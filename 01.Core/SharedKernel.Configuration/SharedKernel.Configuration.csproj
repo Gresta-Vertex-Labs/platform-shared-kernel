@@ -4,6 +4,46 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Configuration</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Options-pattern validation helpers for the SharedKernel: AddValidatedOptions&lt;TOptions&gt; DI extension that binds, validates via DataAnnotations, and enforces startup-time validation (ValidateOnStart). Depends on SharedKernel.Primitives.</Description>
+    <PackageTags>shared-kernel;options;configuration;validation;dependency-injection;aot</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.5" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Configuration.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Configuration.Tests\**" />
+    <None Remove="SharedKernel.Configuration.Tests\**" />
+  </ItemGroup>
 
 </Project>

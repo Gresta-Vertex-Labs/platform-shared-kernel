@@ -4,6 +4,39 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Primitives</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Foundational primitives for the SharedKernel: Result&lt;T&gt;, Error, ErrorCodes, IClock, SmartEnum, ValidationResult. Zero external dependencies. AOT-compatible.</Description>
+    <PackageTags>shared-kernel;result;railway-oriented;clock;smart-enum;aot</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Primitives.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Primitives.Tests\**" />
+    <None Remove="SharedKernel.Primitives.Tests\**" />
+  </ItemGroup>
 
 </Project>

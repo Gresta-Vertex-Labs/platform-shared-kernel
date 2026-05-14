@@ -4,6 +4,51 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Microsoft.FeatureManagement 4.x does not yet ship a full AOT-trimming manifest.
+         The IFeatureManager wrapper isolates consuming services from this concern —
+         if AOT becomes required, only the adapter needs replacement. -->
+
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.FeatureManagement</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Feature flag abstraction for the SharedKernel: IFeatureManager interface and Microsoft.FeatureManagement adapter. Consuming services depend only on the abstraction — swap the adapter if a fully AOT-safe implementation becomes available. Depends on SharedKernel.Primitives.</Description>
+    <PackageTags>shared-kernel;feature-flags;feature-management;abstraction;dependency-injection</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Version 4.5.0 — latest stable as of 2026-05-14.
+         AOT status: NOT fully AOT-safe (uses reflection-based filter activation).
+         The IFeatureManager abstraction isolates downstream from this — swap the
+         adapter if a fully AOT-safe implementation becomes available. -->
+    <PackageReference Include="Microsoft.FeatureManagement" Version="4.5.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.FeatureManagement.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.FeatureManagement.Tests\**" />
+    <None Remove="SharedKernel.FeatureManagement.Tests\**" />
+  </ItemGroup>
 
 </Project>

@@ -188,6 +188,23 @@ Append the root changelog entry as:
 - [YYYY-MM-DD] {domain} → {phase} (●) — promoted from {phase_key} (state-map-phase)
 ```
 
+## Step S8b — Close Phase Backlog entries (Published phase only)
+
+**Only execute this step if `phase` = `Published`** (i.e. the domain just reached its final milestone).
+
+In the root `state-map.md`, scan every entry under `## Phase Backlog`.
+For each entry whose **Domain** field matches the domain that just completed:
+- If its **Status** is `○` Pending or `◐` Dispatched, update it to `●` Complete.
+- Do not change entries for other domains.
+- Do not add or remove entries — only update the `**Status:**` line in-place.
+
+Append exactly one changelog line per closed batch:
+```
+- [YYYY-MM-DD] Phase Backlog entries for {domain} closed → ● Complete — {domain} reached Published (state-map-phase)
+```
+
+If no entries match (Phase Backlog is empty or all already `●`), skip silently — do not append a changelog line.
+
 ## Step S9 — Report
 
 Output ≤ 5 bullet points: task updated, phase key state after update, whether root propagation fired and what changed if it did. If stopped due to parse error, list missing fields and a corrected example.

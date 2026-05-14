@@ -2,7 +2,7 @@
 
 ## What This Domain Is
 
-The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing. It ships four independent packages covering: functional primitives (`Result<T>`, `Error`), system abstractions (`IClock`, SmartEnums, base exceptions, BCL extensions), Options-pattern validation, and a Feature Flag abstraction.
+The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships five independent packages covering: functional primitives (`Result<T>`, `Error`), system abstractions (`IClock`, SmartEnums, base exceptions, BCL extensions), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, and a Feature Flag abstraction.
 
 Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Railway-oriented.**
 
@@ -14,10 +14,11 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 |---------|------|-----------|
 | `SharedKernel.Primitives` | `Result<T>`, `Error`, `ErrorType`, `IClock`, `SmartEnum<TEnum,TValue>` | nothing |
 | `SharedKernel.Core` | Base exceptions, BCL extension methods, `Result<T>` railway extensions | `SharedKernel.Primitives` |
+| `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) | `SharedKernel.Primitives`, `SharedKernel.Core` |
 | `SharedKernel.Configuration` | Options-pattern validation, `AddValidatedOptions` DI extension | `SharedKernel.Primitives` |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
 
-All four target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
+All five target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
 ---
 
@@ -27,6 +28,7 @@ All four target `net10.0`. Test sub-folders live inside each project folder (nev
 |---------|-----------|
 | Functional primitives | Pure C# 13 — no NuGet dependencies |
 | System abstractions | Pure C# 13 — no NuGet dependencies |
+| Guard clauses | Pure C# 13 — no NuGet dependencies; compiled/cached `System.Text.RegularExpressions.Regex` for format/email guards |
 | Options validation | `Microsoft.Extensions.Options.DataAnnotations` |
 | Feature flags | `Microsoft.FeatureManagement` (abstracted behind `IFeatureManager`) |
 
@@ -147,6 +149,67 @@ AddValidatedOptions<TOptions>(IConfiguration section)
     → marker attribute; triggers DataAnnotations + custom IValidateOptions<T> evaluation at startup
 ```
 
+### `SharedKernel.Guards` — public surface
+
+```
+IGuardClause  (public marker interface — no members)
+    — returned by Guard.Against; all guard logic is chained off this interface via extension methods
+    — DefaultGuardClause is the private sealed implementation; callers never reference it directly
+
+Guard  (static class)
+    .Against                                                  → IGuardClause  (entry point for functional path)
+
+Guard.Throw  (nested static class — imperative path)
+    Mirrors every Against.* extension as a void method.
+    On non-null Error return: throws DomainException(error).
+    On null return (guard passed): returns without throwing.
+
+Guard clause extensions on IGuardClause — all return Error? (null = passed, non-null = violation):
+
+    Null/empty
+        .Null<T>(T? value, string paramName)                 → Error?   (reference types only)
+        .NullOrEmpty(string? value, string paramName)        → Error?
+        .NullOrWhiteSpace(string? value, string paramName)   → Error?
+
+    String length
+        .ShorterThan(string value, int minLength, string paramName)   → Error?
+        .LongerThan(string value, int maxLength, string paramName)    → Error?
+
+    Numeric  (overloaded for int, decimal, long)
+        .NegativeOrZero(T value, string paramName)           → Error?
+        .Negative(T value, string paramName)                 → Error?
+        .NotPositive(T value, string paramName)              → Error?
+
+    Range
+        .OutOfRange<T>(T value, T min, T max, string paramName)  → Error?   (where T : IComparable<T>)
+
+    Default / Guid
+        .Default<T>(T value, string paramName)               → Error?   (EqualityComparer<T>.Default — no reflection)
+        .InvalidGuid(Guid value, string paramName)           → Error?   (fails on Guid.Empty)
+
+    Format / Email
+        .InvalidFormat(string value, string pattern, string paramName)  → Error?
+            — uses static compiled Regex field keyed by pattern (ConcurrentDictionary); bounded timeout; zero new Regex per call
+        .Email(string? value, string paramName)              → Error?
+            — uses same cached-regex strategy; no third-party NuGet
+
+    Collections  (IEnumerable<T> enumerated once per call)
+        .Empty<T>(IEnumerable<T> source, string paramName)       → Error?
+        .MaxCount<T>(IEnumerable<T> source, int max, string paramName)  → Error?
+        .MinCount<T>(IEnumerable<T> source, int min, string paramName)  → Error?
+
+    Boolean predicate  (caller supplies Error — enables arbitrary business-rule guards)
+        .True(bool condition, Error error)                   → Error?   (returns error if condition is false)
+        .False(bool condition, Error error)                  → Error?   (returns error if condition is true)
+
+    SmartEnum
+        .InvalidSmartEnum<TEnum, TValue>(TValue id)          → Error?   (where TEnum : SmartEnum<TEnum,TValue>)
+            — calls SmartEnum<TEnum,TValue>.TryFromValue; zero reflection
+
+GuardDescriptions  (internal static class — not public API)
+    — all error message templates as const string; {0}/{1} placeholders; string.Format at call site
+```
+
 ### `SharedKernel.FeatureManagement` — public surface
 
 ```
@@ -168,6 +231,7 @@ AddSharedKernelFeatureManagement(IConfiguration config)
 ## Implementation Rules
 
 - `SharedKernel.Primitives` has **zero NuGet dependencies** — pure C# only.
+- `SharedKernel.Guards` has **zero NuGet dependencies** — references only `SharedKernel.Primitives` and `SharedKernel.Core`.
 - `Result<T>` is a **sealed class** (not a struct) — the zero-value problem with generic struct payloads makes struct unsound at scale.
 - `Result` (non-generic) may be a **readonly struct** — it carries no typed value payload so the zero-value concern does not apply.
 - `Result<T>` must never throw on its own operations (`.IsSuccess`, `.IsFailure`). Only `.Value` and `.Error` accessors throw `InvalidOperationException` on wrong access.
@@ -180,6 +244,13 @@ AddSharedKernelFeatureManagement(IConfiguration config)
 - Async railway extension methods must **not** use `async`/`await` on the outer extension body where the only async work is awaiting the input — avoid unnecessary state machine allocation.
 - `AddValidatedOptions` must call `.ValidateOnStart()` — misconfigured apps must fail at startup, not at first access.
 - `IFeatureManager` is the only permitted feature-flag interface in consuming services — never inject `Microsoft.FeatureManagement.IFeatureManager` directly.
+- Guard extensions return `Error?` — **null means the guard passed**, non-null means violation. Never use `Error.None` as the "passed" sentinel in guard returns; use actual `null` so callers can distinguish cleanly.
+- `Guard.Throw.*` methods are thin wrappers: call the matching `Against.*` extension, throw `DomainException(error)` if the result is non-null, otherwise return. No independent logic.
+- `IGuardClause` is a public marker interface with no members — `DefaultGuardClause` (the implementation) is `private sealed` to the `Guard` class. Callers must never reference `DefaultGuardClause` directly.
+- `InvalidFormat` and `Email` guard extensions must use a **static cached `Regex`** (e.g., via `ConcurrentDictionary<string, Regex>` keyed by pattern) with a bounded `RegexOptions.Compiled` timeout — a new `Regex` instance must never be created per call.
+- Collection guards (`Empty`, `MaxCount`, `MinCount`) must enumerate the `IEnumerable<T>` source **at most once** per call — use `Count()` or a single materialization pass.
+- `GuardDescriptions` is `internal` — it is not part of the public API and must not be exposed to consumers.
+- `InvalidSmartEnum<TEnum, TValue>` must use `SmartEnum<TEnum, TValue>.TryFromValue` — no reflection, no `Enumeration<T>` or parallel type.
 - No static mutable state anywhere in this domain.
 
 ---
@@ -197,7 +268,7 @@ services.AddValidatedOptions<MyServiceOptions>(configuration.GetSection("MyServi
 services.AddSharedKernelFeatureManagement(configuration);
 ```
 
-`SharedKernel.Primitives` and `SharedKernel.Core` ship **no DI extensions** — they are pure libraries.
+`SharedKernel.Primitives`, `SharedKernel.Core`, and `SharedKernel.Guards` ship **no DI extensions** — they are pure libraries.
 
 ---
 
@@ -210,6 +281,10 @@ services.AddSharedKernelFeatureManagement(configuration);
 - `Microsoft.Extensions.Options` is AOT-compatible as of .NET 8+ — verify on each upgrade.
 - `Microsoft.FeatureManagement` — verify AOT status on each major upgrade; the `IFeatureManager` wrapper allows a swap if needed.
 - All BCL extension methods are static — AOT-safe by default.
+- `IGuardClause` and all guard extension methods are static — AOT-safe. `DefaultGuardClause` is sealed, no virtual dispatch.
+- `EqualityComparer<T>.Default` used in `Default<T>` guard is AOT-safe — it uses static dispatch via generic specialization in .NET 10.
+- `InvalidFormat` / `Email` use `Regex` constructed with `RegexOptions.Compiled` in a static field — the compiled delegate is created once at type-initialization, which is AOT-compatible. `ConcurrentDictionary` is used only for pattern-keyed caching of caller-supplied patterns in `InvalidFormat`; the email regex is a fixed static field.
+- `OutOfRange<T>` uses the `IComparable<T>` constraint — static generic dispatch, no boxing for value types, AOT-safe.
 
 ---
 
@@ -218,11 +293,15 @@ services.AddSharedKernelFeatureManagement(configuration);
 - Unit tests for each package live in the nested `.Tests/` folder inside that package's folder.
 - `SharedKernel.Primitives.Tests/` — Result, Error, IClock, SmartEnum
 - `SharedKernel.Core.Tests/` — exceptions, railway extensions, BCL extensions
+- `SharedKernel.Guards.Tests/` — guard functional path (Against.*), guard throw path (Throw.*), boundary theories
 - `SharedKernel.Configuration.Tests/` — ValidatedOptions eager validation
 - `SharedKernel.FeatureManagement.Tests/` — IFeatureManager enable/disable, context variant
 - Railway-extension chains must be covered: map → bind → match over both success and failure paths.
 - `SmartEnum` must cover: FromValue hit, FromValue miss (throws), TryFromValue, List completeness.
 - Validated options test must assert that a misconfigured `TOptions` throws at `IHost.StartAsync()`.
+- Guard tests must cover **both paths independently**: functional `Against.*` (assert returned `Error?`) and throw `Throw.*` (assert `DomainException` thrown on violation, no exception on pass).
+- Numeric and string-length guard tests must use `[Theory]` with `[InlineData]` for boundary conditions (exactly at limit, one below, one above).
+- Collection guard tests must verify single enumeration — use a counting stub/wrapper `IEnumerable<T>` that increments a counter on `GetEnumerator()` calls.
 
 ---
 
@@ -232,3 +311,4 @@ services.AddSharedKernelFeatureManagement(configuration);
 
 - [2026-05-14] Domain brain initialized — packages, interfaces, rules, AOT notes
 - [2026-05-14] P-001/P-002 applied — added ValidationResult pair, ErrorCodes static class, clarified Result<T> as sealed class vs Result readonly struct, added MapError + void Match on non-generic Result, added async state machine allocation rule
+- [2026-05-14] P-003 applied — added SharedKernel.Guards package: IGuardClause marker, Guard.Against/Guard.Throw entry points, full guard extension surface (null/empty, string length, numeric, range, default, Guid, format, email, collection, boolean predicate, SmartEnum), GuardDescriptions internal class, AOT notes for cached Regex and EqualityComparer<T>.Default, updated test rules with boundary theory and single-enumeration requirements

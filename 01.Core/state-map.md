@@ -68,6 +68,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Core` | — | `○` | References Primitives |
 | `SharedKernel.Configuration` | — | `○` | References Primitives |
 | `SharedKernel.FeatureManagement` | — | `○` | References Primitives |
+| `SharedKernel.Guards` | — | `○` | References Primitives + Core; two-path guard API |
 
 ---
 
@@ -77,18 +78,22 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| D-01 | Define `Result<T>` and `Result` type shape (sealed class, implicit operators, access rules) | SharedKernel.Primitives | `○` |
-| D-02 | Define `Error` sealed record shape, `ErrorType` enum variants, and factory method signatures | SharedKernel.Primitives | `○` |
-| D-03 | Define `IClock` interface and `SystemClock` implementation contract | SharedKernel.Primitives | `○` |
-| D-04 | Define `SmartEnum<TEnum, TValue>` abstract base shape — factory methods, List, AOT lookup strategy | SharedKernel.Primitives | `○` |
-| D-05 | Define base exception hierarchy (SharedKernelException, DomainException, ValidationException, NotFoundException, ConflictException, UnauthorizedException) | SharedKernel.Core | `○` |
-| D-06 | Define `Result<T>` railway extension method signatures (.Map, .MapError, .Bind, .Match, .Tap, async overloads) and void `Match` on non-generic `Result` | SharedKernel.Core | `○` |
-| D-07 | Define BCL extension method surface (string, IEnumerable<T>, DateTimeOffset, Guid) | SharedKernel.Core | `○` |
-| D-08 | Define `AddValidatedOptions<TOptions>` DI extension signature and startup-validation contract | SharedKernel.Configuration | `○` |
-| D-09 | Define `IFeatureManager` interface and `FeatureDefinition` record shape | SharedKernel.FeatureManagement | `○` |
-| D-10 | Confirm `Microsoft.FeatureManagement` NuGet version and AOT compatibility status | SharedKernel.FeatureManagement | `○` |
-| D-11 | Define `ValidationResult` and `ValidationResult<T>` sealed record shapes — multi-error pair, distinct from `Result<T>` | SharedKernel.Primitives | `○` |
-| D-12 | Define `ErrorCodes` static class structure — nested static category classes, well-known string constants | SharedKernel.Primitives | `○` |
+| D-01 | Define `Result<T>` and `Result` type shape (sealed class, implicit operators, access rules) | SharedKernel.Primitives | `●` |
+| D-02 | Define `Error` sealed record shape, `ErrorType` enum variants, and factory method signatures | SharedKernel.Primitives | `●` |
+| D-03 | Define `IClock` interface and `SystemClock` implementation contract | SharedKernel.Primitives | `●` |
+| D-04 | Define `SmartEnum<TEnum, TValue>` abstract base shape — factory methods, List, AOT lookup strategy | SharedKernel.Primitives | `●` |
+| D-05 | Define base exception hierarchy (SharedKernelException, DomainException, ValidationException, NotFoundException, ConflictException, UnauthorizedException) | SharedKernel.Core | `●` |
+| D-06 | Define `Result<T>` railway extension method signatures (.Map, .MapError, .Bind, .Match, .Tap, async overloads) and void `Match` on non-generic `Result` | SharedKernel.Core | `●` |
+| D-07 | Define BCL extension method surface (string, IEnumerable<T>, DateTimeOffset, Guid) | SharedKernel.Core | `●` |
+| D-08 | Define `AddValidatedOptions<TOptions>` DI extension signature and startup-validation contract | SharedKernel.Configuration | `●` |
+| D-09 | Define `IFeatureManager` interface and `FeatureDefinition` record shape | SharedKernel.FeatureManagement | `●` |
+| D-10 | Confirm `Microsoft.FeatureManagement` NuGet version and AOT compatibility status | SharedKernel.FeatureManagement | `●` |
+| D-11 | Define `ValidationResult` and `ValidationResult<T>` sealed record shapes — multi-error pair, distinct from `Result<T>` | SharedKernel.Primitives | `●` |
+| D-12 | Define `ErrorCodes` static class structure — nested static category classes, well-known string constants | SharedKernel.Primitives | `●` |
+| D-13 | Define `IGuardClause` marker interface and `DefaultGuardClause` private sealed implementation; define `Guard.Against` / `Guard.Throw` static entry-point shape | SharedKernel.Guards | `○` |
+| D-14 | Define full guard extension method surface on `IGuardClause`: null/empty, string length, numeric, range, default, Guid, regex-format, collection, email, boolean-predicate, SmartEnum | SharedKernel.Guards | `○` |
+| D-15 | Define `GuardDescriptions` internal static class — const string message templates, `{0}`/`{1}` placeholder convention | SharedKernel.Guards | `○` |
+| D-16 | Define `Guard.Throw` nested static class — mirror all `Against.*` extensions as void methods throwing `DomainException` on non-null `Error` return | SharedKernel.Guards | `○` |
 
 ---
 
@@ -98,17 +103,21 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| S-01 | Add `Microsoft.Extensions.Options.DataAnnotations` NuGet ref to `SharedKernel.Configuration.csproj` | SharedKernel.Configuration | `○` |
-| S-02 | Add `Microsoft.FeatureManagement` NuGet ref to `SharedKernel.FeatureManagement.csproj` | SharedKernel.FeatureManagement | `○` |
-| S-03 | Add `SharedKernel.Primitives` project reference to `SharedKernel.Core.csproj` | SharedKernel.Core | `○` |
-| S-04 | Add `SharedKernel.Primitives` project reference to `SharedKernel.Configuration.csproj` | SharedKernel.Configuration | `○` |
-| S-05 | Add `SharedKernel.Primitives` project reference to `SharedKernel.FeatureManagement.csproj` | SharedKernel.FeatureManagement | `○` |
-| S-06 | Create folder structure (`Results/`, `Errors/`, `Clocks/`, `Enums/`) in `SharedKernel.Primitives` | SharedKernel.Primitives | `○` |
-| S-07 | Create folder structure (`Exceptions/`, `Extensions/`) in `SharedKernel.Core` | SharedKernel.Core | `○` |
-| S-08 | Create folder structure (`Options/`, `Extensions/`) in `SharedKernel.Configuration` | SharedKernel.Configuration | `○` |
-| S-09 | Create folder structure (`Abstractions/`, `Extensions/`) in `SharedKernel.FeatureManagement` | SharedKernel.FeatureManagement | `○` |
-| S-10 | Register all four projects in `Platform.SharedKernel.slnx` under solution folder `01.Core` | All | `○` |
-| S-11 | Stub empty `.Tests` projects with xUnit package reference for all four packages | All | `○` |
+| S-01 | Add `Microsoft.Extensions.Options.DataAnnotations` NuGet ref to `SharedKernel.Configuration.csproj` | SharedKernel.Configuration | `●` |
+| S-02 | Add `Microsoft.FeatureManagement` NuGet ref to `SharedKernel.FeatureManagement.csproj` | SharedKernel.FeatureManagement | `●` |
+| S-03 | Add `SharedKernel.Primitives` project reference to `SharedKernel.Core.csproj` | SharedKernel.Core | `●` |
+| S-04 | Add `SharedKernel.Primitives` project reference to `SharedKernel.Configuration.csproj` | SharedKernel.Configuration | `●` |
+| S-05 | Add `SharedKernel.Primitives` project reference to `SharedKernel.FeatureManagement.csproj` | SharedKernel.FeatureManagement | `●` |
+| S-06 | Create folder structure (`Results/`, `Errors/`, `Clocks/`, `Enums/`) in `SharedKernel.Primitives` | SharedKernel.Primitives | `●` |
+| S-07 | Create folder structure (`Exceptions/`, `Extensions/`) in `SharedKernel.Core` | SharedKernel.Core | `●` |
+| S-08 | Create folder structure (`Options/`, `Extensions/`) in `SharedKernel.Configuration` | SharedKernel.Configuration | `●` |
+| S-09 | Create folder structure (`Abstractions/`, `Extensions/`) in `SharedKernel.FeatureManagement` | SharedKernel.FeatureManagement | `●` |
+| S-10 | Register all four projects in `Platform.SharedKernel.slnx` under solution folder `01.Core` | All | `●` |
+| S-11 | Stub empty `.Tests` projects with xUnit package reference for all four packages | All | `●` |
+| S-12 | Create `01.Core/SharedKernel.Guards/SharedKernel.Guards.csproj` targeting `net10.0`; add project refs to `SharedKernel.Primitives` and `SharedKernel.Core` | SharedKernel.Guards | `○` |
+| S-13 | Create folder structure (`Clauses/`, `Descriptions/`) inside `SharedKernel.Guards/` | SharedKernel.Guards | `○` |
+| S-14 | Create `SharedKernel.Guards.Tests.csproj` nested inside `SharedKernel.Guards/` with xUnit reference | SharedKernel.Guards | `○` |
+| S-15 | Register `SharedKernel.Guards` and `SharedKernel.Guards.Tests` in `Platform.SharedKernel.slnx` under solution folder `01.Core` | SharedKernel.Guards | `○` |
 
 ---
 
@@ -118,21 +127,35 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| C-01 | Implement `Result<T>` (sealed class) and `Result` (non-generic) with Success/Failure factories and implicit operators | SharedKernel.Primitives | `○` |
-| C-02 | Implement `Error` sealed record with `ErrorType` enum and all factory methods | SharedKernel.Primitives | `○` |
-| C-03 | Implement `IClock` interface and `SystemClock` (wraps `DateTimeOffset.UtcNow`) | SharedKernel.Primitives | `○` |
-| C-04 | Implement `SmartEnum<TEnum, TValue>` abstract base with AOT-safe static list and value lookup | SharedKernel.Primitives | `○` |
-| C-05 | Implement `services.AddClock()` DI extension wiring `SystemClock` as singleton | SharedKernel.Primitives | `○` |
-| C-06 | Implement base exception hierarchy (all derive from `SharedKernelException`, carry `Error` payload; `ValidationException` accepts `IReadOnlyList<Error>`) | SharedKernel.Core | `○` |
-| C-07 | Implement `Result<T>` railway extension methods (.Map, .MapError, .Bind, .Match, .Tap) and void `Match` on non-generic `Result` | SharedKernel.Core | `○` |
-| C-08 | Implement async `Task<Result<T>>` railway extension overloads — avoid unnecessary state machines on outer extension | SharedKernel.Core | `○` |
-| C-09 | Implement BCL extensions: string (ToSnakeCase, ToCamelCase, ToPascalCase, IsNullOrWhiteSpace), IEnumerable<T> (ToBatches, IsNullOrEmpty, WhereNotNull), DateTimeOffset (ToUnixMilliseconds, StartOfDay, EndOfDay), Guid (IsEmpty) | SharedKernel.Core | `○` |
-| C-10 | Implement `AddValidatedOptions<TOptions>` DI extension with `.ValidateDataAnnotations().ValidateOnStart()` | SharedKernel.Configuration | `○` |
-| C-11 | Implement `IFeatureManager` abstraction interface and `FeatureDefinition` sealed record | SharedKernel.FeatureManagement | `○` |
-| C-12 | Implement `MicrosoftFeatureManagerAdapter` wrapping `Microsoft.FeatureManagement.IFeatureManager` | SharedKernel.FeatureManagement | `○` |
-| C-13 | Implement `AddSharedKernelFeatureManagement` DI extension | SharedKernel.FeatureManagement | `○` |
-| C-14 | Implement `ValidationResult` (non-generic, `IsValid` + `IReadOnlyList<Error>`) and `ValidationResult<T>` (adds `Value`) sealed records | SharedKernel.Primitives | `○` |
-| C-15 | Implement `ErrorCodes` static class with nested category constants (e.g., `ErrorCodes.Validation.Required`, `ErrorCodes.NotFound.Default`) | SharedKernel.Primitives | `○` |
+| C-01 | Implement `Result<T>` (sealed class) and `Result` (non-generic) with Success/Failure factories and implicit operators | SharedKernel.Primitives | `●` |
+| C-02 | Implement `Error` sealed record with `ErrorType` enum and all factory methods | SharedKernel.Primitives | `●` |
+| C-03 | Implement `IClock` interface and `SystemClock` (wraps `DateTimeOffset.UtcNow`) | SharedKernel.Primitives | `●` |
+| C-04 | Implement `SmartEnum<TEnum, TValue>` abstract base with AOT-safe static list and value lookup | SharedKernel.Primitives | `●` |
+| C-05 | Implement `services.AddClock()` DI extension wiring `SystemClock` as singleton | SharedKernel.Primitives | `●` |
+| C-06 | Implement base exception hierarchy (all derive from `SharedKernelException`, carry `Error` payload; `ValidationException` accepts `IReadOnlyList<Error>`) | SharedKernel.Core | `●` |
+| C-07 | Implement `Result<T>` railway extension methods (.Map, .MapError, .Bind, .Match, .Tap) and void `Match` on non-generic `Result` | SharedKernel.Core | `●` |
+| C-08 | Implement async `Task<Result<T>>` railway extension overloads — avoid unnecessary state machines on outer extension | SharedKernel.Core | `●` |
+| C-09 | Implement BCL extensions: string (ToSnakeCase, ToCamelCase, ToPascalCase, IsNullOrWhiteSpace), IEnumerable<T> (ToBatches, IsNullOrEmpty, WhereNotNull), DateTimeOffset (ToUnixMilliseconds, StartOfDay, EndOfDay), Guid (IsEmpty) | SharedKernel.Core | `●` |
+| C-10 | Implement `AddValidatedOptions<TOptions>` DI extension with `.ValidateDataAnnotations().ValidateOnStart()` | SharedKernel.Configuration | `●` |
+| C-11 | Implement `IFeatureManager` abstraction interface and `FeatureDefinition` sealed record | SharedKernel.FeatureManagement | `●` |
+| C-12 | Implement `MicrosoftFeatureManagerAdapter` wrapping `Microsoft.FeatureManagement.IFeatureManager` | SharedKernel.FeatureManagement | `●` |
+| C-13 | Implement `AddSharedKernelFeatureManagement` DI extension | SharedKernel.FeatureManagement | `●` |
+| C-14 | Implement `ValidationResult` (non-generic, `IsValid` + `IReadOnlyList<Error>`) and `ValidationResult<T>` (adds `Value`) sealed records | SharedKernel.Primitives | `●` |
+| C-15 | Implement `ErrorCodes` static class with nested category constants (e.g., `ErrorCodes.Validation.Required`, `ErrorCodes.NotFound.Default`) | SharedKernel.Primitives | `●` |
+| C-16 | Implement `IGuardClause` marker interface and private sealed `DefaultGuardClause` with static `Guard.Against` factory returning the marker | SharedKernel.Guards | `○` |
+| C-17 | Implement null/empty guard extensions: `Null<T>`, `NullOrEmpty`, `NullOrWhiteSpace` — all return `Error?` | SharedKernel.Guards | `○` |
+| C-18 | Implement string length guard extensions: `ShorterThan(string, int minLength)`, `LongerThan(string, int maxLength)` | SharedKernel.Guards | `○` |
+| C-19 | Implement numeric guard extensions for `int`, `decimal`, `long`: `NegativeOrZero`, `Negative`, `NotPositive` | SharedKernel.Guards | `○` |
+| C-20 | Implement `OutOfRange<T>(T value, T min, T max)` constrained to `IComparable<T>` | SharedKernel.Guards | `○` |
+| C-21 | Implement `Default<T>(T value)` using `EqualityComparer<T>.Default` — no reflection | SharedKernel.Guards | `○` |
+| C-22 | Implement `InvalidGuid(Guid value)` catching `Guid.Empty` | SharedKernel.Guards | `○` |
+| C-23 | Implement `InvalidFormat(string value, string pattern)` with compiled/cached `Regex` (static field, bounded timeout) — zero new `Regex` per call | SharedKernel.Guards | `○` |
+| C-24 | Implement `Email(string? value)` using same compiled/cached regex strategy as `InvalidFormat` — no third-party NuGet | SharedKernel.Guards | `○` |
+| C-25 | Implement collection guards: `Empty<T>(IEnumerable<T>)`, `MaxCount<T>(IEnumerable<T>, int)`, `MinCount<T>(IEnumerable<T>, int)` — enumerate once via `Count()` or single materialisation | SharedKernel.Guards | `○` |
+| C-26 | Implement boolean predicate guards: `True(bool condition, Error error)`, `False(bool condition, Error error)` — caller-supplied error, no allocation on pass | SharedKernel.Guards | `○` |
+| C-27 | Implement `InvalidSmartEnum<TEnum, TValue>(TValue id)` constrained to `TEnum : SmartEnum<TEnum,TValue>` using `SmartEnum<TEnum,TValue>.TryFromValue` — zero reflection | SharedKernel.Guards | `○` |
+| C-28 | Implement `GuardDescriptions` internal static class with all const string message templates (not public API) | SharedKernel.Guards | `○` |
+| C-29 | Implement `Guard.Throw` nested static class — mirrors all `Against.*` extensions as void methods; throws `DomainException(error)` on non-null `Error` return | SharedKernel.Guards | `○` |
 
 ---
 
@@ -142,16 +165,24 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| T-01 | Unit: `Result<T>` — success path, failure path, implicit operators, accessor throws on wrong state | SharedKernel.Primitives.Tests | `○` |
-| T-02 | Unit: `Error` — factory methods, record equality, ErrorType discrimination, `Error.None` sentinel | SharedKernel.Primitives.Tests | `○` |
-| T-03 | Unit: `SmartEnum` — FromValue hit, FromValue miss (throws), TryFromValue, FromName, List completeness | SharedKernel.Primitives.Tests | `○` |
-| T-04 | Unit: `IClock` / `SystemClock` — returns current UTC; verify `FakeClock` usable in tests | SharedKernel.Primitives.Tests | `○` |
-| T-05 | Unit: Base exceptions — carry correct `Error`, message propagates, hierarchy verified | SharedKernel.Core.Tests | `○` |
-| T-06 | Unit: Railway extensions — Map, MapError, Bind, Match, Tap chains over success and failure paths; void Match on non-generic Result; async variants | SharedKernel.Core.Tests | `○` |
-| T-07 | Unit: BCL extensions — string conversions, IEnumerable batching and nullability, DateTimeOffset helpers, Guid.IsEmpty | SharedKernel.Core.Tests | `○` |
-| T-08 | Unit: `AddValidatedOptions` — valid config registers without throw; invalid config throws at `IHost.StartAsync()` | SharedKernel.Configuration.Tests | `○` |
-| T-09 | Unit: `IFeatureManager` adapter — enabled flag returns true, disabled returns false, context-aware variant | SharedKernel.FeatureManagement.Tests | `○` |
-| T-10 | Unit: `ValidationResult` / `ValidationResult<T>` — multi-error collection, `IsValid` semantics, generic `Value` access, distinction from `Result<T>` | SharedKernel.Primitives.Tests | `○` |
+| T-01 | Unit: `Result<T>` — success path, failure path, implicit operators, accessor throws on wrong state | SharedKernel.Primitives.Tests | `●` |
+| T-02 | Unit: `Error` — factory methods, record equality, ErrorType discrimination, `Error.None` sentinel | SharedKernel.Primitives.Tests | `●` |
+| T-03 | Unit: `SmartEnum` — FromValue hit, FromValue miss (throws), TryFromValue, FromName, List completeness | SharedKernel.Primitives.Tests | `●` |
+| T-04 | Unit: `IClock` / `SystemClock` — returns current UTC; verify `FakeClock` usable in tests | SharedKernel.Primitives.Tests | `●` |
+| T-05 | Unit: Base exceptions — carry correct `Error`, message propagates, hierarchy verified | SharedKernel.Core.Tests | `●` |
+| T-06 | Unit: Railway extensions — Map, MapError, Bind, Match, Tap chains over success and failure paths; void Match on non-generic Result; async variants | SharedKernel.Core.Tests | `●` |
+| T-07 | Unit: BCL extensions — string conversions, IEnumerable batching and nullability, DateTimeOffset helpers, Guid.IsEmpty | SharedKernel.Core.Tests | `●` |
+| T-08 | Unit: `AddValidatedOptions` — valid config registers without throw; invalid config throws at `IHost.StartAsync()` | SharedKernel.Configuration.Tests | `●` |
+| T-09 | Unit: `IFeatureManager` adapter — enabled flag returns true, disabled returns false, context-aware variant | SharedKernel.FeatureManagement.Tests | `●` |
+| T-10 | Unit: `ValidationResult` / `ValidationResult<T>` — multi-error collection, `IsValid` semantics, generic `Value` access, distinction from `Result<T>` | SharedKernel.Primitives.Tests | `●` |
+| T-11 | Unit: Guard functional path (Against.*) — null/empty/whitespace: returns null on pass, non-null `Error` on violation | SharedKernel.Guards.Tests | `○` |
+| T-12 | Unit: Guard functional path — string length: boundary theory tests (exact min, exact max, one below, one above) | SharedKernel.Guards.Tests | `○` |
+| T-13 | Unit: Guard functional path — numeric guards (`int`, `decimal`, `long`): negative, negativeOrZero, notPositive; boundary theories | SharedKernel.Guards.Tests | `○` |
+| T-14 | Unit: Guard functional path — OutOfRange: pass at bounds, fail outside bounds; Default; InvalidGuid | SharedKernel.Guards.Tests | `○` |
+| T-15 | Unit: Guard functional path — InvalidFormat and Email: valid inputs pass (null on return), invalid inputs return non-null Error; confirm no new Regex per call | SharedKernel.Guards.Tests | `○` |
+| T-16 | Unit: Guard functional path — collection guards: Empty, MaxCount, MinCount; verify single enumeration via stub | SharedKernel.Guards.Tests | `○` |
+| T-17 | Unit: Guard functional path — True/False boolean predicate guards; InvalidSmartEnum with known/unknown value | SharedKernel.Guards.Tests | `○` |
+| T-18 | Unit: Guard throw path (Throw.*) — assert `DomainException` thrown on violation; assert no exception on pass for all guard categories | SharedKernel.Guards.Tests | `○` |
 
 ---
 
@@ -161,10 +192,12 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| DO-01 | XML doc all public types and interfaces across all four packages | All | `○` |
-| DO-02 | Write `01.Core/README.md` with usage examples for Result, Error, IClock, SmartEnum | All | `○` |
-| DO-03 | Document `Result<T>` railway pattern and error-propagation guide with code samples | SharedKernel.Primitives, SharedKernel.Core | `○` |
-| DO-04 | Document `AddValidatedOptions` startup-validation pattern with annotated example | SharedKernel.Configuration | `○` |
+| DO-01 | XML doc all public types and interfaces across all four packages | All | `●` |
+| DO-02 | Write `01.Core/README.md` with usage examples for Result, Error, IClock, SmartEnum | All | `●` |
+| DO-03 | Document `Result<T>` railway pattern and error-propagation guide with code samples | SharedKernel.Primitives, SharedKernel.Core | `●` |
+| DO-04 | Document `AddValidatedOptions` startup-validation pattern with annotated example | SharedKernel.Configuration | `●` |
+| DO-05 | XML doc all public types, extension methods, and parameters in `SharedKernel.Guards` | SharedKernel.Guards | `○` |
+| DO-06 | Add Guards usage examples to `01.Core/README.md` — functional `Against.*` path and imperative `Throw.*` path with annotated samples | SharedKernel.Guards | `○` |
 
 ---
 
@@ -174,12 +207,15 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| P-01 | Add NuGet metadata to all four `.csproj` files (authors, description, version, license) | All | `○` |
-| P-02 | Pack and publish `SharedKernel.Primitives` to feed | SharedKernel.Primitives | `○` |
-| P-03 | Pack and publish `SharedKernel.Core` to feed | SharedKernel.Core | `○` |
-| P-04 | Pack and publish `SharedKernel.Configuration` to feed | SharedKernel.Configuration | `○` |
-| P-05 | Pack and publish `SharedKernel.FeatureManagement` to feed | SharedKernel.FeatureManagement | `○` |
-| P-06 | Verify dependency graph in a consumer test project (Primitives → Core → Configuration chain) | All | `○` |
+| P-01 | Add NuGet metadata to all four `.csproj` files (authors, description, version, license) | All | `●` |
+| P-02 | Pack and publish `SharedKernel.Primitives` to feed | SharedKernel.Primitives | `●` |
+| P-03 | Pack and publish `SharedKernel.Core` to feed | SharedKernel.Core | `●` |
+| P-04 | Pack and publish `SharedKernel.Configuration` to feed | SharedKernel.Configuration | `●` |
+| P-05 | Pack and publish `SharedKernel.FeatureManagement` to feed | SharedKernel.FeatureManagement | `●` |
+| P-06 | Verify dependency graph in a consumer test project (Primitives → Core → Configuration chain) | All | `●` |
+| P-07 | Add NuGet metadata to `SharedKernel.Guards.csproj` (authors, description, version, license) | SharedKernel.Guards | `○` |
+| P-08 | Pack and publish `SharedKernel.Guards` to feed | SharedKernel.Guards | `○` |
+| P-09 | Verify `SharedKernel.Guards` dependency graph in consumer: confirms Primitives + Core transitive refs resolve correctly | SharedKernel.Guards | `○` |
 
 ---
 
@@ -197,16 +233,16 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 54.
+> Counts updated whenever a task state changes. Total tasks: 87.
 
-| Phase Key | Phase | Total | ● Done | State |
-|-----------|-------|:-----:|:------:|:-----:|
-| `SK.01.Design` | Design | 12 | 0 | `○` |
-| `SK.01.Scaffold` | Scaffold | 11 | 0 | `○` |
-| `SK.01.Core` | Core | 15 | 0 | `○` |
-| `SK.01.Tests` | Tests | 10 | 0 | `○` |
-| `SK.01.Docs` | Docs | 4 | 0 | `○` |
-| `SK.01.Published` | Published | 6 | 0 | `○` |
+| Phase Key | Phase | Total | ● Done | ○ Pending | State |
+|-----------|-------|:-----:|:------:|:---------:|:-----:|
+| `SK.01.Design` | Design | 16 | 12 | 4 | `◐` |
+| `SK.01.Scaffold` | Scaffold | 15 | 11 | 4 | `◐` |
+| `SK.01.Core` | Core | 29 | 15 | 14 | `◐` |
+| `SK.01.Tests` | Tests | 18 | 10 | 8 | `◐` |
+| `SK.01.Docs` | Docs | 6 | 4 | 2 | `◐` |
+| `SK.01.Published` | Published | 9 | 6 | 3 | `◐` |
 
 ---
 
@@ -216,3 +252,10 @@ Format when active:
 
 - [2026-05-14] Sub state-map initialized — phase key registry, all 6 phases scaffolded at ○ (49 tasks total)
 - [2026-05-14] P-001 and P-002 processed — added D-11, D-12 (ValidationResult pair and ErrorCodes design tasks), C-14, C-15 (implementation tasks), T-10 (ValidationResult tests); updated D-06 and C-07 to reflect MapError and void Match on non-generic Result; total now 54 tasks
+- [2026-05-14] D-01→D-12 → ● in SK.01.Design — all type shapes, interfaces, and DI signatures defined and implemented with 126 passing tests (state-map-phase)
+- [2026-05-14] S-01→S-11 → ● in SK.01.Scaffold — NuGet refs, project refs, folder structure, slnx registration, and test stubs all confirmed complete (state-map-phase)
+- [2026-05-14] C-01→C-15 → ● in SK.01.Core — all 15 implementation tasks complete, 128 tests passing across all four packages (state-map-phase)
+- [2026-05-14] T-01→T-10 → ● in SK.01.Tests — 128 tests passing across all four packages, full coverage verified (state-map-phase)
+- [2026-05-14] DO-01→DO-04 → ● in SK.01.Docs — XML docs complete on all public APIs; 01.Core/README.md written with railway, IClock, SmartEnum, options examples (state-map-phase)
+- [2026-05-14] P-01→P-06 → ● in SK.01.Published — NuGet metadata added, all four packages packed to local feed, consumer verification project confirms dependency graph (state-map-phase)
+- [2026-05-14] P-003 processed — added SharedKernel.Guards package: D-13→D-16 (design), S-12→S-15 (scaffold), C-16→C-29 (implementation), T-11→T-18 (tests), DO-05→DO-06 (docs), P-07→P-09 (publish); total now 87 tasks across 6 phases; all new tasks at ○

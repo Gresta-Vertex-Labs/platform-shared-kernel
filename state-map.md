@@ -32,7 +32,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 | Domain | Current Phase | Focus (one line) |
 |--------|---------------|-----------------|
-| [01.Core](01.Core/state-map.md) | Design | Define Result/Error/ValidationResult/IClock/SmartEnum type shapes in SharedKernel.Primitives with railway extensions and BCL utilities in SharedKernel.Core |
+| [00.Governance](00.Governance/state-map.md) | Design | Define architecture test asserting that IGuardClause extension methods never throw — only the Guard.Throw companion class may throw |
 
 <!--
 Format when active:
@@ -64,8 +64,8 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | — | `○` | — | — |
-| 01 | [Core](01.Core/state-map.md) | Design | `◐` | — | Define Result/Error/ValidationResult/IClock/SmartEnum type shapes in SharedKernel.Primitives with railway extensions and BCL utilities in SharedKernel.Core |
+| 00 | [Governance](00.Governance/state-map.md) | Design | `◐` | — | Define architecture test asserting that IGuardClause extension methods never throw — only the Guard.Throw companion class may throw |
+| 01 | [Core](01.Core/state-map.md) | Published | `●` | All 6 Published tasks complete — NuGet metadata added, all four packages packed to local feed, consumer verification project confirms dependency graph. | — |
 | 02 | [Caching](02.Caching/state-map.md) | — | `○` | — | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
@@ -106,7 +106,7 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Published | 0 |
+| ● Published | 1 |
 | ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
@@ -114,7 +114,7 @@ Format when active:
 | ● Design | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 17 |
+| ○ Not Started | 16 |
 
 ---
 
@@ -158,7 +158,7 @@ Rules:
 ---
 ### P-001 — Core Primitives Foundational Design
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-001
 **Domain:** 01.Core
 **Depends on:** None
@@ -204,7 +204,7 @@ All types in this package have zero NuGet dependencies. Pure C# 13 targeting `ne
 ---
 ### P-002 — Core Railway Extensions and BCL Utilities
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-001
 **Domain:** 01.Core
 **Depends on:** P-001
@@ -253,6 +253,93 @@ Railway-oriented error propagation requires chainable operators that do not exis
 - [ ] Package references only `SharedKernel.Primitives` — no other NuGet or project references
 
 ---
+### P-003 — Guard System: SharedKernel.Guards Package
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-002
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+
+A new `SharedKernel.Guards` package living in `01.Core/SharedKernel.Guards/`. It references `SharedKernel.Primitives` and `SharedKernel.Core` — the latter provides `DomainException` for the imperative throw path.
+
+**Entry point and marker interface:**
+A static `Guard` class exposes two static entry points. `Guard.Against` returns an `IGuardClause` marker — callers chain extension methods off it to obtain `Error?` (null means the guard passed; non-null means it failed). `Guard.Throw` is a companion static class whose members call the matching `Against` extension and, if a non-null `Error` is returned, immediately throw a `DomainException` carrying that error. The two entry points share the same underlying guard logic — `Throw.*` is a thin wrapper over `Against.*`.
+
+**Guard clause extensions on `IGuardClause` — functional path (return `Error?`):**
+All extensions are static methods, AOT-safe, zero-reflection. They return `Error?` — null signals the guard passed, a populated `Error` signals violation.
+
+- Null/empty guards: `Null<T>` (reference type), `NullOrEmpty` (string), `NullOrWhiteSpace` (string)
+- String length guards: `ShorterThan(string, int minLength)`, `LongerThan(string, int maxLength)`
+- Numeric guards covering `int`, `decimal`, and `long`: `NegativeOrZero`, `Negative`, `NotPositive`
+- Range guard: `OutOfRange<T>(T value, T min, T max)` constrained to `IComparable<T>`
+- Default-value guard: `Default<T>(T value)` — uses `EqualityComparer<T>.Default`
+- Guid guard: `InvalidGuid(Guid value)` — catches `Guid.Empty`
+- Regex format guard: `InvalidFormat(string value, string pattern)` — uses a compiled/cached `Regex` with a bounded timeout to prevent ReDoS; never creates a new `Regex` instance per call
+- Collection guards: `Empty<T>(IEnumerable<T>)`, `MaxCount<T>(IEnumerable<T>, int maxCount)`, `MinCount<T>(IEnumerable<T>, int minCount)` — each materializes the count once
+- Email guard: `Email(string? value)` — uses the same bounded-timeout compiled regex strategy as `InvalidFormat`; no third-party NuGet
+- Boolean predicate guards: `True(bool condition, Error error)`, `False(bool condition, Error error)` — caller supplies the `Error` directly, enabling arbitrary business-rule guards
+- SmartEnum guard: `InvalidSmartEnum<TEnum, TValue>(TValue id)` constrained to `TEnum : SmartEnum<TEnum, TValue>` — calls `SmartEnum<TEnum, TValue>.TryFromValue`; this replaces the original `Enumeration<T>` guard which referenced a non-existent type
+
+**Description strings:**
+An internal `GuardDescriptions` static class owns all message templates as `const string` values. It is not part of the public API. Message templates for numeric and range guards use `{0}`, `{1}` placeholders interpolated via `string.Format` at the call site — no allocations beyond the error case.
+
+**Imperative path (`Guard.Throw.*`):**
+A companion nested static class `Guard.Throw` mirrors every `Against.*` extension as a void method. Each calls the matching `Against` extension, and if the returned `Error` is non-null, throws a `DomainException(error)`. This path is for callers that cannot tolerate continuing on guard failure (e.g., application-layer command handlers that want immediate short-circuit).
+
+**Test project:**
+`SharedKernel.Guards.Tests/` nested inside `SharedKernel.Guards/`. Covers both the functional path (assert returned `Error` on violation, assert null on pass) and the throw path (assert `DomainException` is thrown). Uses theory-driven parameterised tests for boundary conditions on numeric and string guards.
+
+#### Why this is needed
+
+Domain constructors, value objects, and application-layer command handlers all need a consistent precondition-enforcement vocabulary. Without a shared guard system, every team writes ad-hoc null checks and throws bare exceptions — inconsistent codes, inconsistent messages, no observable `Error` structure on the railway monad. The two-path design (functional `Against.*` returning `Error?` and imperative `Throw.*` throwing `DomainException`) satisfies both usage patterns: domain constructors that collect multiple guard results before deciding, and application handlers that want immediate short-circuit. Placing the package in `01.Core` as a distinct `SharedKernel.Guards` package — rather than folding it into `SharedKernel.Core` — keeps `SharedKernel.Core` focused and allows microservices that need only guards to take a smaller dependency.
+
+#### Acceptance criteria
+- [ ] `IGuardClause` marker interface is public; `DefaultGuardClause` implementation is private/sealed
+- [ ] `Guard.Against` returns `IGuardClause`; all guard logic is invoked via extensions on that interface
+- [ ] `Guard.Throw` nested static class mirrors every `Against` extension as a void method that throws `DomainException` on violation
+- [ ] All extensions return `Error?` — null means guard passed, non-null means violation
+- [ ] `Error` type used is `SharedKernel.Primitives.Errors.Error` — no parallel error type is introduced
+- [ ] `InvalidSmartEnum<TEnum, TValue>` uses `SmartEnum<TEnum, TValue>.TryFromValue` — no reflection, no `Enumeration<T>` reference
+- [ ] `InvalidFormat` and `Email` guards use a compiled/cached regex with a bounded timeout — no new `Regex` instance per call
+- [ ] `GuardDescriptions` is internal — not part of the public API
+- [ ] Collection guards (`Empty`, `MaxCount`, `MinCount`) enumerate the collection once only
+- [ ] Package references only `SharedKernel.Primitives` and `SharedKernel.Core` — no other NuGet references
+- [ ] All public types and extension method parameters carry XML doc comments
+- [ ] `SharedKernel.Guards.Tests` covers both functional and throw paths; boundary conditions tested via theory-driven parameterised tests
+- [ ] Package is AOT-safe: no reflection in any hot path, all types sealed where appropriate
+---
+### P-004 — Governance: Guard Purity Architecture Rule
+
+**Status:** `○` Pending
+**Work Order:** WO-002
+**Domain:** 00.Governance
+**Depends on:** P-003
+
+#### What is needed
+
+A new architecture enforcement rule in `00.Governance/SharedKernel.ArchitectureTests` that enforces the guard clause purity contract across all packages in the SharedKernel mono-repo and in any consuming service that references the governance package.
+
+**Rule: Guard extension methods must not throw — they must return `Error?`**
+
+The rule uses NetArchTest (or Roslyn analyzer, at the domain planner's discretion) to assert that methods on any type implementing `IGuardClause` do not contain `throw` statements. The `Guard.Throw.*` path is explicitly excluded from this rule — it is the designated throw surface. Any guard extension that throws directly bypasses the railway monad and violates the functional contract.
+
+**Rule: `Guard.Against.*` and `Guard.Throw.*` are the only permitted guard entry points**
+
+No consuming package or service may call `throw new DomainException(...)` directly inside a domain constructor or value object factory without going through either the guard system or an explicit `Result<T>` railway method. This rule is a lint/naming convention check — it does not enforce this at the IL level (which is infeasible), but documents the expected pattern and may be enforced via a Roslyn analyzer in a future phase.
+
+The governance phase defines the rule specifications and the test fixtures. Actual Roslyn analyzer implementation (if chosen) is a sub-task for the `00.Governance` domain planner.
+
+#### Why this is needed
+
+The two-path guard design only delivers its architectural value if the functional path (`Against.*`) is provably pure — callers who depend on collecting `Error?` results cannot have the rug pulled out by an extension that throws instead of returning. An architecture test enforcing this contract prevents guard extensions from drifting into throw behavior as the package evolves. Without this enforcement, a future contributor adds a guard that throws, breaks domain constructors that assumed collection semantics, and the failure only surfaces at runtime.
+
+#### Acceptance criteria
+- [ ] An architecture test exists that loads all assemblies from `01.Core/SharedKernel.Guards` and asserts that no method on any type implementing `IGuardClause` has a `throw` expression (excluding `Guard.Throw.*` companion class)
+- [ ] The rule is documented in the `00.Governance` domain brain with the rationale and exclusion list
+- [ ] The test runs as part of the governance test suite and fails with a meaningful message identifying the offending method
+---
 
 ## Changelog
 
@@ -262,3 +349,13 @@ Railway-oriented error propagation requires chainable operators that do not exis
 - [2026-05-14] P-001, P-002 written for WO-001 — 01.Core SharedKernel.Primitives and SharedKernel.Core design — arch-lead
 - [2026-05-14] 01.Core → Design (◐) — Define Result/Error/ValidationResult/IClock/SmartEnum and railway extensions (state-map-phase)
 - [2026-05-14] Phase(s) P-001, P-002 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-05-14] Core → Design (●) — promoted from SK.01.Design (state-map-phase)
+- [2026-05-14] Core → Scaffold (●) — promoted from SK.01.Scaffold (state-map-phase)
+- [2026-05-14] Core → Core (●) — promoted from SK.01.Core (state-map-phase)
+- [2026-05-14] Core → Tests (●) — promoted from SK.01.Tests (state-map-phase)
+- [2026-05-14] Core → Docs (●) — promoted from SK.01.Docs (state-map-phase)
+- [2026-05-14] Core → Published (●) — promoted from SK.01.Published (state-map-phase)
+- [2026-05-14] P-001, P-002 → ● Complete — manually closed after SK.01.Published confirmed ● (gap: phase-backlog closure was not wired into implement-phase-core flow)
+- [2026-05-14] P-003, P-004 written for WO-002 — SharedKernel.Guards package and governance purity rule — arch-lead (UPGRADE: DomainError→Error, Guards split from Core, Enumeration<T>→SmartEnum, throw path added)
+- [2026-05-14] Governance → Design (◐) — Define architecture test asserting that IGuardClause extension methods never throw (state-map-phase)
+- [2026-05-14] Phase(s) P-003 dispatched to core-arch-planner for 01.Core (dispatch-phase)
