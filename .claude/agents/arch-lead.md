@@ -146,9 +146,11 @@ Use this exact format for each phase entry, with `---` horizontal rules surround
 - Never write cross-domain phases — one domain per entry, always.
 
 ### Step 6: UPDATE DOMAIN TRACKING
-After appending all phase definitions, call the **`state-map-phase` skill** once per unique domain that received a new phase. This updates the Domain Summary Board, Active Work section, Overall Progress counts, and changelog.
+After appending all phase definitions, call the **`state-map-phase` skill** for each affected domain — **but only if that domain's current State in the Domain Summary Board is `○` (Not Started)**. You already read the root `state-map.md` in Step 5, so check the board row for each domain before calling.
 
-For each affected domain, invoke the skill with these fields:
+**If a domain is already at `◐`, `●`, or `⚑`, do NOT call `state-map-phase` for it.** The new phases have been queued in the backlog and will be picked up by `/dispatch-phase`. Calling state-map-phase on an in-progress or complete domain would regress its current phase state, corrupting the board.
+
+For each eligible domain (currently `○`), invoke the skill with these fields:
 
 | Field | Value |
 |-------|-------|
@@ -202,7 +204,7 @@ Before executing, verify:
 - [ ] Phases are ordered by dependency (foundational first)
 - [ ] Phase IDs (P-NNN) and Work Order ID (WO-NNN) are assigned correctly by reading the current Phase Backlog first
 - [ ] All phases are written into `## Phase Backlog` using the defined entry format
-- [ ] `state-map-phase` skill is called once per affected domain (state=◐, phase=Design)
+- [ ] `state-map-phase` skill is called only for domains currently at `○` Not Started — never called for domains already at `◐`, `●`, or `⚑`
 - [ ] `sync-brain` skill is called if any new technology, package, or rule was introduced
 
 ---

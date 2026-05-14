@@ -38,7 +38,7 @@ Never implement from memory of rules or prior sessions. Always read the current 
 
 When you receive the phase input:
 
-1. **Read in order**: `02.Caching/CLAUDE.md` → `02.Caching/state-map.md` → phase spec.
+1. **Read in order**: `02.Caching/CLAUDE.md` → `02.Caching/state-map.md` → phase spec. Never reverse this order — the CLAUDE.md is the law; read it first.
 2. **Confirm** the phase is not already marked complete in the state-map.
 3. **Identify every deliverable**: new files, modified files, DI registrations, options classes, interfaces, implementations, extension methods.
 4. Execute directly — no planning monologue to the user.
@@ -66,19 +66,21 @@ When you receive the phase input:
 
 After all implementation files are written:
 
-1. **Locate or create** the test project at `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/`.
-2. Abstract interface contracts (`SharedKernel.Caching`) do **not** require dedicated test projects unless the phase explicitly calls for contract tests — apply your judgement.
-3. Write tests that cover:
+1. **Locate or create** the relevant test project(s):
+   - `02.Caching/SharedKernel.Caching/SharedKernel.Caching.Tests/` — for phases that touch the abstractions / FusionCache wiring
+   - `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/` — for phases that touch the Redis L2 / RedLock implementation
+2. Write tests that cover:
    - Happy-path behaviour for every new public method.
    - Edge cases explicitly called out in the phase spec.
    - Failure/error paths (connection failure, timeout, null keys, etc.).
    - DI registration sanity (resolve the registered types successfully).
-4. Use `xUnit` as the test runner, `Testcontainers` for Redis integration tests (via `SharedKernel.Testing` from `16.Testing`), and `NSubstitute` for unit-level mocks.
-5. Run the tests:
+3. Use `xUnit` as the test runner, `Testcontainers` for Redis integration tests (via `SharedKernel.Testing` from `16.Testing`), and `NSubstitute` for unit-level mocks.
+4. Run only the test projects that have new or modified tests this session:
    ```
+   dotnet test 02.Caching/SharedKernel.Caching/SharedKernel.Caching.Tests/ --configuration Release
    dotnet test 02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/ --configuration Release
    ```
-6. If tests fail:
+5. If tests fail:
    - Diagnose the root cause.
    - Fix the **implementation** (not the tests) unless the test itself is wrong.
    - Re-run until all tests are green.
@@ -89,9 +91,8 @@ After all implementation files are written:
 ## State-Map Update
 
 Once all tests pass, call the `state-map-phase` command to:
-- Mark the current phase as **completed** in `02.Caching/state-map.md`.
-- Record a concise one-line summary of what was delivered.
-- If this was the **final phase** listed in `02.Caching/state-map.md`, also update the **root `state-map.md`** to reflect that the entire `02.Caching` capability is complete.
+- Mark each completed task as `●` in `02.Caching/state-map.md` using `phase_key: SK.02.{Phase}` and the task ID.
+- When all tasks under a phase key are `●`, the command automatically propagates to the root `state-map.md`.
 - Follow the exact logic and format defined in `state-map-phase.md` — do not invent your own format.
 
 ---
@@ -106,7 +107,7 @@ After the state-map is updated, evaluate whether any of the following changed du
 - New layering exceptions or clarifications.
 - New test patterns or Testcontainers configurations specific to Redis.
 
-If **any** of the above apply, call the `sync-brain` command to update the relevant local `CLAUDE.md` (inside `02.Caching/`) and/or the root `CLAUDE.md`. Follow the exact rules defined in `sync-brain.md` for what belongs in local vs. root brain files.
+If **any** of the above apply, call the `sync-brain` command with `domain: 02.Caching` to update `02.Caching/CLAUDE.md` and evaluate whether the root `CLAUDE.md` also needs updating. Follow the exact rules defined in `sync-brain.md` for what belongs in local vs. root brain files.
 
 If nothing substantive changed that would affect future agents or developers, skip the sync call — do not add noise to the brain files.
 
@@ -114,11 +115,11 @@ If nothing substantive changed that would affect future agents or developers, sk
 
 ## Execution Order (Never Deviate)
 
-1. Read phase spec → read state-map → read local CLAUDE.md
+1. Read `02.Caching/CLAUDE.md` → `02.Caching/state-map.md` → phase spec
 2. Implement all phase deliverables (code, DI, options, extension methods)
 3. Write / update tests
 4. Run tests → fix until green
-5. Call `state-map-phase` to mark phase complete
+5. Call `state-map-phase` to mark completed tasks and propagate to root when the phase key is fully `●`
 6. Evaluate CLAUDE.md changes → call `sync-brain` if needed
 7. Report completion summary to the user: files created/modified, tests passing, state-map status, brain sync status
 
