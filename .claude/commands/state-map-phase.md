@@ -1,6 +1,11 @@
-You are the root state-map phase recorder for Platform.SharedKernel.
+You are the state-map phase recorder for Platform.SharedKernel.
 
-Your job: parse the input below, then make the minimum necessary edits to `state-map.md` at the repo root to reflect the new or updated phase state. You operate on exactly one file. You do not touch sub state-maps or any other file.
+This command operates in two modes depending on the input:
+
+- **Root mode** — updates a domain row directly in the root `state-map.md`
+- **Sub-map mode** — updates a task inside a domain's own `{NN}.{Name}/state-map.md`, then propagates to root when the phase key is fully complete
+
+Read the input below and determine which mode applies before doing anything else.
 
 ---
 
@@ -9,9 +14,18 @@ $ARGUMENTS
 
 ---
 
-## Step 1 — Parse the input
+## Mode Detection
 
-Extract the following fields from the input. All are required; if any are missing or ambiguous, output an error listing what is missing and stop — do not edit anything.
+If the input contains `phase_key:` (e.g. `phase_key: SK.02.Scaffold`), use **Sub-map mode**.
+Otherwise use **Root mode**.
+
+---
+
+# ROOT MODE
+
+## Step R1 — Parse the input
+
+Extract the following fields. All are required; if any are missing or ambiguous, list what is missing and stop — do not edit anything.
 
 | Field | Expected values |
 |-------|----------------|
@@ -24,104 +38,172 @@ Extract the following fields from the input. All are required; if any are missin
 
 Resolve a domain name to its canonical folder prefix (e.g. `Persistence` → `06`, `Core` → `01`) using the folder map in CLAUDE.md if needed.
 
----
-
-## Step 2 — Read the current state-map
+## Step R2 — Read root state-map
 
 Read `state-map.md` at the repo root in full. Never read any sub state-map or any other file.
 
----
+## Step R3 — Update the Domain Summary Board
 
-## Step 3 — Update the Domain Summary Board
-
-Find the row for the parsed domain in the `## Domain Summary Board` table. Update these columns in-place:
-
-- **Current Phase** → set to the parsed `phase`
-- **State** → set to the parsed `state` symbol (wrapped in backticks)
-- **Summary: Done** → set to the parsed `summary_done`
-- **Summary: Next** → set to the parsed `summary_next`
+Find the row for the parsed domain. Update in-place:
+- **Current Phase** → parsed `phase`
+- **State** → parsed `state` symbol (wrapped in backticks)
+- **Summary: Done** → parsed `summary_done`
+- **Summary: Next** → parsed `summary_next`
 
 Do not add or remove rows. Do not reorder rows. Do not change any other row.
 
----
-
-## Step 4 — Update Active Work
-
-Apply the following logic — only one outcome per call:
+## Step R4 — Update Active Work
 
 | Condition | Action |
 |-----------|--------|
-| `state = ◐` | Replace the placeholder text (or add a row) in `## Active Work` for this domain. Format: `\| [NN.Name](NN.Name/state-map.md) \| Phase \| summary_next \|` |
-| `state = ●` or `state = ○` | Remove this domain's row from `## Active Work` if it exists. If no rows remain, restore the placeholder `_Nothing in progress — all domains at ○ Not Started._` |
-| `state = ⚑` | Remove this domain's row from `## Active Work` if it exists |
+| `state = ◐` | Replace placeholder (or add row) for this domain. Format: `\| [NN.Name](NN.Name/state-map.md) \| Phase \| summary_next \|` |
+| `state = ●` or `state = ○` | Remove this domain's row. If no rows remain, restore `_Nothing in progress — all domains at ○ Not Started._` |
+| `state = ⚑` | Remove this domain's row from Active Work if it exists |
 
-When the Active Work table is populated for the first time, replace the placeholder text with the table header and the new row:
-
+When first populating the table, replace the placeholder with header + row:
 ```
 | Domain | Current Phase | Focus (one line) |
 |--------|---------------|-----------------|
 | [NN.Name](NN.Name/state-map.md) | Phase | summary_next |
 ```
 
----
-
-## Step 5 — Update Blocked
-
-Apply the following logic:
+## Step R5 — Update Blocked
 
 | Condition | Action |
 |-----------|--------|
-| `state = ⚑` | Replace the placeholder text (or add a row) in `## Blocked` for this domain. Format: `\| [NN.Name](NN.Name/state-map.md) \| Phase \| blocker \|` |
-| `state ≠ ⚑` | Remove this domain's row from `## Blocked` if it exists. If no rows remain, restore the placeholder `_No blockers._` |
+| `state = ⚑` | Replace placeholder (or add row) for this domain. Format: `\| [NN.Name](NN.Name/state-map.md) \| Phase \| blocker \|` |
+| `state ≠ ⚑` | Remove this domain's row. If no rows remain, restore `_No blockers._` |
 
-When the Blocked table is populated for the first time, replace the placeholder text with the table header and the new row:
-
+When first populating the table, replace the placeholder with header + row:
 ```
 | Domain | Blocked Phase | Blocker |
 |--------|--------------|---------|
 | [NN.Name](NN.Name/state-map.md) | Phase | blocker |
 ```
 
----
+## Step R6 — Recalculate Overall Progress
 
-## Step 6 — Recalculate Overall Progress
-
-Re-count the Domain Summary Board rows and update every count in `## Overall Progress`. The counts must always sum to 18.
-
-Rules:
+Re-count the Domain Summary Board and update every count. Counts must always sum to 18.
 - **○ Not Started** = rows where State is `○`
 - **◐ In Progress** = rows where State is `◐`
 - **⚑ Blocked** = rows where State is `⚑`
-- **● Design / Scaffold / Core / Tests / Docs / Published** = rows where State is `●`, grouped by their Current Phase value
+- **● Design / Scaffold / Core / Tests / Docs / Published** = rows where State is `●`, grouped by Current Phase
 
----
-
-## Step 7 — Append changelog entry
+## Step R7 — Append changelog entry
 
 Append exactly one line to `## Changelog`:
-
 ```
 - [YYYY-MM-DD] {domain} → {phase} ({state symbol}) — {summary_done if ● else summary_next} (state-map-phase)
 ```
+Use today's date. Keep under 120 characters.
 
-Use today's date. Keep the line under 120 characters.
+## Step R8 — Report
+
+Output ≤ 5 bullet points: what changed and in which section. If stopped due to parse error, list missing fields and a corrected example call.
 
 ---
 
-## Step 8 — Report
+# SUB-MAP MODE
 
-Output a short summary (≤ 5 bullet points) of exactly what changed and in which section. If you stopped early due to a parse error, list the missing fields and a corrected example call.
+Updates a single task inside a domain's own state-map, recalculates phase progress, and propagates to the root state-map when the phase key's promotion condition is met.
+
+## Step S1 — Parse the input
+
+Extract the following fields. All are required; stop and list missing fields if any are absent.
+
+| Field | Expected values |
+|-------|----------------|
+| `phase_key` | Format `SK.{NN}.{Phase}` — e.g. `SK.02.Scaffold`. Identifies domain number and root phase. |
+| `task_id` | The task ID from the phase table — e.g. `S-01`, `C-04`, `T-03` |
+| `state` | One of: `○`, `◐`, `●`, `⚑` |
+| `blocker` | _(Only required when state = `⚑`)_ One sentence describing the blocker. |
+
+Derive the domain number (`NN`) and root phase name from `phase_key` (e.g. `SK.02.Scaffold` → domain `02`, root phase `Scaffold`).
+
+Resolve the sub state-map path: look up the domain number in the root CLAUDE.md folder map to get the folder name (e.g. `02` → `02.Caching`), then target `{folder}/state-map.md`.
+
+## Step S2 — Read the sub state-map
+
+Read the resolved sub state-map file in full. Never read the root state-map in this step.
+
+## Step S3 — Update the task row
+
+Find the phase section tagged `<!-- phase-key: {phase_key} -->` in the sub state-map.
+Within that section's task table, find the row with matching `ID` = `task_id`.
+Update the `State` column to the parsed `state` symbol (wrapped in backticks).
+
+Do not add or remove task rows. Do not change any other row or section.
+
+## Step S4 — Update sub Active Work and Blocked
+
+Apply the same logic as Root mode Steps R4 and R5, but on the sub state-map's `## Active Work` and `## Blocked` sections.
+
+Active Work format (sub-map variant):
+```
+| Task | Phase Key | Package | State |
+|------|-----------|---------|:-----:|
+| {task description} | {phase_key} | {package} | {state} |
+```
+
+## Step S5 — Recalculate sub Overall Progress
+
+Re-count all task rows in each phase section. Update the `● Done` and `State` columns in `## Overall Progress` for the affected phase key row.
+
+Phase key state rules:
+- `○` if Done = 0
+- `◐` if Done > 0 and Done < Total
+- `●` if Done = Total
+- `⚑` if any task in that phase is `⚑`
+
+## Step S6 — Append sub-map changelog entry
+
+Append exactly one line to the sub state-map's `## Changelog`:
+```
+- [YYYY-MM-DD] {task_id} → {state} in {phase_key} — {brief description} (state-map-phase)
+```
+
+## Step S7 — Check promotion condition
+
+Read the `## Phase Key Registry` table in the sub state-map.
+Find the row for the updated `phase_key` and check its **Promotion Condition**.
+Then check `## Overall Progress`: is the phase key's `State` now `●`?
+
+- **If yes (all tasks ●):** proceed to Step S8 to propagate to root.
+- **If no:** skip S8 and go directly to Step S9.
+
+## Step S8 — Propagate to root state-map
+
+Read the root `state-map.md` in full.
+
+Determine the correct values to write:
+- `domain` → derived from phase key (e.g. `SK.02.*` → domain `02` = `Caching`)
+- `phase` → the root phase name from the Phase Key Registry row
+- `state` → `●`
+- `summary_done` → one sentence summarizing what the completed phase delivered
+- `summary_next` → one sentence describing the next phase to begin (or `—` if Published)
+
+Then apply Root mode Steps R3 through R7 on the root `state-map.md` using these values.
+Append the root changelog entry as:
+```
+- [YYYY-MM-DD] {domain} → {phase} (●) — promoted from {phase_key} (state-map-phase)
+```
+
+## Step S9 — Report
+
+Output ≤ 5 bullet points: task updated, phase key state after update, whether root propagation fired and what changed if it did. If stopped due to parse error, list missing fields and a corrected example.
 
 ---
 
 ## Format contract (never violate these)
 
-- This command operates on exactly one file: `state-map.md` at the repo root. No sub state-map, no CLAUDE.md, no other file is read, written, or modified.
-- Never add new sections, rename sections, or reorder sections.
-- Never edit the `## Legend` or the phase list — they are reference-only.
-- The `## Domain Summary Board` is always exactly 18 rows — no insertions, no deletions.
-- State symbols in the board must always be wrapped in backticks: `` `○` ``, `` `◐` ``, `` `●` ``, `` `⚑` ``.
+- Root mode operates on exactly one file: `state-map.md` at the repo root.
+- Sub-map mode operates on one sub state-map file, plus the root `state-map.md` only if promotion fires.
+- Never add new sections, rename sections, or reorder sections in either file.
+- Never edit the `## Legend`, `## Phase Key Registry`, or phase list — they are reference-only.
+- The root `## Domain Summary Board` is always exactly 18 rows — no insertions, no deletions.
+- State symbols in tables must always be wrapped in backticks: `` `○` ``, `` `◐` ``, `` `●` ``, `` `⚑` ``.
 - Active Work and Blocked tables use the exact column headers shown above — never alter them.
-- The Changelog is append-only — never edit or remove existing entries.
+- Both Changelogs are append-only — never edit or remove existing entries.
 - The commented `<!-- Format when active: ... -->` blocks are documentation — leave them untouched.
-- Overall Progress counts must always sum to 18 after every call.
+- Root Overall Progress counts must always sum to 18 after every call.
+- Sub-map Overall Progress `● Done` counts must always equal the number of `●` task rows in that phase section.

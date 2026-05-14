@@ -116,6 +116,47 @@ Format when active:
 
 ---
 
+## Phase Backlog
+
+> Phases queued by `arch-lead`. Each entry targets exactly one domain. Run `/dispatch-phase` to process pending phases in dependency order.
+>
+> **Status values:** `○` Pending — written by arch-lead, awaiting dispatch | `◐` Dispatched — domain planner has planned it | `●` Complete — domain implementation finished
+
+_No pending phases._
+
+<!--
+Format when phases are present — arch-lead appends entries here using this exact structure:
+
+---
+### P-001 — {Capability Name}
+
+**Status:** `○` Pending
+**Work Order:** WO-001
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+{Clear description of the capability — what it does, what contracts it exposes, what behaviors it must guarantee. No file names or class names — those are for domain planners.}
+
+#### Why this is needed
+{Architectural rationale.}
+
+#### Acceptance criteria
+- [ ] {Criterion 1}
+- [ ] {Criterion 2}
+---
+
+Rules:
+- Phase IDs are globally unique: P-001, P-002, ... Increment from the highest existing ID.
+- Work Order IDs group phases from the same user request: WO-001, WO-002, ... Increment from the highest existing WO.
+- **Domain:** must match the canonical folder name: e.g., `01.Core`, `02.Caching`, `03.Domain`.
+- **Depends on:** is either `None` or a comma-separated list of phase IDs (e.g., `P-001, P-003`).
+- Horizontal rules `---` surround each entry as shown.
+- Never remove or edit entries — only update **Status** from `○` to `◐` or `●`.
+-->
+
+---
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} ({domain(s) affected}) — {trigger}`.

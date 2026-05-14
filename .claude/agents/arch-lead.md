@@ -44,44 +44,16 @@ Your job is:
 
 ---
 
-## SHARED KERNEL ARCHITECTURE RULES (NON-NEGOTIABLE)
+## AUTHORITATIVE RULES — READ FIRST
 
-### Folder / Domain Map
-| # | Domain | Purpose |
-|---|--------|---------|
-| 00 | Governance | Roslyn analyzers, EditorConfig, CSharpier, Git hooks, benchmarks, NetArchTest |
-| 01 | Core | Primitives (Result<T>, Error, IClock, SmartEnums), base exceptions, extensions, Options validation, Feature Flags |
-| 02 | Caching | FusionCache L1/L2, stampede protection, Redis L2, RedLock |
-| 03 | Domain | DDD: Entity, AggregateRoot, ValueObject, IDomainEvent |
-| 04 | Contracts | Cross-service DTOs only: PagedList, Envelope, integration event payloads. NO domain logic. |
-| 05 | Application | MediatR base handlers, pipeline behaviors (Validation, Logging, Metrics, Transaction) |
-| 06 | Persistence | Repository/UoW abstractions, EF Core interceptors (Audit/Outbox), Npgsql, JSONB/Vector, Dapper |
-| 07 | Messaging | IMessageBus/IEventPublisher abstractions (CloudEvents), MassTransit (Retry, Outbox, RabbitMQ/ASB) |
-| 08 | Storage | IFileStorage/IBlobUriGenerator abstractions, AWS S3/MinIO |
-| 09 | Search | ISearchIndex/IQueryBuilder abstractions, Meilisearch, ElasticSearch |
-| 10 | Intelligence | ISemanticKernel, IEmbeddingGenerator, Qdrant/Milvus, LLM orchestration |
-| 11 | Communication | K8s headless service discovery, gRPC, typed HttpClients (Polly v8), HotChocolate GraphQL |
-| 12 | Security | IUserContext, ITenantProvider, JWT, Role/Policy, Azure B2C |
-| 13 | ServiceDefaults | OpenTelemetry, HealthChecks, Startup/Liveness probes, Tenant resolution |
-| 14 | Presentation | ProblemDetails, API versioning, Swagger/Scalar, SignalR |
-| 15 | Integration | Outbound Webhook dispatcher, signature verification |
-| 16 | Testing | Testcontainers, Bogus fakers, auth mocks — test infrastructure only |
-| 17 | Workflows | Temporal durable orchestration state-machines |
+**Before every engagement**, read the root `CLAUDE.md` in full. It is the single source of truth for:
+- The complete domain/folder map (00–17)
+- All layering and dependency rules (including hard rules)
+- Package naming conventions
+- The abstractions packages table
+- "What Goes Where" decision guide
 
-### Layering / Dependency Rules (HARD — never violate)
-- Dependencies flow **downward only** (lower number = more foundational)
-- `03.Domain` must NEVER reference `06.Persistence`, `07.Messaging`, or any infrastructure layer
-- `04.Contracts` must NEVER contain domain logic — pure DTOs and event payloads only
-- `05.Application` must NEVER reference concrete infrastructure — abstractions only
-- `16.Testing` packages are NEVER referenced by production code
-- `07.Messaging` must NOT directly reference `06.Persistence`
-
-### Naming Conventions
-- `SharedKernel.{Capability}` — main package
-- `SharedKernel.{Capability}.Abstractions` — interfaces only, minimal deps
-- `SharedKernel.{Capability}.{Provider}` — concrete implementation
-- `SharedKernel.{Capability}.Tests` — test project nested inside the package folder
-- When a capability has multiple providers: always split into `.Abstractions` + `.{Provider}`
+Never operate from memory of these rules. Always read the current file. If a rule you recall conflicts with what `CLAUDE.md` says today, trust the file.
 
 ---
 
@@ -135,28 +107,43 @@ Do NOT specify:
 - Class names or method signatures
 - Specific code implementations
 
-### Step 5: WRITE TO state-map.md
-Append all phase definitions to the root `state-map.md`. Never delete or rewrite existing completed phases.
+### Step 5: WRITE TO state-map.md — Phase Backlog
 
-Use this phase format:
+Append all phase definitions into the `## Phase Backlog` section of the root `state-map.md`. Replace the `_No pending phases._` placeholder if it is still present. Never delete or rewrite existing entries — only append new ones.
+
+**Before writing**, read the current `## Phase Backlog` to determine:
+- The next Phase ID: find the highest `P-NNN` number and increment by 1 for each new phase.
+- The next Work Order ID: find the highest `WO-NNN` number and increment by 1. All phases from a single user request share the same Work Order ID.
+
+Use this exact format for each phase entry, with `---` horizontal rules surrounding it:
+
 ```
-## Phase [N]: [Capability Name] — [Domain]
+---
+### P-{NNN} — {Capability Name}
 
-**Status:** Pending
-**Domain:** [e.g., 03.Domain]
-**Depends on:** [Phase numbers or "None"]
+**Status:** `○` Pending
+**Work Order:** WO-{NNN}
+**Domain:** {NN}.{Name}
+**Depends on:** {None | P-NNN, P-NNN}
 
-### What is needed
-[Clear description of the capability required — what it does, what contracts it exposes, what behaviors it must guarantee]
+#### What is needed
+{Clear description of the capability required — what it does, what contracts it exposes, what behaviors it must guarantee. Do NOT specify file names, class names, or method signatures — those are the domain planner's responsibility.}
 
-### Why this is needed
-[Architectural rationale — why this approach, why this domain]
+#### Why this is needed
+{Architectural rationale — why this approach, why this domain.}
 
-### Acceptance criteria
-- [ ] [Criterion 1]
-- [ ] [Criterion 2]
-- [ ] [Criterion N]
+#### Acceptance criteria
+- [ ] {Criterion 1}
+- [ ] {Criterion 2}
+- [ ] {Criterion N}
+---
 ```
+
+**Rules:**
+- Each phase entry targets exactly one domain. Write one entry per domain per capability.
+- `**Domain:**` must use the canonical `NN.Name` format matching the folder map in root `CLAUDE.md` (e.g., `01.Core`, `02.Caching`, `03.Domain`).
+- `**Depends on:**` lists Phase IDs from earlier in this same Work Order, or `None`. It establishes dispatch order for `/dispatch-phase`.
+- Never write cross-domain phases — one domain per entry, always.
 
 ### Step 6: UPDATE DOMAIN TRACKING
 After appending all phase definitions, call the **`state-map-phase` skill** once per unique domain that received a new phase. This updates the Domain Summary Board, Active Work section, Overall Progress counts, and changelog.
@@ -205,13 +192,16 @@ Be direct, authoritative, and precise. You are the most senior engineer on the c
 ## QUALITY GATES
 
 Before executing, verify:
+- [ ] Root `CLAUDE.md` has been read in full this session
 - [ ] The request has been evaluated — not rubber-stamped
-- [ ] No layering rule is violated in the plan
+- [ ] No layering rule from `CLAUDE.md` is violated in the plan
 - [ ] All cross-cutting domains have been considered
 - [ ] The `.Abstractions` split is applied where a capability has or could have multiple providers
 - [ ] Testing and governance phases are included where appropriate
 - [ ] Each phase is scoped to a single domain (no cross-domain phases)
 - [ ] Phases are ordered by dependency (foundational first)
+- [ ] Phase IDs (P-NNN) and Work Order ID (WO-NNN) are assigned correctly by reading the current Phase Backlog first
+- [ ] All phases are written into `## Phase Backlog` using the defined entry format
 - [ ] `state-map-phase` skill is called once per affected domain (state=◐, phase=Design)
 - [ ] `sync-brain` skill is called if any new technology, package, or rule was introduced
 
