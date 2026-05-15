@@ -13,7 +13,11 @@
       "Bash(cat \"C:\\\\Users\\\\dincd\\\\.nuget\\\\packages\\\\microsoft.codeanalysis.csharp.analyzer.testing.xunit\\\\1.1.2\\\\lib\\\\netstandard2.0\\\\Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit.xml\" 2>/dev/null | head -50)",
       "Read(//c/Users/dincd/.nuget/packages/microsoft.codeanalysis.csharp.analyzer.testing.xunit/1.1.2/lib/netstandard2.0/**)",
       "Read(//c/Users/dincd/.nuget/packages/microsoft.codeanalysis.csharp.analyzer.testing/**)",
-      "Read(//c/Users/dincd/.nuget/packages/microsoft.codeanalysis.analyzer.testing/**)"
+      "Read(//c/Users/dincd/.nuget/packages/microsoft.codeanalysis.analyzer.testing/**)",
+      "Bash(dotnet package *)",
+      "Bash(grep \"FusionCacheExtMethods\\\\|FusionCacheExt\" \"C:/Users/dincd/.nuget/packages/ziggycreatures.fusioncache/2.6.0/lib/net8.0/ZiggyCreatures.FusionCache.xml\" | grep \"member name.*GetOrSetAsync\" | head -10)",
+      "Read(//c/Users/dincd/.nuget/packages/ziggycreatures.fusioncache/2.6.0/lib/net8.0/**)",
+      "Bash(docker info *)"
     ]
   }
 }

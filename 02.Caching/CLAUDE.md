@@ -21,13 +21,14 @@ Both target `net10.0`. Test sub-folders live inside each project folder (never i
 
 ## Technology Stack
 
-| Concern | Technology |
-|---------|-----------|
-| L1 cache (in-process) | `ZiggyCreatures.FusionCache` |
-| L2 cache (distributed) | `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` |
-| Distributed locking | `RedLock.net` (over Redis) |
-| Redis client | `StackExchange.Redis` |
-| Serialization | `System.Text.Json` source-generated contexts (AOT-safe) |
+| Concern | Technology | Confirmed Version |
+| ------- | ---------- | ----------------- |
+| L1 cache (in-process) | `ZiggyCreatures.FusionCache` | 2.6.0 |
+| L2 cache (distributed) | `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` | 2.6.0 |
+| STJ serialization for FusionCache | `ZiggyCreatures.FusionCache.Serialization.SystemTextJson` | 2.6.0 |
+| Distributed locking | `RedLock.net` (over Redis) | 2.3.2 |
+| Redis client | `StackExchange.Redis` | 2.13.1 |
+| DI abstractions | `Microsoft.Extensions.DependencyInjection.Abstractions` | **10.0.1** (not 10.0.0 — FusionCache transitive floor) |
 
 ---
 

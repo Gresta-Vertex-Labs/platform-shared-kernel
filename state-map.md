@@ -64,7 +64,7 @@ Format when blocked:
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
-| 02 | [Caching](02.Caching/state-map.md) | — | `○` | — | — |
+| 02 | [Caching](02.Caching/state-map.md) | Published | `●` | NuGet metadata added to both packages, packed to local feed, and consumer dependency graph verified via a standalone console project. | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
@@ -374,3 +374,9 @@ The two-path guard design only delivers its architectural value if the functiona
 - [2026-05-15] Governance → Published (●) — promoted from SK.00.Published (state-map-phase)
 - [2026-05-15] Phase Backlog entries for 00.Governance closed → ● Complete — 00.Governance reached Published (state-map-phase)
 - [2026-05-15] Governance → Guard Purity Enforcement (●) — promoted from SK.00.GuardPurity (state-map-phase)
+- [2026-05-15] Caching → Design (●) — promoted from SK.02.Design (state-map-phase)
+- [2026-05-15] Caching → Scaffold (●) — promoted from SK.02.Scaffold (state-map-phase)
+- [2026-05-15] Caching → Core (●) — promoted from SK.02.Core (state-map-phase)
+- [2026-05-15] Caching → Tests (●) — promoted from SK.02.Tests (state-map-phase)
+- [2026-05-15] Caching → Docs (●) — promoted from SK.02.Docs (state-map-phase)
+- [2026-05-15] Caching → Published (●) — promoted from SK.02.Published (state-map-phase)
