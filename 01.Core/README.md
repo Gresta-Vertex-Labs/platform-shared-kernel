@@ -588,16 +588,179 @@ var service = new CheckoutService(features);
 
 ---
 
+## SharedKernel.Guards — Guard Clauses
+
+`SharedKernel.Guards` provides a two-path guard system for validating inputs and enforcing invariants. Every guard is available via both paths:
+
+| Path | Entry point | Returns | Use when |
+|------|-------------|---------|---------|
+| Functional | `Guard.Against.*` | `Error?` — `null` on pass, non-null on violation | Railway chains, explicit error handling |
+| Imperative | `Guard.Throw.*` | `void` — throws `DomainException` on violation | Constructor guards, domain invariants |
+
+### Functional Path — `Guard.Against.*`
+
+The functional path returns `Error?`. `null` means the guard passed; a non-null `Error` means it was violated. This is the preferred path inside railway chains.
+
+```csharp
+// Null / empty checks
+Error? e1 = Guard.Against.Null(order, nameof(order));
+Error? e2 = Guard.Against.NullOrEmpty(request.Name, nameof(request.Name));
+Error? e3 = Guard.Against.NullOrWhiteSpace(request.Email, nameof(request.Email));
+
+// String length
+Error? e4 = Guard.Against.ShorterThan(request.Name, minLength: 2, nameof(request.Name));
+Error? e5 = Guard.Against.LongerThan(request.Bio, maxLength: 500, nameof(request.Bio));
+
+// Numeric (overloaded for int, decimal, long)
+Error? e6 = Guard.Against.NegativeOrZero(order.Quantity, nameof(order.Quantity));
+Error? e7 = Guard.Against.Negative(account.Balance, nameof(account.Balance));
+Error? e8 = Guard.Against.NotPositive(product.Price, nameof(product.Price));
+
+// Range
+Error? e9 = Guard.Against.OutOfRange(rating, min: 1, max: 5, nameof(rating));
+
+// Default value / Guid
+Error? e10 = Guard.Against.Default(customerId, nameof(customerId));
+Error? e11 = Guard.Against.InvalidGuid(orderId, nameof(orderId));
+
+// Format and email
+Error? e12 = Guard.Against.InvalidFormat(code, pattern: @"^[A-Z]{3}-\d{4}$", nameof(code));
+Error? e13 = Guard.Against.Email(request.Email, nameof(request.Email));
+
+// Collections
+Error? e14 = Guard.Against.Empty(order.Items, nameof(order.Items));
+Error? e15 = Guard.Against.MaxCount(tags, max: 10, nameof(tags));
+Error? e16 = Guard.Against.MinCount(recipients, min: 1, nameof(recipients));
+
+// Boolean predicates — caller supplies the Error for arbitrary business rules
+Error? e17 = Guard.Against.True(order.IsCancelled, Error.Conflict("order.cancelled", "Order is already cancelled."));
+Error? e18 = Guard.Against.False(customer.IsActive, Error.Unauthorized("customer.inactive", "Customer account is inactive."));
+
+// SmartEnum membership
+Error? e19 = Guard.Against.InvalidSmartEnum<OrderStatus, int>(statusId);
+```
+
+#### Using Against.* inside a railway chain
+
+```csharp
+public Result<Order> PlaceOrder(PlaceOrderCommand cmd)
+{
+    if (Guard.Against.NullOrWhiteSpace(cmd.CustomerId, nameof(cmd.CustomerId)) is { } e1)
+        return e1;
+
+    if (Guard.Against.NegativeOrZero(cmd.Quantity, nameof(cmd.Quantity)) is { } e2)
+        return e2;
+
+    if (Guard.Against.InvalidSmartEnum<OrderStatus, int>(cmd.StatusId) is { } e3)
+        return e3;
+
+    // All guards passed — proceed with business logic
+    var order = new Order(cmd.CustomerId, cmd.Quantity, OrderStatus.FromValue(cmd.StatusId));
+    return Result<Order>.Success(order);
+}
+```
+
+### Imperative Path — `Guard.Throw.*`
+
+The imperative path throws `DomainException` on violation. It mirrors every `Against.*` extension as a void method. Use this in domain constructors and invariant methods where railway chains are not in use.
+
+```csharp
+public sealed class Order
+{
+    public string CustomerId { get; }
+    public int Quantity { get; }
+    public OrderStatus Status { get; }
+
+    public Order(string customerId, int quantity, OrderStatus status)
+    {
+        Guard.Throw.NullOrWhiteSpace(customerId, nameof(customerId));
+        Guard.Throw.NegativeOrZero(quantity, nameof(quantity));
+        Guard.Throw.Null(status, nameof(status));
+
+        CustomerId = customerId;
+        Quantity   = quantity;
+        Status     = status;
+    }
+
+    public void Ship()
+    {
+        Guard.Throw.False(
+            Status == OrderStatus.Processing,
+            Error.Conflict("order.invalid_state", "Only Processing orders can be shipped."));
+
+        // proceed to ship
+    }
+}
+```
+
+#### Complete imperative example — service constructor
+
+```csharp
+public sealed class PaymentService
+{
+    private readonly string _apiKey;
+    private readonly Uri _endpoint;
+
+    public PaymentService(string apiKey, Uri endpoint)
+    {
+        Guard.Throw.NullOrWhiteSpace(apiKey, nameof(apiKey));
+        Guard.Throw.Null(endpoint, nameof(endpoint));
+
+        _apiKey   = apiKey;
+        _endpoint = endpoint;
+    }
+
+    public Task<Result<PaymentReceipt>> ChargeAsync(
+        decimal amount, string currency, CancellationToken ct)
+    {
+        Guard.Throw.NegativeOrZero(amount, nameof(amount));
+        Guard.Throw.NullOrWhiteSpace(currency, nameof(currency));
+        Guard.Throw.LongerThan(currency, maxLength: 3, nameof(currency));
+
+        // proceed with payment API call
+        throw new NotImplementedException();
+    }
+}
+```
+
+### Guard Category Reference
+
+| Category | `Against.*` method | Throws on… |
+|----------|--------------------|-----------|
+| Null | `Null<T>` | reference is `null` |
+| Null/empty | `NullOrEmpty` | `null` or `""` |
+| Null/whitespace | `NullOrWhiteSpace` | `null`, `""`, or only whitespace |
+| Min length | `ShorterThan(value, minLength)` | `value.Length < minLength` |
+| Max length | `LongerThan(value, maxLength)` | `value.Length > maxLength` |
+| Positive only | `NegativeOrZero` | `value <= 0` |
+| Non-negative | `Negative` | `value < 0` |
+| Positive only | `NotPositive` | `value <= 0` (alias with different message) |
+| Range | `OutOfRange<T>(value, min, max)` | `value < min` or `value > max` |
+| Default value | `Default<T>` | `EqualityComparer<T>.Default` match |
+| Empty GUID | `InvalidGuid` | `value == Guid.Empty` |
+| Regex format | `InvalidFormat(value, pattern)` | pattern not matched (cached `Regex`) |
+| Email | `Email` | not a valid email address |
+| Empty collection | `Empty<T>` | no elements |
+| Max elements | `MaxCount<T>(source, max)` | `Count > max` |
+| Min elements | `MinCount<T>(source, min)` | `Count < min` |
+| Predicate true | `True(condition, error)` | `condition == false` |
+| Predicate false | `False(condition, error)` | `condition == true` |
+| SmartEnum | `InvalidSmartEnum<TEnum, TValue>(id)` | `id` not a known member |
+
+---
+
 ## Dependency Graph
 
 ```
 SharedKernel.Primitives              (no dependencies)
        |
        +──► SharedKernel.Core           (BCL extensions, railway extensions, exceptions)
+       |       |
+       |       +──► SharedKernel.Guards  (Guard.Against / Guard.Throw two-path guard system)
        |
        +──► SharedKernel.Configuration  (Options pattern + startup validation)
        |
        +──► SharedKernel.FeatureManagement  (IFeatureManager + Microsoft.FeatureManagement adapter)
 ```
 
-All four packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed.
+All five packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed.

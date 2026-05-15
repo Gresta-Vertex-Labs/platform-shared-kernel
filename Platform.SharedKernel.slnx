@@ -1,7 +1,9 @@
 <Solution>
   <Folder Name="/00.Governance/">
     <Project Path="00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.csproj" />
+    <Project Path="00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.Tests/SharedKernel.Analyzers.Tests.csproj" />
     <Project Path="00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.csproj" />
+    <Project Path="00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.Tests/SharedKernel.ArchitectureTests.Tests.csproj" />
     <Project Path="00.Governance/SharedKernel.Benchmarks/SharedKernel.Benchmarks.csproj" />
     <Project Path="00.Governance/SharedKernel.Linter/SharedKernel.Linter.csproj" />
   </Folder>
@@ -12,6 +14,8 @@
     <Project Path="01.Core/SharedKernel.Core/SharedKernel.Core.Tests/SharedKernel.Core.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.csproj" />
     <Project Path="01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.Tests/SharedKernel.FeatureManagement.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.Guards/SharedKernel.Guards.csproj" />
+    <Project Path="01.Core/SharedKernel.Guards/SharedKernel.Guards.Tests/SharedKernel.Guards.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Primitives/SharedKernel.Primitives.csproj" />
     <Project Path="01.Core/SharedKernel.Primitives/SharedKernel.Primitives.Tests/SharedKernel.Primitives.Tests.csproj" />
   </Folder>

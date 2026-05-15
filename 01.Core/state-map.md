@@ -90,10 +90,10 @@ Format when blocked — replace placeholder with table:
 | D-10 | Confirm `Microsoft.FeatureManagement` NuGet version and AOT compatibility status | SharedKernel.FeatureManagement | `●` |
 | D-11 | Define `ValidationResult` and `ValidationResult<T>` sealed record shapes — multi-error pair, distinct from `Result<T>` | SharedKernel.Primitives | `●` |
 | D-12 | Define `ErrorCodes` static class structure — nested static category classes, well-known string constants | SharedKernel.Primitives | `●` |
-| D-13 | Define `IGuardClause` marker interface and `DefaultGuardClause` private sealed implementation; define `Guard.Against` / `Guard.Throw` static entry-point shape | SharedKernel.Guards | `○` |
-| D-14 | Define full guard extension method surface on `IGuardClause`: null/empty, string length, numeric, range, default, Guid, regex-format, collection, email, boolean-predicate, SmartEnum | SharedKernel.Guards | `○` |
-| D-15 | Define `GuardDescriptions` internal static class — const string message templates, `{0}`/`{1}` placeholder convention | SharedKernel.Guards | `○` |
-| D-16 | Define `Guard.Throw` nested static class — mirror all `Against.*` extensions as void methods throwing `DomainException` on non-null `Error` return | SharedKernel.Guards | `○` |
+| D-13 | Define `IGuardClause` marker interface and `DefaultGuardClause` private sealed implementation; define `Guard.Against` / `Guard.Throw` static entry-point shape | SharedKernel.Guards | `●` |
+| D-14 | Define full guard extension method surface on `IGuardClause`: null/empty, string length, numeric, range, default, Guid, regex-format, collection, email, boolean-predicate, SmartEnum | SharedKernel.Guards | `●` |
+| D-15 | Define `GuardDescriptions` internal static class — const string message templates, `{0}`/`{1}` placeholder convention | SharedKernel.Guards | `●` |
+| D-16 | Define `Guard.Throw` nested static class — mirror all `Against.*` extensions as void methods throwing `DomainException` on non-null `Error` return | SharedKernel.Guards | `●` |
 
 ---
 
@@ -114,10 +114,10 @@ Format when blocked — replace placeholder with table:
 | S-09 | Create folder structure (`Abstractions/`, `Extensions/`) in `SharedKernel.FeatureManagement` | SharedKernel.FeatureManagement | `●` |
 | S-10 | Register all four projects in `Platform.SharedKernel.slnx` under solution folder `01.Core` | All | `●` |
 | S-11 | Stub empty `.Tests` projects with xUnit package reference for all four packages | All | `●` |
-| S-12 | Create `01.Core/SharedKernel.Guards/SharedKernel.Guards.csproj` targeting `net10.0`; add project refs to `SharedKernel.Primitives` and `SharedKernel.Core` | SharedKernel.Guards | `○` |
-| S-13 | Create folder structure (`Clauses/`, `Descriptions/`) inside `SharedKernel.Guards/` | SharedKernel.Guards | `○` |
-| S-14 | Create `SharedKernel.Guards.Tests.csproj` nested inside `SharedKernel.Guards/` with xUnit reference | SharedKernel.Guards | `○` |
-| S-15 | Register `SharedKernel.Guards` and `SharedKernel.Guards.Tests` in `Platform.SharedKernel.slnx` under solution folder `01.Core` | SharedKernel.Guards | `○` |
+| S-12 | Create `01.Core/SharedKernel.Guards/SharedKernel.Guards.csproj` targeting `net10.0`; add project refs to `SharedKernel.Primitives` and `SharedKernel.Core` | SharedKernel.Guards | `●` |
+| S-13 | Create folder structure (`Clauses/`, `Descriptions/`) inside `SharedKernel.Guards/` | SharedKernel.Guards | `●` |
+| S-14 | Create `SharedKernel.Guards.Tests.csproj` nested inside `SharedKernel.Guards/` with xUnit reference | SharedKernel.Guards | `●` |
+| S-15 | Register `SharedKernel.Guards` and `SharedKernel.Guards.Tests` in `Platform.SharedKernel.slnx` under solution folder `01.Core` | SharedKernel.Guards | `●` |
 
 ---
 
@@ -142,20 +142,20 @@ Format when blocked — replace placeholder with table:
 | C-13 | Implement `AddSharedKernelFeatureManagement` DI extension | SharedKernel.FeatureManagement | `●` |
 | C-14 | Implement `ValidationResult` (non-generic, `IsValid` + `IReadOnlyList<Error>`) and `ValidationResult<T>` (adds `Value`) sealed records | SharedKernel.Primitives | `●` |
 | C-15 | Implement `ErrorCodes` static class with nested category constants (e.g., `ErrorCodes.Validation.Required`, `ErrorCodes.NotFound.Default`) | SharedKernel.Primitives | `●` |
-| C-16 | Implement `IGuardClause` marker interface and private sealed `DefaultGuardClause` with static `Guard.Against` factory returning the marker | SharedKernel.Guards | `○` |
-| C-17 | Implement null/empty guard extensions: `Null<T>`, `NullOrEmpty`, `NullOrWhiteSpace` — all return `Error?` | SharedKernel.Guards | `○` |
-| C-18 | Implement string length guard extensions: `ShorterThan(string, int minLength)`, `LongerThan(string, int maxLength)` | SharedKernel.Guards | `○` |
-| C-19 | Implement numeric guard extensions for `int`, `decimal`, `long`: `NegativeOrZero`, `Negative`, `NotPositive` | SharedKernel.Guards | `○` |
-| C-20 | Implement `OutOfRange<T>(T value, T min, T max)` constrained to `IComparable<T>` | SharedKernel.Guards | `○` |
-| C-21 | Implement `Default<T>(T value)` using `EqualityComparer<T>.Default` — no reflection | SharedKernel.Guards | `○` |
-| C-22 | Implement `InvalidGuid(Guid value)` catching `Guid.Empty` | SharedKernel.Guards | `○` |
-| C-23 | Implement `InvalidFormat(string value, string pattern)` with compiled/cached `Regex` (static field, bounded timeout) — zero new `Regex` per call | SharedKernel.Guards | `○` |
-| C-24 | Implement `Email(string? value)` using same compiled/cached regex strategy as `InvalidFormat` — no third-party NuGet | SharedKernel.Guards | `○` |
-| C-25 | Implement collection guards: `Empty<T>(IEnumerable<T>)`, `MaxCount<T>(IEnumerable<T>, int)`, `MinCount<T>(IEnumerable<T>, int)` — enumerate once via `Count()` or single materialisation | SharedKernel.Guards | `○` |
-| C-26 | Implement boolean predicate guards: `True(bool condition, Error error)`, `False(bool condition, Error error)` — caller-supplied error, no allocation on pass | SharedKernel.Guards | `○` |
-| C-27 | Implement `InvalidSmartEnum<TEnum, TValue>(TValue id)` constrained to `TEnum : SmartEnum<TEnum,TValue>` using `SmartEnum<TEnum,TValue>.TryFromValue` — zero reflection | SharedKernel.Guards | `○` |
-| C-28 | Implement `GuardDescriptions` internal static class with all const string message templates (not public API) | SharedKernel.Guards | `○` |
-| C-29 | Implement `Guard.Throw` nested static class — mirrors all `Against.*` extensions as void methods; throws `DomainException(error)` on non-null `Error` return | SharedKernel.Guards | `○` |
+| C-16 | Implement `IGuardClause` marker interface and private sealed `DefaultGuardClause` with static `Guard.Against` factory returning the marker | SharedKernel.Guards | `●` |
+| C-17 | Implement null/empty guard extensions: `Null<T>`, `NullOrEmpty`, `NullOrWhiteSpace` — all return `Error?` | SharedKernel.Guards | `●` |
+| C-18 | Implement string length guard extensions: `ShorterThan(string, int minLength)`, `LongerThan(string, int maxLength)` | SharedKernel.Guards | `●` |
+| C-19 | Implement numeric guard extensions for `int`, `decimal`, `long`: `NegativeOrZero`, `Negative`, `NotPositive` | SharedKernel.Guards | `●` |
+| C-20 | Implement `OutOfRange<T>(T value, T min, T max)` constrained to `IComparable<T>` | SharedKernel.Guards | `●` |
+| C-21 | Implement `Default<T>(T value)` using `EqualityComparer<T>.Default` — no reflection | SharedKernel.Guards | `●` |
+| C-22 | Implement `InvalidGuid(Guid value)` catching `Guid.Empty` | SharedKernel.Guards | `●` |
+| C-23 | Implement `InvalidFormat(string value, string pattern)` with compiled/cached `Regex` (static field, bounded timeout) — zero new `Regex` per call | SharedKernel.Guards | `●` |
+| C-24 | Implement `Email(string? value)` using same compiled/cached regex strategy as `InvalidFormat` — no third-party NuGet | SharedKernel.Guards | `●` |
+| C-25 | Implement collection guards: `Empty<T>(IEnumerable<T>)`, `MaxCount<T>(IEnumerable<T>, int)`, `MinCount<T>(IEnumerable<T>, int)` — enumerate once via `Count()` or single materialisation | SharedKernel.Guards | `●` |
+| C-26 | Implement boolean predicate guards: `True(bool condition, Error error)`, `False(bool condition, Error error)` — caller-supplied error, no allocation on pass | SharedKernel.Guards | `●` |
+| C-27 | Implement `InvalidSmartEnum<TEnum, TValue>(TValue id)` constrained to `TEnum : SmartEnum<TEnum,TValue>` using `SmartEnum<TEnum,TValue>.TryFromValue` — zero reflection | SharedKernel.Guards | `●` |
+| C-28 | Implement `GuardDescriptions` internal static class with all const string message templates (not public API) | SharedKernel.Guards | `●` |
+| C-29 | Implement `Guard.Throw` nested static class — mirrors all `Against.*` extensions as void methods; throws `DomainException(error)` on non-null `Error` return | SharedKernel.Guards | `●` |
 
 ---
 
@@ -175,14 +175,14 @@ Format when blocked — replace placeholder with table:
 | T-08 | Unit: `AddValidatedOptions` — valid config registers without throw; invalid config throws at `IHost.StartAsync()` | SharedKernel.Configuration.Tests | `●` |
 | T-09 | Unit: `IFeatureManager` adapter — enabled flag returns true, disabled returns false, context-aware variant | SharedKernel.FeatureManagement.Tests | `●` |
 | T-10 | Unit: `ValidationResult` / `ValidationResult<T>` — multi-error collection, `IsValid` semantics, generic `Value` access, distinction from `Result<T>` | SharedKernel.Primitives.Tests | `●` |
-| T-11 | Unit: Guard functional path (Against.*) — null/empty/whitespace: returns null on pass, non-null `Error` on violation | SharedKernel.Guards.Tests | `○` |
-| T-12 | Unit: Guard functional path — string length: boundary theory tests (exact min, exact max, one below, one above) | SharedKernel.Guards.Tests | `○` |
-| T-13 | Unit: Guard functional path — numeric guards (`int`, `decimal`, `long`): negative, negativeOrZero, notPositive; boundary theories | SharedKernel.Guards.Tests | `○` |
-| T-14 | Unit: Guard functional path — OutOfRange: pass at bounds, fail outside bounds; Default; InvalidGuid | SharedKernel.Guards.Tests | `○` |
-| T-15 | Unit: Guard functional path — InvalidFormat and Email: valid inputs pass (null on return), invalid inputs return non-null Error; confirm no new Regex per call | SharedKernel.Guards.Tests | `○` |
-| T-16 | Unit: Guard functional path — collection guards: Empty, MaxCount, MinCount; verify single enumeration via stub | SharedKernel.Guards.Tests | `○` |
-| T-17 | Unit: Guard functional path — True/False boolean predicate guards; InvalidSmartEnum with known/unknown value | SharedKernel.Guards.Tests | `○` |
-| T-18 | Unit: Guard throw path (Throw.*) — assert `DomainException` thrown on violation; assert no exception on pass for all guard categories | SharedKernel.Guards.Tests | `○` |
+| T-11 | Unit: Guard functional path (Against.*) — null/empty/whitespace: returns null on pass, non-null `Error` on violation | SharedKernel.Guards.Tests | `●` |
+| T-12 | Unit: Guard functional path — string length: boundary theory tests (exact min, exact max, one below, one above) | SharedKernel.Guards.Tests | `●` |
+| T-13 | Unit: Guard functional path — numeric guards (`int`, `decimal`, `long`): negative, negativeOrZero, notPositive; boundary theories | SharedKernel.Guards.Tests | `●` |
+| T-14 | Unit: Guard functional path — OutOfRange: pass at bounds, fail outside bounds; Default; InvalidGuid | SharedKernel.Guards.Tests | `●` |
+| T-15 | Unit: Guard functional path — InvalidFormat and Email: valid inputs pass (null on return), invalid inputs return non-null Error; confirm no new Regex per call | SharedKernel.Guards.Tests | `●` |
+| T-16 | Unit: Guard functional path — collection guards: Empty, MaxCount, MinCount; verify single enumeration via stub | SharedKernel.Guards.Tests | `●` |
+| T-17 | Unit: Guard functional path — True/False boolean predicate guards; InvalidSmartEnum with known/unknown value | SharedKernel.Guards.Tests | `●` |
+| T-18 | Unit: Guard throw path (Throw.*) — assert `DomainException` thrown on violation; assert no exception on pass for all guard categories | SharedKernel.Guards.Tests | `●` |
 
 ---
 
@@ -196,8 +196,8 @@ Format when blocked — replace placeholder with table:
 | DO-02 | Write `01.Core/README.md` with usage examples for Result, Error, IClock, SmartEnum | All | `●` |
 | DO-03 | Document `Result<T>` railway pattern and error-propagation guide with code samples | SharedKernel.Primitives, SharedKernel.Core | `●` |
 | DO-04 | Document `AddValidatedOptions` startup-validation pattern with annotated example | SharedKernel.Configuration | `●` |
-| DO-05 | XML doc all public types, extension methods, and parameters in `SharedKernel.Guards` | SharedKernel.Guards | `○` |
-| DO-06 | Add Guards usage examples to `01.Core/README.md` — functional `Against.*` path and imperative `Throw.*` path with annotated samples | SharedKernel.Guards | `○` |
+| DO-05 | XML doc all public types, extension methods, and parameters in `SharedKernel.Guards` | SharedKernel.Guards | `●` |
+| DO-06 | Add Guards usage examples to `01.Core/README.md` — functional `Against.*` path and imperative `Throw.*` path with annotated samples | SharedKernel.Guards | `●` |
 
 ---
 
@@ -237,11 +237,11 @@ Format when active:
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.01.Design` | Design | 16 | 12 | 4 | `◐` |
-| `SK.01.Scaffold` | Scaffold | 15 | 11 | 4 | `◐` |
-| `SK.01.Core` | Core | 29 | 15 | 14 | `◐` |
-| `SK.01.Tests` | Tests | 18 | 10 | 8 | `◐` |
-| `SK.01.Docs` | Docs | 6 | 4 | 2 | `◐` |
+| `SK.01.Design` | Design | 16 | 16 | 0 | `●` |
+| `SK.01.Scaffold` | Scaffold | 15 | 15 | 0 | `●` |
+| `SK.01.Core` | Core | 29 | 29 | 0 | `●` |
+| `SK.01.Tests` | Tests | 18 | 18 | 0 | `●` |
+| `SK.01.Docs` | Docs | 6 | 6 | 0 | `●` |
 | `SK.01.Published` | Published | 9 | 6 | 3 | `◐` |
 
 ---
@@ -259,3 +259,8 @@ Format when active:
 - [2026-05-14] DO-01→DO-04 → ● in SK.01.Docs — XML docs complete on all public APIs; 01.Core/README.md written with railway, IClock, SmartEnum, options examples (state-map-phase)
 - [2026-05-14] P-01→P-06 → ● in SK.01.Published — NuGet metadata added, all four packages packed to local feed, consumer verification project confirms dependency graph (state-map-phase)
 - [2026-05-14] P-003 processed — added SharedKernel.Guards package: D-13→D-16 (design), S-12→S-15 (scaffold), C-16→C-29 (implementation), T-11→T-18 (tests), DO-05→DO-06 (docs), P-07→P-09 (publish); total now 87 tasks across 6 phases; all new tasks at ○
+- [2026-05-15] D-13→D-16 → ● in SK.01.Design — IGuardClause, guard extensions, GuardDescriptions, Guard.Throw all defined; 145 tests passing (state-map-phase)
+- [2026-05-15] S-12→S-15 → ● in SK.01.Scaffold — SharedKernel.Guards csproj, folders, test project, and slnx registration all complete (state-map-phase)
+- [2026-05-15] C-16→C-29 → ● in SK.01.Core — SharedKernel.Guards fully implemented: IGuardClause, all guard extensions, GuardDescriptions, Guard.Throw; 145 tests passing (state-map-phase)
+- [2026-05-15] T-11→T-18 → ● in SK.01.Tests — all Guards unit tests complete; 145 tests passing across functional and throw paths (state-map-phase)
+- [2026-05-15] DO-05→DO-06 → ● in SK.01.Docs — XML docs complete on SharedKernel.Guards; Guards usage examples added to README (state-map-phase)

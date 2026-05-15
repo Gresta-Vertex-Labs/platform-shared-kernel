@@ -1,0 +1,54 @@
+<Project>
+
+  <!--
+    SharedKernel.Linter.targets
+    Imported automatically by MSBuild on NuGet restore for any project referencing SharedKernel.Linter.
+
+    What this file does:
+    - Adds the CSharpierCheck target that runs `dotnet csharpier --check` against the project sources.
+    - The target is guarded by $(ContinuousIntegrationBuild) == 'true' so it only runs in CI,
+      never on developer workstations (prevents blocking local builds).
+  -->
+
+  <!--
+    CSharpierCheck — verifies all C# files in the project are formatted according to
+    the distributed .csharpierrc.json. Fails the build if any file is not formatted.
+    Only runs when $(ContinuousIntegrationBuild) == 'true' (set by the CI environment).
+  -->
+  <Target
+    Name="CSharpierCheck"
+    AfterTargets="Build"
+    Condition="'$(ContinuousIntegrationBuild)' == 'true' AND '$(SkipCSharpierCheck)' != 'true'"
+    Inputs="@(Compile)"
+    Outputs="$(IntermediateOutputPath)csharpier.check.sentinel">
+
+    <PropertyGroup>
+      <_CSharpierCheckDir>$(MSBuildProjectDirectory)</_CSharpierCheckDir>
+    </PropertyGroup>
+
+    <Message
+      Text="[SharedKernel.Linter] Running CSharpier format check on $(_CSharpierCheckDir)..."
+      Importance="normal" />
+
+    <!--
+      Install the pinned CSharpier version as a local tool if not already installed.
+      `dotnet tool install` is idempotent — it exits 0 if the correct version is already present.
+    -->
+    <Exec
+      Command="dotnet tool install csharpier --version $(CSharpierVersion) --tool-path &quot;$(IntermediateOutputPath)tools&quot;"
+      IgnoreExitCode="true" />
+
+    <!--
+      Run the format check. The --check flag causes CSharpier to exit non-zero if any file
+      would be reformatted, which fails the build target.
+    -->
+    <Exec
+      Command="&quot;$(IntermediateOutputPath)tools\dotnet-csharpier&quot; --check &quot;$(_CSharpierCheckDir)&quot;"
+      WorkingDirectory="$(MSBuildProjectDirectory)" />
+
+    <!-- Write sentinel so incremental builds skip this target when inputs have not changed -->
+    <Touch Files="$(IntermediateOutputPath)csharpier.check.sentinel" AlwaysCreate="true" />
+
+  </Target>
+
+</Project>

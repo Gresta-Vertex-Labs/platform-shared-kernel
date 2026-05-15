@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(dotnet build \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Analyzers\\\\SharedKernel.Analyzers.csproj\" --configuration Release 2>&1)",
+      "PowerShell(dotnet clean \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Analyzers\\\\SharedKernel.Analyzers.csproj\" --configuration Release 2>&1)",
+      "PowerShell(dotnet --version)",
+      "PowerShell(dotnet --info 2>&1)",
+      "PowerShell(dotnet build \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.ArchitectureTests\\\\SharedKernel.ArchitectureTests.csproj\" --configuration Release 2>&1)",
+      "Bash(dotnet restore *)",
+      "Read(//c/Users/dincd/.nuget/packages/netarchtest.rules/1.3.2/lib/**)",
+      "Bash(dotnet pack *)",
+      "Bash(powershell -Command 'Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [System.IO.Compression.ZipFile]::OpenRead\\('\\\\''nupkgs\\\\SharedKernel.Linter.1.0.0.nupkg'\\\\''\\); $zip.Entries | Select-Object FullName; $zip.Dispose\\(\\)')",
+      "Bash(cat \"C:\\\\Users\\\\dincd\\\\.nuget\\\\packages\\\\microsoft.codeanalysis.csharp.analyzer.testing.xunit\\\\1.1.2\\\\lib\\\\netstandard2.0\\\\Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit.xml\" 2>/dev/null | head -50)",
+      "Read(//c/Users/dincd/.nuget/packages/microsoft.codeanalysis.csharp.analyzer.testing.xunit/1.1.2/lib/netstandard2.0/**)",
+      "Read(//c/Users/dincd/.nuget/packages/microsoft.codeanalysis.csharp.analyzer.testing/**)",
+      "Read(//c/Users/dincd/.nuget/packages/microsoft.codeanalysis.analyzer.testing/**)"
+    ]
+  }
+}

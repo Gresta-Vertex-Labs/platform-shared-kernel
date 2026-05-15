@@ -60,8 +60,9 @@ SK0002  DirectMicrosoftFeatureManagerUsage
 SK0003  RawExceptionThrow
     Category  : Design
     Severity  : Warning
-    Trigger   : throw new Exception(...) or throw new ApplicationException(...)
-                without an Error payload
+    Trigger   : throw new Exception(...) or throw new ApplicationException(...) —
+                fires only when the concrete thrown type IS System.Exception or
+                System.ApplicationException (not subclasses); no Error payload check
     Fix       : Use Result<T>.Failure(error) or throw a typed SharedKernel exception
                 (DomainException, NotFoundException, etc.) carrying an Error
 
@@ -77,6 +78,18 @@ SK0005  StringOnlyExceptionConstructor
     Trigger   : new DomainException("message") / new NotFoundException("message") etc.
                 — any SharedKernelException subclass constructed with a string only
     Fix       : Supply an Error payload: new DomainException(error)
+
+SK0006  GuardClauseThrow
+    Category  : Design
+    Severity  : Warning
+    Trigger   : ThrowStatementSyntax or ThrowExpressionSyntax inside a method declared on a
+                type that implements SharedKernel.Guards.IGuardClause, where the containing
+                type is NOT the Guard.Throw companion class (full name match:
+                declaring type name is "Throw" nested within "Guard", i.e., "Guard+Throw")
+    Fix       : Return Error? instead of throwing — use the functional path (Guard.Against.*)
+                for purity; move throw-side behavior to the Guard.Throw companion class
+    Note      : Severity escalation to Error is gated on confirming Guard+Throw exclusion
+                logic produces zero false positives across all existing guard extensions
 ```
 
 ---
@@ -88,18 +101,35 @@ SK0005  StringOnlyExceptionConstructor
 ```
 ArchitectureRuleBase  (abstract base class)
     protected Types GetAssemblyTypes(Assembly assembly)
-    protected IArchRule ShouldNotReference(string forbiddenNamespace)
-    protected void AssertRule(IArchRule rule, Assembly target)
+    protected ConditionList ShouldNotReference(Assembly assembly, string forbiddenNamespace)
+    protected void AssertRule(ConditionList conditionList)
+    Note: NetArchTest.Rules 1.3.2 does not expose IArchRule — the fluent result type
+          is ConditionList. AssertRule calls .GetResult() on the ConditionList.
 
 SharedKernelLayeringRules  (static class — pre-built predicates)
-    .CoreReferencesNothing()                → IArchRule
-    .CachingReferencesOnlyCore()            → IArchRule
-    .DomainReferencesOnlyCore()             → IArchRule
-    .ContractsReferencesOnlyCoreAndDomain() → IArchRule
-    .DomainNeverReferencesPersistence()     → IArchRule  (hard rule)
-    .DomainNeverReferencesMessaging()       → IArchRule  (hard rule)
-    .ApplicationNeverReferencesConcreteInfrastructure() → IArchRule  (hard rule)
-    .TestingNeverReferencedByProduction()   → IArchRule  (hard rule)
+    All factory methods take an Assembly parameter and return ConditionList.
+    .CoreReferencesNothing(Assembly)                → ConditionList
+    .CachingReferencesOnlyCore(Assembly)            → ConditionList
+    .DomainReferencesOnlyCore(Assembly)             → ConditionList
+    .ContractsReferencesOnlyCoreAndDomain(Assembly) → ConditionList
+    .DomainNeverReferencesPersistence(Assembly)     → ConditionList  (hard rule)
+    .DomainNeverReferencesMessaging(Assembly)       → ConditionList  (hard rule)
+    .ApplicationNeverReferencesConcreteInfrastructure(Assembly) → ConditionList  (hard rule)
+    .TestingNeverReferencedByProduction(Assembly)   → ConditionList  (hard rule)
+
+GuardPurityRules  (static class — guard clause functional-path purity predicates)
+    .GuardAgainstMethodsMustNotThrow()      → IArchRule
+        Loads SharedKernel.Guards assembly, scopes to types implementing IGuardClause,
+        excludes the Guard.Throw companion class (full name "Guard+Throw"),
+        and asserts via DoesNotContainThrowIlPredicate that no method body contains
+        a Mono.Cecil OpCodes.Throw instruction.
+
+DoesNotContainThrowIlPredicate  (class : ICustomRule — internal predicate)
+    Inspects Mono.Cecil MethodDefinition.Body.Instructions for OpCodes.Throw.
+    Returns false (rule violated) for the first method found containing a throw opcode.
+    Failure message includes the declaring type name and method name for diagnostics.
+    Note: if NetArchTest.eNt does not expose IType.Definition publicly, add
+    Mono.Cecil >= 0.11.5 as an explicit NuGet reference to SharedKernel.ArchitectureTests.
 ```
 
 ---
@@ -110,10 +140,11 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
 
 ```
 SharedKernelBenchmarkConfig  (class : ManualConfig)
-    — adds Job.Short (fastest meaningful run for CI)
+    — adds Job.Default.WithWarmupCount(1).WithIterationCount(3).WithId("ShortRun")
+      Note: Job.Short does not exist in BenchmarkDotNet 0.15.x; use the explicit form above
     — adds MemoryDiagnoser (allocation tracking)
     — disables HardwareCounters (unstable in CI containers)
-    — outputs deterministic markdown summary
+    — outputs deterministic markdown summary via MarkdownExporter.GitHub
 
 [SharedKernelBenchmark]  (attribute — shorthand for [Config(typeof(SharedKernelBenchmarkConfig))])
 ```
@@ -151,9 +182,17 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - Architecture tests in `SharedKernelLayeringRules` must mirror the layering table in the root `CLAUDE.md` exactly. If a new domain (folder `XX`) is added, the layering rules must be updated in the same PR.
 - `ArchitectureRuleBase` must use NetArchTest's fluent API — no direct `Assembly.GetReferencedAssemblies()` reflection in rule predicates.
 - No static mutable state anywhere in this domain.
-- All analyzer tests must use `Microsoft.CodeAnalysis.CSharp.Testing.XUnit` — never test analyzers by compiling real source files manually.
+- All analyzer tests use `CSharpAnalyzerTest<TAnalyzer, DefaultVerifier>` from `Microsoft.CodeAnalysis.CSharp.Testing` — never test analyzers by compiling real source files manually. Use inline diagnostic markup `{|SKNNNN:...|}` in `TestCode` to declare expected diagnostics; leave `TestCode` markup-free for pass-path tests.
 - Benchmarks must be gated behind `[BenchmarkDotNet]` harness — never run by the default `dotnet test` runner (use `[MemoryDiagnoser]` + `BenchmarkRunner.Run<T>` in `Program.cs` / a dedicated benchmark runner).
 - `SharedKernelBenchmarkConfig` must set a deterministic markdown exporter for CI artifact comparison.
+- `GuardPurityRules` lives in `SharedKernel.ArchitectureTests` — it must not reference any runtime domain package. The `IGuardClause` type is loaded reflectively via `typeof(IGuardClause).Assembly`; the consuming test project must reference `SharedKernel.Guards` directly to supply the assembly reference.
+- `DoesNotContainThrowIlPredicate` inspects IL via Mono.Cecil `MethodDefinition.Body.Instructions`. If `NetArchTest.eNt` does not expose `IType.Definition` as a public property, add `Mono.Cecil >= 0.11.5` explicitly to `SharedKernel.ArchitectureTests.csproj`.
+- The `Guard.Throw` exclusion in `GuardPurityRules` must be a full nested-type name match (`"Guard+Throw"` or equivalent CLR name) — not a namespace prefix match, which would be too broad.
+- SK0006 `GuardClauseThrowAnalyzer` follows the same `netstandard2.0` constraint as SK0001–SK0005. No new NuGet dependencies beyond `Microsoft.CodeAnalysis.CSharp`.
+- Each architecture test for `GuardPurityRules` must exercise the fire path (violation fixture), the pass path (clean fixture), and the exclusion path (`Guard.Throw` fixture) — three test cases minimum.
+- RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
+- `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
+- Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
 
 ---
 
@@ -189,3 +228,5 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 > Maintained by the governance domain agent. One line per significant change.
 
 - [2026-05-15] Domain brain initialized — packages, diagnostic registry, architecture test contracts, benchmark config, linter distribution strategy
+- [2026-05-15] SK0006 GuardClauseThrow added to diagnostic registry; GuardPurityRules and DoesNotContainThrowIlPredicate added to architecture test contracts; Mono.Cecil IL inspection implementation rules added — WO-002 P-004
+- [2026-05-15] SK0003 trigger narrowed to exact types only; ArchitectureRuleBase/LayeringRules updated to ConditionList API; BenchmarkConfig Job.Short→explicit form; RS2008 suppression, Roslyn pin, and test pattern rules added — SK.00.Core implementation (sync-brain)

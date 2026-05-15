@@ -1,0 +1,32 @@
+<Project>
+
+  <!--
+    SharedKernel.Linter.props
+    Imported automatically by MSBuild on NuGet restore for any project referencing SharedKernel.Linter.
+
+    What this file does:
+    - Wires the distributed .editorconfig as an AdditionalFile so analyzers respect the style rules.
+    - Defines the CSharpierVersion property so the CSharpierCheck target (in .targets) knows
+      which tool version to install/invoke.
+  -->
+
+  <PropertyGroup>
+    <!-- Pin the CSharpier version used by all SharedKernel projects -->
+    <CSharpierVersion Condition="'$(CSharpierVersion)' == ''">0.29.1</CSharpierVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Expose the distributed .editorconfig as an AdditionalFile.
+      Roslyn analyzers (including SharedKernel.Analyzers) read AdditionalFiles for
+      EditorConfig-based severity overrides.
+      The path uses $(MSBuildThisFileDirectory) which resolves to the build/ folder inside
+      the NuGet content directory — so we go up one level to reach content/.editorconfig.
+    -->
+    <AdditionalFiles
+      Include="$(MSBuildThisFileDirectory)..\\.editorconfig"
+      Condition="Exists('$(MSBuildThisFileDirectory)..\\.editorconfig')"
+      Link=".editorconfig" />
+  </ItemGroup>
+
+</Project>

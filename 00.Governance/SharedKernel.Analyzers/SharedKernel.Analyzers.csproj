@@ -1,9 +1,27 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- RS2008: Release tracking warnings — suppressed during development phases before first publish -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Exclude nested test project obj/bin from the parent compile glob -->
+    <Compile Remove="SharedKernel.Analyzers.Tests\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleaseTracking.Shipped.txt" />
+    <AdditionalFiles Include="AnalyzerReleaseTracking.Unshipped.txt" />
+  </ItemGroup>
 
 </Project>

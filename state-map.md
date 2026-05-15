@@ -30,9 +30,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 > Domains currently `◐ In Progress`. This section is the first thing to update when work starts or finishes in any domain.
 
-| Domain | Current Phase | Focus (one line) |
-|--------|---------------|-----------------|
-| [00.Governance](00.Governance/state-map.md) | Design | Define architecture test asserting that IGuardClause extension methods never throw — only the Guard.Throw companion class may throw |
+_Nothing in progress — all domains at ○ Not Started._
 
 <!--
 Format when active:
@@ -64,8 +62,8 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Design | `◐` | — | Define architecture test asserting that IGuardClause extension methods never throw — only the Guard.Throw companion class may throw |
-| 01 | [Core](01.Core/state-map.md) | Published | `●` | All 6 Published tasks complete — NuGet metadata added, all four packages packed to local feed, consumer verification project confirms dependency graph. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Docs | `●` | All 5 Docs tasks complete — XML docs verified on all public APIs and README.md written with SK0001–SK0005 rule documentation, usage guides, and examples. | Begin Published phase — add NuGet metadata, pack and verify SharedKernel.Analyzers, ArchitectureTests, and Linter packages. |
+| 01 | [Core](01.Core/state-map.md) | Docs | `●` | All 6 Docs phase tasks complete — XML docs on all SharedKernel.Guards public APIs and Guards usage examples added to README with functional and imperative annotated samples. | Begin Published phase — add NuGet metadata to SharedKernel.Guards.csproj, pack, publish, and verify dependency graph. |
 | 02 | [Caching](02.Caching/state-map.md) | — | `○` | — | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
@@ -107,12 +105,12 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Published | 1 |
-| ● Docs | 0 |
+| ● Docs | 1 |
 | ● Tests | 0 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
 | ● Design | 0 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 0 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 16 |
 
@@ -312,7 +310,7 @@ Domain constructors, value objects, and application-layer command handlers all n
 ---
 ### P-004 — Governance: Guard Purity Architecture Rule
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-002
 **Domain:** 00.Governance
 **Depends on:** P-003
@@ -359,3 +357,14 @@ The two-path guard design only delivers its architectural value if the functiona
 - [2026-05-14] P-003, P-004 written for WO-002 — SharedKernel.Guards package and governance purity rule — arch-lead (UPGRADE: DomainError→Error, Guards split from Core, Enumeration<T>→SmartEnum, throw path added)
 - [2026-05-14] Governance → Design (◐) — Define architecture test asserting that IGuardClause extension methods never throw (state-map-phase)
 - [2026-05-14] Phase(s) P-003 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-05-15] Phase(s) P-004 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-05-15] Governance → Design (●) — promoted from SK.00.Design (state-map-phase)
+- [2026-05-15] Governance → Scaffold (●) — promoted from SK.00.Scaffold (state-map-phase)
+- [2026-05-15] Governance → Core (●) — promoted from SK.00.Core (state-map-phase)
+- [2026-05-15] Governance → Tests (●) — promoted from SK.00.Tests (state-map-phase)
+- [2026-05-15] Governance → Docs (●) — promoted from SK.00.Docs (state-map-phase)
+- [2026-05-15] Core → Design (●) — promoted from SK.01.Design (state-map-phase)
+- [2026-05-15] Core → Scaffold (●) — promoted from SK.01.Scaffold (state-map-phase)
+- [2026-05-15] Core → Core (●) — promoted from SK.01.Core (state-map-phase)
+- [2026-05-15] Core → Tests (●) — promoted from SK.01.Tests (state-map-phase)
+- [2026-05-15] Core → Docs (●) — promoted from SK.01.Docs (state-map-phase)

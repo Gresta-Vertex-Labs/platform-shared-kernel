@@ -1,0 +1,10 @@
+; Unshipped analyzer release — rules pending first publish
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
+SK0001 | Usage | Warning | DirectDateTimeUsage
+SK0002 | Usage | Warning | DirectMicrosoftFeatureManagerUsage
+SK0003 | Design | Warning | RawExceptionThrow
+SK0004 | Design | Warning | NullErrorReturn
+SK0005 | Design | Warning | StringOnlyExceptionConstructor

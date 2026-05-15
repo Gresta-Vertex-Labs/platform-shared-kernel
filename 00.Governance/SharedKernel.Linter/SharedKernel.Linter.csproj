@@ -1,9 +1,20 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <ContentTargetFolders>content</ContentTargetFolders>
+    <NoWarn>NU5128</NoWarn>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="content\.editorconfig" PackagePath="content/.editorconfig" />
+    <Content Include="content\.csharpierrc.json" PackagePath="content/.csharpierrc.json" />
+    <Content Include="content\build\SharedKernel.Linter.props" PackagePath="content/build/SharedKernel.Linter.props" />
+    <Content Include="content\build\SharedKernel.Linter.targets" PackagePath="content/build/SharedKernel.Linter.targets" />
+  </ItemGroup>
 
 </Project>
