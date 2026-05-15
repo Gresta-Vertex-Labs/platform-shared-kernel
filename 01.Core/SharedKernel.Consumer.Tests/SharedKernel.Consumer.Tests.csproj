@@ -18,6 +18,7 @@
     <PackageReference Include="SharedKernel.Core"              Version="1.0.0" />
     <PackageReference Include="SharedKernel.Configuration"     Version="1.0.0" />
     <PackageReference Include="SharedKernel.FeatureManagement" Version="1.0.0" />
+    <PackageReference Include="SharedKernel.Guards"            Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

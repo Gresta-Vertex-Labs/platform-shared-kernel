@@ -62,8 +62,8 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Docs | `●` | All 5 Docs tasks complete — XML docs verified on all public APIs and README.md written with SK0001–SK0005 rule documentation, usage guides, and examples. | Begin Published phase — add NuGet metadata, pack and verify SharedKernel.Analyzers, ArchitectureTests, and Linter packages. |
-| 01 | [Core](01.Core/state-map.md) | Docs | `●` | All 6 Docs phase tasks complete — XML docs on all SharedKernel.Guards public APIs and Guards usage examples added to README with functional and imperative annotated samples. | Begin Published phase — add NuGet metadata to SharedKernel.Guards.csproj, pack, publish, and verify dependency graph. |
+| 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
+| 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
 | 02 | [Caching](02.Caching/state-map.md) | — | `○` | — | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
@@ -104,15 +104,16 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Published | 1 |
-| ● Docs | 1 |
+| ● Guard Purity Enforcement | 1 |
+| ● Published | 2 |
+| ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
 | ● Design | 0 |
 | ◐ In Progress | 0 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 16 |
+| ○ Not Started | 15 |
 
 ---
 
@@ -253,7 +254,7 @@ Railway-oriented error propagation requires chainable operators that do not exis
 ---
 ### P-003 — Guard System: SharedKernel.Guards Package
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-002
 **Domain:** 01.Core
 **Depends on:** None
@@ -310,7 +311,7 @@ Domain constructors, value objects, and application-layer command handlers all n
 ---
 ### P-004 — Governance: Guard Purity Architecture Rule
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-002
 **Domain:** 00.Governance
 **Depends on:** P-003
@@ -368,3 +369,8 @@ The two-path guard design only delivers its architectural value if the functiona
 - [2026-05-15] Core → Core (●) — promoted from SK.01.Core (state-map-phase)
 - [2026-05-15] Core → Tests (●) — promoted from SK.01.Tests (state-map-phase)
 - [2026-05-15] Core → Docs (●) — promoted from SK.01.Docs (state-map-phase)
+- [2026-05-15] Core → Published (●) — promoted from SK.01.Published (state-map-phase)
+- [2026-05-15] Phase Backlog entries for 01.Core closed → ● Complete — 01.Core reached Published (state-map-phase)
+- [2026-05-15] Governance → Published (●) — promoted from SK.00.Published (state-map-phase)
+- [2026-05-15] Phase Backlog entries for 00.Governance closed → ● Complete — 00.Governance reached Published (state-map-phase)
+- [2026-05-15] Governance → Guard Purity Enforcement (●) — promoted from SK.00.GuardPurity (state-map-phase)

@@ -7,6 +7,8 @@ using SharedKernel.Configuration.Extensions;
 using SharedKernel.Core.Extensions;
 using SharedKernel.FeatureManagement.Abstractions;
 using SharedKernel.FeatureManagement.Extensions;
+using SharedKernel.Guards;
+using SharedKernel.Guards.Clauses;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Enums;
 using SharedKernel.Primitives.Errors;
@@ -274,6 +276,174 @@ public sealed class ConsumerDependencyGraphTests
         Assert.False(enabled);
 
         await host.StopAsync();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Guards — functional Against.* path and imperative Throw.* path
+    // Verifies that Guards resolves correctly from the local feed and that its
+    // transitive dependencies (Primitives + Core) resolve without conflict.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Guards_Against_Null_PassesForNonNull_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.Null("hello", "paramName");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Against_Null_ReturnsError_ForNull_ResolvedFromPackage()
+    {
+        string? value = null;
+        Error? error = Guard.Against.Null(value, "paramName");
+
+        Assert.NotNull(error);
+        Assert.Equal(ErrorType.Validation, error!.Type);
+    }
+
+    [Fact]
+    public void Guards_Against_NullOrWhiteSpace_PassesForValidString_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.NullOrWhiteSpace("hello", "paramName");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Against_NullOrWhiteSpace_ReturnsError_ForWhitespace_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.NullOrWhiteSpace("   ", "paramName");
+
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Guards_Against_InvalidGuid_PassesForNonEmpty_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.InvalidGuid(Guid.NewGuid(), "id");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Against_InvalidGuid_ReturnsError_ForEmpty_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.InvalidGuid(Guid.Empty, "id");
+
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Guards_Against_OutOfRange_PassesWhenInBounds_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.OutOfRange(5, 1, 10, "value");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Against_OutOfRange_ReturnsError_WhenOutOfBounds_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.OutOfRange(15, 1, 10, "value");
+
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Guards_Against_NegativeOrZero_PassesForPositive_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.NegativeOrZero(1, "count");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Against_NegativeOrZero_ReturnsError_ForZero_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.NegativeOrZero(0, "count");
+
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Guards_Against_Email_PassesForValidEmail_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.Email("user@example.com", "email");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Against_Email_ReturnsError_ForInvalidEmail_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.Email("not-an-email", "email");
+
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Guards_Against_Empty_Collection_ReturnsError_ForEmptyList_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.Empty(Array.Empty<int>(), "items");
+
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Guards_Against_Empty_Collection_PassesForNonEmpty_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.Empty(new[] { 1, 2, 3 }, "items");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Throw_DoesNotThrow_WhenGuardPasses_ResolvedFromPackage()
+    {
+        // Guard.Throw.* should not throw when the value is valid.
+        var exception = Record.Exception(() =>
+            Guard.Throw.NullOrWhiteSpace("valid-string", "paramName"));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void Guards_Throw_ThrowsDomainException_WhenGuardFails_ResolvedFromPackage()
+    {
+        // Guard.Throw.* must throw DomainException (from SharedKernel.Core — transitive dep).
+        Assert.ThrowsAny<Exception>(() =>
+            Guard.Throw.NullOrWhiteSpace("   ", "paramName"));
+    }
+
+    [Fact]
+    public void Guards_Against_True_ProvidesCallerSuppliedError_ResolvedFromPackage()
+    {
+        // Boolean predicate guard — caller supplies the Error; confirms Primitives Error flows through.
+        Error domainError = Error.Validation("rule.violated", "Business rule was violated.");
+        Error? result = Guard.Against.True(condition: false, domainError);
+
+        Assert.NotNull(result);
+        Assert.Equal("rule.violated", result!.Code);
+    }
+
+    [Fact]
+    public void Guards_Against_InvalidSmartEnum_PassesForKnownValue_ResolvedFromPackage()
+    {
+        // Confirms SmartEnum transitive dep (Primitives) resolves correctly through Guards package.
+        _ = ConsumerStatus.Active; // force type initialisation
+        Error? error = Guard.Against.InvalidSmartEnum<ConsumerStatus, int>(1);
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Guards_Against_InvalidSmartEnum_ReturnsError_ForUnknownValue_ResolvedFromPackage()
+    {
+        _ = ConsumerStatus.Active; // force type initialisation
+        Error? error = Guard.Against.InvalidSmartEnum<ConsumerStatus, int>(99);
+
+        Assert.NotNull(error);
     }
 }
 

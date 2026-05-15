@@ -22,6 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ArchitectureTests.csproj" />
+    <!-- Required to resolve SharedKernel.Guards.Clauses.IGuardClause in GuardPurityRulesTests -->
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

@@ -213,9 +213,9 @@ Format when blocked — replace placeholder with table:
 | P-04 | Pack and publish `SharedKernel.Configuration` to feed | SharedKernel.Configuration | `●` |
 | P-05 | Pack and publish `SharedKernel.FeatureManagement` to feed | SharedKernel.FeatureManagement | `●` |
 | P-06 | Verify dependency graph in a consumer test project (Primitives → Core → Configuration chain) | All | `●` |
-| P-07 | Add NuGet metadata to `SharedKernel.Guards.csproj` (authors, description, version, license) | SharedKernel.Guards | `○` |
-| P-08 | Pack and publish `SharedKernel.Guards` to feed | SharedKernel.Guards | `○` |
-| P-09 | Verify `SharedKernel.Guards` dependency graph in consumer: confirms Primitives + Core transitive refs resolve correctly | SharedKernel.Guards | `○` |
+| P-07 | Add NuGet metadata to `SharedKernel.Guards.csproj` (authors, description, version, license) | SharedKernel.Guards | `●` |
+| P-08 | Pack and publish `SharedKernel.Guards` to feed | SharedKernel.Guards | `●` |
+| P-09 | Verify `SharedKernel.Guards` dependency graph in consumer: confirms Primitives + Core transitive refs resolve correctly | SharedKernel.Guards | `●` |
 
 ---
 
@@ -242,7 +242,7 @@ Format when active:
 | `SK.01.Core` | Core | 29 | 29 | 0 | `●` |
 | `SK.01.Tests` | Tests | 18 | 18 | 0 | `●` |
 | `SK.01.Docs` | Docs | 6 | 6 | 0 | `●` |
-| `SK.01.Published` | Published | 9 | 6 | 3 | `◐` |
+| `SK.01.Published` | Published | 9 | 9 | 0 | `●` |
 
 ---
 
@@ -264,3 +264,4 @@ Format when active:
 - [2026-05-15] C-16→C-29 → ● in SK.01.Core — SharedKernel.Guards fully implemented: IGuardClause, all guard extensions, GuardDescriptions, Guard.Throw; 145 tests passing (state-map-phase)
 - [2026-05-15] T-11→T-18 → ● in SK.01.Tests — all Guards unit tests complete; 145 tests passing across functional and throw paths (state-map-phase)
 - [2026-05-15] DO-05→DO-06 → ● in SK.01.Docs — XML docs complete on SharedKernel.Guards; Guards usage examples added to README (state-map-phase)
+- [2026-05-15] P-07→P-09 → ● in SK.01.Published — SharedKernel.Guards NuGet metadata added, packed to local feed, consumer verification confirms transitive deps resolve (state-map-phase)

@@ -308,6 +308,115 @@ Suppress inline with `#pragma warning disable SK0005 / restore SK0005`, or proje
 
 ---
 
+### SK0006 — GuardClauseThrow
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+The SharedKernel guard system follows a strict two-path contract:
+
+- **Functional path** (`Guard.Against.*`) — extension methods on `IGuardClause` must be pure:
+  they return `Error?` (null on pass, non-null on violation) and must **never throw**. Throwing
+  on the functional path breaks railway-oriented composition and forces callers to wrap every
+  guard call in a try/catch.
+
+- **Imperative path** (`Guard.Throw.*`) — the `Guard.Throw` nested companion class is the only
+  sanctioned location where throwing `DomainException` is permitted.
+
+SK0006 fires when any method that is part of the functional path (a method on a type
+implementing `IGuardClause`, or an extension method whose first `this` parameter is
+`IGuardClause`) contains a `throw` statement or throw expression. The `Guard.Throw` companion
+class is excluded: methods declared in a class named `Throw` nested inside a class named
+`Guard` are always exempt.
+
+#### Two-Path Contract
+
+```text
+Guard.Against.*    →  IGuardClause extension methods  →  return Error?   (pure — NO throw)
+Guard.Throw.*      →  Guard.Throw static nested class  →  throw DomainException  (imperative)
+```
+
+#### Exclusion List
+
+The following types are **never** flagged by SK0006:
+
+| Type                                                    | Reason                                               |
+|---------------------------------------------------------|------------------------------------------------------|
+| Any type named `Throw` nested inside a type named `Guard` | Legitimate imperative path — throwing is its purpose |
+
+#### Violating Example
+
+```csharp
+using SharedKernel.Guards.Clauses;
+
+namespace MyProject.Guards
+{
+    public static class AgeGuardExtensions
+    {
+        // SK0006: method on IGuardClause extension must not throw
+        public static Error? NegativeAge(this IGuardClause guard, int age, string paramName)
+        {
+            if (age < 0)
+                throw new ArgumentOutOfRangeException(paramName, "Age cannot be negative");
+
+            return null;
+        }
+    }
+}
+```
+
+#### SK0006 Compliant Fix — functional path
+
+```csharp
+using SharedKernel.Guards.Clauses;
+using SharedKernel.Primitives.Errors;
+
+namespace MyProject.Guards
+{
+    public static class AgeGuardExtensions
+    {
+        // Functional path: return Error? — null means no violation
+        public static Error? NegativeAge(this IGuardClause guard, int age, string paramName) =>
+            age < 0
+                ? Error.Validation($"{paramName}.Negative", $"'{paramName}' must be non-negative")
+                : null;
+    }
+}
+```
+
+#### SK0006 Compliant Fix — imperative path (for scenarios where throwing is desired)
+
+```csharp
+namespace MyProject.Guards
+{
+    public static partial class Guard
+    {
+        public static class Throw
+        {
+            // Imperative path: throwing inside Guard.Throw is permitted — SK0006 excludes this
+            public static void NegativeAge(int age, string paramName)
+            {
+                var error = Against.NegativeAge(age, paramName);
+                if (error is not null)
+                    throw new DomainException(error);
+            }
+        }
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0006 / restore SK0006`, or project-wide via
+`<NoWarn>$(NoWarn);SK0006</NoWarn>`.
+
+Note: Suppression should be rare. If your method legitimately needs to throw, move it to a
+`Guard.Throw`-equivalent companion class rather than suppressing the diagnostic.
+
+---
+
 ## SharedKernel.ArchitectureTests — Layering Rules
 
 `SharedKernel.ArchitectureTests` is a test-only package providing NetArchTest-based base
