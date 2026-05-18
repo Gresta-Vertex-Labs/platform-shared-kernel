@@ -339,6 +339,461 @@ The two-path guard design only delivers its architectural value if the functiona
 - [ ] The rule is documented in the `00.Governance` domain brain with the rationale and exclusion list
 - [ ] The test runs as part of the governance test suite and fails with a meaningful message identifying the offending method
 ---
+### P-005 — Caching Abstractions Package: SharedKernel.Caching.Abstractions
+
+**Status:** `●` Complete
+**Work Order:** WO-003
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+A new `SharedKernel.Caching.Abstractions` package that contains every contract currently embedded in `SharedKernel.Caching` and `SharedKernel.Caching.Redis`. This package must have zero infrastructure NuGet dependencies — it references only `01.Core` (for `Result<T>` and primitives if needed) and the BCL. No FusionCache, no StackExchange.Redis, no RedLock.
+
+The package collects and owns the following contracts:
+
+**Cache service contract (`ICacheService`):** The existing five-method interface (`GetAsync`, `SetAsync`, `GetOrSetAsync`, `RemoveAsync`, `RemoveByTagAsync`) migrated verbatim. No behavioral changes — only the namespace changes from `SharedKernel.Caching.Abstractions` (which already happened to be the namespace) to the new dedicated package.
+
+**Cache policy (`CachePolicy`):** The existing sealed immutable record migrated verbatim. `CachePolicy` is a pure data type with no framework dependencies, so it belongs in abstractions alongside the interface that consumes it.
+
+**Cache key provider contract (`ICacheKeyProvider`):** A new interface that standardizes how cache keys are constructed across all microservices. It must expose a method that accepts a key descriptor (a type, a set of segments, or a structured input) and returns a formatted, namespaced string key. The default key format convention is `{service}:{entity}:{id}` — this interface makes that contract explicit and injectable rather than an undocumented comment in `ICacheService`. Microservices that need custom key strategies implement this interface; services that follow the platform convention use the default `CacheKeyProvider` from `SharedKernel.Caching`.
+
+**Distributed lock service contract (`IDistributedLockService`):** Migrated verbatim from `SharedKernel.Caching.Redis.Abstractions`. No behavioral changes.
+
+**Redis channel service contract (`IRedisChannelService`):** A new interface for Redis Pub/Sub-based ephemeral message fanout. Exposes `PublishAsync(string channel, string message, CancellationToken ct)` and `SubscribeAsync(string channel, Func<string, ValueTask> handler, CancellationToken ct)` / `UnsubscribeAsync(string channel, CancellationToken ct)`. This interface is scoped explicitly to cache-adjacent signaling: cache invalidation signals, presence updates, lightweight real-time broadcast. It must never be used for durable, ordered, or guaranteed-delivery messaging — that is `07.Messaging`'s domain. The XML doc on the interface must state this scope constraint explicitly.
+
+**Redis hash service contract (`IRedisHashService`):** A new interface for structured field-value storage within a single Redis key (Redis Hash data structure). Exposes `GetFieldAsync<T>`, `SetFieldAsync<T>`, `GetAllFieldsAsync<T>`, `DeleteFieldAsync`, `IncrementFieldAsync`. This is for structured projection/read-model patterns alongside cache, not a general Redis client. Field values are typed via STJ serialization contracts.
+
+**Builder interface (`ICachingBuilder`):** Migrated from `SharedKernel.Caching.Extensions`. The builder interface must live in abstractions so that `SharedKernel.Caching.Redis` can extend it without taking a dependency on the FusionCache package — only on the abstractions package.
+
+#### Why this is needed
+
+The current structure forces any package that depends on `ICacheService` (notably `05.Application` for its `CachingBehavior` pipeline behavior) to transitively pull in FusionCache as a NuGet reference. That violates the `05.Application` hard rule: application layer may only reference abstractions, never concrete infrastructure packages. A dedicated abstractions package with zero infra dependencies resolves this entirely. It also enables the platform pattern: microservices reference only `SharedKernel.Caching.Abstractions`, register either `SharedKernel.Caching` (FusionCache) or a future alternative at the composition root, and are never coupled to the provider implementation.
+
+#### Acceptance criteria
+- [ ] New project `SharedKernel.Caching.Abstractions` exists in `02.Caching/SharedKernel.Caching.Abstractions/`
+- [ ] Project targets `net10.0` with zero NuGet infrastructure references (no FusionCache, no StackExchange.Redis, no RedLock.net)
+- [ ] `ICacheService` contract is present with all five methods
+- [ ] `CachePolicy` sealed record is present with all existing factory methods and properties
+- [ ] `ICacheKeyProvider` interface is present with a clear contract for producing namespaced, formatted cache keys
+- [ ] `IDistributedLockService` interface is present (migrated from `SharedKernel.Caching.Redis`)
+- [ ] `IRedisChannelService` interface is present with `PublishAsync`, `SubscribeAsync`, `UnsubscribeAsync`; XML doc explicitly states ephemeral/non-durable scope
+- [ ] `IRedisHashService` interface is present with `GetFieldAsync<T>`, `SetFieldAsync<T>`, `GetAllFieldsAsync<T>`, `DeleteFieldAsync`, `IncrementFieldAsync`
+- [ ] `ICachingBuilder` interface is present
+- [ ] All public types carry XML doc comments
+- [ ] Project is registered in `Platform.SharedKernel.slnx` under solution folder `02.Caching`
+- [ ] Package is AOT-safe: no reflection, all types sealed or abstract as appropriate
+---
+### P-006 — Refactor SharedKernel.Caching to Depend on Abstractions + Add CacheKeyProvider
+
+**Status:** `●` Complete
+**Work Order:** WO-003
+**Domain:** 02.Caching
+**Depends on:** P-005
+
+#### What is needed
+
+Refactor the existing `SharedKernel.Caching` package to depend on `SharedKernel.Caching.Abstractions` instead of defining its own interfaces. This must be a non-breaking refactor: all existing DI extension signatures (`AddSharedKernelCaching`, `ICachingBuilder` extension methods) remain identical. The only observable change is that `ICacheService`, `CachePolicy`, `ICachingBuilder`, and `ICacheKeyProvider` are now sourced from the abstractions package.
+
+**Structural changes:**
+- Remove the inline `ICacheService` definition (now comes from abstractions)
+- Remove the inline `CachePolicy` definition (now comes from abstractions)
+- Remove the inline `ICachingBuilder` definition (now comes from abstractions)
+- Add project reference to `SharedKernel.Caching.Abstractions`
+- The `FusionCacheService` implementation remains here — it is the concrete FusionCache-backed implementation
+- The `CacheJsonSerializerContext` STJ base remains here
+
+**New capability — `CacheKeyProvider`:** A default implementation of `ICacheKeyProvider` that produces keys following the platform convention `{service}:{entity}:{id}` using a configurable service name prefix. It must be registered by `AddSharedKernelCaching` as the default `ICacheKeyProvider` singleton, overridable by the consuming service. The service name prefix is sourced from `CachingOptions` (a new required field). If not configured, it defaults to `"app"` to prevent misconfigured keys being silently produced.
+
+The `CachingOptions` class gains a `ServiceName` property (string, defaults to `"app"`, validated non-null/non-whitespace).
+
+**Test project update:** The `.Tests` project must add a test for `CacheKeyProvider` key format validation and override behavior.
+
+#### Why this is needed
+
+`SharedKernel.Caching` must become the FusionCache provider implementation package, not the source of interface definitions. Microservices that reference `SharedKernel.Caching.Abstractions` should never need to know that FusionCache is the underlying implementation. The `CacheKeyProvider` closes the gap between the documented convention (comment in the XML doc) and an actual enforced, injectable contract — preventing teams from inventing their own key formats.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Caching.csproj` has a project reference to `SharedKernel.Caching.Abstractions`
+- [ ] `ICacheService`, `CachePolicy`, `ICachingBuilder` are removed from this package (sourced from abstractions)
+- [ ] `FusionCacheService` still implements `ICacheService` from abstractions — zero behavioral changes
+- [ ] `CacheKeyProvider` class implements `ICacheKeyProvider` using the `{service}:{entity}:{id}` format
+- [ ] `CachingOptions` has a `ServiceName` property with validation
+- [ ] `AddSharedKernelCaching` registers `CacheKeyProvider` as the default `ICacheKeyProvider` singleton
+- [ ] All existing tests continue to pass — no regressions
+- [ ] New tests cover `CacheKeyProvider` key format and `ServiceName` configuration
+- [ ] All public types carry XML doc comments
+---
+### P-007 — Refactor SharedKernel.Caching.Redis + Add Channel and Hash Services
+
+**Status:** `●` Complete
+**Work Order:** WO-003
+**Domain:** 02.Caching
+**Depends on:** P-005
+
+#### What is needed
+
+Refactor the existing `SharedKernel.Caching.Redis` package to depend on `SharedKernel.Caching.Abstractions` instead of defining its own `IDistributedLockService`. Simultaneously add two new Redis-backed service implementations: `RedisChannelService` (implements `IRedisChannelService`) and `RedisHashService` (implements `IRedisHashService`).
+
+**Structural changes:**
+- Remove the inline `IDistributedLockService` definition (now comes from abstractions)
+- Add project reference to `SharedKernel.Caching.Abstractions`; remove direct project reference to `SharedKernel.Caching` unless still needed for `ICachingBuilder` extension target
+- All existing `RedLockDistributedLockService` and Redis L2 wiring remains unchanged
+
+**New capability — `RedisChannelService`:**
+Implements `IRedisChannelService` using StackExchange.Redis `ISubscriber`. Must use the `RedisChannel.Literal` pattern for channel names to avoid pattern-matching overhead. `SubscribeAsync` accepts a `Func<string, ValueTask>` handler and maintains an internal subscription registry keyed by channel name. `UnsubscribeAsync` removes the handler and unsubscribes from Redis. All handler exceptions must be caught and logged — they must never propagate to the Redis subscriber thread. The service is registered as a singleton by `AddRedisChannelService` DI extension.
+
+**New capability — `RedisHashService`:**
+Implements `IRedisHashService` using StackExchange.Redis `IDatabase.HashGetAsync`, `HashSetAsync`, `HashGetAllAsync`, `HashDeleteAsync`, `HashIncrementAsync`. All field values are serialized/deserialized using STJ source-generated contexts — the caller provides the `JsonTypeInfo<T>` as a parameter to typed methods. This keeps the service AOT-safe. A non-typed `string` overload is also provided for plain string field values. The service is registered as a singleton by `AddRedisHashService` DI extension. Both the channel service and hash service share a single `IConnectionMultiplexer` singleton — do not create separate connections.
+
+**DI extension additions:**
+- `AddRedisChannelService(this IServiceCollection services, string connectionString)` — registers `RedisChannelService`
+- `AddRedisHashService(this IServiceCollection services)` — registers `RedisHashService` (reuses the existing `IConnectionMultiplexer` if already registered; throws with a clear message if `AddRedisDistributedLocking` has not been called first, since that registers the multiplexer)
+
+**Test additions:**
+- Integration test: `RedisChannelService` publish/subscribe round-trip via Testcontainers Redis
+- Integration test: `RedisChannelService` unsubscribe stops message delivery
+- Integration test: `RedisHashService` set/get field, get-all fields, delete field, increment field via Testcontainers Redis
+- Integration test: multiple services sharing same multiplexer (connection is not duplicated)
+
+#### Why this is needed
+
+Redis Pub/Sub and Redis Hashes are natural Redis capabilities that microservices need alongside caching and locking. Placing them in `SharedKernel.Caching.Redis` keeps all Redis concerns in one provider package, minimizing the number of Redis connection pools in a service. The AOT-safe STJ approach for hash field serialization is required to stay consistent with the rest of the platform's AOT-first philosophy. The shared `IConnectionMultiplexer` pattern avoids connection proliferation — a common operational problem in Redis-heavy services.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Caching.Redis.csproj` references `SharedKernel.Caching.Abstractions` (not `SharedKernel.Caching` directly, unless `ICachingBuilder` extension requires it)
+- [ ] `IDistributedLockService` removed from this package (sourced from abstractions)
+- [ ] `RedisChannelService` implements `IRedisChannelService`; channel exceptions are caught and logged, never propagated
+- [ ] `RedisHashService` implements `IRedisHashService` with typed STJ serialization for field values
+- [ ] Both services share the singleton `IConnectionMultiplexer` — no new connections created
+- [ ] `AddRedisChannelService` DI extension registers the channel service
+- [ ] `AddRedisHashService` DI extension registers the hash service; throws a clear `InvalidOperationException` if multiplexer not registered
+- [ ] All existing tests pass — no regressions on RedLock and L2 backplane behavior
+- [ ] New integration tests cover Pub/Sub round-trip, unsubscribe, and all hash operations via Testcontainers
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+---
+### P-009 — Governance: Caching Abstractions Enforcement Rules
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-003
+**Domain:** 00.Governance
+**Depends on:** P-005, P-006, P-007
+
+#### What is needed
+
+Two new architecture enforcement rules added to `00.Governance/SharedKernel.ArchitectureTests`:
+
+**Rule 1 — No production package may reference `SharedKernel.Caching` or `SharedKernel.Caching.Redis` directly:**
+Any production assembly (excluding `SharedKernel.Caching` and `SharedKernel.Caching.Redis` themselves, and excluding `13.ServiceDefaults` which is the composition root) that references the concrete caching packages rather than `SharedKernel.Caching.Abstractions` fails this rule. The test uses NetArchTest assembly scanning to detect direct references. The intent: `05.Application` and all domain/contract packages must only reference the abstractions. The composition root (`13.ServiceDefaults`) is the only place that may reference concrete providers.
+
+**Rule 2 — `IRedisChannelService` must not be used as a substitute for `IMessageBus`:**
+A documentation/lint rule (enforced by a naming convention analyzer or architecture comment) asserting that `IRedisChannelService` subscriptions must only be used for cache invalidation signals and ephemeral events, not for commands, domain events, or integration events. The implementation can be a Roslyn analyzer that warns when `IRedisChannelService` is injected into a class in a namespace containing `Command`, `Event`, `DomainEvent`, or `IntegrationEvent`. This enforces the pub/sub scope constraint at the IDE level.
+
+**Rule documentation:** Both rules must be documented in the `00.Governance` domain brain with the full rationale and exemption list.
+
+#### Why this is needed
+
+Without enforcement, teams will inevitably reference `SharedKernel.Caching` (the concrete package) from `05.Application` handlers or domain logic — because it works, but creates invisible coupling to FusionCache. The architecture test catches this drift before it reaches production. The Pub/Sub scope rule prevents a gradual erosion of the `07.Messaging` / `02.Caching` boundary — Redis Pub/Sub is extremely easy to reach for, and without a lint rule, teams will use it for integration events that must actually be durable.
+
+#### Acceptance criteria
+- [ ] NetArchTest rule exists asserting no assembly other than the concrete caching packages and `13.ServiceDefaults` references `SharedKernel.Caching` or `SharedKernel.Caching.Redis`
+- [ ] Rule test fails with a descriptive message identifying the offending assembly when violated
+- [ ] Roslyn analyzer (or equivalent) warns when `IRedisChannelService` is injected in a class whose name or namespace suggests durable messaging (command/event/integration-event context)
+- [ ] Both rules documented in `00.Governance` domain brain with rationale and exemption list
+- [ ] Governance test suite passes with both new rules included
+---
+### P-010 — ServiceDefaults: Redis Health Check and Cache Readiness Probe
+
+**Status:** `○` Pending
+**Work Order:** WO-003
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-005
+
+#### What is needed
+
+Standard health check and readiness probe registrations for the caching infrastructure, added to `13.ServiceDefaults/SharedKernel.ServiceDefaults`.
+
+**Redis connectivity health check:** Uses `AspNetCore.HealthChecks.Redis` (or `Microsoft.Extensions.Diagnostics.HealthChecks` with a custom Redis probe) to verify the StackExchange.Redis connection is alive. The check is tagged `"redis"` and `"cache"` for selective probing. It must be opt-in — a service that only uses L1 cache must not fail health checks because no Redis is configured. Registration via `AddRedisHealthCheck(connectionString)` extension on `IHealthChecksBuilder`.
+
+**Cache service readiness probe:** A lightweight health check that calls `ICacheService.GetAsync<string>` with a synthetic probe key and a short timeout. If the operation throws (Redis down and fail-safe exhausted), the check reports `Degraded` — not `Unhealthy` — because FusionCache's fail-safe may still serve stale data. If the L1 cache responds correctly (fail-safe), it reports `Healthy`. Tagged `"cache"`.
+
+**OpenTelemetry caching metrics:** Instrument `ICacheService` hits/misses/errors as OTEL meters. The metrics are emitted via `System.Diagnostics.Metrics` with a meter named `"SharedKernel.Caching"`. Metrics: `cache.hits` (counter), `cache.misses` (counter), `cache.errors` (counter), `cache.operation.duration` (histogram). These must be instrumentable without modifying `FusionCacheService` directly — prefer a decorator pattern registered at the `13.ServiceDefaults` composition level, or leverage FusionCache's built-in events.
+
+#### Why this is needed
+
+K8s readiness and liveness probes depend on accurate health check signals. A service that uses Redis for L2 and loses connectivity should report `Degraded` (serving stale data via fail-safe) rather than `Unhealthy` (crash the pod), because FusionCache's fail-safe is precisely designed to absorb Redis outages. Getting this signal calibration correct prevents unnecessary K8s pod restarts during Redis rolling upgrades or network blips.
+
+#### Acceptance criteria
+- [ ] `AddRedisHealthCheck` extension registers a Redis connectivity check tagged `"redis"` and `"cache"`
+- [ ] Redis health check is opt-in — not automatically applied by default service defaults registration
+- [ ] `AddCacheReadinessCheck` extension registers a functional cache probe that returns `Degraded` (not `Unhealthy`) when Redis is unavailable but L1 fail-safe is active
+- [ ] OTEL meters registered for `cache.hits`, `cache.misses`, `cache.errors`, `cache.operation.duration`
+- [ ] All registrations reference `SharedKernel.Caching.Abstractions` only — not concrete caching packages
+- [ ] XML doc comments on all public extension methods
+---
+### P-011 — Testing: Caching Test Doubles
+
+**Status:** `○` Pending
+**Work Order:** WO-003
+**Domain:** 16.Testing
+**Depends on:** P-005
+
+#### What is needed
+
+Three test double implementations added to `16.Testing/SharedKernel.Testing` that allow downstream microservice test projects to test caching behavior without spinning up Redis containers:
+
+**`FakeCacheService`:** An in-memory `ICacheService` implementation backed by `Dictionary<string, object>` (or `ConcurrentDictionary` for thread safety in parallel tests). Must implement all five methods faithfully: `GetOrSetAsync` invokes the factory on miss and stores the result (no stampede simulation needed in unit tests), `RemoveByTagAsync` removes all keys associated with the given tag (requires tracking key-to-tag mapping internally), `RemoveAsync` removes a single key. Expiry is not simulated — all entries live indefinitely in the fake. The fake must expose a `Keys` property and a `Reset()` method for test assertions and cleanup.
+
+**`FakeDistributedLockService`:** An in-memory `IDistributedLockService` implementation. `AcquireAsync` tracks acquired lock names in a `HashSet<string>`. If a lock is already held and `wait` is `TimeSpan.Zero`, returns null immediately. If `wait` is positive, waits up to the specified duration polling every `retry` interval. On dispose, releases the lock. The fake must expose a `HeldLocks` property and a `Reset()` method.
+
+**`FakeRedisChannelService`:** An in-memory `IRedisChannelService` implementation. `PublishAsync` delivers the message synchronously to all registered handlers for the channel. `SubscribeAsync` registers a handler. `UnsubscribeAsync` removes it. Exceptions in handlers are rethrown (unlike the real implementation which swallows them) — this makes test failures visible. Exposes a `PublishedMessages` dictionary (channel → list of messages) for assertion.
+
+All three fakes live in `16.Testing/SharedKernel.Testing` and are registered via DI extension `AddFakeCachingServices()` on `IServiceCollection`.
+
+#### Why this is needed
+
+Downstream microservice unit tests that test caching-aware code paths need a predictable, controllable `ICacheService` without spinning up Redis. Without these fakes, teams either write their own incomplete fakes, use NSubstitute mocks (which test nothing about behavior), or pay the overhead of Testcontainers for every unit test. The fakes in `SharedKernel.Testing` are the platform-standard test doubles — all teams use the same semantics, tests are consistent, and behavioral contracts are validated uniformly.
+
+#### Acceptance criteria
+- [ ] `FakeCacheService` implements `ICacheService`; `GetOrSetAsync` invokes factory on miss; `RemoveByTagAsync` correctly removes all entries with the tag; `Reset()` clears all state
+- [ ] `FakeDistributedLockService` implements `IDistributedLockService`; lock contention with `wait: TimeSpan.Zero` returns null immediately; `Reset()` clears held locks
+- [ ] `FakeRedisChannelService` implements `IRedisChannelService`; exceptions in handlers propagate (not swallowed); `PublishedMessages` dictionary accurately records all published messages per channel
+- [ ] `AddFakeCachingServices()` registers all three fakes as singletons
+- [ ] `16.Testing` package references `SharedKernel.Caching.Abstractions` — not the concrete packages
+- [ ] All three fakes have their own unit tests within `SharedKernel.Testing.Tests`
+- [ ] All public types carry XML doc comments
+
+---
+
+### P-012 — Caching: Cross-Service Cache Invalidation Broadcast
+
+**Status:** `●` Complete
+**Work Order:** WO-003
+**Domain:** 02.Caching
+**Depends on:** P-005, P-007
+
+#### What is needed
+
+A new `ICacheInvalidationBus` interface added to `SharedKernel.Caching.Abstractions`, with a Redis-backed implementation (`RedisCacheInvalidationBus`) in `SharedKernel.Caching.Redis`, and a receiver background service (`CacheInvalidationReceiver`) that auto-subscribes on startup to apply remote invalidations to the local FusionCache instance.
+
+This capability closes the cross-service L1 invalidation gap: FusionCache's built-in Redis backplane propagates L1 invalidations across instances of the **same service**, but has no mechanism to tell a **different service** (Service B) to drop its L1 entries when Service A invalidates a shared concept.
+
+---
+
+**`ICacheInvalidationBus` interface (in `SharedKernel.Caching.Abstractions`):**
+
+A publishing contract with four methods:
+
+- `PublishKeyInvalidationAsync(string[] keys, CancellationToken ct)` — requests remote services to evict specific cache keys
+- `PublishTagInvalidationAsync(string[] tags, CancellationToken ct)` — requests remote services to evict all entries carrying the given tags
+- `PublishBroadcastInvalidationAsync(CancellationToken ct)` — requests all subscribing services to flush their entire L1 cache (use with care; documented as a break-glass operation)
+- `PublishInvalidationAsync(CacheInvalidationMessage message, CancellationToken ct)` — low-level method that sends a pre-constructed message, used internally by the three convenience methods above
+
+The interface carries XML documentation stating: "This contract is for cross-service cache invalidation only. It is not a message bus substitute. It provides no delivery guarantees — invalidation messages are ephemeral. If a service is offline when a message is published, it will not receive the invalidation and must rely on TTL expiry. Use `07.Messaging` for durable, ordered, or guaranteed delivery."
+
+**`CacheInvalidationMessage` record (in `SharedKernel.Caching.Abstractions`):**
+
+A sealed record that is the wire payload. Fields:
+
+- `SourceService` (string) — the `ServiceName` from the sender's `CachingOptions`
+- `InvalidationType` (enum: `Key`, `Tag`, `All`) — determines which fields are populated
+- `Keys` (string[]?) — populated when `InvalidationType` is `Key`
+- `Tags` (string[]?) — populated when `InvalidationType` is `Tag`
+- `CorrelationId` (string) — a trace correlation token, populated from ambient activity if available, otherwise a new `Guid.NewGuid().ToString("N")`. This allows OTel spans to link publisher and receiver.
+- `TimestampUtc` (DateTimeOffset) — sender's UTC timestamp at publish time; receivers may use this for clock-skew diagnostics
+
+Serialization uses STJ with a source-generated context — no reflection. The record must be AOT-safe.
+
+**Channel naming convention:**
+
+All invalidation messages are published on the channel `sharedkernel:cache:invalidation:{target-service-name}` for targeted invalidation, or `sharedkernel:cache:invalidation:broadcast` for broadcast. The `{target-service-name}` is always lowercase, with spaces replaced by hyphens. Receiving services subscribe to:
+
+1. Their own named channel (`sharedkernel:cache:invalidation:{own-service-name}`) — for targeted invalidations from a specific sender
+2. The broadcast channel (`sharedkernel:cache:invalidation:broadcast`) — for platform-wide flushes
+
+**`RedisCacheInvalidationBus` (in `SharedKernel.Caching.Redis`):**
+
+Implements `ICacheInvalidationBus` using `IRedisChannelService.PublishAsync`. It serializes the `CacheInvalidationMessage` to JSON using STJ and publishes on the appropriate channel. No knowledge of the receiving side — pure sender. Registered as a singleton by `AddRedisCacheInvalidationBus(this ICachingBuilder builder)` DI extension.
+
+**`CacheInvalidationReceiver` background service (in `SharedKernel.Caching.Redis`):**
+
+A `BackgroundService` that subscribes to the local service's named channel and the broadcast channel on startup using `IRedisChannelService.SubscribeAsync`. On message receipt it:
+
+1. Deserializes the `CacheInvalidationMessage` using the STJ source-generated context
+2. Dispatches to `ICacheService` based on `InvalidationType`:
+   - `Key` — calls `ICacheService.RemoveAsync(key)` for each key in the payload
+   - `Tag` — calls `ICacheService.RemoveByTagAsync(tag)` for each tag
+   - `All` — calls `ICacheService.RemoveAsync` on all known keys, or if that is not feasible, logs a structured warning and relies on TTL; the implementation must document this limitation
+3. Creates an OTel activity span linked to the sender's `CorrelationId` for distributed tracing continuity
+4. On any deserialization or removal error: logs as structured error (never throws) and continues processing subsequent messages
+
+Registration: `AddCacheInvalidationReceiver(this ICachingBuilder builder)` — additive extension, opt-in. Services that only publish invalidations and never receive them do not need to register the receiver.
+
+**DI extension shape:**
+
+```csharp
+services.AddSharedKernelCaching(options => { })
+        .AddRedisL2(connectionString)
+        .AddRedisCacheInvalidationBus()     // adds ICacheInvalidationBus publisher
+        .AddCacheInvalidationReceiver();    // adds background service subscriber
+```
+
+**Integration tests (in `SharedKernel.Caching.Redis.Tests`):**
+
+- Publish a `Key` invalidation from a simulated Service A; verify Service B's `ICacheService` has the key removed
+- Publish a `Tag` invalidation; verify all tagged entries removed from receiver's cache
+- Publish a broadcast; verify receiver's `RemoveAsync`/`RemoveByTagAsync` called appropriately
+- Service offline scenario: publish while receiver is not subscribed; verify no error on sender side and receiver does not crash on reconnect
+- OTel activity span created on receiver with correct `CorrelationId` from sender
+
+#### Why this is needed
+
+FusionCache's built-in Redis backplane is designed to propagate invalidations across instances of the **same** service — it solves the multi-replica L1 sync problem within a single service identity. It does not solve the cross-service problem: when Service A updates a shared concept (e.g., a product catalog item) and Service B has cached that concept in its own L1, Service B will serve stale data until its TTL expires. Without a standard abstraction, every team reinvents this signal differently — different channel names, different payload formats, inconsistent error handling. The result is operational confusion and silent staleness bugs. `ICacheInvalidationBus` makes this pattern first-class, with a single channel naming convention, a self-describing payload, and OTel tracing continuity between sender and receiver. Using `IRedisChannelService` as the transport (P-007) keeps the implementation thin and avoids a second Redis connection. The explicit "no guarantee" contract on the interface prevents misuse as a substitute for `07.Messaging`.
+
+#### Acceptance criteria
+
+- [ ] `ICacheInvalidationBus` interface exists in `SharedKernel.Caching.Abstractions` with four methods as specified; XML doc explicitly states the no-delivery-guarantee contract
+- [ ] `CacheInvalidationMessage` sealed record exists in `SharedKernel.Caching.Abstractions` with all six fields; STJ source-generated serialization; AOT-safe
+- [ ] Channel naming convention is enforced by `RedisCacheInvalidationBus` — format `sharedkernel:cache:invalidation:{service-name}` for targeted, `sharedkernel:cache:invalidation:broadcast` for broadcast
+- [ ] `RedisCacheInvalidationBus` implements `ICacheInvalidationBus` using `IRedisChannelService`; no direct Redis client dependency
+- [ ] `CacheInvalidationReceiver` is a `BackgroundService`; subscribes to own-service channel and broadcast channel on startup; unsubscribes on shutdown
+- [ ] Receiver dispatches correctly for `Key`, `Tag`, and `All` invalidation types by calling `ICacheService` methods
+- [ ] Receiver creates an OTel activity span with `CorrelationId` from the incoming message
+- [ ] Receiver never propagates exceptions — all errors are logged and processing continues
+- [ ] `AddRedisCacheInvalidationBus()` registers the bus; `AddCacheInvalidationReceiver()` registers the background service — both opt-in
+- [ ] `CacheInvalidationReceiver` is correctly registered as a hosted service (not a scoped/transient service)
+- [ ] `ICacheInvalidationBus` added to `SharedKernel.Caching.Abstractions` — no infrastructure package dependency introduced into the abstractions package
+- [ ] Integration tests cover: Key invalidation, Tag invalidation, broadcast, sender-offline no-crash, OTel correlation
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+
+---
+
+### P-013 — Testing: FakeCacheInvalidationBus Test Double
+
+**Status:** `○` Pending
+**Work Order:** WO-003
+**Domain:** 16.Testing
+**Depends on:** P-012
+
+#### What is needed
+
+A single test double added to `16.Testing/SharedKernel.Testing` so downstream microservice test projects can assert on cross-service cache invalidation behavior without a Redis container.
+
+**`FakeCacheInvalidationBus`:** An in-memory `ICacheInvalidationBus` implementation. Each publish method records the `CacheInvalidationMessage` it constructs in an internal list (`PublishedInvalidations`). On publish, it also synchronously invokes any registered handlers — enabling tests to wire up a `FakeCacheService` as the receiver and assert that the correct keys or tags were removed in the same test without any async plumbing.
+
+Public surface:
+
+- `PublishedInvalidations` — `IReadOnlyList<CacheInvalidationMessage>` — all messages published since last reset
+- `Reset()` — clears `PublishedInvalidations` and removes all registered handlers
+- `OnInvalidation(Func<CacheInvalidationMessage, ValueTask> handler)` — registers a handler that is invoked synchronously on each publish; allows tests to chain `FakeCacheService.RemoveAsync` as the downstream effect
+
+The fake must NOT depend on `IRedisChannelService` — it is a pure in-memory implementation. All four `ICacheInvalidationBus` methods must be implemented. `PublishBroadcastInvalidationAsync` constructs a message with `InvalidationType.All` and an empty `Keys`/`Tags`.
+
+The `AddFakeCachingServices()` DI extension in `SharedKernel.Testing` must be updated to also register `FakeCacheInvalidationBus` as the `ICacheInvalidationBus` singleton, keeping all fake caching registrations in a single call.
+
+**Test coverage:**
+
+- `FakeCacheInvalidationBus` records `Key` invalidations with correct key list
+- `FakeCacheInvalidationBus` records `Tag` invalidations with correct tag list
+- `FakeCacheInvalidationBus` records broadcast as `InvalidationType.All`
+- `OnInvalidation` handler is invoked synchronously on each publish
+- `Reset()` clears all state; subsequent assertions on `PublishedInvalidations` start fresh
+- `AddFakeCachingServices()` registration: `ICacheInvalidationBus` resolves as `FakeCacheInvalidationBus`
+
+#### Why this is needed
+
+Any service that uses `ICacheInvalidationBus` to signal cross-service invalidation needs a way to assert "did my code publish the right invalidation?" without a Redis container. Without `FakeCacheInvalidationBus`, teams either skip these assertions entirely (silent regression risk) or spin up a Testcontainers Redis for what is fundamentally a unit-testable concern. The `OnInvalidation` handler registration pattern allows a single test to wire `FakeCacheInvalidationBus` → `FakeCacheService`, proving the full invalidation chain without infrastructure. This is consistent with the fake-first testing philosophy established by the existing three fakes in P-011.
+
+#### Acceptance criteria
+
+- [ ] `FakeCacheInvalidationBus` implements `ICacheInvalidationBus`; all four methods build a `CacheInvalidationMessage` and record it in `PublishedInvalidations`
+- [ ] `PublishedInvalidations` is `IReadOnlyList<CacheInvalidationMessage>` — thread-safe internal storage
+- [ ] `OnInvalidation(Func<CacheInvalidationMessage, ValueTask> handler)` accepts a handler invoked synchronously on each publish
+- [ ] `Reset()` clears `PublishedInvalidations` and removes all registered handlers
+- [ ] `FakeCacheInvalidationBus` has no dependency on `IRedisChannelService` or any Redis package
+- [ ] `AddFakeCachingServices()` is updated to also register `FakeCacheInvalidationBus` as `ICacheInvalidationBus` singleton
+- [ ] `16.Testing` package reference to `SharedKernel.Caching.Abstractions` covers `CacheInvalidationMessage` — no new infrastructure package references added
+- [ ] All six acceptance test cases listed above are covered
+- [ ] All public types carry XML doc comments
+
+---
+
+### P-014 — Caching: Rename SharedKernel.Caching to SharedKernel.Caching.FusionCache + Add CachePolicy.NeverExpire
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-004
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### P-014: What is needed
+
+Two coupled changes delivered as a single phase:
+
+**Part A — Package rename.** The existing `SharedKernel.Caching` package must be renamed to `SharedKernel.Caching.FusionCache`. This is a provider-naming correction — the package is unambiguously a FusionCache implementation, and its current generic name misleads developers into treating it as the abstraction layer (which is `SharedKernel.Caching.Abstractions`). The rename covers: folder name, `.csproj` file name, `<PackageId>` property, `<AssemblyName>` if explicitly set, all `ProjectReference` paths in `SharedKernel.Caching.Redis.csproj` and the consumer-verify project, the solution file `Platform.SharedKernel.slnx` (solution folder entry), and the `<Description>` metadata. The `InternalsVisibleTo` attribute must be updated to reference `SharedKernel.Caching.FusionCache.Tests`. The nested test project folder and `.csproj` must be renamed to `SharedKernel.Caching.FusionCache.Tests` accordingly. All namespaces inside the package must update from `SharedKernel.Caching.*` to `SharedKernel.Caching.FusionCache.*` — the implementation namespace changes, the abstractions namespace (`SharedKernel.Caching.Abstractions`) does not change. The `02.Caching/CLAUDE.md` package table and the root `CLAUDE.md` abstractions table must be updated to reflect the new name.
+
+**Part B — `CachePolicy.NeverExpire` preset.** A new factory property added to `CachePolicy` in `SharedKernel.Caching.Abstractions`. It must map to `TimeSpan.MaxValue` for both L1 and L2 durations, with `FailSafeEnabled = true` and no `EagerRefreshThreshold`. XML doc must state that this preset is intended for truly static data (reference tables, feature flag snapshots, lookup codes) and that cache invalidation must be managed explicitly via `ICacheService.RemoveAsync` or `ICacheInvalidationBus`. This is a pure addition to the abstractions package — no behavioral changes to existing presets.
+
+#### P-014: Why this is needed
+
+The current name `SharedKernel.Caching` creates a naming conflict with the mental model: developers new to the platform assume the "caching package" is the one they always reference, when in fact they should always reference `SharedKernel.Caching.Abstractions`. Every other multi-provider domain in the platform follows the `SharedKernel.{Capability}.{Provider}` pattern (`.MassTransit`, `.EfCore`, `.Meilisearch`). Caching must follow the same pattern to be consistent and self-documenting. At v1.0.0, the rename cost is zero. Delaying it increases the cost as more services onboard. The `CachePolicy.NeverExpire` preset prevents teams from using arbitrary large `TimeSpan` values for static data and makes the intent explicit and auditable.
+
+#### P-014: Acceptance criteria
+
+- [ ] Folder `02.Caching/SharedKernel.Caching/` renamed to `02.Caching/SharedKernel.Caching.FusionCache/`
+- [ ] `SharedKernel.Caching.csproj` renamed to `SharedKernel.Caching.FusionCache.csproj`; `<PackageId>` updated to `SharedKernel.Caching.FusionCache`
+- [ ] Nested test project renamed to `SharedKernel.Caching.FusionCache.Tests`; `InternalsVisibleTo` updated accordingly
+- [ ] All namespaces inside the renamed package updated from `SharedKernel.Caching.*` to `SharedKernel.Caching.FusionCache.*`
+- [ ] `SharedKernel.Caching.Redis.csproj` `<ProjectReference>` updated to point to renamed project
+- [ ] `consumer-verify` project updated to reference renamed package
+- [ ] `Platform.SharedKernel.slnx` solution entry updated
+- [ ] `02.Caching/CLAUDE.md` package table updated
+- [ ] Root `CLAUDE.md` "What Goes Where" table updated: "A new cache interface or policy" row points to `SharedKernel.Caching.Abstractions`; "FusionCache L1 provider" row added pointing to `SharedKernel.Caching.FusionCache`; "Redis-specific cache implementation" row updated to `SharedKernel.Caching.Redis`
+- [ ] `CachePolicy.NeverExpire` static property exists in `SharedKernel.Caching.Abstractions` returning a policy with `TimeSpan.MaxValue` for both durations and `FailSafeEnabled = true`
+- [ ] XML doc on `CachePolicy.NeverExpire` states the intended use case and explicit invalidation requirement
+- [ ] Existing tests all pass under the new package name — no regressions
+- [ ] New test covers `CachePolicy.NeverExpire` property values
+- [ ] `02.Caching/state-map.md` updated to reflect renamed package
+
+---
+
+### P-015 — Application: ICacheableQuery Marker and CachingBehavior Pipeline Behavior
+
+**Status:** `○` Pending
+**Work Order:** WO-004
+**Domain:** 05.Application
+**Depends on:** P-014
+
+#### P-015: What is needed
+
+A MediatR pipeline behavior and supporting marker interface, added to `05.Application`, that gives any query automatic caching without boilerplate in the handler.
+
+**`ICacheableQuery<TResponse>` marker interface:** A zero-member interface that query types implement to opt in to automatic cache wrapping. It must be constrained to `IRequest<TResponse>` (MediatR). Implementing this interface signals that the query result can be cached. The interface lives in `05.Application` (or a sub-package `05.Application.Behaviors` if the domain planner chooses to split it) and references `SharedKernel.Caching.Abstractions` for `CachePolicy` and `ICacheKeyProvider`.
+
+**`ICacheableQuery<TResponse>` must expose two members:** `CachePolicy CachePolicy { get; }` — the policy to apply for this query type, and `string CacheKey { get; }` — the pre-computed key for this specific query instance. The key is provided by the query itself because the query holds the discriminating parameters (e.g., entity ID). The `ICacheKeyProvider` from the caching abstractions is available as a DI service for queries that want to use the platform key format — but calling it is the query's responsibility, not the behavior's. This keeps the behavior simple and the key construction explicit.
+
+**`CachingBehavior<TRequest, TResponse>` pipeline behavior:** A `IPipelineBehavior<TRequest, TResponse>` implementation constrained to `TRequest : ICacheableQuery<TResponse>`. On `Handle`, it calls `ICacheService.GetOrSetAsync` using the key and policy from the query. The factory delegate calls `next()` (the inner handler). This ensures stampede protection automatically — FusionCache's `GetOrSetAsync` guarantees the factory is called exactly once per key under concurrent load. The behavior must be registered in the pipeline after the validation behavior (validation must run before cache lookup to avoid caching responses to invalid requests). Registration is via a DI extension method `AddCachingBehavior(this IServiceCollection services)` or equivalent that adds the behavior to the MediatR pipeline. Must not use `services.AddMediatR` internally — the consuming service already registers MediatR; this extension only adds the behavior.
+
+**`ICacheableQuery<TResponse>` is not applied to commands:** Commands must never be cached. The constraint `TRequest : ICacheableQuery<TResponse>` ensures the behavior is only invoked for queries that explicitly opt in.
+
+#### P-015: Why this is needed
+
+Without a `CachingBehavior`, every query handler in every microservice that wants caching must hand-roll the same pattern: check cache, call handler, store result. Across hundreds of services, this produces inconsistency in key formats, TTL choices, stampede vulnerability (teams use `GetAsync` then `SetAsync` rather than `GetOrSetAsync`), and maintenance overhead. The pipeline behavior centralizes this into a single, tested, platform-standard implementation. The `ICacheableQuery<TResponse>` marker makes caching opt-in and self-documenting — the query type itself declares its caching policy and key, making it instantly visible during code review without needing to trace through DI registrations. The `05.Application` layer is the correct home because `05.Application` is permitted to reference `02.Caching` abstractions (both are below `06.Persistence` in the layering hierarchy).
+
+#### P-015: Acceptance criteria
+
+- [ ] `ICacheableQuery<TResponse>` marker interface exists in `05.Application` (or sub-package); constrained to `IRequest<TResponse>`; exposes `CachePolicy CachePolicy { get; }` and `string CacheKey { get; }`
+- [ ] `CachingBehavior<TRequest, TResponse>` implements `IPipelineBehavior<TRequest, TResponse>` constrained to `TRequest : ICacheableQuery<TResponse>`
+- [ ] Behavior calls `ICacheService.GetOrSetAsync` — never `GetAsync` + `SetAsync` in sequence
+- [ ] Behavior is registered after the validation behavior in pipeline order
+- [ ] Registration extension method (`AddCachingBehavior`) does not call `AddMediatR` internally
+- [ ] `05.Application` project references `SharedKernel.Caching.Abstractions` — not `SharedKernel.Caching.FusionCache` or `SharedKernel.Caching.Redis`
+- [ ] Unit tests covering: cache hit (handler not called), cache miss (handler called once), stampede protection (concurrent requests invoke factory once), command types bypassed (behavior not invoked for non-`ICacheableQuery` requests)
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+
+---
 
 ## Changelog
 
@@ -380,3 +835,14 @@ The two-path guard design only delivers its architectural value if the functiona
 - [2026-05-15] Caching → Tests (●) — promoted from SK.02.Tests (state-map-phase)
 - [2026-05-15] Caching → Docs (●) — promoted from SK.02.Docs (state-map-phase)
 - [2026-05-15] Caching → Published (●) — promoted from SK.02.Published (state-map-phase)
+- [2026-05-18] P-005–P-011 written for WO-003 — Caching system upgrade: .Abstractions split, ICacheKeyProvider, IRedisChannelService, IRedisHashService, CachingBehavior, governance rules, health checks, test doubles (02.Caching, 05.Application, 00.Governance, 13.ServiceDefaults, 16.Testing) — arch-lead (UPGRADE: single .Abstractions package, ICacheKeyProvider added, Redis Pub/Sub and Hash capabilities scoped to 02.Caching, CachingBehavior in 05.Application)
+- [2026-05-18] Application → Design (◐) — Define ICacheableQuery marker interface and CachingBehavior pipeline behavior contract using ICacheService and ICacheKeyProvider from Caching.Abstractions (state-map-phase)
+- [2026-05-18] P-008 removed from WO-003 — 05.Application not ready; board row reset to ○ Not Started; Overall Progress updated (arch-lead)
+- [2026-05-18] P-012, P-013 added to WO-003 — Cross-service cache invalidation broadcast: ICacheInvalidationBus abstraction + RedisCacheInvalidationBus + CacheInvalidationReceiver (02.Caching), FakeCacheInvalidationBus test double (16.Testing) — arch-lead
+- [2026-05-18] Phase(s) P-005, P-006, P-007, P-012 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
+- [2026-05-18] P-005 → ● Complete — SharedKernel.Caching.Abstractions package created, all 11 contracts delivered, solution registered (state-map-phase)
+- [2026-05-18] P-012 → ● Complete — RedisCacheInvalidationBus, CacheInvalidationReceiver, CacheInvalidationExtensions implemented; 62 Redis + 66 Caching tests passing (state-map-phase)
+- [2026-05-18] Application → Design (◐) — Define ICacheableQuery marker and CachingBehavior pipeline behavior from SharedKernel.Caching.Abstractions (state-map-phase)
+- [2026-05-18] Application reset to ○ Not Started — P-015 deferred; 05.Application domain not yet started; board cleared
+- [2026-05-18] Phase(s) P-009 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-05-18] Phase(s) P-014 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)

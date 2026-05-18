@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Caching.Abstractions;
 
 namespace SharedKernel.Caching.Extensions;
 

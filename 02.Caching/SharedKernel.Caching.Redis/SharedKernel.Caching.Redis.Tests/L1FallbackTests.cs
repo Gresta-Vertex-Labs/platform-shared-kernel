@@ -1,8 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Extensions;
-using SharedKernel.Caching.Policies;
-using SharedKernel.Caching.Redis.Abstractions;
 using SharedKernel.Caching.Redis.Extensions;
 using Xunit;
 

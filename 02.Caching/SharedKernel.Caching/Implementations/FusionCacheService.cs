@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Policies;
 using ZiggyCreatures.Caching.Fusion;
 
 namespace SharedKernel.Caching.Implementations;

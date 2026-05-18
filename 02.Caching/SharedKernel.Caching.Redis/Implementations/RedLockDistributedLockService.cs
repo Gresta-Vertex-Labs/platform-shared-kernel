@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using RedLockNet;
-using SharedKernel.Caching.Redis.Abstractions;
+using SharedKernel.Caching.Abstractions;
 
 namespace SharedKernel.Caching.Redis.Implementations;
 

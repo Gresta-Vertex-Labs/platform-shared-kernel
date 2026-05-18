@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Caching.Redis.Abstractions;
+using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Redis.Extensions;
 using Testcontainers.Redis;
 using Xunit;

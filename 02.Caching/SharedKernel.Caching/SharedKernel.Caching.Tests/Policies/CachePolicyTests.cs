@@ -1,4 +1,4 @@
-using SharedKernel.Caching.Policies;
+using SharedKernel.Caching.Abstractions;
 using Xunit;
 
 namespace SharedKernel.Caching.Tests.Policies;

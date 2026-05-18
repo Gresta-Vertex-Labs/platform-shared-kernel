@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Implementations;
 using ZiggyCreatures.Caching.Fusion;
@@ -42,6 +43,9 @@ public static class CachingServiceCollectionExtensions
         if (configure is not null)
             optionsBuilder.Configure(configure);
 
+        // Register custom validator for rules data annotations cannot express (e.g. ServiceName).
+        services.TryAddSingleton<IValidateOptions<CachingOptions>, CachingOptionsValidator>();
+
         // Register FusionCache with STJ serializer and registered logger.
         services
             .AddFusionCache()
@@ -50,6 +54,10 @@ public static class CachingServiceCollectionExtensions
 
         // Register ICacheService as a singleton backed by FusionCacheService.
         services.TryAddSingleton<ICacheService, FusionCacheService>();
+
+        // Register ICacheKeyProvider with the default platform-standard implementation.
+        // Consumers may override by registering their own ICacheKeyProvider after this call.
+        services.TryAddSingleton<ICacheKeyProvider, CacheKeyProvider>();
 
         return new CachingBuilder(services);
     }

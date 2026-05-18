@@ -1,4 +1,4 @@
-namespace SharedKernel.Caching.Redis.Abstractions;
+namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
 /// Provides distributed mutual-exclusion locks backed by RedLock.net over Redis.
@@ -8,7 +8,7 @@ namespace SharedKernel.Caching.Redis.Abstractions;
 /// <see cref="AcquireAsync"/> returns <see langword="null"/> when the lock cannot be acquired
 /// within the <c>wait</c> window. Callers must decide their own fallback strategy —
 /// this service never throws for a contended lock; all <see cref="IAsyncDisposable"/> handles
-/// released via <c>await using</c>.
+/// are released via <c>await using</c>.
 /// </para>
 /// <para>
 /// Example:

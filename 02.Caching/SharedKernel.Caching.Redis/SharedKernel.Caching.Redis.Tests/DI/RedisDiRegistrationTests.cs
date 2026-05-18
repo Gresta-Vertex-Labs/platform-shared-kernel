@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using SharedKernel.Caching.Redis.Abstractions;
+using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Redis.Extensions;
 using Xunit;
 
@@ -71,5 +71,79 @@ public sealed class RedisDiRegistrationTests
 
         Assert.Throws<ArgumentException>(() =>
             services.AddRedisDistributedLocking("   "));
+    }
+
+    [Fact]
+    public void AddRedisChannelService_RegistersIRedisChannelService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddRedisDistributedLocking("localhost:6379");
+
+        var builder = new TestCachingBuilder(services);
+        builder.AddRedisChannelService();
+
+        using var provider = services.BuildServiceProvider();
+        var channelService = provider.GetService<IRedisChannelService>();
+
+        Assert.NotNull(channelService);
+    }
+
+    [Fact]
+    public void AddRedisChannelService_CalledTwice_DoesNotDuplicateRegistration()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddRedisDistributedLocking("localhost:6379");
+
+        var builder = new TestCachingBuilder(services);
+        builder.AddRedisChannelService();
+        builder.AddRedisChannelService(); // idempotent
+
+        var registrations = services
+            .Where(d => d.ServiceType == typeof(IRedisChannelService))
+            .ToList();
+
+        Assert.Single(registrations);
+    }
+
+    [Fact]
+    public void AddRedisChannelService_NullBuilder_ThrowsArgumentNullException()
+    {
+        ICachingBuilder? nullBuilder = null;
+        Assert.Throws<ArgumentNullException>(() => nullBuilder!.AddRedisChannelService());
+    }
+
+    [Fact]
+    public void AddRedisHashService_RegistersIRedisHashService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddRedisDistributedLocking("localhost:6379");
+
+        var builder = new TestCachingBuilder(services);
+        builder.AddRedisHashService();
+
+        using var provider = services.BuildServiceProvider();
+        var hashService = provider.GetService<IRedisHashService>();
+
+        Assert.NotNull(hashService);
+    }
+
+    [Fact]
+    public void AddRedisHashService_WithoutMultiplexer_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+        var builder = new TestCachingBuilder(services);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.AddRedisHashService());
+        Assert.Contains("IConnectionMultiplexer", ex.Message);
+    }
+
+    [Fact]
+    public void AddRedisHashService_NullBuilder_ThrowsArgumentNullException()
+    {
+        ICachingBuilder? nullBuilder = null;
+        Assert.Throws<ArgumentNullException>(() => nullBuilder!.AddRedisHashService());
     }
 }

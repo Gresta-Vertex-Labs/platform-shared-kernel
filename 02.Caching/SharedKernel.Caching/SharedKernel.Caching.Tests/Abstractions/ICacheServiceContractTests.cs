@@ -1,6 +1,5 @@
 using System.Reflection;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Policies;
 using Xunit;
 
 namespace SharedKernel.Caching.Tests.Abstractions;

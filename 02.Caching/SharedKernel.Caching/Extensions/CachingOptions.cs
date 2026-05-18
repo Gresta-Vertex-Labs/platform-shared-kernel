@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Options;
 
 namespace SharedKernel.Caching.Extensions;
 
@@ -27,4 +28,31 @@ public sealed class CachingOptions
     /// </summary>
     [Required]
     public string CacheName { get; set; } = "default";
+
+    /// <summary>
+    /// The logical name of the owning service. Used as the first segment of every cache key
+    /// produced by <c>ICacheKeyProvider</c> in the format <c>{service}:{entity}:{id}</c>.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <c>"app"</c>. Must be explicitly set to a meaningful service name in production
+    /// to avoid key collisions between services sharing a Redis backplane.
+    /// Validation fails if this is null or whitespace.
+    /// </remarks>
+    public string ServiceName { get; set; } = "app";
+}
+
+/// <summary>
+/// Validates <see cref="CachingOptions"/> beyond what data annotations can express.
+/// Registered automatically by <c>AddSharedKernelCaching</c>.
+/// </summary>
+internal sealed class CachingOptionsValidator : IValidateOptions<CachingOptions>
+{
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, CachingOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.ServiceName))
+            return ValidateOptionsResult.Fail("CachingOptions.ServiceName must not be null or whitespace.");
+
+        return ValidateOptionsResult.Success;
+    }
 }

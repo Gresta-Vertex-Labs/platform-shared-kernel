@@ -32,6 +32,7 @@
 | `SK.00.Docs` | Docs | All tasks in Phase: Docs are `●` |
 | `SK.00.Published` | Published | All tasks in Phase: Published are `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | All tasks in Phase: Guard Purity Enforcement are `●` |
+| `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | All tasks in Phase: Caching Abstractions Enforcement are `●` |
 
 ---
 
@@ -187,11 +188,11 @@ Format when blocked — replace placeholder with table:
 
 > Enforce the guard clause purity contract: `IGuardClause` extension methods on the functional path (`Guard.Against.*`) must never throw — they must return `Error?`. Architecture tests load the `SharedKernel.Guards` assembly and assert the absence of throw IL opcodes in all `IGuardClause` extension methods outside the `Guard.Throw` companion class.
 
-### Goal
+### GuardPurity — Goal
 
 The two-path guard design (`Guard.Against.*` returns `Error?`, `Guard.Throw.*` throws) only delivers its value if the functional path is provably pure. This phase adds an architecture test that loads `SharedKernel.Guards` and uses a Mono.Cecil IL inspection predicate — bundled inside `NetArchTest.eNt` — to assert that no method on any type implementing `IGuardClause` contains a `throw` instruction, with an explicit exclusion for the `Guard.Throw` companion class. A Roslyn analyzer (SK0006) is also specified here; its implementation is a follow-on Core task within this phase.
 
-### Scope
+### GuardPurity — Scope
 
 - Package(s) affected: `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers`
 - New files:
@@ -203,13 +204,13 @@ The two-path guard design (`Guard.Against.*` returns `Error?`, `Guard.Throw.*` t
   - `00.Governance/state-map.md` — this update
 - Deleted files: none
 
-### Diagnostic Registry Changes
+### GuardPurity — Diagnostic Registry Changes
 
 | ID | Rule Name | Category | Severity | Trigger Summary |
 |----|-----------|----------|----------|-----------------|
 | SK0006 | GuardClauseThrow | Design | Warning | A method on a type implementing `IGuardClause` that is not inside the `Guard.Throw` class contains a `throw` expression — violates functional-path purity contract |
 
-### Implementation Rules
+### GuardPurity — Implementation Rules
 
 1. `GuardPurityRules.GuardAgainstMethodsMustNotThrow()` must load `SharedKernel.Guards` via `Types.InAssembly(typeof(IGuardClause).Assembly)` and apply `DoesNotContainThrowIlPredicate` scoped to types not named `Guard.Throw` (full name exclusion: `SharedKernel.Guards.Guard+Throw` or the configured companion class name).
 2. `DoesNotContainThrowIlPredicate` must iterate `TypeDefinition.Methods` via `Mono.Cecil.TypeDefinition` (accessible through NetArchTest's internal Mono.Cecil bundling via reflection on the `TypeDefinition` property of `IType`) and check each `MethodDefinition.Body.Instructions` for `OpCodes.Throw`. If any throw opcode is found, the predicate fails for that type.
@@ -219,7 +220,7 @@ The two-path guard design (`Guard.Against.*` returns `Error?`, `Guard.Throw.*` t
 6. SK0006 `GuardClauseThrowAnalyzer` must fire on `ThrowStatementSyntax` or `ThrowExpressionSyntax` nodes inside methods declared on types that implement `IGuardClause`, with containment check to exclude methods declared in the `Guard.Throw` class. The `IGuardClause` symbol check is by full metadata name `SharedKernel.Guards.IGuardClause`.
 7. SK0006 severity is `Warning` at introduction; the path to `Error` is gated on confirmation that `Guard.Throw` exclusion logic is stable (not causing false positives in the `Throw.*` extension class).
 
-### File-Level Plan
+### GuardPurity — File-Level Plan
 
 | File | Package | Action | Purpose |
 |------|---------|--------|---------|
@@ -227,7 +228,7 @@ The two-path guard design (`Guard.Against.*` returns `Error?`, `Guard.Throw.*` t
 | `Predicates/DoesNotContainThrowIlPredicate.cs` | SharedKernel.ArchitectureTests | Create | Custom NetArchTest predicate — Mono.Cecil IL throw inspection |
 | `Diagnostics/SK0006_GuardClauseThrowAnalyzer.cs` | SharedKernel.Analyzers | Create (Core task) | Roslyn analyzer: fires on `throw` inside `IGuardClause` method bodies outside `Guard.Throw` |
 
-### Acceptance Criteria
+### GuardPurity — Acceptance Criteria
 
 - [ ] `GuardPurityRules.GuardAgainstMethodsMustNotThrow()` returns an `IArchRule` that fails when loaded against an assembly containing a `throw` inside an `IGuardClause` extension method (validated by a test fixture using a contrived violation assembly)
 - [ ] The same rule passes when applied to a clean `IGuardClause` implementation that returns `Error?` only
@@ -236,19 +237,19 @@ The two-path guard design (`Guard.Against.*` returns `Error?`, `Guard.Throw.*` t
 - [ ] Analyzer fire-path test: SK0006 fires on a minimal code snippet with `throw new Exception()` inside an `IGuardClause`-implementing method
 - [ ] Analyzer pass-path test: SK0006 does not fire when the method is on a `Guard.Throw`-equivalent type
 
-### Dependencies
+### GuardPurity — Dependencies
 
 - Requires P-003 (`IGuardClause`, `Guard.Against`, `Guard.Throw` types in `SharedKernel.Guards`) to be complete: yes — the architecture test loads `typeof(IGuardClause).Assembly`; without that type existing the assembly load fails. The design is locked but implementation tasks are blocked on P-003.
 - Unblocks: P-005 (Guard purity enforcement integrated into CI gate once this rule is at `Error` severity)
 
-### Tooling Version Notes
+### GuardPurity — Tooling Version Notes
 
 - `NetArchTest.eNt`: >= 1.3.2 (for `MeetCustomPredicate` API)
 - `Mono.Cecil`: >= 0.11.5 (add explicitly if `NetArchTest.eNt` does not expose `IType.Definition` publicly)
 - `Microsoft.CodeAnalysis.CSharp`: current pin (SK0006 follows same constraint as SK0001–SK0005)
 - Target framework: `netstandard2.0` (Analyzers) / `net10.0` (ArchitectureTests)
 
-### Task Rows
+### GuardPurity — Task Rows
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
@@ -266,6 +267,93 @@ The two-path guard design (`Guard.Against.*` returns `Error?`, `Guard.Throw.*` t
 
 ---
 
+## Phase: Caching Abstractions Enforcement <!-- phase-key: SK.00.CachingEnforcement -->
+
+> Enforce the caching abstraction boundary: no production package outside the concrete caching packages and the composition root (`13.ServiceDefaults`) may reference `SharedKernel.Caching` or `SharedKernel.Caching.Redis` directly. Additionally, prevent `IRedisChannelService` from being misused as a substitute for `IMessageBus` in durable-messaging contexts.
+
+### CachingEnforcement — Goal
+
+Two complementary enforcement rules close the coupling drift vector introduced by the Caching domain (P-005, P-006, P-007). The first is a NetArchTest architecture rule asserting that only explicitly exempted assemblies may take a direct reference to the concrete caching packages; all other assemblies must use `SharedKernel.Caching.Abstractions`. The second is a Roslyn analyzer (SK0007) that warns when `IRedisChannelService` is injected into a class whose name or namespace signals durable-messaging intent (`Command`, `Event`, `DomainEvent`, or `IntegrationEvent`). Together they prevent invisible FusionCache coupling from creeping into application and domain layers, and prevent the Redis pub/sub channel from silently replacing the durable message bus.
+
+### CachingEnforcement — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/CachingAbstractionRules.cs` — `CachingAbstractionRules` static class housing `OnlyAllowedAssembliesMayReferenceConcreteCaching()` predicate
+  - `SharedKernel.Analyzers/Diagnostics/SK0007_RedisChannelServiceMessagingSubstituteAnalyzer.cs` — Roslyn analyzer; fires when `IRedisChannelService` is injected in a messaging-context class
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0007 to diagnostic registry; add `CachingAbstractionRules` to architecture test contracts; add exemption list documentation
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### CachingEnforcement — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0007 | RedisChannelServiceMessagingSubstitute | Design | Warning | `IRedisChannelService` injected (constructor parameter, field, or property) in a class whose name or enclosing namespace contains `Command`, `Event`, `DomainEvent`, or `IntegrationEvent` — signals inappropriate use of Redis pub/sub as a durable message bus substitute |
+
+### CachingEnforcement — Implementation Rules
+
+1. `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching()` uses `Types.InAssembly(assembly)` and `.Should().NotHaveDependencyOn("SharedKernel.Caching")` scoped with a filter that excludes the three exempt assemblies: `SharedKernel.Caching` itself, `SharedKernel.Caching.Redis`, and any assembly whose name starts with `SharedKernel.ServiceDefaults` (the composition root). The method accepts a `params Assembly[]` parameter for the production assemblies under test; it does not hard-code assembly paths.
+2. The rule must emit a `ConditionList` (not `IArchRule`) in line with the established `ArchitectureRuleBase` API (NetArchTest.eNt 1.3.2 fluent result type). `AssertRule` on the base class calls `.GetResult()` and throws `ArchitectureException` with the offending type names on failure.
+3. Exemption list for the architecture rule: `SharedKernel.Caching`, `SharedKernel.Caching.Redis`, `SharedKernel.ServiceDefaults` (and any sub-namespace thereof). Any additional exemption must be explicitly listed in `00.Governance/CLAUDE.md` under the architecture test contracts section.
+4. SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` operates on `SyntaxKind.ClassDeclaration` nodes. For each class, it:
+   a. Collects all constructor parameters, field declarations, and property declarations whose declared type's name is `IRedisChannelService` (simple name match; no semantic model namespace resolution required — the simple name is unique within the SDK).
+   b. Checks whether the class name or any ancestor namespace identifier contains any of the forbidden terms: `Command`, `Event`, `DomainEvent`, `IntegrationEvent` (case-sensitive, substring match).
+   c. If both conditions hold, reports SK0007 on the injection site (parameter / field / property identifier token).
+5. SK0007 must suppress correctly inside `SharedKernel.Caching` and `SharedKernel.Caching.Redis` namespaces — the service itself may declare `IRedisChannelService` freely. Suppression uses the same `SyntaxNode.Parent` namespace walk established by SK0001.
+6. SK0007 severity is `Warning`. Escalation to `Error` is gated on field feedback confirming zero false positives on the `DomainEvent` substring match (some projects use `IDomainEventHandler` as a class name suffix).
+7. Both rules (architecture rule and Roslyn analyzer) must be documented in `00.Governance/CLAUDE.md` with the full exemption list and rationale, so any consuming team can apply for a documented exemption.
+
+### CachingEnforcement — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/CachingAbstractionRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: `OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` → `ConditionList` |
+| `Diagnostics/SK0007_RedisChannelServiceMessagingSubstituteAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0007 fire on `IRedisChannelService` injection in messaging-context class |
+
+### CachingEnforcement — Acceptance Criteria
+
+- [ ] NetArchTest rule exists asserting no assembly (except `SharedKernel.Caching`, `SharedKernel.Caching.Redis`, and `SharedKernel.ServiceDefaults`) references `SharedKernel.Caching` or `SharedKernel.Caching.Redis`
+- [ ] Rule test (fire path) fails with a descriptive message identifying the offending assembly name when a non-exempt assembly references a concrete caching type
+- [ ] Rule test (pass path) succeeds when only the three exempt assemblies are scanned
+- [ ] SK0007 Roslyn analyzer warns when `IRedisChannelService` is injected into a class named or namespaced as a command, event, domain event, or integration event handler
+- [ ] SK0007 pass-path test: no diagnostic when `IRedisChannelService` is injected into a class whose name and namespace contain no forbidden terms
+- [ ] SK0007 suppression test: no diagnostic when injection occurs inside a `SharedKernel.Caching` namespace (the service's own definition)
+- [ ] Both rules documented in `00.Governance/CLAUDE.md` with rationale and exemption list
+
+### CachingEnforcement — Dependencies
+
+- Requires P-005 (`SharedKernel.Caching` package defined — abstraction type names established): yes
+- Requires P-006 (`SharedKernel.Caching.Redis` package defined — `IRedisChannelService` interface established): yes
+- Requires P-007 (Caching domain fully integrated — type names stable): yes
+- Depends on C-07/C-08 (`ArchitectureRuleBase` and `SharedKernelLayeringRules` patterns) for the `ConditionList` API shape: yes (already complete)
+- Unblocks: CI architecture gate integration for the Caching domain
+
+### CachingEnforcement — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0007 follows same constraint as SK0001–SK0006)
+- Target framework: `netstandard2.0` (Analyzers) / `net10.0` (ArchitectureTests)
+
+### CachingEnforcement — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-13 | Define `CachingAbstractionRules` static class shape: `OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` → `ConditionList`; define the three-assembly exemption list (`SharedKernel.Caching`, `SharedKernel.Caching.Redis`, `SharedKernel.ServiceDefaults`); document rationale | SharedKernel.ArchitectureTests | `○` |
+| D-14 | Define SK0007 `RedisChannelServiceMessagingSubstitute` — trigger: `IRedisChannelService` in constructor param / field / property of a class whose name or enclosing namespace contains `Command`, `Event`, `DomainEvent`, or `IntegrationEvent`; suppression: inside `SharedKernel.Caching` or `SharedKernel.Caching.Redis` namespaces | SharedKernel.Analyzers | `○` |
+| C-18 | Implement `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` — NetArchTest fluent predicate using `.Should().NotHaveDependencyOn("SharedKernel.Caching")` with assembly-name-based exemption filter | SharedKernel.ArchitectureTests | `○` |
+| C-19 | Implement SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` — `ClassDeclarationSyntax` walker; simple name match on `IRedisChannelService`; substring check for `Command`/`Event`/`DomainEvent`/`IntegrationEvent` in class name and namespace ancestors; suppress inside `SharedKernel.Caching*` namespaces via parent walk | SharedKernel.Analyzers | `○` |
+| T-18 | Architecture test (fire path): pass a contrived assembly reference that imports `SharedKernel.Caching` from an application-layer class; assert `CachingAbstractionRules` rule fails with the offending assembly name in the failure message | SharedKernel.ArchitectureTests | `○` |
+| T-19 | Architecture test (pass path): pass only the three exempt assemblies; assert `CachingAbstractionRules` rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-20 | Analyzer test SK0007 (fire path): `IRedisChannelService` injected via constructor in a class named `PlaceOrderCommandHandler` in namespace `Application.Commands` triggers SK0007 | SharedKernel.Analyzers.Tests | `○` |
+| T-21 | Analyzer test SK0007 (pass path): `IRedisChannelService` injected in a class named `CacheInvalidationService` with no forbidden name or namespace term — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-22 | Analyzer test SK0007 (suppression path): `IRedisChannelService` injected in a class within `SharedKernel.Caching.Redis` namespace — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| DO-07 | Document `CachingAbstractionRules` in `00.Governance/README.md`: rule rationale, exemption list, how to add a documented exemption for a non-standard composition root | SharedKernel.ArchitectureTests | `○` |
+| DO-08 | Document SK0007 in `00.Governance/README.md`: rationale (Redis pub/sub is not a durable bus), violating example, compliant alternative, suppression instructions | SharedKernel.Analyzers | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -280,17 +368,18 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 62.
+> Counts updated whenever a task state changes. Total tasks: 73.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.00.Design` | Design | 12 | 12 | 0 | `●` |
+| `SK.00.Design` | Design | 14 | 12 | 2 | `◐` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
-| `SK.00.Core` | Core | 14 | 14 | 0 | `●` |
-| `SK.00.Tests` | Tests | 12 | 12 | 0 | `●` |
-| `SK.00.Docs` | Docs | 6 | 5 | 1 | `●` |
+| `SK.00.Core` | Core | 16 | 14 | 2 | `◐` |
+| `SK.00.Tests` | Tests | 17 | 12 | 5 | `◐` |
+| `SK.00.Docs` | Docs | 8 | 5 | 3 | `◐` |
 | `SK.00.Published` | Published | 6 | 6 | 0 | `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | 11 | 11 | 0 | `●` |
+| `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | 11 | 0 | 11 | `○` |
 
 ---
 
@@ -307,3 +396,4 @@ Format when active:
 - [2026-05-15] DO-01–DO-05 → ● in SK.00.Docs — XML docs verified on all public APIs; README.md written with rule docs, usage guides, and SK0001–SK0005 entries (state-map-phase)
 - [2026-05-15] P-01–P-06 → ● in SK.00.Published — NuGet metadata added, packages packed to local feed, SK0001 verified firing in consumer (state-map-phase)
 - [2026-05-15] C-15–C-17, T-13–T-17, DO-06 → ● in SK.00.GuardPurity — all 11 tasks complete, GuardPurity phase fully done (state-map-phase)
+- [2026-05-18] Phase Caching Abstractions Enforcement added (SK.00.CachingEnforcement) — 11 tasks: D-13–D-14, C-18–C-19, T-18–T-22, DO-07–DO-08; SK0007 RedisChannelServiceMessagingSubstitute registered; CachingAbstractionRules arch predicate defined; total tasks now 73 — WO-003 P-009

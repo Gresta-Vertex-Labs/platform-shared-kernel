@@ -27,15 +27,23 @@
   <ItemGroup>
     <!-- DI abstractions — required for IServiceCollection extension signatures -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <!-- Hosting abstractions — required for BackgroundService (CacheInvalidationReceiver) -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <!-- Redis client — L2 distributed cache backing and RedLock multiplexer -->
     <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
     <!-- IDistributedCache implementation over StackExchange.Redis for FusionCache L2 -->
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
+    <!-- FusionCache core — required for AddFusionCache() and FusionCacheBuilder extensions -->
+    <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
+    <!-- FusionCache STJ serializer — required for WithSystemTextJsonSerializer() on the L2 backplane -->
+    <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.6.0" />
     <!-- FusionCache Redis L2 distributed backplane -->
     <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.6.0" />
     <!-- RedLock.net distributed locking over Redis -->
     <PackageReference Include="RedLock.net" Version="2.3.2" />
-    <!-- Reference the Caching abstraction package -->
+    <!-- Caching abstractions — ICachingBuilder, ICacheService, IDistributedLockService, IRedisChannelService, IRedisHashService -->
+    <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!-- SharedKernel.Caching — provides CachingOptions used by invalidation bus and receiver -->
     <ProjectReference Include="..\SharedKernel.Caching\SharedKernel.Caching.csproj" />
   </ItemGroup>
 

@@ -1,5 +1,5 @@
 using System.Reflection;
-using SharedKernel.Caching.Redis.Abstractions;
+using SharedKernel.Caching.Abstractions;
 using Xunit;
 
 namespace SharedKernel.Caching.Redis.Tests.Abstractions;

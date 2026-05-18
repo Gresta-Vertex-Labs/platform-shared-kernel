@@ -20,6 +20,7 @@
     <Project Path="01.Core/SharedKernel.Primitives/SharedKernel.Primitives.Tests/SharedKernel.Primitives.Tests.csproj" />
   </Folder>
   <Folder Name="/02.Caching/">
+    <Project Path="02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/SharedKernel.Caching.Redis.Tests.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching/SharedKernel.Caching.csproj" />

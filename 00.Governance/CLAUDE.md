@@ -90,6 +90,26 @@ SK0006  GuardClauseThrow
                 for purity; move throw-side behavior to the Guard.Throw companion class
     Note      : Severity escalation to Error is gated on confirming Guard+Throw exclusion
                 logic produces zero false positives across all existing guard extensions
+
+SK0007  RedisChannelServiceMessagingSubstitute
+    Category  : Design
+    Severity  : Warning
+    Trigger   : IRedisChannelService appears as a constructor parameter, field declaration,
+                or property declaration in a class whose name or enclosing namespace
+                contains any of the substrings: "Command", "Event", "DomainEvent",
+                "IntegrationEvent" (case-sensitive substring match). Signals inappropriate
+                use of Redis pub/sub as a substitute for a durable IMessageBus.
+    Suppress  : Inside SharedKernel.Caching or SharedKernel.Caching.Redis namespaces —
+                the service's own definition may reference IRedisChannelService freely.
+                Suppression uses the SyntaxNode.Parent namespace walk (same as SK0001).
+    Fix       : Inject IMessageBus (SharedKernel.Messaging.Abstractions) for commands,
+                domain events, and integration events. Reserve IRedisChannelService for
+                cache invalidation signals and ephemeral, non-durable pub/sub only.
+    Note      : Severity escalation to Error is gated on field confirmation of zero false
+                positives on the "DomainEvent" substring match — some projects use
+                "IDomainEventHandler" as a class name suffix that is not a misuse.
+    Exemption : Classes within SharedKernel.Caching* namespaces are always exempt.
+                Any additional exemption must be documented in 00.Governance/CLAUDE.md.
 ```
 
 ---
@@ -130,6 +150,23 @@ DoesNotContainThrowIlPredicate  (class : ICustomRule — internal predicate)
     Failure message includes the declaring type name and method name for diagnostics.
     Note: if NetArchTest.eNt does not expose IType.Definition publicly, add
     Mono.Cecil >= 0.11.5 as an explicit NuGet reference to SharedKernel.ArchitectureTests.
+
+CachingAbstractionRules  (static class — caching boundary enforcement predicates)
+    .OnlyAllowedAssembliesMayReferenceConcreteCaching(params Assembly[] assemblies)
+                                            → ConditionList
+        Asserts that no type in the supplied assemblies has a dependency on
+        "SharedKernel.Caching" or "SharedKernel.Caching.Redis".
+        Uses NetArchTest fluent API: .Should().NotHaveDependencyOn(...).
+        Returns ConditionList (not IArchRule) — call AssertRule() on ArchitectureRuleBase.
+
+    Exemption list (assemblies that MAY reference concrete caching packages):
+        - SharedKernel.Caching          (the abstraction+default impl package itself)
+        - SharedKernel.Caching.Redis    (the concrete Redis L2 provider)
+        - SharedKernel.ServiceDefaults  (composition root — the only place that wires providers)
+        Any additional exemption must be documented here before it is applied in code.
+
+    Note: The method accepts a params Assembly[] so consuming test classes supply the
+    production assemblies under test; assembly paths are never hard-coded in the predicate.
 ```
 
 ---
@@ -190,6 +227,11 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - The `Guard.Throw` exclusion in `GuardPurityRules` must be a full nested-type name match (`"Guard+Throw"` or equivalent CLR name) — not a namespace prefix match, which would be too broad.
 - SK0006 `GuardClauseThrowAnalyzer` follows the same `netstandard2.0` constraint as SK0001–SK0005. No new NuGet dependencies beyond `Microsoft.CodeAnalysis.CSharp`.
 - Each architecture test for `GuardPurityRules` must exercise the fire path (violation fixture), the pass path (clean fixture), and the exclusion path (`Guard.Throw` fixture) — three test cases minimum.
+- `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` uses `.Should().NotHaveDependencyOn("SharedKernel.Caching")` — the string is the assembly name prefix, matched by NetArchTest's dependency scanner against referenced assembly names. Two calls are required: one for `"SharedKernel.Caching"` (catches both the main package and Redis because `.Caching.Redis` contains `.Caching` as a prefix) and optionally one scoped specifically to `"SharedKernel.Caching.Redis"` for a more targeted failure message.
+- SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` operates on `ClassDeclarationSyntax` nodes only. It uses a simple name match (`IRedisChannelService`) without semantic model symbol resolution — the simple name is unique within the SDK. Namespace suppression uses the same `SyntaxNode.Parent` walk pattern established by SK0001.
+- SK0007 forbidden-context terms are: `"Command"`, `"Event"`, `"DomainEvent"`, `"IntegrationEvent"` — case-sensitive substring match applied to both the class name and all ancestor namespace identifier strings. The check on `"Event"` intentionally covers `"DomainEvent"` and `"IntegrationEvent"` as substrings; all four terms are listed explicitly for documentation clarity.
+- SK0007 severity escalation to `Error` is gated on field confirmation of zero false positives on the `"DomainEvent"` substring — some projects name classes `IDomainEventHandler` without misusing Redis pub/sub. Until confirmed, severity remains `Warning`.
+- Architecture tests for `CachingAbstractionRules` require two test cases minimum: one fire-path (non-exempt assembly references concrete caching) and one pass-path (only exempt assemblies scanned). No exclusion-path test is needed because exemption is enforced by the caller choosing which assemblies to pass, not by an internal filter.
 - RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
@@ -230,3 +272,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-05-15] Domain brain initialized — packages, diagnostic registry, architecture test contracts, benchmark config, linter distribution strategy
 - [2026-05-15] SK0006 GuardClauseThrow added to diagnostic registry; GuardPurityRules and DoesNotContainThrowIlPredicate added to architecture test contracts; Mono.Cecil IL inspection implementation rules added — WO-002 P-004
 - [2026-05-15] SK0003 trigger narrowed to exact types only; ArchitectureRuleBase/LayeringRules updated to ConditionList API; BenchmarkConfig Job.Short→explicit form; RS2008 suppression, Roslyn pin, and test pattern rules added — SK.00.Core implementation (sync-brain)
+- [2026-05-18] SK0007 RedisChannelServiceMessagingSubstitute added to diagnostic registry; CachingAbstractionRules added to architecture test contracts with three-assembly exemption list; seven new implementation rules added for caching boundary enforcement — WO-003 P-009

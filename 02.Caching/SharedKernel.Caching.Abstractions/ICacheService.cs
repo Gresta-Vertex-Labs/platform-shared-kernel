@@ -1,5 +1,3 @@
-using SharedKernel.Caching.Policies;
-
 namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
@@ -15,7 +13,8 @@ namespace SharedKernel.Caching.Abstractions;
 /// </para>
 /// <para>
 /// Cache keys are prefix-namespaced by the consuming service, not by this package.
-/// Convention: <c>"{service}:{entity}:{id}"</c>.
+/// Convention: <c>"{service}:{entity}:{id}"</c>. Use <see cref="ICacheKeyProvider"/>
+/// to construct keys rather than building strings inline.
 /// </para>
 /// </remarks>
 public interface ICacheService

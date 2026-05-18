@@ -1,4 +1,4 @@
-namespace SharedKernel.Caching.Policies;
+namespace SharedKernel.Caching.Abstractions;
 
 /// <summary>
 /// Describes the caching behaviour for a single entry: L1 and L2 TTLs, optional tags for

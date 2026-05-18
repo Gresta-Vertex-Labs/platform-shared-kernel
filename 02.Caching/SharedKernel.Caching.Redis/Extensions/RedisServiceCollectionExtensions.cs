@@ -2,8 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RedLockNet.SERedis;
 using RedLockNet.SERedis.Configuration;
-using SharedKernel.Caching.Extensions;
-using SharedKernel.Caching.Redis.Abstractions;
+using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Redis.Implementations;
 using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
@@ -46,6 +45,15 @@ public static class RedisServiceCollectionExtensions
         configure?.Invoke(options);
 
         var services = builder.Services;
+
+        // Register the shared IConnectionMultiplexer singleton if not already registered.
+        // This allows RedisChannelService and RedisHashService to reuse the same connection.
+        var configOptions = ConfigurationOptions.Parse(options.ConnectionString);
+        configOptions.ConnectTimeout = options.ConnectTimeoutMs;
+        configOptions.AbortOnConnectFail = false;
+
+        services.TryAddSingleton<IConnectionMultiplexer>(_ =>
+            ConnectionMultiplexer.Connect(configOptions));
 
         // Register the Redis IDistributedCache for FusionCache L2 storage.
         services.AddStackExchangeRedisCache(redisOptions =>

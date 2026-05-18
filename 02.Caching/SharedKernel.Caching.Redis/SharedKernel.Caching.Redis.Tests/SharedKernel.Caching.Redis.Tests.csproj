@@ -21,10 +21,14 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <!-- Logging null provider for tests -->
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <!-- StackExchange.Redis — required for IConnectionMultiplexer in test assertions -->
+    <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Caching.Redis.csproj" />
+    <!-- SharedKernel.Caching needed for L1FallbackTests and RedisL2IntegrationTests (AddSharedKernelCaching, CachePolicy) -->
+    <ProjectReference Include="..\..\SharedKernel.Caching\SharedKernel.Caching.csproj" />
   </ItemGroup>
 
 </Project>

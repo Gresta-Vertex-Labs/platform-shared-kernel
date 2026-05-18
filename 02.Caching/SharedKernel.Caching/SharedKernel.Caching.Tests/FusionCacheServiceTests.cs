@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.Extensions;
 using SharedKernel.Caching.Implementations;
-using SharedKernel.Caching.Policies;
 using Xunit;
 using ZiggyCreatures.Caching.Fusion;
 
