@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -46,11 +48,48 @@ public static class CachingServiceCollectionExtensions
         // Register custom validator for rules data annotations cannot express (e.g. ServiceName).
         services.TryAddSingleton<IValidateOptions<CachingOptions>, CachingOptionsValidator>();
 
-        // Register FusionCache with STJ serializer and registered logger.
+        // Resolve CachingOptions synchronously so we can read SerializerContext before
+        // building the DI container (options are configured above via Configure delegate).
+        // We build a temporary options instance to check SerializerContext.
+        var tempOptions = new CachingOptions();
+        configure?.Invoke(tempOptions);
+
+        // Build the JsonSerializerOptions for the FusionCache STJ serializer.
+        // When SerializerContext is set, combine it with the internal CacheInvalidationMessage
+        // context so FusionCache's L2 serializer is fully NativeAOT-safe.
+        JsonSerializerOptions? resolvedJsonOptions = null;
+        if (tempOptions.SerializerContext is not null)
+        {
+            resolvedJsonOptions = new JsonSerializerOptions
+            {
+                TypeInfoResolver = JsonTypeInfoResolver.Combine(
+                    tempOptions.SerializerContext,
+                    CacheInvalidationMessageJsonContext.Default),
+            };
+        }
+
+        // Register IFusionCacheSerializer in DI (and the concrete type separately) so that
+        // AddBrotliCompression can Replace IFusionCacheSerializer with a decorator factory that
+        // resolves the concrete STJ serializer as its inner without creating a circular dependency.
+        // AddFusionCacheSystemTextJsonSerializer registers via a factory — the concrete type
+        // registration below ensures BrotliCacheSerializer can resolve it by type, not by interface.
+        if (resolvedJsonOptions is not null)
+        {
+            services.TryAddSingleton(new FusionCacheSystemTextJsonSerializer(resolvedJsonOptions));
+            services.AddFusionCacheSystemTextJsonSerializer(resolvedJsonOptions);
+        }
+        else
+        {
+            services.TryAddSingleton<FusionCacheSystemTextJsonSerializer>();
+            services.AddFusionCacheSystemTextJsonSerializer();
+        }
+
+        // Wire FusionCache to resolve its serializer from the DI container so that any
+        // post-registration decoration (e.g. AddBrotliCompression) is picked up automatically.
         services
             .AddFusionCache()
             .TryWithRegisteredLogger()
-            .WithSystemTextJsonSerializer();
+            .WithRegisteredSerializer();
 
         // Register ICacheService as a singleton backed by FusionCacheService.
         services.TryAddSingleton<ICacheService, FusionCacheService>();

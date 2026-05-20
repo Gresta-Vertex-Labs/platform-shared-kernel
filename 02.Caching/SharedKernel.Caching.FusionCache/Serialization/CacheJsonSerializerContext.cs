@@ -8,18 +8,38 @@ namespace SharedKernel.Caching.FusionCache.Serialization;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Consuming services must create their own <see cref="JsonSerializerContext"/> derived class
-/// annotated with <see cref="JsonSerializableAttribute"/> for every type they intend to cache,
-/// then register it during DI setup via
-/// <c>AddSharedKernelCaching(o => o.SerializerContext = MyContext.Default)</c>.
+/// <strong>NativeAOT registration pattern:</strong> For any build that requires NativeAOT
+/// compatibility, create an application-level <c>partial class</c> that derives from (or
+/// independently extends) <see cref="JsonSerializerContext"/> and is annotated with
+/// <see cref="JsonSerializableAttribute"/> for every type your service stores in the cache.
+/// Then pass the singleton instance to <see cref="SharedKernel.Caching.FusionCache.Extensions.CachingOptions.SerializerContext"/>
+/// at startup.
 /// </para>
 /// <para>
-/// Example:
+/// <c>AddSharedKernelCaching</c> will automatically combine your context with the internal
+/// <c>CacheInvalidationMessageJsonContext</c> via <c>JsonTypeInfoResolver.Combine</c>, ensuring
+/// that both your application types and the infrastructure invalidation payload are handled by
+/// source-generated contexts — no reflection is used anywhere in the serialization path.
+/// </para>
+/// <para>
+/// Example (NativeAOT build):
 /// <code>
 /// [JsonSerializable(typeof(OrderDto))]
 /// [JsonSerializable(typeof(CustomerDto))]
-/// internal partial class MyCacheSerializerContext : JsonSerializerContext { }
+/// internal partial class MyAppSerializerContext : JsonSerializerContext { }
+///
+/// // In your DI startup:
+/// services.AddSharedKernelCaching(o =>
+/// {
+///     o.ServiceName = "my-service";
+///     o.SerializerContext = MyAppSerializerContext.Default;
+/// });
 /// </code>
+/// </para>
+/// <para>
+/// When <c>SerializerContext</c> is <see langword="null"/> (the default), FusionCache falls
+/// back to reflection-based System.Text.Json serialization, which is acceptable for non-AOT
+/// builds but will break NativeAOT publishing.
 /// </para>
 /// <para>
 /// This class itself is intentionally empty — it exists solely to document the pattern

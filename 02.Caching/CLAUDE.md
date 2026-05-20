@@ -10,7 +10,7 @@ Philosophy: **Fail-silent by default. Stampede-proof. AOT-compatible.**
 
 ## Current Phase
 
-**Phase 14 complete (WO-004)** — All phases complete. `SharedKernel.Caching` renamed to `SharedKernel.Caching.FusionCache`; `CachePolicy.NeverExpire` added to `SharedKernel.Caching.Abstractions`. 70 FusionCache + 62 Redis tests passing (132 total).
+**Phase 16 complete (WO-005)** — All planned phases complete. Phase 15 (AOT Hardening + ITypedHashStore) and Phase 16 (Brotli L2 Compression) both delivered. `BrotliCacheSerializer` is implemented as an opt-in decorator over the STJ serializer; activated via `AddBrotliCompression()` on `ICachingBuilder`.
 
 ---
 
@@ -18,9 +18,9 @@ Philosophy: **Fail-silent by default. Stampede-proof. AOT-compatible.**
 
 | Package | Role | NuGet / Project References |
 |---------|------|---------------------------|
-| `SharedKernel.Caching.Abstractions` | Zero-infra contracts: `ICacheService`, `CachePolicy` (incl. `NeverExpire`), `ICacheKeyProvider`, `IDistributedLockService`, `IRedisChannelService`, `IRedisHashService`, `ICacheInvalidationBus`, `CacheInvalidationMessage`, `ICachingBuilder` | `Microsoft.Extensions.DependencyInjection.Abstractions` only |
-| `SharedKernel.Caching.FusionCache` | FusionCache L1 provider implementation: `FusionCacheService`, `CacheKeyProvider`, STJ context base, `AddSharedKernelCaching` DI extension. **Previously named `SharedKernel.Caching` — renamed in Phase 14.** | `SharedKernel.Caching.Abstractions`, FusionCache packages, `01.Core` |
-| `SharedKernel.Caching.Redis` | Redis L2 distributed provider, RedLock distributed locking, `RedisChannelService`, `RedisHashService`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver` | `SharedKernel.Caching.Abstractions`, StackExchange.Redis, RedLock.net, ZiggyCreatures.FusionCache, ZiggyCreatures.FusionCache.Serialization.SystemTextJson, ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis |
+| `SharedKernel.Caching.Abstractions` | Zero-infra contracts: `ICacheService`, `CachePolicy` (incl. `NeverExpire`), `ICacheKeyProvider`, `IDistributedLockService`, `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>`, `ICacheInvalidationBus`, `CacheInvalidationMessage`, `ICachingBuilder` | `Microsoft.Extensions.DependencyInjection.Abstractions` only |
+| `SharedKernel.Caching.FusionCache` | FusionCache L1 provider implementation: `FusionCacheService`, `CacheKeyProvider`, `BrotliCacheSerializer` (opt-in), STJ context base, `AddSharedKernelCaching` DI extension. **Previously named `SharedKernel.Caching` — renamed in Phase 14.** | `SharedKernel.Caching.Abstractions`, FusionCache packages, `01.Core` |
+| `SharedKernel.Caching.Redis` | Redis L2 distributed provider, RedLock distributed locking, `RedisChannelService`, `RedisHashService`, `TypedHashStore<T>`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver` | `SharedKernel.Caching.Abstractions`, StackExchange.Redis, RedLock.net, ZiggyCreatures.FusionCache, ZiggyCreatures.FusionCache.Serialization.SystemTextJson, ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis |
 
 All packages target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
@@ -97,6 +97,13 @@ CacheInvalidationMessage  (sealed record)
     CorrelationId    string   (defaults to Activity.Current?.Id ?? Guid.NewGuid().ToString("N"))
     TimestampUtc     DateTimeOffset
 
+ITypedHashStore<T>                        [AOT-safe typed wrapper — no per-call JsonTypeInfo<T>]
+    GetFieldAsync(string key, string field, CancellationToken ct)                           → T?
+    SetFieldAsync(string key, string field, T value, CancellationToken ct)                  → void
+    GetAllFieldsAsync(string key, CancellationToken ct)          → IReadOnlyDictionary<string, T>
+    DeleteFieldAsync(string key, string field, CancellationToken ct)                        → void
+    IncrementFieldAsync(string key, string field, long delta, CancellationToken ct)         → long
+
 ICachingBuilder
     Services  IServiceCollection { get; }
 ```
@@ -139,10 +146,35 @@ ICachingBuilder
 - Always use `RedisChannel.Literal(channelName)` — never `RedisChannel.Pattern`.
 - All handler exceptions must be caught and logged at `LogLevel.Error`. They must never propagate to the Redis subscriber thread.
 
+### FusionCache STJ serializer AOT rule
+
+- `CachingOptions.SerializerContext` must be set to the microservice's source-generated `JsonSerializerContext` in any NativeAOT build.
+- When set, `AddSharedKernelCaching` passes `JsonSerializerOptions { TypeInfoResolver = JsonTypeInfoResolver.Combine(SerializerContext, CacheInvalidationMessageJsonContext.Default) }` to `WithSystemTextJsonSerializer()`.
+- When absent, FusionCache falls back to reflection-based STJ — acceptable for non-AOT builds, breaks NativeAOT.
+- Example: `services.AddSharedKernelCaching(o => o.SerializerContext = MyAppSerializerContext.Default);`
+
+### ITypedHashStore rules
+
+- `ITypedHashStore<T>` is the preferred API for type-specific Redis hash operations in application code. `IRedisHashService` with explicit `JsonTypeInfo<T>` params is the low-level primitive for generic infrastructure code — both are valid and neither is deprecated.
+- Register one `ITypedHashStore<T>` per DTO type at startup via `AddTypedHashStore<T>(JsonTypeInfo<T>)`. Multiple types may be registered independently.
+- `AddTypedHashStore<T>` throws `InvalidOperationException` if `IRedisHashService` is not already registered — call `AddRedisHashService` first.
+- `TypedHashStore<T>` is `internal sealed` — consumers depend only on `ITypedHashStore<T>`.
+
 ### RedisHashService rules
+
 - All typed methods accept `JsonTypeInfo<T>` — no `typeof(T)` reflection anywhere.
 - `IDatabase` reference is obtained once from `IConnectionMultiplexer.GetDatabase()` and cached.
 - `AddRedisHashService` throws `InvalidOperationException` if `IConnectionMultiplexer` is not already registered.
+
+### Brotli compression rules
+
+- Compression is opt-in and L2-only. L1 in-process values are never compressed.
+- `AddBrotliCompression()` on `ICachingBuilder` wraps the registered `IFusionCacheSerializer` with `BrotliCacheSerializer`.
+- `BrotliCacheSerializer` prepends magic bytes `0x42 0x52` ("BR") to compressed payloads. On read it detects the prefix and decompresses; payloads without the prefix are forwarded to the base STJ serializer unchanged (backward-compatible).
+- `BrotliEncoder` (not `BrotliStream`) is used for compression — `ArrayPool<byte>.Shared` for the output buffer, no `MemoryStream` allocation on the hot path.
+- Default threshold: 1 024 bytes. Values smaller than this threshold are stored uncompressed regardless of `Enabled`. Default level: `CompressionLevel.Fastest`.
+- Do not apply compression to `IRedisHashService` hash fields — they are naturally small. Callers who need per-field compression must compress values before passing to `SetFieldAsync`.
+- protobuf-net is explicitly prohibited as a cache serializer: not NativeAOT-compatible, requires `[ProtoContract]` attribute on DTOs (violates clean architecture), breaks the Redis wire format across deployments.
 
 ### CacheInvalidationReceiver rules
 - It is a `BackgroundService` — registered via `AddHostedService`.
@@ -171,12 +203,26 @@ ICachingBuilder
 ## DI Registration (current + planned shape)
 
 ```csharp
-// L1-only
+// L1-only (non-AOT)
 services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; });
 
-// L1 + L2 (Redis backplane)
-services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; })
+// L1-only (NativeAOT — provide source-generated context for all cached types)
+services.AddSharedKernelCaching(options => {
+    options.ServiceName = "my-service";
+    options.SerializerContext = MyAppSerializerContext.Default;
+});
+
+// L1 + L2 (Redis backplane, NativeAOT)
+services.AddSharedKernelCaching(options => {
+             options.ServiceName = "my-service";
+             options.SerializerContext = MyAppSerializerContext.Default;
+         })
         .AddRedisL2(connectionString, options => { });
+
+// L1 + L2 + Brotli compression for large payloads (opt-in)
+services.AddSharedKernelCaching(options => { options.SerializerContext = MyAppSerializerContext.Default; })
+        .AddRedisL2(connectionString)
+        .AddBrotliCompression(o => { o.L2ThresholdBytes = 2048; });
 
 // Distributed locking (requires Redis, independent of L2 cache)
 services.AddRedisDistributedLocking(connectionString);
@@ -185,10 +231,18 @@ services.AddRedisDistributedLocking(connectionString);
 services.AddSharedKernelCaching(options => { })
         .AddRedisChannelService();
 
-// Redis Hash service (requires multiplexer — call AddRedisL2 or AddRedisDistributedLocking first)
+// Redis Hash service — low-level (JsonTypeInfo<T> per call)
 services.AddSharedKernelCaching(options => { })
         .AddRedisL2(connectionString)
         .AddRedisHashService();
+
+// Redis Hash service — typed per-DTO (no JsonTypeInfo<T> per call, AOT-safe)
+services.AddSharedKernelCaching(options => { options.SerializerContext = MyAppSerializerContext.Default; })
+        .AddRedisL2(connectionString)
+        .AddRedisHashService()
+        .AddTypedHashStore(MyAppSerializerContext.Default.OrderDto)
+        .AddTypedHashStore(MyAppSerializerContext.Default.CustomerDto);
+// Inject: ITypedHashStore<OrderDto>, ITypedHashStore<CustomerDto>
 
 // Cross-service cache invalidation (full stack)
 services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; })
@@ -211,6 +265,8 @@ services.AddSharedKernelCaching(options => { options.ServiceName = "my-service";
 - `RedisChannelService` tests: Pub/Sub round-trip, unsubscribe stops delivery.
 - `RedisHashService` tests: set/get field, get-all fields, delete field, increment field, shared multiplexer (no duplicate connection).
 - `CacheInvalidationReceiver` tests: Key invalidation, Tag invalidation, broadcast warning logged, sender-offline no-crash, OTel `CorrelationId` present on span.
+- `ITypedHashStore<T>` tests: five-method round-trip via Testcontainers (set/get/get-all/delete/increment).
+- `BrotliCacheSerializer` unit tests: compressed round-trip (above threshold), passthrough (below threshold), mixed reads (both compressed and uncompressed values readable), compression level configuration.
 
 ---
 
@@ -222,3 +278,5 @@ services.AddSharedKernelCaching(options => { options.ServiceName = "my-service";
 - [2026-05-18] Refreshed for WO-003 — three-package split (Abstractions/Caching/Redis), ICacheKeyProvider, IRedisChannelService, IRedisHashService, ICacheInvalidationBus, CacheInvalidationMessage, channel naming convention, invalidation receiver rules, updated DI registration shape (Phases 5, 6, 7, 12)
 - [2026-05-18] Phase 7 complete — Redis package now refs Abstractions directly; AddRedisL2 registers IConnectionMultiplexer; FusionCache pkgs explicit in Redis csproj (agent)
 - [2026-05-18] Phase 14 planned (WO-004) — SharedKernel.Caching renamed to SharedKernel.Caching.FusionCache; namespace migration to SharedKernel.Caching.FusionCache.*; CachePolicy.NeverExpire preset added; CLAUDE.md package table and test rules updated (caching-arch-planner)
+- [2026-05-20] Phases 15 + 16 planned (WO-005) — Phase 15: fix FusionCache STJ AOT gap (SerializerContext option) + ITypedHashStore typed hash store; Phase 16: opt-in Brotli L2 compression (magic-byte, ArrayPool, threshold); protobuf-net declined (AOT-incompatible); package table, interface contracts, rules, DI shape updated (arch-lead)
+- [2026-05-20] B-01 to B-05 complete in SK.02.BrotliCompression — CompressionOptions nested class added to CachingOptions; BrotliCacheSerializer decorator (ArrayPool, magic bytes 0x42 0x52, BrotliStream decompress); AddBrotliCompression extension on ICachingBuilder; AddSharedKernelCaching updated to register IFusionCacheSerializer in DI via WithRegisteredSerializer(); 91 FusionCache + 74 Redis tests passing (caching-phase-implementer)

@@ -64,7 +64,7 @@ Format when blocked:
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
-| 02 | [Caching](02.Caching/state-map.md) | Published | `●` | NuGet metadata added to both packages, packed to local feed, and consumer dependency graph verified via a standalone console project. | — |
+| 02 | [Caching](02.Caching/state-map.md) | Phase 16 (Brotli L2 Compression) | `●` | Phase 16 complete — BrotliCacheSerializer opt-in decorator with magic-byte detection, ArrayPool hot path, and AddBrotliCompression extension; 91 FusionCache + 74 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
@@ -105,7 +105,8 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Guard Purity Enforcement | 1 |
-| ● Published | 2 |
+| ● Phase 16 (Brotli L2 Compression) | 1 |
+| ● Published | 1 |
 | ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
@@ -846,3 +847,5 @@ Without a `CachingBehavior`, every query handler in every microservice that want
 - [2026-05-18] Application reset to ○ Not Started — P-015 deferred; 05.Application domain not yet started; board cleared
 - [2026-05-18] Phase(s) P-009 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
 - [2026-05-18] Phase(s) P-014 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
+- [2026-05-20] Caching → Phase 15 (AOT Hardening + ITypedHashStore) (●) — promoted from SK.02.AotHardening (state-map-phase)
+- [2026-05-20] Caching → Phase 16 (Brotli L2 Compression) (●) — promoted from SK.02.BrotliCompression (state-map-phase)
