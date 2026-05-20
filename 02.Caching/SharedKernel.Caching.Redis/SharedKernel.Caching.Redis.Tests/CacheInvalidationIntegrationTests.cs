@@ -58,7 +58,7 @@ public sealed class CacheInvalidationReceiverUnitTests
         var services = new ServiceCollection();
         services.AddSingleton(channelService);
         services.AddSingleton(cacheService);
-        services.AddOptions<CachingOptions>().Configure(o => o.ServiceName = ServiceName);
+        services.AddOptions<CachingCoreOptions>().Configure(o => o.ServiceName = ServiceName);
         services.AddLogging();
 
         var provider = services.BuildServiceProvider();
@@ -66,7 +66,7 @@ public sealed class CacheInvalidationReceiverUnitTests
         var receiver = new CacheInvalidationReceiver(
             channelService,
             cacheService,
-            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<CachingOptions>>(),
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<CachingCoreOptions>>(),
             provider.GetRequiredService<ILogger<CacheInvalidationReceiver>>());
 
         // Trigger ExecuteAsync to register subscriptions.

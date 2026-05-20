@@ -4,7 +4,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.FusionCache.Extensions;
 
 namespace SharedKernel.Caching.Redis;
 
@@ -54,12 +53,12 @@ public sealed partial class CacheInvalidationReceiver : BackgroundService
     /// </summary>
     /// <param name="channelService">Redis Pub/Sub channel service for subscription management.</param>
     /// <param name="cacheService">The local cache service that handles key/tag evictions.</param>
-    /// <param name="options">Caching options supplying the service name for channel naming.</param>
+    /// <param name="options">Core caching options supplying the service name for channel naming.</param>
     /// <param name="logger">Logger for structured error and warning output.</param>
     public CacheInvalidationReceiver(
         IRedisChannelService channelService,
         ICacheService cacheService,
-        IOptions<CachingOptions> options,
+        IOptions<CachingCoreOptions> options,
         ILogger<CacheInvalidationReceiver> logger)
     {
         ArgumentNullException.ThrowIfNull(channelService);

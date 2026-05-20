@@ -64,7 +64,7 @@ Format when blocked:
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
-| 02 | [Caching](02.Caching/state-map.md) | Phase 16 (Brotli L2 Compression) | `●` | Phase 16 complete — BrotliCacheSerializer opt-in decorator with magic-byte detection, ArrayPool hot path, and AddBrotliCompression extension; 91 FusionCache + 74 Redis tests passing. | — |
+| 02 | [Caching](02.Caching/state-map.md) | Phase 21 (GetOrSetAsync ValueTask Factory) | `●` | Phase 21 complete — GetOrSetAsync factory migrated to ValueTask{T}; negative-result caching via GetOrSetAsync{T?}; 102 FusionCache + 93 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
@@ -105,7 +105,7 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Guard Purity Enforcement | 1 |
-| ● Phase 16 (Brotli L2 Compression) | 1 |
+| ● Phase 21 (GetOrSetAsync ValueTask Factory) | 1 |
 | ● Published | 1 |
 | ● Docs | 0 |
 | ● Tests | 0 |
@@ -795,6 +795,172 @@ Without a `CachingBehavior`, every query handler in every microservice that want
 - [ ] Package remains AOT-safe
 
 ---
+### P-016 — Caching: Resolve Redis→FusionCache Layering Violation via ServiceName in Abstractions
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-006
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+`SharedKernel.Caching.Redis` currently carries a `ProjectReference` to `SharedKernel.Caching.FusionCache` solely to access `CachingOptions.ServiceName` — used by `RedisCacheInvalidationBus` and `CacheInvalidationReceiver` to construct channel names. This is a sibling-level layering violation: two provider packages (`FusionCache` and `Redis`) are at the same architectural level and must not depend on each other. A service that wants only Redis capabilities (channel service, hash service, invalidation bus) without FusionCache must not be forced to transitively depend on the FusionCache provider.
+
+The fix has two parts:
+
+**Part A — Introduce `CachingCoreOptions` in `SharedKernel.Caching.Abstractions`.**
+A new sealed options class in the Abstractions package that carries only the properties needed by both providers: `ServiceName` (string, defaults to `"app"`) with the same semantics as today. This class must have zero NuGet infrastructure dependencies and must live in the `SharedKernel.Caching.Abstractions` namespace. It must be the single authoritative source of `ServiceName` for all three packages.
+
+**Part B — Remove `SharedKernel.Caching.Redis`'s direct reference to `SharedKernel.Caching.FusionCache`.**
+`RedisCacheInvalidationBus` and `CacheInvalidationReceiver` must be updated to depend on `IOptions<CachingCoreOptions>` (from Abstractions) instead of `IOptions<CachingOptions>` (from FusionCache). `AddSharedKernelCaching` in the FusionCache package must register `CachingCoreOptions` alongside its own `CachingOptions`, copying `ServiceName` into it so both options types are always in sync. The `ProjectReference` from `SharedKernel.Caching.Redis` to `SharedKernel.Caching.FusionCache` must be removed; only the reference to `SharedKernel.Caching.Abstractions` is retained.
+
+`CachingOptions` in `SharedKernel.Caching.FusionCache` retains `ServiceName` for backward compatibility (FusionCache-specific concerns like `L1SizeLimit`, `CacheName`, `SerializerContext`, `CompressionOptions` remain there). Both options types read from compatible configuration sections; `CachingCoreOptions` binds to the same section so a single `appsettings.json` entry covers both.
+
+All existing tests must continue to pass — this is a non-breaking restructure.
+
+#### Why this is needed
+
+Provider packages at the same layer must never depend on each other. `SharedKernel.Caching.Redis` is a Redis provider; `SharedKernel.Caching.FusionCache` is a FusionCache provider. A microservice that uses only Redis Pub/Sub or distributed locking — without L1 FusionCache — should not be forced to take a transitive FusionCache dependency. The layering violation also creates a hidden upgrade coupling: a breaking change in `SharedKernel.Caching.FusionCache`'s `CachingOptions` class automatically breaks the Redis package. Placing the shared state (`ServiceName`) in Abstractions, where it logically belongs (it is not FusionCache-specific), resolves both problems.
+
+#### Acceptance criteria
+- [ ] `CachingCoreOptions` class exists in `SharedKernel.Caching.Abstractions` with at minimum a `ServiceName` property (string, default `"app"`)
+- [ ] `SharedKernel.Caching.Abstractions.csproj` gains `Microsoft.Extensions.Options` (or remains with only the DI abstractions reference, using the options pattern via DI — verify the minimal dependency needed)
+- [ ] `SharedKernel.Caching.Redis.csproj` no longer has a `ProjectReference` to `SharedKernel.Caching.FusionCache`
+- [ ] `RedisCacheInvalidationBus` and `CacheInvalidationReceiver` depend on `IOptions<CachingCoreOptions>` from Abstractions, not `IOptions<CachingOptions>` from FusionCache
+- [ ] `AddSharedKernelCaching` registers `CachingCoreOptions` as a configured singleton so the Redis package can resolve it
+- [ ] `CachingOptions.ServiceName` in FusionCache keeps its validation and default — both options types are in sync at registration time
+- [ ] All 91 FusionCache tests and 74 Redis tests continue to pass — zero regressions
+- [ ] A service that references only `SharedKernel.Caching.Redis` + `SharedKernel.Caching.Abstractions` (no FusionCache) can call `AddRedisChannelService`, `AddRedisHashService`, `AddRedisCacheInvalidationBus` without pulling in FusionCache
+
+---
+### P-017 — Caching: Fix AddRedisL2 Silent Serializer Override Breaking NativeAOT
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-006
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+`AddRedisL2` in `RedisServiceCollectionExtensions` calls `.WithSystemTextJsonSerializer()` again on the FusionCache builder after `AddSharedKernelCaching` has already registered the STJ serializer — potentially with a combined `JsonSerializerOptions` that includes the user-provided `SerializerContext`. This second `.WithSystemTextJsonSerializer()` call silently overwrites the options-aware registration with a reflection-based default, defeating the NativeAOT-safe serializer path entirely.
+
+The fix: `AddRedisL2` must not register the STJ serializer at all. The serializer is already registered by `AddSharedKernelCaching` (either with or without a combined `JsonSerializerOptions`). FusionCache's `WithRegisteredSerializer()` will pick up the DI-registered `IFusionCacheSerializer` automatically. `AddRedisL2` should call `WithRegisteredDistributedCache()` and `WithStackExchangeRedisBackplane()` only — no serializer re-registration.
+
+This is a correctness fix, not a new capability. The existing test suite must be extended with a regression test: verify that after calling `AddSharedKernelCaching(o => o.SerializerContext = ctx)` followed by `AddRedisL2(...)`, the registered `IFusionCacheSerializer` is the one that has the combined `JsonSerializerOptions` with `ctx` in the resolver chain — not a default reflection-based one.
+
+#### Why this is needed
+
+This is a silent NativeAOT correctness bug. A microservice author sets `SerializerContext` correctly in `AddSharedKernelCaching` for NativeAOT compliance. They then add `AddRedisL2` to enable L2 caching. The second serializer registration silently discards their context. Their service compiles and runs in non-AOT mode but fails at runtime in NativeAOT builds with a cryptic `InvalidOperationException` or `NotSupportedException` during L2 cache reads/writes. Because the failure is silent during development and only surfaces in AOT publishing, this bug is high-severity.
+
+#### Acceptance criteria
+- [ ] `AddRedisL2` no longer calls `.WithSystemTextJsonSerializer()` in any form
+- [ ] `AddRedisL2` calls `.WithRegisteredDistributedCache()` and `.WithStackExchangeRedisBackplane()` only for FusionCache configuration
+- [ ] New unit test: after `AddSharedKernelCaching(o => o.SerializerContext = ctx)` + `AddRedisL2(...)`, the DI-resolved `IFusionCacheSerializer` is a `FusionCacheSystemTextJsonSerializer` (or `BrotliCacheSerializer` wrapping one) that includes `ctx` in its type info resolver chain
+- [ ] All existing 91 FusionCache + 74 Redis tests pass — zero regressions
+- [ ] The test is placed in `SharedKernel.Caching.FusionCache.Tests` or a new `SharedKernel.Caching.Redis.Tests` DI test class
+
+---
+### P-018 — Caching: DI Ergonomics Hardening — Builder Pattern and Startup Guards
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-006
+**Domain:** 02.Caching
+**Depends on:** P-016
+
+#### What is needed
+
+Three DI ergonomics defects to fix in a single cohesive phase:
+
+**Fix 1 — `AddRedisDistributedLocking` must be an extension on `ICachingBuilder`, not `IServiceCollection`.**
+The current signature `AddRedisDistributedLocking(this IServiceCollection services, ...)` breaks the fluent builder chain. A service wanting L2 + locking must split across two chains:
+```csharp
+var builder = services.AddSharedKernelCaching(...).AddRedisL2(...);
+services.AddRedisDistributedLocking(connectionString);  // breaks the chain
+```
+The new signature is `AddRedisDistributedLocking(this ICachingBuilder builder, string connectionString, ...)`. The implementation is identical — only the entry point changes. The old `IServiceCollection` extension must be kept as a `[Obsolete]`-marked shim for one version to prevent a hard break for any consumers that have already adopted it.
+
+**Fix 2 — `AddRedisChannelService` must guard that `IConnectionMultiplexer` is already registered.**
+Currently `AddRedisChannelService` registers `RedisChannelService` without checking that `IConnectionMultiplexer` is registered. This produces a cryptic runtime DI failure. The guard should match the pattern used by `AddRedisHashService`: check `builder.Services.Any(sd => sd.ServiceType == typeof(IConnectionMultiplexer))` and throw `InvalidOperationException("AddRedisChannelService requires AddRedisL2 or AddRedisDistributedLocking to be called first to register IConnectionMultiplexer.")` if absent.
+
+**Fix 3 — `AddCacheInvalidationReceiver` must guard that both `IRedisChannelService` and `ICacheService` are registered.**
+The receiver depends on both. If either is absent, the hosted service will fail at resolve time. Add the same pre-registration check pattern as the other extensions.
+
+All three fixes are additive or shim-compatible — no behavioral changes to registered services.
+
+#### Why this is needed
+
+DI ergonomics failures are a Day-1 microservice pain point. When a team calls `AddRedisChannelService()` without the multiplexer, they get an `InvalidOperationException: Unable to resolve service for type IConnectionMultiplexer while attempting to activate RedisChannelService` — typically only seen at the first request in production. Clear startup guards (`ValidateOnStart`-equivalent) surface these configuration errors at application startup, where they are far cheaper to diagnose and fix.
+
+#### Acceptance criteria
+- [ ] `AddRedisDistributedLocking(this ICachingBuilder builder, ...)` extension exists on `ICachingBuilder`; the old `IServiceCollection` overload is `[Obsolete]` and delegates to the new one
+- [ ] `AddRedisChannelService` checks for `IConnectionMultiplexer` at registration time; throws `InvalidOperationException` with a clear message if absent
+- [ ] `AddCacheInvalidationReceiver` checks for `IRedisChannelService` and `ICacheService` at registration time; throws `InvalidOperationException` with a clear message if either is absent
+- [ ] Unit tests exist covering each guard path — verify the correct exception message is thrown
+- [ ] All 91 FusionCache + 74 Redis tests pass — zero regressions
+
+---
+### P-019 — Caching: Wire L1SizeLimit into FusionCache Memory Cache + Verify L2 KeyPrefix Behavior
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-006
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+Two connected dead-configuration and correctness issues:
+
+**Fix 1 — Wire `CachingOptions.L1SizeLimit` into FusionCache's in-process memory cache.**
+`CachingOptions` defines `L1SizeLimit = 10_000` but `AddSharedKernelCaching` never reads it. FusionCache supports a `MemoryCacheOptions` configuration with `SizeLimit`. The DI registration must pass `options.L1SizeLimit` to the `MemoryCacheOptions` so the L1 cache is correctly bounded. Without this, the option is dead configuration — services set it thinking it limits their L1 cache footprint, but it has no effect.
+
+The correct wiring is through FusionCache's `WithOptions(o => o.SizeLimit = ...)` on the `IFusionCacheBuilder` returned by `AddFusionCache()`. The `MemoryCache` backing FusionCache must have `SizeLimit` set. Because the entry size is not tracked by default, entries must be given a size of 1 (or the entry options must set `Size = 1`) — document this behavior and the implication that `L1SizeLimit` is a count, not a byte limit.
+
+**Fix 2 — Verify and document L2 key prefix behavior.**
+`AddRedisL2` accepts a `KeyPrefix` in `RedisL2Options` and passes it as `InstanceName` to `AddStackExchangeRedisCache`. FusionCache uses `IDistributedCache` as the L2 backing store. The `StackExchange.Redis` `IDistributedCache` implementation prepends `InstanceName` to every key. However, FusionCache may also apply its own key transformation. Write an integration test that sets `KeyPrefix = "myservice"`, writes a value through `ICacheService`, and directly inspects the raw Redis key to confirm the prefix is actually applied. If the prefix is not applied or is double-applied, fix the wiring. Add explicit documentation of the effective L2 key format.
+
+#### Why this is needed
+
+`L1SizeLimit` is a visible option on `CachingOptions`. Services that set it to tune their memory footprint will see no effect — a silent configuration lie. In a K8s environment where pod memory limits are strict, unbounded L1 caches can cause OOMKilled events. Fixing the wiring makes the option actually work. The `KeyPrefix` issue is a correctness risk: if the prefix is not applied, two different services sharing a Redis instance can collide on L2 keys (e.g., both caching `default:user:42`).
+
+#### Acceptance criteria
+- [ ] `AddSharedKernelCaching` passes `CachingOptions.L1SizeLimit` to FusionCache's memory cache configuration
+- [ ] Unit test verifies that setting `L1SizeLimit = 100` and inserting 101 unique entries causes the oldest or least-recently-used entry to be evicted
+- [ ] Integration test writes a key through `ICacheService` with `KeyPrefix = "myservice"` set and reads the raw Redis key via `IConnectionMultiplexer.GetDatabase().StringGetAsync(...)` to confirm the prefix is applied
+- [ ] Documentation in `AddRedisL2` XML doc explicitly states the effective L2 key format including the prefix
+- [ ] All existing 91 FusionCache + 74 Redis tests pass
+
+---
+### P-020 — Caching: Upgrade GetOrSetAsync Factory Delegate to ValueTask
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-006
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+`ICacheService.GetOrSetAsync<T>` currently accepts a factory delegate typed as `Func<CancellationToken, Task<T>>`. In .NET 10, the idiomatic async primitive is `ValueTask<T>`. Forcing a `Task<T>` return from factory callers whose operations return `ValueTask<T>` requires an unnecessary `.AsTask()` call (which allocates a wrapper `Task`) or an `await` (which allocates a state machine). For a cache factory that executes on every cache miss — a hot path — this allocation is real and recurring.
+
+**Change:** Update `ICacheService.GetOrSetAsync<T>` factory parameter to `Func<CancellationToken, ValueTask<T>>`. Update `FusionCacheService.GetOrSetAsync` to adapt the `ValueTask<T>` factory into the `Task<T>` form expected by FusionCache's underlying API (FusionCache's API accepts `Task<T>` factories; the adapter is `async token => await factory(token)` — one state machine allocation per miss, not per call).
+
+**Additionally:** Add an overload `GetOrSetAsync<T>(string key, Func<CancellationToken, ValueTask<T?>> factory, CachePolicy policy, CancellationToken ct)` that returns `T?` (nullable) for callers that need to cache a "not found" null result. The current `GetOrSetAsync<T>` returning `T` (non-nullable) makes it impossible to cache an absent result. The nullable overload uses `MaybeValue<T>` support in FusionCache to cache null correctly.
+
+This is a **breaking change** to the `ICacheService` interface. It must be paired with updated XML documentation explaining the migration. Existing callers using `Task<T>` factories must wrap with `async ct => await existingTaskFactory(ct)` — document this in the XML doc.
+
+#### Why this is needed
+
+`ICacheService` is the most frequently used interface in the entire caching system. Every cache miss path invokes the factory delegate. The `Task<T>` factory forces unnecessary allocations for the majority of callers in modern .NET whose data-access layers return `ValueTask<T>`. The `T?` nullable overload fills a real behavioral gap: services that cache negative results (e.g., "product X does not exist") currently have no mechanism to cache this fact and will stampede on every request for a missing key. Since this is a breaking change, it is far cheaper to make at v1.0.0 before any services onboard than at v2.0.0 with hundreds of consumers.
+
+#### Acceptance criteria
+- [ ] `ICacheService.GetOrSetAsync<T>` factory parameter changed from `Func<CancellationToken, Task<T>>` to `Func<CancellationToken, ValueTask<T>>`
+- [ ] `FusionCacheService.GetOrSetAsync<T>` adapts the `ValueTask<T>` factory to FusionCache's `Task<T>` API correctly
+- [ ] A new `GetOrSetAsync<T>` overload accepting `Func<CancellationToken, ValueTask<T?>>` and returning `ValueTask<T?>` is added to `ICacheService` and implemented in `FusionCacheService`
+- [ ] XML documentation on both methods explains the difference and the nullable overload's use case (caching negative results / absent keys)
+- [ ] All existing tests updated to use `ValueTask<T>` factory delegates
+- [ ] New tests: nullable factory returning null caches the null result (factory called once on second request, not twice)
+- [ ] All 91 FusionCache + 74 Redis tests pass after migration
+
+---
 
 ## Changelog
 
@@ -849,3 +1015,10 @@ Without a `CachingBehavior`, every query handler in every microservice that want
 - [2026-05-18] Phase(s) P-014 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
 - [2026-05-20] Caching → Phase 15 (AOT Hardening + ITypedHashStore) (●) — promoted from SK.02.AotHardening (state-map-phase)
 - [2026-05-20] Caching → Phase 16 (Brotli L2 Compression) (●) — promoted from SK.02.BrotliCompression (state-map-phase)
+- [2026-05-20] P-016–P-020 written for WO-006 — 02.Caching production-readiness review: layering violation fix (ServiceName to Abstractions), AddRedisL2 AOT serializer override bug, DI ergonomics hardening (builder pattern + startup guards), L1SizeLimit wiring + L2 key prefix verification, GetOrSetAsync ValueTask upgrade — arch-lead
+- [2026-05-20] Phase(s) P-016, P-017, P-018, P-019, P-020 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
+- [2026-05-20] Caching → Phase 17 (Redis→FusionCache Layering Fix) (●) — promoted from SK.02.LayeringFix (state-map-phase)
+- [2026-05-20] Caching → Phase 18 (AddRedisL2 Silent Serializer Override Fix) (●) — promoted from SK.02.AotSerializerFix (state-map-phase)
+- [2026-05-20] Caching → Phase 19 (DI Ergonomics Hardening) (●) — promoted from SK.02.DiErgonomics (state-map-phase)
+- [2026-05-20] Caching → Phase 20 (Wire L1SizeLimit + Verify L2 KeyPrefix) (●) — promoted from SK.02.L1SizeLimit (state-map-phase)
+- [2026-05-20] Caching → Phase 21 (GetOrSetAsync ValueTask Factory) (●) — promoted from SK.02.ValueTaskFactory (state-map-phase)

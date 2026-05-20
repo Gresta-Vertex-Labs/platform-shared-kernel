@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Caching.Abstractions;
+using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.Extensions;
 
@@ -25,9 +26,19 @@ public static class RedisChannelServiceExtensions
     /// </remarks>
     /// <param name="builder">The caching builder returned by <c>AddSharedKernelCaching</c>.</param>
     /// <returns>The same <paramref name="builder"/> to allow further chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="IConnectionMultiplexer"/> has not been registered.
+    /// Call <c>AddRedisL2</c> or <c>AddRedisDistributedLocking</c> first.
+    /// </exception>
     public static ICachingBuilder AddRedisChannelService(this ICachingBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        if (!builder.Services.Any(sd => sd.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            throw new InvalidOperationException(
+                "AddRedisChannelService requires AddRedisL2 or AddRedisDistributedLocking to be called first to register IConnectionMultiplexer.");
+        }
 
         builder.Services.TryAddSingleton<IRedisChannelService, RedisChannelService>();
 

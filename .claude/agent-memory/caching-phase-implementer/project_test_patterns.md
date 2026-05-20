@@ -37,3 +37,20 @@ metadata:
 ## Pub/Sub timing in tests
 - After `SubscribeAsync`, add `await Task.Delay(100)` before publishing to allow subscription to establish
 - After `UnsubscribeAsync`, add `await Task.Delay(200)` for propagation, then wait `await Task.Delay(300)` before asserting no more messages
+
+## L2 key format — verified in Phase 20
+
+- `Microsoft.Extensions.Caching.StackExchangeRedis` v10+ stores keys as: `{InstanceName}v2:{user-key}`
+- The `v2:` schema-version separator is injected by the library AFTER `InstanceName` (= `KeyPrefix`)
+- When `KeyPrefix` is empty: effective key is `v2:{user-key}`
+- Use `db.KeyExistsAsync(key)` NOT `db.StringGetAsync(key)` — entries are stored as Redis Hash type, not strings
+- Diagnostic pattern: create a test that `Assert.True(false, listOfAllKeys.ToString())` to discover actual key names
+- After `SetAsync`, add `await Task.Delay(500)` to allow FusionCache async L2 write to propagate
+
+## L1SizeLimit eviction tests — Phase 20 pattern
+
+- Use `CachePolicy.For(TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10))` — NOT NeverExpire (NeverExpire bypasses eviction)
+- After bulk inserts, add `await Task.Delay(100)` to allow lazy eviction to trigger
+- MemoryCache eviction is lazy — count checks must allow for `liveCount <= limit + 1` tolerance
+- Wire: `.WithMemoryCache(_ => new MemoryCache(new MemoryCacheOptions { SizeLimit = sizeLimit }))` + `.WithDefaultEntryOptions(o => o.Size = 1)`
+- Also set `Size = 1` in `BuildEntryOptions` — per-call options override defaults

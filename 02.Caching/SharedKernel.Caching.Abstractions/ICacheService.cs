@@ -45,18 +45,47 @@ public interface ICacheService
     /// <paramref name="factory"/>, caches the result using <paramref name="policy"/>, and returns it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This is the preferred method for all cache reads. FusionCache ensures the factory is
     /// called exactly once even under concurrent requests for the same key (stampede protection).
+    /// </para>
+    /// <para>
+    /// <b>Negative-result caching:</b> To cache the <em>absence</em> of an entity (preventing
+    /// repeated expensive lookups for missing records), call this method with <c>T = string?</c>
+    /// (or any nullable type). When the factory returns <see langword="null"/>, that null result
+    /// is stored as a genuine cache entry — subsequent calls return <see langword="null"/> directly
+    /// without invoking the factory again. Do not use <see cref="CachePolicy.NeverExpire"/> for
+    /// this pattern; use a bounded TTL so stale absences eventually expire.
+    /// Example: <c>await cache.GetOrSetAsync&lt;MyEntity?&gt;(key, async ct =&gt; await db.FindAsync(id, ct), policy)</c>
+    /// </para>
+    /// <para>
+    /// <b>Migration note (breaking change):</b> The factory delegate was changed from
+    /// <c>Func&lt;CancellationToken, Task&lt;T&gt;&gt;</c> to <c>Func&lt;CancellationToken, ValueTask&lt;T&gt;&gt;</c>
+    /// to align with .NET 10 async conventions and eliminate per-call <c>.AsTask()</c> allocations.
+    /// If you have an existing <c>Task&lt;T&gt;</c> factory, wrap it:
+    /// <c>async ct =&gt; await existingFactory(ct)</c>.
+    /// </para>
     /// </remarks>
-    /// <typeparam name="T">The type of the cached value.</typeparam>
+    /// <typeparam name="T">
+    /// The type of the cached value. Use a nullable type (<c>T?</c>) to enable negative-result
+    /// caching (caching the absence of an entity as a genuine cache hit).
+    /// </typeparam>
     /// <param name="key">The non-empty cache key.</param>
-    /// <param name="factory">Async delegate invoked on cache miss. Must not be <see langword="null"/>.</param>
+    /// <param name="factory">
+    /// Async delegate invoked on cache miss. Must not be <see langword="null"/>.
+    /// The delegate receives the ambient <see cref="CancellationToken"/> and returns a
+    /// <see cref="ValueTask{T}"/>. May return <see langword="null"/> when <typeparamref name="T"/>
+    /// is nullable — the null result will be cached as a genuine entry.
+    /// </param>
     /// <param name="policy">Cache policy controlling TTL, tags, and refresh behaviour.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The cached or freshly-computed value.</returns>
+    /// <returns>
+    /// The cached or freshly-computed value; <see langword="null"/> when <typeparamref name="T"/>
+    /// is nullable and the factory returned <see langword="null"/>.
+    /// </returns>
     ValueTask<T> GetOrSetAsync<T>(
         string key,
-        Func<CancellationToken, Task<T>> factory,
+        Func<CancellationToken, ValueTask<T>> factory,
         CachePolicy policy,
         CancellationToken ct = default);
 

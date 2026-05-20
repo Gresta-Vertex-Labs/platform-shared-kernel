@@ -35,16 +35,12 @@
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
     <!-- FusionCache core — required for AddFusionCache() and FusionCacheBuilder extensions -->
     <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
-    <!-- FusionCache STJ serializer — required for WithSystemTextJsonSerializer() on the L2 backplane -->
-    <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.6.0" />
     <!-- FusionCache Redis L2 distributed backplane -->
     <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.6.0" />
     <!-- RedLock.net distributed locking over Redis -->
     <PackageReference Include="RedLock.net" Version="2.3.2" />
-    <!-- Caching abstractions — ICachingBuilder, ICacheService, IDistributedLockService, IRedisChannelService, IRedisHashService -->
+    <!-- Caching abstractions — ICachingBuilder, ICacheService, IDistributedLockService, IRedisChannelService, IRedisHashService, CachingCoreOptions -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
-    <!-- SharedKernel.Caching.FusionCache — provides CachingOptions used by invalidation bus and receiver -->
-    <ProjectReference Include="..\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
   </ItemGroup>
 
   <ItemGroup>

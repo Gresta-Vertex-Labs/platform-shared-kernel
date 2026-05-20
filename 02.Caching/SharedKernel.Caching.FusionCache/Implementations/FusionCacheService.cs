@@ -50,7 +50,7 @@ internal sealed partial class FusionCacheService : ICacheService
     /// <inheritdoc />
     public async ValueTask<T> GetOrSetAsync<T>(
         string key,
-        Func<CancellationToken, Task<T>> factory,
+        Func<CancellationToken, ValueTask<T>> factory,
         CachePolicy policy,
         CancellationToken ct = default)
     {
@@ -61,6 +61,8 @@ internal sealed partial class FusionCacheService : ICacheService
         var entryOptions = BuildEntryOptions(policy);
         IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
 
+        // Adapt ValueTask<T> factory to FusionCache's Task<T> factory via async/await.
+        // The state machine allocation occurs only on actual cache misses — not on every call.
         var result = await _cache.GetOrSetAsync<T>(
             key,
             async token =>
@@ -75,6 +77,7 @@ internal sealed partial class FusionCacheService : ICacheService
 
         return result;
     }
+
 
     /// <inheritdoc />
     public async ValueTask RemoveAsync(string key, CancellationToken ct = default)
@@ -100,6 +103,9 @@ internal sealed partial class FusionCacheService : ICacheService
         var options = new FusionCacheEntryOptions(policy.L1Duration)
         {
             IsFailSafeEnabled = policy.FailSafeEnabled,
+            // Size = 1 so every entry counts as one unit against the MemoryCache SizeLimit
+            // set via CachingOptions.L1SizeLimit (entry count — not bytes).
+            Size = 1,
         };
 
         // L2 distributed cache duration — sets the distributed cache TTL

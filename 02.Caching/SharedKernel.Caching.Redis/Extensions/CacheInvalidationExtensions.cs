@@ -72,9 +72,25 @@ public static class CacheInvalidationExtensions
     /// </remarks>
     /// <param name="builder">The caching builder returned by <c>AddSharedKernelCaching</c>.</param>
     /// <returns>The same <paramref name="builder"/> to allow further chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="IRedisChannelService"/> or <see cref="ICacheService"/> has not been
+    /// registered. Call <c>AddRedisChannelService()</c> and <c>AddSharedKernelCaching()</c> first.
+    /// </exception>
     public static ICachingBuilder AddCacheInvalidationReceiver(this ICachingBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        if (!builder.Services.Any(sd => sd.ServiceType == typeof(IRedisChannelService)))
+        {
+            throw new InvalidOperationException(
+                "AddCacheInvalidationReceiver requires AddRedisChannelService to be called first.");
+        }
+
+        if (!builder.Services.Any(sd => sd.ServiceType == typeof(ICacheService)))
+        {
+            throw new InvalidOperationException(
+                "AddCacheInvalidationReceiver requires AddSharedKernelCaching to be called first to register ICacheService.");
+        }
 
         builder.Services.AddHostedService<CacheInvalidationReceiver>();
 

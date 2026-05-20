@@ -18,9 +18,22 @@ public sealed class CachingOptions
     public const string SectionName = "SharedKernelCaching";
 
     /// <summary>
-    /// Maximum number of items the L1 in-process memory cache may hold.
+    /// Maximum number of entries the L1 in-process memory cache may hold simultaneously.
     /// Defaults to <c>10 000</c>. Must be a positive integer.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is an <b>entry count</b> limit, not a byte limit. Each cache entry contributes
+    /// exactly 1 unit toward the limit regardless of payload size. When the limit is reached
+    /// the least-recently-used entries are evicted automatically by
+    /// <see cref="Microsoft.Extensions.Caching.Memory.MemoryCache"/>.
+    /// </para>
+    /// <para>
+    /// In Kubernetes deployments with strict memory limits, set this value explicitly to
+    /// bound per-pod L1 cache cardinality. A value of <c>10 000</c> (the default) is
+    /// appropriate for most services; reduce it for high-churn or memory-constrained pods.
+    /// </para>
+    /// </remarks>
     [Range(1, int.MaxValue, ErrorMessage = "L1SizeLimit must be at least 1.")]
     public int L1SizeLimit { get; set; } = 10_000;
 

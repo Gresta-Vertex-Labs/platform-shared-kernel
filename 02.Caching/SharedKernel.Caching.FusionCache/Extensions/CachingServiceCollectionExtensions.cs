@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -84,11 +85,17 @@ public static class CachingServiceCollectionExtensions
             services.AddFusionCacheSystemTextJsonSerializer();
         }
 
-        // Wire FusionCache to resolve its serializer from the DI container so that any
-        // post-registration decoration (e.g. AddBrotliCompression) is picked up automatically.
+        // Wire FusionCache with a dedicated MemoryCache whose SizeLimit is controlled by
+        // CachingOptions.L1SizeLimit (an entry COUNT limit — each entry contributes Size = 1).
+        // Providing the MemoryCache directly (not via WithRegisteredMemoryCache) ensures the
+        // SizeLimit is isolated to this FusionCache instance and not shared with other
+        // IMemoryCache consumers in the DI container.
+        var sizeLimit = tempOptions.L1SizeLimit;
         services
             .AddFusionCache()
             .TryWithRegisteredLogger()
+            .WithMemoryCache(_ => new MemoryCache(new MemoryCacheOptions { SizeLimit = sizeLimit }))
+            .WithDefaultEntryOptions(o => o.Size = 1)
             .WithRegisteredSerializer();
 
         // Register ICacheService as a singleton backed by FusionCacheService.
@@ -97,6 +104,11 @@ public static class CachingServiceCollectionExtensions
         // Register ICacheKeyProvider with the default platform-standard implementation.
         // Consumers may override by registering their own ICacheKeyProvider after this call.
         services.TryAddSingleton<ICacheKeyProvider, CacheKeyProvider>();
+
+        // Register CachingCoreOptions in sync with CachingOptions so that sibling provider
+        // packages (e.g. SharedKernel.Caching.Redis) can resolve IOptions<CachingCoreOptions>
+        // without taking a dependency on SharedKernel.Caching.FusionCache.
+        services.Configure<CachingCoreOptions>(o => o.ServiceName = tempOptions.ServiceName);
 
         return new CachingBuilder(services);
     }

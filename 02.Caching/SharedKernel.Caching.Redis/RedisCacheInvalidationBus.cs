@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.FusionCache.Extensions;
 
 namespace SharedKernel.Caching.Redis;
 
@@ -13,7 +12,7 @@ namespace SharedKernel.Caching.Redis;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Channel names are derived from <see cref="CachingOptions.ServiceName"/>:
+/// Channel names are derived from <see cref="CachingCoreOptions.ServiceName"/>:
 /// <list type="bullet">
 ///   <item><description>Targeted: <c>sharedkernel:cache:invalidation:{service-name}</c></description></item>
 ///   <item><description>Broadcast: <c>sharedkernel:cache:invalidation:broadcast</c></description></item>
@@ -41,10 +40,10 @@ internal sealed class RedisCacheInvalidationBus : ICacheInvalidationBus
     /// Initialises a new <see cref="RedisCacheInvalidationBus"/>.
     /// </summary>
     /// <param name="channelService">The Redis Pub/Sub channel service for all I/O.</param>
-    /// <param name="options">Caching options supplying the service name for channel naming.</param>
+    /// <param name="options">Core caching options supplying the service name for channel naming.</param>
     public RedisCacheInvalidationBus(
         IRedisChannelService channelService,
-        IOptions<CachingOptions> options)
+        IOptions<CachingCoreOptions> options)
     {
         ArgumentNullException.ThrowIfNull(channelService);
         ArgumentNullException.ThrowIfNull(options);

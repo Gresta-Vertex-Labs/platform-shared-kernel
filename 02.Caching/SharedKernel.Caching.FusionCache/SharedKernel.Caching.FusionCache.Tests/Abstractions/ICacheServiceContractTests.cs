@@ -46,7 +46,9 @@ public sealed class ICacheServiceContractTests
     [Fact]
     public void ICacheService_HasGetOrSetAsyncMethod()
     {
-        // GetOrSetAsync<T>(string key, Func<CancellationToken,Task<T>> factory, CachePolicy) → ValueTask<T>
+        // GetOrSetAsync<T>(string key, Func<CancellationToken,ValueTask<T>> factory, CachePolicy) → ValueTask<T>
+        // A single generic method handles both non-nullable and nullable use cases.
+        // Callers use T = MyType? for negative-result caching (caching null as a genuine cache hit).
         var method = InterfaceType.GetMethod("GetOrSetAsync");
         Assert.NotNull(method);
         Assert.True(method!.IsGenericMethodDefinition);
@@ -87,6 +89,8 @@ public sealed class ICacheServiceContractTests
     [Fact]
     public void ICacheService_ExposesExactlyFiveMethods()
     {
+        // GetAsync, SetAsync, GetOrSetAsync (single generic — handles both nullable and non-nullable),
+        // RemoveAsync, RemoveByTagAsync
         var methods = InterfaceType.GetMethods();
         Assert.Equal(5, methods.Length);
     }
