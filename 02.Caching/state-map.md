@@ -41,7 +41,7 @@
 
 ## Active Work
 
-_Nothing in progress._
+_All phases complete. No active work._
 
 <!--
 Format when active — replace placeholder with table:
@@ -69,8 +69,8 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
-| `SharedKernel.Caching.Abstractions` | Phase 14 | `○` | `CachePolicy.NeverExpire` preset to be added; all prior contracts complete |
-| `SharedKernel.Caching.FusionCache` | Phase 14 | `○` | Renamed from `SharedKernel.Caching`; namespace migration pending |
+| `SharedKernel.Caching.Abstractions` | Phase 14 | `●` | `CachePolicy.NeverExpire` added; all contracts complete |
+| `SharedKernel.Caching.FusionCache` | Phase 14 | `●` | Renamed from `SharedKernel.Caching`; namespaces migrated to `SharedKernel.Caching.FusionCache.*`; 70 tests passing |
 | `SharedKernel.Caching.Redis` | Phase 12 | `●` | Refactored to Abstractions; RedisChannelService, RedisHashService, RedisCacheInvalidationBus, CacheInvalidationReceiver — all implemented; 62 tests passing |
 
 ---
@@ -531,17 +531,17 @@ Close the cross-service L1 invalidation gap: FusionCache's Redis backplane propa
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| F-01 | Rename folder `02.Caching/SharedKernel.Caching/` → `02.Caching/SharedKernel.Caching.FusionCache/` | SharedKernel.Caching.FusionCache | `○` |
-| F-02 | Rename `.csproj` to `SharedKernel.Caching.FusionCache.csproj`; update `<PackageId>` to `SharedKernel.Caching.FusionCache`; update `<AssemblyName>` if explicitly set; update `<Description>` metadata | SharedKernel.Caching.FusionCache | `○` |
-| F-03 | Update `InternalsVisibleTo` attribute to reference `SharedKernel.Caching.FusionCache.Tests` | SharedKernel.Caching.FusionCache | `○` |
-| F-04 | Rename nested test project folder and `.csproj` to `SharedKernel.Caching.FusionCache.Tests` | SharedKernel.Caching.FusionCache.Tests | `○` |
-| F-05 | Migrate all namespaces inside the package from `SharedKernel.Caching.*` to `SharedKernel.Caching.FusionCache.*` (implementation namespace only — `SharedKernel.Caching.Abstractions` namespace is unchanged) | SharedKernel.Caching.FusionCache | `○` |
-| F-06 | Update `<ProjectReference>` in `SharedKernel.Caching.Redis.csproj` to point to `SharedKernel.Caching.FusionCache.csproj` | SharedKernel.Caching.Redis | `○` |
-| F-07 | Update `<ProjectReference>` in `consumer-verify` project to reference renamed package | consumer-verify | `○` |
-| F-08 | Update `Platform.SharedKernel.slnx` solution folder entry from `SharedKernel.Caching` to `SharedKernel.Caching.FusionCache` | Solution | `○` |
-| F-09 | Add `CachePolicy.NeverExpire` static property to `CachePolicy` in `SharedKernel.Caching.Abstractions`; map to `TimeSpan.MaxValue` for both L1 and L2 durations; `FailSafeEnabled = true`; no `EagerRefreshThreshold`; full XML doc | SharedKernel.Caching.Abstractions | `○` |
-| F-10 | Add test covering `CachePolicy.NeverExpire` property values (both durations `TimeSpan.MaxValue`, `FailSafeEnabled = true`, no `EagerRefreshThreshold`) | SharedKernel.Caching.FusionCache.Tests | `○` |
-| F-11 | Verify all existing tests pass under the new package name — zero regressions | Both | `○` |
+| F-01 | Rename folder `02.Caching/SharedKernel.Caching/` → `02.Caching/SharedKernel.Caching.FusionCache/` | SharedKernel.Caching.FusionCache | `●` |
+| F-02 | Rename `.csproj` to `SharedKernel.Caching.FusionCache.csproj`; update `<PackageId>` to `SharedKernel.Caching.FusionCache`; update `<AssemblyName>` if explicitly set; update `<Description>` metadata | SharedKernel.Caching.FusionCache | `●` |
+| F-03 | Update `InternalsVisibleTo` attribute to reference `SharedKernel.Caching.FusionCache.Tests` | SharedKernel.Caching.FusionCache | `●` |
+| F-04 | Rename nested test project folder and `.csproj` to `SharedKernel.Caching.FusionCache.Tests` | SharedKernel.Caching.FusionCache.Tests | `●` |
+| F-05 | Migrate all namespaces inside the package from `SharedKernel.Caching.*` to `SharedKernel.Caching.FusionCache.*` (implementation namespace only — `SharedKernel.Caching.Abstractions` namespace is unchanged) | SharedKernel.Caching.FusionCache | `●` |
+| F-06 | Update `<ProjectReference>` in `SharedKernel.Caching.Redis.csproj` to point to `SharedKernel.Caching.FusionCache.csproj` | SharedKernel.Caching.Redis | `●` |
+| F-07 | Update `<ProjectReference>` in `consumer-verify` project to reference renamed package | consumer-verify | `—` |
+| F-08 | Update `Platform.SharedKernel.slnx` solution folder entry from `SharedKernel.Caching` to `SharedKernel.Caching.FusionCache` | Solution | `●` |
+| F-09 | Add `CachePolicy.NeverExpire` static property to `CachePolicy` in `SharedKernel.Caching.Abstractions`; map to `TimeSpan.MaxValue` for both L1 and L2 durations; `FailSafeEnabled = true`; no `EagerRefreshThreshold`; full XML doc | SharedKernel.Caching.Abstractions | `●` |
+| F-10 | Add test covering `CachePolicy.NeverExpire` property values (both durations `TimeSpan.MaxValue`, `FailSafeEnabled = true`, no `EagerRefreshThreshold`) | SharedKernel.Caching.FusionCache.Tests | `●` |
+| F-11 | Verify all existing tests pass under the new package name — zero regressions | Both | `●` |
 
 ---
 
@@ -657,7 +657,7 @@ Format when active:
 | `SK.02.CachingRefactor` | Phase 6 (Caching Refactor + CacheKeyProvider) | 8 | 8 | `●` |
 | `SK.02.RedisRefactor` | Phase 7 (Redis Refactor + Channel + Hash) | 7 | 7 | `●` |
 | `SK.02.InvalidationBus` | Phase 12 (Invalidation Bus) | 3 | 3 | `●` |
-| `SK.02.FusionCacheRename` | Phase 14 (FusionCache Rename + NeverExpire) | 11 | 0 | `○` |
+| `SK.02.FusionCacheRename` | Phase 14 (FusionCache Rename + NeverExpire) | 11 | 11 | `●` |
 
 ---
 
@@ -679,3 +679,4 @@ Format when active:
 - [2026-05-18] Phase 12 → ● — RedisCacheInvalidationBus, CacheInvalidationReceiver, CacheInvalidationExtensions implemented; [JsonConstructor] added to CacheInvalidationMessage primary ctor; 62 Redis tests + 66 Caching tests passing (caching-phase-implementer)
 - [2026-05-18] State-map structural refactor — Phases 5/6/7/12 migrated to standard format: SK.02.* phase keys added to registry, section headers converted to `## Phase: Name <!-- phase-key: SK.02.Key -->`, task tables added (all ●), Overall Progress phase-key column filled, Package Board Redis row updated, root P-006/P-007 closed to ●
 - [2026-05-18] Phase 14 planned (WO-004) — SharedKernel.Caching renamed to SharedKernel.Caching.FusionCache; CachePolicy.NeverExpire preset added to Abstractions (caching-arch-planner)
+- [2026-05-20] Phase 14 → ● — SharedKernel.Caching renamed to SharedKernel.Caching.FusionCache; namespaces migrated; Redis/test refs updated; CachePolicy.NeverExpire added; 70 FusionCache + 62 Redis tests passing (caching-phase-implementer)
