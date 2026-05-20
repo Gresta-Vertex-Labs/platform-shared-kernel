@@ -1,7 +1,7 @@
-using SharedKernel.Caching.Policies;
+using SharedKernel.Caching.Abstractions;
 using Xunit;
 
-namespace SharedKernel.Caching.Tests.Policies;
+namespace SharedKernel.Caching.FusionCache.Tests.Policies;
 
 /// <summary>
 /// Tests that verify the CachePolicy record shape, default values, factory methods,
@@ -216,6 +216,34 @@ public sealed class CachePolicyTests
         Assert.Equal(TimeSpan.FromMinutes(5), policy.L2Duration);
         Assert.Equal(["tenant:99"], policy.Tags);
         Assert.Equal(0.75, policy.EagerRefreshThreshold);
+    }
+
+    // -------------------------------------------------------------------------
+    // NeverExpire preset
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void NeverExpire_HasMaxValueL1Duration()
+    {
+        Assert.Equal(TimeSpan.MaxValue, CachePolicy.NeverExpire.L1Duration);
+    }
+
+    [Fact]
+    public void NeverExpire_HasMaxValueL2Duration()
+    {
+        Assert.Equal(TimeSpan.MaxValue, CachePolicy.NeverExpire.L2Duration);
+    }
+
+    [Fact]
+    public void NeverExpire_HasFailSafeEnabled()
+    {
+        Assert.True(CachePolicy.NeverExpire.FailSafeEnabled);
+    }
+
+    [Fact]
+    public void NeverExpire_HasNullEagerRefreshThreshold()
+    {
+        Assert.Null(CachePolicy.NeverExpire.EagerRefreshThreshold);
     }
 
     // -------------------------------------------------------------------------

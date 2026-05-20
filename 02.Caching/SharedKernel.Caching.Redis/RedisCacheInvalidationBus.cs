@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Extensions;
+using SharedKernel.Caching.FusionCache.Extensions;
 
 namespace SharedKernel.Caching.Redis;
 

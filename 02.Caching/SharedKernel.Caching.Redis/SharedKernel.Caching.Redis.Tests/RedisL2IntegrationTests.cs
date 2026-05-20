@@ -1,6 +1,6 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Extensions;
+using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using Testcontainers.Redis;
 using Xunit;
@@ -126,3 +126,4 @@ public sealed class RedisL2IntegrationTests : IAsyncLifetime
         Assert.Equal(1, factoryCalls);
     }
 }
+

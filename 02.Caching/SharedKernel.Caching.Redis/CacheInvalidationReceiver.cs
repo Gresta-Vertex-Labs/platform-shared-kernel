@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Extensions;
+using SharedKernel.Caching.FusionCache.Extensions;
 
 namespace SharedKernel.Caching.Redis;
 

@@ -1,6 +1,6 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Extensions;
+using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using Xunit;
 
@@ -59,7 +59,7 @@ public sealed class L1FallbackTests
     }
 
     /// <summary>
-    /// DI registration for distributed locking is independent of L2 cache —
+    /// DI registration for distributed locking is independent of L2 cache â€”
     /// <c>AddRedisDistributedLocking</c> can be called without <c>AddRedisL2</c>.
     /// </summary>
     [Fact]
@@ -67,7 +67,7 @@ public sealed class L1FallbackTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        // L1 only — no AddRedisL2
+        // L1 only â€” no AddRedisL2
         services.AddSharedKernelCaching();
         // Distributed locking registered separately
         services.AddRedisDistributedLocking("localhost:6379");
@@ -96,3 +96,4 @@ public sealed class L1FallbackTests
         Assert.NotNull(cache);
     }
 }
+

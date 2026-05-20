@@ -1,9 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Extensions;
+using SharedKernel.Caching.FusionCache.Extensions;
 using Xunit;
 
-namespace SharedKernel.Caching.Tests.DI;
+namespace SharedKernel.Caching.FusionCache.Tests.DI;
 
 /// <summary>
 /// Verifies that <see cref="CachingServiceCollectionExtensions.AddSharedKernelCaching"/>

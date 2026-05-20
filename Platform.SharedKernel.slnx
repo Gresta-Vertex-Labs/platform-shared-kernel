@@ -23,8 +23,8 @@
     <Project Path="02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/SharedKernel.Caching.Redis.Tests.csproj" />
-    <Project Path="02.Caching/SharedKernel.Caching/SharedKernel.Caching.csproj" />
-    <Project Path="02.Caching/SharedKernel.Caching/SharedKernel.Caching.Tests/SharedKernel.Caching.Tests.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.Tests/SharedKernel.Caching.FusionCache.Tests.csproj" />
   </Folder>
   <Folder Name="/03.Domain/">
     <Project Path="03.Domain/SharedKernel.Domain/SharedKernel.Domain.csproj" />

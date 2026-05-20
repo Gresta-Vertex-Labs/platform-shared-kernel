@@ -1,11 +1,11 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.Core;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Extensions;
+using SharedKernel.Caching.FusionCache.Extensions;
 using SharedKernel.Caching.Redis.Extensions;
 using Testcontainers.Redis;
 using Xunit;
@@ -70,7 +70,7 @@ public sealed class CacheInvalidationReceiverUnitTests
             provider.GetRequiredService<ILogger<CacheInvalidationReceiver>>());
 
         // Trigger ExecuteAsync to register subscriptions.
-        // Do NOT use 'using' — the CTS must remain alive so the captured stoppingToken
+        // Do NOT use 'using' â€” the CTS must remain alive so the captured stoppingToken
         // in the handler closures stays valid throughout the test.
         var cts = new CancellationTokenSource();
         _ = receiver.StartAsync(cts.Token);
@@ -166,7 +166,7 @@ public sealed class CacheInvalidationReceiverUnitTests
         var (receiver, cacheService, targetedHandler, _) = BuildReceiver();
         Assert.NotNull(targetedHandler);
 
-        // Bad JSON — should be caught and swallowed.
+        // Bad JSON â€” should be caught and swallowed.
         await targetedHandler("this is not json");
 
         // No cache operations should occur.
@@ -289,7 +289,7 @@ public sealed class CacheInvalidationDiIntegrationTests : IAsyncLifetime
         services.AddLogging();
         services.AddSharedKernelCaching(opts => opts.ServiceName = "svc");
 
-        // Do NOT call AddRedisChannelService — guard should fire.
+        // Do NOT call AddRedisChannelService â€” guard should fire.
         var builder = new TestCachingBuilder(services);
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
@@ -356,7 +356,7 @@ public sealed class CacheInvalidationDiIntegrationTests : IAsyncLifetime
         await receiver.StartAsync(CancellationToken.None);
         await Task.Delay(200);
 
-        // No messages published — receiver should start and stop cleanly.
+        // No messages published â€” receiver should start and stop cleanly.
         await receiver.StopAsync(CancellationToken.None);
     }
 }
@@ -458,3 +458,4 @@ internal sealed class CapturingLogger : ILogger
         _messages.Add(formatter(state, exception));
     }
 }
+

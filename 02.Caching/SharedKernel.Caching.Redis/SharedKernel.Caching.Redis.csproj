@@ -43,8 +43,8 @@
     <PackageReference Include="RedLock.net" Version="2.3.2" />
     <!-- Caching abstractions — ICachingBuilder, ICacheService, IDistributedLockService, IRedisChannelService, IRedisHashService -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
-    <!-- SharedKernel.Caching — provides CachingOptions used by invalidation bus and receiver -->
-    <ProjectReference Include="..\SharedKernel.Caching\SharedKernel.Caching.csproj" />
+    <!-- SharedKernel.Caching.FusionCache — provides CachingOptions used by invalidation bus and receiver -->
+    <ProjectReference Include="..\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
   </ItemGroup>
 
   <ItemGroup>

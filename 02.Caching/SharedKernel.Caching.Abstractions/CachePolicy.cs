@@ -72,6 +72,39 @@ public sealed record CachePolicy
     /// </summary>
     public static readonly CachePolicy Default = new();
 
+    /// <summary>
+    /// A cache policy for truly static data that should never expire via TTL.
+    /// Both L1 and L2 durations are set to <see cref="TimeSpan.MaxValue"/> and fail-safe is enabled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Intended use case: truly static data such as reference tables, feature flag snapshots,
+    /// and lookup codes that never change during the lifetime of a deployment.
+    /// </para>
+    /// <para>
+    /// <strong>Explicit invalidation required.</strong> Because TTL-based expiry will not occur,
+    /// cached entries must be explicitly invalidated via
+    /// <c>ICacheService.RemoveAsync</c> or <c>ICacheInvalidationBus</c> whenever the underlying
+    /// data changes.
+    /// </para>
+    /// <para>
+    /// <strong>Warning:</strong> Do not use this preset for any data that can change without an
+    /// explicit invalidation signal. Using <see cref="NeverExpire"/> for mutable data will result
+    /// in stale entries being served indefinitely.
+    /// </para>
+    /// <para>
+    /// Eager refresh is intentionally disabled — there is nothing to refresh when no expiry
+    /// is configured.
+    /// </para>
+    /// </remarks>
+    public static CachePolicy NeverExpire { get; } = new()
+    {
+        L1Duration = TimeSpan.MaxValue,
+        L2Duration = TimeSpan.MaxValue,
+        FailSafeEnabled = true,
+        EagerRefreshThreshold = null,
+    };
+
     // -------------------------------------------------------------------------
     // Factory methods
     // -------------------------------------------------------------------------

@@ -1,11 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
-using SharedKernel.Caching.Extensions;
-using SharedKernel.Caching.Implementations;
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.FusionCache.Implementations;
 using Xunit;
 
-namespace SharedKernel.Caching.Tests;
+namespace SharedKernel.Caching.FusionCache.Tests;
 
 /// <summary>
 /// Tests for <see cref="CacheKeyProvider"/> — key format, edge cases,
