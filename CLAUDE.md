@@ -107,7 +107,8 @@ When a capability has more than one provider (Search, Persistence, Caching, Stor
 | A MediatR command/query base class or pipeline behavior | `05.Application` or `05.Application.Behaviors` |
 | A new persistence abstraction (interface) | `06.Persistence/SharedKernel.Persistence.Abstractions` |
 | A new EF Core interceptor or convention | `06.Persistence/SharedKernel.Persistence.EfCore` |
-| A new cache interface or policy | `02.Caching/SharedKernel.Caching` |
+| A new cache interface or policy | `02.Caching/SharedKernel.Caching.Abstractions` |
+| A FusionCache L1 provider implementation or option | `02.Caching/SharedKernel.Caching.FusionCache` |
 | A Redis-specific cache implementation | `02.Caching/SharedKernel.Caching.Redis` |
 | A new message bus abstraction | `07.Messaging/SharedKernel.Messaging.Abstractions` |
 | A MassTransit consumer base or configuration | `07.Messaging/SharedKernel.Messaging.MassTransit` |
@@ -132,14 +133,13 @@ These are the packages microservices should depend on — never on the concrete 
 
 | Abstraction package | Implemented by |
 |---------------------|---------------|
+| `SharedKernel.Caching.Abstractions` | `.FusionCache`, `.Redis` |
 | `SharedKernel.Persistence.Abstractions` | `.EfCore`, `.PostgreSQL`, `.Dapper` |
 | `SharedKernel.Messaging.Abstractions` | `.MassTransit` |
 | `SharedKernel.Storage.Abstractions` | `.S3` |
 | `SharedKernel.Search.Abstractions` | `.Meilisearch`, `.ElasticSearch` |
 | `SharedKernel.AI.Abstractions` | `.VectorDb` |
 | `SharedKernel.Security.Abstractions` | `.Oidc` |
-
-`SharedKernel.Caching` itself acts as the abstraction layer (FusionCache interfaces); `SharedKernel.Caching.Redis` is the distributed L2 provider.
 
 ---
 
@@ -158,3 +158,4 @@ These are the packages microservices should depend on — never on the concrete 
 
 - [2026-05-13] Initial architecture brain written — folder map, layering rules, naming conventions, abstractions table (root)
 - [2026-05-21] AOT hard rule added — `<IsAotCompatible>true</IsAotCompatible>` applied to all 35 production csproj files; root AOT policy section added to CLAUDE.md
+- [2026-05-21] "What Goes Where" and Abstractions table updated: SharedKernel.Caching.Abstractions is now the canonical abstraction; SharedKernel.Caching.FusionCache row added (arch-lead, WO-007 analysis)

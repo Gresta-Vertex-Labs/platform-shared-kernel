@@ -10,7 +10,11 @@ Philosophy: **Fail-silent by default. Stampede-proof. AOT-compatible.**
 
 ## Current Phase
 
-**All phases through 21 complete (WO-006).** Phase 21 (ValueTaskFactory): `ICacheService.GetOrSetAsync<T>` factory delegate migrated from `Task<T>` to `ValueTask<T>`; negative-result caching (null results) is supported by calling `GetOrSetAsync<T?>` with the same single generic method.
+**Phases 1–21 complete (WO-006). Phases 22–31 planned (WO-007), pending implementation.**
+
+Last completed: Phase 21 (ValueTaskFactory) — `ICacheService.GetOrSetAsync<T>` factory delegate migrated from `Task<T>` to `ValueTask<T>`; negative-result caching via `GetOrSetAsync<T?>`.
+
+Next up: Phase 22 (BatchOperations) — `GetManyAsync<T>` and `SetManyAsync<T>` batch methods on `ICacheService`.
 
 ---
 
@@ -122,6 +126,60 @@ ITypedHashStore<T>                        [AOT-safe typed wrapper — no per-cal
 
 ICachingBuilder
     Services  IServiceCollection { get; }
+
+    -- Planned additions (WO-007) --
+
+ICacheService  [additions in Phase 22]
+    GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct)
+    → ValueTask<IReadOnlyDictionary<string, T?>>
+    // Every requested key has an entry; missing keys map to null.
+
+    SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct)
+    → ValueTask
+    // Single CachePolicy applies to all entries in the batch.
+
+IDistributedLockService  [addition in Phase 23]
+    AcquireRenewableAsync(string resource, TimeSpan expiry, TimeSpan wait, TimeSpan retry,
+                          CancellationToken ct)                → ValueTask<IRenewableLock?>
+
+IRenewableLock  [new in Phase 23 — SharedKernel.Caching.Abstractions]
+    RenewAsync(CancellationToken ct)                           → ValueTask<bool>
+    // true = lock still held; false = lock lost (never throws for lost lock)
+    IsAcquired                                                  bool { get; }
+    // Extends IAsyncDisposable.
+
+CachePolicy  [additions in Phases 24 and 25]
+    .Sliding(TimeSpan window)         → CachePolicy with SlidingWindow set
+    .WithVersion(int version)         → CachePolicy with KeyVersion set
+    SlidingWindow                     TimeSpan?  (null = absolute TTL only)
+    KeyVersion                        int        (0 = no suffix, backward-compat)
+
+    NOTE (Phase 24): SlidingWindow maps to L1 SlidingExpiration only — L2 does not slide.
+    NOTE (Phase 24): NeverExpire + SlidingWindow combination is invalid (guard in BuildEntryOptions).
+    NOTE (Phase 25): KeyVersion 0 produces the existing key format with no change.
+                     KeyVersion > 0 appends :v{version} suffix: {service}:{entity}:{id}:v{version}
+
+ICacheKeyProvider  [addition in Phase 25]
+    BuildKey(string entity, string id, int version, params string[] extraSegments) → string
+    // When version > 0 appends :v{version}. Version 0 = original format unchanged.
+
+ConnectionHealthState  [new enum in Phase 26 — SharedKernel.Caching.Abstractions]
+    Connected | Reconnecting | Disconnected
+
+IRedisChannelService  [addition in Phase 26]
+    ConnectionHealth                  ConnectionHealthState { get; }
+
+ICacheWarmupStrategy  [new in Phase 28 — SharedKernel.Caching.Abstractions]
+    Name                              string { get; }
+    Order                             int { get; }
+    WarmupAsync(ICacheService cache, CancellationToken ct) → ValueTask
+
+ITenantCacheKeyProvider  [new in Phase 29 — SharedKernel.Caching.Abstractions]
+    // Extends ICacheKeyProvider.
+    BuildTenantKey(string tenantId, string entity, string id, params string[] extraSegments) → string
+    // Format: {service}:{tenant}:{entity}:{id}[:{extra}...]
+    // tenantId is always an explicit parameter — never resolved from ambient context.
+    // Zero dependency on 12.Security or IHttpContextAccessor.
 ```
 
 ---
@@ -232,6 +290,79 @@ ICachingBuilder
 - `RedisChannelService`, `RedisHashService`, `RedisCacheInvalidationBus`, and the existing L2 backplane all share the single `IConnectionMultiplexer` singleton. No new connections are created.
 - Both `AddRedisL2` and `AddRedisDistributedLocking` register `IConnectionMultiplexer` as a singleton (via `TryAddSingleton` — first caller wins). Either call satisfies the guard in `AddRedisHashService` and `AddRedisChannelService`.
 
+### Batch operations rules (Phase 22)
+
+- `GetManyAsync<T>` always returns a dictionary entry for every requested key — missing keys map to `null`. An empty input enumerable returns an empty dictionary.
+- `SetManyAsync<T>` applies a single `CachePolicy` to all entries — there is no per-key policy in a batch call.
+- `IRedisL2BatchService` is `internal` to `SharedKernel.Caching.Redis` — it must never be registered in DI as a public service or leak into abstractions.
+- The FusionCache implementation loops over keys (FusionCache has no native batch API) — this is correct given FusionCache's stampede-protection model per key.
+- `FakeCacheService` in `16.Testing` must implement both batch methods.
+
+### Renewable lock rules (Phase 23)
+
+- `IRenewableLock.RenewAsync` returns `false` for a lost lock — it must never throw.
+- `IRenewableLock.IsAcquired` transitions to `false` after `DisposeAsync` and after renewal returns `false`.
+- `KeepAliveAsync` is a static extension method on `IRenewableLock` in `SharedKernel.Caching.Redis`; the caller owns cancellation.
+- `AcquireRenewableAsync` returns `null` if the lock cannot be acquired within `wait` — consistent with `AcquireAsync` semantics.
+- Use RedLock.net `ExtendAsync` if available; fall back to re-acquisition if not.
+
+### Sliding expiration rules (Phase 24)
+
+- `CachePolicy.SlidingWindow` maps to L1 `SlidingExpiration` only — L2 in Redis does not support sliding expiry; L2 uses the absolute `L2Duration` as a ceiling.
+- `CachePolicy.NeverExpire` and a non-null `SlidingWindow` together must throw `InvalidOperationException("CachePolicy.Sliding is incompatible with CachePolicy.NeverExpire.")` in `FusionCacheService.BuildEntryOptions`.
+- The guard lives in `BuildEntryOptions` (FusionCache package), not in `CachePolicy` construction (Abstractions) — Abstractions must remain free of runtime validation logic.
+
+### Key versioning rules (Phase 25)
+
+- `CachePolicy.KeyVersion` default is `0`. Version `0` produces no suffix change — identical key format to today. This is backward-compatible.
+- Version suffix format: `:v{version}` appended after all other segments. Example: `{service}:{entity}:{id}:v3`.
+- `ICacheService` method signatures do NOT change — key versioning is the caller's responsibility via `ICacheKeyProvider.BuildKey`. The version is baked into the key string.
+- `ICacheKeyProvider` gains a new `BuildKey` overload with `int version` parameter. Both overloads must be implemented by `CacheKeyProvider`.
+
+### Channel reconnect rules (Phase 26)
+
+- `RedisChannelService` subscribes to `IConnectionMultiplexer.ConnectionRestored` and `ConnectionFailed` in its constructor.
+- On `ConnectionRestored`: acquire the registry lock atomically; resubscribe all channels; log per-channel failures at `Error` without aborting.
+- `ConnectionHealthState` enum lives in `SharedKernel.Caching.Abstractions` — it is a plain enum with no infrastructure dependencies.
+- `IRedisChannelService.ConnectionHealth` property is intended for health check consumption; stated in XML doc.
+
+### CachingCoreOptions standalone DI rules (Phase 27)
+
+- `AddCachingCoreOptions(this IServiceCollection, Action<CachingCoreOptions>)` lives in `SharedKernel.Caching.Abstractions`.
+- It has zero dependency on FusionCache, StackExchange.Redis, or any provider package.
+- `AddSharedKernelCaching` behavior is unchanged — services calling it do not need `AddCachingCoreOptions`.
+- `AddRedisCacheInvalidationBus` logs `LogLevel.Warning` at startup if `ServiceName` is still the default `"app"`.
+
+### Cache warmup rules (Phase 28)
+
+- `ICacheWarmupStrategy.WarmupAsync` uses `ValueTask` — consistent with the rest of the domain.
+- `CacheWarmupHostedService` catches per-strategy exceptions, logs at `Error`, and continues — a failed strategy must never crash the pod.
+- `AddCacheWarmup<TStrategy>` uses `TryAddEnumerable` for strategy registration (supports multiple strategies) and guards `CacheWarmupHostedService` registration to be idempotent.
+- `WaitForWarmup = true` in `CachingOptions` delays readiness via `IHostedLifecycle` (verify .NET 10 API at implementation time).
+
+### Multi-tenant cache key rules (Phase 29)
+
+- `ITenantCacheKeyProvider.BuildTenantKey` key format: `{service}:{tenant}:{entity}:{id}[:{extra}...]`.
+- `tenantId` is always an explicit parameter — `ITenantCacheKeyProvider` never resolves tenant from HTTP context or ambient state.
+- `ITenantCacheKeyProvider` has zero dependency on `12.Security` or `IHttpContextAccessor`.
+- `AddTenantCacheKeyProvider` does NOT replace the existing `ICacheKeyProvider` registration.
+
+### Polly circuit breaker rules (Phase 30)
+
+- `RedisL2Options.CircuitBreaker.Enabled` defaults to `false` — all existing behavior is preserved when disabled.
+- Use `Polly.Core` v8 only — do not add `Microsoft.Extensions.Http.Resilience`.
+- The circuit breaker `ResiliencePipeline` is registered as a singleton only when `Enabled = true`.
+- Verify `Polly.Core` 8.x AOT compatibility at implementation time before adding the reference.
+- FusionCache's own fail-safe is not replaced — the Polly circuit breaker is complementary (short-circuits before the timeout accumulates).
+
+### OTel metrics rules (Phase 31)
+
+- `Meter` name is `"SharedKernel.Caching"` (version `"1.0"`). Static readonly field — created once, AOT-safe.
+- `cache.key_prefix` tag value is `{service}:{entity}` (first two key segments only) — never the full key with `{id}` (high-cardinality).
+- No new NuGet dependencies — `System.Diagnostics.Metrics` is in the BCL for `net10.0`.
+- Use FusionCache events API (`IFusionCache.Events.Memory.*`) for hit/miss/eviction where available — prefer events over call-site instrumentation to avoid duplication.
+- Do not add `Enabled` guards around instrument recording — the BCL handles the no-listener fast path internally.
+
 ### AOT compatibility
 
 - FusionCache is AOT-compatible as of v1.x — verify release notes on every upgrade.
@@ -299,6 +430,36 @@ services.AddSharedKernelCaching(options => { options.ServiceName = "my-service";
         .AddRedisChannelService()
         .AddRedisCacheInvalidationBus()     // registers ICacheInvalidationBus publisher
         .AddCacheInvalidationReceiver();    // registers background service subscriber (opt-in)
+
+// Redis-only consumer (no FusionCache) — Phase 27
+services.AddCachingCoreOptions(o => o.ServiceName = "worker-service")
+        .AddRedisDistributedLocking(connectionString);
+// Note: AddCachingCoreOptions is on IServiceCollection (not ICachingBuilder) — it is the
+// standalone entry point for services that do not call AddSharedKernelCaching.
+
+// Renewable lock (Phase 23) — fluent chain
+services.AddSharedKernelCaching(options => { })
+        .AddRedisDistributedLocking(connectionString);
+// Inject: IDistributedLockService → call AcquireRenewableAsync → IRenewableLock
+// Background renewal: await KeepAliveAsync(lock, renewalInterval, ct);
+
+// Cache warmup (Phase 28)
+services.AddSharedKernelCaching(options => { options.WaitForWarmup = true; })
+        .AddCacheWarmup<MyProductCatalogWarmup>()
+        .AddCacheWarmup<MyUserPreferencesWarmup>();
+// Multiple strategies registered; executed in Order ascending at startup.
+
+// Multi-tenant key provider (Phase 29)
+services.AddSharedKernelCaching(options => { options.ServiceName = "my-service"; })
+        .AddTenantCacheKeyProvider();
+// Inject: ITenantCacheKeyProvider → call BuildTenantKey(tenantId, entity, id)
+
+// Redis L2 with circuit breaker (Phase 30)
+services.AddSharedKernelCaching(options => { })
+        .AddRedisL2(connectionString, o => {
+            o.CircuitBreaker.Enabled = true;
+            o.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
+        });
 ```
 
 ---
@@ -321,6 +482,16 @@ services.AddSharedKernelCaching(options => { options.ServiceName = "my-service";
 - L1SizeLimit eviction test (Phase 20): `L1SizeLimit = 100` with 101 entries causes at least one eviction.
 - L2 KeyPrefix integration test (Phase 20): raw Redis key contains the configured prefix.
 - Nullable factory tests (Phase 21): null result is cached (factory called once on first miss, not on second); non-null factory round-trip works correctly.
+- Batch operations tests (Phase 22): mixed hits/misses, batch set then get-many, empty key list → empty dictionary; integration: single Redis pipeline round-trip verified by command count.
+- Renewable lock tests (Phase 23): renewal succeeds before expiry, returns `false` after expiry without throwing, `KeepAliveAsync` prevents lock loss; `FakeRenewableLock` tracks `RenewalCount`.
+- Sliding expiration tests (Phase 24): `Sliding` factory properties correct, idle-expired entry not returned, absolute ceiling applies; `NeverExpire + SlidingWindow` guard throws.
+- Key versioning tests (Phase 25): version 0 = no suffix change, version 3 = `:v3` suffix, `WithVersion` + `WithTags` chain correctly.
+- Channel reconnect test (Phase 26): drop and restore Redis container; messages delivered after reconnect; resubscription count equals pre-disconnect count.
+- CachingCoreOptions DI test (Phase 27): `ServiceName` resolves correctly via `AddCachingCoreOptions` alone; warning logged when `ServiceName` is still `"app"`.
+- Cache warmup tests (Phase 28): ordering correct, failed strategy does not abort others, timing logged per strategy.
+- Tenant key tests (Phase 29): `BuildTenantKey` format, tenant isolation (different tenant IDs → different keys), format consistent with `BuildKey`.
+- Circuit breaker tests (Phase 30): circuit opens after threshold, short-circuits on open, closes after break duration; `Enabled = false` → zero behavioral change.
+- OTel metrics tests (Phase 31): each counter and histogram verified via `MeterListener` under correct conditions.
 
 ---
 
@@ -338,3 +509,4 @@ services.AddSharedKernelCaching(options => { options.ServiceName = "my-service";
 - [2026-05-20] Phase 17 implemented — CachingCoreOptions added to Abstractions; Redis ProjectRef to FusionCache removed; sibling layering rule enforced; 91+74 tests passing (caching-phase-implementer)
 - [2026-05-20] Phase 20 implemented — L1SizeLimit wired via WithMemoryCache(SizeLimit)+Size=1 per entry; L2 key format verified as {KeyPrefix}v2:{user-key}; v2: injected by Microsoft.Extensions.Caching.StackExchangeRedis v10+; 95+93 tests passing (caching-phase-implementer)
 - [2026-05-20] Phase 21 implemented — GetOrSetAsync factory migrated from Task{T} to ValueTask{T}; C# constraint prevents a separate nullable overload (Func{CT,ValueTask{T}} and Func{CT,ValueTask{T?}} are identical at CLR level); negative-result caching via GetOrSetAsync{T?} confirmed working (FusionCache caches null as genuine entry); 102 FusionCache + 93 Redis tests passing (caching-phase-implementer)
+- [2026-05-21] Phases 22–31 planned (WO-007) — batch operations (GetManyAsync/SetManyAsync), IRenewableLock heartbeat, CachePolicy.Sliding + SlidingWindow, CachePolicy.KeyVersion + BuildKey version overload, RedisChannelService reconnect resilience + ConnectionHealthState, AddCachingCoreOptions standalone DI, ICacheWarmupStrategy + CacheWarmupHostedService, ITenantCacheKeyProvider multi-tenant key isolation, Polly v8 circuit breaker opt-in for Redis L2, OTel System.Diagnostics.Metrics on FusionCacheService; new interface contracts, rules, DI patterns, test rules updated (caching-arch-planner)

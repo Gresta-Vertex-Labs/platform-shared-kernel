@@ -961,6 +961,409 @@ This is a **breaking change** to the `ICacheService` interface. It must be paire
 - [ ] All 91 FusionCache + 74 Redis tests pass after migration
 
 ---
+### P-021 — Caching: Batch Get and Set Operations (GetManyAsync / SetManyAsync)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+Extend `ICacheService` in `SharedKernel.Caching.Abstractions` with two batch operation methods:
+
+- `GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct)` — returns `IReadOnlyDictionary<string, T?>` mapping each requested key to its cached value or `null` on miss. Keys not present in cache map to `null`; the dictionary always contains an entry for every requested key.
+- `SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct)` — stores multiple entries under the given keys in a single logical operation, applying the same `CachePolicy` to all entries in the batch.
+
+The FusionCache implementation in `SharedKernel.Caching.FusionCache` implements these by calling `TryGetAsync` and `SetAsync` in a loop (FusionCache does not have native batch API). This is the correct implementation given FusionCache's stampede-protection model.
+
+The Redis implementation detail: when L2 is active, `GetManyAsync` should use a Redis pipeline (`IDatabase.StringGetAsync` over a batch) via an optional `IRedisL2BatchService` internal helper in `SharedKernel.Caching.Redis`, so the multiple L2 lookups collapse to a single round-trip. This optimization is an implementation detail and must not leak into the `ICacheService` abstraction.
+
+Both methods must carry XML doc comments stating the batch semantics, the per-key CachePolicy constraint for `SetManyAsync`, and the behavior on partial misses.
+
+#### Why this is needed
+
+Services that fetch lists of entities by ID (product catalogs, user profiles, recommendation sets) call `GetAsync` in a loop today. Each call is a separate L2 Redis round-trip. A 50-item fetch becomes 50 sequential or parallel Redis calls where a single pipeline call would suffice. Beyond the latency cost, each loop call resets the FusionCache stampede-protection context — multiple concurrent requests for the same batch can trigger the factory for the same keys in parallel. `GetManyAsync` provides a first-class batch path. Without it, every service team writes their own loop helper with inconsistent semantics.
+
+#### Acceptance criteria
+- [ ] `ICacheService` gains `GetManyAsync<T>` and `SetManyAsync<T>` with the signatures above
+- [ ] `FusionCacheService` implements both methods; `GetManyAsync` returns a dictionary with one entry per input key; missing keys map to `null`
+- [ ] `SetManyAsync` applies a single `CachePolicy` to all entries in the batch
+- [ ] Unit tests in `SharedKernel.Caching.FusionCache.Tests`: batch get with mixed hits/misses, batch set then get-many, empty key list returns empty dictionary
+- [ ] Integration tests in `SharedKernel.Caching.Redis.Tests`: batch get-many with L2 active uses a single Redis pipeline round-trip (verified via a test that counts Redis commands)
+- [ ] `FakeCacheService` in `16.Testing` is updated to implement the new methods
+- [ ] All existing tests continue to pass — interface addition is backward-compatible for all existing implementations
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-022 — Caching: IRenewableLock — Lock Heartbeat and Renewal for Long-Running Operations
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+The current `IDistributedLockService.AcquireAsync` returns an `IAsyncDisposable?` that represents a fixed-expiry lock. There is no mechanism to extend the lock while the work is in progress. Long-running operations (saga steps, database migrations, large batch jobs) that exceed the lock's initial TTL will silently lose the lock — another node may acquire it, leading to concurrent execution.
+
+Add an `IRenewableLock` interface to `SharedKernel.Caching.Abstractions`:
+
+- `RenewAsync(CancellationToken ct)` — extends the lock expiry by the original `expiry` duration. Returns `bool` — `true` if renewal succeeded (lock was still held), `false` if the lock was lost (e.g., expired before renewal, or Redis was unavailable). Must never throw for a lost lock.
+- `IsAcquired` — `bool` property; `true` if the lock is currently held.
+- The interface extends `IAsyncDisposable` so existing disposal patterns continue working.
+
+`IDistributedLockService` gains a new method `AcquireRenewableAsync(string resource, TimeSpan expiry, TimeSpan wait, TimeSpan retry, CancellationToken ct) → ValueTask<IRenewableLock?>` that returns the renewable handle (or `null` if not acquired).
+
+The RedLock.net implementation in `SharedKernel.Caching.Redis` implements `IRenewableLock` by calling `RedLockFactory.CreateAsync` with a renewal loop. RedLock.net supports `ExtendAsync` on an acquired lock — use this if the version supports it; otherwise re-acquire on the same resource before expiry.
+
+A convenience `KeepAliveAsync(IRenewableLock lock, TimeSpan renewalInterval, CancellationToken ct)` static extension method is provided in the Redis package for callers that want automatic background renewal via a `Task` that loops and calls `RenewAsync` until cancellation.
+
+#### Why this is needed
+
+The `expiry` parameter on `AcquireAsync` is a safety backstop, not a work-duration estimate. Any real-world long-running critical section (e.g., a distributed migration, a scheduled job that should not run concurrently) needs to renew the lock periodically. Without a renewal API, teams either set an excessively long TTL (unsafe — a crashed node holds the lock for the full duration) or implement their own RedLock renewal ad-hoc (inconsistent, untested). `IRenewableLock` standardizes this pattern across all services.
+
+#### Acceptance criteria
+- [ ] `IRenewableLock` interface exists in `SharedKernel.Caching.Abstractions` with `RenewAsync`, `IsAcquired`, and `IAsyncDisposable`
+- [ ] `IDistributedLockService` gains `AcquireRenewableAsync` method returning `ValueTask<IRenewableLock?>`
+- [ ] `RedLockRenewableLock` implements `IRenewableLock` in `SharedKernel.Caching.Redis`; `RenewAsync` returns `false` without throwing when the lock is lost
+- [ ] `KeepAliveAsync` static extension method exists for background renewal
+- [ ] `FakeDistributedLockService` in `16.Testing` is updated to implement `AcquireRenewableAsync` with a fake `IRenewableLock` that tracks renewal calls
+- [ ] Integration tests: renewal succeeds before expiry, renewal returns `false` after expiry, `KeepAliveAsync` prevents lock loss across a simulated slow operation
+- [ ] All existing `AcquireAsync` tests continue to pass
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-023 — Caching: Sliding Expiration Support in CachePolicy
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+`CachePolicy` in `SharedKernel.Caching.Abstractions` currently only models absolute TTLs. Sliding expiration — where the TTL resets on each access — is a standard pattern for session-adjacent data (shopping carts, user preference snapshots, partial form state) where entries should expire only when genuinely idle, not after a fixed wall-clock duration.
+
+Add a `SlidingWindow` property to `CachePolicy` (`TimeSpan?`, nullable, defaults to `null`). When set, it expresses the idle-expiry window: a cached entry is evicted if it has not been accessed within `SlidingWindow`. When both `L1Duration` and `SlidingWindow` are set, `L1Duration` acts as the absolute maximum TTL and `SlidingWindow` acts as the idle TTL — consistent with how `MemoryCache` models sliding expiration.
+
+Add a factory method `CachePolicy.Sliding(TimeSpan window)` that returns a policy with `SlidingWindow = window` and absolute durations matching `Default` (so the entry has a reasonable upper bound alongside the sliding window).
+
+In `FusionCacheService.BuildEntryOptions`, map `SlidingWindow` to FusionCache's `FailSafeThrottleDuration` if FusionCache supports sliding semantics, or implement it via a short `L1Duration` + aggressive `EagerRefreshThreshold` that approximates idle-expiry behavior. The exact mapping is the domain planner's implementation decision — document the approximation in the XML doc if native sliding is not available.
+
+The `NeverExpire` preset must explicitly state that `SlidingWindow` is incompatible with it and must not be set together — add a validation guard in `CachingOptions` or in `BuildEntryOptions`.
+
+#### Why this is needed
+
+Shopping cart data, user sessions, and partial workflow state are the canonical sliding-expiration use cases. Every service team that needs this today must model it as a short absolute TTL with `SetAsync` on every access — expensive, boilerplate-heavy, and inconsistent. A first-class `CachePolicy.Sliding` preset documents the intent, standardizes the pattern, and lets the FusionCache implementation apply the most efficient mechanism available.
+
+#### Acceptance criteria
+- [ ] `CachePolicy` gains `SlidingWindow` property (`TimeSpan?`, nullable)
+- [ ] `CachePolicy.Sliding(TimeSpan window)` factory method exists and produces a policy with `SlidingWindow` set
+- [ ] `FusionCacheService.BuildEntryOptions` maps `SlidingWindow` to a FusionCache mechanism; behavior and any approximation are documented in XML doc
+- [ ] Validation guard prevents `NeverExpire` and `SlidingWindow` being combined
+- [ ] Unit tests: `Sliding` factory method properties, sliding-expired entry is not returned after idle period, absolute max TTL still applies when `L1Duration` is also set
+- [ ] All existing `CachePolicy` tests continue to pass
+- [ ] All public types carry XML doc comments
+---
+
+---
+### P-024 — Caching: Cache Key Versioning Strategy
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+When a cached DTO's shape changes across a deployment (new required field, renamed property, type change), existing Redis L2 entries with the old shape will cause silent deserialization failures or corrupt data on the first access after the upgrade. There is currently no standard mechanism to signal that cached entries for a given key are stale due to a schema change.
+
+Add `KeyVersion(int version)` as a fluent method on `CachePolicy`, analogous to `WithTags`. When set, the version number is appended to the cache key by `ICacheKeyProvider.BuildKey` as a suffix segment using the convention `{service}:{entity}:{id}:v{version}`. The default version is `0` (no suffix appended, backward-compatible).
+
+Update `CacheKeyProvider` in `SharedKernel.Caching.FusionCache` to accept an optional version parameter and append the `v{version}` suffix when the version is non-zero.
+
+Update `ICachingBuilder`-level documentation to describe the deployment workflow for key versioning:
+1. Increment the version in `CachePolicy.KeyVersion` alongside the DTO change.
+2. Deploy — new entries write to the new versioned key; old entries at the old key expire naturally via TTL.
+3. No cache flush or service disruption required.
+
+This is a purely additive change — existing callers that do not call `KeyVersion` are unaffected (version defaults to `0`, suffix omitted, identical key format to today).
+
+#### Why this is needed
+
+Silent deserialization failures after DTO schema changes are one of the most common sources of post-deployment incidents in caching-heavy microservices. Teams typically respond by either flushing Redis manually (unsafe, causes a cold-start stampede on all pods simultaneously) or adding ad-hoc `_v2` suffixes to key strings (inconsistent, easy to forget). A first-class `KeyVersion` contract makes schema evolution an explicit, zero-downtime, zero-flush operation. The version is attached to the policy — where the DTO type is also declared — making it impossible to change the DTO without being forced to notice the versioning annotation.
+
+#### Acceptance criteria
+- [ ] `CachePolicy` gains a `KeyVersion` property (`int`, default `0`) and a `WithVersion(int version)` fluent method
+- [ ] `ICacheKeyProvider.BuildKey` is updated to accept an optional `int version` parameter (or a `CachePolicy` overload); when `version > 0`, appends `:v{version}` to the key
+- [ ] `CacheKeyProvider` in FusionCache implements the version suffix correctly
+- [ ] `ICacheService.GetOrSetAsync`, `SetAsync`, `GetAsync`, `RemoveAsync` do NOT change their signatures — key versioning is the caller's responsibility via `ICacheKeyProvider`; the behavior change is inside `BuildKey`, not the cache service
+- [ ] Unit tests: `BuildKey` produces correct versioned key, version `0` produces same output as today (no regression), `WithVersion(3)` chains correctly with `WithTags`
+- [ ] Documentation in `CacheKeyProvider` XML doc describes the deployment workflow
+- [ ] All existing `CacheKeyProvider` and `CachePolicyTests` pass
+---
+
+---
+### P-025 — Caching: RedisChannelService Reconnect Resilience
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+`RedisChannelService` in `SharedKernel.Caching.Redis` currently subscribes to Redis channels via `ISubscriber.SubscribeAsync`. When the Redis connection drops and reconnects (`ConnectionMultiplexer.ConnectionRestored` event), all existing subscriptions created on the old connection are silently lost — the `ISubscriber` instance is invalidated and new messages on those channels are not delivered. There is no current resubscription logic.
+
+The fix: `RedisChannelService` must listen to `IConnectionMultiplexer.ConnectionRestored` event. On connection restoration, it must resubscribe to all channels currently tracked in its internal subscription registry. This must be exception-safe — a failure during resubscription must be logged at `LogLevel.Error` and must not propagate. The resubscription must replay the full channel registry state atomically (lock around registry iteration and resubscription to prevent concurrent `SubscribeAsync` from corrupting the registry state during replay).
+
+Add a `ConnectionHealthState` property to the service (`Connected | Reconnecting | Disconnected`) that reflects the current StackExchange.Redis connection state — this is exposed for health check consumption.
+
+The `CacheInvalidationReceiver` `BackgroundService` implicitly benefits from this fix — its subscriptions are managed through `IRedisChannelService`, so resubscription becomes automatic.
+
+#### Why this is needed
+
+Redis rolling upgrades, pod restarts, and network blips all trigger connection drops. A service running `CacheInvalidationReceiver` that loses its Redis connection will silently stop receiving invalidation signals — its L1 cache will become progressively stale with no indication. The pod does not crash, health checks may still pass, but cached data becomes stale indefinitely. This is a silent correctness failure in production. Reconnect-triggered resubscription is the standard Redis client pattern and must be implemented in `RedisChannelService` to make the invalidation bus reliable.
+
+#### Acceptance criteria
+- [ ] `RedisChannelService` subscribes to `IConnectionMultiplexer.ConnectionRestored` on construction
+- [ ] On connection restoration, all channels in the internal subscription registry are resubscribed atomically; failures are logged and do not propagate
+- [ ] `ConnectionHealthState` property is exposed with values `Connected`, `Reconnecting`, `Disconnected` reflecting the multiplexer state
+- [ ] Integration test: drop and restore Redis container connection; verify messages are delivered again after reconnect; verify resubscription count equals the pre-disconnect subscription count
+- [ ] All existing `RedisChannelServiceIntegrationTests` continue to pass
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-026 — Caching: CachingCoreOptions Standalone DI Registration
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+`CachingCoreOptions` is currently populated only by `AddSharedKernelCaching` (the FusionCache provider). A microservice that uses `SharedKernel.Caching.Redis` without the FusionCache package — for example, a background worker that uses only distributed locking, Redis Pub/Sub, or the cache invalidation bus — cannot set `ServiceName`. The `CachingCoreOptions.ServiceName` remains `"app"`, causing all invalidation channels to be mis-named and all distributed lock resources to share the wrong service namespace.
+
+The fix: add a standalone `AddCachingCoreOptions(this IServiceCollection services, Action<CachingCoreOptions> configure)` DI extension method in `SharedKernel.Caching.Abstractions`. This extension must have zero infrastructure dependencies — it registers and configures `IOptions<CachingCoreOptions>` using only `Microsoft.Extensions.DependencyInjection.Abstractions` and `Microsoft.Extensions.Options`. Services that call `AddSharedKernelCaching` do not need to call this separately — `AddSharedKernelCaching` already populates `CachingCoreOptions`. Services that use only Redis capabilities call `AddCachingCoreOptions` as their sole caching setup step.
+
+Update `AddRedisCacheInvalidationBus` and `AddRedisChannelService` to check that `IOptions<CachingCoreOptions>` is registered (not just `IConnectionMultiplexer`) — if `CachingCoreOptions.ServiceName` is still the default `"app"` in production, log a `LogLevel.Warning` during startup that the service name has not been configured (non-fatal, but actionable).
+
+#### Why this is needed
+
+A distributed locking or Pub/Sub-only consumer is a legitimate use case — background workers often use Redis for coordination without needing an in-process L1 cache. Forcing such a consumer to take a transitive dependency on FusionCache (by calling `AddSharedKernelCaching`) to merely set a service name violates the plug-in principle. `AddCachingCoreOptions` gives Redis-only consumers a clean, zero-infrastructure-dependency entry point for this one configuration concern.
+
+#### Acceptance criteria
+- [ ] `AddCachingCoreOptions(this IServiceCollection, Action<CachingCoreOptions>)` extension exists in `SharedKernel.Caching.Abstractions`
+- [ ] The extension has no dependency on FusionCache, StackExchange.Redis, or any provider package
+- [ ] `SharedKernel.Caching.Abstractions.csproj` gains `Microsoft.Extensions.Options` reference if not already present (verify current state — may only have DI.Abstractions)
+- [ ] A service can call `services.AddCachingCoreOptions(o => o.ServiceName = "worker-service").AddRedisDistributedLocking(connStr)` with no other caching registration
+- [ ] Integration test (in `SharedKernel.Caching.Redis.Tests`): `CachingCoreOptions.ServiceName` resolves correctly when set via `AddCachingCoreOptions` without `AddSharedKernelCaching`
+- [ ] `AddRedisCacheInvalidationBus` logs `LogLevel.Warning` at startup if `ServiceName` is still the default `"app"`
+- [ ] All existing tests continue to pass
+- [ ] All public types carry XML doc comments
+---
+
+---
+### P-027 — Caching: ICacheWarmupStrategy Contract and Startup Runner
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+Add an `ICacheWarmupStrategy` interface to `SharedKernel.Caching.Abstractions` and a `CacheWarmupHostedService` runner in `SharedKernel.Caching.FusionCache`.
+
+**`ICacheWarmupStrategy`** contract (in Abstractions):
+- `string Name { get; }` — unique identifier for logging
+- `int Order { get; }` — execution order among multiple strategies (lower = earlier)
+- `WarmupAsync(ICacheService cache, CancellationToken ct)` — the warm-up logic; implementations call `SetAsync` or `GetOrSetAsync` with pre-fetched data to prime the L1 cache before traffic arrives
+
+**`CacheWarmupHostedService`** (in `SharedKernel.Caching.FusionCache`):
+A `BackgroundService` that resolves all registered `ICacheWarmupStrategy` instances from DI, orders them by `Order`, and executes them sequentially during startup. It must:
+- Log start and completion of each strategy at `LogLevel.Information` with the strategy name and duration
+- Catch and log exceptions per strategy at `LogLevel.Error` — a failed warmup strategy must not prevent the pod from starting
+- Complete execution before the application's readiness probe reports `Healthy` — if possible, integrate with `IHostedLifecycle.StartedAsync` to delay readiness until warmup completes (or expose an opt-in `WaitForWarmup = true` option in the DI extension)
+
+DI registration: `AddCacheWarmup<TStrategy>(this ICachingBuilder builder)` where `TStrategy : ICacheWarmupStrategy`. Multiple strategies can be added in sequence.
+
+#### Why this is needed
+
+Every K8s pod deployment starts with a cold L1 cache. The first wave of requests hits the factory (database, downstream APIs) for every key — a thundering herd that can overwhelm dependencies immediately after a rolling deployment. Teams currently handle this with ad-hoc `IHostedService` implementations that vary in error handling and ordering. A standard `ICacheWarmupStrategy` contract gives teams a consistent pattern, ensures warmup completes before the pod advertises readiness, and makes warmup logic discoverable and testable in isolation.
+
+#### Acceptance criteria
+- [ ] `ICacheWarmupStrategy` interface exists in `SharedKernel.Caching.Abstractions` with `Name`, `Order`, and `WarmupAsync`
+- [ ] `CacheWarmupHostedService` exists in `SharedKernel.Caching.FusionCache`; executes registered strategies in `Order` order; logs per-strategy start/completion/failure
+- [ ] A failed strategy is caught, logged, and does not abort remaining strategies or prevent startup
+- [ ] `AddCacheWarmup<TStrategy>` extension on `ICachingBuilder` registers the strategy
+- [ ] Unit test: multiple strategies execute in correct order; failed strategy does not abort others; timing is logged
+- [ ] `FakeCacheService` can be used as the warmup target in tests
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-028 — Caching: Multi-Tenant Cache Key Isolation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+SaaS microservices serving multiple tenants need per-tenant cache key namespacing to prevent cross-tenant data leakage. Today, `ICacheKeyProvider.BuildKey` produces `{service}:{entity}:{id}` — there is no tenant segment. Teams handle this by prepending a tenant ID manually, which is error-prone, inconsistent, and bypasses the platform key format contract.
+
+Add `ITenantCacheKeyProvider` to `SharedKernel.Caching.Abstractions`:
+- Extends `ICacheKeyProvider` (inherits `BuildKey`)
+- Adds `BuildTenantKey(string tenantId, string entity, string id, params string[] extraSegments)` → string
+- Key format contract: `{service}:{tenant}:{entity}:{id}[:{extraSegment}...]`
+
+Add a default `TenantCacheKeyProvider` implementation in `SharedKernel.Caching.FusionCache`:
+- Implements `ITenantCacheKeyProvider` by prepending the `tenantId` segment after the service name
+- Registered as `ITenantCacheKeyProvider` singleton by a new `AddTenantCacheKeyProvider()` extension on `ICachingBuilder`
+- The standard `ICacheKeyProvider` registration is left unchanged — `AddTenantCacheKeyProvider` is additive
+
+Note: `ITenantCacheKeyProvider` must NOT have any dependency on `12.Security`'s `ITenantProvider` — it accepts `tenantId` as an explicit string parameter so it can be used with any tenancy resolution strategy. The caller provides the tenant ID; this service does not resolve it from context. This keeps `02.Caching` independent of `12.Security` per layering rules.
+
+#### Why this is needed
+
+Multi-tenancy is not a niche pattern — it is the default architecture for SaaS platforms. Cross-tenant cache key collisions are a security and correctness failure, not merely a data quality issue. Without `ITenantCacheKeyProvider`, every tenant-aware service team writes their own tenant-prefix helper. The results diverge: some teams use `{tenant}:{service}:{entity}:{id}`, others use `{service}:{entity}:{id}:{tenant}`, others forget the prefix entirely on some paths. A first-class contract with a standard format eliminates this category of bug. The explicit `tenantId` parameter (not resolved from `IHttpContextAccessor`) keeps the method pure and testable without HTTP context.
+
+#### Acceptance criteria
+- [ ] `ITenantCacheKeyProvider` interface exists in `SharedKernel.Caching.Abstractions`; extends `ICacheKeyProvider`; `BuildTenantKey` format contract is `{service}:{tenant}:{entity}:{id}[:{extra}...]`
+- [ ] `TenantCacheKeyProvider` implements `ITenantCacheKeyProvider` in `SharedKernel.Caching.FusionCache`
+- [ ] `AddTenantCacheKeyProvider()` extension on `ICachingBuilder` registers `TenantCacheKeyProvider` as `ITenantCacheKeyProvider` singleton
+- [ ] `ITenantCacheKeyProvider` has zero dependency on `12.Security` or `IHttpContextAccessor`
+- [ ] Unit tests: `BuildTenantKey` format, tenant isolation (two different tenant IDs produce different keys for the same entity+id), format consistency with `BuildKey` (same segments sans tenant produce the base format)
+- [ ] `16.Testing` test double updated: `FakeTenantCacheKeyProvider` added to `AddFakeCachingServices()` (or a separate `AddFakeTenantCachingServices()` extension)
+- [ ] All public types carry XML doc comments
+---
+
+---
+### P-029 — Caching: Polly v8 Circuit Breaker for Redis L2 Path
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+When Redis is degraded (high latency, partial connectivity), FusionCache's fail-safe serves stale L1 data — but every L2 operation still attempts the Redis call, accumulates timeout latency, and generates structured errors. Over a 30-second Redis outage, a high-traffic service may generate millions of redundant failed Redis calls, each adding latency to the response path.
+
+Add opt-in Polly v8 circuit breaker configuration to `AddRedisL2` in `SharedKernel.Caching.Redis`.
+
+A new `RedisL2Options.CircuitBreaker` nested options class controls:
+- `Enabled` (bool, default `false`) — opt-in
+- `FailureThreshold` (int, default `5`) — consecutive failures before opening
+- `SamplingDuration` (TimeSpan, default `10s`) — time window for failure counting
+- `BreakDuration` (TimeSpan, default `30s`) — how long the circuit stays open
+- `MinimumThroughput` (int, default `3`) — minimum calls before the circuit can open
+
+When `Enabled`, `AddRedisL2` wraps the `IConnectionMultiplexer` in a Polly v8 `ResiliencePipeline` with a circuit breaker strategy. The pipeline is registered as a DI service so `RedisChannelService`, `RedisHashService`, and the backplane can benefit from it. When the circuit is open, Redis operations short-circuit immediately (no timeout wait) and FusionCache's fail-safe serves L1.
+
+The `Polly.Core` (v8) and `Microsoft.Extensions.Http.Resilience` packages are the only new dependencies. Both are AOT-compatible.
+
+#### Why this is needed
+
+FusionCache's fail-safe correctly protects L1 serving during Redis outages, but it does not prevent the latency overhead of repeated failed Redis connection attempts. A Polly circuit breaker complements fail-safe: when Redis is clearly down, the circuit opens and L2 calls short-circuit to `null` (triggering fail-safe from L1 immediately, with zero Redis wait time). This is the K8s-native pattern for graceful degradation — pods continue serving at full speed from L1 while Redis recovers, rather than accumulating timeout latency on every request.
+
+#### Acceptance criteria
+- [ ] `RedisL2Options` gains a `CircuitBreaker` nested options class with the five properties above
+- [ ] `AddRedisL2` registers a Polly v8 `ResiliencePipeline` as a singleton when `CircuitBreaker.Enabled = true`
+- [ ] The circuit breaker wraps Redis connection operations; when open, L2 calls short-circuit and FusionCache fail-safe takes over
+- [ ] `Polly.Core` v8 is added as a NuGet reference to `SharedKernel.Caching.Redis.csproj`
+- [ ] Unit tests: circuit opens after `FailureThreshold` consecutive failures, circuit opens and short-circuits subsequent calls immediately, circuit closes after `BreakDuration`
+- [ ] `CircuitBreaker.Enabled = false` (the default) produces zero behavioral change — all existing tests pass
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-030 — Caching: ICacheService OTel Meters (Hits / Misses / Errors / Duration)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-007
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+
+`FusionCacheService` currently emits structured log messages for cache hits, misses, and factory invocations at `LogLevel.Debug`. Production services monitoring with Grafana/Prometheus have no visibility into cache efficiency — there are no OTel meters, no histograms, and no counters that wire into the `System.Diagnostics.Metrics` infrastructure.
+
+Add OTel instruments to `FusionCacheService` using `System.Diagnostics.Metrics` (BCL — no additional NuGet dependency):
+
+- `cache.hits` — `Counter<long>` — incremented on every `GetAsync` or `GetOrSetAsync` that returns a cached value without invoking the factory. Tags: `cache.key_prefix` (the `{service}:{entity}` portion), `cache.level` (`"l1"` or `"l2"`)
+- `cache.misses` — `Counter<long>` — incremented on every `GetAsync` that returns `null` and on every `GetOrSetAsync` factory invocation. Tags: `cache.key_prefix`
+- `cache.factory.duration` — `Histogram<double>` (milliseconds) — records the factory execution time on cache misses. Tags: `cache.key_prefix`
+- `cache.errors` — `Counter<long>` — incremented on any exception in `GetOrSetAsync` factory or `SetAsync`. Tags: `cache.error_type`
+- `cache.evictions` — `Counter<long>` — subscribes to FusionCache's `ItemEvicted` event to count evictions. Tags: `cache.eviction_reason`
+
+The `Meter` name must be `"SharedKernel.Caching"` with version `"1.0"`. The `Meter` instance is created once as a static field in `FusionCacheService` — AOT-safe as it uses `string` names only.
+
+No new DI registration is needed — `System.Diagnostics.Metrics` instruments are always active once created; listeners (Prometheus, OTEL exporter) subscribe to the `MeterListener` from outside. The instruments are created unconditionally — they impose negligible overhead when no listener is attached.
+
+FusionCache has a built-in events API (`FusionCacheEventHandlers`) — prefer subscribing to its events over duplicating call-site logic. Use `IFusionCache.Events.Memory.Hit`, `Events.Memory.Miss`, `Events.Memory.Eviction`, and factory-completion events where available.
+
+#### Why this is needed
+
+Cache efficiency is one of the most operationally critical metrics in a microservice platform. A cache hit rate drop from 95% to 70% means a 5x increase in database load — but without meters, this is invisible until latency rises. The `cache.hits` / `cache.misses` pair directly produces the hit-rate metric that SREs watch. `cache.factory.duration` catches slow factory regressions (e.g., a database index was dropped). `cache.evictions` with `eviction_reason` catches L1 memory pressure issues before they become OOM events. Using `System.Diagnostics.Metrics` (BCL, AOT-safe) rather than a third-party metrics package keeps the dependency footprint minimal.
+
+#### Acceptance criteria
+- [ ] `FusionCacheService` creates a `Meter` named `"SharedKernel.Caching"` and the five instruments listed above
+- [ ] `cache.hits` and `cache.misses` are emitted correctly for `GetAsync` and `GetOrSetAsync` operations
+- [ ] `cache.factory.duration` records elapsed time of the factory delegate on each cache miss
+- [ ] `cache.errors` increments on factory exceptions and `SetAsync` exceptions
+- [ ] `cache.evictions` increments when FusionCache evicts entries (subscribes to eviction events)
+- [ ] Meter name is `"SharedKernel.Caching"` — consistent with the OTel ActivitySource name used by `CacheInvalidationReceiver` (`"SharedKernel.Caching.Invalidation"`)
+- [ ] Unit tests: verify each counter and histogram increments under the correct conditions using `MeterListener`
+- [ ] All existing tests continue to pass — meter recording is additive
+- [ ] All public types carry XML doc comments
+- [ ] No new NuGet dependencies — `System.Diagnostics.Metrics` is in the BCL
+---
+
+---
+### P-031 — Testing: Extend FakeCacheService with Batch Operations and Add FakeTenantCacheKeyProvider
+
+**Status:** `○` Pending
+**Work Order:** WO-007
+**Domain:** 16.Testing
+**Depends on:** P-021, P-028
+
+#### What is needed
+
+Two additions to `16.Testing/SharedKernel.Testing` to keep the testing infrastructure in sync with the caching capability expansions in WO-007:
+
+**Part A — Extend `FakeCacheService` with `GetManyAsync` / `SetManyAsync`** (depends on P-021):
+Implement the new batch methods on the existing `FakeCacheService`. `GetManyAsync` returns a dictionary built by iterating the internal in-memory store and mapping each key to its value or `null`. `SetManyAsync` stores all entries in a loop. Behavior is consistent with the existing fake: no expiry simulation, thread-safe via `ConcurrentDictionary`.
+
+**Part B — Add `FakeTenantCacheKeyProvider`** (depends on P-028):
+Implement `ITenantCacheKeyProvider` as an in-memory fake that produces keys using the format `{service}:{tenant}:{entity}:{id}[:{extra}...]`. The implementation should be deterministic and inspectable — expose a `BuiltKeys` list (similar to `FakeCacheInvalidationBus.PublishedInvalidations`) so tests can assert on the keys that were constructed. Also expose a `Reset()` method.
+
+Update `AddFakeCachingServices()` to register both new additions so a single call wires up the complete fake caching ecosystem.
+
+#### Why this is needed
+
+The testing domain must stay current with the capability domain. When `16.Testing` fakes lag behind `02.Caching` contracts, service teams either cannot test new capabilities or write their own incomplete fakes. Extending `FakeCacheService` with batch operations ensures teams using `GetManyAsync` / `SetManyAsync` in their handlers can test them without a Redis container. `FakeTenantCacheKeyProvider` enables assertion-level testing of tenant-aware cache key construction without needing a fully wired DI stack.
+
+#### Acceptance criteria
+- [ ] `FakeCacheService` implements `GetManyAsync<T>` and `SetManyAsync<T>` per the contracts defined in P-021
+- [ ] `FakeTenantCacheKeyProvider` implements `ITenantCacheKeyProvider`; exposes `BuiltKeys` list and `Reset()` method
+- [ ] `AddFakeCachingServices()` registers `FakeTenantCacheKeyProvider` as `ITenantCacheKeyProvider` singleton
+- [ ] Unit tests in `SharedKernel.Testing.Tests` cover: batch get with mixed hits/misses, batch set, tenant key format assertion via `BuiltKeys`, `Reset()` clears state
+- [ ] `16.Testing` references `SharedKernel.Caching.Abstractions` — no new concrete provider references
+- [ ] All public types carry XML doc comments
+---
 
 ## Changelog
 
@@ -1022,3 +1425,4 @@ This is a **breaking change** to the `ICacheService` interface. It must be paire
 - [2026-05-20] Caching → Phase 19 (DI Ergonomics Hardening) (●) — promoted from SK.02.DiErgonomics (state-map-phase)
 - [2026-05-20] Caching → Phase 20 (Wire L1SizeLimit + Verify L2 KeyPrefix) (●) — promoted from SK.02.L1SizeLimit (state-map-phase)
 - [2026-05-20] Caching → Phase 21 (GetOrSetAsync ValueTask Factory) (●) — promoted from SK.02.ValueTaskFactory (state-map-phase)
+- [2026-05-21] Phase(s) P-021, P-022, P-023, P-024, P-025, P-026, P-027, P-028, P-029, P-030 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
