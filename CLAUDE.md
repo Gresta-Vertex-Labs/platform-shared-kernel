@@ -6,6 +6,8 @@ A mono-repo of independently publishable NuGet packages that form the **SharedKe
 
 Philosophy: **Capability-Oriented, AOT-Compatible, K8s-Native, Test-Adjacent.**
 
+> **AOT Hard Rule:** Every production package in this repo MUST be .NET Native AOT compatible. No reflection-based serialization, no `dynamic`, no `Assembly.Load`, no `Activator.CreateInstance` without `[DynamicallyAccessedMembers]` annotations, no `Type.GetType(string)` calls without trim-safe alternatives. All serialization must use STJ source-generated contexts (`JsonSerializerContext`). Every production `.csproj` carries `<IsAotCompatible>true</IsAotCompatible>` — this activates the AOT and trim analyzers at build time. Third-party packages that are not AOT-safe may only be introduced behind an abstraction interface so the concrete dependency can be swapped when an AOT-compatible alternative becomes available.
+
 ---
 
 ## Folder Map
@@ -155,3 +157,4 @@ These are the packages microservices should depend on — never on the concrete 
 > Maintained by `/sync-brain`. Each entry is one line: what changed and who triggered it.
 
 - [2026-05-13] Initial architecture brain written — folder map, layering rules, naming conventions, abstractions table (root)
+- [2026-05-21] AOT hard rule added — `<IsAotCompatible>true</IsAotCompatible>` applied to all 35 production csproj files; root AOT policy section added to CLAUDE.md
