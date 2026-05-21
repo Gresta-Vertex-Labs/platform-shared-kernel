@@ -56,6 +56,24 @@ public sealed class CachingOptions
     public string ServiceName { get; set; } = "app";
 
     /// <summary>
+    /// When <see langword="true"/>, the <c>CacheWarmupHostedService</c> integrates with the
+    /// host lifecycle to delay the readiness signal until all registered
+    /// <c>ICacheWarmupStrategy</c> instances have completed. Defaults to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Set this to <see langword="true"/> in combination with
+    /// <c>ICachingBuilder.AddCacheWarmup&lt;TStrategy&gt;()</c> to ensure Kubernetes readiness
+    /// probes do not pass until the L1 cache has been pre-populated.
+    /// </para>
+    /// <para>
+    /// When <see langword="false"/> (the default), warmup runs concurrently with normal
+    /// service startup and traffic may arrive before warmup completes.
+    /// </para>
+    /// </remarks>
+    public bool WaitForWarmup { get; set; } = false;
+
+    /// <summary>
     /// Configuration for opt-in Brotli compression applied to the L2 Redis distributed cache
     /// path. L1 in-process entries are never affected by this setting.
     /// </summary>

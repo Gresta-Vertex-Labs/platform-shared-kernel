@@ -10,6 +10,8 @@ namespace SharedKernel.Caching.Redis.Implementations;
 /// <remarks>
 /// Returns <see langword="null"/> on timeout — never throws for a contended lock.
 /// The returned <see cref="IAsyncDisposable"/> handle releases the lock on disposal.
+/// Supports renewable locks via <see cref="AcquireRenewableAsync"/> for long-running
+/// operations that need to extend their lock before expiry.
 /// </remarks>
 internal sealed partial class RedLockDistributedLockService : IDistributedLockService
 {
@@ -59,6 +61,48 @@ internal sealed partial class RedLockDistributedLockService : IDistributedLockSe
         return null;
     }
 
+    /// <inheritdoc />
+    public async ValueTask<IRenewableLock?> AcquireRenewableAsync(
+        string resource,
+        TimeSpan expiry,
+        TimeSpan wait,
+        TimeSpan retry,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resource);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expiry.Ticks, nameof(expiry));
+        ArgumentOutOfRangeException.ThrowIfNegative(wait.Ticks, nameof(wait));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(retry.Ticks, nameof(retry));
+
+        Log.AcquiringRenewableLock(_logger, resource, expiry, wait);
+
+        var redLock = await _factory.CreateLockAsync(
+            resource,
+            expiryTime: expiry,
+            waitTime: wait,
+            retryTime: retry,
+            cancellationToken: ct).ConfigureAwait(false);
+
+        if (redLock.IsAcquired)
+        {
+            Log.RenewableLockAcquired(_logger, resource);
+            return new RedLockRenewableLock(
+                redLock,
+                _factory,
+                resource,
+                expiry,
+                renewalWait: wait,
+                renewalRetry: retry,
+                _logger);
+        }
+
+        // Lock not acquired within wait window — release the RedLock object and return null.
+        await redLock.DisposeAsync().ConfigureAwait(false);
+        Log.RenewableLockNotAcquired(_logger, resource);
+
+        return null;
+    }
+
     // Wraps the RedLock handle to provide IAsyncDisposable semantics.
     private sealed partial class LockHandle : IAsyncDisposable
     {
@@ -97,5 +141,17 @@ internal sealed partial class RedLockDistributedLockService : IDistributedLockSe
         [LoggerMessage(EventId = 2004, Level = LogLevel.Debug,
             Message = "Releasing distributed lock on '{Resource}'")]
         internal static partial void ReleasingLock(ILogger logger, string resource);
+
+        [LoggerMessage(EventId = 2005, Level = LogLevel.Debug,
+            Message = "Acquiring renewable distributed lock on '{Resource}' (expiry={Expiry}, wait={Wait})")]
+        internal static partial void AcquiringRenewableLock(ILogger logger, string resource, TimeSpan expiry, TimeSpan wait);
+
+        [LoggerMessage(EventId = 2006, Level = LogLevel.Debug,
+            Message = "Renewable distributed lock acquired on '{Resource}'")]
+        internal static partial void RenewableLockAcquired(ILogger logger, string resource);
+
+        [LoggerMessage(EventId = 2007, Level = LogLevel.Warning,
+            Message = "Renewable distributed lock NOT acquired on '{Resource}' within wait window")]
+        internal static partial void RenewableLockNotAcquired(ILogger logger, string resource);
     }
 }

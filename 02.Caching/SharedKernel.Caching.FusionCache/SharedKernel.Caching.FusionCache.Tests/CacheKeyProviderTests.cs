@@ -197,5 +197,8 @@ public sealed class CacheKeyProviderTests
     {
         public string BuildKey(string entity, string id, params string[] extraSegments) =>
             $"custom:{entity}:{id}";
+
+        public string BuildKey(string entity, string id, int version, params string[] extraSegments) =>
+            version > 0 ? $"custom:{entity}:{id}:v{version}" : $"custom:{entity}:{id}";
     }
 }

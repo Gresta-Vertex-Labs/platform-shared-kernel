@@ -62,4 +62,40 @@ public interface IDistributedLockService
         TimeSpan wait,
         TimeSpan retry,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Attempts to acquire a renewable distributed lock on <paramref name="resource"/>.
+    /// The returned <see cref="IRenewableLock"/> can be extended via
+    /// <see cref="IRenewableLock.RenewAsync"/> to prevent silent expiry during
+    /// long-running operations.
+    /// </summary>
+    /// <param name="resource">
+    /// A non-empty, globally unique name for the resource being locked
+    /// (e.g., <c>"invoice:42"</c>). The consuming service is responsible for namespacing.
+    /// </param>
+    /// <param name="expiry">
+    /// How long the lock is held on Redis before it automatically expires, protecting against
+    /// lock-holder crashes. Must be positive. Call <see cref="IRenewableLock.RenewAsync"/>
+    /// before this duration elapses to extend the lock.
+    /// </param>
+    /// <param name="wait">
+    /// Maximum time to wait while attempting to acquire the lock before giving up.
+    /// Must be non-negative. Pass <see cref="TimeSpan.Zero"/> for a single non-blocking attempt.
+    /// </param>
+    /// <param name="retry">
+    /// Interval between acquisition retries during the <paramref name="wait"/> window.
+    /// Must be positive.
+    /// </param>
+    /// <param name="ct">Cancellation token. Cancelling aborts the acquisition attempt.</param>
+    /// <returns>
+    /// An <see cref="IRenewableLock"/> handle that can be renewed and releases the lock
+    /// when disposed, or <see langword="null"/> if the lock could not be acquired within
+    /// <paramref name="wait"/>. This method never throws for a contended lock.
+    /// </returns>
+    ValueTask<IRenewableLock?> AcquireRenewableAsync(
+        string resource,
+        TimeSpan expiry,
+        TimeSpan wait,
+        TimeSpan retry,
+        CancellationToken ct = default);
 }

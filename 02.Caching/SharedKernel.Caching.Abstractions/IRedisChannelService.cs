@@ -24,6 +24,16 @@ namespace SharedKernel.Caching.Abstractions;
 public interface IRedisChannelService
 {
     /// <summary>
+    /// Reflects the current StackExchange.Redis connection state; intended for health check consumption.
+    /// </summary>
+    /// <remarks>
+    /// The value transitions automatically in response to <c>IConnectionMultiplexer.ConnectionRestored</c>
+    /// and <c>IConnectionMultiplexer.ConnectionFailed</c> events. Reads are non-blocking; writes use
+    /// volatile semantics — no lock is held during property access.
+    /// </remarks>
+    ConnectionHealthState ConnectionHealth { get; }
+
+    /// <summary>
     /// Publishes <paramref name="message"/> to the specified Redis <paramref name="channel"/>.
     /// </summary>
     /// <param name="channel">

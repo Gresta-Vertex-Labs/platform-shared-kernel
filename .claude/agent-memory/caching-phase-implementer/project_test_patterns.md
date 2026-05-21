@@ -54,3 +54,34 @@ metadata:
 - MemoryCache eviction is lazy — count checks must allow for `liveCount <= limit + 1` tolerance
 - Wire: `.WithMemoryCache(_ => new MemoryCache(new MemoryCacheOptions { SizeLimit = sizeLimit }))` + `.WithDefaultEntryOptions(o => o.Size = 1)`
 - Also set `Size = 1` in `BuildEntryOptions` — per-call options override defaults
+
+## Batch operations pipeline tests — Phase 22 pattern
+
+- `IRedisL2BatchService` is `internal` — access from tests via `InternalsVisibleTo` using `AssemblyAttribute` item group in `.csproj` (not `[assembly:]` attribute in source)
+- Pipeline verification: use separate admin-mode `IConnectionMultiplexer` (`ConfigurationOptions.AllowAdmin = true`) for `server.InfoAsync("stats")` — the regular multiplexer does not allow INFO command
+- `GetTotalCommandsProcessedAsync`: reads `total_commands_processed` from `server.InfoAsync("stats")` response
+- Pipeline delta assertion: `delta <= keyCount + 2` (N GETs + 2 INFO calls) — Redis counts each pipelined GET individually server-side; the pipeline saves network round-trips, not server-side command count
+- Admin multiplexer disposal: `_adminMultiplexer` is disposed in `DisposeAsync` before `_provider`
+- `IDatabase.CreateBatch()` + queue tasks + `batch.Execute()` is the correct StackExchange.Redis pipeline pattern
+
+## Channel reconnect tests — Phase 26 pattern
+
+- **Docker `PauseAsync` does not trigger SE.Redis `ConnectionFailed`** — SIGSTOP blocks the container but SE.Redis does not detect disconnect fast enough for tests. Do NOT use pause/unpause.
+- **`InternalsVisibleTo` pattern for event simulation**: make `OnConnectionRestored` and `OnConnectionFailed` `internal` methods; the test project calls them directly via positional args: `service.OnConnectionFailed(mux, null!)` / `service.OnConnectionRestored(mux, null!)`. Named `args:` parameter syntax causes CS1739 — use positional syntax.
+- **`ChannelMessageQueue` is sealed** — cannot be NSubstitute mocked. Return `Task.FromResult<ChannelMessageQueue>(null!)` in the `SubscribeAsync` substitute callback. `RedisChannelService` never uses the returned queue object.
+- **`NativeCommandError` / `EndPointCollection.EmptyArray` don't exist** on `IConnectionMultiplexer` NSubstitute substitute — the event args `ConnectionFailedEventArgs` parameter is passed as `null!` (safe since the event handler only reads `_multiplexer.IsConnected`, not the args).
+- **Live reconnect test**: use `CLIENT KILL ID {id}` Redis command to forcibly close subscriber connections. Parse `CLIENT LIST` output for lines with `flags=S` or `flags=PS`, extract `id=` field, then `db.ExecuteAsync("CLIENT", "KILL", "ID", id)`.
+- **`inReplay` flag pattern**: when a test needs a mock subscriber to throw only during replay (not initial subscribe), use a `bool inReplay = false` closure variable; flip to `true` after initial subscriptions complete.
+- **Connection string for reconnect tests**: use `abortConnect=false,connectRetry=10` (not `reconnectRetryPolicy` — that keyword is unsupported and throws `ArgumentException`).
+- **`SubscriptionCount` internal property**: `RedisChannelService` exposes `internal int SubscriptionCount` for test assertions about registry state.
+
+## FakeCacheService in 16.Testing — Phase 22 pattern
+
+- `FakeCacheService` moved from concept to implementation in Phase 22 (previously missing from 16.Testing)
+- Lives at `16.Testing/SharedKernel.Testing/Caching/FakeCacheService.cs`
+- Uses `ConcurrentDictionary<string, object?>` for thread-safe store
+- Tag tracking: `ConcurrentDictionary<string, HashSet<string>>` keyed by cache key → set of tags
+- `GetManyAsync`: returns a dictionary with an entry for every requested key; missing keys → default(T?)
+- `SetManyAsync`: loops `_store[key] = value` for all entries; updates tag registry per-key
+- `Count` property and `Clear()` method exposed for test assertions
+- `16.Testing/SharedKernel.Testing.csproj` requires `ProjectReference` to `SharedKernel.Caching.Abstractions`

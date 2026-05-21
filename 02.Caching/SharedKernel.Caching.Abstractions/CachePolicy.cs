@@ -62,6 +62,51 @@ public sealed record CachePolicy
     /// </summary>
     public double? EagerRefreshThreshold { get; private init; } = 0.9;
 
+    /// <summary>
+    /// Idle time-to-live for the L1 in-process memory cache when sliding expiration is enabled.
+    /// When set, the L1 entry's expiry is reset each time the entry is accessed, up to the
+    /// absolute ceiling imposed by <see cref="L1Duration"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>L1 only.</strong> Sliding expiration is mapped to the in-process
+    /// <c>MemoryCache</c> <c>SlidingExpiration</c> property. The L2 Redis distributed
+    /// cache does not support sliding expiry — the absolute <see cref="L2Duration"/> acts
+    /// as the ceiling TTL for L2 entries.
+    /// </para>
+    /// <para>
+    /// Defaults to <see langword="null"/> (no sliding expiry — pure absolute TTL only).
+    /// </para>
+    /// <para>
+    /// Use <see cref="Sliding"/> to construct a policy with this property set.
+    /// </para>
+    /// </remarks>
+    public TimeSpan? SlidingWindow { get; private init; } = null;
+
+    /// <summary>
+    /// Schema version used to differentiate cache keys across deployments.
+    /// When greater than zero, <c>ICacheKeyProvider.BuildKey</c> appends a <c>:v{version}</c>
+    /// suffix to the generated key (e.g. <c>order-svc:invoice:42:v3</c>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A value of <c>0</c> (the default) produces the original key format with no suffix —
+    /// this is backward-compatible with all callers that do not call <see cref="WithVersion"/>.
+    /// </para>
+    /// <para>
+    /// Use <see cref="WithVersion"/> to obtain a copy of this policy with a non-zero version.
+    /// Pass <c>KeyVersion</c> to
+    /// <c>ICacheKeyProvider.BuildKey(entity, id, version, extraSegments)</c> to bake
+    /// the version into the final key string. Key versioning is the <strong>caller's
+    /// responsibility</strong> — <c>ICacheService</c> method signatures do not change.
+    /// </para>
+    /// <para>
+    /// <strong>Deployment workflow:</strong> increment the version in the code → deploy →
+    /// the old key will expire naturally via its TTL — no explicit cache flush is required.
+    /// </para>
+    /// </remarks>
+    public int KeyVersion { get; private init; } = 0;
+
     // -------------------------------------------------------------------------
     // Presets
     // -------------------------------------------------------------------------
@@ -174,4 +219,84 @@ public sealed record CachePolicy
     /// Returns a copy of this policy with fail-safe disabled.
     /// </summary>
     public CachePolicy WithFailSafeDisabled() => this with { FailSafeEnabled = false };
+
+    /// <summary>
+    /// Returns a copy of this policy with the cache key schema version set to
+    /// <paramref name="version"/>.
+    /// </summary>
+    /// <param name="version">
+    /// A non-negative integer identifying the schema version. When greater than zero,
+    /// <c>ICacheKeyProvider.BuildKey</c> appends a <c>:v{version}</c> suffix to the key
+    /// (e.g. <c>order-svc:invoice:42:v3</c>). Pass <c>0</c> to revert to the original
+    /// format with no suffix.
+    /// </param>
+    /// <returns>
+    /// A new <see cref="CachePolicy"/> with <see cref="KeyVersion"/> set to
+    /// <paramref name="version"/>.
+    /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="version"/> is negative.
+    /// </exception>
+    /// <remarks>
+    /// Chains correctly alongside <see cref="WithTags"/>, <see cref="WithEagerRefresh"/>,
+    /// and <see cref="Sliding"/>:
+    /// <code>
+    /// CachePolicy.Default.WithVersion(3).WithTags("entity:invoice")
+    /// </code>
+    /// </remarks>
+    public CachePolicy WithVersion(int version)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(version, nameof(version));
+        return this with { KeyVersion = version };
+    }
+
+    // -------------------------------------------------------------------------
+    // Sliding-expiration factory
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Creates a policy with sliding (idle) expiration for L1.
+    /// The entry's L1 expiry resets on each access; the absolute ceiling is
+    /// <see cref="Default"/>'s <see cref="L1Duration"/> (5 minutes) for L1
+    /// and <see cref="Default"/>'s <see cref="L2Duration"/> (30 minutes) for L2.
+    /// </summary>
+    /// <param name="window">
+    /// The idle TTL for the L1 in-process cache. The entry expires after this duration
+    /// elapses without any access. Must be positive.
+    /// </param>
+    /// <returns>
+    /// A new <see cref="CachePolicy"/> with <see cref="SlidingWindow"/> set to
+    /// <paramref name="window"/> and absolute durations equal to <see cref="Default"/>.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <strong>L1 only.</strong> Sliding expiration applies only to the L1 in-process
+    /// <c>MemoryCache</c>. The L2 Redis distributed cache does not support sliding expiry;
+    /// L2 entries expire at the absolute <see cref="L2Duration"/> ceiling.
+    /// </para>
+    /// <para>
+    /// <strong>Incompatible with <see cref="NeverExpire"/>.</strong> Combining a non-null
+    /// <see cref="SlidingWindow"/> with <see cref="NeverExpire"/> (which sets
+    /// <see cref="L1Duration"/> to <see cref="TimeSpan.MaxValue"/>) is invalid and will
+    /// throw at the provider level (e.g., <c>FusionCacheService</c>).
+    /// </para>
+    /// <para>
+    /// Use <see cref="CachePolicy.WithTags"/> after this factory to add tag-based
+    /// group invalidation: <c>CachePolicy.Sliding(window).WithTags("tag")</c>.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="window"/> is not positive.
+    /// </exception>
+    public static CachePolicy Sliding(TimeSpan window)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(window.Ticks, nameof(window));
+
+        return new CachePolicy
+        {
+            L1Duration = Default.L1Duration,
+            L2Duration = Default.L2Duration,
+            SlidingWindow = window,
+        };
+    }
 }

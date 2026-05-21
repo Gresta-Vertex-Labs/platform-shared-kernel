@@ -58,7 +58,7 @@
 
 ## Active Work
 
-_Phases 22–31 planned (WO-007) — pending implementation._
+_Phases 24–25 (SlidingExpiration, KeyVersioning) complete. Phases 26–31 planned (WO-007) — pending implementation._
 
 <!--
 Format when active — replace placeholder with table:
@@ -1176,14 +1176,14 @@ This is a **breaking change** to `ICacheService`. It is cheaper at v1.0.0 (befor
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| BA-01 | Add `GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct) → ValueTask<IReadOnlyDictionary<string, T?>>` to `ICacheService`; XML doc states per-key null-on-miss behavior and that every requested key has an entry in the returned dictionary | SharedKernel.Caching.Abstractions | `○` |
-| BA-02 | Add `SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct) → ValueTask` to `ICacheService`; XML doc states single policy applies to all entries in the batch | SharedKernel.Caching.Abstractions | `○` |
-| BA-03 | Implement `GetManyAsync<T>` in `FusionCacheService` via `TryGetAsync` loop; always returns a dictionary entry per input key (null entry on miss) | SharedKernel.Caching.FusionCache | `○` |
-| BA-04 | Implement `SetManyAsync<T>` in `FusionCacheService` via `SetAsync` loop applying the supplied `CachePolicy` to each entry | SharedKernel.Caching.FusionCache | `○` |
-| BA-05 | Create `IRedisL2BatchService` internal helper in `SharedKernel.Caching.Redis` that batches `IDatabase.StringGetAsync` calls into a single Redis pipeline round-trip for `GetManyAsync` L2 path | SharedKernel.Caching.Redis | `○` |
-| BA-06 | Update `FakeCacheService` in `16.Testing` to implement `GetManyAsync` and `SetManyAsync` | SharedKernel.Testing | `○` |
-| BA-07 | Unit tests: batch get with mixed hits/misses, batch set then get-many, empty key list returns empty dictionary | SharedKernel.Caching.FusionCache.Tests | `○` |
-| BA-08 | Integration tests: `GetManyAsync` with L2 active uses a single Redis pipeline round-trip (verified via Redis command count) | SharedKernel.Caching.Redis.Tests | `○` |
+| BA-01 | Add `GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct) → ValueTask<IReadOnlyDictionary<string, T?>>` to `ICacheService`; XML doc states per-key null-on-miss behavior and that every requested key has an entry in the returned dictionary | SharedKernel.Caching.Abstractions | `●` |
+| BA-02 | Add `SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct) → ValueTask` to `ICacheService`; XML doc states single policy applies to all entries in the batch | SharedKernel.Caching.Abstractions | `●` |
+| BA-03 | Implement `GetManyAsync<T>` in `FusionCacheService` via `TryGetAsync` loop; always returns a dictionary entry per input key (null entry on miss) | SharedKernel.Caching.FusionCache | `●` |
+| BA-04 | Implement `SetManyAsync<T>` in `FusionCacheService` via `SetAsync` loop applying the supplied `CachePolicy` to each entry | SharedKernel.Caching.FusionCache | `●` |
+| BA-05 | Create `IRedisL2BatchService` internal helper in `SharedKernel.Caching.Redis` that batches `IDatabase.StringGetAsync` calls into a single Redis pipeline round-trip for `GetManyAsync` L2 path | SharedKernel.Caching.Redis | `●` |
+| BA-06 | Update `FakeCacheService` in `16.Testing` to implement `GetManyAsync` and `SetManyAsync` | SharedKernel.Testing | `●` |
+| BA-07 | Unit tests: batch get with mixed hits/misses, batch set then get-many, empty key list returns empty dictionary | SharedKernel.Caching.FusionCache.Tests | `●` |
+| BA-08 | Integration tests: `GetManyAsync` with L2 active uses a single Redis pipeline round-trip (verified via Redis command count) | SharedKernel.Caching.Redis.Tests | `●` |
 
 ---
 
@@ -1252,13 +1252,13 @@ Services that fetch lists of entities by ID call `GetAsync` in a loop today, eac
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| RL-01 | Add `IRenewableLock` interface to `SharedKernel.Caching.Abstractions`: `RenewAsync(CancellationToken ct) → ValueTask<bool>`, `IsAcquired` (bool), extends `IAsyncDisposable` | SharedKernel.Caching.Abstractions | `○` |
-| RL-02 | Add `AcquireRenewableAsync(string resource, TimeSpan expiry, TimeSpan wait, TimeSpan retry, CancellationToken ct) → ValueTask<IRenewableLock?>` to `IDistributedLockService` | SharedKernel.Caching.Abstractions | `○` |
-| RL-03 | Create `RedLockRenewableLock.cs` in `SharedKernel.Caching.Redis` implementing `IRenewableLock`; `RenewAsync` uses RedLock.net `ExtendAsync` if available or re-acquires before expiry; returns `false` without throwing when lock is lost | SharedKernel.Caching.Redis | `○` |
-| RL-04 | Implement `AcquireRenewableAsync` on `RedLockDistributedLockService` returning a `RedLockRenewableLock` or `null` | SharedKernel.Caching.Redis | `○` |
-| RL-05 | Add `KeepAliveAsync(IRenewableLock lock, TimeSpan renewalInterval, CancellationToken ct) → Task` static extension method in `SharedKernel.Caching.Redis`; loops calling `RenewAsync` until cancellation or `IsAcquired` is `false` | SharedKernel.Caching.Redis | `○` |
-| RL-06 | Update `FakeDistributedLockService` in `16.Testing` to implement `AcquireRenewableAsync` with a fake `IRenewableLock` that tracks renewal call count | SharedKernel.Testing | `○` |
-| RL-07 | Integration tests: renewal succeeds before expiry, renewal returns `false` after expiry, `KeepAliveAsync` prevents lock loss across a simulated slow operation | SharedKernel.Caching.Redis.Tests | `○` |
+| RL-01 | Add `IRenewableLock` interface to `SharedKernel.Caching.Abstractions`: `RenewAsync(CancellationToken ct) → ValueTask<bool>`, `IsAcquired` (bool), extends `IAsyncDisposable` | SharedKernel.Caching.Abstractions | `●` |
+| RL-02 | Add `AcquireRenewableAsync(string resource, TimeSpan expiry, TimeSpan wait, TimeSpan retry, CancellationToken ct) → ValueTask<IRenewableLock?>` to `IDistributedLockService` | SharedKernel.Caching.Abstractions | `●` |
+| RL-03 | Create `RedLockRenewableLock.cs` in `SharedKernel.Caching.Redis` implementing `IRenewableLock`; `RenewAsync` uses RedLock.net `ExtendAsync` if available or re-acquires before expiry; returns `false` without throwing when lock is lost | SharedKernel.Caching.Redis | `●` |
+| RL-04 | Implement `AcquireRenewableAsync` on `RedLockDistributedLockService` returning a `RedLockRenewableLock` or `null` | SharedKernel.Caching.Redis | `●` |
+| RL-05 | Add `KeepAliveAsync(IRenewableLock lock, TimeSpan renewalInterval, CancellationToken ct) → Task` static extension method in `SharedKernel.Caching.Redis`; loops calling `RenewAsync` until cancellation or `IsAcquired` is `false` | SharedKernel.Caching.Redis | `●` |
+| RL-06 | Update `FakeDistributedLockService` in `16.Testing` to implement `AcquireRenewableAsync` with a fake `IRenewableLock` that tracks renewal call count | SharedKernel.Testing | `●` |
+| RL-07 | Integration tests: renewal succeeds before expiry, renewal returns `false` after expiry, `KeepAliveAsync` prevents lock loss across a simulated slow operation | SharedKernel.Caching.Redis.Tests | `●` |
 
 ---
 
@@ -1331,12 +1331,12 @@ The current `IDistributedLockService.AcquireAsync` returns a fixed-expiry lock w
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| SE-01 | Add `SlidingWindow` property (`TimeSpan?`, nullable, default `null`) to `CachePolicy` in `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `○` |
-| SE-02 | Add `CachePolicy.Sliding(TimeSpan window)` factory method; returns a policy with `SlidingWindow = window` and absolute durations matching `CachePolicy.Default` | SharedKernel.Caching.Abstractions | `○` |
-| SE-03 | Map `SlidingWindow` in `FusionCacheService.BuildEntryOptions`; use FusionCache sliding mechanism if available, otherwise approximate via short `L1Duration` + aggressive `EagerRefreshThreshold`; document approximation in XML doc if exact sliding is not available | SharedKernel.Caching.FusionCache | `○` |
-| SE-04 | Add validation guard: `CachePolicy.NeverExpire` and `SlidingWindow` set together is invalid; throw `InvalidOperationException` in `BuildEntryOptions` or add a check in `CachePolicy` construction | SharedKernel.Caching.FusionCache | `○` |
-| SE-05 | Unit tests: `Sliding` factory method properties correct, sliding-expired entry not returned after idle period, absolute max TTL still applies when both `L1Duration` and `SlidingWindow` are set | SharedKernel.Caching.FusionCache.Tests | `○` |
-| SE-06 | All existing `CachePolicy` tests continue to pass | SharedKernel.Caching.FusionCache.Tests | `○` |
+| SE-01 | Add `SlidingWindow` property (`TimeSpan?`, nullable, default `null`) to `CachePolicy` in `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `●` |
+| SE-02 | Add `CachePolicy.Sliding(TimeSpan window)` factory method; returns a policy with `SlidingWindow = window` and absolute durations matching `CachePolicy.Default` | SharedKernel.Caching.Abstractions | `●` |
+| SE-03 | Map `SlidingWindow` in `FusionCacheService.BuildEntryOptions`; use FusionCache sliding mechanism if available, otherwise approximate via short `L1Duration` + aggressive `EagerRefreshThreshold`; document approximation in XML doc if exact sliding is not available | SharedKernel.Caching.FusionCache | `●` |
+| SE-04 | Add validation guard: `CachePolicy.NeverExpire` and `SlidingWindow` set together is invalid; throw `InvalidOperationException` in `BuildEntryOptions` or add a check in `CachePolicy` construction | SharedKernel.Caching.FusionCache | `●` |
+| SE-05 | Unit tests: `Sliding` factory method properties correct, sliding-expired entry not returned after idle period, absolute max TTL still applies when both `L1Duration` and `SlidingWindow` are set | SharedKernel.Caching.FusionCache.Tests | `●` |
+| SE-06 | All existing `CachePolicy` tests continue to pass | SharedKernel.Caching.FusionCache.Tests | `●` |
 
 ---
 
@@ -1397,14 +1397,14 @@ Shopping cart data, user sessions, and partial workflow state need idle-expiry: 
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| KV-01 | Add `KeyVersion` property (`int`, default `0`) to `CachePolicy` in `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `○` |
-| KV-02 | Add `WithVersion(int version)` fluent method to `CachePolicy`; chains correctly alongside `WithTags` | SharedKernel.Caching.Abstractions | `○` |
-| KV-03 | Update `ICacheKeyProvider.BuildKey` XML doc to state that callers should pass the `CachePolicy.KeyVersion` value when non-zero; format: `{service}:{entity}:{id}[:{extraSegment}...]:v{version}` | SharedKernel.Caching.Abstractions | `○` |
-| KV-04 | Update `CacheKeyProvider` in `SharedKernel.Caching.FusionCache` to accept an `int version` parameter in `BuildKey` (or a `CachePolicy` overload); append `:v{version}` suffix when `version > 0` | SharedKernel.Caching.FusionCache | `○` |
-| KV-05 | Update `ICacheKeyProvider` to add overload `BuildKey(string entity, string id, int version, params string[] extraSegments)` — `ICacheService` method signatures do NOT change | SharedKernel.Caching.Abstractions | `○` |
-| KV-06 | Add XML doc to `CacheKeyProvider` describing the deployment workflow: increment version → deploy → old key expires via TTL → no cache flush required | SharedKernel.Caching.FusionCache | `○` |
-| KV-07 | Unit tests: `BuildKey` with version 0 produces no suffix (backward-compatible), `BuildKey` with version 3 produces `:v3` suffix, `WithVersion(3).WithTags("x")` chains correctly | SharedKernel.Caching.FusionCache.Tests | `○` |
-| KV-08 | All existing `CacheKeyProvider` and `CachePolicyTests` pass — no regressions | Both | `○` |
+| KV-01 | Add `KeyVersion` property (`int`, default `0`) to `CachePolicy` in `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `●` |
+| KV-02 | Add `WithVersion(int version)` fluent method to `CachePolicy`; chains correctly alongside `WithTags` | SharedKernel.Caching.Abstractions | `●` |
+| KV-03 | Update `ICacheKeyProvider.BuildKey` XML doc to state that callers should pass the `CachePolicy.KeyVersion` value when non-zero; format: `{service}:{entity}:{id}[:{extraSegment}...]:v{version}` | SharedKernel.Caching.Abstractions | `●` |
+| KV-04 | Update `CacheKeyProvider` in `SharedKernel.Caching.FusionCache` to accept an `int version` parameter in `BuildKey` (or a `CachePolicy` overload); append `:v{version}` suffix when `version > 0` | SharedKernel.Caching.FusionCache | `●` |
+| KV-05 | Update `ICacheKeyProvider` to add overload `BuildKey(string entity, string id, int version, params string[] extraSegments)` — `ICacheService` method signatures do NOT change | SharedKernel.Caching.Abstractions | `●` |
+| KV-06 | Add XML doc to `CacheKeyProvider` describing the deployment workflow: increment version → deploy → old key expires via TTL → no cache flush required | SharedKernel.Caching.FusionCache | `●` |
+| KV-07 | Unit tests: `BuildKey` with version 0 produces no suffix (backward-compatible), `BuildKey` with version 3 produces `:v3` suffix, `WithVersion(3).WithTags("x")` chains correctly | SharedKernel.Caching.FusionCache.Tests | `●` |
+| KV-08 | All existing `CacheKeyProvider` and `CachePolicyTests` pass — no regressions | Both | `●` |
 
 ---
 
@@ -1468,12 +1468,12 @@ Silent deserialization failures after DTO schema changes cause post-deployment i
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| CR-01 | Subscribe `RedisChannelService` to `IConnectionMultiplexer.ConnectionRestored` event in constructor | SharedKernel.Caching.Redis | `○` |
-| CR-02 | On `ConnectionRestored`, resubscribe all channels in the internal subscription registry atomically (lock registry during replay); exceptions during resubscription logged at `LogLevel.Error` and do not propagate | SharedKernel.Caching.Redis | `○` |
-| CR-03 | Add `ConnectionHealthState` enum (`Connected`, `Reconnecting`, `Disconnected`) and property to `RedisChannelService` (and expose on `IRedisChannelService` interface); update the enum to `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `○` |
-| CR-04 | Subscribe to `IConnectionMultiplexer.ConnectionFailed` to transition state to `Reconnecting` or `Disconnected`; `ConnectionRestored` transitions back to `Connected` | SharedKernel.Caching.Redis | `○` |
-| CR-05 | Integration test: drop and restore Redis container connection; verify messages are delivered again after reconnect; verify resubscription count equals the pre-disconnect subscription count | SharedKernel.Caching.Redis.Tests | `○` |
-| CR-06 | All existing `RedisChannelServiceIntegrationTests` continue to pass | SharedKernel.Caching.Redis.Tests | `○` |
+| CR-01 | Subscribe `RedisChannelService` to `IConnectionMultiplexer.ConnectionRestored` event in constructor | SharedKernel.Caching.Redis | `●` |
+| CR-02 | On `ConnectionRestored`, resubscribe all channels in the internal subscription registry atomically (lock registry during replay); exceptions during resubscription logged at `LogLevel.Error` and do not propagate | SharedKernel.Caching.Redis | `●` |
+| CR-03 | Add `ConnectionHealthState` enum (`Connected`, `Reconnecting`, `Disconnected`) and property to `RedisChannelService` (and expose on `IRedisChannelService` interface); update the enum to `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `●` |
+| CR-04 | Subscribe to `IConnectionMultiplexer.ConnectionFailed` to transition state to `Reconnecting` or `Disconnected`; `ConnectionRestored` transitions back to `Connected` | SharedKernel.Caching.Redis | `●` |
+| CR-05 | Integration test: drop and restore Redis container connection; verify messages are delivered again after reconnect; verify resubscription count equals the pre-disconnect subscription count | SharedKernel.Caching.Redis.Tests | `●` |
+| CR-06 | All existing `RedisChannelServiceIntegrationTests` continue to pass | SharedKernel.Caching.Redis.Tests | `●` |
 
 ---
 
@@ -1537,11 +1537,11 @@ Redis rolling upgrades, pod restarts, and network blips trigger connection drops
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| CO-01 | Add `AddCachingCoreOptions(this IServiceCollection services, Action<CachingCoreOptions> configure) → IServiceCollection` extension in `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `○` |
-| CO-02 | Verify `Microsoft.Extensions.Options` is available in `SharedKernel.Caching.Abstractions.csproj` (either direct or transitively via `Microsoft.Extensions.DependencyInjection.Abstractions`); add explicit reference only if required | SharedKernel.Caching.Abstractions | `○` |
-| CO-03 | Update `AddRedisCacheInvalidationBus` to log `LogLevel.Warning` at startup if `CachingCoreOptions.ServiceName` equals the default `"app"` | SharedKernel.Caching.Redis | `○` |
-| CO-04 | Integration test: `CachingCoreOptions.ServiceName` resolves correctly when set via `AddCachingCoreOptions` without `AddSharedKernelCaching` | SharedKernel.Caching.Redis.Tests | `○` |
-| CO-05 | All existing tests continue to pass | Both | `○` |
+| CO-01 | Add `AddCachingCoreOptions(this IServiceCollection services, Action<CachingCoreOptions> configure) → IServiceCollection` extension in `SharedKernel.Caching.Abstractions` | SharedKernel.Caching.Abstractions | `●` |
+| CO-02 | Verify `Microsoft.Extensions.Options` is available in `SharedKernel.Caching.Abstractions.csproj` (either direct or transitively via `Microsoft.Extensions.DependencyInjection.Abstractions`); add explicit reference only if required | SharedKernel.Caching.Abstractions | `●` |
+| CO-03 | Update `AddRedisCacheInvalidationBus` to log `LogLevel.Warning` at startup if `CachingCoreOptions.ServiceName` equals the default `"app"` | SharedKernel.Caching.Redis | `●` |
+| CO-04 | Integration test: `CachingCoreOptions.ServiceName` resolves correctly when set via `AddCachingCoreOptions` without `AddSharedKernelCaching` | SharedKernel.Caching.Redis.Tests | `●` |
+| CO-05 | All existing tests continue to pass | Both | `●` |
 
 ---
 
@@ -1602,12 +1602,12 @@ A background worker using only Redis coordination (distributed locking, channel 
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| CW-01 | Add `ICacheWarmupStrategy` to `SharedKernel.Caching.Abstractions`: `Name` (string), `Order` (int), `WarmupAsync(ICacheService cache, CancellationToken ct)` | SharedKernel.Caching.Abstractions | `○` |
-| CW-02 | Create `CacheWarmupHostedService` `BackgroundService` in `SharedKernel.Caching.FusionCache`: resolves all `ICacheWarmupStrategy` from DI, orders by `Order`, executes sequentially; logs start/completion/duration at `Information`; catches and logs per-strategy exceptions at `Error` without aborting | SharedKernel.Caching.FusionCache | `○` |
-| CW-03 | Add `WaitForWarmup` opt-in to `CachingOptions` (bool, default `false`); when `true`, `CacheWarmupHostedService` integrates with `IHostedLifecycle.StartedAsync` to delay readiness signal until warmup completes | SharedKernel.Caching.FusionCache | `○` |
-| CW-04 | Add `AddCacheWarmup<TStrategy>(this ICachingBuilder builder)` extension where `TStrategy : ICacheWarmupStrategy`; registers `TStrategy` as `ICacheWarmupStrategy` singleton and registers `CacheWarmupHostedService` once (idempotent — use `TryAddEnumerable`) | SharedKernel.Caching.FusionCache | `○` |
-| CW-05 | Unit tests: multiple strategies execute in correct `Order`; failed strategy does not abort others; timing logged per strategy | SharedKernel.Caching.FusionCache.Tests | `○` |
-| CW-06 | All public types carry XML doc comments | Both | `○` |
+| CW-01 | Add `ICacheWarmupStrategy` to `SharedKernel.Caching.Abstractions`: `Name` (string), `Order` (int), `WarmupAsync(ICacheService cache, CancellationToken ct)` | SharedKernel.Caching.Abstractions | `●` |
+| CW-02 | Create `CacheWarmupHostedService` `BackgroundService` in `SharedKernel.Caching.FusionCache`: resolves all `ICacheWarmupStrategy` from DI, orders by `Order`, executes sequentially; logs start/completion/duration at `Information`; catches and logs per-strategy exceptions at `Error` without aborting | SharedKernel.Caching.FusionCache | `●` |
+| CW-03 | Add `WaitForWarmup` opt-in to `CachingOptions` (bool, default `false`); when `true`, `CacheWarmupHostedService` integrates with `IHostedLifecycle.StartedAsync` to delay readiness signal until warmup completes | SharedKernel.Caching.FusionCache | `●` |
+| CW-04 | Add `AddCacheWarmup<TStrategy>(this ICachingBuilder builder)` extension where `TStrategy : ICacheWarmupStrategy`; registers `TStrategy` as `ICacheWarmupStrategy` singleton and registers `CacheWarmupHostedService` once (idempotent — use `TryAddEnumerable`) | SharedKernel.Caching.FusionCache | `●` |
+| CW-05 | Unit tests: multiple strategies execute in correct `Order`; failed strategy does not abort others; timing logged per strategy | SharedKernel.Caching.FusionCache.Tests | `●` |
+| CW-06 | All public types carry XML doc comments | Both | `●` |
 
 ---
 
@@ -1918,13 +1918,13 @@ Format when active:
 | `SK.02.DiErgonomics` | Phase 19 (DI Ergonomics Hardening) | 6 | 6 | `●` |
 | `SK.02.L1SizeLimit` | Phase 20 (L1SizeLimit Wiring + L2 KeyPrefix) | 7 | 7 | `●` |
 | `SK.02.ValueTaskFactory` | Phase 21 (GetOrSetAsync ValueTask Factory) | 8 | 8 | `●` |
-| `SK.02.BatchOperations` | Phase 22 (Batch Get and Set) | 8 | 0 | `○` |
-| `SK.02.RenewableLock` | Phase 23 (IRenewableLock Heartbeat) | 7 | 0 | `○` |
-| `SK.02.SlidingExpiration` | Phase 24 (Sliding Expiration) | 6 | 0 | `○` |
-| `SK.02.KeyVersioning` | Phase 25 (Cache Key Versioning) | 8 | 0 | `○` |
-| `SK.02.ChannelReconnect` | Phase 26 (Channel Reconnect Resilience) | 6 | 0 | `○` |
-| `SK.02.CachingCoreOptionsDi` | Phase 27 (CachingCoreOptions Standalone DI) | 5 | 0 | `○` |
-| `SK.02.CacheWarmup` | Phase 28 (Cache Warmup Strategy) | 6 | 0 | `○` |
+| `SK.02.BatchOperations` | Phase 22 (Batch Get and Set) | 8 | 8 | `●` |
+| `SK.02.RenewableLock` | Phase 23 (IRenewableLock Heartbeat) | 7 | 7 | `●` |
+| `SK.02.SlidingExpiration` | Phase 24 (Sliding Expiration) | 6 | 6 | `●` |
+| `SK.02.KeyVersioning` | Phase 25 (Cache Key Versioning) | 8 | 8 | `●` |
+| `SK.02.ChannelReconnect` | Phase 26 (Channel Reconnect Resilience) | 6 | 6 | `●` |
+| `SK.02.CachingCoreOptionsDi` | Phase 27 (CachingCoreOptions Standalone DI) | 5 | 5 | `●` |
+| `SK.02.CacheWarmup` | Phase 28 (Cache Warmup Strategy) | 6 | 6 | `●` |
 | `SK.02.TenantCacheKey` | Phase 29 (Multi-Tenant Cache Key) | 6 | 0 | `○` |
 | `SK.02.RedisCircuitBreaker` | Phase 30 (Redis Circuit Breaker) | 6 | 0 | `○` |
 | `SK.02.OtelMeters` | Phase 31 (OTel Metrics) | 9 | 0 | `○` |
@@ -1960,3 +1960,10 @@ Format when active:
 - [2026-05-20] DE-01→DE-06 → ● in SK.02.DiErgonomics — ICachingBuilder overload for AddRedisDistributedLocking; IServiceCollection overload marked [Obsolete]; guards on AddRedisChannelService + AddCacheInvalidationReceiver; 95+89 tests passing (state-map-phase)
 - [2026-05-20] VT-01→VT-08 → ● in SK.02.ValueTaskFactory — factory migrated to ValueTask{T}; negative-result caching via GetOrSetAsync{T?}; 102 FusionCache + 93 Redis tests passing (state-map-phase)
 - [2026-05-21] Phases 22–31 planned (WO-007) — Ph22: batch GetManyAsync/SetManyAsync + Redis pipeline helper; Ph23: IRenewableLock heartbeat + KeepAliveAsync; Ph24: CachePolicy.Sliding + SlidingWindow; Ph25: CachePolicy.KeyVersion + ICacheKeyProvider version overload; Ph26: RedisChannelService reconnect resilience + ConnectionHealthState; Ph27: AddCachingCoreOptions standalone DI in Abstractions; Ph28: ICacheWarmupStrategy + CacheWarmupHostedService; Ph29: ITenantCacheKeyProvider multi-tenant key isolation; Ph30: Polly v8 circuit breaker opt-in for Redis L2; Ph31: OTel System.Diagnostics.Metrics instruments on FusionCacheService (caching-arch-planner)
+- [2026-05-21] BA-01→BA-08 → ● in SK.02.BatchOperations — GetManyAsync/SetManyAsync on ICacheService; FusionCacheService loop impl; IRedisL2BatchService pipeline helper; FakeCacheService updated; 114 FusionCache + 99 Redis tests passing (state-map-phase)
+- [2026-05-21] RL-01→RL-07 → ● in SK.02.RenewableLock — IRenewableLock + AcquireRenewableAsync + RedLockRenewableLock + KeepAliveAsync extension + FakeDistributedLockService/FakeRenewableLock in Testing; 114 FusionCache + 125 Redis tests passing (state-map-phase)
+- [2026-05-21] SE-01→SE-06 → ● in SK.02.SlidingExpiration — CachePolicy.SlidingWindow + Sliding() factory; BuildEntryOptions approximation via SetMemoryCacheDuration; NeverExpire guard; 134 FusionCache tests passing (state-map-phase)
+- [2026-05-21] KV-01→KV-08 → ● in SK.02.KeyVersioning — CachePolicy.KeyVersion + WithVersion(int); ICacheKeyProvider versioned overload; CacheKeyProvider :v{n} suffix logic; 160 FusionCache + 125 Redis tests passing (state-map-phase)
+- [2026-05-21] CR-01→CR-06 → ● in SK.02.ChannelReconnect — ConnectionHealthState enum; IRedisChannelService.ConnectionHealth; ConnectionRestored replay; ConnectionFailed transition; 160 FusionCache + 132 Redis tests passing (state-map-phase)
+- [2026-05-21] CO-01→CO-05 → ● in SK.02.CachingCoreOptionsDi — AddCachingCoreOptions on IServiceCollection in Abstractions; Microsoft.Extensions.Options explicit ref added; RedisCacheInvalidationBus warns when ServiceName is default "app"; 160 FusionCache + 142 Redis tests passing (state-map-phase)
+- [2026-05-21] CW-01→CW-06 → ● in SK.02.CacheWarmup — ICacheWarmupStrategy in Abstractions; CacheWarmupHostedService (IHostedLifecycleService); WaitForWarmup option; AddCacheWarmup<T> extension; 172 FusionCache + 142 Redis tests passing (state-map-phase)

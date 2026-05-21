@@ -64,7 +64,7 @@ Format when blocked:
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
-| 02 | [Caching](02.Caching/state-map.md) | Phase 21 (GetOrSetAsync ValueTask Factory) | `●` | Phase 21 complete — GetOrSetAsync factory migrated to ValueTask{T}; negative-result caching via GetOrSetAsync{T?}; 102 FusionCache + 93 Redis tests passing. | — |
+| 02 | [Caching](02.Caching/state-map.md) | Phase 28 (ICacheWarmupStrategy and Startup Runner) | `●` | Phase 28 complete — ICacheWarmupStrategy in Abstractions; CacheWarmupHostedService (IHostedLifecycleService.StartedAsync); WaitForWarmup option; AddCacheWarmup extension; 172 FusionCache + 142 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
@@ -105,7 +105,7 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Guard Purity Enforcement | 1 |
-| ● Phase 21 (GetOrSetAsync ValueTask Factory) | 1 |
+| ● Phase 28 (ICacheWarmupStrategy and Startup Runner) | 1 |
 | ● Published | 1 |
 | ● Docs | 0 |
 | ● Tests | 0 |
@@ -963,7 +963,7 @@ This is a **breaking change** to the `ICacheService` interface. It must be paire
 ---
 ### P-021 — Caching: Batch Get and Set Operations (GetManyAsync / SetManyAsync)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1040,7 +1040,7 @@ The `expiry` parameter on `AcquireAsync` is a safety backstop, not a work-durati
 ---
 ### P-023 — Caching: Sliding Expiration Support in CachePolicy
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1074,7 +1074,7 @@ Shopping cart data, user sessions, and partial workflow state are the canonical 
 ---
 ### P-024 — Caching: Cache Key Versioning Strategy
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1426,3 +1426,9 @@ The testing domain must stay current with the capability domain. When `16.Testin
 - [2026-05-20] Caching → Phase 20 (Wire L1SizeLimit + Verify L2 KeyPrefix) (●) — promoted from SK.02.L1SizeLimit (state-map-phase)
 - [2026-05-20] Caching → Phase 21 (GetOrSetAsync ValueTask Factory) (●) — promoted from SK.02.ValueTaskFactory (state-map-phase)
 - [2026-05-21] Phase(s) P-021, P-022, P-023, P-024, P-025, P-026, P-027, P-028, P-029, P-030 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
+- [2026-05-21] Caching → Phase 22 (Batch Get and Set Operations) (●) — promoted from SK.02.BatchOperations (state-map-phase)
+- [2026-05-21] Caching → Phase 23 (IRenewableLock Heartbeat and Renewal) (●) — promoted from SK.02.RenewableLock (state-map-phase)
+- [2026-05-21] Caching → Phase 24 (Sliding Expiration in CachePolicy) (●) — promoted from SK.02.SlidingExpiration (state-map-phase)
+- [2026-05-21] Caching → Phase 25 (Cache Key Versioning Strategy) (●) — promoted from SK.02.KeyVersioning (state-map-phase)
+- [2026-05-21] Caching → Phase 26 (RedisChannelService Reconnect Resilience) (●) — promoted from SK.02.ChannelReconnect (state-map-phase)
+- [2026-05-21] Caching → Phase 27 (CachingCoreOptions Standalone DI Registration) (●) — promoted from SK.02.CachingCoreOptionsDi (state-map-phase)

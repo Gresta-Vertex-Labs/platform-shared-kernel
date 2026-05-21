@@ -29,6 +29,8 @@
     <ProjectReference Include="..\SharedKernel.Caching.Redis.csproj" />
     <!-- SharedKernel.Caching.FusionCache needed for L1FallbackTests and RedisL2IntegrationTests (AddSharedKernelCaching, CachePolicy) -->
     <ProjectReference Include="..\..\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
+    <!-- SharedKernel.Testing provides FakeCacheService, FakeDistributedLockService, FakeRenewableLock -->
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
 
 </Project>

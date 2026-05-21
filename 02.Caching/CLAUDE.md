@@ -10,11 +10,11 @@ Philosophy: **Fail-silent by default. Stampede-proof. AOT-compatible.**
 
 ## Current Phase
 
-**Phases 1–21 complete (WO-006). Phases 22–31 planned (WO-007), pending implementation.**
+**Phases 1–26 complete (WO-006 + WO-007 partial). Phases 27–31 planned (WO-007), pending implementation.**
 
-Last completed: Phase 21 (ValueTaskFactory) — `ICacheService.GetOrSetAsync<T>` factory delegate migrated from `Task<T>` to `ValueTask<T>`; negative-result caching via `GetOrSetAsync<T?>`.
+Last completed: Phase 26 (ChannelReconnect) — `ConnectionHealthState` enum; `IRedisChannelService.ConnectionHealth` property; `RedisChannelService` subscribes to `ConnectionRestored`/`ConnectionFailed`; atomic registry replay on reconnect; 160 FusionCache + 132 Redis tests passing.
 
-Next up: Phase 22 (BatchOperations) — `GetManyAsync<T>` and `SetManyAsync<T>` batch methods on `ICacheService`.
+Next up: Phase 27 (CachingCoreOptions standalone DI) — `AddCachingCoreOptions` on `IServiceCollection` in Abstractions package.
 
 ---
 
@@ -304,7 +304,7 @@ ITenantCacheKeyProvider  [new in Phase 29 — SharedKernel.Caching.Abstractions]
 - `IRenewableLock.IsAcquired` transitions to `false` after `DisposeAsync` and after renewal returns `false`.
 - `KeepAliveAsync` is a static extension method on `IRenewableLock` in `SharedKernel.Caching.Redis`; the caller owns cancellation.
 - `AcquireRenewableAsync` returns `null` if the lock cannot be acquired within `wait` — consistent with `AcquireAsync` semantics.
-- Use RedLock.net `ExtendAsync` if available; fall back to re-acquisition if not.
+- RedLock.net 2.3.2 has **no public `ExtendAsync`**. `RedLockRenewableLock` uses re-acquisition: dispose the old lock first, then `CreateLockAsync` on the same resource. This has a brief unprotected window but is the only option on a single-node Redis without a public extend API. Do not search for `ExtendAsync` on `IRedLock` — it does not exist in the public surface.
 
 ### Sliding expiration rules (Phase 24)
 
@@ -322,9 +322,13 @@ ITenantCacheKeyProvider  [new in Phase 29 — SharedKernel.Caching.Abstractions]
 ### Channel reconnect rules (Phase 26)
 
 - `RedisChannelService` subscribes to `IConnectionMultiplexer.ConnectionRestored` and `ConnectionFailed` in its constructor.
-- On `ConnectionRestored`: acquire the registry lock atomically; resubscribe all channels; log per-channel failures at `Error` without aborting.
+- On `ConnectionRestored`: acquire the registry lock atomically for the full replay loop; resubscribe all channels; log per-channel failures at `Error` without aborting remaining channels; transition `ConnectionHealth` to `Connected` before the replay.
+- On `ConnectionFailed`: check `IConnectionMultiplexer.IsConnected`; set `Connected` if still connected, `Reconnecting` if not.
 - `ConnectionHealthState` enum lives in `SharedKernel.Caching.Abstractions` — it is a plain enum with no infrastructure dependencies.
 - `IRedisChannelService.ConnectionHealth` property is intended for health check consumption; stated in XML doc.
+- **Registry implementation**: `Dictionary<string, SubscriptionEntry>` + `object _registryLock` (replaces `ConcurrentDictionary`). The lock is held for the entire replay loop — prevents a concurrent `SubscribeAsync` from inserting a channel mid-replay. `SubscribeAsync` and `UnsubscribeAsync` both acquire `_registryLock`.
+- `_connectionHealth` is a `volatile int` field (cast to/from `ConnectionHealthState`) — AOT-safe, single-writer event callbacks, reads without a lock.
+- `OnConnectionRestored` and `OnConnectionFailed` are `internal` — exposed via `InternalsVisibleTo` so test projects can simulate events without a live multiplexer.
 
 ### CachingCoreOptions standalone DI rules (Phase 27)
 
@@ -510,3 +514,8 @@ services.AddSharedKernelCaching(options => { })
 - [2026-05-20] Phase 20 implemented — L1SizeLimit wired via WithMemoryCache(SizeLimit)+Size=1 per entry; L2 key format verified as {KeyPrefix}v2:{user-key}; v2: injected by Microsoft.Extensions.Caching.StackExchangeRedis v10+; 95+93 tests passing (caching-phase-implementer)
 - [2026-05-20] Phase 21 implemented — GetOrSetAsync factory migrated from Task{T} to ValueTask{T}; C# constraint prevents a separate nullable overload (Func{CT,ValueTask{T}} and Func{CT,ValueTask{T?}} are identical at CLR level); negative-result caching via GetOrSetAsync{T?} confirmed working (FusionCache caches null as genuine entry); 102 FusionCache + 93 Redis tests passing (caching-phase-implementer)
 - [2026-05-21] Phases 22–31 planned (WO-007) — batch operations (GetManyAsync/SetManyAsync), IRenewableLock heartbeat, CachePolicy.Sliding + SlidingWindow, CachePolicy.KeyVersion + BuildKey version overload, RedisChannelService reconnect resilience + ConnectionHealthState, AddCachingCoreOptions standalone DI, ICacheWarmupStrategy + CacheWarmupHostedService, ITenantCacheKeyProvider multi-tenant key isolation, Polly v8 circuit breaker opt-in for Redis L2, OTel System.Diagnostics.Metrics on FusionCacheService; new interface contracts, rules, DI patterns, test rules updated (caching-arch-planner)
+- [2026-05-21] Phase 22 implemented — GetManyAsync/SetManyAsync added to ICacheService; FusionCacheService loop impl; IRedisL2BatchService pipeline helper (internal, InternalsVisibleTo test); FakeCacheService updated; 114 FusionCache + 99 Redis tests passing (caching-phase-implementer)
+- [2026-05-21] Phase 23 implemented — IRenewableLock + AcquireRenewableAsync + RedLockRenewableLock (re-acquisition strategy; RedLock.net 2.3.2 has no public ExtendAsync); KeepAliveAsync extension; FakeDistributedLockService + FakeRenewableLock in 16.Testing; 114 FusionCache + 125 Redis tests passing (caching-phase-implementer)
+- [2026-05-21] Phase 24 implemented — CachePolicy.SlidingWindow + Sliding() factory; FusionCacheService BuildEntryOptions SlidingExpiration wiring; NeverExpire+Sliding guard; 134 FusionCache + 125 Redis tests passing (caching-phase-implementer)
+- [2026-05-21] Phase 25 implemented — CachePolicy.KeyVersion + WithVersion(int); ICacheKeyProvider versioned BuildKey overload; CacheKeyProvider :v{n} suffix; 160 FusionCache + 125 Redis tests passing (caching-phase-implementer)
+- [2026-05-21] Phase 26 implemented — ConnectionHealthState enum; IRedisChannelService.ConnectionHealth; RedisChannelService reconnect replay (Dictionary+lock, volatile int health); OnConnectionRestored/Failed internal for testability; 160 FusionCache + 132 Redis tests passing (caching-phase-implementer)

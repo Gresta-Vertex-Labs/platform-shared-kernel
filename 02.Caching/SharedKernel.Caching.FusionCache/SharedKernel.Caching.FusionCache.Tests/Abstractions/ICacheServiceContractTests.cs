@@ -87,11 +87,40 @@ public sealed class ICacheServiceContractTests
     }
 
     [Fact]
-    public void ICacheService_ExposesExactlyFiveMethods()
+    public void ICacheService_ExposesExactlySevenMethods()
     {
         // GetAsync, SetAsync, GetOrSetAsync (single generic — handles both nullable and non-nullable),
-        // RemoveAsync, RemoveByTagAsync
+        // RemoveAsync, RemoveByTagAsync, GetManyAsync, SetManyAsync (Phase 22 — batch operations)
         var methods = InterfaceType.GetMethods();
-        Assert.Equal(5, methods.Length);
+        Assert.Equal(7, methods.Length);
+    }
+
+    [Fact]
+    public void ICacheService_HasGetManyAsyncMethod()
+    {
+        // GetManyAsync<T>(IEnumerable<string> keys, CancellationToken ct)
+        //   → ValueTask<IReadOnlyDictionary<string, T?>>
+        var method = InterfaceType.GetMethod("GetManyAsync");
+        Assert.NotNull(method);
+        Assert.True(method!.IsGenericMethodDefinition);
+
+        var parameters = method.GetParameters();
+        Assert.Equal(2, parameters.Length);
+        Assert.Equal(typeof(CancellationToken), parameters[1].ParameterType);
+    }
+
+    [Fact]
+    public void ICacheService_HasSetManyAsyncMethod()
+    {
+        // SetManyAsync<T>(IReadOnlyDictionary<string, T> entries, CachePolicy policy, CancellationToken ct)
+        //   → ValueTask
+        var method = InterfaceType.GetMethod("SetManyAsync");
+        Assert.NotNull(method);
+        Assert.True(method!.IsGenericMethodDefinition);
+
+        var parameters = method.GetParameters();
+        Assert.Equal(3, parameters.Length);
+        Assert.Equal(typeof(CachePolicy), parameters[1].ParameterType);
+        Assert.Equal(typeof(CancellationToken), parameters[2].ParameterType);
     }
 }

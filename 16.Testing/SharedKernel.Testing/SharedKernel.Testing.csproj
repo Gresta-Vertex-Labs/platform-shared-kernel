@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Caching test doubles — FakeCacheService implements ICacheService -->
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+  </ItemGroup>
+
 </Project>

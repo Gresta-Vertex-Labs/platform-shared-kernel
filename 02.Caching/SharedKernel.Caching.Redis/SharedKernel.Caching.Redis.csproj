@@ -55,4 +55,11 @@
     <None Remove="SharedKernel.Caching.Redis.Tests\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Allow internal types (RedisL2BatchService) to be accessed from the test project -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Caching.Redis.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

@@ -30,6 +30,8 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
     <!-- Options validation via data annotations (ValidateDataAnnotations, ValidateOnStart) -->
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />
+    <!-- Hosting abstractions — required for BackgroundService (CacheWarmupHostedService) and IHostedLifecycleService -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <!-- L1 in-process cache powered by FusionCache -->
     <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
     <!-- AOT-safe STJ serialization for FusionCache entries -->

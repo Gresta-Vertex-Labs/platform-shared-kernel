@@ -89,9 +89,28 @@ public sealed class IDistributedLockServiceContractTests
     }
 
     [Fact]
-    public void IDistributedLockService_ExposesExactlyOneMethod()
+    public void IDistributedLockService_ExposesExactlyTwoMethods()
     {
+        // AcquireAsync (original) + AcquireRenewableAsync (Phase 23)
         var methods = InterfaceType.GetMethods();
-        Assert.Single(methods);
+        Assert.Equal(2, methods.Length);
+    }
+
+    [Fact]
+    public void IDistributedLockService_HasAcquireRenewableAsyncMethod()
+    {
+        var method = InterfaceType.GetMethod("AcquireRenewableAsync");
+        Assert.NotNull(method);
+    }
+
+    [Fact]
+    public void AcquireRenewableAsync_ReturnsValueTaskOfNullableIRenewableLock()
+    {
+        var method = InterfaceType.GetMethod("AcquireRenewableAsync")!;
+        var returnType = method.ReturnType;
+
+        Assert.True(returnType.IsGenericType);
+        Assert.Equal(typeof(ValueTask<>), returnType.GetGenericTypeDefinition());
+        Assert.Equal(typeof(IRenewableLock), returnType.GetGenericArguments()[0]);
     }
 }

@@ -107,4 +107,59 @@ public interface ICacheService
     /// <param name="tag">The tag whose entries should be evicted.</param>
     /// <param name="ct">Cancellation token.</param>
     ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves cached values for all supplied <paramref name="keys"/> in a single batch operation.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every requested key is guaranteed to have a corresponding entry in the returned dictionary.
+    /// Keys that are not present in either the L1 or L2 cache map to <see langword="null"/>.
+    /// </para>
+    /// <para>
+    /// An empty <paramref name="keys"/> enumerable returns an empty dictionary immediately without
+    /// any cache interaction.
+    /// </para>
+    /// <para>
+    /// The underlying implementation iterates keys individually — there is no native batch API on
+    /// FusionCache. Each per-key operation benefits from stampede protection independently.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="T">The type of the cached values.</typeparam>
+    /// <param name="keys">The cache keys to retrieve. Must not be <see langword="null"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// A read-only dictionary mapping each requested key to its cached value, or
+    /// <see langword="null"/> when the key is not present in the cache.
+    /// </returns>
+    ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
+        IEnumerable<string> keys,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores multiple key-value entries in the cache in a single batch operation.
+    /// The same <paramref name="policy"/> is applied to every entry in the batch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A single <see cref="CachePolicy"/> governs all entries — there is no support for
+    /// per-key policies within a batch call. If different entries require different TTLs
+    /// or tags, use individual <see cref="SetAsync{T}"/> calls.
+    /// </para>
+    /// <para>
+    /// An empty <paramref name="entries"/> dictionary is a no-op; no cache interaction occurs.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="T">The type of the values to cache.</typeparam>
+    /// <param name="entries">
+    /// A read-only dictionary of key-value pairs to store. Must not be <see langword="null"/>.
+    /// </param>
+    /// <param name="policy">
+    /// Cache policy controlling TTL, tags, and refresh behaviour. Applied uniformly to all entries.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    ValueTask SetManyAsync<T>(
+        IReadOnlyDictionary<string, T> entries,
+        CachePolicy policy,
+        CancellationToken ct = default);
 }
