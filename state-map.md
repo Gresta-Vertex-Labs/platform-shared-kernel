@@ -1961,3 +1961,4 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-05-22] WO-009 (P-036–P-041) queued — 03.Domain architectural audit: aggregate hierarchy refactor, CLAUDE.md dependency correction, Specification.IsSatisfiedBy, typed DomainEvent base, ISpecification.AsNoTracking, AggregateRoot.Now guidance (arch-lead)
 - [2026-05-22] Phase(s) P-034 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
 - [2026-05-22] Phase(s) P-036, P-037, P-038, P-039, P-040, P-041 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-05-22] 00.Governance → Design (●) — promoted from SK.00.Design; root board not regressed (domain already at Guard Purity Enforcement ●) (state-map-phase)

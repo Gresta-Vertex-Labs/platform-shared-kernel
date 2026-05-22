@@ -341,8 +341,8 @@ Two complementary enforcement rules close the coupling drift vector introduced b
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| D-13 | Define `CachingAbstractionRules` static class shape: `OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` → `ConditionList`; define the three-assembly exemption list (`SharedKernel.Caching`, `SharedKernel.Caching.Redis`, `SharedKernel.ServiceDefaults`); document rationale | SharedKernel.ArchitectureTests | `○` |
-| D-14 | Define SK0007 `RedisChannelServiceMessagingSubstitute` — trigger: `IRedisChannelService` in constructor param / field / property of a class whose name or enclosing namespace contains `Command`, `Event`, `DomainEvent`, or `IntegrationEvent`; suppression: inside `SharedKernel.Caching` or `SharedKernel.Caching.Redis` namespaces | SharedKernel.Analyzers | `○` |
+| D-13 | Define `CachingAbstractionRules` static class shape: `OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` → `ConditionList`; define the three-assembly exemption list (`SharedKernel.Caching`, `SharedKernel.Caching.Redis`, `SharedKernel.ServiceDefaults`); document rationale | SharedKernel.ArchitectureTests | `●` |
+| D-14 | Define SK0007 `RedisChannelServiceMessagingSubstitute` — trigger: `IRedisChannelService` in constructor param / field / property of a class whose name or enclosing namespace contains `Command`, `Event`, `DomainEvent`, or `IntegrationEvent`; suppression: inside `SharedKernel.Caching` or `SharedKernel.Caching.Redis` namespaces | SharedKernel.Analyzers | `●` |
 | C-18 | Implement `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` — NetArchTest fluent predicate using `.Should().NotHaveDependencyOn("SharedKernel.Caching")` with assembly-name-based exemption filter | SharedKernel.ArchitectureTests | `○` |
 | C-19 | Implement SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` — `ClassDeclarationSyntax` walker; simple name match on `IRedisChannelService`; substring check for `Command`/`Event`/`DomainEvent`/`IntegrationEvent` in class name and namespace ancestors; suppress inside `SharedKernel.Caching*` namespaces via parent walk | SharedKernel.Analyzers | `○` |
 | T-18 | Architecture test (fire path): pass a contrived assembly reference that imports `SharedKernel.Caching` from an application-layer class; assert `CachingAbstractionRules` rule fails with the offending assembly name in the failure message | SharedKernel.ArchitectureTests | `○` |
@@ -433,10 +433,10 @@ All files in `SharedKernel.ArchitectureTests`:
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| D-15 | Define `DomainAssembliesNeverReferenceInfrastructure` predicate shape: forbidden assembly name terms (`EntityFramework`, `MassTransit`, `Redis`, `RabbitMQ`), iterative `.NotHaveDependencyOn()` call pattern, failure message contract | SharedKernel.ArchitectureTests | `○` |
-| D-16 | Define `DomainAssembliesNeverContainEventHandlers` predicate shape: `DoesNotImplementOpenGenericInterfacePredicate` design — `TypeDefinition.Interfaces` inspection for `IDomainEventHandler` name prefix; failure message includes offending type full name | SharedKernel.ArchitectureTests | `○` |
-| D-17 | Define `DomainAssembliesNeverCallSystemClock` predicate shape: `DoesNotCallSystemClockPredicate` design — IL instruction walk for `DateTime::get_UtcNow`, `DateTime::get_Now`, `DateTimeOffset::get_UtcNow`, `DateTimeOffset::get_Now`; failure message includes offending type and method | SharedKernel.ArchitectureTests | `○` |
-| D-18 | Define `DomainServicesHaveNoInfrastructureConstructorParameters` predicate shape: `NoInfrastructureConstructorParametersPredicate` design — scope to `IDomainService` implementors, inspect constructor `ParameterDefinition.ParameterType.Namespace` for infra namespace prefix match; failure message includes offending type and parameter type | SharedKernel.ArchitectureTests | `○` |
+| D-15 | Define `DomainAssembliesNeverReferenceInfrastructure` predicate shape: forbidden assembly name terms (`EntityFramework`, `MassTransit`, `Redis`, `RabbitMQ`), iterative `.NotHaveDependencyOn()` call pattern, failure message contract | SharedKernel.ArchitectureTests | `●` |
+| D-16 | Define `DomainAssembliesNeverContainEventHandlers` predicate shape: `DoesNotImplementOpenGenericInterfacePredicate` design — `TypeDefinition.Interfaces` inspection for `IDomainEventHandler` name prefix; failure message includes offending type full name | SharedKernel.ArchitectureTests | `●` |
+| D-17 | Define `DomainAssembliesNeverCallSystemClock` predicate shape: `DoesNotCallSystemClockPredicate` design — IL instruction walk for `DateTime::get_UtcNow`, `DateTime::get_Now`, `DateTimeOffset::get_UtcNow`, `DateTimeOffset::get_Now`; failure message includes offending type and method | SharedKernel.ArchitectureTests | `●` |
+| D-18 | Define `DomainServicesHaveNoInfrastructureConstructorParameters` predicate shape: `NoInfrastructureConstructorParametersPredicate` design — scope to `IDomainService` implementors, inspect constructor `ParameterDefinition.ParameterType.Namespace` for infra namespace prefix match; failure message includes offending type and parameter type | SharedKernel.ArchitectureTests | `●` |
 | C-20 | Implement `DoesNotImplementOpenGenericInterfacePredicate` in `Predicates/` — `ICustomRule` checking `TypeDefinition.Interfaces` for entries whose `InterfaceType.Name` starts with `"IDomainEventHandler"`; return false with offending type full name on violation | SharedKernel.ArchitectureTests | `○` |
 | C-21 | Implement `DoesNotCallSystemClockPredicate` in `Predicates/` — `ICustomRule` walking all `MethodDefinition.Body.Instructions` for `Call`/`Callvirt` opcodes whose operand `MethodReference.FullName` matches any of the four forbidden property getters | SharedKernel.ArchitectureTests | `○` |
 | C-22 | Implement `NoInfrastructureConstructorParametersPredicate` in `Predicates/` — `ICustomRule` scoped to types implementing `IDomainService`; inspects `TypeDefinition.Methods` where `IsConstructor` is true; checks each `ParameterDefinition.ParameterType.Namespace` against forbidden namespace prefix list | SharedKernel.ArchitectureTests | `○` |
@@ -471,7 +471,7 @@ Format when active:
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.00.Design` | Design | 18 | 12 | 6 | `◐` |
+| `SK.00.Design` | Design | 18 | 18 | 0 | `●` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
 | `SK.00.Core` | Core | 20 | 14 | 6 | `◐` |
 | `SK.00.Tests` | Tests | 25 | 12 | 13 | `◐` |
@@ -498,3 +498,4 @@ Format when active:
 - [2026-05-15] C-15–C-17, T-13–T-17, DO-06 → ● in SK.00.GuardPurity — all 11 tasks complete, GuardPurity phase fully done (state-map-phase)
 - [2026-05-18] Phase Caching Abstractions Enforcement added (SK.00.CachingEnforcement) — 11 tasks: D-13–D-14, C-18–C-19, T-18–T-22, DO-07–DO-08; SK0007 RedisChannelServiceMessagingSubstitute registered; CachingAbstractionRules arch predicate defined; total tasks now 73 — WO-003 P-009
 - [2026-05-22] Phase Domain Layer Purity Enforcement added (SK.00.DomainLayerPurity) — 16 tasks: D-15–D-18, C-20–C-23, T-23–T-30, DO-09; four NetArchTest predicates in DomainLayerPurityRules; three new ICustomRule predicates (DoesNotImplementOpenGenericInterfacePredicate, DoesNotCallSystemClockPredicate, NoInfrastructureConstructorParametersPredicate); no new SK IDs; total tasks now 89 — WO-008 P-034
+- [2026-05-22] D-13–D-18 → ● in SK.00.Design — all 6 remaining design tasks verified complete (specs fully present in CLAUDE.md); SK.00.Design promoted to ● with 18/18 tasks done (state-map-phase)
