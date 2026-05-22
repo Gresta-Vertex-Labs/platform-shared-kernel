@@ -3,9 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <IsAotCompatible>true</IsAotCompatible>
-    <!-- Microsoft.FeatureManagement 4.x does not yet ship a full AOT-trimming manifest.
+    <Nullable>enable</Nullable>    <!-- Microsoft.FeatureManagement 4.x does not yet ship a full AOT-trimming manifest.
          The IFeatureManager wrapper isolates consuming services from this concern —
          if AOT becomes required, only the adapter needs replacement. -->
 

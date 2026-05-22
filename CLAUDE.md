@@ -4,9 +4,13 @@
 
 A mono-repo of independently publishable NuGet packages that form the **SharedKernel** for a .NET 10 microservice ecosystem. Every package here is a reusable building block — no business logic lives here. Packages are consumed by downstream microservices, not by each other unless the dependency is explicitly allowed by the layering rules below.
 
-Philosophy: **Capability-Oriented, AOT-Compatible, K8s-Native, Test-Adjacent.**
+Philosophy: **Capability-Oriented, AOT-Preferred, K8s-Native, Test-Adjacent.**
 
-> **AOT Hard Rule:** Every production package in this repo MUST be .NET Native AOT compatible. No reflection-based serialization, no `dynamic`, no `Assembly.Load`, no `Activator.CreateInstance` without `[DynamicallyAccessedMembers]` annotations, no `Type.GetType(string)` calls without trim-safe alternatives. All serialization must use STJ source-generated contexts (`JsonSerializerContext`). Every production `.csproj` carries `<IsAotCompatible>true</IsAotCompatible>` — this activates the AOT and trim analyzers at build time. Third-party packages that are not AOT-safe may only be introduced behind an abstraction interface so the concrete dependency can be swapped when an AOT-compatible alternative becomes available.
+> **AOT Guidance (not a hard rule):** AOT compatibility is preferred where it costs nothing. The bar is pragmatic: if a feature can be written AOT-cleanly without reflection, `dynamic`, or `Assembly.Load`, do it that way. Prefer STJ source-generated contexts (`JsonSerializerContext`) over runtime serialization when the code stays readable. Avoid `Activator.CreateInstance` without `[DynamicallyAccessedMembers]` when a simple factory or constructor call is equally clear.
+>
+> **When to skip AOT:** If writing AOT-safe code requires significant boilerplate, awkward workarounds, or makes the code harder to understand and maintain, drop AOT for that area. Do not add `<IsAotCompatible>true</IsAotCompatible>` to project files — the tag activates trim/AOT analyzers globally and forces AOT compliance on the entire project, which is too coarse-grained.
+>
+> Third-party packages that are not AOT-safe are allowed; prefer placing them behind an abstraction interface where a swap is plausible, but this is a design preference, not a requirement.
 
 ---
 
@@ -157,5 +161,5 @@ These are the packages microservices should depend on — never on the concrete 
 > Maintained by `/sync-brain`. Each entry is one line: what changed and who triggered it.
 
 - [2026-05-13] Initial architecture brain written — folder map, layering rules, naming conventions, abstractions table (root)
-- [2026-05-21] AOT hard rule added — `<IsAotCompatible>true</IsAotCompatible>` applied to all 35 production csproj files; root AOT policy section added to CLAUDE.md
+- [2026-05-22] AOT policy relaxed — removed `<IsAotCompatible>true</IsAotCompatible>` from all 37 production csproj files; hard rule replaced with pragmatic AOT-preferred guidance
 - [2026-05-21] "What Goes Where" and Abstractions table updated: SharedKernel.Caching.Abstractions is now the canonical abstraction; SharedKernel.Caching.FusionCache row added (arch-lead, WO-007 analysis)

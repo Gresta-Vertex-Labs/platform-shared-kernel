@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,9 +8,7 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
 
-    <!-- AOT compatibility -->
-    <IsAotCompatible>true</IsAotCompatible>
-    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <!-- AOT compatibility -->    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
 
     <!-- NuGet metadata -->
     <PackageId>SharedKernel.Caching.Abstractions</PackageId>
@@ -21,9 +19,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- IServiceCollection only — zero infrastructure references -->
+    <!-- IServiceCollection only â€” zero infrastructure references -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
-    <!-- services.Configure<T> used by AddCachingCoreOptions — not transitively available from DI.Abstractions -->
+    <!-- services.Configure<T> used by AddCachingCoreOptions â€” not transitively available from DI.Abstractions -->
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
   </ItemGroup>
 

@@ -4,8 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <IsAotCompatible>true</IsAotCompatible>
-
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Configuration</PackageId>
     <Version>1.0.0</Version>
