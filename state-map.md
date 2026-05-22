@@ -64,7 +64,7 @@ Format when blocked:
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
-| 02 | [Caching](02.Caching/state-map.md) | Phase 28 (ICacheWarmupStrategy and Startup Runner) | `●` | Phase 28 complete — ICacheWarmupStrategy in Abstractions; CacheWarmupHostedService (IHostedLifecycleService.StartedAsync); WaitForWarmup option; AddCacheWarmup extension; 172 FusionCache + 142 Redis tests passing. | — |
+| 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
@@ -105,7 +105,7 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Guard Purity Enforcement | 1 |
-| ● Phase 28 (ICacheWarmupStrategy and Startup Runner) | 1 |
+| ● Phase 31 (OTel Metrics) | 1 |
 | ● Published | 1 |
 | ● Docs | 0 |
 | ● Tests | 0 |
@@ -1432,3 +1432,7 @@ The testing domain must stay current with the capability domain. When `16.Testin
 - [2026-05-21] Caching → Phase 25 (Cache Key Versioning Strategy) (●) — promoted from SK.02.KeyVersioning (state-map-phase)
 - [2026-05-21] Caching → Phase 26 (RedisChannelService Reconnect Resilience) (●) — promoted from SK.02.ChannelReconnect (state-map-phase)
 - [2026-05-21] Caching → Phase 27 (CachingCoreOptions Standalone DI Registration) (●) — promoted from SK.02.CachingCoreOptionsDi (state-map-phase)
+- [2026-05-22] Caching → Phase 28 (ICacheWarmupStrategy and Startup Runner) (●) — promoted from SK.02.CacheWarmup (state-map-phase)
+- [2026-05-22] Caching → Phase 29 (Multi-Tenant Cache Key) (●) — promoted from SK.02.TenantCacheKey (state-map-phase)
+- [2026-05-22] Caching → Phase 30 (Redis Circuit Breaker) (●) — promoted from SK.02.RedisCircuitBreaker (state-map-phase)
+- [2026-05-22] Caching → Phase 31 (OTel Metrics) (●) — promoted from SK.02.OtelMeters (state-map-phase)

@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Polly;
 using SharedKernel.Caching.Abstractions;
 using StackExchange.Redis;
 
@@ -40,7 +42,14 @@ public static class RedisChannelServiceExtensions
                 "AddRedisChannelService requires AddRedisL2 or AddRedisDistributedLocking to be called first to register IConnectionMultiplexer.");
         }
 
-        builder.Services.TryAddSingleton<IRedisChannelService, RedisChannelService>();
+        // Use a factory registration so the optional ResiliencePipeline (circuit breaker)
+        // is resolved from DI when present. When not registered (Enabled = false), the
+        // pipeline parameter is null and RedisChannelService operates without Polly overhead.
+        builder.Services.TryAddSingleton<IRedisChannelService>(sp =>
+            new RedisChannelService(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetRequiredService<ILogger<RedisChannelService>>(),
+                sp.GetService<ResiliencePipeline>()));
 
         return builder;
     }

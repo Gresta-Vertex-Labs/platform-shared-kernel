@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Polly;
+using Polly.CircuitBreaker;
 using SharedKernel.Caching.Abstractions;
 using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
@@ -116,6 +118,30 @@ public static class RedisServiceCollectionExtensions
             {
                 backplaneOptions.Configuration = options.ConnectionString;
             });
+
+        // Register Polly circuit breaker pipeline only when explicitly enabled.
+        // When Enabled = false (the default), no Polly types are registered and
+        // all existing behavior is preserved unchanged.
+        if (options.CircuitBreaker.Enabled)
+        {
+            var cbOpts = options.CircuitBreaker;
+            services.TryAddSingleton(_ =>
+                new ResiliencePipelineBuilder()
+                    .AddCircuitBreaker(new CircuitBreakerStrategyOptions
+                    {
+                        // Polly v8 uses FailureRatio (0.0–1.0) + MinimumThroughput.
+                        // We map the count-based FailureThreshold intent as follows:
+                        //   MinimumThroughput = FailureThreshold (minimum calls before evaluation)
+                        //   FailureRatio = 1.0 (circuit opens when ALL MinimumThroughput calls fail)
+                        // This matches the semantic: "N failures within the window opens the circuit".
+                        FailureRatio = 1.0,
+                        MinimumThroughput = cbOpts.FailureThreshold,
+                        SamplingDuration = cbOpts.SamplingDuration,
+                        BreakDuration = cbOpts.BreakDuration,
+                        ShouldHandle = new PredicateBuilder().Handle<Exception>()
+                    })
+                    .Build());
+        }
 
         return builder;
     }

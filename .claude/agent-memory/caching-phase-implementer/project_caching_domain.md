@@ -12,6 +12,15 @@ metadata:
 - `SharedKernel.Caching.FusionCache` — FusionCache L1 provider; refs Abstractions + FusionCache packages + 01.Core
 - `SharedKernel.Caching.Redis` — Redis L2, RedLock, RedisChannelService, RedisHashService, RedLockRenewableLock; refs Abstractions directly (NOT SharedKernel.Caching.FusionCache)
 
+**Phase 29 (TenantCacheKey) — key decisions:**
+
+- `ITenantCacheKeyProvider` extends `ICacheKeyProvider` — lives in `SharedKernel.Caching.Abstractions`. Zero dependency on `12.Security` or `IHttpContextAccessor`.
+- `TenantCacheKeyProvider` is `internal sealed` in `SharedKernel.Caching.FusionCache`. Constructor takes `IOptions<CachingCoreOptions>` (from Abstractions, not `CachingOptions` from FusionCache).
+- `AddTenantCacheKeyProvider(this ICachingBuilder)` uses `TryAddSingleton<ITenantCacheKeyProvider, TenantCacheKeyProvider>()` — does NOT touch the existing `ICacheKeyProvider → CacheKeyProvider` registration. Both coexist.
+- `FakeTenantCacheKeyProvider` lives in `16.Testing/SharedKernel.Testing/Caching/` — default service name `"test-svc"`, accepts custom name via constructor.
+- Test baseline after Phase 29: **196 FusionCache + 142 Redis tests passing**.
+- `InternalsVisibleTo` was already set in FusionCache.csproj for the test project — no csproj changes needed to access `internal sealed TenantCacheKeyProvider` in tests.
+
 **Phase 25 (KeyVersioning) — key decisions:**
 - `CachePolicy.KeyVersion` defaults to `0`. `WithVersion(int version)` uses `this with { KeyVersion = version }` pattern (immutable record).
 - `ArgumentOutOfRangeException.ThrowIfNegative(version)` guards against negative values in both `WithVersion` and `CacheKeyProvider.BuildKey`.
@@ -26,6 +35,16 @@ metadata:
 - `SemaphoreSlim` must NOT be disposed in `DisposeAsync` — `RenewAsync` may be called concurrently/after disposal. Use `volatile bool _disposed` as fast-path check before touching the semaphore.
 - `FakeDistributedLockService` and `FakeRenewableLock` live in `16.Testing/SharedKernel.Testing/Caching/`.
 
+**Phase 30 (RedisCircuitBreaker) — key decisions:**
+
+- `Polly.Core 8.5.2` added to `SharedKernel.Caching.Redis` only. AOT-compatible at this version.
+- Polly v8 is **ratio-based**, not count-based. To emulate count-based semantics: `FailureRatio = 1.0` + `MinimumThroughput = FailureThreshold`. This means "all calls must fail AND minimum count must be reached."
+- **`BreakDuration` minimum is 500ms** (Polly v8 enforces validation). Tests using short durations must use `TimeSpan.FromMilliseconds(500)` as the floor, not `100ms`.
+- `ResiliencePipeline` registered as singleton **only when `Enabled = true`**. Services use `sp.GetService<ResiliencePipeline>()` (nullable, returns null when not registered).
+- Changed `TryAddSingleton<TService, TImplementation>()` to factory lambdas in `AddRedisHashService` and `AddRedisChannelService` to support optional `ResiliencePipeline` from DI.
+- FusionCache backplane does NOT use the circuit breaker — FusionCache's fail-safe handles L2 unavailability at that level.
+- Test baseline after Phase 30: **196 FusionCache + 154 Redis tests passing**.
+
 **Confirmed NuGet versions:**
 - ZiggyCreatures.FusionCache: 2.6.0
 - ZiggyCreatures.FusionCache.Serialization.SystemTextJson: 2.6.0
@@ -34,6 +53,7 @@ metadata:
 - RedLock.net: 2.3.2
 - Microsoft.Extensions.DependencyInjection.Abstractions: 10.0.1
 - Microsoft.Extensions.Caching.StackExchangeRedis: 10.0.0
+- Polly.Core: 8.5.2
 
 **SharedKernel.Caching.Redis.csproj** explicitly includes FusionCache packages (ZiggyCreatures.FusionCache + Serialization.SystemTextJson + Backplane) because it no longer references SharedKernel.Caching transitively.
 

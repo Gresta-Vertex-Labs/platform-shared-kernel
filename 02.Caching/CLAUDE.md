@@ -10,11 +10,11 @@ Philosophy: **Fail-silent by default. Stampede-proof. AOT-compatible.**
 
 ## Current Phase
 
-**Phases 1–26 complete (WO-006 + WO-007 partial). Phases 27–31 planned (WO-007), pending implementation.**
+**Phases 1–30 complete (WO-006 + WO-007 partial). Phase 31 planned (WO-007), pending implementation.**
 
-Last completed: Phase 26 (ChannelReconnect) — `ConnectionHealthState` enum; `IRedisChannelService.ConnectionHealth` property; `RedisChannelService` subscribes to `ConnectionRestored`/`ConnectionFailed`; atomic registry replay on reconnect; 160 FusionCache + 132 Redis tests passing.
+Last completed: Phase 30 (RedisCircuitBreaker) — `RedisL2Options.CircuitBreakerOptions` nested class; `Polly.Core` `ResiliencePipeline` registered as singleton only when `Enabled = true`; `RedisHashService` and `RedisChannelService` wrap operations via optional pipeline; 154 Redis tests passing (196 FusionCache + 154 Redis total).
 
-Next up: Phase 27 (CachingCoreOptions standalone DI) — `AddCachingCoreOptions` on `IServiceCollection` in Abstractions package.
+Next up: Phase 31 (OTelMetrics) — `System.Diagnostics.Metrics` instrumentation on `FusionCacheService`.
 
 ---
 
@@ -24,7 +24,7 @@ Next up: Phase 27 (CachingCoreOptions standalone DI) — `AddCachingCoreOptions`
 | ------- | ---- | -------------------------- |
 | `SharedKernel.Caching.Abstractions` | Zero-infra contracts: `ICacheService`, `CachePolicy` (incl. `NeverExpire`), `ICacheKeyProvider`, `IDistributedLockService`, `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>`, `ICacheInvalidationBus`, `CacheInvalidationMessage`, `ICachingBuilder`, `CachingCoreOptions` (added Ph17) | `Microsoft.Extensions.DependencyInjection.Abstractions` only |
 | `SharedKernel.Caching.FusionCache` | FusionCache L1 provider implementation: `FusionCacheService`, `CacheKeyProvider`, `BrotliCacheSerializer` (opt-in), STJ context base, `AddSharedKernelCaching` DI extension. **Previously named `SharedKernel.Caching` — renamed in Phase 14.** | `SharedKernel.Caching.Abstractions`, FusionCache packages, `01.Core` |
-| `SharedKernel.Caching.Redis` | Redis L2 distributed provider, RedLock distributed locking, `RedisChannelService`, `RedisHashService`, `TypedHashStore<T>`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver`. **Must not reference `SharedKernel.Caching.FusionCache` (fixed in Ph17).** | `SharedKernel.Caching.Abstractions`, StackExchange.Redis, RedLock.net, ZiggyCreatures.FusionCache, ZiggyCreatures.FusionCache.Serialization.SystemTextJson, ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis |
+| `SharedKernel.Caching.Redis` | Redis L2 distributed provider, RedLock distributed locking, `RedisChannelService`, `RedisHashService`, `TypedHashStore<T>`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver`. **Must not reference `SharedKernel.Caching.FusionCache` (fixed in Ph17).** | `SharedKernel.Caching.Abstractions`, StackExchange.Redis, RedLock.net, ZiggyCreatures.FusionCache, ZiggyCreatures.FusionCache.Serialization.SystemTextJson, ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis, Polly.Core |
 
 All packages target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
@@ -45,6 +45,7 @@ All packages target `net10.0`. Test sub-folders live inside each project folder 
 | Redis client | `StackExchange.Redis` | 2.13.1 |
 | DI abstractions | `Microsoft.Extensions.DependencyInjection.Abstractions` | **10.0.1** (not 10.0.0 — FusionCache transitive floor) |
 | OTel tracing (invalidation receiver) | `System.Diagnostics.DiagnosticSource` | BCL in `net10.0` — no additional NuGet reference |
+| Redis circuit breaker (opt-in) | `Polly.Core` | 8.5.2 |
 
 ---
 
@@ -354,10 +355,13 @@ ITenantCacheKeyProvider  [new in Phase 29 — SharedKernel.Caching.Abstractions]
 ### Polly circuit breaker rules (Phase 30)
 
 - `RedisL2Options.CircuitBreaker.Enabled` defaults to `false` — all existing behavior is preserved when disabled.
-- Use `Polly.Core` v8 only — do not add `Microsoft.Extensions.Http.Resilience`.
+- Use `Polly.Core` v8 only — do not add `Microsoft.Extensions.Http.Resilience`. Confirmed AOT-compatible at version 8.5.2.
 - The circuit breaker `ResiliencePipeline` is registered as a singleton only when `Enabled = true`.
-- Verify `Polly.Core` 8.x AOT compatibility at implementation time before adding the reference.
 - FusionCache's own fail-safe is not replaced — the Polly circuit breaker is complementary (short-circuits before the timeout accumulates).
+- **Count-based semantics via ratio API:** Polly v8 uses ratio-based circuit breaking (`FailureRatio` 0.0–1.0 + `MinimumThroughput`). To emulate count-based behaviour: set `FailureRatio = 1.0` and `MinimumThroughput = CircuitBreaker.FailureThreshold`. This means "all calls in the window must fail AND the threshold count must be reached."
+- **`BreakDuration` minimum:** Polly v8 enforces a minimum `BreakDuration` of `500ms`. The default of 30 s is safe; test code using shorter durations must use `TimeSpan.FromMilliseconds(500)` as the minimum.
+- **Optional DI injection:** `ResiliencePipeline` is resolved via `sp.GetService<ResiliencePipeline>()` (not `GetRequiredService`) in `RedisHashService` and `RedisChannelService` factory registrations. When not registered (disabled), the value is `null` and services operate without Polly overhead.
+- The FusionCache Redis backplane does not use the circuit breaker — FusionCache's own fail-safe covers L2 unavailability at that level.
 
 ### OTel metrics rules (Phase 31)
 
@@ -519,3 +523,7 @@ services.AddSharedKernelCaching(options => { })
 - [2026-05-21] Phase 24 implemented — CachePolicy.SlidingWindow + Sliding() factory; FusionCacheService BuildEntryOptions SlidingExpiration wiring; NeverExpire+Sliding guard; 134 FusionCache + 125 Redis tests passing (caching-phase-implementer)
 - [2026-05-21] Phase 25 implemented — CachePolicy.KeyVersion + WithVersion(int); ICacheKeyProvider versioned BuildKey overload; CacheKeyProvider :v{n} suffix; 160 FusionCache + 125 Redis tests passing (caching-phase-implementer)
 - [2026-05-21] Phase 26 implemented — ConnectionHealthState enum; IRedisChannelService.ConnectionHealth; RedisChannelService reconnect replay (Dictionary+lock, volatile int health); OnConnectionRestored/Failed internal for testability; 160 FusionCache + 132 Redis tests passing (caching-phase-implementer)
+- [2026-05-22] Phase 27 implemented — AddCachingCoreOptions on IServiceCollection in Abstractions; zero FusionCache/Redis dependency; AddSharedKernelCaching unchanged; 172 FusionCache + 142 Redis tests passing (caching-phase-implementer)
+- [2026-05-22] Phase 28 implemented — ICacheWarmupStrategy in Abstractions; CacheWarmupHostedService (IHostedLifecycleService.StartedAsync); WaitForWarmup option; AddCacheWarmup extension; 172 FusionCache + 142 Redis tests passing (caching-phase-implementer)
+- [2026-05-22] Phase 29 implemented — ITenantCacheKeyProvider in Abstractions; TenantCacheKeyProvider (IOptions`CachingCoreOptions`, internal sealed) + AddTenantCacheKeyProvider in FusionCache; FakeTenantCacheKeyProvider in 16.Testing; 196 FusionCache + 142 Redis tests passing (caching-phase-implementer)
+- [2026-05-22] Phase 30 implemented — Polly.Core 8.5.2 added to Redis package; CircuitBreakerOptions nested class in RedisL2Options; ResiliencePipeline singleton registered only when Enabled=true; FailureRatio=1.0+MinimumThroughput pattern for count semantics; BreakDuration minimum 500ms; factory DI for optional pipeline injection; 196 FusionCache + 154 Redis tests passing (sync-brain)

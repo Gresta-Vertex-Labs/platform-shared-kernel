@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Polly;
 using SharedKernel.Caching.Abstractions;
 using StackExchange.Redis;
 
@@ -27,6 +28,7 @@ internal sealed partial class RedisChannelService : IRedisChannelService
     private readonly IConnectionMultiplexer _multiplexer;
     private readonly ISubscriber _subscriber;
     private readonly ILogger<RedisChannelService> _logger;
+    private readonly ResiliencePipeline? _pipeline;
 
     // Registry of active subscriptions: channel name → the Action wrapper registered with SE.Redis.
     // The lock object serialises both mutation of the registry and the reconnect replay loop,
@@ -43,13 +45,21 @@ internal sealed partial class RedisChannelService : IRedisChannelService
     /// </summary>
     /// <param name="multiplexer">The singleton Redis connection multiplexer.</param>
     /// <param name="logger">Logger for structured error recording.</param>
-    public RedisChannelService(IConnectionMultiplexer multiplexer, ILogger<RedisChannelService> logger)
+    /// <param name="pipeline">
+    /// Optional Polly resilience pipeline (circuit breaker). When <see langword="null"/>,
+    /// publish operations are executed directly with no Polly overhead.
+    /// </param>
+    public RedisChannelService(
+        IConnectionMultiplexer multiplexer,
+        ILogger<RedisChannelService> logger,
+        ResiliencePipeline? pipeline = null)
     {
         ArgumentNullException.ThrowIfNull(multiplexer);
         ArgumentNullException.ThrowIfNull(logger);
         _multiplexer = multiplexer;
         _subscriber = multiplexer.GetSubscriber();
         _logger = logger;
+        _pipeline = pipeline;
 
         // Subscribe to multiplexer lifecycle events.
         _multiplexer.ConnectionRestored += OnConnectionRestored;
@@ -73,7 +83,17 @@ internal sealed partial class RedisChannelService : IRedisChannelService
         ArgumentNullException.ThrowIfNull(message);
 
         var redisChannel = RedisChannel.Literal(channel);
-        await _subscriber.PublishAsync(redisChannel, message).ConfigureAwait(false);
+
+        if (_pipeline is not null)
+        {
+            await _pipeline.ExecuteAsync(
+                async token => await _subscriber.PublishAsync(redisChannel, message).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await _subscriber.PublishAsync(redisChannel, message).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />

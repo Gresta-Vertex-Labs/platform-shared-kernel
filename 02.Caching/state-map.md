@@ -1674,12 +1674,12 @@ Every K8s pod deployment starts with a cold L1 cache. The first wave of requests
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| TK-01 | Add `ITenantCacheKeyProvider` to `SharedKernel.Caching.Abstractions`: extends `ICacheKeyProvider`; adds `BuildTenantKey(string tenantId, string entity, string id, params string[] extraSegments) → string`; key format: `{service}:{tenant}:{entity}:{id}[:{extra}...]` | SharedKernel.Caching.Abstractions | `○` |
-| TK-02 | Create `TenantCacheKeyProvider.cs` in `SharedKernel.Caching.FusionCache` implementing `ITenantCacheKeyProvider`; takes `IOptions<CachingCoreOptions>` for service name | SharedKernel.Caching.FusionCache | `○` |
-| TK-03 | Add `AddTenantCacheKeyProvider(this ICachingBuilder builder)` extension in FusionCache; registers `TenantCacheKeyProvider` as `ITenantCacheKeyProvider` singleton; does not replace the existing `ICacheKeyProvider` registration | SharedKernel.Caching.FusionCache | `○` |
-| TK-04 | Verify `ITenantCacheKeyProvider` has zero dependency on `12.Security` or `IHttpContextAccessor`; `tenantId` is always an explicit parameter | SharedKernel.Caching.Abstractions | `○` |
-| TK-05 | Add `FakeTenantCacheKeyProvider` to `16.Testing` or extend `AddFakeCachingServices()` to include the fake | SharedKernel.Testing | `○` |
-| TK-06 | Unit tests: `BuildTenantKey` format correct, two different tenant IDs produce different keys for same entity+id, format consistent with `BuildKey` (same entity+id produces correct base format minus tenant segment) | SharedKernel.Caching.FusionCache.Tests | `○` |
+| TK-01 | Add `ITenantCacheKeyProvider` to `SharedKernel.Caching.Abstractions`: extends `ICacheKeyProvider`; adds `BuildTenantKey(string tenantId, string entity, string id, params string[] extraSegments) → string`; key format: `{service}:{tenant}:{entity}:{id}[:{extra}...]` | SharedKernel.Caching.Abstractions | `●` |
+| TK-02 | Create `TenantCacheKeyProvider.cs` in `SharedKernel.Caching.FusionCache` implementing `ITenantCacheKeyProvider`; takes `IOptions<CachingCoreOptions>` for service name | SharedKernel.Caching.FusionCache | `●` |
+| TK-03 | Add `AddTenantCacheKeyProvider(this ICachingBuilder builder)` extension in FusionCache; registers `TenantCacheKeyProvider` as `ITenantCacheKeyProvider` singleton; does not replace the existing `ICacheKeyProvider` registration | SharedKernel.Caching.FusionCache | `●` |
+| TK-04 | Verify `ITenantCacheKeyProvider` has zero dependency on `12.Security` or `IHttpContextAccessor`; `tenantId` is always an explicit parameter | SharedKernel.Caching.Abstractions | `●` |
+| TK-05 | Add `FakeTenantCacheKeyProvider` to `16.Testing` or extend `AddFakeCachingServices()` to include the fake | SharedKernel.Testing | `●` |
+| TK-06 | Unit tests: `BuildTenantKey` format correct, two different tenant IDs produce different keys for same entity+id, format consistent with `BuildKey` (same entity+id produces correct base format minus tenant segment) | SharedKernel.Caching.FusionCache.Tests | `●` |
 
 ---
 
@@ -1743,12 +1743,12 @@ SaaS services serving multiple tenants must namespace cache keys per tenant to p
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| RCB-01 | Add `CircuitBreaker` nested options class to `RedisL2Options`: `Enabled` (bool, default `false`), `FailureThreshold` (int, default `5`), `SamplingDuration` (TimeSpan, default `10s`), `BreakDuration` (TimeSpan, default `30s`), `MinimumThroughput` (int, default `3`) | SharedKernel.Caching.Redis | `○` |
-| RCB-02 | Add `Polly.Core` v8 `PackageReference` to `SharedKernel.Caching.Redis.csproj` | SharedKernel.Caching.Redis | `○` |
-| RCB-03 | When `CircuitBreaker.Enabled = true`, `AddRedisL2` registers a Polly v8 `ResiliencePipeline<RedisValue>` singleton wrapping Redis operations with a `CircuitBreakerStrategy`; pipeline is available from DI for `RedisChannelService` and `RedisHashService` | SharedKernel.Caching.Redis | `○` |
-| RCB-04 | When the circuit is open, Redis operations short-circuit immediately (no timeout wait); FusionCache fail-safe serves L1 | SharedKernel.Caching.Redis | `○` |
-| RCB-05 | Unit tests: circuit opens after `FailureThreshold` consecutive failures, open circuit short-circuits immediately, circuit closes after `BreakDuration` | SharedKernel.Caching.Redis.Tests | `○` |
-| RCB-06 | `CircuitBreaker.Enabled = false` (the default) produces zero behavioral change — all existing tests pass | SharedKernel.Caching.Redis.Tests | `○` |
+| RCB-01 | Add `CircuitBreaker` nested options class to `RedisL2Options`: `Enabled` (bool, default `false`), `FailureThreshold` (int, default `5`), `SamplingDuration` (TimeSpan, default `10s`), `BreakDuration` (TimeSpan, default `30s`), `MinimumThroughput` (int, default `3`) | SharedKernel.Caching.Redis | `●` |
+| RCB-02 | Add `Polly.Core` v8 `PackageReference` to `SharedKernel.Caching.Redis.csproj` | SharedKernel.Caching.Redis | `●` |
+| RCB-03 | When `CircuitBreaker.Enabled = true`, `AddRedisL2` registers a Polly v8 `ResiliencePipeline<RedisValue>` singleton wrapping Redis operations with a `CircuitBreakerStrategy`; pipeline is available from DI for `RedisChannelService` and `RedisHashService` | SharedKernel.Caching.Redis | `●` |
+| RCB-04 | When the circuit is open, Redis operations short-circuit immediately (no timeout wait); FusionCache fail-safe serves L1 | SharedKernel.Caching.Redis | `●` |
+| RCB-05 | Unit tests: circuit opens after `FailureThreshold` consecutive failures, open circuit short-circuits immediately, circuit closes after `BreakDuration` | SharedKernel.Caching.Redis.Tests | `●` |
+| RCB-06 | `CircuitBreaker.Enabled = false` (the default) produces zero behavioral change — all existing tests pass | SharedKernel.Caching.Redis.Tests | `●` |
 
 ---
 
@@ -1815,15 +1815,15 @@ FusionCache's fail-safe correctly serves stale L1 data during Redis outages, but
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| OM-01 | Create a static `Meter` named `"SharedKernel.Caching"` (version `"1.0"`) as a static field in `FusionCacheService`; no new NuGet dependencies | SharedKernel.Caching.FusionCache | `○` |
-| OM-02 | Add `Counter<long> _cacheHits` instrument; increment on every `GetAsync` or `GetOrSetAsync` that returns a cached value without invoking the factory; tags: `cache.key_prefix`, `cache.level` (`"l1"` or `"l2"`) | SharedKernel.Caching.FusionCache | `○` |
-| OM-03 | Add `Counter<long> _cacheMisses` instrument; increment on every `GetAsync` returning `null` and on every `GetOrSetAsync` factory invocation; tags: `cache.key_prefix` | SharedKernel.Caching.FusionCache | `○` |
-| OM-04 | Add `Histogram<double> _factoryDuration` instrument (milliseconds); records factory elapsed time on cache miss; tags: `cache.key_prefix` | SharedKernel.Caching.FusionCache | `○` |
-| OM-05 | Add `Counter<long> _cacheErrors` instrument; increments on factory or `SetAsync` exceptions; tags: `cache.error_type` | SharedKernel.Caching.FusionCache | `○` |
-| OM-06 | Add `Counter<long> _cacheEvictions` instrument; subscribe to FusionCache `Events.Memory.Eviction` event to increment; tags: `cache.eviction_reason` | SharedKernel.Caching.FusionCache | `○` |
-| OM-07 | Use FusionCache events API (`IFusionCache.Events.Memory.Hit`, `Events.Memory.Miss`) where available to populate hits/misses — prefer events over call-site duplication | SharedKernel.Caching.FusionCache | `○` |
-| OM-08 | Unit tests: verify each counter and histogram increments under the correct conditions using `MeterListener` | SharedKernel.Caching.FusionCache.Tests | `○` |
-| OM-09 | All existing tests continue to pass — meter recording is additive | SharedKernel.Caching.FusionCache.Tests | `○` |
+| OM-01 | Create a static `Meter` named `"SharedKernel.Caching"` (version `"1.0"`) as a static field in `FusionCacheService`; no new NuGet dependencies | SharedKernel.Caching.FusionCache | `●` |
+| OM-02 | Add `Counter<long> _cacheHits` instrument; increment on every `GetAsync` or `GetOrSetAsync` that returns a cached value without invoking the factory; tags: `cache.key_prefix`, `cache.level` (`"l1"` or `"l2"`) | SharedKernel.Caching.FusionCache | `●` |
+| OM-03 | Add `Counter<long> _cacheMisses` instrument; increment on every `GetAsync` returning `null` and on every `GetOrSetAsync` factory invocation; tags: `cache.key_prefix` | SharedKernel.Caching.FusionCache | `●` |
+| OM-04 | Add `Histogram<double> _factoryDuration` instrument (milliseconds); records factory elapsed time on cache miss; tags: `cache.key_prefix` | SharedKernel.Caching.FusionCache | `●` |
+| OM-05 | Add `Counter<long> _cacheErrors` instrument; increments on factory or `SetAsync` exceptions; tags: `cache.error_type` | SharedKernel.Caching.FusionCache | `●` |
+| OM-06 | Add `Counter<long> _cacheEvictions` instrument; subscribe to FusionCache `Events.Memory.Eviction` event to increment; tags: `cache.eviction_reason` | SharedKernel.Caching.FusionCache | `●` |
+| OM-07 | Use FusionCache events API (`IFusionCache.Events.Memory.Hit`, `Events.Memory.Miss`) where available to populate hits/misses — prefer events over call-site duplication | SharedKernel.Caching.FusionCache | `●` |
+| OM-08 | Unit tests: verify each counter and histogram increments under the correct conditions using `MeterListener` | SharedKernel.Caching.FusionCache.Tests | `●` |
+| OM-09 | All existing tests continue to pass — meter recording is additive | SharedKernel.Caching.FusionCache.Tests | `●` |
 
 ---
 
@@ -1925,9 +1925,9 @@ Format when active:
 | `SK.02.ChannelReconnect` | Phase 26 (Channel Reconnect Resilience) | 6 | 6 | `●` |
 | `SK.02.CachingCoreOptionsDi` | Phase 27 (CachingCoreOptions Standalone DI) | 5 | 5 | `●` |
 | `SK.02.CacheWarmup` | Phase 28 (Cache Warmup Strategy) | 6 | 6 | `●` |
-| `SK.02.TenantCacheKey` | Phase 29 (Multi-Tenant Cache Key) | 6 | 0 | `○` |
-| `SK.02.RedisCircuitBreaker` | Phase 30 (Redis Circuit Breaker) | 6 | 0 | `○` |
-| `SK.02.OtelMeters` | Phase 31 (OTel Metrics) | 9 | 0 | `○` |
+| `SK.02.TenantCacheKey` | Phase 29 (Multi-Tenant Cache Key) | 6 | 6 | `●` |
+| `SK.02.RedisCircuitBreaker` | Phase 30 (Redis Circuit Breaker) | 6 | 6 | `●` |
+| `SK.02.OtelMeters` | Phase 31 (OTel Metrics) | 9 | 9 | `●` |
 
 ---
 
@@ -1967,3 +1967,6 @@ Format when active:
 - [2026-05-21] CR-01→CR-06 → ● in SK.02.ChannelReconnect — ConnectionHealthState enum; IRedisChannelService.ConnectionHealth; ConnectionRestored replay; ConnectionFailed transition; 160 FusionCache + 132 Redis tests passing (state-map-phase)
 - [2026-05-21] CO-01→CO-05 → ● in SK.02.CachingCoreOptionsDi — AddCachingCoreOptions on IServiceCollection in Abstractions; Microsoft.Extensions.Options explicit ref added; RedisCacheInvalidationBus warns when ServiceName is default "app"; 160 FusionCache + 142 Redis tests passing (state-map-phase)
 - [2026-05-21] CW-01→CW-06 → ● in SK.02.CacheWarmup — ICacheWarmupStrategy in Abstractions; CacheWarmupHostedService (IHostedLifecycleService); WaitForWarmup option; AddCacheWarmup<T> extension; 172 FusionCache + 142 Redis tests passing (state-map-phase)
+- [2026-05-22] TK-01→TK-06 → ● in SK.02.TenantCacheKey — ITenantCacheKeyProvider in Abstractions; TenantCacheKeyProvider + AddTenantCacheKeyProvider in FusionCache; FakeTenantCacheKeyProvider in Testing; 196 FusionCache tests passing (state-map-phase)
+- [2026-05-22] RCB-01→RCB-06 → ● in SK.02.RedisCircuitBreaker — Polly.Core 8.5.2 added; CircuitBreakerOptions nested class; ResiliencePipeline singleton when Enabled=true; 196 FusionCache + 154 Redis tests passing (state-map-phase)
+- [2026-05-22] OM-01→OM-09 → ● in SK.02.OtelMeters — static Meter+5 instruments; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache tests passing (state-map-phase)

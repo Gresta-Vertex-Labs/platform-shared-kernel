@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
 using ZiggyCreatures.Caching.Fusion;
@@ -9,8 +11,59 @@ namespace SharedKernel.Caching.FusionCache.Implementations;
 /// Provides L1 in-process memory cache with optional L2 Redis distributed backplane,
 /// stampede protection, background refresh, and fail-safe semantics.
 /// </summary>
+/// <remarks>
+/// Emits <see cref="System.Diagnostics.Metrics"/> instruments under the meter
+/// <c>SharedKernel.Caching</c> (version <c>1.0</c>). Consumers attach a
+/// <see cref="MeterListener"/> or configure an OTel metrics exporter to receive
+/// these metrics.
+/// </remarks>
 internal sealed partial class FusionCacheService : ICacheService
 {
+    // ---------------------------------------------------------------------------
+    // OTel Metrics — static readonly, AOT-safe, shared across all instances.
+    // BCL guarantees negligible overhead when no listener is attached.
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// The meter for all SharedKernel.Caching metrics.
+    /// Consumers attach a <see cref="MeterListener"/> or configure an OTel metrics
+    /// exporter to receive these metrics.
+    /// </summary>
+    private static readonly Meter _meter = new("SharedKernel.Caching", "1.0");
+
+    /// <summary>Counts cache hits (L1 memory hits from FusionCache events).</summary>
+    private static readonly Counter<long> _cacheHits =
+        _meter.CreateCounter<long>(
+            "cache.hits",
+            description: "Number of cache hits. Tag cache.key_prefix = {service}:{entity}.");
+
+    /// <summary>Counts cache misses (L1 memory misses from FusionCache events).</summary>
+    private static readonly Counter<long> _cacheMisses =
+        _meter.CreateCounter<long>(
+            "cache.misses",
+            description: "Number of cache misses. Tag cache.key_prefix = {service}:{entity}.");
+
+    /// <summary>Records factory execution duration in milliseconds on cache miss.</summary>
+    private static readonly Histogram<double> _factoryDuration =
+        _meter.CreateHistogram<double>(
+            "cache.factory.duration",
+            unit: "ms",
+            description: "Factory execution duration in milliseconds. Tag cache.key_prefix = {service}:{entity}.");
+
+    /// <summary>Counts errors (factory exceptions or SetAsync exceptions).</summary>
+    private static readonly Counter<long> _cacheErrors =
+        _meter.CreateCounter<long>(
+            "cache.errors",
+            description: "Number of cache errors. Tag cache.error_type = exception type name.");
+
+    /// <summary>Counts L1 memory evictions (subscribed via FusionCache Events.Memory.Eviction).</summary>
+    private static readonly Counter<long> _cacheEvictions =
+        _meter.CreateCounter<long>(
+            "cache.evictions",
+            description: "Number of L1 memory evictions. Tag cache.eviction_reason = EvictionReason name.");
+
+    // ---------------------------------------------------------------------------
+
     private readonly IFusionCache _cache;
     private readonly ILogger<FusionCacheService> _logger;
 
@@ -18,6 +71,57 @@ internal sealed partial class FusionCacheService : ICacheService
     {
         _cache = cache;
         _logger = logger;
+
+        // Subscribe to FusionCache memory events for hit/miss/eviction.
+        // Prefer event subscription over call-site instrumentation to avoid duplication.
+        _cache.Events.Memory.Hit += OnMemoryHit;
+        _cache.Events.Memory.Miss += OnMemoryMiss;
+        _cache.Events.Memory.Eviction += OnMemoryEviction;
+    }
+
+    // ---------------------------------------------------------------------------
+    // FusionCache event handlers
+    // ---------------------------------------------------------------------------
+
+    private static void OnMemoryHit(object? sender, ZiggyCreatures.Caching.Fusion.Events.FusionCacheEntryHitEventArgs e)
+    {
+        var prefix = ExtractKeyPrefix(e.Key);
+        _cacheHits.Add(1,
+            new KeyValuePair<string, object?>("cache.key_prefix", prefix),
+            new KeyValuePair<string, object?>("cache.level", "l1"));
+    }
+
+    private static void OnMemoryMiss(object? sender, ZiggyCreatures.Caching.Fusion.Events.FusionCacheEntryEventArgs e)
+    {
+        var prefix = ExtractKeyPrefix(e.Key);
+        _cacheMisses.Add(1,
+            new KeyValuePair<string, object?>("cache.key_prefix", prefix));
+    }
+
+    private static void OnMemoryEviction(object? sender, ZiggyCreatures.Caching.Fusion.Events.FusionCacheEntryEvictionEventArgs e)
+    {
+        _cacheEvictions.Add(1,
+            new KeyValuePair<string, object?>("cache.eviction_reason", e.Reason.ToString()));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Key prefix extraction — {service}:{entity} from {service}:{entity}:{id}[:...]
+    // Never includes the id segment to avoid high-cardinality Prometheus labels.
+    // ---------------------------------------------------------------------------
+
+    internal static string ExtractKeyPrefix(string key)
+    {
+        if (string.IsNullOrEmpty(key))
+            return string.Empty;
+
+        var firstColon = key.IndexOf(':', StringComparison.Ordinal);
+        if (firstColon < 0)
+            return key; // single-segment key — return as-is
+
+        var secondColon = key.IndexOf(':', firstColon + 1);
+        return secondColon < 0
+            ? key                                   // two segments — return whole key
+            : key[..secondColon];                   // three or more — truncate after second segment
     }
 
     /// <inheritdoc />
@@ -28,7 +132,13 @@ internal sealed partial class FusionCacheService : ICacheService
         var result = await _cache.TryGetAsync<T>(key, token: ct).ConfigureAwait(false);
 
         if (!result.HasValue)
+        {
             Log.CacheMiss(_logger, key);
+            // TryGetAsync does not fire FusionCache's Memory.Miss event, so we
+            // instrument the miss path directly here for GetAsync callers.
+            _cacheMisses.Add(1,
+                new KeyValuePair<string, object?>("cache.key_prefix", ExtractKeyPrefix(key)));
+        }
 
         return result.HasValue ? result.Value : default;
     }
@@ -42,7 +152,16 @@ internal sealed partial class FusionCacheService : ICacheService
         var entryOptions = BuildEntryOptions(policy);
         IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
 
-        await _cache.SetAsync(key, value, entryOptions, tags, token: ct).ConfigureAwait(false);
+        try
+        {
+            await _cache.SetAsync(key, value, entryOptions, tags, token: ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _cacheErrors.Add(1,
+                new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
+            throw;
+        }
 
         Log.CacheSet(_logger, key);
     }
@@ -63,12 +182,30 @@ internal sealed partial class FusionCacheService : ICacheService
 
         // Adapt ValueTask<T> factory to FusionCache's Task<T> factory via async/await.
         // The state machine allocation occurs only on actual cache misses — not on every call.
+        // Stopwatch measures factory elapsed time for the cache.factory.duration histogram.
+        var keyPrefix = ExtractKeyPrefix(key);
         var result = await _cache.GetOrSetAsync<T>(
             key,
             async token =>
             {
                 Log.FactoryInvoked(_logger, key);
-                return await factory(token).ConfigureAwait(false);
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    var value = await factory(token).ConfigureAwait(false);
+                    sw.Stop();
+                    _factoryDuration.Record(
+                        sw.Elapsed.TotalMilliseconds,
+                        new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
+                    return value;
+                }
+                catch (Exception ex)
+                {
+                    sw.Stop();
+                    _cacheErrors.Add(1,
+                        new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
+                    throw;
+                }
             },
             MaybeValue<T>.None,
             entryOptions,

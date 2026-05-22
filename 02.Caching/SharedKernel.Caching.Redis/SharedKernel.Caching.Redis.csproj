@@ -30,6 +30,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
     <!-- Hosting abstractions — required for BackgroundService (CacheInvalidationReceiver) -->
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Polly.Core" Version="8.5.2" />
     <!-- Redis client — L2 distributed cache backing and RedLock multiplexer -->
     <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
     <!-- IDistributedCache implementation over StackExchange.Redis for FusionCache L2 -->

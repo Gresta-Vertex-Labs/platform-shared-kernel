@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Polly;
 using SharedKernel.Caching.Abstractions;
 using StackExchange.Redis;
 
@@ -44,7 +45,13 @@ public static class RedisHashServiceExtensions
                 "AddRedisHashService requires AddRedisDistributedLocking or AddRedisL2 to be called first to register IConnectionMultiplexer.");
         }
 
-        builder.Services.TryAddSingleton<IRedisHashService, RedisHashService>();
+        // Use a factory registration so the optional ResiliencePipeline (circuit breaker)
+        // is resolved from DI when present. When not registered (Enabled = false), the
+        // pipeline parameter is null and RedisHashService operates without Polly overhead.
+        builder.Services.TryAddSingleton<IRedisHashService>(sp =>
+            new RedisHashService(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetService<ResiliencePipeline>()));
 
         return builder;
     }
