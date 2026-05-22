@@ -65,7 +65,7 @@ Format when blocked:
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
-| 03 | [Domain](03.Domain/state-map.md) | Design | `●` | All 14 design tasks verified against CLAUDE.md — interfaces, equality strategy, event contracts, audit hierarchy, business rules, policies, specifications, and IDomainEventHandler exclusion boundary documented. | Begin Scaffold phase: create csproj, directory structure, and solution registration. |
+| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | All 4 Published tasks complete — NuGet metadata finalized, packed 0 errors, consumer stub 17 tests green, SharedKernel.Domain.1.0.0.nupkg pushed to local feed. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | — | `○` | — | — |
@@ -106,7 +106,7 @@ Format when active:
 |-------|---------|
 | ● Guard Purity Enforcement | 1 |
 | ● Phase 31 (OTel Metrics) | 1 |
-| ● Published | 1 |
+| ● Published | 2 |
 | ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
@@ -1366,7 +1366,7 @@ The testing domain must stay current with the capability domain. When `16.Testin
 ---
 ### P-032 — Domain Foundation: DDD Building Blocks for SharedKernel.Domain
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-008
 **Domain:** 03.Domain
 **Depends on:** None
@@ -1542,7 +1542,7 @@ Without these conventions and interceptors, every microservice team must manuall
 ---
 ### P-034 — Governance: Domain Layer Architecture Enforcement Rules
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-008
 **Domain:** 00.Governance
 **Depends on:** P-032
@@ -1705,3 +1705,259 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-05-22] Domain → Design (◐) — Define DDD building block surface: Entity, AggregateRoot+IClock, ValueObject, specs, business rules, policies (state-map-phase)
 - [2026-05-22] Phase(s) P-032 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
 - [2026-05-22] Domain → Design (●) — promoted from SK.03.Design (state-map-phase)
+- [2026-05-22] Domain → Core (●) — promoted from SK.03.Core (state-map-phase)
+- [2026-05-22] Domain → Tests (●) — promoted from SK.03.Tests (state-map-phase)
+- [2026-05-22] Domain → Docs (●) — promoted from SK.03.Docs (state-map-phase)
+- [2026-05-22] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
+- [2026-05-22] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+
+---
+### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-009
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+`FullAuditableAggregateRoot<TId>` currently extends `AggregateRoot<TId>` directly and duplicates the entire soft-delete machinery (`MarkAsDeleted`, `OnDelete`, all three soft-delete fields: `IsDeleted`, `DeletedOn`, `DeletedBy`) that is already implemented identically in `AuditableSoftDeletableAggregateRoot<TId>`. The code is character-for-character duplicated across the two classes.
+
+The correct hierarchy is:
+
+```
+AggregateRoot<TId>
+  ├── AuditableAggregateRoot<TId>                        (IHasAudit)
+  ├── SoftDeletableAggregateRoot<TId>                    (ISoftDeletable)
+  └── AuditableSoftDeletableAggregateRoot<TId>           (IHasAudit + ISoftDeletable)
+        └── FullAuditableAggregateRoot<TId>              (IHasAudit + ISoftDeletable + IHasConcurrency)
+```
+
+`FullAuditableAggregateRoot<TId>` must be refactored to extend `AuditableSoftDeletableAggregateRoot<TId>` instead of `AggregateRoot<TId>`. It removes all duplicated fields and methods, retaining only `IHasConcurrency` membership and the `RowVersion` property (with `protected set`). All constructors must chain correctly through the new base.
+
+The `IHasAudit`, `ISoftDeletable`, and `IHasConcurrency` interface declarations on `FullAuditableAggregateRoot<TId>` must be retained as explicit `implements` declarations for clarity (even though they are transitively satisfied), so that the type's full contract is visible without navigating the hierarchy.
+
+The CLAUDE.md auditable aggregate bases section must be updated to reflect the new inheritance chain and remove the statement that `FullAuditableAggregateRoot` extends `AggregateRoot<TId>` directly.
+
+All existing tests for `FullAuditableAggregateRoot` must continue to pass without modification — this is a pure refactor with no behavioral change.
+
+#### Why this is needed
+
+Duplicated soft-delete machinery across two classes in the same hierarchy is a maintenance trap. When the `MarkAsDeleted` behavior needs to change (e.g., adding a domain event overload, or changing how `DeletedOn` is sourced), the change must be made in two places. In a gold-standard SharedKernel referenced by hundreds of services, divergence between the two implementations over time is inevitable and creates subtle bugs. Inheritance is the correct tool here — the hierarchy must reflect the actual IS-A relationship.
+
+#### Acceptance criteria
+
+- [ ] `FullAuditableAggregateRoot<TId>` extends `AuditableSoftDeletableAggregateRoot<TId>` (not `AggregateRoot<TId>`)
+- [ ] `FullAuditableAggregateRoot<TId>` contains no duplicated soft-delete fields (`IsDeleted`, `DeletedOn`, `DeletedBy`) — these are inherited
+- [ ] `FullAuditableAggregateRoot<TId>` contains no duplicated `MarkAsDeleted` method — inherited from base
+- [ ] `FullAuditableAggregateRoot<TId>` contains no duplicated `OnDelete` abstract method — inherited from base
+- [ ] `FullAuditableAggregateRoot<TId>` retains `IHasConcurrency` interface declaration and `RowVersion` property with `protected set`
+- [ ] Both constructors (primary and ORM-path) chain correctly through `AuditableSoftDeletableAggregateRoot<TId>`
+- [ ] All existing `AuditableAggregateTests` tests continue to pass with zero modifications
+- [ ] `03.Domain/CLAUDE.md` auditable aggregate bases section updated to document the corrected hierarchy
+---
+
+---
+### P-037 — Domain: Correct CLAUDE.md — SharedKernel.Core Is a Declared Dependency
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-009
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+The `03.Domain/CLAUDE.md` currently states that `SharedKernel.Domain` references "only `SharedKernel.Primitives`." The actual `SharedKernel.Domain.csproj` references both `SharedKernel.Primitives` and `SharedKernel.Core`. This discrepancy is a documentation error — the code is correct, the CLAUDE.md is stale.
+
+`SharedKernel.Core` is a necessary reference because:
+- `BusinessRuleViolationException` extends `SharedKernelException` from `SharedKernel.Core.Exceptions`
+- `ValueObject` throws `ValidationException` from `SharedKernel.Core.Exceptions`
+- These are the only two places in the domain package that depend on `SharedKernel.Core`
+
+Three targeted updates are needed:
+
+1. The packages table in CLAUDE.md: update the `References` column for `SharedKernel.Domain` from "`SharedKernel.Primitives`" to "`SharedKernel.Primitives`, `SharedKernel.Core`".
+
+2. The Technology Stack table: update the "Domain primitives" and "Validation errors" rows to reflect that `ValidationException` comes from `SharedKernel.Core.Exceptions` (not just `SharedKernel.Primitives`), and that `SharedKernelException` base also comes from `SharedKernel.Core`.
+
+3. The Implementation Rules section: replace "zero NuGet dependencies — references only `SharedKernel.Primitives`" with the accurate statement that the package references `SharedKernel.Primitives` and `SharedKernel.Core` (both from `01.Core`), and has zero external NuGet dependencies outside of the SharedKernel mono-repo.
+
+No production code changes. No test changes. Documentation correction only.
+
+#### Why this is needed
+
+A CLAUDE.md that contradicts the actual csproj causes every future agent and contributor working in `03.Domain` to operate from a false premise — either they trust the CLAUDE.md (wrong) or they trust the code (correct but they must discover the discrepancy themselves). The domain brain must be the single source of truth. Stale documentation in a gold-standard shared library is a reliability risk: it will cause future refactors to be designed around the wrong dependency model.
+
+#### Acceptance criteria
+
+- [ ] `03.Domain/CLAUDE.md` packages table `References` column for `SharedKernel.Domain` lists both `SharedKernel.Primitives` and `SharedKernel.Core`
+- [ ] Technology Stack table accurately attributes `ValidationException` and `SharedKernelException` to `SharedKernel.Core.Exceptions`
+- [ ] Implementation Rules section accurately states that the package has zero external NuGet dependencies and references two `01.Core` packages
+- [ ] No production source files modified
+- [ ] No test files modified
+---
+
+---
+### P-038 — Domain: Add IsSatisfiedBy In-Memory Evaluation to Specification
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-009
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Add an `IsSatisfiedBy(T entity)` method to `Specification<T>` (the abstract base class, not the interface) that evaluates the specification's `Criteria` predicate against an in-memory entity instance.
+
+The implementation must:
+- Compile the `Criteria` expression to a `Func<T, bool>` delegate exactly once per specification instance and cache it (a private nullable backing field initialized on first call, or equivalent). Re-compilation on every call would be unacceptably expensive for hot paths.
+- When `Criteria` is null (a specification with no filter, matching all entities), return `true` unconditionally.
+- Be a concrete non-virtual method on `Specification<T>` — subclasses must not be able to override it.
+
+The `ISpecification<T>` interface must NOT gain this method — it is an implementation convenience on the concrete base class, not a contract for the read-only specification view. Repository implementations in `06.Persistence` consuming `ISpecification<T>` do not use this method; it is exclusively for in-domain and in-test use.
+
+XML documentation must state: "Evaluates this specification's criteria predicate against a single in-memory entity. The compiled delegate is cached on first call. Returns `true` when `Criteria` is null (all entities satisfy a criteria-less specification)."
+
+A test must be added covering: criteria-less specification returns `true`; entity matching the criteria returns `true`; entity not matching the criteria returns `false`; the compiled delegate is reused across multiple calls (no re-compilation — verifiable by confirming the same `Func<T,bool>` reference is used).
+
+#### Why this is needed
+
+Every team using specifications for in-domain validation or in unit tests must currently write `spec.Criteria?.Compile().Invoke(entity) ?? true` — an inconsistent, un-obvious pattern scattered across hundreds of services. This is the standard "double dispatch" gap in the Specification pattern. Providing `IsSatisfiedBy` on the base class gives teams a clean, discoverable API. The compiled-and-cached delegate is critical for performance: expression compilation is expensive (equivalent to a JIT compilation step), and specifications are often reused many times within a request. Without caching, using `IsSatisfiedBy` in a loop would be catastrophically slow.
+
+#### Acceptance criteria
+
+- [ ] `Specification<T>.IsSatisfiedBy(T entity)` method exists as a non-virtual concrete method
+- [ ] `Criteria` is compiled exactly once; the compiled `Func<T, bool>` is cached in a private field
+- [ ] When `Criteria` is null, `IsSatisfiedBy` returns `true`
+- [ ] `ISpecification<T>` interface is NOT modified — no new member added
+- [ ] XML doc on `IsSatisfiedBy` states caching behavior and null-criteria semantics
+- [ ] Test: criteria-less spec satisfies all entities
+- [ ] Test: entity matching criteria → `true`; entity not matching → `false`
+- [ ] Test: `IsSatisfiedBy` called multiple times on same spec instance uses cached delegate (no re-compilation)
+- [ ] `03.Domain/CLAUDE.md` specification system section updated to document `IsSatisfiedBy`
+---
+
+---
+### P-039 — Domain: Add DomainEvent Typed Payload Base Record
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-009
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Add a `DomainEvent<TPayload>` abstract record in `Events/` that extends `DomainEvent` and carries a strongly-typed payload of type `TPayload`.
+
+The record must:
+- Extend `DomainEvent` (which provides `Id` and `OccurredOn`)
+- Add a single `required init` property `TPayload Payload { get; init; }` — the domain-specific event data
+- Be constrained to `TPayload : notnull` to prevent nullable payload types
+- Remain abstract — concrete event records seal it
+- Carry XML documentation that explains the intended usage pattern and how `Payload` relates to the aggregate's state change
+
+Example usage the documentation must illustrate:
+```
+public sealed record OrderPlacedEvent : DomainEvent<OrderPlacedPayload>; 
+public sealed record OrderPlacedPayload(Guid OrderId, decimal Total);
+```
+
+This is additive only — the existing non-generic `DomainEvent` abstract record is not modified or deprecated. Teams that prefer flat properties directly on the event record continue to use `DomainEvent` directly.
+
+The `IDomainEvent` interface must NOT be modified. Generic dispatch in `05.Application` can pattern-match on `IDomainEvent` and use the `Payload` property when the concrete type is `DomainEvent<TPayload>`.
+
+A test must be added to `DomainEventTests` covering: a concrete `DomainEvent<TPayload>` record correctly exposes `Payload`; it implements `IDomainEvent`; `Id` is generated at construction; `OccurredOn` is set via the `required` init pattern.
+
+#### Why this is needed
+
+In large microservice ecosystems, domain events frequently carry a distinct payload object that is also published as an integration event to `04.Contracts`. Teams that use flat event properties must copy-map them to a payload DTO. A typed `DomainEvent<TPayload>` base allows the domain event's payload to be the same object that travels across service boundaries (after mapping through `04.Contracts` envelope types). It also enables generic MediatR notification handler constraints in `05.Application`: `IDomainEventHandler<TEvent> where TEvent : DomainEvent<TPayload>` — giving application layer handlers type-safe access to the structured payload without reflection or casting. This is purely additive — zero breaking changes.
+
+#### Acceptance criteria
+
+- [ ] `DomainEvent<TPayload>` abstract record exists in `Events/`, extends `DomainEvent`, constrained to `TPayload : notnull`
+- [ ] `TPayload Payload { get; init; }` is a `required` property on the record
+- [ ] `DomainEvent` (non-generic) is unchanged — no deprecation, no modification
+- [ ] `IDomainEvent` interface is unchanged
+- [ ] XML doc illustrates the intended usage pattern with a concrete example
+- [ ] `03.Domain/CLAUDE.md` events section updated to document `DomainEvent<TPayload>`
+- [ ] Test: concrete `DomainEvent<TPayload>` record exposes `Payload` correctly
+- [ ] Test: implements `IDomainEvent`
+- [ ] Test: `Id` is auto-generated, `OccurredOn` is init-only via `required`
+---
+
+---
+### P-040 — Domain: Add AsNoTracking Flag to ISpecification
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-009
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Add a `bool AsNoTracking { get; }` property to `ISpecification<T>` and implement it on `Specification<T>` with a `protected void ApplyNoTracking()` builder method and a default of `false`.
+
+The semantics:
+- `AsNoTracking = false` (default) — the repository may use EF Core change tracking. Use for specifications that precede an update operation.
+- `AsNoTracking = true` — the repository must apply `AsNoTracking()` to the query. Use for read-only query specifications.
+
+The `Specification<T>` abstract base must default `AsNoTracking` to `false` (safe default — no data loss risk). A `protected void ApplyNoTracking()` builder method sets it to `true`. Concrete specification subclasses call `ApplyNoTracking()` in their constructors when they represent read-only queries.
+
+XML documentation on `ISpecification<T>.AsNoTracking` must state: "When `true`, the consuming repository must apply `AsNoTracking()` to the underlying query. Set this for read-only query specifications to avoid unnecessary change-tracking overhead. Default is `false` — safe for specifications used before write operations."
+
+A convenience base class `ReadOnlySpecification<T>` (sealed abstract, extends `Specification<T>`) must be added that calls `ApplyNoTracking()` in its constructor, so teams building query-only specifications can extend `ReadOnlySpecification<T>` instead of calling `ApplyNoTracking()` manually.
+
+Tests must cover: default value is `false`; `ApplyNoTracking()` sets it to `true`; `ReadOnlySpecification<T>` always returns `true`; composed specifications (`AndSpecification`, `OrSpecification`, `NotSpecification`) must carry the `AsNoTracking` value of the left specification (or `true` if either operand is `true` — the more restrictive wins because composites are always query-oriented).
+
+#### Why this is needed
+
+Repository implementations in `06.Persistence` consuming `ISpecification<T>` currently have no way to know whether the caller intends to modify the retrieved entity. They either always use `AsNoTracking` (unsafe for write paths) or never use it (suboptimal for the overwhelming majority of read-only queries in a CQRS microservice). Without `AsNoTracking` on the specification, every repository implementation must make this decision by convention or by adding its own parameter — producing inconsistency across hundreds of services. Making tracking intent part of the specification contract is the correct DDD approach: the query declaration describes its full intent, and the persistence layer honors it without additional parameters.
+
+#### Acceptance criteria
+
+- [ ] `bool AsNoTracking { get; }` exists on `ISpecification<T>`
+- [ ] `Specification<T>` defaults `AsNoTracking` to `false`
+- [ ] `protected void ApplyNoTracking()` builder method sets `AsNoTracking` to `true`
+- [ ] `ReadOnlySpecification<T>` abstract class extends `Specification<T>` and calls `ApplyNoTracking()` in its constructor — always returns `true` for `AsNoTracking`
+- [ ] `AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>` constructors propagate `AsNoTracking`: set to `true` if either operand has `AsNoTracking = true`
+- [ ] XML doc on `ISpecification<T>.AsNoTracking` states the `false`-is-safe-default rationale
+- [ ] `03.Domain/CLAUDE.md` specification system section updated to document `AsNoTracking` and `ReadOnlySpecification<T>`
+- [ ] Tests: default `false`; `ApplyNoTracking()` sets `true`; `ReadOnlySpecification<T>` always `true`; composed specs propagate correctly
+---
+
+---
+### P-041 — Domain: Tighten AggregateRoot.Now — Add Explicit Guard and Documentation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-009
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+The `protected DateTimeOffset Now => _clock.UtcNow;` property on `AggregateRoot<TId>` is currently underdocumented. Its existence invites subclasses to use it for purposes beyond its intended use case (reading the current time for non-event domain operations like `UpdatedAt` fields set directly on the aggregate), which undermines the `IClock` injection discipline.
+
+Two targeted changes:
+
+**1. Add an explicit `[Obsolete]` warning-level annotation if `Now` is used to timestamp a domain event directly (documentation-only guidance, not a runtime change).** This cannot be enforced at compile time without a Roslyn analyzer, so the approach is XML documentation. The `protected DateTimeOffset Now` property must carry an explicit XML `<remarks>` block stating: "This accessor exists for edge-case domain operations that require the current time outside of domain event factories (e.g., computing a deadline, setting a non-event field). It must NOT be used to supply `OccurredOn` for domain events — use the `RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent> factory)` overload, which passes the clock timestamp directly to the event factory. Using `Now` inside a domain event construction bypasses the deterministic timestamp contract."
+
+**2. Add a governance architecture test entry (in `00.Governance` or as a note in `03.Domain/CLAUDE.md`)** documenting the constraint: aggregate subclasses must not pass `Now` as the `OccurredOn` value inside a `RaiseDomainEvent(IDomainEvent)` pre-built call — they must use the factory overload. This is captured as an implementation rule update in `03.Domain/CLAUDE.md`.
+
+No code changes to `AggregateRoot.cs` are required. This phase is documentation-only within `03.Domain`. A separate `00.Governance` phase (future) may introduce a Roslyn analyzer for compile-time enforcement.
+
+#### Why this is needed
+
+The `Now` property is a footgun. A developer who sees `protected DateTimeOffset Now` will naturally use it for event construction: `RaiseDomainEvent(new OrderCreatedEvent { OccurredOn = Now })`. This compiles and runs correctly — but it bypasses the deterministic timestamp contract. In tests, the `FixedClock` is injected to control event timestamps; calling `Now` directly in a pre-built event side-steps the factory overload and makes event timestamps non-deterministic in unit tests (they will use the real wall clock if the aggregate was constructed with `SystemClock`). The `RaiseDomainEvent(Func<...>)` factory overload exists precisely to prevent this — it ensures the clock is the sole timestamp source. Clear documentation of the constraint costs nothing and prevents a recurring anti-pattern.
+
+#### Acceptance criteria
+
+- [ ] `AggregateRoot<TId>.Now` property carries an XML `<remarks>` block explicitly stating it must NOT be used to supply `OccurredOn` for domain events
+- [ ] `<remarks>` explains the correct alternative: `RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent> factory)` overload
+- [ ] `03.Domain/CLAUDE.md` Implementation Rules section gains a rule: "Subclasses must use the `RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent>)` factory overload to timestamp events — passing `Now` as `OccurredOn` in a pre-built event is a soft violation documented in XML."
+- [ ] No behavioral changes — no production logic modified
+---
+
+- [2026-05-22] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+- [2026-05-22] WO-009 (P-036–P-041) queued — 03.Domain architectural audit: aggregate hierarchy refactor, CLAUDE.md dependency correction, Specification.IsSatisfiedBy, typed DomainEvent base, ISpecification.AsNoTracking, AggregateRoot.Now guidance (arch-lead)
+- [2026-05-22] Phase(s) P-034 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-05-22] Phase(s) P-036, P-037, P-038, P-039, P-040, P-041 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)

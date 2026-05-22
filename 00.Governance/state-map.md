@@ -33,6 +33,7 @@
 | `SK.00.Published` | Published | All tasks in Phase: Published are `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | All tasks in Phase: Guard Purity Enforcement are `●` |
 | `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | All tasks in Phase: Caching Abstractions Enforcement are `●` |
+| `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | All tasks in Phase: Domain Layer Purity Enforcement are `●` |
 
 ---
 
@@ -354,6 +355,104 @@ Two complementary enforcement rules close the coupling drift vector introduced b
 
 ---
 
+## Phase: Domain Layer Purity Enforcement <!-- phase-key: SK.00.DomainLayerPurity -->
+
+> Protect the architectural integrity of `03.Domain`: no infrastructure references, no domain event handlers, no direct system-clock usage, and no infrastructure-typed constructor parameters on domain services. Four NetArchTest predicates enforce these contracts on every governance test-suite run.
+
+### DomainLayerPurity — Goal
+
+`03.Domain` is the most architecturally sensitive layer in the SharedKernel. A single infrastructure import — an EF Core attribute added for "convenience", a MassTransit consumer placed alongside a domain event — propagates a hard dependency on a specific infrastructure stack to every service that references the domain. `DateTime.UtcNow` in domain logic makes unit tests non-deterministic and prevents in-memory time simulation for time-sensitive rules (e.g. "entity expires after 30 days"). Domain services that accept infrastructure constructor parameters break in-memory testability. This phase encodes all four purity invariants as NetArchTest predicates in `DomainLayerPurityRules`, adding them to the governance test suite so violations are caught at build time with zero false-positive risk when correctly scoped.
+
+### DomainLayerPurity — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/DomainLayerPurityRules.cs` — static class housing all four predicates
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add `DomainLayerPurityRules` to architecture test contracts section; document all four rules with rationale and examples
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+- Note: No new Roslyn analyzer SK ID is assigned. Rule 3 (clock usage) is enforced at assembly level via NetArchTest `DoesNotCallMemberPredicate`; SK0001 already handles per-call-site diagnostics for individual developers. The architecture test provides the gating enforcement pass that SK0001 cannot provide (assembly-level, post-compile).
+
+### DomainLayerPurity — Diagnostic Registry Changes
+
+No new SK diagnostic IDs. All four rules are pure NetArchTest architecture predicates:
+
+- Rule 1 — `DomainAssembliesNeverReferenceInfrastructure`: NetArchTest assembly dependency scan; all assemblies under `03.Domain`
+- Rule 2 — `DomainAssembliesNeverContainEventHandlers`: NetArchTest type interface scan via ICustomRule; all types in `03.Domain` assemblies
+- Rule 3 — `DomainAssembliesNeverCallSystemClock`: NetArchTest ICustomRule + Mono.Cecil IL instruction scan; all types in `03.Domain` assemblies
+- Rule 4 — `DomainServicesHaveNoInfrastructureConstructorParameters`: NetArchTest constructor parameter scan via ICustomRule; types implementing IDomainService
+
+### DomainLayerPurity — Implementation Rules
+
+1. `DomainAssembliesNeverReferenceInfrastructure` must use `.Should().NotHaveDependencyOnAny(forbiddenAssemblyNames)` where `forbiddenAssemblyNames` is a fixed array covering: `"Microsoft.EntityFrameworkCore"`, `"MassTransit"`, `"StackExchange.Redis"`, `"RabbitMQ.Client"`, plus any assembly whose name contains `"EntityFramework"`, `"MassTransit"`, `"Redis"`, or `"RabbitMQ"`. Because NetArchTest `.NotHaveDependencyOn()` takes a single string and matches it as a substring of the referenced assembly name, calling it iteratively for each forbidden term is the correct pattern. The rule accepts a `params Assembly[]` to allow callers to supply the domain assemblies under test.
+2. `DomainAssembliesNeverContainEventHandlers` must use `.Should().NotImplementInterface(typeof(IDomainEventHandler<>))` where `IDomainEventHandler<>` is sourced from `SharedKernel.Messaging.Abstractions`. Because NetArchTest may not support open-generic interface matching directly, the predicate must fall back to `.MeetCustomRule(new DoesNotImplementOpenGenericInterfacePredicate("IDomainEventHandler"))` — a new `ICustomRule` that checks type interface names via `TypeDefinition.Interfaces`. The failure message must include the offending type's full name and the assembly it was found in. This custom predicate reuses the same `Mono.Cecil` access pattern as `DoesNotContainThrowIlPredicate`.
+3. `DomainAssembliesNeverCallSystemClock` must use a new `ICustomRule` (`DoesNotCallSystemClockPredicate`) that inspects `MethodDefinition.Body.Instructions` for `call` or `callvirt` opcodes whose operand is `System.DateTime::get_UtcNow`, `System.DateTime::get_Now`, `System.DateTimeOffset::get_UtcNow`, or `System.DateTimeOffset::get_Now`. Uses the same Mono.Cecil `TypeDefinition` access as `DoesNotContainThrowIlPredicate`. The predicate is registered as a method on `DomainLayerPurityRules` returning a `ConditionList`.
+4. `DomainServicesHaveNoInfrastructureConstructorParameters` must use a new `ICustomRule` (`NoInfrastructureConstructorParametersPredicate`) that inspects `TypeDefinition.Methods` for methods with `IsConstructor == true` and checks each parameter's `ParameterDefinition.ParameterType.Namespace` against the forbidden namespace list: `"Microsoft.EntityFrameworkCore"`, `"MassTransit"`, `"StackExchange.Redis"`, `"RabbitMQ.Client"` (namespace prefix match). Applied only to types implementing `IDomainService`. Failure message must name the offending constructor parameter type.
+5. All four factory methods accept `Assembly domainAssembly` as their first parameter (not `params Assembly[]` for Rules 2–4 which scope to a single domain assembly at a time). Rule 1 additionally accepts the domain assembly — the implementation filters to types within that assembly only.
+6. All predicates reuse `DoesNotContainThrowIlPredicate`'s established pattern for Mono.Cecil `TypeDefinition` access: if `IType.Definition` is not publicly exposed by NetArchTest.eNt, `Mono.Cecil >= 0.11.5` is already referenced (established in GuardPurity phase) — no new NuGet dependency.
+7. `DomainLayerPurityRules` must live in `SharedKernel.ArchitectureTests/Rules/` alongside `SharedKernelLayeringRules.cs` and `GuardPurityRules.cs`. It must not reference any runtime domain or infrastructure package.
+8. The `IDomainService` interface is defined in `SharedKernel.Domain` (`03.Domain`). The consuming architecture test project must reference `SharedKernel.Domain` directly to supply the assembly reference. `DomainLayerPurityRules` itself does not hard-code an assembly path — the caller supplies `typeof(IDomainService).Assembly`.
+9. Failure messages for all four predicates must identify the offending element: Rule 1 → offending assembly reference name; Rule 2 → offending type full name; Rule 3 → offending type + method name; Rule 4 → offending type name + offending parameter type name.
+10. `DoesNotImplementOpenGenericInterfacePredicate` checks `TypeDefinition.Interfaces` — each `InterfaceImplementation.InterfaceType` is inspected for `Name.StartsWith("IDomainEventHandler")`. This covers both the non-generic and the open-generic form in IL. The predicate is internal to `SharedKernel.ArchitectureTests` and lives in `Predicates/DoesNotImplementOpenGenericInterfacePredicate.cs`.
+11. `DoesNotCallSystemClockPredicate` inspects all `MethodDefinition` bodies in the type; for each `Instruction` where `OpCode` is `Call` or `Callvirt`, the operand is cast to `MethodReference` and the `FullName` is checked against the four forbidden property getter strings. This is the same IL walking pattern as `DoesNotContainThrowIlPredicate`. The predicate lives in `Predicates/DoesNotCallSystemClockPredicate.cs`.
+12. `NoInfrastructureConstructorParametersPredicate` is scoped to types whose `TypeDefinition.Interfaces` contains an entry whose `InterfaceType.Name` equals `"IDomainService"`. Only these types are inspected. The predicate lives in `Predicates/NoInfrastructureConstructorParametersPredicate.cs`.
+
+### DomainLayerPurity — File-Level Plan
+
+All files in `SharedKernel.ArchitectureTests`:
+
+- `Rules/DomainLayerPurityRules.cs` — Create — static class: four predicate factory methods returning ConditionList
+- `Predicates/DoesNotImplementOpenGenericInterfacePredicate.cs` — Create — ICustomRule: checks TypeDefinition.Interfaces for open-generic event handler name prefix
+- `Predicates/DoesNotCallSystemClockPredicate.cs` — Create — ICustomRule: walks IL instructions for DateTime/DateTimeOffset property getter call opcodes
+- `Predicates/NoInfrastructureConstructorParametersPredicate.cs` — Create — ICustomRule: inspects constructors of IDomainService implementors for infra-namespace params
+
+### DomainLayerPurity — Acceptance Criteria
+
+- [ ] NetArchTest rule `DomainAssembliesNeverReferenceInfrastructure` fails with offending reference name when a domain assembly references EntityFramework, MassTransit, Redis, or RabbitMQ
+- [ ] Architecture test asserts no type in `03.Domain` assemblies implements `IDomainEventHandler<TEvent>`; failure message names the offending type
+- [ ] IL-inspection rule flags `DateTime.UtcNow`, `DateTime.Now`, `DateTimeOffset.UtcNow`, `DateTimeOffset.Now` usage in domain assembly types; failure message names the offending type and method
+- [ ] NetArchTest rule asserts `IDomainService` constructors contain no infrastructure-namespace type parameters; failure names the offending type and parameter
+- [ ] All four rules documented in `00.Governance/CLAUDE.md` with rationale, offending-pattern example, compliant-pattern example
+- [ ] Each of the four rules has at least one fire-path test and one pass-path test row in this state-map
+
+### DomainLayerPurity — Dependencies
+
+- Requires P-032 (`IDomainService`, `IDomainEventHandler<TEvent>` types defined in `SharedKernel.Domain`): yes — `DomainLayerPurityRules` loads `typeof(IDomainService).Assembly`; without the type existing the assembly load fails at runtime in tests
+- Requires `DoesNotContainThrowIlPredicate` (Mono.Cecil pattern) from `SK.00.GuardPurity` to be complete: yes (already complete — Mono.Cecil access pattern is established)
+- Unblocks: CI architecture gate integration for the Domain layer
+
+### DomainLayerPurity — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` from GuardPurity phase — no change)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new SK rule, no change)
+- Target framework: `net10.0` (ArchitectureTests)
+
+### DomainLayerPurity — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-15 | Define `DomainAssembliesNeverReferenceInfrastructure` predicate shape: forbidden assembly name terms (`EntityFramework`, `MassTransit`, `Redis`, `RabbitMQ`), iterative `.NotHaveDependencyOn()` call pattern, failure message contract | SharedKernel.ArchitectureTests | `○` |
+| D-16 | Define `DomainAssembliesNeverContainEventHandlers` predicate shape: `DoesNotImplementOpenGenericInterfacePredicate` design — `TypeDefinition.Interfaces` inspection for `IDomainEventHandler` name prefix; failure message includes offending type full name | SharedKernel.ArchitectureTests | `○` |
+| D-17 | Define `DomainAssembliesNeverCallSystemClock` predicate shape: `DoesNotCallSystemClockPredicate` design — IL instruction walk for `DateTime::get_UtcNow`, `DateTime::get_Now`, `DateTimeOffset::get_UtcNow`, `DateTimeOffset::get_Now`; failure message includes offending type and method | SharedKernel.ArchitectureTests | `○` |
+| D-18 | Define `DomainServicesHaveNoInfrastructureConstructorParameters` predicate shape: `NoInfrastructureConstructorParametersPredicate` design — scope to `IDomainService` implementors, inspect constructor `ParameterDefinition.ParameterType.Namespace` for infra namespace prefix match; failure message includes offending type and parameter type | SharedKernel.ArchitectureTests | `○` |
+| C-20 | Implement `DoesNotImplementOpenGenericInterfacePredicate` in `Predicates/` — `ICustomRule` checking `TypeDefinition.Interfaces` for entries whose `InterfaceType.Name` starts with `"IDomainEventHandler"`; return false with offending type full name on violation | SharedKernel.ArchitectureTests | `○` |
+| C-21 | Implement `DoesNotCallSystemClockPredicate` in `Predicates/` — `ICustomRule` walking all `MethodDefinition.Body.Instructions` for `Call`/`Callvirt` opcodes whose operand `MethodReference.FullName` matches any of the four forbidden property getters | SharedKernel.ArchitectureTests | `○` |
+| C-22 | Implement `NoInfrastructureConstructorParametersPredicate` in `Predicates/` — `ICustomRule` scoped to types implementing `IDomainService`; inspects `TypeDefinition.Methods` where `IsConstructor` is true; checks each `ParameterDefinition.ParameterType.Namespace` against forbidden namespace prefix list | SharedKernel.ArchitectureTests | `○` |
+| C-23 | Implement `DomainLayerPurityRules` static class in `Rules/` — four factory methods: `DomainAssembliesNeverReferenceInfrastructure(Assembly)` → `ConditionList`, `DomainAssembliesNeverContainEventHandlers(Assembly)` → `ConditionList`, `DomainAssembliesNeverCallSystemClock(Assembly)` → `ConditionList`, `DomainServicesHaveNoInfrastructureConstructorParameters(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| T-23 | Architecture test Rule 1 (fire path): pass a contrived domain assembly that references `Microsoft.EntityFrameworkCore`; assert `DomainAssembliesNeverReferenceInfrastructure` fails and failure message contains the offending assembly name | SharedKernel.ArchitectureTests | `○` |
+| T-24 | Architecture test Rule 1 (pass path): pass a clean domain assembly with no infrastructure references; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-25 | Architecture test Rule 2 (fire path): pass a domain assembly containing a type that implements `IDomainEventHandler<TEvent>`; assert `DomainAssembliesNeverContainEventHandlers` fails and failure message contains the offending type full name | SharedKernel.ArchitectureTests | `○` |
+| T-26 | Architecture test Rule 2 (pass path): pass a clean domain assembly with no event handler implementations; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-27 | Architecture test Rule 3 (fire path): pass a domain assembly where a domain entity method calls `DateTime.UtcNow`; assert `DomainAssembliesNeverCallSystemClock` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
+| T-28 | Architecture test Rule 3 (pass path): pass a clean domain assembly where time is consumed via `IClock.UtcNow`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-29 | Architecture test Rule 4 (fire path): pass a domain assembly where an `IDomainService` implementation has an `IRepository` (EF Core namespace) constructor parameter; assert `DomainServicesHaveNoInfrastructureConstructorParameters` fails and failure message names the offending type and parameter type | SharedKernel.ArchitectureTests | `○` |
+| T-30 | Architecture test Rule 4 (pass path): pass a clean `IDomainService` implementation whose constructor accepts only `IClock` and other domain interfaces; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| DO-09 | Document all four `DomainLayerPurityRules` predicates in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale for each rule, offending-pattern example, compliant-pattern example, cross-reference to root `CLAUDE.md` hard rules | SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -368,18 +467,19 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 73.
+> Counts updated whenever a task state changes. Total tasks: 89.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.00.Design` | Design | 14 | 12 | 2 | `◐` |
+| `SK.00.Design` | Design | 18 | 12 | 6 | `◐` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
-| `SK.00.Core` | Core | 16 | 14 | 2 | `◐` |
-| `SK.00.Tests` | Tests | 17 | 12 | 5 | `◐` |
-| `SK.00.Docs` | Docs | 8 | 5 | 3 | `◐` |
+| `SK.00.Core` | Core | 20 | 14 | 6 | `◐` |
+| `SK.00.Tests` | Tests | 25 | 12 | 13 | `◐` |
+| `SK.00.Docs` | Docs | 9 | 5 | 4 | `◐` |
 | `SK.00.Published` | Published | 6 | 6 | 0 | `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | 11 | 11 | 0 | `●` |
 | `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | 11 | 0 | 11 | `○` |
+| `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | 16 | 0 | 16 | `○` |
 
 ---
 
@@ -397,3 +497,4 @@ Format when active:
 - [2026-05-15] P-01–P-06 → ● in SK.00.Published — NuGet metadata added, packages packed to local feed, SK0001 verified firing in consumer (state-map-phase)
 - [2026-05-15] C-15–C-17, T-13–T-17, DO-06 → ● in SK.00.GuardPurity — all 11 tasks complete, GuardPurity phase fully done (state-map-phase)
 - [2026-05-18] Phase Caching Abstractions Enforcement added (SK.00.CachingEnforcement) — 11 tasks: D-13–D-14, C-18–C-19, T-18–T-22, DO-07–DO-08; SK0007 RedisChannelServiceMessagingSubstitute registered; CachingAbstractionRules arch predicate defined; total tasks now 73 — WO-003 P-009
+- [2026-05-22] Phase Domain Layer Purity Enforcement added (SK.00.DomainLayerPurity) — 16 tasks: D-15–D-18, C-20–C-23, T-23–T-30, DO-09; four NetArchTest predicates in DomainLayerPurityRules; three new ICustomRule predicates (DoesNotImplementOpenGenericInterfacePredicate, DoesNotCallSystemClockPredicate, NoInfrastructureConstructorParametersPredicate); no new SK IDs; total tasks now 89 — WO-008 P-034

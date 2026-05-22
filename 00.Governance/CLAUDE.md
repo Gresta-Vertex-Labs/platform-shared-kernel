@@ -11,7 +11,7 @@ Philosophy: **Enforce at build time. Zero runtime cost. Tooling-only packages.**
 ## Packages
 
 | Package | Role | References |
-|---------|------|-----------|
+| --- | --- | --- |
 | `SharedKernel.Analyzers` | Roslyn diagnostic analyzers — enforces SharedKernel coding rules at compile time | nothing (targets `netstandard2.0`) |
 | `SharedKernel.ArchitectureTests` | NetArchTest-based base classes and pre-built layering-rule predicates for architecture tests | nothing (test-only, never shipped to production code) |
 | `SharedKernel.Benchmarks` | BenchmarkDotNet configuration and baseline helpers for SharedKernel micro-benchmarks | nothing |
@@ -167,6 +167,64 @@ CachingAbstractionRules  (static class — caching boundary enforcement predicat
 
     Note: The method accepts a params Assembly[] so consuming test classes supply the
     production assemblies under test; assembly paths are never hard-coded in the predicate.
+
+DomainLayerPurityRules  (static class — domain layer purity predicates)
+    All factory methods accept Assembly domainAssembly and return ConditionList.
+    .DomainAssembliesNeverReferenceInfrastructure(Assembly)  → ConditionList
+        Asserts that no type in the supplied domain assembly has a dependency on
+        any of the forbidden assembly name substrings: "EntityFramework", "MassTransit",
+        "Redis", "RabbitMQ". Uses iterative .Should().NotHaveDependencyOn(term) calls —
+        one per forbidden term — because NetArchTest matches the argument as a substring
+        of the referenced assembly's full name. Failure message names the offending
+        reference. No exemptions — domain assemblies may never reference infrastructure.
+
+    .DomainAssembliesNeverContainEventHandlers(Assembly)     → ConditionList
+        Asserts that no type in the domain assembly implements IDomainEventHandler<TEvent>.
+        Uses DoesNotImplementOpenGenericInterfacePredicate (ICustomRule) which inspects
+        TypeDefinition.Interfaces for entries whose InterfaceType.Name starts with
+        "IDomainEventHandler". Failure message includes the offending type's full name.
+        Handlers belong in 05.Application or 07.Messaging — never in 03.Domain.
+
+    .DomainAssembliesNeverCallSystemClock(Assembly)          → ConditionList
+        Asserts that no method in the domain assembly calls DateTime.UtcNow, DateTime.Now,
+        DateTimeOffset.UtcNow, or DateTimeOffset.Now directly. Uses
+        DoesNotCallSystemClockPredicate (ICustomRule) which walks MethodDefinition.Body
+        .Instructions looking for Call/Callvirt opcodes whose MethodReference.FullName
+        matches any of the four forbidden property getter signatures. Failure message
+        names the offending type and method. Only IClock.UtcNow is the permitted time
+        source in domain and application assemblies.
+
+    .DomainServicesHaveNoInfrastructureConstructorParameters(Assembly) → ConditionList
+        Asserts that no type implementing IDomainService has constructor parameters whose
+        ParameterDefinition.ParameterType.Namespace starts with any forbidden namespace:
+        "Microsoft.EntityFrameworkCore", "MassTransit", "StackExchange.Redis",
+        "RabbitMQ.Client". Uses NoInfrastructureConstructorParametersPredicate (ICustomRule)
+        scoped to IDomainService implementors only. Failure message names the offending
+        type and the offending parameter type. Domain services may only accept IClock,
+        other domain interfaces, and 01.Core primitives in their constructors.
+
+DoesNotImplementOpenGenericInterfacePredicate  (class : ICustomRule — internal predicate)
+    Checks TypeDefinition.Interfaces for InterfaceImplementation entries whose
+    InterfaceType.Name starts with a configured interface name prefix (default:
+    "IDomainEventHandler"). Returns false (rule violated) for the first matching type.
+    Covers both generic and non-generic IL forms. Lives in Predicates/ folder.
+
+DoesNotCallSystemClockPredicate  (class : ICustomRule — internal predicate)
+    Walks all MethodDefinition.Body.Instructions in the type. For each Instruction
+    where OpCode is Call or Callvirt, casts the operand to MethodReference and checks
+    FullName against: "System.DateTime::get_UtcNow", "System.DateTime::get_Now",
+    "System.DateTimeOffset::get_UtcNow", "System.DateTimeOffset::get_Now".
+    Returns false (rule violated) for the first match found; failure message includes
+    declaring type name and method name. Lives in Predicates/ folder.
+
+NoInfrastructureConstructorParametersPredicate  (class : ICustomRule — internal predicate)
+    Scopes to types whose TypeDefinition.Interfaces contains an entry with
+    InterfaceType.Name == "IDomainService". For each such type, iterates
+    TypeDefinition.Methods where IsConstructor is true and checks each
+    ParameterDefinition.ParameterType.Namespace for forbidden namespace prefixes:
+    "Microsoft.EntityFrameworkCore", "MassTransit", "StackExchange.Redis", "RabbitMQ.Client".
+    Returns false (rule violated) on the first offending parameter; failure message includes
+    the offending type name and parameter type name. Lives in Predicates/ folder.
 ```
 
 ---
