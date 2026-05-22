@@ -65,7 +65,7 @@ Format when blocked:
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
-| 03 | [Domain](03.Domain/state-map.md) | — | `○` | — | — |
+| 03 | [Domain](03.Domain/state-map.md) | Design | `●` | All 14 design tasks verified against CLAUDE.md — interfaces, equality strategy, event contracts, audit hierarchy, business rules, policies, specifications, and IDomainEventHandler exclusion boundary documented. | Begin Scaffold phase: create csproj, directory structure, and solution registration. |
 | 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | — | `○` | — | — |
@@ -111,10 +111,10 @@ Format when active:
 | ● Tests | 0 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
-| ● Design | 0 |
+| ● Design | 1 |
 | ◐ In Progress | 0 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 15 |
+| ○ Not Started | 14 |
 
 ---
 
@@ -1364,6 +1364,272 @@ The testing domain must stay current with the capability domain. When `16.Testin
 - [ ] `16.Testing` references `SharedKernel.Caching.Abstractions` — no new concrete provider references
 - [ ] All public types carry XML doc comments
 ---
+### P-032 — Domain Foundation: DDD Building Blocks for SharedKernel.Domain
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-008
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+The complete `SharedKernel.Domain` package — the DDD primitive layer that every downstream microservice aggregate, entity, value object, and domain event derives from. This package must have zero NuGet dependencies, reference only `SharedKernel.Primitives`, and be pure C# 13 targeting `net10.0`.
+
+---
+
+**Core identity contracts (interfaces):**
+
+- `IEntity<TId>` — marker interface expressing that a type has a typed, non-null identity key. Constrained to `where TId : notnull`.
+- `IAggregateRoot<TId>` — extends `IEntity<TId>`. Exposes `IReadOnlyCollection<IDomainEvent> DomainEvents` and `void ClearDomainEvents()`. This is the only surface callers (infrastructure dispatch) should depend on — not the concrete base class.
+- `IValueObject` — zero-member marker interface. Signals structural-equality semantics and identifies domain value types for architecture enforcement rules.
+- `IDomainService` — zero-member marker interface. Tags classes that contain domain logic that does not naturally belong to a single aggregate or entity. Used by governance architecture tests to enforce that domain services carry no infrastructure dependencies.
+- `IStronglyTypedId<TValue>` — marker interface for strongly-typed ID wrappers. Exposes a single `TValue Value { get; }`. Constrained to `where TValue : notnull`. Used by persistence and governance layers to detect ID types.
+
+**Domain event contracts:**
+
+- `IDomainEvent` — the canonical event marker. Exposes `Guid Id { get; }` (event identity, not aggregate identity) and `DateTimeOffset OccurredOn { get; }`. No other members — routing, serialization, and dispatch are infrastructure concerns and must not appear here.
+- `DomainEvent` — abstract record implementing `IDomainEvent`. `Id` is set to `Guid.NewGuid()` at construction. `OccurredOn` is an `init`-only property — it must be supplied by the caller at construction time (typically `AggregateRoot.RaiseDomainEvent`), not defaulted internally with `DateTimeOffset.UtcNow`. Direct use of `DateTimeOffset.UtcNow` inside `DomainEvent` is a hard violation. The accepted pattern: the `RaiseDomainEvent(IDomainEvent)` overload on `AggregateRoot` receives a pre-constructed event; a companion protected `RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent> factory)` overload accepts a factory that receives the current UTC time sourced from the aggregate's `IClock` field. This ensures all domain events carry timestamps sourced from `IClock`, not from ambient `DateTimeOffset.UtcNow`.
+
+**Audit and cross-cutting marker interfaces:**
+
+- `IHasCreatedAudit` — exposes `string CreatedBy { get; }` and `DateTimeOffset CreatedOn { get; }`.
+- `IHasAudit` — extends `IHasCreatedAudit`. Adds `string? ModifiedBy { get; }` and `DateTimeOffset? ModifiedOn { get; }`.
+- `ISoftDeletable` — exposes `bool IsDeleted { get; }`, `DateTimeOffset? DeletedOn { get; }`, `string? DeletedBy { get; }`.
+- `IHasConcurrency` — exposes `byte[] RowVersion { get; }`. EF Core / persistence interceptors use this for optimistic concurrency token mapping.
+- `IHasTenant` — exposes `Guid TenantId { get; }`. Enables persistence layer query filters and infrastructure isolation. This is a marker only — the domain layer has no tenant resolution logic.
+
+**Strongly-typed ID base:**
+
+- `StronglyTypedId<TValue>` — abstract record implementing `IStronglyTypedId<TValue>`. Carries `TValue Value { get; init; }` as a required positional record property. Overrides `ToString()` to return `Value.ToString()!`. Provides `implicit operator TValue` for ergonomic unwrapping. The base record must carry an XML doc note that STJ serialization of strongly-typed IDs requires a custom `JsonConverter` in the consuming service's serialization context — the domain package does not ship converters (that belongs in `06.Persistence` or `04.Contracts`).
+
+**Entity base:**
+
+- `Entity<TId>` — abstract class implementing `IEntity<TId>`. Constructor `protected Entity(TId id)` plus a protected parameterless constructor for ORM materialization. Id is `TId Id { get; private init; }`. Identity equality: two entities are equal if and only if their `GetType()` matches and their `Id` values are equal (via `EqualityComparer<TId>.Default`). Transient detection via `IsTransient()`: returns `true` when `Id` equals `default(TId)`. Transient entities are never equal to any other entity, including themselves (use `RuntimeHelpers.GetHashCode` as the hash for transient instances). `operator ==` and `operator !=` must be defined. No infrastructure concerns anywhere in this class.
+
+**AggregateRoot base:**
+
+- `AggregateRoot<TId>` — abstract class extending `Entity<TId>`, implementing `IAggregateRoot<TId>`. Holds a private `List<IDomainEvent>` field. Exposes `IReadOnlyCollection<IDomainEvent> DomainEvents` (read-only view). `ClearDomainEvents()` empties the list. Protected `RaiseDomainEvent(IDomainEvent domainEvent)` adds to the list. Protected `RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent> factory)` calls `factory(_clock.UtcNow)` and adds the result — this is the IClock-sourced overload. `IClock` is a constructor parameter on `AggregateRoot<TId>` (not optional, not injected via property), injected by domain constructors from the application layer. The protected parameterless constructor (for ORM materialization) must set `_clock` to a `NullClock` internal sentinel that returns `DateTimeOffset.MinValue` — this prevents NPE during ORM hydration while making it observable if domain methods that raise events are accidentally called on an ORM-materialized instance without a clock. Protected static `void CheckRule(IBusinessRule rule)` throws `BusinessRuleViolationException` if the rule is broken.
+
+**Auditable aggregate bases (minimal set — four only):**
+
+- `AuditableAggregateRoot<TId>` — extends `AggregateRoot<TId>`, implements `IHasAudit`. `CreatedBy`, `CreatedOn`, `ModifiedBy`, `ModifiedOn` all have `private set` (populated by EF Core interceptors or persistence-layer conventions — not by the aggregate itself). Protected parameterless constructor for ORM. No `SetAudit()` method — audit properties are owned by the infrastructure interceptor.
+- `SoftDeletableAggregateRoot<TId>` — extends `AggregateRoot<TId>`, implements `ISoftDeletable`. `IsDeleted`, `DeletedOn`, `DeletedBy` all have `private set`. Exposes a protected virtual `void Delete(string deletedBy)` method that sets the soft-delete fields and raises a domain event via the `Func<DateTimeOffset, IDomainEvent>` overload — but because the concrete event type is defined by the subclass, `Delete` must be `protected abstract void OnDelete()` and the base provides a `protected void MarkAsDeleted(string deletedBy)` helper that sets the audit fields. Concrete aggregates override `OnDelete` to raise the appropriate domain event.
+- `AuditableSoftDeletableAggregateRoot<TId>` — extends `AggregateRoot<TId>`, implements `IHasAudit` and `ISoftDeletable`. Combines the two sets of properties. This covers the most common production pattern. `private set` on all audit and soft-delete fields.
+- `FullAuditableAggregateRoot<TId>` — extends `AggregateRoot<TId>`, implements `IHasAudit`, `ISoftDeletable`, `IHasConcurrency`. The "kitchen sink" base for aggregates needing full audit, soft delete, and optimistic concurrency. `RowVersion` is `byte[] { get; protected set; }` — `protected set` because the persistence layer may need to update it via a property setter after fetch, not via constructor.
+
+**Auditable entity bases (for owned child entities, not just aggregates):**
+
+- `AuditableEntity<TId>` — extends `Entity<TId>`, implements `IHasAudit`. `private set` on all audit fields. No event machinery — entities do not raise domain events.
+- `FullAuditableEntity<TId>` — extends `Entity<TId>`, implements `IHasAudit`, `ISoftDeletable`, `IHasConcurrency`.
+
+**ValueObject base:**
+
+- `ValueObject` — abstract record. Structural equality is provided by C# record semantics when `GetEqualityComponents()` is used to drive equality, but abstract records do not automatically wire this. The domain planner must choose between: (a) abstract class with explicit `GetEqualityComponents()` → `IEnumerable<object?>` and overridden `Equals`/`GetHashCode`, or (b) abstract record relying on the implementing record's positional equality — option (b) is simpler and fully AOT-safe. The domain planner must pick one pattern and document it clearly. Whichever approach is chosen, `IValueObject` must be implemented, and the `Validate()` hook pattern must be provided: a protected abstract `IEnumerable<Error>? Validate()` method (returning null means valid) that the `ValueObject` constructor calls — this integrates railway-style validation at construction time using `SharedKernel.Primitives.Error`.
+
+**Business rule system:**
+
+- `IBusinessRule` — exposes `string Message { get; }` and `bool IsBroken()`.
+- `BusinessRuleViolationException` — derives from `SharedKernelException` (from `01.Core`). Carries `IBusinessRule Rule { get; }`. Constructor takes the rule and passes `new Error(rule.Message)` to the base.
+- Composite rules: `AndBusinessRule` (both must pass — broken if either is broken), `OrBusinessRule` (at least one must pass — broken only if both are broken), `NotBusinessRule` (inverts). All three are `sealed`. The `AndBusinessRule.Message` aggregates messages from broken sub-rules using "; " as delimiter.
+- `BusinessRuleExtensions` — static class with `.And()`, `.Or()`, `.Not()` extension methods on `IBusinessRule`.
+
+**Policy system:**
+
+- `IPolicy<T>` — exposes `bool IsCompliant(T subject)`.
+- Composite policies: `AndPolicy<T>`, `OrPolicy<T>`, `NotPolicy<T>` — sealed. Mirror the business rule composites.
+- `PolicyExtensions` — static class with `.And<T>()`, `.Or<T>()`, `.Not<T>()` extension methods on `IPolicy<T>`.
+- Note: `IPolicy<T>` is the domain-level compliance check (is this subject in a valid state for a domain rule?); `IBusinessRule` is the instance-level invariant check (is this specific value valid?). They are distinct — policies evaluate domain objects, business rules evaluate raw values or primitives.
+
+**Specification system:**
+
+- `ISpecification<T>` — the query-expression contract consumed by repositories in `06.Persistence`. Must expose: `Expression<Func<T, bool>>? Criteria`, `IReadOnlyList<Expression<Func<T, object>>> Includes`, `Expression<Func<T, object>>? OrderBy`, `Expression<Func<T, object>>? OrderByDescending`, `IReadOnlyList<(Expression<Func<T, object>> KeySelector, bool Descending)> ThenBys`, `int? Skip`, `int? Take`, `bool IsDistinct`. This is a read-only contract — the infrastructure layer evaluates it, the domain layer only constructs it.
+- `Specification<T>` — abstract base class implementing `ISpecification<T>`. Provides protected builder methods: `AddCriteria(Expression<Func<T, bool>>)`, `AddInclude(Expression<Func<T, object>>)`, `ApplyOrderBy(Expression<Func<T, object>>)`, `ApplyOrderByDescending(Expression<Func<T, object>>)`, `ApplyThenBy(Expression<Func<T, object>>, bool descending)`, `ApplyPaging(int skip, int take)`, `ApplyDistinct()`. All builder methods return `void` — specifications are built in the constructor of the concrete subclass. Concrete specifications are sealed records or sealed classes.
+- `AndSpecification<T>` — combines two specifications using expression tree AND via `ExpressionVisitor`. The `ParameterReplacer` pattern from the proposal is correct — accept as-is.
+- `OrSpecification<T>` — combines using expression tree OR.
+- `NotSpecification<T>` — negates using `Expression.Not`.
+- `SpecificationExtensions` — `.And<T>()`, `.Or<T>()`, `.Not<T>()` on `Specification<T>`.
+
+**Exceptions:**
+
+- `BusinessRuleViolationException` — as described above. Lives in `03.Domain` (not `01.Core`) because it depends on `IBusinessRule`, which is a domain concept.
+
+**IClock usage:**
+
+- `AggregateRoot<TId>` accepts `IClock` via constructor. Domain aggregate constructors downstream accept and pass `IClock`. This is the only permitted time source.
+- A `NullClock` internal sealed class implements `IClock` returning `DateTimeOffset.MinValue` — used for ORM materialization protection as described.
+
+#### Why this is needed
+
+`03.Domain` is the most foundational mutable layer in the entire SharedKernel. Every downstream microservice's aggregate, entity, and value object derives from these building blocks. The design must be correct the first time — changing `Entity<TId>` equality semantics, the `ISpecification<T>` contract, or the `DomainEvent` timestamp approach after dozens of services have onboarded causes a platform-wide breaking change. The IClock-injected timestamp pattern prevents non-deterministic test failures (tests no longer race against wall-clock time). The minimal auditable base class set (four only) controls combinatorial explosion while covering all real production patterns. The specification system with expression composites gives repositories in `06.Persistence` a type-safe, composable query language without domain-layer infrastructure coupling.
+
+#### Acceptance criteria
+- [ ] `IEntity<TId>`, `IAggregateRoot<TId>`, `IValueObject`, `IDomainService`, `IStronglyTypedId<TValue>` interfaces implemented with documented constraints
+- [ ] `IDomainEvent` interface with `Id` and `OccurredOn`; `DomainEvent` abstract record with `init`-only `OccurredOn`, not defaulted internally to `DateTimeOffset.UtcNow`
+- [ ] `AggregateRoot<TId>` accepts `IClock` via constructor; `RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent>)` overload uses `_clock.UtcNow`; `NullClock` sentinel for ORM materialization path
+- [ ] `Entity<TId>` equality is identity-based; transient entities are never equal to any other; `IsTransient()` detects default-value Id
+- [ ] `CheckRule(IBusinessRule)` on `AggregateRoot<TId>` throws `BusinessRuleViolationException` when the rule is broken
+- [ ] Exactly four auditable aggregate bases: `AuditableAggregateRoot<TId>`, `SoftDeletableAggregateRoot<TId>`, `AuditableSoftDeletableAggregateRoot<TId>`, `FullAuditableAggregateRoot<TId>` — no more, no less
+- [ ] `AuditableEntity<TId>` and `FullAuditableEntity<TId>` for non-aggregate child entities
+- [ ] `ValueObject` abstract base with a clear documented equality strategy (abstract class with `GetEqualityComponents()` OR abstract record — domain planner chooses and documents)
+- [ ] `ValueObject` constructor calls `protected abstract IEnumerable<Error>? Validate()` — null means valid; non-null collection throws `ValidationException` from `01.Core`
+- [ ] `IBusinessRule`, `BusinessRuleViolationException`, `AndBusinessRule`, `OrBusinessRule`, `NotBusinessRule`, `BusinessRuleExtensions` implemented
+- [ ] `IPolicy<T>`, `AndPolicy<T>`, `OrPolicy<T>`, `NotPolicy<T>`, `PolicyExtensions` implemented
+- [ ] `ISpecification<T>` interface with all seven members; `Specification<T>` abstract base with all protected builder methods
+- [ ] `AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>` using expression tree composition; `SpecificationExtensions`
+- [ ] `StronglyTypedId<TValue>` abstract record with `implicit operator TValue` and XML doc note on STJ converter requirement
+- [ ] `IHasCreatedAudit`, `IHasAudit`, `ISoftDeletable`, `IHasConcurrency`, `IHasTenant` marker interfaces
+- [ ] `IDomainEventHandler<TEvent>` is NOT present in this package — it belongs in `05.Application`
+- [ ] Zero NuGet dependencies — references only `SharedKernel.Primitives`
+- [ ] No `DateTime.UtcNow` or `DateTimeOffset.UtcNow` direct usage anywhere in this package
+- [ ] All public types carry XML doc comments
+- [ ] AOT-safe: no reflection in hot paths, no `Assembly.Load`, no `Activator.CreateInstance`
+- [ ] Package is registered in `Platform.SharedKernel.slnx` under solution folder `03.Domain`
+- [ ] Test project `SharedKernel.Domain.Tests` covers: entity equality (same Id = equal, different Id = not equal, transient = not equal to anything), aggregate event accumulation and `ClearDomainEvents`, value object structural equality, business rule composites (`And`, `Or`, `Not`), specification expression composition, `StronglyTypedId` implicit operator
+---
+
+---
+### P-033 — Persistence: EF Core Domain Primitive Support (Value Converters, Interceptors, Query Filters)
+
+**Status:** `○` Pending
+**Work Order:** WO-008
+**Domain:** 06.Persistence
+**Depends on:** P-032
+
+#### What is needed
+
+EF Core-specific support in `06.Persistence/SharedKernel.Persistence.EfCore` for the domain primitives defined in P-032. This is the infrastructure mirror of the domain contracts — every interface from `03.Domain` that requires persistence behavior gets its EF Core implementation here.
+
+**Strongly-typed ID value converters:**
+
+A generic `StronglyTypedIdValueConverter<TId, TValue>` EF Core `ValueConverter` that maps `TId` (implementing `IStronglyTypedId<TValue>`) to its primitive `TValue` for database column storage. A companion `StronglyTypedIdValueConverterSelector` extension for `ModelConfigurationBuilder` that auto-registers the converter for all strongly-typed ID types detected via `IStronglyTypedId<TValue>`. This prevents per-aggregate manual converter registration — one call wires all IDs.
+
+**ValueObject owned entity convention:**
+
+A model building convention that detects properties typed as `IValueObject` implementors and applies `.OwnsOne()` automatically. This eliminates manual `modelBuilder.Entity<T>().OwnsOne(...)` calls in every `IEntityTypeConfiguration`. The convention must handle nested value objects (`.OwnsOne` with a nested `.OwnsOne` for composed value objects). XML doc must document the limitations: collections of value objects (`OwnsMany`) must still be configured manually.
+
+**Audit interceptor (`AuditSaveChangesInterceptor`):**
+
+An `ISaveChangesInterceptor` that automatically populates `IHasCreatedAudit` and `IHasAudit` fields on `EntityState.Added` and `EntityState.Modified` entries. Requires an `IUserContext` abstraction (from `12.Security`) injected via DI to supply `CreatedBy`/`ModifiedBy`. Requires `IClock` (from `01.Core`) for timestamps. The interceptor must be registered in `AddSharedKernelPersistence` as part of the EF Core interceptor chain. Must not throw when `IUserContext` is not registered — in that case it must use a configurable `FallbackUserIdentifier` (default: `"system"`) and log a `LogLevel.Warning` at startup.
+
+**Soft-delete query filter convention:**
+
+A model building convention that detects entity types implementing `ISoftDeletable` and applies a global query filter `e => !e.IsDeleted` automatically. This eliminates per-entity manual filter registration. Provides an extension method `IgnoreSoftDeleteFilter()` on `IQueryable<T>` for queries that intentionally need to see deleted records (admin panels, audit trails).
+
+**Concurrency token convention:**
+
+A model building convention that detects properties implementing `IHasConcurrency.RowVersion` and applies `.IsRowVersion()` automatically for SQL Server or `.UseXminAsConcurrencyToken()` for PostgreSQL/Npgsql. The convention must be provider-aware — it checks the configured database provider and applies the correct token strategy. If the provider is unknown, it falls back to `IsConcurrencyToken()` and logs a `LogLevel.Warning` at startup.
+
+**Tenant query filter convention:**
+
+A model building convention that detects entity types implementing `IHasTenant` and applies a global query filter `e => e.TenantId == currentTenantId` automatically, sourcing `currentTenantId` from an `ITenantProvider` (from `12.Security`). Requires `ITenantProvider` injected into the DbContext or the convention builder. Must be opt-in (`AddTenantIsolationFilter()` extension) — not applied by default, since not all services are multi-tenant.
+
+#### Why this is needed
+
+Without these conventions and interceptors, every microservice team must manually configure value converters, write audit interceptors, apply soft-delete query filters, and handle concurrency tokens for every aggregate — repeating the same boilerplate across hundreds of services. A single bug in one team's interceptor (e.g., not populating `CreatedBy` on insert) produces silent data quality issues in production. Centralizing these in `SharedKernel.Persistence.EfCore` guarantees consistent behavior across all services and eliminates the boilerplate entirely.
+
+#### Acceptance criteria
+- [ ] `StronglyTypedIdValueConverter<TId, TValue>` EF Core value converter exists; auto-registered via `ModelConfigurationBuilder` extension
+- [ ] `ValueObject` owned entity convention auto-applies `.OwnsOne()` for `IValueObject` properties; XML doc documents `OwnsMany` limitation
+- [ ] `AuditSaveChangesInterceptor` populates `IHasCreatedAudit` on `Added` and `IHasAudit` on `Modified`; uses `IUserContext` and `IClock`; falls back to `"system"` with a warning if `IUserContext` is absent
+- [ ] Soft-delete query filter convention auto-applies `e => !e.IsDeleted` for `ISoftDeletable` entities; `IgnoreSoftDeleteFilter()` extension exists on `IQueryable<T>`
+- [ ] Concurrency token convention auto-detects `IHasConcurrency.RowVersion`; applies `.IsRowVersion()` or `.UseXminAsConcurrencyToken()` based on provider
+- [ ] `AddTenantIsolationFilter()` extension applies `e.TenantId == currentTenantId` query filter for `IHasTenant` entities; is opt-in and not part of default registration
+- [ ] All conventions register through `AddSharedKernelEfCore` DI extension without requiring manual wiring per-aggregate
+- [ ] All public types carry XML doc comments
+- [ ] Integration tests using Testcontainers PostgreSQL cover: strongly-typed ID round-trip, audit field population on insert/update, soft-delete filter hides deleted records, `IgnoreSoftDeleteFilter` returns deleted records, concurrency conflict raises `DbUpdateConcurrencyException`
+---
+
+---
+### P-034 — Governance: Domain Layer Architecture Enforcement Rules
+
+**Status:** `○` Pending
+**Work Order:** WO-008
+**Domain:** 00.Governance
+**Depends on:** P-032
+
+#### What is needed
+
+New architecture enforcement rules in `00.Governance/SharedKernel.ArchitectureTests` that protect the `03.Domain` layer's purity contracts. These rules must run on every build via the existing governance test suite.
+
+**Rule 1 — Domain layer must not reference infrastructure packages:**
+Any assembly in `03.Domain` must not reference `06.Persistence`, `07.Messaging`, `08.Storage`, `09.Search`, `10.Intelligence`, `11.Communication`, or any package with `EntityFramework`, `MassTransit`, `Redis`, or `RabbitMQ` in its name. Uses NetArchTest assembly dependency scanning. Failure message must identify the offending reference.
+
+**Rule 2 — `IDomainEventHandler<TEvent>` must not live in domain assemblies:**
+Any type implementing `IDomainEventHandler<TEvent>` found in an assembly under `03.Domain` fails this rule. Handlers belong in `05.Application` or `07.Messaging`. This prevents teams from accidentally placing handler logic inside domain event types.
+
+**Rule 3 — `DateTime.UtcNow` and `DateTimeOffset.UtcNow` must not be used in domain assemblies:**
+A Roslyn analyzer (or IL-based rule via NetArchTest) that detects direct usage of `DateTime.UtcNow`, `DateTime.Now`, `DateTimeOffset.UtcNow`, or `DateTimeOffset.Now` in any assembly under `03.Domain` or `05.Application`. Only `IClock.UtcNow` is the permitted time source. Failure must produce a diagnostic with a clear message and a code fix suggestion.
+
+**Rule 4 — Domain services must not have constructor-injected infrastructure dependencies:**
+Types implementing `IDomainService` must not have constructor parameters whose types are from infrastructure namespaces (EF Core, MassTransit, StackExchange.Redis, etc.). Domain services may only accept `IClock`, other domain interfaces, and `01.Core` primitives. This rule uses NetArchTest constructor injection scanning.
+
+**Rule documentation:** All four rules must be documented in the `00.Governance` domain brain with the rationale, the offending-pattern example, and the compliant-pattern example.
+
+#### Why this is needed
+
+`03.Domain` is the most architecturally sensitive layer in the SharedKernel. A single infrastructure reference accidentally introduced here — a developer imports a NuGet package with EF Core attributes for "convenience" — propagates a hard dependency on a specific infrastructure stack to every service that references the domain. Without automated enforcement, this drift is silent until a service tries to compile against a different provider and fails. The `DateTime.UtcNow` rule is equally critical: non-deterministic time in domain logic makes unit tests flaky and prevents in-memory simulation of time-sensitive domain rules (e.g., "entity expires after 30 days"). These rules have zero false-positive rate when properly scoped and provide high value with negligible test runtime overhead.
+
+#### Acceptance criteria
+- [ ] NetArchTest rule exists asserting no `03.Domain` assembly references infrastructure packages; fails with offending reference name
+- [ ] Architecture test asserts no type in `03.Domain` assemblies implements `IDomainEventHandler<TEvent>`
+- [ ] Roslyn analyzer or NetArchTest IL rule flags `DateTime.UtcNow`, `DateTime.Now`, `DateTimeOffset.UtcNow`, `DateTimeOffset.Now` usage in domain assemblies; produces diagnostic with fix suggestion
+- [ ] NetArchTest rule asserts domain service constructors contain no infrastructure-layer type parameters
+- [ ] All four rules documented in `00.Governance/CLAUDE.md` with rationale and examples
+- [ ] Governance test suite passes with all new rules included; each rule has at least one "violating" assembly fixture test that demonstrates the rule fires correctly
+---
+
+---
+### P-035 — Testing: Domain Primitive Fakers and Test Helpers
+
+**Status:** `○` Pending
+**Work Order:** WO-008
+**Domain:** 16.Testing
+**Depends on:** P-032
+
+#### What is needed
+
+Additions to `16.Testing/SharedKernel.Testing` that give downstream microservice test projects the standard test helpers they need to exercise domain logic without boilerplate.
+
+**`FakeClock`:**
+A controllable `IClock` implementation for tests. Exposes `SetUtcNow(DateTimeOffset value)` to control the current time and `Advance(TimeSpan duration)` to move time forward. `UtcNow` returns the currently set value; `Today` returns `DateOnly.FromDateTime(UtcNow.DateTime)`. The fake must be thread-safe (backing field behind a lock or `Interlocked`). Registered as the default `IClock` when `AddFakeDomainServices()` is called.
+
+**`EntityFaker<TEntity, TId>` base:**
+A Bogus-based `Faker<TEntity>` subclass that gives downstream test projects a consistent base for generating domain entity test data. Provides a `WithClock(IClock clock)` builder method so the fake entity is constructed with a controllable `FakeClock`. This is an abstract base — consuming test projects create concrete fakers by subclassing and specifying `RuleFor` definitions. Not a complete auto-faker: domain fakers must declare their rules explicitly because domain invariants must be respected.
+
+**`DomainEventAssertions` extension:**
+Static extension methods on `IReadOnlyCollection<IDomainEvent>` (the type returned by `AggregateRoot.DomainEvents`) for test assertions:
+- `ContainsEventOfType<T>()` — asserts at least one event of type `T` is in the collection; returns the matching event for further assertions
+- `ContainsExactly<T>(int count)` — asserts exactly `count` events of type `T`
+- `HasNoEvents()` — asserts the collection is empty
+- `HasNoEventsOfType<T>()` — asserts no event of type `T` is present
+
+These are assertion helpers — they throw `InvalidOperationException` with descriptive messages on failure. They do NOT depend on xUnit, NUnit, or any test framework — they are pure assertion helpers compatible with any test framework.
+
+**`BusinessRuleAssertions`:**
+A static extension method `ShouldBeBroken(this IBusinessRule rule)` and `ShouldNotBeBroken(this IBusinessRule rule)` — framework-agnostic assertion helpers that throw `InvalidOperationException` with the rule message on failure.
+
+**`SpecificationAssertions`:**
+A static helper `SpecificationAssert.Satisfies<T>(ISpecification<T> spec, T entity)` and `DoesNotSatisfy<T>` — evaluates the specification's `Criteria` expression against a given entity instance (using `.Compile()`) so unit tests can assert specification logic without a database. Note: `Compile()` is reflection-based — acceptable in test assemblies, never in production.
+
+**`AddFakeDomainServices()` DI extension:**
+Registers `FakeClock` as `IClock` singleton. Other domain test helpers are static, not DI-registered.
+
+#### Why this is needed
+
+Domain unit tests are the most valuable, fastest tests in a microservice. They require zero infrastructure. But without a standard `FakeClock`, teams either inject `DateTimeOffset.UtcNow` directly (violating the hard rule) or write their own clock fakes per service — inconsistent, non-reusable. Without `DomainEventAssertions`, teams write verbose `DomainEvents.OfType<T>().Should().HaveCount(1)` everywhere — readable but repetitive across hundreds of aggregate tests. The `SpecificationAssert` helper is particularly valuable: it lets teams write specification unit tests that prove `new ActiveOrdersSpec().IsSatisfiedBy(completedOrder) == false` without a database — something most teams skip entirely without tooling support. Centralizing these helpers in `SharedKernel.Testing` ensures all 100+ microservice test suites use the same assertion vocabulary.
+
+#### Acceptance criteria
+- [ ] `FakeClock` implements `IClock`; `SetUtcNow`, `Advance`, `UtcNow`, `Today` work correctly; thread-safe
+- [ ] `EntityFaker<TEntity, TId>` abstract Bogus base with `WithClock(IClock)` builder method
+- [ ] `DomainEventAssertions`: `ContainsEventOfType<T>()`, `ContainsExactly<T>(int)`, `HasNoEvents()`, `HasNoEventsOfType<T>()` — all throw with descriptive messages on failure; no test framework dependency
+- [ ] `BusinessRuleAssertions`: `ShouldBeBroken` / `ShouldNotBeBroken` extension methods on `IBusinessRule`; throw with rule message on failure
+- [ ] `SpecificationAssert.Satisfies<T>` / `DoesNotSatisfy<T>` evaluate specification criteria via `.Compile()` for in-memory assertion
+- [ ] `AddFakeDomainServices()` registers `FakeClock` as `IClock` singleton
+- [ ] `16.Testing` references `SharedKernel.Domain` — this is permitted (testing domain may reference any layer)
+- [ ] All test helpers have their own unit tests in `SharedKernel.Testing.Tests`
+- [ ] All public types carry XML doc comments
+- [ ] `FakeClock` is AOT-safe (but `SpecificationAssert` may use `.Compile()` — document this as test-only, never for production use)
+---
 
 ## Changelog
 
@@ -1436,3 +1702,6 @@ The testing domain must stay current with the capability domain. When `16.Testin
 - [2026-05-22] Caching → Phase 29 (Multi-Tenant Cache Key) (●) — promoted from SK.02.TenantCacheKey (state-map-phase)
 - [2026-05-22] Caching → Phase 30 (Redis Circuit Breaker) (●) — promoted from SK.02.RedisCircuitBreaker (state-map-phase)
 - [2026-05-22] Caching → Phase 31 (OTel Metrics) (●) — promoted from SK.02.OtelMeters (state-map-phase)
+- [2026-05-22] Domain → Design (◐) — Define DDD building block surface: Entity, AggregateRoot+IClock, ValueObject, specs, business rules, policies (state-map-phase)
+- [2026-05-22] Phase(s) P-032 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-05-22] Domain → Design (●) — promoted from SK.03.Design (state-map-phase)
