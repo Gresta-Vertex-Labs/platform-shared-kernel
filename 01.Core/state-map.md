@@ -31,6 +31,7 @@
 | `SK.01.Tests` | Tests | All tasks in Phase: Tests are `●` |
 | `SK.01.Docs` | Docs | All tasks in Phase: Docs are `●` |
 | `SK.01.Published` | Published | All tasks in Phase: Published are `●` |
+| `SK.01.P042` | P-042 Error.BusinessRule Factory | All tasks in Phase: P-042 are `●` |
 
 ---
 
@@ -219,6 +220,30 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: P-042 — Error.BusinessRule Factory <!-- phase-key: SK.01.P042 -->
+
+> Additive extension to `SharedKernel.Primitives`: adds `ErrorType.BusinessRule` enum member, `Error.BusinessRule(string code, string message)` factory method, and `ErrorCodes.Domain` nested static class with `RuleViolated` constant.
+> Motivation: `BusinessRuleViolationException` in `03.Domain` currently misclassifies domain rule violations as `ErrorType.Unexpected`, which causes wrong HTTP status mapping and false-positive alerts. This change provides the semantically correct error type.
+> WO-010.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-17 | Add `BusinessRule` member to `ErrorType` enum; XML doc stating HTTP 422 mapping and domain-invariant-violation semantics | SharedKernel.Primitives | `●` |
+| D-18 | Define `Error.BusinessRule(string code, string message)` factory method signature — consistent with existing factory pattern; returns `new Error(code, message, ErrorType.BusinessRule)` | SharedKernel.Primitives | `●` |
+| D-19 | Define `ErrorCodes.Domain` nested static class inside `ErrorCodes`; constant `RuleViolated = "domain.rule.violated"` — prevents magic strings migrating between packages | SharedKernel.Primitives | `●` |
+| C-30 | Implement `ErrorType.BusinessRule` enum member with XML doc | SharedKernel.Primitives | `●` |
+| C-31 | Implement `Error.BusinessRule(string code, string message)` factory method on `Error` sealed record | SharedKernel.Primitives | `●` |
+| C-32 | Implement `ErrorCodes.Domain` nested static class with `RuleViolated = "domain.rule.violated"` constant | SharedKernel.Primitives | `●` |
+| T-19 | Unit: `Error.BusinessRule(...)` returns an `Error` with `Type == ErrorType.BusinessRule` | SharedKernel.Primitives.Tests | `●` |
+| T-20 | Unit: `Error.BusinessRule(...)` is distinct from `Error.Unexpected` and `Error.Validation` by `ErrorType` | SharedKernel.Primitives.Tests | `●` |
+| T-21 | Unit: `ErrorCodes.Domain.RuleViolated` is non-null and non-empty; value equals `"domain.rule.violated"` | SharedKernel.Primitives.Tests | `●` |
+| T-22 | Regression: all existing `SharedKernel.Primitives` and `SharedKernel.Core` tests continue to pass after additive change | SharedKernel.Primitives.Tests, SharedKernel.Core.Tests | `●` |
+| DO-07 | XML doc `ErrorType.BusinessRule` — state HTTP 422 mapping, domain-invariant-violation semantics, distinction from `Validation` and `Unexpected` | SharedKernel.Primitives | `●` |
+| DO-08 | XML doc `Error.BusinessRule(string code, string message)` factory method | SharedKernel.Primitives | `●` |
+| DO-09 | XML doc `ErrorCodes.Domain` nested class and `RuleViolated` constant | SharedKernel.Primitives | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `01.Core` references nothing._
@@ -233,7 +258,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 87.
+> Counts updated whenever a task state changes. Total tasks: 100.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -243,6 +268,7 @@ Format when active:
 | `SK.01.Tests` | Tests | 18 | 18 | 0 | `●` |
 | `SK.01.Docs` | Docs | 6 | 6 | 0 | `●` |
 | `SK.01.Published` | Published | 9 | 9 | 0 | `●` |
+| `SK.01.P042` | P-042 Error.BusinessRule Factory | 13 | 13 | 0 | `●` |
 
 ---
 
@@ -265,3 +291,5 @@ Format when active:
 - [2026-05-15] T-11→T-18 → ● in SK.01.Tests — all Guards unit tests complete; 145 tests passing across functional and throw paths (state-map-phase)
 - [2026-05-15] DO-05→DO-06 → ● in SK.01.Docs — XML docs complete on SharedKernel.Guards; Guards usage examples added to README (state-map-phase)
 - [2026-05-15] P-07→P-09 → ● in SK.01.Published — SharedKernel.Guards NuGet metadata added, packed to local feed, consumer verification confirms transitive deps resolve (state-map-phase)
+- [2026-05-27] P-042 added — Error.BusinessRule factory, ErrorType.BusinessRule enum member, ErrorCodes.Domain nested class; 13 tasks (D-17→D-19, C-30→C-32, T-19→T-22, DO-07→DO-09) added at ○; total 100 tasks (WO-010)
+- [2026-05-27] D-17→D-19, C-30→C-32, T-19→T-22, DO-07→DO-09 → ● in SK.01.P042 — all 13 tasks complete; ErrorType.BusinessRule, Error.BusinessRule factory, ErrorCodes.Domain.RuleViolated implemented and tested (state-map-phase)

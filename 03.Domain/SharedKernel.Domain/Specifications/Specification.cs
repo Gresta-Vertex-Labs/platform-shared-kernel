@@ -28,6 +28,8 @@ public abstract class Specification<T> : ISpecification<T>
 {
     private readonly List<Expression<Func<T, object>>> _includes = [];
     private readonly List<(Expression<Func<T, object>> KeySelector, bool Descending)> _thenBys = [];
+    private bool _asNoTracking;
+    private Func<T, bool>? _compiledCriteria;
 
     /// <inheritdoc/>
     public Expression<Func<T, bool>>? Criteria { get; private set; }
@@ -54,6 +56,9 @@ public abstract class Specification<T> : ISpecification<T>
     /// <inheritdoc/>
     public bool IsDistinct { get; private set; }
 
+    /// <inheritdoc/>
+    public bool AsNoTracking => _asNoTracking;
+
     /// <summary>Sets the filter predicate for this specification.</summary>
     protected void AddCriteria(Expression<Func<T, bool>> criteria) => Criteria = criteria;
 
@@ -73,6 +78,14 @@ public abstract class Specification<T> : ISpecification<T>
     protected void ApplyThenBy(Expression<Func<T, object>> keySelector, bool descending) =>
         _thenBys.Add((keySelector, descending));
 
+    /// <summary>
+    /// Adds a secondary descending sort expression after the primary sort.
+    /// Alias for <c>ApplyThenBy(keySelector, descending: true)</c>.
+    /// </summary>
+    /// <param name="keySelector">The sort key selector.</param>
+    protected void ApplyThenByDescending(Expression<Func<T, object>> keySelector) =>
+        ApplyThenBy(keySelector, descending: true);
+
     /// <summary>Applies paging by setting <see cref="Skip"/> and <see cref="Take"/>.</summary>
     protected void ApplyPaging(int skip, int take)
     {
@@ -82,4 +95,40 @@ public abstract class Specification<T> : ISpecification<T>
 
     /// <summary>Marks the specification as distinct — duplicate results will be eliminated.</summary>
     protected void ApplyDistinct() => IsDistinct = true;
+
+    /// <summary>
+    /// Marks this specification as no-tracking — the consuming repository must suppress
+    /// change-tracking (e.g., <c>AsNoTracking()</c>) when applying this specification.
+    /// </summary>
+    protected void ApplyNoTracking() => _asNoTracking = true;
+
+    /// <summary>
+    /// Evaluates whether <paramref name="entity"/> satisfies this specification's <see cref="Criteria"/>.
+    /// Intended for in-domain validation and unit-test assertions only — repository implementations
+    /// in <c>06.Persistence</c> must not call this method.
+    /// </summary>
+    /// <param name="entity">The entity to evaluate.</param>
+    /// <returns>
+    /// <see langword="true"/> if the entity satisfies the criteria, or if <see cref="Criteria"/> is
+    /// <see langword="null"/> (a criteria-less specification matches all entities).
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// The <see cref="Criteria"/> expression is compiled to a <see cref="Func{T, TResult}"/> delegate
+    /// exactly once and cached in a private field on the first call. Subsequent calls reuse the cached
+    /// delegate with no recompilation overhead. Reusing a specification instance across calls is safe.
+    /// </para>
+    /// <para>
+    /// When <see cref="Criteria"/> is <see langword="null"/>, the method returns <see langword="true"/>
+    /// unconditionally — a criteria-less specification is interpreted as "match all".
+    /// </para>
+    /// </remarks>
+    public bool IsSatisfiedBy(T entity)
+    {
+        if (Criteria is null)
+            return true;
+
+        _compiledCriteria ??= Criteria.Compile();
+        return _compiledCriteria(entity);
+    }
 }

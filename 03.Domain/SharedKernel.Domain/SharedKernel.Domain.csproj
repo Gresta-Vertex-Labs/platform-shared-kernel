@@ -6,9 +6,31 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Domain</PackageId>
-    <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <PackageReleaseNotes>Initial release — DDD building blocks: Entity, AggregateRoot (IClock injection), ValueObject, DomainEvent, business rules, policies, specifications, auditable hierarchy, StronglyTypedId.</PackageReleaseNotes>
+    <Version>1.3.0</Version>
+    <PackageVersion>1.3.0</PackageVersion>
+    <PackageReleaseNotes>1.3.0 (WO-011):
+- IHasDomainEvents interface extracted (P-045): DomainEvents + ClearDomainEvents moved to IHasDomainEvents; IAggregateRoot&lt;TId&gt; extends it; infrastructure dispatch must depend on IHasDomainEvents only.
+- SingleValueObject&lt;TValue&gt; abstract class added (P-046): extends ValueObject; Value assigned before Validate() runs (construction-order safe); sealed GetEqualityComponents, ToString, implicit operator TValue.
+- DomainService abstract class added (P-047): implements IDomainService; protected static CheckRule; no IClock, no DomainEvents, no repository access.
+- IHasVersion interface added (P-048): int Version on AggregateRoot&lt;TId&gt;; starts at 0; increments on every RaiseDomainEvent; ClearDomainEvents does not decrement.
+- DomainNotFoundException added (P-049): extends DomainException; AggregateType + AggregateId; Error.NotFound payload; BusinessRuleViolationException now extends DomainException (not SharedKernelException directly).
+- AllSpecification&lt;T&gt; and EmptySpecification&lt;T&gt; sentinel classes added (P-050): AND/OR identity elements; OrSpecification null-criteria handling fixed.
+- PagedSpecification&lt;T&gt; abstract class added (P-051): extends ReadOnlySpecification&lt;T&gt;; 1-based page; guards for page/pageSize/MaxPageSize(1000); AsNoTracking always true.
+- ApplyThenByDescending convenience alias added to Specification&lt;T&gt; (P-052): delegates to ApplyThenBy(keySelector, descending: true); ordering precedence documented.
+- DomainEventVersionAttribute and DomainEventVersionHelper added (P-053): attribute on concrete event class; helper returns declared version or 1 as default; IDomainEvent interface unchanged.
+- IAggregateFactory&lt;TAggregateRoot, TId&gt; zero-member marker interface added (P-054); TryCreate&lt;T&gt; protected static helper on AggregateRoot&lt;TId&gt;: BusinessRuleViolationException -&gt; Result.Failure; ValidationException -&gt; Result.Failure; success -&gt; Result.Success.
+
+1.2.0 (WO-010):
+- BusinessRuleViolationException now uses Error.BusinessRule(ErrorCodes.Domain.RuleViolated, ...) (P-043): ErrorType.BusinessRule maps to HTTP 422; magic string "domain.rule.violated" eliminated.
+- ValueObject constructor-call-order hazard documented (P-043): base constructor calls Validate() before subclass body; two safe patterns: field-initializer assignment and factory method returning Result&lt;T&gt;.
+- TenantedAggregateRoot&lt;TId&gt;, TenantedAuditableAggregateRoot&lt;TId&gt;, TenantedFullAuditableAggregateRoot&lt;TId&gt; added (P-044): TenantId set at construction (private set); ORM-path parameterless constructor leaves TenantId = Guid.Empty.
+
+1.1.0 (WO-009):
+- FullAuditableAggregateRoot&lt;TId&gt; now correctly extends AuditableSoftDeletableAggregateRoot&lt;TId&gt; (P-036): all soft-delete fields, MarkAsDeleted, and OnDelete are inherited from the hierarchy — no duplication.
+- Specification&lt;T&gt;.IsSatisfiedBy(T) added for in-domain/in-test evaluation (P-038): compiles Criteria once and caches the delegate; returns true when Criteria is null.
+- DomainEvent&lt;TPayload&gt; abstract record added (P-039): extends DomainEvent; required TPayload Payload where TPayload : notnull; non-generic DomainEvent unchanged.
+- ISpecification&lt;T&gt;.AsNoTracking flag and ReadOnlySpecification&lt;T&gt; convenience base added (P-040): composites propagate true when either operand is true.
+- AggregateRoot&lt;TId&gt;.Now remarks tightened (P-041): must not be used to supply OccurredOn; use RaiseDomainEvent(Func&lt;DateTimeOffset, IDomainEvent&gt;) factory overload.</PackageReleaseNotes>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>

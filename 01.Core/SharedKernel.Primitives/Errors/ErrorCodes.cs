@@ -67,4 +67,24 @@ public static class ErrorCodes
         /// <summary>An unclassified or unexpected failure occurred.</summary>
         public const string Default = "unexpected.default";
     }
+
+    /// <summary>
+    /// Codes for domain invariant and business rule violations.
+    /// </summary>
+    /// <remarks>
+    /// Use these constants as the <see cref="Error.Code"/> value when raising
+    /// <see cref="ErrorType.BusinessRule"/> errors. Consuming packages may define additional
+    /// domain-specific rule codes in their own namespaces; this class provides the canonical
+    /// well-known constant that bridges <c>SharedKernel.Primitives</c> and
+    /// <c>SharedKernel.Domain</c> without introducing a package dependency.
+    /// </remarks>
+    public static class Domain
+    {
+        /// <summary>
+        /// A domain business rule or invariant was violated.
+        /// Canonical code for <c>BusinessRuleViolationException</c> in
+        /// <c>SharedKernel.Domain</c>.
+        /// </summary>
+        public const string RuleViolated = "domain.rule.violated";
+    }
 }

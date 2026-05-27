@@ -30,7 +30,9 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 > Domains currently `◐ In Progress`. This section is the first thing to update when work starts or finishes in any domain.
 
-_Nothing in progress — all domains at ○ Not Started._
+| Domain | Current Phase | Focus (one line) |
+|--------|---------------|-----------------|
+| [04.Contracts](04.Contracts/state-map.md) | Design | Define EventEnvelope<TEvent> transport wrapper with CorrelationId, CausationId, SourceService, and DomainEventVersion fields for cross-service domain event publishing |
 
 <!--
 Format when active:
@@ -63,10 +65,10 @@ Format when blocked:
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
-| 01 | [Core](01.Core/state-map.md) | Published | `●` | All 9 Published tasks complete — NuGet metadata on all five packages, all packed to local feed, consumer verification confirms Primitives + Core + Guards transitive dependency graph resolves correctly. | — |
+| 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
-| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | All 4 Published tasks complete — NuGet metadata finalized, packed 0 errors, consumer stub 17 tests green, SharedKernel.Domain.1.0.0.nupkg pushed to local feed. | — |
-| 04 | [Contracts](04.Contracts/state-map.md) | — | `○` | — | — |
+| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.2.0 and 1.3.0 packed and published to nupkgs/; manifests list only SharedKernel.Primitives and SharedKernel.Core; all 7 Published tasks complete. | — |
+| 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Define EventEnvelope<TEvent> transport wrapper with CorrelationId, CausationId, SourceService, and DomainEventVersion fields for cross-service domain event publishing |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | — | `○` | — | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | — | `○` | — | — |
@@ -106,15 +108,16 @@ Format when active:
 |-------|---------|
 | ● Guard Purity Enforcement | 1 |
 | ● Phase 31 (OTel Metrics) | 1 |
-| ● Published | 2 |
+| ● P-042 Error.BusinessRule Factory | 1 |
+| ● Published | 1 |
 | ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
-| ● Design | 1 |
-| ◐ In Progress | 0 |
+| ● Design | 0 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 14 |
+| ○ Not Started | 13 |
 
 ---
 
@@ -1710,11 +1713,19 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-05-22] Domain → Docs (●) — promoted from SK.03.Docs (state-map-phase)
 - [2026-05-22] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
 - [2026-05-22] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+- [2026-05-26] Domain → Design (●) — D-15..D-18 (WO-009) verified against CLAUDE.md; all 18 design tasks now ● (state-map-phase)
+- [2026-05-26] Domain → Tests (●) — promoted from SK.03.Tests (state-map-phase)
+- [2026-05-26] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
+- [2026-05-26] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+- [2026-05-27] Core → P-042 Error.BusinessRule Factory (●) — promoted from SK.01.P042 (state-map-phase)
+- [2026-05-27] Domain → Design (●) — promoted from SK.03.Design (state-map-phase)
+- [2026-05-27] Domain → Tests (●) — promoted from SK.03.Tests (state-map-phase)
+- [2026-05-27] Domain → Docs (●) — promoted from SK.03.Docs (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-009
 **Domain:** 03.Domain
 **Depends on:** None
@@ -1760,7 +1771,7 @@ Duplicated soft-delete machinery across two classes in the same hierarchy is a m
 ---
 ### P-037 — Domain: Correct CLAUDE.md — SharedKernel.Core Is a Declared Dependency
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-009
 **Domain:** 03.Domain
 **Depends on:** None
@@ -1800,7 +1811,7 @@ A CLAUDE.md that contradicts the actual csproj causes every future agent and con
 ---
 ### P-038 — Domain: Add IsSatisfiedBy In-Memory Evaluation to Specification
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-009
 **Domain:** 03.Domain
 **Depends on:** None
@@ -1840,7 +1851,7 @@ Every team using specifications for in-domain validation or in unit tests must c
 ---
 ### P-039 — Domain: Add DomainEvent Typed Payload Base Record
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-009
 **Domain:** 03.Domain
 **Depends on:** None
@@ -1888,7 +1899,7 @@ In large microservice ecosystems, domain events frequently carry a distinct payl
 ---
 ### P-040 — Domain: Add AsNoTracking Flag to ISpecification
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-009
 **Domain:** 03.Domain
 **Depends on:** None
@@ -1928,7 +1939,7 @@ Repository implementations in `06.Persistence` consuming `ISpecification<T>` cur
 ---
 ### P-041 — Domain: Tighten AggregateRoot.Now — Add Explicit Guard and Documentation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-009
 **Domain:** 03.Domain
 **Depends on:** None
@@ -1962,3 +1973,795 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-05-22] Phase(s) P-034 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
 - [2026-05-22] Phase(s) P-036, P-037, P-038, P-039, P-040, P-041 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
 - [2026-05-22] 00.Governance → Design (●) — promoted from SK.00.Design; root board not regressed (domain already at Guard Purity Enforcement ●) (state-map-phase)
+- [2026-05-26] 03.Domain → Core (●) — promoted from SK.03.Core (state-map-phase)
+- [2026-05-26] 03.Domain → Docs (●) — promoted from SK.03.Docs (state-map-phase)
+- [2026-05-27] WO-010 (P-042–P-044) queued — 03.Domain deep architectural audit: Error.BusinessRule factory in 01.Core; BusinessRuleViolationException error classification fix + ValueObject constructor hazard documentation; TenantedAggregateRoot family for IHasTenant (arch-lead)
+- [2026-05-27] WO-011 (P-045–P-057) queued — 03.Domain gold-standard second-pass audit (13 phases, 4 domains): SingleValueObject<TValue>, DomainService abstract base, IHasVersion domain concurrency, IHasDomainEvents separation, specification sentinels, PagedSpecification, Result<T> factory pattern, DomainEventVersion attribute, DomainException hierarchy, ThenByDescending alias, Apply event-sourcing hook, EventEnvelope in 04.Contracts, governance rules, testing fakers (arch-lead)
+- [2026-05-27] Contracts → Design (◐) — Define EventEnvelope<TEvent> transport wrapper with CorrelationId, CausationId, SourceService, and DomainEventVersion fields for cross-service domain event publishing (state-map-phase)
+- [2026-05-27] Phase(s) P-042 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-05-27] Phase(s) P-043, P-044, P-045, P-046, P-047, P-048, P-049, P-050, P-051, P-052, P-053, P-054 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-05-27] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
+- [2026-05-27] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+
+---
+### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-010
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+
+A new `Error.BusinessRule(string code, string message)` factory method on the existing `Error` sealed record in `SharedKernel.Primitives`. This requires a corresponding `BusinessRule` member added to the `ErrorType` enum (alongside the existing `Unexpected`, `Validation`, `NotFound`, `Conflict`, `Unauthorized`).
+
+The semantic contract: a `BusinessRule` error represents a domain invariant violation — the operation was valid in form but violated a domain rule (e.g., "You cannot cancel a shipped order", "Discount cannot exceed 100%"). It is categorically distinct from `Validation` (input format/presence errors) and `Unexpected` (system faults). At the HTTP presentation layer, `BusinessRule` maps to HTTP 422 Unprocessable Entity with a domain-specific error body, identical to `Validation` HTTP-wise but semantically distinct for domain logic and audit purposes.
+
+The new factory method must be consistent with the existing factory methods in signature: `public static Error BusinessRule(string code, string message)` returning `new Error(code, message, ErrorType.BusinessRule)`.
+
+The `ErrorCodes` static class must gain a `Domain` nested static class with at minimum one constant: `Domain.RuleViolated = "domain.rule.violated"` — the canonical code used by `BusinessRuleViolationException`. This prevents magic strings from migrating between packages.
+
+Tests must be added covering: `Error.BusinessRule(...)` produces an error with `ErrorType.BusinessRule`; `ErrorCodes.Domain.RuleViolated` constant is non-null and non-empty; `Error.BusinessRule` is distinct from `Error.Validation` and `Error.Unexpected` by type.
+
+#### Why this is needed
+
+`BusinessRuleViolationException` in `03.Domain` currently constructs its `Error` payload using `Error.Unexpected("domain.rule.violated", rule.Message)`. This is a semantic misclassification: `Unexpected` signals a system fault — an unrecoverable error the caller could not have predicted or prevented. A domain business rule violation is the opposite: it is an expected, predictable rejection of an operation that violates a known domain invariant. Misclassifying domain rule violations as `Unexpected` causes downstream effects:
+
+1. Presentation layer middleware that maps `ErrorType` to HTTP status codes will use the wrong status (500 Internal Server Error for `Unexpected` vs 422 Unprocessable Entity for domain violations).
+2. Monitoring and alerting systems that count `Unexpected` errors will fire false alerts on normal business rule rejections.
+3. API consumers and client error-handling logic lose the ability to distinguish "system broke" from "your operation violated a domain rule."
+
+Adding `ErrorType.BusinessRule` is a purely additive change — existing `ErrorType` values are unchanged and no existing code breaks.
+
+#### Acceptance criteria
+- [ ] `ErrorType` enum gains a `BusinessRule` member
+- [ ] `Error.BusinessRule(string code, string message)` factory method exists on `Error` sealed record; returns an `Error` with `Type == ErrorType.BusinessRule`
+- [ ] `ErrorCodes.Domain` nested static class exists in `SharedKernel.Primitives`; contains `RuleViolated = "domain.rule.violated"` constant
+- [ ] Existing `Error.Unexpected`, `Error.Validation`, `Error.NotFound`, `Error.Conflict`, `Error.Unauthorized` are unchanged
+- [ ] Unit tests: `Error.BusinessRule(...)` type is `ErrorType.BusinessRule`; factory method is distinct from `Unexpected` and `Validation` by type; `ErrorCodes.Domain.RuleViolated` is non-null/non-empty
+- [ ] All existing `SharedKernel.Primitives` and `SharedKernel.Core` tests continue to pass — additive change only
+- [ ] All public types carry XML doc comments; `ErrorType.BusinessRule` XML doc states the HTTP 422 mapping and domain-invariant-violation semantics
+- [ ] Package remains AOT-safe; no reflection
+---
+
+---
+### P-043 — Domain: Fix BusinessRuleViolationException Error Classification + ValueObject Constructor Hazard Documentation
+
+**Status:** `●` Complete
+**Work Order:** WO-010
+**Domain:** 03.Domain
+**Depends on:** P-042
+
+#### What is needed
+
+Two targeted corrections to `SharedKernel.Domain` delivered as a single phase:
+
+**Part A — Fix `BusinessRuleViolationException` error classification:**
+
+`BusinessRuleViolationException` currently constructs its `Error` payload as `Error.Unexpected("domain.rule.violated", rule.Message)`. This must be changed to `Error.BusinessRule(ErrorCodes.Domain.RuleViolated, rule.Message)` using the new factory added in P-042. This is a one-line fix with a significant semantic impact — see P-042 rationale.
+
+The change also eliminates the magic string `"domain.rule.violated"` from `03.Domain` by referencing `ErrorCodes.Domain.RuleViolated` from `SharedKernel.Primitives`. This is the only change to production code in this phase.
+
+A regression test must verify that after the fix, a caught `BusinessRuleViolationException` carries an `Error` with `Type == ErrorType.BusinessRule` (not `ErrorType.Unexpected`). This test must be added to the existing test suite.
+
+**Part B — Document the `ValueObject` constructor validation hazard:**
+
+The `ValueObject` base constructor calls `protected abstract IEnumerable<Error>? Validate()` immediately. This is a correct and useful pattern for most cases, but it has a subtle initialization-order hazard: if a subclass's `Validate()` reads an instance member that is assigned in the subclass constructor body (not a field initializer), that member will have its default value (`null` / `0` / `false`) when `Validate()` runs, because the base constructor executes before the subclass constructor body.
+
+The fix is documentation — not a behavioral change. The `ValueObject` XML documentation must be updated with an explicit `<remarks>` block that:
+
+1. Names the hazard clearly: "The base constructor calls `Validate()` immediately. If your `Validate()` implementation reads properties that are assigned in the subclass constructor body (not as field initializers), they will have default values (`null` / `0` / `false`) when validation runs."
+2. Documents the two safe patterns:
+   - **Safe: Field initializer assignment** — use `public decimal Amount { get; } = amount;` via a primary constructor parameter, which executes before the base constructor. Or use a read-only auto-property set in a C# 12+ primary constructor.
+   - **Safe: Factory method pattern** — keep the constructor `private` or `protected`, expose a static `Create(...)` factory method that constructs the object (triggering validation) and returns `Result<TValueObject>` for railway-friendly error handling instead of throwing. This is the recommended pattern for value objects that require non-trivial validation.
+3. Adds an example of the factory method pattern in the `<example>` block.
+
+No behavioral changes to `ValueObject.cs`. No new interfaces or methods. Documentation update only for Part B.
+
+#### Why this is needed
+
+**Part A:** `Error.Unexpected` is semantically "the system broke" — it maps to HTTP 500 in the presentation layer. A business rule violation is an expected rejection — it maps to HTTP 422. Every microservice that catches `BusinessRuleViolationException` and inspects `exception.Error.Type` will mishandle it until this is fixed. This is a correctness bug, not a style issue.
+
+**Part B:** The `ValueObject` constructor hazard will silently produce incorrect validation behavior for any team that writes a value object in the natural C# style (assigning properties in the constructor body). Because `Validate()` returns no errors for default values (`0 <= Amount` is true for `Amount == 0`), many teams will not catch this bug in testing — their value objects will appear to validate correctly. The bug only manifests with invalid inputs like negative amounts where the check `Amount < 0` is false for the default `0`. Teams with non-zero validation thresholds will see ghost validations. Clear documentation of the hazard and the two safe patterns prevents this entire class of bug from propagating across hundreds of microservices.
+
+#### Acceptance criteria
+- [ ] `BusinessRuleViolationException` constructor uses `Error.BusinessRule(ErrorCodes.Domain.RuleViolated, rule.Message)` — no raw `Error.Unexpected(...)` call
+- [ ] No magic string `"domain.rule.violated"` remains in `03.Domain` source — replaced by `ErrorCodes.Domain.RuleViolated` constant
+- [ ] New test: caught `BusinessRuleViolationException` carries `Error` with `Type == ErrorType.BusinessRule`
+- [ ] All existing `BusinessRuleCompositeTests` and `AggregateRootEventTests` pass without modification
+- [ ] `ValueObject` XML documentation gains an explicit `<remarks>` block documenting the constructor-validation hazard, two safe patterns, and a factory method example
+- [ ] `03.Domain/CLAUDE.md` Implementation Rules section gains a rule documenting the `ValueObject` constructor hazard and the two safe patterns
+- [ ] All 125+ existing tests continue to pass — no behavioral regressions
+- [ ] Package remains AOT-safe; no reflection added
+---
+
+---
+### P-044 — Domain: Add TenantedAggregateRoot Family for IHasTenant
+
+**Status:** `●` Complete
+**Work Order:** WO-010
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Three new abstract aggregate base classes in `03.Domain` that implement `IHasTenant`, giving multi-tenant microservices a concrete hierarchy anchor for tenant-scoped aggregates. The family must follow the same IS-A chain discipline as the existing auditable hierarchy.
+
+**`TenantedAggregateRoot<TId>`:**
+
+Extends `AggregateRoot<TId>`, implements `IHasTenant`. Adds a single property `Guid TenantId { get; private set; }`. The primary constructor accepts `TId id, Guid tenantId, IClock clock` and sets `TenantId = tenantId` before calling `base(id, clock)`. The protected ORM-path constructor (parameterless) chains `base()` and leaves `TenantId` at `Guid.Empty` — persistence interceptors or EF Core conventions will populate it on hydration. XML doc must state that `TenantId` has `private set` — it is populated at construction (from the application layer, typically from `ITenantProvider`) and must not change after creation. It must not reference `12.Security.ITenantProvider` directly — the domain receives `tenantId` as a primitive value, not a resolved service.
+
+**`TenantedAuditableAggregateRoot<TId>`:**
+
+Extends `AuditableAggregateRoot<TId>`, implements `IHasTenant`. Adds `TenantId` as above. This covers the most common SaaS pattern: a tenant-scoped aggregate with creation/modification audit. Constructor: `TId id, Guid tenantId, IClock clock`.
+
+**`TenantedFullAuditableAggregateRoot<TId>`:**
+
+Extends `FullAuditableAggregateRoot<TId>`, implements `IHasTenant`. Adds `TenantId` as above. This covers the full-stack SaaS pattern: tenant-scoped aggregate with full audit, soft-delete, and optimistic concurrency. Constructor: `TId id, Guid tenantId, IClock clock`.
+
+**Design constraints:**
+- All three classes live in `Aggregates/` subfolder alongside the existing hierarchy
+- `TenantId` has `private set` on all three — it is a construction-time assignment only; tenant reassignment is a domain violation (a separate business rule, if needed at all)
+- No dependency on `12.Security` is introduced — `tenantId` is a `Guid` parameter, not resolved from any service
+- `IHasTenant` is explicitly declared on each class for discoverability, even though it could be inferred from the interface
+- The `TenantedAggregateRoot<TId>` family does NOT add a `TenantedSoftDeletableAggregateRoot<TId>` — this would explode the hierarchy. The recommended pattern for soft-delete + tenancy is `TenantedFullAuditableAggregateRoot<TId>` (which inherits soft-delete through `FullAuditableAggregateRoot`).
+
+**Tests:**
+- `TenantedAggregateRoot<TId>`: `TenantId` is set correctly at construction; ORM-path constructor leaves `TenantId` at `Guid.Empty`; `TenantId` setter is `private` (verified via reflection)
+- `TenantedAuditableAggregateRoot<TId>` IS-A `AuditableAggregateRoot<TId>` and implements `IHasTenant`
+- `TenantedFullAuditableAggregateRoot<TId>` IS-A `FullAuditableAggregateRoot<TId>` and implements `IHasTenant`; `MarkAsDeleted` and domain events are inherited correctly
+
+**Documentation:**
+- `03.Domain/CLAUDE.md` auditable aggregate hierarchy section gains a new subsection documenting the three tenanted bases, the `TenantId` construction pattern, and the explicit note that `12.Security.ITenantProvider` must not be referenced from domain code — the tenant ID is passed as a `Guid` parameter resolved at the application layer.
+- `TenantedAggregateRoot<TId>` XML doc carries a `<remarks>` block stating: "The tenant identifier is a construction-time assignment. The domain layer has no tenant resolution logic — supply `tenantId` from the application layer (e.g., from a resolved `ITenantProvider` in the command handler). Do not modify `TenantId` after construction."
+
+#### Why this is needed
+
+`IHasTenant` has been in the domain model since the initial build, but it is a stranded interface with no concrete base class implementing it. Every multi-tenant microservice team that uses `SharedKernel.Domain` must write their own tenant property on their aggregate, creating inconsistency across the platform:
+
+- Some teams use `Guid TenantId { get; private set; }` — correct
+- Some teams use `string TenantId { get; set; }` — incorrect, allows post-construction mutation
+- Some teams reference `ITenantProvider` inside their aggregate constructor — a hard layering violation (domain depends on security infrastructure)
+- Some teams forget the property entirely and rely on query filters in the repository, then discover they cannot enforce tenant boundaries in the domain
+
+A platform SharedKernel that defines `IHasTenant` but ships no concrete implementation of it is incomplete. The three tenanted bases close this gap and provide a consistent, auditable, layering-compliant foundation for all multi-tenant aggregates. The `private set` discipline on `TenantId` prevents cross-tenant contamination bugs (an aggregate belonging to Tenant A cannot have its `TenantId` overwritten to Tenant B by a persistence interceptor bug). The explicit three-class family (lean / auditable / full-auditable) covers the three most common production patterns without forcing teams into a "kitchen sink" base for simple cases.
+
+#### Acceptance criteria
+- [ ] `TenantedAggregateRoot<TId>` exists in `Aggregates/`, extends `AggregateRoot<TId>`, implements `IHasTenant`; `TenantId { get; private set; }` set at construction; ORM-path constructor leaves `TenantId` as `Guid.Empty`
+- [ ] `TenantedAuditableAggregateRoot<TId>` exists in `Aggregates/`, extends `AuditableAggregateRoot<TId>`, implements `IHasTenant`; same `TenantId` contract
+- [ ] `TenantedFullAuditableAggregateRoot<TId>` exists in `Aggregates/`, extends `FullAuditableAggregateRoot<TId>`, implements `IHasTenant`; same `TenantId` contract; `MarkAsDeleted` and `OnDelete` are inherited, not re-declared
+- [ ] `TenantId` has `private set` on all three classes — verified via reflection test
+- [ ] No reference to `12.Security` or `ITenantProvider` introduced anywhere in `03.Domain`
+- [ ] Tests: construction sets `TenantId` correctly; ORM path leaves `Guid.Empty`; IS-A assertions for all three classes; `MarkAsDeleted` works correctly on `TenantedFullAuditableAggregateRoot<TId>`
+- [ ] `03.Domain/CLAUDE.md` hierarchy section updated to document the three tenanted bases and construction pattern
+- [ ] `03.Domain/CLAUDE.md` Implementation Rules gains rule: `TenantId` is construction-time only; `ITenantProvider` must not be referenced from domain code — pass `tenantId` as a `Guid` parameter from the application layer
+- [ ] All 125+ existing tests continue to pass — additive changes only
+- [ ] Package remains AOT-safe; no reflection in production code
+- [ ] `SharedKernel.Domain` version bumped to `1.2.0` in csproj after all WO-010 changes are complete
+---
+
+---
+### P-045 — Domain: IHasDomainEvents — Decouple Event Collection Contract from Aggregate Identity
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Currently `IAggregateRoot<TId>` carries both the identity contract (`Id`, via `IEntity<TId>`) and the domain event collection contract (`DomainEvents`, `ClearDomainEvents()`). These are two distinct concerns conflated into one interface.
+
+A standalone `IHasDomainEvents` interface must be introduced that owns the event collection contract:
+- `IReadOnlyCollection<IDomainEvent> DomainEvents { get; }`
+- `void ClearDomainEvents()`
+
+`IAggregateRoot<TId>` must then extend `IHasDomainEvents` (in addition to `IEntity<TId>`) instead of declaring `DomainEvents` and `ClearDomainEvents()` directly. This is a pure refactor — no behavioral change, no API surface removed.
+
+The concrete `AggregateRoot<TId>` already implements both; it simply now satisfies two interfaces via hierarchy rather than one.
+
+**Why this matters beyond aggregates:** Infrastructure dispatch code (EF Core interceptors, outbox publishers, saga orchestrators) that publishes domain events should depend on `IHasDomainEvents`, not on `IAggregateRoot<TId>`. Process managers and saga state machines in `17.Workflows` often need to accumulate and dispatch domain events without being aggregate roots with typed identities. `IHasDomainEvents` gives those types a clean, minimal contract without forcing them to also implement `IEntity<TId>`.
+
+`AggregateRoot<TId>` remains the concrete base — nothing changes for 99% of consumers. The benefit is that infrastructure dispatch code becomes cleaner:
+```csharp
+// Before: forced to know about aggregate identity
+void DispatchEvents(IAggregateRoot<object> root) { ... }
+
+// After: decoupled from identity
+void DispatchEvents(IHasDomainEvents entity) { ... }
+```
+
+`CLAUDE.md` must be updated to document `IHasDomainEvents` and the rule that infrastructure dispatch code should depend on it rather than `IAggregateRoot<TId>`.
+
+#### Why this is needed
+
+The domain event dispatch contract and the aggregate identity contract are orthogonal. Infrastructure components (EF Core `ISaveChangesInterceptor`, `IOutboxPublisher`, Temporal workflow activities) that scan tracked entities for domain events do not need to know about aggregate identity — they only need to know how to read and clear the event list. Coupling them to `IAggregateRoot<TId>` forces unnecessary knowledge of the generic `TId` type parameter and prevents non-aggregate types (process managers, sagas) from participating in the event dispatch pipeline. This is a foundational interface hygiene improvement.
+
+#### Acceptance criteria
+- [ ] `IHasDomainEvents` interface exists in `Abstractions/` with `DomainEvents` and `ClearDomainEvents()` members; XML doc states it is the event-dispatch contract for infrastructure
+- [ ] `IAggregateRoot<TId>` extends `IHasDomainEvents` instead of declaring `DomainEvents` and `ClearDomainEvents()` directly; the public API of `IAggregateRoot<TId>` is unchanged
+- [ ] `AggregateRoot<TId>` continues to implement both interfaces correctly — no behavioral change
+- [ ] All existing tests pass with zero modification — this is a pure interface refactor
+- [ ] `03.Domain/CLAUDE.md` `IAggregateRoot<TId>` section documents that it extends `IHasDomainEvents`; a new `IHasDomainEvents` entry is added to the Interface Contracts section
+- [ ] `03.Domain/CLAUDE.md` Implementation Rules gains a rule: "Infrastructure dispatch code must depend on `IHasDomainEvents`, not `IAggregateRoot<TId>` — dependency on aggregate identity is not required for event dispatch"
+- [ ] Package remains AOT-safe; no reflection
+---
+
+---
+### P-046 — Domain: SingleValueObject<TValue> — Convenience Base for Single-Primitive Value Objects
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+The current `ValueObject` abstract base requires every implementor to override two abstract methods: `GetEqualityComponents()` and `Validate()`. For the overwhelmingly common case of a value object wrapping a single primitive value (e.g., `EmailAddress(string value)`, `CustomerId(Guid value)`, `Percentage(decimal value)`), this is repetitive boilerplate.
+
+A `SingleValueObject<TValue>` abstract class must be added that extends `ValueObject` and provides:
+- A `public TValue Value { get; }` property set from the constructor parameter
+- A sealed override of `GetEqualityComponents()` that returns `[Value]` — no override needed by subclasses
+- A sealed override of `ToString()` that returns `Value?.ToString() ?? string.Empty`
+- An `implicit operator TValue` for ergonomic unwrapping, consistent with `StronglyTypedId<TValue>`
+- `Validate()` remains `protected abstract IEnumerable<Error>?` — subclasses must still declare their validation rules
+
+The constructor signature is `protected SingleValueObject(TValue value)` which sets `Value = value` and then calls `base()` (which in turn calls `Validate()`). Because `Validate()` must be able to reference `Value`, the assignment of `Value = value` must happen in a field initializer or in the subclass constructor body before calling `base()`. Given C# constructor execution order, `Value` must be assigned before `base()` is called — the standard pattern is to assign `Value` directly and call `base()` in the constructor body, but the base constructor calls `Validate()` before the subclass can assign `Value`. This is the same hazard documented in P-043 (Part B).
+
+The correct implementation uses the following pattern: `SingleValueObject<TValue>` must NOT call `base()` in the traditional chain. Instead, it must accept the value, assign `Value = value`, and then manually invoke `Validate()` — bypassing the `ValueObject` base constructor (or `ValueObject` must provide an `init`-protected bypass mechanism). The domain planner must choose the cleanest C# solution. One approach: `SingleValueObject<TValue>` overrides the abstract `Validate()` as sealed-abstract-passthrough and calls validation explicitly after assignment using a `private void Initialize()` method, not by calling `base()`. The XML documentation must explain the constructor order clearly.
+
+**Distinction from `StronglyTypedId<TValue>`:**
+- `StronglyTypedId<TValue>` is for entity/aggregate identity keys — database-persisted primitive IDs
+- `SingleValueObject<TValue>` is for domain concepts with validation — email addresses, money amounts, percentages, scores
+
+These are explicitly separate and must not be merged. The XML doc must state this distinction.
+
+A test covering: correct `Value` set; `GetEqualityComponents()` returns only `[Value]`; equality works by value (not reference); `implicit operator TValue` unwraps correctly; `Validate()` returning errors throws `ValidationException`.
+
+#### Why this is needed
+
+Approximately 60–70% of all value objects in a typical DDD microservice wrap a single primitive. Every `EmailAddress`, `PhoneNumber`, `Percentage`, `Score`, `Amount` value object currently requires identical boilerplate: a private backing field or auto-property, a `GetEqualityComponents()` returning `[_value]`, and a `ToString()` delegation. Across dozens of services and hundreds of value objects, this is measurable boilerplate. `SingleValueObject<TValue>` reduces a 10-line value object to 4 lines (constructor + `Validate()` body), while the `implicit operator TValue` eliminates explicit `.Value` unwrapping throughout application code. The distinction from `StronglyTypedId<TValue>` is architectural — strongly-typed IDs have no validation logic, just identity semantics; single value objects have business-rule validation.
+
+#### Acceptance criteria
+- [ ] `SingleValueObject<TValue>` abstract class exists in `ValueObjects/`; extends `ValueObject` (directly or via a valid inheritance chain that preserves `Validate()`)
+- [ ] `Value` property is `public TValue Value { get; }` — readable, non-mutable after construction
+- [ ] `GetEqualityComponents()` sealed override returns exactly `[Value]` — no subclass override needed
+- [ ] `ToString()` sealed override returns `Value?.ToString() ?? string.Empty`
+- [ ] `implicit operator TValue` is defined
+- [ ] `Validate()` remains abstract — subclasses must declare their validation rules
+- [ ] Construction-order hazard is solved correctly: `Value` is accessible when `Validate()` runs
+- [ ] XML doc states the distinction from `StronglyTypedId<TValue>` explicitly with a side-by-side example
+- [ ] Tests: `Value` set correctly; equality by value; implicit unwrap; failed `Validate()` throws `ValidationException`; `Value` is accessible inside `Validate()` at construction time
+- [ ] All existing `ValueObject` tests continue to pass — additive change
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-047 — Domain: DomainService Abstract Base — Provide CheckRule Access and DI Anchor
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+`IDomainService` is currently a zero-member marker interface. Domain services — stateless types that coordinate between aggregates or enforce cross-aggregate invariants — often need to enforce business rules. Currently, `CheckRule(IBusinessRule)` is a `protected static` method on `AggregateRoot<TId>`. Domain services cannot access it without copy-pasting the implementation.
+
+A `DomainService` abstract class must be added that:
+- Implements `IDomainService` (marker)
+- Exposes `protected static void CheckRule(IBusinessRule rule)` — identical semantics to `AggregateRoot<TId>.CheckRule`: throws `BusinessRuleViolationException` if `rule.IsBroken()`
+- Has no constructor parameters — domain services are stateless; they are registered in DI and may receive domain objects or `01.Core` abstractions (like `IClock`) via their own constructors in concrete subclasses
+- Is abstract — it cannot be instantiated directly; teams subclass it with `sealed` concrete domain services
+
+The method must be the same implementation as on `AggregateRoot<TId>`. A future refactor could extract a shared internal helper to avoid duplication, but the domain planner may choose to duplicate the three-line implementation rather than create an internal utility class that links the two hierarchies. Both approaches are valid — the domain planner decides.
+
+**What DomainService does NOT provide:**
+- No `IClock` injection (domain services that need time receive it via their own constructor parameters)
+- No `DomainEvents` accumulation (domain services do not raise events — aggregates do)
+- No repository access (domain services receive already-loaded aggregates from the application layer)
+
+XML doc must state all three exclusions explicitly so teams understand the design intent.
+
+A test must cover: a concrete domain service extending `DomainService` can call `CheckRule`; broken rule throws `BusinessRuleViolationException`; non-broken rule does not throw.
+
+`CLAUDE.md` must gain a `DomainService (abstract class)` entry in the Interface Contracts section and an Implementation Rule: "Domain services must extend `DomainService`, not implement `IDomainService` directly. This provides `CheckRule` access and serves as the DI anchor for governance architecture rules."
+
+#### Why this is needed
+
+Without a concrete base, teams either implement `IDomainService` directly (no `CheckRule` access, leading to manual `if (rule.IsBroken()) throw new BusinessRuleViolationException(rule)` scattered everywhere) or they skip domain services entirely and push cross-aggregate coordination into application handlers. Both outcomes are anti-patterns. The abstract `DomainService` base is the exact parallel to `AggregateRoot<TId>` — both provide `CheckRule`, both are abstract, both enforce the rule that only these types can check business rules. Governance architecture tests (P-034) can then enforce that all `IDomainService` implementors extend `DomainService` (not a raw class), the same way they enforce `IAggregateRoot<TId>` implementors extend `AggregateRoot<TId>`.
+
+#### Acceptance criteria
+- [ ] `DomainService` abstract class exists in a `DomainServices/` folder (or alongside business rules — domain planner decides); implements `IDomainService`
+- [ ] `protected static void CheckRule(IBusinessRule rule)` method exists; throws `BusinessRuleViolationException` when `rule.IsBroken()` is true
+- [ ] `DomainService` has no mandatory constructor parameters — concrete subclasses add their own
+- [ ] `DomainService` does NOT accumulate domain events; no `DomainEvents` or `RaiseDomainEvent` present
+- [ ] XML doc states the three exclusions: no clock, no events, no repository access
+- [ ] Tests: concrete domain service can call `CheckRule`; broken rule throws; non-broken does not throw
+- [ ] `03.Domain/CLAUDE.md` gains `DomainService` abstract class in the Interface Contracts section
+- [ ] `03.Domain/CLAUDE.md` Implementation Rules gains rule: all domain service implementations must extend `DomainService` abstract class
+- [ ] All existing tests continue to pass — additive change
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-048 — Domain: IHasVersion — Domain-Native Integer Version Counter for Optimistic Concurrency
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+`IHasConcurrency` currently carries `byte[] RowVersion { get; }` — an SQL Server/EF Core infrastructure concept. A `rowversion` is a SQL Server-specific binary timestamp with no meaning outside the database. This leaks infrastructure semantics into the domain contract.
+
+A domain-native `IHasVersion` interface must be added:
+- `int Version { get; }` — a monotonically increasing integer counter representing the number of committed mutations to the aggregate
+- Semantics: `Version` starts at `0` when the aggregate is first created. Each time `RaiseDomainEvent` is called (or optionally each time `SaveChanges` succeeds — the domain planner must document which), `Version` is incremented by 1.
+- `Version` enables event-sourced-style version tracking without an event store: the aggregate can assert "I was at version 5 when the application read me; if version has changed since then, reject the update" — the classic optimistic concurrency check.
+
+**Concrete additions:**
+
+`AggregateRoot<TId>` must expose `int Version { get; private set; }` implemented by incrementing `Version` in `RaiseDomainEvent(IDomainEvent)` and in `RaiseDomainEvent(Func<DateTimeOffset, IDomainEvent>)`. This choice means `Version` tracks "how many events have been raised since creation" — it is a domain-level concept, not an infrastructure counter.
+
+`IHasConcurrency` must be kept unchanged — it remains the SQL Server `byte[] RowVersion` contract for EF Core's concurrency token. `IHasVersion` is the domain-native alternative. They are not mutually exclusive: an aggregate can implement both if it uses both mechanisms.
+
+`FullAuditableAggregateRoot<TId>` must not automatically implement `IHasVersion` (it already implements `IHasConcurrency`). Teams that want integer version tracking implement `IHasVersion` on their own aggregate by overriding or via a separate base. Alternatively, a new `VersionedAggregateRoot<TId>` base may be added (extends `AggregateRoot<TId>`, implements `IHasVersion`) — the domain planner decides whether this separate base is cleaner than putting `Version` on `AggregateRoot<TId>` directly.
+
+**Important constraint:** If `Version` is placed on `AggregateRoot<TId>` directly, it becomes universal — every aggregate has a version counter even if they don't need it. A separate `VersionedAggregateRoot<TId>` keeps the hierarchy clean. The domain planner must decide and document the trade-off.
+
+XML doc on `IHasVersion.Version` must state: "Domain-native integer version counter. Increments on every raised domain event. Distinct from `IHasConcurrency.RowVersion` which is an infrastructure-specific SQL Server binary token. Use `IHasVersion` for domain-level event versioning; use `IHasConcurrency` for EF Core optimistic concurrency tokens."
+
+Tests: `Version` starts at 0; increments by 1 per `RaiseDomainEvent` call; remains unchanged when no events are raised.
+
+#### Why this is needed
+
+`byte[] RowVersion` on `IHasConcurrency` is infrastructure vocabulary that has accidentally migrated into the domain model. Teams who read `IHasConcurrency` and see `byte[] RowVersion` immediately think "EF Core" and "SQL Server" — infrastructure concerns have no place in the domain contract. A domain-native `int Version` counter is universally understood, provider-agnostic, and directly usable in domain logic (e.g., an aggregate can assert `if (loadedVersion != this.Version) throw new ConcurrencyException()`). It also opens the door to event sourcing: if an aggregate tracks its version via events, replaying events to a target version becomes trivial. Adding `IHasVersion` costs one integer field and two one-line increments in `RaiseDomainEvent` — the benefit-to-cost ratio is extremely high.
+
+#### Acceptance criteria
+- [ ] `IHasVersion` interface exists in `Abstractions/` with `int Version { get; }`; XML doc states domain-native semantics and distinction from `IHasConcurrency`
+- [ ] Either `AggregateRoot<TId>` gains `int Version { get; private set; }` incremented in both `RaiseDomainEvent` overloads (making it universal), OR a new `VersionedAggregateRoot<TId>` base is added (extends `AggregateRoot<TId>`, implements `IHasVersion`) — domain planner documents the trade-off in CLAUDE.md and chooses one
+- [ ] `IHasConcurrency` is unchanged — `byte[] RowVersion` remains for EF Core concurrency token compatibility
+- [ ] `Version` starts at `0` on construction; increments by 1 on every `RaiseDomainEvent` call
+- [ ] Tests: initial `Version` is 0; raises 3 events → `Version == 3`; `ClearDomainEvents()` does not decrement `Version`; two aggregates with same event count but different identities have independent `Version` values
+- [ ] `03.Domain/CLAUDE.md` gains `IHasVersion` in Interface Contracts section and documents the `IHasConcurrency` vs `IHasVersion` distinction
+- [ ] All existing tests continue to pass — additive change
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-049 — Domain: DomainException Base — Introduce Intermediate Exception Between SharedKernelException and Domain Exceptions
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Currently `BusinessRuleViolationException` extends `SharedKernelException` directly. The exception hierarchy in `01.Core` already defines a `DomainException` type that extends `SharedKernelException`. However, `BusinessRuleViolationException` does not extend `DomainException` — it was wired to extend `SharedKernelException` directly when the domain package was first built, predating the `DomainException` addition in `01.Core`.
+
+`BusinessRuleViolationException` must be changed to extend `DomainException` (from `SharedKernel.Core.Exceptions`) instead of `SharedKernelException` directly. This establishes the correct exception hierarchy:
+
+```
+Exception
+  └── SharedKernelException           (01.Core)
+        └── DomainException           (01.Core)
+              └── BusinessRuleViolationException  (03.Domain)
+```
+
+This is a non-breaking change for callers that `catch (BusinessRuleViolationException)` — they continue to work. It is a behavioral improvement for callers that `catch (DomainException)` — they will now also catch `BusinessRuleViolationException`, which is correct.
+
+Additionally, consider whether a `DomainNotFoundException` belongs here. When an aggregate cannot be found by its ID, the repository (in `06.Persistence`) could throw a `DomainNotFoundException` that extends `DomainException`. However, the correct placement is debated: if the exception type is defined in `06.Persistence`, domain code cannot reference it. If defined in `03.Domain`, it is available everywhere but implies the domain knows about the concept of "not found from persistence." The verdict: `DomainNotFoundException` belongs in `03.Domain` as a domain-level concept — the domain can legitimately say "the aggregate with this identity does not exist" without referencing persistence infrastructure. The repository in `06.Persistence` throws it; the domain defines the type.
+
+`DomainNotFoundException` must:
+- Extend `DomainException` from `01.Core`
+- Carry `Type aggregateType { get; }` and `object aggregateId { get; }` for identifying what was not found
+- Have a consistent message format: `"Entity of type '{aggregateType.Name}' with id '{aggregateId}' was not found."`
+- Not carry an `Error.NotFound(...)` directly in its constructor — the `Error` is constructed from the provided type and id, using `ErrorCodes.NotFound.Entity` (a constant to be added to `SharedKernel.Primitives` or using the existing `Error.NotFound` factory)
+
+Tests: `BusinessRuleViolationException` IS-A `DomainException`; `DomainNotFoundException` IS-A `DomainException`; `DomainNotFoundException` message format is correct; catching `DomainException` catches both.
+
+#### Why this is needed
+
+`catch (DomainException ex)` is the canonical pattern for catching "anything the domain rejected." Middleware, error-handling pipelines, and saga compensations need to catch domain-layer errors without enumerating every specific exception type. If `BusinessRuleViolationException` does not extend `DomainException`, these catch blocks silently miss it — teams discover this in production when a saga compensation fails to trigger on a business rule violation. The `DomainNotFoundException` fills a real gap: every repository implementation currently invents its own "not found" exception or returns null (which forces null checks at every call site). A standard `DomainNotFoundException` in `03.Domain` gives all `06.Persistence` implementations a common base to throw, and all `05.Application` handlers a common type to catch.
+
+#### Acceptance criteria
+- [ ] `BusinessRuleViolationException` extends `DomainException` (from `SharedKernel.Core.Exceptions`) instead of `SharedKernelException` directly
+- [ ] `DomainNotFoundException` exists in `Exceptions/`; extends `DomainException`; carries `Type AggregateType { get; }` and `object AggregateId { get; }`; message format is `"Entity of type '{name}' with id '{id}' was not found."`
+- [ ] `DomainNotFoundException` constructor uses `Error.NotFound(...)` for the base `Error` payload
+- [ ] Tests: `BusinessRuleViolationException IS-A DomainException`; `DomainNotFoundException IS-A DomainException`; catching `DomainException` catches both; `DomainNotFoundException` message format verified
+- [ ] All existing exception-related tests continue to pass — catching `SharedKernelException` still works (hierarchy is extended, not broken)
+- [ ] `03.Domain/CLAUDE.md` Exceptions section updated to document the corrected hierarchy and `DomainNotFoundException`
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-050 — Domain: Specification Sentinels — AllSpecification and EmptySpecification
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Two sentinel specification types that serve as identity elements for specification composition:
+
+**`AllSpecification<T>`:**
+- A concrete (not abstract) sealed specification that matches every entity
+- `Criteria` is `null` (no filter) — the existing `IsSatisfiedBy` behavior returns `true` for null criteria, so this is consistent
+- Use as the starting identity for building AND chains dynamically: `var spec = new AllSpecification<T>(); foreach (...) spec = spec.And(filter);`
+
+**`EmptySpecification<T>`:**
+- A concrete sealed specification that matches no entity
+- `Criteria` is `_ => false` — an expression that always evaluates to false
+- Use as the starting identity for building OR chains dynamically
+
+Both types must be sealed concrete classes (not abstract) so they can be instantiated directly without subclassing.
+
+Both must be documented with the composition pattern they serve (AND identity = start with `All`; OR identity = start with `Empty`) and an explicit code example showing the conditional filter building pattern.
+
+A test covering: `AllSpecification<T>.IsSatisfiedBy(entity)` returns `true` for any entity; `EmptySpecification<T>.IsSatisfiedBy(entity)` returns `false` for any entity; `AllSpecification<T>.And(filterSpec)` produces a spec equivalent to `filterSpec` alone (filter criteria wins); `EmptySpecification<T>.Or(filterSpec)` produces a spec equivalent to `filterSpec` alone.
+
+Additionally, the composite specifications `AndSpecification<T>` and `OrSpecification<T>` must have their null-criteria handling behavior explicitly documented and tested:
+- `And` with one null-criteria operand: currently takes the other operand's criteria (effectively ignores the `AllSpec`) — this is the correct AND-identity behavior. Must be documented in XML with a `<remarks>` block.
+- `Or` with one null-criteria operand: currently takes the other operand's criteria — this is NOT the correct OR-identity behavior (if one operand matches everything, the OR should also match everything). The domain planner must evaluate whether this is a bug and fix it if so.
+
+#### Why this is needed
+
+Dynamic filter building from user inputs (optional date ranges, status filters, category filters) is one of the most common specification use cases in CQRS read models. Without sentinels, every team writes defensive null-check code before composing specifications. With sentinels, the pattern becomes idiomatic and safe: start with `AllSpecification<T>`, chain `.And(filter)` for each active filter, pass the result to the repository. The behavior is mathematically correct (AND with "all" = the filter; OR with "none" = the filter) and eliminates the null-check guard pattern entirely. Documenting the existing null-criteria handling behavior in `And`/`Or` closes a latent bug risk — if the current behavior for `Or` with a null-criteria operand is wrong, it must be fixed now before P-033 (persistence layer) builds on it.
+
+#### Acceptance criteria
+- [ ] `AllSpecification<T>` sealed class exists; `Criteria` is `null`; `IsSatisfiedBy` returns `true` for any entity
+- [ ] `EmptySpecification<T>` sealed class exists; `Criteria` is `_ => false`; `IsSatisfiedBy` returns `false` for any entity
+- [ ] Both are concrete (not abstract) and instantiable without subclassing
+- [ ] XML doc on both classes documents the composition identity pattern with a code example
+- [ ] `OrSpecification<T>` null-criteria handling is evaluated and corrected if incorrect: if either operand has `null` criteria (matches everything), the OR result should also have `null` criteria (matches everything)
+- [ ] `AndSpecification<T>` null-criteria handling is verified correct and documented: if one operand has `null` criteria, the AND takes the other operand's criteria
+- [ ] Tests: sentinels match/reject all entities; `And` / `Or` composition with sentinels behaves as identity elements; `Or` null-criteria fix (if any) verified
+- [ ] All existing specification tests continue to pass
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-051 — Domain: PagedSpecification<T> — Convenience Base for Paged Query Specifications
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+A `PagedSpecification<T>` abstract class that extends `ReadOnlySpecification<T>` (inheriting `AsNoTracking = true`) and automatically applies paging in its constructor.
+
+The constructor signature: `protected PagedSpecification(int page, int pageSize)` where:
+- `page` is 1-based (page 1 = first page)
+- `pageSize` is the number of results per page
+- The constructor calls `ApplyPaging(skip: (page - 1) * pageSize, take: pageSize)` automatically
+
+Validation guards in the constructor:
+- `page < 1` → throws `ArgumentOutOfRangeException`
+- `pageSize < 1` → throws `ArgumentOutOfRangeException`
+- `pageSize > MaxPageSize` → throws `ArgumentOutOfRangeException` with a message naming `MaxPageSize`
+
+`MaxPageSize` must be a `protected const int` with a default value of `1000`. Subclasses may shadow it with their own `const` to enforce a lower maximum (e.g., `new const int MaxPageSize = 50` for a list endpoint with a known upper bound).
+
+The class exposes `public int Page { get; }` and `public int PageSize { get; }` as readable properties for convenience (e.g., for building `PagedList<T>` responses in the application layer).
+
+A `PagedReadOnlySpecification<T>` alias name is not needed — `PagedSpecification<T>` inheriting from `ReadOnlySpecification<T>` makes the read-only intent clear.
+
+XML doc must clarify: "All paged specifications are implicitly read-only (`AsNoTracking = true`). Paged queries are never followed by write operations — if a write operation needs to find and modify entities with paging, it must not use this base and must not apply `AsNoTracking`."
+
+Tests: correct `Skip`/`Take` computed for `page=1, pageSize=10`; `page=3, pageSize=20`; invalid inputs throw `ArgumentOutOfRangeException`; `AsNoTracking` is `true` always; `Page` and `PageSize` properties read correctly.
+
+#### Why this is needed
+
+`(page - 1) * pageSize` is a formula every developer has typed hundreds of times. It is trivial but wrong when `page` is 0-based (a common off-by-one error teams make when mixing 0-based and 1-based pagination conventions). Centralizing this in `PagedSpecification<T>` with an explicit 1-based convention and guard clauses eliminates the entire class of "page 0 returns the first 20 items but page 1 also returns the first 20 items" bugs that appear in production APIs. The `MaxPageSize` guard prevents API abuse (requesting 100,000 items in one page) without requiring each team to add their own limit. Making `PagedSpecification<T>` extend `ReadOnlySpecification<T>` is architecturally correct — paged queries are always read queries.
+
+#### Acceptance criteria
+- [ ] `PagedSpecification<T>` abstract class exists in `Specifications/`; extends `ReadOnlySpecification<T>`
+- [ ] Constructor `protected PagedSpecification(int page, int pageSize)` calls `ApplyPaging(skip: (page - 1) * pageSize, take: pageSize)`
+- [ ] `ArgumentOutOfRangeException` thrown for `page < 1`, `pageSize < 1`, and `pageSize > MaxPageSize`
+- [ ] `MaxPageSize` is `protected const int MaxPageSize = 1000`; subclasses may shadow with a lower value
+- [ ] `Page { get; }` and `PageSize { get; }` properties are publicly readable
+- [ ] `AsNoTracking` is always `true` (inherited from `ReadOnlySpecification<T>`)
+- [ ] XML doc states the 1-based page convention, the `MaxPageSize` guard, and the read-only rationale
+- [ ] Tests: correct Skip/Take for various page/pageSize inputs; guard throws; `Page`/`PageSize` readable; `AsNoTracking = true`
+- [ ] All existing specification tests continue to pass — additive change
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-052 — Domain: Specification Builder Ergonomics — ApplyThenByDescending Alias + Ordering Documentation
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+The current `Specification<T>` builder has `ApplyThenBy(Expression<Func<T, object>> keySelector, bool descending)` — a single method with a boolean flag for direction. This is correct but the `bool descending` parameter is easy to get wrong (passing `true` when you mean ascending). Adding a named alias for the descending case follows C# conventions (e.g., `OrderBy`/`OrderByDescending` in LINQ):
+
+**Add `ApplyThenByDescending(Expression<Func<T, object>> keySelector)`** as a protected builder method that delegates to `ApplyThenBy(keySelector, descending: true)`.
+
+This is a two-line addition but meaningfully improves readability:
+```csharp
+// Before (bool flag — easy to confuse):
+ApplyThenBy(x => x.Name, true);
+
+// After (self-documenting):
+ApplyThenByDescending(x => x.Name);
+```
+
+Additionally, the `ISpecification<T>` documentation must be updated with a `<remarks>` block explicitly documenting the ordering precedence:
+1. Primary sort: either `OrderBy` or `OrderByDescending` (mutually exclusive — last call wins)
+2. Secondary sorts: `ThenBys` list, applied in order of `ApplyThenBy` / `ApplyThenByDescending` calls
+3. If neither primary sort is set: `ThenBys` entries are ignored by well-behaved repositories
+
+The `Specification<T>` documentation must state that calling both `ApplyOrderBy` and `ApplyOrderByDescending` is not an error at the domain level — the last call wins — but produces unexpected behavior and should be avoided. A governance rule (added in P-056) should flag this pattern.
+
+Tests: `ApplyThenByDescending(expr)` adds an entry to `ThenBys` with `Descending = true`; sequential calls to `ApplyThenBy` and `ApplyThenByDescending` produce `ThenBys` in the correct order with the correct direction flags.
+
+#### Why this is needed
+
+The `bool descending` flag on `ApplyThenBy` is a minor but real ergonomic gap. In every other ordering API in the .NET ecosystem (LINQ, EF Core, MongoDB, Elasticsearch), the ascending/descending distinction is expressed as separate named methods rather than a boolean flag. Consistency with ecosystem conventions reduces cognitive overhead for teams adopting the SharedKernel specification pattern.
+
+#### Acceptance criteria
+- [ ] `protected void ApplyThenByDescending(Expression<Func<T, object>> keySelector)` method added to `Specification<T>`; delegates to `ApplyThenBy(keySelector, descending: true)`
+- [ ] `ISpecification<T>` gains a `<remarks>` block documenting ordering precedence and the `ThenBys` list behavior when no primary sort is set
+- [ ] `Specification<T>` XML doc states that calling both `ApplyOrderBy` and `ApplyOrderByDescending` is a soft violation
+- [ ] Tests: `ApplyThenByDescending` produces correct `ThenBys` entry; mixed `ApplyThenBy`/`ApplyThenByDescending` calls produce correct direction flags in order
+- [ ] All existing specification tests continue to pass — additive change
+- [ ] Package remains AOT-safe
+---
+
+---
+### P-053 — Domain: DomainEventVersion Attribute — Schema Versioning for Domain Events
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+When a domain event record's shape changes (new required field, renamed property, type change), consumers of that event — particularly integration event handlers in other services — face a deserialization mismatch. There is currently no standard mechanism in `03.Domain` to signal that an event type has a schema version.
+
+A `[DomainEventVersion(int version)]` attribute must be added to `03.Domain/Events/`:
+- `DomainEventVersionAttribute` inherits from `Attribute`
+- Constructor: `public DomainEventVersionAttribute(int version)` where `version >= 1` (validated at construction; `ArgumentOutOfRangeException` if `version < 1`)
+- Exposes `public int Version { get; }` as a readable property
+- Is applied at the class/record level: `[AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]`
+- XML doc states: "Declares the schema version of this domain event record. Increment when adding, removing, or renaming properties. Version 1 is implied when the attribute is absent. Consuming services must handle event deserialization for the declared version."
+
+Additionally, an `IDomainEvent` interface extension is **not appropriate** — adding `Version` to the interface would force all domain events to declare a version at runtime, adding allocation and coupling. The attribute approach is the correct .NET pattern: checked at compile time via reflection in governance tests, not at runtime in the hot path.
+
+A static helper `DomainEventVersionHelper.GetVersion(Type domainEventType)` must be provided:
+- Returns the `Version` from `DomainEventVersionAttribute` if present; returns `1` as default when the attribute is absent
+- This helper is for use in `07.Messaging` serialization and governance tests, not for use in the domain layer itself
+
+Tests: attribute applies to a domain event record; `GetVersion` returns declared version; `GetVersion` returns 1 when attribute is absent; version `< 1` throws `ArgumentOutOfRangeException`.
+
+`CLAUDE.md` must document: "Apply `[DomainEventVersion(N)]` when changing an event's schema. Increment N on every breaking schema change. A missing attribute implies version 1. Use `DomainEventVersionHelper.GetVersion(type)` in messaging and governance layers to inspect the version."
+
+#### Why this is needed
+
+Domain events are the cross-service integration contract of the platform. Without schema versioning, a team that adds a required field to `OrderPlacedEvent` silently breaks all services that deserialize it without the new field. The `[DomainEventVersion]` attribute makes schema evolution explicit and auditable: code review sees the version increment and forces reviewers to consider backward compatibility. Governance architecture tests (P-056) can enforce that no `IDomainEvent` implementor changes its structure without an updated `[DomainEventVersion]` attribute (checked via git diff in CI). The static `DomainEventVersionHelper` gives the messaging layer a standardized way to read the declared version for routing event payloads to versioned deserializers.
+
+#### Acceptance criteria
+- [ ] `DomainEventVersionAttribute` class exists in `Events/`; `AttributeUsage` is `Class, Inherited = false, AllowMultiple = false`
+- [ ] Constructor validates `version >= 1`; throws `ArgumentOutOfRangeException` for `version < 1`
+- [ ] `public int Version { get; }` is readable after construction
+- [ ] `DomainEventVersionHelper.GetVersion(Type)` static helper exists; returns declared version or `1` as default
+- [ ] `IDomainEvent` interface is unchanged — no runtime `Version` property added
+- [ ] XML doc on `DomainEventVersionAttribute` documents the versioning contract and deployment workflow
+- [ ] Tests: attribute declaration; `GetVersion` with and without attribute; invalid version guard
+- [ ] `03.Domain/CLAUDE.md` events section documents the attribute usage and versioning workflow
+- [ ] Package remains AOT-safe (attribute reading uses reflection, but only in `DomainEventVersionHelper` which is for governance/messaging, not the domain hot path)
+---
+
+---
+### P-054 — Domain: Aggregate Result Factory Pattern — IAggregateFactory<T> Convention and Result<T>-Returning Create
+
+**Status:** `●` Complete
+**Work Order:** WO-011
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+The platform uses `Result<T>` from `SharedKernel.Primitives` for railway-oriented programming. Domain aggregates currently either throw exceptions from their constructors (via `CheckRule`) or from `ValueObject.Validate()`. For application-layer callers that want railway-style error propagation without try/catch, there is no standard pattern for aggregate creation.
+
+Two additions are needed:
+
+**`IAggregateFactory<TAggregateRoot, TId>` marker interface:**
+A zero-member marker interface (like `IDomainService`) that identifies a class as a factory for a specific aggregate type. Implementing this interface is optional convention — its primary use is for governance architecture tests that can enforce "every aggregate has a factory" if the team wants that rule.
+
+```csharp
+public interface IAggregateFactory<TAggregateRoot, TId>
+    where TAggregateRoot : IAggregateRoot<TId>
+    where TId : notnull
+{
+}
+```
+
+**`AggregateRoot<TId>.TryCreate` documentation pattern:**
+Rather than shipping a concrete abstract `static Result<TAggregateRoot> Create(...)` method (which C# does not support as abstract statics in the same way for instance factories), the domain must document a standard convention:
+- Every aggregate that needs railway-safe creation should expose a `public static Result<TSelf> Create(...params...)` factory method
+- This factory method wraps the aggregate constructor in a try/catch that catches `BusinessRuleViolationException` and `ValidationException` and converts them to `Result.Failure(error)`
+- `AggregateRoot<TId>` must provide a `protected static Result<T> TryCreate<T>(Func<T> factory)` helper that performs this wrapping so aggregates don't duplicate the try/catch pattern
+
+The helper signature:
+```
+protected static Result<T> TryCreate<T>(Func<T> factory)
+    catches BusinessRuleViolationException → Result.Failure(exception.Error)
+    catches ValidationException → Result.Failure(ValidationResult with errors)
+    returns Result.Success(factory())
+```
+
+This `TryCreate` helper eliminates per-aggregate try/catch boilerplate while keeping the `static Result<T> Create(...)` pattern at the aggregate level (not enforced by the base class).
+
+`CLAUDE.md` must document this as a convention (not a hard rule) with an example showing a `static Result<Order> Create(OrderId id, string customerName, IClock clock)` factory method that calls `TryCreate(() => new Order(id, customerName, clock))`.
+
+Tests: `TryCreate` returns `Success` when the constructor succeeds; returns `Failure` with `ErrorType.BusinessRule` when the constructor calls `CheckRule` with a broken rule; returns `Failure` with `ErrorType.Validation` when the constructor throws `ValidationException`.
+
+#### Why this is needed
+
+The exception-based path for domain invariants (`CheckRule` throwing `BusinessRuleViolationException`) is correct for enforcing invariants that must never be violated. But aggregate creation from application command handlers benefits from railway-style error propagation: `Result<Order> result = Order.Create(id, name, clock); if (result.IsFailure) return result;`. Without `TryCreate`, every aggregate team writes their own try/catch wrapper — producing inconsistent error structures and missing the correct `ErrorType` classification. The `IAggregateFactory<T>` interface gives governance a handle on factory types without constraining how they are implemented. Together these give teams a standard, idiomatic, railway-friendly aggregate creation pattern without changing the domain's core exception model.
+
+#### Acceptance criteria
+- [ ] `IAggregateFactory<TAggregateRoot, TId>` zero-member marker interface exists in `Abstractions/` with correct generic constraints
+- [ ] `protected static Result<T> TryCreate<T>(Func<T> factory)` method exists on `AggregateRoot<TId>`; catches `BusinessRuleViolationException` → `Result.Failure(ex.Error)`; catches `ValidationException` → `Result.Failure(ex.Errors.First())` (or a composite error if `ValidationResult` is appropriate); wraps in `try/catch`
+- [ ] `03.Domain/CLAUDE.md` documents the `static Result<T> Create(...)` convention as a recommended (not required) pattern; includes a complete code example
+- [ ] Tests: `TryCreate` success path; `TryCreate` `BusinessRuleViolationException` produces `Failure` with `ErrorType.BusinessRule`; `TryCreate` `ValidationException` produces `Failure`
+- [ ] All existing tests continue to pass — additive change
+- [ ] Package remains AOT-safe (no reflection in `TryCreate`)
+---
+
+---
+### P-055 — Contracts: EventEnvelope<TEvent> — Transport Metadata Wrapper for Domain Events
+
+**Status:** `○` Pending
+**Work Order:** WO-011
+**Domain:** 04.Contracts
+**Depends on:** P-053
+
+#### What is needed
+
+Domain events carry `Id` and `OccurredOn` — intrinsic domain properties. Transport concerns — correlation tracing, causation chains, schema versioning, routing keys — must not pollute the domain event model. They belong in a wrapper type at the contracts boundary.
+
+An `EventEnvelope<TEvent>` sealed record must be added to `04.Contracts`:
+
+```
+EventEnvelope<TEvent>  where TEvent : IDomainEvent
+    .EventId          → Guid           (copy of TEvent.Id)
+    .OccurredOn       → DateTimeOffset  (copy of TEvent.OccurredOn)
+    .EventType        → string          (full type name of TEvent, e.g. "OrderPlacedEvent")
+    .EventVersion     → int             (from DomainEventVersionAttribute on TEvent, or 1 if absent)
+    .CorrelationId    → string?         (set from ambient OTel ActivityContext or caller-provided; null if unavailable)
+    .CausationId      → string?         (ID of the command or event that caused this event; null if unavailable)
+    .SourceService    → string          (name of the service that raised this event; set at composition root)
+    .Payload          → TEvent          (the wrapped domain event)
+```
+
+A static `EventEnvelope.Wrap<TEvent>(TEvent domainEvent, string sourceService, string? correlationId = null, string? causationId = null)` factory method must be provided that populates all fields from the event and metadata.
+
+`EventEnvelope<TEvent>` must be STJ-serializable. A `JsonSerializerContext` source-generated entry must be provided for the common case of `EventEnvelope<DomainEvent>` (the non-generic base). Strongly-typed `EventEnvelope<OrderPlacedEvent>` requires the consuming service's STJ context — document this.
+
+`04.Contracts` may reference `03.Domain` per layering rules (Contracts references Core + Domain). The reference to `IDomainEvent` and `DomainEventVersionHelper` from `03.Domain` is therefore permitted.
+
+`CLAUDE.md` must be updated: the "What Goes Where" table must gain a row for `EventEnvelope<TEvent>` pointing to `04.Contracts`.
+
+#### Why this is needed
+
+CorrelationId and CausationId are universally needed for distributed tracing across services, but they are transport/infrastructure concerns — not domain concerns. Placing them on `IDomainEvent` or `DomainEvent` base would require every domain aggregate to know about distributed trace context, creating a coupling between domain logic and infrastructure metadata. The `EventEnvelope<TEvent>` wrapper cleanly separates the two concerns: the domain event carries domain data, the envelope carries transport metadata. The `07.Messaging` layer wraps domain events in envelopes before publishing; handlers in other services unwrap the envelope to access the domain event. This pattern is standard in event-driven architectures (CloudEvents, AMQP headers, MassTransit's `MessageContext`). The `SourceService` and schema version fields enable multi-service event routing and versioned deserialization without polling the event store for metadata.
+
+#### Acceptance criteria
+- [ ] `EventEnvelope<TEvent>` sealed record exists in `04.Contracts`; constrained to `TEvent : IDomainEvent`; all eight properties present as documented
+- [ ] `EventEnvelope.Wrap<TEvent>(TEvent, string sourceService, string? correlationId, string? causationId)` static factory method exists; populates all fields correctly; `EventVersion` uses `DomainEventVersionHelper.GetVersion(typeof(TEvent))`
+- [ ] `EventEnvelope<TEvent>` is STJ-serializable; a source-generated context entry is provided for `EventEnvelope<DomainEvent>` at minimum
+- [ ] `04.Contracts` references `03.Domain` — this is permitted by layering rules; no new cross-domain layering violations introduced
+- [ ] Root `CLAUDE.md` "What Goes Where" table gains `EventEnvelope<TEvent>` row pointing to `04.Contracts`
+- [ ] Tests: `Wrap` factory populates all fields; `EventVersion` defaults to 1 when attribute absent; `EventVersion` uses declared version when attribute present; `CorrelationId`/`CausationId` are null when not provided
+- [ ] All public types carry XML doc comments
+- [ ] Package remains AOT-safe; STJ context is source-generated
+---
+
+---
+### P-056 — Governance: Domain Gold-Standard Architecture Rules
+
+**Status:** `○` Pending
+**Work Order:** WO-011
+**Domain:** 00.Governance
+**Depends on:** P-045, P-047, P-053
+
+#### What is needed
+
+New architecture enforcement rules in `00.Governance/SharedKernel.ArchitectureTests` that protect the new domain contracts introduced in WO-011:
+
+**Rule 1 — All `IDomainService` implementors must extend `DomainService` abstract class (not implement `IDomainService` directly):**
+NetArchTest rule: any type implementing `IDomainService` that does NOT extend `DomainService` fails. This enforces P-047's mandate that domain services use the abstract base for `CheckRule` access and DI anchor. Exemption: `DomainService` itself.
+
+**Rule 2 — Infrastructure dispatch code must depend on `IHasDomainEvents`, not `IAggregateRoot<TId>`:**
+A documentation-level rule (not enforceable by NetArchTest alone without significant IL inspection). A Roslyn analyzer that warns when a type in a namespace containing `Interceptor`, `Publisher`, `Outbox`, or `Dispatcher` injects a parameter typed as `IAggregateRoot<>` rather than `IHasDomainEvents`. This enforces P-045's intent.
+
+**Rule 3 — Domain event schema changes must carry a `[DomainEventVersion]` attribute increment:**
+A CI-level governance check (Git diff-based): any modification to a type implementing `IDomainEvent` that adds, removes, or renames a property must carry a corresponding update to its `[DomainEventVersion]` attribute. This is checked via a post-build analyzer or a custom Git hook documented in `00.Governance`. The Roslyn analyzer approach: warn when a `IDomainEvent`-implementing type lacks `[DomainEventVersion]` entirely (not when the version is stale — that requires git diff).
+
+**Rule 4 — `AggregateRoot<TId>` subclasses must not call both `ApplyOrderBy` and `ApplyOrderByDescending` in the same constructor:**
+A Roslyn analyzer that detects specification constructors calling both primary ordering methods — a potential ordering conflict that produces non-deterministic sort results.
+
+**Rule documentation:** All four rules must be documented in `00.Governance/CLAUDE.md` with rationale, offending-pattern example, and compliant-pattern example.
+
+#### Why this is needed
+
+Architecture rules without enforcement are suggestions. WO-011 introduces several conventions that will be violated by well-meaning developers who haven't read the CLAUDE.md. Rule 1 ensures domain services always have `CheckRule` access without copy-pasting. Rule 2 prevents infrastructure code from coupling to aggregate identity unnecessarily. Rule 3 forces schema versioning discipline — the most common source of cross-service event deserialization failures. Rule 4 catches an ordering ambiguity that would silently return non-deterministic results from queries. All four rules have near-zero false-positive rates when properly scoped to the relevant namespaces and type hierarchies.
+
+#### Acceptance criteria
+- [ ] Rule 1 NetArchTest: `IDomainService` implementors not extending `DomainService` are detected and fail with an identifying message
+- [ ] Rule 2 Roslyn analyzer: injection of `IAggregateRoot<>` in dispatch-named contexts produces a warning with a link to `IHasDomainEvents`
+- [ ] Rule 3 Roslyn analyzer: `IDomainEvent` implementing type lacking `[DomainEventVersion]` produces a warning
+- [ ] Rule 4 Roslyn analyzer: specification constructors calling both `ApplyOrderBy` and `ApplyOrderByDescending` produce a warning
+- [ ] All four rules documented in `00.Governance/CLAUDE.md` with rationale and examples
+- [ ] Governance test suite passes with all new rules; each rule has a fixture test demonstrating it fires correctly
+---
+
+---
+### P-057 — Testing: Domain Gold-Standard Test Helpers — Extended Fakers and Assertion Extensions
+
+**Status:** `○` Pending
+**Work Order:** WO-011
+**Domain:** 16.Testing
+**Depends on:** P-045, P-046, P-048, P-050, P-054
+
+#### What is needed
+
+Extended test helpers in `16.Testing/SharedKernel.Testing` for the new capabilities introduced in WO-011:
+
+**`SingleValueObjectFaker<TValueObject, TValue>` abstract base:**
+A Bogus-based abstract faker for `SingleValueObject<TValue>` subclasses. Exposes a `WithValue(TValue value)` builder method and a `WithRandomValue(Func<Faker, TValue> generator)` method for generating randomized valid values. Reduces the boilerplate of writing a Bogus faker for every single-primitive value object.
+
+**`DomainVersionAssertions` — schema version assertion helpers:**
+- `ShouldHaveVersion<TEvent>(int expectedVersion)` — asserts that `TEvent` (an `IDomainEvent` implementor) carries `[DomainEventVersion(N)]` where `N == expectedVersion`. Throws with a descriptive message on failure.
+- `ShouldBeVersioned<TEvent>()` — asserts that `TEvent` carries any `[DomainEventVersion]` attribute (i.e., the team has not forgotten to version their event).
+
+**Extended `DomainEventAssertions`:**
+Extend the existing `DomainEventAssertions` from P-035 with:
+- `ContainsEventWithVersion<T>(int version)` — asserts at least one event of type `T` is present AND `T` is annotated with `[DomainEventVersion(version)]`
+- `HasRaisedExactlyNEvents(int n)` — asserts the total event count (not per-type) is exactly `n`; useful for invariant tests that must confirm no unexpected side-effect events were raised
+
+**`SpecificationTestBuilder<T>` — in-memory specification test helper:**
+A fluent builder for testing specifications against an in-memory collection:
+```
+SpecificationTestBuilder.For(spec)
+    .Against(entities)        // IEnumerable<T>
+    .ExpectCount(n)           // asserts n entities satisfy the spec
+    .ExpectMatch(predicate)   // asserts all returned entities satisfy additional predicates
+    .Assert()
+```
+This is a more ergonomic wrapper around `spec.IsSatisfiedBy(entity)` that handles the collection-level assertions with better failure messages.
+
+**`FakeDomainNotFoundException` helper:**
+A factory method `FakeDomainNotFoundException.For<TAggregate>(object id)` that creates a `DomainNotFoundException` (from P-049) for use in test setups where a repository mock or fake needs to throw a not-found exception.
+
+All new helpers must be added to the `16.Testing/SharedKernel.Testing` package under appropriate namespaces. `AddFakeDomainServices()` must be updated to register any new DI-registered helpers.
+
+#### Why this is needed
+
+Test infrastructure must keep pace with domain capability. Without `SingleValueObjectFaker`, every service team writes its own Bogus configuration for their value objects — inconsistent, duplicated, and often wrong (using values that happen to pass validation rather than explicitly testing the boundaries). Without `DomainVersionAssertions`, teams have no automated way to assert that their event schema versions are declared and correct — the gap between "I meant to version this event" and "I actually annotated it" is a real production risk. The `SpecificationTestBuilder` provides a dramatically improved developer experience for specification unit testing compared to calling `IsSatisfiedBy` in a loop with manual count assertions. These helpers directly reduce the time cost of writing thorough domain tests — which increases coverage and reduces the risk of domain regressions.
+
+#### Acceptance criteria
+- [ ] `SingleValueObjectFaker<TValueObject, TValue>` abstract base exists; `WithValue`/`WithRandomValue` builders work correctly
+- [ ] `DomainVersionAssertions.ShouldHaveVersion<TEvent>` and `ShouldBeVersioned<TEvent>` throw with descriptive messages when assertions fail
+- [ ] `DomainEventAssertions` extended with `ContainsEventWithVersion<T>` and `HasRaisedExactlyNEvents`
+- [ ] `SpecificationTestBuilder<T>` fluent API works correctly; `ExpectCount` and `ExpectMatch` throw on failure with entity details
+- [ ] `FakeDomainNotFoundException.For<TAggregate>(object id)` factory method exists and produces a valid `DomainNotFoundException`
+- [ ] `AddFakeDomainServices()` updated where applicable
+- [ ] All test helpers have their own unit tests in `SharedKernel.Testing.Tests`
+- [ ] `16.Testing` references `SharedKernel.Domain` (permitted) and `04.Contracts` (permitted) for `EventEnvelope` helper support
+- [ ] All public types carry XML doc comments
+---

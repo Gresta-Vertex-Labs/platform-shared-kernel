@@ -10,11 +10,19 @@ namespace SharedKernel.Domain.Exceptions;
 /// the rule's message or type.
 /// </summary>
 /// <remarks>
+/// <para>
 /// This exception is raised by <c>AggregateRoot&lt;TId&gt;.CheckRule(IBusinessRule)</c> when
 /// <c>IBusinessRule.IsBroken()</c> returns <see langword="true"/>. Map it to an HTTP 422
-/// Unprocessable Entity at the presentation layer.
+/// Unprocessable Entity at the presentation layer — never HTTP 500.
+/// </para>
+/// <para>
+/// Hierarchy: <c>Exception</c> → <c>SharedKernelException</c> → <c>DomainException</c>
+/// → <c>BusinessRuleViolationException</c>.
+/// Catching <c>DomainException</c> catches this; catching <c>SharedKernelException</c>
+/// also catches this. <see cref="Error"/> carries <c>ErrorType.BusinessRule</c>.
+/// </para>
 /// </remarks>
-public sealed class BusinessRuleViolationException : SharedKernelException
+public sealed class BusinessRuleViolationException : DomainException
 {
     /// <summary>
     /// Initialises a new <see cref="BusinessRuleViolationException"/> for the specified
@@ -22,7 +30,7 @@ public sealed class BusinessRuleViolationException : SharedKernelException
     /// </summary>
     /// <param name="rule">The business rule that was violated. Must not be <see langword="null"/>.</param>
     public BusinessRuleViolationException(IBusinessRule rule)
-        : base(rule.Message, Error.Unexpected("domain.rule.violated", rule.Message))
+        : base(Error.BusinessRule(ErrorCodes.Domain.RuleViolated, rule.Message))
     {
         Rule = rule;
     }

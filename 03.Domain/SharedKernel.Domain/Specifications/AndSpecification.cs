@@ -32,5 +32,8 @@ public sealed class AndSpecification<T> : Specification<T>
         {
             AddCriteria(right.Criteria);
         }
+
+        if (left.AsNoTracking || right.AsNoTracking)
+            ApplyNoTracking();
     }
 }

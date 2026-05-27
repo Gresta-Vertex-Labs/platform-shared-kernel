@@ -41,8 +41,18 @@ public sealed class ErrorCodesTests
             ErrorCodes.Unauthorized.Default,
             ErrorCodes.Unauthorized.Expired,
             ErrorCodes.Unexpected.Default,
+            ErrorCodes.Domain.RuleViolated,
         };
 
         Assert.Equal(codes.Length, codes.Distinct().Count());
     }
+
+    // T-21: ErrorCodes.Domain.RuleViolated is non-null, non-empty, and equals "domain.rule.violated"
+    [Fact]
+    public void Domain_RuleViolated_IsNotNullOrEmpty()
+        => Assert.False(string.IsNullOrWhiteSpace(ErrorCodes.Domain.RuleViolated));
+
+    [Fact]
+    public void Domain_RuleViolated_HasCorrectValue()
+        => Assert.Equal("domain.rule.violated", ErrorCodes.Domain.RuleViolated);
 }

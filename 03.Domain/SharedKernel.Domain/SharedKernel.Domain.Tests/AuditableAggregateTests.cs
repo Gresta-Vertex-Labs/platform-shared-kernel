@@ -122,4 +122,49 @@ public class AuditableAggregateTests
             .GetProperty(nameof(AuditableAggregateRoot<Guid>.CreatedOn));
         prop!.SetMethod!.IsPrivate.Should().BeTrue("CreatedOn setter must be private");
     }
+
+    // --- T-12: FullAuditableAggregateRoot hierarchy regression (P-036/WO-009) ---
+
+    [Fact]
+    public void FullAuditableAggregateRoot_IsA_AuditableSoftDeletableAggregateRoot()
+    {
+        var clock = new FixedClock(DateTimeOffset.UtcNow);
+        var order = new FullOrder(Guid.NewGuid(), clock);
+
+        order.Should().BeAssignableTo<AuditableSoftDeletableAggregateRoot<Guid>>(
+            "FullAuditableAggregateRoot<TId> must extend AuditableSoftDeletableAggregateRoot<TId>");
+    }
+
+    [Fact]
+    public void FullAuditableAggregateRoot_MarkAsDeleted_IsInherited_NotRedeclared()
+    {
+        // MarkAsDeleted must be declared on AuditableSoftDeletableAggregateRoot, not on FullAuditableAggregateRoot
+        var method = typeof(FullAuditableAggregateRoot<Guid>)
+            .GetMethod("MarkAsDeleted", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method!.DeclaringType.Should().NotBe(typeof(FullAuditableAggregateRoot<Guid>),
+            "MarkAsDeleted must be inherited from AuditableSoftDeletableAggregateRoot");
+    }
+
+    [Fact]
+    public void FullAuditableAggregateRoot_OnDelete_IsInherited_NotRedeclared()
+    {
+        // OnDelete declared in AuditableSoftDeletableAggregateRoot; concrete impl in FullOrder, not FullAuditableAggregateRoot
+        var method = typeof(FullAuditableAggregateRoot<Guid>)
+            .GetMethod("OnDelete", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        // The abstract declaration is on AuditableSoftDeletableAggregateRoot; FullAuditableAggregateRoot itself does not redeclare it
+        method!.DeclaringType.Should().NotBe(typeof(FullAuditableAggregateRoot<Guid>),
+            "OnDelete must not be redeclared on FullAuditableAggregateRoot");
+    }
+
+    [Fact]
+    public void FullAuditableAggregateRoot_OnlyDeclares_RowVersion_And_IHasConcurrency()
+    {
+        var ownedProps = typeof(FullAuditableAggregateRoot<Guid>)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+        ownedProps.Should().HaveCount(1, "FullAuditableAggregateRoot should declare only RowVersion");
+        ownedProps[0].Name.Should().Be(nameof(FullAuditableAggregateRoot<Guid>.RowVersion));
+    }
 }

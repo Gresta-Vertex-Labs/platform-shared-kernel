@@ -14,8 +14,15 @@ public sealed class OrSpecification<T> : Specification<T>
     /// Initialises a new <see cref="OrSpecification{T}"/> by composing <paramref name="left"/>
     /// and <paramref name="right"/> via logical OR.
     /// </summary>
+    /// <remarks>
+    /// When either operand has a <see langword="null"/> <c>Criteria</c> (meaning "match all"),
+    /// the combined <c>Criteria</c> is also <see langword="null"/> — a logical OR with an
+    /// unconditional-match operand always matches everything.
+    /// </remarks>
     public OrSpecification(Specification<T> left, Specification<T> right)
     {
+        // If either operand has null criteria it matches everything.
+        // OR of (match-all, anything) = match-all → combined criteria is null.
         if (left.Criteria is not null && right.Criteria is not null)
         {
             var param = left.Criteria.Parameters[0];
@@ -24,13 +31,9 @@ public sealed class OrSpecification<T> : Specification<T>
             AddCriteria(Expression.Lambda<Func<T, bool>>(
                 Expression.OrElse(left.Criteria.Body, rightBody), param));
         }
-        else if (left.Criteria is not null)
-        {
-            AddCriteria(left.Criteria);
-        }
-        else if (right.Criteria is not null)
-        {
-            AddCriteria(right.Criteria);
-        }
+        // else: at least one operand has null criteria → combined Criteria stays null (match all)
+
+        if (left.AsNoTracking || right.AsNoTracking)
+            ApplyNoTracking();
     }
 }

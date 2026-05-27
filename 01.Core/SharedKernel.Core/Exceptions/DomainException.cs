@@ -10,7 +10,7 @@ namespace SharedKernel.Core.Exceptions;
 /// would leave the domain in an invalid state. Map it to an HTTP 422 Unprocessable Entity
 /// (or equivalent) at the presentation layer.
 /// </remarks>
-public sealed class DomainException : SharedKernelException
+public class DomainException : SharedKernelException
 {
     /// <summary>
     /// Initialises a new <see cref="DomainException"/> carrying the specified <paramref name="error"/>.

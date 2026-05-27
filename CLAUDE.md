@@ -23,7 +23,7 @@ Each numbered folder is a capability domain. Each owns a `CLAUDE.md` with its in
 | 00 | `00.Governance` | Roslyn analyzers, EditorConfig/CSharpier styling, Git hooks, benchmarking templates, architecture test suites (NetArchTest) |
 | 01 | `01.Core` | Primitives (`Result<T>`, `Error`, `IClock`, SmartEnums), base exceptions, system extensions, Options-pattern validation, Feature Flags |
 | 02 | `02.Caching` | FusionCache L1/L2 interfaces, stampede protection, Redis distributed cache, RedLock distributed locking |
-| 03 | `03.Domain` | DDD building blocks: `Entity`, `AggregateRoot`, `ValueObject`, `IDomainEvent` |
+| 03 | `03.Domain` | DDD building blocks: `Entity`, `AggregateRoot`, `ValueObject`, `IDomainEvent`, tenanted aggregate bases (`TenantedAggregateRoot`, `TenantedAuditableAggregateRoot`, `TenantedFullAuditableAggregateRoot`) |
 | 04 | `04.Contracts` | Cross-service DTOs only: `PagedList`, `Envelope`, integration event payloads. No domain logic. |
 | 05 | `05.Application` | MediatR base handlers and dispatchers, pipeline behaviors (Validation, Logging, Metrics, Transaction) |
 | 06 | `06.Persistence` | Repository and UoW abstractions, EF Core interceptors (Audit/Outbox), Npgsql/SQL defaults, PostgreSQL JSONB/Vector, Dapper type handlers |
@@ -107,7 +107,9 @@ When a capability has more than one provider (Search, Persistence, Caching, Stor
 | I need to add… | It belongs in… |
 |----------------|---------------|
 | A new domain concept (entity, value object, domain event) | `03.Domain` |
+| A tenant-scoped aggregate (multi-tenant SaaS) | `03.Domain` — extend `TenantedAggregateRoot<TId>`, `TenantedAuditableAggregateRoot<TId>`, or `TenantedFullAuditableAggregateRoot<TId>`; supply `tenantId` as a `Guid` parameter from the application layer |
 | A cross-service DTO or integration event payload | `04.Contracts` |
+| An `EventEnvelope<TEvent>` transport wrapper (CorrelationId, CausationId, SourceService, schema version) | `04.Contracts` |
 | A MediatR command/query base class or pipeline behavior | `05.Application` or `05.Application.Behaviors` |
 | A new persistence abstraction (interface) | `06.Persistence/SharedKernel.Persistence.Abstractions` |
 | A new EF Core interceptor or convention | `06.Persistence/SharedKernel.Persistence.EfCore` |
@@ -163,3 +165,5 @@ These are the packages microservices should depend on — never on the concrete 
 - [2026-05-13] Initial architecture brain written — folder map, layering rules, naming conventions, abstractions table (root)
 - [2026-05-22] AOT policy relaxed — removed `<IsAotCompatible>true</IsAotCompatible>` from all 37 production csproj files; hard rule replaced with pragmatic AOT-preferred guidance
 - [2026-05-21] "What Goes Where" and Abstractions table updated: SharedKernel.Caching.Abstractions is now the canonical abstraction; SharedKernel.Caching.FusionCache row added (arch-lead, WO-007 analysis)
+- [2026-05-27] Folder Map 03 updated: tenanted aggregate bases added; "What Goes Where" row added for tenant-scoped aggregates (arch-lead, WO-010)
+- [2026-05-27] WO-011: "What Goes Where" row added for EventEnvelope<TEvent> → 04.Contracts; domain brain updated with IHasDomainEvents, DomainService, IHasVersion, DomainException hierarchy, SingleValueObject, PagedSpecification, specification sentinels, DomainEventVersion, IAggregateFactory (arch-lead)

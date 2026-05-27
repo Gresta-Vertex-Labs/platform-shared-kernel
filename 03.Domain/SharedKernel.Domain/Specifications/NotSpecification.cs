@@ -20,5 +20,8 @@ public sealed class NotSpecification<T> : Specification<T>
             AddCriteria(Expression.Lambda<Func<T, bool>>(
                 Expression.Not(spec.Criteria.Body), param));
         }
+
+        if (spec.AsNoTracking)
+            ApplyNoTracking();
     }
 }

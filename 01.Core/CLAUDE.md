@@ -61,12 +61,15 @@ Error  (sealed record)
     .NotFound(string code, string message)                 → Error
     .Conflict(string code, string message)                 → Error
     .Unauthorized(string code, string message)             → Error
+    .BusinessRule(string code, string message)             → Error  (domain invariant violation — HTTP 422; distinct from Validation)
     .Code                                                  → string
     .Message                                               → string
     .Type                                                  → ErrorType
 
 ErrorType  (enum)
-    None | Unexpected | Validation | NotFound | Conflict | Unauthorized
+    None | Unexpected | Validation | NotFound | Conflict | Unauthorized | BusinessRule
+    — BusinessRule: domain invariant violation; maps to HTTP 422 Unprocessable Entity at presentation layer;
+      semantically distinct from Validation (input format/presence) and Unexpected (system fault)
 
 ErrorCodes  (static class — well-known string constants, organized as nested static classes)
     ErrorCodes.Validation.Required
@@ -74,6 +77,7 @@ ErrorCodes  (static class — well-known string constants, organized as nested s
     ErrorCodes.NotFound.Default
     ErrorCodes.Conflict.Default
     ErrorCodes.Unauthorized.Default
+    ErrorCodes.Domain.RuleViolated                         → "domain.rule.violated"  (canonical code for BusinessRuleViolationException)
     — consuming packages may define additional local constants; no enum versioning problem
 
 ValidationResult  (sealed record — multi-error aggregate, distinct from Result<T>)
@@ -312,3 +316,4 @@ services.AddSharedKernelFeatureManagement(configuration);
 - [2026-05-14] Domain brain initialized — packages, interfaces, rules, AOT notes
 - [2026-05-14] P-001/P-002 applied — added ValidationResult pair, ErrorCodes static class, clarified Result<T> as sealed class vs Result readonly struct, added MapError + void Match on non-generic Result, added async state machine allocation rule
 - [2026-05-14] P-003 applied — added SharedKernel.Guards package: IGuardClause marker, Guard.Against/Guard.Throw entry points, full guard extension surface (null/empty, string length, numeric, range, default, Guid, format, email, collection, boolean predicate, SmartEnum), GuardDescriptions internal class, AOT notes for cached Regex and EqualityComparer<T>.Default, updated test rules with boundary theory and single-enumeration requirements
+- [2026-05-27] P-042 applied — added ErrorType.BusinessRule enum member (HTTP 422 / domain-invariant-violation semantics), Error.BusinessRule(string code, string message) factory method, ErrorCodes.Domain nested class with RuleViolated constant; all additive — no existing types changed

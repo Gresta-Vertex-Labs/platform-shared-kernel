@@ -55,4 +55,21 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     /// <param name="message">A human-readable description.</param>
     public static Error Unauthorized(string code, string message)
         => new(code, message, ErrorType.Unauthorized);
+
+    /// <summary>
+    /// Creates an <see cref="ErrorType.BusinessRule"/> error representing a domain invariant
+    /// or business rule violation.
+    /// </summary>
+    /// <param name="code">
+    /// A stable machine-readable identifier for the violated rule (e.g.,
+    /// <see cref="ErrorCodes.Domain.RuleViolated"/>).
+    /// </param>
+    /// <param name="message">A human-readable description of the violated rule.</param>
+    /// <returns>
+    /// An <see cref="Error"/> with <see cref="Error.Type"/> set to
+    /// <see cref="ErrorType.BusinessRule"/>. Maps to HTTP 422 Unprocessable Entity at the
+    /// presentation layer.
+    /// </returns>
+    public static Error BusinessRule(string code, string message)
+        => new(code, message, ErrorType.BusinessRule);
 }
