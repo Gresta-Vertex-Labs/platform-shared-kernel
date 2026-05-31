@@ -1,0 +1,193 @@
+# 04.Contracts — State Map
+
+> **What this file is:** Phase and task tracker for all work within `04.Contracts`.
+> **What it is not:** The root tracker — that lives at `state-map.md`.
+> **Sync policy:** When all tasks under a Phase Key are `●`, run `/state-map-phase` with `phase_key: SK.04.{Phase}` to propagate that milestone to the root state-map.
+
+---
+
+## Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| `○` | Not started |
+| `◐` | In progress |
+| `●` | Complete |
+| `⚑` | Blocked |
+| `—` | N/A / Skipped |
+
+---
+
+## Phase Key Registry
+
+> Phase keys are the sync bridge between this sub-state-map and the root `state-map.md`.
+> Each key maps a local milestone to a root-level phase. When a key's Promotion Condition is met, the root is updated via `/state-map-phase`.
+
+| Phase Key | Maps to Root Phase | Promotion Condition |
+|-----------|-------------------|-------------------|
+| `SK.04.Design` | Design | All tasks in Phase: Design are `●` |
+| `SK.04.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` |
+| `SK.04.Core` | Core | All tasks in Phase: Core are `●` |
+| `SK.04.Tests` | Tests | All tasks in Phase: Tests are `●` |
+| `SK.04.Docs` | Docs | All tasks in Phase: Docs are `●` |
+| `SK.04.Published` | Published | All tasks in Phase: Published are `●` |
+
+---
+
+## Active Work
+
+_Nothing in progress — Published phase complete._
+
+<!--
+Format when active — replace placeholder with table:
+| Task | Phase Key | Package | State |
+|------|-----------|---------|:-----:|
+| Define EventEnvelope<TEvent> shape | SK.04.Design | SharedKernel.Contracts | ◐ |
+-->
+
+---
+
+## Blocked
+
+_No blockers._
+
+<!--
+Format when blocked — replace placeholder with table:
+| Task | Phase Key | Blocker |
+|------|-----------|---------|
+| Example blocked task | SK.04.Core | Waiting on upstream decision |
+-->
+
+---
+
+## Package Board
+
+| Package | Current Phase | State | Notes |
+|---------|--------------|:-----:|-------|
+| `SharedKernel.Contracts` | Published | `●` | Published — `SharedKernel.Contracts 1.0.0` packed to `nupkgs/`; xml docs included; consumer-verify passing; 62 tests green |
+
+---
+
+## Cross-Domain Dependencies
+
+| This Phase Key | Needs From Domain | What | Status |
+|---------------|------------------|------|--------|
+| `SK.04.Scaffold` | `01.Core` | `SharedKernel.Primitives` ProjectReference (`Result<T>`, `Error`) | Available |
+| `SK.04.Scaffold` | `03.Domain` | `SharedKernel.Domain` ProjectReference (`IDomainEvent`, `DomainEventVersionHelper`) | Available (P-053 complete) |
+| `SK.04.Core` | `03.Domain` | `DomainEventVersionHelper.GetVersion(Type)` for `EventEnvelope<TEvent>.EventVersion` | Available (P-053 complete) |
+
+---
+
+## Phase: Design <!-- phase-key: SK.04.Design -->
+
+> Finalize all type shapes, interface contracts, and STJ context signatures before any implementation begins.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-01 | Define `PagedList<T>` sealed record shape — `Items`, `Page` (1-based), `PageSize`, `TotalCount`; computed `TotalPages` (zero-safe), `HasNextPage`, `HasPreviousPage`; `Create` factory signature with `ArgumentOutOfRangeException` guards (`page >= 1`, `pageSize >= 1`, `totalCount >= 0`) | SharedKernel.Contracts | `●` |
+| D-02 | Define `Envelope` sealed record shape — `Ok()`, `Fail(Error)` factories, implicit `Error` operator, `Fail(Error.None)` guard; define `Envelope<T>` sealed record shape — `Ok(T)`, `Fail(Error)` factories, `Ok(null)` guard, two implicit operators; document `Result<T>` vs `Envelope<T>` boundary rule | SharedKernel.Contracts | `●` |
+| D-03 | Define `IIntegrationEvent` marker interface shape — `EventId` (Guid), `OccurredOn` (DateTimeOffset); document sealed record/class constraint and no-domain-logic rule; document `EventId` traceability to `IDomainEvent.Id` | SharedKernel.Contracts | `●` |
+| D-04 | Define `EventEnvelope<TEvent>` sealed record shape (WO-011/P-055) — 8 properties: `EventId`, `OccurredOn`, `EventType`, `EventVersion`, `CorrelationId` (string?), `CausationId` (string?), `SourceService`, `Payload`; `Wrap` factory signature; `TEvent : IDomainEvent` constraint; `EventVersion` sourced from `DomainEventVersionHelper.GetVersion(typeof(TEvent))` defaulting to 1 | SharedKernel.Contracts | `●` |
+| D-05 | Define `ContractsJsonContext` partial `JsonSerializerContext` layout — `[JsonSourceGenerationOptions]`, `[JsonSerializable]` entries for all package types (`PagedList<object>`, `Envelope`, `Envelope<object>`, `IIntegrationEvent`, `EventEnvelope<DomainEvent>`); `internal` visibility; consumer extension pattern via `TypeInfoResolverChain` documented | SharedKernel.Contracts | `●` |
+| D-06 | Finalize `SharedKernel.Contracts` dependency graph — confirm `SharedKernel.Primitives` + `SharedKernel.Domain` as the only project references; zero external NuGet; document rationale for `IDomainEvent` and `DomainEventVersionHelper` imports from `03.Domain` | SharedKernel.Contracts | `●` |
+
+---
+
+## Phase: Scaffold <!-- phase-key: SK.04.Scaffold -->
+
+> Wire up .csproj NuGet references, intra-domain project references, folder structure, solution registration, and empty test stubs — no logic yet.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| S-01 | Create `SharedKernel.Contracts.csproj` targeting `net10.0`; add `SharedKernel.Primitives` and `SharedKernel.Domain` project references; add all NuGet packaging metadata (`PackageId`, `Version 1.0.0`, `Description`, `Authors`, `PackageTags`, `PackageLicenseExpression`); enable XML documentation generation | SharedKernel.Contracts | `●` |
+| S-02 | Create empty placeholder subfolders inside `04.Contracts/SharedKernel.Contracts/`: `Pagination/`, `Envelope/`, `Events/`, `Serialization/` | SharedKernel.Contracts | `●` |
+| S-03 | Create `SharedKernel.Contracts.Tests/` nested test project as `classlib` targeting `net10.0`; add `SharedKernel.Contracts` and `SharedKernel.Testing` project references; add xUnit and FluentAssertions NuGet references; create one compilable placeholder test class | SharedKernel.Contracts | `●` |
+| S-04 | Register `SharedKernel.Contracts.csproj` and `SharedKernel.Contracts.Tests.csproj` in `Platform.SharedKernel.slnx` under solution folder `04.Contracts`; verify `dotnet build` passes with zero errors and zero warnings | SharedKernel.Contracts | `●` |
+
+---
+
+## Phase: Core <!-- phase-key: SK.04.Core -->
+
+> Full implementation of all DTO types, records, and STJ context.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| C-01 | Implement `PagedList<T>` sealed record in `Pagination/` — `required init` properties, `private init` primary constructor, `Create` static factory with `ArgumentOutOfRangeException` guards; computed `TotalPages` (handles `PageSize == 0` without divide-by-zero), `HasNextPage` (`Page < TotalPages`), `HasPreviousPage` (`Page > 1`); strictly 1-based page convention | SharedKernel.Contracts | `●` |
+| C-02 | Implement `Envelope` sealed record in `Envelope/` — `IsSuccess`, `Error?` properties; `Ok()` and `Fail(Error)` static factories; `Fail(Error.None)` guard throws `ArgumentException`; implicit `operator Envelope(Error error)` | SharedKernel.Contracts | `●` |
+| C-03 | Implement `Envelope<T>` sealed record in `Envelope/` — `IsSuccess`, `Value T?`, `Error?` properties; `Ok(T value)` factory (rejects null with `ArgumentNullException`); `Fail(Error)` factory (rejects `Error.None` with `ArgumentException`); `implicit operator Envelope<T>(T value)` and `implicit operator Envelope<T>(Error error)`; boundary contract XML doc | SharedKernel.Contracts | `●` |
+| C-04 | Implement `IIntegrationEvent` marker interface in `Events/` — `Guid EventId { get; }` and `DateTimeOffset OccurredOn { get; }`; XML doc stating implementations must be `sealed record` or `sealed class`, must be immutable DTOs, and must never carry domain logic | SharedKernel.Contracts | `●` |
+| C-05 | Implement `EventEnvelope<TEvent>` sealed record in `Events/` (WO-011/P-055) — `TEvent : IDomainEvent` constraint; 8 `required init` properties (`EventId`, `OccurredOn`, `EventType`, `EventVersion`, `CorrelationId string?`, `CausationId string?`, `SourceService`, `Payload TEvent`); static `EventEnvelope.Wrap<TEvent>(TEvent domainEvent, string sourceService, string? correlationId, string? causationId)` factory populating all fields; `EventVersion` via `DomainEventVersionHelper.GetVersion(typeof(TEvent))` defaulting to 1; `EventType` via `typeof(TEvent).Name` | SharedKernel.Contracts | `●` |
+| C-06 | Implement `ContractsJsonContext` as `internal partial class` in `Serialization/` — decorate with `[JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]` and `[JsonSerializable]` entries for all package types; no reflection-based fallback; consumer extension pattern documented in XML doc | SharedKernel.Contracts | `●` |
+
+---
+
+## Phase: Tests <!-- phase-key: SK.04.Tests -->
+
+> Unit test coverage for all packages. No integration tests needed — this domain has no external dependencies.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| T-01 | Unit tests for `PagedList<T>` — `TotalPages` computation (100/10=10, 101/10=11, 5/10=1, TotalCount=0 returns 0); `HasNextPage`/`HasPreviousPage` on first/last/middle/single/empty page; `Create` factory guard clauses using `[Theory]` (page=0, page=-1, pageSize=0, totalCount=-1); record structural equality; STJ round-trip for `PagedList<string>` using source-generated context | SharedKernel.Contracts.Tests | `●` |
+| T-02 | Unit tests for `Envelope` — `Ok()` sets `IsSuccess=true`, `Error=null`; `Fail(error)` sets `IsSuccess=false`, `Error=error`; `Fail(Error.None)` throws `ArgumentException`; implicit `Error` operator produces failure; record equality; STJ round-trip using source-generated context | SharedKernel.Contracts.Tests | `●` |
+| T-03 | Unit tests for `Envelope<T>` — `Ok(value)` sets `IsSuccess=true`, `Value=value`, `Error=null`; `Fail(error)` sets `IsSuccess=false`, `Value=null`, `Error=error`; `Ok(null)` throws `ArgumentNullException`; `Fail(Error.None)` throws `ArgumentException`; both implicit operators; record equality; STJ round-trip for `Envelope<string>` using source-generated context | SharedKernel.Contracts.Tests | `●` |
+| T-04 | Unit tests for `IIntegrationEvent` — concrete `sealed record` implementing `IIntegrationEvent` is assignable to the interface; `EventId` and `OccurredOn` are accessible from interface reference | SharedKernel.Contracts.Tests | `●` |
+| T-05 | Unit tests for `EventEnvelope<TEvent>` — `Wrap` factory populates all 8 fields correctly; `EventVersion` defaults to 1 when `DomainEventVersionAttribute` absent; `EventVersion` uses declared version when attribute present; `CorrelationId` and `CausationId` are null when not provided; `EventType` equals `typeof(TEvent).Name`; record equality; STJ round-trip using source-generated context; all STJ tests use source-generated contexts — no reflection-based serialization | SharedKernel.Contracts.Tests | `●` |
+| T-06 | Cross-cutting test quality gate — verify all STJ round-trip tests use source-generated contexts (zero reflection-based `JsonSerializer.Serialize` overloads); verify all guard-clause tests use `[Theory]` with boundary data; run `dotnet test` and confirm zero failures, zero skipped tests | SharedKernel.Contracts.Tests | `●` |
+
+---
+
+## Phase: Docs <!-- phase-key: SK.04.Docs -->
+
+> XML doc comments on all public APIs, README with usage examples.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| DO-01 | XML doc on `PagedList<T>` — `<summary>` (cross-service paged result DTO), `<typeparam>` for T, `<remarks>` (1-based page convention, `Create`-only construction path, `TotalPages` divide-by-zero handling), per-property and `<param>` on `Create` factory | SharedKernel.Contracts | `●` |
+| DO-02 | XML doc on `Envelope` and `Envelope<T>` — `<summary>` (cross-service transport counterparts to `Result<T>`), `<remarks>` (boundary contract: construct only at service boundaries — presentation/HTTP client adapters, never from application layer), `<seealso cref="Result{T}"/>` cross-reference | SharedKernel.Contracts | `●` |
+| DO-03 | XML doc on `IIntegrationEvent` — `<summary>` (public contract projection of a domain event), `<remarks>` (implementations must be `sealed record` or `sealed class`; immutable DTOs; no behavior, no domain logic; consumers must never cast back to domain type; `EventId` maps to `IDomainEvent.Id`), cross-reference to `IDomainEvent` | SharedKernel.Contracts | `●` |
+| DO-04 | XML doc on `EventEnvelope<TEvent>` — `<summary>` and per-property `<remarks>` for all 8 properties: `EventId` vs domain event `Id` distinction, `OccurredOn` sourcing, `EventType` routing purpose, `EventVersion` attribute-sourcing and default-1 behaviour, `CorrelationId` null semantics, `CausationId` causal chain intent, `SourceService` publisher identity, `Payload` as the wrapped domain event | SharedKernel.Contracts | `●` |
+| DO-05 | XML doc on `ContractsJsonContext` — `<summary>` and `<remarks>` instructing consumers to not reference this context directly; instruct on creating own `partial JsonSerializerContext` with `[JsonSerializable(typeof(EventEnvelope<YourEvent>))]` and merging via `JsonSerializerOptions.TypeInfoResolverChain` | SharedKernel.Contracts | `●` |
+| DO-06 | Author `README.md` at `04.Contracts/SharedKernel.Contracts/README.md` with five sections: (1) purpose and what belongs / does not belong; (2) quick-start code examples for all five surfaces; (3) `Result<T>` vs `Envelope<T>` boundary rule; (4) STJ usage pattern for consuming services; (5) `EventEnvelope<TEvent>` composition pattern as used by `07.Messaging` | SharedKernel.Contracts | `●` |
+
+---
+
+## Phase: Published <!-- phase-key: SK.04.Published -->
+
+> NuGet packaging metadata, pack, publish, and consumer verification.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| P-01 | Harden `.csproj` NuGet metadata — verify all required fields present: `PackageId`, `Version 1.0.0`, `Description`, `Authors`, `PackageTags` (contracts;dtos;integration-events;paged-list;envelope;shared-kernel), `PackageLicenseExpression MIT`, `RepositoryUrl`, `<Nullable>enable</Nullable>`, `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` | SharedKernel.Contracts | `●` |
+| P-02 | Run `dotnet pack` on `SharedKernel.Contracts.csproj`; confirm `SharedKernel.Contracts.1.0.0.nupkg` is produced in `nupkgs/`; confirm the generated `.xml` documentation file is included in the package alongside the DLL | SharedKernel.Contracts | `●` |
+| P-03 | Create `consumer-verify` console project referencing `SharedKernel.Contracts`; exercise all five surfaces (create `PagedList<string>`, wrap `Envelope<string>`, define `IIntegrationEvent` record, call `EventEnvelope.Wrap`, serialize via consuming `JsonSerializerContext` extending `ContractsJsonContext`); run `dotnet run` and confirm zero reflection fallback | SharedKernel.Contracts | `●` |
+| P-04 | Final gate — confirm all existing tests pass with zero regressions; update Package Board in this state-map to reflect `Published` state with `.nupkg` manifest entry (`SharedKernel.Contracts 1.0.0`) | SharedKernel.Contracts | `●` |
+
+---
+
+## Overall Progress
+
+> Counts updated whenever a task state changes.
+
+| Phase Key | Phase | Total | ● Done | ○ Pending | State |
+|-----------|-------|:-----:|:------:|:---------:|:-----:|
+| `SK.04.Design` | Design | 6 | 6 | 0 | `●` |
+| `SK.04.Scaffold` | Scaffold | 4 | 4 | 0 | `●` |
+| `SK.04.Core` | Core | 6 | 6 | 0 | `●` |
+| `SK.04.Tests` | Tests | 6 | 6 | 0 | `●` |
+| `SK.04.Docs` | Docs | 6 | 6 | 0 | `●` |
+| `SK.04.Published` | Published | 4 | 4 | 0 | `●` |
+
+---
+
+## Changelog
+
+> One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
+
+- [2026-05-30] Sub state-map initialized — phase key registry, 6 phases scaffolded at ○, no tasks yet
+- [2026-05-30] All 32 tasks added across 6 phases (D-01–D-06, S-01–S-04, C-01–C-06, T-01–T-06, DO-01–DO-06, P-01–P-04) — WO-011 (P-055 EventEnvelope) + WO-012 (P-058 Scaffold, P-059 Core, P-060 Tests, P-061 Docs, P-062 Published)
+- [2026-05-30] D-01–D-06 → ● in SK.04.Design — all 5 DTO types defined and implemented; 62 tests green; Scaffold next (state-map-phase)
+- [2026-05-30] S-01–S-04 → ● in SK.04.Scaffold — csproj, subfolders, test project with SharedKernel.Testing ref, solution registered; 62 tests green (state-map-phase)
+- [2026-05-30] C-01–C-06 → ● in SK.04.Core — PagedList, Envelope, Envelope<T>, IIntegrationEvent, EventEnvelope, ContractsJsonContext all implemented; 62 tests green (state-map-phase)
+- [2026-05-30] T-01–T-06 → ● in SK.04.Tests — 62 tests green; all DTO types covered; STJ round-trips via source-generated context; Docs next (state-map-phase)
+- [2026-05-30] DO-01–DO-06 → ● in SK.04.Docs — XML doc on all public APIs; seealso Result{T} cross-refs; per-property remarks on EventEnvelope; README.md authored (state-map-phase)
+- [2026-05-30] P-01–P-04 → ● in SK.04.Published — csproj metadata hardened; nupkg produced with XML docs; consumer-verify console harness exercises all 5 surfaces with source-generated STJ; 62 tests green; ContractsSerializerDefaults added for consumer resolver chain access (state-map-phase)

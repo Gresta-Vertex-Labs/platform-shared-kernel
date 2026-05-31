@@ -30,9 +30,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 > Domains currently `◐ In Progress`. This section is the first thing to update when work starts or finishes in any domain.
 
-| Domain | Current Phase | Focus (one line) |
-|--------|---------------|-----------------|
-| [04.Contracts](04.Contracts/state-map.md) | Design | Define EventEnvelope<TEvent> transport wrapper with CorrelationId, CausationId, SourceService, and DomainEventVersion fields for cross-service domain event publishing |
+_Nothing in progress — all domains at ○ Not Started or ● Complete._
 
 <!--
 Format when active:
@@ -68,7 +66,7 @@ Format when blocked:
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.2.0 and 1.3.0 packed and published to nupkgs/; manifests list only SharedKernel.Primitives and SharedKernel.Core; all 7 Published tasks complete. | — |
-| 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Define EventEnvelope<TEvent> transport wrapper with CorrelationId, CausationId, SourceService, and DomainEventVersion fields for cross-service domain event publishing |
+| 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | — | `○` | — | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | — | `○` | — | — |
@@ -109,13 +107,13 @@ Format when active:
 | ● Guard Purity Enforcement | 1 |
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 1 |
+| ● Published | 2 |
 | ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
 | ● Design | 0 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 0 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 13 |
 
@@ -1721,6 +1719,15 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-05-27] Domain → Design (●) — promoted from SK.03.Design (state-map-phase)
 - [2026-05-27] Domain → Tests (●) — promoted from SK.03.Tests (state-map-phase)
 - [2026-05-27] Domain → Docs (●) — promoted from SK.03.Docs (state-map-phase)
+- [2026-05-30] Phase(s) P-056, P-063 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-05-30] Phase(s) P-055, P-058, P-059, P-060, P-061, P-062 dispatched to contracts-arch-planner for 04.Contracts (dispatch-phase)
+- [2026-05-30] Contracts → Design (●) — promoted from SK.04.Design (state-map-phase)
+- [2026-05-30] Contracts → Scaffold (●) — promoted from SK.04.Scaffold (state-map-phase)
+- [2026-05-30] Contracts → Core (●) — promoted from SK.04.Core (state-map-phase)
+- [2026-05-30] Contracts → Tests (●) — promoted from SK.04.Tests (state-map-phase)
+- [2026-05-30] Contracts → Docs (●) — promoted from SK.04.Docs (state-map-phase)
+- [2026-05-30] Contracts → Published (●) — promoted from SK.04.Published (state-map-phase)
+- [2026-05-30] Phase Backlog entries for 04.Contracts closed → ● Complete — 04.Contracts reached Published (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2625,7 +2632,7 @@ The exception-based path for domain invariants (`CheckRule` throwing `BusinessRu
 ---
 ### P-055 — Contracts: EventEnvelope<TEvent> — Transport Metadata Wrapper for Domain Events
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-011
 **Domain:** 04.Contracts
 **Depends on:** P-053
@@ -2674,7 +2681,7 @@ CorrelationId and CausationId are universally needed for distributed tracing acr
 ---
 ### P-056 — Governance: Domain Gold-Standard Architecture Rules
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-011
 **Domain:** 00.Governance
 **Depends on:** P-045, P-047, P-053
@@ -2765,3 +2772,349 @@ Test infrastructure must keep pace with domain capability. Without `SingleValueO
 - [ ] `16.Testing` references `SharedKernel.Domain` (permitted) and `04.Contracts` (permitted) for `EventEnvelope` helper support
 - [ ] All public types carry XML doc comments
 ---
+
+---
+### P-058 — Contracts: Scaffold SharedKernel.Contracts Project Structure
+
+**Status:** `●` Complete
+**Work Order:** WO-012
+**Domain:** 04.Contracts
+**Depends on:** None
+
+#### What is needed
+
+The physical project scaffold for `SharedKernel.Contracts` — the single package in the `04.Contracts` domain. This phase produces a buildable, compilable, but empty project structure. No implementation logic is written here — only the structural skeleton that subsequent phases will populate.
+
+**Project file (`SharedKernel.Contracts.csproj`):**
+Targets `net10.0`. References `SharedKernel.Primitives` (from `01.Core`) and `SharedKernel.Domain` (from `03.Domain`) as project references. Has zero external NuGet dependencies beyond `System.Text.Json` which is in-box with `net10.0`. All standard NuGet packaging metadata must be present: `<PackageId>`, `<Version>` (start at `1.0.0`), `<Description>`, `<Authors>`, `<PackageTags>` (`contracts`, `dtos`, `integration-events`, `shared-kernel`). XML documentation generation must be enabled (`<GenerateDocumentationFile>true</GenerateDocumentationFile>`).
+
+**Folder structure inside `04.Contracts/SharedKernel.Contracts/`:**
+- `Pagination/` — placeholder for `PagedList<T>`
+- `Envelope/` — placeholder for `Envelope` and `Envelope<T>`
+- `Events/` — placeholder for `IIntegrationEvent` and `EventEnvelope<TEvent>`
+- `Serialization/` — placeholder for `ContractsJsonContext`
+
+**Test project (`SharedKernel.Contracts.Tests/`):**
+Nested inside `04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.Tests/`. Targets `net10.0` as a `classlib`. References `SharedKernel.Contracts` and `SharedKernel.Testing`. xUnit, FluentAssertions (or equivalent), and the test runner are added as NuGet package references. The test project must be a compilable stub with one placeholder test class — no test logic yet.
+
+**Solution registration:**
+Both `SharedKernel.Contracts.csproj` and `SharedKernel.Contracts.Tests.csproj` must be registered in `Platform.SharedKernel.slnx` under the `04.Contracts` solution folder.
+
+#### Why this is needed
+
+Scaffold is the prerequisite for all implementation phases. The project structure must be established, buildable, and solution-registered before Core, Tests, Docs, or Published phases can proceed. Separating scaffold from implementation is the platform standard — it ensures the CI build pipeline can verify compilation from the first commit, rather than discovering structural errors after significant implementation work has been done.
+
+#### Acceptance criteria
+- [ ] `04.Contracts/SharedKernel.Contracts/SharedKernel.Contracts.csproj` exists; targets `net10.0`; references `SharedKernel.Primitives` and `SharedKernel.Domain`; zero external NuGet dependencies; all packaging metadata present
+- [ ] XML documentation generation enabled in the project file
+- [ ] Four empty placeholder subfolders exist: `Pagination/`, `Envelope/`, `Events/`, `Serialization/`
+- [ ] `SharedKernel.Contracts.Tests/` nested test project exists; references `SharedKernel.Contracts` and `SharedKernel.Testing`; has at least one compilable placeholder test class
+- [ ] Both projects registered in `Platform.SharedKernel.slnx` under solution folder `04.Contracts`
+- [ ] `dotnet build` on the solution succeeds with zero errors and zero warnings for the new projects
+---
+
+---
+### P-059 — Contracts: Core Implementation — All Five Public Surfaces
+
+**Status:** `●` Complete
+**Work Order:** WO-012
+**Domain:** 04.Contracts
+**Depends on:** P-058, P-055
+
+#### What is needed
+
+Full implementation of the five public surfaces of `SharedKernel.Contracts` as defined in `04.Contracts/CLAUDE.md`. P-055 (WO-011) delivers `EventEnvelope<TEvent>` — this phase delivers the remaining four surfaces plus the STJ context that covers all five.
+
+**Surface 1 — `PagedList<T>` (in `Pagination/`):**
+
+A `sealed record` with `required init` properties: `IReadOnlyList<T> Items`, `int Page` (1-based), `int PageSize`, `int TotalCount`. Computed properties: `int TotalPages` (`= (int)Math.Ceiling((double)TotalCount / PageSize)` — must handle zero `PageSize` without divide-by-zero, documented in XML), `bool HasNextPage` (`= Page < TotalPages`), `bool HasPreviousPage` (`= Page > 1`). A static factory `PagedList<T>.Create(IReadOnlyList<T> items, int page, int pageSize, int totalCount)` is the sole permitted construction path — the primary record constructor is `private init` to prevent ad-hoc construction that bypasses the factory. `Create` must validate: `page >= 1`, `pageSize >= 1`, `totalCount >= 0`; throw `ArgumentOutOfRangeException` for invalid inputs. The factory is a pure pass-through for valid inputs — it sets all four properties and lets computed properties derive. The page convention is strictly 1-based — this is consistent with `PagedSpecification<T>` in `03.Domain`. No `PageSize == 0` allowed (prevents divide-by-zero in `TotalPages`).
+
+**Surface 2 — `Envelope` and `Envelope<T>` (in `Envelope/`):**
+
+`Envelope` is a `sealed record` for void operations. Properties: `bool IsSuccess`, `Error? Error` (null when `IsSuccess = true`). Static factories: `Envelope.Ok()` returns success, `Envelope.Fail(Error error)` returns failure. `Fail(Error.None)` is an invalid operation — must throw `ArgumentException` with message `"Cannot create a failure envelope with Error.None."`. Implicit operator: `implicit operator Envelope(Error error)` delegates to `Envelope.Fail(error)`. `Envelope<T>` is a `sealed record` for operations returning a value. Properties: `bool IsSuccess`, `T? Value` (null when `IsSuccess = false`), `Error? Error` (null when `IsSuccess = true`). Static factories: `Envelope<T>.Ok(T value)` (rejects null `value` with `ArgumentNullException`), `Envelope<T>.Fail(Error error)` (rejects `Error.None`). Implicit operators: `implicit operator Envelope<T>(T value)` and `implicit operator Envelope<T>(Error error)`. These are the cross-service transport counterparts to `Result<T>` from `01.Core` — they must never be returned from application layer methods; they are only constructed at service boundaries (presentation layer, gRPC, HTTP client response mapping). XML doc must state this boundary contract explicitly.
+
+**Surface 3 — `IIntegrationEvent` (in `Events/`):**
+
+A marker interface with `Guid EventId { get; }` and `DateTimeOffset OccurredOn { get; }`. No other members. Implementations must be `sealed record` or `sealed class` — XML doc states this. `IIntegrationEvent` is the public contract projection of domain events — its `EventId` maps to `IDomainEvent.Id` from the originating domain event, preserving traceability. XML doc must state: "Integration events are immutable DTOs. No behavior, no domain logic. Consumers must never cast `IIntegrationEvent` back to a domain type."
+
+**Surface 4 — `EventEnvelope<TEvent>` (in `Events/`):**
+
+This surface is delivered by P-055 (WO-011). This phase integrates it into the full package — it is already specified there and no rework is needed. If P-055 has been completed before this phase is dispatched, the implementor must verify the `EventEnvelope<TEvent>` type is present and matches the `04.Contracts/CLAUDE.md` specification. If P-055 has not been completed, this phase depends on it and must wait.
+
+**Surface 5 — `ContractsJsonContext` (in `Serialization/`):**
+
+A `partial class ContractsJsonContext : JsonSerializerContext` decorated with `[JsonSourceGenerationOptions]` and `[JsonSerializable]` attributes covering all types in this package: `PagedList<object>` (the generic form; consumers add their own `T`), `Envelope`, `Envelope<object>`, `IIntegrationEvent`, `EventEnvelope<DomainEvent>`. The context must be `internal partial` — consuming services do not use this context directly; they extend it in their own `JsonSerializerContext`. XML doc must instruct: "Do not reference this context directly. Instead, add your own `partial JsonSerializerContext` that includes `[JsonSerializable(typeof(EventEnvelope<YourEvent>))]` and merge it with this context via `JsonSerializerOptions.TypeInfoResolverChain`." The context must not include any reflection-based fallback — `[JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]` or equivalent must be set.
+
+All five surfaces must be implemented with zero NuGet infrastructure dependencies, pure C# 13, and full AOT safety.
+
+#### Why this is needed
+
+`04.Contracts` is the lingua franca of the platform — every microservice that publishes or consumes integration events, returns paged responses, or wraps results in a cross-service envelope depends on this package. Getting these surfaces right before any downstream domain (Application, Messaging, Persistence) builds on them prevents breaking changes at the worst possible time. The strict factory-only construction for `PagedList<T>` prevents subtle pagination bugs (page 0, negative total counts) across hundreds of services. The `Envelope<T>` boundary contract prevents `Result<T>` from leaking across service boundaries — a common anti-pattern that causes serialization failures in polyglot environments. The STJ source-generated context is mandatory for AOT compliance — reflection-based JSON serialization in integration events is a silent AOT bomb.
+
+#### Acceptance criteria
+- [ ] `PagedList<T>` sealed record exists in `Pagination/`; `Create` static factory is the only construction path; `TotalPages`, `HasNextPage`, `HasPreviousPage` are computed correctly; `Page` is 1-based; `Create` rejects `page < 1`, `pageSize < 1`, `totalCount < 0` with `ArgumentOutOfRangeException`
+- [ ] `Envelope` sealed record exists with `Ok()`, `Fail(Error)` factories and implicit `Error` operator; `Fail(Error.None)` throws `ArgumentException`
+- [ ] `Envelope<T>` sealed record exists with `Ok(T)`, `Fail(Error)` factories and two implicit operators; `Ok(null)` throws `ArgumentNullException`; `Fail(Error.None)` throws `ArgumentException`
+- [ ] `IIntegrationEvent` marker interface exists with `EventId` and `OccurredOn`; XML doc states implementations must be `sealed record` or `sealed class`
+- [ ] `EventEnvelope<TEvent>` exists (delivered by P-055 or implemented here if P-055 completes first); matches `04.Contracts/CLAUDE.md` specification in full
+- [ ] `ContractsJsonContext` partial `JsonSerializerContext` exists in `Serialization/`; covers all package types; is `internal`; uses source-generation only — no reflection fallback
+- [ ] `dotnet build` produces zero errors and zero warnings (no nullable, no XML doc, no AOT analyzer warnings)
+- [ ] Zero external NuGet dependencies in the `.csproj` — only `SharedKernel.Primitives` and `SharedKernel.Domain` project references
+- [ ] All public types carry XML doc comments including boundary contract notes on `Envelope<T>` and `IIntegrationEvent`
+---
+
+---
+### P-060 — Contracts: Test Suite — Unit Tests and STJ Round-Trip Coverage
+
+**Status:** `●` Complete
+**Work Order:** WO-012
+**Domain:** 04.Contracts
+**Depends on:** P-059
+
+#### What is needed
+
+A comprehensive unit test suite in `SharedKernel.Contracts.Tests/` covering all five public surfaces with their behavioral, boundary, and serialization contracts.
+
+**`PagedList<T>` tests:**
+- `TotalPages` computed correctly for typical inputs (e.g., 100 items / 10 per page = 10, 101 items / 10 = 11, 5 items / 10 = 1)
+- `TotalPages` when `TotalCount = 0` returns 0 (not divide-by-zero)
+- `HasNextPage` is true for all pages except the last; false on the last page
+- `HasPreviousPage` is true for all pages except the first; false on page 1
+- Single-page case: `HasNextPage = false`, `HasPreviousPage = false`
+- `Create` factory rejects `page = 0`, `page = -1`, `pageSize = 0`, `totalCount = -1`
+- Empty list: `Create` with `Items = []`, `TotalCount = 0` returns valid record; `TotalPages = 0`, `HasNextPage = false`, `HasPreviousPage = false`
+- Record structural equality: two `PagedList<T>` with identical field values are equal
+- STJ round-trip: `PagedList<string>` serializes and deserializes correctly using `ContractsJsonContext`; no reflection fallback triggered
+
+**`Envelope` and `Envelope<T>` tests:**
+- `Envelope.Ok()` produces `IsSuccess = true`, `Error = null`
+- `Envelope.Fail(error)` produces `IsSuccess = false`, `Error = error`
+- `Envelope.Fail(Error.None)` throws `ArgumentException`
+- Implicit operator: `Error someError = ...; Envelope e = someError;` produces failure
+- `Envelope<T>.Ok(value)` produces `IsSuccess = true`, `Value = value`, `Error = null`
+- `Envelope<T>.Fail(error)` produces `IsSuccess = false`, `Value = null` (or default), `Error = error`
+- `Envelope<T>.Ok(null)` throws `ArgumentNullException` (for reference type `T`)
+- `Envelope<T>.Fail(Error.None)` throws `ArgumentException`
+- Both implicit operators on `Envelope<T>`
+- Record equality on both types
+- STJ round-trip for `Envelope` and `Envelope<string>` using `ContractsJsonContext`
+
+**`IIntegrationEvent` tests:**
+- A concrete `sealed record` implementing `IIntegrationEvent` is assignable to the interface
+- `EventId` and `OccurredOn` are readable from the interface reference
+
+**`EventEnvelope<TEvent>` tests (coordinate with or depend on P-055 test spec):**
+- `Wrap` factory populates all fields correctly; `EnvelopeId` is distinct from `TEvent.EventId`
+- `CorrelationId` is never null or empty when provided; defaults correctly when null
+- `CausationId` is null when not provided
+- `SchemaVersion` matches the value passed to `Wrap`; defaults to 1 when `DomainEventVersionAttribute` is absent
+- `EventType` equals `typeof(TEvent).Name`
+- Record equality
+- STJ round-trip for `EventEnvelope<T>` where `T` is a concrete `IDomainEvent`-implementing record
+
+**Cross-cutting test rules:**
+- No test may use reflection-based `JsonSerializer.Serialize(obj)` without a context — all STJ tests must use source-generated contexts
+- All tests must be theory-driven where boundary conditions exist (e.g., `PagedList<T>` page/pageSize guards use `[Theory]` with edge-case data)
+- Tests are framework-agnostic assertions — no assumption that FluentAssertions is the only allowed assertion library, though it is the platform standard
+
+#### Why this is needed
+
+`04.Contracts` is a zero-infrastructure package — every test can be a true unit test with no external dependencies. This means there is no excuse for incomplete coverage. The STJ round-trip tests are particularly critical: they are the only automated verification that the `ContractsJsonContext` correctly covers all types, and that the `EventEnvelope<TEvent>` serialization does not silently fall back to reflection in production AOT builds. Without these tests, an AOT-incompatible serialization path can ship undetected and only surface at runtime in a production container.
+
+#### Acceptance criteria
+- [ ] `PagedList<T>` tests cover: `TotalPages` computation, `HasNextPage`/`HasPreviousPage` on first/last/middle/single/empty page, factory guard clauses, record equality, STJ round-trip
+- [ ] `Envelope` and `Envelope<T>` tests cover: success/failure factories, implicit operators, `Error.None` guard, `null` value guard on `Ok(T)`, record equality, STJ round-trip
+- [ ] `IIntegrationEvent` tests cover: interface assignability; property accessibility from interface reference
+- [ ] `EventEnvelope<TEvent>` tests cover: `Wrap` factory fields, distinct `EnvelopeId`, null/non-null `CorrelationId`, `SchemaVersion` default and declared, `EventType`, record equality, STJ round-trip
+- [ ] All STJ round-trip tests use source-generated contexts — zero reflection-based serialization in tests
+- [ ] All guard-clause tests use `[Theory]` with boundary data sets
+- [ ] `dotnet test` passes with zero failures and zero skipped tests
+- [ ] Test project references only `SharedKernel.Contracts` and `SharedKernel.Testing` — no new infrastructure dependencies
+---
+
+---
+### P-061 — Contracts: Docs — XML Documentation and Package README
+
+**Status:** `●` Complete
+**Work Order:** WO-012
+**Domain:** 04.Contracts
+**Depends on:** P-060
+
+#### What is needed
+
+Complete XML documentation on all public types and a package-level README that serves as the developer quick-reference for `SharedKernel.Contracts`.
+
+**XML documentation requirements (per type):**
+
+`PagedList<T>`: `<summary>` stating it is the cross-service paged result DTO; `<typeparam>` for `T`; `<remarks>` documenting the 1-based page convention and `Create` as the only permitted construction path; per-property `<param>` on `Create`.
+
+`Envelope` and `Envelope<T>`: `<summary>` stating these are cross-service response wrappers (counterparts to `Result<T>` from `SharedKernel.Primitives`); `<remarks>` documenting the boundary contract — must only be constructed at service boundaries (presentation, HTTP client adapters), never returned from application layer methods; `<seealso cref="Result{T}"/>` cross-reference.
+
+`IIntegrationEvent`: `<summary>` stating it is the public contract projection of a domain event; `<remarks>` stating implementations must be `sealed record` or `sealed class`, must be immutable DTOs, and must never carry domain logic; cross-reference to `IDomainEvent` from `03.Domain`.
+
+`EventEnvelope<TEvent>`: `<summary>` and per-property `<remarks>` for every property (especially `EnvelopeId` vs `EventId` distinction, `SchemaVersion` sourcing, `CorrelationId` null semantics, `SourceService` intent).
+
+`ContractsJsonContext`: `<summary>` and `<remarks>` instructing consumers to not reference this context directly but to create their own `partial JsonSerializerContext` and merge via `TypeInfoResolverChain`.
+
+**README.md (`04.Contracts/SharedKernel.Contracts/README.md`):**
+A concise developer README with five sections:
+1. Purpose and what belongs here (cross-service DTOs, integration event payloads, paged results, response envelopes) — and what does NOT belong (domain logic, domain types, `Result<T>`)
+2. Quick-start code examples for each surface (create a `PagedList<T>`, wrap a result in `Envelope<T>`, define an `IIntegrationEvent`, wrap a domain event in `EventEnvelope<TEvent>`)
+3. The `Result<T>` vs `Envelope<T>` boundary rule — one paragraph explaining when to use each and at which layer conversion happens
+4. The STJ usage pattern — how consuming services must extend `ContractsJsonContext`
+5. The `EventEnvelope<TEvent>` composition pattern — how `07.Messaging` uses it as the wire format
+
+#### Why this is needed
+
+`04.Contracts` is the most widely referenced package in the entire platform — every microservice references it. Developers encounter this package on day 1 and must understand three non-obvious boundaries: `Result<T>` vs `Envelope<T>`, why `IIntegrationEvent` cannot carry behavior, and how `ContractsJsonContext` must be extended. These are architectural subtleties that XML doc comments alone cannot fully convey — the README provides the framing. Every new team member, every onboarding engineer, and every code reviewer will consult this package's documentation. Incomplete XML docs cause IDE tooltips to be silent exactly where developers need guidance most.
+
+#### Acceptance criteria
+- [ ] All public types in `SharedKernel.Contracts` have complete XML doc comments (`<summary>`, `<remarks>` where applicable, `<typeparam>`, `<param>`, `<seealso>` cross-references)
+- [ ] `Envelope<T>` XML doc explicitly states the boundary contract and cross-references `Result<T>`
+- [ ] `ContractsJsonContext` XML doc instructs consumers on context extension via `TypeInfoResolverChain`
+- [ ] `IIntegrationEvent` XML doc states the sealed record/class constraint and the no-domain-logic rule
+- [ ] `README.md` exists in the project folder with all five sections
+- [ ] `dotnet build` generates the `.xml` documentation file with no missing-doc warnings
+- [ ] All XML doc comments are grammatically correct and accurately describe the types they annotate
+---
+
+---
+### P-062 — Contracts: Published — NuGet Packaging and Consumer Verification
+
+**Status:** `●` Complete
+**Work Order:** WO-012
+**Domain:** 04.Contracts
+**Depends on:** P-061
+
+#### What is needed
+
+NuGet packaging and consumer verification for `SharedKernel.Contracts` — confirming the package can be consumed correctly by a downstream microservice in a realistic usage scenario.
+
+**NuGet metadata hardening:**
+Verify the `.csproj` has complete metadata: `<PackageId>SharedKernel.Contracts</PackageId>`, `<Version>1.0.0</Version>`, `<Description>Cross-service DTOs, integration event contracts, paged results, and response envelopes for the Platform SharedKernel ecosystem.</Description>`, `<Authors>Platform Team</Authors>`, `<PackageTags>contracts;dtos;integration-events;paged-list;envelope;shared-kernel</PackageTags>`, `<PackageLicenseExpression>MIT</PackageLicenseExpression>` (or the repo's chosen license), `<RepositoryUrl>` pointing to the mono-repo. `<Nullable>enable</Nullable>` must be present. `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` is strongly recommended for a contracts package.
+
+**Pack and verify:**
+Run `dotnet pack` on `SharedKernel.Contracts.csproj` and confirm the `.nupkg` is produced in the `nupkgs/` output directory (consistent with the convention used by `SharedKernel.Domain` and `SharedKernel.Primitives`). The `.nupkg` must include the generated XML documentation file (`.xml`) alongside the DLL so NuGet consumers receive IntelliSense.
+
+**Consumer verification project:**
+A minimal `consumer-verify` console project (or the existing one if it exists for the domain) that:
+1. References `SharedKernel.Contracts` as a `ProjectReference`
+2. Creates a `PagedList<string>` via `PagedList<string>.Create(items, page: 1, pageSize: 10, totalCount: 25)`
+3. Wraps a result in `Envelope<string>.Ok("hello")`
+4. Defines a minimal concrete `IIntegrationEvent` sealed record and wraps it in an `EventEnvelope.Wrap(...)` call
+5. Serializes the `EventEnvelope<T>` using a locally defined `JsonSerializerContext` that extends `ContractsJsonContext`
+6. Confirms the round-trip compiles and runs without reflection-based JSON paths
+
+This verification project must compile and run with `dotnet run`. It is not a test project — it is a compilation and smoke-test verification that the public API is usable as intended.
+
+**`04.Contracts/state-map.md` Published milestone:**
+The domain sub-state-map must be updated to reflect `Published` state with the `.nupkg` manifest entry.
+
+#### Why this is needed
+
+A package that can be built but not consumed correctly has no value. The consumer-verify project closes the gap between "it builds" and "it works for downstream teams." It is especially important for `04.Contracts` because the `ContractsJsonContext` extension pattern is non-obvious — if the STJ context is misconfigured, the compilation still succeeds but the runtime will fall back to reflection silently. The consumer-verify project exercises this path explicitly. The `TreatWarningsAsErrors` discipline prevents XML doc gaps and nullable annotation regressions from shipping in a contracts package used by hundreds of services.
+
+#### Acceptance criteria
+- [ ] `.csproj` has complete NuGet metadata (all fields listed above)
+- [ ] `<Nullable>enable</Nullable>` and `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` are present
+- [ ] `dotnet pack` succeeds and produces `SharedKernel.Contracts.1.0.0.nupkg` in `nupkgs/`
+- [ ] `.nupkg` includes the `.xml` documentation file
+- [ ] Consumer-verify project exists; references `SharedKernel.Contracts`; exercises all five surfaces; defines a consuming `JsonSerializerContext` that extends the base context
+- [ ] Consumer-verify project compiles and runs with `dotnet run` — no runtime reflection fallback
+- [ ] `04.Contracts/state-map.md` Published phase milestone updated with `.nupkg` manifest
+- [ ] All existing tests continue to pass — no regressions from packaging changes
+---
+
+---
+### P-063 — Governance: Contracts Layer Purity Architecture Rules
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-012
+**Domain:** 00.Governance
+**Depends on:** P-059
+
+#### What is needed
+
+New architecture enforcement rules in `00.Governance/SharedKernel.ArchitectureTests` that protect the `04.Contracts` purity contract. These rules enforce the hard layering and design constraints that distinguish a gold-standard contracts package from a code-dump DTO library.
+
+**Rule 1 — `04.Contracts` must never contain domain logic:**
+A NetArchTest rule that asserts no type in any assembly under `04.Contracts` has methods with behavioral logic beyond: constructors/factories, computed properties that derive from stored state, `ToString()`, and `Equals()`/`GetHashCode()` (from record). The test detects types with non-trivial method bodies by checking method count > N (a heuristic threshold) or by checking for any method that is not a constructor, operator, or property getter. The rule is documented as a heuristic — it cannot catch all logic, but it catches accidental method additions.
+
+**Rule 2 — No domain types on `04.Contracts` public surface:**
+A NetArchTest rule that asserts no public type in `04.Contracts` assemblies has public properties or return types that are `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject`, or `Specification<T>` from `03.Domain`. Integration events and DTOs must be independent projections, not domain type aliases. The `IDomainEvent` reference in `EventEnvelope<TEvent>` is a permitted internal constraint (it is the generic parameter constraint), not a public property type.
+
+**Rule 3 — `Result<T>` must not appear in `04.Contracts` public surface:**
+A NetArchTest rule that asserts no property, parameter, or return type in `04.Contracts` public API is `Result<T>` or `Result` from `SharedKernel.Primitives`. `Result<T>` is intra-service; `Envelope<T>` is cross-service. They must never be conflated. Crossing a service boundary with `Result<T>` causes serialization failures in polyglot consumers and breaks the contract model.
+
+**Rule 4 — `IIntegrationEvent` implementations must be sealed:**
+A NetArchTest rule that asserts every non-abstract type in any production assembly that implements `IIntegrationEvent` is either a `sealed class` or a `record` (which is implicitly sealed in terms of further implementation). Non-sealed integration events are an inheritance trap — they allow sub-events that change the wire format without incrementing `[DomainEventVersion]`.
+
+**Rule 5 — Microservices must not reference `SharedKernel.Domain` directly (only via `04.Contracts`):**
+A documentation-level rule (enforced by `13.ServiceDefaults` or equivalent composition guidance): microservices must reference `SharedKernel.Contracts` for cross-service DTO types and must not reference `SharedKernel.Domain` unless they implement domain logic. This is not a NetArchTest rule (the mono-repo structure makes it hard to enforce across external assemblies) but is documented in the `00.Governance` brain with the architectural rationale.
+
+**Rule documentation:** All five rules must be documented in the `00.Governance` domain brain with rationale, offending-pattern example, and compliant-pattern example.
+
+#### Why this is needed
+
+`04.Contracts` is the most widely referenced package in the platform. A contracts package that silently accumulates domain logic, carries `Result<T>` return types, or exposes non-sealed integration events will corrupt downstream services at the point of serialization or deserialization — typically in production, not in development. The rules here are simple, high-confidence, low-false-positive checks. Rule 3 (no `Result<T>`) is particularly important: a microservice that returns `Result<T>` in a serialized HTTP response compiles correctly but fails for any JSON client that does not know about `SharedKernel.Primitives` types. The governance rules make these violations visible in CI before they reach any downstream consumer.
+
+#### Acceptance criteria
+- [ ] NetArchTest Rule 1 exists: detects non-trivial method bodies in `04.Contracts` assemblies; includes an explicit allowlist for constructors, operators, property accessors
+- [ ] NetArchTest Rule 2 exists: detects `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject`, or `Specification<T>` as public property/return types in `04.Contracts`
+- [ ] NetArchTest Rule 3 exists: detects `Result<T>` or `Result` as any public parameter or return type in `04.Contracts`; fires with the specific type name in the error message
+- [ ] NetArchTest Rule 4 exists: detects non-sealed `IIntegrationEvent` implementations in production assemblies; fires with the offending type name
+- [ ] Rule 5 is documented in `00.Governance/CLAUDE.md` with rationale — not a NetArchTest rule but an architectural guideline
+- [ ] All four NetArchTest rules have at least one "violating assembly" fixture test demonstrating the rule fires correctly under a violation scenario
+- [ ] All rules documented in `00.Governance/CLAUDE.md` with rationale, offending-pattern example, compliant-pattern example
+- [ ] Governance test suite passes with all new rules included; no false positives on the existing SharedKernel assemblies
+---
+
+---
+### P-064 — Testing: Contracts Test Helpers — Fakers, Builders, and Assertion Extensions
+
+**Status:** `○` Pending
+**Work Order:** WO-012
+**Domain:** 16.Testing
+**Depends on:** P-059
+
+#### What is needed
+
+Additions to `16.Testing/SharedKernel.Testing` that give downstream microservice test projects the standard test helpers for the `04.Contracts` types — covering construction helpers, Bogus fakers, and assertion extensions.
+
+**`PagedListBuilder<T>` — fluent test builder:**
+A fluent builder for constructing `PagedList<T>` instances in tests without boilerplate. Exposes: `WithItems(IEnumerable<T> items)`, `WithPage(int page)`, `WithPageSize(int pageSize)`, `WithTotalCount(int totalCount)`, and `Build()` which calls `PagedList<T>.Create(...)`. Default values: `Page = 1`, `PageSize = 10`, `TotalCount = items.Count` (when set via `WithItems`). An `Empty<T>()` static factory returns a `PagedList<T>` with zero items, `TotalCount = 0`, `Page = 1`, `PageSize = 10`. This eliminates the repetitive construction in test setups where teams need a `PagedList<T>` but don't care about the pagination parameters.
+
+**`EnvelopeAssertions` — extension methods on `Envelope` and `Envelope<T>`:**
+Static extension methods for assertion-level checking:
+- `ShouldBeSuccess(this Envelope envelope)` — asserts `IsSuccess = true`; throws with the `Error` details on failure
+- `ShouldBeFailure(this Envelope envelope)` — asserts `IsSuccess = false`; throws with a message on failure
+- `ShouldBeSuccess<T>(this Envelope<T> envelope)` — asserts success; returns `Value` for further chaining
+- `ShouldBeFailure<T>(this Envelope<T> envelope, ErrorType? expectedType = null)` — asserts failure; optionally asserts the `ErrorType`; throws with the actual error on failure
+- `ShouldHaveError(this Envelope<T> envelope, string expectedCode)` — asserts failure with a specific error code
+
+All helpers throw `InvalidOperationException` with descriptive messages — no test framework dependency.
+
+**`IntegrationEventFaker<TEvent>` abstract base:**
+A Bogus-based abstract faker for `IIntegrationEvent` implementations. Provides `protected void RuleForEventId()` pre-wired to `f.Random.Guid()` and `protected void RuleForOccurredOn()` pre-wired to `f.Date.RecentOffset()`. Subclasses call these helpers in their constructor then add their own `RuleFor` declarations. Eliminates the boilerplate of wiring `EventId` and `OccurredOn` on every integration event faker.
+
+**`EventEnvelopeBuilder<TEvent>` — fluent test builder for `EventEnvelope<TEvent>`:**
+A fluent builder that wraps `EventEnvelope.Wrap<TEvent>(...)`. Exposes: `WithPayload(TEvent event)`, `WithSourceService(string name)`, `WithCorrelationId(string id)`, `WithCausationId(string id)`, and `Build()`. Defaults: `SourceService = "test-service"`, `CorrelationId = Guid.NewGuid().ToString("N")`, `CausationId = null`. This gives integration test setups a clean way to construct envelopes without knowing every field.
+
+**`AddFakeContractsServices()` DI extension:**
+Registers any DI-backed test doubles for the contracts domain — at this stage likely only `PagedListBuilder` and `EventEnvelopeBuilder` as transient services if needed by test fixture scaffolding. If no DI registration is needed, this extension can be deferred.
+
+All helpers must be added to `16.Testing/SharedKernel.Testing` under a `SharedKernel.Testing.Contracts` namespace sub-group. Each helper must have its own unit tests in `SharedKernel.Testing.Tests`.
+
+#### Why this is needed
+
+Downstream microservice test projects will construct `PagedList<T>` instances dozens of times per test suite — one per paged query test. Without `PagedListBuilder<T>`, every test hardcodes `PagedList<string>.Create(new[] {"a"}, 1, 10, 1)` — correct but noisy. Without `EnvelopeAssertions`, every test writes `Assert.True(result.IsSuccess); Assert.Equal("expected", result.Value)` without meaningful failure messages. The `IntegrationEventFaker<TEvent>` closes the gap between `EntityFaker<TEntity, TId>` (P-035) and integration event test data — without it, teams write their own minimal fakers per event type, diverging in completeness and correctness. The `EventEnvelopeBuilder<TEvent>` is particularly valuable for messaging tests that need to simulate receiving an envelope without knowing the metadata details.
+
+#### Acceptance criteria
+- [ ] `PagedListBuilder<T>` fluent builder exists; `WithItems`, `WithPage`, `WithPageSize`, `WithTotalCount`, `Build()` work correctly; `Empty<T>()` produces a valid zero-item `PagedList<T>`
+- [ ] `EnvelopeAssertions` static extensions exist: `ShouldBeSuccess`, `ShouldBeFailure` on both `Envelope` and `Envelope<T>`; `ShouldHaveError` checks error code; all throw with descriptive messages on failure; no test framework dependency
+- [ ] `IntegrationEventFaker<TEvent>` abstract base exists; `RuleForEventId()` and `RuleForOccurredOn()` helpers are pre-wired; subclasses can extend cleanly
+- [ ] `EventEnvelopeBuilder<TEvent>` fluent builder exists; all fields are configurable; defaults are applied for unprovided fields
+- [ ] All helpers have unit tests in `SharedKernel.Testing.Tests`
+- [ ] `16.Testing/SharedKernel.Testing` references `SharedKernel.Contracts` (permitted — testing may reference any layer)
+- [ ] All public types carry XML doc comments
+- [ ] `AddFakeCachingServices()` and `AddFakeDomainServices()` are not affected — contracts helpers are registered separately via `AddFakeContractsServices()` if DI registration is needed, or shipped as static helpers only

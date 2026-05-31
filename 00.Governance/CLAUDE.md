@@ -91,6 +91,45 @@ SK0006  GuardClauseThrow
     Note      : Severity escalation to Error is gated on confirming Guard+Throw exclusion
                 logic produces zero false positives across all existing guard extensions
 
+SK0008  AggregateRootDispatchCoupling
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A constructor parameter is typed as IAggregateRoot<> (simple name contains
+                "IAggregateRoot") inside a class whose name or any enclosing namespace
+                identifier contains any of: "Interceptor", "Publisher", "Outbox",
+                "Dispatcher" (case-sensitive substring match)
+    Fix       : Replace IAggregateRoot<TId> with IHasDomainEvents — dispatch code only
+                needs to raise domain events, not the full aggregate identity surface
+    Note      : No suppression namespace defined. Simple name check; no semantic model
+                required. SK0008 is assigned in WO-011 P-056.
+
+SK0009  DomainEventMissingVersionAttribute
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A non-abstract class or record that declares IDomainEvent in its base list
+                does not carry a [DomainEventVersion] attribute — schema versioning
+                discipline is required for all concrete domain event types
+    Fix       : Add [DomainEventVersion(N)] where N is the current schema version;
+                increment N on any breaking property change (add, remove, rename)
+    Exempt    : Abstract types (those with the abstract modifier) are excluded — abstract
+                base event classes used as shared bases do not need a version attribute
+    Note      : Base list check is simple name match ("IDomainEvent"). Attribute check is
+                simple name match ("DomainEventVersion" or "DomainEventVersionAttribute").
+                No semantic model required.
+
+SK0010  SpecificationOrderingConflict
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A constructor body contains invocations of both ApplyOrderBy(...) and
+                ApplyOrderByDescending(...) — the conflicting ordering directives produce
+                non-deterministic sort results at query execution time
+    Fix       : Use only one ordering direction per specification constructor; apply
+                secondary sorting via ThenBy / ThenByDescending overloads if needed
+    Note      : Simple name check on invocation method names — "ApplyOrderBy" and
+                "ApplyOrderByDescending". Scoped to ConstructorDeclarationSyntax bodies.
+                No type-scoping to Specification<T> subclasses required; method names
+                are unique within the SDK.
+
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
@@ -225,6 +264,109 @@ NoInfrastructureConstructorParametersPredicate  (class : ICustomRule — interna
     "Microsoft.EntityFrameworkCore", "MassTransit", "StackExchange.Redis", "RabbitMQ.Client".
     Returns false (rule violated) on the first offending parameter; failure message includes
     the offending type name and parameter type name. Lives in Predicates/ folder.
+
+DomainGoldStandardRules  (static class — domain convention enforcement predicates)
+    .DomainServicesMustExtendAbstractBase(Assembly)  → ConditionList
+        Asserts that every non-abstract type implementing IDomainService also inherits from
+        DomainService abstract class. Uses NetArchTest fluent API:
+        Types.InAssembly(assembly).That().ImplementInterface(typeof(IDomainService))
+            .And().AreNotAbstract().Should().Inherit(typeof(DomainService))
+        The DomainService abstract class itself is excluded via .AreNotAbstract() — it
+        passes naturally. Failure message lists all non-conforming type names from
+        .GetResult().FailingTypeNames. No ICustomRule required.
+
+    Rationale (Rule 1): DomainService provides CheckRule(IBusinessRule) access and acts
+        as the DI anchor for all domain services. Direct IDomainService implementation
+        bypasses these shared capabilities, forcing copy-paste of CheckRule logic.
+    Offending pattern: class PricingService : IDomainService { ... }
+    Compliant pattern: class PricingService : DomainService { ... }
+    Note: consuming test project must reference SharedKernel.Domain to supply the assembly.
+
+    SK0008 companion rule — documented in Diagnostic Rule Registry above:
+        Infrastructure dispatch code should inject IHasDomainEvents, not IAggregateRoot<TId>.
+        The architecture enforces the IDomainService→DomainService chain; the Roslyn analyzer
+        enforces the narrower dispatch coupling separately.
+
+    SK0009 companion rule — documented in Diagnostic Rule Registry above:
+        Every non-abstract IDomainEvent implementor must carry [DomainEventVersion].
+
+    SK0010 companion rule — documented in Diagnostic Rule Registry above:
+        Specification constructors must not call both ApplyOrderBy and ApplyOrderByDescending.
+
+ContractsPurityRules  (static class — contracts layer purity predicates)
+    All factory methods accept Assembly contractsAssembly and return ConditionList.
+
+    .ContractsAssembliesHaveNoNonTrivialMethods(Assembly)  → ConditionList
+        Asserts no type in the contracts assembly contains a non-trivial method — defined as
+        any method that is not a constructor, property getter/setter, static operator
+        (IsSpecialName and name starts with "op_"), or one of ToString/Equals/GetHashCode.
+        Uses NoNonTrivialMethodsPredicate (ICustomRule — see below). Failure message
+        includes the offending type name and first non-trivial method name.
+
+        Rationale: DTOs and event payloads carry state, not behaviour. Any non-trivial method
+        in 04.Contracts signals domain logic leakage into the contracts layer.
+        Offending pattern: public class OrderDto { public bool IsExpired() => Deadline < DateTime.UtcNow; }
+        Compliant pattern: public record OrderDto(Guid Id, DateTimeOffset Deadline);
+
+    .ContractsAssembliesHaveNoDomainTypeOnPublicSurface(Assembly)  → ConditionList
+        Asserts no public type in the contracts assembly has a dependency on
+        "SharedKernel.Domain" (the domain assembly). Uses
+        .Should().NotHaveDependencyOn("SharedKernel.Domain") scoped to public types.
+        Exemption: EventEnvelope<TEvent> where TEvent : IDomainEvent — the generic
+        constraint references IDomainEvent; if NetArchTest picks this up as a dependency,
+        EventEnvelope must be explicitly excluded from the scan or the constraint must be
+        defined against a marker interface in SharedKernel.Primitives instead of SharedKernel.Domain.
+        Document the resolution in this CLAUDE.md if the exemption is applied.
+
+        Rationale: Integration events and DTOs must be independent projections. Exposing
+        Entity<TId>, AggregateRoot<TId>, ValueObject, or Specification<T> on a contracts
+        public surface ties the wire format to the domain model, breaking polyglot consumers.
+        Offending pattern: public class OrderSummaryDto { public Order DomainOrder { get; set; } }
+        Compliant pattern: public record OrderSummaryDto(Guid OrderId, string Status);
+
+    .ContractsAssembliesHaveNoResultTypeOnPublicSurface(Assembly)  → ConditionList
+        Asserts no public type in the contracts assembly has a dependency on
+        "SharedKernel.Primitives" (where Result<T> and Result live). Uses
+        .Should().NotHaveDependencyOn("SharedKernel.Primitives") scoped to public types.
+        Failure message must include the specific offending type name from
+        .GetResult().FailingTypeNames.
+
+        Rationale: Result<T> is an intra-service discriminated union. Envelope<T> is the
+        cross-service HTTP wrapper. Exposing Result<T> in a serialized response payload causes
+        deserialization failures in any JSON client that does not share the SharedKernel.Primitives
+        assembly, breaking the polyglot contract model.
+        Offending pattern: public class CreateOrderResponse { public Result<Guid> OrderId { get; set; } }
+        Compliant pattern: public record CreateOrderResponse(Guid OrderId);
+
+    .IntegrationEventImplementationsMustBeSealed(Assembly)  → ConditionList
+        Asserts every non-abstract type implementing IIntegrationEvent is sealed.
+        Uses: Types.InAssembly(assembly).That().ImplementInterface(typeof(IIntegrationEvent))
+            .And().AreNotAbstract().Should().BeSealed()
+        If .BeSealed() is not available in NetArchTest.eNt 1.3.2, fall back to a custom
+        ICustomRule that inspects TypeDefinition.IsSealed (records are IsSealed in IL).
+        Failure message names the offending type.
+
+        Rationale: Non-sealed integration events are an inheritance trap. A sub-event changes
+        the wire format without incrementing [DomainEventVersion], causing silent schema drift.
+        sealed or record ensures the wire contract is closed.
+        Offending pattern: public class OrderCreatedEvent : IIntegrationEvent { ... }
+        Compliant pattern: public sealed record OrderCreatedEvent : IIntegrationEvent { ... }
+
+    Rule 5 (documentation-only — not a NetArchTest rule):
+        Microservices must not reference SharedKernel.Domain directly unless they implement
+        domain logic. Cross-service DTO types are in SharedKernel.Contracts; domain types
+        (Entity, ValueObject, AggregateRoot) are internal to services that own the domain.
+        Rationale: referencing SharedKernel.Domain from a microservice that is not a DDD-domain
+        service creates an invisible coupling to the domain model that breaks when the domain
+        model evolves. The contracts package is the stable public surface.
+
+NoNonTrivialMethodsPredicate  (class : ICustomRule — internal predicate)
+    Inspects TypeDefinition.Methods for each type. A method is non-trivial if all of the
+    following are false: IsConstructor, IsGetter, IsSetter, (IsSpecialName and Name starts
+    with "op_"), Name is "ToString" or "Equals" or "GetHashCode".
+    Returns false (rule violated) for the first non-trivial method found; failure message
+    includes the declaring type name and the method name. Lives in Predicates/ folder.
+    Used by ContractsPurityRules.ContractsAssembliesHaveNoNonTrivialMethods.
 ```
 
 ---
@@ -290,6 +432,12 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0007 forbidden-context terms are: `"Command"`, `"Event"`, `"DomainEvent"`, `"IntegrationEvent"` — case-sensitive substring match applied to both the class name and all ancestor namespace identifier strings. The check on `"Event"` intentionally covers `"DomainEvent"` and `"IntegrationEvent"` as substrings; all four terms are listed explicitly for documentation clarity.
 - SK0007 severity escalation to `Error` is gated on field confirmation of zero false positives on the `"DomainEvent"` substring — some projects name classes `IDomainEventHandler` without misusing Redis pub/sub. Until confirmed, severity remains `Warning`.
 - Architecture tests for `CachingAbstractionRules` require two test cases minimum: one fire-path (non-exempt assembly references concrete caching) and one pass-path (only exempt assemblies scanned). No exclusion-path test is needed because exemption is enforced by the caller choosing which assemblies to pass, not by an internal filter.
+- `DomainGoldStandardRules.DomainServicesMustExtendAbstractBase` uses `.AreNotAbstract()` in the NetArchTest predicate chain to exclude the `DomainService` abstract base class itself. The consuming test project must reference `SharedKernel.Domain` so that `typeof(IDomainService)` and `typeof(DomainService)` can be resolved as assembly references.
+- SK0008 `AggregateRootDispatchCouplingAnalyzer` checks `ConstructorDeclarationSyntax` parameter types — not `ObjectCreationExpression` or field declarations. The type name check for `IAggregateRoot` uses `SimpleNameSyntax` or `GenericNameSyntax` identifier text (not the full `ToString()`). Dispatch-context check applies to both the class name and all ancestor `NamespaceDeclarationSyntax` / `FileScopedNamespaceDeclarationSyntax` names via the established parent walk pattern. No semantic model required.
+- SK0009 `DomainEventMissingVersionAttributeAnalyzer` operates on both `ClassDeclarationSyntax` and `RecordDeclarationSyntax`. The base list check is a simple name match — `BaseList.Types` iterated for any `SimpleNameSyntax` or `IdentifierNameSyntax` whose identifier text is `"IDomainEvent"`. Abstract types are excluded via `Modifiers.Any(SyntaxKind.AbstractKeyword)`. No semantic model required.
+- SK0010 `SpecificationOrderingConflictAnalyzer` collects `InvocationExpressionSyntax` nodes from the constructor body. The method name is extracted from `MemberAccessExpressionSyntax.Name.Identifier.Text` or, for simple invocations, directly from `IdentifierNameSyntax.Identifier.Text`. Both `"ApplyOrderBy"` and `"ApplyOrderByDescending"` must appear for SK0010 to fire. No semantic model required.
+- `ContractsPurityRules.ContractsAssembliesHaveNoDomainTypeOnPublicSurface` — if NetArchTest's dependency scanner picks up the `EventEnvelope<TEvent> where TEvent : IDomainEvent` generic constraint as a dependency on `SharedKernel.Domain`, the `EventEnvelope` type must be explicitly excluded from the scan using `.And().DoNotHaveName("EventEnvelope")` before the `.Should()` clause. Document the exclusion in the architecture test fixture.
+- `ContractsPurityRules.IntegrationEventImplementationsMustBeSealed` — if `.BeSealed()` is not exposed by `NetArchTest.eNt` 1.3.2, implement a `SealedTypePredicate` ICustomRule that checks `TypeDefinition.IsSealed`. Record the API surface check result in `00.Governance/CLAUDE.md` once confirmed.
 - RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
@@ -331,3 +479,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-05-15] SK0006 GuardClauseThrow added to diagnostic registry; GuardPurityRules and DoesNotContainThrowIlPredicate added to architecture test contracts; Mono.Cecil IL inspection implementation rules added — WO-002 P-004
 - [2026-05-15] SK0003 trigger narrowed to exact types only; ArchitectureRuleBase/LayeringRules updated to ConditionList API; BenchmarkConfig Job.Short→explicit form; RS2008 suppression, Roslyn pin, and test pattern rules added — SK.00.Core implementation (sync-brain)
 - [2026-05-18] SK0007 RedisChannelServiceMessagingSubstitute added to diagnostic registry; CachingAbstractionRules added to architecture test contracts with three-assembly exemption list; seven new implementation rules added for caching boundary enforcement — WO-003 P-009
+- [2026-05-30] SK0008 AggregateRootDispatchCoupling, SK0009 DomainEventMissingVersionAttribute, SK0010 SpecificationOrderingConflict added to diagnostic registry; DomainGoldStandardRules and ContractsPurityRules added to architecture test contracts; NoNonTrivialMethodsPredicate documented; eight new implementation rules added — WO-011 P-056, WO-012 P-063

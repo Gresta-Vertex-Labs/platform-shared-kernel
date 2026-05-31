@@ -1,8 +1,45 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Contracts</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Cross-service DTOs for Platform.SharedKernel microservices: PagedList, Envelope, IIntegrationEvent, EventEnvelope transport wrapper. Zero external NuGet dependencies. AOT-safe STJ source-generated serialization.</Description>
+    <PackageTags>contracts;dtos;integration-events;paged-list;envelope;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      SharedKernel.Primitives: supplies Error, ErrorType, Result<T> primitives consumed by Envelope types.
+      SharedKernel.Domain: supplies IDomainEvent (constraint on EventEnvelope<TEvent>) and
+                           DomainEventVersionHelper.GetVersion(Type) (populating EventVersion in Wrap).
+      No other project or NuGet references are permitted in this package.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Contracts.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Contracts.Tests\**" />
+    <None Remove="SharedKernel.Contracts.Tests\**" />
+  </ItemGroup>
 
 </Project>

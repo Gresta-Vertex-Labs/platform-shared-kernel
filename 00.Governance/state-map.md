@@ -34,6 +34,8 @@
 | `SK.00.GuardPurity` | Guard Purity Enforcement | All tasks in Phase: Guard Purity Enforcement are `●` |
 | `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | All tasks in Phase: Caching Abstractions Enforcement are `●` |
 | `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | All tasks in Phase: Domain Layer Purity Enforcement are `●` |
+| `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | All tasks in Phase: Domain Gold-Standard Architecture Rules are `●` |
+| `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | All tasks in Phase: Contracts Layer Purity Architecture Rules are `●` |
 
 ---
 
@@ -453,6 +455,199 @@ All files in `SharedKernel.ArchitectureTests`:
 
 ---
 
+## Phase: Domain Gold-Standard Architecture Rules <!-- phase-key: SK.00.DomainGoldStandard -->
+
+> Encode the WO-011 domain conventions as build-time enforcement rules: IDomainService must extend DomainService, infrastructure dispatch code must not couple to IAggregateRoot<TId>, IDomainEvent implementors must carry [DomainEventVersion], and specification constructors must not apply conflicting ordering calls.
+
+### DomainGoldStandard — Goal
+
+WO-011 introduced several high-value conventions — the `DomainService` abstract base, the `IHasDomainEvents` interface as the narrow dispatch coupling point, the `[DomainEventVersion]` schema attribute, and the dual-ordering prohibition on `Specification<T>` constructors. Without enforcement these remain advisory guidelines that well-meaning developers will violate in good faith. This phase encodes them as a NetArchTest predicate (Rule 1) and three Roslyn analyzers (Rules 2–4), closing the gap between convention and contract at build time with near-zero false-positive rates when scoped correctly.
+
+### DomainGoldStandard — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/DomainGoldStandardRules.cs` — static class housing `DomainServicesMustExtendAbstractBase(Assembly)`
+  - `SharedKernel.Analyzers/Diagnostics/SK0008_AggregateRootDispatchCouplingAnalyzer.cs` — Roslyn analyzer: SK0008 fire when `IAggregateRoot<>` injected in dispatch-context class
+  - `SharedKernel.Analyzers/Diagnostics/SK0009_DomainEventMissingVersionAttributeAnalyzer.cs` — Roslyn analyzer: SK0009 fire when IDomainEvent implementation lacks `[DomainEventVersion]`
+  - `SharedKernel.Analyzers/Diagnostics/SK0010_SpecificationOrderingConflictAnalyzer.cs` — Roslyn analyzer: SK0010 fire when specification constructor calls both `ApplyOrderBy` and `ApplyOrderByDescending`
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0008–SK0010 to diagnostic registry; add `DomainGoldStandardRules` to architecture test contracts; document all four rules with rationale and examples
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### DomainGoldStandard — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0008 | AggregateRootDispatchCoupling | Design | Warning | A type in a namespace or class name containing `Interceptor`, `Publisher`, `Outbox`, or `Dispatcher` injects a constructor parameter typed `IAggregateRoot<>` — prefer `IHasDomainEvents` for narrower coupling |
+| SK0009 | DomainEventMissingVersionAttribute | Design | Warning | A type implementing `IDomainEvent` (directly or transitively) lacks a `[DomainEventVersion]` attribute declaration — schema versioning discipline is required |
+| SK0010 | SpecificationOrderingConflict | Design | Warning | A constructor body calls both `ApplyOrderBy(...)` and `ApplyOrderByDescending(...)` — the conflicting ordering directives produce non-deterministic sort results |
+
+### DomainGoldStandard — Implementation Rules
+
+1. `DomainGoldStandardRules.DomainServicesMustExtendAbstractBase(Assembly)` uses NetArchTest fluent API: `Types.InAssembly(assembly).That().ImplementInterface(typeof(IDomainService)).And().AreNotAbstract().Should().Inherit(typeof(DomainService))`. The `DomainService` abstract class itself is excluded via `.AreNotAbstract()` — the abstract base passes. No `ICustomRule` required; NetArchTest's `.Inherit()` predicate is sufficient.
+2. Rule 1 failure message must name the offending type. Because NetArchTest generates the failure list from `.GetResult().FailingTypeNames`, no additional predicate is needed — the default failure output names all non-conforming types.
+3. SK0008 `AggregateRootDispatchCouplingAnalyzer` operates on `ConstructorDeclarationSyntax` nodes. For each constructor parameter whose type syntax resolves to a name containing `IAggregateRoot` (simple name contains check — the generic form uses angle brackets so check `.Identifier.Text` or `.ToString()` for `"IAggregateRoot"`), it checks whether the containing class name or any ancestor namespace identifier contains any of: `"Interceptor"`, `"Publisher"`, `"Outbox"`, `"Dispatcher"` (case-sensitive substring match). If the condition holds, SK0008 is reported on the parameter type identifier. No semantic model required — the simple name `IAggregateRoot` is unique within the SDK.
+4. SK0008 uses the standard `SyntaxNode.Parent` namespace walk (same pattern as SK0001, SK0007) for suppression. No suppression namespace is defined for SK0008 — the rule fires in all namespaces where dispatch-context names appear.
+5. SK0009 `DomainEventMissingVersionAttributeAnalyzer` operates on `ClassDeclarationSyntax` and `RecordDeclarationSyntax` nodes. For each type declaration, it checks whether the type implements an interface whose name is `IDomainEvent` (base list simple name check — `BaseList.Types` checked for `IDomainEvent`). If it does, the analyzer checks whether the type's `AttributeLists` contain an attribute whose name is `DomainEventVersion` or `DomainEventVersionAttribute`. If the attribute is absent, SK0009 is reported on the type identifier. No semantic model required for attribute name check — simple name match is sufficient and unique within the SDK.
+6. SK0009 must not fire on abstract types — an abstract base that implements `IDomainEvent` without `[DomainEventVersion]` is legitimate as a shared base for versioned events. Suppress by checking `Modifiers.Any(SyntaxKind.AbstractKeyword)`.
+7. SK0010 `SpecificationOrderingConflictAnalyzer` operates on `ConstructorDeclarationSyntax` nodes. Within the constructor body, it collects all `InvocationExpressionSyntax` nodes whose method name is `ApplyOrderBy` or `ApplyOrderByDescending` (simple name check on the `MemberAccessExpression.Name.Identifier.Text`). If both names appear at least once within the same constructor body, SK0010 is reported on the constructor identifier. No scoping to Specification subclasses is required at the syntax level — the method names `ApplyOrderBy`/`ApplyOrderByDescending` are unique to `Specification<T>` within the SDK. A false-positive from a different type calling a coincidentally-named method is acceptable given the low probability.
+8. All three SK analyzers follow `netstandard2.0` constraint. Zero new NuGet dependencies beyond `Microsoft.CodeAnalysis.CSharp`.
+9. Rule 1 (`DomainGoldStandardRules`) depends on `SharedKernel.Domain` assembly containing `IDomainService` and `DomainService` types. The consuming test project must reference `SharedKernel.Domain` directly; `DomainGoldStandardRules` accepts `Assembly` as a parameter and does not hard-code type paths.
+10. `DomainGoldStandardRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside `DomainLayerPurityRules.cs`. It must not reference any runtime domain or infrastructure package directly.
+
+### DomainGoldStandard — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/DomainGoldStandardRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: `DomainServicesMustExtendAbstractBase(Assembly)` → `ConditionList` |
+| `Diagnostics/SK0008_AggregateRootDispatchCouplingAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0008 — IAggregateRoot injection in dispatch-context classes |
+| `Diagnostics/SK0009_DomainEventMissingVersionAttributeAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0009 — IDomainEvent implementors missing [DomainEventVersion] |
+| `Diagnostics/SK0010_SpecificationOrderingConflictAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0010 — constructor calls both ApplyOrderBy and ApplyOrderByDescending |
+
+### DomainGoldStandard — Acceptance Criteria
+
+- [ ] Rule 1 NetArchTest: `IDomainService` implementors not extending `DomainService` are detected; failure message names the offending type; `DomainService` itself does not appear as a violation
+- [ ] SK0008 Roslyn analyzer: injection of `IAggregateRoot<>` as a constructor parameter in a class/namespace named with dispatch-context terms produces a warning with a link to `IHasDomainEvents`
+- [ ] SK0009 Roslyn analyzer: `IDomainEvent` implementing type (non-abstract) lacking `[DomainEventVersion]` attribute produces a warning; abstract base types are exempt
+- [ ] SK0010 Roslyn analyzer: specification constructors calling both `ApplyOrderBy` and `ApplyOrderByDescending` produce a warning; constructors calling only one are clean
+- [ ] All four rules documented in `00.Governance/CLAUDE.md` with rationale, offending-pattern example, compliant-pattern example
+- [ ] Rule 1 has fire-path and pass-path architecture test fixtures
+- [ ] Each of SK0008, SK0009, SK0010 has a fire-path analyzer test and a pass-path analyzer test
+
+### DomainGoldStandard — Dependencies
+
+- Requires P-045 (`DomainService` abstract class in `SharedKernel.Domain`): yes — Rule 1 uses `typeof(DomainService)` as the expected base
+- Requires P-047 (`IDomainService` interface in `SharedKernel.Domain`): yes — Rule 1 scopes to `IDomainService` implementors; SK0008 uses `IAggregateRoot<>` from the same domain package
+- Requires P-053 (`IDomainEvent`, `[DomainEventVersion]`, `Specification<T>` with `ApplyOrderBy`/`ApplyOrderByDescending` in `SharedKernel.Domain`): yes — SK0009 checks `IDomainEvent` interface membership; SK0010 checks ordering method call names
+- Unblocks: CI architecture gate integration for the Domain gold-standard contract
+
+### DomainGoldStandard — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref — no change; not needed for Rule 1 but already present)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0008–SK0010 follow same constraint)
+- Target framework: `netstandard2.0` (Analyzers) / `net10.0` (ArchitectureTests)
+
+### DomainGoldStandard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-19 | Define `DomainGoldStandardRules.DomainServicesMustExtendAbstractBase(Assembly)` shape: NetArchTest `.ImplementInterface(typeof(IDomainService)).And().AreNotAbstract().Should().Inherit(typeof(DomainService))`; failure message lists offending type names from `.GetResult().FailingTypeNames` | SharedKernel.ArchitectureTests | `○` |
+| D-20 | Define SK0008 `AggregateRootDispatchCoupling` — trigger: `IAggregateRoot<>` constructor parameter in class/namespace containing `Interceptor`, `Publisher`, `Outbox`, or `Dispatcher`; no suppression namespace; link to `IHasDomainEvents` in fix message | SharedKernel.Analyzers | `○` |
+| D-21 | Define SK0009 `DomainEventMissingVersionAttribute` — trigger: type implementing `IDomainEvent` (base list check) without `[DomainEventVersion]` attribute; exempt abstract types; no suppression namespace | SharedKernel.Analyzers | `○` |
+| D-22 | Define SK0010 `SpecificationOrderingConflict` — trigger: constructor body containing both `ApplyOrderBy` and `ApplyOrderByDescending` invocations; simple name check; no type-scoping required | SharedKernel.Analyzers | `○` |
+| C-24 | Implement `DomainGoldStandardRules` static class in `Rules/` — single factory method `DomainServicesMustExtendAbstractBase(Assembly)` returning `ConditionList` using NetArchTest fluent `.Inherit()` predicate | SharedKernel.ArchitectureTests | `○` |
+| C-25 | Implement SK0008 `AggregateRootDispatchCouplingAnalyzer` — `ConstructorDeclarationSyntax` walker; IAggregateRoot simple name check on param type; dispatch-context substring check on class name and ancestor namespaces; report SK0008 on param type identifier | SharedKernel.Analyzers | `○` |
+| C-26 | Implement SK0009 `DomainEventMissingVersionAttributeAnalyzer` — `ClassDeclarationSyntax` and `RecordDeclarationSyntax` walker; base list check for `IDomainEvent`; attribute list check for `DomainEventVersion`; skip abstract types; report SK0009 on type identifier | SharedKernel.Analyzers | `○` |
+| C-27 | Implement SK0010 `SpecificationOrderingConflictAnalyzer` — `ConstructorDeclarationSyntax` walker; collect `ApplyOrderBy` and `ApplyOrderByDescending` invocations in body; if both present, report SK0010 on constructor identifier | SharedKernel.Analyzers | `○` |
+| T-31 | Architecture test Rule 1 (fire path): pass a contrived assembly containing an `IDomainService` implementor that does NOT extend `DomainService`; assert `DomainServicesMustExtendAbstractBase` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-32 | Architecture test Rule 1 (pass path): pass an assembly where all `IDomainService` implementors extend `DomainService`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-33 | Analyzer test SK0008 (fire path): `IAggregateRoot<Order>` constructor parameter in class `OrderPublisher` (namespace `Messaging`) triggers SK0008 | SharedKernel.Analyzers.Tests | `○` |
+| T-34 | Analyzer test SK0008 (pass path): `IHasDomainEvents` constructor parameter in class `OrderPublisher` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-35 | Analyzer test SK0009 (fire path): `record OrderCreated : IDomainEvent { ... }` without `[DomainEventVersion]` attribute triggers SK0009 | SharedKernel.Analyzers.Tests | `○` |
+| T-36 | Analyzer test SK0009 (pass path): `[DomainEventVersion(1)] record OrderCreated : IDomainEvent { ... }` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-37 | Analyzer test SK0009 (abstract exempt path): `abstract class DomainEventBase : IDomainEvent { }` without `[DomainEventVersion]` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-38 | Analyzer test SK0010 (fire path): specification constructor calling both `ApplyOrderBy(x => x.Name)` and `ApplyOrderByDescending(x => x.CreatedAt)` triggers SK0010 | SharedKernel.Analyzers.Tests | `○` |
+| T-39 | Analyzer test SK0010 (pass path): specification constructor calling only `ApplyOrderBy(x => x.Name)` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| DO-10 | Document all four DomainGoldStandard rules in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale, offending-pattern example, compliant-pattern example | SharedKernel.ArchitectureTests, SharedKernel.Analyzers | `○` |
+
+---
+
+## Phase: Contracts Layer Purity Architecture Rules <!-- phase-key: SK.00.ContractsPurity -->
+
+> Protect the `04.Contracts` layer from accumulating domain logic, domain type leakage, `Result<T>` misuse, and non-sealed integration events — all with high-confidence NetArchTest rules that fire in CI before violations reach any downstream consumer.
+
+### ContractsPurity — Goal
+
+`04.Contracts` is the widest-referenced package in the platform: every service boundary touches it. A contracts package that silently accumulates domain logic, exposes `Entity<TId>` return types, returns `Result<T>` across service boundaries, or ships non-sealed integration events will corrupt downstream consumers at serialization time. The five rules in this phase provide a CI gate that catches each violation class with near-zero false positives. Rule 5 is documented only — the mono-repo boundary makes NetArchTest enforcement against external consumer assemblies impractical.
+
+### ContractsPurity — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/ContractsPurityRules.cs` — static class housing all four NetArchTest predicates
+  - `SharedKernel.ArchitectureTests/Predicates/NoNonTrivialMethodsPredicate.cs` — ICustomRule: heuristic method-count check for non-trivial logic in contracts types
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add `ContractsPurityRules` to architecture test contracts section; document all five rules with rationale, offending-pattern example, compliant-pattern example
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+- Note: No new Roslyn analyzer SK IDs. All enforcement is via NetArchTest + one ICustomRule predicate.
+
+### ContractsPurity — Diagnostic Registry Changes
+
+No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates or documentation-level rules:
+
+- Rule 1 — `ContractsAssembliesHaveNoNonTrivialMethods`: ICustomRule heuristic — method count threshold + allowlist for constructors/operators/property accessors
+- Rule 2 — `ContractsAssembliesHaveNoDomainTypeOnPublicSurface`: NetArchTest dependency scan for `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject`, `Specification<T>` as public member types
+- Rule 3 — `ContractsAssembliesHaveNoResultTypeOnPublicSurface`: NetArchTest dependency scan for `Result<T>` and `Result` from `SharedKernel.Primitives`
+- Rule 4 — `IntegrationEventImplementationsMustBeSealed`: NetArchTest type predicate — non-abstract `IIntegrationEvent` implementors must be sealed or records
+- Rule 5 — Documentation-only: microservices must not reference `SharedKernel.Domain` directly unless they implement domain logic
+
+### ContractsPurity — Implementation Rules
+
+1. `ContractsAssembliesHaveNoNonTrivialMethods` uses a custom `ICustomRule` (`NoNonTrivialMethodsPredicate`) that inspects `TypeDefinition.Methods` for each type in the contracts assembly. The heuristic: any method that is not a constructor (`IsConstructor`), not a property getter/setter (`IsGetter` or `IsSetter`), not a static operator (`IsSpecialName` and name starts with `"op_"`), and not `ToString`/`Equals`/`GetHashCode` (by name) is counted as non-trivial. If a type has any non-trivial method, the predicate returns false with the offending type name and method name in the failure message. The threshold is zero non-trivial methods — one non-trivial method is a violation. The predicate lives in `Predicates/NoNonTrivialMethodsPredicate.cs`.
+2. `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` uses `Types.InAssembly(assembly).That().ArePublic().Should().NotHaveDependencyOnAny("SharedKernel.Domain.Entity", "SharedKernel.Domain.AggregateRoot", "SharedKernel.Domain.ValueObject", "SharedKernel.Domain.Specification")`. Because NetArchTest's `.NotHaveDependencyOn()` matches on assembly name substring (not type name), the correct approach is to check for a dependency on the `SharedKernel.Domain` assembly itself — but only for public types that expose domain types as property or return types. The practical approach for this rule: use `.Should().NotHaveDependencyOn("SharedKernel.Domain")` on types scoped to `04.Contracts`. This is a conservative check; it will catch any type in contracts that has any binary reference to the domain assembly. Exception: the `EventEnvelope<TEvent>` generic type constraint (`where TEvent : IDomainEvent`) is permitted — it is a constraint, not a public property type. Document this exception in the implementation notes.
+3. `ContractsAssembliesHaveNoResultTypeOnPublicSurface` uses `Types.InAssembly(assembly).That().ArePublic().Should().NotHaveDependencyOn("SharedKernel.Primitives")`. This catches any contracts type that references `Result<T>` or `Result` (both live in `SharedKernel.Primitives`). The failure message must include the specific type name from `.GetResult().FailingTypeNames`.
+4. `IntegrationEventImplementationsMustBeSealed` uses a custom `ICustomRule` (`SealedIntegrationEventPredicate`) OR a NetArchTest fluent predicate. Because NetArchTest.eNt 1.3.2 supports `.BeSealed()` on `ConditionList`, use: `Types.InAssembly(assembly).That().ImplementInterface(typeof(IIntegrationEvent)).And().AreNotAbstract().Should().BeSealed()`. If `.BeSealed()` is not available in the pinned version, fall back to a custom `ICustomRule` that inspects `TypeDefinition.IsSealed` or checks for `record` (records are `IsSealed` in IL). The failure message must name the offending type.
+5. Rule 5 (documentation-only) is not implemented as a NetArchTest rule. It is recorded in `CLAUDE.md` with architectural rationale: microservices should reference `SharedKernel.Contracts` for cross-service types; referencing `SharedKernel.Domain` directly from a microservice that is not a DDD-domain service represents an inappropriate layering coupling. No code enforcement is applicable at the mono-repo level.
+6. The `EventEnvelope<TEvent> where TEvent : IDomainEvent` constraint is a declared exemption for Rule 2. The `IDomainEvent` type reference appears as a generic type constraint in IL, not as a field or property type — NetArchTest's dependency scanner may or may not pick it up as a dependency on `SharedKernel.Domain`. If it does, `EventEnvelope<TEvent>` must be added to an explicit allowlist in the predicate. Document this in `CLAUDE.md` under the rule.
+7. All four factory methods in `ContractsPurityRules` accept `Assembly contractsAssembly` as their parameter. They return `ConditionList` (consistent with the established `ArchitectureRuleBase` API).
+8. `ContractsPurityRules` lives in `SharedKernel.ArchitectureTests/Rules/`. It must not hard-code assembly paths. The consuming test project supplies the `04.Contracts` assembly via `typeof(SomeContractsType).Assembly`.
+9. All predicates reuse the established Mono.Cecil access pattern from `DoesNotContainThrowIlPredicate`. No new NuGet dependencies.
+
+### ContractsPurity — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/ContractsPurityRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: four predicate factory methods + Rule 5 documentation reference |
+| `Predicates/NoNonTrivialMethodsPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: heuristic non-trivial method detection for contracts types |
+
+### ContractsPurity — Acceptance Criteria
+
+- [ ] NetArchTest Rule 1 exists: detects non-trivial method bodies in `04.Contracts` assemblies; allowlist covers constructors, property accessors, operators, `ToString`/`Equals`/`GetHashCode`; fires correctly on a violation fixture
+- [ ] NetArchTest Rule 2 exists: detects `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject`, or `Specification<T>` presence in `04.Contracts` public types via domain assembly dependency scan; fires on violation; `EventEnvelope<TEvent>` constraint exemption documented
+- [ ] NetArchTest Rule 3 exists: detects `Result<T>` or `Result` in `04.Contracts` public API via Primitives dependency scan; fires with the specific type name in the failure message
+- [ ] NetArchTest Rule 4 exists: detects non-sealed, non-abstract `IIntegrationEvent` implementations; fires with the offending type name
+- [ ] Rule 5 is documented in `00.Governance/CLAUDE.md` with rationale — not a NetArchTest rule but an architectural guideline
+- [ ] Rules 1–4 each have at least one violation fixture test demonstrating the rule fires correctly
+- [ ] All rules documented in `00.Governance/CLAUDE.md` with rationale, offending-pattern example, compliant-pattern example
+- [ ] Governance test suite passes with all new rules; no false positives on existing SharedKernel assemblies
+
+### ContractsPurity — Dependencies
+
+- Requires P-059 (`04.Contracts` package complete with `IIntegrationEvent`, `EventEnvelope<TEvent>`, `PagedList`, `Envelope<T>` types established): yes — Rules 2, 3, and 4 reference types from `04.Contracts` and `SharedKernel.Primitives`
+- Requires `DomainLayerPurityRules` (`DoesNotContainThrowIlPredicate` Mono.Cecil pattern) to be complete: yes (already complete — Mono.Cecil access pattern is established in `NoNonTrivialMethodsPredicate`)
+- Unblocks: CI architecture gate integration for the Contracts layer
+
+### ContractsPurity — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — `.BeSealed()` availability to be confirmed; fallback ICustomRule documented)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref — no change)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new SK rules, no change)
+- Target framework: `net10.0` (ArchitectureTests)
+
+### ContractsPurity — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-23 | Define `ContractsAssembliesHaveNoNonTrivialMethods` shape: `NoNonTrivialMethodsPredicate` heuristic design — zero non-trivial methods threshold; allowlist: constructors, property getters/setters, operators (`op_` prefix), `ToString`/`Equals`/`GetHashCode` by name | SharedKernel.ArchitectureTests | `○` |
+| D-24 | Define `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` shape: `.Should().NotHaveDependencyOn("SharedKernel.Domain")` on public contracts types; document `EventEnvelope<TEvent>` generic-constraint exemption | SharedKernel.ArchitectureTests | `○` |
+| D-25 | Define `ContractsAssembliesHaveNoResultTypeOnPublicSurface` shape: `.Should().NotHaveDependencyOn("SharedKernel.Primitives")` on public contracts types; failure message must include offending type name | SharedKernel.ArchitectureTests | `○` |
+| D-26 | Define `IntegrationEventImplementationsMustBeSealed` shape: `.ImplementInterface(typeof(IIntegrationEvent)).And().AreNotAbstract().Should().BeSealed()` — with ICustomRule fallback if `.BeSealed()` unavailable in NetArchTest 1.3.2 | SharedKernel.ArchitectureTests | `○` |
+| C-28 | Implement `NoNonTrivialMethodsPredicate` in `Predicates/` — `ICustomRule` inspecting `TypeDefinition.Methods`; exclude constructors, property accessors, operators, `ToString`/`Equals`/`GetHashCode`; return false with offending type+method name on first non-trivial method found | SharedKernel.ArchitectureTests | `○` |
+| C-29 | Implement `ContractsPurityRules` static class in `Rules/` — four factory methods: `ContractsAssembliesHaveNoNonTrivialMethods(Assembly)`, `ContractsAssembliesHaveNoDomainTypeOnPublicSurface(Assembly)`, `ContractsAssembliesHaveNoResultTypeOnPublicSurface(Assembly)`, `IntegrationEventImplementationsMustBeSealed(Assembly)` — all return `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| T-40 | Architecture test Rule 1 (fire path): pass a contrived contracts assembly containing a type with a non-trivial method body (e.g., a `Validate()` method with conditional logic); assert `ContractsAssembliesHaveNoNonTrivialMethods` fails and names the offending type and method | SharedKernel.ArchitectureTests | `○` |
+| T-41 | Architecture test Rule 1 (pass path): pass a clean contracts assembly of pure DTOs and records; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-42 | Architecture test Rule 2 (fire path): pass a contracts assembly containing a public property of type `AggregateRoot<Guid>`; assert `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` fails | SharedKernel.ArchitectureTests | `○` |
+| T-43 | Architecture test Rule 3 (fire path): pass a contracts assembly with a public method returning `Result<string>`; assert `ContractsAssembliesHaveNoResultTypeOnPublicSurface` fails and failure message contains the offending type name | SharedKernel.ArchitectureTests | `○` |
+| T-44 | Architecture test Rule 4 (fire path): pass a contracts assembly with a non-sealed class implementing `IIntegrationEvent`; assert `IntegrationEventImplementationsMustBeSealed` fails and names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-45 | Architecture test Rule 4 (pass path): pass a contracts assembly where all `IIntegrationEvent` implementations are sealed classes or records; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| DO-11 | Document all five ContractsPurity rules in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale, offending-pattern example, compliant-pattern example; Rule 5 documented as guideline with architectural rationale | SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -467,19 +662,21 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 89.
+> Counts updated whenever a task state changes. Total tasks: 144.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.00.Design` | Design | 18 | 18 | 0 | `●` |
+| `SK.00.Design` | Design | 26 | 18 | 8 | `◐` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
-| `SK.00.Core` | Core | 20 | 14 | 6 | `◐` |
-| `SK.00.Tests` | Tests | 25 | 12 | 13 | `◐` |
-| `SK.00.Docs` | Docs | 9 | 5 | 4 | `◐` |
+| `SK.00.Core` | Core | 36 | 14 | 22 | `◐` |
+| `SK.00.Tests` | Tests | 45 | 12 | 33 | `◐` |
+| `SK.00.Docs` | Docs | 11 | 5 | 6 | `◐` |
 | `SK.00.Published` | Published | 6 | 6 | 0 | `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | 11 | 11 | 0 | `●` |
 | `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | 11 | 0 | 11 | `○` |
 | `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | 16 | 0 | 16 | `○` |
+| `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | 19 | 0 | 19 | `○` |
+| `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | 13 | 0 | 13 | `○` |
 
 ---
 
@@ -499,3 +696,5 @@ Format when active:
 - [2026-05-18] Phase Caching Abstractions Enforcement added (SK.00.CachingEnforcement) — 11 tasks: D-13–D-14, C-18–C-19, T-18–T-22, DO-07–DO-08; SK0007 RedisChannelServiceMessagingSubstitute registered; CachingAbstractionRules arch predicate defined; total tasks now 73 — WO-003 P-009
 - [2026-05-22] Phase Domain Layer Purity Enforcement added (SK.00.DomainLayerPurity) — 16 tasks: D-15–D-18, C-20–C-23, T-23–T-30, DO-09; four NetArchTest predicates in DomainLayerPurityRules; three new ICustomRule predicates (DoesNotImplementOpenGenericInterfacePredicate, DoesNotCallSystemClockPredicate, NoInfrastructureConstructorParametersPredicate); no new SK IDs; total tasks now 89 — WO-008 P-034
 - [2026-05-22] D-13–D-18 → ● in SK.00.Design — all 6 remaining design tasks verified complete (specs fully present in CLAUDE.md); SK.00.Design promoted to ● with 18/18 tasks done (state-map-phase)
+- [2026-05-30] Phase Domain Gold-Standard Architecture Rules added (SK.00.DomainGoldStandard) — 19 tasks: D-19–D-22, C-24–C-27, T-31–T-39, DO-10; SK0008 AggregateRootDispatchCoupling, SK0009 DomainEventMissingVersionAttribute, SK0010 SpecificationOrderingConflict registered; DomainGoldStandardRules arch predicate defined; total tasks now 144 — WO-011 P-056
+- [2026-05-30] Phase Contracts Layer Purity Architecture Rules added (SK.00.ContractsPurity) — 13 tasks: D-23–D-26, C-28–C-29, T-40–T-45, DO-11; four NetArchTest predicates in ContractsPurityRules; NoNonTrivialMethodsPredicate ICustomRule; no new SK IDs; Rule 5 documentation-only guideline — WO-012 P-063
