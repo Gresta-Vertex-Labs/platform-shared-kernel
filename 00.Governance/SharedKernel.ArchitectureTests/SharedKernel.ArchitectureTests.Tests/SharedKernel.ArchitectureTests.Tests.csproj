@@ -25,6 +25,12 @@
     <!-- Required to resolve SharedKernel.Guards.Clauses.IGuardClause in GuardPurityRulesTests -->
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve typeof(IDomainService)/typeof(DomainService) in DomainGoldStandard/DomainLayerPurity tests -->
+    <ProjectReference Include="..\..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj"
+                      PrivateAssets="all" />
+    <!-- Required to resolve typeof(IIntegrationEvent) in ContractsPurityRules tests -->
+    <ProjectReference Include="..\..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

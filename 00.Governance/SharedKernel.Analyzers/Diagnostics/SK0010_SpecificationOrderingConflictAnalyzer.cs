@@ -1,0 +1,119 @@
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
+
+namespace SharedKernel.Analyzers.Diagnostics;
+
+/// <summary>
+/// SK0010 — Fires when a constructor body contains invocations of both
+/// <c>ApplyOrderBy(...)</c> and <c>ApplyOrderByDescending(...)</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Calling both ordering methods in the same constructor produces non-deterministic sort results
+/// at query execution time because the last call overwrites the previous ordering direction
+/// (both set the same <c>OrderBy</c>/<c>OrderByDescending</c> property). Use only one ordering
+/// direction per specification constructor; apply secondary sorting via <c>ThenBy</c> /
+/// <c>ThenByDescending</c> overloads if needed.
+/// </para>
+/// <para>
+/// Simple name check on invocation method names. No type-scoping to <c>Specification&lt;T&gt;</c>
+/// subclasses required — the method names are unique within the SDK.
+/// </para>
+/// </remarks>
+[DiagnosticAnalyzer(LanguageNames.CSharp)]
+public sealed class SpecificationOrderingConflictAnalyzer : AnalyzerBase
+{
+    private const string DiagnosticId = "SK0010";
+
+    private const string ApplyOrderByName = "ApplyOrderBy";
+    private const string ApplyOrderByDescendingName = "ApplyOrderByDescending";
+
+    /// <summary>The diagnostic descriptor for SK0010.</summary>
+    public static readonly DiagnosticDescriptor Rule = CreateDescriptor(
+        id: DiagnosticId,
+        title: "Specification constructor has conflicting ordering calls",
+        messageFormat: "Constructor '{0}' calls both ApplyOrderBy and ApplyOrderByDescending — use only one primary ordering direction and apply secondary sorting via ThenBy/ThenByDescending",
+        category: Design,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        readmeAnchor: "sk0010-specificationorderingconflict"
+    );
+
+    /// <inheritdoc />
+    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
+        ImmutableArray.Create(Rule);
+
+    /// <inheritdoc />
+    public override void Initialize(AnalysisContext context)
+    {
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        context.EnableConcurrentExecution();
+
+        context.RegisterSyntaxNodeAction(
+            AnalyzeConstructor,
+            SyntaxKind.ConstructorDeclaration
+        );
+    }
+
+    private static void AnalyzeConstructor(SyntaxNodeAnalysisContext context)
+    {
+        var ctor = (ConstructorDeclarationSyntax)context.Node;
+
+        if (ctor.Body is null && ctor.ExpressionBody is null)
+            return;
+
+        bool hasApplyOrderBy = false;
+        bool hasApplyOrderByDescending = false;
+
+        // Collect all invocation expressions in the constructor body
+        IEnumerable<InvocationExpressionSyntax> invocations;
+
+        if (ctor.Body is not null)
+        {
+            invocations = ctor.Body
+                .DescendantNodes()
+                .OfType<InvocationExpressionSyntax>();
+        }
+        else
+        {
+            invocations = ctor.ExpressionBody!
+                .DescendantNodes()
+                .OfType<InvocationExpressionSyntax>();
+        }
+
+        foreach (var invocation in invocations)
+        {
+            var methodName = GetInvocationMethodName(invocation);
+            if (methodName == ApplyOrderByName)
+                hasApplyOrderBy = true;
+            else if (methodName == ApplyOrderByDescendingName)
+                hasApplyOrderByDescending = true;
+
+            if (hasApplyOrderBy && hasApplyOrderByDescending)
+                break;
+        }
+
+        if (hasApplyOrderBy && hasApplyOrderByDescending)
+        {
+            var className = ctor.Identifier.Text;
+            context.ReportDiagnostic(
+                Diagnostic.Create(Rule, ctor.Identifier.GetLocation(), className)
+            );
+        }
+    }
+
+    private static string GetInvocationMethodName(InvocationExpressionSyntax invocation)
+    {
+        return invocation.Expression switch
+        {
+            MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text,
+            IdentifierNameSyntax identifier => identifier.Identifier.Text,
+            GenericNameSyntax generic => generic.Identifier.Text,
+            _ => string.Empty,
+        };
+    }
+}

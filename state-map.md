@@ -62,7 +62,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Guard Purity Enforcement | `●` | SK0006 analyzer and DoesNotContainThrowIlPredicate IL rule implemented; all 11 guard purity tasks complete; 26 analyzer tests and 6 arch tests pass. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Core | `●` | All 36 Core tasks complete — SK0001–SK0010 analyzers, ArchitectureTests base classes, BenchmarkConfig, and Linter content authored; 45 tests passing; all enforcement phases (GuardPurity, CachingEnforcement, DomainLayerPurity, DomainGoldStandard, ContractsPurity) complete. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.2.0 and 1.3.0 packed and published to nupkgs/; manifests list only SharedKernel.Primitives and SharedKernel.Core; all 7 Published tasks complete. | — |
@@ -1728,6 +1728,8 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-05-30] Contracts → Docs (●) — promoted from SK.04.Docs (state-map-phase)
 - [2026-05-30] Contracts → Published (●) — promoted from SK.04.Published (state-map-phase)
 - [2026-05-30] Phase Backlog entries for 04.Contracts closed → ● Complete — 04.Contracts reached Published (state-map-phase)
+- [2026-05-31] Governance → Design (●) — promoted from SK.00.Design (state-map-phase)
+- [2026-05-31] Governance → Core (●) — promoted from SK.00.Core (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable

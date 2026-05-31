@@ -15,10 +15,20 @@ This document covers how to consume each package in the `00.Governance` capabili
   - [SK0003 — RawExceptionThrow](#sk0003-rawexceptionthrow)
   - [SK0004 — NullErrorReturn](#sk0004-nullerrorreturn)
   - [SK0005 — StringOnlyExceptionConstructor](#sk0005-stringonlyexceptionconstructor)
+  - [SK0006 — GuardClauseThrow](#sk0006-guardclausethrow)
+  - [SK0007 — RedisChannelServiceMessagingSubstitute](#sk0007-redischannelservicemessagingsubstitute)
+  - [SK0008 — AggregateRootDispatchCoupling](#sk0008-aggregaterootdispatchcoupling)
+  - [SK0009 — DomainEventMissingVersionAttribute](#sk0009-domaineventmissingversionattribute)
+  - [SK0010 — SpecificationOrderingConflict](#sk0010-specificationorderingconflict)
 - [SharedKernel.ArchitectureTests — Layering Rules](#sharedkernelarchitecturetests--layering-rules)
   - [Referencing the Package](#referencing-the-package)
   - [Using SharedKernelLayeringRules](#using-sharedkernellayeringrules)
   - [Subclassing ArchitectureRuleBase](#subclassing-architecturerulebase)
+  - [GuardPurityRules — Guard Clause Purity Enforcement](#guardpurityrules--guard-clause-purity-enforcement)
+  - [CachingAbstractionRules — Caching Boundary Enforcement](#cachingabstractionrules--caching-boundary-enforcement)
+  - [DomainLayerPurityRules — Domain Layer Purity Enforcement](#domainlayerpurityrules--domain-layer-purity-enforcement)
+  - [DomainGoldStandardRules — Domain Convention Enforcement](#domaingoldstandardrules--domain-convention-enforcement)
+  - [ContractsPurityRules — Contracts Layer Purity Enforcement](#contractspurityrules--contracts-layer-purity-enforcement)
 - [SharedKernel.Linter — EditorConfig and CSharpier](#sharedkernellinter--editorconfig-and-csharpier)
   - [Applying the Linter Package](#applying-the-linter-package)
   - [CI Enforcement](#ci-enforcement)
@@ -47,7 +57,7 @@ Add the reference to any project that should be checked:
 </ItemGroup>
 ```
 
-All five rules (SK0001–SK0005) are enabled by default at `Warning` severity. To suppress a
+All rules (SK0001–SK0010) are enabled by default at `Warning` severity. To suppress a
 rule project-wide, add it to `<NoWarn>`:
 
 ```xml
@@ -417,6 +427,241 @@ Note: Suppression should be rare. If your method legitimately needs to throw, mo
 
 ---
 
+### SK0007 — RedisChannelServiceMessagingSubstitute
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+`IRedisChannelService` is a Redis pub/sub channel abstraction designed exclusively for
+**ephemeral, non-durable** signals — cache invalidation hints, presence notifications, and
+other fire-and-forget messages where loss is acceptable. It is **not a message bus**.
+
+When `IRedisChannelService` is injected into a class whose name or enclosing namespace
+signals durable-messaging intent — anything containing `Command`, `Event`, `DomainEvent`,
+or `IntegrationEvent` — it is almost certainly a substitute for `IMessageBus`
+(`SharedKernel.Messaging.Abstractions`). This substitution produces silent message loss
+under Redis failure, broker restarts, or network partition, with no dead-letter queue, no
+retry, and no audit trail.
+
+SK0007 fires on the injection site (constructor parameter, field, or property declaration)
+rather than on every use, so it is triggered once per structural coupling point.
+
+#### Suppression Namespace
+
+The rule is automatically suppressed inside the `SharedKernel.Caching` and
+`SharedKernel.Caching.Redis` namespaces. These are the only locations where `IRedisChannelService`
+is defined and legitimately referenced at the structural level. Any additional exemption must
+be documented in `00.Governance/CLAUDE.md` under the `CachingAbstractionRules` exemption list
+before applying a suppress pragma.
+
+#### Violating Example
+
+```csharp
+namespace Application.Commands
+{
+    // SK0007: 'IRedisChannelService' is injected in a messaging-context class
+    public class PlaceOrderCommandHandler
+    {
+        private readonly IRedisChannelService _channel;
+
+        public PlaceOrderCommandHandler(IRedisChannelService channel)
+            => _channel = channel;
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+using SharedKernel.Messaging.Abstractions;
+
+namespace Application.Commands
+{
+    public class PlaceOrderCommandHandler
+    {
+        private readonly IMessageBus _bus;
+
+        public PlaceOrderCommandHandler(IMessageBus bus)
+            => _bus = bus;
+    }
+}
+```
+
+For cache invalidation signals that genuinely belong in a command handler, inject both
+`IMessageBus` (for the command/event) and `IRedisChannelService` (for the cache hint) — but
+give the Redis channel field a name that makes its ephemeral purpose clear (e.g.,
+`_cacheInvalidation`).
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0007 / restore SK0007`, or project-wide via
+`<NoWarn>$(NoWarn);SK0007</NoWarn>`.
+
+Before suppressing, confirm that the `IRedisChannelService` usage is genuinely for cache
+invalidation, not as a substitute for a durable bus. If in doubt, use `IMessageBus`.
+
+---
+
+### SK0008 — AggregateRootDispatchCoupling
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+Infrastructure dispatch code — interceptors, event publishers, outbox processors, and
+dispatchers — needs to raise domain events from aggregates. It does not need the full
+`IAggregateRoot<TId>` surface (entity identity, version, invariant checking). Injecting
+`IAggregateRoot<TId>` in dispatch-context classes creates an unnecessary coupling to the
+aggregate identity contract; if the `IAggregateRoot<TId>` interface changes (e.g., `TId`
+is renamed, the version contract is extended), all dispatch code breaks.
+
+The `IHasDomainEvents` interface is the narrowest correct coupling: dispatch code only needs
+to dequeue and publish domain events, which is exactly what `IHasDomainEvents` exposes.
+
+SK0008 fires when a constructor parameter is typed as `IAggregateRoot<>` (simple name check)
+inside a class whose name or any enclosing namespace contains `Interceptor`, `Publisher`,
+`Outbox`, or `Dispatcher`.
+
+#### Violating Example
+
+```csharp
+namespace Infrastructure.Messaging
+{
+    // SK0008: Use 'IHasDomainEvents' instead of 'IAggregateRoot<TId>' in dispatch code
+    public class DomainEventPublisher
+    {
+        public DomainEventPublisher(IAggregateRoot<Guid> aggregate) { }
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Infrastructure.Messaging
+{
+    public class DomainEventPublisher
+    {
+        public DomainEventPublisher(IHasDomainEvents aggregate) { }
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0008 / restore SK0008`, or project-wide via
+`<NoWarn>$(NoWarn);SK0008</NoWarn>`.
+
+---
+
+### SK0009 — DomainEventMissingVersionAttribute
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+Domain events are part of the public, versioned schema of a bounded context. When a domain
+event property is added, removed, or renamed, every consumer that deserializes the old wire
+format is silently broken. `[DomainEventVersion]` encodes the current schema version
+on each concrete event type and forces the developer to acknowledge every breaking change
+(by incrementing the version number), creating a visible audit trail in the git history.
+
+SK0009 fires on every non-abstract class or record that declares `IDomainEvent` in its
+base list but does not carry a `[DomainEventVersion]` attribute. Abstract base event
+classes are exempt because they do not represent wire-format contracts — only their concrete
+subclasses do.
+
+#### Violating Example
+
+```csharp
+// SK0009: 'OrderCreatedEvent' implements 'IDomainEvent' but is missing '[DomainEventVersion]'
+public record OrderCreatedEvent(Guid OrderId, DateTimeOffset CreatedAt) : IDomainEvent;
+```
+
+#### Compliant Fix
+
+```csharp
+[DomainEventVersion(1)]
+public record OrderCreatedEvent(Guid OrderId, DateTimeOffset CreatedAt) : IDomainEvent;
+```
+
+When a breaking property change is made (add, remove, or rename a property), increment the
+version:
+
+```csharp
+[DomainEventVersion(2)]  // bumped: added 'CustomerId' property
+public record OrderCreatedEvent(
+    Guid OrderId,
+    Guid CustomerId,
+    DateTimeOffset CreatedAt) : IDomainEvent;
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0009 / restore SK0009`, or project-wide via
+`<NoWarn>$(NoWarn);SK0009</NoWarn>`.
+
+---
+
+### SK0010 — SpecificationOrderingConflict
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+`Specification<T>` constructors may call `ApplyOrderBy(...)` and/or
+`ApplyOrderByDescending(...)` to set the primary sort direction. Calling both in the same
+constructor body creates an ordering conflict: the query engine will use whichever call
+is applied last, producing non-deterministic sort results that depend on source code order
+rather than explicit intent.
+
+SK0010 fires on the constructor identifier when both `ApplyOrderBy` and
+`ApplyOrderByDescending` are called within the same constructor body. Calling only one is
+always clean.
+
+#### Violating Example
+
+```csharp
+public class ActiveOrdersSpec : Specification<Order>
+{
+    public ActiveOrdersSpec()
+    {
+        AddCriteria(o => o.IsActive);
+        // SK0010: Constructor calls both 'ApplyOrderBy' and 'ApplyOrderByDescending'
+        ApplyOrderBy(o => o.CreatedAt);
+        ApplyOrderByDescending(o => o.Total);
+    }
+}
+```
+
+#### Compliant Fix
+
+Choose a single primary sort direction. Use `ThenBy` / `ThenByDescending` for secondary
+sorts if the specification supports it:
+
+```csharp
+public class ActiveOrdersSpec : Specification<Order>
+{
+    public ActiveOrdersSpec()
+    {
+        AddCriteria(o => o.IsActive);
+        ApplyOrderByDescending(o => o.Total);
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0010 / restore SK0010`, or project-wide via
+`<NoWarn>$(NoWarn);SK0010</NoWarn>`.
+
+---
+
 ## SharedKernel.ArchitectureTests — Layering Rules
 
 `SharedKernel.ArchitectureTests` is a test-only package providing NetArchTest-based base
@@ -531,6 +776,514 @@ public class MyDomainArchitectureTests : ArchitectureRuleBase
   type in the assembly has a dependency on the forbidden namespace.
 - `AssertRule(conditionList)` — calls `.GetResult()` on the condition list and asserts
   `IsSuccessful` via FluentAssertions, printing failing type names on failure.
+
+---
+
+### GuardPurityRules — Guard Clause Purity Enforcement
+
+`GuardPurityRules` is a static class that enforces the two-path guard clause contract at
+assembly level. Its single factory method inspects the `SharedKernel.Guards` assembly for
+throw opcodes in `IGuardClause` extension methods.
+
+```csharp
+using System.Reflection;
+using FluentAssertions;
+using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Guards; // must be referenced to supply typeof(IGuardClause)
+using Xunit;
+
+public class GuardPurityTests
+{
+    [Fact]
+    public void GuardAgainst_Methods_MustNot_Throw()
+    {
+        var guardsAssembly = typeof(IGuardClause).Assembly;
+        var result = GuardPurityRules
+            .GuardAgainstMethodsMustNotThrow(guardsAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "IGuardClause extension methods must never throw — use the Guard.Throw path");
+    }
+}
+```
+
+The `Guard.Throw` companion class (full CLR name `Guard+Throw`) is explicitly excluded from
+the check — methods in that class are the sanctioned throw location.
+
+---
+
+### CachingAbstractionRules — Caching Boundary Enforcement
+
+`CachingAbstractionRules` asserts that only explicitly permitted assemblies may take a
+direct binary reference to concrete caching packages (`SharedKernel.Caching` or
+`SharedKernel.Caching.Redis`). All other assemblies must use `SharedKernel.Caching.Abstractions`.
+
+#### Exemption List
+
+The following assemblies are **always exempt** from this rule:
+
+| Assembly | Reason |
+|----------|--------|
+| `SharedKernel.Caching` | The package itself — it is the abstraction + default implementation |
+| `SharedKernel.Caching.Redis` | The concrete Redis L2 provider — legitimately references itself |
+| `SharedKernel.ServiceDefaults` | The composition root — the only place providers are wired to abstractions |
+
+Any additional exemption requires prior documentation in `00.Governance/CLAUDE.md` under
+the `CachingAbstractionRules` exemption list. Adding an ad-hoc exemption in test code
+without CLAUDE.md documentation is a governance violation.
+
+#### Usage
+
+```csharp
+using System.Reflection;
+using FluentAssertions;
+using SharedKernel.ArchitectureTests.Rules;
+using Xunit;
+
+public class CachingBoundaryTests
+{
+    // Pass the assemblies under test — do NOT pass exempt assemblies here.
+    private static readonly Assembly[] ProductionAssemblies =
+    [
+        typeof(SomeApplicationHandler).Assembly,
+        typeof(SomeDomainService).Assembly,
+    ];
+
+    [Fact]
+    public void Production_Assemblies_MustNot_Reference_ConcreteCaching()
+    {
+        var result = CachingAbstractionRules
+            .OnlyAllowedAssembliesMayReferenceConcreteCaching(ProductionAssemblies)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "Only exempt assemblies may reference concrete caching packages");
+    }
+}
+```
+
+The rule uses `.Should().NotHaveDependencyOn("SharedKernel.Caching")` — NetArchTest matches
+this as a substring of referenced assembly names, so it catches both `SharedKernel.Caching`
+(the main package) and `SharedKernel.Caching.Redis` with a single call.
+
+#### Adding a Documented Exemption
+
+If a non-standard composition root legitimately needs to reference concrete caching:
+
+1. Open `00.Governance/CLAUDE.md` and add the assembly to the `CachingAbstractionRules`
+   exemption list with a documented rationale.
+2. In your architecture test, exclude that assembly from the `ProductionAssemblies` array
+   passed to `OnlyAllowedAssembliesMayReferenceConcreteCaching`.
+3. Do not suppress the test or widen the exemption without updating CLAUDE.md.
+
+---
+
+### DomainLayerPurityRules — Domain Layer Purity Enforcement
+
+`DomainLayerPurityRules` provides four predicates that collectively protect `03.Domain` from
+infrastructure contamination. Each predicate targets a distinct class of violation.
+
+Cross-reference: the root `CLAUDE.md` layering rules state that `03.Domain` must never
+reference `06.Persistence`, `07.Messaging`, or any infrastructure layer. These predicates
+encode those hard rules as build-time checks.
+
+#### Rule 1 — DomainAssembliesNeverReferenceInfrastructure
+
+Asserts that no type in the domain assembly has a binary reference to any of the forbidden
+infrastructure libraries: EntityFramework, MassTransit, Redis (StackExchange.Redis), or
+RabbitMQ.
+
+**Rationale:** A single EF Core attribute added for "convenience" propagates a hard
+dependency on a specific ORM to every service that references the domain. Domain models
+must be persistence-ignorant.
+
+**Offending pattern:**
+```csharp
+using Microsoft.EntityFrameworkCore; // in a domain entity file
+
+[Owned]  // EF Core attribute — creates a binary reference to EntityFrameworkCore
+public class Address : ValueObject { ... }
+```
+
+**Compliant pattern:**
+```csharp
+public class Address : ValueObject { ... }
+// EF Core mapping belongs in a separate configuration class in 06.Persistence
+```
+
+#### Rule 2 — DomainAssembliesNeverContainEventHandlers
+
+Asserts that no type in the domain assembly implements `IDomainEventHandler<TEvent>`.
+
+**Rationale:** Domain event handlers orchestrate responses to domain events — they belong in
+`05.Application` (orchestration) or `07.Messaging` (integration). Placing handlers inside
+the domain creates a circular coupling between the event definition and its handling,
+preventing independent evolution.
+
+**Offending pattern:**
+```csharp
+// In 03.Domain:
+public class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
+{
+    public Task Handle(OrderCreatedEvent @event, CancellationToken ct) { ... }
+}
+```
+
+**Compliant pattern:**
+```csharp
+// In 05.Application:
+public class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
+{
+    public Task Handle(OrderCreatedEvent @event, CancellationToken ct) { ... }
+}
+```
+
+#### Rule 3 — DomainAssembliesNeverCallSystemClock
+
+Asserts that no method in the domain assembly calls `DateTime.UtcNow`, `DateTime.Now`,
+`DateTimeOffset.UtcNow`, or `DateTimeOffset.Now` directly (detected via IL inspection).
+
+**Rationale:** Direct system-clock calls make domain methods non-deterministic: tests cannot
+control time without monkey-patching the system clock. `IClock.UtcNow` (from
+`SharedKernel.Primitives`) is the only permitted time source — inject it via DI so tests
+can substitute a fixed instant.
+
+Companion rule: SK0001 catches these at individual call-site level during development;
+this architecture rule provides the assembly-level gating enforcement that SK0001 cannot.
+
+**Offending pattern:**
+```csharp
+public class Order : AggregateRoot<Guid>
+{
+    public bool IsExpired() => ExpiresAt < DateTime.UtcNow; // direct clock call
+}
+```
+
+**Compliant pattern:**
+```csharp
+public class Order : AggregateRoot<Guid>
+{
+    public bool IsExpired(IClock clock) => ExpiresAt < clock.UtcNow;
+}
+```
+
+#### Rule 4 — DomainServicesHaveNoInfrastructureConstructorParameters
+
+Asserts that no type implementing `IDomainService` has constructor parameters whose type
+namespace starts with `Microsoft.EntityFrameworkCore`, `MassTransit`, `StackExchange.Redis`,
+or `RabbitMQ.Client`.
+
+**Rationale:** Domain services that accept infrastructure types as constructor parameters
+cannot be tested without the full infrastructure stack. They also couple the domain layer
+to a specific technology choice, making provider swaps risky. Domain services must accept
+only `IClock`, other domain interfaces, and `01.Core` primitives.
+
+**Offending pattern:**
+```csharp
+public class PricingService : DomainService
+{
+    // IDomainService with EF Core repository in constructor — violates purity
+    public PricingService(IRepository<Product> repo, IClock clock) { }
+}
+```
+
+**Compliant pattern:**
+```csharp
+public class PricingService : DomainService
+{
+    // Domain repository interface (in 03.Domain or 01.Core), not EF Core
+    public PricingService(IProductRepository repo, IClock clock) { }
+}
+```
+
+#### Usage
+
+```csharp
+using System.Reflection;
+using FluentAssertions;
+using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Domain; // reference needed for typeof(IDomainService)
+using Xunit;
+
+public class DomainPurityTests
+{
+    private static readonly Assembly DomainAssembly = typeof(Order).Assembly;
+
+    [Fact]
+    public void Domain_MustNot_ReferenceInfrastructure()
+    {
+        var result = DomainLayerPurityRules
+            .DomainAssembliesNeverReferenceInfrastructure(DomainAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Domain_MustNot_ContainEventHandlers()
+    {
+        var result = DomainLayerPurityRules
+            .DomainAssembliesNeverContainEventHandlers(DomainAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Domain_MustNot_CallSystemClock()
+    {
+        var result = DomainLayerPurityRules
+            .DomainAssembliesNeverCallSystemClock(DomainAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DomainServices_MustNot_HaveInfrastructureConstructorParameters()
+    {
+        var result = DomainLayerPurityRules
+            .DomainServicesHaveNoInfrastructureConstructorParameters(DomainAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+}
+```
+
+---
+
+### DomainGoldStandardRules — Domain Convention Enforcement
+
+`DomainGoldStandardRules` enforces the WO-011 domain conventions at assembly level. Rule 1
+is a NetArchTest predicate; Rules 2–4 are Roslyn analyzers (SK0008–SK0010) documented in the
+Analyzers section above.
+
+#### Rule 1 — DomainServicesMustExtendAbstractBase
+
+Asserts that every non-abstract type implementing `IDomainService` also inherits from the
+`DomainService` abstract base class.
+
+**Rationale:** `DomainService` provides `CheckRule(IBusinessRule)` access and acts as the
+DI anchor for all domain services. Directly implementing `IDomainService` without inheriting
+`DomainService` bypasses `CheckRule`, forcing consumers to duplicate business-rule validation
+logic across services.
+
+**Offending pattern:**
+```csharp
+// Directly implements IDomainService — bypasses DomainService.CheckRule
+public class PricingService : IDomainService
+{
+    public decimal CalculatePrice(Order order) { ... }
+}
+```
+
+**Compliant pattern:**
+```csharp
+// Inherits DomainService — gets CheckRule and the standard DI anchor
+public class PricingService : DomainService
+{
+    public decimal CalculatePrice(Order order)
+    {
+        CheckRule(new PricingEligibilityRule(order));
+        ...
+    }
+}
+```
+
+**Usage:**
+```csharp
+[Fact]
+public void DomainServices_Must_ExtendAbstractBase()
+{
+    var result = DomainGoldStandardRules
+        .DomainServicesMustExtendAbstractBase(typeof(IDomainService).Assembly)
+        .GetResult();
+
+    result.IsSuccessful.Should().BeTrue(
+        because: $"Failing types: {string.Join(", ", result.FailingTypeNames ?? [])}");
+}
+```
+
+The `DomainService` abstract base itself is excluded via `.AreNotAbstract()` in the
+NetArchTest predicate chain — it passes cleanly without appearing as a violation.
+
+---
+
+### ContractsPurityRules — Contracts Layer Purity Enforcement
+
+`ContractsPurityRules` provides four predicates that protect `04.Contracts` from domain
+logic leakage, domain type exposure, `Result<T>` misuse, and non-sealed integration events.
+A fifth rule is a documented guideline (not enforced by NetArchTest).
+
+#### Rule 1 — ContractsAssembliesHaveNoNonTrivialMethods
+
+Asserts that no type in the contracts assembly contains a non-trivial method — defined as
+any method that is not a constructor, property getter/setter, static operator (`op_` prefix),
+or one of `ToString`/`Equals`/`GetHashCode`.
+
+**Rationale:** DTOs and event payloads carry state, not behaviour. Any non-trivial method
+in `04.Contracts` signals domain logic leakage into the contracts layer, creating an
+invisible coupling between the wire format and domain rules.
+
+**Offending pattern:**
+```csharp
+public class OrderDto
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset Deadline { get; set; }
+
+    // Non-trivial method — domain logic in a DTO
+    public bool IsExpired() => Deadline < DateTime.UtcNow;
+}
+```
+
+**Compliant pattern:**
+```csharp
+public record OrderDto(Guid Id, DateTimeOffset Deadline);
+// Expiry logic belongs in the domain or application layer, not the DTO
+```
+
+#### Rule 2 — ContractsAssembliesHaveNoDomainTypeOnPublicSurface
+
+Asserts no public type in the contracts assembly has a binary reference to the
+`SharedKernel.Domain` assembly.
+
+**Rationale:** Exposing `Entity<TId>`, `AggregateRoot<TId>`, `ValueObject`, or
+`Specification<T>` on a contracts public surface ties the wire format to the domain model,
+breaking polyglot consumers that do not reference `SharedKernel.Domain`.
+
+**Exemption:** `EventEnvelope<TEvent> where TEvent : IDomainEvent` — the generic constraint
+references `IDomainEvent`. If NetArchTest's dependency scanner picks this up as a domain
+reference, the `EventEnvelope` type is explicitly excluded from the scan. This exemption is
+documented in the architecture test fixture.
+
+**Offending pattern:**
+```csharp
+public class OrderSummaryDto
+{
+    // Domain type on a contracts public surface — breaks polyglot consumers
+    public Order DomainOrder { get; set; }
+}
+```
+
+**Compliant pattern:**
+```csharp
+public record OrderSummaryDto(Guid OrderId, string Status, DateTimeOffset CreatedAt);
+```
+
+#### Rule 3 — ContractsAssembliesHaveNoResultTypeOnPublicSurface
+
+Asserts no public type in the contracts assembly has a binary reference to
+`SharedKernel.Primitives` (where `Result<T>` and `Result` live).
+
+**Rationale:** `Result<T>` is an intra-service discriminated union. `Envelope<T>` is the
+cross-service HTTP wrapper. Exposing `Result<T>` in a serialized response payload causes
+deserialization failures in any JSON client that does not share `SharedKernel.Primitives`,
+breaking the polyglot contract model.
+
+**Offending pattern:**
+```csharp
+public class CreateOrderResponse
+{
+    // Result<T> on a cross-service DTO — breaks polyglot deserialization
+    public Result<Guid> OrderId { get; set; }
+}
+```
+
+**Compliant pattern:**
+```csharp
+public record CreateOrderResponse(Guid OrderId);
+// Use Envelope<T> for HTTP wrapping — not Result<T>
+```
+
+#### Rule 4 — IntegrationEventImplementationsMustBeSealed
+
+Asserts every non-abstract type implementing `IIntegrationEvent` is sealed (or a record,
+which is sealed in IL).
+
+**Rationale:** Non-sealed integration events are an inheritance trap. A sub-event changes
+the wire format without incrementing `[DomainEventVersion]`, causing silent schema drift
+that breaks consumers relying on exact type discrimination.
+
+**Offending pattern:**
+```csharp
+// Non-sealed — a subtype could silently extend the wire format
+public class OrderCreatedEvent : IIntegrationEvent
+{
+    public Guid OrderId { get; init; }
+}
+```
+
+**Compliant pattern:**
+```csharp
+public sealed record OrderCreatedEvent(Guid OrderId) : IIntegrationEvent;
+```
+
+#### Rule 5 — Microservices Must Not Reference SharedKernel.Domain Directly (Guideline)
+
+This is a **documentation-only guideline** — it is not enforced by a NetArchTest predicate
+at the mono-repo level.
+
+Microservices that are not DDD-domain services must not take a `<PackageReference>` on
+`SharedKernel.Domain`. Cross-service DTO types live in `SharedKernel.Contracts`; domain
+types (`Entity`, `ValueObject`, `AggregateRoot`) are internal to the service that owns the
+domain. Referencing `SharedKernel.Domain` from a CRUD microservice or a reporting service
+creates an invisible coupling to the domain model that breaks silently when the domain
+evolves.
+
+**Architectural rationale:** The contracts package is the stable public surface between
+services. `SharedKernel.Domain` is an internal building block for services that
+implement domain logic. Consuming it from non-domain services collapses the contracts/domain
+separation and forces every downstream service to rebuild when the domain model changes.
+
+#### Usage
+
+```csharp
+using System.Reflection;
+using FluentAssertions;
+using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Contracts; // reference needed to supply the contracts assembly
+using Xunit;
+
+public class ContractsPurityTests
+{
+    private static readonly Assembly ContractsAssembly = typeof(PagedList<>).Assembly;
+
+    [Fact]
+    public void Contracts_MustNot_HaveNonTrivialMethods()
+    {
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoNonTrivialMethods(ContractsAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Contracts_MustNot_ExposeDomainTypesOnPublicSurface()
+    {
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoDomainTypeOnPublicSurface(ContractsAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Contracts_MustNot_ExposeResultTypeOnPublicSurface()
+    {
+        var result = ContractsPurityRules
+            .ContractsAssembliesHaveNoResultTypeOnPublicSurface(ContractsAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IntegrationEvents_Must_BeSealed()
+    {
+        var result = ContractsPurityRules
+            .IntegrationEventImplementationsMustBeSealed(ContractsAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue();
+    }
+}
+```
 
 ---
 

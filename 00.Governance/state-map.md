@@ -345,15 +345,15 @@ Two complementary enforcement rules close the coupling drift vector introduced b
 |----|------|-----------|:-----:|
 | D-13 | Define `CachingAbstractionRules` static class shape: `OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` → `ConditionList`; define the three-assembly exemption list (`SharedKernel.Caching`, `SharedKernel.Caching.Redis`, `SharedKernel.ServiceDefaults`); document rationale | SharedKernel.ArchitectureTests | `●` |
 | D-14 | Define SK0007 `RedisChannelServiceMessagingSubstitute` — trigger: `IRedisChannelService` in constructor param / field / property of a class whose name or enclosing namespace contains `Command`, `Event`, `DomainEvent`, or `IntegrationEvent`; suppression: inside `SharedKernel.Caching` or `SharedKernel.Caching.Redis` namespaces | SharedKernel.Analyzers | `●` |
-| C-18 | Implement `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` — NetArchTest fluent predicate using `.Should().NotHaveDependencyOn("SharedKernel.Caching")` with assembly-name-based exemption filter | SharedKernel.ArchitectureTests | `○` |
-| C-19 | Implement SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` — `ClassDeclarationSyntax` walker; simple name match on `IRedisChannelService`; substring check for `Command`/`Event`/`DomainEvent`/`IntegrationEvent` in class name and namespace ancestors; suppress inside `SharedKernel.Caching*` namespaces via parent walk | SharedKernel.Analyzers | `○` |
-| T-18 | Architecture test (fire path): pass a contrived assembly reference that imports `SharedKernel.Caching` from an application-layer class; assert `CachingAbstractionRules` rule fails with the offending assembly name in the failure message | SharedKernel.ArchitectureTests | `○` |
-| T-19 | Architecture test (pass path): pass only the three exempt assemblies; assert `CachingAbstractionRules` rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-20 | Analyzer test SK0007 (fire path): `IRedisChannelService` injected via constructor in a class named `PlaceOrderCommandHandler` in namespace `Application.Commands` triggers SK0007 | SharedKernel.Analyzers.Tests | `○` |
-| T-21 | Analyzer test SK0007 (pass path): `IRedisChannelService` injected in a class named `CacheInvalidationService` with no forbidden name or namespace term — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
-| T-22 | Analyzer test SK0007 (suppression path): `IRedisChannelService` injected in a class within `SharedKernel.Caching.Redis` namespace — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
-| DO-07 | Document `CachingAbstractionRules` in `00.Governance/README.md`: rule rationale, exemption list, how to add a documented exemption for a non-standard composition root | SharedKernel.ArchitectureTests | `○` |
-| DO-08 | Document SK0007 in `00.Governance/README.md`: rationale (Redis pub/sub is not a durable bus), violating example, compliant alternative, suppression instructions | SharedKernel.Analyzers | `○` |
+| C-18 | Implement `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching(Assembly[])` — NetArchTest fluent predicate using `.Should().NotHaveDependencyOn("SharedKernel.Caching")` with assembly-name-based exemption filter | SharedKernel.ArchitectureTests | `●` |
+| C-19 | Implement SK0007 `RedisChannelServiceMessagingSubstituteAnalyzer` — `ClassDeclarationSyntax` walker; simple name match on `IRedisChannelService`; substring check for `Command`/`Event`/`DomainEvent`/`IntegrationEvent` in class name and namespace ancestors; suppress inside `SharedKernel.Caching*` namespaces via parent walk | SharedKernel.Analyzers | `●` |
+| T-18 | Architecture test (fire path): pass a contrived assembly reference that imports `SharedKernel.Caching` from an application-layer class; assert `CachingAbstractionRules` rule fails with the offending assembly name in the failure message | SharedKernel.ArchitectureTests | `●` |
+| T-19 | Architecture test (pass path): pass only the three exempt assemblies; assert `CachingAbstractionRules` rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-20 | Analyzer test SK0007 (fire path): `IRedisChannelService` injected via constructor in a class named `PlaceOrderCommandHandler` in namespace `Application.Commands` triggers SK0007 | SharedKernel.Analyzers.Tests | `●` |
+| T-21 | Analyzer test SK0007 (pass path): `IRedisChannelService` injected in a class named `CacheInvalidationService` with no forbidden name or namespace term — no diagnostic | SharedKernel.Analyzers.Tests | `●` |
+| T-22 | Analyzer test SK0007 (suppression path): `IRedisChannelService` injected in a class within `SharedKernel.Caching.Redis` namespace — no diagnostic | SharedKernel.Analyzers.Tests | `●` |
+| DO-07 | Document `CachingAbstractionRules` in `00.Governance/README.md`: rule rationale, exemption list, how to add a documented exemption for a non-standard composition root | SharedKernel.ArchitectureTests | `●` |
+| DO-08 | Document SK0007 in `00.Governance/README.md`: rationale (Redis pub/sub is not a durable bus), violating example, compliant alternative, suppression instructions | SharedKernel.Analyzers | `●` |
 
 ---
 
@@ -439,19 +439,19 @@ All files in `SharedKernel.ArchitectureTests`:
 | D-16 | Define `DomainAssembliesNeverContainEventHandlers` predicate shape: `DoesNotImplementOpenGenericInterfacePredicate` design — `TypeDefinition.Interfaces` inspection for `IDomainEventHandler` name prefix; failure message includes offending type full name | SharedKernel.ArchitectureTests | `●` |
 | D-17 | Define `DomainAssembliesNeverCallSystemClock` predicate shape: `DoesNotCallSystemClockPredicate` design — IL instruction walk for `DateTime::get_UtcNow`, `DateTime::get_Now`, `DateTimeOffset::get_UtcNow`, `DateTimeOffset::get_Now`; failure message includes offending type and method | SharedKernel.ArchitectureTests | `●` |
 | D-18 | Define `DomainServicesHaveNoInfrastructureConstructorParameters` predicate shape: `NoInfrastructureConstructorParametersPredicate` design — scope to `IDomainService` implementors, inspect constructor `ParameterDefinition.ParameterType.Namespace` for infra namespace prefix match; failure message includes offending type and parameter type | SharedKernel.ArchitectureTests | `●` |
-| C-20 | Implement `DoesNotImplementOpenGenericInterfacePredicate` in `Predicates/` — `ICustomRule` checking `TypeDefinition.Interfaces` for entries whose `InterfaceType.Name` starts with `"IDomainEventHandler"`; return false with offending type full name on violation | SharedKernel.ArchitectureTests | `○` |
-| C-21 | Implement `DoesNotCallSystemClockPredicate` in `Predicates/` — `ICustomRule` walking all `MethodDefinition.Body.Instructions` for `Call`/`Callvirt` opcodes whose operand `MethodReference.FullName` matches any of the four forbidden property getters | SharedKernel.ArchitectureTests | `○` |
-| C-22 | Implement `NoInfrastructureConstructorParametersPredicate` in `Predicates/` — `ICustomRule` scoped to types implementing `IDomainService`; inspects `TypeDefinition.Methods` where `IsConstructor` is true; checks each `ParameterDefinition.ParameterType.Namespace` against forbidden namespace prefix list | SharedKernel.ArchitectureTests | `○` |
-| C-23 | Implement `DomainLayerPurityRules` static class in `Rules/` — four factory methods: `DomainAssembliesNeverReferenceInfrastructure(Assembly)` → `ConditionList`, `DomainAssembliesNeverContainEventHandlers(Assembly)` → `ConditionList`, `DomainAssembliesNeverCallSystemClock(Assembly)` → `ConditionList`, `DomainServicesHaveNoInfrastructureConstructorParameters(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
-| T-23 | Architecture test Rule 1 (fire path): pass a contrived domain assembly that references `Microsoft.EntityFrameworkCore`; assert `DomainAssembliesNeverReferenceInfrastructure` fails and failure message contains the offending assembly name | SharedKernel.ArchitectureTests | `○` |
-| T-24 | Architecture test Rule 1 (pass path): pass a clean domain assembly with no infrastructure references; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-25 | Architecture test Rule 2 (fire path): pass a domain assembly containing a type that implements `IDomainEventHandler<TEvent>`; assert `DomainAssembliesNeverContainEventHandlers` fails and failure message contains the offending type full name | SharedKernel.ArchitectureTests | `○` |
-| T-26 | Architecture test Rule 2 (pass path): pass a clean domain assembly with no event handler implementations; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-27 | Architecture test Rule 3 (fire path): pass a domain assembly where a domain entity method calls `DateTime.UtcNow`; assert `DomainAssembliesNeverCallSystemClock` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
-| T-28 | Architecture test Rule 3 (pass path): pass a clean domain assembly where time is consumed via `IClock.UtcNow`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-29 | Architecture test Rule 4 (fire path): pass a domain assembly where an `IDomainService` implementation has an `IRepository` (EF Core namespace) constructor parameter; assert `DomainServicesHaveNoInfrastructureConstructorParameters` fails and failure message names the offending type and parameter type | SharedKernel.ArchitectureTests | `○` |
-| T-30 | Architecture test Rule 4 (pass path): pass a clean `IDomainService` implementation whose constructor accepts only `IClock` and other domain interfaces; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| DO-09 | Document all four `DomainLayerPurityRules` predicates in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale for each rule, offending-pattern example, compliant-pattern example, cross-reference to root `CLAUDE.md` hard rules | SharedKernel.ArchitectureTests | `○` |
+| C-20 | Implement `DoesNotImplementOpenGenericInterfacePredicate` in `Predicates/` — `ICustomRule` checking `TypeDefinition.Interfaces` for entries whose `InterfaceType.Name` starts with `"IDomainEventHandler"`; return false with offending type full name on violation | SharedKernel.ArchitectureTests | `●` |
+| C-21 | Implement `DoesNotCallSystemClockPredicate` in `Predicates/` — `ICustomRule` walking all `MethodDefinition.Body.Instructions` for `Call`/`Callvirt` opcodes whose operand `MethodReference.FullName` matches any of the four forbidden property getters | SharedKernel.ArchitectureTests | `●` |
+| C-22 | Implement `NoInfrastructureConstructorParametersPredicate` in `Predicates/` — `ICustomRule` scoped to types implementing `IDomainService`; inspects `TypeDefinition.Methods` where `IsConstructor` is true; checks each `ParameterDefinition.ParameterType.Namespace` against forbidden namespace prefix list | SharedKernel.ArchitectureTests | `●` |
+| C-23 | Implement `DomainLayerPurityRules` static class in `Rules/` — four factory methods: `DomainAssembliesNeverReferenceInfrastructure(Assembly)` → `ConditionList`, `DomainAssembliesNeverContainEventHandlers(Assembly)` → `ConditionList`, `DomainAssembliesNeverCallSystemClock(Assembly)` → `ConditionList`, `DomainServicesHaveNoInfrastructureConstructorParameters(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `●` |
+| T-23 | Architecture test Rule 1 (fire path): pass a contrived domain assembly that references `Microsoft.EntityFrameworkCore`; assert `DomainAssembliesNeverReferenceInfrastructure` fails and failure message contains the offending assembly name | SharedKernel.ArchitectureTests | `●` |
+| T-24 | Architecture test Rule 1 (pass path): pass a clean domain assembly with no infrastructure references; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-25 | Architecture test Rule 2 (fire path): pass a domain assembly containing a type that implements `IDomainEventHandler<TEvent>`; assert `DomainAssembliesNeverContainEventHandlers` fails and failure message contains the offending type full name | SharedKernel.ArchitectureTests | `●` |
+| T-26 | Architecture test Rule 2 (pass path): pass a clean domain assembly with no event handler implementations; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-27 | Architecture test Rule 3 (fire path): pass a domain assembly where a domain entity method calls `DateTime.UtcNow`; assert `DomainAssembliesNeverCallSystemClock` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `●` |
+| T-28 | Architecture test Rule 3 (pass path): pass a clean domain assembly where time is consumed via `IClock.UtcNow`; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-29 | Architecture test Rule 4 (fire path): pass a domain assembly where an `IDomainService` implementation has an `IRepository` (EF Core namespace) constructor parameter; assert `DomainServicesHaveNoInfrastructureConstructorParameters` fails and failure message names the offending type and parameter type | SharedKernel.ArchitectureTests | `●` |
+| T-30 | Architecture test Rule 4 (pass path): pass a clean `IDomainService` implementation whose constructor accepts only `IClock` and other domain interfaces; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| DO-09 | Document all four `DomainLayerPurityRules` predicates in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale for each rule, offending-pattern example, compliant-pattern example, cross-reference to root `CLAUDE.md` hard rules | SharedKernel.ArchitectureTests | `●` |
 
 ---
 
@@ -534,24 +534,24 @@ WO-011 introduced several high-value conventions — the `DomainService` abstrac
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| D-19 | Define `DomainGoldStandardRules.DomainServicesMustExtendAbstractBase(Assembly)` shape: NetArchTest `.ImplementInterface(typeof(IDomainService)).And().AreNotAbstract().Should().Inherit(typeof(DomainService))`; failure message lists offending type names from `.GetResult().FailingTypeNames` | SharedKernel.ArchitectureTests | `○` |
-| D-20 | Define SK0008 `AggregateRootDispatchCoupling` — trigger: `IAggregateRoot<>` constructor parameter in class/namespace containing `Interceptor`, `Publisher`, `Outbox`, or `Dispatcher`; no suppression namespace; link to `IHasDomainEvents` in fix message | SharedKernel.Analyzers | `○` |
-| D-21 | Define SK0009 `DomainEventMissingVersionAttribute` — trigger: type implementing `IDomainEvent` (base list check) without `[DomainEventVersion]` attribute; exempt abstract types; no suppression namespace | SharedKernel.Analyzers | `○` |
-| D-22 | Define SK0010 `SpecificationOrderingConflict` — trigger: constructor body containing both `ApplyOrderBy` and `ApplyOrderByDescending` invocations; simple name check; no type-scoping required | SharedKernel.Analyzers | `○` |
-| C-24 | Implement `DomainGoldStandardRules` static class in `Rules/` — single factory method `DomainServicesMustExtendAbstractBase(Assembly)` returning `ConditionList` using NetArchTest fluent `.Inherit()` predicate | SharedKernel.ArchitectureTests | `○` |
-| C-25 | Implement SK0008 `AggregateRootDispatchCouplingAnalyzer` — `ConstructorDeclarationSyntax` walker; IAggregateRoot simple name check on param type; dispatch-context substring check on class name and ancestor namespaces; report SK0008 on param type identifier | SharedKernel.Analyzers | `○` |
-| C-26 | Implement SK0009 `DomainEventMissingVersionAttributeAnalyzer` — `ClassDeclarationSyntax` and `RecordDeclarationSyntax` walker; base list check for `IDomainEvent`; attribute list check for `DomainEventVersion`; skip abstract types; report SK0009 on type identifier | SharedKernel.Analyzers | `○` |
-| C-27 | Implement SK0010 `SpecificationOrderingConflictAnalyzer` — `ConstructorDeclarationSyntax` walker; collect `ApplyOrderBy` and `ApplyOrderByDescending` invocations in body; if both present, report SK0010 on constructor identifier | SharedKernel.Analyzers | `○` |
-| T-31 | Architecture test Rule 1 (fire path): pass a contrived assembly containing an `IDomainService` implementor that does NOT extend `DomainService`; assert `DomainServicesMustExtendAbstractBase` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
-| T-32 | Architecture test Rule 1 (pass path): pass an assembly where all `IDomainService` implementors extend `DomainService`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-33 | Analyzer test SK0008 (fire path): `IAggregateRoot<Order>` constructor parameter in class `OrderPublisher` (namespace `Messaging`) triggers SK0008 | SharedKernel.Analyzers.Tests | `○` |
-| T-34 | Analyzer test SK0008 (pass path): `IHasDomainEvents` constructor parameter in class `OrderPublisher` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
-| T-35 | Analyzer test SK0009 (fire path): `record OrderCreated : IDomainEvent { ... }` without `[DomainEventVersion]` attribute triggers SK0009 | SharedKernel.Analyzers.Tests | `○` |
-| T-36 | Analyzer test SK0009 (pass path): `[DomainEventVersion(1)] record OrderCreated : IDomainEvent { ... }` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
-| T-37 | Analyzer test SK0009 (abstract exempt path): `abstract class DomainEventBase : IDomainEvent { }` without `[DomainEventVersion]` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
-| T-38 | Analyzer test SK0010 (fire path): specification constructor calling both `ApplyOrderBy(x => x.Name)` and `ApplyOrderByDescending(x => x.CreatedAt)` triggers SK0010 | SharedKernel.Analyzers.Tests | `○` |
-| T-39 | Analyzer test SK0010 (pass path): specification constructor calling only `ApplyOrderBy(x => x.Name)` — no diagnostic | SharedKernel.Analyzers.Tests | `○` |
-| DO-10 | Document all four DomainGoldStandard rules in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale, offending-pattern example, compliant-pattern example | SharedKernel.ArchitectureTests, SharedKernel.Analyzers | `○` |
+| D-19 | Define `DomainGoldStandardRules.DomainServicesMustExtendAbstractBase(Assembly)` shape: NetArchTest `.ImplementInterface(typeof(IDomainService)).And().AreNotAbstract().Should().Inherit(typeof(DomainService))`; failure message lists offending type names from `.GetResult().FailingTypeNames` | SharedKernel.ArchitectureTests | `●` |
+| D-20 | Define SK0008 `AggregateRootDispatchCoupling` — trigger: `IAggregateRoot<>` constructor parameter in class/namespace containing `Interceptor`, `Publisher`, `Outbox`, or `Dispatcher`; no suppression namespace; link to `IHasDomainEvents` in fix message | SharedKernel.Analyzers | `●` |
+| D-21 | Define SK0009 `DomainEventMissingVersionAttribute` — trigger: type implementing `IDomainEvent` (base list check) without `[DomainEventVersion]` attribute; exempt abstract types; no suppression namespace | SharedKernel.Analyzers | `●` |
+| D-22 | Define SK0010 `SpecificationOrderingConflict` — trigger: constructor body containing both `ApplyOrderBy` and `ApplyOrderByDescending` invocations; simple name check; no type-scoping required | SharedKernel.Analyzers | `●` |
+| C-24 | Implement `DomainGoldStandardRules` static class in `Rules/` — single factory method `DomainServicesMustExtendAbstractBase(Assembly)` returning `ConditionList` using NetArchTest fluent `.Inherit()` predicate | SharedKernel.ArchitectureTests | `●` |
+| C-25 | Implement SK0008 `AggregateRootDispatchCouplingAnalyzer` — `ConstructorDeclarationSyntax` walker; IAggregateRoot simple name check on param type; dispatch-context substring check on class name and ancestor namespaces; report SK0008 on param type identifier | SharedKernel.Analyzers | `●` |
+| C-26 | Implement SK0009 `DomainEventMissingVersionAttributeAnalyzer` — `ClassDeclarationSyntax` and `RecordDeclarationSyntax` walker; base list check for `IDomainEvent`; attribute list check for `DomainEventVersion`; skip abstract types; report SK0009 on type identifier | SharedKernel.Analyzers | `●` |
+| C-27 | Implement SK0010 `SpecificationOrderingConflictAnalyzer` — `ConstructorDeclarationSyntax` walker; collect `ApplyOrderBy` and `ApplyOrderByDescending` invocations in body; if both present, report SK0010 on constructor identifier | SharedKernel.Analyzers | `●` |
+| T-31 | Architecture test Rule 1 (fire path): pass a contrived assembly containing an `IDomainService` implementor that does NOT extend `DomainService`; assert `DomainServicesMustExtendAbstractBase` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `●` |
+| T-32 | Architecture test Rule 1 (pass path): pass an assembly where all `IDomainService` implementors extend `DomainService`; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-33 | Analyzer test SK0008 (fire path): `IAggregateRoot<Order>` constructor parameter in class `OrderPublisher` (namespace `Messaging`) triggers SK0008 | SharedKernel.Analyzers.Tests | `●` |
+| T-34 | Analyzer test SK0008 (pass path): `IHasDomainEvents` constructor parameter in class `OrderPublisher` — no diagnostic | SharedKernel.Analyzers.Tests | `●` |
+| T-35 | Analyzer test SK0009 (fire path): `record OrderCreated : IDomainEvent { ... }` without `[DomainEventVersion]` attribute triggers SK0009 | SharedKernel.Analyzers.Tests | `●` |
+| T-36 | Analyzer test SK0009 (pass path): `[DomainEventVersion(1)] record OrderCreated : IDomainEvent { ... }` — no diagnostic | SharedKernel.Analyzers.Tests | `●` |
+| T-37 | Analyzer test SK0009 (abstract exempt path): `abstract class DomainEventBase : IDomainEvent { }` without `[DomainEventVersion]` — no diagnostic | SharedKernel.Analyzers.Tests | `●` |
+| T-38 | Analyzer test SK0010 (fire path): specification constructor calling both `ApplyOrderBy(x => x.Name)` and `ApplyOrderByDescending(x => x.CreatedAt)` triggers SK0010 | SharedKernel.Analyzers.Tests | `●` |
+| T-39 | Analyzer test SK0010 (pass path): specification constructor calling only `ApplyOrderBy(x => x.Name)` — no diagnostic | SharedKernel.Analyzers.Tests | `●` |
+| DO-10 | Document all four DomainGoldStandard rules in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale, offending-pattern example, compliant-pattern example | SharedKernel.ArchitectureTests, SharedKernel.Analyzers | `●` |
 
 ---
 
@@ -632,19 +632,19 @@ No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| D-23 | Define `ContractsAssembliesHaveNoNonTrivialMethods` shape: `NoNonTrivialMethodsPredicate` heuristic design — zero non-trivial methods threshold; allowlist: constructors, property getters/setters, operators (`op_` prefix), `ToString`/`Equals`/`GetHashCode` by name | SharedKernel.ArchitectureTests | `○` |
-| D-24 | Define `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` shape: `.Should().NotHaveDependencyOn("SharedKernel.Domain")` on public contracts types; document `EventEnvelope<TEvent>` generic-constraint exemption | SharedKernel.ArchitectureTests | `○` |
-| D-25 | Define `ContractsAssembliesHaveNoResultTypeOnPublicSurface` shape: `.Should().NotHaveDependencyOn("SharedKernel.Primitives")` on public contracts types; failure message must include offending type name | SharedKernel.ArchitectureTests | `○` |
-| D-26 | Define `IntegrationEventImplementationsMustBeSealed` shape: `.ImplementInterface(typeof(IIntegrationEvent)).And().AreNotAbstract().Should().BeSealed()` — with ICustomRule fallback if `.BeSealed()` unavailable in NetArchTest 1.3.2 | SharedKernel.ArchitectureTests | `○` |
-| C-28 | Implement `NoNonTrivialMethodsPredicate` in `Predicates/` — `ICustomRule` inspecting `TypeDefinition.Methods`; exclude constructors, property accessors, operators, `ToString`/`Equals`/`GetHashCode`; return false with offending type+method name on first non-trivial method found | SharedKernel.ArchitectureTests | `○` |
-| C-29 | Implement `ContractsPurityRules` static class in `Rules/` — four factory methods: `ContractsAssembliesHaveNoNonTrivialMethods(Assembly)`, `ContractsAssembliesHaveNoDomainTypeOnPublicSurface(Assembly)`, `ContractsAssembliesHaveNoResultTypeOnPublicSurface(Assembly)`, `IntegrationEventImplementationsMustBeSealed(Assembly)` — all return `ConditionList` | SharedKernel.ArchitectureTests | `○` |
-| T-40 | Architecture test Rule 1 (fire path): pass a contrived contracts assembly containing a type with a non-trivial method body (e.g., a `Validate()` method with conditional logic); assert `ContractsAssembliesHaveNoNonTrivialMethods` fails and names the offending type and method | SharedKernel.ArchitectureTests | `○` |
-| T-41 | Architecture test Rule 1 (pass path): pass a clean contracts assembly of pure DTOs and records; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-42 | Architecture test Rule 2 (fire path): pass a contracts assembly containing a public property of type `AggregateRoot<Guid>`; assert `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` fails | SharedKernel.ArchitectureTests | `○` |
-| T-43 | Architecture test Rule 3 (fire path): pass a contracts assembly with a public method returning `Result<string>`; assert `ContractsAssembliesHaveNoResultTypeOnPublicSurface` fails and failure message contains the offending type name | SharedKernel.ArchitectureTests | `○` |
-| T-44 | Architecture test Rule 4 (fire path): pass a contracts assembly with a non-sealed class implementing `IIntegrationEvent`; assert `IntegrationEventImplementationsMustBeSealed` fails and names the offending type | SharedKernel.ArchitectureTests | `○` |
-| T-45 | Architecture test Rule 4 (pass path): pass a contracts assembly where all `IIntegrationEvent` implementations are sealed classes or records; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| DO-11 | Document all five ContractsPurity rules in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale, offending-pattern example, compliant-pattern example; Rule 5 documented as guideline with architectural rationale | SharedKernel.ArchitectureTests | `○` |
+| D-23 | Define `ContractsAssembliesHaveNoNonTrivialMethods` shape: `NoNonTrivialMethodsPredicate` heuristic design — zero non-trivial methods threshold; allowlist: constructors, property getters/setters, operators (`op_` prefix), `ToString`/`Equals`/`GetHashCode` by name | SharedKernel.ArchitectureTests | `●` |
+| D-24 | Define `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` shape: `.Should().NotHaveDependencyOn("SharedKernel.Domain")` on public contracts types; document `EventEnvelope<TEvent>` generic-constraint exemption | SharedKernel.ArchitectureTests | `●` |
+| D-25 | Define `ContractsAssembliesHaveNoResultTypeOnPublicSurface` shape: `.Should().NotHaveDependencyOn("SharedKernel.Primitives")` on public contracts types; failure message must include offending type name | SharedKernel.ArchitectureTests | `●` |
+| D-26 | Define `IntegrationEventImplementationsMustBeSealed` shape: `.ImplementInterface(typeof(IIntegrationEvent)).And().AreNotAbstract().Should().BeSealed()` — with ICustomRule fallback if `.BeSealed()` unavailable in NetArchTest 1.3.2 | SharedKernel.ArchitectureTests | `●` |
+| C-28 | Implement `NoNonTrivialMethodsPredicate` in `Predicates/` — `ICustomRule` inspecting `TypeDefinition.Methods`; exclude constructors, property accessors, operators, `ToString`/`Equals`/`GetHashCode`; return false with offending type+method name on first non-trivial method found | SharedKernel.ArchitectureTests | `●` |
+| C-29 | Implement `ContractsPurityRules` static class in `Rules/` — four factory methods: `ContractsAssembliesHaveNoNonTrivialMethods(Assembly)`, `ContractsAssembliesHaveNoDomainTypeOnPublicSurface(Assembly)`, `ContractsAssembliesHaveNoResultTypeOnPublicSurface(Assembly)`, `IntegrationEventImplementationsMustBeSealed(Assembly)` — all return `ConditionList` | SharedKernel.ArchitectureTests | `●` |
+| T-40 | Architecture test Rule 1 (fire path): pass a contrived contracts assembly containing a type with a non-trivial method body (e.g., a `Validate()` method with conditional logic); assert `ContractsAssembliesHaveNoNonTrivialMethods` fails and names the offending type and method | SharedKernel.ArchitectureTests | `●` |
+| T-41 | Architecture test Rule 1 (pass path): pass a clean contracts assembly of pure DTOs and records; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-42 | Architecture test Rule 2 (fire path): pass a contracts assembly containing a public property of type `AggregateRoot<Guid>`; assert `ContractsAssembliesHaveNoDomainTypeOnPublicSurface` fails | SharedKernel.ArchitectureTests | `●` |
+| T-43 | Architecture test Rule 3 (fire path): pass a contracts assembly with a public method returning `Result<string>`; assert `ContractsAssembliesHaveNoResultTypeOnPublicSurface` fails and failure message contains the offending type name | SharedKernel.ArchitectureTests | `●` |
+| T-44 | Architecture test Rule 4 (fire path): pass a contracts assembly with a non-sealed class implementing `IIntegrationEvent`; assert `IntegrationEventImplementationsMustBeSealed` fails and names the offending type | SharedKernel.ArchitectureTests | `●` |
+| T-45 | Architecture test Rule 4 (pass path): pass a contracts assembly where all `IIntegrationEvent` implementations are sealed classes or records; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| DO-11 | Document all five ContractsPurity rules in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale, offending-pattern example, compliant-pattern example; Rule 5 documented as guideline with architectural rationale | SharedKernel.ArchitectureTests | `●` |
 
 ---
 
@@ -666,17 +666,17 @@ Format when active:
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.00.Design` | Design | 26 | 18 | 8 | `◐` |
+| `SK.00.Design` | Design | 26 | 26 | 0 | `●` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
-| `SK.00.Core` | Core | 36 | 14 | 22 | `◐` |
-| `SK.00.Tests` | Tests | 45 | 12 | 33 | `◐` |
-| `SK.00.Docs` | Docs | 11 | 5 | 6 | `◐` |
+| `SK.00.Core` | Core | 36 | 36 | 0 | `●` |
+| `SK.00.Tests` | Tests | 45 | 45 | 0 | `●` |
+| `SK.00.Docs` | Docs | 11 | 11 | 0 | `●` |
 | `SK.00.Published` | Published | 6 | 6 | 0 | `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | 11 | 11 | 0 | `●` |
-| `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | 11 | 0 | 11 | `○` |
-| `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | 16 | 0 | 16 | `○` |
-| `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | 19 | 0 | 19 | `○` |
-| `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | 13 | 0 | 13 | `○` |
+| `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | 11 | 11 | 0 | `●` |
+| `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | 16 | 16 | 0 | `●` |
+| `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | 19 | 19 | 0 | `●` |
+| `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | 13 | 13 | 0 | `●` |
 
 ---
 
@@ -698,3 +698,6 @@ Format when active:
 - [2026-05-22] D-13–D-18 → ● in SK.00.Design — all 6 remaining design tasks verified complete (specs fully present in CLAUDE.md); SK.00.Design promoted to ● with 18/18 tasks done (state-map-phase)
 - [2026-05-30] Phase Domain Gold-Standard Architecture Rules added (SK.00.DomainGoldStandard) — 19 tasks: D-19–D-22, C-24–C-27, T-31–T-39, DO-10; SK0008 AggregateRootDispatchCoupling, SK0009 DomainEventMissingVersionAttribute, SK0010 SpecificationOrderingConflict registered; DomainGoldStandardRules arch predicate defined; total tasks now 144 — WO-011 P-056
 - [2026-05-30] Phase Contracts Layer Purity Architecture Rules added (SK.00.ContractsPurity) — 13 tasks: D-23–D-26, C-28–C-29, T-40–T-45, DO-11; four NetArchTest predicates in ContractsPurityRules; NoNonTrivialMethodsPredicate ICustomRule; no new SK IDs; Rule 5 documentation-only guideline — WO-012 P-063
+- [2026-05-31] D-19–D-26 → ● in SK.00.Design — all 8 remaining design tasks complete; SK.00.Design promoted to ● (state-map-phase)
+- [2026-05-31] C-18–C-19, T-18–T-22 → ● in SK.00.CachingEnforcement; C-20–C-23, T-23–T-30 → ● in SK.00.DomainLayerPurity; C-24–C-27, T-31–T-39 → ● in SK.00.DomainGoldStandard; C-28–C-29, T-40–T-45 → ● in SK.00.ContractsPurity (state-map-phase)
+- [2026-05-31] DO-07–DO-11 → ● in SK.00.Docs — README.md extended with SK0007–SK0010 Roslyn analyzer docs, CachingAbstractionRules, DomainLayerPurityRules, DomainGoldStandardRules, ContractsPurityRules architecture test docs; Overall Progress table corrected for Core/Tests/Docs/CachingEnforcement/DomainLayerPurity/DomainGoldStandard/ContractsPurity — all phase keys now ● (state-map-phase)

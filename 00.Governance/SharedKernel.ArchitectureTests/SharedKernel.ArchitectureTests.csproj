@@ -31,9 +31,17 @@
 
   <ItemGroup>
     <!-- Guards reference required to resolve typeof(IGuardClause) in GuardPurityRules.
-         PrivateAssets="all" prevents SharedKernel.Guards from leaking as a transitive
-         production dependency of any consumer that references SharedKernel.ArchitectureTests. -->
+         PrivateAssets="all" prevents transitive leakage to production code. -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj"
+                      PrivateAssets="all" />
+    <!-- Domain reference required to resolve typeof(IDomainService) and typeof(DomainService) in
+         DomainGoldStandardRules and DomainLayerPurityRules.
+         PrivateAssets="all" prevents transitive leakage to production code. -->
+    <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj"
+                      PrivateAssets="all" />
+    <!-- Contracts reference required to resolve typeof(IIntegrationEvent) in ContractsPurityRules.
+         PrivateAssets="all" prevents transitive leakage to production code. -->
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj"
                       PrivateAssets="all" />
   </ItemGroup>
 
