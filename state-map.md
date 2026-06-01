@@ -33,6 +33,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain | Current Phase | Focus (one line) |
 |--------|---------------|-----------------|
 | [00.Governance](00.Governance/state-map.md) | Design | Add five persistence architecture enforcement rules (IUnitOfWork-only save boundary, no IQueryable on IRepository, no persistence in Domain, IDbConnectionFactory-only connections, no SQL interpolation in DapperReadService) |
+| [12.Security](12.Security/state-map.md) | Design | Create SharedKernel.Security.Abstractions package with IUserContext and ITenantProvider as the canonical cross-cutting identity and tenancy contracts |
 | [16.Testing](16.Testing/state-map.md) | Design | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
 
 <!--
@@ -77,7 +78,7 @@ Format when blocked:
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | — | `○` | — | — |
-| 12 | [Security](12.Security/state-map.md) | — | `○` | — | — |
+| 12 | [Security](12.Security/state-map.md) | Design | `◐` | — | Create SharedKernel.Security.Abstractions package with IUserContext and ITenantProvider as the canonical cross-cutting identity and tenancy contracts |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
@@ -115,9 +116,9 @@ Format when active:
 | ● Core | 1 |
 | ● Scaffold | 0 |
 | ● Design | 0 |
-| ◐ In Progress | 2 |
+| ◐ In Progress | 3 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 11 |
+| ○ Not Started | 10 |
 
 ---
 
@@ -1744,6 +1745,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-01] Persistence → Docs (●) — promoted from SK.06.Docs (state-map-phase)
 - [2026-06-01] Persistence → Published (●) — promoted from SK.06.Published (state-map-phase)
 - [2026-06-01] Phase Backlog entries for 06.Persistence closed → ● Complete — 06.Persistence reached Published (state-map-phase)
+- [2026-06-01] Security → Design (◐) — Create SharedKernel.Security.Abstractions with IUserContext and ITenantProvider (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -3595,5 +3597,297 @@ Every persistence test project that verifies interceptor behavior must create a 
 - [ ] No `OutboxMessageFaker`, no `OutboxAssertions`, no PostgreSQL testcontainer in this phase — those belong to future WOs
 - [ ] `SharedKernel.Testing` csproj references `SharedKernel.Persistence.Abstractions` and `SharedKernel.Persistence.EfCore`
 - [ ] All helpers have self-tests in `SharedKernel.Testing.Tests`
+
+---
+### P-077 — Security Abstractions: IUserContext and ITenantProvider Package
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 12.Security
+**Depends on:** None
+
+#### What is needed
+
+Create the `SharedKernel.Security.Abstractions` package under `12.Security/`. This package is a pure interface library — zero NuGet dependencies, references only `SharedKernel.Primitives` and `SharedKernel.Core`.
+
+**Interfaces to define:**
+
+`IUserContext` — exposes the identity of the currently authenticated principal. Must surface at minimum: `UserId` (string), `UserName` (string, optional), `Email` (string, optional), `Roles` (IReadOnlyList<string>), `IsAuthenticated` (bool). The `UserId` property is the primary consumer of `AuditInterceptor` and `SoftDeleteInterceptor` in `06.Persistence.EfCore`. A fallback pattern: when not authenticated, `UserId` returns a conventional constant (e.g., `"system"`) and `IsAuthenticated` returns `false` — never null, never throws.
+
+`ITenantProvider` — exposes the current tenant identity. Surfaces: `TenantId` (Guid?). Nullable because background jobs, migrations, and system-initiated operations run without a tenant context. This is the exact contract currently defined as `ICurrentTenantService` inside `06.Persistence.EfCore.MultiTenancy`. The name `ITenantProvider` is preferred as it is generic enough to be consumed by Application, Communication, and ServiceDefaults layers — not just Persistence. The old `ICurrentTenantService` name is too EF-specific; it becomes an alias or is removed in P-078.
+
+Both interfaces must carry full XML doc comments, including the fallback/no-context behavior contract.
+
+No implementations ship in this package — those are in `SharedKernel.Security.Oidc`, `13.ServiceDefaults.MultiTenancy`, etc.
+
+#### Why this is needed
+
+Both `IUserContext` and `ICurrentTenantService` are currently duplicated/misplaced in `06.Persistence.EfCore` because the layering rules appeared to prohibit a reference from `06.Persistence` to `12.Security`. In reality the prohibition is against concrete security infrastructure (JWT parsing, OIDC tokens, Azure B2C SDKs) — not against a pure zero-dependency interface library. Moving these contracts to `12.Security.Abstractions` corrects the ownership: identity and tenancy are security concerns, not EF Core concerns. With a canonical home, these interfaces can be consumed by `05.Application` pipeline behaviors, `11.Communication` typed clients, `13.ServiceDefaults` middleware, and `06.Persistence` interceptors — all without each layer defining its own local copy.
+
+#### Acceptance criteria
+
+- [ ] `SharedKernel.Security.Abstractions` csproj exists in `12.Security/SharedKernel.Security.Abstractions/`; references only `SharedKernel.Primitives` and `SharedKernel.Core`; zero third-party NuGet dependencies
+- [ ] `IUserContext` interface exposes `UserId`, `UserName`, `Email`, `Roles`, `IsAuthenticated` with the no-null, no-throw fallback contract documented
+- [ ] `ITenantProvider` interface exposes `TenantId` (Guid?) with the nullable-means-no-tenant-context contract documented
+- [ ] Both interfaces have full XML doc comments covering the fallback/system behavior
+- [ ] Package is registered in the solution file under the `12.Security` solution folder
+- [ ] A `ContractShapeTests` test confirms the interfaces are present, have the correct member signatures, and live in the `SharedKernel.Security.Abstractions` namespace
+
+---
+### P-078 — Persistence EfCore: Migrate IUserContext and ICurrentTenantService to Security.Abstractions
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 06.Persistence
+**Depends on:** P-077
+
+#### What is needed
+
+Migrate `06.Persistence.EfCore` to consume `IUserContext` and `ITenantProvider` from `SharedKernel.Security.Abstractions` (created in P-077) instead of declaring its own local copies.
+
+**Changes required:**
+
+1. Add a project reference from `SharedKernel.Persistence.EfCore` to `SharedKernel.Security.Abstractions`.
+2. Delete `06.Persistence.EfCore/Interceptors/IUserContext.cs` — replaced by `IUserContext` from `12.Security.Abstractions`.
+3. Delete `06.Persistence.EfCore/MultiTenancy/ICurrentTenantService.cs` — replaced by `ITenantProvider` from `12.Security.Abstractions`.
+4. Update `AuditInterceptor` and `SoftDeleteInterceptor` to inject `IUserContext` from the `SharedKernel.Security.Abstractions` namespace. The `UserId` property is the same string accessor — no behavioral change.
+5. Update `TenantedDbContext` to inject `ITenantProvider` (instead of `ICurrentTenantService`). The `TenantId` property is the same `Guid?` — no behavioral change in the global query filter.
+6. Update `EfCorePersistenceBuilder.WithMultiTenancy()` to register a no-op `ITenantProvider` placeholder instead of `ICurrentTenantService`.
+7. Update `EfCorePersistenceBuilder.Build()` to register a no-op `IUserContext` placeholder (returning `"system"`, `IsAuthenticated = false`) if no `IUserContext` is already registered.
+8. Delete `NoOpUserContext.cs` and `NoOpCurrentTenantService.cs` — replace with new no-op impls that implement the updated interfaces from `12.Security.Abstractions`.
+9. Update `06.Persistence/CLAUDE.md` to reflect the new dependency and remove the workaround documentation.
+10. Update `TenantedRepository.cs` — no changes needed (it does not inject `ICurrentTenantService` directly).
+
+The `EfCorePersistenceBuilder` DI registration shape changes only in the interface names used — the startup API (`.WithMultiTenancy()`, `.Build()`) remains unchanged for consumers.
+
+#### Why this is needed
+
+The local `IUserContext` and `ICurrentTenantService` declarations in `06.Persistence.EfCore` are workarounds for a perceived layering constraint. Now that `12.Security.Abstractions` is a pure interface-only package with no infrastructure dependencies, `06.Persistence.EfCore` referencing it is architecturally correct — the same way `06.Persistence.EfCore` already references `SharedKernel.Domain` (also an abstractions layer). Removing the local duplicates eliminates divergence risk: a service that consumes both `IUserContext` from Security and from EfCore currently gets two different types that look the same but are not the same contract.
+
+#### Acceptance criteria
+
+- [ ] `06.Persistence.EfCore.csproj` references `SharedKernel.Security.Abstractions`
+- [ ] `IUserContext.cs` file is deleted from `06.Persistence.EfCore/Interceptors/`
+- [ ] `ICurrentTenantService.cs` file is deleted from `06.Persistence.EfCore/MultiTenancy/`
+- [ ] `AuditInterceptor` and `SoftDeleteInterceptor` compile against `IUserContext` from `SharedKernel.Security.Abstractions`
+- [ ] `TenantedDbContext` compiles against `ITenantProvider` from `SharedKernel.Security.Abstractions`
+- [ ] `EfCorePersistenceBuilder` registers no-op `IUserContext` and `ITenantProvider` placeholders using the types from `12.Security.Abstractions`
+- [ ] All existing `SharedKernel.Persistence.EfCore.Tests` pass without modification (behavioral change is zero)
+- [ ] `06.Persistence/CLAUDE.md` updated to remove the IUserContext-workaround documentation and replace it with the correct `SharedKernel.Security.Abstractions` reference documentation
+
+---
+### P-079 — Persistence Abstractions: Clean Up IDbConnectionFactory Doc + Add Projection Specification Contract
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+Two targeted changes to `SharedKernel.Persistence.Abstractions`:
+
+**Fix 1 — Remove "Dapper-exclusive" restriction from `IDbConnectionFactory` XML doc.**
+The current doc comment says *"This factory is used exclusively by Dapper read-side services."* This is an overly restrictive statement on an abstraction. `IDbConnectionFactory` returns `Task<IDbConnection>` — a BCL type. Any consumer that needs raw SQL access (ADO.NET bulk operations, custom micro-ORM, Testcontainers connection injection) can legitimately use this factory. Remove the "exclusively Dapper" language and replace it with a neutral contract description: factory for producing open database connections, caller is responsible for disposal, connection pooling is provider-managed.
+
+**Fix 2 — Add `IProjectionSpecification<TAggregate, TResult>` contract.**
+The current `ISpecification<T>` in `SharedKernel.Domain` covers filtering, ordering, paging, and includes. But there is no way to express a projection (a `Select` expression) at the abstraction level. Add `IProjectionSpecification<TAggregate, TResult>` to `SharedKernel.Persistence.Abstractions/Specifications/`. This interface extends `ISpecification<TAggregate>` with one additional member: a `Selector` expression (`Expression<Func<TAggregate, TResult>>`). This is the contract that `IReadRepository.ListProjectedAsync<TResult>` and `IReadRepository.GetBySpecProjectedAsync<TResult>` (added in P-080) depend on. The interface itself lives in Abstractions; the EF Core implementation of the selector application lives in `SpecificationEvaluator` (updated in P-080).
+
+#### Why this is needed
+
+`IDbConnectionFactory`'s doc comment silently locks down a legitimate abstraction — teams reading it will avoid using the factory for non-Dapper raw SQL scenarios and either bypass it or duplicate it. The doc fix aligns the abstraction with its actual semantic contract.
+
+The projection specification gap is the single most common reason teams reach around the repository at scale. When a read-side handler needs a lightweight DTO projection from a large aggregate table, materializing full aggregates wastes memory and CPU. Without a first-class projection contract, developers will expose `IQueryable`, add a custom `DbContext` service, or implement their own `DapperReadService` even when EF Core is sufficient. The `IProjectionSpecification<TAggregate, TResult>` contract solves this within the specification pattern without breaking the IQueryable encapsulation rule.
+
+#### Acceptance criteria
+
+- [ ] `IDbConnectionFactory` XML doc no longer contains "exclusively by Dapper" language; the contract describes what the factory does without restricting who may use it
+- [ ] `IProjectionSpecification<TAggregate, TResult>` interface exists in `SharedKernel.Persistence.Abstractions/Specifications/`; it extends `ISpecification<TAggregate>` and adds a `Selector` property of type `Expression<Func<TAggregate, TResult>>`
+- [ ] Full XML doc comments on the new interface describing the contract
+- [ ] `ContractShapeTests` in `SharedKernel.Persistence.Abstractions.Tests` verify the new interface shape
+- [ ] Zero NuGet dependencies introduced (System.Linq.Expressions is BCL)
+
+---
+### P-080 — Persistence EfCore: Bulk Operations, Projection Reads, Paged Result, Domain Event Dispatch, and IQueryable Leak Fix
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 06.Persistence
+**Depends on:** P-079, P-081
+
+#### What is needed
+
+A comprehensive feature addition and correctness hardening pass on `SharedKernel.Persistence.EfCore`. Six independent capabilities, all delivered in this phase because they share the same set of implementation files and tests.
+
+**Capability 1 — Bulk write operations on `IRepository` and `EfRepository`.**
+Add `AddRangeAsync(IEnumerable<TAggregate>, CancellationToken)`, `UpdateRangeAsync(IEnumerable<TAggregate>, CancellationToken)`, and `DeleteRangeAsync(IEnumerable<TAggregate>, CancellationToken)` to `IRepository<TAggregate, TId>` in Abstractions and implement them in `EfRepository<TAggregate, TId>`. Mutations are staged (not committed) until `IUnitOfWork.SaveChangesAsync` is called — same semantics as the single-entity methods. `EfRepository` implementations use `DbContext.Set<T>().AddRangeAsync`, `UpdateRange`, and `RemoveRange` respectively.
+
+**Capability 2 — Projection read methods on `IReadRepository` and `EfReadRepository`.**
+Add two new methods to `IReadRepository<TAggregate, TId>` (in Abstractions):
+- `ListProjectedAsync<TResult>(IProjectionSpecification<TAggregate, TResult> spec, CancellationToken ct)` returns `Task<IReadOnlyList<TResult>>`
+- `GetBySpecProjectedAsync<TResult>(IProjectionSpecification<TAggregate, TResult> spec, CancellationToken ct)` returns `Task<TResult?>`
+
+Update `EfReadRepository` to implement both. Update `SpecificationEvaluator<T>` to handle `IProjectionSpecification<T, TResult>`: after all criteria/ordering/paging steps, apply `.Select(spec.Selector)` and materialize as `TResult`. The selector is applied after paging to maintain the paging-last invariant.
+
+**Capability 3 — Paged result from a single round-trip.**
+Add `ListPagedAsync(ISpecification<TAggregate> spec, CancellationToken ct)` returning `Task<PagedList<TAggregate>>` to `IReadRepository` (Abstractions) where `PagedList<T>` is the type already defined in `04.Contracts`. This method issues a count query (using `spec` without Skip/Take) and a data query (using `spec` with Skip/Take) as two database round-trips under the same `DbContext` scope.
+
+**Capability 4 — Domain event dispatch hook in `EfUnitOfWork`.**
+Update `EfUnitOfWork` to accept an optional `IDomainEventDispatcher` from `05.Application`. After `_dbContext.SaveChangesAsync(ct)` succeeds, `EfUnitOfWork` collects all domain events from `IHasDomainEvents` tracked entities via `ChangeTracker.Entries<IHasDomainEvents>()`, calls `IDomainEventDispatcher.DispatchAsync(events, ct)`, and clears the event collection on each aggregate. The dispatcher is optional — consuming services opt in by registering an `IDomainEventDispatcher`.
+
+**Capability 5 — Fix `QueryableExtensions.IgnoreSoftDeleteFilter` IQueryable leakage.**
+Remove `QueryableExtensions.IgnoreSoftDeleteFilter` entirely. Add a boolean flag `IncludeDeleted` to `ISpecification<T>` in `SharedKernel.Domain`. Handle it in `SpecificationEvaluator`: when `spec.IncludeDeleted == true`, call `.IgnoreQueryFilters()` on the query before applying criteria. The `QueryableExtensions` class is deleted.
+
+**Capability 6 — Fix `GetByIdAsync` duplication between `IRepository` and `IReadRepository`.**
+Remove `GetByIdAsync` from `IReadRepository<TAggregate, TId>`. Provide a `ByIdSpecification<TAggregate, TId>` convenience specification in the Abstractions package. `EfReadRepository.GetByIdAsync` is also removed. This is a breaking change — document with migration guide in `06.Persistence/CLAUDE.md`.
+
+#### Why this is needed
+
+These six capabilities represent the most common points where teams across hundreds of services will bypass the repository pattern. Each gap is a known failure mode at microservice scale: bulk bypass via `DbContext.AddRange`, projection bypass via `IQueryable` exposure, paged result duplication in every handler, lost domain events without a dispatch hook, `IQueryable` leakage through the soft-delete extension, and tracked/untracked implementation divergence from `GetByIdAsync` duplication.
+
+#### Acceptance criteria
+
+- [ ] `IRepository<TAggregate, TId>` declares `AddRangeAsync`, `UpdateRangeAsync`, `DeleteRangeAsync`; `EfRepository` implements all three
+- [ ] `IReadRepository<TAggregate, TId>` declares `ListProjectedAsync<TResult>` and `GetBySpecProjectedAsync<TResult>`; `EfReadRepository` implements both
+- [ ] `IReadRepository<TAggregate, TId>` declares `ListPagedAsync` returning `PagedList<TAggregate>`; `EfReadRepository` implements it with count + data queries
+- [ ] `EfUnitOfWork` accepts optional `IDomainEventDispatcher`; dispatches events post-commit; clears event collections; no-dispatcher path unchanged
+- [ ] `QueryableExtensions` class deleted; `ISpecification<T>.IncludeDeleted` flag added; `SpecificationEvaluator` handles `IgnoreQueryFilters` via the flag
+- [ ] `IReadRepository.GetByIdAsync` removed; `ByIdSpecification<TAggregate, TId>` convenience spec added in Abstractions; migration guide in CLAUDE.md
+- [ ] All existing tests pass; new unit tests (SQLite in-memory) cover every new capability
+
+---
+### P-081 — Application: IDomainEventDispatcher Abstraction
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+Add an `IDomainEventDispatcher` interface to `05.Application`. This is a single, minimal interface:
+
+`IDomainEventDispatcher` — one method: `DispatchAsync(IReadOnlyList<IDomainEvent> events, CancellationToken ct)` returning `Task`. The implementation (MediatR-based, publishing each event via `IPublisher`) lives in the same package as a concrete class `MediatRDomainEventDispatcher`. `IDomainEvent` is imported from `SharedKernel.Domain`.
+
+This interface is consumed by `EfUnitOfWork` in `06.Persistence.EfCore` (P-080). It must be defined at or before P-080.
+
+The default `MediatRDomainEventDispatcher` implementation publishes each domain event as an `INotification` via `IPublisher`. Events not handled by any registered handler are silently ignored (MediatR default). The dispatcher does not swallow handler exceptions — if a handler throws, the exception propagates to the caller.
+
+`IDomainEventDispatcher` is not registered by `EfCorePersistenceBuilder` — it is opt-in via the consuming service's DI composition. Services that want automatic domain event dispatch register `MediatRDomainEventDispatcher` (or their own implementation) alongside the `EfCorePersistenceBuilder.Build()` call.
+
+#### Why this is needed
+
+Domain events collected on aggregates during a command must be dispatched after the commit succeeds. Without a first-class dispatcher contract in `05.Application`, each service team wires their own dispatch logic inconsistently. Placing the interface in `05.Application` respects the layering rule: `06.Persistence` may reference layers 01–05, so `EfUnitOfWork` can receive the dispatcher via DI without any layering violation. A MediatR-based default implementation is provided so teams do not need to write one from scratch.
+
+#### Acceptance criteria
+
+- [ ] `IDomainEventDispatcher` interface exists in `05.Application` with `DispatchAsync(IReadOnlyList<IDomainEvent>, CancellationToken)` returning `Task`
+- [ ] `MediatRDomainEventDispatcher` implements `IDomainEventDispatcher` using `IPublisher.Publish` per event; events dispatched in order
+- [ ] Empty event list is a no-op (no MediatR calls)
+- [ ] Handler exceptions propagate unchanged — no swallowing
+- [ ] DI registration extension or documentation covers how consuming services register the dispatcher
+- [ ] Full XML doc comments on both the interface and the default implementation
+- [ ] Unit tests cover: single event dispatched; multiple events dispatched in order; empty list is no-op; handler exception propagates unchanged
+
+---
+### P-082 — Persistence EfCore: Fix TenantedDbContext Reflection in OnModelCreating
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 06.Persistence
+**Depends on:** P-078
+
+#### What is needed
+
+Two targeted fixes to remove runtime reflection from EF Core model-building paths.
+
+**Fix 1 — `TenantedDbContext.OnModelCreating` reflection elimination.**
+The current implementation uses `GetMethod(...).MakeGenericMethod(entityType.ClrType).Invoke(this, ...)` to apply the tenant query filter for each `IHasTenant` entity. Replace this with an expression-tree-based approach that constructs the `HasQueryFilter` lambda directly without reflection on the CLR type. The approach: for each entity type implementing `IHasTenant`, build a lambda `e => e.TenantId == CurrentTenantService.TenantId` using `Expression.Parameter`, `Expression.Property` (accessing the `TenantId` property by name), `Expression.Field` or `Expression.Property` for `CurrentTenantService.TenantId`, and `Expression.Equal`. Then call `modelBuilder.Entity(entityType.ClrType).HasQueryFilter(lambda)` via the non-generic `Entity(Type)` overload. No `MakeGenericMethod` or `Invoke` calls remain.
+
+**Fix 2 — `ValueObjectOwnershipConvention` early-exit when model has no `IValueObject` properties.**
+Add an early-exit at the top of `ValueObjectOwnershipConvention.Apply`: scan for any entity with at least one `IValueObject` property. If none found, return immediately without allocating the candidates list. This is an O(n) scan-once optimization, not a full rewrite. Document in `06.Persistence/CLAUDE.md` that the convention is opt-in and has O(n*m) startup cost (n entities × m properties each) — callers should be aware at large model scale.
+
+#### Why this is needed
+
+The reflection in `TenantedDbContext.OnModelCreating` violates the AOT-preferred guidance and adds measurable cold-start latency on K8s-native services where compiled EF Core models are used. Reflection during model finalization is especially problematic with NativeAOT builds (even if not mandatory today, the migration path should be clear). Removing reflection from the hot model-building path makes the code auditable and forward-compatible.
+
+#### Acceptance criteria
+
+- [ ] `TenantedDbContext.OnModelCreating` contains no `GetMethod`, `MakeGenericMethod`, or `Invoke` calls
+- [ ] Tenant query filter is applied via expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`)
+- [ ] `modelBuilder.Entity(clrType).HasQueryFilter(lambdaExpr)` called via non-generic `Entity(Type)` overload
+- [ ] All existing `TenantedDbContextTests` pass; new tests added confirming the filter fires correctly for `IHasTenant` entities post-refactor
+- [ ] `ValueObjectOwnershipConvention.Apply` returns immediately (no candidate list allocation) when no `IValueObject` properties are found
+- [ ] `06.Persistence/CLAUDE.md` updated with reflection-elimination note and `ValueObjectOwnershipConvention` startup-cost guidance
+
+---
+### P-083 — Governance: Persistence Architecture Rules Phase 2 — Interface Migration Enforcement
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 00.Governance
+**Depends on:** P-078
+
+#### What is needed
+
+Extend `SharedKernel.ArchitectureTests` with additional persistence architecture enforcement rules that codify the corrections from this work order.
+
+**New rules to add:**
+
+1. **`IUserContext` must be declared only in `SharedKernel.Security.Abstractions`** — No type named `IUserContext` may be declared in any package other than `SharedKernel.Security.Abstractions`. Catches future re-introduction of local copies in persistence or application layers.
+
+2. **`ITenantProvider` (and `ICurrentTenantService`) must be declared only in `SharedKernel.Security.Abstractions`** — Same rule pattern for tenant identity contracts.
+
+3. **`IQueryable<T>` must not appear on any public method or property of `IRepository` or `IReadRepository` implementors** — Extends the existing IQueryable enforcement to cover the repository abstraction surface explicitly. Catches patterns like the deleted `IgnoreSoftDeleteFilter` if they reappear on any repository class.
+
+4. **No `GetByIdAsync` method on any `IReadRepository` implementor** — Codifies the removal from P-080. Any class implementing `IReadRepository<,>` that also declares a `GetByIdAsync` method fails this rule. This prevents the duplication anti-pattern from being reintroduced.
+
+#### Why this is needed
+
+Architecture test rules are the durable enforcement layer for `state-map.md` decisions. Without automated rules, migrations like P-078 will regress as teams copy old patterns from wiki pages or service templates that predate the fix. Each rule here directly corresponds to a correctness decision made in this work order.
+
+#### Acceptance criteria
+
+- [ ] All four new architecture rules are implemented as `[Fact]` tests in `SharedKernel.ArchitectureTests`
+- [ ] Each test carries a clear failure message pointing to the correct pattern and package
+- [ ] All new tests pass against the codebase after P-078 and P-080 are complete
+- [ ] `00.Governance/CLAUDE.md` updated with the four new rules under the Persistence Enforcement section
+
+---
+### P-084 — Testing: Projection, Bulk, and Paged Read Test Helpers
+
+**Status:** `○` Pending
+**Work Order:** WO-014
+**Domain:** 16.Testing
+**Depends on:** P-080
+
+#### What is needed
+
+Extend `SharedKernel.Testing` with helpers for the new repository surface introduced in P-080.
+
+**Projection specification helpers (`EfCore/Specifications/`):**
+A `ProjectionSpecificationBuilder<TAggregate, TResult>` fluent builder that allows test code to construct `IProjectionSpecification<TAggregate, TResult>` instances concisely without declaring a full concrete spec class per test. Exposes at minimum: `WithCriteria(Expression<Func<TAggregate, bool>>)`, `WithSelector(Expression<Func<TAggregate, TResult>>)`, `Build()`.
+
+**Paged read assertion helpers (`EfCore/Assertions/`):**
+`PagedListAssertions` — static assertion helpers for `PagedList<T>` (from `04.Contracts`): `ShouldHaveTotalCount(int expected)`, `ShouldHaveItems(params T[] expected)`, `ShouldBeEmpty()`. Uses FluentAssertions internally.
+
+**Bulk operation fakers (`EfCore/Fakers/`):**
+`BulkAggregateFaker<TAggregate, TId>` — generates a `List<TAggregate>` of configurable count using Bogus with all audit fields populated. Designed for seeding integration test databases with bulk `AddRangeAsync` calls.
+
+**`IncludeDeleted` specification helper:**
+A `WithDeletedSpecification<TAggregate>` wrapper that takes any `ISpecification<TAggregate>` and returns a copy with `IncludeDeleted = true`. Used in soft-delete integration tests.
+
+#### Why this is needed
+
+New capabilities without testing scaffolding create an adoption barrier across teams. Projection and bulk APIs need matching test helpers so teams can write deterministic, readable tests without reverting to raw `DbContext.Set<T>()` access — which bypasses the repository and gives false confidence in test coverage.
+
+#### Acceptance criteria
+
+- [ ] `ProjectionSpecificationBuilder<TAggregate, TResult>` exists; produces valid `IProjectionSpecification` instances; self-tested
+- [ ] `PagedListAssertions` exists with the three assertion methods; self-tested against constructed `PagedList<T>` instances
+- [ ] `BulkAggregateFaker<TAggregate, TId>` generates configurable count with valid audit fields; self-tested
+- [ ] `WithDeletedSpecification<TAggregate>` sets `IncludeDeleted = true`; self-tested
+- [ ] All helpers have XML doc comments
+- [ ] `SharedKernel.Testing.Tests` self-test suite passes with all new helpers covered
 
 ---
