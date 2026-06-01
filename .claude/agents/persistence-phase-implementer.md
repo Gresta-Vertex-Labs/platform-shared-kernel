@@ -1,33 +1,6 @@
 ---
 name: "persistence-phase-implementer"
-description: "Use this agent when a persistence architecture phase (from persistence-arch-planner) needs to be implemented in .NET 10 code. This agent takes a phase definition as input, writes production-quality C# code for the 06.Persistence capability domain, creates/updates tests, runs them, updates the state-map, and syncs CLAUDE.md brain files as needed.
-
-<example>
-Context: The persistence-arch-planner has produced the Scaffold phase for 06.Persistence.
-user: '/implement-phase-persistence Scaffold'
-assistant: 'I'll launch the persistence-phase-implementer agent to implement this phase.'
-<commentary>
-A fully-specified persistence phase has been handed off. Use the Agent tool to launch persistence-phase-implementer so it reads the phase spec, writes the code, tests it, and updates the state-map.
-</commentary>
-</example>
-
-<example>
-Context: The Core phase is next and contains IRepository, IReadRepository, IUnitOfWork, EfRepository, SpecificationEvaluator, and all interceptor implementations.
-user: 'Run the implementer for the Core phase.'
-assistant: 'Launching persistence-phase-implementer to build the Core phase.'
-<commentary>
-Core phase spec is ready. Use the Agent tool to launch persistence-phase-implementer to produce the persistence types and update the state-map.
-</commentary>
-</example>
-
-<example>
-Context: A phase was partially implemented in a previous session and the state-map shows it still in-progress.
-user: 'Continue implementing the remaining items in the Tests phase of 06.Persistence.'
-assistant: 'I will use the persistence-phase-implementer agent to pick up the Tests phase from where it left off.'
-<commentary>
-The phase is incomplete. Use the Agent tool to launch persistence-phase-implementer, which will read the state-map, identify remaining tasks, and complete them.
-</commentary>
-</example>"
+description: "Use this agent when a persistence architecture phase (from persistence-arch-planner) needs to be implemented in .NET 10 code. This agent takes a phase definition as input, writes production-quality C# code for the 06.Persistence capability domain, creates/updates tests, runs them, updates the state-map, and syncs CLAUDE.md brain files as needed.\n\n<example>\nContext: The persistence-arch-planner has produced the Scaffold phase for 06.Persistence.\nuser: '/implement-phase-persistence Scaffold'\nassistant: 'I'll launch the persistence-phase-implementer agent to implement this phase.'\n<commentary>\nA fully-specified persistence phase has been handed off. Use the Agent tool to launch persistence-phase-implementer so it reads the phase spec, writes the code, tests it, and updates the state-map.\n</commentary>\n</example>\n\n<example>\nContext: The Core phase is next and contains IRepository, IReadRepository, IUnitOfWork, EfRepository, SpecificationEvaluator, and all interceptor implementations.\nuser: 'Run the implementer for the Core phase.'\nassistant: 'Launching persistence-phase-implementer to build the Core phase.'\n<commentary>\nCore phase spec is ready. Use the Agent tool to launch persistence-phase-implementer to produce the persistence types and update the state-map.\n</commentary>\n</example>\n\n<example>\nContext: A phase was partially implemented in a previous session and the state-map shows it still in-progress.\nuser: 'Continue implementing the remaining items in the Tests phase of 06.Persistence.'\nassistant: 'I will use the persistence-phase-implementer agent to pick up the Tests phase from where it left off.'\n<commentary>\nThe phase is incomplete. Use the Agent tool to launch persistence-phase-implementer, which will read the state-map, identify remaining tasks, and complete them.\n</commentary>\n</example>"
 model: sonnet
 color: cyan
 memory: project

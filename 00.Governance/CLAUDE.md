@@ -367,6 +367,68 @@ NoNonTrivialMethodsPredicate  (class : ICustomRule — internal predicate)
     Returns false (rule violated) for the first non-trivial method found; failure message
     includes the declaring type name and the method name. Lives in Predicates/ folder.
     Used by ContractsPurityRules.ContractsAssembliesHaveNoNonTrivialMethods.
+
+PersistenceLayerProtectionRules  (static class — EF Core persistence layer contract predicates)
+    All factory methods accept Assembly as their parameter and return ConditionList.
+    .OnlyEfUnitOfWorkMayCallSaveChanges(Assembly)        → ConditionList
+        Asserts that no type outside the SharedKernel.Persistence.EfCore namespace calls
+        DbContext.SaveChanges or DbContext.SaveChangesAsync directly. Uses
+        NoDirectSaveChangesPredicate (ICustomRule — see below). Types whose
+        TypeDefinition.Namespace starts with "SharedKernel.Persistence.EfCore" are
+        exempted unconditionally inside the predicate. Failure message names the offending
+        type and method containing the direct SaveChanges call.
+        Rationale: calling SaveChangesAsync directly bypasses the EF Core interceptor chain
+        (AuditInterceptor, SoftDeleteInterceptor, OutboxInterceptor, ConcurrencyInterceptor).
+        Only EfUnitOfWork may commit — all other code must call IUnitOfWork.CommitAsync().
+        Offending pattern: await _dbContext.SaveChangesAsync();
+        Compliant pattern: await _unitOfWork.CommitAsync();
+
+    .RepositoriesMustNotExposeIQueryable(Assembly)        → ConditionList
+        Asserts that no type implementing an IRepository-prefixed interface has a method
+        returning IQueryable. Uses NoIQueryableReturnPredicate (ICustomRule — see below).
+        Scope: types whose TypeDefinition.Interfaces contains an entry with
+        InterfaceType.Name starting with "IRepository". Inspects all non-constructor,
+        non-getter methods for IQueryable return type (name match on "IQueryable"). Failure
+        message names the offending type and method returning IQueryable.
+        Rationale: IQueryable<T> leaks EF Core expression-tree execution semantics into the
+        application layer, making handler code dependent on EF Core internals. Query surface
+        belongs exclusively on IReadRepository via Specification<T>; the write-side
+        IRepository<T,TId> is scoped to mutation operations only.
+        Offending pattern: IQueryable<Order> GetAll();
+        Compliant pattern: Task<IReadOnlyList<Order>> FindAsync(ISpecification<Order> spec);
+
+    .DomainAssembliesNeverReferencePersistenceStack(Assembly) → ConditionList
+        Asserts that no type in the supplied domain assembly has a dependency on any of the
+        persistence-stack assembly name substrings: "Microsoft.EntityFrameworkCore",
+        "Npgsql", "SharedKernel.Persistence". Uses iterative .Should().NotHaveDependencyOn()
+        calls — one per forbidden term — consistent with the pattern in
+        DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure. This rule is
+        additive (not replacing) that rule: it adds Npgsql and the in-repo persistence
+        packages as a second, WO-013-scoped gate.
+        Rationale: any EF Core, Npgsql, or SharedKernel.Persistence.* reference inside
+        03.Domain destroys DDD isolation and makes domain logic impossible to unit-test
+        without a database. This is a hard rule from the root CLAUDE.md layering table.
+        Offending pattern: [Key] attribute from Microsoft.EntityFrameworkCore on a domain entity
+        Compliant pattern: domain entity with no infrastructure annotations
+
+NoDirectSaveChangesPredicate  (class : ICustomRule — internal predicate)
+    Walks TypeDefinition.Methods for each type. For each MethodDefinition.Body.Instructions,
+    checks for Call or Callvirt opcodes whose operand is a MethodReference with
+    DeclaringType.Name equal to "DbContext" and Name equal to "SaveChanges" or
+    "SaveChangesAsync". Returns false (rule violated) for the first type found containing
+    such a call, with failure message including the declaring type name and method name.
+    Exemption: types whose TypeDefinition.Namespace starts with "SharedKernel.Persistence.EfCore"
+    are returned as passing (true) unconditionally — this is the EfUnitOfWork exclusion.
+    Lives in Predicates/ folder. Used by PersistenceLayerProtectionRules.OnlyEfUnitOfWorkMayCallSaveChanges.
+
+NoIQueryableReturnPredicate  (class : ICustomRule — internal predicate)
+    Scopes to types whose TypeDefinition.Interfaces contains an entry whose
+    InterfaceType.Name starts with "IRepository". For each such type, inspects all
+    TypeDefinition.Methods where IsConstructor is false and IsGetter is false. If any
+    method's ReturnType.Name is "IQueryable" or ReturnType.FullName contains "IQueryable",
+    returns false (rule violated) with failure message including the declaring type name and
+    method name. Covers both IQueryable and IQueryable<T> in IL. Lives in Predicates/ folder.
+    Used by PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable.
 ```
 
 ---
@@ -438,6 +500,10 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0010 `SpecificationOrderingConflictAnalyzer` collects `InvocationExpressionSyntax` nodes from the constructor body. The method name is extracted from `MemberAccessExpressionSyntax.Name.Identifier.Text` or, for simple invocations, directly from `IdentifierNameSyntax.Identifier.Text`. Both `"ApplyOrderBy"` and `"ApplyOrderByDescending"` must appear for SK0010 to fire. No semantic model required.
 - `ContractsPurityRules.ContractsAssembliesHaveNoDomainTypeOnPublicSurface` — if NetArchTest's dependency scanner picks up the `EventEnvelope<TEvent> where TEvent : IDomainEvent` generic constraint as a dependency on `SharedKernel.Domain`, the `EventEnvelope` type must be explicitly excluded from the scan using `.And().DoNotHaveName("EventEnvelope")` before the `.Should()` clause. Document the exclusion in the architecture test fixture.
 - `ContractsPurityRules.IntegrationEventImplementationsMustBeSealed` — if `.BeSealed()` is not exposed by `NetArchTest.eNt` 1.3.2, implement a `SealedTypePredicate` ICustomRule that checks `TypeDefinition.IsSealed`. Record the API surface check result in `00.Governance/CLAUDE.md` once confirmed.
+- `PersistenceLayerProtectionRules.OnlyEfUnitOfWorkMayCallSaveChanges` — the namespace exemption (`TypeDefinition.Namespace.StartsWith("SharedKernel.Persistence.EfCore")`) is evaluated as the first guard inside `NoDirectSaveChangesPredicate`. Do not apply the exemption at the `PersistenceLayerProtectionRules` call site — it belongs inside the predicate so the rule correctly self-documents the single permitted caller.
+- `PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable` — the `"IRepository"` prefix check on `TypeDefinition.Interfaces` is intentionally broad: it covers `IRepository<T,TId>`, `IReadRepository<T,TId>`, and any sub-interface. `IQueryable` is matched by `ReturnType.Name == "IQueryable"` (non-generic) or `ReturnType.FullName.Contains("IQueryable")` (generic). Both checks are required to cover the IL representation of `IQueryable<T>`.
+- `PersistenceLayerProtectionRules.DomainAssembliesNeverReferencePersistenceStack` is additive with `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure` — both rules may run in the same test suite. They are not duplicates: the latter covers broad infra terms; this rule adds Npgsql and `SharedKernel.Persistence.*` as a WO-013-scoped gate. Never remove either in favour of the other.
+- `NoDirectSaveChangesPredicate` and `NoIQueryableReturnPredicate` reuse the established Mono.Cecil `TypeDefinition` access pattern from `DoesNotContainThrowIlPredicate`. The existing `Mono.Cecil >= 0.11.5` NuGet reference in `SharedKernel.ArchitectureTests` covers both new predicates — no new NuGet dependency is introduced.
 - RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
@@ -480,3 +546,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-05-15] SK0003 trigger narrowed to exact types only; ArchitectureRuleBase/LayeringRules updated to ConditionList API; BenchmarkConfig Job.Short→explicit form; RS2008 suppression, Roslyn pin, and test pattern rules added — SK.00.Core implementation (sync-brain)
 - [2026-05-18] SK0007 RedisChannelServiceMessagingSubstitute added to diagnostic registry; CachingAbstractionRules added to architecture test contracts with three-assembly exemption list; seven new implementation rules added for caching boundary enforcement — WO-003 P-009
 - [2026-05-30] SK0008 AggregateRootDispatchCoupling, SK0009 DomainEventMissingVersionAttribute, SK0010 SpecificationOrderingConflict added to diagnostic registry; DomainGoldStandardRules and ContractsPurityRules added to architecture test contracts; NoNonTrivialMethodsPredicate documented; eight new implementation rules added — WO-011 P-056, WO-012 P-063
+- [2026-06-01] PersistenceLayerProtectionRules added to architecture test contracts (three predicates: OnlyEfUnitOfWorkMayCallSaveChanges, RepositoriesMustNotExposeIQueryable, DomainAssembliesNeverReferencePersistenceStack); NoDirectSaveChangesPredicate and NoIQueryableReturnPredicate documented; five new implementation rules added — WO-013 P-075

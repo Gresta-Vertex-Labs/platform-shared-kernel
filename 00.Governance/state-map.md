@@ -36,6 +36,7 @@
 | `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | All tasks in Phase: Domain Layer Purity Enforcement are `●` |
 | `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | All tasks in Phase: Domain Gold-Standard Architecture Rules are `●` |
 | `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | All tasks in Phase: Contracts Layer Purity Architecture Rules are `●` |
+| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | All tasks in Phase: Persistence Architecture Enforcement are `●` |
 
 ---
 
@@ -648,6 +649,109 @@ No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates
 
 ---
 
+## Phase: Persistence Architecture Enforcement <!-- phase-key: SK.00.PersistenceEnforcement -->
+
+> Protect the EF Core persistence layer's three most critical contracts: `SaveChangesAsync` is only callable by `EfUnitOfWork`, `IRepository` must never return `IQueryable`, and `03.Domain` types must never reference EF Core, Npgsql, or any `SharedKernel.Persistence.*` assembly.
+
+### PersistenceEnforcement — Goal
+
+WO-013 introduced the EF Core persistence layer (`SharedKernel.Persistence.EfCore`) with three load-bearing invariants that, if violated, cause cascading failures: calling `SaveChangesAsync` directly bypasses audit interceptors and soft-delete logic; exposing `IQueryable<T>` on a write-side repository couples application handlers to EF Core internals and breaks the read/write split; and any EF Core or Npgsql reference inside `03.Domain` destroys DDD isolation, making domain logic impossible to test without a database. All three invariants are already stated as hard rules in the root `CLAUDE.md` layering table. This phase encodes them as NetArchTest predicates in a new `PersistenceLayerProtectionRules` static class with two supporting `ICustomRule` predicates, making them CI-enforceable build-time gates.
+
+### PersistenceEnforcement — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/PersistenceLayerProtectionRules.cs` — static class housing all three predicates
+  - `SharedKernel.ArchitectureTests/Predicates/NoDirectSaveChangesPredicate.cs` — `ICustomRule`: IL inspection for direct `DbContext.SaveChanges[Async]` call opcodes in types outside `SharedKernel.Persistence.EfCore`
+  - `SharedKernel.ArchitectureTests/Predicates/NoIQueryableReturnPredicate.cs` — `ICustomRule`: IL inspection for `IQueryable` return types on methods of `IRepository<T,TId>` implementing types
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add `PersistenceLayerProtectionRules` to architecture test contracts section; document all three rules with rationale and examples
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+- Note: No new Roslyn analyzer SK IDs. All three rules are pure NetArchTest architecture predicates with `ICustomRule` predicates for IL-level checks. The existing `SharedKernelLayeringRules.DomainNeverReferencesPersistence` covers the high-level layering; Rule 3 in this phase extends it with Npgsql and `SharedKernel.Persistence.*` scoping via the established IL predicate approach.
+
+### PersistenceEnforcement — Diagnostic Registry Changes
+
+No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates:
+
+- Rule 1 — `OnlyEfUnitOfWorkMayCallSaveChanges`: `ICustomRule` (`NoDirectSaveChangesPredicate`) — IL instruction walk for `call`/`callvirt` to `DbContext::SaveChanges` or `DbContext::SaveChangesAsync` in types not in `SharedKernel.Persistence.EfCore` namespace
+- Rule 2 — `RepositoriesMustNotExposeIQueryable`: `ICustomRule` (`NoIQueryableReturnPredicate`) — IL inspection of method return types on `IRepository` implementing types; fails on `IQueryable` return type name match
+- Rule 3 — `DomainAssembliesNeverReferencePersistenceStack`: NetArchTest iterative `.NotHaveDependencyOn()` calls covering `Microsoft.EntityFrameworkCore`, `Npgsql`, and `SharedKernel.Persistence` — complementary to and more specific than `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure`
+
+### PersistenceEnforcement — Implementation Rules
+
+1. `OnlyEfUnitOfWorkMayCallSaveChanges` uses `NoDirectSaveChangesPredicate` — an `ICustomRule` that walks `TypeDefinition.Methods`, and for each `MethodDefinition.Body.Instructions`, checks for `Call` or `Callvirt` opcodes whose operand is a `MethodReference` with `DeclaringType.Name` equal to `"DbContext"` and `Name` equal to `"SaveChanges"` or `"SaveChangesAsync"`. Returns false (rule violated) for the first type found containing such a call. The predicate is applied only to types whose `TypeDefinition.Namespace` does NOT start with `"SharedKernel.Persistence.EfCore"` — the exemption is implemented inside the predicate as an early-return guard. Failure message includes the offending type name and method name.
+
+2. `RepositoriesMustNotExposeIQueryable` uses `NoIQueryableReturnPredicate` — an `ICustomRule` scoped to types whose `TypeDefinition.Interfaces` contains an entry whose `InterfaceType.Name` starts with `"IRepository"`. For each such type, all `TypeDefinition.Methods` where `IsConstructor` is false and `IsGetter` is false are inspected. If any method's `ReturnType.Name` is `"IQueryable"` or `ReturnType.FullName` contains `"IQueryable"` (covers both the non-generic and generic form in IL), the predicate returns false. Failure message includes the offending type name and the method name returning `IQueryable`.
+
+3. `DomainAssembliesNeverReferencePersistenceStack` uses iterative `.Should().NotHaveDependencyOn()` calls — one per forbidden term — following the same pattern established in `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure`. The forbidden terms are: `"Microsoft.EntityFrameworkCore"`, `"Npgsql"`, `"SharedKernel.Persistence"`. Three calls are required (one per term) because NetArchTest matches each as a substring of the referenced assembly's full name. This is intentionally additive with `DomainAssembliesNeverReferenceInfrastructure`: the latter covers broad infra terms (`EntityFramework`, `MassTransit`, `Redis`, `RabbitMQ`); this rule adds Npgsql and the in-repo persistence packages as a second gate scoped specifically to the EF Core persistence domain.
+
+4. All three factory methods accept `Assembly` as their parameter and return `ConditionList`. Method signatures:
+   - `PersistenceLayerProtectionRules.OnlyEfUnitOfWorkMayCallSaveChanges(Assembly)` → `ConditionList`
+   - `PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable(Assembly)` → `ConditionList`
+   - `PersistenceLayerProtectionRules.DomainAssembliesNeverReferencePersistenceStack(Assembly)` → `ConditionList`
+
+5. `NoDirectSaveChangesPredicate` and `NoIQueryableReturnPredicate` reuse the same Mono.Cecil `TypeDefinition` access pattern established by `DoesNotContainThrowIlPredicate`. If `NetArchTest.eNt` does not expose `IType.Definition` publicly, the existing explicit `Mono.Cecil >= 0.11.5` NuGet reference (established in GuardPurity phase) covers both new predicates — no new NuGet dependency is introduced.
+
+6. `NoDirectSaveChangesPredicate` exemption logic: the namespace guard (`TypeDefinition.Namespace.StartsWith("SharedKernel.Persistence.EfCore")`) is applied as the first check inside the predicate's evaluation method. Types in the exempted namespace are returned as passing (true) unconditionally, regardless of what methods they call. This is the `EfUnitOfWork`-exclusion mechanism.
+
+7. `NoIQueryableReturnPredicate` interface scope: the `"IRepository"` name prefix check on `TypeDefinition.Interfaces` is deliberately broad — it covers `IRepository<T,TId>`, `IReadRepository<T,TId>`, and any sub-interface with the prefix. If a `IReadRepository` returning `IQueryable` is found, the rule still fires; read-side query surfaces belong to Specifications, not raw `IQueryable`. If the consuming test project wishes to scope to write-side only, the predicate must be called on the write-side assembly specifically.
+
+8. `PersistenceLayerProtectionRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside the other rules static classes. It must not reference `SharedKernel.Persistence.EfCore` or any runtime production package directly. The consuming test project supplies the assembly under test via `typeof(SomePersistenceType).Assembly`.
+
+9. Rule 3 is distinct from `SharedKernelLayeringRules.DomainNeverReferencesPersistence` (which is a broad "domain assembly has no dependency on anything named Persistence") — this new rule is scoped to the specific persistence technology stack (EF Core, Npgsql, in-repo packages) and documents the rationale tied to WO-013's specific packages.
+
+10. Failure messages for all three predicates must identify the offending element: Rule 1 → offending type name + method name containing the `SaveChanges` call; Rule 2 → offending type name + method name returning `IQueryable`; Rule 3 → NetArchTest's default failure output lists the offending assembly reference name.
+
+### PersistenceEnforcement — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/PersistenceLayerProtectionRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: three predicate factory methods returning ConditionList |
+| `Predicates/NoDirectSaveChangesPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: IL walk for SaveChanges/SaveChangesAsync calls; exempts SharedKernel.Persistence.EfCore namespace |
+| `Predicates/NoIQueryableReturnPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: IL inspection of IRepository implementors for IQueryable return types |
+
+### PersistenceEnforcement — Acceptance Criteria
+
+- [ ] Rule 1 exists and tested: a class calling `SaveChangesAsync` directly (outside `SharedKernel.Persistence.EfCore`) fails the rule; a class using only `IUnitOfWork` passes
+- [ ] Rule 2 exists and tested: a type implementing `IRepository<T,TId>` with an `IQueryable<T>` returning method fails the rule; an `IRepository<T,TId>` with no `IQueryable` returns passes
+- [ ] Rule 3 exists and tested: a domain type referencing `Microsoft.EntityFrameworkCore` fails; a clean domain type with no EF Core, Npgsql, or `SharedKernel.Persistence.*` dependency passes
+- [ ] All three rules documented in `00.Governance/CLAUDE.md` with rationale, offending-pattern example, compliant-pattern example
+- [ ] All rules run cleanly against the current SharedKernel codebase without false positives
+
+### PersistenceEnforcement — Dependencies
+
+- Requires P-066 (`SharedKernel.Persistence.EfCore` complete with `IUnitOfWork`, `EfUnitOfWork`, `IRepository<T,TId>` types established): yes — `NoIQueryableReturnPredicate` scopes to `IRepository` implementors; `NoDirectSaveChangesPredicate` exempts the `SharedKernel.Persistence.EfCore` namespace by name
+- Requires `DoesNotContainThrowIlPredicate` (Mono.Cecil pattern) from `SK.00.GuardPurity` to be complete: yes (already complete — Mono.Cecil access pattern established; `Mono.Cecil >= 0.11.5` already referenced)
+- Unblocks: CI architecture gate integration for the Persistence layer
+
+### PersistenceEnforcement — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` — no change; covers both new predicates)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new SK rules, no change)
+- Target framework: `net10.0` (ArchitectureTests)
+
+### PersistenceEnforcement — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-27 | Define `OnlyEfUnitOfWorkMayCallSaveChanges` predicate shape: `NoDirectSaveChangesPredicate` design — IL walk for `DbContext::SaveChanges` and `DbContext::SaveChangesAsync` call opcodes; exemption: types in `SharedKernel.Persistence.EfCore` namespace pass unconditionally; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `○` |
+| D-28 | Define `RepositoriesMustNotExposeIQueryable` predicate shape: `NoIQueryableReturnPredicate` design — scope to `IRepository`-prefix implementing types; inspect method return types for `IQueryable` name match; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `○` |
+| D-29 | Define `DomainAssembliesNeverReferencePersistenceStack` predicate shape: three iterative `.NotHaveDependencyOn()` calls for `"Microsoft.EntityFrameworkCore"`, `"Npgsql"`, `"SharedKernel.Persistence"`; document relationship to `DomainAssembliesNeverReferenceInfrastructure` (additive, not replacing) | SharedKernel.ArchitectureTests | `○` |
+| C-30 | Implement `NoDirectSaveChangesPredicate` in `Predicates/` — `ICustomRule` walking `TypeDefinition.Methods.Body.Instructions` for `Call`/`Callvirt` to `DbContext::SaveChanges` or `DbContext::SaveChangesAsync`; namespace-based exemption for `SharedKernel.Persistence.EfCore`; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `○` |
+| C-31 | Implement `NoIQueryableReturnPredicate` in `Predicates/` — `ICustomRule` scoped to types whose `TypeDefinition.Interfaces` contains an `IRepository`-prefix entry; inspects non-constructor, non-getter method return types for `IQueryable` name match; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `○` |
+| C-32 | Implement `PersistenceLayerProtectionRules` static class in `Rules/` — three factory methods: `OnlyEfUnitOfWorkMayCallSaveChanges(Assembly)` → `ConditionList`, `RepositoriesMustNotExposeIQueryable(Assembly)` → `ConditionList`, `DomainAssembliesNeverReferencePersistenceStack(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| T-46 | Architecture test Rule 1 (fire path): pass a contrived assembly containing a class that calls `DbContext.SaveChangesAsync()` directly (not in `SharedKernel.Persistence.EfCore` namespace); assert `OnlyEfUnitOfWorkMayCallSaveChanges` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-47 | Architecture test Rule 1 (pass path): pass an assembly containing a class that injects and calls only `IUnitOfWork`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-48 | Architecture test Rule 2 (fire path): pass an assembly containing a type implementing `IRepository<Order, Guid>` with a method returning `IQueryable<Order>`; assert `RepositoriesMustNotExposeIQueryable` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
+| T-49 | Architecture test Rule 2 (pass path): pass an assembly containing an `IRepository<Order, Guid>` implementation with no `IQueryable` returning methods; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-50 | Architecture test Rule 3 (fire path): pass a domain assembly that references `Microsoft.EntityFrameworkCore` (e.g., uses `[Key]` attribute); assert `DomainAssembliesNeverReferencePersistenceStack` fails | SharedKernel.ArchitectureTests | `○` |
+| T-51 | Architecture test Rule 3 (pass path): pass a clean domain assembly with no EF Core, Npgsql, or `SharedKernel.Persistence.*` dependency; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| DO-12 | Document all three `PersistenceLayerProtectionRules` predicates in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale for each rule tied to WO-013 EF Core contracts, offending-pattern example, compliant-pattern example, cross-reference to root `CLAUDE.md` hard layering rules | SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -662,21 +766,22 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 144.
+> Counts updated whenever a task state changes. Total tasks: 157.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.00.Design` | Design | 26 | 26 | 0 | `●` |
+| `SK.00.Design` | Design | 29 | 26 | 3 | `◐` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
-| `SK.00.Core` | Core | 36 | 36 | 0 | `●` |
-| `SK.00.Tests` | Tests | 45 | 45 | 0 | `●` |
-| `SK.00.Docs` | Docs | 11 | 11 | 0 | `●` |
+| `SK.00.Core` | Core | 39 | 36 | 3 | `◐` |
+| `SK.00.Tests` | Tests | 51 | 45 | 6 | `◐` |
+| `SK.00.Docs` | Docs | 12 | 11 | 1 | `◐` |
 | `SK.00.Published` | Published | 6 | 6 | 0 | `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | 11 | 11 | 0 | `●` |
 | `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | 11 | 11 | 0 | `●` |
 | `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | 16 | 16 | 0 | `●` |
 | `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | 19 | 19 | 0 | `●` |
 | `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | 13 | 13 | 0 | `●` |
+| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | 13 | 0 | 13 | `○` |
 
 ---
 
@@ -701,3 +806,4 @@ Format when active:
 - [2026-05-31] D-19–D-26 → ● in SK.00.Design — all 8 remaining design tasks complete; SK.00.Design promoted to ● (state-map-phase)
 - [2026-05-31] C-18–C-19, T-18–T-22 → ● in SK.00.CachingEnforcement; C-20–C-23, T-23–T-30 → ● in SK.00.DomainLayerPurity; C-24–C-27, T-31–T-39 → ● in SK.00.DomainGoldStandard; C-28–C-29, T-40–T-45 → ● in SK.00.ContractsPurity (state-map-phase)
 - [2026-05-31] DO-07–DO-11 → ● in SK.00.Docs — README.md extended with SK0007–SK0010 Roslyn analyzer docs, CachingAbstractionRules, DomainLayerPurityRules, DomainGoldStandardRules, ContractsPurityRules architecture test docs; Overall Progress table corrected for Core/Tests/Docs/CachingEnforcement/DomainLayerPurity/DomainGoldStandard/ContractsPurity — all phase keys now ● (state-map-phase)
+- [2026-06-01] Phase Persistence Architecture Enforcement added (SK.00.PersistenceEnforcement) — 13 tasks: D-27–D-29, C-30–C-32, T-46–T-51, DO-12; three NetArchTest predicates in PersistenceLayerProtectionRules; two new ICustomRule predicates (NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate); no new SK IDs; total tasks now 157 — WO-013 P-075

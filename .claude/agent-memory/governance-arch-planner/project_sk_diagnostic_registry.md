@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-SK diagnostic ID registry as of 2026-05-30. Next available ID: **SK0011**.
+SK diagnostic ID registry as of 2026-06-01. Next available ID: **SK0011**.
 
 | ID | Rule Name | Status |
 |----|-----------|--------|
@@ -19,6 +19,8 @@ SK diagnostic ID registry as of 2026-05-30. Next available ID: **SK0011**.
 | SK0008 | AggregateRootDispatchCoupling | Defined (WO-011 P-056) — Warning; fires when IAggregateRoot<> injected in dispatch-context constructor; fix: use IHasDomainEvents |
 | SK0009 | DomainEventMissingVersionAttribute | Defined (WO-011 P-056) — Warning; fires on non-abstract IDomainEvent implementors lacking [DomainEventVersion]; abstract types exempt |
 | SK0010 | SpecificationOrderingConflict | Defined (WO-011 P-056) — Warning; fires when constructor calls both ApplyOrderBy and ApplyOrderByDescending |
+
+P-075 (WO-013, Persistence Architecture Enforcement) introduced no new SK IDs — all three rules are pure NetArchTest predicates.
 
 **Why:** Tracking this avoids gaps and reuse. Never reuse a published ID even if a rule is renamed — bump the registry.
 

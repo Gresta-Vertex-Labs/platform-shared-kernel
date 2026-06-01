@@ -1,8 +1,26 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <PackageId>SharedKernel.Persistence.Abstractions</PackageId>
+    <Description>Zero-ORM persistence abstractions: IRepository, IReadRepository, IUnitOfWork, IDbConnectionFactory, ISpecificationEvaluator. References only SharedKernel.Primitives and SharedKernel.Domain.</Description>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <RepositoryUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Persistence.Abstractions.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Persistence.Abstractions.Tests\**" />
+    <None Remove="SharedKernel.Persistence.Abstractions.Tests\**" />
+  </ItemGroup>
 
 </Project>

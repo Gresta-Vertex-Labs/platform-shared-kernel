@@ -30,7 +30,10 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 > Domains currently `◐ In Progress`. This section is the first thing to update when work starts or finishes in any domain.
 
-_Nothing in progress — all domains at ○ Not Started or ● Complete._
+| Domain | Current Phase | Focus (one line) |
+|--------|---------------|-----------------|
+| [00.Governance](00.Governance/state-map.md) | Design | Add five persistence architecture enforcement rules (IUnitOfWork-only save boundary, no IQueryable on IRepository, no persistence in Domain, IDbConnectionFactory-only connections, no SQL interpolation in DapperReadService) |
+| [16.Testing](16.Testing/state-map.md) | Design | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
 
 <!--
 Format when active:
@@ -62,13 +65,13 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Core | `●` | All 36 Core tasks complete — SK0001–SK0010 analyzers, ArchitectureTests base classes, BenchmarkConfig, and Linter content authored; 45 tests passing; all enforcement phases (GuardPurity, CachingEnforcement, DomainLayerPurity, DomainGoldStandard, ContractsPurity) complete. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Design | `◐` | All 36 Core tasks complete — SK0001–SK0010 analyzers, ArchitectureTests base classes, BenchmarkConfig, and Linter content authored; 45 tests passing; all enforcement phases (GuardPurity, CachingEnforcement, DomainLayerPurity, DomainGoldStandard, ContractsPurity) complete. | Add five persistence architecture enforcement rules (IUnitOfWork-only save boundary, no IQueryable on IRepository, no persistence in Domain, IDbConnectionFactory-only connections, no SQL interpolation in DapperReadService) |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.2.0 and 1.3.0 packed and published to nupkgs/; manifests list only SharedKernel.Primitives and SharedKernel.Core; all 7 Published tasks complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
-| 06 | [Persistence](06.Persistence/state-map.md) | — | `○` | — | — |
+| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | SharedKernel.Persistence.Abstractions 1.0.0 and SharedKernel.Persistence.EfCore 1.0.0 packed; Abstractions verified ORM-free; EfCore lists EF deps but not Npgsql; all 6 phases complete. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | — | `○` | — | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
@@ -78,7 +81,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
-| 16 | [Testing](16.Testing/state-map.md) | — | `○` | — | — |
+| 16 | [Testing](16.Testing/state-map.md) | Design | `◐` | — | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -104,18 +107,17 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Guard Purity Enforcement | 1 |
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 2 |
+| ● Published | 3 |
 | ● Docs | 0 |
 | ● Tests | 0 |
-| ● Core | 0 |
+| ● Core | 1 |
 | ● Scaffold | 0 |
 | ● Design | 0 |
-| ◐ In Progress | 0 |
+| ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 13 |
+| ○ Not Started | 11 |
 
 ---
 
@@ -1491,7 +1493,7 @@ The complete `SharedKernel.Domain` package — the DDD primitive layer that ever
 ---
 ### P-033 — Persistence: EF Core Domain Primitive Support (Value Converters, Interceptors, Query Filters)
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-008
 **Domain:** 06.Persistence
 **Depends on:** P-032
@@ -1730,6 +1732,18 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-05-30] Phase Backlog entries for 04.Contracts closed → ● Complete — 04.Contracts reached Published (state-map-phase)
 - [2026-05-31] Governance → Design (●) — promoted from SK.00.Design (state-map-phase)
 - [2026-05-31] Governance → Core (●) — promoted from SK.00.Core (state-map-phase)
+- [2026-06-01] 06.Persistence → Design (◐) — Define complete public surface for all four persistence packages and scaffold csproj wiring (state-map-phase)
+- [2026-06-01] 00.Governance → Design (◐) — Add five persistence architecture enforcement rules to ArchitectureTests (state-map-phase)
+- [2026-06-01] 16.Testing → Design (◐) — Add PostgreSQL Testcontainer fixture, EfCore test DbContext base, persistence-aware fakers, outbox assertions (state-map-phase)
+- [2026-06-01] Phase(s) P-075 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-01] Phase(s) P-033, P-065, P-066, P-067, P-068, P-069, P-070, P-073, P-074 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-06-01] Persistence → Design (●) — promoted from SK.06.Design (state-map-phase)
+- [2026-06-01] Persistence → Scaffold (●) — promoted from SK.06.Scaffold (state-map-phase)
+- [2026-06-01] Persistence → Core (●) — promoted from SK.06.Core (state-map-phase)
+- [2026-06-01] Persistence → Tests (●) — promoted from SK.06.Tests (state-map-phase)
+- [2026-06-01] Persistence → Docs (●) — promoted from SK.06.Docs (state-map-phase)
+- [2026-06-01] Persistence → Published (●) — promoted from SK.06.Published (state-map-phase)
+- [2026-06-01] Phase Backlog entries for 06.Persistence closed → ● Complete — 06.Persistence reached Published (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -1991,6 +2005,7 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-05-27] Phase(s) P-043, P-044, P-045, P-046, P-047, P-048, P-049, P-050, P-051, P-052, P-053, P-054 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
 - [2026-05-27] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
 - [2026-05-27] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+- [2026-06-01] Persistence → Scaffold (●) — promoted from SK.06.Scaffold (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -3120,3 +3135,465 @@ Downstream microservice test projects will construct `PagedList<T>` instances do
 - [ ] `16.Testing/SharedKernel.Testing` references `SharedKernel.Contracts` (permitted — testing may reference any layer)
 - [ ] All public types carry XML doc comments
 - [ ] `AddFakeCachingServices()` and `AddFakeDomainServices()` are not affected — contracts helpers are registered separately via `AddFakeContractsServices()` if DI registration is needed, or shipped as static helpers only
+
+---
+### P-065 — Persistence: Scaffold Abstractions and EfCore Packages
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+Full project scaffold for the two persistence packages in scope: `SharedKernel.Persistence.Abstractions` and `SharedKernel.Persistence.EfCore`. Both csproj files are currently empty shells — they need proper NuGet references, package metadata, and solution wiring before any implementation can begin.
+
+**`SharedKernel.Persistence.Abstractions`:**
+- References: `SharedKernel.Primitives`, `SharedKernel.Domain` (project references from `01.Core` and `03.Domain`)
+- Zero ORM NuGet dependencies — this is a pure interface library
+- Package metadata: id, description, version `1.0.0`
+
+**`SharedKernel.Persistence.EfCore`:**
+- References: `SharedKernel.Persistence.Abstractions` (project reference), `SharedKernel.Domain` (project reference)
+- NuGet: `Microsoft.EntityFrameworkCore` 10.x, `Microsoft.EntityFrameworkCore.Relational` 10.x, `Microsoft.Extensions.DependencyInjection.Abstractions` (for DI extensions)
+- Package metadata: id, description, version `1.0.0`
+
+Both packages: `net10.0` target framework, `ImplicitUsings` enabled, `Nullable` enabled. Both test sub-project csproj files get the same treatment — test projects receive `xunit`, `xunit.runner.visualstudio`, `coverlet.collector`, `Microsoft.EntityFrameworkCore.Sqlite` (for EfCore tests), and a project reference to `SharedKernel.Testing`. The two test projects are: `SharedKernel.Persistence.Abstractions.Tests/` and `SharedKernel.Persistence.EfCore.Tests/`.
+
+Add all four projects (two production, two test) to `Platform.SharedKernel.slnx` under the `06.Persistence` solution folder.
+
+#### Why this is needed
+
+Both packages are empty csproj shells with no references. No implementation can start until the dependency graph is correctly wired and the solution registers the projects. The PostgreSQL and Dapper packages are out of scope for this work order — they will be scaffolded in a future work order when those capability domains are needed.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Persistence.Abstractions.csproj` references `SharedKernel.Primitives` and `SharedKernel.Domain` as project references; zero ORM NuGet dependencies
+- [ ] `SharedKernel.Persistence.EfCore.csproj` references `SharedKernel.Persistence.Abstractions` and `SharedKernel.Domain` as project references; `Microsoft.EntityFrameworkCore` 10.x and `Microsoft.Extensions.DependencyInjection.Abstractions` added
+- [ ] Both test csproj files reference `SharedKernel.Testing`, xUnit packages, and their respective production project; EfCore.Tests adds `Microsoft.EntityFrameworkCore.Sqlite`
+- [ ] All four projects appear in `Platform.SharedKernel.slnx` under the `06.Persistence` solution folder
+- [ ] `dotnet build` passes for both production projects from a clean state
+---
+
+---
+### P-066 — Persistence Abstractions: IRepository, IReadRepository, IUnitOfWork, IDbConnectionFactory, ISpecificationEvaluator
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** P-065
+
+#### What is needed
+
+The complete public surface of `SharedKernel.Persistence.Abstractions`. This package is a pure interface library — no EF Core, no Npgsql, no Dapper. Every interface in this package is a contract that consuming microservices depend on regardless of which persistence provider they choose. The outbox pattern is fully owned by `07.Messaging` (MassTransit's Entity Framework outbox) — no outbox types belong here.
+
+**Repository interfaces (`Repositories/`):**
+- `IRepository<TAggregate, TId>` — write-side only: `GetByIdAsync`, `AddAsync`, `UpdateAsync`, `DeleteAsync`. Constrained to `where TAggregate : IAggregateRoot<TId> where TId : notnull`. No `IQueryable<TAggregate>` exposure — all queries go through `IReadRepository`.
+- `IReadRepository<TAggregate, TId>` — read-side only: `GetByIdAsync`, `GetBySpecAsync(ISpecification<TAggregate>)`, `ListAsync(ISpecification<TAggregate>)`, `CountAsync(ISpecification<TAggregate>)`, `AnyAsync(ISpecification<TAggregate>)`. Same generic constraints as write repository. Consumers inject `ReadOnlySpecification<T>` or `PagedSpecification<T>` from `03.Domain` for read-heavy paths.
+
+**Unit of work (`UnitOfWork/`):**
+- `IUnitOfWork` — single method: `SaveChangesAsync(CancellationToken ct) → Task<int>`. This is the only permitted save boundary in the system. No provider-specific concepts leak here.
+
+**Connection factory (`Connections/`):**
+- `IDbConnectionFactory` — single method: `CreateConnectionAsync(CancellationToken ct) → Task<IDbConnection>`. Returns an open connection; caller disposes. Defined here for future Dapper provider implementations; not consumed by EfCore packages.
+
+**Specification evaluator contract (`Specifications/`):**
+- `ISpecificationEvaluator<T>` — single method: `GetQuery(IQueryable<T> inputQuery, ISpecification<T> spec) → IQueryable<T>`. Lives in Abstractions so alternative evaluators (e.g., Cosmos DB) can implement the same contract without referencing EF Core.
+
+All types carry XML doc comments.
+
+#### Why this is needed
+
+`SharedKernel.Persistence.Abstractions` is the contract layer that Application-layer handlers (`05.Application`) depend on for repositories and unit of work. Keeping it free of ORM dependencies means a microservice can reference it without pulling in EF Core. Outbox is explicitly excluded: MassTransit's Entity Framework outbox (`UseEntityFrameworkOutbox`) manages its own schema, persistence, and relay entirely within `07.Messaging` — introducing a competing outbox contract in `06.Persistence` would create parallel infrastructure with no clear owner. The specification evaluator contract enables the EfCore implementation and any future alternative to fulfill the same interface without coupling to each other.
+
+#### Acceptance criteria
+- [ ] `IRepository<TAggregate, TId>` defined with write-only surface; no `IQueryable<TAggregate>` member
+- [ ] `IReadRepository<TAggregate, TId>` defined with all five read methods accepting `ISpecification<TAggregate>`
+- [ ] `IUnitOfWork` defined with single `SaveChangesAsync` method
+- [ ] `IDbConnectionFactory` defined with single `CreateConnectionAsync` method returning `Task<IDbConnection>`
+- [ ] `ISpecificationEvaluator<T>` defined with `GetQuery` method
+- [ ] No `OutboxMessage`, `IOutboxWriter`, or any outbox type exists in this package
+- [ ] Package has zero ORM NuGet dependencies — only `SharedKernel.Primitives` and `SharedKernel.Domain` project references
+- [ ] All public types carry XML doc comments
+- [ ] `dotnet build SharedKernel.Persistence.Abstractions` passes clean
+---
+
+---
+### P-067 — Persistence EfCore Core: SharedKernelDbContext, EntityTypeConfigurationBase, StronglyTypedIdValueConverter
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** P-066
+
+#### What is needed
+
+The foundational EF Core types in `SharedKernel.Persistence.EfCore` that all other EfCore phases build on. This phase must be completed before interceptors (P-068) or repositories (P-069) are implemented, because both depend on `SharedKernelDbContext`.
+
+**`SharedKernelDbContext` — abstract base context (`Context/`):**
+The base `DbContext` that all downstream microservice DbContexts extend. Its responsibilities:
+
+- Accepts `DbContextOptions` via constructor; passes to `DbContext` base
+- Registers the three cross-cutting interceptors in its constructor (`AuditInterceptor`, `SoftDeleteInterceptor`, `ConcurrencyInterceptor`) — downstream subclasses cannot bypass this registration
+- Overrides `SaveChangesAsync` to ensure all interceptors fire before the database commit; returns `Task<int>`
+- Exposes no entity `DbSet<T>` properties — those are declared by the consuming service's own DbContext subclass
+- In `OnModelCreating`, scans and applies all `IEntityTypeConfiguration<T>` implementations registered in the calling assembly (via `modelBuilder.ApplyConfigurationsFromAssembly`)
+- Must not seal itself — it is designed to be extended
+
+The outbox interceptor is not registered here. MassTransit's `UseEntityFrameworkOutbox` integration manages outbox concerns directly on the consuming service's DbContext at the `07.Messaging` layer.
+
+**`EntityTypeConfigurationBase<TEntity, TId>` — abstract EF configuration base (`Configurations/`):**
+The base class all aggregate EF configurations extend. Configures the following automatically when `base.Configure(builder)` is called:
+
+- Primary key on `TId`
+- Concurrency token (row version) for entities implementing `IHasConcurrency` — uses `IsRowVersion()` convention
+- Global query filter for `ISoftDeletable` entities: `e => !e.IsDeleted` — ensures soft-deleted records are invisible to all queries by default
+- Owned audit value columns for `IHasCreatedAudit`: `CreatedBy` (max-length string, not null), `CreatedOn` (DateTimeOffset, not null)
+- Owned audit value columns for `IHasAudit`: additionally `ModifiedBy` (nullable string), `ModifiedOn` (nullable DateTimeOffset)
+- Tenant column for `IHasTenant`: `TenantId` (Guid, not null) — index added for tenant-filtered queries
+
+Concrete downstream configurations extend this base and call `base.Configure(builder)` first, then add their own entity-specific column and index mappings.
+
+**`StronglyTypedIdValueConverter<TStronglyTypedId, TValue>` — EF value converter (`Conversions/`):**
+A sealed generic `ValueConverter<TStronglyTypedId, TValue>` that converts between a `StronglyTypedId<TValue>` and its underlying `TValue` for EF Core column mapping. Uses the `implicit operator TValue` from `StronglyTypedId<TValue>` for the to-provider direction and a constructor call (or factory) for the from-provider direction. No reflection — the `implicit operator TValue` is a static method call, AOT-safe.
+
+#### Why this is needed
+
+`SharedKernelDbContext` is the single point where cross-cutting persistence concerns (audit, soft-delete, concurrency) are registered as interceptors. Centralizing this in an abstract base ensures no downstream service can accidentally omit an interceptor by forgetting to call `AddInterceptors`. The outbox concern is intentionally absent — MassTransit's Entity Framework outbox hooks into the consuming service's `DbContext` directly and manages its own interceptor registration, schema, and relay without any coordination with this base. `EntityTypeConfigurationBase` eliminates boilerplate from every entity's EF configuration. `StronglyTypedIdValueConverter` is required by every entity configuration that uses a strongly-typed ID as a primary key.
+
+#### Acceptance criteria
+- [ ] `SharedKernelDbContext` is abstract; its constructor registers exactly three interceptors (`AuditInterceptor`, `SoftDeleteInterceptor`, `ConcurrencyInterceptor`); no `OutboxInterceptor`
+- [ ] `SharedKernelDbContext.OnModelCreating` calls `modelBuilder.ApplyConfigurationsFromAssembly` for the calling assembly
+- [ ] `SharedKernelDbContext.SaveChangesAsync` override delegates to interceptor pipeline then base EF Core commit
+- [ ] `EntityTypeConfigurationBase<TEntity, TId>` applies primary key, concurrency token (for `IHasConcurrency`), soft-delete filter (for `ISoftDeletable`), and audit columns (for `IHasCreatedAudit` / `IHasAudit`) when `base.Configure(builder)` is called
+- [ ] Tenant column and index applied for `IHasTenant` entities in `EntityTypeConfigurationBase`
+- [ ] `StronglyTypedIdValueConverter<TStronglyTypedId, TValue>` uses `implicit operator TValue` — no `Activator.CreateInstance`, no reflection
+- [ ] All public types carry XML doc comments
+- [ ] `dotnet build SharedKernel.Persistence.EfCore` passes clean
+---
+
+---
+### P-068 — Persistence EfCore Interceptors: Audit, SoftDelete, Concurrency
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** P-067
+
+#### What is needed
+
+The three `ISaveChangesInterceptor` implementations in `SharedKernel.Persistence.EfCore` that compose the cross-cutting persistence pipeline. All three are sealed classes registered by `SharedKernelDbContext`. There is no `OutboxInterceptor` in this package — outbox concerns belong entirely to `07.Messaging` (MassTransit's Entity Framework outbox).
+
+**`AuditInterceptor` (`Interceptors/`):**
+
+- Fires `SavingChangesAsync` / `SavingChanges`
+- For `Added` entities implementing `IHasCreatedAudit`: sets `CreatedBy` and `CreatedOn` via `ChangeTracker.Entry(entity).CurrentValues[propertyName]` — never via direct property setter on the aggregate
+- For `Modified` entities implementing `IHasAudit`: sets `ModifiedBy` and `ModifiedOn` the same way
+- For `Deleted` entities: does not write audit fields — `SoftDeleteInterceptor` intercepts those before they reach `Deleted` state
+- Requires `IUserContext` (from `12.Security.Abstractions`) to resolve the current user string — injected via constructor. Note: `06.Persistence` cannot reference `12.Security` by layering rules; `IUserContext` must be resolved at DI composition time and passed in as a scoped dependency injected into the interceptor. The interceptor declares a constructor parameter typed to `IUserContext`; DI wires it at runtime. This is standard EF interceptor DI — the interceptor is registered as a scoped service so it receives `IUserContext` per-request.
+- Requires `IClock` (from `01.Core`) for `CreatedOn` / `ModifiedOn` timestamps
+
+**`SoftDeleteInterceptor` (`Interceptors/`):**
+
+- Fires `SavingChangesAsync` / `SavingChanges`
+- For `Deleted` entities implementing `ISoftDeletable`: changes EF entity state from `Deleted` to `Modified`; sets `IsDeleted = true`, `DeletedOn = clock.UtcNow`, `DeletedBy` via EF ChangeTracker
+- For non-`ISoftDeletable` entities: passes through without modification
+- Requires `IUserContext` and `IClock` via constructor
+
+**`ConcurrencyInterceptor` (`Interceptors/`):**
+
+- Fires on `SaveChangesFailedAsync` / `SaveChangesFailed`
+- When a `DbUpdateConcurrencyException` is thrown for an entity implementing `IHasConcurrency`: catches the exception and rethrows as a typed `ConcurrencyException` carrying `Error.Conflict(...)` from `SharedKernel.Primitives`
+- Does not silently retry — conflict resolution is the application layer's responsibility
+- Non-concurrency exceptions are not swallowed — they propagate unchanged
+
+#### Why this is needed
+
+These three interceptors enforce audit trails, soft deletion, and optimistic concurrency transparently at the infrastructure boundary without any domain or application code needing to know about them. Every downstream `SaveChangesAsync` call automatically gets consistent cross-cutting behaviour. The outbox concern is absent by design — MassTransit's `UseEntityFrameworkOutbox` hooks directly into the consuming service's DbContext at the `07.Messaging` composition layer, writing its outbox tables in the same transaction as `SaveChanges` without any coordination needed from this package.
+
+#### Acceptance criteria
+- [ ] `AuditInterceptor` sets `CreatedBy`/`CreatedOn` for Added `IHasCreatedAudit` entities; sets `ModifiedBy`/`ModifiedOn` for Modified `IHasAudit` entities; does so via EF ChangeTracker, never via direct property setter
+- [ ] `SoftDeleteInterceptor` converts `Deleted → Modified` for `ISoftDeletable` entities; sets `IsDeleted`, `DeletedOn`, `DeletedBy`; non-soft-deletable entities pass through untouched
+- [ ] `ConcurrencyInterceptor` catches `DbUpdateConcurrencyException` for `IHasConcurrency` entities and rethrows as `ConcurrencyException` carrying `Error.Conflict(...)` — does not swallow non-concurrency exceptions
+- [ ] Exactly three interceptors are sealed classes registered in `SharedKernelDbContext`; no `OutboxInterceptor` exists in this package
+- [ ] `IUserContext` is injected into `AuditInterceptor` and `SoftDeleteInterceptor` as a scoped DI dependency — no direct reference to `12.Security.Oidc` concrete package
+- [ ] `IClock` is injected via constructor from `01.Core`
+- [ ] All public types carry XML doc comments
+---
+
+---
+### P-069 — Persistence EfCore Repositories, Unit of Work, and Specification Evaluator
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** P-067
+
+#### What is needed
+
+The EF Core implementations of the repository and unit of work contracts from `SharedKernel.Persistence.Abstractions`, plus the specification evaluator that translates `ISpecification<T>` to `IQueryable<T>`.
+
+**`EfRepository<TAggregate, TId>` (`Repositories/`):**
+Abstract class implementing `IRepository<TAggregate, TId>`. Backed by `DbContext.Set<TAggregate>()`. Implements `GetByIdAsync`, `AddAsync`, `UpdateAsync`, `DeleteAsync`. Does not expose `IQueryable<TAggregate>` to callers. Concrete downstream repositories extend this — do not register `EfRepository<T,TId>` directly in DI without a concrete subclass. Accepts `SharedKernelDbContext` via constructor injection.
+
+**`EfReadRepository<TAggregate, TId>` (`Repositories/`):**
+Abstract class implementing `IReadRepository<TAggregate, TId>`. Uses `ISpecificationEvaluator<TAggregate>` internally to apply specifications to `DbContext.Set<TAggregate>()`. Implements all five read methods: `GetByIdAsync`, `GetBySpecAsync`, `ListAsync`, `CountAsync`, `AnyAsync`. When the specification has `AsNoTracking == true`, `AsNoTracking()` is applied to the query. Accepts `SharedKernelDbContext` and `ISpecificationEvaluator<TAggregate>` via constructor.
+
+**`EfUnitOfWork` (`UnitOfWork/`):**
+Sealed class implementing `IUnitOfWork`. Single responsibility: delegates `SaveChangesAsync` to `SharedKernelDbContext.SaveChangesAsync`. Accepts `SharedKernelDbContext` via constructor. All interceptors fire automatically through the context. This is the sole permitted save boundary — application code must never call `DbContext.SaveChangesAsync` directly.
+
+**`SpecificationEvaluator<T>` (`Specifications/`):**
+Sealed class implementing `ISpecificationEvaluator<T>`. The `GetQuery` method applies the following operations to the input `IQueryable<T>` in strict order:
+
+1. `Criteria` (Where clause) — if non-null
+2. `Includes` (eager loading via `Include` / `ThenInclude`)
+3. `OrderBy` / `OrderByDescending` — primary sort; last-call wins
+4. `ThenBys` — secondary sorts applied in order; only applied if a primary sort is set
+5. `IsDistinct` — `Distinct()` if true
+6. `AsNoTracking` — `AsNoTracking()` if true
+7. `Skip` / `Take` — paging; always last to ensure ordering is stable before any row-offset operation
+
+#### Why this is needed
+
+These types are the bridge between the domain's `ISpecification<T>` contracts and EF Core's `IQueryable<T>` pipeline. Abstracting repositories behind `IRepository` and `IReadRepository` means application-layer handlers never reference `DbContext` directly — they work exclusively with injected repository interfaces, keeping the application layer portable. `EfUnitOfWork` as the sole save boundary enforces the rule that business logic cannot accidentally persist changes by calling `SaveChanges` directly on the context. `SpecificationEvaluator` in a sealed concrete class means specification application logic is defined once, tested once, and applied consistently across every read operation in every microservice that uses EfCore persistence.
+
+#### Acceptance criteria
+- [ ] `EfRepository<TAggregate, TId>` is abstract; implements all four write methods; never exposes `IQueryable<TAggregate>`
+- [ ] `EfReadRepository<TAggregate, TId>` is abstract; all five read methods work correctly; `AsNoTracking()` applied when `spec.AsNoTracking == true`
+- [ ] `EfUnitOfWork` is sealed; delegates to `SharedKernelDbContext.SaveChangesAsync`; no additional logic
+- [ ] `SpecificationEvaluator<T>` applies operations in the documented order; paging is provably last (unit test verifies `Skip`/`Take` appear after `OrderBy` in the generated query)
+- [ ] `SpecificationEvaluator<T>` ignores `ThenBys` when no primary sort is set
+- [ ] Null `Criteria` specification matches all entities (no `Where` clause added)
+- [ ] All types carry XML doc comments
+---
+
+---
+### P-070 — Persistence EfCore Multi-Tenancy: TenantedDbContext and Tenant Query Filter
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** P-069
+
+#### What is needed
+
+Multi-tenant data isolation support in `SharedKernel.Persistence.EfCore`. This capability adds a tenant-filtered DbContext base and a tenant repository wrapper for services that use tenant-scoped aggregates.
+
+**`ICurrentTenantService` (`MultiTenancy/`):**
+A simple interface exposing `TenantId` (Guid?) — returns the current tenant from wherever it was resolved (HTTP header, JWT claim, etc.). This interface is defined in `SharedKernel.Persistence.EfCore` (not in Abstractions) because it is an EfCore-layer concern: the DbContext needs it to apply a global query filter. The concrete implementation lives in `13.ServiceDefaults.MultiTenancy`.
+
+**`TenantedDbContext` (`MultiTenancy/`):**
+Abstract base class extending `SharedKernelDbContext`. Overrides `OnModelCreating` to install a global query filter on all entities implementing `IHasTenant`: `e => e.TenantId == currentTenantService.TenantId` (where `TenantId` is resolved from `ICurrentTenantService` at query execution time, not at model-build time — the filter must capture the service, not a snapshot of the tenant ID). Accepts `ICurrentTenantService` via constructor alongside `DbContextOptions`. Downstream multi-tenant DbContext subclasses extend `TenantedDbContext` instead of `SharedKernelDbContext`.
+
+**`TenantedRepository<TAggregate, TId>` (`MultiTenancy/`):**
+Abstract class extending `EfRepository<TAggregate, TId>`. Adds `GetByIdForTenantAsync(TId id, Guid tenantId, CancellationToken ct) → Task<TAggregate?>` — a safety method that explicitly scopes a lookup to a specific tenant, bypassing the global filter for cross-tenant administrative operations. Standard `GetByIdAsync` routes through the global filter automatically. The global filter on `TenantedDbContext` means that `GetByIdAsync` from the base `EfRepository` is already tenant-safe for the current-tenant path.
+
+#### Why this is needed
+
+Multi-tenant SaaS services that use `TenantedAggregateRoot<TId>` (from `03.Domain`) must never accidentally query another tenant's data. Global query filters at the DbContext level are the most reliable mechanism for this — they apply to all queries, including those generated by `EfReadRepository` and specification evaluators, without any per-query filter annotation. Without this phase, each team must implement tenant filtering ad-hoc, and the inevitable oversight creates cross-tenant data leakage vulnerabilities.
+
+#### Acceptance criteria
+- [ ] `ICurrentTenantService` defined in `SharedKernel.Persistence.EfCore`; exposes `TenantId` as `Guid?`
+- [ ] `TenantedDbContext` installs a global query filter on all `IHasTenant` entities using the runtime value of `ICurrentTenantService.TenantId` (not a startup-time snapshot)
+- [ ] `TenantedRepository<TAggregate, TId>` provides `GetByIdForTenantAsync` that explicitly scopes by `tenantId`; standard `GetByIdAsync` flows through the global filter
+- [ ] A unit test verifies that a query on `TenantedDbContext` without a current tenant either returns nothing or throws a configurable exception (not cross-tenant data)
+- [ ] All types carry XML doc comments
+---
+
+---
+### P-071 — DEFERRED: Persistence PostgreSQL Package
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+
+`SharedKernel.Persistence.PostgreSQL` (SnakeCaseNamingConvention, JSONB, pgvector, `UsePostgreSQL` DI extension) is out of scope for WO-013. It will be planned and implemented in a future work order once the EfCore layer (P-065 to P-070, P-073 to P-076) is complete and microservices begin integrating the persistence packages.
+
+---
+
+---
+### P-072 — DEFERRED: Persistence Dapper Package
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+
+`SharedKernel.Persistence.Dapper` (NpgsqlConnectionFactory, StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperReadService) is out of scope for WO-013. Dapper is a read-side concern; it will be scoped into a dedicated future work order alongside the PostgreSQL package once a microservice CQRS read-side need drives it.
+
+---
+
+---
+
+### P-073 — Persistence DI Extensions: AddSharedKernelEfCore Builder
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** P-070
+
+#### What is needed
+
+The DI extension methods in `SharedKernel.Persistence.EfCore` that wire up the EfCore persistence layer for consuming microservices. This phase provides a fluent builder that composes all required registrations in one call and validates the configuration at startup.
+
+**`EfCorePersistenceBuilder` — fluent DI builder (`Extensions/`):**
+A builder type returned by `AddSharedKernelEfCore<TContext>(IServiceCollection services, Action<DbContextOptionsBuilder> configureDb)` where `TContext : SharedKernelDbContext`. Provides a fluent API for optional capabilities:
+
+- `.WithMultiTenancy()` — asserts that `TContext` extends `TenantedDbContext`; registers `ICurrentTenantService` as a **scoped placeholder** (an empty no-op implementation) so the DI graph resolves at startup — the concrete implementation is overridden by `13.ServiceDefaults.MultiTenancy` in consuming services. This placeholder exists only to prevent startup failures in services that call `.WithMultiTenancy()` before the MultiTenancy package wires its own implementation.
+- `.Build()` — registers:
+  - `TContext` as `DbContext` (scoped)
+  - `IUnitOfWork` → `EfUnitOfWork` (scoped)
+  - `ISpecificationEvaluator<T>` → `SpecificationEvaluator<T>` (singleton — stateless)
+  - `AuditInterceptor`, `SoftDeleteInterceptor`, `ConcurrencyInterceptor` as scoped services (required by EF Core interceptor DI)
+
+**Startup guard in `.Build()`:**
+If `.WithMultiTenancy()` was called but `TContext` does not extend `TenantedDbContext`, `.Build()` throws `InvalidOperationException` with a clear message at startup. This prevents the common mistake of calling `.WithMultiTenancy()` while using the wrong base DbContext.
+
+**`IUserContext` dependency resolution:**
+`AuditInterceptor` and `SoftDeleteInterceptor` require `IUserContext` (from `12.Security.Abstractions`). `.Build()` registers a scoped no-op `IUserContext` placeholder (returns `"system"`) if no `IUserContext` is already registered — consuming services override it by registering their own implementation before or after calling `.Build()`. The last registration wins.
+
+#### Why this is needed
+
+Without a builder, consuming services must register `EfUnitOfWork`, `SpecificationEvaluator<T>`, and all three scoped interceptors individually in exactly the right order. Missing any registration causes a cryptic runtime failure on the first `SaveChangesAsync`. The builder makes the correct configuration the path of least resistance and catches misconfiguration at startup rather than at first use.
+
+#### Acceptance criteria
+
+- [ ] `AddSharedKernelEfCore<TContext>(services, configureDb)` returns an `EfCorePersistenceBuilder` instance
+- [ ] `.Build()` registers `TContext` as `DbContext`, `IUnitOfWork → EfUnitOfWork`, `ISpecificationEvaluator<T> → SpecificationEvaluator<T>`, and all three interceptors as scoped services
+- [ ] `.WithMultiTenancy()` registers the no-op `ICurrentTenantService` placeholder; `.Build()` throws if `TContext` does not extend `TenantedDbContext`
+- [ ] No-op `IUserContext` placeholder registered only when no `IUserContext` is already in the container
+- [ ] No outbox, Dapper, or PostgreSQL wiring in this builder — those are separate concerns
+- [ ] A smoke test (no real database) verifies `.Build()` with `.WithMultiTenancy()` on a non-tenanted context throws at startup
+- [ ] All public extension methods carry XML doc comments
+---
+
+---
+
+### P-074 — Persistence Tests: EfCore Interceptors, Repository, Evaluator, Multi-Tenancy
+
+**Status:** `●` Complete
+**Work Order:** WO-013
+**Domain:** 06.Persistence
+**Depends on:** P-073, P-076
+
+#### What is needed
+
+The full test suite for both EfCore persistence packages, using SQLite for in-process integration tests. Tests span two projects nested inside their respective package folders.
+
+**`SharedKernel.Persistence.Abstractions.Tests/` (unit tests):**
+
+- Interface contract shape: verify all expected methods present on `IRepository`, `IReadRepository`, `IUnitOfWork`, `IDbConnectionFactory`, `ISpecificationEvaluator`
+- `OutboxMessage` is absent — assert no outbox types exist in this package
+
+**`SharedKernel.Persistence.EfCore.Tests/` (unit + SQLite integration):**
+
+- `AuditInterceptor`: Added entity → `CreatedBy`/`CreatedOn` set; Modified entity → `ModifiedBy`/`ModifiedOn` set; Deleted non-soft-deletable entity → no audit mutation
+- `SoftDeleteInterceptor`: Deleted `ISoftDeletable` entity → state changed to Modified; `IsDeleted = true`; `DeletedOn` and `DeletedBy` set; soft-deleted entity invisible via global filter after reload
+- `ConcurrencyInterceptor`: `DbUpdateConcurrencyException` on `IHasConcurrency` entity → rethrown as `ConcurrencyException` with `Error.Conflict`; non-concurrency exceptions propagate unchanged
+- `SpecificationEvaluator<T>`: criteria, ordering (ascending/descending), secondary sorts (ThenBys), paging, distinct, AsNoTracking — each verified independently; paging provably last (verify LINQ expression tree order); null criteria matches all entities
+- `EfRepository`/`EfReadRepository`: read-write round-trip with SQLite provider; `GetBySpecAsync` with a real specification returns the correct entity; `ListAsync` with `PagedSpecification` returns the correct page
+- `StronglyTypedIdValueConverter`: round-trip — write entity with strongly-typed ID, read back, assert ID value equal
+- `TenantedDbContext`: global query filter isolates records by `TenantId`; a query with no current tenant returns zero rows (not cross-tenant data); `GetByIdForTenantAsync` bypasses the filter and returns the correct entity by explicit tenant scope
+- `EfCorePersistenceBuilder` smoke tests: `.Build()` with `.WithMultiTenancy()` on a non-`TenantedDbContext` throws `InvalidOperationException` at startup
+
+All tests use the `TestSharedKernelDbContext` from `SharedKernel.Testing` (P-076) with SQLite in-memory provider — no Testcontainers needed for this phase.
+
+#### Why this is needed
+
+The persistence layer is the most critical infrastructure boundary in the platform — incorrect interceptor behavior causes data loss (missing audits), compliance failures (missing soft-deletes), or cross-tenant data leakage. Every component must be verified against a real EF `SaveChanges` pipeline, not just isolated unit calls. SQLite covers all EF Core LINQ and interceptor behavior at zero infrastructure cost.
+
+#### Acceptance criteria
+
+- [ ] Both test projects build cleanly
+- [ ] `AuditInterceptor` tests: Added, Modified, and non-soft-deletable Deleted scenarios all verified
+- [ ] `SoftDeleteInterceptor` tests: state transition verified; soft-deleted entity invisible via global filter after reload
+- [ ] `ConcurrencyInterceptor` tests: exception type, `Error.Conflict` payload, and non-concurrency passthrough all verified
+- [ ] `SpecificationEvaluator` tests: all six operations (criteria, includes, orderby, thenbys, distinct, asnotracking, skip/take) verified independently; paging-last order proven
+- [ ] `EfRepository`/`EfReadRepository` round-trip tests with SQLite pass
+- [ ] `StronglyTypedIdValueConverter` round-trip test passes
+- [ ] `TenantedDbContext` filter tests: tenant isolation and `GetByIdForTenantAsync` bypass both verified
+- [ ] Builder smoke test: `.WithMultiTenancy()` on wrong context type throws at startup
+- [ ] All tests use helpers from `SharedKernel.Testing`; no mocked database connections in integration tests
+
+---
+
+---
+
+### P-075 — Governance: Persistence Architecture Rules
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-013
+**Domain:** 00.Governance
+**Depends on:** P-066
+
+#### What is needed
+
+New architecture enforcement rules in `00.Governance/SharedKernel.ArchitectureTests` protecting the EfCore persistence layer's key contracts. Three rules — Dapper and PostgreSQL rules are deferred alongside those packages.
+
+**Rule 1 — IUnitOfWork is the only permitted save boundary:**
+No class in any assembly other than `SharedKernel.Persistence.EfCore` may call `DbContext.SaveChanges[Async]` directly. Only `EfUnitOfWork` may reference `DbContext.SaveChangesAsync`. Services that inject `IUnitOfWork` are compliant; those that call `SaveChanges` directly on an injected `DbContext` are not.
+
+**Rule 2 — IRepository must never expose IQueryable:**
+No member of any type implementing `IRepository<T,TId>` may return `IQueryable<T>`. The write-side repository contract is narrowly scoped to mutation operations. All query surface belongs on `IReadRepository` via specifications.
+
+**Rule 3 — No persistence references in Domain layer:**
+Types in the `03.Domain` namespace must not reference any type from `Microsoft.EntityFrameworkCore`, `Npgsql`, or `SharedKernel.Persistence.*`. This enforces the hard layering rule from root `CLAUDE.md`.
+
+#### Why this is needed
+
+These three rules catch the most damaging persistence anti-patterns before they merge: `SaveChanges` called directly (bypasses interceptors, breaks audit and soft-delete), `IQueryable` exposed on a repository (breaks the read/write separation and couples application handlers to EF internals), and EF Core referenced inside the Domain layer (violates DDD isolation and makes domain logic impossible to test without a database).
+
+#### Acceptance criteria
+
+- [ ] Rule 1 exists and tested: a class calling `SaveChangesAsync` directly fails; a class using only `IUnitOfWork` passes
+- [ ] Rule 2 exists and tested: a repository type with `IQueryable<T>` return fails; `IRepository<T,TId>` without `IQueryable` passes
+- [ ] Rule 3 exists and tested: a domain type referencing `EntityFrameworkCore` fails; a clean domain type passes
+- [ ] All three rules documented in `00.Governance/CLAUDE.md` with rationale and offending/compliant pattern examples
+- [ ] All rules run cleanly against the current SharedKernel codebase without false positives
+
+---
+
+---
+
+### P-076 — Testing: EfCore Test Helpers — Test DbContext, Domain Fakers, EF Extensions
+
+**Status:** `○` Pending
+**Work Order:** WO-013
+**Domain:** 16.Testing
+**Depends on:** P-066
+
+#### What is needed
+
+Extensions to `SharedKernel.Testing` that provide EfCore-specific test infrastructure consumed by P-074 and by any downstream microservice test project. No Testcontainers or PostgreSQL infrastructure is required — all tests in P-074 use SQLite in-memory.
+
+**EfCore test DbContext base (`EfCore/`):**
+A `TestSharedKernelDbContext` abstract class that extends `SharedKernelDbContext` with SQLite in-memory provider preconfigured for testing. This base:
+
+- Wires a no-op `IUserContext` (returns fixed string `"test-user"`) so `AuditInterceptor` resolves without a real HTTP context
+- Wires a deterministic `IClock` returning a fixed `DateTimeOffset.UtcNow` snapshot so interceptor timestamps are stable across test runs
+- Enables `EnableSensitiveDataLogging()` for readable test diagnostics
+- Exposes `EnsureCreatedAsync()` helper for test setup — no migrations needed in SQLite tests
+
+**Persistence-aware domain fakers (`Fakers/`):**
+
+- `AggregateRootFaker<TAggregate, TId>` — abstract Bogus `Faker<TAggregate>` base; pre-configures `CreatedBy`, `CreatedOn`, `IsDeleted = false` matching EF interceptor expectations; concrete fakers in microservice test projects extend this
+- `TenantedAggregateFaker<TAggregate, TId>` — extends `AggregateRootFaker` with a populated, non-empty `TenantId` (Guid)
+
+**EF Core test helpers (`Helpers/`):**
+
+- `EfContextExtensions.DetachAll(DbContext)` — detaches all tracked entities, enabling a fresh load from the same in-memory database in the same test
+- `EfContextExtensions.ReloadAsync<T>(DbContext, T entity)` — loads a fresh copy of an entity via a new `DbContext` instance scoped to the same provider, asserting round-trip persistence
+
+#### Why this is needed
+
+Every persistence test project that verifies interceptor behavior must create a `SharedKernelDbContext` subclass wired with the same interceptor pipeline as production. Without the `TestSharedKernelDbContext` base, teams must re-implement the fake `IUserContext` and `IClock` wiring in each test project, introducing subtle divergences. The fakers ensure that test aggregates arrive in a valid persisted state (with audit fields populated), eliminating false failures caused by missing required columns.
+
+#### Acceptance criteria
+
+- [ ] `TestSharedKernelDbContext` abstract class exists with SQLite configuration, no-op `IUserContext`, deterministic `IClock`, sensitive logging, and `EnsureCreatedAsync()`
+- [ ] `AggregateRootFaker<TAggregate, TId>` abstract base exists; generates valid `CreatedBy`, `CreatedOn`, `IsDeleted = false` defaults
+- [ ] `TenantedAggregateFaker<TAggregate, TId>` generates a non-empty `TenantId`
+- [ ] `EfContextExtensions.DetachAll()` and `ReloadAsync<T>()` both implemented and self-tested
+- [ ] No `OutboxMessageFaker`, no `OutboxAssertions`, no PostgreSQL testcontainer in this phase — those belong to future WOs
+- [ ] `SharedKernel.Testing` csproj references `SharedKernel.Persistence.Abstractions` and `SharedKernel.Persistence.EfCore`
+- [ ] All helpers have self-tests in `SharedKernel.Testing.Tests`
+
+---

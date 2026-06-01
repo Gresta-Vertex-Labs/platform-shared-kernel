@@ -43,6 +43,7 @@
   </Folder>
   <Folder Name="/06.Persistence/">
     <Project Path="06.Persistence/SharedKernel.Persistence.Abstractions/SharedKernel.Persistence.Abstractions.csproj" />
+    <Project Path="06.Persistence/SharedKernel.Persistence.Abstractions/SharedKernel.Persistence.Abstractions.Tests/SharedKernel.Persistence.Abstractions.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/SharedKernel.Persistence.Dapper.Tests.csproj" />
     <Project Path="06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.csproj" />

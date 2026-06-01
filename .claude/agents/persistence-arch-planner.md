@@ -1,33 +1,6 @@
 ---
 name: "persistence-arch-planner"
-description: "Use this agent when the arch-lead has identified a new persistence-related capability, pattern, or infrastructure change that needs to be planned and documented specifically for the 06.Persistence capability domain. This agent translates high-level architectural directives into concrete, actionable phases inside 06.Persistence/state-map.md and keeps 06.Persistence/CLAUDE.md in sync. It should be invoked whenever a new repository abstraction, EF Core interceptor, specification variant, outbox contract change, Dapper type handler, or PostgreSQL convention needs to be planned.
-
-<example>
-Context: The arch-lead agent has finished processing a directive to add a soft-delete global query filter convention to the EF Core base configuration.
-user: 'arch-lead has finished its plan. Now apply the new persistence phase: add SoftDeleteInterceptor and global query filter wiring to EfCore base.'
-assistant: 'I will now launch the persistence-arch-planner agent to analyse this requirement and write the new phase into 06.Persistence/state-map.md and refresh 06.Persistence/CLAUDE.md.'
-<commentary>
-The request targets the 06.Persistence domain. The persistence-arch-planner agent should be used via the Agent tool to handle the full analysis and documentation update — the assistant must not attempt to write the files directly.
-</commentary>
-</example>
-
-<example>
-Context: A new cursor-based paging specification variant is needed in the persistence abstractions.
-user: 'New phase input: add CursorSpecification<T> to SharedKernel.Persistence.Abstractions for keyset pagination support.'
-assistant: 'Let me invoke the persistence-arch-planner agent to break this down and update the persistence state-map.'
-<commentary>
-This is a persistence-domain architecture task. The Agent tool must be used to launch persistence-arch-planner rather than responding inline.
-</commentary>
-</example>
-
-<example>
-Context: The arch-lead wants to add a pgvector nearest-neighbour query extension to the PostgreSQL package.
-user: 'Phase input: add VectorSimilaritySpecification<T> and a SpecificationEvaluator extension for pgvector cosine-distance ordering.'
-assistant: 'I will use the persistence-arch-planner agent to analyse this and add the appropriate phase to 06.Persistence/state-map.md.'
-<commentary>
-PostgreSQL-specific specification extensions belong in the 06.Persistence domain plan. The persistence-arch-planner agent handles this via the Agent tool.
-</commentary>
-</example>"
+description: "Use this agent when the arch-lead has identified a new persistence-related capability, pattern, or infrastructure change that needs to be planned and documented specifically for the 06.Persistence capability domain. This agent translates high-level architectural directives into concrete, actionable phases inside 06.Persistence/state-map.md and keeps 06.Persistence/CLAUDE.md in sync. It should be invoked whenever a new repository abstraction, EF Core interceptor, specification variant, outbox contract change, Dapper type handler, or PostgreSQL convention needs to be planned.\n\n<example>\nContext: The arch-lead agent has finished processing a directive to add a soft-delete global query filter convention to the EF Core base configuration.\nuser: 'arch-lead has finished its plan. Now apply the new persistence phase: add SoftDeleteInterceptor and global query filter wiring to EfCore base.'\nassistant: 'I will now launch the persistence-arch-planner agent to analyse this requirement and write the new phase into 06.Persistence/state-map.md and refresh 06.Persistence/CLAUDE.md.'\n<commentary>\nThe request targets the 06.Persistence domain. The persistence-arch-planner agent should be used via the Agent tool to handle the full analysis and documentation update — the assistant must not attempt to write the files directly.\n</commentary>\n</example>\n\n<example>\nContext: A new cursor-based paging specification variant is needed in the persistence abstractions.\nuser: 'New phase input: add CursorSpecification<T> to SharedKernel.Persistence.Abstractions for keyset pagination support.'\nassistant: 'Let me invoke the persistence-arch-planner agent to break this down and update the persistence state-map.'\n<commentary>\nThis is a persistence-domain architecture task. The Agent tool must be used to launch persistence-arch-planner rather than responding inline.\n</commentary>\n</example>\n\n<example>\nContext: The arch-lead wants to add a pgvector nearest-neighbour query extension to the PostgreSQL package.\nuser: 'Phase input: add VectorSimilaritySpecification<T> and a SpecificationEvaluator extension for pgvector cosine-distance ordering.'\nassistant: 'I will use the persistence-arch-planner agent to analyse this and add the appropriate phase to 06.Persistence/state-map.md.'\n<commentary>\nPostgreSQL-specific specification extensions belong in the 06.Persistence domain plan. The persistence-arch-planner agent handles this via the Agent tool.\n</commentary>\n</example>"
 model: sonnet
 color: purple
 memory: project

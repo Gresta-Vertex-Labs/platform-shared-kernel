@@ -26,7 +26,7 @@ Each numbered folder is a capability domain. Each owns a `CLAUDE.md` with its in
 | 03 | `03.Domain` | DDD building blocks: `Entity`, `AggregateRoot`, `ValueObject`, `IDomainEvent`, tenanted aggregate bases (`TenantedAggregateRoot`, `TenantedAuditableAggregateRoot`, `TenantedFullAuditableAggregateRoot`) |
 | 04 | `04.Contracts` | Cross-service DTOs only: `PagedList`, `Envelope`, integration event payloads. No domain logic. |
 | 05 | `05.Application` | MediatR base handlers and dispatchers, pipeline behaviors (Validation, Logging, Metrics, Transaction) |
-| 06 | `06.Persistence` | Repository and UoW abstractions, EF Core interceptors (Audit/Outbox), Npgsql/SQL defaults, PostgreSQL JSONB/Vector, Dapper type handlers |
+| 06 | `06.Persistence` | Repository and UoW abstractions, EF Core interceptors (Audit/SoftDelete/Outbox/Concurrency), Npgsql/PostgreSQL defaults (SnakeCase, JSONB, pgvector via `Pgvector.EntityFrameworkCore`), Dapper type handlers and `DapperReadService` base |
 | 07 | `07.Messaging` | `IMessageBus` / `IEventPublisher` abstractions (CloudEvents), MassTransit pre-configured bus (Retry, Outbox, RabbitMQ/ASB) |
 | 08 | `08.Storage` | `IFileStorage` / `IBlobUriGenerator` abstractions, AWS S3 / MinIO implementation |
 | 09 | `09.Search` | `ISearchIndex` / `IQueryBuilder` abstractions, Meilisearch (BFF/fast), ElasticSearch (analytics/heavy) |
@@ -113,6 +113,11 @@ When a capability has more than one provider (Search, Persistence, Caching, Stor
 | A MediatR command/query base class or pipeline behavior | `05.Application` or `05.Application.Behaviors` |
 | A new persistence abstraction (interface) | `06.Persistence/SharedKernel.Persistence.Abstractions` |
 | A new EF Core interceptor or convention | `06.Persistence/SharedKernel.Persistence.EfCore` |
+| An EF Core repository for an aggregate | `06.Persistence/SharedKernel.Persistence.EfCore` — extend `EfRepository<T,TId>` (write) and `EfReadRepository<T,TId>` (read) |
+| A strongly-typed ID EF Core value converter | `06.Persistence/SharedKernel.Persistence.EfCore` — use `StronglyTypedIdValueConverter<TId, TValue>` |
+| A multi-tenant EF Core DbContext with global tenant filter | `06.Persistence/SharedKernel.Persistence.EfCore` — extend `TenantedDbContext`; tenant filter applied automatically via `ICurrentTenantService` |
+| PostgreSQL snake_case naming, JSONB column, or pgvector column | `06.Persistence/SharedKernel.Persistence.PostgreSQL` — use `UsePostgreSQL()`, `HasJsonbColumn()`, or `HasVectorColumn()` |
+| A Dapper read-side query service | `06.Persistence/SharedKernel.Persistence.Dapper` — extend `DapperReadService`; inject `IDbConnectionFactory`; use parameterized queries only |
 | A new cache interface or policy | `02.Caching/SharedKernel.Caching.Abstractions` |
 | A FusionCache L1 provider implementation or option | `02.Caching/SharedKernel.Caching.FusionCache` |
 | A Redis-specific cache implementation | `02.Caching/SharedKernel.Caching.Redis` |
@@ -140,7 +145,7 @@ These are the packages microservices should depend on — never on the concrete 
 | Abstraction package | Implemented by |
 |---------------------|---------------|
 | `SharedKernel.Caching.Abstractions` | `.FusionCache`, `.Redis` |
-| `SharedKernel.Persistence.Abstractions` | `.EfCore`, `.PostgreSQL`, `.Dapper` |
+| `SharedKernel.Persistence.Abstractions` | `.EfCore` (write + read repos, UoW, outbox), `.PostgreSQL` (Npgsql + conventions layer over EfCore), `.Dapper` (read-side NpgsqlConnectionFactory + DapperReadService) |
 | `SharedKernel.Messaging.Abstractions` | `.MassTransit` |
 | `SharedKernel.Storage.Abstractions` | `.S3` |
 | `SharedKernel.Search.Abstractions` | `.Meilisearch`, `.ElasticSearch` |
@@ -167,3 +172,4 @@ These are the packages microservices should depend on — never on the concrete 
 - [2026-05-21] "What Goes Where" and Abstractions table updated: SharedKernel.Caching.Abstractions is now the canonical abstraction; SharedKernel.Caching.FusionCache row added (arch-lead, WO-007 analysis)
 - [2026-05-27] Folder Map 03 updated: tenanted aggregate bases added; "What Goes Where" row added for tenant-scoped aggregates (arch-lead, WO-010)
 - [2026-05-27] WO-011: "What Goes Where" row added for EventEnvelope<TEvent> → 04.Contracts; domain brain updated with IHasDomainEvents, DomainService, IHasVersion, DomainException hierarchy, SingleValueObject, PagedSpecification, specification sentinels, DomainEventVersion, IAggregateFactory (arch-lead)
+- [2026-06-01] WO-013: Folder Map 06 updated with pgvector/Dapper detail; Abstractions table 06 expanded to list all three implementors; five "What Goes Where" rows added for EfRepository, StronglyTypedIdValueConverter, TenantedDbContext, PostgreSQL conventions, DapperReadService (arch-lead)
