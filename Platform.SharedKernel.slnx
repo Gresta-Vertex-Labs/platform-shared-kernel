@@ -86,6 +86,7 @@
   </Folder>
   <Folder Name="/12.Security/">
     <Project Path="12.Security/SharedKernel.Security.Abstractions/SharedKernel.Security.Abstractions.csproj" />
+    <Project Path="12.Security/SharedKernel.Security.Abstractions/SharedKernel.Security.Abstractions.Tests/SharedKernel.Security.Abstractions.Tests.csproj" />
     <Project Path="12.Security/SharedKernel.Security.Oidc/SharedKernel.Security.Oidc.csproj" />
     <Project Path="12.Security/SharedKernel.Security.Oidc/SharedKernel.Security.Oidc.Tests/SharedKernel.Security.Oidc.Tests.csproj" />
   </Folder>

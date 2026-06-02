@@ -76,7 +76,7 @@ Group the remaining (unblocked) pending phases by their **Domain** field.
 | 09.Search | 09 | _(no agent — deferred)_ |
 | 10.Intelligence | 10 | _(no agent — deferred)_ |
 | 11.Communication | 11 | _(no agent — deferred)_ |
-| 12.Security | 12 | _(no agent — deferred)_ |
+| 12.Security | 12 | `security-arch-planner` |
 | 13.ServiceDefaults | 13 | _(no agent — deferred)_ |
 | 14.Presentation | 14 | _(no agent — deferred)_ |
 | 15.Integration | 15 | _(no agent — deferred)_ |

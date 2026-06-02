@@ -736,9 +736,9 @@ No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates
 
 | ID | Task | Package(s) | State |
 |----|------|-----------|:-----:|
-| D-27 | Define `OnlyEfUnitOfWorkMayCallSaveChanges` predicate shape: `NoDirectSaveChangesPredicate` design — IL walk for `DbContext::SaveChanges` and `DbContext::SaveChangesAsync` call opcodes; exemption: types in `SharedKernel.Persistence.EfCore` namespace pass unconditionally; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `○` |
-| D-28 | Define `RepositoriesMustNotExposeIQueryable` predicate shape: `NoIQueryableReturnPredicate` design — scope to `IRepository`-prefix implementing types; inspect method return types for `IQueryable` name match; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `○` |
-| D-29 | Define `DomainAssembliesNeverReferencePersistenceStack` predicate shape: three iterative `.NotHaveDependencyOn()` calls for `"Microsoft.EntityFrameworkCore"`, `"Npgsql"`, `"SharedKernel.Persistence"`; document relationship to `DomainAssembliesNeverReferenceInfrastructure` (additive, not replacing) | SharedKernel.ArchitectureTests | `○` |
+| D-27 | Define `OnlyEfUnitOfWorkMayCallSaveChanges` predicate shape: `NoDirectSaveChangesPredicate` design — IL walk for `DbContext::SaveChanges` and `DbContext::SaveChangesAsync` call opcodes; exemption: types in `SharedKernel.Persistence.EfCore` namespace pass unconditionally; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `●` |
+| D-28 | Define `RepositoriesMustNotExposeIQueryable` predicate shape: `NoIQueryableReturnPredicate` design — scope to `IRepository`-prefix implementing types; inspect method return types for `IQueryable` name match; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `●` |
+| D-29 | Define `DomainAssembliesNeverReferencePersistenceStack` predicate shape: three iterative `.NotHaveDependencyOn()` calls for `"Microsoft.EntityFrameworkCore"`, `"Npgsql"`, `"SharedKernel.Persistence"`; document relationship to `DomainAssembliesNeverReferenceInfrastructure` (additive, not replacing) | SharedKernel.ArchitectureTests | `●` |
 | C-30 | Implement `NoDirectSaveChangesPredicate` in `Predicates/` — `ICustomRule` walking `TypeDefinition.Methods.Body.Instructions` for `Call`/`Callvirt` to `DbContext::SaveChanges` or `DbContext::SaveChangesAsync`; namespace-based exemption for `SharedKernel.Persistence.EfCore`; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `○` |
 | C-31 | Implement `NoIQueryableReturnPredicate` in `Predicates/` — `ICustomRule` scoped to types whose `TypeDefinition.Interfaces` contains an `IRepository`-prefix entry; inspects non-constructor, non-getter method return types for `IQueryable` name match; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `○` |
 | C-32 | Implement `PersistenceLayerProtectionRules` static class in `Rules/` — three factory methods: `OnlyEfUnitOfWorkMayCallSaveChanges(Assembly)` → `ConditionList`, `RepositoriesMustNotExposeIQueryable(Assembly)` → `ConditionList`, `DomainAssembliesNeverReferencePersistenceStack(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
@@ -770,7 +770,7 @@ Format when active:
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.00.Design` | Design | 29 | 26 | 3 | `◐` |
+| `SK.00.Design` | Design | 29 | 29 | 0 | `●` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
 | `SK.00.Core` | Core | 39 | 36 | 3 | `◐` |
 | `SK.00.Tests` | Tests | 51 | 45 | 6 | `◐` |
@@ -807,3 +807,4 @@ Format when active:
 - [2026-05-31] C-18–C-19, T-18–T-22 → ● in SK.00.CachingEnforcement; C-20–C-23, T-23–T-30 → ● in SK.00.DomainLayerPurity; C-24–C-27, T-31–T-39 → ● in SK.00.DomainGoldStandard; C-28–C-29, T-40–T-45 → ● in SK.00.ContractsPurity (state-map-phase)
 - [2026-05-31] DO-07–DO-11 → ● in SK.00.Docs — README.md extended with SK0007–SK0010 Roslyn analyzer docs, CachingAbstractionRules, DomainLayerPurityRules, DomainGoldStandardRules, ContractsPurityRules architecture test docs; Overall Progress table corrected for Core/Tests/Docs/CachingEnforcement/DomainLayerPurity/DomainGoldStandard/ContractsPurity — all phase keys now ● (state-map-phase)
 - [2026-06-01] Phase Persistence Architecture Enforcement added (SK.00.PersistenceEnforcement) — 13 tasks: D-27–D-29, C-30–C-32, T-46–T-51, DO-12; three NetArchTest predicates in PersistenceLayerProtectionRules; two new ICustomRule predicates (NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate); no new SK IDs; total tasks now 157 — WO-013 P-075
+- [2026-06-02] D-27–D-29 → ● in SK.00.Design — all three persistence enforcement design tasks complete; specs fully present in CLAUDE.md (PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate); SK.00.Design promoted to ● with 29/29 tasks done (state-map-phase)

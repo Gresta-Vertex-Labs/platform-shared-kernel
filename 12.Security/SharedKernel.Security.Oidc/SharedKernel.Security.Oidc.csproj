@@ -1,8 +1,57 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Security.Oidc</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>OIDC/JWT implementation for SharedKernel security: OidcUserContext, OidcTenantProvider, SecurityOptions (AddValidatedOptions), AddSharedKernelSecurity and AddAzureB2CAuthentication DI extensions. Depends on SharedKernel.Security.Abstractions and Microsoft.Identity.Web.</Description>
+    <PackageTags>shared-kernel;security;oidc;jwt;azure-b2c;identity;dependency-injection</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.AspNetCore.Authentication.JwtBearer: JWT Bearer validation.
+      AOT note: JWT token parsing uses internal reflection in some code paths.
+      Encapsulated behind IUserContext so the AOT blast radius is limited to the DI registration path.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <!--
+      Microsoft.Identity.Web: Azure B2C / Entra External ID authority/audience wiring.
+      AOT note: Microsoft.Identity.Web is not fully AOT-safe. Isolated to AddAzureB2CAuthentication
+      extension only. A swap to a lighter JWT-only path does not require abstraction changes.
+    -->
+    <PackageReference Include="Microsoft.Identity.Web" Version="3.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Security.Oidc.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Security.Oidc.Tests\**" />
+    <None Remove="SharedKernel.Security.Oidc.Tests\**" />
+  </ItemGroup>
 
 </Project>

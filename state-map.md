@@ -32,8 +32,6 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 | Domain | Current Phase | Focus (one line) |
 |--------|---------------|-----------------|
-| [00.Governance](00.Governance/state-map.md) | Design | Add five persistence architecture enforcement rules (IUnitOfWork-only save boundary, no IQueryable on IRepository, no persistence in Domain, IDbConnectionFactory-only connections, no SQL interpolation in DapperReadService) |
-| [12.Security](12.Security/state-map.md) | Design | Create SharedKernel.Security.Abstractions package with IUserContext and ITenantProvider as the canonical cross-cutting identity and tenancy contracts |
 | [16.Testing](16.Testing/state-map.md) | Design | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
 
 <!--
@@ -66,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Design | `◐` | All 36 Core tasks complete — SK0001–SK0010 analyzers, ArchitectureTests base classes, BenchmarkConfig, and Linter content authored; 45 tests passing; all enforcement phases (GuardPurity, CachingEnforcement, DomainLayerPurity, DomainGoldStandard, ContractsPurity) complete. | Add five persistence architecture enforcement rules (IUnitOfWork-only save boundary, no IQueryable on IRepository, no persistence in Domain, IDbConnectionFactory-only connections, no SQL interpolation in DapperReadService) |
+| 00 | [Governance](00.Governance/state-map.md) | Design | `●` | All 29 Design tasks complete — SK0001–SK0010 diagnostic registry, ArchitectureTests contract shapes (PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate), and BenchmarkConfig/Linter strategies fully specified. | Implement PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, and architecture test suite (C-30–C-32, T-46–T-51, DO-12). |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.2.0 and 1.3.0 packed and published to nupkgs/; manifests list only SharedKernel.Primitives and SharedKernel.Core; all 7 Published tasks complete. | — |
@@ -78,7 +76,7 @@ Format when blocked:
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | — | `○` | — | — |
-| 12 | [Security](12.Security/state-map.md) | Design | `◐` | — | Create SharedKernel.Security.Abstractions package with IUserContext and ITenantProvider as the canonical cross-cutting identity and tenancy contracts |
+| 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
@@ -110,13 +108,13 @@ Format when active:
 |-------|---------|
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 3 |
+| ● Published | 4 |
 | ● Docs | 0 |
 | ● Tests | 0 |
-| ● Core | 1 |
+| ● Core | 0 |
 | ● Scaffold | 0 |
-| ● Design | 0 |
-| ◐ In Progress | 3 |
+| ● Design | 1 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 10 |
 
@@ -1746,6 +1744,14 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-01] Persistence → Published (●) — promoted from SK.06.Published (state-map-phase)
 - [2026-06-01] Phase Backlog entries for 06.Persistence closed → ● Complete — 06.Persistence reached Published (state-map-phase)
 - [2026-06-01] Security → Design (◐) — Create SharedKernel.Security.Abstractions with IUserContext and ITenantProvider (state-map-phase)
+- [2026-06-02] Security → Design (●) — promoted from SK.12.Design (state-map-phase)
+- [2026-06-02] Security → Scaffold (●) — promoted from SK.12.Scaffold (state-map-phase)
+- [2026-06-02] Security → Core (●) — promoted from SK.12.Core (state-map-phase)
+- [2026-06-02] Security → Tests (●) — promoted from SK.12.Tests (state-map-phase)
+- [2026-06-02] Security → Docs (●) — promoted from SK.12.Docs (state-map-phase)
+- [2026-06-02] Security → Published (●) — promoted from SK.12.Published (state-map-phase)
+- [2026-06-02] Phase Backlog entries for 12.Security closed → ● Complete — 12.Security reached Published (state-map-phase)
+- [2026-06-02] Governance → Design (●) — promoted from SK.00.Design (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -3601,7 +3607,7 @@ Every persistence test project that verifies interceptor behavior must create a 
 ---
 ### P-077 — Security Abstractions: IUserContext and ITenantProvider Package
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-014
 **Domain:** 12.Security
 **Depends on:** None
@@ -3889,5 +3895,296 @@ New capabilities without testing scaffolding create an adoption barrier across t
 - [ ] `WithDeletedSpecification<TAggregate>` sets `IncludeDeleted = true`; self-tested
 - [ ] All helpers have XML doc comments
 - [ ] `SharedKernel.Testing.Tests` self-test suite passes with all new helpers covered
+
+---
+
+### P-085 — Security Abstractions: Design — Finalize Interface Contracts
+
+**Status:** `●` Complete
+**Work Order:** WO-015
+**Domain:** 12.Security
+**Depends on:** None
+
+#### What is needed
+
+Finalize and lock down the full public surface of `SharedKernel.Security.Abstractions` before any scaffolding or implementation begins. This is a design-only phase — output is a verified, authoritative contract spec that the implementation phase executes against without ambiguity.
+
+**Surface to finalize:**
+
+`IUserContext` — the request-scoped identity contract. Properties: `UserId` (Guid), `Email` (string?), `Username` (string?), `Roles` (IReadOnlyCollection of string), `Claims` (IReadOnlyDictionary of string to string), `IsAuthenticated` (bool). Method: `HasRole(string role)` returning bool with case-insensitive semantics. Contract invariant: when `IsAuthenticated == true`, `UserId` must never be `Guid.Empty`. When `IsAuthenticated == false`, all string properties are null or empty, collections are empty, `UserId` is `Guid.Empty`.
+
+`ITenantProvider` — the request-scoped tenancy contract. Property: `TenantId` (Guid). Returns `Guid.Empty` when no tenant claim is present — it is non-nullable by design. Callers must treat `Guid.Empty` as "no tenant context" (system-level or unauthenticated request). Domain code must never inject `ITenantProvider` — the application layer resolves `TenantId` and passes it as a primitive to aggregate constructors.
+
+`AnonymousUserContext` — sealed class implementing `IUserContext`. Sentinel for unauthenticated requests. All string properties null, all collections empty, `UserId = Guid.Empty`, `IsAuthenticated = false`, `HasRole` always returns false. This is the fallback registered in DI so `IUserContext` is always resolvable without a real HTTP context.
+
+`SecurityClaimTypes` — static class of `const string` fields mapping well-known claim names: `UserId` ("sub"), `TenantId` ("tenant_id"), `Email` (maps to `ClaimTypes.Email`), `Role` (maps to `ClaimTypes.Role`). These are the canonical names shared between the Abstractions package and any provider implementation — never raw string literals in consumer code.
+
+**Design decisions to confirm:**
+
+- `ITenantProvider.TenantId` is `Guid` (not `Guid?`) — `Guid.Empty` is the no-tenant sentinel.
+- `IUserContext.UserId` is `Guid` (not `string`) — typed identity, not raw sub claim string.
+- `AnonymousUserContext` is a sealed concrete class that ships in the Abstractions package (the only concrete type that does).
+- `IUserContext.Claims` keyed by claim type, first value wins for multi-value claims — roles must always be accessed via `Roles`, never via `Claims`.
+- `HasRole` is case-insensitive — role names may arrive with different casing from different identity providers.
+- Zero NuGet dependencies — only `SharedKernel.Primitives` project reference.
+
+#### Why this is needed
+
+P-077 was authored before the `12.Security/CLAUDE.md` brain was written and contains a partially outdated surface (`UserId` as `string`, `TenantId` as `Guid?`, no `Claims` dictionary, no `SecurityClaimTypes`). The CLAUDE.md brain is now authoritative. This design phase locks the correct contract before any code is written, ensuring the implementation phase has zero ambiguity and the package ships with the gold-standard surface that all downstream domains (`06.Persistence`, `05.Application`, `11.Communication`, `13.ServiceDefaults`) can depend on.
+
+#### Acceptance criteria
+
+- [ ] `IUserContext` contract is documented: all five properties, `HasRole` signature, `IsAuthenticated`/`UserId` invariant, and scope (request-scoped, never singleton)
+- [ ] `ITenantProvider` contract is documented: `TenantId` as `Guid`, `Guid.Empty` semantics, prohibition on domain injection
+- [ ] `AnonymousUserContext` contract is documented: all sentinel values, `HasRole` always-false behavior, DI fallback role
+- [ ] `SecurityClaimTypes` documented: four constants, their default values, extensibility note (consumers may define additional local constants)
+- [ ] Design confirms `Guid`-typed `UserId` and non-nullable `TenantId` — no ambiguity for implementation
+- [ ] The design is reviewed against all known consumers: `06.Persistence` interceptors (AuditInterceptor, SoftDeleteInterceptor, TenantedDbContext), `05.Application` pipeline behaviors, `11.Communication` typed clients, `13.ServiceDefaults` tenant resolution
+
+---
+
+### P-086 — Security Abstractions: Scaffold — Project Structure and Solution Registration
+
+**Status:** `●` Complete
+**Work Order:** WO-015
+**Domain:** 12.Security
+**Depends on:** P-085
+
+#### What is needed
+
+Create the physical project structure for `SharedKernel.Security.Abstractions` and register it in the solution. This is scaffold-only — no implementation logic, no interface bodies beyond stubs.
+
+**Deliverables:**
+
+1. `12.Security/SharedKernel.Security.Abstractions/SharedKernel.Security.Abstractions.csproj` — targets `net10.0`; project reference to `SharedKernel.Primitives` only; zero NuGet package references; XML doc generation enabled; pack metadata (Id, Version 1.0.0, Authors, Description, Tags).
+
+2. Folder layout inside the project: `Abstractions/` for `IUserContext.cs` and `ITenantProvider.cs`; `Claims/` for `SecurityClaimTypes.cs`; `Fallback/` for `AnonymousUserContext.cs`.
+
+3. Empty stub files (namespace + type declaration only, no members yet) for each of the four types.
+
+4. `12.Security/SharedKernel.Security.Abstractions/SharedKernel.Security.Abstractions.Tests/` — test sub-project: `classlib`, `net10.0`, references `SharedKernel.Security.Abstractions` and `SharedKernel.Testing`; xUnit, FluentAssertions, coverlet as NuGet references.
+
+5. Both projects registered in `Platform.SharedKernel.slnx` under the `12.Security` solution folder.
+
+#### Why this is needed
+
+A clean scaffold phase separates project wiring from logic implementation. It allows the solution to build (empty stubs compile) and CI to catch any project reference or solution registration errors before implementation begins. It also gives the implementer a predictable folder contract to work within.
+
+#### Acceptance criteria
+
+- [ ] `SharedKernel.Security.Abstractions.csproj` exists, builds, targets `net10.0`, references only `SharedKernel.Primitives`
+- [ ] Zero NuGet dependencies beyond transitive from `SharedKernel.Primitives`
+- [ ] Four stub files exist in correct folders: `IUserContext.cs`, `ITenantProvider.cs`, `SecurityClaimTypes.cs`, `AnonymousUserContext.cs`
+- [ ] Test sub-project exists and is registered in solution
+- [ ] `dotnet build` passes for the entire solution with the new projects present
+- [ ] Both projects appear in `Platform.SharedKernel.slnx` under `12.Security`
+
+---
+
+### P-087 — Security Abstractions: Core — Implement All Public Contracts
+
+**Status:** `●` Complete
+**Work Order:** WO-015
+**Domain:** 12.Security
+**Depends on:** P-086
+
+#### What is needed
+
+Full implementation of all four public types in `SharedKernel.Security.Abstractions`, strictly following the contract finalized in P-085.
+
+**`IUserContext` (interface):** Properties: `UserId` (Guid), `Email` (string?), `Username` (string?), `Roles` (IReadOnlyCollection of string), `Claims` (IReadOnlyDictionary of string to string), `IsAuthenticated` (bool). Method: `bool HasRole(string role)` using case-insensitive comparison against `Roles`. Full XML doc on all members including the `IsAuthenticated == true` implies `UserId != Guid.Empty` invariant and the scope note (request-scoped, never singleton).
+
+**`ITenantProvider` (interface):** Property: `TenantId` (Guid) — non-nullable; `Guid.Empty` means no active tenant context. Full XML doc including the `Guid.Empty` sentinel semantics, prohibition on domain-layer injection, and the note that `06.Persistence.TenantedDbContext` is the only infrastructure component allowed to inject this interface.
+
+**`AnonymousUserContext` (sealed class, implements `IUserContext`):**
+
+- `UserId` = `Guid.Empty`
+- `Email` = null
+- `Username` = null
+- `Roles` = empty read-only collection (e.g., `Array.Empty` or `ImmutableArray.Empty`)
+- `Claims` = empty read-only dictionary (e.g., `ImmutableDictionary.Empty`)
+- `IsAuthenticated` = false
+- `HasRole(string role)` always returns false
+- Sealed — no subclassing allowed
+- All state is static/constant — no mutable instance state
+
+**`SecurityClaimTypes` (static class):**
+
+- `const string UserId = "sub"` — maps to the OIDC subject claim
+- `const string TenantId = "tenant_id"` — custom claim agreed upon for multi-tenant services
+- `const string Email` — mirrors the BCL `ClaimTypes.Email` value as a string constant (not a property reference, to avoid a BCL import in a const context)
+- `const string Role` — mirrors the BCL `ClaimTypes.Role` value
+- Full XML doc on the class and each constant explaining the canonical claim name and its source
+
+All types must be in the `SharedKernel.Security.Abstractions` namespace (or a logical sub-namespace matching the folder, e.g., `SharedKernel.Security.Abstractions.Claims` for `SecurityClaimTypes`).
+
+#### Why this is needed
+
+This is the foundational package that all downstream capability domains will reference. The correctness of the interface shapes — especially the `Guid`-typed `UserId`, non-nullable `TenantId`, and the `AnonymousUserContext` sentinel — directly determines whether the `06.Persistence` migration (P-078), `05.Application` pipeline behaviors, and `13.ServiceDefaults` tenant middleware can be implemented without local workarounds. Getting this right in one pass eliminates divergence across domains.
+
+#### Acceptance criteria
+
+- [ ] `IUserContext` is implemented with all six members; `HasRole` uses case-insensitive string comparison
+- [ ] `ITenantProvider` is implemented with `TenantId` as non-nullable `Guid`
+- [ ] `AnonymousUserContext` is a sealed class; all sentinel values are correct; `HasRole` always returns false; no mutable state
+- [ ] `SecurityClaimTypes` is a static class with four `const string` fields; values match the documented canonical claim names
+- [ ] All types are in the correct namespace matching their folder
+- [ ] All public members have XML doc comments
+- [ ] `dotnet build` succeeds with zero warnings on the package
+
+---
+
+### P-088 — Security Abstractions: Tests — Unit Test Suite
+
+**Status:** `●` Complete
+**Work Order:** WO-015
+**Domain:** 12.Security
+**Depends on:** P-087
+
+#### What is needed
+
+Full unit test coverage for all four public types in `SharedKernel.Security.Abstractions`. Tests live in `12.Security/SharedKernel.Security.Abstractions/SharedKernel.Security.Abstractions.Tests/`.
+
+**`AnonymousUserContext` tests:**
+
+- `UserId` returns `Guid.Empty`
+- `IsAuthenticated` returns false
+- `Email` returns null
+- `Username` returns null
+- `Roles` returns an empty collection (not null)
+- `Claims` returns an empty dictionary (not null)
+- `HasRole("any-role")` returns false — with exact case, uppercase, lowercase, and mixed casing
+- Instance is immutable — no property setter
+
+**`SecurityClaimTypes` tests:**
+
+- `UserId` constant value is `"sub"`
+- `TenantId` constant value is `"tenant_id"`
+- `Email` constant value matches the expected BCL claim type string value for email
+- `Role` constant value matches the expected BCL claim type string value for role
+
+**Contract shape tests (reflection-based, ensuring the interface is stable):**
+
+- `IUserContext` has exactly the expected members: `UserId` (Guid), `Email` (string?), `Username` (string?), `Roles`, `Claims`, `IsAuthenticated` (bool), `HasRole` method
+- `ITenantProvider` has exactly `TenantId` (Guid)
+- `AnonymousUserContext` implements `IUserContext`
+- `AnonymousUserContext` is sealed
+- `SecurityClaimTypes` is a static class
+
+**`IUserContext` + `ITenantProvider` consumer pattern tests:**
+
+- A custom `IUserContext` test double with `IsAuthenticated = true` and a non-empty Guid satisfies the `IsAuthenticated == true implies UserId != Guid.Empty` invariant — verified by test assertions
+- A custom `ITenantProvider` test double with `TenantId = Guid.Empty` is a valid state — test asserts it does not throw
+
+#### Why this is needed
+
+A pure interface package without a test suite leaves contract drift undetected. These tests serve as a living specification: they will catch any future refactor that accidentally changes a property type, renames a member, or breaks the `AnonymousUserContext` sentinel behavior. The contract shape tests are especially valuable because all downstream domains (Persistence, Application, Communication) depend on this surface being stable.
+
+#### Acceptance criteria
+
+- [ ] All `AnonymousUserContext` property and method tests pass
+- [ ] All `SecurityClaimTypes` constant value tests pass
+- [ ] Contract shape tests confirm correct member types and sealed/static modifiers
+- [ ] Consumer pattern tests for `IUserContext` and `ITenantProvider` pass
+- [ ] Test project builds and all tests pass with `dotnet test`
+- [ ] No test references any concrete Oidc or infrastructure type
+
+---
+
+### P-089 — Security Abstractions: Docs — XML Documentation and Package README
+
+**Status:** `●` Complete
+**Work Order:** WO-015
+**Domain:** 12.Security
+**Depends on:** P-088
+
+#### What is needed
+
+Ensure every public API in `SharedKernel.Security.Abstractions` is fully documented with XML doc comments, and the package ships a README that consumer teams can use to onboard quickly.
+
+**XML doc requirements for `IUserContext`:**
+
+- Type-level: purpose, scope (request-scoped, never singleton), DI registration note (always resolvable — falls back to `AnonymousUserContext`), usage guidance (inject in application layer only, never in domain or repository code)
+- `UserId`: `Guid` type rationale, the `IsAuthenticated == true implies not Guid.Empty` invariant
+- `Email`, `Username`: nullable, may be absent depending on identity provider configuration
+- `Roles`: collection, case as provided by the identity provider — use `HasRole` for safe comparison
+- `Claims`: keyed by claim type, first value wins for multi-value claims; roles must always be accessed via `Roles`, never this dictionary
+- `IsAuthenticated`: semantics, false means unauthenticated or no HTTP context
+- `HasRole`: case-insensitive, returns false for unknown roles and when not authenticated
+
+**XML doc requirements for `ITenantProvider`:** Type-level doc covering purpose, scope (request-scoped), `Guid.Empty` sentinel meaning, prohibition on domain injection, and the note that `06.Persistence.TenantedDbContext` is the only allowed infrastructure consumer.
+
+**XML doc requirements for `AnonymousUserContext`:** Type-level doc covering what it is (sentinel, fallback implementation), why it exists (DI always-resolvable pattern), when to expect it (unauthenticated requests, background jobs without HTTP context), and the `sealed` rationale.
+
+**XML doc requirements for `SecurityClaimTypes`:** Type-level doc covering what these constants are, why to use them (avoid raw string literals), and a note that consumers may define additional local constants for domain-specific claims. Each constant documents the actual claim string value, its source (OIDC spec / custom), and which identity providers use it.
+
+**Package README (`README.md` at the project root):**
+
+- What the package is and what it is not (no DI, no JWT parsing — those are in `SharedKernel.Security.Oidc`)
+- The three patterns: inject `IUserContext` in application handlers; inject `ITenantProvider` in the application layer to resolve `TenantId` before passing to domain; use `SecurityClaimTypes` constants instead of raw strings
+- `AnonymousUserContext` — when to expect it and how to handle it
+- One-paragraph note on the `IsAuthenticated` guard pattern
+
+#### Why this is needed
+
+`SharedKernel.Security.Abstractions` is consumed by potentially every service across the platform. Without clear documentation, teams will guess at the `AnonymousUserContext` fallback behavior, incorrectly inject `ITenantProvider` into domain code, or bypass `HasRole` in favour of raw `Claims` dictionary access — all of which the design explicitly prohibits. Documentation is the enforcement mechanism for design intent in a shared library.
+
+#### Acceptance criteria
+
+- [ ] All public members of `IUserContext` have non-trivial XML doc comments (not just property name restatements)
+- [ ] All public members of `ITenantProvider` have XML doc
+- [ ] `AnonymousUserContext` type-level and member docs explain the sentinel pattern
+- [ ] `SecurityClaimTypes` class and all four constants have XML doc with the actual claim string values
+- [ ] `README.md` exists at `12.Security/SharedKernel.Security.Abstractions/README.md`
+- [ ] README covers the three consumer patterns and the `AnonymousUserContext` handling guidance
+- [ ] `dotnet build` emits zero XML doc warnings (no missing `<param>`, `<returns>`, or `<summary>` warnings)
+
+---
+
+### P-090 — Security Abstractions: Published — NuGet Pack and Consumer Verification
+
+**Status:** `●` Complete
+**Work Order:** WO-015
+**Domain:** 12.Security
+**Depends on:** P-089
+
+#### What is needed
+
+Pack `SharedKernel.Security.Abstractions` as a NuGet package and verify it is consumable by a downstream service referencing it as a NuGet dependency (not a project reference).
+
+**Pack metadata (in .csproj):**
+
+- `PackageId`: `SharedKernel.Security.Abstractions`
+- `Version`: `1.0.0`
+- `Authors`: platform team identity
+- `Description`: "Identity and tenancy abstraction interfaces for Platform.SharedKernel. Zero NuGet dependencies. Reference this package in application and infrastructure layers; never inject IHttpContextAccessor or ClaimsPrincipal directly."
+- `PackageTags`: security, identity, tenancy, abstractions, sharedkernel
+- `GenerateDocumentationFile`: true (so XML doc ships with the package)
+- `IncludeReadme`: README.md
+- No `PrivateAssets` — this is a public abstraction package
+
+**Pack and output:** `dotnet pack` targeting Release configuration outputs `.nupkg` to the repo's `nupkgs/` directory. Package content verified: contains the four source types, XML doc file, README.
+
+**Consumer verification** — a minimal consumer verify project (console or classlib) that:
+
+1. References `SharedKernel.Security.Abstractions` as a NuGet package from the `nupkgs/` local feed
+2. Resolves `IUserContext` from a test DI container with `AnonymousUserContext` registered as the implementation
+3. Asserts `IUserContext.IsAuthenticated == false` and `IUserContext.UserId == Guid.Empty`
+4. Resolves `SecurityClaimTypes.UserId` constant and asserts value is `"sub"`
+5. Confirms the package does not pull in any unexpected transitive NuGet dependencies
+
+#### Why this is needed
+
+Packing and doing a consumer verify is the only way to confirm that the package as shipped (not as a project reference) exposes the correct public API, ships XML docs, and carries no unintended transitive dependencies. Projects throughout the platform will take a NuGet dependency on this package — consumer verification catches mismatched namespaces, missing doc files, or accidental private-asset leaks before they reach downstream teams.
+
+#### Acceptance criteria
+
+- [ ] `dotnet pack` succeeds in Release configuration; `.nupkg` is in `nupkgs/`
+- [ ] Package contains: four type files, XML doc file, README.md
+- [ ] No unexpected NuGet dependencies beyond `SharedKernel.Primitives` in the package manifest
+- [ ] Consumer verify: `IUserContext` resolves to `AnonymousUserContext` from local NuGet feed reference
+- [ ] Consumer verify: `IsAuthenticated == false`, `UserId == Guid.Empty`, `HasRole("anything") == false` via `AnonymousUserContext`
+- [ ] Consumer verify: `SecurityClaimTypes.UserId == "sub"`
+- [ ] `12.Security/state-map.md` Package Board row for `SharedKernel.Security.Abstractions` updated to `Published`
 
 ---
