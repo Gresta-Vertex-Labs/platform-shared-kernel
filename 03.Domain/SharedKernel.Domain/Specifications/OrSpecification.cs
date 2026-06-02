@@ -35,5 +35,8 @@ public sealed class OrSpecification<T> : Specification<T>
 
         if (left.AsNoTracking || right.AsNoTracking)
             ApplyNoTracking();
+
+        if (left.IncludeDeleted || right.IncludeDeleted)
+            IncludeSoftDeleted();
     }
 }

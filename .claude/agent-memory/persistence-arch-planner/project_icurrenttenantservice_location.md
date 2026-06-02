@@ -1,14 +1,22 @@
 ---
 name: project_icurrenttenantservice_location
-description: ICurrentTenantService lives in SharedKernel.Persistence.EfCore, not in Abstractions
+description: ICurrentTenantService removed — TenantedDbContext now uses ITenantProvider from Security.Abstractions; Guid.Empty is the no-tenant sentinel
 metadata:
   type: project
 ---
 
-`ICurrentTenantService` (exposes `TenantId` as `Guid?`) is defined in `SharedKernel.Persistence.EfCore`, not in `SharedKernel.Persistence.Abstractions`.
+**P-078 decision (WO-014, 2026-06-02):** `ICurrentTenantService` (local interface with `TenantId` as `Guid?`) has been removed from `SharedKernel.Persistence.EfCore`. `TenantedDbContext` now injects `ITenantProvider` from `SharedKernel.Security.Abstractions` (`TenantId` is `Guid`, non-nullable).
 
-**Why:** It is an EfCore DbContext concern — `TenantedDbContext` needs it to install a global query filter. Placing it in `.Abstractions` would make the ORM-agnostic interface layer aware of a concept only relevant to EF Core's model-building pipeline.
+**Why the switch was made:** The local interface copy created divergence risk. `Security.Abstractions` is zero-dependency, so referencing it from `EfCore` is architecturally correct and eliminates the maintenance burden of keeping two interfaces in sync.
 
-**Concrete implementation:** Lives in `13.ServiceDefaults.MultiTenancy`. `EfCorePersistenceBuilder.WithMultiTenancy()` registers a no-op placeholder that is overridden by the ServiceDefaults package.
+**Guid.Empty no-tenant sentinel (P-092, WO-016, 2026-06-02):**
 
-**How to apply:** When a phase request mentions `ICurrentTenantService`, always place it in `.EfCore`. If it appears in a design for `.Abstractions`, reject and correct.
+`ITenantProvider.TenantId` is non-nullable. When no real provider is registered, `NoOpTenantProvider` returns `Guid.Empty` explicitly (not `default(Guid)` — same value but intent is explicit). The global filter becomes `e.TenantId == Guid.Empty`, returning zero rows. This is intentional and safe — no production entity should have `TenantId == Guid.Empty`.
+
+**Why:** `Guid?` vs `Guid` is a correctness boundary. Returning zero rows on misconfiguration is safer than a cross-tenant leak. Teams see an empty result set immediately.
+
+**How to apply:** When planning any multi-tenancy task, use `ITenantProvider` (not `ICurrentTenantService`). The no-op placeholder is `NoOpTenantProvider` returning `Guid.Empty`. Never plan a task that writes `Guid.Empty` as a real tenant ID in production rows.
+
+**TenantedDbContext filter:** Built via expression trees — `Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda` — applied via `modelBuilder.Entity(clrType).HasQueryFilter(lambda)`. No `GetMethod`/`MakeGenericMethod`/`Invoke`.
+
+See also: [[project_iusercontext_pattern]]

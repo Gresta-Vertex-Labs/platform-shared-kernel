@@ -1,19 +1,26 @@
 ---
 name: project_iusercontext_pattern
-description: IUserContext injection pattern for AuditInterceptor/SoftDeleteInterceptor — no direct 12.Security reference
+description: IUserContext injection pattern — approved Security.Abstractions reference, GUID audit string format, no-op placeholder rules
 metadata:
   type: project
 ---
 
-`AuditInterceptor` and `SoftDeleteInterceptor` need `IUserContext` but `06.Persistence` cannot reference `12.Security` by layering rules (lower number = more foundational; 12 > 6 so the reference direction is wrong).
+`AuditInterceptor` and `SoftDeleteInterceptor` need `IUserContext` from `SharedKernel.Security.Abstractions`.
 
-Resolution pattern (confirmed in WO-013 design, 2026-06-01):
+**P-078 decision (WO-014, 2026-06-02):** `SharedKernel.Persistence.EfCore` holds a deliberate project reference to `SharedKernel.Security.Abstractions`. This is an approved layering exception — `12.Security.Abstractions` is a zero-dependency interface library. The prior workaround (local `IUserContext.cs` copy in EfCore) was removed. All other `12.Security.*` packages remain forbidden in `06.Persistence`.
 
-1. Interceptors declare `IUserContext` as a constructor parameter typed to the interface from `12.Security.Abstractions`. DI wires this at runtime — no compile-time project reference needed in `06.Persistence`.
-2. `EfCorePersistenceBuilder.Build()` registers a scoped no-op `IUserContext` placeholder (returns `"system"`) **only when no `IUserContext` is already registered** in the DI container.
-3. Consuming services override the placeholder by registering their own implementation (e.g., `OidcUserContext` from `12.Security.Oidc`) before or after `.Build()` — last registration wins.
-4. All three interceptors are registered as **scoped** services so they receive a per-request `IUserContext`.
+**`IUserContext` shape (Security.Abstractions):** `UserId` is `Guid`; `IsAuthenticated` is `bool`.
 
-**Why:** Standard EF Core interceptor DI pattern. The interceptors need per-request user context; scoped lifetime provides it. The no-op placeholder prevents startup failures in test or background-service contexts where no real user is present.
+**No-op placeholder:** `EfCorePersistenceBuilder.Build()` registers a scoped no-op with `UserId = Guid.Empty`, `IsAuthenticated = false` when no `IUserContext` is already registered.
 
-**How to apply:** Never add `SharedKernel.Security.Abstractions` as a project reference in any `.Persistence.*` csproj. The interface type resolves purely through DI at runtime.
+**Audit string format rule (P-091, WO-016, 2026-06-02):** Audit columns (`CreatedBy`, `ModifiedBy`, `DeletedBy`) are `string HasMaxLength(256)`. The value is produced as:
+- `IsAuthenticated == true && UserId != Guid.Empty` → `userId.ToString("D")` (lowercase hyphenated GUID, 36 chars)
+- Otherwise → `"system"`
+
+Only `"D"` format is permitted. `"N"`, `"B"`, `"P"`, `"X"` are all violations.
+
+**Why:** `UserId` changed from `string` to `Guid` when migrating to `Security.Abstractions`. Audit columns remain `string`. The `"D"` format is stable, unique, human-readable, and fits within 256 chars. `"system"` fallback prevents null audit records in background-service or test contexts.
+
+**How to apply:** When planning any audit interceptor task, always include the `ToString("D")` vs `"system"` branch logic. Never store raw `Guid.ToString()` without the `"D"` specifier.
+
+See also: [[project_icurrenttenantservice_location]]

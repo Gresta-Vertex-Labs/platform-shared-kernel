@@ -1,5 +1,7 @@
 using System.Data;
+using System.Linq.Expressions;
 using FluentAssertions;
+using SharedKernel.Contracts.Pagination;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Abstractions.Specifications;
@@ -21,7 +23,14 @@ public sealed class ContractShapeTests
     public void IRepository_Has_GetByIdAsync()
     {
         var method = typeof(IRepository<,>).GetMethod("GetByIdAsync");
-        method.Should().NotBeNull("IRepository must expose GetByIdAsync");
+        method.Should().NotBeNull("IRepository must expose GetByIdAsync (write side retains this method)");
+    }
+
+    [Fact]
+    public void IRepository_Has_ExistsAsync()
+    {
+        var method = typeof(IRepository<,>).GetMethod("ExistsAsync");
+        method.Should().NotBeNull("IRepository must expose ExistsAsync");
     }
 
     [Fact]
@@ -32,6 +41,13 @@ public sealed class ContractShapeTests
     }
 
     [Fact]
+    public void IRepository_Has_AddRangeAsync()
+    {
+        var method = typeof(IRepository<,>).GetMethod("AddRangeAsync");
+        method.Should().NotBeNull("IRepository must expose AddRangeAsync");
+    }
+
+    [Fact]
     public void IRepository_Has_UpdateAsync()
     {
         var method = typeof(IRepository<,>).GetMethod("UpdateAsync");
@@ -39,10 +55,24 @@ public sealed class ContractShapeTests
     }
 
     [Fact]
+    public void IRepository_Has_UpdateRangeAsync()
+    {
+        var method = typeof(IRepository<,>).GetMethod("UpdateRangeAsync");
+        method.Should().NotBeNull("IRepository must expose UpdateRangeAsync");
+    }
+
+    [Fact]
     public void IRepository_Has_DeleteAsync()
     {
         var method = typeof(IRepository<,>).GetMethod("DeleteAsync");
         method.Should().NotBeNull("IRepository must expose DeleteAsync");
+    }
+
+    [Fact]
+    public void IRepository_Has_DeleteRangeAsync()
+    {
+        var method = typeof(IRepository<,>).GetMethod("DeleteRangeAsync");
+        method.Should().NotBeNull("IRepository must expose DeleteRangeAsync");
     }
 
     [Fact]
@@ -60,10 +90,14 @@ public sealed class ContractShapeTests
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void IReadRepository_Has_GetByIdAsync()
+    public void IReadRepository_Does_Not_Have_GetByIdAsync()
     {
+        // P-080 breaking change: GetByIdAsync was removed from IReadRepository.
+        // Use GetBySpecAsync(new ByIdSpecification<TAggregate, TId>(id), ct) instead.
         var method = typeof(IReadRepository<,>).GetMethod("GetByIdAsync");
-        method.Should().NotBeNull("IReadRepository must expose GetByIdAsync");
+        method.Should().BeNull(
+            "IReadRepository.GetByIdAsync was removed (P-080 breaking change). " +
+            "Use GetBySpecAsync(new ByIdSpecification<TAggregate, TId>(id), ct) instead.");
     }
 
     [Fact]
@@ -92,6 +126,34 @@ public sealed class ContractShapeTests
     {
         var method = typeof(IReadRepository<,>).GetMethod("AnyAsync");
         method.Should().NotBeNull("IReadRepository must expose AnyAsync");
+    }
+
+    [Fact]
+    public void IReadRepository_Has_GetByIdsAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("GetByIdsAsync");
+        method.Should().NotBeNull("IReadRepository must expose GetByIdsAsync");
+    }
+
+    [Fact]
+    public void IReadRepository_Has_ListPagedAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("ListPagedAsync");
+        method.Should().NotBeNull("IReadRepository must expose ListPagedAsync returning PagedList<T>");
+    }
+
+    [Fact]
+    public void IReadRepository_Has_ListProjectedAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("ListProjectedAsync");
+        method.Should().NotBeNull("IReadRepository must expose ListProjectedAsync<TResult>");
+    }
+
+    [Fact]
+    public void IReadRepository_Has_GetBySpecProjectedAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("GetBySpecProjectedAsync");
+        method.Should().NotBeNull("IReadRepository must expose GetBySpecProjectedAsync<TResult>");
     }
 
     [Fact]
@@ -150,6 +212,52 @@ public sealed class ContractShapeTests
     {
         var method = typeof(ISpecificationEvaluator<>).GetMethod("GetQuery");
         method.Should().NotBeNull("ISpecificationEvaluator must expose GetQuery");
+    }
+
+    // ---------------------------------------------------------------------------
+    // IProjectionSpecification<TAggregate, TResult> contract
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void IProjectionSpecification_Exists_In_Specifications_Namespace()
+    {
+        var type = typeof(IProjectionSpecification<,>);
+        type.Should().NotBeNull("IProjectionSpecification<TAggregate, TResult> must exist in Abstractions");
+        type.Namespace.Should().Be("SharedKernel.Persistence.Abstractions.Specifications");
+    }
+
+    [Fact]
+    public void IProjectionSpecification_Extends_ISpecification()
+    {
+        var type = typeof(IProjectionSpecification<,>);
+        var interfaces = type.GetInterfaces();
+        var extendsSpec = interfaces.Any(i =>
+            i.IsGenericType &&
+            i.GetGenericTypeDefinition() == typeof(SharedKernel.Domain.Specifications.ISpecification<>));
+        extendsSpec.Should().BeTrue("IProjectionSpecification must extend ISpecification<TAggregate>");
+    }
+
+    [Fact]
+    public void IProjectionSpecification_Has_Selector_Property_Of_ExpressionType()
+    {
+        var type = typeof(IProjectionSpecification<,>);
+        var prop = type.GetProperty("Selector");
+        prop.Should().NotBeNull("IProjectionSpecification must expose Selector property");
+        // Return type should be Expression<Func<TAggregate, TResult>>
+        prop!.PropertyType.IsGenericType.Should().BeTrue();
+        prop.PropertyType.GetGenericTypeDefinition().Should().Be(typeof(Expression<>));
+    }
+
+    // ---------------------------------------------------------------------------
+    // ByIdSpecification<TAggregate, TId> contract
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void ByIdSpecification_Exists_In_Specifications_Namespace()
+    {
+        var type = typeof(ByIdSpecification<,>);
+        type.Should().NotBeNull("ByIdSpecification<TAggregate, TId> must exist in Abstractions");
+        type.Namespace.Should().Be("SharedKernel.Persistence.Abstractions.Specifications");
     }
 
     // ---------------------------------------------------------------------------

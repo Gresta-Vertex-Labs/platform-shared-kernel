@@ -6,6 +6,7 @@ using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
@@ -87,7 +88,7 @@ public sealed class HardDeleteAggregateConfig : EntityTypeConfigurationBase<Hard
 
 /// <summary>
 /// Test DbContext scoped to TenantedTestAggregate only.
-/// Manually applies configurations and tenant filter.
+/// Uses ITenantProvider (Security.Abstractions) to drive the global tenant query filter.
 /// </summary>
 public sealed class TenantedTestDbContext : TenantedDbContext
 {
@@ -98,8 +99,8 @@ public sealed class TenantedTestDbContext : TenantedDbContext
         AuditInterceptor auditInterceptor,
         SoftDeleteInterceptor softDeleteInterceptor,
         ConcurrencyInterceptor concurrencyInterceptor,
-        ICurrentTenantService currentTenantService)
-        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor, currentTenantService)
+        ITenantProvider tenantProvider)
+        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor, tenantProvider)
     {
     }
 
@@ -111,14 +112,11 @@ public sealed class TenantedTestDbContext : TenantedDbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Apply only this context's entity configurations.
-        // Skip base.OnModelCreating to avoid assembly scan picking up non-tenanted configs.
+        // Apply only this context's entity configurations without the full assembly scan.
+        // We do NOT call base.OnModelCreating to avoid picking up configs from other test contexts.
+        // ApplyTenantFilters installs the expression-tree tenant filter after entity configs.
         modelBuilder.ApplyConfiguration(new TenantedTestAggregateConfig());
-
-        // Install tenant filter manually (replicate TenantedDbContext's logic for this entity).
-        var tenantService = CurrentTenantService;
-        modelBuilder.Entity<TenantedTestAggregate>()
-            .HasQueryFilter(e => e.TenantId == tenantService.TenantId);
+        ApplyTenantFilters(modelBuilder);
     }
 }
 

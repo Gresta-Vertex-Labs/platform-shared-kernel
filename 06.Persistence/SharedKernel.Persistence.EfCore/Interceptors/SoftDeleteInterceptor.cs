@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
 
@@ -26,14 +27,21 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// modification — their rows are physically removed.
 /// </para>
 /// <para>
+/// <strong>Audit string format (P-091):</strong> <c>DeletedBy</c> is populated using the same
+/// adapter as <c>AuditInterceptor</c>: <c>userId.ToString("D")</c> (lowercase hyphenated GUID)
+/// when <c>IsAuthenticated == true</c> and <c>UserId != Guid.Empty</c>; <c>"system"</c> otherwise.
+/// Audit columns carry <c>HasMaxLength(256)</c>, which accommodates both formats.
+/// </para>
+/// <para>
 /// <strong>Mutation rule:</strong> All field writes go exclusively through
 /// <c>ChangeTracker.Entry(entity).CurrentValues[propertyName]</c>. Direct property setters on
 /// entity instances are never called.
 /// </para>
 /// <para>
 /// Soft-deleted records are hidden from normal queries by the global query filter
-/// <c>e =&gt; !e.IsDeleted</c> configured by <c>EntityTypeConfigurationBase</c>. To query
-/// soft-deleted records, use <c>.IgnoreQueryFilters()</c> on the queryable.
+/// <c>e =&gt; !e.IsDeleted</c> configured by <c>EntityTypeConfigurationBase</c>.
+/// Use <c>spec.IncludeDeleted = true</c> on a specification to bypass this filter via the
+/// <c>SpecificationEvaluator</c>; do not call <c>.IgnoreQueryFilters()</c> directly.
 /// </para>
 /// </remarks>
 public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
@@ -45,7 +53,7 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
     /// Initialises a new <see cref="SoftDeleteInterceptor"/> with the required dependencies.
     /// </summary>
     /// <param name="userContext">
-    /// Scoped DI dependency providing the current user's identifier.
+    /// Scoped DI dependency providing the current user's identity.
     /// </param>
     /// <param name="clock">
     /// Abstracted system clock for deterministic timestamp production.
@@ -80,7 +88,7 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
     {
         if (context is null) return;
 
-        var userId = string.IsNullOrWhiteSpace(_userContext.UserId) ? "system" : _userContext.UserId;
+        var userId = ResolveUserId();
         var now = _clock.UtcNow;
 
         foreach (var entry in context.ChangeTracker.Entries<ISoftDeletable>()
@@ -92,4 +100,10 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
             entry.CurrentValues[nameof(ISoftDeletable.DeletedBy)] = userId;
         }
     }
+
+    // Resolves the audit string from the current IUserContext per P-091 rules.
+    private string ResolveUserId()
+        => _userContext.IsAuthenticated && _userContext.UserId != Guid.Empty
+            ? _userContext.UserId.ToString("D")
+            : "system";
 }

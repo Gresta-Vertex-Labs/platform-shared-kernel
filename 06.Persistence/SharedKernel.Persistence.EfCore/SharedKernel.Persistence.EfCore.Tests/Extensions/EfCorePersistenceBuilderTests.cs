@@ -3,11 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
-using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Extensions;
-using SharedKernel.Persistence.EfCore.Interceptors;
-using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Extensions;
 
@@ -73,42 +71,15 @@ public sealed class EfCorePersistenceBuilderTests
         var specEval = scope.ServiceProvider.GetService(typeof(ISpecificationEvaluator<TestAggregate>));
         specEval.Should().NotBeNull();
 
+        // No-op IUserContext: IsAuthenticated=false, UserId=Guid.Empty
         var userCtx = scope.ServiceProvider.GetService<IUserContext>();
         userCtx.Should().NotBeNull();
-        userCtx!.UserId.Should().Be("system"); // no-op placeholder
+        userCtx!.IsAuthenticated.Should().BeFalse();
+        userCtx.UserId.Should().Be(Guid.Empty);
     }
 
     [Fact]
-    public void Build_WithExistingUserContext_DoesNotOverrideIt()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Register a custom IUserContext first
-        services.AddScoped<IUserContext>(_ => new CustomUserContext("custom-user"));
-
-        // Act
-        services
-            .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
-            .Build();
-
-        var provider = services.BuildServiceProvider();
-
-        // Assert — the custom one should win (it was registered first)
-        using var scope = provider.CreateScope();
-        var userCtx = scope.ServiceProvider.GetService<IUserContext>();
-        // The default DI behaviour returns the LAST registered service, so "system" would win
-        // unless we check this explicitly. We verify the no-op placeholder does NOT add
-        // when one already exists.
-        // Actually in MS DI the last registration wins, but our code checks "if not already registered"
-        // so the custom one should remain.
-        userCtx.Should().NotBeNull();
-        userCtx!.UserId.Should().Be("custom-user");
-    }
-
-    [Fact]
-    public void Build_MultiTenancy_RegistersNoOpCurrentTenantService()
+    public void Build_MultiTenancy_RegistersNoOpTenantProvider()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -122,11 +93,37 @@ public sealed class EfCorePersistenceBuilderTests
 
         var provider = services.BuildServiceProvider();
 
-        // Assert
+        // Assert — P-092: NoOpTenantProvider returns Guid.Empty
         using var scope = provider.CreateScope();
-        var tenantService = scope.ServiceProvider.GetService<ICurrentTenantService>();
-        tenantService.Should().NotBeNull();
-        tenantService!.TenantId.Should().BeNull(); // no-op returns null
+        var tenantProvider = scope.ServiceProvider.GetService<ITenantProvider>();
+        tenantProvider.Should().NotBeNull();
+        tenantProvider!.TenantId.Should().Be(Guid.Empty);
+    }
+
+    [Fact]
+    public void Build_WithExistingUserContext_DoesNotOverrideIt()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var customId = Guid.NewGuid();
+
+        // Register a custom IUserContext first
+        services.AddScoped<IUserContext>(_ => new CustomUserContext(customId));
+
+        // Act
+        services
+            .AddSharedKernelEfCore<TestDbContext>(options =>
+                options.UseSqlite("DataSource=:memory:"))
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+
+        // Assert — the custom one should win (Build() checks "if not already registered")
+        using var scope = provider.CreateScope();
+        var userCtx = scope.ServiceProvider.GetService<IUserContext>();
+        userCtx.Should().NotBeNull();
+        userCtx!.UserId.Should().Be(customId);
+        userCtx.IsAuthenticated.Should().BeTrue();
     }
 }
 
@@ -134,7 +131,13 @@ public sealed class EfCorePersistenceBuilderTests
 // Test helper
 // ---------------------------------------------------------------------------
 
-internal sealed class CustomUserContext(string userId) : IUserContext
+internal sealed class CustomUserContext(Guid userId) : IUserContext
 {
-    public string UserId { get; } = userId;
+    public Guid UserId { get; } = userId;
+    public string? Email => null;
+    public string? Username => null;
+    public IReadOnlyCollection<string> Roles => [];
+    public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
+    public bool IsAuthenticated => true;
+    public bool HasRole(string role) => false;
 }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Domain;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
@@ -8,6 +9,7 @@ using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Extensions;
 
@@ -81,8 +83,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
     /// <summary>
     /// Opts in to multi-tenancy support.
-    /// Registers a no-op <see cref="ICurrentTenantService"/> placeholder that can be overridden
-    /// by the consuming service.
+    /// Registers a no-op <see cref="ITenantProvider"/> placeholder (<see cref="NoOpTenantProvider"/>)
+    /// that returns <see cref="Guid.Empty"/> until overridden by the consuming service.
     /// At <see cref="Build"/> time, asserts that <typeparamref name="TContext"/> extends
     /// <see cref="TenantedDbContext"/>; throws <see cref="InvalidOperationException"/> with an
     /// actionable message if the assertion fails.
@@ -92,7 +94,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     {
         _multiTenancyEnabled = true;
 
-        _services.AddScoped<ICurrentTenantService, NoOpCurrentTenantService>();
+        _services.AddScoped<ITenantProvider, NoOpTenantProvider>();
 
         return this;
     }
@@ -148,6 +150,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
         {
             _services.AddScoped<IUserContext, NoOpUserContext>();
         }
+
+        // IDomainEventDispatcher is optional — consuming services opt in by registering it.
+        // EfUnitOfWork resolves it as IEnumerable<IDomainEventDispatcher> to avoid hard dependency.
 
         // IClock — registered as singleton only when not already present.
         if (!_services.Any(sd => sd.ServiceType == typeof(IClock)))

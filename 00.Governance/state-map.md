@@ -37,6 +37,8 @@
 | `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | All tasks in Phase: Domain Gold-Standard Architecture Rules are `●` |
 | `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | All tasks in Phase: Contracts Layer Purity Architecture Rules are `●` |
 | `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | All tasks in Phase: Persistence Architecture Enforcement are `●` |
+| `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | All tasks in Phase: Persistence Architecture Rules Phase 2 are `●` |
+| `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | All tasks in Phase: IUserContext Audit String Adapter and Repository Contract Completeness are `●` |
 
 ---
 
@@ -752,6 +754,215 @@ No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates
 
 ---
 
+## Phase: Persistence Architecture Rules Phase 2 — Interface Migration Enforcement <!-- phase-key: SK.00.PersistenceEnforcement2 -->
+
+> Extend `SharedKernel.ArchitectureTests` with four additional architecture enforcement rules that codify the P-078 interface migration corrections: `IUserContext` and tenant-identity contracts must be declared only in `SharedKernel.Security.Abstractions`, `IQueryable<T>` must not appear on any `IReadRepository` public method, and `GetByIdAsync` must not appear on any `IReadRepository` implementor.
+
+### PersistenceEnforcement2 — Goal
+
+P-078 relocated `IUserContext` from a local persistence copy into `SharedKernel.Security.Abstractions` and removed the erroneous `GetByIdAsync` duplication from `IReadRepository`. Without automated architecture rules these corrections will regress: teams copying old templates will redeclare `IUserContext` locally, and contributors unfamiliar with the P-080 decision will re-add `GetByIdAsync` on read repositories. Each of the four rules here corresponds directly to a correctness decision recorded in P-078's work order, making the fix durable at build time.
+
+### PersistenceEnforcement2 — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/PersistenceInterfaceOwnershipRules.cs` — new static class housing all four predicates
+  - `SharedKernel.ArchitectureTests/Predicates/InterfaceDeclarationOwnershipPredicate.cs` — `ICustomRule`: checks that a named interface type is not declared in any assembly other than the designated owner
+  - `SharedKernel.ArchitectureTests/Predicates/NoGetByIdOnReadRepositoryPredicate.cs` — `ICustomRule`: scoped to `IReadRepository` implementors; fails if any declares a method named `GetByIdAsync`
+- Modified files:
+  - `SharedKernel.ArchitectureTests/Rules/PersistenceLayerProtectionRules.cs` — no change (existing rules are unchanged; new rules live in the new static class)
+  - `00.Governance/CLAUDE.md` — add `PersistenceInterfaceOwnershipRules` and its predicates to the Architecture Test Contracts section; add new rules under Persistence Enforcement section
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+- Note: No new Roslyn analyzer SK IDs — all four rules are pure NetArchTest architecture predicates. The existing `NoIQueryableReturnPredicate` already covers `IRepository`-prefix types; Rule 3 here extends its intent explicitly to `IReadRepository` public method signatures (not just return types) using the same predicate with a targeted failure message.
+
+### PersistenceEnforcement2 — Diagnostic Registry Changes
+
+No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates:
+
+- Rule 1 — `IUserContextDeclaredOnlyInSecurityAbstractions`: `InterfaceDeclarationOwnershipPredicate` — type name `IUserContext` declared outside `SharedKernel.Security.Abstractions` assembly fails this rule
+- Rule 2 — `TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions`: same predicate pattern for `ITenantProvider` and `ICurrentTenantService` — both must be declared only in `SharedKernel.Security.Abstractions`
+- Rule 3 — `IReadRepositoryMustNotExposeIQueryable`: extends existing IQueryable enforcement explicitly to `IReadRepository` implementing types — any public method or property returning `IQueryable` fails
+- Rule 4 — `NoGetByIdAsyncOnReadRepository`: `NoGetByIdOnReadRepositoryPredicate` — any class implementing `IReadRepository<,>` that declares a method named `GetByIdAsync` fails this rule
+
+### PersistenceEnforcement2 — Implementation Rules
+
+1. `PersistenceInterfaceOwnershipRules.IUserContextDeclaredOnlyInSecurityAbstractions(params Assembly[] assemblies)` takes the production assemblies to scan (excluding `SharedKernel.Security.Abstractions` itself — the caller must not pass it). Uses `Types.InAssembly(assembly).That().HaveName("IUserContext").Should().NotExist()` per non-owner assembly. Alternatively, uses `InterfaceDeclarationOwnershipPredicate` which checks `TypeDefinition.Name == "IUserContext"` across provided assemblies and fails if any such type is found. Failure message must name the offending assembly and type. The ownership assembly (`SharedKernel.Security.Abstractions`) is never passed to this method — it is the correct home.
+
+2. `PersistenceInterfaceOwnershipRules.TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions(params Assembly[] assemblies)` follows the identical pattern for both `ITenantProvider` and `ICurrentTenantService`. Uses `InterfaceDeclarationOwnershipPredicate` configured with both names (OR match). Failure message must name the offending type name and the assembly it was found in.
+
+3. `PersistenceInterfaceOwnershipRules.IReadRepositoryMustNotExposeIQueryable(Assembly assembly)` uses `NoIQueryableReturnPredicate` (already defined in `SharedKernel.ArchitectureTests`) but scoped specifically to types whose `TypeDefinition.Interfaces` contains an entry whose `InterfaceType.Name` starts with `"IReadRepository"` (not the broader `"IRepository"` prefix used by the existing rule). This prevents the broader rule from being relied upon for `IReadRepository` — the failure message must identify it as an `IReadRepository`-specific violation. Returns `ConditionList`.
+
+4. `PersistenceInterfaceOwnershipRules.NoGetByIdAsyncOnReadRepository(Assembly assembly)` uses `NoGetByIdOnReadRepositoryPredicate` — an `ICustomRule` that scopes to types whose `TypeDefinition.Interfaces` contains an entry whose `InterfaceType.Name` starts with `"IReadRepository"`. For each such type, inspects `TypeDefinition.Methods` for any entry whose `Name` equals `"GetByIdAsync"` (exact match). If found, returns false (rule violated) with a failure message naming the offending type and pointing to `FindByIdAsync` as the correct alternative. Returns `ConditionList`.
+
+5. `InterfaceDeclarationOwnershipPredicate` is a new `ICustomRule` in `Predicates/`. It is constructed with a set of interface names to check (e.g., `{ "IUserContext" }` or `{ "ITenantProvider", "ICurrentTenantService" }`). For each type, if `TypeDefinition.Name` is in the configured name set, the predicate returns false (violation). The predicate is instantiated per call site — it never caches state. Failure message includes the offending type name and its `TypeDefinition.Module.Assembly.Name.Name` for assembly identification.
+
+6. `NoGetByIdOnReadRepositoryPredicate` is a new `ICustomRule` in `Predicates/`. Scope check: `TypeDefinition.Interfaces` contains entry with `InterfaceType.Name` starting with `"IReadRepository"`. Method scan: iterates `TypeDefinition.Methods` for `Name == "GetByIdAsync"`. Returns false with failure message: `"{offendingType}.GetByIdAsync must be removed — use FindByIdAsync (returns Result<T>) or GetAsync (returns T?) instead. GetByIdAsync was removed in P-080 to eliminate duplication."`. Returns `ConditionList` from `PersistenceInterfaceOwnershipRules`.
+
+7. Both new predicates reuse the established Mono.Cecil `TypeDefinition` access pattern from `DoesNotContainThrowIlPredicate`. No new NuGet dependency — the existing `Mono.Cecil >= 0.11.5` explicit reference in `SharedKernel.ArchitectureTests` covers both.
+
+8. All four factory methods in `PersistenceInterfaceOwnershipRules` return `ConditionList` and accept the assembly(-ies) under test as parameters. No assembly paths are hard-coded. The consuming test project must supply the relevant production assembly via `typeof(SomeProductionType).Assembly`.
+
+9. Rule 3 (`IReadRepositoryMustNotExposeIQueryable`) is distinct from `PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable` — the latter covers the broad `IRepository` prefix; this rule is scoped specifically to `IReadRepository` and carries a targeted failure message for read-side violations. Both rules may run in the same test suite without conflict.
+
+10. Each of the four rules must carry a failure message pointing to the correct pattern: Rule 1 → declare `IUserContext` only in `SharedKernel.Security.Abstractions`; Rule 2 → declare `ITenantProvider`/`ICurrentTenantService` only in `SharedKernel.Security.Abstractions`; Rule 3 → use `Specification<T>` for query surface on `IReadRepository`; Rule 4 → remove `GetByIdAsync`, use `FindByIdAsync` or `GetAsync`.
+
+### PersistenceEnforcement2 — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/PersistenceInterfaceOwnershipRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: four predicate factory methods returning ConditionList |
+| `Predicates/InterfaceDeclarationOwnershipPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: detects named interface type declarations in non-owner assemblies |
+| `Predicates/NoGetByIdOnReadRepositoryPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: scoped to IReadRepository implementors; fails on GetByIdAsync method declaration |
+
+### PersistenceEnforcement2 — Acceptance Criteria
+
+- [ ] Rule 1 exists as `[Fact]`: `IUserContext` declared in any assembly other than `SharedKernel.Security.Abstractions` fails the rule; failure message names the offending assembly
+- [ ] Rule 2 exists as `[Fact]`: `ITenantProvider` or `ICurrentTenantService` declared outside `SharedKernel.Security.Abstractions` fails; failure message names the offending type
+- [ ] Rule 3 exists as `[Fact]`: an `IReadRepository<,>` implementor with an `IQueryable<T>` public method fails; a clean implementor passes
+- [ ] Rule 4 exists as `[Fact]`: an `IReadRepository<,>` implementor with a `GetByIdAsync` method fails; failure message points to `FindByIdAsync` / `GetAsync`; a clean implementor without `GetByIdAsync` passes
+- [ ] All four tests carry a descriptive failure message pointing to the correct pattern and package
+- [ ] All four tests pass against the codebase after P-078 and P-080 are complete
+- [ ] `00.Governance/CLAUDE.md` updated with the four new rules under a Persistence Interface Ownership section
+
+### PersistenceEnforcement2 — Dependencies
+
+- Requires P-078 (`IUserContext` moved to `SharedKernel.Security.Abstractions`, `GetByIdAsync` removed from `IReadRepository`) to be complete: yes — the rules are meaningless before the migration occurs; passing the test requires the correct state
+- Depends on `NoIQueryableReturnPredicate` from `SK.00.PersistenceEnforcement` for Rule 3's underlying IL check: yes (already defined)
+- Unblocks: P-083 architecture gates integrated into CI after P-078/P-080 completion
+
+### PersistenceEnforcement2 — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref — no change; covers both new predicates)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new SK rules, no change)
+- Target framework: `net10.0` (ArchitectureTests)
+
+### PersistenceEnforcement2 — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-30 | Define `PersistenceInterfaceOwnershipRules` static class shape: four predicate factory methods; `InterfaceDeclarationOwnershipPredicate` design (TypeDefinition.Name set match); `NoGetByIdOnReadRepositoryPredicate` design (IReadRepository scope + GetByIdAsync name match); failure message contract for each rule | SharedKernel.ArchitectureTests | `○` |
+| C-33 | Implement `InterfaceDeclarationOwnershipPredicate` in `Predicates/` — `ICustomRule` constructed with a set of interface names to detect; returns false with offending type name + assembly name for any type whose `TypeDefinition.Name` is in the configured set | SharedKernel.ArchitectureTests | `○` |
+| C-34 | Implement `NoGetByIdOnReadRepositoryPredicate` in `Predicates/` — `ICustomRule` scoped to types with `IReadRepository`-prefix interfaces; returns false if any method is named `"GetByIdAsync"`; failure message names offending type and references `FindByIdAsync`/`GetAsync` as the correct alternative | SharedKernel.ArchitectureTests | `○` |
+| C-35 | Implement `PersistenceInterfaceOwnershipRules` static class in `Rules/` — four factory methods: `IUserContextDeclaredOnlyInSecurityAbstractions(params Assembly[])`, `TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions(params Assembly[])`, `IReadRepositoryMustNotExposeIQueryable(Assembly)`, `NoGetByIdAsyncOnReadRepository(Assembly)` — all return `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| T-52 | Architecture test Rule 1 (fire path): pass an assembly containing a type named `IUserContext` (not `SharedKernel.Security.Abstractions`); assert `IUserContextDeclaredOnlyInSecurityAbstractions` fails and failure message names the offending assembly | SharedKernel.ArchitectureTests | `○` |
+| T-53 | Architecture test Rule 1 (pass path): pass only assemblies that do not declare `IUserContext`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-54 | Architecture test Rule 2 (fire path): pass an assembly declaring `ITenantProvider` outside `SharedKernel.Security.Abstractions`; assert `TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions` fails | SharedKernel.ArchitectureTests | `○` |
+| T-55 | Architecture test Rule 2 (pass path): pass assemblies with no `ITenantProvider` or `ICurrentTenantService` declarations; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-56 | Architecture test Rule 3 (fire path): pass an assembly with an `IReadRepository<Order, Guid>` implementor that has a method returning `IQueryable<Order>`; assert `IReadRepositoryMustNotExposeIQueryable` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
+| T-57 | Architecture test Rule 3 (pass path): pass a clean `IReadRepository<Order, Guid>` implementation with no IQueryable methods; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-58 | Architecture test Rule 4 (fire path): pass an assembly with a class implementing `IReadRepository<Order, Guid>` that declares `GetByIdAsync`; assert `NoGetByIdAsyncOnReadRepository` fails and failure message references the correct alternatives | SharedKernel.ArchitectureTests | `○` |
+| T-59 | Architecture test Rule 4 (pass path): pass a class implementing `IReadRepository<Order, Guid>` with no `GetByIdAsync` method; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| DO-13 | Document all four `PersistenceInterfaceOwnershipRules` predicates in `00.Governance/CLAUDE.md`: rationale tying each rule to P-078/P-080 migration decision, offending-pattern example, compliant-pattern example, failure message content | SharedKernel.ArchitectureTests | `○` |
+
+---
+
+## Phase: Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness <!-- phase-key: SK.00.PersistenceContractCompleteness -->
+
+> Two new architecture enforcement rules ensure audit trail GUID format consistency (SK0011 Roslyn analyzer) and that all `IRepository<,>` and `IReadRepository<,>` implementors in the persistence layer declare the batch methods added in P-093: `ExistsAsync` and `GetByIdsAsync`.
+
+### PersistenceContractCompleteness — Goal
+
+P-091 established a defined GUID string conversion pattern for `AuditInterceptor` and `SoftDeleteInterceptor`. Without enforcement, a contributor adding a new interceptor or modifying existing ones can silently introduce `Guid.ToString("N")` (produces `"d3e4f5a6..."` — no hyphens) instead of the canonical `ToString()` / `ToString("D")` (produces `"d3e4f5a6-..."` with hyphens), causing inconsistent `CreatedBy`/`ModifiedBy` column values across services that share the same audit schema. P-093 added `ExistsAsync` and `GetByIdsAsync` to the repository interfaces; any concrete repository that does not implement these methods will compile successfully (the interface is satisfied) but will fail at runtime with `NotImplementedException` if the base class provides a stub. An architecture rule with a descriptive failure message surfaces this gap earlier.
+
+### PersistenceContractCompleteness — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers`
+- New files:
+  - `SharedKernel.Analyzers/Diagnostics/SK0011_GuidFormatCodeMisuseAnalyzer.cs` — Roslyn analyzer: SK0011 fires when `Guid.ToString("N")`, `"B"`, `"P"`, or `"X"` format codes are detected; only `ToString()` and `ToString("D")` permitted
+  - `SharedKernel.ArchitectureTests/Rules/RepositoryContractCompletenessRules.cs` — new static class housing Rules 2 and 3
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0011 to diagnostic registry; add `RepositoryContractCompletenessRules` to architecture test contracts section; document all three rules under Persistence Enforcement
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### PersistenceContractCompleteness — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0011 | GuidFormatCodeMisuse | Design | Warning | `Guid.ToString(string)` called with a format argument other than `"D"` — format codes `"N"`, `"B"`, `"P"`, `"X"` are forbidden; only `ToString()` (no argument) or `ToString("D")` produce the canonical hyphenated lowercase format required for consistent audit column values |
+
+### PersistenceContractCompleteness — Implementation Rules
+
+1. SK0011 `GuidFormatCodeMisuseAnalyzer` operates on `InvocationExpressionSyntax` nodes of the form `<expression>.ToString(<stringLiteralArgument>)`. The analyzer fires when:
+   - The method name is `ToString` (simple name check on the `MemberAccessExpressionSyntax.Name`)
+   - The invocation has exactly one argument that is a `LiteralExpressionSyntax` of kind `SyntaxKind.StringLiteralExpression`
+   - The string literal value (after stripping quotes) is one of `"N"`, `"B"`, `"P"`, or `"X"` (case-insensitive match — these are all defined format specifiers for `Guid`)
+   - The receiver expression's type resolves to `System.Guid` (requires `SemanticModel.GetTypeInfo` to verify the receiver is a Guid — this is the one place where a minimal semantic model check is required to avoid false positives from non-Guid `ToString("N")` calls)
+   Severity: `Warning`. Fix message: use `ToString()` or `ToString("D")` for the canonical hyphenated lowercase GUID format.
+
+2. SK0011 must target `netstandard2.0` (same constraint as all other SK analyzers). The semantic model check (`GetTypeInfo`) is the minimum required for correctness — the Guid type is a BCL type resolvable without additional NuGet references beyond `Microsoft.CodeAnalysis.CSharp`.
+
+3. SK0011 suppression: the analyzer does not define a suppression namespace. It fires globally. Suppress per-call-site via `#pragma warning disable SK0011` when a non-`"D"` format is genuinely required (e.g., a compact Guid used as a URL segment). Document the suppression requirement in the `HelpLinkUri` entry.
+
+4. `RepositoryContractCompletenessRules.AllRepositoryImplementorsMustHaveExistsAsync(Assembly assembly)` uses NetArchTest fluent API:
+   `Types.InAssembly(assembly).That().ImplementInterface(typeof(IRepository<,>)).And().AreNotAbstract().Should().HaveMember("ExistsAsync")`
+   Because NetArchTest.eNt 1.3.2 may not support `HaveMember()` for open-generic interface matching, the preferred approach is a custom `ICustomRule` (`HasMethodNamePredicate`) that inspects `TypeDefinition.Methods` for a method named `"ExistsAsync"`. Scope: types whose `TypeDefinition.Interfaces` contains any entry whose `InterfaceType.Name` starts with `"IRepository"` (and not `"IReadRepository"`). Returns false (rule violated) with failure message: `"{offendingType} implements IRepository<,> but does not declare ExistsAsync. Add ExistsAsync per the interface contract defined in P-093."` Returns `ConditionList`.
+
+5. `RepositoryContractCompletenessRules.AllReadRepositoryImplementorsMustHaveGetByIdsAsync(Assembly assembly)` follows the identical pattern for `IReadRepository`-prefix types, checking for a method named `"GetByIdsAsync"`. Failure message: `"{offendingType} implements IReadRepository<,> but does not declare GetByIdsAsync. Add GetByIdsAsync(IEnumerable<TId> ids) per the interface contract defined in P-093."` Returns `ConditionList`.
+
+6. Both Rules 2 and 3 use a shared `HasRequiredMethodPredicate` (or per-rule ICustomRule instances) that accepts the required method name as a constructor parameter and the interface name prefix for scoping. This avoids duplicating the same IL inspection logic for two methods. The predicate lives in `Predicates/HasRequiredMethodPredicate.cs`.
+
+7. `HasRequiredMethodPredicate` is a new `ICustomRule` in `Predicates/`. Constructor: `HasRequiredMethodPredicate(string interfaceNamePrefix, string requiredMethodName)`. For each type, checks `TypeDefinition.Interfaces` for the prefix scope, then checks `TypeDefinition.Methods` for a method matching `requiredMethodName` (exact name match, any overload). Returns false (rule violated) if no such method is found. Failure message includes the offending type name, the required method name, and the implementing interface.
+
+8. All methods in `RepositoryContractCompletenessRules` accept `Assembly` as their parameter and return `ConditionList`. The consuming test project must reference `SharedKernel.Persistence.Abstractions` to supply the assembly containing `IRepository<,>` and `IReadRepository<,>` implementors. The class lives in `SharedKernel.ArchitectureTests/Rules/`.
+
+9. `RepositoryContractCompletenessRules` must not hard-code assembly paths. It uses `Types.InAssembly(assembly)` exclusively. The caller supplies the persistence assembly via `typeof(SomeRepositoryType).Assembly`.
+
+10. `HasRequiredMethodPredicate` reuses the same Mono.Cecil `TypeDefinition` access pattern as the existing predicates. No new NuGet dependency.
+
+### PersistenceContractCompleteness — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Diagnostics/SK0011_GuidFormatCodeMisuseAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0011 fires on `Guid.ToString("N"/"B"/"P"/"X")` — enforces canonical `"D"` hyphenated format |
+| `Rules/RepositoryContractCompletenessRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: two predicate factory methods — `AllRepositoryImplementorsMustHaveExistsAsync`, `AllReadRepositoryImplementorsMustHaveGetByIdsAsync` |
+| `Predicates/HasRequiredMethodPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: scoped to interface-prefix types; fails if required method name is absent |
+
+### PersistenceContractCompleteness — Acceptance Criteria
+
+- [ ] SK0011 exists: `Guid.ToString("N")` in `AuditInterceptor` triggers Warning; `Guid.ToString("D")` and plain `Guid.ToString()` do not trigger; documented in `00.Governance/CLAUDE.md`
+- [ ] SK0011 semantic model check: the analyzer must not fire on a non-Guid type's `ToString("N")` call (e.g., `someString.ToString("N")` or `intValue.ToString("N")`)
+- [ ] Rule 2 exists: `[Fact]` test asserts all `IRepository<,>` implementors in `06.Persistence` assemblies have `ExistsAsync`; test passes on P-093-updated repositories; documented in `00.Governance/CLAUDE.md`
+- [ ] Rule 3 exists: `[Fact]` test asserts all `IReadRepository<,>` implementors in `06.Persistence` assemblies have `GetByIdsAsync`; documented in `00.Governance/CLAUDE.md`
+- [ ] All three rules run as `[Fact]` tests in the governance test suite; each has a descriptive failure message
+- [ ] Governance test suite passes with all new rules included
+
+### PersistenceContractCompleteness — Dependencies
+
+- Requires P-091 (`AuditInterceptor` and `SoftDeleteInterceptor` updated to use canonical GUID format): yes — SK0011 must pass on the updated interceptors; before P-091 the rule would fire as a warning on any existing non-`"D"` format usage
+- Requires P-093 (`ExistsAsync` on `IRepository<,>`, `GetByIdsAsync` on `IReadRepository<,>` added to the persistence interface): yes — Rules 2 and 3 assert method presence; without P-093 no existing implementations have these methods and both rules fail
+- Depends on `HasRequiredMethodPredicate` being a new predicate (no existing predicate serves this purpose): no prior dependency
+- Unblocks: CI contract completeness gate for all current and future `IRepository<,>` and `IReadRepository<,>` implementors in downstream services
+
+### PersistenceContractCompleteness — Tooling Version Notes
+
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0011 follows same constraint; semantic model `GetTypeInfo` is available in this version)
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref — no change; `HasRequiredMethodPredicate` uses same access pattern)
+- Target framework: `netstandard2.0` (Analyzers) / `net10.0` (ArchitectureTests)
+
+### PersistenceContractCompleteness — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-31 | Define SK0011 `GuidFormatCodeMisuse` — trigger: `Guid.ToString(string)` with format argument in `{"N","B","P","X"}` (case-insensitive); semantic model receiver-type check required to avoid false positives; severity: Warning; suppression: per-call-site `#pragma warning disable SK0011`; fix message: use `ToString()` or `ToString("D")` | SharedKernel.Analyzers | `○` |
+| D-32 | Define `RepositoryContractCompletenessRules` static class shape: `AllRepositoryImplementorsMustHaveExistsAsync(Assembly)` → `ConditionList`; `AllReadRepositoryImplementorsMustHaveGetByIdsAsync(Assembly)` → `ConditionList`; `HasRequiredMethodPredicate` design — interface name prefix scope + method name existence check via `TypeDefinition.Methods` | SharedKernel.ArchitectureTests | `○` |
+| C-36 | Implement SK0011 `GuidFormatCodeMisuseAnalyzer` — `InvocationExpressionSyntax` walker; extract `ToString` method name + single string literal argument; `SemanticModel.GetTypeInfo` check on receiver for `System.Guid`; report SK0011 on the format argument literal if format code is in `{"N","B","P","X"}` | SharedKernel.Analyzers | `○` |
+| C-37 | Implement `HasRequiredMethodPredicate` in `Predicates/` — `ICustomRule` constructed with `interfaceNamePrefix` and `requiredMethodName`; scopes to types whose `TypeDefinition.Interfaces` contains a prefix-matching entry; returns false with failure message if no method matching `requiredMethodName` is found in `TypeDefinition.Methods` | SharedKernel.ArchitectureTests | `○` |
+| C-38 | Implement `RepositoryContractCompletenessRules` static class in `Rules/` — two factory methods using `HasRequiredMethodPredicate("IRepository", "ExistsAsync")` and `HasRequiredMethodPredicate("IReadRepository", "GetByIdsAsync")`; both return `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| T-60 | Analyzer test SK0011 (fire path): `guid.ToString("N")` triggers SK0011; `guid.ToString("B")` triggers SK0011 | SharedKernel.Analyzers.Tests | `○` |
+| T-61 | Analyzer test SK0011 (pass path): `guid.ToString()` (no argument) does not trigger SK0011; `guid.ToString("D")` does not trigger SK0011 | SharedKernel.Analyzers.Tests | `○` |
+| T-62 | Analyzer test SK0011 (non-Guid pass path): `someString.ToString("N")` does not trigger SK0011 — semantic model receiver-type guard prevents false positive | SharedKernel.Analyzers.Tests | `○` |
+| T-63 | Architecture test Rule 2 (fire path): pass an assembly with an `IRepository<Order, Guid>` implementor that does NOT declare `ExistsAsync`; assert `AllRepositoryImplementorsMustHaveExistsAsync` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-64 | Architecture test Rule 2 (pass path): pass an assembly where all `IRepository<,>` implementors declare `ExistsAsync`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-65 | Architecture test Rule 3 (fire path): pass an assembly with an `IReadRepository<Order, Guid>` implementor that does NOT declare `GetByIdsAsync`; assert `AllReadRepositoryImplementorsMustHaveGetByIdsAsync` fails and names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-66 | Architecture test Rule 3 (pass path): pass an assembly where all `IReadRepository<,>` implementors declare `GetByIdsAsync`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| DO-14 | Document SK0011 and both `RepositoryContractCompletenessRules` predicates in `00.Governance/CLAUDE.md`: rationale tied to P-091 audit trail consistency and P-093 interface contract, offending-pattern examples, compliant-pattern examples, failure message content | SharedKernel.Analyzers, SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -766,7 +977,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 157.
+> Counts updated whenever a task state changes. Total tasks: 186.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -782,6 +993,8 @@ Format when active:
 | `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | 19 | 19 | 0 | `●` |
 | `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | 13 | 13 | 0 | `●` |
 | `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | 13 | 0 | 13 | `○` |
+| `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | 14 | 0 | 14 | `○` |
+| `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | 15 | 0 | 15 | `○` |
 
 ---
 
@@ -808,3 +1021,5 @@ Format when active:
 - [2026-05-31] DO-07–DO-11 → ● in SK.00.Docs — README.md extended with SK0007–SK0010 Roslyn analyzer docs, CachingAbstractionRules, DomainLayerPurityRules, DomainGoldStandardRules, ContractsPurityRules architecture test docs; Overall Progress table corrected for Core/Tests/Docs/CachingEnforcement/DomainLayerPurity/DomainGoldStandard/ContractsPurity — all phase keys now ● (state-map-phase)
 - [2026-06-01] Phase Persistence Architecture Enforcement added (SK.00.PersistenceEnforcement) — 13 tasks: D-27–D-29, C-30–C-32, T-46–T-51, DO-12; three NetArchTest predicates in PersistenceLayerProtectionRules; two new ICustomRule predicates (NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate); no new SK IDs; total tasks now 157 — WO-013 P-075
 - [2026-06-02] D-27–D-29 → ● in SK.00.Design — all three persistence enforcement design tasks complete; specs fully present in CLAUDE.md (PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate); SK.00.Design promoted to ● with 29/29 tasks done (state-map-phase)
+- [2026-06-02] Phase Persistence Architecture Rules Phase 2 added (SK.00.PersistenceEnforcement2) — 14 tasks: D-30, C-33–C-35, T-52–T-59, DO-13; four new NetArchTest predicates in PersistenceInterfaceOwnershipRules; two new ICustomRule predicates (InterfaceDeclarationOwnershipPredicate, NoGetByIdOnReadRepositoryPredicate); no new SK IDs; total tasks now 171 — WO-014 P-083
+- [2026-06-02] Phase Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness added (SK.00.PersistenceContractCompleteness) — 15 tasks: D-31–D-32, C-36–C-38, T-60–T-66, DO-14; SK0011 GuidFormatCodeMisuse registered; RepositoryContractCompletenessRules arch predicates defined; HasRequiredMethodPredicate ICustomRule; total tasks now 186 — WO-016 P-096

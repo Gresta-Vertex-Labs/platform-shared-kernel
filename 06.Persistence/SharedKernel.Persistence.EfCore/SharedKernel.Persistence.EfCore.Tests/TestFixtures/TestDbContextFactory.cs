@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using SharedKernel.Persistence.EfCore.Interceptors;
-using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
@@ -19,7 +19,7 @@ internal static class TestDbContextFactory
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
             .Options;
 
-        userContext ??= CreateUserContext("test-user");
+        userContext ??= CreateAuthenticatedUserContext(Guid.NewGuid());
         clock ??= CreateClock(DateTimeOffset.UtcNow);
 
         var audit = new AuditInterceptor(userContext, clock);
@@ -32,7 +32,7 @@ internal static class TestDbContextFactory
     }
 
     public static TenantedTestDbContext CreateTenantedDbContext(
-        ICurrentTenantService? tenantService = null,
+        ITenantProvider? tenantProvider = null,
         IUserContext? userContext = null,
         IClock? clock = null)
     {
@@ -40,23 +40,44 @@ internal static class TestDbContextFactory
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
             .Options;
 
-        userContext ??= CreateUserContext("test-user");
+        userContext ??= CreateAuthenticatedUserContext(Guid.NewGuid());
         clock ??= CreateClock(DateTimeOffset.UtcNow);
-        tenantService ??= CreateTenantService(null);
+        tenantProvider ??= CreateTenantProvider(Guid.Empty);
 
         var audit = new AuditInterceptor(userContext, clock);
         var softDelete = new SoftDeleteInterceptor(userContext, clock);
         var concurrency = new ConcurrencyInterceptor();
 
-        var ctx = new TenantedTestDbContext(options, audit, softDelete, concurrency, tenantService);
+        var ctx = new TenantedTestDbContext(options, audit, softDelete, concurrency, tenantProvider);
         ctx.Database.EnsureCreated();
         return ctx;
     }
 
-    public static IUserContext CreateUserContext(string userId)
+    /// <summary>Creates an authenticated IUserContext mock with the specified UserId.</summary>
+    public static IUserContext CreateAuthenticatedUserContext(Guid userId)
     {
         var mock = Substitute.For<IUserContext>();
         mock.UserId.Returns(userId);
+        mock.IsAuthenticated.Returns(true);
+        mock.Email.Returns((string?)null);
+        mock.Username.Returns((string?)null);
+        mock.Roles.Returns([]);
+        mock.Claims.Returns(new Dictionary<string, string>());
+        mock.HasRole(Arg.Any<string>()).Returns(false);
+        return mock;
+    }
+
+    /// <summary>Creates an unauthenticated IUserContext mock (produces "system" audit values).</summary>
+    public static IUserContext CreateUnauthenticatedUserContext()
+    {
+        var mock = Substitute.For<IUserContext>();
+        mock.UserId.Returns(Guid.Empty);
+        mock.IsAuthenticated.Returns(false);
+        mock.Email.Returns((string?)null);
+        mock.Username.Returns((string?)null);
+        mock.Roles.Returns([]);
+        mock.Claims.Returns(new Dictionary<string, string>());
+        mock.HasRole(Arg.Any<string>()).Returns(false);
         return mock;
     }
 
@@ -67,9 +88,9 @@ internal static class TestDbContextFactory
         return mock;
     }
 
-    public static ICurrentTenantService CreateTenantService(Guid? tenantId)
+    public static ITenantProvider CreateTenantProvider(Guid tenantId)
     {
-        var mock = Substitute.For<ICurrentTenantService>();
+        var mock = Substitute.For<ITenantProvider>();
         mock.TenantId.Returns(tenantId);
         return mock;
     }

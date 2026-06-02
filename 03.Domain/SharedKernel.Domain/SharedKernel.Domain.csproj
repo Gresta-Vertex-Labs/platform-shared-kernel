@@ -6,9 +6,23 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Domain</PackageId>
-    <Version>1.3.0</Version>
-    <PackageVersion>1.3.0</PackageVersion>
-    <PackageReleaseNotes>1.3.0 (WO-011):
+    <Version>1.5.0</Version>
+    <PackageVersion>1.5.0</PackageVersion>
+    <PackageReleaseNotes>1.5.0 (WO-014 / P-081):
+- IDomainEventDispatcher interface added (C-36): single method Task DispatchAsync(IReadOnlyList&lt;IDomainEvent&gt;, CancellationToken); opt-in DI contract — not auto-registered by any infrastructure builder.
+- Contract rules: empty events list must be treated as a no-op by any conforming implementation; handler exceptions must propagate unchanged without swallowing.
+- Consumed by EfUnitOfWork in 06.Persistence.EfCore as an optional dependency; consuming services register an implementation alongside their persistence builder.
+- IDomainEventHandler&lt;TEvent&gt; is NOT added here — handler registration remains 05.Application territory. MediatR-based implementation (MediatRDomainEventDispatcher) is a future 05.Application phase.
+- Zero new NuGet dependencies — references only IDomainEvent already in this package.
+
+1.4.0 (WO-016 / P-095):
+- ISpecification&lt;T&gt;.IncludeDeleted flag added (C-35): when true, the consuming repository must bypass the global soft-delete query filter so soft-deleted records are included in results; default false.
+- Specification&lt;T&gt;.IncludeSoftDeleted() protected builder method added: call in concrete spec constructors for admin/audit/export/recovery specifications only; never in user-facing query specifications.
+- AndSpecification&lt;T&gt;, OrSpecification&lt;T&gt;, NotSpecification&lt;T&gt; now propagate IncludeDeleted = true when any operand has it set (more-permissive wins, mirrors AsNoTracking propagation).
+- WARNING: IgnoreQueryFilters() bypasses ALL EF Core global query filters including tenant isolation; re-apply tenant criterion manually via AddCriteria(e => e.TenantId == tenantId) for tenant-scoped soft-delete queries.
+- Prerequisite for P-080 Capability 5 (soft-delete filter encapsulation in 06.Persistence.EfCore).
+
+1.3.0 (WO-011):
 - IHasDomainEvents interface extracted (P-045): DomainEvents + ClearDomainEvents moved to IHasDomainEvents; IAggregateRoot&lt;TId&gt; extends it; infrastructure dispatch must depend on IHasDomainEvents only.
 - SingleValueObject&lt;TValue&gt; abstract class added (P-046): extends ValueObject; Value assigned before Validate() runs (construction-order safe); sealed GetEqualityComponents, ToString, implicit operator TValue.
 - DomainService abstract class added (P-047): implements IDomainService; protected static CheckRule; no IClock, no DomainEvents, no repository access.

@@ -3,7 +3,7 @@ using System.Data;
 namespace SharedKernel.Persistence.Abstractions.Connections;
 
 /// <summary>
-/// Factory that produces open database connections for use by Dapper read-side services.
+/// Factory that produces open database connections for low-level data access.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -12,9 +12,9 @@ namespace SharedKernel.Persistence.Abstractions.Connections;
 /// returned connection — recommended pattern is <c>await using var conn = await factory.CreateConnectionAsync(ct);</c>.
 /// </para>
 /// <para>
-/// This factory is used exclusively by Dapper read-side services (<c>DapperReadService</c>
-/// subclasses). EF Core repositories never use this factory — they obtain connections implicitly
-/// through <c>DbContext</c>.
+/// Any component needing a raw <see cref="IDbConnection"/> may inject this factory —
+/// it is not restricted to Dapper. EF Core repositories obtain connections implicitly
+/// through <c>DbContext</c> and do not use this factory.
 /// </para>
 /// </remarks>
 public interface IDbConnectionFactory

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
 
@@ -23,15 +24,23 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </list>
 /// </para>
 /// <para>
+/// <strong>Audit string format (P-091):</strong> The audit column value is:
+/// <list type="bullet">
+///   <item><description>
+///     <c>userContext.UserId.ToString("D")</c> (lowercase hyphenated GUID, 36 chars) when
+///     <c>IUserContext.IsAuthenticated == true</c> and <c>UserId != Guid.Empty</c>.
+///   </description></item>
+///   <item><description>
+///     <c>"system"</c> otherwise (unauthenticated, background jobs, seeding operations).
+///   </description></item>
+/// </list>
+/// Audit columns are configured with <c>HasMaxLength(256)</c> which accommodates both formats.
+/// </para>
+/// <para>
 /// <strong>Mutation rule:</strong> All field writes go exclusively through
 /// <c>ChangeTracker.Entry(entity).CurrentValues[propertyName]</c>. Direct property setters on
 /// entity instances are never called — doing so would bypass EF Core's change-tracking
 /// and violate the aggregate root encapsulation contract.
-/// </para>
-/// <para>
-/// <strong>Fallback strategy:</strong> When <see cref="IUserContext.UserId"/> is empty or
-/// whitespace, the literal string <c>"system"</c> is used as the fallback identifier.
-/// This covers background jobs and seeding operations where no HTTP context exists.
 /// </para>
 /// </remarks>
 public sealed class AuditInterceptor : SaveChangesInterceptor
@@ -43,7 +52,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// Initialises a new <see cref="AuditInterceptor"/> with the required dependencies.
     /// </summary>
     /// <param name="userContext">
-    /// Scoped DI dependency providing the current user's identifier. Never <see langword="null"/>.
+    /// Scoped DI dependency providing the current user's identity. Never <see langword="null"/>.
     /// </param>
     /// <param name="clock">
     /// Abstracted system clock for deterministic timestamp production. Never <see langword="null"/>.
@@ -78,7 +87,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     {
         if (context is null) return;
 
-        var userId = string.IsNullOrWhiteSpace(_userContext.UserId) ? "system" : _userContext.UserId;
+        var userId = ResolveUserId();
         var now = _clock.UtcNow;
 
         foreach (var entry in context.ChangeTracker.Entries())
@@ -96,4 +105,10 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
             }
         }
     }
+
+    // Resolves the audit string from the current IUserContext per P-091 rules.
+    private string ResolveUserId()
+        => _userContext.IsAuthenticated && _userContext.UserId != Guid.Empty
+            ? _userContext.UserId.ToString("D")
+            : "system";
 }

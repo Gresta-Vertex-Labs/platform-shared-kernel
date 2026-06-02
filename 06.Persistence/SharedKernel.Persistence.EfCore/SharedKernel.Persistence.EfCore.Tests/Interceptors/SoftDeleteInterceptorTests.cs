@@ -1,7 +1,9 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
@@ -12,9 +14,9 @@ public sealed class SoftDeleteInterceptorTests
     {
         // Arrange
         var now = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
-        var userId = "carol";
+        var userId = Guid.NewGuid();
         using var ctx = TestDbContextFactory.CreateTestDbContext(
-            userContext: TestDbContextFactory.CreateUserContext(userId),
+            userContext: TestDbContextFactory.CreateAuthenticatedUserContext(userId),
             clock: TestDbContextFactory.CreateClock(now));
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "ToSoftDelete", new SystemClock());
@@ -36,7 +38,59 @@ public sealed class SoftDeleteInterceptorTests
         stillThere.Should().NotBeNull();
         stillThere!.IsDeleted.Should().BeTrue();
         stillThere.DeletedOn.Should().Be(now);
-        stillThere.DeletedBy.Should().Be(userId);
+        stillThere.DeletedBy.Should().Be(userId.ToString("D"));
+    }
+
+    [Fact]
+    public async Task SaveChanges_Unauthenticated_DeletedBy_IsSystem()
+    {
+        // Arrange — P-091: unauthenticated → DeletedBy = "system"
+        var now = DateTimeOffset.UtcNow;
+        using var ctx = TestDbContextFactory.CreateTestDbContext(
+            userContext: TestDbContextFactory.CreateUnauthenticatedUserContext(),
+            clock: TestDbContextFactory.CreateClock(now));
+
+        var aggregate = new AuditableTestAggregate(TestId.New(), "SoftDeleteSystem", new SystemClock());
+        ctx.AuditableAggregates.Add(aggregate);
+        await ctx.SaveChangesAsync();
+
+        ctx.ChangeTracker.Clear();
+        var toDelete = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
+        ctx.AuditableAggregates.Remove(toDelete!);
+        await ctx.SaveChangesAsync();
+
+        ctx.ChangeTracker.Clear();
+        var stillThere = await ctx.AuditableAggregates
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
+        stillThere!.DeletedBy.Should().Be("system");
+    }
+
+    [Fact]
+    public async Task SaveChanges_AuthenticatedWithGuidEmpty_DeletedBy_IsSystem()
+    {
+        // Arrange — P-091: IsAuthenticated == true but UserId == Guid.Empty → "system"
+        var mock = Substitute.For<IUserContext>();
+        mock.UserId.Returns(Guid.Empty);
+        mock.IsAuthenticated.Returns(true);
+        mock.Roles.Returns([]);
+        mock.Claims.Returns(new Dictionary<string, string>());
+
+        using var ctx = TestDbContextFactory.CreateTestDbContext(userContext: mock);
+        var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());
+        ctx.AuditableAggregates.Add(aggregate);
+        await ctx.SaveChangesAsync();
+
+        ctx.ChangeTracker.Clear();
+        var toDelete = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
+        ctx.AuditableAggregates.Remove(toDelete!);
+        await ctx.SaveChangesAsync();
+
+        ctx.ChangeTracker.Clear();
+        var stillThere = await ctx.AuditableAggregates
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(e => e.Id == aggregate.Id);
+        stillThere!.DeletedBy.Should().Be("system");
     }
 
     [Fact]

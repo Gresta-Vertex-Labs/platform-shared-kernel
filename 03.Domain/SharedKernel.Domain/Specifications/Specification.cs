@@ -29,6 +29,7 @@ public abstract class Specification<T> : ISpecification<T>
     private readonly List<Expression<Func<T, object>>> _includes = [];
     private readonly List<(Expression<Func<T, object>> KeySelector, bool Descending)> _thenBys = [];
     private bool _asNoTracking;
+    private bool _includeDeleted;
     private Func<T, bool>? _compiledCriteria;
 
     /// <inheritdoc/>
@@ -58,6 +59,9 @@ public abstract class Specification<T> : ISpecification<T>
 
     /// <inheritdoc/>
     public bool AsNoTracking => _asNoTracking;
+
+    /// <inheritdoc/>
+    public bool IncludeDeleted => _includeDeleted;
 
     /// <summary>Sets the filter predicate for this specification.</summary>
     protected void AddCriteria(Expression<Func<T, bool>> criteria) => Criteria = criteria;
@@ -101,6 +105,18 @@ public abstract class Specification<T> : ISpecification<T>
     /// change-tracking (e.g., <c>AsNoTracking()</c>) when applying this specification.
     /// </summary>
     protected void ApplyNoTracking() => _asNoTracking = true;
+
+    /// <summary>
+    /// Marks this specification as soft-delete-inclusive — the consuming repository must bypass the
+    /// global soft-delete query filter so that soft-deleted records appear in results.
+    /// </summary>
+    /// <remarks>
+    /// Call this only in constructors of admin, audit, export, or recovery specifications.
+    /// Never call it from read-model or user-facing query specifications.
+    /// See <see cref="ISpecification{T}.IncludeDeleted"/> for the full bypass warning regarding
+    /// tenant isolation.
+    /// </remarks>
+    protected void IncludeSoftDeleted() => _includeDeleted = true;
 
     /// <summary>
     /// Evaluates whether <paramref name="entity"/> satisfies this specification's <see cref="Criteria"/>.

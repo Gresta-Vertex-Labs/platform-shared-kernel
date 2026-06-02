@@ -206,7 +206,7 @@ public sealed class DomainPrimitiveConventionTests
         var options = new DbContextOptionsBuilder<ValueObjectConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
             .Options;
-        var userCtx = TestDbContextFactory.CreateUserContext("test");
+        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var ctx = new ValueObjectConventionDbContext(
             options,
@@ -222,7 +222,7 @@ public sealed class DomainPrimitiveConventionTests
         var options = new DbContextOptionsBuilder<SimpleConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
             .Options;
-        var userCtx = TestDbContextFactory.CreateUserContext("test");
+        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var ctx = new SimpleConventionDbContext(
             options,
@@ -238,7 +238,7 @@ public sealed class DomainPrimitiveConventionTests
         var options = new DbContextOptionsBuilder<FullAuditConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
             .Options;
-        var userCtx = TestDbContextFactory.CreateUserContext("test");
+        var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var ctx = new FullAuditConventionDbContext(
             options,

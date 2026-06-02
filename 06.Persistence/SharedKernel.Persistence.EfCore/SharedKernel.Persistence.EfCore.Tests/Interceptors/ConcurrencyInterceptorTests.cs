@@ -64,7 +64,7 @@ public sealed class ConcurrencyInterceptorTests
             .UseSqlite(connStr)
             .Options;
 
-        var userContext = TestDbContextFactory.CreateUserContext("test");
+        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var audit1 = new AuditInterceptor(userContext, clock);
         var softDel1 = new SoftDeleteInterceptor(userContext, clock);

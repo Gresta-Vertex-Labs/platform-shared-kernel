@@ -23,5 +23,8 @@ public sealed class NotSpecification<T> : Specification<T>
 
         if (spec.AsNoTracking)
             ApplyNoTracking();
+
+        if (spec.IncludeDeleted)
+            IncludeSoftDeleted();
     }
 }

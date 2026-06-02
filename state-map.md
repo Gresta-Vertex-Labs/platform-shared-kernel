@@ -67,7 +67,7 @@ Format when blocked:
 | 00 | [Governance](00.Governance/state-map.md) | Design | `●` | All 29 Design tasks complete — SK0001–SK0010 diagnostic registry, ArchitectureTests contract shapes (PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate), and BenchmarkConfig/Linter strategies fully specified. | Implement PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, and architecture test suite (C-30–C-32, T-46–T-51, DO-12). |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
-| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.2.0 and 1.3.0 packed and published to nupkgs/; manifests list only SharedKernel.Primitives and SharedKernel.Core; all 7 Published tasks complete. | — |
+| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | SharedKernel.Persistence.Abstractions 1.0.0 and SharedKernel.Persistence.EfCore 1.0.0 packed; Abstractions verified ORM-free; EfCore lists EF deps but not Npgsql; all 6 phases complete. | — |
@@ -1752,6 +1752,20 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-02] Security → Published (●) — promoted from SK.12.Published (state-map-phase)
 - [2026-06-02] Phase Backlog entries for 12.Security closed → ● Complete — 12.Security reached Published (state-map-phase)
 - [2026-06-02] Governance → Design (●) — promoted from SK.00.Design (state-map-phase)
+- [2026-06-02] Phase(s) P-095 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-06-02] Phase(s) P-078, P-079, P-082, P-091, P-092, P-093, P-094 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-06-02] P-081 moved from 05.Application → 03.Domain: IDomainEventDispatcher interface belongs in Domain layer, not Application layer — eliminates 06.Persistence→05.Application coupling (arch-fix)
+- [2026-06-02] P-080 Depends on updated: P-081 removed as Application dep (now in 03.Domain), P-095 added (IncludeDeleted prereq); P-080 unblocked (arch-fix)
+- [2026-06-02] Phase(s) P-081 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-06-02] Phase(s) P-080 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-06-02] Phase(s) P-083, P-096 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-02] Domain → Design (●) — promoted from SK.03.Design (state-map-phase)
+- [2026-06-02] Domain → Core (●) — promoted from SK.03.Core (state-map-phase)
+- [2026-06-02] Domain → Tests (●) — promoted from SK.03.Tests (state-map-phase)
+- [2026-06-02] Domain → Docs (●) — promoted from SK.03.Docs (state-map-phase)
+- [2026-06-02] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
+- [2026-06-02] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+- [2026-06-02] Persistence → Design (●) — promoted from SK.06.Design; D-15..D-25 verified complete (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -3642,7 +3656,7 @@ Both `IUserContext` and `ICurrentTenantService` are currently duplicated/misplac
 ---
 ### P-078 — Persistence EfCore: Migrate IUserContext and ICurrentTenantService to Security.Abstractions
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-014
 **Domain:** 06.Persistence
 **Depends on:** P-077
@@ -3684,7 +3698,7 @@ The local `IUserContext` and `ICurrentTenantService` declarations in `06.Persist
 ---
 ### P-079 — Persistence Abstractions: Clean Up IDbConnectionFactory Doc + Add Projection Specification Contract
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-014
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -3716,10 +3730,10 @@ The projection specification gap is the single most common reason teams reach ar
 ---
 ### P-080 — Persistence EfCore: Bulk Operations, Projection Reads, Paged Result, Domain Event Dispatch, and IQueryable Leak Fix
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-014
 **Domain:** 06.Persistence
-**Depends on:** P-079, P-081
+**Depends on:** P-079, P-081, P-095
 
 #### What is needed
 
@@ -3739,7 +3753,7 @@ Update `EfReadRepository` to implement both. Update `SpecificationEvaluator<T>` 
 Add `ListPagedAsync(ISpecification<TAggregate> spec, CancellationToken ct)` returning `Task<PagedList<TAggregate>>` to `IReadRepository` (Abstractions) where `PagedList<T>` is the type already defined in `04.Contracts`. This method issues a count query (using `spec` without Skip/Take) and a data query (using `spec` with Skip/Take) as two database round-trips under the same `DbContext` scope.
 
 **Capability 4 — Domain event dispatch hook in `EfUnitOfWork`.**
-Update `EfUnitOfWork` to accept an optional `IDomainEventDispatcher` from `05.Application`. After `_dbContext.SaveChangesAsync(ct)` succeeds, `EfUnitOfWork` collects all domain events from `IHasDomainEvents` tracked entities via `ChangeTracker.Entries<IHasDomainEvents>()`, calls `IDomainEventDispatcher.DispatchAsync(events, ct)`, and clears the event collection on each aggregate. The dispatcher is optional — consuming services opt in by registering an `IDomainEventDispatcher`.
+Update `EfUnitOfWork` to accept an optional `IDomainEventDispatcher` from `SharedKernel.Domain` (`03.Domain`). After `_dbContext.SaveChangesAsync(ct)` succeeds, `EfUnitOfWork` collects all domain events from `IHasDomainEvents` tracked entities via `ChangeTracker.Entries<IHasDomainEvents>()`, calls `IDomainEventDispatcher.DispatchAsync(events, ct)`, and clears the event collection on each aggregate. The dispatcher is optional — consuming services opt in by registering an `IDomainEventDispatcher`. No reference to `05.Application` is introduced — `IDomainEventDispatcher` lives in `03.Domain` which `06.Persistence` already references.
 
 **Capability 5 — Fix `QueryableExtensions.IgnoreSoftDeleteFilter` IQueryable leakage.**
 Remove `QueryableExtensions.IgnoreSoftDeleteFilter` entirely. Add a boolean flag `IncludeDeleted` to `ISpecification<T>` in `SharedKernel.Domain`. Handle it in `SpecificationEvaluator`: when `spec.IncludeDeleted == true`, call `.IgnoreQueryFilters()` on the query before applying criteria. The `QueryableExtensions` class is deleted.
@@ -3762,43 +3776,43 @@ These six capabilities represent the most common points where teams across hundr
 - [ ] All existing tests pass; new unit tests (SQLite in-memory) cover every new capability
 
 ---
-### P-081 — Application: IDomainEventDispatcher Abstraction
 
-**Status:** `○` Pending
+### P-081 — Domain: IDomainEventDispatcher Interface
+
+**Status:** `●` Complete
 **Work Order:** WO-014
-**Domain:** 05.Application
+**Domain:** 03.Domain
 **Depends on:** None
 
 #### What is needed
 
-Add an `IDomainEventDispatcher` interface to `05.Application`. This is a single, minimal interface:
+Add an `IDomainEventDispatcher` interface to `SharedKernel.Domain` (`03.Domain`). This is a single, minimal interface:
 
-`IDomainEventDispatcher` — one method: `DispatchAsync(IReadOnlyList<IDomainEvent> events, CancellationToken ct)` returning `Task`. The implementation (MediatR-based, publishing each event via `IPublisher`) lives in the same package as a concrete class `MediatRDomainEventDispatcher`. `IDomainEvent` is imported from `SharedKernel.Domain`.
+`IDomainEventDispatcher` — one method: `DispatchAsync(IReadOnlyList<IDomainEvent> events, CancellationToken ct)` returning `Task`. `IDomainEvent` is already defined in `SharedKernel.Domain` — this interface has zero dependencies outside `03.Domain`.
 
-This interface is consumed by `EfUnitOfWork` in `06.Persistence.EfCore` (P-080). It must be defined at or before P-080.
+**Why 03.Domain and not 05.Application:** Dispatching domain events is a domain-layer concept — the interface only references `IDomainEvent` which lives in `03.Domain`. Placing the interface in `05.Application` forces `06.Persistence.EfCore` to take a dependency on the application layer just to wire the optional dispatch hook in `EfUnitOfWork`. That coupling is wrong: `06.Persistence` already references `03.Domain`, so moving the interface there eliminates the cross-layer dependency entirely. The MediatR-based implementation (`MediatRDomainEventDispatcher`, which does depend on MediatR) is a future `05.Application` concern — it is not part of this phase.
 
-The default `MediatRDomainEventDispatcher` implementation publishes each domain event as an `INotification` via `IPublisher`. Events not handled by any registered handler are silently ignored (MediatR default). The dispatcher does not swallow handler exceptions — if a handler throws, the exception propagates to the caller.
-
-`IDomainEventDispatcher` is not registered by `EfCorePersistenceBuilder` — it is opt-in via the consuming service's DI composition. Services that want automatic domain event dispatch register `MediatRDomainEventDispatcher` (or their own implementation) alongside the `EfCorePersistenceBuilder.Build()` call.
+`IDomainEventDispatcher` is consumed by `EfUnitOfWork` in `06.Persistence.EfCore` (P-080) as an optional dependency. It is not registered by `EfCorePersistenceBuilder` — consuming services opt in by registering an implementation alongside `.Build()`.
 
 #### Why this is needed
 
-Domain events collected on aggregates during a command must be dispatched after the commit succeeds. Without a first-class dispatcher contract in `05.Application`, each service team wires their own dispatch logic inconsistently. Placing the interface in `05.Application` respects the layering rule: `06.Persistence` may reference layers 01–05, so `EfUnitOfWork` can receive the dispatcher via DI without any layering violation. A MediatR-based default implementation is provided so teams do not need to write one from scratch.
+Domain events collected on aggregates during a command must be dispatched after the unit of work commits. Without a first-class interface in `03.Domain`, the persistence layer cannot express the optional dispatch hook without coupling to the application layer. Locating the interface in `03.Domain` means any layer from 03 upward (Persistence, Application, ServiceDefaults) can implement or consume it without layering violations. The MediatR-based default implementation is a separate future phase in `05.Application`.
 
 #### Acceptance criteria
 
-- [ ] `IDomainEventDispatcher` interface exists in `05.Application` with `DispatchAsync(IReadOnlyList<IDomainEvent>, CancellationToken)` returning `Task`
-- [ ] `MediatRDomainEventDispatcher` implements `IDomainEventDispatcher` using `IPublisher.Publish` per event; events dispatched in order
-- [ ] Empty event list is a no-op (no MediatR calls)
-- [ ] Handler exceptions propagate unchanged — no swallowing
-- [ ] DI registration extension or documentation covers how consuming services register the dispatcher
-- [ ] Full XML doc comments on both the interface and the default implementation
-- [ ] Unit tests cover: single event dispatched; multiple events dispatched in order; empty list is no-op; handler exception propagates unchanged
+- [ ] `IDomainEventDispatcher` interface exists in `SharedKernel.Domain` with `DispatchAsync(IReadOnlyList<IDomainEvent>, CancellationToken)` returning `Task`
+- [ ] Interface lives in the `SharedKernel.Domain` namespace under `03.Domain/SharedKernel.Domain/`
+- [ ] Zero NuGet dependencies introduced — interface only references `IDomainEvent` which is already in the package
+- [ ] Empty event list is treated as a no-op by any conforming implementation (document in XML doc)
+- [ ] Handler exceptions must propagate unchanged — document in XML doc; no swallowing
+- [ ] Full XML doc comments on the interface including the opt-in DI contract and no-op empty-list behaviour
+- [ ] `ContractShapeTests` in `SharedKernel.Domain.Tests` verify interface shape and namespace
+- [ ] `03.Domain/CLAUDE.md` updated to list `IDomainEventDispatcher` in the public surface
 
 ---
 ### P-082 — Persistence EfCore: Fix TenantedDbContext Reflection in OnModelCreating
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-014
 **Domain:** 06.Persistence
 **Depends on:** P-078
@@ -3829,7 +3843,7 @@ The reflection in `TenantedDbContext.OnModelCreating` violates the AOT-preferred
 ---
 ### P-083 — Governance: Persistence Architecture Rules Phase 2 — Interface Migration Enforcement
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-014
 **Domain:** 00.Governance
 **Depends on:** P-078
@@ -4186,5 +4200,274 @@ Packing and doing a consumer verify is the only way to confirm that the package 
 - [ ] Consumer verify: `IsAuthenticated == false`, `UserId == Guid.Empty`, `HasRole("anything") == false` via `AnonymousUserContext`
 - [ ] Consumer verify: `SecurityClaimTypes.UserId == "sub"`
 - [ ] `12.Security/state-map.md` Package Board row for `SharedKernel.Security.Abstractions` updated to `Published`
+
+---
+
+---
+### P-091 — Persistence EfCore: Audit Interceptor String Adapter for Guid-typed IUserContext.UserId
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-016
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`AuditInterceptor` and `SoftDeleteInterceptor` in `SharedKernel.Persistence.EfCore` currently call `_userContext.UserId` expecting a `string`, which is the type on the local `IUserContext` declared in `EfCore/Interceptors/`. When P-078 migrates to `SharedKernel.Security.Abstractions.IUserContext`, the `UserId` property becomes `Guid` — a breaking type change. The audit columns `CreatedBy`, `ModifiedBy`, and `DeletedBy` are mapped as `string` columns in the database (configured in `EntityTypeConfigurationBase` as `HasMaxLength(256)`). These columns must continue to receive a `string` value.
+
+The resolution requires an explicit adapter decision. The correct approach is:
+
+**Use `IUserContext.UserId.ToString()` as the string representation for audit fields.** The `Guid` UUID value (`"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"`) is a stable, unique, human-readable identifier that fits within the `HasMaxLength(256)` constraint. `"system"` remains the fallback when `IsAuthenticated == false` or `UserId == Guid.Empty`.
+
+Update both interceptors to produce the audit string as follows:
+- When `userContext.IsAuthenticated == true` and `userContext.UserId != Guid.Empty`: use `userContext.UserId.ToString()` (lowercase hyphenated GUID string, format "D")
+- When `userContext.IsAuthenticated == false` or `UserId == Guid.Empty`: use the fallback value `"system"`
+
+The `NoOpUserContext` that ships as the DI fallback in `EfCorePersistenceBuilder.Build()` must return `UserId = Guid.Empty` and `IsAuthenticated = false` — consistent with `AnonymousUserContext` from Security.Abstractions.
+
+Update `06.Persistence/CLAUDE.md` to document the audit string format: "Audit fields `CreatedBy`, `ModifiedBy`, and `DeletedBy` store the `UserId` as a lowercase hyphenated GUID string. When no user context is available (background jobs, migrations), the literal `\"system\"` is stored."
+
+#### Why this is needed
+
+When P-078 removes the local `IUserContext` (which had `string UserId`) and replaces it with `SharedKernel.Security.Abstractions.IUserContext` (which has `Guid UserId`), the interceptors will fail to compile unless the `string`→`Guid` adapter is in place. More importantly, this decision must be made **before** P-078 is dispatched — it is a behavioral contract that affects every audit record written by every downstream service. Getting this right on first implementation avoids a database migration in hundreds of services.
+
+#### Acceptance criteria
+
+- [ ] `AuditInterceptor` produces audit string as `userId.ToString()` (format `"D"`) when `IsAuthenticated == true && UserId != Guid.Empty`; falls back to `"system"` otherwise
+- [ ] `SoftDeleteInterceptor` applies the same adapter logic for `DeletedBy`
+- [ ] `NoOpUserContext` (the DI fallback) returns `UserId = Guid.Empty` and `IsAuthenticated = false` — triggers the `"system"` fallback path
+- [ ] Audit string format is `"system"` or a lowercase hyphenated GUID — no other format (no uppercase, no braces, no `"N"` format)
+- [ ] `EntityTypeConfigurationBase` `HasMaxLength(256)` constraint accommodates GUID string length (36 chars) — no change needed, but verified
+- [ ] All existing `AuditInterceptorTests` and `SoftDeleteInterceptorTests` are updated to match the new adapter behavior
+- [ ] New test: when `IsAuthenticated == false`, `CreatedBy` receives `"system"` — not an empty GUID string, not null
+- [ ] New test: when `IsAuthenticated == true` with a valid `UserId`, `CreatedBy` receives the hyphenated lowercase GUID string
+- [ ] `06.Persistence/CLAUDE.md` documents the audit string format and the `"system"` fallback rule
+- [ ] No behavioral regression for services that supply a real `IUserContext` from `SharedKernel.Security.Oidc`
+
+---
+
+---
+### P-092 — Persistence EfCore: ICurrentTenantService → ITenantProvider Nullability Resolution
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-016
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`ICurrentTenantService.TenantId` in `06.Persistence.EfCore` is declared as `Guid?` (nullable). `ITenantProvider.TenantId` in `SharedKernel.Security.Abstractions` is declared as `Guid` (non-nullable; returns `Guid.Empty` as the no-tenant sentinel). When P-078 migrates `TenantedDbContext` from `ICurrentTenantService` to `ITenantProvider`, the global query filter changes from:
+
+```
+e.TenantId == CurrentTenantService.TenantId   // Guid? comparison — nullable SQL semantics
+```
+
+to:
+
+```
+e.TenantId == TenantProvider.TenantId         // Guid comparison — non-nullable SQL semantics
+```
+
+This is a behavioral difference. The nullable `Guid?` comparison generates SQL `IS NULL` or `= NULL` logic at the EF Core translation layer, which can produce unexpected filter results (entities with `TenantId = null` in the DB would be excluded regardless). The non-nullable `Guid` comparison always generates `= '00000000-0000-0000-0000-000000000000'` when no tenant is present, which would match only rows where `TenantId` is the zero GUID — a well-defined, safe sentinel.
+
+The resolution: `TenantedDbContext` after migration must document and test the new filter behavior explicitly. The `NoOpTenantProvider` (no-op `ITenantProvider` placeholder registered by `EfCorePersistenceBuilder.WithMultiTenancy()`) must return `Guid.Empty`. The global query filter becomes `e.TenantId == Guid.Empty` when no tenant is set — which correctly returns zero rows (no entity should have `TenantId == Guid.Empty` in production). This is a safer sentinel than `null` because it avoids `IS NULL` SQL complexity.
+
+Specifically:
+1. Document in `06.Persistence/CLAUDE.md` that `TenantId == Guid.Empty` is the no-tenant filter state; no rows match; this is intentional and safe.
+2. The `NoOpTenantProvider` (`NoOpCurrentTenantService` successor) must return `Guid.Empty`.
+3. A new integration test must verify: when no real `ITenantProvider` is registered (only the no-op placeholder), `TenantedDbContext` queries return zero rows for `IHasTenant` entities regardless of their `TenantId` value.
+4. Update `EntityTypeConfigurationBase` to add a check: if `TenantId` is stored as a required non-nullable column (which it should be per `ConfigureTenantColumn`), no database row should ever have `TenantId == Guid.Empty`. Add an assertion comment in the configuration.
+
+This phase is a prerequisite clarification and documentation phase for P-078 — it does not change production behavior but makes the behavioral contract explicit before P-078 executes.
+
+#### Why this is needed
+
+`Guid?` vs `Guid` in the tenant filter is a correctness boundary. If the migration from P-078 produces a filter `e.TenantId == Guid.Empty` without this being understood and tested, the no-op placeholder silently shows zero rows to all queries — which looks like a data loss bug, not a configuration issue. Teams that forget to register a real `ITenantProvider` will see an empty database and spend hours debugging. This phase ensures the behavior is understood, tested, and documented as a design decision rather than a surprise.
+
+#### Acceptance criteria
+
+- [ ] `06.Persistence/CLAUDE.md` documents the `Guid.Empty` no-tenant sentinel behavior: "When no real `ITenantProvider` is registered, the no-op placeholder returns `Guid.Empty`, producing the filter `TenantId == Guid.Empty`. No production row should have `TenantId == Guid.Empty`. This is the intended safe default: unconfigured multi-tenancy returns zero rows rather than all rows."
+- [ ] `NoOpTenantProvider` (successor to `NoOpCurrentTenantService`) returns `Guid.Empty` explicitly, not `default(Guid)`  — same value but explicit intent
+- [ ] Integration test (SQLite): a `TenantedDbContext` with no real `ITenantProvider` (only no-op) returns zero rows for entities with any non-empty `TenantId`
+- [ ] Integration test (SQLite): a `TenantedDbContext` with a real `ITenantProvider` returning `tenantId = X` returns only rows where `TenantId == X`
+- [ ] `EntityTypeConfigurationBase.ConfigureTenantColumn` includes an XML doc comment stating: "`TenantId` must never be `Guid.Empty` in production rows — `Guid.Empty` is the no-tenant sentinel used by the `NoOpTenantProvider`"
+- [ ] No production code behavior changes — this phase is documentation + test only (the no-op returning `Guid.Empty` is already the correct behavior)
+
+---
+
+---
+### P-093 — Persistence Abstractions: Add ExistsAsync and GetByIdsAsync to Repository Contracts
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-016
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+Extend `IRepository<TAggregate, TId>` in `SharedKernel.Persistence.Abstractions` with two new methods, and extend `IReadRepository<TAggregate, TId>` with one new method.
+
+**`IRepository<TAggregate, TId>` additions:**
+
+- `ExistsAsync(TId id, CancellationToken ct)` → `Task<bool>` — returns `true` if an aggregate with the given identity exists, `false` otherwise. This is semantically distinct from `GetByIdAsync` (which fetches the full aggregate) — `ExistsAsync` issues a cheap count or existence check (`ANY` / `EXISTS` in SQL) and never materializes an entity. This is a write-side check used before commands (e.g., "does this order exist before I try to cancel it?").
+
+**`IReadRepository<TAggregate, TId>` additions:**
+
+- `GetByIdsAsync(IEnumerable<TId> ids, CancellationToken ct)` → `Task<IReadOnlyList<TAggregate>>` — returns all aggregates whose identity appears in `ids`. The order of results is not guaranteed to match the order of input IDs. Missing IDs produce no entry in the result (the result list may be shorter than the input). This is distinct from `ListAsync(spec)` — it is a primary-key batch lookup that can use EF Core's `Contains` / `IN (...)` SQL pattern.
+
+**`EfRepository<TAggregate, TId>` additions:**
+
+- Implement `ExistsAsync` using `DbContext.Set<TAggregate>().AnyAsync(e => e.Id.Equals(id), ct)` — or use EF Core's compiled query pattern for this hot-path operation if the evaluator supports it.
+
+**`EfReadRepository<TAggregate, TId>` additions:**
+
+- Implement `GetByIdsAsync` using `DbContext.Set<TAggregate>().Where(e => ids.Contains(e.Id)).ToListAsync(ct)`. Note: this generates an `IN (...)` clause at the SQL level. The implementation must constrain input to a reasonable size (document a recommended max of 1000 IDs); the XML doc must warn that very large `ids` collections degrade to table scans on non-indexed types.
+
+Both methods must carry full XML doc comments explaining the semantics, the SQL translation, and performance considerations.
+
+#### Why this is needed
+
+`ExistsAsync` and `GetByIdsAsync` are among the top two operations that cause teams to bypass the repository pattern entirely. Without `ExistsAsync`, application-layer handlers call `GetByIdAsync` just to check if an aggregate exists, materializing the full entity unnecessarily. Without `GetByIdsAsync`, handlers either call `GetByIdAsync` in a loop (N+1 queries) or drop into `DbContext` directly to write a `Where(e => ids.Contains(e.Id))` query. Both bypasses erode the repository abstraction and create inconsistent patterns across hundreds of services. Adding these methods to the abstract contracts ensures every EF Core repository gets the implementations for free.
+
+#### Acceptance criteria
+
+- [ ] `IRepository<TAggregate, TId>` declares `ExistsAsync(TId id, CancellationToken ct)` returning `Task<bool>`
+- [ ] `IReadRepository<TAggregate, TId>` declares `GetByIdsAsync(IEnumerable<TId> ids, CancellationToken ct)` returning `Task<IReadOnlyList<TAggregate>>`
+- [ ] `EfRepository<TAggregate, TId>` implements `ExistsAsync` using `AnyAsync` — does not materialize the entity
+- [ ] `EfReadRepository<TAggregate, TId>` implements `GetByIdsAsync` using `Where(e => ids.Contains(e.Id)).ToListAsync`
+- [ ] XML doc on `ExistsAsync` states it issues an `EXISTS` / `ANY` check — never materializes the aggregate
+- [ ] XML doc on `GetByIdsAsync` states result order is not guaranteed; missing IDs produce no entry; warns on large collections (>1000 IDs)
+- [ ] All existing `EfRepositoryTests` and `EfReadRepositoryTests` continue to pass
+- [ ] New unit tests (SQLite): `ExistsAsync` returns `true` for existing ID, `false` for missing ID; `GetByIdsAsync` returns only matching entities; partial match (some IDs missing) returns only found entities; empty input returns empty list
+- [ ] `ContractShapeTests` in `SharedKernel.Persistence.Abstractions.Tests` verify both new interface members
+- [ ] `06.Persistence/CLAUDE.md` updated: both methods added to the repository interface contracts table
+
+---
+
+---
+### P-094 — Persistence EfCore: EfRepository.UpdateAsync Tracking Optimization
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-016
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`EfRepository<TAggregate, TId>.UpdateAsync` currently calls `DbContext.Set<TAggregate>().Update(aggregate)` unconditionally. This is the correct behavior for **disconnected** entities (entities that were not fetched through the same `DbContext` scope — for example, entities reconstructed from a cache or a DTO). However, for **connected** entities (entities that were fetched via `GetByIdAsync` in the same scope), calling `.Update()` marks every property as `Modified`, generating a full-table-column `UPDATE` statement regardless of which properties actually changed. This causes:
+
+1. Unnecessary write load on the database — UPDATE statements touch all columns even when only one changed.
+2. Concurrency token bypass risk — some providers treat a full `.Update()` call differently from a change-tracked modification.
+3. Confusion in audit interceptors — `ModifiedBy`/`ModifiedOn` set on every save even when nothing materially changed.
+
+The fix: update `EfRepository.UpdateAsync` to check EF Core's `ChangeTracker` state before calling `.Update()`:
+
+- If the entity is already tracked by the `DbContext` (i.e., `DbContext.Entry(aggregate).State != EntityState.Detached`), do NOT call `.Update()`. The change tracker already knows about it. Simply ensure the entity state is `Modified` if it isn't already — or leave it as-is and let EF Core detect changes via snapshot comparison.
+- If the entity is **detached** (not tracked in the current scope), call `.Update(aggregate)` as today — this attaches it and marks all properties as modified (correct for disconnected scenarios).
+
+Add an XML doc comment on `UpdateAsync` explaining both paths: "If the entity is already tracked by the current `DbContext` scope (fetched via `GetByIdAsync` in the same unit of work), change detection is automatic — calling `UpdateAsync` is a no-op in this case but is idempotent. If the entity is detached (constructed externally or loaded in a different scope), `UpdateAsync` attaches it and marks all properties as modified."
+
+Add a protected virtual `void MarkAsModifiedIfDetached(TAggregate aggregate)` helper on `EfRepository` so concrete subclasses can call it without duplicating the detachment check.
+
+#### Why this is needed
+
+The unconditional `.Update()` call is a classic EF Core beginner mistake that ships in many base repository implementations. In a SharedKernel used by hundreds of services, this mistake multiplies into hundreds of full-column UPDATE statements on every aggregate mutation. At scale, this is measurable database overhead. More critically, it masks EF Core's change detection capability — a primary performance feature of EF Core that is completely wasted when `.Update()` is called unconditionally. Fixing this in the base class benefits every downstream service without requiring any changes in consuming repositories.
+
+#### Acceptance criteria
+
+- [ ] `EfRepository<TAggregate, TId>.UpdateAsync` checks entity tracking state before calling `.Update(aggregate)`
+- [ ] If the entity is already tracked (state is not `Detached`), `.Update()` is NOT called; the method is a logical no-op (change tracking handles the rest)
+- [ ] If the entity is detached, `.Update(aggregate)` is called — unchanged behavior from today
+- [ ] A protected virtual `MarkAsModifiedIfDetached(TAggregate aggregate)` helper method is provided on `EfRepository`
+- [ ] XML doc on `UpdateAsync` explains both the tracked and detached code paths
+- [ ] New unit tests (SQLite): fetch entity via `GetByIdAsync`, mutate a property, call `UpdateAsync` — verify only the changed property generates a `Modified` column marker; verify only a targeted UPDATE is issued (not full-column); fetch entity, call `UpdateAsync` without any mutation — verify no UPDATE is issued
+- [ ] Existing tests continue to pass — detached entity path is unchanged
+- [ ] No changes to `IRepository<TAggregate, TId>` interface — implementation-only fix
+
+---
+
+---
+### P-095 — Domain: Add IncludeDeleted Flag to ISpecification
+
+**Status:** `●` Complete
+**Work Order:** WO-016
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+Add a `bool IncludeDeleted { get; }` property to `ISpecification<T>` in `SharedKernel.Domain` and implement it on `Specification<T>` with a `protected void IncludeSoftDeleted()` builder method and a default of `false`.
+
+This is a prerequisite for P-080 Capability 5, which requires `SpecificationEvaluator` to call `IgnoreQueryFilters()` on the `IQueryable` when `spec.IncludeDeleted == true` — rather than the current `QueryableExtensions.IgnoreSoftDeleteFilter` extension which leaks `IQueryable` to the caller.
+
+The semantics:
+- `IncludeDeleted = false` (default) — the global soft-delete query filter (`e => !e.IsDeleted`) applies normally. Soft-deleted records are hidden.
+- `IncludeDeleted = true` — the global soft-delete filter is bypassed. Soft-deleted records are included in results.
+
+The `Specification<T>` abstract base must default `IncludeDeleted` to `false`. A `protected void IncludeSoftDeleted()` builder method sets it to `true`. Concrete specification subclasses call `IncludeSoftDeleted()` in their constructors when they are admin/audit specifications that intentionally need to see deleted records.
+
+XML documentation on `ISpecification<T>.IncludeDeleted` must state: "When `true`, the consuming repository must bypass the global soft-delete query filter so that soft-deleted records are included in results. Intended for admin panels, audit trails, data export, and recovery operations only. Default is `false` — soft-deleted records are hidden."
+
+Important: `IncludeDeleted = true` bypasses ALL global query filters on the entity type (including tenant isolation filters if a `TenantedDbContext` is used), because EF Core's `IgnoreQueryFilters()` cannot selectively bypass a single filter. The XML doc must warn of this: "Setting `IncludeDeleted = true` calls `IgnoreQueryFilters()` internally, which also bypasses any tenant isolation filter. For tenant-scoped soft-delete queries, re-apply the tenant criterion manually via `AddCriteria(e => e.TenantId == tenantId)`."
+
+Composed specifications (`AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>`) must propagate `IncludeDeleted`: set to `true` if either operand has `IncludeDeleted = true` (the more permissive wins, since composed specs are query-oriented).
+
+Tests must cover: default value is `false`; `IncludeSoftDeleted()` sets to `true`; composed specs propagate `IncludeDeleted = true` when either operand is `true`; composed specs remain `false` when both operands are `false`.
+
+Update `03.Domain/CLAUDE.md` specification system section to document `IncludeDeleted` and the filter-bypass warning.
+
+#### Why this is needed
+
+P-080 (Capability 5) removes `QueryableExtensions.IgnoreSoftDeleteFilter` — an extension method that directly returns `IQueryable<T>` to callers, bypassing the repository's `IQueryable` encapsulation contract. The correct replacement is the `IncludeDeleted` flag on the specification, which keeps the `IQueryable` inside the repository boundary. Without this `03.Domain` phase, P-080 cannot implement Capability 5 — it depends on the specification contract change to replace the `IQueryable` leak. This phase must therefore complete before P-080 is dispatched.
+
+#### Acceptance criteria
+
+- [ ] `bool IncludeDeleted { get; }` exists on `ISpecification<T>`
+- [ ] `Specification<T>` defaults `IncludeDeleted` to `false`
+- [ ] `protected void IncludeSoftDeleted()` builder method sets `IncludeDeleted` to `true`
+- [ ] `AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>` propagate `IncludeDeleted = true` when either operand has it set
+- [ ] XML doc warns that `IgnoreQueryFilters()` bypasses ALL query filters including tenant isolation; provides the manual workaround
+- [ ] `03.Domain/CLAUDE.md` specification system section updated to document `IncludeDeleted`, `IncludeSoftDeleted()`, the bypass warning, and the multi-filter caveat
+- [ ] New tests: default `false`; `IncludeSoftDeleted()` sets `true`; composed spec propagation (both cases)
+- [ ] All existing `Specification<T>` tests continue to pass — additive change only
+- [ ] No new NuGet dependencies — BCL only
+- [ ] Package remains AOT-safe
+
+---
+
+---
+### P-096 — Governance: Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-016
+**Domain:** 00.Governance
+**Depends on:** P-091, P-093
+
+#### What is needed
+
+Two new architecture enforcement rules in `SharedKernel.ArchitectureTests`:
+
+**Rule 1 — Audit interceptors must not use `Guid.ToString()` raw — must go through the adapter helper.**
+After P-091, the audit interceptors use a defined pattern for converting `IUserContext.UserId` (Guid) to a string. To prevent future drift (e.g., a contributor using `userId.ToString("N")` which produces no hyphens, causing inconsistent audit trail format), add an architecture test that scans `AuditInterceptor` and `SoftDeleteInterceptor` source and asserts that no `Guid.ToString("N")`, `Guid.ToString("B")`, `Guid.ToString("P")`, or `Guid.ToString("X")` format codes are used — only `ToString()` or `ToString("D")` (the default lowercase hyphenated format). This can be implemented as a naming/format convention check via Roslyn analyzer or a targeted IL scan.
+
+**Rule 2 — All `IRepository<TAggregate, TId>` implementors must declare `ExistsAsync`.**
+After P-093, `ExistsAsync` is on the `IRepository` interface. Any class that implements `IRepository<TAggregate, TId>` but does not implement `ExistsAsync` is missing a required method — the compiler catches this, but the architecture test provides a readable failure message. Use NetArchTest to assert that all types implementing `IRepository<,>` in `06.Persistence` assemblies have a method named `ExistsAsync`.
+
+**Rule 3 — `IReadRepository` implementors must declare `GetByIdsAsync`.**
+Same pattern as Rule 2 for `GetByIdsAsync` on `IReadRepository<TAggregate, TId>`.
+
+All three rules must be documented in `00.Governance/CLAUDE.md` under the Persistence Enforcement section with rationale and examples.
+
+#### Why this is needed
+
+Rule 1 prevents audit trail inconsistency caused by GUID format drift — a silent bug that produces inconsistent `CreatedBy` column values (`"d3e4f5a6-..."` vs `"d3e4f5a6..."`) across services that implement custom repositories. Rules 2 and 3 provide readable build-time messages when a service's custom repository fails to implement the new batch methods — surfacing the gap earlier than a runtime `NotImplementedException`.
+
+#### Acceptance criteria
+
+- [ ] Rule 1 exists: architecture test asserts `AuditInterceptor` and `SoftDeleteInterceptor` do not use non-`"D"` GUID format codes; test passes on the P-091-updated interceptors; documented in `00.Governance/CLAUDE.md`
+- [ ] Rule 2 exists: NetArchTest rule asserts all `IRepository<,>` implementors in `06.Persistence` have `ExistsAsync`; documented in `00.Governance/CLAUDE.md`
+- [ ] Rule 3 exists: NetArchTest rule asserts all `IReadRepository<,>` implementors in `06.Persistence` have `GetByIdsAsync`; documented in `00.Governance/CLAUDE.md`
+- [ ] All three rules run as `[Fact]` tests in the governance test suite; each has a descriptive failure message
+- [ ] Governance test suite passes with all new rules included
 
 ---

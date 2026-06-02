@@ -15,6 +15,14 @@
     <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <!--
+      Deliberate layering exception (P-078): SharedKernel.Security.Abstractions is a
+      zero-dependency interface library (no ORM, no infrastructure). The reference is
+      required for IUserContext (AuditInterceptor, SoftDeleteInterceptor) and
+      ITenantProvider (TenantedDbContext). Maintaining local interface copies would
+      create divergence risk. All other 12.Security.* packages are forbidden here.
+    -->
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -14,6 +14,14 @@
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+    <!--
+      Deliberate design decision (P-080, Cap 3): SharedKernel.Contracts (04.Contracts) is
+      referenced to expose PagedList<T> as the return type of IReadRepository.ListPagedAsync.
+      This is within root layering rules (06.Persistence may reference 01–05). It widens
+      the Abstractions dependency surface from [Primitives, Domain] to [Primitives, Domain,
+      Contracts]. No ORM NuGet references are introduced by this change.
+    -->
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

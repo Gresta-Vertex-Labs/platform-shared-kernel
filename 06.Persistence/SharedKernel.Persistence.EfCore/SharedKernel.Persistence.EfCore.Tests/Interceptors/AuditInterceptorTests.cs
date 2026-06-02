@@ -4,6 +4,7 @@ using NSubstitute;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
@@ -14,9 +15,9 @@ public sealed class AuditInterceptorTests
     {
         // Arrange
         var now = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
-        var userId = "alice";
+        var userId = Guid.NewGuid();
         using var ctx = TestDbContextFactory.CreateTestDbContext(
-            userContext: TestDbContextFactory.CreateUserContext(userId),
+            userContext: TestDbContextFactory.CreateAuthenticatedUserContext(userId),
             clock: TestDbContextFactory.CreateClock(now));
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());
@@ -28,8 +29,64 @@ public sealed class AuditInterceptorTests
         // Assert — reload to confirm persisted values
         ctx.ChangeTracker.Clear();
         var saved = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
-        saved!.CreatedBy.Should().Be(userId);
+        saved!.CreatedBy.Should().Be(userId.ToString("D"));
         saved.CreatedOn.Should().Be(now);
+    }
+
+    [Fact]
+    public async Task SaveChanges_Authenticated_WithValidUserId_WritesGuidDFormat()
+    {
+        // Arrange — P-091: IsAuthenticated == true && UserId != Guid.Empty → userId.ToString("D")
+        var userId = Guid.Parse("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+        using var ctx = TestDbContextFactory.CreateTestDbContext(
+            userContext: TestDbContextFactory.CreateAuthenticatedUserContext(userId));
+
+        var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());
+        ctx.AuditableAggregates.Add(aggregate);
+        await ctx.SaveChangesAsync();
+
+        ctx.ChangeTracker.Clear();
+        var saved = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
+        saved!.CreatedBy.Should().Be("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    }
+
+    [Fact]
+    public async Task SaveChanges_Unauthenticated_WritesSystem()
+    {
+        // Arrange — P-091: IsAuthenticated == false → "system"
+        using var ctx = TestDbContextFactory.CreateTestDbContext(
+            userContext: TestDbContextFactory.CreateUnauthenticatedUserContext());
+
+        var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());
+
+        // Act
+        ctx.AuditableAggregates.Add(aggregate);
+        await ctx.SaveChangesAsync();
+
+        // Assert
+        ctx.ChangeTracker.Clear();
+        var saved = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
+        saved!.CreatedBy.Should().Be("system");
+    }
+
+    [Fact]
+    public async Task SaveChanges_AuthenticatedWithGuidEmpty_WritesSystem()
+    {
+        // Arrange — P-091: IsAuthenticated == true but UserId == Guid.Empty → "system"
+        var mock = Substitute.For<IUserContext>();
+        mock.UserId.Returns(Guid.Empty);
+        mock.IsAuthenticated.Returns(true);
+        mock.Roles.Returns([]);
+        mock.Claims.Returns(new Dictionary<string, string>());
+
+        using var ctx = TestDbContextFactory.CreateTestDbContext(userContext: mock);
+        var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());
+        ctx.AuditableAggregates.Add(aggregate);
+        await ctx.SaveChangesAsync();
+
+        ctx.ChangeTracker.Clear();
+        var saved = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
+        saved!.CreatedBy.Should().Be("system");
     }
 
     [Fact]
@@ -38,12 +95,12 @@ public sealed class AuditInterceptorTests
         // Arrange
         var createdAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var modifiedAt = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
-        var userId = "bob";
+        var userId = Guid.NewGuid();
 
         var clockMock = Substitute.For<IClock>();
         clockMock.UtcNow.Returns(createdAt);
 
-        var userMock = TestDbContextFactory.CreateUserContext(userId);
+        var userMock = TestDbContextFactory.CreateAuthenticatedUserContext(userId);
 
         using var ctx = TestDbContextFactory.CreateTestDbContext(
             userContext: userMock,
@@ -65,27 +122,8 @@ public sealed class AuditInterceptorTests
         // Assert
         ctx.ChangeTracker.Clear();
         var result = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
-        result!.ModifiedBy.Should().Be(userId);
+        result!.ModifiedBy.Should().Be(userId.ToString("D"));
         result.ModifiedOn.Should().Be(modifiedAt);
-    }
-
-    [Fact]
-    public async Task SaveChanges_EmptyUserId_FallsBackToSystem()
-    {
-        // Arrange
-        using var ctx = TestDbContextFactory.CreateTestDbContext(
-            userContext: TestDbContextFactory.CreateUserContext(string.Empty));
-
-        var aggregate = new AuditableTestAggregate(TestId.New(), "Test", new SystemClock());
-
-        // Act
-        ctx.AuditableAggregates.Add(aggregate);
-        await ctx.SaveChangesAsync();
-
-        // Assert
-        ctx.ChangeTracker.Clear();
-        var saved = await ctx.AuditableAggregates.FindAsync(aggregate.Id);
-        saved!.CreatedBy.Should().Be("system");
     }
 
     [Fact]

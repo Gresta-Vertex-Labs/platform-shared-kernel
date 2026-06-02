@@ -66,7 +66,7 @@ Format when blocked — replace placeholder with table:
 
 | Package               | Current Phase | State | Notes                         |
 |-----------------------|---------------|:-----:|-------------------------------|
-| `SharedKernel.Domain` | Published     | `●`   | References Primitives + Core; v1.3.0 |
+| `SharedKernel.Domain` | Published     | `●`   | References Primitives + Core; v1.5.0 |
 
 ---
 
@@ -112,6 +112,8 @@ Format when blocked — replace placeholder with table:
 | D-28 | P-052/WO-011 — Design `ApplyThenByDescending` convenience alias on `Specification<T>`: delegates to `ApplyThenBy(keySelector, descending: true)`; update `ISpecification<T>` `<remarks>` block documenting ordering precedence (primary sort: `OrderBy`/`OrderByDescending` mutually exclusive; secondary: `ThenBys` in call order; no primary sort = `ThenBys` ignored by well-behaved repositories) | SharedKernel.Domain | `●` |
 | D-29 | P-053/WO-011 — Design `DomainEventVersionAttribute`: `[AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]`; constructor `(int version)` validates `version >= 1`; `int Version { get; }`; static `DomainEventVersionHelper.GetVersion(Type)` returns declared version or `1` as default; `IDomainEvent` interface unchanged | SharedKernel.Domain | `●` |
 | D-30 | P-054/WO-011 — Design `IAggregateFactory<TAggregateRoot, TId>` zero-member marker interface with constraints `where TAggregateRoot : IAggregateRoot<TId> where TId : notnull`; design `protected static Result<T> TryCreate<T>(Func<T> factory)` helper on `AggregateRoot<TId>`: catches `BusinessRuleViolationException` → `Result.Failure(ex.Error)`; catches `ValidationException` → `Result.Failure(ex.Errors.First())`; on success → `Result.Success(factory())`; no reflection in hot path | SharedKernel.Domain | `●` |
+| D-31 | P-095/WO-016 — Design `bool IncludeDeleted { get; }` on `ISpecification<T>`: default `false`; semantics: `false` = global soft-delete filter applies normally; `true` = repository must bypass the global soft-delete query filter so soft-deleted records are included; XML doc must state (a) intended for admin/audit/export/recovery only, (b) `IgnoreQueryFilters()` bypasses ALL query filters including tenant isolation, (c) workaround for tenant-scoped soft-delete: re-apply tenant criterion via `AddCriteria(e => e.TenantId == tenantId)`; design `protected void IncludeSoftDeleted()` builder on `Specification<T>` that sets the flag to `true`; propagation rule for composed specs: `AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>` set `IncludeDeleted = true` if either operand has `IncludeDeleted = true` (more-permissive wins — mirrors the `AsNoTracking` propagation pattern); document that `Specification<T>` defaults to `false` and that concrete subclasses call `IncludeSoftDeleted()` in their constructors for admin/audit specifications | SharedKernel.Domain | `●` |
+| D-32 | P-081/WO-014 — Design `IDomainEventDispatcher` interface in `SharedKernel.Domain`: single method `Task DispatchAsync(IReadOnlyList<IDomainEvent> events, CancellationToken ct)`; namespace `SharedKernel.Domain`; zero NuGet dependencies (only references `IDomainEvent` already in this package); document in XML that an empty list is a no-op; document that handler exceptions must propagate unchanged — no swallowing; document that this is an opt-in DI contract (consuming services register an implementation alongside infra builder, e.g., `EfCorePersistenceBuilder`); confirm no `IDomainEventHandler<TEvent>` is added here — handler registration remains `05.Application` territory | SharedKernel.Domain | `●` |
 
 ---
 
@@ -165,6 +167,8 @@ Format when blocked — replace placeholder with table:
 | C-32 | P-052/WO-011 — Add `protected void ApplyThenByDescending(Expression<Func<T, object>> keySelector)` to `Specification<T>` delegating to `ApplyThenBy(keySelector, descending: true)`; update `ISpecification<T>` with `<remarks>` block documenting ordering precedence; update `Specification<T>` XML doc noting mutual exclusivity of primary sort calls | SharedKernel.Domain | `●` |
 | C-33 | P-053/WO-011 — Implement `DomainEventVersionAttribute` in `Events/`: `[AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]`; constructor validates `version >= 1`; `public int Version { get; }`; implement `DomainEventVersionHelper` static class with `GetVersion(Type domainEventType)` returning declared version or `1` as default; `IDomainEvent` interface unchanged | SharedKernel.Domain | `●` |
 | C-34 | P-054/WO-011 — Add `IAggregateFactory<TAggregateRoot, TId>` zero-member marker interface to `Abstractions/` with correct generic constraints; add `protected static Result<T> TryCreate<T>(Func<T> factory)` to `AggregateRoot<TId>`: try/catch `BusinessRuleViolationException` → `Result.Failure(ex.Error)`; catch `ValidationException` → `Result.Failure(ex.Errors.First())`; catch success → `Result.Success(factory())` | SharedKernel.Domain | `●` |
+| C-35 | P-095/WO-016 — Add `bool IncludeDeleted { get; }` to `ISpecification<T>` interface with the full XML doc warning (bypasses ALL query filters; tenant isolation caveat; re-apply tenant criterion manually); add private backing field defaulting to `false` in `Specification<T>`; implement `protected void IncludeSoftDeleted()` builder method that sets backing field to `true`; update `AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>` constructors: set `IncludeDeleted = true` when either operand has `IncludeDeleted = true`; no change to `AllSpecification<T>`, `EmptySpecification<T>`, `PagedSpecification<T>`, or `ReadOnlySpecification<T>` — they inherit the default `false` | SharedKernel.Domain | `●` |
+| C-36 | P-081/WO-014 — Implement `IDomainEventDispatcher` interface in `03.Domain/SharedKernel.Domain/Abstractions/IDomainEventDispatcher.cs`; namespace `SharedKernel.Domain`; full triple-slash XML doc on the interface and method: (a) `<summary>` describing the dispatch contract, (b) `<param>` for both parameters, (c) `<returns>` documenting returned `Task`, (d) `<remarks>` block covering the three key doc rules — empty list is a no-op, handler exceptions propagate unchanged, this is an opt-in DI contract not auto-registered by any builder; zero new NuGet dependencies; no implementation in this package | SharedKernel.Domain | `●` |
 
 ---
 
@@ -199,6 +203,8 @@ Format when blocked — replace placeholder with table:
 | T-25 | P-052/WO-011 — `ApplyThenByDescending` tests: produces `ThenBys` entry with `Descending = true`; correct `KeySelector`; all existing spec ordering tests continue to pass | SharedKernel.Domain | `●` |
 | T-26 | P-053/WO-011 — `DomainEventVersionAttribute` tests: attribute declared on a domain event class; `GetVersion` returns declared version; `GetVersion` returns 1 when attribute absent; attribute with `version < 1` throws `ArgumentOutOfRangeException` at construction | SharedKernel.Domain | `●` |
 | T-27 | P-054/WO-011 — `TryCreate<T>` tests: success path returns `Result.Success(T)`; `BusinessRuleViolationException` thrown in factory produces `Result.Failure` with `Error.Type == ErrorType.BusinessRule`; `ValidationException` thrown in factory produces `Result.Failure`; all existing aggregate tests continue to pass | SharedKernel.Domain | `●` |
+| T-28 | P-095/WO-016 — `IncludeDeleted` tests: (1) fresh `Specification<T>` subclass has `IncludeDeleted == false` by default; (2) calling `IncludeSoftDeleted()` in constructor sets `IncludeDeleted == true`; (3) `AndSpecification<T>` with left `IncludeDeleted = true` and right `false` → composed `IncludeDeleted == true`; (4) `AndSpecification<T>` with both operands `false` → composed `IncludeDeleted == false`; (5) `OrSpecification<T>` propagation mirrors (3) and (4); (6) `NotSpecification<T>` with operand `IncludeDeleted = true` → composed `IncludeDeleted == true`; (7) all existing specification tests continue to pass — additive change only | SharedKernel.Domain | `●` |
+| T-29 | P-081/WO-014 — `ContractShapeTests` for `IDomainEventDispatcher`: (1) interface exists in assembly `SharedKernel.Domain` under namespace `SharedKernel.Domain`; (2) has exactly one method `DispatchAsync`; (3) method signature is `Task DispatchAsync(IReadOnlyList<IDomainEvent>, CancellationToken)` — verified via reflection; (4) interface is public; (5) `IDomainEvent` parameter type is the existing interface from the same package (no external type references); (6) `DomainEventDispatcherShapeTests` class in `ContractShapeTests.cs` or its own file within `SharedKernel.Domain.Tests/` | SharedKernel.Domain | `●` |
 
 ---
 
@@ -232,6 +238,8 @@ Format when blocked — replace placeholder with table:
 | DO-24 | P-053/WO-011 — Update `CLAUDE.md` Events section: add `DomainEventVersionAttribute` entry; add `DomainEventVersionHelper` entry; document versioning workflow (attribute on concrete event class; helper for infrastructure to read schema version; default=1 when absent; `IDomainEvent` interface unchanged) | SharedKernel.Domain | `●` |
 | DO-25 | P-054/WO-011 — Update `CLAUDE.md` Interface Contracts: add `IAggregateFactory<TAggregateRoot, TId>` entry under `Abstractions/`; update `AggregateRoot<TId>` entry to show `TryCreate<T>` protected static method; document the `static Result<T> Create(...)` convention as a recommended pattern with complete code example | SharedKernel.Domain | `●` |
 | DO-26 | WO-010 — Bump `SharedKernel.Domain.csproj` `PackageVersion` to `1.2.0`; update `PackageReleaseNotes` summarising P-043 (error classification fix + ValueObject hazard docs) and P-044 (tenanted aggregate family) changes | SharedKernel.Domain | `●` |
+| DO-27 | P-095/WO-016 — Update `CLAUDE.md` specification system section: add `IncludeDeleted` to `ISpecification<T>` member list; add `IncludeSoftDeleted()` to `Specification<T>` builder method list; add `IncludeDeleted` propagation rule to composite specification entries (`And`, `Or`, `Not`); add implementation rule documenting the `IgnoreQueryFilters()` bypass semantics, the ALL-filters caveat, and the tenant-isolation workaround; add test rule: default `false`, `IncludeSoftDeleted()` sets `true`, composed propagation both cases | SharedKernel.Domain | `●` |
+| DO-28 | P-081/WO-014 — Update `CLAUDE.md` Interface Contracts: add `IDomainEventDispatcher` entry under `Abstractions/` with full method signature; document the three key XML-doc rules (empty list = no-op, exceptions propagate unchanged, opt-in DI contract); add implementation rule confirming `IDomainEventHandler<TEvent>` remains excluded from `03.Domain`; add AOT note (`IDomainEventDispatcher` is a plain interface with no reflection — AOT-safe); add test rule documenting `ContractShapeTests` | SharedKernel.Domain | `●` |
 
 ---
 
@@ -246,6 +254,8 @@ Format when blocked — replace placeholder with table:
 | P-05 | Re-pack and re-publish `SharedKernel.Domain` after WO-009 changes (P-036..P-041): bump `PackageVersion` to `1.1.0`; verify `.nupkg` manifest still lists only `SharedKernel.Primitives` and `SharedKernel.Core` as dependencies; update `PackageReleaseNotes` with WO-009 changes | SharedKernel.Domain | `●` |
 | P-06 | WO-010 — Re-pack and re-publish `SharedKernel.Domain` at `1.2.0` after P-043 and P-044 changes: verify `.nupkg` manifest lists only `SharedKernel.Primitives` and `SharedKernel.Core`; verify `BusinessRuleViolationException` error type fix is present; verify tenanted aggregate family is exported; update `PackageReleaseNotes` | SharedKernel.Domain | `●` |
 | P-07 | WO-011 — Re-pack and re-publish `SharedKernel.Domain` at `1.3.0` after P-045..P-054 changes: verify zero new NuGet dependencies; verify all new public surface (`IHasDomainEvents`, `SingleValueObject<TValue>`, `DomainService`, `IHasVersion`, `DomainNotFoundException`, sentinel specs, `PagedSpecification<T>`, `DomainEventVersionAttribute`, `IAggregateFactory`) is exported; update `PackageReleaseNotes` | SharedKernel.Domain | `●` |
+| P-08 | P-095/WO-016 — Re-pack and re-publish `SharedKernel.Domain` at `1.4.0` after P-095 changes: verify zero new NuGet dependencies; verify `ISpecification<T>.IncludeDeleted` and `Specification<T>.IncludeSoftDeleted()` are exported; update `PackageReleaseNotes` summarising WO-016 (IncludeDeleted flag on ISpecification, composed spec propagation, prerequisite for P-080 Capability 5) | SharedKernel.Domain | `●` |
+| P-09 | P-081/WO-014 — Re-pack and re-publish `SharedKernel.Domain` at `1.5.0` after P-081 changes: verify zero new NuGet dependencies; verify `IDomainEventDispatcher` is exported in the package manifest; update `PackageReleaseNotes` summarising WO-014 (IDomainEventDispatcher interface — opt-in dispatch hook; consumed by `06.Persistence.EfCore` EfUnitOfWork; MediatR implementation deferred to `05.Application`) | SharedKernel.Domain | `●` |
 
 ---
 
@@ -270,12 +280,12 @@ Format when blocked — replace placeholder with table:
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.03.Design` | Design | 30 | 30 | 0 | `●` |
+| `SK.03.Design` | Design | 32 | 32 | 0 | `●` |
 | `SK.03.Scaffold` | Scaffold | 5 | 5 | 0 | `●` |
-| `SK.03.Core` | Core | 34 | 34 | 0 | `●` |
-| `SK.03.Tests` | Tests | 27 | 27 | 0 | `●` |
-| `SK.03.Docs` | Docs | 26 | 26 | 0 | `●` |
-| `SK.03.Published` | Published | 7 | 7 | 0 | `●` |
+| `SK.03.Core` | Core | 36 | 36 | 0 | `●` |
+| `SK.03.Tests` | Tests | 29 | 29 | 0 | `●` |
+| `SK.03.Docs` | Docs | 28 | 28 | 0 | `●` |
+| `SK.03.Published` | Published | 9 | 9 | 0 | `●` |
 
 ---
 
@@ -307,3 +317,12 @@ Format when blocked — replace placeholder with table:
 - [2026-05-27] DO-14..DO-26 → ● in SK.03.Docs — all 26 Docs tasks complete; CLAUDE.md verified for WO-010/WO-011 content; PackageVersion bumped to 1.2.0 with WO-010 release notes (state-map-phase)
 - [2026-05-27] P-06 → ● — SharedKernel.Domain 1.2.0 packed and published to nupkgs/; manifest deps: SharedKernel.Core + SharedKernel.Primitives only (domain-phase-implementer)
 - [2026-05-27] P-07 → ● — SharedKernel.Domain 1.3.0 packed and published to nupkgs/; PackageVersion bumped; WO-011 release notes added; manifest deps: SharedKernel.Core + SharedKernel.Primitives only; SK.03.Published all 7/7 ● (domain-phase-implementer)
+- [2026-06-02] P-095/WO-016 — 5 new tasks added: D-31 (design IncludeDeleted on ISpecification), C-35 (implement flag + composed spec propagation), T-28 (new + regression tests), DO-27 (CLAUDE.md spec section update), P-08 (re-pack at 1.4.0); prerequisite for P-080 Capability 5 (IgnoreQueryFilters encapsulation); Overall Progress updated (domain-arch-planner)
+- [2026-06-02] P-081/WO-014 — 5 new tasks added: D-32 (design IDomainEventDispatcher interface), C-36 (implement interface with full XML doc), T-29 (ContractShapeTests), DO-28 (CLAUDE.md Abstractions section update), P-09 (re-pack at 1.5.0); IDomainEventDispatcher enables 06.Persistence.EfCore opt-in dispatch hook without cross-layer coupling to 05.Application; Overall Progress updated (domain-arch-planner)
+- [2026-06-02] D-31 → ● in SK.03.Design — P-095/WO-016 IncludeDeleted design verified in CLAUDE.md (state-map-phase)
+- [2026-06-02] D-32 → ● in SK.03.Design — P-081/WO-014 IDomainEventDispatcher design verified in CLAUDE.md (state-map-phase)
+- [2026-06-02] SK.03.Design → ● — all 32 design tasks complete; promoting to root (state-map-phase)
+- [2026-06-02] C-35, C-36 → ● in SK.03.Core — all 36 Core tasks complete; promoting to root (state-map-phase)
+- [2026-06-02] T-28, T-29 → ● in SK.03.Tests — all 29 Tests tasks complete; 232 tests green (state-map-phase)
+- [2026-06-02] DO-27, DO-28 → ● in SK.03.Docs — all 28 Docs tasks complete; CLAUDE.md verified for WO-016 IncludeDeleted and WO-014 IDomainEventDispatcher content (state-map-phase)
+- [2026-06-02] P-08, P-09 → ● in SK.03.Published — SharedKernel.Domain 1.4.0 and 1.5.0 packed; all 9/9 Published tasks complete; promoting to root (state-map-phase)

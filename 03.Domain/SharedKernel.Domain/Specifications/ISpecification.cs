@@ -71,4 +71,38 @@ public interface ISpecification<T>
     /// operand carries <see langword="true"/> (more restrictive wins).
     /// </remarks>
     bool AsNoTracking { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the consuming repository should bypass the global soft-delete
+    /// query filter so that soft-deleted records are included in results.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default is <see langword="false"/> — soft-deleted records are hidden by the global query
+    /// filter. Intended for admin panels, audit trails, data export, and recovery operations only.
+    /// Never set this flag in read-model or user-facing query specifications.
+    /// </para>
+    /// <para>
+    /// <strong>WARNING:</strong> Setting <c>IncludeDeleted = true</c> causes the repository to call
+    /// <c>IgnoreQueryFilters()</c> internally (in EF Core), which bypasses <em>ALL</em> global query
+    /// filters on the entity type — including any tenant isolation filter registered in a
+    /// <c>TenantedDbContext</c>. EF Core's <c>IgnoreQueryFilters()</c> cannot selectively bypass a
+    /// single filter; it disables every filter for that entity type.
+    /// </para>
+    /// <para>
+    /// For tenant-scoped soft-delete queries, always re-apply the tenant criterion manually:
+    /// <code>
+    /// AddCriteria(e => e.TenantId == tenantId);
+    /// </code>
+    /// This ensures the tenant boundary is re-enforced at the query level even when the global tenant
+    /// filter has been bypassed.
+    /// </para>
+    /// <para>
+    /// Composite specifications (<c>AndSpecification&lt;T&gt;</c>, <c>OrSpecification&lt;T&gt;</c>,
+    /// <c>NotSpecification&lt;T&gt;</c>) propagate <see langword="true"/> when any operand has
+    /// <c>IncludeDeleted = true</c> (more-permissive wins, mirroring the <c>AsNoTracking</c>
+    /// propagation rule).
+    /// </para>
+    /// </remarks>
+    bool IncludeDeleted { get; }
 }

@@ -73,6 +73,17 @@ IAggregateFactory<TAggregateRoot, TId>
     — zero-member marker: tags a class as a factory for a specific aggregate root type
     NOTE: Implement this on static factory classes or dedicated factory services.
           Convention: expose a static Result<TAggregateRoot> Create(...) factory method.
+
+IDomainEventDispatcher
+    .DispatchAsync(IReadOnlyList<IDomainEvent> events, CancellationToken ct) → Task
+    NOTE: Opt-in DI contract. Consumed by EfUnitOfWork in 06.Persistence.EfCore as an optional
+          dependency — not auto-registered by any infrastructure builder. Consuming services
+          register an implementation alongside their persistence builder.
+          CONTRACT (documented in XML doc on the interface):
+            — An empty events list must be treated as a no-op by any conforming implementation.
+            — Handler exceptions must propagate unchanged — implementations must not swallow them.
+          IDomainEventHandler<TEvent> is NOT added here — handler registration remains 05.Application.
+          The MediatR-based implementation (MediatRDomainEventDispatcher) is a future 05.Application phase.
 ```
 
 #### Domain event contracts (`Events/`)
@@ -330,6 +341,15 @@ ISpecification<T>
         When true, the consuming repository must apply AsNoTracking() to the underlying query.
         Default is false — safe for specifications used before write operations.
         Set to true for read-only query specifications to avoid unnecessary change-tracking overhead.
+    .IncludeDeleted                                        → bool
+        When true, the consuming repository must bypass the global soft-delete query filter so that
+        soft-deleted records are included in results. Intended for admin panels, audit trails, data
+        export, and recovery operations only. Default is false — soft-deleted records are hidden.
+        WARNING: Setting IncludeDeleted = true calls IgnoreQueryFilters() internally (in EF Core),
+        which also bypasses ANY tenant isolation filter on the entity type because EF Core's
+        IgnoreQueryFilters() cannot selectively bypass a single filter.
+        For tenant-scoped soft-delete queries, re-apply the tenant criterion manually:
+            AddCriteria(e => e.TenantId == tenantId)
 
 Specification<T>  (abstract class, implements ISpecification<T>)
     protected .AddCriteria(Expression<Func<T, bool>>)      → void
@@ -340,6 +360,9 @@ Specification<T>  (abstract class, implements ISpecification<T>)
     protected .ApplyPaging(int skip, int take)             → void
     protected .ApplyDistinct()                             → void
     protected .ApplyNoTracking()                           → void  (sets AsNoTracking = true)
+    protected .IncludeSoftDeleted()                        → void  (sets IncludeDeleted = true)
+        Call this in a concrete specification's constructor when the spec is an admin/audit/export/recovery
+        specification that must see soft-deleted records. Never call it from non-admin specifications.
     .IsSatisfiedBy(T entity)                               → bool  (non-virtual concrete method — in-domain/in-test use only)
         Compiles Criteria to Func<T, bool> exactly once and caches the delegate in a private field.
         Returns true when Criteria is null (criteria-less specification matches all entities).
@@ -384,11 +407,14 @@ EmptySpecification<T>  (sealed concrete class)  — identity element for OR comp
 
 AndSpecification<T>  — combines two specs via ExpressionVisitor ParameterReplacer (logical AND)
                       AsNoTracking = true if either operand has AsNoTracking = true
+                      IncludeDeleted = true if either operand has IncludeDeleted = true (more-permissive wins)
 OrSpecification<T>   — combines via logical OR
                       AsNoTracking = true if either operand has AsNoTracking = true
+                      IncludeDeleted = true if either operand has IncludeDeleted = true (more-permissive wins)
                       Null-criteria handling: if either operand has null criteria, combined Criteria is null
 NotSpecification<T>  — negates via Expression.Not
                       AsNoTracking = true if the operand has AsNoTracking = true
+                      IncludeDeleted = true if the operand has IncludeDeleted = true
 
 SpecificationExtensions
     .And<T>(this Specification<T>, Specification<T>)       → AndSpecification<T>
@@ -416,6 +442,7 @@ SpecificationExtensions
 - `RowVersion` on `FullAuditableAggregateRoot<TId>` and `FullAuditableEntity<TId>` has `protected set` to allow persistence layer population after fetch.
 - `FullAuditableAggregateRoot<TId>` extends `AuditableSoftDeletableAggregateRoot<TId>` — **not** `AggregateRoot<TId>` directly. It inherits all soft-delete and audit machinery; it contributes only `IHasConcurrency` and `RowVersion`.
 - `IDomainEventHandler<TEvent>` is **explicitly excluded** from this package — it belongs in `05.Application`. The domain layer has no knowledge of handler dispatch.
+- `IDomainEventDispatcher` is the **only** dispatch-related type permitted in this package. Its scope is strictly the interface contract — no implementation, no registration. Any conforming implementation must (a) treat an empty `events` list as a no-op and (b) propagate handler exceptions unchanged without swallowing. The `06.Persistence.EfCore` layer consumes this interface as an optional dependency; consuming services opt in by registering an implementation via DI. The MediatR-based implementation belongs in `05.Application`.
 - **`TenantId` is construction-time only** — the `TenantId` property on all tenanted aggregate bases has `private set` and must never change after construction. Tenant reassignment is a domain violation. The application layer (typically `ITenantProvider` from `12.Security`) resolves the tenant and passes it as a `Guid` primitive to the aggregate constructor. `ITenantProvider` must never be referenced from `03.Domain` — the domain receives `tenantId` as a primitive, not a resolved service.
 - `IHasTenant` is a marker only — the domain layer has no tenant resolution logic.
 - **All domain service implementations must extend `DomainService` abstract class** — do not implement `IDomainService` directly. Extending `DomainService` provides `CheckRule` access without any infrastructure coupling.
@@ -429,6 +456,9 @@ SpecificationExtensions
 - **`BusinessRuleViolationException` carries `Error.Type == ErrorType.BusinessRule`** — this maps to HTTP 422 in the presentation layer. It must never use `Error.Unexpected` (which maps to HTTP 500). The error code is `ErrorCodes.Domain.RuleViolated` from `SharedKernel.Primitives`.
 - **`AggregateRoot<TId>.Version` is a domain-native optimistic concurrency helper** — starts at 0, increments by 1 on every `RaiseDomainEvent` call. This is distinct from `IHasConcurrency.RowVersion` which is an infrastructure-specific SQL Server byte array. `ClearDomainEvents()` does not decrement `Version`.
 - **`TryCreate<T>` is the recommended aggregate factory helper** — use `protected static Result<T> TryCreate<T>(Func<T> factory)` in static `Create(...)` factory methods on aggregate roots to produce railway-friendly construction that converts exceptions to `Result.Failure` values.
+- **`ISpecification<T>.IncludeDeleted` bypasses ALL EF Core global query filters** — the repository implementation calls `IgnoreQueryFilters()` when `IncludeDeleted = true`. Because EF Core's `IgnoreQueryFilters()` cannot target a single filter, it bypasses every global query filter on the entity type, including any tenant isolation filter registered in a `TenantedDbContext`. For tenant-scoped soft-delete queries, always pair `IncludeSoftDeleted()` with an explicit `AddCriteria(e => e.TenantId == tenantId)` call so the tenant boundary is re-enforced at the query level.
+- `IncludeDeleted = false` is the safe default — it does not change existing query behaviour. Call `IncludeSoftDeleted()` only in constructors of admin/audit/export/recovery specifications. Never set it in read-model or user-facing query specifications.
+- Composite specifications (`AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>`) propagate `IncludeDeleted = true` when any operand has it set (more-permissive wins). This mirrors the `AsNoTracking` propagation rule.
 
 ---
 
@@ -468,9 +498,11 @@ Reasons for rejection:
 - `AllSpecification<T>` and `EmptySpecification<T>` are sealed concrete classes — AOT-safe.
 - `PagedSpecification<T>` is an abstract class — AOT-safe.
 - Tenanted aggregate bases are abstract classes extending the existing hierarchy — AOT-safe.
+- `IDomainEventDispatcher` is a plain interface with no generic type parameters, no reflection, and no attribute usage — AOT-safe. Implementations live outside this package; their AOT compatibility is a consumer concern.
 - Specification expression trees (`Expression<Func<T, bool>>`) are AOT-safe when the expressions do not involve runtime-only reflection APIs.
 - `ExpressionVisitor` / `ParameterReplacer` in specification composites: AOT-safe as these operate on already-compiled expression trees with no runtime type discovery.
 - `Specification<T>.IsSatisfiedBy` calls `Criteria.Compile()` — expression compilation is AOT-safe for expressions that do not use late-bound reflection inside the lambda body.
+- `ISpecification<T>.IncludeDeleted` is a `bool` property — BCL primitive, no reflection, AOT-safe. `Specification<T>.IncludeSoftDeleted()` is a simple field write — AOT-safe.
 - No `Activator.CreateInstance`, no `Assembly.Load`, no reflection in hot paths.
 
 ---
@@ -503,6 +535,8 @@ Reasons for rejection:
 - `ApplyThenByDescending`: produces `ThenBys` entry with `Descending = true`.
 - `DomainEventVersionAttribute` / `DomainEventVersionHelper`: version readable; default 1 when absent; version < 1 throws.
 - `TryCreate<T>`: success path; `BusinessRuleViolationException` → `Result.Failure` with `ErrorType.BusinessRule`; `ValidationException` → `Result.Failure`.
+- `ISpecification<T>.IncludeDeleted`: default `false`; `IncludeSoftDeleted()` sets `true`; `AndSpecification<T>` / `OrSpecification<T>` propagate `true` when either operand is `true`; remain `false` when both operands are `false`; `NotSpecification<T>` propagates `true` when operand is `true`; all existing specification tests continue to pass (additive change only).
+- `IDomainEventDispatcher` `ContractShapeTests`: (a) interface exists in assembly `SharedKernel.Domain` under namespace `SharedKernel.Domain`; (b) has exactly one method `DispatchAsync`; (c) method signature is `Task DispatchAsync(IReadOnlyList<IDomainEvent>, CancellationToken)` verified via reflection; (d) interface is `public`; (e) `IDomainEvent` parameter type resolves to the existing interface from the same package (no external type references introduced).
 
 ---
 
@@ -518,3 +552,5 @@ Reasons for rejection:
 - [2026-05-27] WO-010 (P-043, P-044) — refreshed: BusinessRuleViolationException now extends DomainException and uses Error.BusinessRule; ValueObject constructor hazard documented; tenanted aggregate family (3 bases) added to hierarchy; IHasTenant implementation rules added; version bump to 1.2.0 planned (domain-arch-planner)
 - [2026-05-27] WO-011 (P-045..P-054) — refreshed: IHasDomainEvents extracted; SingleValueObject<TValue> added; DomainService abstract base added; IHasVersion added; DomainNotFoundException added; AllSpecification/EmptySpecification sentinels added; PagedSpecification<T> added; ApplyThenByDescending alias added; DomainEventVersionAttribute/Helper added; IAggregateFactory + TryCreate<T> added; version bump to 1.3.0 planned (domain-arch-planner)
 - [2026-05-27] SK.03.Published complete — SharedKernel.Domain 1.2.0 and 1.3.0 packed; manifests: Primitives + Core only; no new architectural signals (domain-phase-implementer)
+- [2026-06-02] P-095/WO-016 — ISpecification(T).IncludeDeleted flag added to public surface; Specification(T).IncludeSoftDeleted() builder documented; composite spec propagation rule added (IncludeDeleted = true if any operand true, mirrors AsNoTracking); implementation rules section updated with IgnoreQueryFilters() bypass warning and tenant isolation caveat; AOT note added; test rule added; version bump to 1.4.0 planned (domain-arch-planner)
+- [2026-06-02] P-081/WO-014 — IDomainEventDispatcher interface added to public surface (Abstractions/ section); implementation rule added (only dispatch interface permitted; empty-list no-op and exception propagation contract; opt-in DI; MediatR impl deferred to 05.Application); AOT note added; ContractShapeTests rule added; version bump to 1.5.0 planned (domain-arch-planner)
