@@ -63,6 +63,11 @@ public abstract class EfRepository<TAggregate, TId> : IRepository<TAggregate, TI
         => await DbContext.Set<TAggregate>().AddAsync(aggregate, ct);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to <c>DbContext.Set&lt;TAggregate&gt;().AddRangeAsync</c> which is asynchronous.
+    /// Rows are staged in the change tracker and not written to the database until
+    /// <c>IUnitOfWork.SaveChangesAsync</c> is called.
+    /// </remarks>
     public virtual async Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
         => await DbContext.Set<TAggregate>().AddRangeAsync(aggregates, ct);
 
@@ -74,6 +79,13 @@ public abstract class EfRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <c>DbContext.UpdateRange</c> is synchronous — this method completes without any async I/O.
+    /// The per-entity detached-state check from <see cref="MarkAsModifiedIfDetached"/> is applied
+    /// to each aggregate: tracked entities rely on EF change detection (only dirty columns are
+    /// written); detached entities get an unconditional <c>.Update()</c> (all columns marked Modified).
+    /// Mutations are staged and not persisted until <c>IUnitOfWork.SaveChangesAsync</c> is called.
+    /// </remarks>
     public virtual Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
     {
         // UpdateRange is synchronous in EF Core; apply per-entity detached-state check.
@@ -91,6 +103,13 @@ public abstract class EfRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to <c>DbContext.RemoveRange</c> which is synchronous — this method completes
+    /// without any async I/O. For <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/>
+    /// aggregates the <c>SoftDeleteInterceptor</c> converts the <c>Deleted</c> state to
+    /// <c>Modified</c> before commit. Mutations are staged and not persisted until
+    /// <c>IUnitOfWork.SaveChangesAsync</c> is called.
+    /// </remarks>
     public virtual Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
     {
         DbContext.Set<TAggregate>().RemoveRange(aggregates);

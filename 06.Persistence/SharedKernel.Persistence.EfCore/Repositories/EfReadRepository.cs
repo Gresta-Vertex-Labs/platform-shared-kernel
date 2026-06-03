@@ -106,6 +106,21 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Issues two database round-trips under the same <see cref="SharedKernelDbContext"/> scope:
+    /// <list type="number">
+    ///   <item><description>
+    ///     <strong>Count query:</strong> the specification is evaluated without Skip/Take (via
+    ///     <c>NoPagingWrapper</c>) and <c>CountAsync</c> is called to obtain the true total.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <strong>Data query:</strong> the full specification (including Skip/Take) is evaluated
+    ///     and <c>ToListAsync</c> is called to obtain the current page of items.
+    ///   </description></item>
+    /// </list>
+    /// Both queries share the same connection and transaction scope.
+    /// <c>PagedList&lt;T&gt;</c> is defined in <c>SharedKernel.Contracts</c> (04.Contracts).
+    /// </remarks>
     public virtual async Task<PagedList<TAggregate>> ListPagedAsync(
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
@@ -126,6 +141,13 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to <c>SpecificationEvaluator&lt;T&gt;.GetProjectedQuery</c> which runs the full
+    /// aggregate pipeline (criteria, includes, ordering, Skip/Take) and then applies
+    /// <c>.Select(spec.Selector)</c> as the final step. EF Core translates the <c>Select</c>
+    /// expression into a SQL <c>SELECT</c> projection so only the referenced columns are fetched
+    /// from the database.
+    /// </remarks>
     public virtual async Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default)
@@ -135,6 +157,12 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to <c>SpecificationEvaluator&lt;T&gt;.GetProjectedQuery</c> and calls
+    /// <c>FirstOrDefaultAsync</c> on the resulting projected queryable. EF Core translates the
+    /// <c>Select(spec.Selector)</c> into a SQL <c>SELECT</c> projection applied after all
+    /// Skip/Take operations, consistent with the paging-last invariant.
+    /// </remarks>
     public virtual async Task<TResult?> GetBySpecProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default)

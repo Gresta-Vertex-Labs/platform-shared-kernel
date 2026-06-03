@@ -64,13 +64,13 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Design | `●` | All 29 Design tasks complete — SK0001–SK0010 diagnostic registry, ArchitectureTests contract shapes (PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate), and BenchmarkConfig/Linter strategies fully specified. | Implement PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, and architecture test suite (C-30–C-32, T-46–T-51, DO-12). |
+| 00 | [Governance](00.Governance/state-map.md) | Core | `●` | C-30/C-31/C-32 complete — NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, and PersistenceLayerProtectionRules implemented; SK.00.Core phase fully done (39/39). | Implement T-46–T-51 (PersistenceEnforcement test fixtures) and DO-12 (README docs). |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
-| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | SharedKernel.Persistence.Abstractions 1.0.0 and SharedKernel.Persistence.EfCore 1.0.0 packed; Abstractions verified ORM-free; EfCore lists EF deps but not Npgsql; all 6 phases complete. | — |
+| 06 | [Persistence](06.Persistence/state-map.md) | Docs | `●` | All 15 Docs tasks complete — XML docs added to interceptors, ConfigureTenantColumn, ExistsAsync/GetByIdsAsync, projection/paged methods, EfUnitOfWork dispatcher, SpecificationEvaluator pipeline, ValueObjectOwnershipConvention, and ByIdSpecification. | Begin Published phase — finalize NuGet packaging metadata and run dotnet pack for both packages. |
 | 07 | [Messaging](07.Messaging/state-map.md) | — | `○` | — | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
@@ -109,11 +109,11 @@ Format when active:
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
 | ● Published | 4 |
-| ● Docs | 0 |
+| ● Docs | 1 |
 | ● Tests | 0 |
-| ● Core | 0 |
+| ● Core | 1 |
 | ● Scaffold | 0 |
-| ● Design | 1 |
+| ● Design | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 10 |
@@ -1756,6 +1756,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-02] Phase(s) P-078, P-079, P-082, P-091, P-092, P-093, P-094 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
 - [2026-06-02] P-081 moved from 05.Application → 03.Domain: IDomainEventDispatcher interface belongs in Domain layer, not Application layer — eliminates 06.Persistence→05.Application coupling (arch-fix)
 - [2026-06-02] P-080 Depends on updated: P-081 removed as Application dep (now in 03.Domain), P-095 added (IncludeDeleted prereq); P-080 unblocked (arch-fix)
+- [2026-06-03] Persistence → Core (●) — promoted from SK.06.Core; 41/41 tasks complete; 112 tests green (state-map-phase)
 - [2026-06-02] Phase(s) P-081 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
 - [2026-06-02] Phase(s) P-080 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
 - [2026-06-02] Phase(s) P-083, P-096 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
@@ -1766,6 +1767,9 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-02] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
 - [2026-06-02] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
 - [2026-06-02] Persistence → Design (●) — promoted from SK.06.Design; D-15..D-25 verified complete (state-map-phase)
+- [2026-06-03] Persistence → Tests (●) — promoted from SK.06.Tests (state-map-phase)
+- [2026-06-03] Persistence → Docs (●) — promoted from SK.06.Docs (state-map-phase)
+- [2026-06-03] Governance → Core (●) — promoted from SK.00.Core (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable

@@ -1,5 +1,6 @@
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
+using SharedKernel.Domain.Events;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Primitives.Clocks;
 
@@ -46,7 +47,17 @@ public sealed class AuditableTestAggregate : AuditableSoftDeletableAggregateRoot
     protected AuditableTestAggregate() { } // ORM path
 
     protected override void OnDelete() { }
+
+    /// <summary>Raises a test domain event for dispatch tests.</summary>
+    public void RaiseTestEvent()
+        => RaiseDomainEvent(ts => new TestDomainEvent { OccurredOn = ts });
 }
+
+// ---------------------------------------------------------------------------
+// Test domain event
+// ---------------------------------------------------------------------------
+
+public sealed record TestDomainEvent : DomainEvent;
 
 // ---------------------------------------------------------------------------
 // Non-soft-deletable aggregate (pass-through test)

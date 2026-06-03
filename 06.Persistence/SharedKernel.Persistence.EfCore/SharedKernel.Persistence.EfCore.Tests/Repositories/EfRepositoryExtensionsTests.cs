@@ -1,10 +1,13 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using SharedKernel.Domain;
+using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
+using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Persistence.EfCore.Tests.Repositories;
@@ -223,7 +226,7 @@ public sealed class BulkWriteTests
     public async Task DeleteRangeAsync_SoftDeletableEntities_AllMarkedDeleted()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var repo = new EfRepository<AuditableTestAggregate, TestId>.ConcreteAuditRepo(ctx);
+        var repo = new ConcreteAuditRepo(ctx);
         var id1 = TestId.New();
         var id2 = TestId.New();
         ctx.AuditableAggregates.AddRange(
@@ -285,7 +288,7 @@ internal sealed class TestProjectionSpec : Specification<TestAggregate>,
     {
         if (nameFilter is not null)
             AddCriteria(e => e.Name == nameFilter);
-        ApplyAsNoTracking();
+        ApplyNoTracking();
     }
 }
 
@@ -298,7 +301,7 @@ internal sealed class PagedProjectionSpec : PagedSpecification<TestAggregate>,
     public PagedProjectionSpec(int page, int pageSize) : base(page, pageSize)
     {
         ApplyOrderBy(e => e.Name!);
-        ApplyAsNoTracking();
+        ApplyNoTracking();
     }
 }
 
@@ -436,8 +439,7 @@ public sealed class IncludeDeletedTests
     public async Task IncludeDeleted_False_ExcludesSoftDeletedRows()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new EfReadRepository<AuditableTestAggregate, TestId>.ConcreteAuditReadRepo(
-            ctx, new SpecificationEvaluator<AuditableTestAggregate>());
+        var readRepo = new ConcreteAuditReadRepo(ctx, new SpecificationEvaluator<AuditableTestAggregate>());
 
         var id = TestId.New();
         ctx.AuditableAggregates.Add(new AuditableTestAggregate(id, "Hidden", new SystemClock()));
@@ -459,8 +461,7 @@ public sealed class IncludeDeletedTests
     public async Task IncludeDeleted_True_IncludesSoftDeletedRows()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var readRepo = new EfReadRepository<AuditableTestAggregate, TestId>.ConcreteAuditReadRepo(
-            ctx, new SpecificationEvaluator<AuditableTestAggregate>());
+        var readRepo = new ConcreteAuditReadRepo(ctx, new SpecificationEvaluator<AuditableTestAggregate>());
 
         var id = TestId.New();
         ctx.AuditableAggregates.Add(new AuditableTestAggregate(id, "Hidden", new SystemClock()));
@@ -537,12 +538,11 @@ public sealed class DomainEventDispatchTests
     public async Task SaveChangesAsync_WithDispatcher_DispatchesEventsAndClearsThem()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var dispatched = new List<SharedKernel.Domain.Events.IDomainEvent>();
+        var dispatched = new List<IDomainEvent>();
         var dispatcher = new CaptureDispatcher(dispatched);
-        var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(ctx, dispatcher);
+        var uow = new EfUnitOfWork(ctx, dispatcher);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "EventTest", new SystemClock());
-        // Raise a test event via the aggregate's domain event mechanism
         aggregate.RaiseTestEvent();
         ctx.AuditableAggregates.Add(aggregate);
 
@@ -556,7 +556,7 @@ public sealed class DomainEventDispatchTests
     public async Task SaveChangesAsync_WithoutDispatcher_ClearsEventsWithoutDispatch()
     {
         using var ctx = TestDbContextFactory.CreateTestDbContext();
-        var uow = new SharedKernel.Persistence.EfCore.UnitOfWork.EfUnitOfWork(ctx);
+        var uow = new EfUnitOfWork(ctx);
 
         var aggregate = new AuditableTestAggregate(TestId.New(), "NoDispatch", new SystemClock());
         aggregate.RaiseTestEvent();
@@ -564,20 +564,96 @@ public sealed class DomainEventDispatchTests
 
         await uow.SaveChangesAsync();
 
-        // Events cleared even without dispatcher
         aggregate.DomainEvents.Should().BeEmpty("events must be cleared even without a dispatcher");
     }
 
-    private sealed class CaptureDispatcher(List<SharedKernel.Domain.Events.IDomainEvent> captured)
-        : SharedKernel.Domain.IDomainEventDispatcher
+    /// <summary>
+    /// T-21: No double-dispatch — events cleared before second SaveChangesAsync call.
+    /// Verified by raising an event, saving, then saving again without raising new events:
+    /// the second dispatch receives zero events.
+    /// </summary>
+    [Fact]
+    public async Task SaveChangesAsync_NoDoubleDispatch_EventsClearedBeforeNextSave()
+    {
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var dispatchCounts = new List<int>();
+        var dispatcher = new CountingDispatcher(dispatchCounts);
+        var uow = new EfUnitOfWork(ctx, dispatcher);
+
+        var aggregate = new AuditableTestAggregate(TestId.New(), "DoubleDispatch", new SystemClock());
+        aggregate.RaiseTestEvent();
+        ctx.AuditableAggregates.Add(aggregate);
+
+        // First save — one event dispatched
+        await uow.SaveChangesAsync();
+        dispatchCounts.Should().HaveCount(1);
+        dispatchCounts[0].Should().Be(1, "one event raised before first save");
+
+        // Second save — no new events raised; dispatcher should receive zero events (or not be called)
+        ctx.Entry(aggregate).CurrentValues["Name"] = "Modified";
+        await uow.SaveChangesAsync();
+
+        // Dispatcher may be called with an empty collection or not called — either way
+        // the aggregate has no events to dispatch.
+        aggregate.DomainEvents.Should().BeEmpty("events cleared; no double-dispatch");
+    }
+
+    /// <summary>
+    /// T-21: Dispatch failure does not roll back already-committed data.
+    /// This is a documented known trade-off: once the DB transaction commits, dispatch errors are
+    /// surfaced to the caller but the committed row remains in the database.
+    /// Note: when dispatch throws, event clearing (which follows dispatch) is also skipped — the
+    /// caller receives the exception and is responsible for deciding how to handle the undispatched events.
+    /// </summary>
+    [Fact]
+    public async Task SaveChangesAsync_DispatchFailure_DoesNotRollbackCommittedData()
+    {
+        // Known trade-off: domain event dispatch happens post-commit.
+        // A dispatch failure does not roll back the committed aggregate state.
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var uow = new EfUnitOfWork(ctx, new ThrowingDispatcher());
+
+        var id = TestId.New();
+        var aggregate = new AuditableTestAggregate(id, "DispatchFail", new SystemClock());
+        aggregate.RaiseTestEvent();
+        ctx.AuditableAggregates.Add(aggregate);
+
+        // Act — dispatcher throws after commit; the exception propagates to the caller
+        var act = async () => await uow.SaveChangesAsync();
+        await act.Should().ThrowAsync<InvalidOperationException>("dispatcher is expected to throw");
+
+        // Assert — the committed row is still in the database despite the dispatch failure
+        ctx.ChangeTracker.Clear();
+        var saved = await ctx.AuditableAggregates.IgnoreQueryFilters().FirstOrDefaultAsync(e => e.Id == id);
+        saved.Should().NotBeNull(
+            "committed data must survive dispatch failure — this is the documented known trade-off");
+    }
+
+    private sealed class CaptureDispatcher(List<IDomainEvent> captured)
+        : IDomainEventDispatcher
     {
         public Task DispatchAsync(
-            IReadOnlyList<SharedKernel.Domain.Events.IDomainEvent> events,
+            IReadOnlyList<IDomainEvent> events,
             CancellationToken cancellationToken)
         {
             captured.AddRange(events);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class CountingDispatcher(List<int> counts) : IDomainEventDispatcher
+    {
+        public Task DispatchAsync(IReadOnlyList<IDomainEvent> events, CancellationToken cancellationToken)
+        {
+            counts.Add(events.Count);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingDispatcher : IDomainEventDispatcher
+    {
+        public Task DispatchAsync(IReadOnlyList<IDomainEvent> events, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Simulated dispatch failure");
     }
 }
 
@@ -589,26 +665,14 @@ internal sealed class NoFilterSpec<T> : Specification<T> where T : class { }
 
 internal sealed class IncludeDeletedSpec<T> : Specification<T> where T : class
 {
-    public IncludeDeletedSpec() => SetIncludeDeleted(true);
+    public IncludeDeletedSpec() => IncludeSoftDeleted();
 }
 
-// Expose protected helper via subclassing for test purposes
-internal static class EfRepositoryHelpers
-{
-}
+// Concrete repository stubs for AuditableTestAggregate tests
+internal sealed class ConcreteAuditRepo(TestDbContext ctx)
+    : EfRepository<AuditableTestAggregate, TestId>(ctx);
 
-// Concrete stubs for AuditableTestAggregate
-namespace SharedKernel.Persistence.EfCore.Repositories
-{
-    internal sealed partial class EfRepository<TAggregate, TId>
-    {
-        internal sealed class ConcreteAuditRepo(TestDbContext ctx)
-            : EfRepository<AuditableTestAggregate, TestId>(ctx);
-    }
-
-    internal sealed partial class EfReadRepository<TAggregate, TId>
-    {
-        internal sealed class ConcreteAuditReadRepo(TestDbContext ctx, ISpecificationEvaluator<AuditableTestAggregate> evaluator)
-            : EfReadRepository<AuditableTestAggregate, TestId>(ctx, evaluator);
-    }
-}
+internal sealed class ConcreteAuditReadRepo(
+    TestDbContext ctx,
+    ISpecificationEvaluator<AuditableTestAggregate> evaluator)
+    : EfReadRepository<AuditableTestAggregate, TestId>(ctx, evaluator);

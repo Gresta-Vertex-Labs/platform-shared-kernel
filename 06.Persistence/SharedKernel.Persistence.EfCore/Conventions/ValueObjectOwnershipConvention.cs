@@ -29,6 +29,13 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// <strong>Explicit-config guard:</strong> If a navigation or owned-type is already declared for
 /// the property, the convention skips it to avoid conflicts with explicit <c>OwnsOne</c> calls.
 /// </para>
+/// <para>
+/// <strong>Startup cost:</strong> <see cref="Apply"/> has O(n×m) startup cost where <c>n</c> is
+/// the number of non-owned entity types in the model and <c>m</c> is the number of public instance
+/// properties per type. This cost is incurred only once at model-build time — it is <em>not</em>
+/// a hot path. An early-exit optimisation prevents candidate-list allocation when no
+/// <see cref="IValueObject"/> properties are present in the model.
+/// </para>
 /// </remarks>
 public static class ValueObjectOwnershipConvention
 {
@@ -42,7 +49,7 @@ public static class ValueObjectOwnershipConvention
     public static void Apply(ModelBuilder modelBuilder)
     {
         // Collect candidates first to avoid modifying the collection while iterating.
-        var candidates = new List<(Type OwnerType, Type ValueObjectType, string NavName)>();
+        List<(Type OwnerType, Type ValueObjectType, string NavName)>? candidates = null;
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
@@ -67,9 +74,15 @@ public static class ValueObjectOwnershipConvention
                 if (IsAlreadyOwned(entityType, propType, clrProperty.Name))
                     continue;
 
+                // Lazy-initialise only when the first IValueObject candidate is found.
+                candidates ??= [];
                 candidates.Add((entityType.ClrType, propType, clrProperty.Name));
             }
         }
+
+        // Early-exit: no IValueObject properties found — nothing to apply.
+        if (candidates is null)
+            return;
 
         // Apply OwnsOne via the standard ModelBuilder fluent API.
         foreach (var (ownerType, valueObjectType, navName) in candidates)

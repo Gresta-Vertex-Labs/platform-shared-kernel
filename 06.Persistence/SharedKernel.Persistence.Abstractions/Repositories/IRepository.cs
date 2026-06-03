@@ -62,6 +62,10 @@ public interface IRepository<TAggregate, TId>
     /// </summary>
     /// <param name="aggregates">The aggregates to insert. Must not be <see langword="null"/>.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <remarks>
+    /// Staging semantics are identical to <see cref="AddAsync"/> — rows are not written to the
+    /// database until <see cref="IUnitOfWork.SaveChangesAsync"/> is called.
+    /// </remarks>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="ct"/> is cancelled.</exception>
     Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default);
 
@@ -100,6 +104,10 @@ public interface IRepository<TAggregate, TId>
     /// </summary>
     /// <param name="aggregates">The aggregates to delete. Must not be <see langword="null"/>.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <remarks>
+    /// Staging semantics are identical to <see cref="DeleteAsync"/> — rows are not removed (or soft-deleted)
+    /// until <see cref="IUnitOfWork.SaveChangesAsync"/> is called.
+    /// </remarks>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="ct"/> is cancelled.</exception>
     Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default);
 }

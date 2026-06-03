@@ -106,15 +106,20 @@ public interface IReadRepository<TAggregate, TId>
     /// <summary>
     /// Projects all aggregates that satisfy the specification to <typeparamref name="TResult"/>.
     /// </summary>
-    /// <typeparam name="TResult">The projection output type.</typeparam>
+    /// <typeparam name="TResult">
+    /// The projection output type. Must be a reference type or a value type that EF Core can
+    /// translate — typically a DTO or an anonymous type.
+    /// </typeparam>
     /// <param name="spec">
     /// The projection specification, which supplies both the filtering/ordering/paging pipeline
-    /// and the selector expression applied after paging.
+    /// and the <c>Selector</c> expression applied after paging.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A read-only list of projected results (empty, never <see langword="null"/>).</returns>
     /// <remarks>
-    /// The selector expression is applied after Skip/Take to preserve the paging-last invariant.
+    /// The <c>Selector</c> expression on <paramref name="spec"/> is applied after Skip/Take to
+    /// preserve the paging-last invariant. The EF Core provider translates the selector into a
+    /// SQL <c>SELECT</c> projection — only the columns referenced by the selector are fetched.
     /// </remarks>
     Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
@@ -124,10 +129,22 @@ public interface IReadRepository<TAggregate, TId>
     /// Returns the first aggregate that satisfies the specification projected to
     /// <typeparamref name="TResult"/>, or <see langword="null"/> when none match.
     /// </summary>
-    /// <typeparam name="TResult">The projection output type.</typeparam>
-    /// <param name="spec">The projection specification.</param>
+    /// <typeparam name="TResult">
+    /// The projection output type. Must be a reference type or a value type that EF Core can
+    /// translate.
+    /// </typeparam>
+    /// <param name="spec">
+    /// The projection specification supplying filter criteria and the <c>Selector</c> expression.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The first projected result, or <see langword="null"/>.</returns>
+    /// <returns>
+    /// The first projected result, or <see langword="null"/> when no aggregate satisfies the
+    /// specification.
+    /// </returns>
+    /// <remarks>
+    /// The <c>Selector</c> expression is applied after the full aggregate pipeline (criteria,
+    /// includes, ordering, paging) — consistent with the paging-last invariant.
+    /// </remarks>
     Task<TResult?> GetBySpecProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default);

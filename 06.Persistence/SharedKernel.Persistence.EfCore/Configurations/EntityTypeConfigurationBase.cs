@@ -125,7 +125,23 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         }
     }
 
-    // Configures the TenantId column and index for IHasTenant entities.
+    /// <summary>
+    /// Configures the <c>TenantId</c> column and index for <see cref="IHasTenant"/> entities.
+    /// </summary>
+    /// <param name="builder">The entity type builder for <typeparamref name="TEntity"/>.</param>
+    /// <remarks>
+    /// <para>
+    /// <strong>Production constraint:</strong> <c>TenantId == Guid.Empty</c> is <em>forbidden</em>
+    /// in production rows. <see cref="Guid.Empty"/> is reserved as the no-tenant sentinel used by
+    /// <c>NoOpTenantProvider</c>. When no real <c>ITenantProvider</c> is registered, the global
+    /// tenant query filter evaluates as <c>e.TenantId == Guid.Empty</c>, which returns
+    /// <strong>zero rows</strong> — no production entity should ever carry <c>TenantId == Guid.Empty</c>.
+    /// </para>
+    /// <para>
+    /// This design is intentional and safe: teams that forget to register a real provider see an
+    /// empty result set immediately rather than a cross-tenant data leak.
+    /// </para>
+    /// </remarks>
     private static void ConfigureTenantColumn(EntityTypeBuilder<TEntity> builder)
     {
         if (typeof(IHasTenant).IsAssignableFrom(typeof(TEntity)))

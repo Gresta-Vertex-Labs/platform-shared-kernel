@@ -42,12 +42,15 @@ public sealed class ByIdSpecification<TAggregate, TId> : Specification<TAggregat
     }
 
     // Builds the expression tree e => e.Id.Equals(id) without reflection.
+    // Uses Expression.Equal for value-equality so TId need not override Equals explicitly
+    // and the expression is AOT-safe on IQueryable.
     private static Expression<Func<TAggregate, bool>> BuildCriteria(TId id)
     {
         var param = Expression.Parameter(typeof(TAggregate), "e");
         var idProperty = Expression.Property(param, "Id");
         var idValue = Expression.Constant(id, typeof(TId));
-        var equalsCall = Expression.Call(idProperty, "Equals", null, idValue);
-        return Expression.Lambda<Func<TAggregate, bool>>(equalsCall, param);
+        // Expression.Equal translates to SQL "=" which is correct and unambiguous.
+        var equal = Expression.Equal(idProperty, idValue);
+        return Expression.Lambda<Func<TAggregate, bool>>(equal, param);
     }
 }

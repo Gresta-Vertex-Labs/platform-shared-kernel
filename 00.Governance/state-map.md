@@ -741,9 +741,9 @@ No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates
 | D-27 | Define `OnlyEfUnitOfWorkMayCallSaveChanges` predicate shape: `NoDirectSaveChangesPredicate` design — IL walk for `DbContext::SaveChanges` and `DbContext::SaveChangesAsync` call opcodes; exemption: types in `SharedKernel.Persistence.EfCore` namespace pass unconditionally; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `●` |
 | D-28 | Define `RepositoriesMustNotExposeIQueryable` predicate shape: `NoIQueryableReturnPredicate` design — scope to `IRepository`-prefix implementing types; inspect method return types for `IQueryable` name match; failure message includes offending type + method name | SharedKernel.ArchitectureTests | `●` |
 | D-29 | Define `DomainAssembliesNeverReferencePersistenceStack` predicate shape: three iterative `.NotHaveDependencyOn()` calls for `"Microsoft.EntityFrameworkCore"`, `"Npgsql"`, `"SharedKernel.Persistence"`; document relationship to `DomainAssembliesNeverReferenceInfrastructure` (additive, not replacing) | SharedKernel.ArchitectureTests | `●` |
-| C-30 | Implement `NoDirectSaveChangesPredicate` in `Predicates/` — `ICustomRule` walking `TypeDefinition.Methods.Body.Instructions` for `Call`/`Callvirt` to `DbContext::SaveChanges` or `DbContext::SaveChangesAsync`; namespace-based exemption for `SharedKernel.Persistence.EfCore`; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `○` |
-| C-31 | Implement `NoIQueryableReturnPredicate` in `Predicates/` — `ICustomRule` scoped to types whose `TypeDefinition.Interfaces` contains an `IRepository`-prefix entry; inspects non-constructor, non-getter method return types for `IQueryable` name match; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `○` |
-| C-32 | Implement `PersistenceLayerProtectionRules` static class in `Rules/` — three factory methods: `OnlyEfUnitOfWorkMayCallSaveChanges(Assembly)` → `ConditionList`, `RepositoriesMustNotExposeIQueryable(Assembly)` → `ConditionList`, `DomainAssembliesNeverReferencePersistenceStack(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| C-30 | Implement `NoDirectSaveChangesPredicate` in `Predicates/` — `ICustomRule` walking `TypeDefinition.Methods.Body.Instructions` for `Call`/`Callvirt` to `DbContext::SaveChanges` or `DbContext::SaveChangesAsync`; namespace-based exemption for `SharedKernel.Persistence.EfCore`; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `●` |
+| C-31 | Implement `NoIQueryableReturnPredicate` in `Predicates/` — `ICustomRule` scoped to types whose `TypeDefinition.Interfaces` contains an `IRepository`-prefix entry; inspects non-constructor, non-getter method return types for `IQueryable` name match; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `●` |
+| C-32 | Implement `PersistenceLayerProtectionRules` static class in `Rules/` — three factory methods: `OnlyEfUnitOfWorkMayCallSaveChanges(Assembly)` → `ConditionList`, `RepositoriesMustNotExposeIQueryable(Assembly)` → `ConditionList`, `DomainAssembliesNeverReferencePersistenceStack(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `●` |
 | T-46 | Architecture test Rule 1 (fire path): pass a contrived assembly containing a class that calls `DbContext.SaveChangesAsync()` directly (not in `SharedKernel.Persistence.EfCore` namespace); assert `OnlyEfUnitOfWorkMayCallSaveChanges` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
 | T-47 | Architecture test Rule 1 (pass path): pass an assembly containing a class that injects and calls only `IUnitOfWork`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
 | T-48 | Architecture test Rule 2 (fire path): pass an assembly containing a type implementing `IRepository<Order, Guid>` with a method returning `IQueryable<Order>`; assert `RepositoriesMustNotExposeIQueryable` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
@@ -983,7 +983,7 @@ Format when active:
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
 | `SK.00.Design` | Design | 29 | 29 | 0 | `●` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
-| `SK.00.Core` | Core | 39 | 36 | 3 | `◐` |
+| `SK.00.Core` | Core | 39 | 39 | 0 | `●` |
 | `SK.00.Tests` | Tests | 51 | 45 | 6 | `◐` |
 | `SK.00.Docs` | Docs | 12 | 11 | 1 | `◐` |
 | `SK.00.Published` | Published | 6 | 6 | 0 | `●` |
@@ -992,7 +992,7 @@ Format when active:
 | `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | 16 | 16 | 0 | `●` |
 | `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | 19 | 19 | 0 | `●` |
 | `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | 13 | 13 | 0 | `●` |
-| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | 13 | 0 | 13 | `○` |
+| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | 13 | 6 | 7 | `◐` |
 | `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | 14 | 0 | 14 | `○` |
 | `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | 15 | 0 | 15 | `○` |
 
@@ -1023,3 +1023,4 @@ Format when active:
 - [2026-06-02] D-27–D-29 → ● in SK.00.Design — all three persistence enforcement design tasks complete; specs fully present in CLAUDE.md (PersistenceLayerProtectionRules, NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate); SK.00.Design promoted to ● with 29/29 tasks done (state-map-phase)
 - [2026-06-02] Phase Persistence Architecture Rules Phase 2 added (SK.00.PersistenceEnforcement2) — 14 tasks: D-30, C-33–C-35, T-52–T-59, DO-13; four new NetArchTest predicates in PersistenceInterfaceOwnershipRules; two new ICustomRule predicates (InterfaceDeclarationOwnershipPredicate, NoGetByIdOnReadRepositoryPredicate); no new SK IDs; total tasks now 171 — WO-014 P-083
 - [2026-06-02] Phase Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness added (SK.00.PersistenceContractCompleteness) — 15 tasks: D-31–D-32, C-36–C-38, T-60–T-66, DO-14; SK0011 GuidFormatCodeMisuse registered; RepositoryContractCompletenessRules arch predicates defined; HasRequiredMethodPredicate ICustomRule; total tasks now 186 — WO-016 P-096
+- [2026-06-03] C-30, C-31, C-32 → ● in SK.00.Core — NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, PersistenceLayerProtectionRules implemented; SK.00.Core promoted to ● (state-map-phase)
