@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.Repositories;
@@ -54,9 +55,20 @@ public abstract class EfRepository<TAggregate, TId> : IRepository<TAggregate, TI
         => await DbContext.Set<TAggregate>().FindAsync([id], ct);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Uses an expression-tree predicate (same pattern as <c>ByIdSpecification&lt;TAggregate, TId&gt;</c>)
+    /// rather than <c>EF.Property&lt;TId&gt;(e, "Id")</c> — the shadow-property accessor is fragile
+    /// on concrete CLR properties. The expression tree is AOT-safe on <see cref="IQueryable{T}"/>.
+    /// </remarks>
     public virtual async Task<bool> ExistsAsync(TId id, CancellationToken ct = default)
-        => await DbContext.Set<TAggregate>()
-            .AnyAsync(e => EF.Property<TId>(e, "Id")!.Equals(id), ct);
+    {
+        var param = Expression.Parameter(typeof(TAggregate), "e");
+        var idProperty = Expression.Property(param, "Id");
+        var idConstant = Expression.Constant(id, typeof(TId));
+        var equals = Expression.Equal(idProperty, idConstant);
+        var predicate = Expression.Lambda<Func<TAggregate, bool>>(equals, param);
+        return await DbContext.Set<TAggregate>().AnyAsync(predicate, ct);
+    }
 
     /// <inheritdoc />
     public virtual async Task AddAsync(TAggregate aggregate, CancellationToken ct = default)

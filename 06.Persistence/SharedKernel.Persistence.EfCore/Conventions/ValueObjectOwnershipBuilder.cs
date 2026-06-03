@@ -1,33 +1,37 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using SharedKernel.Domain.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Conventions;
 
 /// <summary>
-/// Utility class that auto-applies <c>OwnsOne</c> for all scalar properties whose CLR type
-/// implements <see cref="IValueObject"/>, eliminating the need for manual <c>OwnsOne</c> calls
-/// in every entity configuration.
+/// Static utility for auto-configuring value object ownership in EF Core models.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <strong>This is a static utility method, not an EF Core <c>IModelFinalizingConvention</c>.</strong>
+/// Call <see cref="Apply"/> manually at the end of <c>OnModelCreating</c> after all entity
+/// configurations are applied. Do <strong>NOT</strong> register this via
+/// <c>ConfigureConventions</c> — it will have no effect there because it does not implement
+/// <c>IModelFinalizingConvention</c>.
+/// </para>
 /// <para>
 /// <strong>Usage — call <see cref="Apply"/> at the end of <c>OnModelCreating</c>:</strong>
 /// <code>
 /// protected override void OnModelCreating(ModelBuilder modelBuilder)
 /// {
 ///     base.OnModelCreating(modelBuilder);
-///     ValueObjectOwnershipConvention.Apply(modelBuilder);
+///     ValueObjectOwnershipBuilder.Apply(modelBuilder);
 /// }
 /// </code>
 /// </para>
 /// <para>
 /// <strong>OwnsMany limitation:</strong> Collections of value objects are <em>not</em> processed
-/// by this convention. They require <c>OwnsMany</c> with an explicit table/shadow-key configuration.
+/// by this utility. They require <c>OwnsMany</c> with an explicit table/shadow-key configuration.
 /// Register those explicitly in entity configuration classes.
 /// </para>
 /// <para>
 /// <strong>Explicit-config guard:</strong> If a navigation or owned-type is already declared for
-/// the property, the convention skips it to avoid conflicts with explicit <c>OwnsOne</c> calls.
+/// the property, the utility skips it to avoid conflicts with explicit <c>OwnsOne</c> calls.
 /// </para>
 /// <para>
 /// <strong>Startup cost:</strong> <see cref="Apply"/> has O(n×m) startup cost where <c>n</c> is
@@ -37,7 +41,7 @@ namespace SharedKernel.Persistence.EfCore.Conventions;
 /// <see cref="IValueObject"/> properties are present in the model.
 /// </para>
 /// </remarks>
-public static class ValueObjectOwnershipConvention
+public static class ValueObjectOwnershipBuilder
 {
     /// <summary>
     /// Scans all non-owned entity types in the current model and automatically applies

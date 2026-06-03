@@ -70,7 +70,7 @@ Format when blocked:
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
-| 06 | [Persistence](06.Persistence/state-map.md) | Docs | `●` | All 15 Docs tasks complete — XML docs added to interceptors, ConfigureTenantColumn, ExistsAsync/GetByIdsAsync, projection/paged methods, EfUnitOfWork dispatcher, SpecificationEvaluator pipeline, ValueObjectOwnershipConvention, and ByIdSpecification. | Begin Published phase — finalize NuGet packaging metadata and run dotnet pack for both packages. |
+| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | WO-017 complete — all 30 tasks (D-26..D-33, C-42..C-50, T-24..T-30, DO-16..DO-21) implemented and 158 tests green; all 6 phases (Design/Scaffold/Core/Tests/Docs/Published) fully ●. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | — | `○` | — | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
@@ -108,8 +108,8 @@ Format when active:
 |-------|---------|
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 4 |
-| ● Docs | 1 |
+| ● Published | 5 |
+| ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 1 |
 | ● Scaffold | 0 |
@@ -1770,6 +1770,9 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-03] Persistence → Tests (●) — promoted from SK.06.Tests (state-map-phase)
 - [2026-06-03] Persistence → Docs (●) — promoted from SK.06.Docs (state-map-phase)
 - [2026-06-03] Governance → Core (●) — promoted from SK.00.Core (state-map-phase)
+- [2026-06-03] Phase(s) P-097, P-098, P-099, P-100, P-101, P-102 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-06-03] Persistence → Published (●) — promoted from SK.06.Design; WO-017 all 30 tasks complete, 158 tests green (state-map-phase)
+- [2026-06-03] P-078, P-079, P-080, P-082, P-091, P-092, P-093, P-094, P-097, P-098, P-099, P-100, P-101, P-102 → ● Complete — Phase Backlog sync; all 06.Persistence phases confirmed ● in sub state-map; statuses were stuck at ◐ Dispatched (manual sync)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -3660,7 +3663,7 @@ Both `IUserContext` and `ICurrentTenantService` are currently duplicated/misplac
 ---
 ### P-078 — Persistence EfCore: Migrate IUserContext and ICurrentTenantService to Security.Abstractions
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-014
 **Domain:** 06.Persistence
 **Depends on:** P-077
@@ -3702,7 +3705,7 @@ The local `IUserContext` and `ICurrentTenantService` declarations in `06.Persist
 ---
 ### P-079 — Persistence Abstractions: Clean Up IDbConnectionFactory Doc + Add Projection Specification Contract
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-014
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -3734,7 +3737,7 @@ The projection specification gap is the single most common reason teams reach ar
 ---
 ### P-080 — Persistence EfCore: Bulk Operations, Projection Reads, Paged Result, Domain Event Dispatch, and IQueryable Leak Fix
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-014
 **Domain:** 06.Persistence
 **Depends on:** P-079, P-081, P-095
@@ -3816,7 +3819,7 @@ Domain events collected on aggregates during a command must be dispatched after 
 ---
 ### P-082 — Persistence EfCore: Fix TenantedDbContext Reflection in OnModelCreating
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-014
 **Domain:** 06.Persistence
 **Depends on:** P-078
@@ -4210,7 +4213,7 @@ Packing and doing a consumer verify is the only way to confirm that the package 
 ---
 ### P-091 — Persistence EfCore: Audit Interceptor String Adapter for Guid-typed IUserContext.UserId
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-016
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -4253,7 +4256,7 @@ When P-078 removes the local `IUserContext` (which had `string UserId`) and repl
 ---
 ### P-092 — Persistence EfCore: ICurrentTenantService → ITenantProvider Nullability Resolution
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-016
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -4302,7 +4305,7 @@ This phase is a prerequisite clarification and documentation phase for P-078 —
 ---
 ### P-093 — Persistence Abstractions: Add ExistsAsync and GetByIdsAsync to Repository Contracts
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-016
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -4351,7 +4354,7 @@ Both methods must carry full XML doc comments explaining the semantics, the SQL 
 ---
 ### P-094 — Persistence EfCore: EfRepository.UpdateAsync Tracking Optimization
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-016
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -4474,4 +4477,370 @@ Rule 1 prevents audit trail inconsistency caused by GUID format drift — a sile
 - [ ] All three rules run as `[Fact]` tests in the governance test suite; each has a descriptive failure message
 - [ ] Governance test suite passes with all new rules included
 
+---
+
+---
+### P-097 — Persistence Abstractions: Promote GetProjectedQuery to ISpecificationEvaluator Contract
+
+**Status:** `●` Complete
+**Work Order:** WO-017
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`EfReadRepository<TAggregate, TId>` currently downcasts its injected `ISpecificationEvaluator<TAggregate>` to the concrete `SpecificationEvaluator<TAggregate>` in order to call `GetProjectedQuery`. This is a layering violation: `EfReadRepository` is supposed to depend on the `ISpecificationEvaluator<T>` abstraction from `SharedKernel.Persistence.Abstractions`, but the downcast breaks the contract — any alternative evaluator implementation (Cosmos, in-memory, Marten) will throw `InvalidCastException` at runtime.
+
+The fix has two parts:
+
+**Part 1 — Extend `ISpecificationEvaluator<T>` in Abstractions:**
+Add a generic method `GetProjectedQuery<TResult>(IQueryable<T> inputQuery, IProjectionSpecification<T, TResult> spec) → IQueryable<TResult>` to the `ISpecificationEvaluator<T>` interface. This method already exists on the concrete `SpecificationEvaluator<T>` — it must be promoted to the interface so the abstraction is complete. The method signature is AOT-safe: it uses expression trees through `IProjectionSpecification<T, TResult>.Selector`, which is already in Abstractions.
+
+**Part 2 — Remove the downcast in `EfReadRepository`:**
+Replace the stored `SpecificationEvaluator<TAggregate> _evaluator` field with `ISpecificationEvaluator<TAggregate> _evaluator`. The projection methods (`ListProjectedAsync`, `GetBySpecProjectedAsync`) call `_evaluator.GetProjectedQuery(...)` directly on the interface — no cast needed. The constructor parameter type changes accordingly.
+
+**Abstraction contract addition:**
+The `ISpecificationEvaluator<T>` interface in Abstractions gains one method. Zero ORM dependencies are introduced — `IProjectionSpecification<T, TResult>` is already in Abstractions and uses only BCL expression tree types.
+
+#### Why this is needed
+
+The concrete downcast is a silent runtime bomb: any team that implements a custom `ISpecificationEvaluator<T>` for testing or alternative persistence providers will get an `InvalidCastException` the first time `ListProjectedAsync` or `GetBySpecProjectedAsync` is called. At scale across hundreds of services, this is a guaranteed failure vector. The abstraction boundary exists precisely to enable provider swapping — the downcast negates that entirely. Promoting the method to the interface closes the gap at zero cost.
+
+#### Acceptance criteria
+- [ ] `ISpecificationEvaluator<T>` in `SharedKernel.Persistence.Abstractions` declares `GetProjectedQuery<TResult>(IQueryable<T> inputQuery, IProjectionSpecification<T, TResult> spec) → IQueryable<TResult>`
+- [ ] `SpecificationEvaluator<T>` in `SharedKernel.Persistence.EfCore` implements the interface method (it already has the implementation — it just needs the `ISpecificationEvaluator<T>` declaration added)
+- [ ] `EfReadRepository` field changes from `SpecificationEvaluator<TAggregate>` to `ISpecificationEvaluator<TAggregate>` — the downcast is removed
+- [ ] `EfReadRepository` constructor parameter type changes from `ISpecificationEvaluator<TAggregate> evaluator` (with internal downcast) to `ISpecificationEvaluator<TAggregate> evaluator` (used directly)
+- [ ] All existing `EfReadRepository` tests continue to pass — no behavioral changes
+- [ ] `ContractShapeTests` in `SharedKernel.Persistence.Abstractions.Tests` verify `GetProjectedQuery` is declared on the interface
+- [ ] XML doc on the new interface method matches the existing doc on `SpecificationEvaluator<T>.GetProjectedQuery`
+- [ ] `06.Persistence/CLAUDE.md` updated: `ISpecificationEvaluator<T>` interface contract table adds `GetProjectedQuery`
+---
+
+---
+### P-098 — Persistence EfCore: Fix EfUnitOfWork Dual-Constructor DI Ambiguity
+
+**Status:** `●` Complete
+**Work Order:** WO-017
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`EfUnitOfWork` declares two public constructors: one accepting `(SharedKernelDbContext)` and one accepting `(SharedKernelDbContext, IDomainEventDispatcher?)`. This creates DI resolution ambiguity in .NET's default service container (`Microsoft.Extensions.DependencyInjection`): when `IDomainEventDispatcher` IS registered, the container may select the shorter constructor (single parameter) and silently skip the dispatcher. The result is domain events raised during `SaveChangesAsync` are never dispatched even though a dispatcher is registered — a silent behavioral failure.
+
+The fix: collapse to a single constructor that accepts `IDomainEventDispatcher?` as nullable. Since the DI container resolves nullable services as `null` when not registered, this is the idiomatic .NET optional-dependency pattern. The single constructor is:
+
+```
+EfUnitOfWork(SharedKernelDbContext dbContext, IDomainEventDispatcher? dispatcher = null)
+```
+
+When `IDomainEventDispatcher` is not registered in the container, DI resolves `null` for the nullable parameter and the no-dispatch path remains active. When it IS registered, DI resolves the implementation. This eliminates the constructor ambiguity entirely.
+
+`EfCorePersistenceBuilder.Build()` requires no changes — the DI registration of `EfUnitOfWork` as `IUnitOfWork` continues to work because the single constructor is unambiguous.
+
+Update `06.Persistence/CLAUDE.md` to clarify that `IDomainEventDispatcher` is resolved by the DI container as a nullable optional service — no special registration pattern is needed beyond registering the implementation.
+
+#### Why this is needed
+
+Silently missing domain event dispatch is among the most dangerous failure modes in an event-sourced or domain-event-driven architecture. Events appear to work in test environments (where a concrete dispatcher is passed to the constructor directly) but fail in production (where DI picks the wrong constructor). This is not theoretical: .NET DI uses the constructor with the most resolvable parameters, which is non-deterministic when two constructors overlap. Collapsing to one constructor with a nullable optional parameter is the idiomatic .NET DI pattern for optional dependencies.
+
+#### Acceptance criteria
+- [ ] `EfUnitOfWork` has exactly one public constructor: `(SharedKernelDbContext dbContext, IDomainEventDispatcher? dispatcher = null)`
+- [ ] The two-constructor form is removed
+- [ ] Existing `DomainEventDispatchTests` continue to pass — all four test cases cover: dispatcher registered, dispatcher not registered, double-dispatch prevention, dispatch failure behavior
+- [ ] New DI test: register `EfUnitOfWork` in a real `ServiceCollection`; also register a concrete `IDomainEventDispatcher`; resolve `IUnitOfWork` via DI; verify that domain events ARE dispatched after `SaveChangesAsync` — confirming DI wires the dispatcher correctly via the single constructor
+- [ ] New DI test: do NOT register `IDomainEventDispatcher`; resolve `IUnitOfWork`; verify `SaveChangesAsync` completes without error (null dispatcher path works)
+- [ ] `06.Persistence/CLAUDE.md` `EfUnitOfWork` section updated to state the single-constructor pattern and the optional DI injection semantics
+---
+
+---
+### P-099 — Persistence EfCore: Fix ExistsAsync EF.Property Shadow Access + Add ITransactionalUnitOfWork
+
+**Status:** `●` Complete
+**Work Order:** WO-017
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+This phase addresses two related persistence concerns:
+
+**Part 1 — Fix `ExistsAsync` predicate in `EfRepository`:**
+
+`EfRepository.ExistsAsync` uses `AnyAsync(e => EF.Property<TId>(e, "Id")!.Equals(id))`. `EF.Property<TId>(e, "Id")` is a shadow property accessor intended for EF Core internal use or genuinely shadow-mapped properties. For `AggregateRoot<TId>` subclasses — which declare `Id` as a concrete CLR property — this is incorrect. EF Core may translate it inconsistently depending on provider and whether the property is shadow or concrete.
+
+The fix: use the same expression-tree approach as `ByIdSpecification<TAggregate, TId>` which correctly uses `Expression.Property(param, "Id")` → `Expression.Equal` → compiled lambda. `ExistsAsync` should either:
+- Delegate to `AnyAsync(e => EF.Property<object>(e, "Id")!.Equals((object)id!))` — which forces a boxed comparison and is consistently translated
+- Or more correctly: build a static compiled expression `Expression<Func<TAggregate, bool>>` using `Expression.Property(param, "Id")` + `Expression.Equal(idProperty, Expression.Constant(id, typeof(TId)))` and pass it to `AnyAsync`. This is the same pattern `ByIdSpecification` uses and is confirmed AOT-safe on EF Core IQueryable.
+
+**Part 2 — Add `ITransactionalUnitOfWork` to Abstractions:**
+
+Microservices that need to coordinate multiple repository operations within an explicit database transaction (e.g., saga compensation steps, two-phase read-then-write patterns, batch imports) currently have no way to do this via the `IUnitOfWork` abstraction. They fall back to injecting `SharedKernelDbContext` directly — a hard rule violation.
+
+Add `ITransactionalUnitOfWork` to `SharedKernel.Persistence.Abstractions` extending `IUnitOfWork`:
+
+```
+ITransactionalUnitOfWork : IUnitOfWork
+    BeginTransactionAsync(CancellationToken ct) → Task<IDbContextTransaction>
+    CommitTransactionAsync(CancellationToken ct) → Task
+    RollbackTransactionAsync(CancellationToken ct) → Task
+```
+
+`IDbContextTransaction` is from `Microsoft.EntityFrameworkCore` — this introduces a limited EF Core reference in Abstractions. To keep Abstractions ORM-free, the transaction handle should be represented as `IAsyncDisposable` or a custom `IPersistenceTransaction` wrapper interface that wraps `CommitAsync()` and `RollbackAsync()` without importing EF Core into Abstractions.
+
+The transaction interface lives in Abstractions as `IPersistenceTransaction` with `CommitAsync(CancellationToken ct)`, `RollbackAsync(CancellationToken ct)`, and `IAsyncDisposable`. The `EfTransactionalUnitOfWork` in EfCore implements `ITransactionalUnitOfWork` using `DbContext.Database.BeginTransactionAsync` internally, wrapping the `IDbContextTransaction` in a `EfPersistenceTransaction` adapter.
+
+`EfCorePersistenceBuilder.Build()` gains an optional `.WithTransactionalUnitOfWork()` fluent method that registers `ITransactionalUnitOfWork → EfTransactionalUnitOfWork` (scoped) alongside `IUnitOfWork → EfUnitOfWork`.
+
+#### Why this is needed
+
+`ExistsAsync` using `EF.Property` is an incorrect use of a shadow property accessor on a concrete CLR property. While it often works, it is fragile across provider versions and AOT scenarios. Fixing it to use the same expression-tree approach as `ByIdSpecification` aligns it with the documented AOT-safe pattern.
+
+`ITransactionalUnitOfWork` closes the last forcing function for `DbContext` injection: teams needing explicit transactions. Without this abstraction, every service with a multi-step transactional saga must inject the concrete `DbContext`, which bypasses the repository pattern and couples application logic to EF Core. This is one of the most common persistence anti-patterns across microservice ecosystems.
+
+#### Acceptance criteria
+- [ ] `EfRepository.ExistsAsync` uses expression-tree `Expression.Property` + `Expression.Equal` pattern (or consistent EF Core translation approach) — `EF.Property<TId>(e, "Id")` is removed
+- [ ] New unit test: `ExistsAsync` returns `true` for an existing strongly-typed ID; `false` for missing — identical behavioral contract, different implementation
+- [ ] `IPersistenceTransaction` interface exists in `SharedKernel.Persistence.Abstractions` with `CommitAsync`, `RollbackAsync`, and `IAsyncDisposable`
+- [ ] `ITransactionalUnitOfWork : IUnitOfWork` interface exists in `SharedKernel.Persistence.Abstractions` with `BeginTransactionAsync(CancellationToken ct) → Task<IPersistenceTransaction>`
+- [ ] `EfPersistenceTransaction` sealed class in `SharedKernel.Persistence.EfCore` wraps `IDbContextTransaction` and implements `IPersistenceTransaction`
+- [ ] `EfTransactionalUnitOfWork` sealed class in `SharedKernel.Persistence.EfCore` implements `ITransactionalUnitOfWork`; dispatches domain events post-commit in the same manner as `EfUnitOfWork`
+- [ ] `EfCorePersistenceBuilder` gains `.WithTransactionalUnitOfWork()` fluent method; registers `ITransactionalUnitOfWork → EfTransactionalUnitOfWork` (scoped)
+- [ ] Integration test (SQLite): begin transaction → add aggregate → commit → verify persisted
+- [ ] Integration test (SQLite): begin transaction → add aggregate → rollback → verify NOT persisted
+- [ ] `SharedKernel.Persistence.Abstractions` does NOT reference any EF Core NuGet package — `IPersistenceTransaction` uses only BCL types
+- [ ] `06.Persistence/CLAUDE.md` updated: `ITransactionalUnitOfWork` and `IPersistenceTransaction` added to interface contracts; `ExistsAsync` implementation note updated
+---
+
+---
+### P-100 — Persistence EfCore: Fix TenantedRepository Soft-Delete Bypass + Rename Clarity
+
+**Status:** `●` Complete
+**Work Order:** WO-017
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`TenantedRepository<TAggregate, TId>.GetByIdForTenantAsync` calls `IgnoreQueryFilters()` which removes ALL global query filters simultaneously — both the tenant isolation filter AND the soft-delete filter. This is unintentional for the documented purpose of the method ("admin or migration code that needs to operate on data outside the current tenant scope"). Silently returning soft-deleted records from an admin tenant-bypass lookup is a data integrity risk.
+
+**Fix — two new methods replacing the single ambiguous one:**
+
+Remove `GetByIdForTenantAsync(TId id, Guid tenantId, ct)` or keep it with a deprecation warning, and add:
+
+1. `GetByIdForTenantAsync(TId id, Guid tenantId, ct)` — bypasses ONLY the tenant filter; preserves the soft-delete filter. Implementation: apply `IgnoreQueryFilters()` then re-add the soft-delete filter manually via `Where(e => !EF.Property<bool>(e, "IsDeleted"))` if the entity is `ISoftDeletable`; or use a more targeted approach.
+
+   **Note on EF Core limitation:** EF Core's `IgnoreQueryFilters()` cannot selectively bypass a single filter — it bypasses all of them. The workaround is: after `IgnoreQueryFilters()`, add back the soft-delete criteria manually as a `Where` clause: `.Where(e => !EF.Property<bool>(e, nameof(ISoftDeletable.IsDeleted)))` when `typeof(ISoftDeletable).IsAssignableFrom(typeof(TAggregate))`. This re-creates the soft-delete filter as an explicit query predicate.
+
+2. `GetByIdForTenantIncludingDeletedAsync(TId id, Guid tenantId, ct)` — bypasses BOTH filters (current behavior, now named clearly). Reserved for recovery and audit operations.
+
+Both methods carry XML doc comments that clearly state their filter semantics. `GetByIdForTenantAsync` must document that soft-deleted records are excluded. `GetByIdForTenantIncludingDeletedAsync` must document that both filters are bypassed and state it is only for audit/recovery.
+
+#### Why this is needed
+
+Silent soft-delete bypass on what appears to be a routine "get by ID for tenant" call is a correctness trap. A developer using `GetByIdForTenantAsync` in an admin panel expects to see live data for a different tenant — they do not expect to also see soft-deleted records. The name `GetByIdForTenantAsync` gives no indication of soft-delete semantics. Providing a clean `GetByIdForTenantAsync` (soft-delete preserved) and an explicit `GetByIdForTenantIncludingDeletedAsync` (both filters bypassed) makes the semantics unambiguous at the call site.
+
+#### Acceptance criteria
+- [ ] `TenantedRepository<TAggregate, TId>` has `GetByIdForTenantAsync(TId id, Guid tenantId, ct)` that bypasses the tenant filter AND preserves the soft-delete filter for `ISoftDeletable` entities
+- [ ] `TenantedRepository<TAggregate, TId>` has `GetByIdForTenantIncludingDeletedAsync(TId id, Guid tenantId, ct)` that bypasses both filters (previous behavior); XML doc explicitly states both filters are bypassed; warns this is only for audit/recovery/admin use
+- [ ] For non-`ISoftDeletable` entities, both methods behave identically (no soft-delete filter exists to preserve)
+- [ ] Integration test (SQLite): soft-delete an entity; call `GetByIdForTenantAsync` → returns null (soft-delete excluded); call `GetByIdForTenantIncludingDeletedAsync` → returns entity
+- [ ] Integration test (SQLite): entity in tenant A; query with tenant B via `GetByIdForTenantAsync` → returns null (correct tenant filter bypass applied, but still cross-tenant — wrong behavior confirmed blocked)
+- [ ] Integration test (SQLite): entity in tenant A with `GetByIdForTenantAsync(id, tenantA)` returns entity; `GetByIdForTenantAsync(id, tenantB)` returns null
+- [ ] The original single-method signature `GetByIdForTenantAsync(TId, Guid, CancellationToken)` continues to compile with the new soft-delete-preserving semantics (keeping the method name, changing its behavior)
+- [ ] `06.Persistence/CLAUDE.md` `TenantedRepository` section updated to document both methods and their respective filter semantics
+---
+
+---
+### P-101 — Persistence EfCore: Add ListPagedProjectedAsync to IReadRepository and EfReadRepository
+
+**Status:** `●` Complete
+**Work Order:** WO-017
+**Domain:** 06.Persistence
+**Depends on:** P-097
+
+#### What is needed
+
+The most common query pattern in microservices is "return a paged list of DTOs" — not "return a paged list of aggregate roots". Currently:
+
+- `ListPagedAsync(spec)` returns `PagedList<TAggregate>` — requires in-memory mapping to DTOs after the call, defeating SQL projection benefits.
+- `ListProjectedAsync(projectionSpec)` returns `IReadOnlyList<TResult>` — projects to DTOs at SQL level but provides no paging metadata (`TotalCount`, `TotalPages`, etc.).
+
+Neither method serves the primary use case without a workaround. Teams are forced to: (a) use `ListPagedAsync` and map in memory, or (b) use `ListProjectedAsync` with manual paging and a separate `CountAsync` call — two round trips, manually wired, inconsistent across services.
+
+Add `ListPagedProjectedAsync<TResult>` to both the interface and implementation:
+
+**In `IReadRepository<TAggregate, TId>` (Abstractions):**
+
+```
+ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate, TResult> spec, CancellationToken ct)
+    → Task<PagedList<TResult>>
+```
+
+The spec supplies both the pipeline (criteria, ordering, Skip/Take) and the selector. The method issues two DB round-trips: count query (Skip/Take stripped, projection NOT applied — counts the full filtered set) and data query (full spec with projection applied).
+
+**In `EfReadRepository<TAggregate, TId>` (EfCore):**
+
+Implementation mirrors `ListPagedAsync` but uses `GetProjectedQuery` instead of `GetQuery` for the data query. The count query uses `GetQuery` (without projection) to count the filtered aggregates before projection. Page metadata is extracted the same way as `ListPagedAsync`.
+
+The `NoPagingWrapper<T>` private class already used in `ListPagedAsync` is reused for the count query.
+
+#### Why this is needed
+
+"Paged DTO list" is the single most frequent read-side pattern in CQRS microservices. Every query handler that returns paginated data to a UI or API needs this. Without it, teams either accept the in-memory mapping overhead or write inconsistent two-round-trip workarounds. Adding this one method to `IReadRepository` eliminates the entire class of "paged projection" workarounds across all services. The implementation cost is minimal — it reuses `GetProjectedQuery` (from P-097) and the existing `NoPagingWrapper` and `ExtractPageInfo` private helpers.
+
+#### Acceptance criteria
+- [ ] `IReadRepository<TAggregate, TId>` in Abstractions declares `ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate, TResult> spec, CancellationToken ct) → Task<PagedList<TResult>>`
+- [ ] `EfReadRepository<TAggregate, TId>` implements the method: count query uses `GetQuery` (no projection, no Skip/Take) then `CountAsync`; data query uses `GetProjectedQuery` (with projection, with Skip/Take) then `ToListAsync`; both under the same `DbContext` scope
+- [ ] `PagedList<TResult>.Create` is called with the projected items, page, pageSize, and totalCount
+- [ ] Integration test (SQLite): 10 aggregates; `ListPagedProjectedAsync` with page 2 size 3 → 3 DTOs, `TotalCount == 10`, `Page == 2`, `PageSize == 3`
+- [ ] Integration test (SQLite): empty set → `TotalCount == 0`, `Items == []`
+- [ ] Integration test (SQLite): page beyond data → empty items, correct `TotalCount`
+- [ ] Integration test (SQLite): verify projection is applied at SQL level — the projected result contains only the mapped fields (no full aggregate data)
+- [ ] `ContractShapeTests` in Abstractions assert the new method exists on `IReadRepository`
+- [ ] `06.Persistence/CLAUDE.md` updated: `IReadRepository` contract table adds `ListPagedProjectedAsync`; `EfReadRepository` section updated to document the two-round-trip behavior
+- [ ] Depends on P-097 being complete (requires `GetProjectedQuery` on the interface, not a concrete cast)
+---
+
+---
+### P-102 — Persistence EfCore: Rename ValueObjectOwnershipConvention to Reflect Static Utility Intent
+
+**Status:** `●` Complete
+**Work Order:** WO-017
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`ValueObjectOwnershipConvention` is named as if it implements the EF Core `IModelFinalizingConvention` interface and auto-applies during model building — it does not. It is a static utility class with a single `Apply(ModelBuilder modelBuilder)` method that must be called manually from `OnModelCreating`. This naming mismatch misleads developers who expect it to work like `SnakeCaseNamingConvention` (which does implement `IModelFinalizingConvention` and is registered via `ConfigureConventions`).
+
+**Option A (Preferred) — Implement as a real `IModelFinalizingConvention`:**
+
+Rename to `ValueObjectOwnershipConvention` (keeping the name) and implement `IModelFinalizingConvention`:
+
+```csharp
+public sealed class ValueObjectOwnershipConvention : IModelFinalizingConvention
+{
+    void IModelFinalizingConvention.ProcessModelFinalizing(
+        IConventionModelBuilder modelBuilder,
+        IConventionContext<IConventionModelBuilder> context)
+```
+
+Register it in `SharedKernelDbContext.OnConfiguring` or in `EfCorePersistenceBuilder.Build()` via `DbContextOptionsBuilder.ReplaceService<IConventionSet>` (which is the EF Core API for convention registration) or via `ConfigureConventions` override in the base context.
+
+**Option B (Minimal, no convention system change) — Rename to clarify static intent:**
+
+If implementing as a real convention is too invasive for this phase, rename to `ValueObjectOwnershipBuilder` and update all XML docs to explicitly state it must be called manually from `OnModelCreating`. The name change removes the false `Convention` suffix that implies auto-application.
+
+**Option B is the correct scope for this phase** — implementing a full `IModelFinalizingConvention` would require changes to `SharedKernelDbContext.OnConfiguring` and the EF Core convention pipeline, which is a larger change. Option B is a safe, non-breaking rename that eliminates the naming confusion with zero behavioral impact.
+
+After renaming:
+- All references in test code and in `06.Persistence/CLAUDE.md` are updated
+- XML doc on the class is updated to explicitly state: "Call `ValueObjectOwnershipBuilder.Apply(modelBuilder)` at the end of `OnModelCreating` after all entity configurations are applied. This is a post-processing utility, not an EF Core convention — it does not auto-apply."
+
+#### Why this is needed
+
+Developer confusion from the naming mismatch is guaranteed. A developer building a new multi-tenant service that uses value objects will either: (a) not call `Apply` at all because the name implies it auto-applies, resulting in missing `OwnsOne` configurations and runtime EF Core model-build errors; or (b) spend time looking for how to register it as a convention (via `ConfigureConventions`) only to discover it doesn't implement the interface. Either outcome costs developer time. The rename is a one-line fix that prevents this confusion permanently.
+
+#### Acceptance criteria
+- [ ] The class is renamed from `ValueObjectOwnershipConvention` to `ValueObjectOwnershipBuilder`
+- [ ] All test code references are updated to use the new name
+- [ ] `06.Persistence/CLAUDE.md` updated: all references to `ValueObjectOwnershipConvention` replaced with `ValueObjectOwnershipBuilder`; usage note added explicitly stating manual `OnModelCreating` call is required
+- [ ] XML doc on the class states explicitly: "This is a static utility method, not an EF Core `IModelFinalizingConvention`. Call `ValueObjectOwnershipBuilder.Apply(modelBuilder)` manually at the end of `OnModelCreating`."
+- [ ] All existing convention tests in `DomainPrimitiveConventionTests.cs` continue to pass with the new name
+- [ ] `dotnet build` produces zero errors and zero warnings on the EfCore package after the rename
+---
+
+---
+### P-103 — Governance: Architecture Rules for EfCore Package Hygiene
+
+**Status:** `○` Pending
+**Work Order:** WO-017
+**Domain:** 00.Governance
+**Depends on:** P-097, P-099
+
+#### What is needed
+
+Three new architecture enforcement rules in `SharedKernel.ArchitectureTests` addressing the EfCore package hygiene concerns identified in WO-017:
+
+**Rule 1 — No concrete downcast of `ISpecificationEvaluator<T>` to implementation type:**
+After P-097, `ISpecificationEvaluator<T>` in Abstractions exposes `GetProjectedQuery`. Any code in the production packages that casts `ISpecificationEvaluator<T>` to a concrete type (e.g., `(SpecificationEvaluator<T>)evaluator`) is a violation. Add a NetArchTest rule (or Roslyn analyzer check) that asserts no type in `SharedKernel.Persistence.EfCore` contains a direct cast from `ISpecificationEvaluator<>` to any concrete class. This prevents future regression to the downcast pattern.
+
+**Rule 2 — `IUnitOfWork` implementors must have exactly one constructor:**
+After P-098, `EfUnitOfWork` uses a single constructor. To prevent future contributors from adding a second constructor (recreating the DI ambiguity), add a NetArchTest rule asserting that all types in `06.Persistence` implementing `IUnitOfWork` have exactly one public constructor. This is a simple structural check that runs in milliseconds.
+
+**Rule 3 — `ITransactionalUnitOfWork` must be the only EF Core transaction surface:**
+After P-099, `ITransactionalUnitOfWork` is the abstraction-layer entry point for explicit transactions. No code in `05.Application` assemblies (application handlers) may reference `Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction` directly. Add a NetArchTest rule asserting that no type in any `05.Application` or downstream non-persistence namespace references `IDbContextTransaction` or `DbContext.Database.BeginTransactionAsync`. The boundary is `ITransactionalUnitOfWork` — application layer never sees the EF Core transaction type.
+
+All three rules must be documented in `00.Governance/CLAUDE.md` under the Persistence Enforcement section with: rule name, rationale, offending-pattern example, compliant-pattern example, and exemptions (e.g., `06.Persistence.EfCore` itself is exempt from Rule 3).
+
+#### Why this is needed
+
+Rule 1 prevents regression to the concrete-downcast anti-pattern that P-097 fixes. Without this rule, a future refactor could re-introduce the downcast silently. Rule 2 prevents DI ambiguity regression — a one-line fix in `EfUnitOfWork` could be undone by a contributor who "helpfully" adds a convenience constructor. Rule 3 enforces the transaction abstraction boundary: if application handlers start injecting `IDbContextTransaction` directly, the entire persistence abstraction is undermined. These are low-cost, high-signal rules that protect the most critical architectural decisions made in WO-017.
+
+#### Acceptance criteria
+- [ ] Rule 1 exists as a `[Fact]` test asserting no `ISpecificationEvaluator<>` → concrete-type casts exist in `SharedKernel.Persistence.EfCore` assembly
+- [ ] Rule 2 exists asserting all `IUnitOfWork` implementors in `06.Persistence` have exactly one public constructor; passes on `EfUnitOfWork` after P-098
+- [ ] Rule 3 exists asserting no type in `05.Application` namespace pattern references `IDbContextTransaction`; exempts `06.Persistence` assemblies
+- [ ] All three rules documented in `00.Governance/CLAUDE.md` with rationale, example, and exemptions
+- [ ] All three rules run as `[Fact]` tests with descriptive failure messages; no false positives on the existing SharedKernel assemblies
+- [ ] Governance test suite passes with all new rules included
+---
+
+---
+### P-104 — Testing: EfCore Persistence Test Coverage Gaps — AsNoTracking, Transaction Scope, Paged Projection
+
+**Status:** `○` Pending
+**Work Order:** WO-017
+**Domain:** 16.Testing
+**Depends on:** P-097, P-099, P-101
+
+#### What is needed
+
+Several behavioral contracts of the EfCore persistence package lack test coverage. This phase adds the missing tests to `SharedKernel.Persistence.EfCore.Tests` and updates `SharedKernel.Testing` with reusable helpers for persistence testing.
+
+**Gap 1 — `AsNoTracking` behavioral verification:**
+No existing test verifies that when `spec.AsNoTracking == true`, the entities returned by `ListAsync`, `GetBySpecAsync`, `GetByIdsAsync`, and `ListProjectedAsync` are NOT tracked by the `DbContext` change tracker. This is a behavioral contract with real performance implications. Add tests:
+- `ListAsync` with `ReadOnlySpecification<T>` (which sets `AsNoTracking = true`) → returned entities have `EntityState.Detached`
+- `GetBySpecAsync` with `AsNoTracking = true` → returned entity has `EntityState.Detached`
+- `ListAsync` without `AsNoTracking` → returned entities have `EntityState.Unchanged` (are tracked)
+- Verify that modifying a no-tracking entity and calling `SaveChangesAsync` does NOT generate an UPDATE statement
+
+**Gap 2 — Assembly scan `OnModelCreating` smoke test:**
+The production pattern is that a downstream `SharedKernelDbContext` subclass calls `base.OnModelCreating(modelBuilder)` which scans the subclass's assembly for `IEntityTypeConfiguration<T>` implementations. The test `TestDbContext` deliberately bypasses `base.OnModelCreating` to avoid test configuration conflicts. Add a dedicated `AssemblyScanDbContext` in the tests that DOES call `base.OnModelCreating` with a clean assembly containing only one configuration — verify the configuration is correctly applied via assembly scan.
+
+**Gap 3 — Transaction scope round-trip (after P-099):**
+When `ITransactionalUnitOfWork` is implemented (P-099), add:
+- Test: begin transaction → add entity → commit → entity persisted
+- Test: begin transaction → add entity → rollback → entity NOT persisted
+- Test: multiple repository operations within one transaction scope → all committed atomically
+
+**Gap 4 — `ListPagedProjectedAsync` coverage (after P-101):**
+The new paged projection method (P-101) needs its own test class:
+- Paged DTO projection: 10 aggregates, page 2 size 3 → 3 DTOs, `TotalCount == 10`
+- Empty set: `TotalCount == 0`, `Items == []`
+- Page beyond data: empty items, correct `TotalCount`
+- Verify projection columns only (not full aggregate round-trip overhead)
+
+**`SharedKernel.Testing` helpers:**
+Add `PersistenceTestHelpers` static class to `SharedKernel.Testing` with:
+- `AssertEntityTracked<T>(DbContext ctx, T entity)` — asserts entity is in tracked state
+- `AssertEntityNotTracked<T>(DbContext ctx, T entity)` — asserts entity has `EntityState.Detached`
+
+These helpers are useful across any EfCore test project.
+
+#### Why this is needed
+
+`AsNoTracking` is one of the most performance-critical EF Core features and its absence from test coverage means it is untested as a behavioral contract. A regression (e.g., the `AsNoTracking` step being accidentally removed from `SpecificationEvaluator`) would not be caught until production profiling reveals unexpected change-tracking overhead. The assembly scan test closes the gap between "we test explicit configuration" and "we test the discovery path" — the primary path that production services use. The transaction and paged projection tests are required companions to the P-099 and P-101 implementations.
+
+#### Acceptance criteria
+- [ ] Four `AsNoTracking` tests added to `EfReadRepositoryTests`: detached state on `ListAsync` with `AsNoTracking`, detached state on `GetBySpecAsync`, tracked state on `ListAsync` without `AsNoTracking`, no UPDATE for modified no-tracking entity
+- [ ] Assembly scan smoke test: `AssemblyScanDbContext` calls `base.OnModelCreating`; verify one `IEntityTypeConfiguration<T>` from the test assembly is applied
+- [ ] Transaction scope tests (depends on P-099): begin/commit/rollback round-trips as described
+- [ ] `ListPagedProjectedAsync` tests (depends on P-101): four test cases as described
+- [ ] `PersistenceTestHelpers` static class added to `SharedKernel.Testing` with `AssertEntityTracked` and `AssertEntityNotTracked`
+- [ ] All new tests use SQLite provider — no Testcontainers needed for EfCore behavioral tests
+- [ ] All existing tests continue to pass — no regressions
+- [ ] `16.Testing/CLAUDE.md` (if it exists) updated with `PersistenceTestHelpers` documentation
 ---

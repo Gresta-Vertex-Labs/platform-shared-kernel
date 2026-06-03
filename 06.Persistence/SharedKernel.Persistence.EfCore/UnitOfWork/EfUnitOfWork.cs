@@ -34,6 +34,13 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// the persistence builder.
 /// </para>
 /// <para>
+/// <strong>Single constructor rule (P-098):</strong> This class has exactly one public
+/// constructor. <c>IDomainEventDispatcher?</c> is a nullable optional parameter resolved by the
+/// DI container — DI resolves <see langword="null"/> when no implementation is registered and
+/// resolves the registered implementation when present. Adding a second constructor is a hard
+/// violation: the DI container may silently select the shorter constructor and skip the dispatcher.
+/// </para>
+/// <para>
 /// <strong>Known trade-off:</strong> dispatch failure after a successful commit does not roll back
 /// the committed transaction. Domain events raised in that save cycle are cleared and lost. This
 /// is a deliberate design decision — the persistence boundary is the DbContext transaction;
@@ -46,23 +53,16 @@ public sealed class EfUnitOfWork : IUnitOfWork
     private readonly IDomainEventDispatcher? _dispatcher;
 
     /// <summary>
-    /// Initialises a new <see cref="EfUnitOfWork"/> without a domain event dispatcher.
-    /// </summary>
-    /// <param name="dbContext">The scoped shared-kernel DB context.</param>
-    public EfUnitOfWork(SharedKernelDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
-
-    /// <summary>
-    /// Initialises a new <see cref="EfUnitOfWork"/> with an optional domain event dispatcher.
+    /// Initialises a new <see cref="EfUnitOfWork"/>.
     /// </summary>
     /// <param name="dbContext">The scoped shared-kernel DB context.</param>
     /// <param name="dispatcher">
     /// Optional dispatcher for domain events raised during the save cycle.
-    /// When <see langword="null"/>, events are cleared but not dispatched.
+    /// Resolved by DI as a nullable service — <see langword="null"/> when
+    /// <c>IDomainEventDispatcher</c> is not registered; the concrete implementation when
+    /// registered. Never supply a second constructor — see class remarks.
     /// </param>
-    public EfUnitOfWork(SharedKernelDbContext dbContext, IDomainEventDispatcher? dispatcher)
+    public EfUnitOfWork(SharedKernelDbContext dbContext, IDomainEventDispatcher? dispatcher = null)
     {
         _dbContext = dbContext;
         _dispatcher = dispatcher;

@@ -78,11 +78,15 @@ IReadRepository<TAggregate, TId>
     .ListPagedAsync(ISpecification<TAggregate> spec, CancellationToken ct)                 → Task<PagedList<TAggregate>>
     .ListProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct)    → Task<IReadOnlyList<TResult>>
     .GetBySpecProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> s, ct)  → Task<TResult?>
+    .ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct) → Task<PagedList<TResult>>
     NOTE: Read-side only. Specifications control tracking, filtering, ordering, paging, and includes.
           Callers use ReadOnlySpecification<T> or PagedSpecification<T> for read-heavy paths.
           GetByIdsAsync translates to IN (...) SQL; result order is not guaranteed; missing IDs produce
           no entry; performance degrades above 1000 IDs (chunk at the application layer).
           ListPagedAsync issues two DB round-trips (count + data) under the same DbContext scope.
+          ListPagedProjectedAsync<TResult> (P-101): same two-round-trip pattern; count query uses GetQuery
+          (no projection), data query uses GetProjectedQuery (with selector); returns PagedList<TResult>.
+          Use this instead of ListPagedAsync when the caller needs DTOs, not aggregate roots.
           PagedList<T> is defined in SharedKernel.Contracts (04.Contracts).
           BREAKING CHANGE (P-080): GetByIdAsync has been removed from IReadRepository.
           Migration: replace readRepo.GetByIdAsync(id, ct) with
@@ -99,6 +103,21 @@ IUnitOfWork
           (Audit, SoftDelete, Concurrency) inside the same SaveChanges call.
           This is the ONLY permitted save boundary — calling DbContext.SaveChangesAsync directly
           outside EfUnitOfWork is a hard violation.
+
+IPersistenceTransaction  (IAsyncDisposable)
+    .CommitAsync(CancellationToken ct)                         → Task
+    .RollbackAsync(CancellationToken ct)                       → Task
+    NOTE: Provider-agnostic transaction handle. EF Core implementation wraps IDbContextTransaction.
+          Callers must await DisposeAsync() (or use await using) — the handle disposes the underlying
+          transaction resource. Zero ORM dependencies — lives in Abstractions (BCL types only).
+
+ITransactionalUnitOfWork  (extends IUnitOfWork)
+    .BeginTransactionAsync(CancellationToken ct)               → Task<IPersistenceTransaction>
+    NOTE: Opens an explicit database transaction. Multiple repository operations within the
+          returned IPersistenceTransaction scope are committed atomically via CommitAsync or
+          rolled back via RollbackAsync. Domain event dispatch fires after CommitAsync, consistent
+          with EfUnitOfWork semantics. Register via EfCorePersistenceBuilder.WithTransactionalUnitOfWork().
+          Application layer injects ITransactionalUnitOfWork — never IDbContextTransaction directly.
 ```
 
 #### Connection factory (`Connections/`)
@@ -116,9 +135,14 @@ IDbConnectionFactory
 ```text
 ISpecificationEvaluator<T>
     .GetQuery(IQueryable<T> inputQuery, ISpecification<T> spec) → IQueryable<T>
+    .GetProjectedQuery<TResult>(IQueryable<T> inputQuery, IProjectionSpecification<T,TResult> spec) → IQueryable<TResult>
     NOTE: Applies criteria, includes, ordering, paging, distinct, and AsNoTracking to the input queryable.
-          Lives in Abstractions so alternative evaluators (e.g., for Cosmos) can implement the same interface
-          without coupling to EF Core.
+          GetProjectedQuery applies the full aggregate pipeline (steps 0–7) then step 8 (Select).
+          Both methods live in Abstractions so alternative evaluators (e.g., for Cosmos) implement the same
+          interface without coupling to EF Core.
+          BREAKING from original design: GetProjectedQuery was previously only on the concrete
+          SpecificationEvaluator<T>; it is now on the interface (P-097). EfReadRepository no longer
+          downcasts to the concrete type — any ISpecificationEvaluator<T> implementation must implement both.
 
 IProjectionSpecification<TAggregate, TResult>  (extends ISpecification<TAggregate>)
     .Selector                                                   → Expression<Func<TAggregate, TResult>>
@@ -180,11 +204,16 @@ EfReadRepository<TAggregate, TId>  (abstract class, implements IReadRepository<T
     .ListPagedAsync(ISpecification<TAggregate> spec, CancellationToken ct)                 → Task<PagedList<TAggregate>>
     .ListProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct)    → Task<IReadOnlyList<TResult>>
     .GetBySpecProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> s, ct)  → Task<TResult?>
+    .ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct) → Task<PagedList<TResult>>
     NOTE: Uses ISpecificationEvaluator<T> internally. Pass ReadOnlySpecification<T> subclasses to avoid
           unnecessary change-tracking. AsNoTracking() applied when spec.AsNoTracking == true.
           GetByIdsAsync uses Where(e => ids.Contains(e.Id)).ToListAsync — generates IN (...) SQL.
           ListPagedAsync: count query strips Skip/Take; data query applies full spec; both under same DbContext.
-          Projection methods delegate to SpecificationEvaluator projection overload; Select applied after paging.
+          Projection methods delegate to ISpecificationEvaluator<T>.GetProjectedQuery (interface method since P-097);
+          no downcast to concrete SpecificationEvaluator<T> — any ISpecificationEvaluator<T> implementation works.
+          ListPagedProjectedAsync: count query uses GetQuery (no projection), data query uses GetProjectedQuery;
+          returns PagedList<TResult>. Use instead of ListPagedAsync when caller needs DTOs.
+          Select applied after paging in all projection paths.
           GetByIdAsync has been removed (P-080 breaking change) — use GetBySpecAsync(new ByIdSpecification<>(...)).
 ```
 
@@ -192,8 +221,12 @@ EfReadRepository<TAggregate, TId>  (abstract class, implements IReadRepository<T
 
 ```text
 EfUnitOfWork  (sealed class, implements IUnitOfWork)
+    constructor: EfUnitOfWork(SharedKernelDbContext dbContext, IDomainEventDispatcher? dispatcher = null)
     .SaveChangesAsync(CancellationToken ct)                    → Task<int>
-    NOTE: Delegates to SharedKernelDbContext.SaveChangesAsync.
+    NOTE: Exactly one public constructor. IDomainEventDispatcher? is a nullable optional parameter resolved
+          by the DI container — no second constructor. Adding a second constructor creates DI ambiguity
+          (container may silently pick the shorter one and skip the dispatcher). This is a hard violation.
+          Delegates to SharedKernelDbContext.SaveChangesAsync.
           All three interceptors (Audit, SoftDelete, Concurrency) fire automatically before the commit.
           No OutboxInterceptor — MassTransit's UseEntityFrameworkOutbox handles outbox in 07.Messaging.
           After SaveChangesAsync succeeds: collects all domain events from ChangeTracker.Entries<IHasDomainEvents>();
@@ -202,6 +235,15 @@ EfUnitOfWork  (sealed class, implements IUnitOfWork)
           IDomainEventDispatcher is from SharedKernel.Domain (03.Domain) — no 05.Application reference.
           Dispatcher is optional: consuming services opt in by registering IDomainEventDispatcher in DI.
           Dispatch failure does not roll back the already-committed transaction (document as known trade-off).
+
+EfTransactionalUnitOfWork  (sealed class, implements ITransactionalUnitOfWork)
+    .SaveChangesAsync(CancellationToken ct)                    → Task<int>      (inherited)
+    .BeginTransactionAsync(CancellationToken ct)               → Task<IPersistenceTransaction>
+    NOTE: Registered only when EfCorePersistenceBuilder.WithTransactionalUnitOfWork() is called.
+          Wraps DbContext.Database.BeginTransactionAsync; returns an EfPersistenceTransaction adapter
+          that implements IPersistenceTransaction. Domain event dispatch fires after CommitAsync,
+          consistent with EfUnitOfWork semantics. Application layer injects ITransactionalUnitOfWork —
+          never IDbContextTransaction directly (hard violation, enforced by governance Rule P-103).
 ```
 
 #### Specification evaluator (`Specifications/`)
@@ -290,6 +332,20 @@ StronglyTypedIdValueConverter<TStronglyTypedId, TValue>  (sealed class, extends 
       types, eliminating per-aggregate manual converter registration.
 ```
 
+#### Conventions (`Conventions/`)
+
+```text
+ValueObjectOwnershipBuilder  (static class)
+    .Apply(ModelBuilder modelBuilder) → void
+    NOTE: Static utility method — NOT an IModelFinalizingConvention and does NOT auto-apply.
+          Must be called manually from OnModelCreating after all entity configurations are applied.
+          Scans all non-owned entity types; calls OwnsOne for any property whose CLR type implements
+          IValueObject that is not already explicitly configured.
+          OwnsMany collections are excluded — register those explicitly in entity configuration classes.
+          Startup cost: O(n×m); early-exit when no IValueObject properties present.
+          Do NOT register via ConfigureConventions — it will have no effect there.
+```
+
 #### Multi-tenancy (`MultiTenancy/`)
 
 ```text
@@ -305,7 +361,13 @@ TenantedDbContext  (abstract class, extends SharedKernelDbContext)
 
 TenantedRepository<TAggregate, TId>  (abstract class, extends EfRepository<TAggregate, TId>)
     .GetByIdForTenantAsync(TId id, Guid tenantId, CancellationToken ct) → Task<TAggregate?>
-    NOTE: Provides explicit cross-tenant lookup (admin / migration use cases).
+    .GetByIdForTenantIncludingDeletedAsync(TId id, Guid tenantId, CancellationToken ct) → Task<TAggregate?>
+    NOTE: GetByIdForTenantAsync — bypasses the tenant filter only; preserves the soft-delete filter
+          for ISoftDeletable entities (soft-deleted records are excluded). Use for admin cross-tenant lookups
+          where only live records are expected.
+          GetByIdForTenantIncludingDeletedAsync — bypasses BOTH the tenant filter AND the soft-delete filter
+          via IgnoreQueryFilters(). Use only for audit, recovery, or data-export operations. XML doc must warn
+          both filters are bypassed.
           Standard GetByIdAsync flows through the global tenant filter automatically.
 ```
 
@@ -326,6 +388,10 @@ EfCorePersistenceBuilder
         — Registers NoOpTenantProvider (ITenantProvider, returns Guid.Empty) as scoped placeholder.
         — Asserts at .Build() time that TContext extends TenantedDbContext; throws InvalidOperationException
           with actionable message if the assertion fails.
+    .WithTransactionalUnitOfWork()
+        — Registers ITransactionalUnitOfWork → EfTransactionalUnitOfWork (scoped) alongside IUnitOfWork.
+        — Optional. Services that never need explicit transactions can omit this call.
+        — Application layer injects ITransactionalUnitOfWork; never IDbContextTransaction directly.
     .Build()
         — Registers TContext as DbContext (scoped)
         — Registers IUnitOfWork → EfUnitOfWork (scoped)
@@ -334,6 +400,7 @@ EfCorePersistenceBuilder
         — Registers no-op IUserContext placeholder (UserId = Guid.Empty, IsAuthenticated = false)
           if no IUserContext already registered; uses SharedKernel.Security.Abstractions.IUserContext
     NOTE: No outbox, Dapper, or PostgreSQL wiring in this builder. Those are separate concerns.
+          ITransactionalUnitOfWork is only registered when .WithTransactionalUnitOfWork() is called.
           IUserContext and ITenantProvider are both sourced from SharedKernel.Security.Abstractions.
 ```
 
@@ -451,6 +518,9 @@ DapperReadService  (abstract class)
 - Using reflection in `SmartEnumTypeHandler` — use `SmartEnum<TEnum,TValue>.TryFromValue`.
 - Adding messaging concerns (`IMessageBus`, `IEventPublisher`) to this domain — outbox message writes are the persistence boundary; dispatching belongs in `07.Messaging`.
 - Adding domain logic to any type in this domain — this layer is pure data-access plumbing.
+- Adding a second public constructor to `EfUnitOfWork` — exactly one constructor with `IDomainEventDispatcher?` as a nullable optional parameter is required; a second constructor creates DI ambiguity where the container silently picks the shorter one and skips the dispatcher.
+- Injecting `Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction` directly in application layer handlers — explicit transaction control must go through `ITransactionalUnitOfWork.BeginTransactionAsync` which returns an `IPersistenceTransaction` handle; direct `IDbContextTransaction` injection bypasses the abstraction and couples application code to EF Core.
+- Downcasting `ISpecificationEvaluator<T>` to `SpecificationEvaluator<T>` (or any concrete type) — `GetProjectedQuery` is now on the interface; any cast to the concrete type breaks alternative evaluator implementations at runtime.
 - Inline `new NpgsqlConnection(connStr)` in Dapper services — `IDbConnectionFactory` is the only permitted connection source.
 - Any static mutable state.
 - Adding a project reference from `SharedKernel.Persistence.EfCore` to any `12.Security` package other than `SharedKernel.Security.Abstractions` — the single approved exception is `SharedKernel.Security.Abstractions` (zero-dependency interface library). All other `12.Security.*` packages are forbidden.
@@ -510,6 +580,13 @@ services
     .WithMultiTenancy()   // TContext must extend TenantedDbContext or Build() throws
     .Build();
 
+// With explicit transaction support (optional — only for services that need ITransactionalUnitOfWork)
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithTransactionalUnitOfWork()   // registers ITransactionalUnitOfWork → EfTransactionalUnitOfWork
+    .Build();
+
 // Consuming service overrides the IUserContext placeholder with its real implementation
 // IUserContext is from SharedKernel.Security.Abstractions; UserId is Guid
 services.AddScoped<IUserContext, OidcUserContext>();
@@ -541,13 +618,15 @@ DapperTypeHandlers.Register();
 - `SmartEnumTypeHandler<TEnum,TValue>` uses `SmartEnum<TEnum,TValue>.TryFromValue` — no reflection in the hot path, AOT-safe.
 - `AuditInterceptor` and `SoftDeleteInterceptor` access EF Core shadow properties by string key — shadow property access via `CurrentValues[name]` is AOT-safe (no reflection on CLR types).
 - `TenantedDbContext.OnModelCreating` global filter is built with expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`) — no `GetMethod`/`MakeGenericMethod`/`Invoke` calls; fully AOT-safe.
-- `ValueObjectOwnershipConvention` scans entity types at model-build time — O(n×m) startup cost (n entity types, m properties per type); early-exit when no `IValueObject` properties found prevents unnecessary allocation; model-build time only, not a hot path.
+- `ValueObjectOwnershipBuilder` scans entity types at model-build time — O(n×m) startup cost (n entity types, m properties per type); early-exit when no `IValueObject` properties found prevents unnecessary allocation; model-build time only, not a hot path.
 - `SnakeCaseNamingConvention` operates on EF Core model metadata at model-building time — not in hot paths, AOT-safe.
 - `JsonbEntityTypeBuilderExtension` and `VectorEntityTypeBuilderExtension` configure the EF model at startup — AOT-safe.
 - `Microsoft.EntityFrameworkCore` — fully AOT-compatible as of .NET 8+ with compiled models; verify on each major upgrade.
 - `Npgsql.EntityFrameworkCore.PostgreSQL` — verify AOT status on each major upgrade; abstraction boundary allows a provider swap.
 - `Dapper` — uses reflection for parameter binding and result mapping. Known AOT limitation. All Dapper code is behind `DapperReadService` so the AOT boundary is contained to that class.
 - `EfCorePersistenceBuilder` uses generic type constraints to validate `TContext` at compile time where possible; startup-time `InvalidOperationException` for the multi-tenancy mismatch guard is acceptable (DI composition is not AOT-critical path).
+- `IPersistenceTransaction` and `ITransactionalUnitOfWork` are pure interfaces — AOT-safe by definition. Zero ORM dependencies in Abstractions.
+- `EfTransactionalUnitOfWork` and `EfPersistenceTransaction` delegate to EF Core's `IDbContextTransaction` which is AOT-compatible as of EF Core 8+; verify on each major upgrade.
 - `ByIdSpecification<TAggregate, TId>` uses `e => e.Id.Equals(id)` as an expression tree — AOT-safe on `IQueryable`.
 - `SpecificationEvaluator<T>.GetProjectedQuery<TResult>` applies `.Select(spec.Selector)` where `Selector` is `Expression<Func<TAggregate, TResult>>` — expression trees on `IQueryable` are AOT-safe when the lambda body contains no runtime reflection APIs.
 - `EfUnitOfWork` domain event dispatch: `ChangeTracker.Entries<IHasDomainEvents>()` is a generic EF Core API — AOT-safe. `IDomainEventDispatcher` is a pure interface; no reflection in the dispatch path.
@@ -572,7 +651,7 @@ DapperTypeHandlers.Register();
 - `EfReadRepository.GetByIdsAsync` tests: partial match (some IDs missing — only matching returned); empty input → empty list; all IDs present → full list; result order is not asserted.
 - `EfRepository.UpdateAsync` tests: tracked entity with one changed property — only that column is Modified; tracked entity with no mutations — no UPDATE statement issued; detached entity — full-column UPDATE issued (unchanged behavior).
 - `TenantedDbContext` isolation tests: no-op `ITenantProvider` (returns `Guid.Empty`) → all queries return zero rows; real provider returning `tenantId = X` → only rows with `TenantId == X` returned; filter is applied at query execution time not startup.
-- `ContractShapeTests` in Abstractions: verify `IRepository` has `ExistsAsync`; `IReadRepository` has `GetByIdsAsync`; `IProjectionSpecification` exists in `Specifications/`, extends `ISpecification`, has `Selector` of correct expression type; no ORM assembly in package.
+- `ContractShapeTests` in Abstractions: verify `IRepository` has `ExistsAsync`; `IReadRepository` has `GetByIdsAsync` and `ListPagedProjectedAsync`; `IProjectionSpecification` exists in `Specifications/`, extends `ISpecification`, has `Selector` of correct expression type; `ISpecificationEvaluator<T>` declares `GetProjectedQuery`; `ITransactionalUnitOfWork` extends `IUnitOfWork` and declares `BeginTransactionAsync`; `IPersistenceTransaction` declares `CommitAsync` and `RollbackAsync`; no ORM assembly in package.
 - **SQLite for EfCore tests** — no Testcontainers needed; SQLite covers all EF Core LINQ and interceptor behavior.
 - **Testcontainers PostgreSQL** for PostgreSQL and Dapper tests — no mocked database connections. Import helpers from `16.Testing/SharedKernel.Testing`.
 - **Standard test package set** (all test `.csproj` files): `xunit` 2.9.3, `xunit.runner.visualstudio` 2.8.2, `Microsoft.NET.Test.Sdk` 17.13.0, `coverlet.collector` 6.0.4, `FluentAssertions` 8.4.0. EfCore tests also add `Microsoft.EntityFrameworkCore.Sqlite` 10.0.5 and `NSubstitute` 5.3.0.
@@ -583,6 +662,10 @@ DapperTypeHandlers.Register();
 - `EfUnitOfWork` domain event dispatch tests (P-080): dispatcher registered → events dispatched and cleared post-commit; no dispatcher → events cleared, no dispatch; double-dispatch prevention (events cleared before second `SaveChangesAsync`); dispatch failure does not roll back committed data (documented known trade-off).
 - `IncludeDeleted` evaluator tests (P-080): `spec.IncludeDeleted == false` (default) → soft-deleted rows excluded; `spec.IncludeDeleted == true` → soft-deleted rows returned; `QueryableExtensions` class absent from assembly (reflection assertion).
 - `ByIdSpecification` and `IReadRepository.GetByIdAsync` removal tests (P-080): `ByIdSpecification` `Criteria` matches only the given ID; `GetBySpecAsync(new ByIdSpecification<>(...))` returns correct aggregate; `ContractShapeTests` assert `IReadRepository` has no `GetByIdAsync` method; `IRepository` still has `GetByIdAsync`.
+- `ListPagedProjectedAsync` tests (P-101): 10 aggregates → page 2 size 3 returns 3 DTOs, `TotalCount == 10`; empty set: `TotalCount == 0`, `Items == []`; page beyond data: empty items, correct `TotalCount`; SQLite provider.
+- `ITransactionalUnitOfWork` tests (P-099): begin → add entity → commit → entity persisted; begin → add entity → rollback → entity NOT persisted; SQLite provider.
+- `TenantedRepository.GetByIdForTenantIncludingDeletedAsync` tests (P-100): soft-delete entity; `GetByIdForTenantAsync` returns null; `GetByIdForTenantIncludingDeletedAsync` returns entity; SQLite provider.
+- `AsNoTracking` behavioral tests (P-104): `ListAsync` with `AsNoTracking = true` → entities have `EntityState.Detached`; `ListAsync` without → entities tracked; SQLite provider.
 
 ---
 
@@ -593,6 +676,7 @@ DapperTypeHandlers.Register();
 - [2026-06-01] Domain brain initialized — packages, interfaces, rules, AOT notes, test rules
 - [2026-06-01] Major refresh: outbox types removed from Abstractions and EfCore scope (MassTransit EF outbox owns outbox at 07.Messaging); SharedKernelDbContext now registers exactly three interceptors (no OutboxInterceptor); ICurrentTenantService added to EfCore package; EfCorePersistenceBuilder fluent DI builder documented; IUserContext placeholder injection pattern documented; DI registration shape updated; test rules split by SQLite (EfCore) vs Testcontainers (PostgreSQL/Dapper); implementation rules reorganized with hard-violation list; WO-008 (P-033) and WO-013 (P-065 through P-074) phases reflected
 - [2026-06-01] SK.06.Scaffold complete — EfCore package versions pinned (DI.Abstractions 10.0.5); nested test exclusion pattern and IEntity marker-only rule added to Implementation Rules; standard test package set and GlobalUsings.cs requirement added to Test Rules (sync-brain)
-- [2026-06-02] WO-016 (P-091, P-092, P-093, P-094) and WO-014 (P-078, P-079, P-082) planned — audit string adapter rule added (userId.ToString("D") or "system"); Guid.Empty no-tenant sentinel documented; IRepository/IReadRepository extended with ExistsAsync/GetByIdsAsync; IProjectionSpecification added to Abstractions; IDbConnectionFactory doc restriction removed; EfRepository.UpdateAsync tracking optimization documented; TenantedDbContext reflection-elimination and ValueObjectOwnershipConvention early-exit documented; deliberate layering exception for Security.Abstractions reference recorded; ICurrentTenantService removed in favour of ITenantProvider from Security.Abstractions (persistence-arch-planner)
+- [2026-06-02] WO-016 (P-091, P-092, P-093, P-094) and WO-014 (P-078, P-079, P-082) planned — audit string adapter rule added (userId.ToString("D") or "system"); Guid.Empty no-tenant sentinel documented; IRepository/IReadRepository extended with ExistsAsync/GetByIdsAsync; IProjectionSpecification added to Abstractions; IDbConnectionFactory doc restriction removed; EfRepository.UpdateAsync tracking optimization documented; TenantedDbContext reflection-elimination and ValueObjectOwnershipBuilder early-exit documented; deliberate layering exception for Security.Abstractions reference recorded; ICurrentTenantService removed in favour of ITenantProvider from Security.Abstractions (persistence-arch-planner)
 - [2026-06-02] WO-014 (P-080) planned — bulk write methods (AddRangeAsync/UpdateRangeAsync/DeleteRangeAsync) added to IRepository and EfRepository; projection reads (ListProjectedAsync/GetBySpecProjectedAsync) added to IReadRepository and EfReadRepository; ListPagedAsync added returning `PagedList<T>` (Abstractions gains SharedKernel.Contracts reference); IDomainEventDispatcher optional hook added to EfUnitOfWork (post-commit dispatch + event clear); QueryableExtensions.IgnoreSoftDeleteFilter deleted — replaced by spec.IncludeDeleted flag handled by SpecificationEvaluator (step 0 IgnoreQueryFilters); IReadRepository.GetByIdAsync removed (breaking change) — `ByIdSpecification<TAggregate,TId>` added as canonical replacement; SpecificationEvaluator pipeline updated with step 0 and step 8; all hard violations, AOT notes, test rules, and interface contracts updated (persistence-arch-planner)
 - [2026-06-02] SK.06.Scaffold S-06 and S-07 complete — EfCore→Security.Abstractions and Abstractions→Contracts project references added to csproj files; both already documented; no CLAUDE.md content changes needed (sync-brain)
+- [2026-06-03] WO-017: GetProjectedQuery promoted to ISpecificationEvaluator<T>; ITransactionalUnitOfWork/IPersistenceTransaction added to Abstractions; EfTransactionalUnitOfWork/EfCorePersistenceBuilder.WithTransactionalUnitOfWork added to EfCore; ListPagedProjectedAsync added to IReadRepository/EfReadRepository; ValueObjectOwnershipConvention renamed to ValueObjectOwnershipBuilder with static-utility note; TenantedRepository.GetByIdForTenantAsync soft-delete-preserving semantics documented + GetByIdForTenantIncludingDeletedAsync added; EfUnitOfWork single-constructor hard rule added; three new hard violations (downcast, second constructor, direct IDbContextTransaction injection) (sync-brain)

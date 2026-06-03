@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using SharedKernel.Persistence.EfCore.Interceptors;
@@ -49,6 +50,33 @@ internal static class TestDbContextFactory
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new TenantedTestDbContext(options, audit, softDelete, concurrency, tenantProvider);
+        ctx.Database.EnsureCreated();
+        return ctx;
+    }
+
+    public static SoftDeletableTenantedDbContext CreateSoftDeletableTenantedDbContext(
+        ITenantProvider? tenantProvider = null,
+        IUserContext? userContext = null,
+        IClock? clock = null)
+    {
+        // Use an explicit open SqliteConnection so the in-memory database persists
+        // for the full lifetime of the test even when EF Core cycles its connections.
+        var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+
+        var options = new DbContextOptionsBuilder<SoftDeletableTenantedDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        userContext ??= CreateAuthenticatedUserContext(Guid.NewGuid());
+        clock ??= CreateClock(DateTimeOffset.UtcNow);
+        tenantProvider ??= CreateTenantProvider(Guid.Empty);
+
+        var audit = new AuditInterceptor(userContext, clock);
+        var softDelete = new SoftDeleteInterceptor(userContext, clock);
+        var concurrency = new ConcurrencyInterceptor();
+
+        var ctx = new SoftDeletableTenantedDbContext(options, audit, softDelete, concurrency, tenantProvider);
         ctx.Database.EnsureCreated();
         return ctx;
     }

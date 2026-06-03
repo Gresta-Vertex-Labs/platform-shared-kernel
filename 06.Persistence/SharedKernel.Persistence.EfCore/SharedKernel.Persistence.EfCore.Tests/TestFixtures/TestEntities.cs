@@ -98,3 +98,26 @@ public sealed class TenantedTestAggregate : AggregateRoot<TenantedTestId>, IHasT
 
     protected TenantedTestAggregate() { } // ORM path
 }
+
+// ---------------------------------------------------------------------------
+// Soft-deletable tenanted aggregate (TenantedRepository soft-delete tests)
+// ---------------------------------------------------------------------------
+
+public sealed class SoftDeletableTenantedAggregate
+    : AuditableSoftDeletableAggregateRoot<TenantedTestId>, IHasTenant
+{
+    public string Name { get; private set; } = string.Empty;
+    public Guid TenantId { get; private set; }
+
+    public SoftDeletableTenantedAggregate(
+        TenantedTestId id, string name, Guid tenantId, IClock clock)
+        : base(id, clock)
+    {
+        Name = name;
+        TenantId = tenantId;
+    }
+
+    protected SoftDeletableTenantedAggregate() { } // ORM path
+
+    protected override void OnDelete() { }
+}

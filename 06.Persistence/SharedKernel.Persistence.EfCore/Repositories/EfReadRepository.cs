@@ -5,7 +5,6 @@ using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Context;
-using SharedKernel.Persistence.EfCore.Specifications;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -38,7 +37,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// <summary>The underlying EF Core context.</summary>
     protected SharedKernelDbContext DbContext { get; }
 
-    private readonly SpecificationEvaluator<TAggregate> _evaluator;
+    private readonly ISpecificationEvaluator<TAggregate> _evaluator;
 
     /// <summary>
     /// Initialises a new <see cref="EfReadRepository{TAggregate, TId}"/>.
@@ -46,16 +45,16 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// <param name="dbContext">The scoped shared-kernel DB context.</param>
     /// <param name="evaluator">
     /// The specification evaluator that translates <see cref="ISpecification{T}"/> into
-    /// a composable <see cref="IQueryable{T}"/> pipeline.
+    /// a composable <see cref="IQueryable{T}"/> pipeline. Any <see cref="ISpecificationEvaluator{T}"/>
+    /// implementation works — no downcast to the concrete <c>SpecificationEvaluator&lt;T&gt;</c>
+    /// type is performed (P-097).
     /// </param>
     protected EfReadRepository(
         SharedKernelDbContext dbContext,
         ISpecificationEvaluator<TAggregate> evaluator)
     {
         DbContext = dbContext;
-        // Downcast to the concrete evaluator so GetProjectedQuery is accessible without
-        // changing the ISpecificationEvaluator<T> interface (which remains ORM-free in Abstractions).
-        _evaluator = (SpecificationEvaluator<TAggregate>)evaluator;
+        _evaluator = evaluator;
     }
 
     /// <inheritdoc />
@@ -142,11 +141,10 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
 
     /// <inheritdoc />
     /// <remarks>
-    /// Delegates to <c>SpecificationEvaluator&lt;T&gt;.GetProjectedQuery</c> which runs the full
-    /// aggregate pipeline (criteria, includes, ordering, Skip/Take) and then applies
-    /// <c>.Select(spec.Selector)</c> as the final step. EF Core translates the <c>Select</c>
-    /// expression into a SQL <c>SELECT</c> projection so only the referenced columns are fetched
-    /// from the database.
+    /// Delegates to <see cref="ISpecificationEvaluator{T}.GetProjectedQuery{TResult}"/> which
+    /// runs the full aggregate pipeline (criteria, includes, ordering, Skip/Take) and then applies
+    /// <c>.Select(spec.Selector)</c> as the final step. Any <see cref="ISpecificationEvaluator{T}"/>
+    /// implementation works — no downcast to the concrete type is performed (P-097).
     /// </remarks>
     public virtual async Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
@@ -158,10 +156,11 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
 
     /// <inheritdoc />
     /// <remarks>
-    /// Delegates to <c>SpecificationEvaluator&lt;T&gt;.GetProjectedQuery</c> and calls
-    /// <c>FirstOrDefaultAsync</c> on the resulting projected queryable. EF Core translates the
-    /// <c>Select(spec.Selector)</c> into a SQL <c>SELECT</c> projection applied after all
-    /// Skip/Take operations, consistent with the paging-last invariant.
+    /// Delegates to <see cref="ISpecificationEvaluator{T}.GetProjectedQuery{TResult}"/> and calls
+    /// <c>FirstOrDefaultAsync</c> on the resulting projected queryable. The
+    /// <c>Select(spec.Selector)</c> is applied after all Skip/Take operations, consistent with the
+    /// paging-last invariant. Any <see cref="ISpecificationEvaluator{T}"/> implementation works —
+    /// no downcast performed (P-097).
     /// </remarks>
     public virtual async Task<TResult?> GetBySpecProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
@@ -169,6 +168,40 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     {
         var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
         return await projected.FirstOrDefaultAsync(ct);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Issues two database round-trips under the same <see cref="SharedKernelDbContext"/> scope:
+    /// <list type="number">
+    ///   <item><description>
+    ///     <strong>Count query:</strong> the specification is evaluated without projection and
+    ///     without Skip/Take (via <c>NoPagingWrapper</c>), and <c>CountAsync</c> is called to
+    ///     obtain the true total.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <strong>Data query:</strong> the full specification (including projection and Skip/Take)
+    ///     is evaluated via <c>GetProjectedQuery</c>, and <c>ToListAsync</c> is called to obtain
+    ///     the current page of projected items.
+    ///   </description></item>
+    /// </list>
+    /// Both queries share the same connection and transaction scope.
+    /// <c>PagedList&lt;T&gt;</c> is defined in <c>SharedKernel.Contracts</c> (04.Contracts).
+    /// </remarks>
+    public virtual async Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        CancellationToken ct = default)
+    {
+        // Count query: apply spec without projection and without Skip/Take.
+        var countSpec = new NoPagingWrapper<TAggregate>(spec);
+        var totalCount = await _evaluator.GetQuery(DbContext.Set<TAggregate>(), countSpec).CountAsync(ct);
+
+        // Data query: full spec including projection and Skip/Take.
+        var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
+        var items = await projected.ToListAsync(ct);
+
+        var (page, pageSize) = ExtractPageInfo(spec);
+        return PagedList<TResult>.Create(items, page, pageSize, totalCount);
     }
 
     // Strips Skip/Take from the already-evaluated query for count purposes.

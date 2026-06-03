@@ -10,6 +10,7 @@ using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 
 namespace SharedKernel.Persistence.EfCore.Extensions;
 
@@ -65,6 +66,15 @@ public static class EfCorePersistenceExtensions
 ///     .Build();
 /// </code>
 /// </para>
+/// <para>
+/// With explicit transaction support:
+/// <code>
+/// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;(options =>
+///     options.UseNpgsql(connectionString))
+///     .WithTransactionalUnitOfWork()
+///     .Build();
+/// </code>
+/// </para>
 /// </remarks>
 public sealed class EfCorePersistenceBuilder<TContext>
     where TContext : SharedKernelDbContext
@@ -72,6 +82,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private readonly IServiceCollection _services;
     private readonly Action<DbContextOptionsBuilder> _configureDb;
     private bool _multiTenancyEnabled;
+    private bool _transactionalUnitOfWorkEnabled;
 
     internal EfCorePersistenceBuilder(
         IServiceCollection services,
@@ -100,10 +111,37 @@ public sealed class EfCorePersistenceBuilder<TContext>
     }
 
     /// <summary>
+    /// Opts in to explicit transaction support by registering
+    /// <see cref="ITransactionalUnitOfWork"/> → <see cref="EfTransactionalUnitOfWork"/> (scoped).
+    /// </summary>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Optional — call only for services that require explicit transaction boundaries (e.g., saga
+    /// compensation, two-phase read-then-write operations). Services that do not need explicit
+    /// transactions can omit this call and use <see cref="IUnitOfWork"/> directly.
+    /// </para>
+    /// <para>
+    /// When called, both <c>IUnitOfWork</c> and <c>ITransactionalUnitOfWork</c> resolve the same
+    /// scoped <see cref="EfTransactionalUnitOfWork"/> instance.
+    /// </para>
+    /// <para>
+    /// <strong>Hard violation:</strong> Application-layer code must inject
+    /// <c>ITransactionalUnitOfWork</c> — never <c>IDbContextTransaction</c> directly.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithTransactionalUnitOfWork()
+    {
+        _transactionalUnitOfWorkEnabled = true;
+        return this;
+    }
+
+    /// <summary>
     /// Finalises the DI registration:
     /// <list type="bullet">
     ///   <item><description>Registers <typeparamref name="TContext"/> as <see cref="DbContext"/> (scoped).</description></item>
-    ///   <item><description>Registers <see cref="IUnitOfWork"/> → <see cref="EfUnitOfWork"/> (scoped).</description></item>
+    ///   <item><description>Registers <see cref="IUnitOfWork"/> → <see cref="EfUnitOfWork"/> (scoped), or <see cref="EfTransactionalUnitOfWork"/> when <see cref="WithTransactionalUnitOfWork"/> was called.</description></item>
+    ///   <item><description>Registers <see cref="ITransactionalUnitOfWork"/> → <see cref="EfTransactionalUnitOfWork"/> (scoped) when <see cref="WithTransactionalUnitOfWork"/> was called.</description></item>
     ///   <item><description>Registers <see cref="ISpecificationEvaluator{T}"/> → <see cref="SpecificationEvaluator{T}"/> (singleton — stateless).</description></item>
     ///   <item><description>Registers <see cref="AuditInterceptor"/>, <see cref="SoftDeleteInterceptor"/>, <see cref="ConcurrencyInterceptor"/> (scoped).</description></item>
     ///   <item><description>Registers a no-op <see cref="IUserContext"/> placeholder (scoped) if none is already registered.</description></item>
@@ -139,8 +177,19 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // Register TContext also as the base SharedKernelDbContext so EfUnitOfWork resolves it.
         _services.AddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
 
-        // IUnitOfWork — scoped to match DbContext lifetime.
-        _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        if (_transactionalUnitOfWorkEnabled)
+        {
+            // When transactional UoW is enabled, EfTransactionalUnitOfWork serves as both
+            // IUnitOfWork and ITransactionalUnitOfWork — same scoped instance.
+            _services.AddScoped<EfTransactionalUnitOfWork>();
+            _services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<EfTransactionalUnitOfWork>());
+            _services.AddScoped<ITransactionalUnitOfWork>(sp => sp.GetRequiredService<EfTransactionalUnitOfWork>());
+        }
+        else
+        {
+            // Standard non-transactional path.
+            _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        }
 
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
@@ -152,7 +201,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
         }
 
         // IDomainEventDispatcher is optional — consuming services opt in by registering it.
-        // EfUnitOfWork resolves it as IEnumerable<IDomainEventDispatcher> to avoid hard dependency.
+        // EfUnitOfWork resolves it as a nullable IDomainEventDispatcher? via DI.
 
         // IClock — registered as singleton only when not already present.
         if (!_services.Any(sd => sd.ServiceType == typeof(IClock)))

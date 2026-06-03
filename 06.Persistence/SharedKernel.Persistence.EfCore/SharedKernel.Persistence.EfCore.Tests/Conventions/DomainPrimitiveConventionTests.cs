@@ -113,8 +113,8 @@ internal sealed class ValueObjectConventionDbContext : SharedKernelDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new EntityWithValueObjectConfig());
-        // Apply ValueObjectOwnershipConvention after all entity configurations.
-        ValueObjectOwnershipConvention.Apply(modelBuilder);
+        // Apply ValueObjectOwnershipBuilder after all entity configurations.
+        ValueObjectOwnershipBuilder.Apply(modelBuilder);
     }
 }
 
@@ -124,7 +124,7 @@ internal sealed class EntityWithValueObjectConfig : EntityTypeConfigurationBase<
     {
         base.Configure(builder);
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
-        // Price (MoneyValueObject) — ValueObjectOwnershipConvention.Apply() will auto-configure OwnsOne.
+        // Price (MoneyValueObject) — ValueObjectOwnershipBuilder.Apply() will auto-configure OwnsOne.
     }
 }
 
@@ -250,11 +250,31 @@ public sealed class DomainPrimitiveConventionTests
     }
 
     // -----------------------------------------------------------------------
-    // ValueObjectOwnershipConvention
+    // ValueObjectOwnershipBuilder (renamed from ValueObjectOwnershipConvention — P-102)
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void ValueObjectOwnershipConvention_AutoApplies_OwnsOne_ForIValueObjectProperty()
+    public void ValueObjectOwnershipConvention_DoesNotExist_In_Assembly()
+    {
+        // T-30: P-102 renames ValueObjectOwnershipConvention to ValueObjectOwnershipBuilder.
+        var assembly = typeof(SharedKernel.Persistence.EfCore.Conventions.ValueObjectOwnershipBuilder).Assembly;
+        var oldType = assembly.GetTypes().FirstOrDefault(t => t.Name == "ValueObjectOwnershipConvention");
+        oldType.Should().BeNull(
+            "ValueObjectOwnershipConvention was renamed to ValueObjectOwnershipBuilder (P-102). " +
+            "The old class name must not exist in the assembly.");
+    }
+
+    [Fact]
+    public void ValueObjectOwnershipBuilder_Exists_In_Assembly()
+    {
+        var assembly = typeof(SharedKernel.Persistence.EfCore.Conventions.ValueObjectOwnershipBuilder).Assembly;
+        var newType = assembly.GetTypes().FirstOrDefault(t => t.Name == "ValueObjectOwnershipBuilder");
+        newType.Should().NotBeNull("ValueObjectOwnershipBuilder must exist in the EfCore assembly (P-102 rename)");
+        newType!.IsAbstract.Should().BeTrue("ValueObjectOwnershipBuilder is a static class (sealed + abstract in IL)");
+    }
+
+    [Fact]
+    public void ValueObjectOwnershipBuilder_AutoApplies_OwnsOne_ForIValueObjectProperty()
     {
         using var ctx = CreateValueObjectContext();
 
@@ -262,12 +282,12 @@ public sealed class DomainPrimitiveConventionTests
         entityType.Should().NotBeNull();
 
         var priceNav = entityType!.FindNavigation(nameof(EntityWithValueObject.Price));
-        priceNav.Should().NotBeNull("ValueObjectOwnershipConvention.Apply() should configure OwnsOne for IValueObject properties");
+        priceNav.Should().NotBeNull("ValueObjectOwnershipBuilder.Apply() should configure OwnsOne for IValueObject properties");
         priceNav!.ForeignKey.IsOwnership.Should().BeTrue("Price is an owned value object");
     }
 
     [Fact]
-    public void ValueObjectOwnershipConvention_OwnedType_RegisteredAsOwned()
+    public void ValueObjectOwnershipBuilder_OwnedType_RegisteredAsOwned()
     {
         using var ctx = CreateValueObjectContext();
 
@@ -277,7 +297,7 @@ public sealed class DomainPrimitiveConventionTests
     }
 
     [Fact]
-    public void ValueObjectOwnershipConvention_DoesNotAffect_NonValueObjectProperties()
+    public void ValueObjectOwnershipBuilder_DoesNotAffect_NonValueObjectProperties()
     {
         using var ctx = CreateSimpleContext();
 

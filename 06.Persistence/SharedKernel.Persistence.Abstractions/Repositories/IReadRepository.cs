@@ -148,4 +148,40 @@ public interface IReadRepository<TAggregate, TId>
     Task<TResult?> GetBySpecProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a paged result containing projected <typeparamref name="TResult"/> instances that
+    /// satisfy the specification, together with total-count metadata.
+    /// </summary>
+    /// <typeparam name="TResult">
+    /// The projection output type. Use this method instead of <see cref="ListPagedAsync"/> when
+    /// the caller needs DTOs rather than aggregate roots.
+    /// </typeparam>
+    /// <param name="spec">
+    /// The projection specification supplying filter criteria, ordering, paging, and the
+    /// <c>Selector</c> expression applied after paging.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// A <see cref="PagedList{TResult}"/> with the current page of projected items and
+    /// pagination metadata.
+    /// </returns>
+    /// <remarks>
+    /// Issues two database round-trips under the same <c>DbContext</c> scope:
+    /// <list type="number">
+    ///   <item><description>
+    ///     <strong>Count query:</strong> the specification is evaluated without projection and
+    ///     without Skip/Take via <c>GetQuery</c>, then <c>CountAsync</c> is called.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <strong>Data query:</strong> the full specification (including projection and Skip/Take)
+    ///     is evaluated via <c>GetProjectedQuery</c>, then <c>ToListAsync</c> is called.
+    ///   </description></item>
+    /// </list>
+    /// Both queries share the same connection and <c>DbContext</c> scope.
+    /// <c>PagedList&lt;T&gt;</c> is defined in <c>SharedKernel.Contracts</c> (04.Contracts).
+    /// </remarks>
+    Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        CancellationToken ct = default);
 }

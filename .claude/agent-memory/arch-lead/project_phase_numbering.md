@@ -5,24 +5,28 @@ metadata:
   type: project
 ---
 
-As of 2026-06-02, the last phase written to `state-map.md` Phase Backlog is **P-096** under **WO-016**.
+As of 2026-06-03, the last phase written to `state-map.md` Phase Backlog is **P-104** under **WO-017**.
 
-Next new phase must be **P-097**. Next new Work Order must be **WO-017**.
+Next new phase must be **P-105**. Next new Work Order must be **WO-018**.
 
 **How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file.
 
-**WO-016 context:** 06.Persistence and 03.Domain improvement audit. 6 phases across 3 domains:
-- P-091 06.Persistence: Audit interceptor string adapter — `IUserContext.UserId` is now `Guid` in Security.Abstractions; interceptors must use `UserId.ToString()` for string audit fields; fallback to `"system"` when unauthenticated
-- P-092 06.Persistence: `ICurrentTenantService` → `ITenantProvider` nullability resolution — `Guid?` → `Guid`; `Guid.Empty` is the no-tenant sentinel; documents the zero-rows behavior when no-op provider is registered
-- P-093 06.Persistence: Add `ExistsAsync(TId)` to `IRepository` and `GetByIdsAsync(IEnumerable<TId>)` to `IReadRepository` in Abstractions + EfCore implementations
-- P-094 06.Persistence: `EfRepository.UpdateAsync` tracking optimization — skip `.Update()` when entity is already tracked; avoids full-column UPDATE statements
-- P-095 03.Domain: Add `bool IncludeDeleted` flag to `ISpecification<T>` with `IncludeSoftDeleted()` builder method — prerequisite for P-080 Capability 5 (replaces `QueryableExtensions.IgnoreSoftDeleteFilter`)
-- P-096 00.Governance: Architecture rules for GUID format in audit fields and `ExistsAsync`/`GetByIdsAsync` presence on repository implementors
+**WO-017 context:** EfCore package audit — 8 phases across 3 domains:
+- P-097 06.Persistence: Promote `GetProjectedQuery` to `ISpecificationEvaluator<T>` interface in Abstractions; remove concrete downcast in `EfReadRepository`
+- P-098 06.Persistence: Fix `EfUnitOfWork` dual-constructor DI ambiguity → single constructor with nullable `IDomainEventDispatcher?`
+- P-099 06.Persistence: Fix `ExistsAsync` `EF.Property` shadow accessor; add `ITransactionalUnitOfWork` + `IPersistenceTransaction` to Abstractions + `EfTransactionalUnitOfWork` to EfCore
+- P-100 06.Persistence: Fix `TenantedRepository.GetByIdForTenantAsync` unintentional soft-delete bypass; add `GetByIdForTenantIncludingDeletedAsync` variant
+- P-101 06.Persistence: Add `ListPagedProjectedAsync<TResult>` to `IReadRepository` + `EfReadRepository` (depends on P-097)
+- P-102 06.Persistence: Rename `ValueObjectOwnershipConvention` → `ValueObjectOwnershipBuilder` to clarify it is not a real EF Core convention
+- P-103 00.Governance: Three architecture rules — no ISpecificationEvaluator downcast, single-constructor UoW, no IDbContextTransaction in application layer (depends on P-097, P-099)
+- P-104 16.Testing: Test coverage gaps — AsNoTracking behavior, assembly scan OnModelCreating, transaction scope, ListPagedProjectedAsync (depends on P-097, P-099, P-101)
 
-**Domains touched:** 06.Persistence (already ●), 03.Domain (already ●), 00.Governance (already ●) — no `state-map-phase` calls needed; all phases queued in backlog only.
+**Domains touched:** 06.Persistence (already ●), 00.Governance (already ●), 16.Testing (already ◐) — no `state-map-phase` calls needed.
 
-**Key architectural decisions made in WO-016:**
-1. Audit string format: `UserId.ToString("D")` (lowercase hyphenated GUID) or `"system"` fallback — not `"N"`, `"B"`, `"P"`, or `"X"` formats
-2. `Guid.Empty` is the no-tenant sentinel; `NoOpTenantProvider` returns `Guid.Empty`; TenantedDbContext with no-op returns zero rows — this is intentional and safe
-3. `IQueryable` leak through `QueryableExtensions.IgnoreSoftDeleteFilter` must be closed via `IncludeDeleted` flag on `ISpecification<T>` (P-095 → enables P-080 Capability 5)
-4. `EfRepository.UpdateAsync` must check `DbContext.Entry(entity).State` before calling `.Update()` — unconditional `.Update()` is a known anti-pattern
+**Key architectural decisions made in WO-017:**
+1. `ISpecificationEvaluator<T>` must expose `GetProjectedQuery` — concrete downcast in EfReadRepository is a hard layering violation
+2. `EfUnitOfWork` single-constructor pattern with `IDomainEventDispatcher?` nullable is the idiomatic .NET optional-dependency pattern
+3. `ITransactionalUnitOfWork` / `IPersistenceTransaction` abstraction in Abstractions keeps EF Core's `IDbContextTransaction` out of application layer
+4. `TenantedRepository.GetByIdForTenantAsync` must preserve soft-delete filter; `GetByIdForTenantIncludingDeletedAsync` is the explicit bypass variant
+5. `ListPagedProjectedAsync<TResult>` is the canonical "paged DTOs" method; two DB round-trips, count without projection + data with projection
+6. `ValueObjectOwnershipConvention` renamed to `ValueObjectOwnershipBuilder` — it does not implement `IModelFinalizingConvention` and the name was misleading

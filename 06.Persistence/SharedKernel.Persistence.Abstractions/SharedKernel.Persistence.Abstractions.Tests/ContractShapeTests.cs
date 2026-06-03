@@ -167,25 +167,6 @@ public sealed class ContractShapeTests
     }
 
     // ---------------------------------------------------------------------------
-    // IUnitOfWork contract
-    // ---------------------------------------------------------------------------
-
-    [Fact]
-    public void IUnitOfWork_Has_SaveChangesAsync()
-    {
-        var method = typeof(IUnitOfWork).GetMethod("SaveChangesAsync");
-        method.Should().NotBeNull("IUnitOfWork must expose SaveChangesAsync");
-        method!.ReturnType.Should().Be(typeof(Task<int>), "SaveChangesAsync must return Task<int>");
-    }
-
-    [Fact]
-    public void IUnitOfWork_Has_Exactly_OneMethod()
-    {
-        var methods = typeof(IUnitOfWork).GetMethods();
-        methods.Should().HaveCount(1, "IUnitOfWork must expose exactly one method: SaveChangesAsync");
-    }
-
-    // ---------------------------------------------------------------------------
     // IDbConnectionFactory contract
     // ---------------------------------------------------------------------------
 
@@ -203,6 +184,70 @@ public sealed class ContractShapeTests
         method.ReturnType.Should().Be(typeof(Task<IDbConnection>));
     }
 
+    [Fact]
+    public void IReadRepository_Has_ListPagedProjectedAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("ListPagedProjectedAsync");
+        method.Should().NotBeNull("IReadRepository must expose ListPagedProjectedAsync<TResult> (P-101)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // IUnitOfWork / ITransactionalUnitOfWork / IPersistenceTransaction contract
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void IUnitOfWork_Has_SaveChangesAsync()
+    {
+        var method = typeof(IUnitOfWork).GetMethod("SaveChangesAsync");
+        method.Should().NotBeNull("IUnitOfWork must expose SaveChangesAsync");
+        method!.ReturnType.Should().Be(typeof(Task<int>), "SaveChangesAsync must return Task<int>");
+    }
+
+    [Fact]
+    public void IUnitOfWork_Has_Exactly_OneMethod()
+    {
+        var methods = typeof(IUnitOfWork).GetMethods();
+        methods.Should().HaveCount(1, "IUnitOfWork must expose exactly one method: SaveChangesAsync");
+    }
+
+    [Fact]
+    public void ITransactionalUnitOfWork_Extends_IUnitOfWork()
+    {
+        typeof(IUnitOfWork).IsAssignableFrom(typeof(ITransactionalUnitOfWork))
+            .Should().BeTrue("ITransactionalUnitOfWork must extend IUnitOfWork");
+    }
+
+    [Fact]
+    public void ITransactionalUnitOfWork_Has_BeginTransactionAsync()
+    {
+        var method = typeof(ITransactionalUnitOfWork).GetMethod("BeginTransactionAsync");
+        method.Should().NotBeNull("ITransactionalUnitOfWork must expose BeginTransactionAsync");
+        method!.ReturnType.Should().Be(
+            typeof(Task<IPersistenceTransaction>),
+            "BeginTransactionAsync must return Task<IPersistenceTransaction>");
+    }
+
+    [Fact]
+    public void IPersistenceTransaction_Has_CommitAsync()
+    {
+        var method = typeof(IPersistenceTransaction).GetMethod("CommitAsync");
+        method.Should().NotBeNull("IPersistenceTransaction must expose CommitAsync");
+    }
+
+    [Fact]
+    public void IPersistenceTransaction_Has_RollbackAsync()
+    {
+        var method = typeof(IPersistenceTransaction).GetMethod("RollbackAsync");
+        method.Should().NotBeNull("IPersistenceTransaction must expose RollbackAsync");
+    }
+
+    [Fact]
+    public void IPersistenceTransaction_Extends_IAsyncDisposable()
+    {
+        typeof(IAsyncDisposable).IsAssignableFrom(typeof(IPersistenceTransaction))
+            .Should().BeTrue("IPersistenceTransaction must extend IAsyncDisposable");
+    }
+
     // ---------------------------------------------------------------------------
     // ISpecificationEvaluator<T> contract
     // ---------------------------------------------------------------------------
@@ -212,6 +257,28 @@ public sealed class ContractShapeTests
     {
         var method = typeof(ISpecificationEvaluator<>).GetMethod("GetQuery");
         method.Should().NotBeNull("ISpecificationEvaluator must expose GetQuery");
+    }
+
+    [Fact]
+    public void ISpecificationEvaluator_Has_GetProjectedQuery()
+    {
+        // P-097: GetProjectedQuery promoted from concrete SpecificationEvaluator<T> to interface.
+        var method = typeof(ISpecificationEvaluator<>).GetMethod("GetProjectedQuery");
+        method.Should().NotBeNull(
+            "ISpecificationEvaluator<T> must expose GetProjectedQuery<TResult> (P-097 promotion). " +
+            "All evaluator implementations (EF Core, Cosmos, in-memory) must implement this method.");
+    }
+
+    [Fact]
+    public void Abstractions_Assembly_DoesNotReference_EntityFramework_ForTransactionTypes()
+    {
+        // IPersistenceTransaction and ITransactionalUnitOfWork must be BCL-only in Abstractions.
+        var assembly = typeof(IPersistenceTransaction).Assembly;
+        var efReference = assembly.GetReferencedAssemblies()
+            .Any(r => r.Name!.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal));
+        efReference.Should().BeFalse(
+            "IPersistenceTransaction and ITransactionalUnitOfWork live in Abstractions — " +
+            "they must have zero EF Core NuGet dependencies");
     }
 
     // ---------------------------------------------------------------------------

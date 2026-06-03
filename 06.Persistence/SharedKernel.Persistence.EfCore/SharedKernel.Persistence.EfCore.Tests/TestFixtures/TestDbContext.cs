@@ -128,3 +128,47 @@ public sealed class TenantedTestAggregateConfig : EntityTypeConfigurationBase<Te
         builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
     }
 }
+
+// ---------------------------------------------------------------------------
+// DbContext for soft-deletable tenanted aggregate (TenantedRepository tests)
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// Test DbContext for <see cref="SoftDeletableTenantedAggregate"/> — used by T-28 tests.
+/// </summary>
+public sealed class SoftDeletableTenantedDbContext : TenantedDbContext
+{
+    public DbSet<SoftDeletableTenantedAggregate> SdAggregates => Set<SoftDeletableTenantedAggregate>();
+
+    public SoftDeletableTenantedDbContext(
+        DbContextOptions<SoftDeletableTenantedDbContext> options,
+        AuditInterceptor audit,
+        SoftDeleteInterceptor softDelete,
+        ConcurrencyInterceptor concurrency,
+        ITenantProvider tenantProvider)
+        : base(options, audit, softDelete, concurrency, tenantProvider)
+    {
+    }
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.ConfigureStronglyTypedId<TenantedTestId, Guid>();
+        base.ConfigureConventions(configurationBuilder);
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfiguration(new SoftDeletableTenantedAggregateConfig());
+        ApplyTenantFilters(modelBuilder);
+    }
+}
+
+public sealed class SoftDeletableTenantedAggregateConfig
+    : EntityTypeConfigurationBase<SoftDeletableTenantedAggregate, TenantedTestId>
+{
+    public override void Configure(EntityTypeBuilder<SoftDeletableTenantedAggregate> builder)
+    {
+        base.Configure(builder);
+        builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
+    }
+}
