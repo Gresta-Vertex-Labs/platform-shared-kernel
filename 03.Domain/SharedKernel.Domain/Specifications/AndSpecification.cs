@@ -38,5 +38,12 @@ public sealed class AndSpecification<T> : Specification<T>
 
         if (left.IncludeDeleted || right.IncludeDeleted)
             IncludeSoftDeleted();
+
+        foreach (var path in left.StringIncludes)
+            AddStringInclude(path);
+
+        foreach (var path in right.StringIncludes)
+            if (!StringIncludes.Contains(path))
+                AddStringInclude(path);
     }
 }

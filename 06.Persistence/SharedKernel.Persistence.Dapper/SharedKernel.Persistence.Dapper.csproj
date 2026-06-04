@@ -3,6 +3,30 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <PackageId>SharedKernel.Persistence.Dapper</PackageId>
+    <Description>Dapper micro-ORM read-side helpers for SharedKernel: StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService base, and AddSharedKernelDapper DI extension.</Description>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <RepositoryUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- References Abstractions for IDbConnectionFactory; PostgreSQL for NpgsqlConnectionFactory -->
+    <!-- Does NOT reference SharedKernel.Persistence.EfCore -->
+    <ProjectReference Include="..\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Persistence.PostgreSQL\SharedKernel.Persistence.PostgreSQL.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.79" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Persistence.Dapper.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Persistence.Dapper.Tests\**" />
+    <None Remove="SharedKernel.Persistence.Dapper.Tests\**" />
+  </ItemGroup>
 
 </Project>

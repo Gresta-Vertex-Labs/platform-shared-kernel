@@ -39,6 +39,7 @@
 | `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | All tasks in Phase: Persistence Architecture Enforcement are `●` |
 | `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | All tasks in Phase: Persistence Architecture Rules Phase 2 are `●` |
 | `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | All tasks in Phase: IUserContext Audit String Adapter and Repository Contract Completeness are `●` |
+| `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | All tasks in Phase: EfCore Package Hygiene Architecture Rules are `●` |
 
 ---
 
@@ -963,6 +964,125 @@ P-091 established a defined GUID string conversion pattern for `AuditInterceptor
 
 ---
 
+## Phase: EfCore Package Hygiene Architecture Rules <!-- phase-key: SK.00.EfCorePackageHygiene -->
+
+> Three new NetArchTest enforcement rules closing the regression vectors introduced by WO-017: no concrete downcast of `ISpecificationEvaluator<T>`, `IUnitOfWork` implementors must have exactly one public constructor, and the application layer must never reference `IDbContextTransaction` directly.
+
+### EfCorePackageHygiene — Goal
+
+WO-017 introduced three precision fixes to the EF Core persistence layer: P-097 replaced a concrete downcast of `ISpecificationEvaluator<T>` with a proper abstraction (exposing `GetProjectedQuery` on the interface), P-098 reduced `EfUnitOfWork` to a single constructor to eliminate DI ambiguity, and P-099 introduced `ITransactionalUnitOfWork` as the only permitted transaction surface in application code. Each of these fixes is trivially reversible by a future contributor who is not aware of the rationale. This phase encodes all three as CI-blocking NetArchTest architecture rules: Rule 1 prevents the concrete-downcast anti-pattern from returning, Rule 2 prevents a second constructor from being added to `IUnitOfWork` implementors, and Rule 3 enforces the transaction abstraction boundary by ensuring no type in the `05.Application` layer ever imports `IDbContextTransaction` directly.
+
+### EfCorePackageHygiene — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/EfCorePackageHygieneRules.cs` — static class housing all three predicate factory methods
+  - `SharedKernel.ArchitectureTests/Predicates/NoSpecificationEvaluatorDowncastPredicate.cs` — `ICustomRule`: IL inspection for casts from `ISpecificationEvaluator<>` to any concrete class in the `SharedKernel.Persistence.EfCore` assembly
+  - `SharedKernel.ArchitectureTests/Predicates/NoDbContextTransactionInApplicationPredicate.cs` — `ICustomRule`: dependency name check for `IDbContextTransaction` references in types whose namespace matches an `05.Application` pattern
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add `EfCorePackageHygieneRules` to architecture test contracts section; document all three rules with rationale, offending/compliant patterns, and exemptions
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+- Note: No new Roslyn analyzer SK IDs. All three rules are pure NetArchTest architecture predicates (two backed by custom `ICustomRule` predicates, one using NetArchTest fluent API directly).
+
+### EfCorePackageHygiene — Diagnostic Registry Changes
+
+No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates:
+
+- Rule 1 — `NoSpecificationEvaluatorDowncastInEfCoreAssembly`: `ICustomRule` (`NoSpecificationEvaluatorDowncastPredicate`) — IL instruction walk for `castclass` opcodes whose target type name starts with `"SpecificationEvaluator"` inside the `SharedKernel.Persistence.EfCore` assembly
+- Rule 2 — `IUnitOfWorkImplementorsMustHaveExactlyOneConstructor`: NetArchTest fluent API — scope to types implementing `IUnitOfWork` in `06.Persistence`; assert exactly one public constructor each
+- Rule 3 — `ApplicationLayerMustNotReferenceDbContextTransaction`: `ICustomRule` (`NoDbContextTransactionInApplicationPredicate`) — dependency namespace check for `Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction` on types in assemblies whose name matches the `05.Application` pattern; exempts `SharedKernel.Persistence.EfCore` namespace
+
+### EfCorePackageHygiene — Implementation Rules
+
+1. `EfCorePackageHygieneRules.NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly assembly)` uses `NoSpecificationEvaluatorDowncastPredicate` — an `ICustomRule` that walks `TypeDefinition.Methods.Body.Instructions` for each method. For each instruction whose `OpCode` is `Mono.Cecil.Cil.OpCodes.Castclass`, the operand is cast to `TypeReference` and its `Name` is checked for the prefix `"SpecificationEvaluator"` (case-sensitive). If any such cast is found in a type inside the `SharedKernel.Persistence.EfCore` assembly, the predicate returns false. Failure message includes the offending type name and method name containing the cast. Returns `ConditionList`.
+   - Rationale: the downcast `(SpecificationEvaluator<T>)evaluator` on an `ISpecificationEvaluator<T>` reference was the pre-P-097 pattern that P-097 eliminated by exposing `GetProjectedQuery` on the interface. This rule ensures the pattern cannot silently return.
+   - Offending pattern: `var concreteEval = (SpecificationEvaluator<T>)_evaluator;`
+   - Compliant pattern: `_evaluator.GetProjectedQuery(query, spec)` — uses the interface method
+
+2. `EfCorePackageHygieneRules.IUnitOfWorkImplementorsMustHaveExactlyOneConstructor(Assembly assembly)` uses a custom `ICustomRule` (`SingleConstructorPredicate`) that scopes to types whose `TypeDefinition.Interfaces` contains an entry whose `InterfaceType.Name` equals `"IUnitOfWork"`. For each such type, the predicate counts `TypeDefinition.Methods` where `IsConstructor` is true and `IsStatic` is false (instance constructors only). If the count is not exactly 1, the predicate returns false with a failure message naming the offending type and the actual constructor count. Returns `ConditionList`.
+   - Rationale: `EfUnitOfWork` was reduced to a single constructor in P-098 to resolve DI ambiguity. Adding a second constructor (e.g., a "convenience constructor") would reintroduce the ambiguity silently — two registrations would compete for injection.
+   - Offending pattern: `class EfUnitOfWork : IUnitOfWork { public EfUnitOfWork(DbContext ctx) { } public EfUnitOfWork() { } }`
+   - Compliant pattern: `class EfUnitOfWork : IUnitOfWork { public EfUnitOfWork(DbContext ctx) { } }`
+   - Note: `SingleConstructorPredicate` is a new `ICustomRule` in `Predicates/SingleConstructorPredicate.cs` — no prior predicate covers this pattern.
+
+3. `EfCorePackageHygieneRules.ApplicationLayerMustNotReferenceDbContextTransaction(Assembly assembly)` uses `NoDbContextTransactionInApplicationPredicate` — an `ICustomRule` that checks `TypeDefinition.Methods.Body.Instructions` for `Call` or `Callvirt` opcodes whose `MethodReference.DeclaringType.FullName` contains `"IDbContextTransaction"`, and also checks `TypeDefinition.Fields` and `TypeDefinition.Methods` parameter types for any `TypeReference` whose `FullName` contains `"IDbContextTransaction"`. Exemption: types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Persistence.EfCore"` or `"SharedKernel.Persistence"` are returned as passing (true) unconditionally — the persistence layer itself is the only legitimate user of `IDbContextTransaction`. Failure message includes the offending type name and the reference location (field, parameter, or method call). Returns `ConditionList`.
+   - Rationale: `ITransactionalUnitOfWork` is the only permitted transaction entry point for application handlers (P-099). Direct injection of `IDbContextTransaction` couples the application handler to EF Core's specific transaction implementation, undermining the abstraction boundary.
+   - Offending pattern: `class CreateOrderHandler { public CreateOrderHandler(IDbContextTransaction tx) { } }`
+   - Compliant pattern: `class CreateOrderHandler { public CreateOrderHandler(ITransactionalUnitOfWork unitOfWork) { } }`
+   - Exemption: `SharedKernel.Persistence.EfCore` and `SharedKernel.Persistence.*` namespace types — the persistence implementation layer is allowed to reference `IDbContextTransaction` internally.
+
+4. All three factory methods accept `Assembly assembly` as their parameter and return `ConditionList`. Method signatures:
+   - `EfCorePackageHygieneRules.NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly)` → `ConditionList`
+   - `EfCorePackageHygieneRules.IUnitOfWorkImplementorsMustHaveExactlyOneConstructor(Assembly)` → `ConditionList`
+   - `EfCorePackageHygieneRules.ApplicationLayerMustNotReferenceDbContextTransaction(Assembly)` → `ConditionList`
+
+5. All three predicates reuse the established Mono.Cecil `TypeDefinition` access pattern. No new NuGet dependencies — the existing `Mono.Cecil >= 0.11.5` explicit reference in `SharedKernel.ArchitectureTests` covers all new predicates.
+
+6. `EfCorePackageHygieneRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside the existing rule static classes. It must not reference `SharedKernel.Persistence.EfCore` or any runtime production package directly. The consuming test project supplies the assembly under test via `typeof(SomePersistenceType).Assembly` or `typeof(SomeApplicationType).Assembly`.
+
+7. Failure messages for all three predicates must identify the offending element:
+   - Rule 1 → offending type name + method name containing the downcast instruction
+   - Rule 2 → offending type name + actual constructor count (e.g., `"EfUnitOfWork has 2 public constructors; expected exactly 1."`)
+   - Rule 3 → offending type name + the declaration site (field, constructor parameter, or method return type) referencing `IDbContextTransaction`
+
+8. `NoSpecificationEvaluatorDowncastPredicate` and `NoDbContextTransactionInApplicationPredicate` live in `Predicates/`. `SingleConstructorPredicate` also lives in `Predicates/`. All three are internal to `SharedKernel.ArchitectureTests`.
+
+9. Rule 3 consumer note: the consuming architecture test project must pass the `05.Application` assembly (e.g., `typeof(SomeApplicationHandler).Assembly`). The persistence-layer assemblies must NOT be passed — the exemption inside the predicate is a safety net, not the primary enforcement mechanism. The primary mechanism is scoping the test to the application assembly only.
+
+### EfCorePackageHygiene — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/EfCorePackageHygieneRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: three predicate factory methods returning ConditionList |
+| `Predicates/NoSpecificationEvaluatorDowncastPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: IL walk for castclass opcodes targeting SpecificationEvaluator concrete types |
+| `Predicates/SingleConstructorPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: counts instance constructors on IUnitOfWork implementors; fails if count ≠ 1 |
+| `Predicates/NoDbContextTransactionInApplicationPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: dependency check for IDbContextTransaction references; exempts Persistence namespace |
+
+### EfCorePackageHygiene — Acceptance Criteria
+
+- [ ] Rule 1 exists as a `[Fact]` test asserting no `ISpecificationEvaluator<>` → concrete-type casts exist in `SharedKernel.Persistence.EfCore` assembly; fire-path test uses a contrived violation fixture; pass-path test uses a clean fixture
+- [ ] Rule 2 exists asserting all `IUnitOfWork` implementors in `06.Persistence` have exactly one public constructor; passes on `EfUnitOfWork` after P-098; fire-path test catches a two-constructor implementor; pass-path test passes on a single-constructor implementor
+- [ ] Rule 3 exists asserting no type in `05.Application` namespace pattern references `IDbContextTransaction`; exempts `SharedKernel.Persistence.*` assemblies; fire-path test catches an application handler injecting `IDbContextTransaction`; pass-path test passes on a handler using `ITransactionalUnitOfWork`
+- [ ] All three rules documented in `00.Governance/CLAUDE.md` with rationale, offending-pattern example, compliant-pattern example, and exemptions
+- [ ] All three rules run as `[Fact]` tests with descriptive failure messages
+- [ ] Governance test suite passes with all new rules included; no false positives on existing SharedKernel assemblies
+
+### EfCorePackageHygiene — Dependencies
+
+- Requires P-097 (`ISpecificationEvaluator<T>` interface has `GetProjectedQuery` — the downcast no longer occurs in `SharedKernel.Persistence.EfCore`): yes — Rule 1 must pass cleanly after P-097; before P-097 it would fire on the existing code
+- Requires P-098 (`EfUnitOfWork` reduced to a single constructor): yes — Rule 2 must pass on `EfUnitOfWork`; before P-098 `EfUnitOfWork` may have had two constructors and the rule would fire
+- Requires P-099 (`ITransactionalUnitOfWork` defined in persistence abstractions): yes — Rule 3 references `IDbContextTransaction` as the forbidden type; `ITransactionalUnitOfWork` must exist for the compliant alternative to be actionable
+- Unblocks: CI architecture gate integration for EfCore package hygiene contracts
+
+### EfCorePackageHygiene — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` — no change; covers all three new predicates)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new SK analyzer rules, no change)
+- Target framework: `net10.0` (ArchitectureTests)
+
+### EfCorePackageHygiene — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-33 | Define Rule 1 shape: `NoSpecificationEvaluatorDowncastInEfCoreAssembly` — `NoSpecificationEvaluatorDowncastPredicate` design: IL walk for `castclass` opcodes targeting type names starting with `"SpecificationEvaluator"`; scoped to `SharedKernel.Persistence.EfCore` assembly; failure message: offending type + method name | SharedKernel.ArchitectureTests | `○` |
+| D-34 | Define Rule 2 shape: `IUnitOfWorkImplementorsMustHaveExactlyOneConstructor` — `SingleConstructorPredicate` design: scope to types implementing `IUnitOfWork` interface; count instance constructors (IsConstructor && !IsStatic); fail if count ≠ 1; failure message: offending type + actual constructor count | SharedKernel.ArchitectureTests | `○` |
+| D-35 | Define Rule 3 shape: `ApplicationLayerMustNotReferenceDbContextTransaction` — `NoDbContextTransactionInApplicationPredicate` design: check field types, constructor parameter types, and method call operands for `IDbContextTransaction` FullName substring; exemption: `SharedKernel.Persistence.*` namespace prefix passes unconditionally; failure message: offending type + declaration site | SharedKernel.ArchitectureTests | `○` |
+| C-39 | Implement `NoSpecificationEvaluatorDowncastPredicate` in `Predicates/` — `ICustomRule` walking `TypeDefinition.Methods.Body.Instructions` for `castclass` opcodes; check `TypeReference.Name.StartsWith("SpecificationEvaluator")`; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `○` |
+| C-40 | Implement `SingleConstructorPredicate` in `Predicates/` — `ICustomRule` scoped to types whose `TypeDefinition.Interfaces` contains an entry with `InterfaceType.Name == "IUnitOfWork"`; counts `TypeDefinition.Methods` where `IsConstructor && !IsStatic`; returns false with offending type name + actual count if count ≠ 1 | SharedKernel.ArchitectureTests | `○` |
+| C-41 | Implement `NoDbContextTransactionInApplicationPredicate` in `Predicates/` — `ICustomRule`; namespace exemption (`SharedKernel.Persistence.*`) as first guard; checks field `FieldType.FullName`, method parameter `ParameterType.FullName`, and `Call`/`Callvirt` operand `DeclaringType.FullName` for `"IDbContextTransaction"` substring; returns false with offending type + site description on violation | SharedKernel.ArchitectureTests | `○` |
+| C-42 | Implement `EfCorePackageHygieneRules` static class in `Rules/` — three factory methods: `NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly)` → `ConditionList`, `IUnitOfWorkImplementorsMustHaveExactlyOneConstructor(Assembly)` → `ConditionList`, `ApplicationLayerMustNotReferenceDbContextTransaction(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| T-67 | Architecture test Rule 1 (fire path): pass a contrived assembly containing a method that casts `ISpecificationEvaluator<T>` to `SpecificationEvaluator<T>` via `castclass`; assert `NoSpecificationEvaluatorDowncastInEfCoreAssembly` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
+| T-68 | Architecture test Rule 1 (pass path): pass an assembly where `ISpecificationEvaluator<T>` is always used via its interface methods; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-69 | Architecture test Rule 2 (fire path): pass an assembly containing a class implementing `IUnitOfWork` with two public constructors; assert `IUnitOfWorkImplementorsMustHaveExactlyOneConstructor` fails and failure message names the offending type and reports actual constructor count | SharedKernel.ArchitectureTests | `○` |
+| T-70 | Architecture test Rule 2 (pass path): pass an assembly containing a class implementing `IUnitOfWork` with exactly one public constructor; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-71 | Architecture test Rule 3 (fire path): pass an application assembly containing a class with a constructor parameter typed `IDbContextTransaction`; assert `ApplicationLayerMustNotReferenceDbContextTransaction` fails and failure message names the offending type and constructor parameter | SharedKernel.ArchitectureTests | `○` |
+| T-72 | Architecture test Rule 3 (pass path): pass an application assembly containing a class with a constructor parameter typed `ITransactionalUnitOfWork` (and no `IDbContextTransaction` references); assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| DO-15 | Document all three `EfCorePackageHygieneRules` predicates in `00.Governance/CLAUDE.md`: rationale tying each rule to WO-017 (P-097, P-098, P-099 decisions), offending-pattern example, compliant-pattern example, exemptions, failure message content | SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -977,7 +1097,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 186.
+> Counts updated whenever a task state changes. Total tasks: 199.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -995,6 +1115,7 @@ Format when active:
 | `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | 13 | 6 | 7 | `◐` |
 | `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | 14 | 0 | 14 | `○` |
 | `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | 15 | 0 | 15 | `○` |
+| `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | 13 | 0 | 13 | `○` |
 
 ---
 
@@ -1024,3 +1145,4 @@ Format when active:
 - [2026-06-02] Phase Persistence Architecture Rules Phase 2 added (SK.00.PersistenceEnforcement2) — 14 tasks: D-30, C-33–C-35, T-52–T-59, DO-13; four new NetArchTest predicates in PersistenceInterfaceOwnershipRules; two new ICustomRule predicates (InterfaceDeclarationOwnershipPredicate, NoGetByIdOnReadRepositoryPredicate); no new SK IDs; total tasks now 171 — WO-014 P-083
 - [2026-06-02] Phase Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness added (SK.00.PersistenceContractCompleteness) — 15 tasks: D-31–D-32, C-36–C-38, T-60–T-66, DO-14; SK0011 GuidFormatCodeMisuse registered; RepositoryContractCompletenessRules arch predicates defined; HasRequiredMethodPredicate ICustomRule; total tasks now 186 — WO-016 P-096
 - [2026-06-03] C-30, C-31, C-32 → ● in SK.00.Core — NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, PersistenceLayerProtectionRules implemented; SK.00.Core promoted to ● (state-map-phase)
+- [2026-06-03] Phase EfCore Package Hygiene Architecture Rules added (SK.00.EfCorePackageHygiene) — 13 tasks: D-33–D-35, C-39–C-42, T-67–T-72, DO-15; three NetArchTest predicates in EfCorePackageHygieneRules; three new ICustomRule predicates (NoSpecificationEvaluatorDowncastPredicate, SingleConstructorPredicate, NoDbContextTransactionInApplicationPredicate); no new SK IDs; total tasks now 199 — WO-017 P-103

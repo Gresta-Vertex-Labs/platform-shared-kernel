@@ -1,4 +1,5 @@
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Domain.Specifications;
 
 namespace SharedKernel.Persistence.Abstractions.Repositories;
 
@@ -28,6 +29,26 @@ public interface IRepository<TAggregate, TId>
     where TAggregate : IAggregateRoot<TId>
     where TId : notnull
 {
+    /// <summary>
+    /// Retrieves a single aggregate matching the specification for write-path mutation, or
+    /// <see langword="null"/> when no match exists.
+    /// </summary>
+    /// <param name="spec">The specification that expresses the fetch predicate.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A tracked aggregate matching the specification, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// <para>
+    /// Returns a <strong>tracked</strong> entity by default — the spec's own <c>AsNoTracking</c>
+    /// flag is honored. Write-side callers should leave <c>AsNoTracking</c> unset so that subsequent
+    /// mutations are detected by EF change tracking without requiring an explicit <c>.Update()</c>.
+    /// </para>
+    /// <para>
+    /// <see cref="System.Linq.IQueryable{T}"/> is never returned to the caller — the fetch predicate
+    /// is expressed entirely through <see cref="ISpecification{TAggregate}"/>.
+    /// </para>
+    /// </remarks>
+    Task<TAggregate?> GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken ct = default);
+
     /// <summary>
     /// Retrieves an aggregate by its unique identity, or <see langword="null"/> when not found.
     /// </summary>

@@ -70,7 +70,7 @@ Format when blocked:
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
-| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | WO-017 complete — all 30 tasks (D-26..D-33, C-42..C-50, T-24..T-30, DO-16..DO-21) implemented and 158 tests green; all 6 phases (Design/Scaffold/Core/Tests/Docs/Published) fully ●. | — |
+| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | — | `○` | — | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
@@ -108,7 +108,7 @@ Format when active:
 |-------|---------|
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 5 |
+| ● Published | 4 |
 | ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 1 |
@@ -1773,6 +1773,15 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-03] Phase(s) P-097, P-098, P-099, P-100, P-101, P-102 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
 - [2026-06-03] Persistence → Published (●) — promoted from SK.06.Design; WO-017 all 30 tasks complete, 158 tests green (state-map-phase)
 - [2026-06-03] P-078, P-079, P-080, P-082, P-091, P-092, P-093, P-094, P-097, P-098, P-099, P-100, P-101, P-102 → ● Complete — Phase Backlog sync; all 06.Persistence phases confirmed ● in sub state-map; statuses were stuck at ◐ Dispatched (manual sync)
+- [2026-06-03] Phase(s) P-103 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-03] Phase(s) P-105, P-106, P-107, P-108, P-109 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-06-04] Persistence → Design (●) — promoted from SK.06.Design; all 43 design tasks complete including WO-018 P-105..P-109 (state-map-phase)
+- [2026-06-04] Persistence → Scaffold (●) — promoted from SK.06.Scaffold (state-map-phase)
+- [2026-06-04] Persistence → Core (●) — promoted from SK.06.Core (state-map-phase)
+- [2026-06-04] Persistence → Tests (●) — promoted from SK.06.Tests (state-map-phase)
+- [2026-06-04] Persistence → Docs (●) — promoted from SK.06.Docs (state-map-phase)
+- [2026-06-04] Persistence → Published (●) — promoted from SK.06.Published (state-map-phase)
+- [2026-06-04] Phase Backlog entries for 06.Persistence closed → ● Complete — 06.Persistence reached Published (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -4755,7 +4764,7 @@ Developer confusion from the naming mismatch is guaranteed. A developer building
 ---
 ### P-103 — Governance: Architecture Rules for EfCore Package Hygiene
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-017
 **Domain:** 00.Governance
 **Depends on:** P-097, P-099
@@ -4843,4 +4852,364 @@ These helpers are useful across any EfCore test project.
 - [ ] All new tests use SQLite provider — no Testcontainers needed for EfCore behavioral tests
 - [ ] All existing tests continue to pass — no regressions
 - [ ] `16.Testing/CLAUDE.md` (if it exists) updated with `PersistenceTestHelpers` documentation
+---
+
+---
+### P-105 — Persistence EfCore: Correctness Fixes — Double-Dispatch Bug, GetByIdsAsync Expression Tree, and AOT Annotation
+
+**Status:** `●` Complete
+**Work Order:** WO-018
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+Three correctness issues in `SharedKernel.Persistence.EfCore` that are bugs or trim-safety gaps requiring surgical fixes before the package can be declared production-ready.
+
+**Fix 1 — Double domain-event dispatch in `EfTransactionalUnitOfWork`:**
+The current `EfTransactionalUnitOfWork.SaveChangesAsync` calls `DispatchAndClearEventsAsync` immediately after each `SaveChangesAsync`. When a caller uses the transactional flow — `SaveChangesAsync` followed by `CommitAsync` — domain events are dispatched twice: once after save and again after commit. This is a correctness bug: integration event publishers (07.Messaging) and any idempotency logic will see duplicate domain events for a single save cycle.
+
+The fix: `EfTransactionalUnitOfWork.SaveChangesAsync` must NOT call `DispatchAndClearEventsAsync`. Instead, it must only stage the save (delegate to `DbContext.SaveChangesAsync`). Domain event dispatch must happen exclusively in `EfPersistenceTransaction.CommitAsync` (after the database transaction is committed). For callers who never open an explicit transaction but still use `EfTransactionalUnitOfWork` directly as `IUnitOfWork`, a fallback dispatch after `SaveChangesAsync` is still needed — this is handled by detecting whether an active `IDbContextTransaction` is in progress. If `DbContext.Database.CurrentTransaction` is null (no explicit transaction open), `SaveChangesAsync` dispatches immediately; if a transaction is active, dispatch is deferred to `CommitAsync`. This is the standard EF Core transactional dispatch pattern.
+
+The `EfUnitOfWork.SaveChangesAsync` (non-transactional) is NOT affected — its behavior (dispatch after save) is correct and unchanged.
+
+Test additions required:
+
+- `begin → SaveChangesAsync → CommitAsync` → domain events dispatched exactly once (after commit)
+- `SaveChangesAsync` without an open transaction via `EfTransactionalUnitOfWork` → domain events dispatched once (after save, since no transaction active)
+- `begin → SaveChangesAsync → RollbackAsync` → domain events NOT dispatched
+
+**Fix 2 — `EfReadRepository.GetByIdsAsync` expression-tree rewrite:**
+The current implementation uses `EF.Property<TId>(e, "Id")` inside a `Contains` predicate. When `TId` is a `StronglyTypedId<Guid>` (a value object with a registered `ValueConverter`), EF Core's translation of `idList.Contains(EF.Property<TId>(e, "Id"))` may fall back to client-side evaluation because the converter is applied to the column but the `Contains` argument is a list of `TId` instances. This silently loads all rows to the client and filters in memory — a full table scan for the `GetByIdsAsync` use case.
+
+The fix: replace the `EF.Property` approach with the same expression-tree construction used in `EfRepository.ExistsAsync` — build `e => ids.Contains(e.Id)` as an expression tree using `Expression.Parameter`, `Expression.Property("Id")`, and `Expression.Call(containsMethod)`. EF Core's value converter is applied correctly to expression-tree lambda predicates because the LINQ provider resolves the converter at the property level. The resulting SQL is a proper `WHERE Id IN (...)` with the converter applied to each element.
+
+Test additions required:
+
+- `GetByIdsAsync` with `StronglyTypedId<Guid>` IDs — verify the SQL contains an `IN` clause (not a client-side predicate)
+- All existing `GetByIdsAsync` behavioral tests continue to pass
+
+**Fix 3 — `ValueObjectOwnershipBuilder` DynamicallyAccessedMembers annotation:**
+`ValueObjectOwnershipBuilder.Apply` calls `entityType.ClrType.GetProperties(BindingFlags.Public | BindingFlags.Instance)` at model-build time. Under NativeAOT publishing, the .NET trimmer emits a trim warning (`IL2026` / `IL2075`) because the properties of the CLR entity types may be trimmed if not explicitly attributed. Since EF Core itself is not NativeAOT-safe without compiled models, this warning does not block current use — but it produces noise in AOT-enabled services and will become a compile error if NativeAOT is mandated in future.
+
+The fix: add `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]` to the `clrType` parameter at the point of reflection access, or apply it via the intermediate `entityType.ClrType` usage site. The CLAUDE.md AOT note for this class must be updated to document the annotation and state explicitly why it is acceptable (model-build time only — not a hot path).
+
+No behavioral changes from this fix — it is purely an attribute annotation to satisfy the trim analyzer.
+
+#### Why this is needed
+
+The double-dispatch bug (Fix 1) is a correctness defect: any consuming service using `ITransactionalUnitOfWork` with domain events will silently produce duplicate events. This is invisible in unit tests (which mock the dispatcher) and only manifests in integration tests or production. At platform scale, duplicate events cause idempotency failures, duplicate message publishing, and difficult-to-diagnose audit anomalies. The `GetByIdsAsync` fix (Fix 2) is a performance defect: a silent client-side evaluation fallback turns an `O(1)` database lookup into an `O(n)` full table scan when strongly-typed IDs are used — and the entire platform uses strongly-typed IDs. The AOT annotation (Fix 3) is a quality hygiene issue: suppressing known trim warnings before they cascade into compile errors in AOT-publishing services.
+
+#### Acceptance criteria
+
+- [ ] `EfTransactionalUnitOfWork.SaveChangesAsync` does NOT call `DispatchAndClearEventsAsync` when a `DbContext.Database.CurrentTransaction` is active; it dispatches immediately only when no explicit transaction is open
+- [ ] `EfPersistenceTransaction.CommitAsync` calls `DispatchAndClearEventsAsync` after the database commit succeeds
+- [ ] Domain event dispatch test: `begin → SaveChangesAsync → CommitAsync` → events dispatched exactly once
+- [ ] Domain event dispatch test: `SaveChangesAsync` (no open transaction via `EfTransactionalUnitOfWork`) → events dispatched once
+- [ ] Domain event dispatch test: `begin → SaveChangesAsync → RollbackAsync` → events not dispatched
+- [ ] `EfReadRepository.GetByIdsAsync` uses expression-tree `Contains` predicate — no `EF.Property` shadow accessor
+- [ ] `GetByIdsAsync` with `StronglyTypedId<Guid>` entities generates a server-side `IN (...)` SQL clause (verifiable via EF Core logging or `ToQueryString()`)
+- [ ] All existing `GetByIdsAsync` tests pass without regressions
+- [ ] `ValueObjectOwnershipBuilder.Apply` carries `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]` on the relevant CLR type access site
+- [ ] `06.Persistence/CLAUDE.md` AOT note for `ValueObjectOwnershipBuilder` updated to document the annotation
+- [ ] All existing tests green — no regressions
+---
+
+---
+### P-106 — Persistence EfCore: Capability Gaps — Write-Side Spec Fetch, IDbContextFactory, Custom Interceptors, Compiled Model Hook
+
+**Status:** `●` Complete
+**Work Order:** WO-018
+**Domain:** 06.Persistence
+**Depends on:** P-105
+
+#### What is needed
+
+Four additive capabilities missing from `SharedKernel.Persistence.EfCore` that are required for production microservice scenarios.
+
+**Capability 1 — Write-side `GetBySpecAsync` on `IRepository<T, TId>`:**
+Many write-path command handlers need to fetch an aggregate for mutation by a business key (e.g., "the order whose external reference number is X") rather than by primary key. The current `IRepository<T, TId>` only provides `GetByIdAsync`, forcing teams to either inject `IReadRepository` (returning non-tracked entities, breaking update semantics) or bypass the repository abstraction entirely with raw `DbContext` access.
+
+Add `Task<TAggregate?> GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken ct = default)` to `IRepository<T, TId>` in `SharedKernel.Persistence.Abstractions`. The EF Core implementation in `EfRepository<T, TId>` applies the specification via `ISpecificationEvaluator<T>.GetQuery` WITHOUT `AsNoTracking` — the entity is returned as tracked so that subsequent mutations are picked up by change detection. The spec's own `AsNoTracking` flag is honored (callers who explicitly set it get non-tracked; but typically write-side specs should not set `AsNoTracking`).
+
+This method is intentionally NOT a query surface — callers must still express the fetch predicate as an `ISpecification<T>`. Raw `IQueryable` is never returned.
+
+**Capability 2 — `IDbContextFactory<TContext>` support for background services:**
+Background services, hosted services, Hangfire workers, and Temporal activities all execute outside a HTTP request scope and cannot consume a scoped `DbContext`. The standard .NET pattern is `IDbContextFactory<TContext>` (added by `AddDbContextFactory<T>`), which creates short-lived `DbContext` instances on demand.
+
+`EfCorePersistenceBuilder` gains a new `.WithDbContextFactory()` opt-in method. When called, `Build()` additionally calls `services.AddDbContextFactory<TContext>(configureDb)` so that `IDbContextFactory<TContext>` is resolvable by background services. The factory-created contexts must respect the same interceptor registration — this requires that interceptors be registered as singletons or that the factory context options are built with the same interceptor chain. Since the three platform interceptors are scoped (they depend on scoped `IUserContext` and `IClock`), background services using the factory must be documented as resolving their own `IUserContext` scope (defaulting to the no-op placeholder) rather than inheriting an HTTP request's user context.
+
+The CLAUDE.md must document: "Background services using `IDbContextFactory` receive a `NoOpUserContext` (userId = `Guid.Empty`) unless a custom `IUserContext` implementation is registered as a singleton. Audit fields on entities written from background services will always receive the `"system"` audit value."
+
+**Capability 3 — Custom interceptor registration hook on `EfCorePersistenceBuilder`:**
+Consuming services occasionally need to add service-specific EF Core interceptors alongside the three platform interceptors. Currently there is no clean path — they would have to override `OnConfiguring` (anti-pattern in DI contexts) or add a second `AddDbContext` registration that conflicts.
+
+Add `.AddInterceptor<TInterceptor>()` fluent method to `EfCorePersistenceBuilder<TContext>` where `TInterceptor : class, ISaveChangesInterceptor`. When called one or more times, `Build()` registers each additional interceptor as a scoped service. These user-supplied interceptors are appended to the interceptor list alongside the three platform interceptors in `SharedKernelDbContext.OnConfiguring`. `SharedKernelDbContext` must be updated to accept `IEnumerable<ISaveChangesInterceptor> additionalInterceptors` via constructor injection (empty by default), and `OnConfiguring` must compose the platform three plus any additional interceptors.
+
+The platform three interceptors (Audit, SoftDelete, Concurrency) always fire first — user-supplied interceptors fire after. This ordering is intentional and must be documented.
+
+**Capability 4 — Compiled model hook on `EfCorePersistenceBuilder`:**
+For services investing in NativeAOT or startup performance, EF Core compiled models eliminate model-building overhead. The compiled model is produced by `dotnet ef dbcontext optimize` and used via `optionsBuilder.UseModel(compiledModel)`.
+
+Add `.WithCompiledModel(IModel compiledModel)` optional method to `EfCorePersistenceBuilder<TContext>`. When called, `Build()` wraps the caller-supplied `configureDb` action with an additional `UseModel(compiledModel)` call. This is a pure pass-through — the builder does not validate the compiled model; it merely ensures it is injected into the options before the context is created. XML doc must state: "Compiled models are produced via `dotnet ef dbcontext optimize`. When used, `ValueObjectOwnershipBuilder.Apply` and runtime model-building scans do not run — all mappings must be in the compiled model."
+
+#### Why this is needed
+
+Capability 1 (write-side spec fetch) is needed because every non-trivial write handler needs to fetch by business key, not just by PK. Without it, teams use `IReadRepository` (wrong tracking semantics) or bypass the abstraction. Capability 2 (`IDbContextFactory`) is a K8s-native requirement: background processing jobs that write to the database are ubiquitous in microservices (Hangfire, Temporal, outbox processors, event consumers) and all require factory-pattern DbContext creation. Without this, teams either use a singleton scoped context (a known EF Core anti-pattern causing concurrency issues) or write bespoke factory registration that bypasses the SharedKernel wiring. Capability 3 (custom interceptors) enables teams to add service-specific cross-cutting persistence concerns (audit bridges, query logging, telemetry) without forking the SharedKernel or using anti-patterns. Capability 4 (compiled model) is the standard EF Core optimization for latency-sensitive K8s cold-start scenarios — services that ship compiled models currently have no clean way to use them with the SharedKernel builder.
+
+#### Acceptance criteria
+
+- [ ] `IRepository<TAggregate, TId>` in `SharedKernel.Persistence.Abstractions` declares `GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken ct)`
+- [ ] `EfRepository<TAggregate, TId>` implements `GetBySpecAsync` using `ISpecificationEvaluator<T>.GetQuery` without forcing `AsNoTracking` — spec's own flag is honored
+- [ ] `GetBySpecAsync` on `EfRepository` returns a tracked entity when the spec has `AsNoTracking == false`
+- [ ] `ContractShapeTests` in Abstractions verifies `IRepository<T,TId>` declares `GetBySpecAsync`
+- [ ] `EfCorePersistenceBuilder` has `.WithDbContextFactory()` method; `Build()` calls `AddDbContextFactory<TContext>` when it is invoked
+- [ ] Factory-created contexts use the same interceptor chain as scoped contexts; `NoOpUserContext` audit behavior is documented
+- [ ] `EfCorePersistenceBuilder` has `.AddInterceptor<TInterceptor>()` generic method; multiple calls accumulate interceptors
+- [ ] `SharedKernelDbContext` accepts additional interceptors via constructor; platform three always fire before user-supplied interceptors
+- [ ] `EfCorePersistenceBuilder` has `.WithCompiledModel(IModel model)` method; `Build()` applies `UseModel(model)` to the context options when called
+- [ ] All new builder methods return `EfCorePersistenceBuilder<TContext>` for fluent chaining
+- [ ] `06.Persistence/CLAUDE.md` documents all four new capabilities with usage examples
+- [ ] Tests: write-side `GetBySpecAsync` round-trip (tracked entity mutation persisted), factory-created context audit defaults, custom interceptor firing order, compiled model passthrough (smoke test with a hand-written `IModel` stub)
+- [ ] All existing tests pass — no regressions
+---
+
+---
+### P-107 — Persistence Abstractions: String-Based Navigation Include Support in ISpecification
+
+**Status:** `●` Complete
+**Work Order:** WO-018
+**Domain:** 06.Persistence
+**Depends on:** P-106
+
+#### What is needed
+
+`ISpecification<T>` and `SpecificationEvaluator<T>` currently support only expression-based eager-loading includes (`Expression<Func<T, object>>`). For dynamic include paths — where the navigation property path is determined at runtime, or for deep nested navigation chains like `"Orders.Items.Product"` — string-based includes are necessary. EF Core supports string-based includes via `IQueryable<T>.Include(string navigationPropertyPath)`.
+
+**`ISpecification<T>` extension:**
+Add a `IReadOnlyList<string> StringIncludes` property to `ISpecification<T>` in `SharedKernel.Domain.Specifications`. The default concrete `Specification<T>` base must expose a protected `AddStringInclude(string navigationPath)` method, with the property returning an empty read-only list by default.
+
+This is an additive, non-breaking change — existing specifications that do not call `AddStringInclude` return an empty list and are unaffected.
+
+**`SpecificationEvaluator<T>` update:**
+The string-includes step is added to `GetQuery` between step 2 (expression includes) and step 3 (ordering) — it becomes step 2b. The evaluator applies each string in `StringIncludes` as an `IQueryable<T>.Include(string)` call. The ordering step number in documentation shifts accordingly.
+
+`ISpecificationEvaluator<T>` contract on `GetQuery` remains unchanged (it already delegates to the spec properties) — any `ISpecificationEvaluator<T>` implementation that reads `spec.Includes` must also read `spec.StringIncludes` to be complete. The interface contract doc is updated to state this expectation.
+
+**`Specification<T>` base update:**
+`Specification<T>` gains an internal `List<string> _stringIncludes` backing field. `AddStringInclude(string path)` appends to this list. `StringIncludes` returns the list as `IReadOnlyList<string>`. Null or whitespace paths are rejected with an `ArgumentException`.
+
+**`ReadOnlySpecification<T>` and `PagedSpecification<T>` bases:**
+Both inherit `StringIncludes` from `Specification<T>` — no changes needed to them directly.
+
+**CLAUDE.md updates:**
+`06.Persistence/CLAUDE.md` specification evaluator ordering section updated to document step 2b. `03.Domain/CLAUDE.md` specification section updated to document `StringIncludes` and `AddStringInclude`.
+
+**Test additions:**
+
+- A specification with `AddStringInclude("NavigationProperty")` — verify the string include is applied (entity nav prop populated)
+- A specification with both expression includes and string includes — verify both are applied
+- `SpecificationEvaluator` ordering test: string includes applied after expression includes and before primary sort
+
+#### Why this is needed
+
+Complex domain models with multi-level navigation chains are common at microservice scale (e.g., `Order → OrderLines → Product → Category`). Expression-based includes hit a readability wall beyond two levels — `ThenInclude` chains become cumbersome. String-based includes provide a clean alternative for dynamic or deep paths. Without this, teams either abandon the specification pattern for complex queries (reaching directly for `IQueryable`, breaking the abstraction), or write verbose multi-level expression chains that are harder to maintain. The additive, non-breaking design means zero impact on existing specifications.
+
+#### Acceptance criteria
+
+- [ ] `ISpecification<T>` declares `IReadOnlyList<string> StringIncludes` property
+- [ ] `Specification<T>` base implements `StringIncludes` with an internal list and `AddStringInclude(string path)` protected method
+- [ ] `AddStringInclude` rejects null/whitespace with `ArgumentException`
+- [ ] `SpecificationEvaluator<T>.GetQuery` applies string includes between expression includes (step 2) and primary sort (step 3)
+- [ ] All existing specifications that do not call `AddStringInclude` return empty `StringIncludes` — zero behavioral impact
+- [ ] Test: string include path applied → navigation property populated in result
+- [ ] Test: expression include + string include both applied → both navigation properties populated
+- [ ] `ContractShapeTests` in Abstractions verifies `ISpecification<T>` has `StringIncludes` property
+- [ ] `06.Persistence/CLAUDE.md` evaluator ordering section updated (step 2b documented)
+- [ ] `03.Domain/CLAUDE.md` updated with `StringIncludes` / `AddStringInclude` documentation
+- [ ] All existing specification and evaluator tests pass — no regressions
+---
+
+---
+### P-108 — Persistence PostgreSQL: SharedKernel.Persistence.PostgreSQL Package Implementation
+
+**Status:** `●` Complete
+**Work Order:** WO-018
+**Domain:** 06.Persistence
+**Depends on:** P-106
+
+#### What is needed
+
+The `SharedKernel.Persistence.PostgreSQL` package, previously deferred as P-071, must now be fully implemented. This package provides PostgreSQL-specific EF Core conventions and helpers on top of `SharedKernel.Persistence.EfCore`.
+
+The package lives at `06.Persistence/SharedKernel.Persistence.PostgreSQL/`. It references `SharedKernel.Persistence.EfCore` and `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x. It does NOT reference Dapper or connection factories — those are in the Dapper package.
+
+**`SnakeCaseNamingConvention`:**
+An `IModelFinalizingConvention` that converts all table names, column names, index names, and constraint names to `snake_case`. Applied automatically when `UsePostgreSQL()` DI extension is called. Implementation must handle `PascalCase`, `camelCase`, and already-snake-cased names idempotently.
+
+**`UsePostgreSQL()` DI extension on `DbContextOptionsBuilder`:**
+Configures the Npgsql provider with the connection string AND applies `SnakeCaseNamingConvention` via `ConfigureConventions`. Additionally enables pgvector support if `Pgvector.EntityFrameworkCore` is referenced. Single call replaces manual provider + convention wiring. This extension is called inside the `configureDb` action passed to `AddSharedKernelEfCore<TContext>`.
+
+**JSONB support (`HasJsonbColumn` extension):**
+A `JsonbEntityTypeBuilderExtension` static class with `.HasJsonbColumn<TProperty>(propertyExpression)` extension on `EntityTypeBuilder<T>`. Applies `.HasColumnType("jsonb")`. STJ serialization is configured globally by Npgsql — individual JSONB columns do not need per-column converters. A companion `[JsonbColumn]` attribute (optional, for documentation and future tooling).
+
+**pgvector support (`HasVectorColumn` extension):**
+A `VectorEntityTypeBuilderExtension` static class with `.HasVectorColumn<TProperty>(propertyExpression, int dimensions)` extension on `EntityTypeBuilder<T>`. Requires the `Pgvector.EntityFrameworkCore` NuGet package. Applies `.HasColumnType("vector({dimensions})")`. Companion `[VectorColumn(int dimensions)]` attribute.
+
+**PostgreSQL DI registration (`AddSharedKernelPostgreSQL`):**
+`services.AddSharedKernelPostgreSQL(string connectionString)` registers an `NpgsqlDataSource` (configured with STJ options) and `IDbConnectionFactory → NpgsqlConnectionFactory` (scoped). This extension is for services that also want Dapper read-side queries alongside EF Core writes — it wires the shared `NpgsqlDataSource` so both EF Core (via `UseNpgsql(dataSource)`) and Dapper (via `IDbConnectionFactory`) share the same connection pool.
+
+**`NpgsqlConnectionFactory`:**
+A sealed implementation of `IDbConnectionFactory` (from `SharedKernel.Persistence.Abstractions`) backed by the injected `NpgsqlDataSource`. `CreateConnectionAsync` calls `NpgsqlDataSource.OpenConnectionAsync()`. Caller is responsible for disposal.
+
+Note: The `NpgsqlConnectionFactory` in the CLAUDE.md is listed under `SharedKernel.Persistence.Dapper` — this is because the Dapper package is the consumer. However, it is equally valid to place it here in the PostgreSQL package (which also needs it for the shared data source). The decision: place `NpgsqlConnectionFactory` in THIS package (PostgreSQL) and have the Dapper package reference it. The Dapper package is a pure Dapper read-service layer — it does not need its own connection factory if the PostgreSQL package provides one.
+
+**Tests (`SharedKernel.Persistence.PostgreSQL.Tests`):**
+
+All PostgreSQL package tests require a real PostgreSQL Testcontainer (no SQLite fallback — snake_case naming, JSONB, and pgvector are PostgreSQL-specific features):
+
+- `SnakeCaseNamingConvention` test: verify table and column names in `DbContext.Model` are snake_case
+- JSONB round-trip: insert entity with JSONB column, fetch back, verify deserialization
+- pgvector round-trip: insert entity with vector column, fetch back, verify dimensions
+- `NpgsqlConnectionFactory` test: `CreateConnectionAsync` returns an open `NpgsqlConnection`; connection is disposed by caller
+- `AddSharedKernelPostgreSQL` smoke test: services resolve `IDbConnectionFactory` as `NpgsqlConnectionFactory`
+
+#### Why this is needed
+
+Without the PostgreSQL package, every microservice using PostgreSQL must manually wire `SnakeCaseNamingConvention`, JSONB column types, pgvector columns, and Npgsql connection factories — code that is identical across hundreds of services. This is exactly the SharedKernel's purpose: eliminate that repetition. The snake_case convention in particular is universally expected in PostgreSQL schemas (column names like `created_by`, not `CreatedBy`), and a missing convention means either mis-named columns or per-entity manual overrides in every configuration class. The shared `NpgsqlDataSource` pattern is critical for connection-pool efficiency: without it, EF Core and Dapper open separate connection pools, doubling the PostgreSQL connection count per service.
+
+#### Acceptance criteria
+
+- [ ] `SharedKernel.Persistence.PostgreSQL` project exists at `06.Persistence/SharedKernel.Persistence.PostgreSQL/`
+- [ ] Project references `SharedKernel.Persistence.EfCore` and `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x
+- [ ] `SnakeCaseNamingConvention` implements `IModelFinalizingConvention`; correctly converts `PascalCase` to `snake_case` idempotently
+- [ ] `UsePostgreSQL(DbContextOptionsBuilder, string connectionString)` extension configures Npgsql + `SnakeCaseNamingConvention`
+- [ ] `HasJsonbColumn<TProperty>` extension applies `HasColumnType("jsonb")` to the specified property
+- [ ] `HasVectorColumn<TProperty>` extension applies the correct pgvector column type with the specified dimensions
+- [ ] `AddSharedKernelPostgreSQL(IServiceCollection, string connectionString)` registers `NpgsqlDataSource` and `IDbConnectionFactory → NpgsqlConnectionFactory`
+- [ ] `NpgsqlConnectionFactory` implements `IDbConnectionFactory`; returns an open `NpgsqlConnection`; caller disposes
+- [ ] Project registered in `Platform.SharedKernel.slnx` under solution folder `06.Persistence`
+- [ ] Test project at `SharedKernel.Persistence.PostgreSQL.Tests/` using Testcontainers PostgreSQL
+- [ ] `SnakeCaseNamingConvention` test: column names verified as `snake_case` via `DbContext.Model`
+- [ ] JSONB round-trip test passes
+- [ ] pgvector round-trip test passes
+- [ ] `NpgsqlConnectionFactory` integration test passes
+- [ ] `06.Persistence/CLAUDE.md` package table updated to reflect PostgreSQL package is now implemented (not deferred)
+- [ ] All public types carry XML doc comments
+---
+
+---
+### P-109 — Persistence Dapper: SharedKernel.Persistence.Dapper Package Implementation
+
+**Status:** `●` Complete
+**Work Order:** WO-018
+**Domain:** 06.Persistence
+**Depends on:** P-108
+
+#### What is needed
+
+The `SharedKernel.Persistence.Dapper` package, previously deferred as P-072, must now be fully implemented. This package provides the Dapper micro-ORM read-side layer for services that need raw SQL query performance alongside EF Core writes.
+
+The package lives at `06.Persistence/SharedKernel.Persistence.Dapper/`. It references `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.PostgreSQL` (for `NpgsqlConnectionFactory`), and `Dapper` NuGet. It does NOT reference `SharedKernel.Persistence.EfCore` directly — the read-side is provider-agnostic at the repository level.
+
+**`StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>`:**
+An abstract class extending `SqlMapper.TypeHandler<TStronglyTypedId>`. `SetValue` writes the underlying `TValue` via the `implicit operator TValue` (static method call — no reflection). `Parse` constructs the strongly-typed ID from the raw DB value using the `implicit operator` or factory method on `StronglyTypedId<TValue>`. Consuming services implement a one-line concrete handler per ID type (no logic — just type parameters). Registered at startup via `DapperTypeHandlers.Register()`.
+
+**`SmartEnumTypeHandler<TEnum, TValue>`:**
+An abstract class extending `SqlMapper.TypeHandler<TEnum>` constrained to `TEnum : SmartEnum<TEnum, TValue>`. `SetValue` writes the underlying `TValue`. `Parse` calls `SmartEnum<TEnum, TValue>.TryFromValue` — no reflection in the hot path. Consuming services implement a one-line concrete handler per enum type.
+
+**`DapperTypeHandlers`:**
+A static class with a `Register()` method that is idempotent (can be called multiple times without duplicate registration). `Register()` sets Dapper's `SqlMapper.AddTypeHandler` for any platform-wide handlers (e.g., `DateTimeOffset` → PostgreSQL `timestamptz` if Dapper does not handle it natively in 10.x). Individual service-specific handlers (`StronglyTypedIdTypeHandler` subclasses) are registered by consuming services in their composition root.
+
+**`DapperReadService`:**
+
+An abstract base class providing the three protected read methods:
+
+- `QueryAsync<TResult>(string sql, object? parameters, CancellationToken ct)` — returns `IEnumerable<TResult>`
+- `QuerySingleOrDefaultAsync<TResult>(string sql, object? parameters, CancellationToken ct)` — returns `TResult?`
+- `ExecuteAsync(string sql, object? parameters, CancellationToken ct)` — returns `int` (rows affected)
+
+All three methods open a connection via `IDbConnectionFactory.CreateConnectionAsync()`, execute the query, and dispose the connection. They use `await using` or explicit dispose to ensure connection release. SQL is caller-supplied — no query builder abstraction. Parameterized queries only — string interpolation in SQL is a hard violation (SQL injection risk). All three are `protected` — subclasses form the public API surface.
+
+**Dapper DI extensions:**
+`AddSharedKernelDapper(this IServiceCollection services)` — registers `DapperTypeHandlers.Register()` as a startup action (or calls it inline). Returns `IServiceCollection` for chaining. Note: `IDbConnectionFactory` is registered by `AddSharedKernelPostgreSQL` — the Dapper extension only wires the type handlers and any Dapper-specific configuration. Consuming services register their concrete `DapperReadService` subclasses individually in DI.
+
+**Tests (`SharedKernel.Persistence.Dapper.Tests`):**
+
+All Dapper package tests require a real PostgreSQL Testcontainer:
+
+- `DapperReadService.QueryAsync` returns correct results from parameterized query
+- `DapperReadService.QuerySingleOrDefaultAsync` returns the entity when found, null when not found
+- `DapperReadService.ExecuteAsync` executes a DML statement and returns affected row count
+- `IDbConnectionFactory.CreateConnectionAsync` called once per operation (connection disposed after each call)
+- `StronglyTypedIdTypeHandler` round-trip: write entity with strongly-typed ID column, fetch back via Dapper, verify ID deserialized correctly
+- `SmartEnumTypeHandler` round-trip: write entity with SmartEnum column, fetch back via Dapper, verify enum deserialized correctly
+
+#### Why this is needed
+
+CQRS at scale requires a fast read path. EF Core's change-tracking and identity-map overhead makes it suboptimal for high-throughput read queries that project directly to DTOs without aggregate materialization. Dapper provides raw SQL performance with typed result mapping. Without the SharedKernel Dapper package, every service implements its own connection management, its own type handlers for strongly-typed IDs and SmartEnums (all subtly different), and its own base query service — creating a proliferation of slightly-incompatible patterns. The `DapperReadService` base enforces the parameterized-queries-only rule at the platform level, making SQL injection the exceptional case rather than the default.
+
+#### Acceptance criteria
+
+- [ ] `SharedKernel.Persistence.Dapper` project exists at `06.Persistence/SharedKernel.Persistence.Dapper/`
+- [ ] Project references `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.PostgreSQL`, and `Dapper`
+- [ ] `StronglyTypedIdTypeHandler<TStronglyTypedId, TValue>` abstract class — `SetValue` uses `implicit operator`, `Parse` reconstructs via factory/operator; no reflection
+- [ ] `SmartEnumTypeHandler<TEnum, TValue>` abstract class — `Parse` uses `SmartEnum<TEnum, TValue>.TryFromValue`; no reflection
+- [ ] `DapperTypeHandlers.Register()` is idempotent
+- [ ] `DapperReadService` protected methods: `QueryAsync`, `QuerySingleOrDefaultAsync`, `ExecuteAsync` — each opens and disposes connection per call
+- [ ] `AddSharedKernelDapper` DI extension calls `DapperTypeHandlers.Register()` and returns `IServiceCollection`
+- [ ] Project registered in `Platform.SharedKernel.slnx` under solution folder `06.Persistence`
+- [ ] Test project at `SharedKernel.Persistence.Dapper.Tests/` using Testcontainers PostgreSQL, importing helpers from `16.Testing/SharedKernel.Testing`
+- [ ] All six test cases from the `What is needed` section pass
+- [ ] `DapperReadService` tests verify the connection is disposed after each call (not leaked)
+- [ ] `06.Persistence/CLAUDE.md` package table updated to reflect Dapper package is now implemented (not deferred)
+- [ ] All public types carry XML doc comments
+---
+
+---
+### P-110 — Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule
+
+**Status:** `○` Pending
+**Work Order:** WO-018
+**Domain:** 00.Governance
+**Depends on:** P-108
+
+#### What is needed
+
+A new architecture enforcement rule in `00.Governance/SharedKernel.ArchitectureTests` that guards against a silent multi-tenancy misconfiguration in `TenantedDbContext` subclasses.
+
+**The problem being enforced:**
+`TenantedDbContext.OnModelCreating` calls `base.OnModelCreating(modelBuilder)` which internally calls `ApplyTenantFilters(modelBuilder)`. However, when a subclass overrides `OnModelCreating` and does NOT call `base.OnModelCreating` (a common pattern when the assembly-scan path is bypassed for performance or test isolation), the tenant filter is silently not applied. The result is that ALL tenants' data is visible to ALL queries — a critical data leak, not just a correctness issue.
+
+The `06.Persistence/CLAUDE.md` documents that subclasses bypassing `base.OnModelCreating` MUST call `ApplyTenantFilters` explicitly. But there is no enforcement mechanism — this is a documentation-only rule that will eventually be violated.
+
+**Rule 1 — TenantedDbContext OnModelCreating override guard:**
+A Roslyn analyzer (or NetArchTest rule, at domain planner's discretion) that detects `TenantedDbContext` subclasses that override `OnModelCreating` without either (a) calling `base.OnModelCreating(modelBuilder)` or (b) calling `this.ApplyTenantFilters(modelBuilder)`. If neither call is present, the analyzer emits a warning-level diagnostic `SK0201: TenantedDbContext.OnModelCreating override must call base.OnModelCreating(modelBuilder) or ApplyTenantFilters(modelBuilder) to preserve tenant isolation`.
+
+The rule is warning-level (not error) to avoid breaking existing code during adoption. Services must treat it as an error in their CI configuration.
+
+**Rule 2 — No direct `IgnoreQueryFilters()` call in tenanted repository implementations:**
+`TenantedRepository.GetByIdForTenantAsync` and `GetByIdForTenantIncludingDeletedAsync` are the designated cross-tenant access points. Arbitrary `IgnoreQueryFilters()` calls in service-specific repository subclasses that extend `TenantedRepository` are a data-leak risk. The analyzer should warn when `IgnoreQueryFilters()` is called in any class that is NOT `TenantedRepository<,>` (or a type in `SharedKernel.Persistence.EfCore`). Diagnostic: `SK0202: Direct IgnoreQueryFilters() call outside TenantedRepository designated methods may bypass tenant isolation`.
+
+**Rule documentation:**
+
+Both rules documented in `00.Governance/CLAUDE.md` with:
+
+- The rationale (silent data leak risk)
+- The exemption list (TenantedRepository designated methods, test fixtures with explicit isolation setup)
+- Suggested CI configuration (treat SK0201 and SK0202 as errors)
+
+#### Why this is needed
+
+Multi-tenancy misconfiguration is one of the highest-severity bug categories in SaaS microservices — it results in cross-tenant data exposure, a security incident, not merely a correctness issue. The current documentation-only approach is insufficient at platform scale: with hundreds of services consuming the SharedKernel, at least some will bypass `base.OnModelCreating` (for valid performance or test-isolation reasons) and forget to call `ApplyTenantFilters`. The analyzer enforces the invariant at IDE level (red squiggle), PR review level (CI), and production-readiness level — making the misconfiguration impossible to ship unnoticed. Rule 2 closes the secondary risk: a developer who knows how to use `IgnoreQueryFilters()` can accidentally bypass tenant isolation in a service repository subclass that is not the designated cross-tenant access point.
+
+#### Acceptance criteria
+
+- [ ] Roslyn analyzer (or equivalent NetArchTest fixture) `SK0201` emits a diagnostic when a `TenantedDbContext` subclass overrides `OnModelCreating` without calling `base.OnModelCreating` or `ApplyTenantFilters`
+- [ ] `SK0201` is warning-level; CI configuration guidance documented
+- [ ] `SK0202` emits a diagnostic when `IgnoreQueryFilters()` is called in a class outside `SharedKernel.Persistence.EfCore.MultiTenancy.TenantedRepository<,>` and its designated methods
+- [ ] Both rules have test fixtures in `SharedKernel.ArchitectureTests` that verify the rules fire on violating code and pass on compliant code
+- [ ] Exemption list documented: test fixtures, `TenantedRepository` designated methods, `SharedKernel.Persistence.EfCore` internal types
+- [ ] `00.Governance/CLAUDE.md` updated with both rules, rationale, exemption list, and CI configuration guidance
+- [ ] All existing governance tests pass — no regressions
 ---

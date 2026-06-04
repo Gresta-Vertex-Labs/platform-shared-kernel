@@ -27,10 +27,20 @@ internal sealed class EfPersistenceTransaction : IPersistenceTransaction
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to the underlying <see cref="IDbContextTransaction.CommitAsync"/>.
+    /// Domain event dispatch is NOT performed here — use
+    /// <see cref="EfTransactionalUnitOfWork"/> (via <c>ITransactionalUnitOfWork</c>) to obtain a
+    /// transaction handle that dispatches events after commit.
+    /// </remarks>
     public Task CommitAsync(CancellationToken ct = default)
         => _transaction.CommitAsync(ct);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Domain events are <strong>not</strong> dispatched on rollback. The change-tracker still
+    /// holds staged events; callers must discard the unit-of-work scope after a rollback.
+    /// </remarks>
     public Task RollbackAsync(CancellationToken ct = default)
         => _transaction.RollbackAsync(ct);
 

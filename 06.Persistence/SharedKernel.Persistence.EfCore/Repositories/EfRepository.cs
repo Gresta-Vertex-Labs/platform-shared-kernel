@@ -1,8 +1,11 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
+using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Specifications;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -41,13 +44,37 @@ public abstract class EfRepository<TAggregate, TId> : IRepository<TAggregate, TI
     /// <summary>The underlying EF Core context.</summary>
     protected SharedKernelDbContext DbContext { get; }
 
+    private readonly ISpecificationEvaluator<TAggregate> _evaluator;
+
     /// <summary>
     /// Initialises a new <see cref="EfRepository{TAggregate, TId}"/>.
     /// </summary>
     /// <param name="dbContext">The scoped shared-kernel DB context.</param>
-    protected EfRepository(SharedKernelDbContext dbContext)
+    /// <param name="evaluator">
+    /// Optional specification evaluator. Defaults to <see cref="SpecificationEvaluator{T}"/>
+    /// when not supplied (e.g., from concrete repositories that only inject the DbContext).
+    /// </param>
+    protected EfRepository(
+        SharedKernelDbContext dbContext,
+        ISpecificationEvaluator<TAggregate>? evaluator = null)
     {
         DbContext = dbContext;
+        _evaluator = evaluator ?? new SpecificationEvaluator<TAggregate>();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Applies <see cref="ISpecificationEvaluator{T}.GetQuery"/> to the base set, then calls
+    /// <c>FirstOrDefaultAsync</c>. The spec's <c>AsNoTracking</c> flag is honored — write-side
+    /// callers should leave it unset to receive a tracked entity for subsequent mutations without
+    /// requiring an explicit <c>.Update()</c> call. Never returns <see cref="IQueryable{TAggregate}"/>.
+    /// </remarks>
+    public virtual async Task<TAggregate?> GetBySpecAsync(
+        ISpecification<TAggregate> spec,
+        CancellationToken ct = default)
+    {
+        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+        return await query.FirstOrDefaultAsync(ct);
     }
 
     /// <inheritdoc />

@@ -47,10 +47,27 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// <strong>Dispatch deferral rule (P-105):</strong> When an explicit database transaction is
+    /// active (<c>DbContext.Database.CurrentTransaction</c> is non-null), domain event dispatch is
+    /// deferred to <c>EfPersistenceTransaction.CommitAsync</c>. Only the raw EF Core save is issued
+    /// here — dispatching before the commit would cause duplicate events if the caller commits after.
+    /// </para>
+    /// <para>
+    /// When no transaction is active (<c>CurrentTransaction == null</c>), dispatch fires immediately
+    /// after the save, matching <see cref="EfUnitOfWork.SaveChangesAsync"/> semantics exactly.
+    /// </para>
+    /// </remarks>
     public async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
         var result = await _dbContext.SaveChangesAsync(ct);
-        await DispatchAndClearEventsAsync(ct);
+
+        // Dispatch only when no explicit transaction is active.
+        // When CurrentTransaction is non-null, dispatch is deferred to EfPersistenceTransaction.CommitAsync.
+        if (_dbContext.Database.CurrentTransaction is null)
+            await DispatchAndClearEventsAsync(ct);
+
         return result;
     }
 
@@ -119,6 +136,11 @@ internal sealed class EfTransactionalPersistenceTransaction : IPersistenceTransa
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Domain events are <strong>not</strong> dispatched on rollback. The change-tracker still
+    /// holds any staged events; callers must discard the unit-of-work scope after a rollback to
+    /// prevent stale events from being dispatched on a subsequent save.
+    /// </remarks>
     public Task RollbackAsync(CancellationToken ct = default)
         => _transaction.RollbackAsync(ct);
 

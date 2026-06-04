@@ -28,6 +28,7 @@ public abstract class Specification<T> : ISpecification<T>
 {
     private readonly List<Expression<Func<T, object>>> _includes = [];
     private readonly List<(Expression<Func<T, object>> KeySelector, bool Descending)> _thenBys = [];
+    private readonly List<string> _stringIncludes = [];
     private bool _asNoTracking;
     private bool _includeDeleted;
     private Func<T, bool>? _compiledCriteria;
@@ -62,6 +63,9 @@ public abstract class Specification<T> : ISpecification<T>
 
     /// <inheritdoc/>
     public bool IncludeDeleted => _includeDeleted;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> StringIncludes => _stringIncludes.AsReadOnly();
 
     /// <summary>Sets the filter predicate for this specification.</summary>
     protected void AddCriteria(Expression<Func<T, bool>> criteria) => Criteria = criteria;
@@ -117,6 +121,20 @@ public abstract class Specification<T> : ISpecification<T>
     /// tenant isolation.
     /// </remarks>
     protected void IncludeSoftDeleted() => _includeDeleted = true;
+
+    /// <summary>
+    /// Adds a string-based navigation-include path for deep eager loading.
+    /// </summary>
+    /// <param name="path">
+    /// A dot-separated navigation path (e.g., <c>"Orders.Items.Product"</c>).
+    /// Must not be <see langword="null"/> or whitespace.
+    /// </param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is null or whitespace.</exception>
+    protected void AddStringInclude(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        _stringIncludes.Add(path);
+    }
 
     /// <summary>
     /// Evaluates whether <paramref name="entity"/> satisfies this specification's <see cref="Criteria"/>.

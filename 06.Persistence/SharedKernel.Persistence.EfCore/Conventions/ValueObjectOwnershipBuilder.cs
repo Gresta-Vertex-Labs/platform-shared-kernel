@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 
@@ -61,8 +63,7 @@ public static class ValueObjectOwnershipBuilder
             if (entityType.IsOwned())
                 continue;
 
-            foreach (var clrProperty in entityType.ClrType.GetProperties(
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            foreach (var clrProperty in GetPublicProperties(entityType.ClrType))
             {
                 var propType = clrProperty.PropertyType;
 
@@ -94,6 +95,15 @@ public static class ValueObjectOwnershipBuilder
             modelBuilder.Entity(ownerType).OwnsOne(valueObjectType, navName);
         }
     }
+
+    /// <summary>
+    /// Returns the public instance properties of <paramref name="clrType"/>.
+    /// The <see cref="DynamicallyAccessedMembersAttribute"/> on the parameter suppresses IL2026/IL2075
+    /// trim warnings — this call is model-build time only and is not a hot path.
+    /// </summary>
+    private static PropertyInfo[] GetPublicProperties(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type clrType)
+        => clrType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
     private static bool IsCollectionType(Type type) =>
         type.IsArray ||

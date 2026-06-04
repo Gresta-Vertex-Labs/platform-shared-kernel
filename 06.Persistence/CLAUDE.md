@@ -16,8 +16,8 @@ Philosophy: **Abstraction-first. Provider-swappable. Specification-driven. Inter
 | --- | --- | --- |
 | `SharedKernel.Persistence.Abstractions` | `IRepository<T,TId>`, `IReadRepository<T,TId>`, `IUnitOfWork`, `IDbConnectionFactory`, `ISpecificationEvaluator<T>`, `ByIdSpecification<T,TId>` — pure interface library; no outbox types | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` (added P-080 — required for `PagedList<T>` in `IReadRepository.ListPagedAsync`) |
 | `SharedKernel.Persistence.EfCore` | EF Core implementation: `EfRepository<T,TId>`, `EfReadRepository<T,TId>`, `EfUnitOfWork`, `SharedKernelDbContext`, `SpecificationEvaluator<T>`, interceptors (Audit, SoftDelete, Concurrency — no OutboxInterceptor), `TenantedDbContext`, `EfCorePersistenceBuilder` | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Domain`, `Microsoft.EntityFrameworkCore` 10.0.5, `Microsoft.EntityFrameworkCore.Relational` 10.0.5, `Microsoft.Extensions.DependencyInjection.Abstractions` 10.0.5 (must match EFCore transitive — NU1605 fires if pinned lower) |
-| `SharedKernel.Persistence.PostgreSQL` | PostgreSQL-specific conventions: Npgsql wiring, JSONB column support, pgvector support, snake_case naming convention, sequence-based ID generators | `SharedKernel.Persistence.EfCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` |
-| `SharedKernel.Persistence.Dapper` | Dapper micro-ORM read-side: `IDbConnectionFactory` implementation (`NpgsqlConnectionFactory`), strongly-typed ID type handlers, SmartEnum type handlers, `DapperReadService` base | `SharedKernel.Persistence.Abstractions`, `Dapper` |
+| `SharedKernel.Persistence.PostgreSQL` | PostgreSQL-specific conventions: `SnakeCaseNamingConvention`, `UsePostgreSQL()` DI extension, JSONB column support (`HasJsonbColumn`, `JsonbColumnAttribute`), pgvector support (`HasVectorColumn`, `VectorColumnAttribute`), `NpgsqlConnectionFactory`, `AddSharedKernelPostgreSQL()` DI extension | `SharedKernel.Persistence.EfCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x, `Pgvector.EntityFrameworkCore` |
+| `SharedKernel.Persistence.Dapper` | Dapper micro-ORM read-side: `StronglyTypedIdTypeHandler<TStronglyTypedId,TValue>`, `SmartEnumTypeHandler<TEnum,TValue>`, `DapperTypeHandlers` (idempotent `Register()`), `DapperReadService` base, `AddSharedKernelDapper()` DI extension | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.PostgreSQL` (for `NpgsqlConnectionFactory`), `Dapper` |
 
 All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
@@ -56,6 +56,7 @@ IRepository<TAggregate, TId>
     where TAggregate : IAggregateRoot<TId>
     where TId : notnull
     .GetByIdAsync(TId id, CancellationToken ct)                                            → Task<TAggregate?>
+    .GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken ct)                 → Task<TAggregate?>
     .AddAsync(TAggregate aggregate, CancellationToken ct)                                  → Task
     .UpdateAsync(TAggregate aggregate, CancellationToken ct)                               → Task
     .DeleteAsync(TAggregate aggregate, CancellationToken ct)                               → Task
@@ -64,6 +65,9 @@ IRepository<TAggregate, TId>
     .UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct)            → Task
     .DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct)            → Task
     NOTE: Write-side only. Does not expose IQueryable or raw SQL.
+          GetBySpecAsync returns a TRACKED entity by default (spec's AsNoTracking flag honored).
+          Write-side callers should use specs with AsNoTracking == false so subsequent mutations
+          are detected by EF change detection without requiring an explicit .Update() call.
           ExistsAsync issues an EXISTS/ANY check — never materializes the aggregate.
           Bulk methods stage mutations without committing — same semantics as single-entity counterparts.
 
@@ -136,13 +140,15 @@ IDbConnectionFactory
 ISpecificationEvaluator<T>
     .GetQuery(IQueryable<T> inputQuery, ISpecification<T> spec) → IQueryable<T>
     .GetProjectedQuery<TResult>(IQueryable<T> inputQuery, IProjectionSpecification<T,TResult> spec) → IQueryable<TResult>
-    NOTE: Applies criteria, includes, ordering, paging, distinct, and AsNoTracking to the input queryable.
-          GetProjectedQuery applies the full aggregate pipeline (steps 0–7) then step 8 (Select).
+    NOTE: Applies criteria, includes (expression + string), ordering, paging, distinct, and AsNoTracking.
+          GetProjectedQuery applies the full aggregate pipeline (steps 0–7 + 2b) then step 8 (Select).
           Both methods live in Abstractions so alternative evaluators (e.g., for Cosmos) implement the same
           interface without coupling to EF Core.
           BREAKING from original design: GetProjectedQuery was previously only on the concrete
           SpecificationEvaluator<T>; it is now on the interface (P-097). EfReadRepository no longer
           downcasts to the concrete type — any ISpecificationEvaluator<T> implementation must implement both.
+          All ISpecificationEvaluator<T> implementations must read both spec.Includes (expression-based)
+          and spec.StringIncludes (string-based) to be complete — omitting StringIncludes is a silent bug.
 
 IProjectionSpecification<TAggregate, TResult>  (extends ISpecification<TAggregate>)
     .Selector                                                   → Expression<Func<TAggregate, TResult>>
@@ -167,11 +173,15 @@ ByIdSpecification<TAggregate, TId>  (sealed class, implements ISpecification<TAg
 
 ```text
 SharedKernelDbContext  (abstract class, extends DbContext)
-    protected SharedKernelDbContext(DbContextOptions options)
-    .SaveChangesAsync(CancellationToken ct)                    → Task<int>  (override — three interceptors fire here)
+    protected SharedKernelDbContext(DbContextOptions options,
+                                    IEnumerable<ISaveChangesInterceptor> additionalInterceptors = default)
+    .SaveChangesAsync(CancellationToken ct)                    → Task<int>  (override — interceptors fire here)
     NOTE: Concrete downstream DbContexts must extend this base.
-          Constructor registers exactly three interceptors: AuditInterceptor, SoftDeleteInterceptor,
-          ConcurrencyInterceptor. No OutboxInterceptor — outbox is MassTransit's concern at 07.Messaging.
+          Constructor registers platform interceptors (AuditInterceptor, SoftDeleteInterceptor,
+          ConcurrencyInterceptor) first, then any additional interceptors supplied via the second parameter.
+          Platform interceptors always fire before consumer-supplied interceptors — this ordering is
+          intentional and cannot be overridden.
+          No OutboxInterceptor — outbox is MassTransit's concern at 07.Messaging.
           OnModelCreating calls modelBuilder.ApplyConfigurationsFromAssembly for the calling assembly.
           Does not declare any entity DbSets — those belong to the consuming service's DbContext subclass.
 ```
@@ -181,6 +191,7 @@ SharedKernelDbContext  (abstract class, extends DbContext)
 ```text
 EfRepository<TAggregate, TId>  (abstract class, implements IRepository<TAggregate, TId>)
     .GetByIdAsync(TId id, CancellationToken ct)                                            → Task<TAggregate?>
+    .GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken ct)                 → Task<TAggregate?>
     .AddAsync(TAggregate aggregate, CancellationToken ct)                                  → Task
     .UpdateAsync(TAggregate aggregate, CancellationToken ct)                               → Task   ← tracking-aware: skips .Update() for tracked entities
     .DeleteAsync(TAggregate aggregate, CancellationToken ct)                               → Task
@@ -191,6 +202,8 @@ EfRepository<TAggregate, TId>  (abstract class, implements IRepository<TAggregat
     protected virtual .MarkAsModifiedIfDetached(TAggregate aggregate)                      → void
     NOTE: Backed by DbContext.Set<TAggregate>(). Concrete repositories extend this — do not register
           EfRepository<T,TId> directly in DI without a concrete subclass. Never exposes IQueryable.
+          GetBySpecAsync calls ISpecificationEvaluator<T>.GetQuery then FirstOrDefaultAsync; returns a
+          tracked entity by default (spec's AsNoTracking flag honored — write-side callers should not set it).
           UpdateAsync checks DbContext.Entry(aggregate).State: if Detached calls .Update(); otherwise
           EF change detection handles dirty tracking automatically (avoids full-column UPDATE statements).
           UpdateRangeAsync applies the same detached-state check per entity. UpdateRange itself is synchronous.
@@ -207,7 +220,10 @@ EfReadRepository<TAggregate, TId>  (abstract class, implements IReadRepository<T
     .ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct) → Task<PagedList<TResult>>
     NOTE: Uses ISpecificationEvaluator<T> internally. Pass ReadOnlySpecification<T> subclasses to avoid
           unnecessary change-tracking. AsNoTracking() applied when spec.AsNoTracking == true.
-          GetByIdsAsync uses Where(e => ids.Contains(e.Id)).ToListAsync — generates IN (...) SQL.
+          GetByIdsAsync uses an expression-tree Contains predicate (e => ids.Contains(e.Id)) so that
+          registered ValueConverters (e.g., StronglyTypedIdValueConverter) are applied at the property
+          level by the LINQ provider, generating a server-side IN (...) SQL clause. The former EF.Property
+          approach has been removed — it caused silent client-side evaluation with strongly-typed IDs.
           ListPagedAsync: count query strips Skip/Take; data query applies full spec; both under same DbContext.
           Projection methods delegate to ISpecificationEvaluator<T>.GetProjectedQuery (interface method since P-097);
           no downcast to concrete SpecificationEvaluator<T> — any ISpecificationEvaluator<T> implementation works.
@@ -241,9 +257,15 @@ EfTransactionalUnitOfWork  (sealed class, implements ITransactionalUnitOfWork)
     .BeginTransactionAsync(CancellationToken ct)               → Task<IPersistenceTransaction>
     NOTE: Registered only when EfCorePersistenceBuilder.WithTransactionalUnitOfWork() is called.
           Wraps DbContext.Database.BeginTransactionAsync; returns an EfPersistenceTransaction adapter
-          that implements IPersistenceTransaction. Domain event dispatch fires after CommitAsync,
-          consistent with EfUnitOfWork semantics. Application layer injects ITransactionalUnitOfWork —
-          never IDbContextTransaction directly (hard violation, enforced by governance Rule P-103).
+          that implements IPersistenceTransaction.
+          DISPATCH DEFERRAL RULE (P-105): SaveChangesAsync checks DbContext.Database.CurrentTransaction.
+          When a transaction IS active (non-null): calls only DbContext.SaveChangesAsync — domain event
+          dispatch is deferred to EfPersistenceTransaction.CommitAsync (fires after DB commit succeeds).
+          When NO transaction is active (null): calls SaveChangesAsync then dispatches immediately,
+          matching EfUnitOfWork semantics exactly.
+          EfPersistenceTransaction.RollbackAsync does NOT dispatch domain events.
+          Application layer injects ITransactionalUnitOfWork — never IDbContextTransaction directly
+          (hard violation, enforced by governance Rule P-103).
 ```
 
 #### Specification evaluator (`Specifications/`)
@@ -253,17 +275,22 @@ SpecificationEvaluator<T>  (sealed class, implements ISpecificationEvaluator<T>)
     .GetQuery(IQueryable<T> inputQuery, ISpecification<T> spec) → IQueryable<T>
     .GetProjectedQuery<TResult>(IQueryable<T> inputQuery, IProjectionSpecification<T,TResult> spec) → IQueryable<TResult>
     Applies in strict order:
-        0. IgnoreQueryFilters() — only when spec.IncludeDeleted == true; applied before all other steps
-        1. Criteria (Where clause) — if non-null; null Criteria matches all entities
-        2. Includes (eager loading — ThenInclude supported via include expressions)
-        3. OrderBy / OrderByDescending — primary sort; last-call wins
-        4. ThenBys — secondary sorts; only applied if a primary sort is already set
-        5. Distinct (Distinct())
-        6. AsNoTracking (AsNoTracking())
-        7. Skip / Take — paging; ALWAYS applied last for the aggregate pipeline
-        8. Select(spec.Selector) — projection overload only; applied after Skip/Take
+        0.  IgnoreQueryFilters() — only when spec.IncludeDeleted == true; applied before all other steps
+        1.  Criteria (Where clause) — if non-null; null Criteria matches all entities
+        2.  Includes (expression-based eager loading — ThenInclude supported via include expressions)
+        2b. StringIncludes — applied after expression includes and before ordering; each entry in
+            spec.StringIncludes is applied via IQueryable<T>.Include(string); empty list is a no-op
+        3.  OrderBy / OrderByDescending — primary sort; last-call wins
+        4.  ThenBys — secondary sorts; only applied if a primary sort is already set
+        5.  Distinct (Distinct())
+        6.  AsNoTracking (AsNoTracking())
+        7.  Skip / Take — paging; ALWAYS applied last for the aggregate pipeline
+        8.  Select(spec.Selector) — projection overload only; applied after Skip/Take
     NOTE: Paging is always the final operation before projection so ordering is stable before any Skip/Take.
           ThenBys are silently ignored when no primary sort is configured.
+          StringIncludes are intended for deep navigation paths (e.g., "Orders.Items.Product") where
+          expression-based ThenInclude chains become cumbersome. Existing specs not calling
+          AddStringInclude are unaffected — empty StringIncludes is a no-op.
           QueryableExtensions.IgnoreSoftDeleteFilter() has been removed (P-080 breaking change).
           Use spec.IncludeDeleted = true instead — the evaluator calls .IgnoreQueryFilters() automatically.
 ```
@@ -392,16 +419,37 @@ EfCorePersistenceBuilder
         — Registers ITransactionalUnitOfWork → EfTransactionalUnitOfWork (scoped) alongside IUnitOfWork.
         — Optional. Services that never need explicit transactions can omit this call.
         — Application layer injects ITransactionalUnitOfWork; never IDbContextTransaction directly.
+    .WithDbContextFactory()
+        — Calls services.AddDbContextFactory<TContext>(configureDb) in addition to AddDbContext.
+        — Required for background services, hosted workers, Hangfire jobs, and Temporal activities.
+        — Factory-created contexts receive NoOpUserContext (UserId = Guid.Empty) for audit fields,
+          producing "system" audit values, unless a singleton IUserContext is registered.
+        — Optional. Omit for services that have no background DbContext consumers.
+    .AddInterceptor<TInterceptor>()
+        — Registers one additional ISaveChangesInterceptor beyond the platform three.
+        — Multiple calls accumulate; all fire after the platform interceptors in registration order.
+        — TInterceptor is registered as scoped.
+        — Platform three (Audit, SoftDelete, Concurrency) always fire first — this is non-negotiable.
+    .WithCompiledModel(IModel compiledModel)
+        — Wraps the caller-supplied configureDb action to also call optionsBuilder.UseModel(compiledModel).
+        — Compiled models are produced via dotnet ef dbcontext optimize.
+        — When used, ValueObjectOwnershipBuilder.Apply and runtime model-building scans do not run —
+          all mappings must be present in the compiled model.
+        — Pure pass-through: builder does not validate the model.
     .Build()
         — Registers TContext as DbContext (scoped)
         — Registers IUnitOfWork → EfUnitOfWork (scoped)
         — Registers ISpecificationEvaluator<T> → SpecificationEvaluator<T> (singleton — stateless)
         — Registers AuditInterceptor, SoftDeleteInterceptor, ConcurrencyInterceptor (scoped)
+        — Registers any additional interceptors supplied via .AddInterceptor<T>() (scoped)
         — Registers no-op IUserContext placeholder (UserId = Guid.Empty, IsAuthenticated = false)
           if no IUserContext already registered; uses SharedKernel.Security.Abstractions.IUserContext
+        — Calls AddDbContextFactory<TContext> when .WithDbContextFactory() was invoked
+        — Applies UseModel(compiledModel) when .WithCompiledModel() was invoked
     NOTE: No outbox, Dapper, or PostgreSQL wiring in this builder. Those are separate concerns.
           ITransactionalUnitOfWork is only registered when .WithTransactionalUnitOfWork() is called.
           IUserContext and ITenantProvider are both sourced from SharedKernel.Security.Abstractions.
+          All fluent methods return EfCorePersistenceBuilder for chaining.
 ```
 
 ---
@@ -533,20 +581,27 @@ DapperReadService  (abstract class)
 - Calling `IReadRepository.GetByIdAsync(id, ct)` — this method has been removed (P-080 breaking change). Use `readRepo.GetBySpecAsync(new ByIdSpecification<TAggregate, TId>(id), ct)` instead. `IRepository` (write side) still has `GetByIdAsync`.
 - Calling `IDomainEventDispatcher.DispatchAsync` from anywhere other than `EfUnitOfWork.SaveChangesAsync` — domain event dispatch is triggered exclusively post-commit by `EfUnitOfWork`; dispatching from application layer is a responsibility violation (07.Messaging publishes integration events from dispatched domain events).
 - Applying `.Select(spec.Selector)` before `Skip/Take` in the `SpecificationEvaluator` projection path — projection must always be the final step (step 8) after paging (step 7) to preserve the paging-last invariant.
+- Calling `DispatchAndClearEventsAsync` inside `EfTransactionalUnitOfWork.SaveChangesAsync` when `DbContext.Database.CurrentTransaction` is non-null — dispatch must be deferred to `EfPersistenceTransaction.CommitAsync`; premature dispatch causes duplicate events when the flow is `BeginTransactionAsync → SaveChangesAsync → CommitAsync`.
+- Using `EF.Property<TId>(e, "Id")` inside a `Contains` predicate for `GetByIdsAsync` — this approach may silently fall back to client-side evaluation when `TId` is a strongly-typed ID with a registered `ValueConverter`; use an expression-tree `Contains` lambda instead so the converter is applied at the property level by the LINQ provider.
+- Registering consumer interceptors that fire before the platform three (Audit, SoftDelete, Concurrency) — platform interceptors are always composed first in `SharedKernelDbContext`; consumer interceptors added via `.AddInterceptor<T>()` are always appended after.
+- Setting `AsNoTracking = true` on a specification passed to `IRepository.GetBySpecAsync` (write-side) — the entity returned will be detached and subsequent mutations will not be detected by change tracking, forcing a full-column UPDATE via `.Update()`; write-side specs must leave `AsNoTracking` unset.
 
 ### Specification evaluator ordering (canonical)
 
 ```text
-0. IgnoreQueryFilters()  ← only when spec.IncludeDeleted == true; before all other steps
-1. Criteria  (Where clause — null = no filter = all entities)
-2. Includes  (Include / ThenInclude)
-3. OrderBy / OrderByDescending  (primary sort)
-4. ThenBys  (secondary sorts — only when primary sort is set)
-5. Distinct
-6. AsNoTracking
-7. Skip / Take  ← ALWAYS LAST for the aggregate pipeline
-8. Select(spec.Selector)  ← projection overload only; applied after Skip/Take
+0.  IgnoreQueryFilters()  ← only when spec.IncludeDeleted == true; before all other steps
+1.  Criteria  (Where clause — null = no filter = all entities)
+2.  Includes  (expression-based Include / ThenInclude)
+2b. StringIncludes  (string-based Include paths — applied after expression includes, before ordering)
+3.  OrderBy / OrderByDescending  (primary sort)
+4.  ThenBys  (secondary sorts — only when primary sort is set)
+5.  Distinct
+6.  AsNoTracking
+7.  Skip / Take  ← ALWAYS LAST for the aggregate pipeline
+8.  Select(spec.Selector)  ← projection overload only; applied after Skip/Take
 ```
+
+Step 2b note: `spec.StringIncludes` contains paths like `"Orders.Items.Product"`. Each is applied via `IQueryable<T>.Include(string)`. Empty list is a no-op — existing specs are unaffected. Null/whitespace paths are rejected by `AddStringInclude` with `ArgumentException`.
 
 ### Interceptor-only save mutation rule
 
@@ -599,11 +654,32 @@ services.AddScoped<ITenantProvider, ClaimsTenantProvider>();
 services.AddScoped<IRepository<Order, OrderId>, OrderEfRepository>();
 services.AddScoped<IReadRepository<Order, OrderId>, OrderEfReadRepository>();
 
+// With IDbContextFactory for background services (optional)
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithDbContextFactory()   // registers IDbContextFactory<OrderDbContext>
+    .Build();
+
+// With custom service-specific interceptor (optional — fires after platform three)
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .AddInterceptor<OrderAuditBridgeInterceptor>()
+    .Build();
+
+// With EF Core compiled model (optional — for AOT / cold-start performance)
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithCompiledModel(OrderDbContextModel.Instance)  // produced by dotnet ef dbcontext optimize
+    .Build();
+
 // PostgreSQL — shared NpgsqlDataSource and IDbConnectionFactory for Dapper
 services.AddSharedKernelPostgreSQL(connectionString);
 
-// Dapper — type handlers registered at startup
-DapperTypeHandlers.Register();
+// Dapper — type handlers registered at startup; IDbConnectionFactory already registered above
+services.AddSharedKernelDapper();
 ```
 
 `SharedKernel.Persistence.Abstractions` ships **no DI extensions** — it is a pure interface library.
@@ -618,7 +694,7 @@ DapperTypeHandlers.Register();
 - `SmartEnumTypeHandler<TEnum,TValue>` uses `SmartEnum<TEnum,TValue>.TryFromValue` — no reflection in the hot path, AOT-safe.
 - `AuditInterceptor` and `SoftDeleteInterceptor` access EF Core shadow properties by string key — shadow property access via `CurrentValues[name]` is AOT-safe (no reflection on CLR types).
 - `TenantedDbContext.OnModelCreating` global filter is built with expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`) — no `GetMethod`/`MakeGenericMethod`/`Invoke` calls; fully AOT-safe.
-- `ValueObjectOwnershipBuilder` scans entity types at model-build time — O(n×m) startup cost (n entity types, m properties per type); early-exit when no `IValueObject` properties found prevents unnecessary allocation; model-build time only, not a hot path.
+- `ValueObjectOwnershipBuilder` scans entity types at model-build time — O(n×m) startup cost (n entity types, m properties per type); early-exit when no `IValueObject` properties found prevents unnecessary allocation; model-build time only, not a hot path. The `GetProperties(BindingFlags.Public | BindingFlags.Instance)` call at the `entityType.ClrType` usage site carries `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]` to suppress IL2026/IL2075 trim warnings; this annotation is acceptable because the call is model-build time only.
 - `SnakeCaseNamingConvention` operates on EF Core model metadata at model-building time — not in hot paths, AOT-safe.
 - `JsonbEntityTypeBuilderExtension` and `VectorEntityTypeBuilderExtension` configure the EF model at startup — AOT-safe.
 - `Microsoft.EntityFrameworkCore` — fully AOT-compatible as of .NET 8+ with compiled models; verify on each major upgrade.
@@ -666,6 +742,15 @@ DapperTypeHandlers.Register();
 - `ITransactionalUnitOfWork` tests (P-099): begin → add entity → commit → entity persisted; begin → add entity → rollback → entity NOT persisted; SQLite provider.
 - `TenantedRepository.GetByIdForTenantIncludingDeletedAsync` tests (P-100): soft-delete entity; `GetByIdForTenantAsync` returns null; `GetByIdForTenantIncludingDeletedAsync` returns entity; SQLite provider.
 - `AsNoTracking` behavioral tests (P-104): `ListAsync` with `AsNoTracking = true` → entities have `EntityState.Detached`; `ListAsync` without → entities tracked; SQLite provider.
+- `EfTransactionalUnitOfWork` double-dispatch fix tests (P-105): (1) begin → `SaveChangesAsync` → `CommitAsync` → domain events dispatched exactly once (after commit); (2) `SaveChangesAsync` via `EfTransactionalUnitOfWork` without open transaction → dispatched once immediately; (3) begin → `SaveChangesAsync` → `RollbackAsync` → events NOT dispatched; domain events cleared in all paths; SQLite provider.
+- `EfReadRepository.GetByIdsAsync` strongly-typed ID test (P-105): entity with `StronglyTypedId<Guid>` PK and registered `StronglyTypedIdValueConverter`; `GetByIdsAsync` returns correct entities; SQL log shows server-side `IN (...)` clause (no client-side evaluation log entry); all existing `GetByIdsAsync` behavioral tests continue to pass.
+- `IRepository.GetBySpecAsync` write-side tests (P-106): spec matching by non-PK field returns tracked entity (mutation detected without explicit `.Update()`); spec matching nothing returns null; spec with `AsNoTracking = true` returns detached entity; `ContractShapeTests` verify `IRepository<T,TId>` declares `GetBySpecAsync`.
+- `EfCorePersistenceBuilder.WithDbContextFactory()` smoke test (P-106): `IDbContextFactory<TContext>` resolvable when `.WithDbContextFactory()` called; not resolvable when omitted; factory-created context is operable (non-null, can execute a query); SQLite provider.
+- Custom interceptor firing order test (P-106): platform three fire before consumer-supplied interceptors; two consumer interceptors fire in registration order after the platform three; SQLite provider.
+- Compiled model passthrough smoke test (P-106): `.WithCompiledModel(model)` → resolved `DbContext` options contain the compiled model (reference equality or extensions check); no behavioral assertion beyond successful context creation.
+- `SpecificationEvaluator<T>` string include tests (P-107): string include path applied → navigation property populated; expression include + string include both applied → both navigation properties populated; string includes applied after expression includes and before primary sort (ordering verification via query log or expression tree); `ContractShapeTests` verify `ISpecification<T>` declares `StringIncludes` property.
+- PostgreSQL package integration tests (P-108) — all require real PostgreSQL Testcontainer: (1) `SnakeCaseNamingConvention` produces snake_case names in `DbContext.Model`; (2) JSONB round-trip: insert + fetch + verify deserialization; (3) pgvector round-trip: insert + fetch + verify dimensions; (4) `NpgsqlConnectionFactory.CreateConnectionAsync` returns open `NpgsqlConnection`; (5) `AddSharedKernelPostgreSQL` smoke: `IDbConnectionFactory` resolves as `NpgsqlConnectionFactory`.
+- Dapper package integration tests (P-109) — all require real PostgreSQL Testcontainer: (1) `QueryAsync` returns correct rows from parameterized query; (2) `QuerySingleOrDefaultAsync` returns entity / null; (3) `ExecuteAsync` returns affected row count; (4) connection opened once and disposed per operation (no leaks); (5) `StronglyTypedIdTypeHandler` round-trip; (6) `SmartEnumTypeHandler` round-trip.
 
 ---
 
@@ -679,4 +764,5 @@ DapperTypeHandlers.Register();
 - [2026-06-02] WO-016 (P-091, P-092, P-093, P-094) and WO-014 (P-078, P-079, P-082) planned — audit string adapter rule added (userId.ToString("D") or "system"); Guid.Empty no-tenant sentinel documented; IRepository/IReadRepository extended with ExistsAsync/GetByIdsAsync; IProjectionSpecification added to Abstractions; IDbConnectionFactory doc restriction removed; EfRepository.UpdateAsync tracking optimization documented; TenantedDbContext reflection-elimination and ValueObjectOwnershipBuilder early-exit documented; deliberate layering exception for Security.Abstractions reference recorded; ICurrentTenantService removed in favour of ITenantProvider from Security.Abstractions (persistence-arch-planner)
 - [2026-06-02] WO-014 (P-080) planned — bulk write methods (AddRangeAsync/UpdateRangeAsync/DeleteRangeAsync) added to IRepository and EfRepository; projection reads (ListProjectedAsync/GetBySpecProjectedAsync) added to IReadRepository and EfReadRepository; ListPagedAsync added returning `PagedList<T>` (Abstractions gains SharedKernel.Contracts reference); IDomainEventDispatcher optional hook added to EfUnitOfWork (post-commit dispatch + event clear); QueryableExtensions.IgnoreSoftDeleteFilter deleted — replaced by spec.IncludeDeleted flag handled by SpecificationEvaluator (step 0 IgnoreQueryFilters); IReadRepository.GetByIdAsync removed (breaking change) — `ByIdSpecification<TAggregate,TId>` added as canonical replacement; SpecificationEvaluator pipeline updated with step 0 and step 8; all hard violations, AOT notes, test rules, and interface contracts updated (persistence-arch-planner)
 - [2026-06-02] SK.06.Scaffold S-06 and S-07 complete — EfCore→Security.Abstractions and Abstractions→Contracts project references added to csproj files; both already documented; no CLAUDE.md content changes needed (sync-brain)
-- [2026-06-03] WO-017: GetProjectedQuery promoted to ISpecificationEvaluator<T>; ITransactionalUnitOfWork/IPersistenceTransaction added to Abstractions; EfTransactionalUnitOfWork/EfCorePersistenceBuilder.WithTransactionalUnitOfWork added to EfCore; ListPagedProjectedAsync added to IReadRepository/EfReadRepository; ValueObjectOwnershipConvention renamed to ValueObjectOwnershipBuilder with static-utility note; TenantedRepository.GetByIdForTenantAsync soft-delete-preserving semantics documented + GetByIdForTenantIncludingDeletedAsync added; EfUnitOfWork single-constructor hard rule added; three new hard violations (downcast, second constructor, direct IDbContextTransaction injection) (sync-brain)
+- [2026-06-03] WO-017: GetProjectedQuery promoted to `ISpecificationEvaluator<T>`; ITransactionalUnitOfWork/IPersistenceTransaction added to Abstractions; EfTransactionalUnitOfWork/EfCorePersistenceBuilder.WithTransactionalUnitOfWork added to EfCore; ListPagedProjectedAsync added to IReadRepository/EfReadRepository; ValueObjectOwnershipConvention renamed to ValueObjectOwnershipBuilder with static-utility note; TenantedRepository.GetByIdForTenantAsync soft-delete-preserving semantics documented + GetByIdForTenantIncludingDeletedAsync added; EfUnitOfWork single-constructor hard rule added; three new hard violations (downcast, second constructor, direct IDbContextTransaction injection) (sync-brain)
+- [2026-06-03] WO-018 (P-105..P-109) planned: EfTransactionalUnitOfWork double-dispatch fix documented (dispatch deferred to EfPersistenceTransaction.CommitAsync when CurrentTransaction active); EfReadRepository.GetByIdsAsync expression-tree Contains fix documented (eliminates silent client-side evaluation with strongly-typed ID converters); ValueObjectOwnershipBuilder DynamicallyAccessedMembers annotation documented in AOT notes; IRepository.GetBySpecAsync added (write-side tracked fetch by spec); EfCorePersistenceBuilder gains `WithDbContextFactory()`, `AddInterceptor<T>()`, `WithCompiledModel(IModel)`; SharedKernelDbContext constructor extended for additional interceptors; SpecificationEvaluator canonical pipeline updated with step 2b (StringIncludes — between expression includes and OrderBy); PostgreSQL package fully documented (SnakeCaseNamingConvention, JSONB, pgvector, NpgsqlConnectionFactory, AddSharedKernelPostgreSQL); Dapper package fully documented (StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService, AddSharedKernelDapper); five new hard violations; DI registration examples expanded; test rules updated with nine new test scenarios (persistence-arch-planner)

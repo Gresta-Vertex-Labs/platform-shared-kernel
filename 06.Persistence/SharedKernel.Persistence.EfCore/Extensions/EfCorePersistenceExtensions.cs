@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Domain;
 using SharedKernel.Persistence.Abstractions.Specifications;
@@ -83,6 +85,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private readonly Action<DbContextOptionsBuilder> _configureDb;
     private bool _multiTenancyEnabled;
     private bool _transactionalUnitOfWorkEnabled;
+    private bool _registerFactory;
+    private IModel? _compiledModel;
+    private readonly List<Type> _additionalInterceptorTypes = [];
 
     internal EfCorePersistenceBuilder(
         IServiceCollection services,
@@ -107,6 +112,80 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
         _services.AddScoped<ITenantProvider, NoOpTenantProvider>();
 
+        return this;
+    }
+
+    /// <summary>
+    /// Opts in to <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/> registration
+    /// for background services and hosted workers.
+    /// </summary>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// When called, <see cref="Build"/> additionally calls
+    /// <c>services.AddDbContextFactory&lt;TContext&gt;(configureDb)</c> alongside the regular
+    /// <c>AddDbContext</c> registration.
+    /// </para>
+    /// <para>
+    /// Factory-created contexts receive <c>NoOpUserContext</c> (<c>UserId = Guid.Empty</c>) for audit
+    /// fields, producing <c>"system"</c> audit values, unless a singleton <c>IUserContext</c> is
+    /// registered separately.
+    /// </para>
+    /// <para>
+    /// Optional — omit for services that have no background <c>DbContext</c> consumers.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithDbContextFactory()
+    {
+        _registerFactory = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Registers an additional service-specific <see cref="ISaveChangesInterceptor"/> that fires
+    /// after the platform three (Audit, SoftDelete, Concurrency).
+    /// </summary>
+    /// <typeparam name="TInterceptor">
+    /// The concrete interceptor type. Must be a class implementing <see cref="ISaveChangesInterceptor"/>.
+    /// </typeparam>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Multiple calls accumulate — all registered interceptors fire after the platform three in
+    /// registration order. The platform interceptors always fire first — this ordering is
+    /// non-negotiable.
+    /// </para>
+    /// <para>
+    /// Each additional interceptor is registered as <strong>scoped</strong>.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> AddInterceptor<TInterceptor>()
+        where TInterceptor : class, ISaveChangesInterceptor
+    {
+        _additionalInterceptorTypes.Add(typeof(TInterceptor));
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the <see cref="DbContext"/> to use a pre-built compiled model for AOT and
+    /// cold-start performance improvements.
+    /// </summary>
+    /// <param name="compiledModel">
+    /// The compiled model produced via <c>dotnet ef dbcontext optimize</c>.
+    /// </param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// When used, <c>ValueObjectOwnershipBuilder.Apply</c> and runtime model-building scans do not
+    /// run — all entity mappings must be present in the compiled model.
+    /// </para>
+    /// <para>
+    /// Pure pass-through: the builder does not validate the compiled model.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithCompiledModel(IModel compiledModel)
+    {
+        _compiledModel = compiledModel;
         return this;
     }
 
@@ -170,9 +249,28 @@ public sealed class EfCorePersistenceBuilder<TContext>
         _services.AddScoped<SoftDeleteInterceptor>();
         _services.AddScoped<ConcurrencyInterceptor>();
 
+        // Register any additional consumer-supplied interceptors as scoped.
+        foreach (var interceptorType in _additionalInterceptorTypes)
+        {
+            _services.AddScoped(interceptorType);
+            _services.AddScoped(typeof(ISaveChangesInterceptor), sp =>
+                sp.GetRequiredService(interceptorType) as ISaveChangesInterceptor
+                    ?? throw new InvalidOperationException(
+                        $"Type '{interceptorType.Name}' does not implement ISaveChangesInterceptor."));
+        }
+
+        // Build effective configureDb action — wrap with compiled model if supplied.
+        Action<DbContextOptionsBuilder> effectiveConfigureDb = _compiledModel is not null
+            ? options =>
+            {
+                _configureDb(options);
+                options.UseModel(_compiledModel);
+            }
+            : _configureDb;
+
         // Register DbContext using the caller-supplied options action.
         // Interceptors are wired via SharedKernelDbContext.OnConfiguring.
-        _services.AddDbContext<TContext>(_configureDb);
+        _services.AddDbContext<TContext>(effectiveConfigureDb);
 
         // Register TContext also as the base SharedKernelDbContext so EfUnitOfWork resolves it.
         _services.AddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
@@ -191,6 +289,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         }
 
+        // Register TContext also as the base SharedKernelDbContext so EfUnitOfWork resolves it.
+        _services.AddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
+
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
 
@@ -207,6 +308,12 @@ public sealed class EfCorePersistenceBuilder<TContext>
         if (!_services.Any(sd => sd.ServiceType == typeof(IClock)))
         {
             _services.AddSingleton<IClock, SystemClock>();
+        }
+
+        // Register IDbContextFactory<TContext> when WithDbContextFactory() was called.
+        if (_registerFactory)
+        {
+            _services.AddDbContextFactory<TContext>(effectiveConfigureDb);
         }
 
         return _services;

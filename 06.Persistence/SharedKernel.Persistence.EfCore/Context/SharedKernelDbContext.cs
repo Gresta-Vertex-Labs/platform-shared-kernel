@@ -37,6 +37,7 @@ public abstract class SharedKernelDbContext : DbContext
     private readonly AuditInterceptor _auditInterceptor;
     private readonly SoftDeleteInterceptor _softDeleteInterceptor;
     private readonly ConcurrencyInterceptor _concurrencyInterceptor;
+    private readonly IReadOnlyList<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor> _additionalInterceptors;
 
     /// <summary>
     /// Initialises a new <see cref="SharedKernelDbContext"/> and registers the three
@@ -46,25 +47,37 @@ public abstract class SharedKernelDbContext : DbContext
     /// <param name="auditInterceptor">Scoped interceptor that populates audit fields.</param>
     /// <param name="softDeleteInterceptor">Scoped interceptor that converts deletes to soft-deletes.</param>
     /// <param name="concurrencyInterceptor">Interceptor that wraps concurrency exceptions.</param>
+    /// <param name="additionalInterceptors">
+    /// Optional consumer-supplied interceptors. Platform three (Audit, SoftDelete, Concurrency) always
+    /// fire before these — this ordering is intentional and cannot be overridden.
+    /// </param>
     protected SharedKernelDbContext(
         DbContextOptions options,
         AuditInterceptor auditInterceptor,
         SoftDeleteInterceptor softDeleteInterceptor,
-        ConcurrencyInterceptor concurrencyInterceptor)
+        ConcurrencyInterceptor concurrencyInterceptor,
+        IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor>? additionalInterceptors = null)
         : base(options)
     {
         _auditInterceptor = auditInterceptor;
         _softDeleteInterceptor = softDeleteInterceptor;
         _concurrencyInterceptor = concurrencyInterceptor;
+        _additionalInterceptors = additionalInterceptors?.ToList() ?? [];
     }
 
     /// <inheritdoc />
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilder.AddInterceptors(
+        // Platform interceptors always fire first — consumer interceptors are appended after.
+        var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
+        {
             _auditInterceptor,
             _softDeleteInterceptor,
-            _concurrencyInterceptor);
+            _concurrencyInterceptor
+        };
+        interceptors.AddRange(_additionalInterceptors);
+
+        optionsBuilder.AddInterceptors(interceptors);
 
         base.OnConfiguring(optionsBuilder);
     }

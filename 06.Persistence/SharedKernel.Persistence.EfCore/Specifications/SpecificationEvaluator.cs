@@ -11,7 +11,8 @@ namespace SharedKernel.Persistence.EfCore.Specifications;
 /// <list type="number">
 ///   <item><description>IgnoreQueryFilters — only when <c>spec.IncludeDeleted == true</c>; applied before all other steps</description></item>
 ///   <item><description>Criteria (Where clause — <see langword="null"/> matches all entities)</description></item>
-///   <item><description>Includes (Include / ThenInclude eager loading)</description></item>
+///   <item><description>Includes (expression-based Include / ThenInclude eager loading)</description></item>
+///   <item><description>StringIncludes (string-based Include paths — applied after expression includes, before ordering)</description></item>
 ///   <item><description>OrderBy / OrderByDescending (primary sort)</description></item>
 ///   <item><description>ThenBys (secondary sorts — only when a primary sort is set)</description></item>
 ///   <item><description>Distinct</description></item>
@@ -49,9 +50,18 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
         if (spec.Criteria is not null)
             query = query.Where(spec.Criteria);
 
-        // 2. Includes
+        // 2. Includes (expression-based)
         query = spec.Includes.Aggregate(query,
             (current, include) => current.Include(include));
+
+        // 2b. StringIncludes — applied after expression includes, before ordering.
+        //     Intended for deep navigation paths (e.g., "Orders.Items.Product").
+        //     Empty list is a no-op; existing specs are unaffected.
+        foreach (var path in spec.StringIncludes)
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+                query = query.Include(path);
+        }
 
         // 3. Primary sort
         var hasPrimarySort = false;

@@ -1,3 +1,5 @@
+using System.Linq.Expressions;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Abstractions;
@@ -94,13 +96,38 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Uses an expression-tree <c>Contains</c> predicate (<c>e => ids.Contains(e.Id)</c>) so that
+    /// EF Core's registered <see cref="Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter"/>
+    /// is applied at the property level by the LINQ provider, generating a server-side
+    /// <c>WHERE "Id" IN (...)</c> clause. The prior <c>EF.Property</c> approach has been removed
+    /// because it could silently fall back to client-side evaluation when <typeparamref name="TId"/>
+    /// is a strongly-typed ID with a registered converter (P-105 Fix 2).
+    /// </remarks>
     public virtual async Task<IReadOnlyList<TAggregate>> GetByIdsAsync(
         IEnumerable<TId> ids,
         CancellationToken ct = default)
     {
-        var idList = ids as ICollection<TId> ?? ids.ToList();
+        var idList = ids as List<TId> ?? ids.ToList();
+
+        // Build expression tree: e => idList.Contains(e.Id)
+        // This ensures the registered ValueConverter is applied at the property level by the
+        // LINQ provider, generating a server-side WHERE Id IN (...) clause.
+        var param = Expression.Parameter(typeof(TAggregate), "e");
+        var idProperty = Expression.Property(param, "Id");
+        var idListConstant = Expression.Constant(idList);
+
+        // Enumerable.Contains<TId>(IEnumerable<TId>, TId)
+        var containsMethod = typeof(Enumerable)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .First(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2)
+            .MakeGenericMethod(typeof(TId));
+
+        var containsCall = Expression.Call(containsMethod, idListConstant, idProperty);
+        var predicate = Expression.Lambda<Func<TAggregate, bool>>(containsCall, param);
+
         return await DbContext.Set<TAggregate>()
-            .Where(e => idList.Contains(EF.Property<TId>(e, "Id")!))
+            .Where(predicate)
             .ToListAsync(ct);
     }
 
@@ -254,5 +281,6 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         public bool IsDistinct => _inner.IsDistinct;
         public bool AsNoTracking => _inner.AsNoTracking;
         public bool IncludeDeleted => _inner.IncludeDeleted;
+        public IReadOnlyList<string> StringIncludes => _inner.StringIncludes;
     }
 }

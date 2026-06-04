@@ -19,7 +19,8 @@ namespace SharedKernel.Persistence.Abstractions.Specifications;
 /// <list type="number">
 ///   <item><description>IgnoreQueryFilters — only when <c>spec.IncludeDeleted == true</c>; applied before all other steps</description></item>
 ///   <item><description>Criteria (Where clause — <see langword="null"/> matches all entities)</description></item>
-///   <item><description>Includes (Include / ThenInclude eager loading)</description></item>
+///   <item><description>Includes (expression-based Include / ThenInclude eager loading)</description></item>
+///   <item><description>StringIncludes (string-based Include paths — applied after expression includes, before ordering; e.g. <c>"Orders.Items.Product"</c>; empty list is a no-op)</description></item>
 ///   <item><description>OrderBy / OrderByDescending (primary sort)</description></item>
 ///   <item><description>ThenBys (secondary sorts — only when a primary sort is set)</description></item>
 ///   <item><description>Distinct</description></item>
@@ -28,6 +29,8 @@ namespace SharedKernel.Persistence.Abstractions.Specifications;
 ///   <item><description>Select(spec.Selector) — projection overload only; applied after Skip/Take</description></item>
 /// </list>
 /// Alternative evaluators must preserve the paging-last invariant and implement both methods.
+/// All implementations must read both <c>spec.Includes</c> (expression-based) and
+/// <c>spec.StringIncludes</c> (string-based) — omitting <c>StringIncludes</c> is a silent bug.
 /// </para>
 /// <para>
 /// <strong>Breaking change (P-097):</strong> <c>GetProjectedQuery</c> has been promoted from

@@ -117,7 +117,12 @@ When a capability has more than one provider (Search, Persistence, Caching, Stor
 | A strongly-typed ID EF Core value converter | `06.Persistence/SharedKernel.Persistence.EfCore` — use `StronglyTypedIdValueConverter<TId, TValue>` |
 | A multi-tenant EF Core DbContext with global tenant filter | `06.Persistence/SharedKernel.Persistence.EfCore` — extend `TenantedDbContext`; tenant filter applied automatically via `ICurrentTenantService` |
 | PostgreSQL snake_case naming, JSONB column, or pgvector column | `06.Persistence/SharedKernel.Persistence.PostgreSQL` — use `UsePostgreSQL()`, `HasJsonbColumn()`, or `HasVectorColumn()` |
-| A Dapper read-side query service | `06.Persistence/SharedKernel.Persistence.Dapper` — extend `DapperReadService`; inject `IDbConnectionFactory`; use parameterized queries only |
+| A Dapper read-side query service | `06.Persistence/SharedKernel.Persistence.Dapper` — extend `DapperReadService`; inject `IDbConnectionFactory` (provided by `SharedKernel.Persistence.PostgreSQL`); use parameterized queries only |
+| A write-side fetch by business key (not by primary key) | `06.Persistence/SharedKernel.Persistence.EfCore` — call `IRepository.GetBySpecAsync(spec, ct)`; returns a tracked entity; do not use `IReadRepository` for write-path fetches |
+| Background service or hosted-service DbContext (outside HTTP request scope) | `06.Persistence/SharedKernel.Persistence.EfCore` — register via `EfCorePersistenceBuilder.WithDbContextFactory()`; injects `IDbContextFactory<TContext>`; audit fields default to `"system"` (no HTTP user context) |
+| A service-specific EF Core interceptor alongside platform interceptors | `06.Persistence/SharedKernel.Persistence.EfCore` — register via `EfCorePersistenceBuilder.AddInterceptor<TInterceptor>()`; platform three (Audit/SoftDelete/Concurrency) always fire first |
+| A deep multi-level navigation include path (beyond two ThenInclude levels) | `03.Domain/SharedKernel.Domain` — call `AddStringInclude("Navigation.Child.GrandChild")` on the specification; `SpecificationEvaluator` applies string includes at step 2b between expression includes and ordering |
+| An EF Core compiled model for AOT / startup performance | `06.Persistence/SharedKernel.Persistence.EfCore` — pass via `EfCorePersistenceBuilder.WithCompiledModel(IModel)`; produced by `dotnet ef dbcontext optimize`; disables runtime model-building scans |
 | An explicit database transaction (multi-repo saga, two-phase write) | `06.Persistence/SharedKernel.Persistence.Abstractions` — inject `ITransactionalUnitOfWork`; call `BeginTransactionAsync` → returns `IPersistenceTransaction`; commit or rollback via that handle; never inject `IDbContextTransaction` directly |
 | A paged list of DTOs (projected, with total-count metadata) | `06.Persistence/SharedKernel.Persistence.EfCore` — call `IReadRepository.ListPagedProjectedAsync<TResult>(spec, ct)`; spec must implement both `ISpecification<TAggregate>` (paging/ordering) and `IProjectionSpecification<TAggregate,TResult>` (selector); returns `PagedList<TResult>` |
 | A new cache interface or policy | `02.Caching/SharedKernel.Caching.Abstractions` |
@@ -147,7 +152,7 @@ These are the packages microservices should depend on — never on the concrete 
 | Abstraction package | Implemented by |
 |---------------------|---------------|
 | `SharedKernel.Caching.Abstractions` | `.FusionCache`, `.Redis` |
-| `SharedKernel.Persistence.Abstractions` | `.EfCore` (write + read repos, `IUnitOfWork` + `ITransactionalUnitOfWork`, outbox), `.PostgreSQL` (Npgsql + conventions layer over EfCore), `.Dapper` (read-side NpgsqlConnectionFactory + DapperReadService) |
+| `SharedKernel.Persistence.Abstractions` | `.EfCore` (write + read repos, `IUnitOfWork` + `ITransactionalUnitOfWork`), `.PostgreSQL` (Npgsql + conventions, `NpgsqlConnectionFactory` implementing `IDbConnectionFactory`), `.Dapper` (read-side `DapperReadService`; references `.PostgreSQL` for the connection factory) |
 | `SharedKernel.Messaging.Abstractions` | `.MassTransit` |
 | `SharedKernel.Storage.Abstractions` | `.S3` |
 | `SharedKernel.Search.Abstractions` | `.Meilisearch`, `.ElasticSearch` |
@@ -176,3 +181,4 @@ These are the packages microservices should depend on — never on the concrete 
 - [2026-05-27] WO-011: "What Goes Where" row added for EventEnvelope<TEvent> → 04.Contracts; domain brain updated with IHasDomainEvents, DomainService, IHasVersion, DomainException hierarchy, SingleValueObject, PagedSpecification, specification sentinels, DomainEventVersion, IAggregateFactory (arch-lead)
 - [2026-06-01] WO-013: Folder Map 06 updated with pgvector/Dapper detail; Abstractions table 06 expanded to list all three implementors; five "What Goes Where" rows added for EfRepository, StronglyTypedIdValueConverter, TenantedDbContext, PostgreSQL conventions, DapperReadService (arch-lead)
 - [2026-06-03] WO-017: Abstractions table 06 updated with ITransactionalUnitOfWork; two "What Goes Where" rows added for explicit transaction scope and paged DTO projection (arch-lead)
+- [2026-06-03] WO-018: Abstractions table 06 corrected — NpgsqlConnectionFactory lives in .PostgreSQL not .Dapper; five "What Goes Where" rows added for write-side spec fetch, IDbContextFactory, custom interceptors, string includes, and EfCore compiled model; Dapper "What Goes Where" row updated (arch-lead)

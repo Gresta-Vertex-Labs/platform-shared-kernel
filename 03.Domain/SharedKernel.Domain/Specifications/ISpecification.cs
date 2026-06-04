@@ -105,4 +105,24 @@ public interface ISpecification<T>
     /// </para>
     /// </remarks>
     bool IncludeDeleted { get; }
+
+    /// <summary>
+    /// Gets the list of string-based navigation-include paths for deep eager loading.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// String includes are applied after expression-based <see cref="Includes"/> (step 2b in the
+    /// <c>SpecificationEvaluator&lt;T&gt;</c> pipeline) and before ordering. Each entry is a
+    /// dot-separated navigation path such as <c>"Orders.Items.Product"</c>.
+    /// </para>
+    /// <para>
+    /// Intended for deep multi-level navigation paths where expression-based
+    /// <c>ThenInclude</c> chains become cumbersome. Existing specifications that do not call
+    /// <c>AddStringInclude</c> return an empty list, which is a no-op in the evaluator.
+    /// </para>
+    /// <para>
+    /// <c>AddStringInclude(null/whitespace)</c> throws <see cref="ArgumentException"/>.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<string> StringIncludes { get; }
 }
