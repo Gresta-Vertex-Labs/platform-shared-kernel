@@ -1285,6 +1285,209 @@ public class ContractsPurityTests
 }
 ```
 
+### PersistenceLayerProtectionRules — EF Core Persistence Layer Contract Enforcement
+
+`PersistenceLayerProtectionRules` provides three predicates that protect the EF Core
+persistence layer contract established in WO-013. They enforce the three hard constraints
+that keep the interceptor chain intact, the query surface clean, and the domain layer
+ignorant of persistence infrastructure.
+
+#### Rule 1 — OnlyEfUnitOfWorkMayCallSaveChanges
+
+Asserts that no type **outside** the `SharedKernel.Persistence.EfCore` namespace calls
+`DbContext.SaveChanges` or `DbContext.SaveChangesAsync` directly. The check is implemented
+by `NoDirectSaveChangesPredicate` (a Mono.Cecil `ICustomRule` that walks
+`MethodDefinition.Body.Instructions` for `Call`/`Callvirt` opcodes whose operand is a
+`MethodReference` on `DbContext` named `SaveChanges` or `SaveChangesAsync`). Types whose
+`TypeDefinition.Namespace` starts with `"SharedKernel.Persistence.EfCore"` are exempted
+unconditionally inside the predicate — `EfUnitOfWork` is the sole legitimate commit site.
+
+**Rationale:** Calling `SaveChangesAsync` directly bypasses the full EF Core interceptor
+chain — `AuditInterceptor` (created/modified audit fields), `SoftDeleteInterceptor`
+(converts hard deletes to soft deletes), `OutboxInterceptor` (publishes domain events to
+the outbox), and `ConcurrencyInterceptor` (optimistic concurrency token enforcement). Only
+`EfUnitOfWork.CommitAsync()` is the correct commit path; all application handlers must
+inject `IUnitOfWork` and call `CommitAsync()`. This is a hard rule from the root
+`CLAUDE.md` layering table.
+
+**Cross-reference:** Root `CLAUDE.md` — "05.Application must never reference a concrete
+infrastructure package — only abstractions." Direct `DbContext.SaveChangesAsync` in
+application code is equivalent to referencing a concrete infrastructure API.
+
+**Offending pattern:**
+```csharp
+// Application layer directly committing — bypasses all EF Core interceptors
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand>
+{
+    private readonly AppDbContext _dbContext;
+
+    public async Task Handle(CreateOrderCommand cmd, CancellationToken ct)
+    {
+        _dbContext.Orders.Add(new Order(cmd.Id));
+        await _dbContext.SaveChangesAsync(ct); // SK violation: bypasses interceptors
+    }
+}
+```
+
+**Compliant pattern:**
+```csharp
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand>
+{
+    private readonly IRepository<Order, Guid> _repository;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public async Task Handle(CreateOrderCommand cmd, CancellationToken ct)
+    {
+        await _repository.AddAsync(new Order(cmd.Id), ct);
+        await _unitOfWork.CommitAsync(ct); // correct: runs the full interceptor chain
+    }
+}
+```
+
+#### Rule 2 — RepositoriesMustNotExposeIQueryable
+
+Asserts that no type implementing an `IRepository`-prefixed interface has a method
+returning `IQueryable` or `IQueryable<T>`. The check is implemented by
+`NoIQueryableReturnPredicate` (a Mono.Cecil `ICustomRule`) that scopes to types whose
+`TypeDefinition.Interfaces` contains an entry with `InterfaceType.Name` starting with
+`"IRepository"`, then inspects all non-constructor, non-getter methods for an
+`IQueryable` return type.
+
+**Rationale:** `IQueryable<T>` leaks EF Core expression-tree execution semantics into the
+application layer. Handler code that receives an `IQueryable<Order>` is implicitly coupled
+to EF Core's LINQ provider — swapping the persistence technology (e.g., to Dapper) breaks
+every handler that consumed the queryable. The query surface belongs exclusively on
+`IReadRepository<T,TId>` via `Specification<T>`; the write-side `IRepository<T,TId>` is
+scoped to mutation operations only.
+
+**Cross-reference:** Root `CLAUDE.md` layering rules: `06.Persistence` may reference
+`01–05` but application handlers in `05.Application` must not be coupled to EF Core
+execution semantics.
+
+**Offending pattern:**
+```csharp
+public class OrderRepository : IRepository<Order, Guid>
+{
+    // Exposes EF Core execution semantics to callers — coupling violation
+    public IQueryable<Order> GetAll() => _dbContext.Orders.AsQueryable();
+}
+```
+
+**Compliant pattern:**
+```csharp
+public class OrderRepository : IRepository<Order, Guid>
+{
+    // Query surface exposed via Specification<T> only
+    public Task<IReadOnlyList<Order>> FindAsync(
+        ISpecification<Order> spec,
+        CancellationToken ct = default) { ... }
+}
+```
+
+#### Rule 3 — DomainAssembliesNeverReferencePersistenceStack
+
+Asserts that no type in the supplied domain assembly has a binary dependency on any of the
+persistence-stack assembly name substrings: `"Microsoft.EntityFrameworkCore"`, `"Npgsql"`,
+`"SharedKernel.Persistence"`. The check uses iterative
+`.Should().NotHaveDependencyOn(term)` calls — one per forbidden term — consistent with the
+pattern in `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure`. This rule
+is **additive**, not replacing, that rule: it adds Npgsql and the in-repo persistence
+packages as a WO-013-scoped gate.
+
+**Rationale:** Any EF Core, Npgsql, or `SharedKernel.Persistence.*` reference inside
+`03.Domain` destroys DDD isolation. Domain entities annotated with EF Core attributes
+(e.g., `[Key]`, `[Column]`) cannot be tested without a running database context, making
+unit tests expensive or impossible. Npgsql references in domain code tie the bounded
+context to a specific database engine. This is a hard rule from the root `CLAUDE.md`
+layering table: `03.Domain` must never reference `06.Persistence` or any infrastructure
+layer.
+
+**Cross-reference:** Root `CLAUDE.md` — "Hard rules: `03.Domain` must never reference
+`06.Persistence`, `07.Messaging`, or any infrastructure layer."
+
+**Offending pattern:**
+```csharp
+// Domain entity polluted with EF Core infrastructure annotations
+using Microsoft.EntityFrameworkCore; // EF Core reference in 03.Domain — violation
+
+[Index(nameof(TenantId), nameof(Email))] // EF Core attribute on a domain type
+public class User : Entity<UserId>
+{
+    [Key] // EF Core attribute — persistence concern in domain layer
+    public UserId Id { get; private set; }
+}
+```
+
+**Compliant pattern:**
+
+```csharp
+// Domain entity — zero infrastructure annotations
+public class User : Entity<UserId>
+{
+    public UserId Id { get; private set; }
+    public Email Email { get; private set; }
+    public TenantId TenantId { get; private set; }
+}
+
+// EF Core mapping lives exclusively in 06.Persistence
+// IEntityTypeConfiguration<User> in SharedKernel.Persistence.EfCore
+public class UserConfiguration : IEntityTypeConfiguration<User>
+{
+    public void Configure(EntityTypeBuilder<User> builder)
+    {
+        builder.HasKey(u => u.Id);
+        builder.HasIndex(u => new { u.TenantId, u.Email });
+    }
+}
+```
+
+#### Usage Example
+
+```csharp
+using System.Reflection;
+using FluentAssertions;
+using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Domain; // reference needed to supply the domain assembly
+using SharedKernel.Persistence.EfCore; // reference needed for the persistence assembly
+using Xunit;
+
+public class PersistenceLayerProtectionTests
+{
+    private static readonly Assembly DomainAssembly = typeof(Order).Assembly;
+    private static readonly Assembly ApplicationAssembly = typeof(CreateOrderHandler).Assembly;
+
+    [Fact]
+    public void OnlyEfUnitOfWork_MayCall_SaveChanges()
+    {
+        var result = PersistenceLayerProtectionRules
+            .OnlyEfUnitOfWorkMayCallSaveChanges(ApplicationAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue(
+            because: "only EfUnitOfWork.CommitAsync() is the permitted commit path");
+    }
+
+    [Fact]
+    public void Repositories_MustNot_ExposeIQueryable()
+    {
+        var result = PersistenceLayerProtectionRules
+            .RepositoriesMustNotExposeIQueryable(typeof(EfRepository<,>).Assembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue(
+            because: "IQueryable leaks EF Core execution semantics into the application layer");
+    }
+
+    [Fact]
+    public void Domain_MustNot_ReferencePersistenceStack()
+    {
+        var result = PersistenceLayerProtectionRules
+            .DomainAssembliesNeverReferencePersistenceStack(DomainAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue(
+            because: "03.Domain must be persistence-ignorant per the root layering hard rules");
+    }
+}
+```
+
 ---
 
 ## SharedKernel.Linter — EditorConfig and CSharpier

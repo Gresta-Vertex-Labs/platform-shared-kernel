@@ -20,3 +20,4 @@
 - [EfCorePersistenceBuilder new fluent methods](project_efcorepersistencebuilder_extensions.md) — `WithDbContextFactory()`, `AddInterceptor<T>()`, `WithCompiledModel(IModel)`; platform interceptors always fire first (P-106)
 - [SharedKernel.Persistence.PostgreSQL package](project_postgresql_package.md) — SnakeCaseNamingConvention, JSONB, pgvector, NpgsqlConnectionFactory in PostgreSQL pkg (not Dapper) (P-108)
 - [SharedKernel.Persistence.Dapper package](project_dapper_package.md) — StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperReadService; references PostgreSQL pkg; no EfCore ref (P-109)
+- [Encryption subsystem: AES-256-GCM field-level encryption](project_encryption_subsystem.md) — EncryptedValueConverter+EncryptionModelConvention+IEncryptionRotationJob in EfCore; EncryptionOptions+PersistenceServiceOptions with eager ValidateOnStart (P-111/P-112)

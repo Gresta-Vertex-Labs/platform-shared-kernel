@@ -2,12 +2,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SharedKernel.Domain;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
+using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
@@ -69,11 +72,12 @@ public static class EfCorePersistenceExtensions
 /// </code>
 /// </para>
 /// <para>
-/// With explicit transaction support:
+/// With field-level encryption:
 /// <code>
 /// services.AddSharedKernelEfCore&lt;OrderDbContext&gt;(options =>
 ///     options.UseNpgsql(connectionString))
-///     .WithTransactionalUnitOfWork()
+///     .WithEncryption(enc => { enc.Enabled = true; enc.CurrentVersion = "v1"; enc.Keys["v1"] = "..."; })
+///     .WithServiceName("order-service")
 ///     .Build();
 /// </code>
 /// </para>
@@ -86,6 +90,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _multiTenancyEnabled;
     private bool _transactionalUnitOfWorkEnabled;
     private bool _registerFactory;
+    private bool _registerEncryption;
     private IModel? _compiledModel;
     private readonly List<Type> _additionalInterceptorTypes = [];
 
@@ -109,9 +114,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     public EfCorePersistenceBuilder<TContext> WithMultiTenancy()
     {
         _multiTenancyEnabled = true;
-
         _services.AddScoped<ITenantProvider, NoOpTenantProvider>();
-
         return this;
     }
 
@@ -120,21 +123,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// for background services and hosted workers.
     /// </summary>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// When called, <see cref="Build"/> additionally calls
-    /// <c>services.AddDbContextFactory&lt;TContext&gt;(configureDb)</c> alongside the regular
-    /// <c>AddDbContext</c> registration.
-    /// </para>
-    /// <para>
-    /// Factory-created contexts receive <c>NoOpUserContext</c> (<c>UserId = Guid.Empty</c>) for audit
-    /// fields, producing <c>"system"</c> audit values, unless a singleton <c>IUserContext</c> is
-    /// registered separately.
-    /// </para>
-    /// <para>
-    /// Optional — omit for services that have no background <c>DbContext</c> consumers.
-    /// </para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithDbContextFactory()
     {
         _registerFactory = true;
@@ -149,16 +137,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// The concrete interceptor type. Must be a class implementing <see cref="ISaveChangesInterceptor"/>.
     /// </typeparam>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Multiple calls accumulate — all registered interceptors fire after the platform three in
-    /// registration order. The platform interceptors always fire first — this ordering is
-    /// non-negotiable.
-    /// </para>
-    /// <para>
-    /// Each additional interceptor is registered as <strong>scoped</strong>.
-    /// </para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> AddInterceptor<TInterceptor>()
         where TInterceptor : class, ISaveChangesInterceptor
     {
@@ -174,15 +152,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// The compiled model produced via <c>dotnet ef dbcontext optimize</c>.
     /// </param>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// When used, <c>ValueObjectOwnershipBuilder.Apply</c> and runtime model-building scans do not
-    /// run — all entity mappings must be present in the compiled model.
-    /// </para>
-    /// <para>
-    /// Pure pass-through: the builder does not validate the compiled model.
-    /// </para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithCompiledModel(IModel compiledModel)
     {
         _compiledModel = compiledModel;
@@ -194,21 +163,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// <see cref="ITransactionalUnitOfWork"/> → <see cref="EfTransactionalUnitOfWork"/> (scoped).
     /// </summary>
     /// <returns>The same builder for further chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Optional — call only for services that require explicit transaction boundaries (e.g., saga
-    /// compensation, two-phase read-then-write operations). Services that do not need explicit
-    /// transactions can omit this call and use <see cref="IUnitOfWork"/> directly.
-    /// </para>
-    /// <para>
-    /// When called, both <c>IUnitOfWork</c> and <c>ITransactionalUnitOfWork</c> resolve the same
-    /// scoped <see cref="EfTransactionalUnitOfWork"/> instance.
-    /// </para>
-    /// <para>
-    /// <strong>Hard violation:</strong> Application-layer code must inject
-    /// <c>ITransactionalUnitOfWork</c> — never <c>IDbContextTransaction</c> directly.
-    /// </para>
-    /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithTransactionalUnitOfWork()
     {
         _transactionalUnitOfWorkEnabled = true;
@@ -216,22 +170,68 @@ public sealed class EfCorePersistenceBuilder<TContext>
     }
 
     /// <summary>
-    /// Finalises the DI registration:
-    /// <list type="bullet">
-    ///   <item><description>Registers <typeparamref name="TContext"/> as <see cref="DbContext"/> (scoped).</description></item>
-    ///   <item><description>Registers <see cref="IUnitOfWork"/> → <see cref="EfUnitOfWork"/> (scoped), or <see cref="EfTransactionalUnitOfWork"/> when <see cref="WithTransactionalUnitOfWork"/> was called.</description></item>
-    ///   <item><description>Registers <see cref="ITransactionalUnitOfWork"/> → <see cref="EfTransactionalUnitOfWork"/> (scoped) when <see cref="WithTransactionalUnitOfWork"/> was called.</description></item>
-    ///   <item><description>Registers <see cref="ISpecificationEvaluator{T}"/> → <see cref="SpecificationEvaluator{T}"/> (singleton — stateless).</description></item>
-    ///   <item><description>Registers <see cref="AuditInterceptor"/>, <see cref="SoftDeleteInterceptor"/>, <see cref="ConcurrencyInterceptor"/> (scoped).</description></item>
-    ///   <item><description>Registers a no-op <see cref="IUserContext"/> placeholder (scoped) if none is already registered.</description></item>
-    /// </list>
+    /// Opts in to field-level AES-256-GCM transparent encryption.
+    /// </summary>
+    /// <param name="configure">
+    /// Optional action to configure <see cref="EncryptionOptions"/> (keys, current version, enabled flag).
+    /// Pass <see langword="null"/> to use defaults (disabled).
+    /// </param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Registers <see cref="EncryptionOptions"/> via the Options system and registers eager startup
+    /// validation. When <see cref="Build"/> is called, also registers
+    /// <see cref="IEncryptionRotationJob"/> → <see cref="EncryptionRotationService{TContext}"/> (scoped).
+    /// </para>
+    /// <para>
+    /// Omitting this call leaves all existing behavior unchanged — encryption is disabled by default.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithEncryption(Action<EncryptionOptions>? configure = null)
+    {
+        _registerEncryption = true;
+
+        var optionsBuilder = _services.AddOptions<EncryptionOptions>();
+        if (configure is not null)
+        {
+            optionsBuilder.Configure(configure);
+        }
+
+        _services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
+        _services.AddOptions<EncryptionOptions>().ValidateOnStart();
+
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the unauthenticated audit fallback string written to <c>CreatedBy</c>,
+    /// <c>ModifiedBy</c>, and <c>DeletedBy</c> columns when no authenticated user is present.
+    /// </summary>
+    /// <param name="serviceName">
+    /// The service identity string. Must be non-null, non-empty, and ≤ 256 characters.
+    /// </param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// Omitting this call keeps the default <c>"system"</c> fallback.
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithServiceName(string serviceName)
+    {
+        _services.AddOptions<PersistenceServiceOptions>()
+            .Configure(o => o.ServiceName = serviceName);
+
+        _services.AddSingleton<IValidateOptions<PersistenceServiceOptions>, PersistenceServiceOptionsValidator>();
+        _services.AddOptions<PersistenceServiceOptions>().ValidateOnStart();
+
+        return this;
+    }
+
+    /// <summary>
+    /// Finalises the DI registration.
     /// </summary>
     /// <returns>The <see cref="IServiceCollection"/> for further chaining.</returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown at startup when <see cref="WithMultiTenancy"/> was called but
     /// <typeparamref name="TContext"/> does not extend <see cref="TenantedDbContext"/>.
-    /// Fix: change your DbContext to extend <c>TenantedDbContext</c> instead of
-    /// <c>SharedKernelDbContext</c>, or remove the <c>.WithMultiTenancy()</c> call.
     /// </exception>
     public IServiceCollection Build()
     {
@@ -242,6 +242,14 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 $"'{typeof(TContext).FullName}' does not extend '{typeof(TenantedDbContext).FullName}'. " +
                 $"Either change '{typeof(TContext).Name}' to extend 'TenantedDbContext', " +
                 $"or remove the '.WithMultiTenancy()' call from the DI registration.");
+        }
+
+        // Register PersistenceServiceOptions default if not already configured by WithServiceName().
+        // This ensures AuditInterceptor and SoftDeleteInterceptor can always resolve it.
+        if (!_services.Any(sd => sd.ServiceType == typeof(IOptions<PersistenceServiceOptions>))
+            && !_services.Any(sd => sd.ServiceType == typeof(IConfigureOptions<PersistenceServiceOptions>)))
+        {
+            _services.AddOptions<PersistenceServiceOptions>();
         }
 
         // Register interceptors as scoped so they receive per-request IUserContext / IClock.
@@ -289,9 +297,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         }
 
-        // Register TContext also as the base SharedKernelDbContext so EfUnitOfWork resolves it.
-        _services.AddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
-
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
 
@@ -314,6 +319,18 @@ public sealed class EfCorePersistenceBuilder<TContext>
         if (_registerFactory)
         {
             _services.AddDbContextFactory<TContext>(effectiveConfigureDb);
+        }
+
+        // When .WithEncryption() was called, register the IOptionsMonitor<EncryptionOptions> so
+        // SharedKernelDbContext can resolve it for EncryptionModelConvention.
+        // IEncryptionRotationJob registration is the consumer's responsibility — they must provide
+        // a concrete EncryptionRotationService<TContext> subclass via services.AddScoped<IEncryptionRotationJob, MyRotationService>().
+        // We intentionally do not register the abstract base class here.
+        if (_registerEncryption)
+        {
+            // Ensure IOptionsMonitor<EncryptionOptions> is available in the DI container.
+            // AddOptions() is idempotent and does not duplicate registrations.
+            _services.AddOptions<EncryptionOptions>();
         }
 
         return _services;

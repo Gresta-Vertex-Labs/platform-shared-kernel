@@ -40,6 +40,8 @@
 | `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | All tasks in Phase: Persistence Architecture Rules Phase 2 are `●` |
 | `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | All tasks in Phase: IUserContext Audit String Adapter and Repository Contract Completeness are `●` |
 | `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | All tasks in Phase: EfCore Package Hygiene Architecture Rules are `●` |
+| `SK.00.TenantedDbContextGuard` | Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule | All tasks in Phase: TenantedDbContext Tenant-Filter Guard are `●` |
+| `SK.00.EncryptionPatternGuard` | Governance: Architecture Rules for DB Encryption Pattern Correctness | All tasks in Phase: EncryptionPatternGuard are `●` |
 
 ---
 
@@ -745,13 +747,13 @@ No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates
 | C-30 | Implement `NoDirectSaveChangesPredicate` in `Predicates/` — `ICustomRule` walking `TypeDefinition.Methods.Body.Instructions` for `Call`/`Callvirt` to `DbContext::SaveChanges` or `DbContext::SaveChangesAsync`; namespace-based exemption for `SharedKernel.Persistence.EfCore`; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `●` |
 | C-31 | Implement `NoIQueryableReturnPredicate` in `Predicates/` — `ICustomRule` scoped to types whose `TypeDefinition.Interfaces` contains an `IRepository`-prefix entry; inspects non-constructor, non-getter method return types for `IQueryable` name match; return false with offending type + method name on violation | SharedKernel.ArchitectureTests | `●` |
 | C-32 | Implement `PersistenceLayerProtectionRules` static class in `Rules/` — three factory methods: `OnlyEfUnitOfWorkMayCallSaveChanges(Assembly)` → `ConditionList`, `RepositoriesMustNotExposeIQueryable(Assembly)` → `ConditionList`, `DomainAssembliesNeverReferencePersistenceStack(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `●` |
-| T-46 | Architecture test Rule 1 (fire path): pass a contrived assembly containing a class that calls `DbContext.SaveChangesAsync()` directly (not in `SharedKernel.Persistence.EfCore` namespace); assert `OnlyEfUnitOfWorkMayCallSaveChanges` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
-| T-47 | Architecture test Rule 1 (pass path): pass an assembly containing a class that injects and calls only `IUnitOfWork`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-48 | Architecture test Rule 2 (fire path): pass an assembly containing a type implementing `IRepository<Order, Guid>` with a method returning `IQueryable<Order>`; assert `RepositoriesMustNotExposeIQueryable` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
-| T-49 | Architecture test Rule 2 (pass path): pass an assembly containing an `IRepository<Order, Guid>` implementation with no `IQueryable` returning methods; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| T-50 | Architecture test Rule 3 (fire path): pass a domain assembly that references `Microsoft.EntityFrameworkCore` (e.g., uses `[Key]` attribute); assert `DomainAssembliesNeverReferencePersistenceStack` fails | SharedKernel.ArchitectureTests | `○` |
-| T-51 | Architecture test Rule 3 (pass path): pass a clean domain assembly with no EF Core, Npgsql, or `SharedKernel.Persistence.*` dependency; assert rule passes | SharedKernel.ArchitectureTests | `○` |
-| DO-12 | Document all three `PersistenceLayerProtectionRules` predicates in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale for each rule tied to WO-013 EF Core contracts, offending-pattern example, compliant-pattern example, cross-reference to root `CLAUDE.md` hard layering rules | SharedKernel.ArchitectureTests | `○` |
+| T-46 | Architecture test Rule 1 (fire path): pass a contrived assembly containing a class that calls `DbContext.SaveChangesAsync()` directly (not in `SharedKernel.Persistence.EfCore` namespace); assert `OnlyEfUnitOfWorkMayCallSaveChanges` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `●` |
+| T-47 | Architecture test Rule 1 (pass path): pass an assembly containing a class that injects and calls only `IUnitOfWork`; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-48 | Architecture test Rule 2 (fire path): pass an assembly containing a type implementing `IRepository<Order, Guid>` with a method returning `IQueryable<Order>`; assert `RepositoriesMustNotExposeIQueryable` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `●` |
+| T-49 | Architecture test Rule 2 (pass path): pass an assembly containing an `IRepository<Order, Guid>` implementation with no `IQueryable` returning methods; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-50 | Architecture test Rule 3 (fire path): pass a domain assembly that references `Microsoft.EntityFrameworkCore` (e.g., uses `[Key]` attribute); assert `DomainAssembliesNeverReferencePersistenceStack` fails | SharedKernel.ArchitectureTests | `●` |
+| T-51 | Architecture test Rule 3 (pass path): pass a clean domain assembly with no EF Core, Npgsql, or `SharedKernel.Persistence.*` dependency; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| DO-12 | Document all three `PersistenceLayerProtectionRules` predicates in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale for each rule tied to WO-013 EF Core contracts, offending-pattern example, compliant-pattern example, cross-reference to root `CLAUDE.md` hard layering rules | SharedKernel.ArchitectureTests | `●` |
 
 ---
 
@@ -1083,6 +1085,222 @@ No new SK diagnostic IDs. All rules are pure NetArchTest architecture predicates
 
 ---
 
+## Phase: TenantedDbContext Tenant-Filter Guard <!-- phase-key: SK.00.TenantedDbContextGuard -->
+
+> Prevent silent multi-tenancy misconfiguration in `TenantedDbContext` subclasses and arbitrary `IgnoreQueryFilters()` calls in non-designated code paths. Two Roslyn analyzers close the gap between the documentation-only rule in `06.Persistence/CLAUDE.md` and build-time enforcement.
+
+### TenantedDbContextGuard — Goal
+
+`TenantedDbContext.OnModelCreating` applies the tenant query filter via `base.OnModelCreating(modelBuilder)`. When a subclass overrides `OnModelCreating` and omits the `base` call (valid for performance or test-isolation reasons), `ApplyTenantFilters` is silently not applied — every query returns all tenants' data. This is a security incident, not a correctness issue. Similarly, `IgnoreQueryFilters()` called from arbitrary service repository subclasses bypasses tenant isolation outside the two designated cross-tenant access methods on `TenantedRepository<,>`. The `06.Persistence/CLAUDE.md` documents these rules but there is no enforcement mechanism. Two Roslyn analyzers — SK0201 and SK0202 — enforce both invariants at IDE and CI level, making the misconfiguration impossible to ship unnoticed.
+
+### TenantedDbContextGuard — Scope
+
+- Package(s) affected: `SharedKernel.Analyzers`
+- New files:
+  - `SharedKernel.Analyzers/Diagnostics/SK0201_TenantedDbContextOnModelCreatingAnalyzer.cs` — Roslyn analyzer; fires when a `TenantedDbContext` subclass overrides `OnModelCreating` without calling `base.OnModelCreating` or `ApplyTenantFilters`
+  - `SharedKernel.Analyzers/Diagnostics/SK0202_IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer.cs` — Roslyn analyzer; fires when `IgnoreQueryFilters()` is called in any class outside `SharedKernel.Persistence.EfCore` namespace
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0201 and SK0202 to diagnostic registry; add `MultiTenancyGuardRules` section to architecture test contracts; document rationale, exemption list, and CI configuration guidance
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### TenantedDbContextGuard — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0201 | TenantedDbContextOnModelCreatingGuard | Design | Warning | A class that inherits from `TenantedDbContext` overrides `OnModelCreating` without calling either `base.OnModelCreating(modelBuilder)` or `this.ApplyTenantFilters(modelBuilder)` — tenant query filters will not be applied, exposing all tenants' data |
+| SK0202 | IgnoreQueryFiltersOutsideTenantedRepository | Design | Warning | `IgnoreQueryFilters()` is called in a class that is not `TenantedRepository<,>` and is not in the `SharedKernel.Persistence.EfCore` namespace — direct use outside the designated cross-tenant access point may bypass tenant isolation |
+
+### TenantedDbContextGuard — Implementation Rules
+
+1. SK0201 `TenantedDbContextOnModelCreatingAnalyzer` operates on `MethodDeclarationSyntax` nodes. For each override of `OnModelCreating`, it walks the declaring class hierarchy (via `BaseList`) to determine whether any ancestor's simple name is `TenantedDbContext` (simple name check — unique within the SDK; no semantic model required for type name). If the class inherits `TenantedDbContext` (directly or indirectly, checked via ancestor `BaseList` names), the analyzer inspects the method body for: (a) any `InvocationExpressionSyntax` whose `MemberAccessExpression.Name.Identifier.Text` is `OnModelCreating` and the receiver expression is `base`, or (b) any `InvocationExpressionSyntax` whose name is `ApplyTenantFilters`. If neither is found, SK0201 is reported on the method identifier.
+2. For SK0201 ancestry check: because `TenantedDbContext` subclasses may be several inheritance levels deep, a simple `BaseList` check on the immediately declaring class is insufficient. The analyzer must walk the declared base type chain using `BaseList.Types` on each parent `ClassDeclarationSyntax` in the syntax tree. If the syntax tree does not include the full chain (cross-file or cross-assembly), the analyzer applies a conservative rule: if ANY ancestor in the current file's syntax tree contains `TenantedDbContext` as a base name, the rule applies. Cross-assembly ancestry requires SemanticModel; for the initial implementation, use syntax-only check on the declaring class and its immediately visible base names — document this limitation in the implementation rules.
+3. SK0201 severity is `Warning`. CI configuration guidance: services should add `<WarningsAsErrors>SK0201</WarningsAsErrors>` or the equivalent `dotnet_diagnostic.SK0201.severity = error` in their `.editorconfig` to enforce as an error.
+4. SK0202 `IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer` operates on `InvocationExpressionSyntax` nodes. For each invocation whose simple method name is `IgnoreQueryFilters` (no arguments — the EF Core method takes no parameters), the analyzer checks whether the declaring class is exempt. Exemption: the containing class's namespace (determined by walking `SyntaxNode.Parent` to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax`) starts with `SharedKernel.Persistence.EfCore`. If the namespace is NOT exempt, SK0202 is reported on the `IgnoreQueryFilters` invocation expression.
+5. SK0202 additional class-name exemption: if the immediate containing class name (simple name of `ClassDeclarationSyntax`) is `TenantedRepository` (exact match), SK0202 does not fire. This covers the case where `TenantedRepository` is defined outside the `SharedKernel.Persistence.EfCore` namespace in a test fixture or downstream service re-export. The class-name check is in addition to the namespace check — either exemption suppresses the diagnostic.
+6. SK0202 severity is `Warning`. CI configuration guidance: services should add `<WarningsAsErrors>SK0202</WarningsAsErrors>` or `dotnet_diagnostic.SK0202.severity = error`. Test fixtures that set up explicit isolation (cross-tenant admin tests) may use `#pragma warning disable SK0202` with a code comment explaining the intentional bypass.
+7. Both analyzers follow `netstandard2.0` constraint. Zero new NuGet dependencies beyond `Microsoft.CodeAnalysis.CSharp`.
+8. SK0201 and SK0202 use no `SemanticModel` for their primary trigger checks — syntax-only is sufficient. SK0202 uses the established `SyntaxNode.Parent` namespace walk pattern (same as SK0001, SK0007). SK0201 uses a `BaseList` name scan for the `TenantedDbContext` ancestry check.
+9. Exemption list (must be documented in `00.Governance/CLAUDE.md`):
+   - SK0201: no exemptions — every `TenantedDbContext` subclass MUST call `base.OnModelCreating` or `ApplyTenantFilters`. Test subclasses are not exempt; test isolation must be explicit.
+   - SK0202: `SharedKernel.Persistence.EfCore.*` namespace (covers `TenantedRepository<,>` and all internal types), class name `TenantedRepository` (exact match), and per-call-site `#pragma warning disable SK0202` with a documented comment.
+
+### TenantedDbContextGuard — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Diagnostics/SK0201_TenantedDbContextOnModelCreatingAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0201 — `TenantedDbContext` subclass overrides `OnModelCreating` without tenant filter setup call |
+| `Diagnostics/SK0202_IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0202 — `IgnoreQueryFilters()` called outside exempt namespace/class |
+
+### TenantedDbContextGuard — Acceptance Criteria
+
+- [ ] SK0201 emits a diagnostic when a `TenantedDbContext` subclass overrides `OnModelCreating` and calls neither `base.OnModelCreating(modelBuilder)` nor `ApplyTenantFilters(modelBuilder)`
+- [ ] SK0201 does NOT emit when `base.OnModelCreating(modelBuilder)` is present
+- [ ] SK0201 does NOT emit when `ApplyTenantFilters(modelBuilder)` is called explicitly (without calling `base`)
+- [ ] SK0202 emits a diagnostic when `IgnoreQueryFilters()` is called in a class outside `SharedKernel.Persistence.EfCore` namespace and not named `TenantedRepository`
+- [ ] SK0202 does NOT emit when called inside a class whose namespace starts with `SharedKernel.Persistence.EfCore`
+- [ ] SK0202 does NOT emit when called inside a class named `TenantedRepository` (exact match)
+- [ ] Both rules documented in `00.Governance/CLAUDE.md` with rationale, exemption list, and CI configuration guidance (`<WarningsAsErrors>` and `.editorconfig` patterns)
+- [ ] All existing governance tests pass — no regressions
+
+### TenantedDbContextGuard — Dependencies
+
+- Requires P-108 (`TenantedDbContext` with `OnModelCreating`/`ApplyTenantFilters` defined in `SharedKernel.Persistence.EfCore`): yes — SK0201 checks for these method names; without them defined the analyzer would be registering rules against non-existent patterns; the type names are the trigger anchor
+- Requires C-01 (`AnalyzerBase` abstract class from SK.00.Core): yes — both analyzers extend `AnalyzerBase` for `CreateDescriptor` and `HelpLinkUri`
+- Unblocks: CI enforcement of multi-tenancy misconfiguration detection across all downstream services
+
+### TenantedDbContextGuard — Tooling Version Notes
+
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0201 and SK0202 follow same constraint as SK0001–SK0011)
+- Target framework: `netstandard2.0` (Analyzers only — no ArchitectureTests work in this phase)
+
+### TenantedDbContextGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-36 | Define SK0201 `TenantedDbContextOnModelCreatingGuard` — trigger: `OnModelCreating` override in a class whose `BaseList` includes `TenantedDbContext` (simple name); body must contain `base.OnModelCreating(...)` or `ApplyTenantFilters(...)` invocation; neither present fires SK0201; document ancestry-check limitation (syntax-only, single file) | SharedKernel.Analyzers | `○` |
+| D-37 | Define SK0202 `IgnoreQueryFiltersOutsideTenantedRepository` — trigger: `IgnoreQueryFilters()` invocation (zero arguments) anywhere outside `SharedKernel.Persistence.EfCore*` namespace and outside class named `TenantedRepository`; namespace walk via `SyntaxNode.Parent`; document exemption list and `#pragma` suppression guidance | SharedKernel.Analyzers | `○` |
+| C-43 | Implement SK0201 `TenantedDbContextOnModelCreatingAnalyzer` — `MethodDeclarationSyntax` walker; filter to `OnModelCreating` overrides; check containing class `BaseList` for `TenantedDbContext` simple name; inspect body for `base.OnModelCreating` or `ApplyTenantFilters` invocations; report SK0201 on method identifier if neither found | SharedKernel.Analyzers | `○` |
+| C-44 | Implement SK0202 `IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer` — `InvocationExpressionSyntax` walker; filter to `IgnoreQueryFilters` simple name with zero arguments; namespace walk via parent `NamespaceDeclarationSyntax`/`FileScopedNamespaceDeclarationSyntax`; class-name check for `TenantedRepository`; report SK0202 if neither exemption applies | SharedKernel.Analyzers | `○` |
+| T-73 | Analyzer test SK0201 (fire path): `TenantedDbContext` subclass overrides `OnModelCreating` with a body containing only `base.OnModelCreating` call removed and entity configuration — no filter call present; verify SK0201 fires on the method identifier | SharedKernel.Analyzers.Tests | `○` |
+| T-74 | Analyzer test SK0201 (pass path — base call): `TenantedDbContext` subclass overrides `OnModelCreating` and calls `base.OnModelCreating(modelBuilder)` — verify no SK0201 diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-75 | Analyzer test SK0201 (pass path — explicit ApplyTenantFilters): `TenantedDbContext` subclass overrides `OnModelCreating`, calls `this.ApplyTenantFilters(modelBuilder)` without `base.OnModelCreating` — verify no SK0201 diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-76 | Analyzer test SK0202 (fire path): `IgnoreQueryFilters()` called in a class within `Application.Repositories` namespace (not `SharedKernel.Persistence.EfCore`) — verify SK0202 fires on the invocation | SharedKernel.Analyzers.Tests | `○` |
+| T-77 | Analyzer test SK0202 (pass path — namespace exempt): `IgnoreQueryFilters()` called inside a class whose namespace is `SharedKernel.Persistence.EfCore.MultiTenancy` — verify no SK0202 diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-78 | Analyzer test SK0202 (pass path — class name exempt): `IgnoreQueryFilters()` called inside a class named `TenantedRepository` in a non-exempt namespace — verify no SK0202 diagnostic | SharedKernel.Analyzers.Tests | `○` |
+| DO-16 | Document SK0201 and SK0202 in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale (silent data leak risk), exemption list, CI configuration guidance (`<WarningsAsErrors>SK0201;SK0202</WarningsAsErrors>` and `dotnet_diagnostic.SK02xx.severity = error`), suppression instructions for intentional cross-tenant test fixtures | SharedKernel.Analyzers | `○` |
+| D-38 | Add SK0201 and SK0202 to the `00.Governance/CLAUDE.md` diagnostic registry with full descriptor blocks (category, severity, trigger, fix, suppress, note) | SharedKernel.Analyzers | `○` |
+
+---
+
+## Phase: Governance: Architecture Rules for DB Encryption Pattern Correctness <!-- phase-key: SK.00.EncryptionPatternGuard -->
+
+> Four architecture enforcement rules that prevent the most likely misuse patterns of the WO-019 AES-256-GCM encryption subsystem: wrong-layer cryptographic cipher usage, encryption attributes on domain entities, `IEncryptionRotationJob` injection in domain/application types, and direct `EncryptedValueConverter<T>` instantiation bypassing the `EncryptionModelConvention` auto-wire.
+
+### EncryptionPatternGuard — Goal
+
+With hundreds of services consuming the SharedKernel encryption subsystem, four specific misuse patterns will recur. Developers familiar with attribute-based encryption frameworks (e.g., NHibernate, Hibernate) will try to add `[Encrypted]` or `[EncryptedColumn]` attributes directly to domain entity classes. Developers who see `EncryptedValueConverter<T>` surfaced by IntelliSense will instantiate it directly and pass it to `.HasConversion()`, bypassing the model convention that wires it automatically and causing duplicate or inconsistent converter registration. Contributors will try to trigger key rotation from a MediatR handler (correct layer is a hosted service or management endpoint). Others will call `AesGcm`, `Aes`, or `SymmetricAlgorithm` directly in domain or application code rather than routing through the persistence-layer converter. All four patterns are either security violations (wrong-layer crypto) or correctness violations (duplicate converter registration causing double-encryption of stored data). Rule-as-code at the governance layer makes all four impossible to ship undetected — they produce IDE diagnostics and CI failures.
+
+### EncryptionPatternGuard — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/EncryptionPatternGuardRules.cs` — static class housing all four predicate factory methods
+  - `SharedKernel.ArchitectureTests/Predicates/NoAesCipherInDomainOrApplicationPredicate.cs` — `ICustomRule`: IL inspection for references to `AesGcm`, `Aes`, or `SymmetricAlgorithm` types from `System.Security.Cryptography` in domain or application layer types
+  - `SharedKernel.ArchitectureTests/Predicates/NoEncryptionAttributeOnDomainEntityPredicate.cs` — `ICustomRule`: type attribute scan for any attribute whose name contains `"Encrypt"` as a substring on types in `03.Domain` assemblies
+  - `SharedKernel.ArchitectureTests/Predicates/NoEncryptionRotationJobInjectionPredicate.cs` — `ICustomRule`: constructor parameter type scan for `IEncryptionRotationJob` in types whose namespace starts with domain or application namespace patterns
+  - `SharedKernel.ArchitectureTests/Predicates/NoDirectEncryptedValueConverterInstantiationPredicate.cs` — `ICustomRule`: IL inspection for `newobj` opcodes whose operand type name contains `"EncryptedValueConverter"` inside types implementing `IEntityTypeConfiguration<>`; exempts `EncryptionModelConvention` by full type name
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add `EncryptionPatternGuardRules` to architecture test contracts section; add SK0301–SK0304 to diagnostic registry; document all four rules with rationale, offending pattern, compliant pattern, exemption list
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+- Note: SK0301–SK0304 introduce a new 03xx ID block dedicated to encryption-domain governance rules. SK0001–SK0011 cover general SharedKernel patterns; SK0201–SK0202 cover EF Core multi-tenancy; the 03xx block covers the encryption subsystem. No new Roslyn analyzer `.cs` files — all four rules are pure NetArchTest architecture predicates backed by `ICustomRule` IL/attribute-inspection predicates. This keeps the enforcement at the assembly level (post-compile) rather than per-call-site, which is correct for architectural boundary rules.
+
+### EncryptionPatternGuard — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0301 | DirectCryptoInDomainOrApplication | Security | Warning | `AesGcm`, `Aes`, or `SymmetricAlgorithm` referenced in a type whose namespace starts with a `03.Domain` or `05.Application` pattern — crypto belongs exclusively in `06.Persistence` (converter) and `12.Security` (JWT signing) |
+| SK0302 | EncryptionAttributeOnDomainEntity | Design | Warning | A class in a `03.Domain` assembly carries a custom attribute whose name contains `"Encrypt"` as a substring — use `PropertyBuilder<T>.Encrypt()` in `IEntityTypeConfiguration<T>` instead |
+| SK0303 | EncryptionRotationJobInDomainOrApplication | Design | Warning | `IEncryptionRotationJob` appears as a constructor parameter type in a type whose namespace starts with a `03.Domain` or `05.Application` pattern — rotation is an infrastructure operation; register it in a hosted service, Hangfire job, or management endpoint |
+| SK0304 | DirectEncryptedValueConverterInstantiation | Design | Warning | `new EncryptedValueConverter<T>(...)` called directly inside an `IEntityTypeConfiguration<T>` implementation — use the `.Encrypt()` `PropertyBuilder` extension and let `EncryptionModelConvention` apply the converter automatically; direct instantiation causes duplicate or inconsistent converter registration |
+
+### EncryptionPatternGuard — Implementation Rules
+
+1. `EncryptionPatternGuardRules.NoCryptoCipherInDomainOrApplication(Assembly domainAssembly)` and `NoCryptoCipherInDomainOrApplication(Assembly applicationAssembly)` may be overloaded or the method may accept a `params Assembly[]`. The implementation uses `NoAesCipherInDomainOrApplicationPredicate` — an `ICustomRule` that walks `TypeDefinition.Methods.Body.Instructions` for `Call`, `Callvirt`, and `Newobj` opcodes whose operand `TypeReference.Namespace` equals `"System.Security.Cryptography"` and `TypeReference.Name` is one of `"AesGcm"`, `"Aes"`, `"SymmetricAlgorithm"`. Also checks `TypeDefinition.Fields` for field types in the same namespace/name set. Passes for types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Persistence"` or `"SharedKernel.Security"` — these are the legitimate users. Returns `ConditionList`.
+
+2. The `NoAesCipherInDomainOrApplicationPredicate` exemption is implemented as a first-check guard: types in `SharedKernel.Persistence.*` or `SharedKernel.Security.*` namespaces return true (pass) unconditionally. The predicate must be called against domain/application assemblies only; the consuming test must supply the correct assemblies. The exemption guard is a safety net for any accidentally passed assembly.
+
+3. `EncryptionPatternGuardRules.NoEncryptionAttributeOnDomainEntities(Assembly domainAssembly)` uses `NoEncryptionAttributeOnDomainEntityPredicate` — an `ICustomRule` that inspects `TypeDefinition.CustomAttributes` for each type in the domain assembly. For each `CustomAttribute`, checks whether `AttributeType.Name` contains `"Encrypt"` (case-insensitive substring). If any such attribute is found, returns false (rule violated) with failure message naming the offending type and the attribute type name. This is attribute-reflection based — no IL instruction walk required, only `TypeDefinition.CustomAttributes` enumeration via Mono.Cecil. Returns `ConditionList`.
+
+4. `EncryptionPatternGuardRules.NoEncryptionRotationJobInjectionInDomainOrApplication(Assembly assembly)` uses `NoEncryptionRotationJobInjectionPredicate` — an `ICustomRule` that scopes to all types in the assembly (not interface-scoped). For each type, iterates `TypeDefinition.Methods` where `IsConstructor` is true. For each constructor, inspects `MethodDefinition.Parameters` for any `ParameterDefinition.ParameterType.Name` equal to `"IEncryptionRotationJob"` (exact name match; no namespace resolution needed — the simple name is unique within the SDK). If found, returns false with failure message naming the offending type and the constructor where the injection occurs. Returns `ConditionList`.
+   - Exemption: types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Persistence"` return true unconditionally — the interface's own package may reference it. Classes named `*RotationJob*`, `*HostedService*`, `*Controller*`, or `*Activity*` (suffix/prefix match on the simple type name) are also exempt — these are the legitimate consumers.
+
+5. `EncryptionPatternGuardRules.NoDirectEncryptedValueConverterInstantiation(Assembly assembly)` uses `NoDirectEncryptedValueConverterInstantiationPredicate` — an `ICustomRule` that:
+   a. Scopes to types whose `TypeDefinition.Interfaces` contains an entry whose `InterfaceType.Name` starts with `"IEntityTypeConfiguration"` (the EF Core configuration interface prefix).
+   b. For each such type, walks `TypeDefinition.Methods.Body.Instructions` for `Newobj` opcodes whose operand `MethodReference.DeclaringType.Name` contains `"EncryptedValueConverter"` (substring match on the type being instantiated).
+   c. Exemption: types whose `TypeDefinition.Name` is `"EncryptionModelConvention"` (exact match) return true unconditionally — the convention itself instantiates `EncryptedValueConverter<T>` legitimately as the auto-wire mechanism.
+   d. Returns false with failure message naming the offending `IEntityTypeConfiguration<T>` implementor and the method containing the direct instantiation. Returns `ConditionList`.
+
+6. All four factory methods in `EncryptionPatternGuardRules` accept `Assembly` (or `params Assembly[]` where noted) and return `ConditionList`. Method signatures:
+   - `EncryptionPatternGuardRules.NoCryptoCipherInDomainOrApplication(params Assembly[])` → `ConditionList`
+   - `EncryptionPatternGuardRules.NoEncryptionAttributeOnDomainEntities(Assembly)` → `ConditionList`
+   - `EncryptionPatternGuardRules.NoEncryptionRotationJobInjectionInDomainOrApplication(params Assembly[])` → `ConditionList`
+   - `EncryptionPatternGuardRules.NoDirectEncryptedValueConverterInstantiation(Assembly)` → `ConditionList`
+
+7. All four predicates reuse the established Mono.Cecil `TypeDefinition` access pattern from `DoesNotContainThrowIlPredicate`. No new NuGet dependencies — the existing `Mono.Cecil >= 0.11.5` explicit reference in `SharedKernel.ArchitectureTests` covers all four predicates.
+
+8. `EncryptionPatternGuardRules` lives in `SharedKernel.ArchitectureTests/Rules/`. It must not reference `SharedKernel.Persistence.EfCore` or any runtime production package directly. The consuming test project supplies assemblies under test via `typeof(SomeProductionType).Assembly`.
+
+9. SK0303 exemption class-name patterns (`*RotationJob*`, `*HostedService*`, `*Controller*`, `*Activity*`) are applied by substring check on `TypeDefinition.Name`. This is a broad-but-safe exemption: these class-name patterns identify the legitimate infrastructure consumers of the rotation job. No additional namespace exemption is needed for these — the class name check is the primary discriminator.
+
+10. SK0304 `"IEntityTypeConfiguration"` interface prefix scope ensures the rule only fires inside EF Core entity configuration classes — not in general application code that might create a converter for other purposes. `EncryptionModelConvention` is the sole type exempt by name; any other type (including test fixtures that mock the convention) is subject to the rule. Test fixtures that need to test converter wiring should use `.Encrypt()` in test entity configurations, not `new EncryptedValueConverter<T>()`.
+
+11. Failure messages for all four predicates must be actionable:
+    - SK0301 → `"Direct use of {cipherTypeName} (System.Security.Cryptography) detected in {offendingType}. Use the persistence-layer EncryptedValueConverter via the .Encrypt() configuration extension instead."`
+    - SK0302 → `"Encryption attribute [{attributeName}] found on domain entity {offendingType}. Place encryption configuration in IEntityTypeConfiguration<T> using PropertyBuilder<T>.Encrypt() instead."`
+    - SK0303 → `"IEncryptionRotationJob is injected in {offendingType} constructor. Move key rotation to a hosted service, Hangfire job, or management endpoint — not domain or application handlers."`
+    - SK0304 → `"Direct instantiation of EncryptedValueConverter<T> detected in {offendingType}.{offendingMethod}. Use the .Encrypt() PropertyBuilder extension — EncryptionModelConvention applies the converter automatically."`
+
+### EncryptionPatternGuard — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/EncryptionPatternGuardRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: four predicate factory methods returning ConditionList |
+| `Predicates/NoAesCipherInDomainOrApplicationPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: IL walk for AesGcm/Aes/SymmetricAlgorithm references; exempts Persistence and Security namespaces |
+| `Predicates/NoEncryptionAttributeOnDomainEntityPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: TypeDefinition.CustomAttributes scan for "Encrypt"-containing attribute names on domain types |
+| `Predicates/NoEncryptionRotationJobInjectionPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: constructor parameter type scan for IEncryptionRotationJob; exempts Persistence namespace and designated class-name patterns |
+| `Predicates/NoDirectEncryptedValueConverterInstantiationPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: Newobj IL opcode scan for EncryptedValueConverter<T> inside IEntityTypeConfiguration<T> implementors; exempts EncryptionModelConvention by name |
+
+### EncryptionPatternGuard — Acceptance Criteria
+
+- [ ] SK0301 fires when `AesGcm`, `Aes`, or `SymmetricAlgorithm` is referenced in `03.Domain` or `05.Application` namespace types
+- [ ] SK0301 does not fire for types in `SharedKernel.Persistence.*` or `SharedKernel.Security.*` namespaces
+- [ ] SK0302 fires when a class in a `03.Domain` assembly carries an attribute whose name contains `"Encrypt"` as a substring
+- [ ] SK0302 does not fire for non-domain types (types whose namespace does not map to a domain assembly)
+- [ ] SK0303 fires when `IEncryptionRotationJob` is injected (constructor parameter) in a type in `03.Domain` or `05.Application`
+- [ ] SK0303 does not fire for types named `*RotationJob*`, `*HostedService*`, `*Controller*`, or `*Activity*`; does not fire for `SharedKernel.Persistence.*` namespaced types
+- [ ] SK0304 fires when `EncryptedValueConverter<T>` is directly instantiated (`newobj`) in an `IEntityTypeConfiguration<T>` implementation
+- [ ] SK0304 does not fire for `EncryptionModelConvention` (the legitimate internal instantiation)
+- [ ] All four rules have compliant-pass and violation-fire test fixtures (fire path and pass path per rule = 8 minimum test tasks)
+- [ ] `00.Governance/CLAUDE.md` updated with all four new rules, rationale, exemption lists, and failure messages
+- [ ] All existing governance tests pass — no regressions
+
+### EncryptionPatternGuard — Dependencies
+
+- Requires P-112 (`EncryptedValueConverter<T>`, `IEncryptionRotationJob`, `EncryptionModelConvention`, `IEntityTypeConfiguration<T>` extension `.Encrypt()` defined in `SharedKernel.Persistence.EfCore`): yes — `NoDirectEncryptedValueConverterInstantiationPredicate` uses these type names as anchors; `NoEncryptionRotationJobInjectionPredicate` uses `IEncryptionRotationJob` simple name; without these types defined the predicates are checking for names that don't exist yet (rules will trivially pass, which is safe but vacuous)
+- Requires `DoesNotContainThrowIlPredicate` (Mono.Cecil pattern established in SK.00.GuardPurity): yes (already complete — Mono.Cecil access pattern and `>= 0.11.5` NuGet reference are established)
+- Unblocks: CI encryption-pattern gate across all downstream services consuming the WO-019 encryption subsystem
+
+### EncryptionPatternGuard — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` — no change; covers all four new predicates)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new Roslyn analyzer files in this phase; no change)
+- Target framework: `net10.0` (ArchitectureTests only)
+
+### EncryptionPatternGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-39 | Define `EncryptionPatternGuardRules` static class shape: four predicate factory methods; SK0301 — `NoAesCipherInDomainOrApplicationPredicate` IL walk design (AesGcm/Aes/SymmetricAlgorithm, Persistence+Security exemptions); SK0302 — `NoEncryptionAttributeOnDomainEntityPredicate` attribute scan design ("Encrypt" substring); SK0303 — `NoEncryptionRotationJobInjectionPredicate` constructor parameter scan design (IEncryptionRotationJob simple name, class-name exemption patterns); SK0304 — `NoDirectEncryptedValueConverterInstantiationPredicate` Newobj IL scan design (EncryptedValueConverter name in IEntityTypeConfiguration scope, EncryptionModelConvention exemption); failure message contract for each rule | SharedKernel.ArchitectureTests | `○` |
+| C-45 | Implement `NoAesCipherInDomainOrApplicationPredicate` in `Predicates/` — `ICustomRule`; namespace exemption (`SharedKernel.Persistence.*`, `SharedKernel.Security.*`) as first guard; walk `TypeDefinition.Methods.Body.Instructions` for Call/Callvirt/Newobj opcodes and `TypeDefinition.Fields` for field types whose `Namespace == "System.Security.Cryptography"` and `Name` in `{"AesGcm","Aes","SymmetricAlgorithm"}`; return false with SK0301 failure message on first match | SharedKernel.ArchitectureTests | `○` |
+| C-46 | Implement `NoEncryptionAttributeOnDomainEntityPredicate` in `Predicates/` — `ICustomRule`; iterate `TypeDefinition.CustomAttributes`; for each, check `AttributeType.Name.Contains("Encrypt", StringComparison.OrdinalIgnoreCase)`; return false with SK0302 failure message naming offending type and attribute on first match | SharedKernel.ArchitectureTests | `○` |
+| C-47 | Implement `NoEncryptionRotationJobInjectionPredicate` in `Predicates/` — `ICustomRule`; namespace exemption (`SharedKernel.Persistence.*`) and class-name exemptions (`*RotationJob*`, `*HostedService*`, `*Controller*`, `*Activity*` substring checks on `TypeDefinition.Name`) as first guard; iterate constructors in `TypeDefinition.Methods` where `IsConstructor`; check `ParameterDefinition.ParameterType.Name == "IEncryptionRotationJob"`; return false with SK0303 failure message on match | SharedKernel.ArchitectureTests | `○` |
+| C-48 | Implement `NoDirectEncryptedValueConverterInstantiationPredicate` in `Predicates/` — `ICustomRule`; scope to types whose `TypeDefinition.Interfaces` contains entry with `InterfaceType.Name.StartsWith("IEntityTypeConfiguration")`; exempt types whose `TypeDefinition.Name == "EncryptionModelConvention"`; walk `TypeDefinition.Methods.Body.Instructions` for Newobj opcodes where `MethodReference.DeclaringType.Name.Contains("EncryptedValueConverter")`; return false with SK0304 failure message naming offending type and method | SharedKernel.ArchitectureTests | `○` |
+| C-49 | Implement `EncryptionPatternGuardRules` static class in `Rules/` — four factory methods: `NoCryptoCipherInDomainOrApplication(params Assembly[])` → `ConditionList`, `NoEncryptionAttributeOnDomainEntities(Assembly)` → `ConditionList`, `NoEncryptionRotationJobInjectionInDomainOrApplication(params Assembly[])` → `ConditionList`, `NoDirectEncryptedValueConverterInstantiation(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| T-79 | Architecture test SK0301 (fire path): pass a domain assembly containing a type that references `System.Security.Cryptography.AesGcm` directly; assert `NoCryptoCipherInDomainOrApplication` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-80 | Architecture test SK0301 (pass path): pass a domain assembly with no direct crypto cipher references; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-81 | Architecture test SK0302 (fire path): pass a domain assembly containing a class decorated with an `[EncryptedColumn]` attribute; assert `NoEncryptionAttributeOnDomainEntities` fails and failure message names the offending type and attribute | SharedKernel.ArchitectureTests | `○` |
+| T-82 | Architecture test SK0302 (pass path): pass a domain assembly where no class carries an "Encrypt*" attribute; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-83 | Architecture test SK0303 (fire path): pass an application assembly containing a MediatR handler constructor that injects `IEncryptionRotationJob`; assert `NoEncryptionRotationJobInjectionInDomainOrApplication` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-84 | Architecture test SK0303 (pass path): pass an application assembly containing a hosted service class named `EncryptionKeyRotationHostedService` that injects `IEncryptionRotationJob`; assert rule passes (exempt by class-name pattern `*HostedService*`) | SharedKernel.ArchitectureTests | `○` |
+| T-85 | Architecture test SK0304 (fire path): pass a persistence assembly containing an `IEntityTypeConfiguration<Order>` implementation that calls `new EncryptedValueConverter<string>(...)` directly; assert `NoDirectEncryptedValueConverterInstantiation` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
+| T-86 | Architecture test SK0304 (pass path): pass an assembly containing `EncryptionModelConvention` (which legitimately instantiates `EncryptedValueConverter<T>`) and an `IEntityTypeConfiguration<Order>` implementation that uses `.Encrypt()` only; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| DO-17 | Document all four `EncryptionPatternGuardRules` predicates in `00.Governance/CLAUDE.md`: rationale tying each rule to WO-019 encryption subsystem correctness, exemption lists with rationale, failure message content, compliant vs. offending pattern for each; add SK0301–SK0304 to the CLAUDE.md diagnostic registry | SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -1097,25 +1315,27 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 199.
+> Counts updated whenever a task state changes. Total tasks: 226.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
 | `SK.00.Design` | Design | 29 | 29 | 0 | `●` |
 | `SK.00.Scaffold` | Scaffold | 10 | 10 | 0 | `●` |
 | `SK.00.Core` | Core | 39 | 39 | 0 | `●` |
-| `SK.00.Tests` | Tests | 51 | 45 | 6 | `◐` |
-| `SK.00.Docs` | Docs | 12 | 11 | 1 | `◐` |
+| `SK.00.Tests` | Tests | 51 | 51 | 0 | `●` |
+| `SK.00.Docs` | Docs | 12 | 12 | 0 | `●` |
 | `SK.00.Published` | Published | 6 | 6 | 0 | `●` |
 | `SK.00.GuardPurity` | Guard Purity Enforcement | 11 | 11 | 0 | `●` |
 | `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | 11 | 11 | 0 | `●` |
 | `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | 16 | 16 | 0 | `●` |
 | `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | 19 | 19 | 0 | `●` |
 | `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | 13 | 13 | 0 | `●` |
-| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | 13 | 6 | 7 | `◐` |
+| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | 13 | 13 | 0 | `●` |
 | `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | 14 | 0 | 14 | `○` |
 | `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | 15 | 0 | 15 | `○` |
 | `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | 13 | 0 | 13 | `○` |
+| `SK.00.TenantedDbContextGuard` | Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule | 13 | 0 | 13 | `○` |
+| `SK.00.EncryptionPatternGuard` | Governance: Architecture Rules for DB Encryption Pattern Correctness | 14 | 0 | 14 | `○` |
 
 ---
 
@@ -1146,3 +1366,9 @@ Format when active:
 - [2026-06-02] Phase Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness added (SK.00.PersistenceContractCompleteness) — 15 tasks: D-31–D-32, C-36–C-38, T-60–T-66, DO-14; SK0011 GuidFormatCodeMisuse registered; RepositoryContractCompletenessRules arch predicates defined; HasRequiredMethodPredicate ICustomRule; total tasks now 186 — WO-016 P-096
 - [2026-06-03] C-30, C-31, C-32 → ● in SK.00.Core — NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, PersistenceLayerProtectionRules implemented; SK.00.Core promoted to ● (state-map-phase)
 - [2026-06-03] Phase EfCore Package Hygiene Architecture Rules added (SK.00.EfCorePackageHygiene) — 13 tasks: D-33–D-35, C-39–C-42, T-67–T-72, DO-15; three NetArchTest predicates in EfCorePackageHygieneRules; three new ICustomRule predicates (NoSpecificationEvaluatorDowncastPredicate, SingleConstructorPredicate, NoDbContextTransactionInApplicationPredicate); no new SK IDs; total tasks now 199 — WO-017 P-103
+- [2026-06-04] Phase TenantedDbContext Tenant-Filter Guard added (SK.00.TenantedDbContextGuard) — 13 tasks: D-36–D-38, C-43–C-44, T-73–T-78, DO-16; SK0201 TenantedDbContextOnModelCreatingGuard and SK0202 IgnoreQueryFiltersOutsideTenantedRepository registered; two Roslyn analyzers closing the silent multi-tenancy misconfiguration gap; total tasks now 212 — WO-018 P-110
+- [2026-06-04] T-46–T-51 → ● in SK.00.PersistenceEnforcement — PersistenceLayerProtectionRules tests: all 6 fire/pass paths for Rules 1–3 passing; 12/13 done (state-map-phase)
+- [2026-06-04] Phase Governance: Architecture Rules for DB Encryption Pattern Correctness added (SK.00.EncryptionPatternGuard) — 14 tasks: D-39, C-45–C-49, T-79–T-86, DO-17; SK0301 DirectCryptoInDomainOrApplication, SK0302 EncryptionAttributeOnDomainEntity, SK0303 EncryptionRotationJobInDomainOrApplication, SK0304 DirectEncryptedValueConverterInstantiation registered (new 03xx ID block for encryption-domain rules); four NetArchTest predicates in EncryptionPatternGuardRules; four new ICustomRule predicates (NoAesCipherInDomainOrApplicationPredicate, NoEncryptionAttributeOnDomainEntityPredicate, NoEncryptionRotationJobInjectionPredicate, NoDirectEncryptedValueConverterInstantiationPredicate); total tasks now 226 — WO-019 P-114
+- [2026-06-04] SK.00.Tests Overall Progress count corrected — stale count showed 45/51; actual state is 51/51 (T-46–T-51 were marked ● in prior session for SK.00.PersistenceEnforcement but SK.00.Tests cumulative counter was not refreshed); SK.00.Tests promoted to ● — housekeeping pass
+- [2026-06-04] DO-12 → ● in SK.00.Docs — PersistenceLayerProtectionRules documented in 00.Governance/README.md: all three predicates (OnlyEfUnitOfWorkMayCallSaveChanges, RepositoriesMustNotExposeIQueryable, DomainAssembliesNeverReferencePersistenceStack) with rationale, offending/compliant examples, and cross-references to root CLAUDE.md hard layering rules; SK.00.Docs phase now 12/12 ● (state-map-phase)
+- [2026-06-04] SK.00.PersistenceEnforcement Overall Progress count corrected — stale counter showed 12/13 (◐); all 13 tasks (D-27–D-29, C-30–C-32, T-46–T-51, DO-12) confirmed ● in task table; counter refreshed to 13/13 (0 pending); SK.00.PersistenceEnforcement promoted to ● — housekeeping pass

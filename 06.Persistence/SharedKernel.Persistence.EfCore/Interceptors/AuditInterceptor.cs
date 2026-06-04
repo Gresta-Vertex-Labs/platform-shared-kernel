@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Options;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
 
@@ -24,14 +26,15 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// </list>
 /// </para>
 /// <para>
-/// <strong>Audit string format (P-091):</strong> The audit column value is:
+/// <strong>Audit string format (P-091, updated WO-019):</strong> The audit column value is:
 /// <list type="bullet">
 ///   <item><description>
 ///     <c>userContext.UserId.ToString("D")</c> (lowercase hyphenated GUID, 36 chars) when
 ///     <c>IUserContext.IsAuthenticated == true</c> and <c>UserId != Guid.Empty</c>.
 ///   </description></item>
 ///   <item><description>
-///     <c>"system"</c> otherwise (unauthenticated, background jobs, seeding operations).
+///     <c>PersistenceServiceOptions.ServiceName</c> (default <c>"system"</c>) otherwise —
+///     unauthenticated, background jobs, seeding operations.
 ///   </description></item>
 /// </list>
 /// Audit columns are configured with <c>HasMaxLength(256)</c> which accommodates both formats.
@@ -47,6 +50,7 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
 {
     private readonly IUserContext _userContext;
     private readonly IClock _clock;
+    private readonly IOptions<PersistenceServiceOptions> _serviceOptions;
 
     /// <summary>
     /// Initialises a new <see cref="AuditInterceptor"/> with the required dependencies.
@@ -57,10 +61,17 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     /// <param name="clock">
     /// Abstracted system clock for deterministic timestamp production. Never <see langword="null"/>.
     /// </param>
-    public AuditInterceptor(IUserContext userContext, IClock clock)
+    /// <param name="serviceOptions">
+    /// Options providing the unauthenticated audit fallback string (defaults to <c>"system"</c>).
+    /// </param>
+    public AuditInterceptor(
+        IUserContext userContext,
+        IClock clock,
+        IOptions<PersistenceServiceOptions> serviceOptions)
     {
         _userContext = userContext;
         _clock = clock;
+        _serviceOptions = serviceOptions;
     }
 
     /// <inheritdoc />
@@ -106,9 +117,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         }
     }
 
-    // Resolves the audit string from the current IUserContext per P-091 rules.
+    // Resolves the audit string from the current IUserContext per P-091/WO-019 rules.
     private string ResolveUserId()
         => _userContext.IsAuthenticated && _userContext.UserId != Guid.Empty
             ? _userContext.UserId.ToString("D")
-            : "system";
+            : _serviceOptions.Value.ServiceName;
 }

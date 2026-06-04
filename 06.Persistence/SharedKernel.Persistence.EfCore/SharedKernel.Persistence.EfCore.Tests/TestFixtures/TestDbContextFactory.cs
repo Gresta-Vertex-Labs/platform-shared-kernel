@@ -1,9 +1,12 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using SharedKernel.Persistence.EfCore.Interceptors;
+using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
+using MicrosoftOptions = Microsoft.Extensions.Options.Options;
 
 namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 
@@ -12,19 +15,35 @@ namespace SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 /// </summary>
 internal static class TestDbContextFactory
 {
+    /// <summary>Creates a default IOptions&lt;PersistenceServiceOptions&gt; with ServiceName = "system".</summary>
+    public static IOptions<PersistenceServiceOptions> DefaultServiceOptions()
+        => MicrosoftOptions.Create(new PersistenceServiceOptions());
+
+    /// <summary>Creates a custom IOptions&lt;PersistenceServiceOptions&gt; with the given service name.</summary>
+    public static IOptions<PersistenceServiceOptions> ServiceOptions(string serviceName)
+        => MicrosoftOptions.Create(new PersistenceServiceOptions { ServiceName = serviceName });
+
     public static TestDbContext CreateTestDbContext(
         IUserContext? userContext = null,
         IClock? clock = null)
+    {
+        userContext ??= CreateAuthenticatedUserContext(Guid.NewGuid());
+        clock ??= CreateClock(DateTimeOffset.UtcNow);
+        return CreateTestDbContextWithOptions(userContext, clock, DefaultServiceOptions());
+    }
+
+    /// <summary>Creates a TestDbContext with explicit PersistenceServiceOptions (for service-name tests).</summary>
+    public static TestDbContext CreateTestDbContextWithOptions(
+        IUserContext userContext,
+        IClock clock,
+        IOptions<PersistenceServiceOptions> serviceOptions)
     {
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
             .Options;
 
-        userContext ??= CreateAuthenticatedUserContext(Guid.NewGuid());
-        clock ??= CreateClock(DateTimeOffset.UtcNow);
-
-        var audit = new AuditInterceptor(userContext, clock);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock);
+        var audit = new AuditInterceptor(userContext, clock, serviceOptions);
+        var softDelete = new SoftDeleteInterceptor(userContext, clock, serviceOptions);
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new TestDbContext(options, audit, softDelete, concurrency);
@@ -45,8 +64,8 @@ internal static class TestDbContextFactory
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         tenantProvider ??= CreateTenantProvider(Guid.Empty);
 
-        var audit = new AuditInterceptor(userContext, clock);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock);
+        var audit = new AuditInterceptor(userContext, clock, DefaultServiceOptions());
+        var softDelete = new SoftDeleteInterceptor(userContext, clock, DefaultServiceOptions());
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new TenantedTestDbContext(options, audit, softDelete, concurrency, tenantProvider);
@@ -72,8 +91,8 @@ internal static class TestDbContextFactory
         clock ??= CreateClock(DateTimeOffset.UtcNow);
         tenantProvider ??= CreateTenantProvider(Guid.Empty);
 
-        var audit = new AuditInterceptor(userContext, clock);
-        var softDelete = new SoftDeleteInterceptor(userContext, clock);
+        var audit = new AuditInterceptor(userContext, clock, DefaultServiceOptions());
+        var softDelete = new SoftDeleteInterceptor(userContext, clock, DefaultServiceOptions());
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new SoftDeletableTenantedDbContext(options, audit, softDelete, concurrency, tenantProvider);

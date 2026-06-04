@@ -142,8 +142,9 @@ public sealed class StringIncludeTests
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.AmbientTransactionWarning))
             .Options;
 
-        var audit = new AuditInterceptor(userCtx, clock);
-        var softDelete = new SoftDeleteInterceptor(userCtx, clock);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
+        var audit = new AuditInterceptor(userCtx, clock, svcOpts);
+        var softDelete = new SoftDeleteInterceptor(userCtx, clock, svcOpts);
         var concurrency = new ConcurrencyInterceptor();
 
         var ctx = new StringIncludeDbContext(options, audit, softDelete, concurrency);

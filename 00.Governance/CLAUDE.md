@@ -146,6 +146,83 @@ SK0011  GuidFormatCodeMisuse
     Note      : Introduced in WO-016 P-096. Unlike SK0001–SK0010, SK0011 requires a minimal
                 semantic model check (GetTypeInfo) to resolve the receiver type.
 
+SK0301  DirectCryptoInDomainOrApplication
+    Category  : Security
+    Severity  : Warning
+    Trigger   : A type in a `03.Domain` or `05.Application` assembly references
+                `System.Security.Cryptography.AesGcm`, `System.Security.Cryptography.Aes`,
+                or `System.Security.Cryptography.SymmetricAlgorithm` — detected via IL
+                instruction walk (Call/Callvirt/Newobj opcodes) and field type inspection
+    Exempt    : Types whose namespace starts with `SharedKernel.Persistence.*` or
+                `SharedKernel.Security.*` — these are the only legitimate crypto consumers
+                in the platform (persistence-layer converter and JWT signing respectively)
+    Fix       : Remove direct cipher usage from domain/application code. Route all
+                field-level encryption through the persistence-layer `EncryptedValueConverter<T>`
+                wired via `PropertyBuilder<T>.Encrypt()` in `IEntityTypeConfiguration<T>`.
+    Note      : Implemented as a NetArchTest `ICustomRule`
+                (`NoAesCipherInDomainOrApplicationPredicate`) — not a per-call-site
+                Roslyn analyzer. Enforced at assembly level (post-compile). Introduced
+                in WO-019 P-114. Part of the new 03xx encryption-domain ID block.
+
+SK0302  EncryptionAttributeOnDomainEntity
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A class in a `03.Domain` assembly carries a custom attribute whose
+                `Name` contains `"Encrypt"` as a substring (case-insensitive) — detected
+                via `TypeDefinition.CustomAttributes` enumeration (Mono.Cecil attribute
+                reflection, no IL instruction walk required)
+    Exempt    : Non-domain types (types outside the domain assembly under test). The
+                predicate is always scoped to the domain assembly passed by the caller.
+    Fix       : Remove the `[Encrypted*]` / `[*Encrypt*]` attribute from the domain entity.
+                Place encryption configuration in `IEntityTypeConfiguration<T>.Configure()`
+                using `PropertyBuilder<T>.Encrypt()` — `EncryptionModelConvention` applies
+                `EncryptedValueConverter<T>` automatically at model finalization. Never
+                annotate domain entity classes with infrastructure-specific attributes.
+    Note      : Implemented as a NetArchTest `ICustomRule`
+                (`NoEncryptionAttributeOnDomainEntityPredicate`). Introduced in WO-019 P-114.
+
+SK0303  EncryptionRotationJobInDomainOrApplication
+    Category  : Design
+    Severity  : Warning
+    Trigger   : `IEncryptionRotationJob` appears as a constructor parameter type (by simple
+                name exact match) in a type whose namespace maps to `03.Domain` or
+                `05.Application` — detected via `TypeDefinition.Methods` where
+                `IsConstructor` is true, checking `ParameterDefinition.ParameterType.Name`
+    Exempt    : Types whose `TypeDefinition.Namespace` starts with `SharedKernel.Persistence.*`
+                (the interface's own package). Types whose `TypeDefinition.Name` contains
+                any of: `"RotationJob"`, `"HostedService"`, `"Controller"`, `"Activity"`
+                as a substring (class-name based exemption for designated infrastructure
+                consumers of the rotation job).
+    Fix       : Move `IEncryptionRotationJob` injection to a hosted service
+                (`IHostedService` implementation), a Hangfire/Temporal job class, or a
+                management API controller. Never inject it in a MediatR handler, domain
+                service, or any type in `03.Domain` / `05.Application`.
+    Note      : Implemented as a NetArchTest `ICustomRule`
+                (`NoEncryptionRotationJobInjectionPredicate`). Introduced in WO-019 P-114.
+
+SK0304  DirectEncryptedValueConverterInstantiation
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A `newobj` IL opcode whose operand `MethodReference.DeclaringType.Name`
+                contains `"EncryptedValueConverter"` (substring) is found inside a method
+                body of a type whose `TypeDefinition.Interfaces` contains an entry with
+                `InterfaceType.Name.StartsWith("IEntityTypeConfiguration")` — detected via
+                IL instruction walk in `NoDirectEncryptedValueConverterInstantiationPredicate`
+    Exempt    : Types whose `TypeDefinition.Name == "EncryptionModelConvention"` (exact
+                match) — the convention itself legitimately instantiates the converter as
+                the auto-wire mechanism and must never be flagged.
+    Fix       : Replace `new EncryptedValueConverter<string>(...)` + `.HasConversion(converter)`
+                with `.Encrypt()` on `PropertyBuilder<T>`. The `EncryptionModelConvention`
+                (registered via `EfCorePersistenceBuilder.WithEncryption()`) detects the
+                marker and applies the converter automatically at model finalization.
+                Direct instantiation bypasses the convention, producing duplicate or
+                inconsistent converter registration (double-encryption of stored data).
+    Note      : Implemented as a NetArchTest `ICustomRule`
+                (`NoDirectEncryptedValueConverterInstantiationPredicate`). Introduced
+                in WO-019 P-114. Scope: `IEntityTypeConfiguration<T>` implementors only —
+                general application code that is not an EF Core configuration class is
+                not subject to this rule.
+
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
@@ -548,6 +625,132 @@ NoIQueryableReturnPredicate  (class : ICustomRule — internal predicate)
     method name. Covers both IQueryable and IQueryable<T> in IL. Lives in Predicates/ folder.
     Used by PersistenceLayerProtectionRules.RepositoriesMustNotExposeIQueryable.
 
+EncryptionPatternGuardRules  (static class — encryption subsystem misuse enforcement predicates; WO-019 P-114)
+    All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
+    .NoCryptoCipherInDomainOrApplication(params Assembly[])          → ConditionList
+        Asserts that no type in the supplied assemblies references
+        System.Security.Cryptography.AesGcm, System.Security.Cryptography.Aes, or
+        System.Security.Cryptography.SymmetricAlgorithm directly. Uses
+        NoAesCipherInDomainOrApplicationPredicate (ICustomRule — see below).
+        Exemption: types whose TypeDefinition.Namespace starts with "SharedKernel.Persistence.*"
+        or "SharedKernel.Security.*" pass unconditionally — these are the only legitimate
+        crypto consumers. Failure message names the offending type and the cipher type
+        referenced.
+        Rationale: cipher usage in 03.Domain or 05.Application destroys layering isolation
+        and bypasses the platform-managed AES-256-GCM key rotation lifecycle. All
+        field-level encryption must route through EncryptedValueConverter<T>.
+        Offending pattern: class OrderEncryptionHelper { private AesGcm _cipher = new(key); }
+        Compliant pattern: configure encryption via PropertyBuilder<T>.Encrypt() in
+            IEntityTypeConfiguration<T>; never reference AesGcm in domain/application code.
+
+    .NoEncryptionAttributeOnDomainEntities(Assembly)                 → ConditionList
+        Asserts that no type in the supplied domain assembly carries a custom attribute
+        whose name contains "Encrypt" as a substring (case-insensitive). Uses
+        NoEncryptionAttributeOnDomainEntityPredicate (ICustomRule — see below).
+        Attribute detection via TypeDefinition.CustomAttributes enumeration (no IL walk).
+        Failure message names the offending type and the offending attribute type name.
+        Rationale: attribute-based encryption (e.g., [EncryptedColumn], [Encrypted]) on
+        domain entity classes is the primary misuse pattern from developers familiar with
+        other ORM frameworks. It leaks infrastructure concerns into the domain layer and
+        bypasses EncryptionModelConvention, preventing the platform key-rotation lifecycle
+        from operating correctly.
+        Offending pattern: [EncryptedColumn] public string Ssn { get; private set; }
+            on a domain entity class
+        Compliant pattern: builder.Property(x => x.Ssn).Encrypt(); inside
+            IEntityTypeConfiguration<Order>.Configure()
+
+    .NoEncryptionRotationJobInjectionInDomainOrApplication(params Assembly[]) → ConditionList
+        Asserts that no type in the supplied assemblies injects IEncryptionRotationJob as
+        a constructor parameter. Uses NoEncryptionRotationJobInjectionPredicate (ICustomRule
+        — see below). Detection via TypeDefinition.Methods where IsConstructor, checking
+        ParameterDefinition.ParameterType.Name == "IEncryptionRotationJob" (exact name match).
+        Exemption list:
+          - Types whose TypeDefinition.Namespace starts with "SharedKernel.Persistence.*"
+          - Types whose TypeDefinition.Name contains any of: "RotationJob", "HostedService",
+            "Controller", "Activity" (substring match — designates legitimate infrastructure
+            consumers of the rotation job interface)
+        Failure message names the offending type and the constructor where injection occurs.
+        Rationale: IEncryptionRotationJob is an infrastructure operation. Injecting it in
+        a MediatR handler or domain service incorrectly places key-rotation responsibility
+        in the application layer, conflating business logic with infrastructure lifecycle
+        management. Rotation must be triggered from a hosted service, Hangfire job, Temporal
+        activity, or management endpoint — not from command/query handlers.
+        Offending pattern: class RotateKeysCommandHandler(IEncryptionRotationJob rotationJob)
+        Compliant pattern: class EncryptionKeyRotationHostedService(IEncryptionRotationJob rotationJob)
+
+    .NoDirectEncryptedValueConverterInstantiation(Assembly)          → ConditionList
+        Asserts that no type implementing IEntityTypeConfiguration<T> directly instantiates
+        EncryptedValueConverter<T> via a newobj IL opcode. Uses
+        NoDirectEncryptedValueConverterInstantiationPredicate (ICustomRule — see below).
+        Scope: types whose TypeDefinition.Interfaces contains an entry with
+        InterfaceType.Name.StartsWith("IEntityTypeConfiguration"). Walks
+        TypeDefinition.Methods.Body.Instructions for Newobj opcodes where
+        MethodReference.DeclaringType.Name.Contains("EncryptedValueConverter").
+        Exemption: types whose TypeDefinition.Name == "EncryptionModelConvention" (exact
+        match) return true unconditionally — the convention is the sole legitimate
+        instantiation site.
+        Failure message names the offending IEntityTypeConfiguration<T> implementor and
+        the method containing the direct instantiation.
+        Rationale: EncryptionModelConvention (registered via EfCorePersistenceBuilder
+        .WithEncryption()) detects the .Encrypt() marker and applies EncryptedValueConverter<T>
+        automatically at model finalization. Direct instantiation bypasses the convention,
+        causing either duplicate converter registration (double-encryption) or inconsistent
+        key-version handling across the model. The .Encrypt() extension is the only safe
+        call site.
+        Offending pattern: builder.Property(x => x.Ssn)
+            .HasConversion(new EncryptedValueConverter<string>(options));
+        Compliant pattern: builder.Property(x => x.Ssn).Encrypt();
+
+NoAesCipherInDomainOrApplicationPredicate  (class : ICustomRule — internal predicate)
+    Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts
+    with "SharedKernel.Persistence" or "SharedKernel.Security" return true unconditionally.
+    For all other types, checks two surfaces for System.Security.Cryptography cipher types:
+      (1) TypeDefinition.Fields — checks FieldDefinition.FieldType.Namespace ==
+          "System.Security.Cryptography" and FieldDefinition.FieldType.Name in
+          {"AesGcm", "Aes", "SymmetricAlgorithm"}
+      (2) TypeDefinition.Methods.Body.Instructions — for Call, Callvirt, and Newobj opcodes,
+          checks the resolved TypeReference.Namespace and TypeReference.Name against the
+          same set.
+    Returns false (rule violated) on the first match, with failure message naming the
+    offending type and the cipher type name. Lives in Predicates/ folder. Used by
+    EncryptionPatternGuardRules.NoCryptoCipherInDomainOrApplication.
+
+NoEncryptionAttributeOnDomainEntityPredicate  (class : ICustomRule — internal predicate)
+    For each type, iterates TypeDefinition.CustomAttributes. For each CustomAttribute,
+    checks AttributeType.Name.Contains("Encrypt", StringComparison.OrdinalIgnoreCase).
+    Returns false (rule violated) for the first type found carrying a matching attribute,
+    with failure message naming the offending type and the attribute type name. No IL
+    instruction walk required — attribute inspection only. Lives in Predicates/ folder.
+    Used by EncryptionPatternGuardRules.NoEncryptionAttributeOnDomainEntities.
+
+NoEncryptionRotationJobInjectionPredicate  (class : ICustomRule — internal predicate)
+    Namespace exemption guard: types whose TypeDefinition.Namespace starts with
+    "SharedKernel.Persistence" return true unconditionally.
+    Class-name exemption guard: types whose TypeDefinition.Name contains any of
+    "RotationJob", "HostedService", "Controller", "Activity" (substring, case-sensitive)
+    return true unconditionally.
+    For all other types, iterates TypeDefinition.Methods where IsConstructor is true.
+    For each constructor, checks ParameterDefinition.ParameterType.Name ==
+    "IEncryptionRotationJob" (exact name match — unique within the SDK).
+    Returns false (rule violated) on the first match, with failure message naming the
+    offending type and the constructor signature. Lives in Predicates/ folder. Used by
+    EncryptionPatternGuardRules.NoEncryptionRotationJobInjectionInDomainOrApplication.
+
+NoDirectEncryptedValueConverterInstantiationPredicate  (class : ICustomRule — internal predicate)
+    Type-scope guard (first check): types whose TypeDefinition.Interfaces does NOT contain
+    any entry with InterfaceType.Name starting with "IEntityTypeConfiguration" return true
+    unconditionally (not in scope — not an EF Core configuration class).
+    Convention exemption: types whose TypeDefinition.Name == "EncryptionModelConvention"
+    (exact match) return true unconditionally.
+    For all remaining types (IEntityTypeConfiguration<T> implementors other than the
+    convention), walks TypeDefinition.Methods.Body.Instructions for Newobj opcodes.
+    For each Newobj instruction, checks MethodReference.DeclaringType.Name.Contains(
+    "EncryptedValueConverter") (substring, case-sensitive).
+    Returns false (rule violated) on the first match, with failure message naming the
+    offending type name and the method name where the direct instantiation occurs.
+    Lives in Predicates/ folder. Used by
+    EncryptionPatternGuardRules.NoDirectEncryptedValueConverterInstantiation.
+
 EfCorePackageHygieneRules  (static class — EfCore package hygiene predicates; WO-017 P-103)
     All factory methods accept Assembly as their parameter and return ConditionList.
     .NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly)  → ConditionList
@@ -720,6 +923,14 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `EfCorePackageHygieneRules.NoSpecificationEvaluatorDowncastInEfCoreAssembly` must be called with the `SharedKernel.Persistence.EfCore` assembly only. The `castclass` opcode check is a simple operand name prefix match — no semantic model or type hierarchy walk is required. The rule fires on any cast whose target `TypeReference.Name` starts with `"SpecificationEvaluator"`, covering both the generic (`SpecificationEvaluator<T>`) and any subclass forms in IL.
 - `EfCorePackageHygieneRules.IUnitOfWorkImplementorsMustHaveExactlyOneConstructor` must be called with the `06.Persistence` assembly containing concrete `IUnitOfWork` implementors (e.g., `SharedKernel.Persistence.EfCore`). `SingleConstructorPredicate` self-scopes to `IUnitOfWork` implementors only — passing an unrelated assembly produces zero matches and the rule trivially passes without masking violations, provided the correct persistence assembly is also passed.
 - `EfCorePackageHygieneRules.ApplicationLayerMustNotReferenceDbContextTransaction` must be called with the `05.Application` assembly. Passing persistence assemblies is redundant — the namespace exemption inside `NoDbContextTransactionInApplicationPredicate` is a safety net, not the primary enforcement mechanism. The "IDbContextTransaction" substring check covers the full interface name including namespace in the `FullName` property, ensuring `BeginTransactionAsync` return types and `IDbContextTransaction`-typed fields are both detected.
+- `EncryptionPatternGuardRules` introduces a new 03xx SK ID block (SK0301–SK0304) dedicated to the WO-019 encryption subsystem. The 03xx block is separate from the sequential SK0001–SK0011 general-purpose block and the SK0201–SK0202 multi-tenancy block. Never backfill SK0012–SK0200 with encryption rules — those gaps are reserved for the respective domain blocks.
+- `NoAesCipherInDomainOrApplicationPredicate` checks both field types and IL instruction operands for the three cipher types (`AesGcm`, `Aes`, `SymmetricAlgorithm`). The namespace guard (`SharedKernel.Persistence.*` and `SharedKernel.Security.*`) is applied as the first check, before any IL walking, to avoid false positives from the legitimate converter and JWT signing code paths.
+- `NoEncryptionAttributeOnDomainEntityPredicate` uses a case-insensitive substring match on `"Encrypt"` — this deliberately catches all common forms: `[Encrypted]`, `[EncryptedColumn]`, `[EncryptAttribute]`, `[ShouldEncrypt]`, etc. If a future attribute with "Encrypt" in its name is legitimately placed on a domain type for non-encryption purposes, document the exemption in this file before adding a name-specific exclusion to the predicate.
+- `NoEncryptionRotationJobInjectionPredicate` class-name exemptions (`*RotationJob*`, `*HostedService*`, `*Controller*`, `*Activity*`) are substring matches on `TypeDefinition.Name` (the simple CLR type name, not the full namespace-qualified name). This is intentionally broad to cover naming conventions like `EncryptionKeyRotationHostedService`, `KeyRotationActivity`, and `EncryptionManagementController`.
+- `NoDirectEncryptedValueConverterInstantiationPredicate` is scoped to `IEntityTypeConfiguration<T>` implementors only (interface name prefix check). General application code that is not an EF Core configuration class is not subject to SK0304 — the rule is narrowly targeted at the EF Core model-building phase where the misuse pattern causes double-encryption.
+- `EncryptionModelConvention` exemption in `NoDirectEncryptedValueConverterInstantiationPredicate` is by exact type name (`TypeDefinition.Name == "EncryptionModelConvention"`). If the convention class is renamed, update both the predicate and this rule entry in the same PR.
+- All four predicates (SK0301–SK0304) reuse the Mono.Cecil `TypeDefinition` access pattern established by `DoesNotContainThrowIlPredicate`. No new NuGet dependency — the existing `Mono.Cecil >= 0.11.5` explicit reference in `SharedKernel.ArchitectureTests` covers all four.
+- `EncryptionPatternGuardRules` factory methods are called with domain and application assemblies supplied by the consuming test project via `typeof(SomeDomainType).Assembly`. The factory methods never hard-code assembly paths.
 - RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
@@ -765,3 +976,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-01] PersistenceLayerProtectionRules added to architecture test contracts (three predicates: OnlyEfUnitOfWorkMayCallSaveChanges, RepositoriesMustNotExposeIQueryable, DomainAssembliesNeverReferencePersistenceStack); NoDirectSaveChangesPredicate and NoIQueryableReturnPredicate documented; five new implementation rules added — WO-013 P-075
 - [2026-06-03] EfCorePackageHygieneRules added to architecture test contracts (three predicates: NoSpecificationEvaluatorDowncastInEfCoreAssembly, IUnitOfWorkImplementorsMustHaveExactlyOneConstructor, ApplicationLayerMustNotReferenceDbContextTransaction); NoSpecificationEvaluatorDowncastPredicate, SingleConstructorPredicate, NoDbContextTransactionInApplicationPredicate ICustomRules documented; three new implementation rules added — WO-017 P-103
 - [2026-06-02] SK0011 GuidFormatCodeMisuse added to diagnostic registry (requires SemanticModel.GetTypeInfo — first SK analyzer with semantic check; fires on Guid.ToString("N"/"B"/"P"/"X"); no suppression namespace); PersistenceInterfaceOwnershipRules added to architecture test contracts (four predicates: IUserContextDeclaredOnlyInSecurityAbstractions, TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions, IReadRepositoryMustNotExposeIQueryable, NoGetByIdAsyncOnReadRepository); RepositoryContractCompletenessRules added (two predicates: AllRepositoryImplementorsMustHaveExistsAsync, AllReadRepositoryImplementorsMustHaveGetByIdsAsync); InterfaceDeclarationOwnershipPredicate, NoGetByIdOnReadRepositoryPredicate, HasRequiredMethodPredicate ICustomRules documented; eleven new implementation rules added — WO-014 P-083, WO-016 P-096
+- [2026-06-04] SK0301 DirectCryptoInDomainOrApplication, SK0302 EncryptionAttributeOnDomainEntity, SK0303 EncryptionRotationJobInDomainOrApplication, SK0304 DirectEncryptedValueConverterInstantiation added to diagnostic registry (new 03xx block for encryption-domain rules; all implemented as NetArchTest ICustomRule predicates); EncryptionPatternGuardRules static class added to architecture test contracts with four predicates (NoCryptoCipherInDomainOrApplication, NoEncryptionAttributeOnDomainEntities, NoEncryptionRotationJobInjectionInDomainOrApplication, NoDirectEncryptedValueConverterInstantiation); four new ICustomRule predicates documented; seven new implementation rules added — WO-019 P-114

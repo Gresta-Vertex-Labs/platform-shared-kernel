@@ -66,11 +66,12 @@ public sealed class ConcurrencyInterceptorTests
 
         var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var audit1 = new AuditInterceptor(userContext, clock);
-        var softDel1 = new SoftDeleteInterceptor(userContext, clock);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
+        var audit1 = new AuditInterceptor(userContext, clock, svcOpts);
+        var softDel1 = new SoftDeleteInterceptor(userContext, clock, svcOpts);
         var conc1 = new ConcurrencyInterceptor();
-        var audit2 = new AuditInterceptor(userContext, clock);
-        var softDel2 = new SoftDeleteInterceptor(userContext, clock);
+        var audit2 = new AuditInterceptor(userContext, clock, svcOpts);
+        var softDel2 = new SoftDeleteInterceptor(userContext, clock, svcOpts);
         var conc2 = new ConcurrencyInterceptor();
 
         await using var ctx1 = new TestDbContext(options1, audit1, softDel1, conc1);

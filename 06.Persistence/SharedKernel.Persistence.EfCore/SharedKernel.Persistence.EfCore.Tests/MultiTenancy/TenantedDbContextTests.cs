@@ -123,8 +123,9 @@ public sealed class TenantedDbContextTests
         IClock clock,
         ITenantProvider tenantProvider)
     {
-        var audit = new AuditInterceptor(userCtx, clock);
-        var softDel = new SoftDeleteInterceptor(userCtx, clock);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
+        var audit = new AuditInterceptor(userCtx, clock, svcOpts);
+        var softDel = new SoftDeleteInterceptor(userCtx, clock, svcOpts);
         var conc = new ConcurrencyInterceptor();
         return new TenantedTestDbContext(options, audit, softDel, conc, tenantProvider);
     }

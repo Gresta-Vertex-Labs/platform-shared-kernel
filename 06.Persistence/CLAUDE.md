@@ -329,14 +329,14 @@ NOTE: Exactly three interceptors exist in this package. No OutboxInterceptor —
 3. Consuming services register their own `IUserContext` implementation (from `12.Security.Oidc` or similar) before or after `.Build()` — the last registration wins.
 4. Interceptors are registered as **scoped** services so they receive a per-request `IUserContext` from DI.
 
-**Audit string format rule (P-091):**
+**Audit string format rule (P-091, updated WO-019):**
 
 Audit columns (`CreatedBy`, `ModifiedBy`, `DeletedBy`) are `string` with `HasMaxLength(256)`. The string value is produced as:
 
 - When `userContext.IsAuthenticated == true && userContext.UserId != Guid.Empty`: write `userContext.UserId.ToString("D")` — lowercase hyphenated GUID, 36 characters, e.g. `"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`.
-- Otherwise: write `"system"`.
+- Otherwise: write `PersistenceServiceOptions.ServiceName` — defaults to `"system"` but is configurable per-service via `EfCorePersistenceBuilder.WithServiceName(string)`.
 
-No other format is permitted. The `"D"` format specifier is mandatory — `"N"`, `"B"`, `"P"`, and `"X"` formats are all violations.
+No other format is permitted. The `"D"` format specifier is mandatory for authenticated users — `"N"`, `"B"`, `"P"`, and `"X"` formats are all violations. The unauthenticated fallback must always come from `PersistenceServiceOptions.ServiceName`; the hardcoded literal `"system"` is no longer permitted in `AuditInterceptor.ResolveUserId()` — it must be the options default value only.
 
 #### Type configurations (`Configurations/`)
 
@@ -372,6 +372,98 @@ ValueObjectOwnershipBuilder  (static class)
           Startup cost: O(n×m); early-exit when no IValueObject properties present.
           Do NOT register via ConfigureConventions — it will have no effect there.
 ```
+
+#### Encryption (`Encryption/`) — WO-019
+
+Field-level transparent encryption for `string` EF Core properties. Zero domain-layer leakage — entities carry no encryption attributes. All configuration lives in `IEntityTypeConfiguration<T>` implementations.
+
+```text
+EncryptionOptions  (options POCO, section "SharedKernel:Encryption")
+    .Enabled          (bool, default false)   — master on/off switch; false = plaintext pass-through
+    .CurrentVersion   (string)                — version tag for new encryptions, e.g. "v1"; must exist in Keys
+    .Keys             (Dictionary<string,string>) — version → Base64-encoded 32-byte AES key
+    NOTE: Startup validation fires when Enabled == true:
+          (a) CurrentVersion non-null/non-empty; (b) CurrentVersion key exists in Keys;
+          (c) every key value decodes to exactly 32 bytes.
+          Register via EfCorePersistenceBuilder.WithEncryption(action).
+
+PersistenceServiceOptions  (options POCO, section "SharedKernel:Persistence")
+    .ServiceName      (string, default "system") — unauthenticated audit fallback written to CreatedBy/ModifiedBy/DeletedBy
+    NOTE: Replaces the hardcoded "system" literal in AuditInterceptor.ResolveUserId().
+          Register via EfCorePersistenceBuilder.WithServiceName(string).
+          Startup validation: ServiceName must be non-null, non-empty, ≤ 256 characters.
+
+EncryptedValueConverter<T>  (sealed class, extends ValueConverter<T, string>)   where T : string
+    NOTE: Encryption direction: AES-256-GCM with a random 12-byte nonce per encryption.
+          Ciphertext format: "v{version}:{Base64(nonce || ciphertext || 16-byte auth-tag)}".
+          The version prefix is mandatory — it identifies the decryption key from EncryptionOptions.Keys.
+          Decryption: parses the version prefix, looks up the key, decrypts, and verifies the auth tag.
+          Legacy plaintext (no "v" prefix): returned as-is — safe migration path from unencrypted data.
+          Enabled == false: pass-through in both directions, no AES operations performed.
+          Holds IOptionsMonitor<EncryptionOptions> — hot-reload of CurrentVersion and key changes
+          takes effect on the next read/write without a service restart.
+          Do NOT instantiate directly in IEntityTypeConfiguration — use .Encrypt() extension (SK0304).
+
+.Encrypt(bool? enabled = true)  (extension method on PropertyBuilder<T>)
+    NOTE: Writes annotation "SharedKernel:Encrypt" = true/false on the property.
+          This is the ONLY permitted way to mark a property for encryption.
+          Called inside IEntityTypeConfiguration<TEntity>.Configure(builder):
+              builder.Property(x => x.Email).HasMaxLength(255).Encrypt().IsRequired();
+          Passing false explicitly opts the property out even if future bulk-annotation approaches are added.
+          The method returns the builder for fluent chaining.
+
+EncryptionModelConvention  (sealed class, implements IModelFinalizingConvention)
+    NOTE: Runs at model-finalization time (after all IEntityTypeConfiguration implementations).
+          Scans all entity type properties for the "SharedKernel:Encrypt" annotation.
+          Applies EncryptedValueConverter<string> to each annotated property where annotation == true.
+          Registered automatically in SharedKernelDbContext.OnModelCreating — no manual call needed.
+          Behavior is gated by EncryptionOptions.Enabled inside the converter, not the convention —
+          the convention always wires the converter; Enabled == false makes the converter a pass-through.
+
+EncryptionKeyNotFoundException  (sealed class, extends SharedKernelException)
+    NOTE: Thrown by EncryptedValueConverter when the version prefix in stored ciphertext
+          is not found in EncryptionOptions.Keys. Carries the unknown version string.
+          Indicates a key was removed from options before all rows using it were rotated.
+
+IEncryptionRotationJob  (interface)
+    .RotateAsync(string fromVersion, string toVersion, CancellationToken ct) → Task<EncryptionRotationResult>
+    NOTE: Abstraction for triggering key rotation. Registered only when .WithEncryption() is called.
+          Trigger via Hangfire job, Temporal activity, hosted service, or management endpoint.
+          Must NOT be injected in MediatR handlers, domain services, or any 03.Domain/05.Application type (SK0303).
+
+EncryptionRotationResult  (record)
+    .RowsProcessed   (int)
+    .RowsRotated     (int)
+    .RowsFailed      (int)
+    .Errors          (IReadOnlyList<string>)
+
+EncryptionRotationService  (abstract class, implements IEncryptionRotationJob)
+    NOTE: Uses IDbContextFactory<TContext> to open fresh contexts per batch (default batch size 500).
+          Enumerates all entity types in the EF model that have encrypted properties.
+          For each batch: loads rows, checks whether stored value starts with "v{fromVersion}:";
+          decrypts with fromVersion key, re-encrypts with toVersion key, saves batch.
+          Rotation is idempotent — rows already at toVersion are skipped.
+          Keys read from IOptionsMonitor<EncryptionOptions> at RotateAsync call time.
+          Subclasses supply TContext; may override batch size or pre/post-batch hooks.
+```
+
+**EfCorePersistenceBuilder encryption wiring (WO-019):**
+
+```text
+.WithEncryption(Action<EncryptionOptions>? configure = null)
+    — Registers EncryptionOptions via the Options system with the supplied configuration action.
+    — Registers eager startup validation for EncryptionOptions.
+    — Sets flag: .Build() registers IEncryptionRotationJob → EncryptionRotationService (scoped).
+    — Optional. Omitting leaves all existing behavior unchanged (Enabled == false by default).
+
+.WithServiceName(string serviceName)
+    — Registers PersistenceServiceOptions with the given ServiceName.
+    — AuditInterceptor reads ServiceName as the unauthenticated audit fallback.
+    — Optional. Omitting keeps the default "system" fallback.
+```
+
+**SharedKernelDbContext constructor update (WO-019):**
+`SharedKernelDbContext` gains an additional optional constructor parameter `IOptionsMonitor<EncryptionOptions>? encryptionOptions`. When provided, `EncryptionModelConvention` receives the monitor. When not provided (or when `.WithEncryption()` is not called), the convention defaults to `Enabled = false` and all annotated properties are pass-through converters. This parameter is nullable/optional so all existing `SharedKernelDbContext` subclasses remain compatible without modification.
 
 #### Multi-tenancy (`MultiTenancy/`)
 
@@ -574,7 +666,12 @@ DapperReadService  (abstract class)
 - Adding a project reference from `SharedKernel.Persistence.EfCore` to any `12.Security` package other than `SharedKernel.Security.Abstractions` — the single approved exception is `SharedKernel.Security.Abstractions` (zero-dependency interface library). All other `12.Security.*` packages are forbidden.
 - Using `nameof(IEntity<TId>.Id)` in EF Core configurations — `IEntity<TId>` is a **marker interface** with no `Id` property; `Id` is declared on `Entity<TId>`. Use the string literal `"Id"` or `nameof(Entity<TId>.Id)` (requires a concrete TEntity constraint).
 - Omitting the nested test-project exclusion items from production `.csproj` files — every production csproj that has a nested `*.Tests` subfolder must include: `<Compile Remove="*.Tests\**" />`, `<EmbeddedResource Remove="*.Tests\**" />`, `<None Remove="*.Tests\**" />`. Without these the SDK globs pick up test `.cs` files and the production build fails.
-- Writing audit strings in any format other than `userId.ToString("D")` or `"system"` — the `"D"` lowercase hyphenated GUID format is the only permitted non-system value. `"N"`, `"B"`, `"P"`, `"X"` formats are violations.
+- Writing audit strings in any format other than `userId.ToString("D")` or `PersistenceServiceOptions.ServiceName` — the `"D"` lowercase hyphenated GUID format is the only permitted authenticated value; the unauthenticated fallback must come from options (never a hardcoded string literal other than the options default). `"N"`, `"B"`, `"P"`, `"X"` GUID formats are violations.
+- Placing encryption attributes (any attribute whose name contains `Encrypt` or `Encrypted`) on domain entity classes — encryption is configured exclusively via `PropertyBuilder<T>.Encrypt()` inside `IEntityTypeConfiguration<TEntity>` implementations. Attributes on domain types create an infrastructure concern in the domain layer, violating DDD purity (SK0302).
+- Instantiating `EncryptedValueConverter<T>` directly inside `IEntityTypeConfiguration<TEntity>.Configure(builder)` and passing it to `.HasConversion(converter)` — `EncryptionModelConvention` applies the converter automatically after model finalization; manual instantiation produces duplicate or inconsistent converter registration (SK0304).
+- Injecting `IEncryptionRotationJob` in any MediatR handler, domain service, application command/query handler, or any type in `03.Domain` or `05.Application` — key rotation is an infrastructure operation triggered via hosted service, Hangfire job, Temporal activity, or management endpoint only (SK0303).
+- Using `AesGcm`, `Aes`, `SymmetricAlgorithm`, or any BCL symmetric cipher directly in `03.Domain` or `05.Application` layer types — all field-level encryption goes through `EncryptedValueConverter<T>` registered by the model convention (SK0301).
+- Removing a key version from `EncryptionOptions.Keys` before completing the rotation of all rows that were encrypted with that version — doing so causes `EncryptionKeyNotFoundException` at query time for any row still carrying a ciphertext prefixed with the removed version.
 - Using `GetMethod`, `MakeGenericMethod`, or `Invoke` in `TenantedDbContext.OnModelCreating` — the global tenant filter must be built using expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`) and applied via the non-generic `modelBuilder.Entity(clrType).HasQueryFilter(lambdaExpr)` overload.
 - Storing `Guid.Empty` as a `TenantId` in production rows — `Guid.Empty` is the reserved no-tenant sentinel used by `NoOpTenantProvider`; any row with `TenantId == Guid.Empty` will be invisible to all tenanted queries.
 - Calling `QueryableExtensions.IgnoreSoftDeleteFilter()` — this class has been deleted (P-080). Use `spec.IncludeDeleted = true` on the specification; `SpecificationEvaluator<T>` calls `.IgnoreQueryFilters()` automatically at step 0.
@@ -680,6 +777,28 @@ services.AddSharedKernelPostgreSQL(connectionString);
 
 // Dapper — type handlers registered at startup; IDbConnectionFactory already registered above
 services.AddSharedKernelDapper();
+
+// With field-level encryption (optional — WO-019)
+// Keys sourced from appsettings, environment variables, or Azure Key Vault mappings
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithEncryption(enc =>
+    {
+        enc.Enabled = true;
+        enc.CurrentVersion = "v1";
+        enc.Keys["v1"] = "<Base64-encoded 32-byte key>";
+        enc.Keys["v2"] = "<Base64-encoded 32-byte key>";   // add before rotating
+    })
+    .WithServiceName("order-service")   // replaces "system" in audit fallback
+    .Build();
+
+// Consuming service entity configuration (inside IEntityTypeConfiguration<Customer>.Configure):
+//   builder.Property(x => x.Email).HasMaxLength(255).Encrypt().IsRequired();
+//   builder.Property(x => x.PhoneNumber).HasMaxLength(20).Encrypt().IsRequired();
+
+// Triggering key rotation — inject IEncryptionRotationJob in a Hangfire job / hosted service
+//   await rotationJob.RotateAsync(fromVersion: "v1", toVersion: "v2", ct);
 ```
 
 `SharedKernel.Persistence.Abstractions` ships **no DI extensions** — it is a pure interface library.
@@ -695,6 +814,9 @@ services.AddSharedKernelDapper();
 - `AuditInterceptor` and `SoftDeleteInterceptor` access EF Core shadow properties by string key — shadow property access via `CurrentValues[name]` is AOT-safe (no reflection on CLR types).
 - `TenantedDbContext.OnModelCreating` global filter is built with expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`) — no `GetMethod`/`MakeGenericMethod`/`Invoke` calls; fully AOT-safe.
 - `ValueObjectOwnershipBuilder` scans entity types at model-build time — O(n×m) startup cost (n entity types, m properties per type); early-exit when no `IValueObject` properties found prevents unnecessary allocation; model-build time only, not a hot path. The `GetProperties(BindingFlags.Public | BindingFlags.Instance)` call at the `entityType.ClrType` usage site carries `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]` to suppress IL2026/IL2075 trim warnings; this annotation is acceptable because the call is model-build time only.
+- `EncryptedValueConverter<string>` uses `System.Security.Cryptography.AesGcm` and `RandomNumberGenerator` — both are BCL types fully AOT-compatible in .NET 10. No reflection in the hot path; `IOptionsMonitor<EncryptionOptions>` access is a property read on a DI-managed singleton. AOT-safe.
+- `EncryptionModelConvention` scans `modelBuilder.Model.GetEntityTypes()` and `entityType.GetProperties()` at model-finalization time — model-build time only, not a hot path. The same `[DynamicallyAccessedMembers]` pattern applies if CLR property access is needed for annotation scanning; annotation access via EF Core's `IAnnotation` API is AOT-safe by design.
+- `EncryptionRotationService` uses `IDbContextFactory<TContext>` which is AOT-compatible as of EF Core 8+. Batch processing is ordinary LINQ against the already-materialized EF model — no runtime-model scanning in the hot path.
 - `SnakeCaseNamingConvention` operates on EF Core model metadata at model-building time — not in hot paths, AOT-safe.
 - `JsonbEntityTypeBuilderExtension` and `VectorEntityTypeBuilderExtension` configure the EF model at startup — AOT-safe.
 - `Microsoft.EntityFrameworkCore` — fully AOT-compatible as of .NET 8+ with compiled models; verify on each major upgrade.
@@ -766,3 +888,4 @@ services.AddSharedKernelDapper();
 - [2026-06-02] SK.06.Scaffold S-06 and S-07 complete — EfCore→Security.Abstractions and Abstractions→Contracts project references added to csproj files; both already documented; no CLAUDE.md content changes needed (sync-brain)
 - [2026-06-03] WO-017: GetProjectedQuery promoted to `ISpecificationEvaluator<T>`; ITransactionalUnitOfWork/IPersistenceTransaction added to Abstractions; EfTransactionalUnitOfWork/EfCorePersistenceBuilder.WithTransactionalUnitOfWork added to EfCore; ListPagedProjectedAsync added to IReadRepository/EfReadRepository; ValueObjectOwnershipConvention renamed to ValueObjectOwnershipBuilder with static-utility note; TenantedRepository.GetByIdForTenantAsync soft-delete-preserving semantics documented + GetByIdForTenantIncludingDeletedAsync added; EfUnitOfWork single-constructor hard rule added; three new hard violations (downcast, second constructor, direct IDbContextTransaction injection) (sync-brain)
 - [2026-06-03] WO-018 (P-105..P-109) planned: EfTransactionalUnitOfWork double-dispatch fix documented (dispatch deferred to EfPersistenceTransaction.CommitAsync when CurrentTransaction active); EfReadRepository.GetByIdsAsync expression-tree Contains fix documented (eliminates silent client-side evaluation with strongly-typed ID converters); ValueObjectOwnershipBuilder DynamicallyAccessedMembers annotation documented in AOT notes; IRepository.GetBySpecAsync added (write-side tracked fetch by spec); EfCorePersistenceBuilder gains `WithDbContextFactory()`, `AddInterceptor<T>()`, `WithCompiledModel(IModel)`; SharedKernelDbContext constructor extended for additional interceptors; SpecificationEvaluator canonical pipeline updated with step 2b (StringIncludes — between expression includes and OrderBy); PostgreSQL package fully documented (SnakeCaseNamingConvention, JSONB, pgvector, NpgsqlConnectionFactory, AddSharedKernelPostgreSQL); Dapper package fully documented (StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService, AddSharedKernelDapper); five new hard violations; DI registration examples expanded; test rules updated with nine new test scenarios (persistence-arch-planner)
+- [2026-06-04] WO-019 (P-111..P-113) planned: field-level AES-256-GCM encryption subsystem documented — EncryptedValueConverter<string>, EncryptionOptions, PersistenceServiceOptions, EncryptionModelConvention (IModelFinalizingConvention), PropertyBuilder.Encrypt() annotation extension, IEncryptionRotationJob/EncryptionRotationService, EncryptionKeyNotFoundException; audit fallback hardcoded "system" replaced by configurable PersistenceServiceOptions.ServiceName; EfCorePersistenceBuilder gains .WithEncryption() and .WithServiceName(); SharedKernelDbContext gains optional IOptionsMonitor<EncryptionOptions> constructor parameter; six new hard violations; AOT notes for AesGcm/EncryptionModelConvention/EncryptionRotationService; DI registration example updated; test rules added for converter round-trip, tamper detection, hot-reload, legacy plaintext path, convention integration, rotation idempotency (arch-lead)

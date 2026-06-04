@@ -208,10 +208,11 @@ public sealed class DomainPrimitiveConventionTests
             .Options;
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
         var ctx = new ValueObjectConventionDbContext(
             options,
-            new AuditInterceptor(userCtx, clock),
-            new SoftDeleteInterceptor(userCtx, clock),
+            new AuditInterceptor(userCtx, clock, svcOpts),
+            new SoftDeleteInterceptor(userCtx, clock, svcOpts),
             new ConcurrencyInterceptor());
         ctx.Database.EnsureCreated();
         return ctx;
@@ -224,10 +225,11 @@ public sealed class DomainPrimitiveConventionTests
             .Options;
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
         var ctx = new SimpleConventionDbContext(
             options,
-            new AuditInterceptor(userCtx, clock),
-            new SoftDeleteInterceptor(userCtx, clock),
+            new AuditInterceptor(userCtx, clock, svcOpts),
+            new SoftDeleteInterceptor(userCtx, clock, svcOpts),
             new ConcurrencyInterceptor());
         ctx.Database.EnsureCreated();
         return ctx;
@@ -240,10 +242,11 @@ public sealed class DomainPrimitiveConventionTests
             .Options;
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
+        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
         var ctx = new FullAuditConventionDbContext(
             options,
-            new AuditInterceptor(userCtx, clock),
-            new SoftDeleteInterceptor(userCtx, clock),
+            new AuditInterceptor(userCtx, clock, svcOpts),
+            new SoftDeleteInterceptor(userCtx, clock, svcOpts),
             new ConcurrencyInterceptor());
         ctx.Database.EnsureCreated();
         return ctx;

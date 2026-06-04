@@ -64,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Core | `●` | C-30/C-31/C-32 complete — NoDirectSaveChangesPredicate, NoIQueryableReturnPredicate, and PersistenceLayerProtectionRules implemented; SK.00.Core phase fully done (39/39). | Implement T-46–T-51 (PersistenceEnforcement test fixtures) and DO-12 (README docs). |
+| 00 | [Governance](00.Governance/state-map.md) | Persistence Architecture Enforcement | `●` | All 13 tasks complete — PersistenceLayerProtectionRules (OnlyEfUnitOfWorkMayCallSaveChanges, RepositoriesMustNotExposeIQueryable, DomainAssembliesNeverReferencePersistenceStack) implemented, tested, and documented. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
@@ -109,9 +109,9 @@ Format when active:
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
 | ● Published | 4 |
-| ● Docs | 0 |
+| ● Docs | 1 |
 | ● Tests | 0 |
-| ● Core | 1 |
+| ● Core | 0 |
 | ● Scaffold | 0 |
 | ● Design | 0 |
 | ◐ In Progress | 1 |
@@ -1782,6 +1782,14 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-04] Persistence → Docs (●) — promoted from SK.06.Docs (state-map-phase)
 - [2026-06-04] Persistence → Published (●) — promoted from SK.06.Published (state-map-phase)
 - [2026-06-04] Phase Backlog entries for 06.Persistence closed → ● Complete — 06.Persistence reached Published (state-map-phase)
+- [2026-06-04] Phase(s) P-110 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-04] Phase(s) P-111, P-112, P-113 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-06-04] Persistence → Design (●) — promoted from SK.06.Design; all 53 design tasks complete including WO-019 encryption subsystem (state-map-phase)
+- [2026-06-04] Persistence → Core (●) — promoted from SK.06.Core; WO-019 encryption subsystem 81/81 tasks complete (state-map-phase)
+- [2026-06-04] Phase(s) P-114 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-04] Governance → Tests (●) — promoted from SK.00.Tests (state-map-phase)
+- [2026-06-04] Governance → Docs (●) — promoted from SK.00.Docs (state-map-phase)
+- [2026-06-04] Governance → Persistence Architecture Enforcement (●) — promoted from SK.00.PersistenceEnforcement (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -5169,7 +5177,7 @@ CQRS at scale requires a fast read path. EF Core's change-tracking and identity-
 ---
 ### P-110 — Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-018
 **Domain:** 00.Governance
 **Depends on:** P-108
@@ -5211,5 +5219,254 @@ Multi-tenancy misconfiguration is one of the highest-severity bug categories in 
 - [ ] Both rules have test fixtures in `SharedKernel.ArchitectureTests` that verify the rules fire on violating code and pass on compliant code
 - [ ] Exemption list documented: test fixtures, `TenantedRepository` designated methods, `SharedKernel.Persistence.EfCore` internal types
 - [ ] `00.Governance/CLAUDE.md` updated with both rules, rationale, exemption list, and CI configuration guidance
+- [ ] All existing governance tests pass — no regressions
+---
+
+---
+### P-111 — Persistence EfCore: Encryption Options, Service Identity Options, and AuditInterceptor Service-Name Fallback
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-019
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+Two new options classes and a targeted update to `AuditInterceptor`.
+
+**`EncryptionOptions`** — a new options POCO bound to the `IOptions` system (section name `SharedKernel:Encryption`). It carries:
+- `Enabled` (`bool`, default `false`) — master on/off switch for the entire encryption subsystem. When `false`, all encrypted properties store and return plaintext; no AES operations are performed.
+- `CurrentVersion` (`string`) — the version tag for newly encrypted values (e.g., `"v1"`). Must match a key in `Keys`.
+- `Keys` (`Dictionary<string, string>`) — versioned key registry. Each entry maps a version string (e.g., `"v1"`, `"v2"`) to a Base64-encoded 256-bit (32-byte) AES key. The dictionary must contain at least one entry when `Enabled == true`.
+
+`EncryptionOptions` must include startup-time validation (via the Options validation pattern already used in `01.Core/SharedKernel.Configuration`) that, when `Enabled == true`: (a) `CurrentVersion` is non-null/non-empty, (b) `CurrentVersion` exists as a key in `Keys`, (c) every key value in `Keys` decodes to exactly 32 bytes. Validation fires at `Build()` time (eager validation), not lazily on first use, so misconfiguration is caught at startup, not in a live request.
+
+**`PersistenceServiceOptions`** — a new options POCO bound to the `IOptions` system (section name `SharedKernel:Persistence`). It carries:
+- `ServiceName` (`string`, default `"system"`) — the application identity string used as the audit fallback when no authenticated user is present. This replaces the hardcoded `"system"` literal in `AuditInterceptor.ResolveUserId()`.
+
+`PersistenceServiceOptions` must accept any non-null, non-empty string. Startup validation: `ServiceName` must be non-null and non-empty, and must fit within the audit column's `HasMaxLength(256)` constraint.
+
+**`AuditInterceptor` update:** Inject `IOptions<PersistenceServiceOptions>` into the constructor (or inject the options value directly as a `PersistenceServiceOptions` instance resolved by the DI container). The `ResolveUserId()` method's else-branch replaces `"system"` with `options.ServiceName`. The fallback rule from P-091 is retained: when `IsAuthenticated == true && UserId != Guid.Empty`, write `userId.ToString("D")`; otherwise write `options.ServiceName`. The CLAUDE.md audit string format rule must be updated to reflect that the fallback is now configurable via `PersistenceServiceOptions.ServiceName` (with `"system"` remaining the default).
+
+**`EfCorePersistenceBuilder` update:** Add a `.WithEncryption(Action<EncryptionOptions>?)` fluent method that (a) registers `EncryptionOptions` via `services.AddOptions<EncryptionOptions>()...Configure(action)`, (b) registers the Options validator, (c) sets a flag so `.Build()` registers `IEncryptionRotationJob` and `EncryptionRotationService` (see P-112). Also add `.WithServiceName(string serviceName)` that registers `PersistenceServiceOptions` with the given name. Both methods are optional — omitting them leaves existing behavior unchanged.
+
+The two options classes live inside `06.Persistence/SharedKernel.Persistence.EfCore/Options/`. No new NuGet dependencies are required — `Microsoft.Extensions.Options` is already transitively available through `Microsoft.Extensions.DependencyInjection.Abstractions`.
+
+#### Why this is needed
+
+The hardcoded `"system"` audit fallback is a known limitation — when hundreds of services share the same SharedKernel, audit logs cannot distinguish which service (background job, migration runner, seed script) performed a change. A configurable `ServiceName` makes audit trails actionable for multi-service incident investigation. Centralizing `EncryptionOptions` in a single place with eager startup validation prevents the class of failure where encryption is enabled but the key is malformed, or the `CurrentVersion` refers to a non-existent key — both of which would cause runtime panics during a live request rather than a clean startup error.
+
+#### Acceptance criteria
+- [ ] `EncryptionOptions` POCO exists with `Enabled`, `CurrentVersion`, and `Keys` properties
+- [ ] `EncryptionOptions` startup validation fires when `Enabled == true` and any invariant is violated (missing version, wrong key length)
+- [ ] `PersistenceServiceOptions` POCO exists with `ServiceName` defaulting to `"system"`
+- [ ] `PersistenceServiceOptions` startup validation rejects null/empty `ServiceName` and values exceeding 256 characters
+- [ ] `AuditInterceptor.ResolveUserId()` returns `options.ServiceName` instead of the literal `"system"` for the unauthenticated path
+- [ ] `EfCorePersistenceBuilder.WithEncryption(...)` method exists and registers the options + validator
+- [ ] `EfCorePersistenceBuilder.WithServiceName(string)` method exists and registers `PersistenceServiceOptions`
+- [ ] Omitting `.WithEncryption()` and `.WithServiceName()` leaves all existing behavior unchanged — no regressions
+- [ ] `06.Persistence/CLAUDE.md` audit string format rule updated to document configurable `ServiceName`
+---
+
+---
+### P-112 — Persistence EfCore: Encrypted Value Converter, PropertyBuilder Annotation Extension, Model Finalization Convention, and Key Rotation Infrastructure
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-019
+**Domain:** 06.Persistence
+**Depends on:** P-111
+
+#### What is needed
+
+The core encryption capability, composed of four interlocking pieces.
+
+**1. `EncryptedValueConverter<T>` — EF Core value converter**
+
+A generic value converter where `T` is constrained to `string` and `byte[]` (the only EF Core property types that encryption meaningfully applies to). The converter implements `ValueConverter<T, string>` with:
+
+- **Encryption direction (to-provider):** When `EncryptionOptions.Enabled == false`, return the value as-is (plaintext pass-through). When enabled: generate a cryptographically random 12-byte nonce using `RandomNumberGenerator`; perform AES-256-GCM encryption using the key identified by `EncryptionOptions.CurrentVersion` from the `Keys` dictionary; produce a self-describing ciphertext string in the format `v{CurrentVersion}:{Base64(nonce || ciphertext || authentication-tag)}`. The version prefix is mandatory — it is the only mechanism for key rotation transparency. The `||` is byte concatenation. The Base64 encoding uses standard Base64 (`Convert.ToBase64String`) — URL-safe variants are avoided to keep the stored value simple.
+
+- **Decryption direction (from-provider):** When `EncryptionOptions.Enabled == false`, return the stored value as-is. When the stored value does NOT start with `v` followed by a version tag and `:`, treat it as legacy plaintext and return it unchanged (graceful migration path). When the stored value has a version prefix: parse the version tag, look up the key in `EncryptionOptions.Keys`, extract the nonce (first 12 bytes) and authentication tag (last 16 bytes) from the decoded bytes, perform AES-256-GCM decryption. If the version is not found in `Keys`, throw a descriptive `EncryptionKeyNotFoundException` (a new exception type in the same package). If the authentication tag check fails (tampered or corrupted ciphertext), the `AesGcm` runtime will throw — let it propagate naturally.
+
+- **Options access:** The converter holds an `IOptionsMonitor<EncryptionOptions>` reference. On every conversion call it reads `.CurrentValue` — this provides hot-reload semantics without requiring a restart. `IOptionsMonitor` is safe to hold in a singleton because it is itself singleton-safe.
+
+- The converter is registered per-property by the model convention (see piece 3), not per-type — no auto-discovery via `ModelConfigurationBuilder.ConfigureConventions` because the `.Encrypt()` annotation controls opt-in.
+
+**2. `.Encrypt(bool? enabled = true)` extension method on `PropertyBuilder<T>`**
+
+A static extension method on `PropertyBuilder<T>` that writes the sentinel EF Core annotation `SharedKernel:Encrypt` with the boolean value `enabled` (defaulting to `true`). This method is the ONLY way consuming services interact with the encryption system from their entity configurations.
+
+The extension accepts a nullable bool so callers can explicitly pass `false` to opt a property out, even if a future bulk-annotation approach were added. Null is treated as `true`. The extension is purely additive — it calls `builder.HasAnnotation("SharedKernel:Encrypt", enabled ?? true)` and returns the builder for chaining.
+
+The extension lives in `06.Persistence/SharedKernel.Persistence.EfCore/Encryption/` (or a sub-folder). It must NOT live in a namespace that downstream domain layers import — it targets `PropertyBuilder<T>` which is an EF Core type, so it is naturally scoped to entity configuration files only.
+
+**3. `EncryptionModelConvention` — `IModelFinalizingConvention`**
+
+An EF Core model finalizing convention that runs during `OnModelCreating` (after all `IEntityTypeConfiguration` implementations have been applied) and auto-wires `EncryptedValueConverter<string>` on every property that carries the `SharedKernel:Encrypt` annotation with value `true`.
+
+The convention iterates `modelBuilder.Model.GetEntityTypes()`, then for each entity type iterates `entityType.GetProperties()`, checking for the `SharedKernel:Encrypt` annotation. When found and the annotation value is `true`: resolve `EncryptedValueConverter<string>` from the service provider (or construct it with the `IOptionsMonitor<EncryptionOptions>`) and call `property.SetValueConverter(converter)`. When `EncryptionOptions.Enabled == false`, the convention still wires the converter — the converter itself is the pass-through gate. This means toggling `Enabled` at runtime (via `IOptionsMonitor` hot-reload) takes effect on the next read/write without requiring a model rebuild.
+
+The convention is registered in `SharedKernelDbContext.OnModelCreating` via `modelBuilder.Conventions.Add(_ => new EncryptionModelConvention(optionsMonitor))` — it is always present; its behavior is gated by `EncryptionOptions.Enabled` inside the converter. This registration lives in `SharedKernelDbContext` so all downstream DbContext subclasses inherit it automatically.
+
+`SharedKernelDbContext` must receive `IOptionsMonitor<EncryptionOptions>` via its constructor to pass to the convention. Since `EncryptionOptions` may not be registered in DI (when `.WithEncryption()` is not called), the constructor should accept `IOptionsMonitor<EncryptionOptions>?` as nullable/optional, and register a no-op default internally when not provided. The default `EncryptionOptions` has `Enabled = false`, making the pass-through the default behavior.
+
+**4. `IEncryptionRotationJob` abstraction and `EncryptionRotationService` base**
+
+`IEncryptionRotationJob` — a new interface in the EfCore package (not in Abstractions, because it references EF Core types) with:
+- `RotateAsync(string fromVersion, string toVersion, CancellationToken ct) → Task<EncryptionRotationResult>`
+
+`EncryptionRotationResult` — a result record carrying `RowsProcessed`, `RowsRotated`, `RowsFailed`, and `Errors` (a list of per-entity error descriptions).
+
+`EncryptionRotationService` — an abstract base class implementing `IEncryptionRotationJob`. It uses `IDbContextFactory<TContext>` to open a fresh `DbContext` per batch (avoids long-lived context memory buildup). The base provides the rotation algorithm scaffold: enumerate all entity types in the model that have encrypted properties; for each entity type, load rows in configurable batches (default 500); for each row, check whether any encrypted property's stored value starts with `v{fromVersion}:`; if so, decrypt with the `fromVersion` key and re-encrypt with the `toVersion` key; save the batch. Concrete downstream implementations supply the `TContext` type parameter and can override the batch size or pre/post-batch hooks.
+
+The rotation service reads keys directly from `IOptionsMonitor<EncryptionOptions>` — no separate key argument is passed at construction time. The `fromVersion` and `toVersion` are passed as method arguments to `RotateAsync` so a single service instance can be invoked for multiple rotation campaigns (e.g., scheduled, triggered via a management endpoint).
+
+`EfCorePersistenceBuilder.WithEncryption(...)` (defined in P-111) sets a flag; `.Build()` registers `IEncryptionRotationJob → EncryptionRotationService` (scoped) only when the flag is set. When `WithEncryption()` is not called, `IEncryptionRotationJob` is not registered — no dead services.
+
+**`EncryptionKeyNotFoundException`** — a new exception type extending `SharedKernelException` (from `01.Core`). Carries the unknown version string. Thrown by the converter when a ciphertext version prefix is not found in `EncryptionOptions.Keys`.
+
+All new types live under `06.Persistence/SharedKernel.Persistence.EfCore/Encryption/`. No new NuGet package references are needed — `System.Security.Cryptography` (`AesGcm`) is part of the BCL in .NET 10. `RandomNumberGenerator` is also BCL.
+
+#### Why this is needed
+
+Field-level encryption at the persistence layer is the correct location for this concern because: (a) domain entities must not carry cryptographic attributes or cipher knowledge — that violates DDD purity; (b) infrastructure-level converters are the EF Core idiom for transparent value transformation; (c) `IModelFinalizingConvention` is the correct extension point for cross-cutting model mutations, as it runs after all `IEntityTypeConfiguration` implementations and has full model visibility. AES-256-GCM is chosen over AES-CBC+HMAC because GCM provides authenticated encryption in a single primitive — there is no risk of forgetting the HMAC step or misimplementing Encrypt-then-MAC. The versioned ciphertext prefix `v{version}:` is the minimum metadata needed to support transparent key rotation without a migration table. `IOptionsMonitor` is the correct live-reload primitive for a long-lived singleton converter. The `IEncryptionRotationJob` abstraction allows downstream services to trigger rotation via any surface (Hangfire job, Temporal workflow, HTTP management endpoint) without coupling the rotation logic to any particular scheduler.
+
+#### Acceptance criteria
+- [ ] `EncryptedValueConverter<string>` encrypts with AES-256-GCM and produces a `v{version}:{Base64}` ciphertext string
+- [ ] Decryption correctly resolves the key by parsing the version prefix from the stored ciphertext
+- [ ] Decryption of a value without a version prefix returns the value as-is (legacy plaintext pass-through)
+- [ ] `EncryptionOptions.Enabled == false` causes the converter to pass values through without any AES operation
+- [ ] `EncryptionKeyNotFoundException` is thrown when the ciphertext version is not found in `EncryptionOptions.Keys`
+- [ ] `.Encrypt()` extension on `PropertyBuilder<T>` writes the `SharedKernel:Encrypt` annotation with value `true`
+- [ ] `.Encrypt(false)` writes the annotation with value `false`
+- [ ] `EncryptionModelConvention` applies `EncryptedValueConverter<string>` to every annotated property at model finalization time
+- [ ] Properties without the `SharedKernel:Encrypt` annotation are not touched by the convention
+- [ ] `SharedKernelDbContext` registers `EncryptionModelConvention` in `OnModelCreating` and accepts `IOptionsMonitor<EncryptionOptions>?` as an optional constructor parameter
+- [ ] When `IOptionsMonitor<EncryptionOptions>` is not registered in DI, the convention defaults to `Enabled = false` pass-through
+- [ ] `IEncryptionRotationJob.RotateAsync(fromVersion, toVersion, ct)` contract is defined
+- [ ] `EncryptionRotationService` base class implements the batch rotation algorithm using `IDbContextFactory<TContext>`
+- [ ] `EfCorePersistenceBuilder.Build()` registers `IEncryptionRotationJob → EncryptionRotationService` only when `.WithEncryption()` was called
+- [ ] No new NuGet package references added to `SharedKernel.Persistence.EfCore.csproj`
+- [ ] `06.Persistence/CLAUDE.md` updated with the encryption subsystem documentation
+---
+
+---
+### P-113 — Persistence EfCore: Tests — Encryption Converter, Key Rotation, Service Name Audit Fallback, and Model Convention
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-019
+**Domain:** 06.Persistence
+**Depends on:** P-111, P-112
+
+#### What is needed
+
+A comprehensive test suite added to `06.Persistence/SharedKernel.Persistence.EfCore/SharedKernel.Persistence.EfCore.Tests/`. All tests use the SQLite in-memory provider unless explicitly noted. No new Testcontainers dependency is needed — SQLite covers all EF Core convention, interceptor, and converter behavior.
+
+**`EncryptedValueConverter<string>` unit tests:**
+- Encrypt round-trip: encrypt a plaintext string → ciphertext starts with `v{CurrentVersion}:`; decrypt returns original plaintext.
+- Different plaintexts produce different ciphertexts (nonce randomness — no deterministic output).
+- Wrong key version in ciphertext throws `EncryptionKeyNotFoundException`.
+- Tampered ciphertext (flipped bit in the authentication tag) throws `AuthenticationTagMismatchException` or equivalent `CryptographicException`.
+- `Enabled == false`: encrypt returns plaintext as-is; decrypt returns stored value as-is.
+- Legacy plaintext (no version prefix): decrypt returns value unchanged (graceful migration).
+- `IOptionsMonitor` hot-reload: change `CurrentVersion` mid-test; subsequent encryptions use the new version; decryption of old-version ciphertext still succeeds using the old key.
+
+**`EncryptionOptions` validation tests:**
+- `Enabled == false`: no validation errors regardless of `CurrentVersion` or `Keys` state.
+- `Enabled == true`, `CurrentVersion` missing from `Keys`: validation fails with descriptive message.
+- `Enabled == true`, key value decodes to != 32 bytes: validation fails with descriptive message.
+- `Enabled == true`, all invariants met: validation passes.
+
+**`PersistenceServiceOptions` validation tests:**
+- Null `ServiceName`: validation fails.
+- Empty string `ServiceName`: validation fails.
+- String > 256 characters: validation fails.
+- Valid string: validation passes.
+
+**`AuditInterceptor` service name tests:**
+- `IsAuthenticated == false`, `ServiceName = "order-service"` → `CreatedBy` and `ModifiedBy` receive `"order-service"`.
+- `IsAuthenticated == false`, `ServiceName = "system"` (default) → `CreatedBy` receives `"system"` (backward compat).
+- `IsAuthenticated == true`, valid `UserId` → `CreatedBy` receives `userId.ToString("D")` regardless of `ServiceName`.
+- All existing P-091 audit tests continue to pass — no regressions.
+
+**`EncryptionModelConvention` integration tests (SQLite):**
+- Property annotated with `.Encrypt()` → value stored in DB is ciphertext (starts with `v`); value read back is original plaintext.
+- Property NOT annotated with `.Encrypt()` → value stored and read back as plaintext, no conversion.
+- `.Encrypt(false)` → property treated as plaintext (annotation present but disabled).
+- `EncryptionOptions.Enabled == false` → annotated property stored and read as plaintext.
+- Multi-property entity: some encrypted, some not; each behaves correctly and independently.
+- `SpecificationEvaluator` criteria still work on non-encrypted properties when some properties are encrypted.
+
+**Key rotation integration tests (SQLite):**
+- Insert a row with `v1` key → call `RotateAsync("v1", "v2")` → stored value now starts with `v2:`; decrypt with `v2` key returns original plaintext.
+- Rotation skips rows already at `toVersion` (idempotent).
+- Rotation result `RowsRotated` count is accurate.
+- Rotation with an unrecognized `fromVersion` processes zero rows and returns `RowsProcessed == 0`.
+- `EncryptionRotationResult` carries accurate counts when some rows are at `fromVersion` and others are not.
+
+**EfCorePersistenceBuilder wiring tests:**
+- `.WithEncryption(...)` → `IEncryptionRotationJob` resolves from the DI container.
+- Without `.WithEncryption()` → `IEncryptionRotationJob` does not resolve (not registered).
+- `.WithServiceName("my-service")` → `AuditInterceptor` produces `"my-service"` for unauthenticated saves.
+- Without `.WithServiceName()` → fallback is `"system"` (default).
+
+#### Why this is needed
+
+Encryption is a security-sensitive subsystem where subtle defects (nonce reuse, missing auth-tag verification, wrong key dispatch) have severe consequences. Tests at the converter level catch cipher defects; tests at the convention level verify the EF integration; tests at the rotation level verify the migration safety of the key rotation algorithm. The backward-compat (legacy plaintext) and hot-reload scenarios are critical edge cases that must be explicitly exercised, not assumed correct.
+
+#### Acceptance criteria
+- [ ] All `EncryptedValueConverter<string>` unit tests pass including round-trip, tamper detection, pass-through, and legacy plaintext path
+- [ ] Hot-reload test confirms `IOptionsMonitor` key version switch is picked up without service restart
+- [ ] `EncryptionOptions` validation tests cover all three failure modes
+- [ ] `PersistenceServiceOptions` validation tests cover all failure modes
+- [ ] `AuditInterceptor` service-name tests pass; all existing P-091 audit tests pass without modification
+- [ ] Convention integration tests confirm annotated properties are stored as ciphertext and read back as plaintext
+- [ ] Convention integration tests confirm unannotated properties are untouched
+- [ ] Rotation tests confirm `RotateAsync` produces correct counts and the re-encrypted rows are readable
+- [ ] Builder wiring tests confirm conditional registration of `IEncryptionRotationJob`
+- [ ] All 203 existing tests continue to pass — no regressions
+---
+
+---
+### P-114 — Governance: Architecture Rules for DB Encryption Pattern Correctness
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-019
+**Domain:** 00.Governance
+**Depends on:** P-112
+
+#### What is needed
+
+New architecture enforcement rules added to `00.Governance/SharedKernel.ArchitectureTests` that govern correct usage of the encryption subsystem. These rules prevent the most likely misuse patterns that would compromise security or violate the SharedKernel layering contract.
+
+**Rule SK0301 — No direct AES usage in domain or application layers:**
+No type in `03.Domain` or `05.Application` (or their sub-namespaces) may reference `System.Security.Cryptography.AesGcm`, `System.Security.Cryptography.Aes`, or `System.Security.Cryptography.SymmetricAlgorithm`. Encryption belongs exclusively in `06.Persistence` (via the converter) and `12.Security` (for JWT signing operations). Diagnostic: `SK0301: Direct cryptographic cipher usage detected in Domain or Application layer. Use the persistence-layer EncryptedValueConverter via the .Encrypt() configuration extension instead.`
+
+**Rule SK0302 — No encryption attributes on domain entity types:**
+No class in `03.Domain` (or packages consumed by it) may carry a custom attribute whose name contains `Encrypt` or `Encrypted` as a suffix or prefix. The `.Encrypt()` extension operates on `PropertyBuilder<T>` in EF Core configuration — it never adds attributes to entity classes. This rule catches developers who try to re-implement attribute-based encryption (the pattern the design deliberately avoids). Diagnostic: `SK0302: Encryption attributes must not be placed on domain entity types. Use the EF Core PropertyBuilder.Encrypt() extension in IEntityTypeConfiguration instead.`
+
+**Rule SK0303 — `IEncryptionRotationJob` must not be injected in domain or application layer types:**
+`IEncryptionRotationJob` is a persistence-layer concern — triggering rotation is an infrastructure operation that belongs in a hosted service, Hangfire job, Temporal activity, or management controller. It must not be injected in a MediatR handler, domain service, or any type in `03.Domain` or `05.Application`. Diagnostic: `SK0303: IEncryptionRotationJob must not be injected in Domain or Application layer types. Register rotation as a hosted service, Hangfire job, or management endpoint.`
+
+**Rule SK0304 — `EncryptedValueConverter` must not be instantiated directly in entity configurations:**
+Downstream entity configuration classes (implementing `IEntityTypeConfiguration<T>`) must use `.Encrypt()` on `PropertyBuilder<T>` — not call `new EncryptedValueConverter<T>(...)` directly and pass it to `.HasConversion(converter)`. The model convention wires the converter automatically; bypassing it produces duplicate or inconsistent converter registration. Diagnostic: `SK0304: Do not instantiate EncryptedValueConverter<T> directly in entity configurations. Use the .Encrypt() PropertyBuilder extension — EncryptionModelConvention applies the converter automatically.`
+
+All rules must have test fixtures in `SharedKernel.ArchitectureTests` exercising both the violation case (which must fire the diagnostic) and the compliant case (which must not). Rules SK0301 and SK0302 apply at NetArchTest level (assembly reference and attribute reflection checks). Rules SK0303 and SK0304 may be Roslyn analyzer diagnostics or NetArchTest checks, whichever is more precise for the pattern.
+
+#### Why this is needed
+
+With hundreds of services consuming the SharedKernel, some developers will attempt to add `[Encrypted]` attributes directly to domain entities (familiar from other ORM frameworks), or inject `EncryptedValueConverter<T>` directly into entity configurations because IntelliSense surfaces it. Others may attempt to trigger key rotation from a MediatR handler (wrong layer). Rule-as-code at the governance level makes all four patterns impossible to ship undetected — they produce IDE squiggles and CI failures. This is especially important for the encryption subsystem because the misuse patterns are either security violations (wrong-layer crypto) or correctness violations (duplicate converter registration causing double-encryption).
+
+#### Acceptance criteria
+- [ ] `SK0301` fires when `AesGcm`, `Aes`, or `SymmetricAlgorithm` is referenced in `03.Domain` or `05.Application` namespace types
+- [ ] `SK0301` does not fire for types in `06.Persistence` or `12.Security`
+- [ ] `SK0302` fires when a class in `03.Domain` carries an attribute whose name matches `*Encrypt*` or `*Encrypted*`
+- [ ] `SK0302` does not fire for non-domain types
+- [ ] `SK0303` fires when `IEncryptionRotationJob` is injected (constructor or property) in a type in `03.Domain` or `05.Application`
+- [ ] `SK0303` does not fire for hosted services, Hangfire jobs, Temporal activities, or controller types
+- [ ] `SK0304` fires when `EncryptedValueConverter<T>` is directly instantiated in an `IEntityTypeConfiguration<T>` implementation
+- [ ] `SK0304` does not fire for `EncryptionModelConvention` itself (the legitimate internal instantiation)
+- [ ] All four rules have compliant-pass and violation-fire test fixtures
+- [ ] `00.Governance/CLAUDE.md` updated with the four new rules, rationale, and exemption lists
 - [ ] All existing governance tests pass — no regressions
 ---
