@@ -20,6 +20,8 @@ This document covers how to consume each package in the `00.Governance` capabili
   - [SK0008 — AggregateRootDispatchCoupling](#sk0008-aggregaterootdispatchcoupling)
   - [SK0009 — DomainEventMissingVersionAttribute](#sk0009-domaineventmissingversionattribute)
   - [SK0010 — SpecificationOrderingConflict](#sk0010-specificationorderingconflict)
+  - [SK0201 — TenantedDbContextOnModelCreatingGuard](#sk0201-tenanteddbcontextonmodelcreatingguard)
+  - [SK0202 — IgnoreQueryFiltersOutsideTenantedRepository](#sk0202-ignorequeryfiltersoutsidetenantedrepository)
 - [SharedKernel.ArchitectureTests — Layering Rules](#sharedkernelarchitecturetests--layering-rules)
   - [Referencing the Package](#referencing-the-package)
   - [Using SharedKernelLayeringRules](#using-sharedkernellayeringrules)
@@ -659,6 +661,201 @@ public class ActiveOrdersSpec : Specification<Order>
 
 Suppress inline with `#pragma warning disable SK0010 / restore SK0010`, or project-wide via
 `<NoWarn>$(NoWarn);SK0010</NoWarn>`.
+
+---
+
+### SK0201 — TenantedDbContextOnModelCreatingGuard
+
+**Category:** Design | **Severity:** Warning | **ID Block:** 02xx (multi-tenancy)
+
+#### Rationale
+
+`TenantedDbContext.OnModelCreating` registers the global EF Core query filter that restricts
+all queries to the current tenant's rows. Any subclass that overrides `OnModelCreating` and
+omits `base.OnModelCreating(...)` silently removes this filter — all subsequent queries return
+rows across all tenant boundaries without any error, warning, or runtime exception. This is a
+silent data-leak class of bug.
+
+SK0201 enforces that every `TenantedDbContext` override of `OnModelCreating` contains at least
+one of:
+
+- `base.OnModelCreating(modelBuilder)` — the normal case
+- `ApplyTenantFilters(modelBuilder)` (simple name, or any explicit receiver) — for advanced
+  multi-context patterns where the base call must be deferred
+
+**Limitation:** The check is syntax-only within a single file. If the inheritance chain spans
+multiple files (e.g., `MyContext → IntermediateContext → TenantedDbContext` across three
+files), only the immediate `BaseList` is inspected. For such chains, document the ancestry in
+a comment near the override.
+
+#### Violating Example
+
+```csharp
+public class OrderDbContext : TenantedDbContext
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // SK0201: 'OrderDbContext.OnModelCreating' overrides TenantedDbContext but does not
+        // call 'base.OnModelCreating' or 'ApplyTenantFilters' — the global tenant query
+        // filter will be silently removed
+        modelBuilder.Entity<Order>().ToTable("Orders");
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public class OrderDbContext : TenantedDbContext
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder); // ← registers the global tenant filter
+        modelBuilder.Entity<Order>().ToTable("Orders");
+    }
+}
+```
+
+Or when the filter must be applied explicitly:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    ApplyTenantFilters(modelBuilder); // ← explicit filter registration
+    modelBuilder.Entity<Order>().ToTable("Orders");
+}
+```
+
+#### CI Configuration
+
+To escalate to an error in CI:
+
+```xml
+<PropertyGroup>
+  <WarningsAsErrors>$(WarningsAsErrors);SK0201</WarningsAsErrors>
+</PropertyGroup>
+```
+
+Or via `.editorconfig`:
+
+```
+[*.cs]
+dotnet_diagnostic.SK0201.severity = error
+```
+
+#### Suppression Instructions
+
+Suppress per-site with `#pragma warning disable SK0201` when the tenant filter is intentionally
+omitted or applied via a mechanism not detectable at syntax level. Always add an inline comment
+explaining the rationale:
+
+```csharp
+#pragma warning disable SK0201 // Tenant filter applied via custom OnModelFinalized — see TenantBootstrap.cs
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    // ... custom wiring that defers filter registration
+}
+#pragma warning restore SK0201
+```
+
+---
+
+### SK0202 — IgnoreQueryFiltersOutsideTenantedRepository
+
+**Category:** Design | **Severity:** Warning | **ID Block:** 02xx (multi-tenancy)
+
+#### Rationale
+
+`IgnoreQueryFilters()` bypasses **all** EF Core global query filters registered on a
+`DbContext`, including the tenant isolation filter applied by `TenantedDbContext`. Calling it
+from application-layer services, MediatR handlers, or arbitrary repositories silently returns
+rows across all tenant boundaries without any audit trail or intentional decision record.
+
+The only sanctioned call sites are:
+
+1. **Inside `SharedKernel.Persistence.EfCore*` namespaces** — the persistence implementation
+   layer may use `IgnoreQueryFilters()` deliberately (e.g., soft-delete cleanup jobs,
+   cross-tenant admin APIs that are purpose-built within the platform).
+2. **Inside a class named `TenantedRepository` (exact match)** — the designated cross-tenant
+   repository base class is the single sanctioned call site outside the platform namespace.
+
+#### Violating Example
+
+```csharp
+namespace Application.Repositories
+{
+    public class OrderQueryService
+    {
+        private readonly IQueryable<Order> _query;
+
+        public IQueryable<Order> GetAllOrdersAcrossTenants()
+        {
+            // SK0202: 'IgnoreQueryFilters()' must only be called inside the
+            // 'SharedKernel.Persistence.EfCore' namespace or from 'TenantedRepository'
+            return _query.IgnoreQueryFilters();
+        }
+    }
+}
+```
+
+#### Compliant Fix — use TenantedRepository
+
+```csharp
+// In SharedKernel.Persistence.EfCore (or a class named TenantedRepository):
+public abstract class TenantedRepository
+{
+    protected IQueryable<T> CrossTenantQuery<T>(IQueryable<T> source)
+        => source.IgnoreQueryFilters(); // ← exempt: inside TenantedRepository
+}
+
+// In application layer — call the named method, never IgnoreQueryFilters() directly:
+public class AdminOrderService : TenantedRepository
+{
+    public IReadOnlyList<Order> GetAllOrders()
+        => CrossTenantQuery(_orders).ToList();
+}
+```
+
+#### Exemption List
+
+| Exemption | Scope | Rationale |
+|-----------|-------|-----------|
+| Namespace prefix `SharedKernel.Persistence.EfCore` | All sub-namespaces | Platform persistence layer — deliberate cross-tenant operations are permitted here |
+| Class name `TenantedRepository` (exact) | Single designated base class | Provides controlled cross-tenant query access with a named, auditable surface |
+
+To add a new exemption, document it in `00.Governance/CLAUDE.md` under the SK0202 rule entry
+**before** applying a `#pragma warning disable SK0202` suppression.
+
+#### CI Configuration
+
+To escalate to an error in CI:
+
+```xml
+<PropertyGroup>
+  <WarningsAsErrors>$(WarningsAsErrors);SK0202</WarningsAsErrors>
+</PropertyGroup>
+```
+
+Or via `.editorconfig`:
+
+```
+[*.cs]
+dotnet_diagnostic.SK0202.severity = error
+```
+
+#### Suppression Instructions
+
+Suppress per-site with `#pragma warning disable SK0202`. Always document the business reason
+and who approved the cross-tenant access:
+
+```csharp
+#pragma warning disable SK0202 // Cross-tenant purge — approved by infra-team, ticket INF-4421
+var deletedCount = await _context.Set<AuditLog>()
+    .IgnoreQueryFilters()
+    .Where(x => x.CreatedAt < cutoff)
+    .ExecuteDeleteAsync(ct);
+#pragma warning restore SK0202
+```
 
 ---
 

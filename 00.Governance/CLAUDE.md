@@ -223,6 +223,48 @@ SK0304  DirectEncryptedValueConverterInstantiation
                 general application code that is not an EF Core configuration class is
                 not subject to this rule.
 
+SK0201  TenantedDbContextOnModelCreatingGuard
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A class whose BaseList contains TenantedDbContext (simple name match) declares
+                an override of OnModelCreating; the method body does not contain any invocation
+                of base.OnModelCreating(...) or ApplyTenantFilters(...) (simple name or member
+                access, any receiver). Neither found → fires SK0201 on the method identifier.
+    Fix       : Add base.OnModelCreating(modelBuilder) as the first call in the override body,
+                or explicitly call this.ApplyTenantFilters(modelBuilder) when the base call must
+                be deferred (advanced multi-context patterns only; document the rationale).
+    Suppress  : Per-site via #pragma warning disable SK0201 with a comment explaining why the
+                tenant filter is intentionally omitted or applied via another mechanism.
+    Note      : Syntax-only check scoped to the current file. Cross-file or cross-assembly
+                inheritance chains (e.g., class A : B : TenantedDbContext, where B is in a
+                different file) are not resolved — only the immediate BaseList is inspected.
+                For deep inheritance trees document the chain in a comment near the override.
+                ID block: 02xx (multi-tenancy). Introduced in WO-020 SK.00.TenantedDbContextGuard.
+
+SK0202  IgnoreQueryFiltersOutsideTenantedRepository
+    Category  : Design
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose simple method name is IgnoreQueryFilters
+                and whose argument list is empty (zero arguments) is found outside:
+                  (a) any namespace whose qualified name starts with SharedKernel.Persistence.EfCore
+                  (b) any class whose Identifier.Text is exactly "TenantedRepository"
+                Namespace check is the same SyntaxNode.Parent walk used by SK0001/SK0007.
+                Class check is exact string match on the immediate ClassDeclarationSyntax.
+    Fix       : Move the IgnoreQueryFilters() call into a method on the TenantedRepository base
+                class, or into a type inside SharedKernel.Persistence.EfCore. If a cross-tenant
+                query is genuinely required in another layer, subclass TenantedRepository and
+                expose a purpose-named query method — never scatter raw IgnoreQueryFilters() calls
+                across the codebase.
+    Suppress  : Per-site via #pragma warning disable SK0202 with an inline comment stating the
+                business reason for the cross-tenant access and who approved the exemption.
+    Exempt    : Namespace prefix SharedKernel.Persistence.EfCore (and all sub-namespaces) —
+                the persistence implementation layer may use IgnoreQueryFilters() deliberately.
+                Class exact name TenantedRepository — the designated cross-tenant repository
+                base class is the single sanctioned call site outside the platform namespace.
+                Any additional exemption class or namespace must be documented in this file
+                before applying a suppression.
+    Note      : ID block: 02xx (multi-tenancy). Introduced in WO-020 SK.00.TenantedDbContextGuard.
+
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
@@ -931,6 +973,8 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `EncryptionModelConvention` exemption in `NoDirectEncryptedValueConverterInstantiationPredicate` is by exact type name (`TypeDefinition.Name == "EncryptionModelConvention"`). If the convention class is renamed, update both the predicate and this rule entry in the same PR.
 - All four predicates (SK0301–SK0304) reuse the Mono.Cecil `TypeDefinition` access pattern established by `DoesNotContainThrowIlPredicate`. No new NuGet dependency — the existing `Mono.Cecil >= 0.11.5` explicit reference in `SharedKernel.ArchitectureTests` covers all four.
 - `EncryptionPatternGuardRules` factory methods are called with domain and application assemblies supplied by the consuming test project via `typeof(SomeDomainType).Assembly`. The factory methods never hard-code assembly paths.
+- SK0201 `TenantedDbContextOnModelCreatingAnalyzer` scans `MethodDeclarationSyntax` nodes named `OnModelCreating` with the `override` modifier. Ancestry check walks `ClassDeclarationSyntax.BaseList.Types` for a type whose simple name is `TenantedDbContext`; if not found on the immediate class, walks parent `ClassDeclarationSyntax` nodes in the same file (syntax-only — cross-file ancestry is not resolved). Body scan calls `DescendantNodes().OfType<InvocationExpressionSyntax>()` on the method body and checks for: (a) `MemberAccessExpressionSyntax` with `BaseExpressionSyntax` receiver and `Name.Identifier.Text == "OnModelCreating"`, or (b) any invocation (simple name or member access) whose method name is `"ApplyTenantFilters"`. Fires on the method identifier if neither found. No suppression namespace — suppress per-site via `#pragma warning disable SK0201`.
+- SK0202 `IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer` scans `InvocationExpressionSyntax` nodes. Filter: simple method name (from `IdentifierNameSyntax` or `MemberAccessExpressionSyntax.Name`) is `"IgnoreQueryFilters"` AND argument list is empty (zero arguments). Two exemptions checked in order: (1) namespace walk via `SyntaxNode.Parent` for any `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` whose `Name.ToString()` starts with `"SharedKernel.Persistence.EfCore"` — same pattern as SK0001/SK0007; (2) `FirstAncestorOrSelf<ClassDeclarationSyntax>()` with `Identifier.Text == "TenantedRepository"` (exact string match). Reports on the full invocation expression if neither exemption applies. Any additional exemption class or namespace must be documented in `00.Governance/CLAUDE.md` under SK0202 before applying suppression.
 - RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
@@ -977,3 +1021,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-03] EfCorePackageHygieneRules added to architecture test contracts (three predicates: NoSpecificationEvaluatorDowncastInEfCoreAssembly, IUnitOfWorkImplementorsMustHaveExactlyOneConstructor, ApplicationLayerMustNotReferenceDbContextTransaction); NoSpecificationEvaluatorDowncastPredicate, SingleConstructorPredicate, NoDbContextTransactionInApplicationPredicate ICustomRules documented; three new implementation rules added — WO-017 P-103
 - [2026-06-02] SK0011 GuidFormatCodeMisuse added to diagnostic registry (requires SemanticModel.GetTypeInfo — first SK analyzer with semantic check; fires on Guid.ToString("N"/"B"/"P"/"X"); no suppression namespace); PersistenceInterfaceOwnershipRules added to architecture test contracts (four predicates: IUserContextDeclaredOnlyInSecurityAbstractions, TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions, IReadRepositoryMustNotExposeIQueryable, NoGetByIdAsyncOnReadRepository); RepositoryContractCompletenessRules added (two predicates: AllRepositoryImplementorsMustHaveExistsAsync, AllReadRepositoryImplementorsMustHaveGetByIdsAsync); InterfaceDeclarationOwnershipPredicate, NoGetByIdOnReadRepositoryPredicate, HasRequiredMethodPredicate ICustomRules documented; eleven new implementation rules added — WO-014 P-083, WO-016 P-096
 - [2026-06-04] SK0301 DirectCryptoInDomainOrApplication, SK0302 EncryptionAttributeOnDomainEntity, SK0303 EncryptionRotationJobInDomainOrApplication, SK0304 DirectEncryptedValueConverterInstantiation added to diagnostic registry (new 03xx block for encryption-domain rules; all implemented as NetArchTest ICustomRule predicates); EncryptionPatternGuardRules static class added to architecture test contracts with four predicates (NoCryptoCipherInDomainOrApplication, NoEncryptionAttributeOnDomainEntities, NoEncryptionRotationJobInjectionInDomainOrApplication, NoDirectEncryptedValueConverterInstantiation); four new ICustomRule predicates documented; seven new implementation rules added — WO-019 P-114
+- [2026-06-05] SK0201 TenantedDbContextOnModelCreatingGuard and SK0202 IgnoreQueryFiltersOutsideTenantedRepository added to diagnostic registry (new 02xx multi-tenancy block); both implemented as Roslyn analyzers (syntax-only, no semantic model); SK0201 body-scan checks base.OnModelCreating and ApplyTenantFilters via InvocationExpressionSyntax descendants; SK0202 namespace-walk and class-name exemption follow the SK0001/SK0007 SyntaxNode.Parent pattern; two new implementation rules added — WO-020 SK.00.TenantedDbContextGuard

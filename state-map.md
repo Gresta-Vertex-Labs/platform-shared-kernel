@@ -64,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Persistence Architecture Enforcement | `●` | All 13 tasks complete — PersistenceLayerProtectionRules (OnlyEfUnitOfWorkMayCallSaveChanges, RepositoriesMustNotExposeIQueryable, DomainAssembliesNeverReferencePersistenceStack) implemented, tested, and documented. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for DB Encryption Pattern Correctness | `●` | All 14 tasks complete — EncryptionPatternGuardRules (SK0301–SK0304) with four ICustomRule predicates implemented and tested; 57 architecture tests passing. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
@@ -1790,6 +1790,11 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-04] Governance → Tests (●) — promoted from SK.00.Tests (state-map-phase)
 - [2026-06-04] Governance → Docs (●) — promoted from SK.00.Docs (state-map-phase)
 - [2026-06-04] Governance → Persistence Architecture Enforcement (●) — promoted from SK.00.PersistenceEnforcement (state-map-phase)
+- [2026-06-05] Governance → Persistence Architecture Rules Phase 2 — Interface Migration Enforcement (●) — promoted from SK.00.PersistenceEnforcement2 (state-map-phase)
+- [2026-06-05] Governance → Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness (●) — promoted from SK.00.PersistenceContractCompleteness (state-map-phase)
+- [2026-06-05] Governance → Governance: Architecture Rules for EfCore Package Hygiene (●) — promoted from SK.00.EfCorePackageHygiene (state-map-phase)
+- [2026-06-05] Governance → Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule (●) — promoted from SK.00.TenantedDbContextGuard (state-map-phase)
+- [2026-06-05] Governance → Governance: Architecture Rules for DB Encryption Pattern Correctness (●) — promoted from SK.00.EncryptionPatternGuard (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
