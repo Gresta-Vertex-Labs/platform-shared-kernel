@@ -71,7 +71,7 @@ Group the remaining (unblocked) pending phases by their **Domain** field.
 | 04.Contracts | 04 | `contracts-arch-planner` |
 | 05.Application | 05 | _(no agent — deferred)_ |
 | 06.Persistence | 06 | `persistence-arch-planner` |
-| 07.Messaging | 07 | _(no agent — deferred)_ |
+| 07.Messaging | 07 | `messaging-arch-planner` |
 | 08.Storage | 08 | _(no agent — deferred)_ |
 | 09.Search | 09 | _(no agent — deferred)_ |
 | 10.Intelligence | 10 | _(no agent — deferred)_ |
