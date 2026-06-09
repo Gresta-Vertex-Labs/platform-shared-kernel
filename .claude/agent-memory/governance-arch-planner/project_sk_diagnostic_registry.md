@@ -39,14 +39,24 @@ SK diagnostic ID registry as of 2026-06-04. Next available sequential ID: **SK00
 | SK0303 | EncryptionRotationJobInDomainOrApplication | Defined (WO-019 P-114) — Warning; IEncryptionRotationJob constructor injection in domain/application types; NetArchTest ICustomRule (NoEncryptionRotationJobInjectionPredicate) |
 | SK0304 | DirectEncryptedValueConverterInstantiation | Defined (WO-019 P-114) — Warning; new EncryptedValueConverter<T>() called in IEntityTypeConfiguration<T> implementors other than EncryptionModelConvention; NetArchTest ICustomRule (NoDirectEncryptedValueConverterInstantiationPredicate) |
 
+## Messaging-domain block (SK0701–SK0704) — WO-020 P-123 messaging abstraction rules
+
+| ID | Rule Name | Status |
+|----|-----------|--------|
+| SK0701 | NoDirectBusInjectionOutsideMessaging | Defined (WO-020 P-123) — Warning; IBus/IPublishEndpoint/ISendEndpointProvider constructor injection outside SharedKernel.Messaging.*; NetArchTest ICustomRule (NoDirectBusInjectionOutsideMessagingPredicate) |
+| SK0702 | NoEventPublisherInDomainLayer | Defined (WO-020 P-123) — Warning; IEventPublisher constructor injection in domain-layer types (namespace or interface signal); NetArchTest ICustomRule (NoEventPublisherInDomainLayerPredicate) |
+| SK0703 | MessageBusSingletonRegistration | Defined (WO-020 P-123) — Warning; AddSingleton<IMessageBus,...>() or AddSingleton<IEventPublisher,...>(); Roslyn syntax-only analyzer (no SemanticModel) |
+| SK0704 | HardcodedQueueUriInGetSendEndpoint | Defined (WO-020 P-123) — Warning; new Uri("queue:...") or new Uri("exchange:...") literal passed to GetSendEndpoint; Roslyn syntax-only analyzer (no SemanticModel) |
+
 ## Block conventions
 
 - **SK0001–SK0011**: general SharedKernel coding patterns (Roslyn analyzers, sequential)
 - **SK0012–SK0199**: reserved for future sequential general-purpose rules; next is SK0012
 - **SK0201–SK0299**: EF Core / multi-tenancy domain block; next is SK0203
 - **SK0301–SK0399**: encryption subsystem block; next is SK0305
+- **SK0701–SK0799**: messaging-domain block (domain 07); next is SK0705
 - Never backfill gaps between blocks. Never reuse a published ID even if a rule is renamed.
 
-**Why:** Tracking this prevents ID gaps, reuse, and block collisions. The 03xx block was introduced non-sequentially (skipping SK0012) as a deliberate namespace decision for the encryption domain — document it clearly so future phases use the correct block.
+**Why:** Tracking this prevents ID gaps, reuse, and block collisions. Block numbers follow the domain number (02xx = domain 02 EfCore/multi-tenancy, 03xx = encryption subsystem, 07xx = messaging domain). The 07xx block was introduced in WO-020 P-123.
 
-**How to apply:** Before assigning a new SK ID, verify this registry. Use SK0012 for the next general-purpose rule, SK0203 for the next multi-tenancy rule, SK0305 for the next encryption rule. Update this memory file whenever a new rule is assigned.
+**How to apply:** Before assigning a new SK ID, verify this registry. Use SK0012 for the next general-purpose rule, SK0203 for the next multi-tenancy rule, SK0305 for the next encryption rule, SK0705 for the next messaging rule. Update this memory file whenever a new rule is assigned.

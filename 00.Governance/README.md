@@ -22,6 +22,8 @@ This document covers how to consume each package in the `00.Governance` capabili
   - [SK0010 — SpecificationOrderingConflict](#sk0010-specificationorderingconflict)
   - [SK0201 — TenantedDbContextOnModelCreatingGuard](#sk0201-tenanteddbcontextonmodelcreatingguard)
   - [SK0202 — IgnoreQueryFiltersOutsideTenantedRepository](#sk0202-ignorequeryfiltersoutsidetenantedrepository)
+  - [SK0703 — MessageBusSingletonRegistration](#sk0703-messagebussingletonregistration)
+  - [SK0704 — HardcodedQueueUriInGetSendEndpoint](#sk0704-hardcodedqueueuriingetsendendpoint)
 - [SharedKernel.ArchitectureTests — Layering Rules](#sharedkernelarchitecturetests--layering-rules)
   - [Referencing the Package](#referencing-the-package)
   - [Using SharedKernelLayeringRules](#using-sharedkernellayeringrules)
@@ -31,6 +33,7 @@ This document covers how to consume each package in the `00.Governance` capabili
   - [DomainLayerPurityRules — Domain Layer Purity Enforcement](#domainlayerpurityrules--domain-layer-purity-enforcement)
   - [DomainGoldStandardRules — Domain Convention Enforcement](#domaingoldstandardrules--domain-convention-enforcement)
   - [ContractsPurityRules — Contracts Layer Purity Enforcement](#contractspurityrules--contracts-layer-purity-enforcement)
+  - [MessagingArchitectureRules — Messaging Boundary Enforcement](#messagingarchitecturerules--messaging-boundary-enforcement)
 - [SharedKernel.Linter — EditorConfig and CSharpier](#sharedkernellinter--editorconfig-and-csharpier)
   - [Applying the Linter Package](#applying-the-linter-package)
   - [CI Enforcement](#ci-enforcement)
@@ -855,6 +858,105 @@ var deletedCount = await _context.Set<AuditLog>()
     .Where(x => x.CreatedAt < cutoff)
     .ExecuteDeleteAsync(ct);
 #pragma warning restore SK0202
+```
+
+---
+
+### SK0703 — MessageBusSingletonRegistration
+
+**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+
+SK0703 fires when `AddSingleton` is invoked with a type argument whose simple name starts with
+`"IMessageBus"` or `"IEventPublisher"`.
+
+**Rationale:** MassTransit's consume pipeline creates a new scope for each consumed message.
+Registering `IMessageBus` or `IEventPublisher` as a singleton causes scope pollution and race
+conditions under concurrent load — the singleton instance is shared across all consume scopes
+and loses per-scope state (outbox entries, correlation IDs, etc.). The correct lifetime is
+`Scoped`, which aligns with the MassTransit per-consume-scope model.
+
+**Offending pattern:**
+
+```csharp
+// SK0703: Singleton registration causes scope pollution under concurrent message processing
+services.AddSingleton<IMessageBus, MassTransitMessageBus>();
+services.AddSingleton<IEventPublisher, MassTransitEventPublisher>();
+```
+
+**Compliant pattern:**
+
+```csharp
+// Correct: Scoped lifetime aligns with MassTransit's per-consume-scope model
+services.AddScoped<IMessageBus, MassTransitMessageBus>();
+services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
+```
+
+**Suppression:** Per-call-site only — use `#pragma warning disable SK0703` exclusively when
+the DI container semantics are provably equivalent to scoped behaviour. Always document the
+reason inline:
+
+```csharp
+#pragma warning disable SK0703 // Test harness uses a no-op singleton stub — not a real MassTransit bus
+services.AddSingleton<IMessageBus, NullMessageBus>();
+#pragma warning restore SK0703
+```
+
+**CI configuration:**
+```xml
+<WarningsAsErrors>$(WarningsAsErrors);SK0703</WarningsAsErrors>
+```
+
+---
+
+### SK0704 — HardcodedQueueUriInGetSendEndpoint
+
+**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+
+SK0704 fires when `GetSendEndpoint` is called with a `new Uri(...)` argument whose string
+literal value starts with `"queue:"` or `"exchange:"` (case-insensitive).
+
+**Rationale:** Hardcoded queue or exchange URI strings tie producers to a specific broker
+topology. When the queue name, exchange name, or transport changes (e.g., RabbitMQ →
+Azure Service Bus, or a queue rename during a rolling deployment), every call site must be
+updated manually. Convention-based endpoint resolution via
+`IEndpointNameFormatter.GetDestinationAddress<TMessage>()` centralises the naming concern
+and survives broker configuration changes automatically.
+
+**Offending pattern:**
+```csharp
+// SK0704: hardcoded "queue:" URI ties producer to RabbitMQ topology
+var endpoint = await provider.GetSendEndpoint(new Uri("queue:order-commands"));
+
+// SK0704: hardcoded "exchange:" URI also flagged
+var endpoint = await provider.GetSendEndpoint(new Uri("exchange:order-events"));
+```
+
+**Compliant pattern:**
+```csharp
+// Convention-based resolution — survives broker changes and rename refactors
+var address = _formatter.GetDestinationAddress<OrderCommand>();
+var endpoint = await provider.GetSendEndpoint(address);
+```
+
+**Non-literal form (not flagged):**
+```csharp
+// No diagnostic: the argument is a variable, not a string literal
+var endpoint = await provider.GetSendEndpoint(new Uri(configuredAddress));
+```
+
+**Suppression:** Per-call-site only — use `#pragma warning disable SK0704` when a fixed,
+environment-invariant queue address is genuinely required (e.g., a dead-letter queue URI in
+an isolated test fixture). Always document the rationale inline:
+
+```csharp
+#pragma warning disable SK0704 // Dead-letter queue — fixed broker-internal address, not service-configurable
+var dlq = await provider.GetSendEndpoint(new Uri("queue:dead-letter"));
+#pragma warning restore SK0704
+```
+
+**CI configuration:**
+```xml
+<WarningsAsErrors>$(WarningsAsErrors);SK0704</WarningsAsErrors>
 ```
 
 ---

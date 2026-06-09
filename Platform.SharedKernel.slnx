@@ -53,6 +53,7 @@
   </Folder>
   <Folder Name="/07.Messaging/">
     <Project Path="07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.csproj" />
+    <Project Path="07.Messaging/SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.Tests/SharedKernel.Messaging.Abstractions.Tests.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.csproj" />
     <Project Path="07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.Tests/SharedKernel.Messaging.MassTransit.Tests.csproj" />
   </Folder>

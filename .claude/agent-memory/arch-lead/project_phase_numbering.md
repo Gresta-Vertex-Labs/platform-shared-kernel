@@ -5,27 +5,37 @@ metadata:
   type: project
 ---
 
-As of 2026-06-04, the last phase written to `state-map.md` Phase Backlog is **P-114** under **WO-019**.
+As of 2026-06-08, the last phase written to `state-map.md` Phase Backlog is **P-133** under **WO-021**.
 
-Next new phase must be **P-115**. Next new Work Order must be **WO-020**.
+Next new phase must be **P-134**. Next new Work Order must be **WO-022**.
 
 **How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file.
 
-**WO-019 context:** DB-level field encryption for EfCore persistence layer — 4 phases across 2 domains:
-- P-111 06.Persistence: EncryptionOptions + PersistenceServiceOptions + AuditInterceptor service-name fallback + EfCorePersistenceBuilder.WithEncryption() / .WithServiceName()
-- P-112 06.Persistence: EncryptedValueConverter<string> (AES-256-GCM, versioned ciphertext `v{ver}:{B64}`), .Encrypt() PropertyBuilder extension, EncryptionModelConvention (IModelFinalizingConvention), IEncryptionRotationJob + EncryptionRotationService base, EncryptionKeyNotFoundException — depends P-111
-- P-113 06.Persistence: Tests — converter round-trip, tamper detection, hot-reload, legacy plaintext, convention integration, rotation idempotency, service-name audit, builder wiring — depends P-111, P-112
-- P-114 00.Governance: Architecture rules SK0301 (no AES in Domain/Application), SK0302 (no Encrypt attributes on domain types), SK0303 (IEncryptionRotationJob not in Domain/Application), SK0304 (no direct EncryptedValueConverter instantiation in configs) — depends P-112
+**WO-020 context:** 07.Messaging domain initial delivery (P-115–P-124) — 7 messaging phases + 3 cross-domain (ServiceDefaults health checks P-122, Governance MSG rules P-123, Testing harness helpers P-124).
 
-**Domains touched:** 06.Persistence (already ●), 00.Governance (already ●) — no `state-map-phase` calls needed.
+**WO-021 context:** 07.Messaging deep architectural review gap fill — 9 phases across 4 domains:
+- P-125 07.Messaging: IFaultConsumer<T>, FaultExceptionInfo, CircuitBreakerOptions in Abstractions
+- P-126 07.Messaging: WithCircuitBreaker(), AddFaultConsumer adapter in MassTransit — depends P-125
+- P-127 07.Messaging: IMessageScheduler, SchedulingOptions (Abstractions), MassTransitMessageScheduler, WithInMemoryScheduler(), WithQuartzScheduler() — depends P-125
+- P-128 07.Messaging: SagaStateBase, SagaStateMachineBase<TSaga>, AddSaga<T>, WithEntityFrameworkSagaRepository — depends P-125
+- P-129 07.Messaging: BatchConsumerBase<T>, BatchOptions, AddBatchConsumer<T>() — no dependency
+- P-130 07.Messaging: Fix Build() calling Services.BuildServiceProvider() — critical anti-pattern fix — no dependency
+- P-131 07.Messaging: ISendEndpointResolver, ConventionSendEndpointResolver, WithSendEndpointRoute<T> — depends P-125
+- P-132 13.ServiceDefaults: WithMessagingTelemetry() — MassTransit + SharedKernel.Messaging ActivitySource wiring — depends P-117, P-118
+- P-133 00.Governance: MSG0105-MSG0108 architecture rules — depends P-125, P-126, P-127, P-128
 
-**Key architectural decisions made in WO-019:**
-1. AES-256-GCM chosen over AES-CBC+HMAC — single authenticated primitive, no separate MAC step
-2. Versioned ciphertext format `v{version}:{Base64(nonce||ciphertext||tag)}` is the minimum metadata for key rotation transparency — version prefix in stored value identifies the decryption key
-3. IModelFinalizingConvention is the correct EF Core extension point — runs after all IEntityTypeConfiguration implementations, has full model visibility, zero domain leakage
-4. `.Encrypt()` annotation-only on PropertyBuilder — writes `SharedKernel:Encrypt` annotation; convention wires the converter; entity types carry no encryption attributes
-5. IOptionsMonitor<EncryptionOptions> (not IOptionsSnapshot) — required for singleton converter hot-reload without restart
-6. EncryptionOptions.Enabled == false makes converter a pass-through — toggling Enabled at runtime takes effect without model rebuild
-7. IEncryptionRotationJob abstraction in EfCore package (not Abstractions) — references EF Core types (IDbContextFactory); registered only when .WithEncryption() is called
-8. PersistenceServiceOptions.ServiceName replaces hardcoded "system" in AuditInterceptor.ResolveUserId() — configurable per-service via .WithServiceName()
-9. SharedKernelDbContext gains optional IOptionsMonitor<EncryptionOptions>? constructor parameter — nullable to preserve backward compat for all existing subclasses
+**Key architectural decisions made in WO-021:**
+1. Build() ServiceProvider anti-pattern identified: `Services.BuildServiceProvider()` inside `MessagingBusBuilder.Build()` creates a second root container — fix by using captured `Action<MessagingOptions>?` delegate directly for validation
+2. IFaultConsumer<T> lives in Abstractions (not MassTransit) so fault handler implementations never need a MassTransit reference; adapter lives in MassTransit package
+3. CircuitBreaker ordering rule: retry inner, circuit breaker outer — retry first within current breaker state, then breaker guards against sustained failure
+4. IMessageScheduler interface in Abstractions — zero NuGet deps; MassTransit.IMessageScheduler must never be injected directly outside 07.Messaging
+5. SagaStateBase is a record (not a class) — EF Core mappable, ISagaVersion compatible, platform audit fields standardized
+6. BatchConsumerBase<T> uses IConsumer<Batch<T>> — must be registered via AddBatchConsumer<T>() not AddConsumer<T>() to apply batch configuration
+7. ISendEndpointResolver fixes the hardcoded service-name prefix assumption in SendAsync<T>() — per-type route dictionary takes precedence over convention
+8. Custom ActivitySource("SharedKernel.Messaging", "1.0.0") added to ConsumerBase and MassTransitEventPublisher for platform-namespaced traces
+9. WithMessagingTelemetry() idempotency required — multiple registrations must not duplicate OTel instruments
+
+**Domains touched in WO-021:**
+- 07.Messaging: already ● Published — new phases queued in backlog only; no state-map-phase call made
+- 13.ServiceDefaults: already ○ Not Started — P-132 queued; state-map-phase not called (P-122 already pending from WO-020 also targets this domain)
+- 00.Governance: already ● Complete — P-133 queued in backlog only; no state-map-phase call made

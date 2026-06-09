@@ -1301,6 +1301,135 @@ With hundreds of services consuming the SharedKernel encryption subsystem, four 
 
 ---
 
+## Phase: Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs <!-- phase-key: SK.00.MessagingArchRules -->
+
+> Enforce four critical messaging misuse patterns that the compiler cannot catch: MassTransit transport types injected outside `07.Messaging`, `IEventPublisher` used in the domain layer, `IMessageBus`/`IEventPublisher` registered as singletons, and hardcoded queue/exchange URI strings passed to `GetSendEndpoint`.
+
+### MessagingArchRules — Goal
+
+With hundreds of microservices consuming `SharedKernel.Messaging`, developers under deadline pressure reach for the most IntelliSense-visible type — often `IBus`, `IPublishEndpoint`, or `ISendEndpointProvider` from MassTransit directly, bypassing the abstraction entirely. Without rule-as-code enforcement, transport-specific types leak into application handlers, making transport swaps impossible and breaking the abstraction boundary. Domain types injecting `IEventPublisher` collapse the DDD event propagation model (domain events must remain internal to the domain; integration events flow outward through the application layer via `IDomainEventDispatcher`). Singleton registration of `IMessageBus`/`IEventPublisher` compiles and runs in development but causes scope pollution, race conditions, and incorrect MassTransit consume-scope lifecycle under concurrent production load. Hardcoded `new Uri("queue:...")` strings passed to `GetSendEndpoint` produce environment-specific addresses that break across dev/staging/prod with different broker configurations.
+
+Two rules (SK0701, SK0702) are NetArchTest assembly-level predicates. Two rules (SK0703, SK0704) are Roslyn syntax analyzers for per-call-site enforcement.
+
+### MessagingArchRules — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/MessagingArchitectureRules.cs` — static class housing SK0701 and SK0702 predicate factory methods
+  - `SharedKernel.ArchitectureTests/Predicates/NoDirectBusInjectionOutsideMessagingPredicate.cs` — `ICustomRule`: constructor parameter scan for `IBus`, `IPublishEndpoint`, `ISendEndpointProvider` in types whose namespace does not start with `SharedKernel.Messaging`
+  - `SharedKernel.ArchitectureTests/Predicates/NoEventPublisherInDomainLayerPredicate.cs` — `ICustomRule`: constructor parameter scan for `IEventPublisher` in types implementing `Entity`, `AggregateRoot`, `ValueObject`, `DomainService`, or residing in a `*.Domain.*` namespace
+  - `SharedKernel.Analyzers/Diagnostics/SK0703_MessageBusSingletonRegistrationAnalyzer.cs` — Roslyn analyzer: fires on `AddSingleton<IMessageBus,...>()` or `AddSingleton<IEventPublisher,...>()` call expressions
+  - `SharedKernel.Analyzers/Diagnostics/SK0704_HardcodedQueueUriAnalyzer.cs` — Roslyn analyzer: fires on `new Uri("queue:...")` or `new Uri("exchange:...")` literal argument passed to `GetSendEndpoint`
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0701–SK0704 to diagnostic registry; add `MessagingArchitectureRules` to architecture test contracts section; document all four rules with rationale, exemption lists, and offending/compliant patterns
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### MessagingArchRules — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0701 | NoDirectBusInjectionOutsideMessaging | Design | Warning | `MassTransit.IBus`, `MassTransit.IPublishEndpoint`, or `MassTransit.ISendEndpointProvider` appears as a constructor parameter in a type whose namespace does not start with `SharedKernel.Messaging` — use `IMessageBus` or `IEventPublisher` from SharedKernel.Messaging.Abstractions instead |
+| SK0702 | NoEventPublisherInDomainLayer | Design | Warning | `IEventPublisher` appears as a constructor parameter in a type that implements `Entity`, `AggregateRoot`, `ValueObject`, or `DomainService`, or resides in a `*.Domain.*` namespace — domain events are dispatched internally by `IDomainEventDispatcher`; integration events flow through the application layer only |
+| SK0703 | MessageBusSingletonRegistration | Usage | Warning | `services.AddSingleton<IMessageBus,...>()` or `services.AddSingleton<IEventPublisher,...>()` detected — both interfaces must be registered as scoped to match MassTransit's per-consume-scope lifetime model; singleton registration causes scope pollution and race conditions under concurrent load |
+| SK0704 | HardcodedQueueUriInGetSendEndpoint | Usage | Warning | A `new Uri(string)` expression with a literal value starting with `"queue:"` or `"exchange:"` is passed as an argument to a `GetSendEndpoint` invocation — endpoint addresses must be resolved via `IEndpointNameFormatter` convention; hardcoded URIs break across environments |
+
+### MessagingArchRules — Implementation Rules
+
+1. `MessagingArchitectureRules.NoDirectBusInjectionOutsideMessaging(params Assembly[] assemblies)` uses `NoDirectBusInjectionOutsideMessagingPredicate` — an `ICustomRule` that iterates `TypeDefinition.Methods` where `IsConstructor` is true. For each constructor, inspects each `ParameterDefinition.ParameterType.Name` for exact name match in `{"IBus", "IPublishEndpoint", "ISendEndpointProvider"}`. Exemption guard (first check): types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Messaging"` return true (pass) unconditionally — `07.Messaging` package types may reference MassTransit transport interfaces freely. Returns false (rule violated) with failure message naming the offending type, constructor parameter name, and the recommended alternative (`IMessageBus` or `IEventPublisher`). Returns `ConditionList`.
+
+2. Namespace exemption for SK0701 covers both `SharedKernel.Messaging.Abstractions` and `SharedKernel.Messaging.MassTransit` (and all sub-namespaces) via the `StartsWith("SharedKernel.Messaging")` prefix check. No additional exemptions. Any team requesting an exemption must document it in this file before applying a suppression.
+
+3. `MessagingArchitectureRules.NoEventPublisherInDomainLayer(Assembly domainAssembly)` uses `NoEventPublisherInDomainLayerPredicate` — an `ICustomRule` that inspects constructor parameters for the simple name `"IEventPublisher"` (exact match). Scope: the predicate evaluates all types in the supplied assembly. Two scope signals are evaluated in sequence: (a) the type's `TypeDefinition.Namespace` contains `".Domain."` as a substring (namespace-based signal), OR (b) the type implements an interface whose `InterfaceType.Name` is in `{"IEntity", "IAggregateRoot", "IValueObject", "IDomainService"}` (interface-based signal). If either signal is true AND a constructor parameter type name is `"IEventPublisher"`, the predicate returns false with a failure message naming the offending type, the offending constructor parameter, and the correct flow (`IDomainEventDispatcher` → application handler → `IEventPublisher`). Returns `ConditionList`.
+   - Note: the namespace signal `.Domain.` (with dots) is intentionally narrow — it avoids matching `IDomainEventHandler` or similar types in application namespaces that contain "Domain" as a word. The interface-based signal is the more reliable discriminator for SDK types.
+
+4. `NoDirectBusInjectionOutsideMessagingPredicate` and `NoEventPublisherInDomainLayerPredicate` both reuse the established Mono.Cecil `TypeDefinition.Methods` constructor-parameter inspection pattern from `NoInfrastructureConstructorParametersPredicate` (established in DomainLayerPurity phase). No new NuGet dependency — `Mono.Cecil >= 0.11.5` is already referenced.
+
+5. SK0703 `MessageBusSingletonRegistrationAnalyzer` operates on `InvocationExpressionSyntax` nodes. The trigger: a method name of `AddSingleton` (simple name, case-sensitive exact match on `MemberAccessExpressionSyntax.Name.Identifier.Text` or `IdentifierNameSyntax.Identifier.Text`) whose type arguments include a type name matching `"IMessageBus"` or `"IEventPublisher"` (simple name, case-sensitive). The check proceeds as follows:
+   a. For each `InvocationExpressionSyntax`, check whether the method name is `"AddSingleton"`.
+   b. If yes, inspect the type arguments (`GenericNameSyntax.TypeArgumentList.Arguments`) for any `TypeSyntax` whose string representation starts with `"IMessageBus"` or `"IEventPublisher"` (simple name prefix check, covers both the unbound form `AddSingleton<IMessageBus>()` and the bound form `AddSingleton<IMessageBus, MassTransitMessageBus>()`).
+   c. If found, report SK0703 on the invocation expression.
+   No semantic model required — the simple names `IMessageBus` and `IEventPublisher` are unique within the SDK. No suppression namespace — SK0703 fires globally; singleton registration of these interfaces is never correct. Suppress per-call-site via `#pragma warning disable SK0703` (use only if the DI container semantics are provably equivalent — document the reason).
+
+6. SK0704 `HardcodedQueueUriAnalyzer` operates on `InvocationExpressionSyntax` nodes. The trigger: an invocation whose method name is `"GetSendEndpoint"` (simple name check, case-sensitive) has at least one argument that is an `ObjectCreationExpressionSyntax` (or `ImplicitObjectCreationExpressionSyntax`) of type `Uri` (simple name `"Uri"`) whose first argument is a `LiteralExpressionSyntax` of kind `StringLiteralExpression` whose value starts with `"queue:"` or `"exchange:"` (case-insensitive). If all conditions hold, SK0704 is reported on the `Uri` creation expression. No semantic model required — the method name `GetSendEndpoint` and type name `Uri` are checked syntactically; the queue/exchange scheme prefixes are the discriminating signal. No suppression namespace — suppress per-call-site via `#pragma warning disable SK0704` only when an environment-invariant queue address is required (e.g., a fixed dead-letter queue URI in a test fixture); document the rationale.
+
+7. Both SK0703 and SK0704 follow the `netstandard2.0` constraint. Zero new NuGet dependencies beyond `Microsoft.CodeAnalysis.CSharp`. Both use syntax-only analysis; neither requires `SemanticModel`.
+
+8. `MessagingArchitectureRules` lives in `SharedKernel.ArchitectureTests/Rules/`. It must not reference `SharedKernel.Messaging.MassTransit` or any MassTransit package directly. Type names (`IBus`, `IPublishEndpoint`, `ISendEndpointProvider`, `IEventPublisher`) are matched by simple name only — the predicates never hard-code a namespace-qualified name for MassTransit types. This keeps the predicate stable even if MassTransit renames a namespace.
+
+9. `MessagingArchitectureRules` factory method signatures:
+   - `MessagingArchitectureRules.NoDirectBusInjectionOutsideMessaging(params Assembly[])` → `ConditionList`
+   - `MessagingArchitectureRules.NoEventPublisherInDomainLayer(Assembly)` → `ConditionList`
+
+10. Failure messages must be actionable:
+    - SK0701 → `"{offendingType} injects MassTransit transport type '{parameterTypeName}' directly. Use IMessageBus (for commands/queries) or IEventPublisher (for events) from SharedKernel.Messaging.Abstractions instead."`
+    - SK0702 → `"{offendingType} injects IEventPublisher in the domain layer. Domain events are dispatched internally by IDomainEventDispatcher. Correct flow: domain event → IDomainEventDispatcher → application handler → IEventPublisher."`
+    - SK0703 → `"IMessageBus and IEventPublisher must be registered as Scoped, not Singleton. Singleton registration breaks MassTransit's per-consume-scope lifetime and causes race conditions under concurrent load. Use AddScoped<{typeName}, ...>() instead."`
+    - SK0704 → `"Do not pass a hardcoded queue or exchange URI string to GetSendEndpoint. Use convention-based endpoint resolution via IEndpointNameFormatter to produce environment-agnostic addresses."`
+
+11. Architecture tests for SK0701 and SK0702 require two test cases each (fire path and pass path) as per the governance test rules. Analyzer tests for SK0703 and SK0704 require fire path and pass path (two test rows minimum per analyzer rule).
+
+12. `MessagingArchitectureRules` factory methods accept assembly parameters supplied by the consuming test project via `typeof(SomeMessagingOrDomainType).Assembly`. No assembly paths are hard-coded in the predicates.
+
+### MessagingArchRules — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/MessagingArchitectureRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: two predicate factory methods for SK0701 and SK0702 returning ConditionList |
+| `Predicates/NoDirectBusInjectionOutsideMessagingPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: constructor parameter scan for IBus/IPublishEndpoint/ISendEndpointProvider; exempts SharedKernel.Messaging.* namespace |
+| `Predicates/NoEventPublisherInDomainLayerPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: constructor parameter scan for IEventPublisher in domain-layer types (namespace signal and interface-signal detection) |
+| `Diagnostics/SK0703_MessageBusSingletonRegistrationAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0703 fires on AddSingleton<IMessageBus,...>() or AddSingleton<IEventPublisher,...>() calls |
+| `Diagnostics/SK0704_HardcodedQueueUriAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0704 fires on new Uri("queue:...") or new Uri("exchange:...") passed to GetSendEndpoint |
+
+### MessagingArchRules — Acceptance Criteria
+
+- [ ] `SK0701` fires when `IBus`, `IPublishEndpoint`, or `ISendEndpointProvider` is injected as a constructor parameter in a type outside `SharedKernel.Messaging.*`; does not fire for types within that namespace
+- [ ] `SK0702` fires when `IEventPublisher` is a constructor parameter of a domain-layer type (interface-signal or `.Domain.` namespace signal); does not fire for application-layer types
+- [ ] `SK0703` fires when `IMessageBus` or `IEventPublisher` appears as the first type argument to `AddSingleton`; does not fire for `AddScoped`
+- [ ] `SK0704` fires when a string literal `"queue:..."` or `"exchange:..."` is passed inside a `new Uri(...)` argument to `GetSendEndpoint`; does not fire for convention-based resolution without a literal URI
+- [ ] All four rules have compliant-pass and violation-fire test fixtures in `SharedKernel.ArchitectureTests` (SK0701, SK0702) and `SharedKernel.Analyzers.Tests` (SK0703, SK0704)
+- [ ] All existing governance tests pass — no regressions
+- [ ] `00.Governance/CLAUDE.md` updated with all four new rules, rationale, exemption lists, and failure message content
+
+### MessagingArchRules — Dependencies
+
+- Requires P-117 (`IMessageBus`, `IEventPublisher`, `PublishContext` defined in `SharedKernel.Messaging.Abstractions`; `MassTransitMessageBus`, `MassTransitEventPublisher`, `ConsumerBase<TMessage>`, `MessagingBusBuilder` in `SharedKernel.Messaging.MassTransit`): yes — SK0701 predicate uses the `IBus`/`IPublishEndpoint`/`ISendEndpointProvider` simple names that only exist once MassTransit is integrated; SK0702 uses `IEventPublisher` whose simple name must be stable; without P-117 the predicates check names that may not yet be canonical
+- Requires `NoInfrastructureConstructorParametersPredicate` pattern (Mono.Cecil constructor inspection) from `SK.00.DomainLayerPurity` to be complete: yes (already complete — pattern established)
+- Unblocks: CI messaging abstraction boundary gate across all downstream services consuming `SharedKernel.Messaging`
+
+### MessagingArchRules — Tooling Version Notes
+
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0703 and SK0704 follow same constraint as SK0001–SK0011; syntax-only analysis, no semantic model required)
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` — no change; covers both new predicates)
+- Target framework: `netstandard2.0` (Analyzers) / `net10.0` (ArchitectureTests)
+
+### MessagingArchRules — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-40 | Define `MessagingArchitectureRules` static class shape: two predicate factory methods; `NoDirectBusInjectionOutsideMessagingPredicate` design — constructor parameter name match for `IBus`/`IPublishEndpoint`/`ISendEndpointProvider`; exemption: `SharedKernel.Messaging.*` namespace prefix; failure message contract for SK0701 | SharedKernel.ArchitectureTests | `●` |
+| D-41 | Define `NoEventPublisherInDomainLayerPredicate` shape: constructor parameter scan for `IEventPublisher` simple name; scope signals — namespace contains `".Domain."` OR implements entity/aggregate/value-object/domain-service interface; failure message contract for SK0702 | SharedKernel.ArchitectureTests | `●` |
+| D-42 | Define SK0703 `MessageBusSingletonRegistration` — trigger: `AddSingleton` invocation with type argument whose name starts with `"IMessageBus"` or `"IEventPublisher"`; syntax-only (no SemanticModel); global scope; per-call-site `#pragma` suppression only; fix message: use `AddScoped` | SharedKernel.Analyzers | `●` |
+| D-43 | Define SK0704 `HardcodedQueueUriInGetSendEndpoint` — trigger: `GetSendEndpoint` invocation containing a `new Uri(string)` argument whose literal value starts with `"queue:"` or `"exchange:"` (case-insensitive); syntax-only; global scope; per-call-site `#pragma` suppression only; fix message: use `IEndpointNameFormatter` convention | SharedKernel.Analyzers | `●` |
+| C-50 | Implement `NoDirectBusInjectionOutsideMessagingPredicate` in `Predicates/` — `ICustomRule`; namespace exemption (`SharedKernel.Messaging.*`) as first guard; iterate `TypeDefinition.Methods` where `IsConstructor`; check `ParameterDefinition.ParameterType.Name` against `{"IBus","IPublishEndpoint","ISendEndpointProvider"}`; return false with SK0701 failure message naming offending type, parameter name, and recommended alternative | SharedKernel.ArchitectureTests | `●` |
+| C-51 | Implement `NoEventPublisherInDomainLayerPredicate` in `Predicates/` — `ICustomRule`; for each type, evaluate domain-layer membership via namespace signal (`TypeDefinition.Namespace.Contains(".Domain.")`) OR interface signal (`TypeDefinition.Interfaces` contains `IEntity`, `IAggregateRoot`, `IValueObject`, or `IDomainService` by name); if in domain layer, check constructors for `ParameterDefinition.ParameterType.Name == "IEventPublisher"`; return false with SK0702 failure message on violation | SharedKernel.ArchitectureTests | `●` |
+| C-52 | Implement `MessagingArchitectureRules` static class in `Rules/` — two factory methods: `NoDirectBusInjectionOutsideMessaging(params Assembly[])` → `ConditionList`, `NoEventPublisherInDomainLayer(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `●` |
+| C-53 | Implement SK0703 `MessageBusSingletonRegistrationAnalyzer` — `InvocationExpressionSyntax` walker; filter to `AddSingleton` method name; check type arguments for `"IMessageBus"` or `"IEventPublisher"` simple name prefix; report SK0703 on the invocation expression; syntax-only, no SemanticModel | SharedKernel.Analyzers | `●` |
+| C-54 | Implement SK0704 `HardcodedQueueUriAnalyzer` — `InvocationExpressionSyntax` walker; filter to `GetSendEndpoint` method name; inspect arguments for `ObjectCreationExpressionSyntax` or `ImplicitObjectCreationExpressionSyntax` of type `Uri`; check first argument for `StringLiteralExpression` whose value starts with `"queue:"` or `"exchange:"` (case-insensitive); report SK0704 on the Uri creation expression; syntax-only, no SemanticModel | SharedKernel.Analyzers | `●` |
+| T-87 | Architecture test SK0701 (fire path): pass an application assembly containing a command handler class with a constructor parameter typed `IBus`; assert `NoDirectBusInjectionOutsideMessaging` fails and failure message names the offending type and parameter | SharedKernel.ArchitectureTests | `●` |
+| T-88 | Architecture test SK0701 (pass path): pass an assembly containing a type in `SharedKernel.Messaging.MassTransit` namespace that injects `IBus`; assert rule passes (namespace exempt) | SharedKernel.ArchitectureTests | `●` |
+| T-89 | Architecture test SK0701 (pass path — abstraction): pass an application assembly containing a command handler that injects `IMessageBus` only; assert rule passes | SharedKernel.ArchitectureTests | `●` |
+| T-90 | Architecture test SK0702 (fire path): pass a domain assembly containing a domain service class with a constructor parameter typed `IEventPublisher`; assert `NoEventPublisherInDomainLayer` fails and failure message names the offending type and correct flow | SharedKernel.ArchitectureTests | `●` |
+| T-91 | Architecture test SK0702 (pass path): pass an application assembly containing an application service class with a constructor parameter typed `IEventPublisher`; assert rule passes (application layer is not domain layer) | SharedKernel.ArchitectureTests | `●` |
+| T-92 | Analyzer test SK0703 (fire path): `services.AddSingleton<IMessageBus, MassTransitMessageBus>()` triggers SK0703; `services.AddSingleton<IEventPublisher, MassTransitEventPublisher>()` triggers SK0703 | SharedKernel.Analyzers.Tests | `●` |
+| T-93 | Analyzer test SK0703 (pass path): `services.AddScoped<IMessageBus, MassTransitMessageBus>()` does not trigger SK0703; `services.AddScoped<IEventPublisher, MassTransitEventPublisher>()` does not trigger SK0703 | SharedKernel.Analyzers.Tests | `●` |
+| T-94 | Analyzer test SK0704 (fire path): `provider.GetSendEndpoint(new Uri("queue:order-commands"))` triggers SK0704; `provider.GetSendEndpoint(new Uri("exchange:order-events"))` triggers SK0704 | SharedKernel.Analyzers.Tests | `●` |
+| T-95 | Analyzer test SK0704 (pass path): `provider.GetSendEndpoint(formatter.GetDestinationAddress<OrderCommand>())` (no literal Uri construction) does not trigger SK0704; a `new Uri(someVariable)` (non-literal argument) does not trigger SK0704 | SharedKernel.Analyzers.Tests | `●` |
+| DO-18 | Document all four `MessagingArchitectureRules` in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale for each rule (transport abstraction, domain purity, lifecycle correctness, environment-agnostic addressing), exemption lists, offending-pattern example, compliant-pattern example, failure message content, CI configuration guidance | SharedKernel.ArchitectureTests, SharedKernel.Analyzers | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -1315,7 +1444,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 226.
+> Counts updated whenever a task state changes. Total tasks: 246.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -1336,6 +1465,7 @@ Format when active:
 | `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | 13 | 13 | 0 | `●` |
 | `SK.00.TenantedDbContextGuard` | Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule | 13 | 13 | 0 | `●` |
 | `SK.00.EncryptionPatternGuard` | Governance: Architecture Rules for DB Encryption Pattern Correctness | 14 | 14 | 0 | `●` |
+| `SK.00.MessagingArchRules` | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | 20 | 20 | 0 | `●` |
 
 ---
 
@@ -1377,3 +1507,6 @@ Format when active:
 - [2026-06-05] D-31–D-32, C-36–C-38, T-60–T-66, DO-14 → ● in SK.00.PersistenceContractCompleteness — all 13 tasks complete; SK0011 GuidFormatCodeMisuseAnalyzer (semantic model Guid receiver check), HasRequiredMethodPredicate, RepositoryContractCompletenessRules implemented; 10+5 tests passing (state-map-phase)
 - [2026-06-05] D-36–D-38, C-43–C-44, T-73–T-78, DO-16 → ● in SK.00.TenantedDbContextGuard — all 13 tasks complete; SK0201 + SK0202 Roslyn analyzers implemented; 12 new tests passing (68 total) (state-map-phase)
 - [2026-06-05] D-39, C-45–C-49, T-79–T-86, DO-17 → ● in SK.00.EncryptionPatternGuard — all 14 tasks complete; EncryptionPatternGuardRules + 4 ICustomRule predicates (SK0301–SK0304) implemented; 8 tests passing (57 total) (state-map-phase)
+- [2026-06-08] Phase SK.00.MessagingArchRules added — 20 tasks: D-40–D-43, C-50–C-54, T-87–T-95, DO-18; SK0701 NoDirectBusInjectionOutsideMessaging, SK0702 NoEventPublisherInDomainLayer (NetArchTest predicates), SK0703 MessageBusSingletonRegistration, SK0704 HardcodedQueueUriInGetSendEndpoint (Roslyn analyzers); new 07xx messaging ID block; total tasks now 246 — WO-020 P-123
+- [2026-06-09] D-40–D-43, C-50–C-54, T-87–T-95, DO-18 → ● in SK.00.MessagingArchRules — NoDirectBusInjectionOutsideMessagingPredicate, NoEventPublisherInDomainLayerPredicate, MessagingArchitectureRules implemented; SK0703 MessageBusSingletonRegistrationAnalyzer, SK0704 HardcodedQueueUriAnalyzer implemented; 78 analyzer tests pass, 62 arch tests pass; SK.00.MessagingArchRules → ● (state-map-phase)
+- [2026-06-09] SK.00.MessagingArchRules → ● — all 20 tasks complete; promoted to root state-map (state-map-phase)

@@ -265,6 +265,40 @@ SK0202  IgnoreQueryFiltersOutsideTenantedRepository
                 before applying a suppression.
     Note      : ID block: 02xx (multi-tenancy). Introduced in WO-020 SK.00.TenantedDbContextGuard.
 
+SK0703  MessageBusSingletonRegistration
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose simple method name is "AddSingleton"
+                contains a type argument whose simple name starts with "IMessageBus" or
+                "IEventPublisher". Covers the two-argument form
+                AddSingleton<IMessageBus, MassTransitMessageBus>() and the one-argument form
+                AddSingleton<IMessageBus>(factory). Syntax-only check; no SemanticModel required.
+    Fix       : Replace AddSingleton with AddScoped to match MassTransit's per-consume-scope
+                lifetime model. Singleton registration of IMessageBus or IEventPublisher causes
+                scope pollution and race conditions under concurrent load.
+    Suppress  : Per-call-site via #pragma warning disable SK0703 only when the DI container
+                semantics are provably equivalent to scoped behaviour (document the reason inline).
+    Note      : No suppression namespace — SK0703 fires globally. ID block: 07xx
+                (messaging-domain). Introduced in WO-020 P-123.
+
+SK0704  HardcodedQueueUriInGetSendEndpoint
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose simple method name is "GetSendEndpoint"
+                has at least one argument that is an ObjectCreationExpressionSyntax (or
+                ImplicitObjectCreationExpressionSyntax) of type "Uri" whose first argument is
+                a StringLiteralExpression whose value starts with "queue:" or "exchange:"
+                (case-insensitive). Syntax-only check; no SemanticModel required.
+    Fix       : Remove the literal Uri construction and use convention-based endpoint resolution
+                via IEndpointNameFormatter.GetDestinationAddress<TMessage>() or the equivalent
+                MassTransit IEndpointNameFormatter helper. Convention-based addressing is
+                environment-agnostic and survives broker configuration changes.
+    Suppress  : Per-call-site via #pragma warning disable SK0704 only when a fixed,
+                environment-invariant queue address is genuinely required (e.g., a dead-letter
+                queue URI in an isolated test fixture); document the rationale inline.
+    Note      : No suppression namespace — SK0704 fires globally. ID block: 07xx
+                (messaging-domain). Introduced in WO-020 P-123.
+
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
@@ -793,6 +827,79 @@ NoDirectEncryptedValueConverterInstantiationPredicate  (class : ICustomRule — 
     Lives in Predicates/ folder. Used by
     EncryptionPatternGuardRules.NoDirectEncryptedValueConverterInstantiation.
 
+MessagingArchitectureRules  (static class — messaging abstraction boundary enforcement predicates; WO-020 P-123)
+    All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
+    .NoDirectBusInjectionOutsideMessaging(params Assembly[] assemblies)  → ConditionList
+        Asserts that no type in the supplied assemblies injects MassTransit transport types
+        (IBus, IPublishEndpoint, ISendEndpointProvider) as constructor parameters. Uses
+        NoDirectBusInjectionOutsideMessagingPredicate (ICustomRule — see below).
+        Exemption: types whose TypeDefinition.Namespace starts with "SharedKernel.Messaging"
+        pass unconditionally — 07.Messaging package types may reference MassTransit transport
+        interfaces freely. All other assemblies must inject IMessageBus or IEventPublisher.
+        Failure message names the offending type, the offending parameter name, and the
+        recommended alternative interface.
+        Rationale: MassTransit transport types (IBus, IPublishEndpoint, ISendEndpointProvider)
+        are an implementation detail of SharedKernel.Messaging.MassTransit. Injecting them
+        directly in application handlers, domain services, or controllers bypasses the
+        SharedKernel.Messaging.Abstractions boundary and makes transport swaps impossible.
+        Offending pattern: class PlaceOrderHandler(IBus bus) { }
+        Compliant pattern: class PlaceOrderHandler(IMessageBus messageBus) { }
+
+    .NoEventPublisherInDomainLayer(Assembly domainAssembly)              → ConditionList
+        Asserts that no type in the supplied domain assembly injects IEventPublisher as a
+        constructor parameter when that type is identified as a domain-layer type. Uses
+        NoEventPublisherInDomainLayerPredicate (ICustomRule — see below).
+        Domain-layer membership is determined by two signals evaluated in order:
+          (a) Namespace signal: TypeDefinition.Namespace contains ".Domain." as a substring
+          (b) Interface signal: TypeDefinition.Interfaces contains an entry whose
+              InterfaceType.Name is in {"IEntity", "IAggregateRoot", "IValueObject",
+              "IDomainService"} (exact name match)
+        Either signal triggers the check. If the type is a domain-layer type AND has a
+        constructor parameter whose ParameterType.Name == "IEventPublisher", the rule fails.
+        Failure message names the offending type, the parameter, and the correct dispatch flow:
+        domain event → IDomainEventDispatcher → application handler → IEventPublisher.
+        Rationale: domain types must not reach out to publish integration events directly.
+        Domain events are raised internally and dispatched by IDomainEventDispatcher in the
+        application layer. Injecting IEventPublisher in a domain type collapses the separation
+        between domain events and integration events, breaking the DDD event propagation model.
+        Offending pattern: class OrderAggregate(IEventPublisher publisher) : AggregateRoot<Guid>
+        Compliant pattern: raise domain events via AddDomainEvent(); let the application layer
+            dispatch them to IEventPublisher via IDomainEventDispatcher
+
+    Exemption list (assemblies whose types are exempt from NoDirectBusInjectionOutsideMessaging):
+        - SharedKernel.Messaging (abstraction package — may reference transport types for wiring)
+        - SharedKernel.Messaging.MassTransit (concrete provider — owns transport type wiring)
+        Any additional exemption must be documented here before it is applied in code.
+
+NoDirectBusInjectionOutsideMessagingPredicate  (class : ICustomRule — internal predicate)
+    Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts with
+    "SharedKernel.Messaging" return true unconditionally.
+    For all other types, iterates TypeDefinition.Methods where IsConstructor is true. For each
+    constructor, checks each ParameterDefinition.ParameterType.Name against the set
+    {"IBus", "IPublishEndpoint", "ISendEndpointProvider"} (exact name match, case-sensitive).
+    Returns false (rule violated) on the first match, with failure message:
+    "{offendingType} injects MassTransit transport type '{parameterTypeName}' directly. Use
+    IMessageBus (for commands/queries) or IEventPublisher (for events) from
+    SharedKernel.Messaging.Abstractions instead."
+    Lives in Predicates/ folder. Used by MessagingArchitectureRules.NoDirectBusInjectionOutsideMessaging.
+
+NoEventPublisherInDomainLayerPredicate  (class : ICustomRule — internal predicate)
+    For each type, evaluates domain-layer membership via two signals:
+      (a) TypeDefinition.Namespace.Contains(".Domain.") — namespace signal (dots are required
+          to prevent matching "IDomainEventHandler" or other application types with "Domain"
+          as a word fragment without a namespace boundary)
+      (b) TypeDefinition.Interfaces contains an entry with InterfaceType.Name in
+          {"IEntity", "IAggregateRoot", "IValueObject", "IDomainService"} — interface signal
+    If neither signal is true, returns true (not in scope — not a domain-layer type).
+    If either signal is true, iterates TypeDefinition.Methods where IsConstructor is true.
+    For each constructor, checks ParameterDefinition.ParameterType.Name == "IEventPublisher"
+    (exact name match).
+    Returns false (rule violated) on the first match, with failure message:
+    "{offendingType} injects IEventPublisher in the domain layer. Domain events are dispatched
+    internally by IDomainEventDispatcher. Correct flow: domain event → IDomainEventDispatcher
+    → application handler → IEventPublisher."
+    Lives in Predicates/ folder. Used by MessagingArchitectureRules.NoEventPublisherInDomainLayer.
+
 EfCorePackageHygieneRules  (static class — EfCore package hygiene predicates; WO-017 P-103)
     All factory methods accept Assembly as their parameter and return ConditionList.
     .NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly)  → ConditionList
@@ -976,6 +1083,12 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0201 `TenantedDbContextOnModelCreatingAnalyzer` scans `MethodDeclarationSyntax` nodes named `OnModelCreating` with the `override` modifier. Ancestry check walks `ClassDeclarationSyntax.BaseList.Types` for a type whose simple name is `TenantedDbContext`; if not found on the immediate class, walks parent `ClassDeclarationSyntax` nodes in the same file (syntax-only — cross-file ancestry is not resolved). Body scan calls `DescendantNodes().OfType<InvocationExpressionSyntax>()` on the method body and checks for: (a) `MemberAccessExpressionSyntax` with `BaseExpressionSyntax` receiver and `Name.Identifier.Text == "OnModelCreating"`, or (b) any invocation (simple name or member access) whose method name is `"ApplyTenantFilters"`. Fires on the method identifier if neither found. No suppression namespace — suppress per-site via `#pragma warning disable SK0201`.
 - SK0202 `IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer` scans `InvocationExpressionSyntax` nodes. Filter: simple method name (from `IdentifierNameSyntax` or `MemberAccessExpressionSyntax.Name`) is `"IgnoreQueryFilters"` AND argument list is empty (zero arguments). Two exemptions checked in order: (1) namespace walk via `SyntaxNode.Parent` for any `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` whose `Name.ToString()` starts with `"SharedKernel.Persistence.EfCore"` — same pattern as SK0001/SK0007; (2) `FirstAncestorOrSelf<ClassDeclarationSyntax>()` with `Identifier.Text == "TenantedRepository"` (exact string match). Reports on the full invocation expression if neither exemption applies. Any additional exemption class or namespace must be documented in `00.Governance/CLAUDE.md` under SK0202 before applying suppression.
 - RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
+- `NoDirectBusInjectionOutsideMessagingPredicate` exemption guard (`TypeDefinition.Namespace.StartsWith("SharedKernel.Messaging")`) is applied as the first check, before any constructor parameter inspection. This covers both `SharedKernel.Messaging.Abstractions` and `SharedKernel.Messaging.MassTransit` and all sub-namespaces with a single prefix check. Any additional namespace exemption must be documented in `00.Governance/CLAUDE.md` under `MessagingArchitectureRules` before applying.
+- `NoEventPublisherInDomainLayerPredicate` namespace signal uses `Contains(".Domain.")` with dots on both sides to narrow the match to a full namespace segment — this prevents `IDomainEventHandler` or application types with "Domain" as a bare word in a namespace fragment from triggering the domain-layer scope check. The interface signal is the more reliable discriminator and should be preferred for SDK types that inherit from known domain base types.
+- SK0703 `MessageBusSingletonRegistrationAnalyzer` extracts type argument names from `GenericNameSyntax.TypeArgumentList.Arguments`. For the form `AddSingleton<IMessageBus>()` the first type argument is an `IdentifierNameSyntax` — check `.Identifier.Text`. For the two-argument form `AddSingleton<IMessageBus, MassTransitMessageBus>()` only the first type argument is checked. Simple name prefix `"IMessageBus"` covers `IMessageBus` and any future `IMessageBus<T>` variant; prefix `"IEventPublisher"` covers `IEventPublisher` and any future variant. No SemanticModel required.
+- SK0704 `HardcodedQueueUriAnalyzer` checks for both `ObjectCreationExpressionSyntax` (`new Uri(...)`) and `ImplicitObjectCreationExpressionSyntax` (`new(...)` where the type is inferred). The type name check for `Uri` is a simple name check on `ObjectCreationExpressionSyntax.Type` (`IdentifierNameSyntax.Identifier.Text == "Uri"` or `QualifiedNameSyntax` whose rightmost segment is `"Uri"`). For implicit creation, the containing argument context must be a `GetSendEndpoint` invocation — the type inference resolves to `Uri` by declaration context. The queue/exchange scheme check is case-insensitive (`StartsWith("queue:", StringComparison.OrdinalIgnoreCase)` and `StartsWith("exchange:", StringComparison.OrdinalIgnoreCase)`).
+- `MessagingArchitectureRules` and both predicates (`NoDirectBusInjectionOutsideMessagingPredicate`, `NoEventPublisherInDomainLayerPredicate`) reuse the established Mono.Cecil `TypeDefinition.Methods` constructor-parameter inspection pattern from `NoInfrastructureConstructorParametersPredicate`. No new NuGet dependency — `Mono.Cecil >= 0.11.5` already referenced in `SharedKernel.ArchitectureTests`.
+- SK0703 and SK0704 are the first SK analyzers in the 07xx messaging block. Both follow the same `netstandard2.0` constraint and `Microsoft.CodeAnalysis.CSharp 4.14.0` pin as all other SK analyzers. Neither requires a SemanticModel — both are syntax-only, keeping analysis cost minimal on large codebases.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
 
@@ -1022,3 +1135,5 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-02] SK0011 GuidFormatCodeMisuse added to diagnostic registry (requires SemanticModel.GetTypeInfo — first SK analyzer with semantic check; fires on Guid.ToString("N"/"B"/"P"/"X"); no suppression namespace); PersistenceInterfaceOwnershipRules added to architecture test contracts (four predicates: IUserContextDeclaredOnlyInSecurityAbstractions, TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions, IReadRepositoryMustNotExposeIQueryable, NoGetByIdAsyncOnReadRepository); RepositoryContractCompletenessRules added (two predicates: AllRepositoryImplementorsMustHaveExistsAsync, AllReadRepositoryImplementorsMustHaveGetByIdsAsync); InterfaceDeclarationOwnershipPredicate, NoGetByIdOnReadRepositoryPredicate, HasRequiredMethodPredicate ICustomRules documented; eleven new implementation rules added — WO-014 P-083, WO-016 P-096
 - [2026-06-04] SK0301 DirectCryptoInDomainOrApplication, SK0302 EncryptionAttributeOnDomainEntity, SK0303 EncryptionRotationJobInDomainOrApplication, SK0304 DirectEncryptedValueConverterInstantiation added to diagnostic registry (new 03xx block for encryption-domain rules; all implemented as NetArchTest ICustomRule predicates); EncryptionPatternGuardRules static class added to architecture test contracts with four predicates (NoCryptoCipherInDomainOrApplication, NoEncryptionAttributeOnDomainEntities, NoEncryptionRotationJobInjectionInDomainOrApplication, NoDirectEncryptedValueConverterInstantiation); four new ICustomRule predicates documented; seven new implementation rules added — WO-019 P-114
 - [2026-06-05] SK0201 TenantedDbContextOnModelCreatingGuard and SK0202 IgnoreQueryFiltersOutsideTenantedRepository added to diagnostic registry (new 02xx multi-tenancy block); both implemented as Roslyn analyzers (syntax-only, no semantic model); SK0201 body-scan checks base.OnModelCreating and ApplyTenantFilters via InvocationExpressionSyntax descendants; SK0202 namespace-walk and class-name exemption follow the SK0001/SK0007 SyntaxNode.Parent pattern; two new implementation rules added — WO-020 SK.00.TenantedDbContextGuard
+- [2026-06-08] SK0703 MessageBusSingletonRegistration and SK0704 HardcodedQueueUriInGetSendEndpoint added to diagnostic registry (new 07xx messaging-domain block; both Roslyn syntax-only analyzers); SK0701 NoDirectBusInjectionOutsideMessaging and SK0702 NoEventPublisherInDomainLayer added as NetArchTest predicates (MessagingArchitectureRules static class; NoDirectBusInjectionOutsideMessagingPredicate and NoEventPublisherInDomainLayerPredicate ICustomRule predicates documented); eleven new implementation rules added — WO-020 P-123
+- [2026-06-09] SK.00.MessagingArchRules → ● — all 20 tasks complete; 78 analyzer + 62 arch tests passing; no new brain content (state-map-phase)

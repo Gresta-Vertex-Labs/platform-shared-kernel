@@ -30,9 +30,9 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 > Domains currently `◐ In Progress`. This section is the first thing to update when work starts or finishes in any domain.
 
-| Domain | Current Phase | Focus (one line) |
-|--------|---------------|-----------------|
-| [16.Testing](16.Testing/state-map.md) | Design | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
+| Domain                                    | Current Phase   | Focus (one line)                                                                                                                                 |
+|-------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| [16.Testing](16.Testing/state-map.md)     | Design          | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing                         |
 
 <!--
 Format when active:
@@ -64,14 +64,14 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for DB Encryption Pattern Correctness | `●` | All 14 tasks complete — EncryptionPatternGuardRules (SK0301–SK0304) with four ICustomRule predicates implemented and tested; 57 architecture tests passing. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | `●` | All 20 tasks complete — MessagingArchitectureRules (SK0701–SK0704) with two ICustomRule predicates and two Roslyn analyzers implemented; 78 analyzer + 62 arch tests passing. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
-| 07 | [Messaging](07.Messaging/state-map.md) | — | `○` | — | — |
+| 07 | [Messaging](07.Messaging/state-map.md) | Routing | `●` | SK.07.Routing complete (8/8) — ConventionSendEndpointResolver implemented; MassTransitMessageBus.SendAsync updated with routeMap+resolver injection; Build() registers singleton routeMap + scoped resolver; 79 MassTransit tests pass. | OTel phase (SK.07.OTel) pending; P-132 targets 13.ServiceDefaults. |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
@@ -109,14 +109,16 @@ Format when active:
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
 | ● Published | 4 |
-| ● Docs | 1 |
+| ● Saga | 1 |
+| ● Governance: Architecture Rules | 1 |
+| ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
 | ● Design | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 10 |
+| ○ Not Started | 9 |
 
 ---
 
@@ -1795,6 +1797,23 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-05] Governance → Governance: Architecture Rules for EfCore Package Hygiene (●) — promoted from SK.00.EfCorePackageHygiene (state-map-phase)
 - [2026-06-05] Governance → Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule (●) — promoted from SK.00.TenantedDbContextGuard (state-map-phase)
 - [2026-06-05] Governance → Governance: Architecture Rules for DB Encryption Pattern Correctness (●) — promoted from SK.00.EncryptionPatternGuard (state-map-phase)
+- [2026-06-05] Messaging → Scaffold (●) — promoted from SK.07.Scaffold (state-map-phase)
+- [2026-06-05] Messaging → Core (●) — promoted from SK.07.Core (state-map-phase)
+- [2026-06-08] Messaging → Tests (●) — promoted from SK.07.Tests (state-map-phase)
+- [2026-06-08] Messaging → Docs (●) — promoted from SK.07.Docs (state-map-phase)
+- [2026-06-08] Messaging → Published (●) — promoted from SK.07.Published (state-map-phase)
+- [2026-06-08] Phase Backlog entries for 07.Messaging closed → ● Complete — 07.Messaging reached Published (state-map-phase)
+- [2026-06-08] Messaging → Design (●) — promoted from SK.07.Design (state-map-phase)
+- [2026-06-08] Messaging → Scaffold (●) — promoted from SK.07.Scaffold (state-map-phase)
+- [2026-06-08] Messaging → Core (●) — promoted from SK.07.Core (state-map-phase)
+- [2026-06-08] Messaging → Tests (●) — promoted from SK.07.Tests (state-map-phase)
+- [2026-06-08] Messaging → Docs (●) — promoted from SK.07.Docs (state-map-phase)
+- [2026-06-08] Messaging → Resilience (●) — promoted from SK.07.Resilience (state-map-phase)
+- [2026-06-08] Messaging → Scheduling (●) — promoted from SK.07.Scheduling (state-map-phase)
+- [2026-06-09] Messaging → Saga (●) — promoted from SK.07.Saga (state-map-phase)
+- [2026-06-09] Messaging → Batch (●) — promoted from SK.07.Batch (state-map-phase)
+- [2026-06-09] Messaging → Routing (●) — promoted from SK.07.Routing (state-map-phase)
+- [2026-06-09] Governance → Governance: Messaging Architecture Rules (●) — promoted from SK.00.MessagingArchRules (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2057,6 +2076,8 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-05-27] Domain → Published (●) — promoted from SK.03.Published (state-map-phase)
 - [2026-05-27] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
 - [2026-06-01] Persistence → Scaffold (●) — promoted from SK.06.Scaffold (state-map-phase)
+- [2026-06-08] Phase(s) P-123 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-08] Phase(s) P-125, P-126, P-127, P-128, P-129, P-130, P-131 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -5474,4 +5495,689 @@ With hundreds of services consuming the SharedKernel, some developers will attem
 - [ ] All four rules have compliant-pass and violation-fire test fixtures
 - [ ] `00.Governance/CLAUDE.md` updated with the four new rules, rationale, and exemption lists
 - [ ] All existing governance tests pass — no regressions
+---
+
+---
+### P-115 — Messaging: Scaffold Both Packages
+
+**Status:** `●` Complete
+**Work Order:** WO-020
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+Create the complete project scaffolding for both `SharedKernel.Messaging.Abstractions` and `SharedKernel.Messaging.MassTransit`. This includes `.csproj` files with correct NuGet metadata, `net10.0` target framework, `ImplicitUsings`, `Nullable` enabled, and all required package references. The Abstractions project must reference only `Microsoft.Extensions.DependencyInjection.Abstractions` — no transport packages. The MassTransit project must reference `SharedKernel.Messaging.Abstractions`, `SharedKernel.Contracts`, `MassTransit` 8.x, `MassTransit.RabbitMQ` 8.x, `MassTransit.Azure.ServiceBus.Core` 8.x, `MassTransit.EntityFrameworkCoreIntegration` 8.x, `Microsoft.EntityFrameworkCore` 10.x, and `Microsoft.Extensions.Logging.Abstractions` 10.x.
+
+Each package must have its nested `.Tests/` project scaffolded with the standard test package set: `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `coverlet.collector`, `FluentAssertions`, `NSubstitute`, and `MassTransit.Testing` 8.x. Every test project must include a `GlobalUsings.cs` with `global using Xunit;`.
+
+Both packages and their test projects must be registered in the `Platform.SharedKernel.slnx` solution under the `07.Messaging` solution folder. The directory structure must mirror existing domain packages: source files in the package root, test files in the nested `.Tests/` subfolder.
+
+No implementation code is placed in this phase — only project files, solution registrations, `GlobalUsings.cs`, and placeholder folder directories.
+
+#### Why this is needed
+Scaffold is always the prerequisite phase before core implementation. It ensures the solution compiles from day one, CI can run a clean build, and domain sub-agents have a correctly-wired project to write into. Separating scaffold from core prevents the common mistake of entangling structural decisions with implementation decisions.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Messaging.Abstractions/SharedKernel.Messaging.Abstractions.csproj` exists with correct TFM, nullability, implicit usings, and DI abstractions reference only
+- [ ] `SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.csproj` exists with all required package references enumerated above
+- [ ] Both packages' nested `.Tests/` projects scaffold with correct test package references and `GlobalUsings.cs`
+- [ ] Both packages and test projects registered in `Platform.SharedKernel.slnx` under `07.Messaging` solution folder
+- [ ] `dotnet build` on the solution succeeds with zero errors and zero warnings after scaffolding
+- [ ] No production source files written — stub only
+---
+
+---
+### P-116 — Messaging Abstractions: Core Interfaces — IMessageBus, IEventPublisher, PublishContext, IMessagingBuilder, MessagingOptions
+
+**Status:** `●` Complete
+**Work Order:** WO-020
+**Domain:** 07.Messaging
+**Depends on:** P-115
+
+#### What is needed
+Implement all production types for `SharedKernel.Messaging.Abstractions`. This package is the zero-transport contract library every microservice references for DI — it must have no transport NuGet dependencies whatsoever.
+
+**`IMessageBus`** — scoped service interface. Must expose: `PublishAsync<T>(T message, CancellationToken ct)` for fan-out publish; `PublishAsync<T>(T message, Action<PublishContext> configure, CancellationToken ct)` for explicit envelope metadata; `SendAsync<T>(T command, CancellationToken ct)` for point-to-point queue send; `RequestAsync<TRequest, TResponse>(TRequest request, CancellationToken ct)` for request/response with caution-documented temporal coupling semantics.
+
+**`IEventPublisher`** — scoped service interface. Must expose: `PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)` for CloudEvents-compliant integration event publishing; `PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)` for explicit envelope override. XML docs must clearly state: for in-process domain events, use `IDomainEventDispatcher` from `03.Domain` — never `IEventPublisher`.
+
+**`PublishContext`** — sealed mutable builder class (not a record). Must expose: `CorrelationId` (`Guid?`, null means auto-populate from `Activity.Current`); `CausationId` (`Guid?`, null means omitted); `Headers` (`IReadOnlyDictionary<string, string>`); fluent `WithCorrelationId(Guid)`, `WithCausationId(Guid)`, `WithHeader(string key, string value)` methods returning `this`. Duplicate header keys overwrite silently. Header keys must be non-null, non-empty — guard with `ArgumentException`.
+
+**`MessagingOptions`** — sealed POCO registered as DI options under section `"SharedKernel:Messaging"`. Must expose: `ServiceName` (`string`, required) used as CloudEvents source and queue routing prefix. Must be a lowercase slug. Startup validation must throw `OptionsValidationException` on null or whitespace.
+
+**`IMessagingBuilder`** — interface with a single `Services` property (`IServiceCollection`). Returned by `AddSharedKernelMessaging()` to allow transport-specific extension methods to chain without a circular reference.
+
+**`AddSharedKernelMessaging` extension method** — on `IServiceCollection`. Registers `MessagingOptions` via `services.AddOptions<MessagingOptions>()...Validate(...)`. Returns a `MessagingBusBuilder` instance (defined in the MassTransit package, but the builder contract `IMessagingBuilder` is declared here). Note: the extension lives in the Abstractions package so microservices can validate options without pulling in transport packages.
+
+All types must carry complete XML doc comments. Namespace: `SharedKernel.Messaging` or sub-namespaces per folder convention.
+
+#### Why this is needed
+The Abstractions package is the most-referenced artifact across hundreds of microservices — it must be perfectly stable, have zero transport dependencies, and carry no implementation. Building it as a standalone, complete package first ensures downstream application handlers can be written and tested with NSubstitute mocks before the MassTransit concrete wiring exists. It is also the contract that makes transport-swappability possible — if a team ever needs to replace MassTransit with a different broker client, only the MassTransit package changes, not the hundreds of handler files referencing `IMessageBus`.
+
+#### Acceptance criteria
+- [ ] `IMessageBus` defined with all four methods, all XML-documented, registered as scoped
+- [ ] `IEventPublisher` defined with both publish overloads, XML docs include domain-event dispatcher distinction
+- [ ] `PublishContext` sealed class with three properties and three fluent methods; `WithHeader` guards against null/empty key
+- [ ] `MessagingOptions.ServiceName` required; Options validation throws `OptionsValidationException` on null/whitespace
+- [ ] `IMessagingBuilder` interface with `Services` property defined
+- [ ] `AddSharedKernelMessaging` extension method on `IServiceCollection` registers options and returns a builder
+- [ ] No transport NuGet packages referenced — only `Microsoft.Extensions.DependencyInjection.Abstractions`
+- [ ] `dotnet build` clean; zero analyzer warnings
+---
+
+---
+### P-117 — Messaging MassTransit: Core Bus Wiring — MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ Transport
+
+**Status:** `●` Complete
+**Work Order:** WO-020
+**Domain:** 07.Messaging
+**Depends on:** P-116
+
+#### What is needed
+Implement the core MassTransit bus wiring in `SharedKernel.Messaging.MassTransit`.
+
+**`ConsumerBase<TMessage>`** — abstract class implementing `MassTransit.IConsumer<TMessage>`. The abstract method `ConsumeAsync(TMessage message, CancellationToken ct)` is what downstream services override. The sealed `Consume(ConsumeContext<TMessage>)` implementation (MassTransit entry point) must: propagate `CorrelationId` from `ConsumeContext` into `Activity.Current` when no active span exists; forward `ConsumeContext.CancellationToken` to `ConsumeAsync`; catch and log unhandled exceptions at Error level with `CorrelationId` context, then rethrow. `ILogger<TConsumer>` must be available as a protected property — injected via constructor. Derived classes must never override the sealed MassTransit `Consume` method.
+
+**`MassTransitMessageBus`** — scoped concrete class implementing `IMessageBus`. Wraps MassTransit's `IPublishEndpoint` and `ISendEndpointProvider`. `PublishAsync` delegates to `IPublishEndpoint.Publish`. `SendAsync` resolves the endpoint by convention (MassTransit `KebabCaseEndpointNameFormatter` default) and delegates to `ISendEndpointProvider.GetSendEndpoint(...).Send(...)`. `RequestAsync` uses MassTransit `IRequestClient<TRequest>` — constructs a scoped request client, sends, awaits response, returns `TResponse`; never uses `CancellationToken.None`. All three MassTransit DI types are constructor-injected.
+
+**`MassTransitEventPublisher`** — scoped concrete class implementing `IEventPublisher`. Wraps `IPublishEndpoint` and `IOptions<MessagingOptions>`. `PublishAsync<TEvent>` wraps `TEvent` in `EventEnvelope<TEvent>` (from `04.Contracts`) with all five envelope fields populated: `CorrelationId` from `Activity.Current?.TraceId` cast to `Guid` or `Guid.NewGuid()`; `CausationId` from `PublishContext.CausationId` or `Guid.Empty`; `SourceService` from `MessagingOptions.ServiceName`; `SchemaVersion` from `DomainEventVersionHelper.GetVersion(typeof(TEvent))`; `TimestampUtc` = `DateTimeOffset.UtcNow`. The envelope is published via `IPublishEndpoint.Publish<EventEnvelope<TEvent>>`.
+
+**`MessagingBusBuilder`** — sealed class implementing `IMessagingBuilder`. Accumulates configuration state and wires MassTransit in `Build()`. Must expose: `.UseRabbitMq(string connectionString)` and `.UseRabbitMq(Action<RabbitMqBusOptions> configure)` — both configure the MassTransit RabbitMQ host; `.Build()` method that calls `services.AddMassTransit(...)`, registers `IMessageBus → MassTransitMessageBus` (scoped), `IEventPublisher → MassTransitEventPublisher` (scoped), and `IHostedService` for bus lifecycle. Build must throw `InvalidOperationException` if no transport has been configured.
+
+**`RabbitMqBusOptions`** — sealed options class with: `Host` (AMQP URI string), `Username` (default `"guest"`), `Password` (default `"guest"`), `VirtualHost` (default `"/"`), `Prefetch` (`ushort`, default `16`), `RequestedHeartbeat` (`TimeSpan`, default `60s`). Registered under `"SharedKernel:Messaging:RabbitMq"`.
+
+**Consumer endpoint naming** — `MessagingBusBuilder` must configure MassTransit's `KebabCaseEndpointNameFormatter` with `MessagingOptions.ServiceName` as the prefix so queues are named `{service-name}-{consumer-type}` in kebab-case.
+
+This phase covers RabbitMQ transport only. Azure Service Bus is addressed in P-118.
+
+#### Why this is needed
+This phase builds the beating heart of the messaging system. `ConsumerBase<TMessage>` is the contract every microservice consumer will implement — its sealed `Consume` method and correlation propagation behavior are the platform-enforced quality gates that prevent silent message loss and ensure observability across hundreds of services. The CloudEvents envelope population in `MassTransitEventPublisher` is critical for cross-service traceability — CorrelationId threading from Activity.Current means distributed traces span service boundaries automatically.
+
+#### Acceptance criteria
+- [ ] `ConsumerBase<TMessage>` abstract class with sealed `Consume` entry point, `ConsumeAsync` abstract method, CorrelationId propagation, exception logging-then-rethrow behavior, and protected `ILogger` property
+- [ ] `MassTransitMessageBus` implements all four `IMessageBus` methods; never uses hardcoded queue URIs
+- [ ] `MassTransitEventPublisher` wraps events in `EventEnvelope<TEvent>` with all five fields populated correctly; `CorrelationId` falls back to `Guid.NewGuid()` when no active trace; `SchemaVersion` via `DomainEventVersionHelper.GetVersion`
+- [ ] `RabbitMqBusOptions` sealed class with all five properties and documented defaults
+- [ ] `MessagingBusBuilder.UseRabbitMq` overloads (string and Action) both configure the MassTransit RabbitMQ host correctly
+- [ ] `MessagingBusBuilder.Build()` registers `IMessageBus`, `IEventPublisher`, MassTransit bus types, and `IHostedService` bus lifecycle
+- [ ] `Build()` throws `InvalidOperationException` if no transport configured
+- [ ] `KebabCaseEndpointNameFormatter` wired with `MessagingOptions.ServiceName` prefix
+- [ ] `dotnet build` clean; no compile errors
+---
+
+---
+### P-118 — Messaging MassTransit: Azure Service Bus Transport Adapter and Options Validation
+
+**Status:** `●` Complete
+**Work Order:** WO-020
+**Domain:** 07.Messaging
+**Depends on:** P-117
+
+#### What is needed
+Extend `MessagingBusBuilder` with the Azure Service Bus (ASB) transport adapter.
+
+**`AzureServiceBusOptions`** — sealed options class registered under `"SharedKernel:Messaging:AzureServiceBus"`. Must expose: `ConnectionString` (`string?`, local/dev only); `FullyQualifiedNamespace` (`string?`, K8s managed identity path, e.g. `"my-ns.servicebus.windows.net"`); `MaxConcurrentCalls` (`int`, default `1`); `TransportType` (`ServiceBusTransportType` enum, default `Amqp`). Startup validation: exactly one of `ConnectionString` or `FullyQualifiedNamespace` must be set — if both or neither are set, `InvalidOperationException` is thrown. When `FullyQualifiedNamespace` is set, the transport must authenticate via `DefaultAzureCredential` (managed identity preferred in K8s workloads).
+
+**`MessagingBusBuilder.UseAzureServiceBus`** overloads — `.UseAzureServiceBus(string connectionString)` parses and passes to MassTransit ASB host; `.UseAzureServiceBus(Action<AzureServiceBusOptions> configure)` applies options and configures the host with the correct credential (connection string or `DefaultAzureCredential` depending on which option is set).
+
+**Transport exclusivity guard** — calling both `.UseRabbitMq(...)` and `.UseAzureServiceBus(...)` on the same builder must throw `InvalidOperationException` at the second call. Only one transport per bus instance.
+
+**Consumer definition support** — `MessagingBusBuilder.AddConsumer<TConsumer, TDefinition>()` must wire `IConsumerDefinition<TConsumer>` into MassTransit's consumer registration, allowing per-consumer endpoint name, prefetch count, and retry override configuration. This method is in addition to the simple `AddConsumer<TConsumer>()` from P-117.
+
+#### Why this is needed
+Many teams run RabbitMQ locally and Azure Service Bus in staging/production. The ASB adapter with managed identity via `DefaultAzureCredential` is the standard K8s-to-Azure pattern — workload identity eliminates connection strings in environment variables entirely. The transport exclusivity guard prevents a misconfigured service from silently ignoring one transport, which would cause message routing failures in production.
+
+#### Acceptance criteria
+- [ ] `AzureServiceBusOptions` sealed class with `ConnectionString?`, `FullyQualifiedNamespace?`, `MaxConcurrentCalls`, `TransportType` properties
+- [ ] Startup validation throws `InvalidOperationException` when both `ConnectionString` and `FullyQualifiedNamespace` are set, or when neither is set
+- [ ] When `FullyQualifiedNamespace` is set, `DefaultAzureCredential` is used — no connection string in code path
+- [ ] `.UseAzureServiceBus(string)` and `.UseAzureServiceBus(Action<AzureServiceBusOptions>)` both configure MassTransit ASB host correctly
+- [ ] Calling both `.UseRabbitMq` and `.UseAzureServiceBus` on the same builder throws `InvalidOperationException` at the second call
+- [ ] `AddConsumer<TConsumer, TDefinition>()` wires `IConsumerDefinition<TConsumer>` into MassTransit registration
+- [ ] `dotnet build` clean; `MassTransit.Azure.ServiceBus.Core` reference is present in `.csproj`
+---
+
+---
+### P-119 — Messaging MassTransit: Retry Pipeline and EF Core Transactional Outbox
+
+**Status:** `●` Complete
+**Work Order:** WO-020
+**Domain:** 07.Messaging
+**Depends on:** P-117
+
+#### What is needed
+Implement two opt-in capabilities on `MessagingBusBuilder`: the global retry pipeline and the EF Core transactional outbox.
+
+**`RetryOptions`** — sealed options class. Must expose: `Attempts` (`int`, default `3`, total attempts including first delivery); `InitialInterval` (`TimeSpan`, default `1s`); `IntervalIncrement` (`TimeSpan`, default `1s`); `MaxInterval` (`TimeSpan`, default `30s`); `ImmediateAttempts` (`int`, default `0`). Registered under `"SharedKernel:Messaging:Retry"`.
+
+**`MessagingBusBuilder.WithRetry(Action<RetryOptions>? configure = null)`** — applies `UseRetry` globally to all registered consumers via MassTransit's retry configurator. Null argument uses default `RetryOptions`. The retry pipeline must use incremental back-off: delay for attempt N is `InitialInterval + (N-1) * IntervalIncrement`, capped at `MaxInterval`. `ImmediateAttempts` fast-retries fire before the interval-based attempts begin. This method is optional — omitting it results in no retry policy (MassTransit default: no retry).
+
+**`OutboxOptions`** — sealed options class. Must expose: `BatchSize` (`int`, default `100`); `QueryDelay` (`TimeSpan`, default `1s`); `DuplicateDetectionWindow` (`TimeSpan`, default `30min`). Registered under `"SharedKernel:Messaging:Outbox"`.
+
+**`MessagingBusBuilder.WithEntityFrameworkOutbox<TDbContext>(Action<OutboxOptions>? configure = null)`** — calls `MassTransit.EntityFrameworkCoreIntegration.AddEntityFrameworkOutbox<TDbContext>()` with the configured `OutboxOptions`. The generic constraint is `where TDbContext : Microsoft.EntityFrameworkCore.DbContext`. This package must not reference `SharedKernel.Persistence.EfCore` or any `06.Persistence.*` package — the `TDbContext` type parameter constraint uses only `Microsoft.EntityFrameworkCore` directly. The outbox delivery background service is wired by MassTransit automatically. At-least-once delivery semantics apply — all consumers registered alongside an outbox must be idempotent. The consuming service owns all EF migrations for outbox tables.
+
+The outbox setup must include clear startup documentation (XML doc on `WithEntityFrameworkOutbox`) warning: the consuming service's `DbContext` must include outbox tables (added via `dotnet ef migrations add AddMassTransitOutbox`) before starting the service. Starting without outbox tables causes the delivery worker to throw immediately at runtime.
+
+#### Why this is needed
+These two capabilities are the primary reliability levers for the messaging system. The retry pipeline is the first line of defense against transient broker failures, network blips, and downstream service unavailability. The transactional outbox solves the dual-write problem — without it, an application handler that saves a database record and then publishes a message has a window where the DB commits but the publish fails (or vice versa), causing data inconsistency. The outbox pattern makes publish atomic with the database transaction, which is the gold standard for microservice event sourcing at scale.
+
+The no-reference-to-06.Persistence constraint is critical: `07.Messaging` must never depend on `06.Persistence`. The generic `TDbContext` parameter achieves the transactional coupling without introducing a package dependency.
+
+#### Acceptance criteria
+- [ ] `RetryOptions` sealed class with all five properties and documented defaults
+- [ ] `WithRetry()` wires MassTransit `UseRetry` with incremental back-off computed from `RetryOptions`; `ImmediateAttempts` fires before interval attempts
+- [ ] Omitting `WithRetry()` results in zero retry policy (verified via `TestHarness` — first failure causes fault immediately)
+- [ ] `OutboxOptions` sealed class with three properties and documented defaults
+- [ ] `WithEntityFrameworkOutbox<TDbContext>()` calls MassTransit `AddEntityFrameworkOutbox<TDbContext>()` with outbox options; generic constraint is `where TDbContext : DbContext` (EfCore only, no Persistence reference)
+- [ ] `SharedKernel.Messaging.MassTransit.csproj` references `MassTransit.EntityFrameworkCoreIntegration` and `Microsoft.EntityFrameworkCore` only — no `SharedKernel.Persistence.*` reference
+- [ ] XML doc on `WithEntityFrameworkOutbox` warns about migration requirement
+- [ ] `dotnet build` clean
+---
+
+---
+### P-120 — Messaging: Full Test Suite — Unit, Integration, Outbox, CloudEvents, Retry, and Guard Tests
+
+**Status:** `●` Complete
+**Work Order:** WO-020
+**Domain:** 07.Messaging
+**Depends on:** P-117, P-118, P-119
+
+#### What is needed
+A comprehensive test suite covering both packages. Tests live in the nested `.Tests/` projects inside each package folder. All tests use the standard test stack: xUnit, FluentAssertions, NSubstitute, `MassTransit.Testing` 8.x.
+
+**Abstractions package tests (`SharedKernel.Messaging.Abstractions.Tests`):**
+- `PublishContext` fluent builder — verify `WithCorrelationId`, `WithCausationId`, `WithHeader` produce correct state; verify `WithHeader` with null/empty key throws `ArgumentException`; verify duplicate key overwrites
+- `MessagingOptions` validation — verify `OptionsValidationException` thrown when `ServiceName` is null or whitespace
+- `AddSharedKernelMessaging` — verify `IMessagingBuilder` returned; verify `MessagingOptions` resolvable from DI after registration
+
+**MassTransit package tests — unit (`SharedKernel.Messaging.MassTransit.Tests`):**
+- `IMessageBus` mock tests — NSubstitute mock; application handler calls `PublishAsync<OrderPlacedEvent>` — verify called once with correct type; `SendAsync<CreateOrderCommand>` — verify called once
+- `IEventPublisher` mock tests — NSubstitute mock; verify `PublishAsync<TEvent>` called with correct integration event type
+- `MessagingBusBuilder` guard tests — verify `Build()` throws `InvalidOperationException` with no transport; verify both `.UseRabbitMq` + `.UseAzureServiceBus` throws at second call; verify `AzureServiceBusOptions` with both `ConnectionString` and `FullyQualifiedNamespace` set throws `InvalidOperationException`
+
+**MassTransit package tests — TestHarness integration:**
+- `ConsumerBase<TMessage>` tests — in-memory `TestHarness`; publish a message; assert `ConsumeAsync` was called with correct message; assert NSubstitute-configured dependency was invoked; verify exception propagation (NSubstitute throws from dependency — verify `harness.Consumed` does NOT show success; fault is published)
+- CloudEvents envelope tests — publish via `IEventPublisher` via `TestHarness`; intercept outgoing `EventEnvelope<TEvent>`; assert `SourceService` equals `MessagingOptions.ServiceName`; assert `CorrelationId` non-empty; assert `SchemaVersion` value (via `[DomainEventVersion]` attribute if present, else `1`); assert `TimestampUtc` is recent
+- Consumer endpoint convention tests — verify queue name follows `{service-name}-{consumer-type}` kebab-case via `TestHarness.GetConsumerHarness<TConsumer>().QueueAddress`
+- `RequestAsync<TRequest, TResponse>` timeout test — no responder registered; cancellation token expires; verify operation throws or cancels (does not hang)
+
+**Retry policy tests:**
+- Configure `RetryOptions.Attempts = 3`; consumer throws on first 2 calls, succeeds on 3rd; assert `ConsumeAsync` called exactly 3 times via `TestHarness.Consumed`
+- Configure `ImmediateAttempts = 2`; consumer always fails; assert fault after total `Attempts` exhausted
+
+**Outbox round-trip tests (SQLite, no Testcontainers needed):**
+- Wire `WithEntityFrameworkOutbox<TestDbContext>` to an in-memory SQLite EF Core context with MassTransit outbox tables (via `modelBuilder.AddInboxStateEntity()` + `modelBuilder.AddOutboxMessageEntity()` + `modelBuilder.AddOutboxStateEntity()`)
+- Publish via `IEventPublisher` inside a DB transaction scope
+- Assert outbox row inserted before `SaveChangesAsync` commits
+- Run outbox delivery worker (advance MassTransit `TestHarness` clock or trigger delivery manually)
+- Assert message delivered to consumer after DB commit; `harness.Consumed` contains the expected event
+
+**RabbitMQ integration tests (Testcontainers, tagged `[Trait("Category", "Integration")]`):**
+- Wire `UseRabbitMq` with Testcontainers RabbitMQ container connection string from `16.Testing/SharedKernel.Testing`
+- Publish via `IMessageBus.PublishAsync`; consumer receives message; assert `harness.Consumed.Select<TMessage>()` contains expected message
+- End-to-end delivery verified across real broker
+
+All tests must achieve meaningful assertion coverage — no trivial pass-through tests. Every test class must have `GlobalUsings.cs` `global using Xunit;`.
+
+#### Why this is needed
+The messaging layer is the communication backbone for hundreds of microservices. A broken `ConsumerBase`, incorrect CloudEvents envelope, or malfunctioning outbox could cause silent message loss at massive scale. The test suite is the zero-regression guarantee. SQLite for outbox unit tests eliminates Testcontainers dependency for CI speed. Testcontainers RabbitMQ tests verify actual broker behavior — serialization, acknowledgment, and reconnection behavior cannot be caught by `TestHarness` alone.
+
+#### Acceptance criteria
+- [ ] All `PublishContext` behavioral tests pass — fluent builder, guard on null/empty key, duplicate overwrite
+- [ ] `MessagingOptions` validation tests pass — `OptionsValidationException` on null/whitespace `ServiceName`
+- [ ] `IMessageBus` and `IEventPublisher` NSubstitute mock verification tests pass
+- [ ] All `MessagingBusBuilder` guard tests pass — no-transport, dual-transport, ASB options mutual-exclusion
+- [ ] `ConsumerBase<TMessage>` `TestHarness` tests pass — correct message delivery, exception propagation without swallowing
+- [ ] CloudEvents envelope field tests pass — all five envelope fields verified
+- [ ] Consumer endpoint naming convention test passes — kebab-case with service-name prefix
+- [ ] `RequestAsync` timeout test passes — no hang on missing responder
+- [ ] Retry policy tests pass — 3-attempt scenario with incremental back-off; `ImmediateAttempts` fast-retry scenario
+- [ ] Outbox round-trip test passes on SQLite — row inserted before commit, delivered after commit
+- [ ] RabbitMQ Testcontainers integration test passes (run locally and in CI)
+- [ ] All tests tagged `[Trait("Category", "Integration")]` can be skipped in unit-only CI runs
+- [ ] Zero test compilation warnings; `dotnet test` exits 0
+---
+
+---
+### P-121 — Messaging: XML Documentation, Package Metadata, NuGet Pack, and Consumer Verification
+
+**Status:** `●` Complete
+**Work Order:** WO-020
+**Domain:** 07.Messaging
+**Depends on:** P-120
+
+#### What is needed
+Finalize both packages for NuGet publication.
+
+**XML documentation** — every public type and public member in both packages must carry XML doc comments: `<summary>`, `<param>`, `<returns>`, `<exception>`, and `<remarks>` where applicable. Special emphasis on: `IMessageBus.RequestAsync` — must include `<remarks>` warning about temporal coupling and the requirement to pass a timeout-bound `CancellationToken`; `WithEntityFrameworkOutbox` — must include `<remarks>` warning about migration prerequisite; `ConsumerBase<TMessage>.ConsumeAsync` — must include `<remarks>` stating exceptions must not be swallowed.
+
+**NuGet metadata** — both `.csproj` files must carry: `<PackageId>`, `<Version>` (starting at `1.0.0`), `<Authors>`, `<Description>` (one-sentence capability description), `<PackageTags>`, `<PackageLicenseExpression>` (MIT), `<GenerateDocumentationFile>true</GenerateDocumentationFile>`, `<IncludeSymbols>true</IncludeSymbols>`, `<SymbolPackageFormat>snupkg</SymbolPackageFormat>`. No `<IsAotCompatible>` tag — per root `CLAUDE.md` AOT policy.
+
+**Pack and verify** — run `dotnet pack` for both packages; verify `.nupkg` and `.snupkg` artifacts land in `nupkgs/`; verify package manifests include all expected assemblies; verify XML documentation is embedded in the `.nupkg`. Write a consumer-verify test that instantiates `AddSharedKernelMessaging` from `SharedKernel.Messaging.Abstractions` in isolation (no MassTransit reference) and verifies the DI registration completes and `IMessagingBuilder` resolves.
+
+**`07.Messaging/CLAUDE.md` changelog update** — append a one-line entry per implementation-phase discovery, if any corrections or additions to the domain brain were made during implementation.
+
+#### Why this is needed
+NuGet metadata and XML docs are the developer experience contract for every team consuming these packages. Incomplete XML docs mean IntelliSense shows no guidance — developers make wrong decisions at call sites. The `snupkg` symbol package enables source-level debugging across service boundaries. The consumer-verify test catches packaging errors (missing types, wrong assembly references) before the packages are promoted.
+
+#### Acceptance criteria
+- [ ] Every public type and member in both packages carries XML doc `<summary>`; complex members have `<remarks>`
+- [ ] `IMessageBus.RequestAsync` XML doc includes temporal-coupling and timeout-CancellationToken warning
+- [ ] `WithEntityFrameworkOutbox` XML doc includes migration prerequisite warning
+- [ ] `ConsumerBase<TMessage>.ConsumeAsync` XML doc includes no-swallow exception requirement
+- [ ] Both `.csproj` files carry all required NuGet metadata fields including `GenerateDocumentationFile`, `IncludeSymbols`, `SymbolPackageFormat`
+- [ ] `dotnet pack` produces `.nupkg` and `.snupkg` for both packages in `nupkgs/`
+- [ ] Package manifests verified — assemblies and XML docs included
+- [ ] Consumer-verify test passes: `AddSharedKernelMessaging` used from `SharedKernel.Messaging.Abstractions` with no transport reference; `IMessagingBuilder` resolves
+- [ ] `07.Messaging/CLAUDE.md` changelog updated
+---
+
+---
+### P-122 — ServiceDefaults: Messaging Health Checks — RabbitMQ and Azure Service Bus Connection Probes
+
+**Status:** `○` Pending
+**Work Order:** WO-020
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-117, P-118
+
+#### What is needed
+Add health check registrations for both supported transports to `SharedKernel.ServiceDefaults`. The health checks must be opt-in extension methods rather than unconditionally registered — services that do not use messaging should not carry a failing health check for a broker they don't connect to.
+
+**RabbitMQ health check** — an `AddRabbitMqMessagingHealthCheck(string amqpUri)` extension on `IHealthChecksBuilder` (or a `IServiceCollection` extension) that registers the `RabbitMQ.Client` health check (from the `AspNetCore.HealthChecks.RabbitMQ` package). The health check must be tagged `"messaging"` and `"ready"` so it participates in the readiness probe. The check must verify the AMQP connection can be established — not just that the URI parses.
+
+**Azure Service Bus health check** — an `AddAzureServiceBusMessagingHealthCheck(string connectionStringOrNamespace)` extension that registers the ASB health check (from `AspNetCore.HealthChecks.AzureServiceBus`). The check must be tagged `"messaging"` and `"ready"`. When a fully-qualified namespace is passed (no connection string), the check must use `DefaultAzureCredential`.
+
+**Bus readiness probe** — the health check endpoints must distinguish between liveness (the process is alive) and readiness (the bus is connected and ready to consume). A service reporting Healthy on `/health/live` but Degraded on `/health/ready` must not receive traffic until the bus connection is established. The messaging health checks must only appear on the readiness path.
+
+**Options-based registration** — the extension must accept the transport type and connection details from `MessagingOptions` and transport options (e.g., `RabbitMqBusOptions.Host`) rather than requiring callers to duplicate connection string values. Where `MessagingOptions` is registered in DI, the health check registration must be able to resolve it.
+
+#### Why this is needed
+K8s-native services depend on accurate health probes to route traffic safely. A service whose bus connection is down should be removed from the load balancer until reconnected — this is why messaging health checks belong on the readiness path, not liveness. Without this, a pod with a broken RabbitMQ connection continues receiving HTTP traffic whose handlers may publish messages that silently fail, causing data inconsistency at scale. The `13.ServiceDefaults` layer is the correct home for health check wiring because it composes all observability concerns at the host level.
+
+#### Acceptance criteria
+- [ ] `AddRabbitMqMessagingHealthCheck` extension registered; verifies real AMQP connection; tagged `"messaging"` and `"ready"`
+- [ ] `AddAzureServiceBusMessagingHealthCheck` extension registered; uses `DefaultAzureCredential` when fully-qualified namespace is passed; tagged `"messaging"` and `"ready"`
+- [ ] Messaging health checks appear only on `/health/ready` endpoint, not `/health/live`
+- [ ] Registration accepts values from resolved `RabbitMqBusOptions` / `AzureServiceBusOptions` from DI — no connection string duplication in calling code
+- [ ] `AspNetCore.HealthChecks.RabbitMQ` and `AspNetCore.HealthChecks.AzureServiceBus` package references added to `SharedKernel.ServiceDefaults`
+- [ ] `dotnet build` clean; `13.ServiceDefaults/CLAUDE.md` changelog updated
+---
+
+---
+### P-123 — Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-020
+**Domain:** 00.Governance
+**Depends on:** P-117
+
+#### What is needed
+Add architecture enforcement rules to `SharedKernel.ArchitectureTests` covering the four primary messaging misuse patterns that cannot be caught by the compiler.
+
+**Rule MSG0101 — No direct `IBus` / `IPublishEndpoint` / `ISendEndpointProvider` injection outside `07.Messaging`:**
+Any type outside the `SharedKernel.Messaging.*` namespace (or the `07.Messaging` folder assemblies) that has a constructor or property dependency on `MassTransit.IBus`, `MassTransit.IPublishEndpoint`, or `MassTransit.ISendEndpointProvider` violates this rule. Application handlers, domain services, command/query handlers, and controllers must inject `IMessageBus` or `IEventPublisher` exclusively. Diagnostic: `MSG0101: MassTransit transport types (IBus, IPublishEndpoint, ISendEndpointProvider) must not be injected directly. Use IMessageBus or IEventPublisher from SharedKernel.Messaging.Abstractions.`
+
+**Rule MSG0102 — `IEventPublisher` must not be called from types in `03.Domain`:**
+Any type in the domain layer (implementing `Entity`, `AggregateRoot`, `ValueObject`, `DomainService`, or residing in a `*.Domain.*` namespace) that has a dependency on `IEventPublisher` violates this rule. Domain events are dispatched internally by `IDomainEventDispatcher` — integration events flow through the application layer only. Diagnostic: `MSG0102: IEventPublisher must not be used in the domain layer. Domain events are dispatched by IDomainEventDispatcher. The correct flow: domain event → IDomainEventDispatcher → application handler → IEventPublisher.`
+
+**Rule MSG0103 — `IMessageBus` and `IEventPublisher` must not be registered as singletons:**
+Any `services.AddSingleton<IMessageBus, ...>()` or `services.AddSingleton<IEventPublisher, ...>()` call violates this rule. Both interfaces must be scoped to match MassTransit's per-consume-scope lifetime model. Singleton registration breaks MassTransit's scoping and causes subtle message correlation bugs. Diagnostic: `MSG0103: IMessageBus and IEventPublisher must be registered as scoped services, not singletons.`
+
+**Rule MSG0104 — No hardcoded queue URI strings passed to `GetSendEndpoint`:**
+Any call to `ISendEndpointProvider.GetSendEndpoint(new Uri("queue:..."))` or `GetSendEndpoint(new Uri("exchange:..."))` with a string literal URI violates this rule. Endpoint addresses must be resolved by convention through MassTransit's `IEndpointNameFormatter` — hardcoded addresses break across environments. Diagnostic: `MSG0104: Do not pass hardcoded queue or exchange URI strings to GetSendEndpoint. Use convention-based endpoint resolution via IEndpointNameFormatter.`
+
+All rules must have compliant-pass and violation-fire test fixtures in `SharedKernel.ArchitectureTests`. Rules MSG0101 and MSG0102 are NetArchTest predicate checks (assembly type inspection). MSG0103 is a startup-time check or Roslyn analyzer. MSG0104 is a Roslyn analyzer checking for literal `Uri` construction with queue/exchange scheme prefixes.
+
+#### Why this is needed
+With hundreds of microservices consuming `SharedKernel.Messaging`, developers under deadline pressure will reach for the most IntelliSense-visible type — which is often `IBus` from MassTransit directly, bypassing the abstraction entirely. Without rule-as-code enforcement, this leaks transport-specific types into application handlers, making transport swaps impossible and breaking the abstraction boundary. The singleton lifetime violation is particularly insidious — it compiles and runs correctly in development but causes race conditions and scope pollution in production under concurrent load.
+
+#### Acceptance criteria
+- [ ] `MSG0101` fires when `IBus`, `IPublishEndpoint`, or `ISendEndpointProvider` is injected in a type outside `SharedKernel.Messaging.*`; does not fire for types within that namespace
+- [ ] `MSG0102` fires when `IEventPublisher` is a constructor dependency of any domain-layer type; does not fire for application-layer types
+- [ ] `MSG0103` fires when `IMessageBus` or `IEventPublisher` is registered via `AddSingleton`; does not fire for `AddScoped`
+- [ ] `MSG0104` fires when a string literal `new Uri("queue:...")` or `new Uri("exchange:...")` is passed to `GetSendEndpoint`; does not fire for convention-based resolution
+- [ ] All four rules have compliant-pass and violation-fire test fixtures in `SharedKernel.ArchitectureTests`
+- [ ] All existing governance tests pass — no regressions
+- [ ] `00.Governance/CLAUDE.md` updated with the four new rules, rationale, and exemption lists
+---
+
+---
+### P-124 — Testing: Messaging Test Doubles and TestHarness Factory Helpers
+
+**Status:** `○` Pending
+**Work Order:** WO-020
+**Domain:** 16.Testing
+**Depends on:** P-116
+
+#### What is needed
+Add messaging test infrastructure to `SharedKernel.Testing` so downstream microservice tests can wire messaging in a controlled, deterministic way without spinning up a real broker.
+
+**`InMemoryMessageBus`** — a concrete `IMessageBus` implementation backed by an in-memory dictionary of published and sent messages. `PublishAsync<T>` stores the message and invokes any registered handlers for `T`. `SendAsync<T>` stores the command. `RequestAsync<TRequest, TResponse>` returns a configurable `TResponse` via a per-type response factory registration. Exposes `Published<T>()` and `Sent<T>()` query methods for assertion. Thread-safe. Does not require MassTransit package reference — references only `SharedKernel.Messaging.Abstractions`.
+
+**`InMemoryEventPublisher`** — a concrete `IEventPublisher` implementation backed by an in-memory list of published integration events. `PublishAsync<TEvent>` stores the `(TEvent, PublishContext?)` tuple. Exposes `PublishedEvents<TEvent>()` returning `IReadOnlyList<TEvent>`; `PublishedCount<TEvent>()` returning `int`. Thread-safe. No MassTransit dependency.
+
+**`MessagingTestHarnessFactory`** — a static factory class with a `CreateInMemory(Action<MessagingBusBuilder>? configure = null)` method that constructs a MassTransit `TestHarness` with in-memory transport, wires `IMessageBus` and `IEventPublisher`, and registers provided consumers. Returns an `IAsyncDisposable` wrapper (`MessagingTestContext`) that exposes the `TestHarness`, `IMessageBus`, and `IEventPublisher` instances. References `MassTransit.Testing` — this is acceptable because `16.Testing` may reference any layer.
+
+**`RabbitMqTestContainerFactory`** — a static factory (or helper builder) that creates a Testcontainers RabbitMQ container configured for integration tests. Exposes the resulting AMQP connection string so callers can pass it to `UseRabbitMq(connectionString)`. Wraps the Testcontainers RabbitMQ image setup — callers do not need to know the container image name or port mapping details. Implements `IAsyncDisposable` to stop and remove the container on test teardown.
+
+**`FakePublishContext`** — a test helper that pre-builds a `PublishContext` with deterministic `CorrelationId` and `CausationId` values for asserting envelope propagation in unit tests.
+
+#### Why this is needed
+Every microservice team will write application-layer unit tests that exercise command/query handlers which call `IMessageBus` or `IEventPublisher`. Without `InMemoryMessageBus` and `InMemoryEventPublisher`, teams reach for raw NSubstitute mocks — which verify calls were made but cannot assert message content or routing semantics. The in-memory implementations provide a lightweight but behaviorally-correct bus that captures the full message for assertion, enabling stronger test contracts. The `MessagingTestHarnessFactory` lifts MassTransit's TestHarness setup out of every test project that needs it — a single well-configured factory prevents thirty teams from each writing their own harness setup with slightly different configurations.
+
+#### Acceptance criteria
+- [ ] `InMemoryMessageBus` implements `IMessageBus`; `Published<T>()` and `Sent<T>()` return correct captured messages after `PublishAsync`/`SendAsync` calls; `RequestAsync` returns registered response or throws descriptive `InvalidOperationException` when no response factory registered
+- [ ] `InMemoryEventPublisher` implements `IEventPublisher`; `PublishedEvents<TEvent>()` returns correct list; thread-safe under concurrent publish
+- [ ] `MessagingTestHarnessFactory.CreateInMemory()` returns a `MessagingTestContext` with working `IMessageBus`, `IEventPublisher`, and `TestHarness` instances using in-memory transport
+- [ ] `MessagingTestContext` is `IAsyncDisposable`; `DisposeAsync` stops and disposes the MassTransit harness cleanly
+- [ ] `RabbitMqTestContainerFactory` starts a Testcontainers RabbitMQ container; exposes AMQP connection string; `IAsyncDisposable` teardown stops container
+- [ ] `FakePublishContext` produces deterministic `PublishContext` with set `CorrelationId` and `CausationId`
+- [ ] `InMemoryMessageBus` and `InMemoryEventPublisher` reference only `SharedKernel.Messaging.Abstractions` — no MassTransit package reference in their implementations
+- [ ] `SharedKernel.Testing` test project validates all four helpers with at least one test each
+- [ ] `dotnet build` clean; `16.Testing/CLAUDE.md` changelog updated
+
+---
+### P-125 — Messaging Abstractions: Circuit Breaker and Fault Consumer Contracts
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-021
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+Extend `SharedKernel.Messaging.Abstractions` with two new contracts that address the gap between retry exhaustion and structured fault handling.
+
+**`IFaultConsumer<TMessage>` interface** — a companion base contract for consumers that need to handle dead-lettered or faulted messages. Mirrors MassTransit's `IConsumer<Fault<TMessage>>` pattern but expressed through the SharedKernel abstraction surface so consuming services never reference MassTransit directly in their fault handlers. Must carry the original faulted message payload, the `ExceptionInfo[]` array (as a platform-defined `FaultExceptionInfo` record with `ExceptionType` string and `Message` string), the `FaultId` (Guid), and the `FaultTimestamp` (DateTimeOffset). Fault consumers are registered via `MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>()` (defined in the MassTransit package, not here — this interface is the abstraction only). The interface must be zero-dependency (no MassTransit reference in Abstractions).
+
+**`CircuitBreakerOptions` options class** — a sealed POCO (DI options section `"SharedKernel:Messaging:CircuitBreaker"`) exposing: `TripThreshold` (int, default 5 — consecutive failures before tripping), `ActiveThreshold` (int, default 10 — active messages before circuit-breaker evaluation), `ResetInterval` (TimeSpan, default 60s — time before circuit moves from Open to HalfOpen), `TrackingPeriod` (TimeSpan, default 60s — rolling window for failure counting). These options are consumed by `MessagingBusBuilder.WithCircuitBreaker()` in the MassTransit package.
+
+**`FaultExceptionInfo` record** — a sealed record with `ExceptionType` (string) and `Message` (string). Lives in Abstractions so fault consumers can inspect the error without MassTransit references. Referenced by `IFaultConsumer<TMessage>`.
+
+All new types must have full XML doc comments. Zero new NuGet dependencies in `SharedKernel.Messaging.Abstractions`.
+
+#### Why this is needed
+Retry alone is insufficient resilience — it is the *first* line of defense. When retries are exhausted, the message enters MassTransit's dead-letter mechanism. Without `IFaultConsumer<TMessage>`, services either ignore dead-lettered messages (silent data loss) or reach directly into MassTransit's `IConsumer<Fault<T>>` (leaking transport types into application code). The circuit breaker options are needed here (not just in the MassTransit package) because they are configuration data that consuming services configure via DI options — the shape of that configuration is part of the abstraction contract.
+
+#### Acceptance criteria
+- [ ] `IFaultConsumer<TMessage>` interface defined in `SharedKernel.Messaging.Abstractions` with `FaultId`, `FaultTimestamp`, `FaultedMessage`, and `Exceptions` contract members
+- [ ] `FaultExceptionInfo` sealed record defined with `ExceptionType` and `Message` — no MassTransit reference
+- [ ] `CircuitBreakerOptions` sealed POCO defined with four properties, defaults, and `SectionName` constant; full XML docs
+- [ ] Zero new NuGet package references added to `SharedKernel.Messaging.Abstractions.csproj`
+- [ ] All new types carry full XML doc comments
+- [ ] Unit tests added to `SharedKernel.Messaging.Abstractions.Tests` verifying `CircuitBreakerOptions` default values and `FaultExceptionInfo` record equality
+- [ ] `07.Messaging/CLAUDE.md` changelog updated
+---
+
+---
+### P-126 — Messaging MassTransit: Circuit Breaker Builder Method and Fault Consumer Wiring
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-021
+**Domain:** 07.Messaging
+**Depends on:** P-125
+
+#### What is needed
+Extend `MessagingBusBuilder` in `SharedKernel.Messaging.MassTransit` with circuit breaker configuration and fault consumer registration.
+
+**`MessagingBusBuilder.WithCircuitBreaker(Action<CircuitBreakerOptions>? configure = null)` method** — configures MassTransit's `UseCircuitBreaker` on the bus factory. Uses `CircuitBreakerOptions` (from P-125 in Abstractions) to populate `tripThreshold`, `activeThreshold`, `resetInterval`, and `trackingPeriod`. When both `WithRetry()` and `WithCircuitBreaker()` are called, retry is applied first (inner), circuit breaker second (outer) — this ordering is the correct layering: retry first within the current breaker state, then the breaker guards against sustained failure. If called without `WithRetry()`, only the circuit breaker applies. The method returns `MessagingBusBuilder` for fluent chaining.
+
+**`MessagingBusBuilder.AddFaultConsumer<TMessage, TFaultConsumer>()` method** — registers a consumer for `Fault<TMessage>` by adapting `TFaultConsumer : IFaultConsumer<TMessage>` to MassTransit's `IConsumer<Fault<TMessage>>`. The adapter class (`FaultConsumerAdapter<TMessage, TFaultConsumer>`) is internal to the package and translates `ConsumeContext<Fault<TMessage>>` to a platform `IFaultConsumer<TMessage>` call. The adapter must map `Fault<TMessage>.Exceptions` to `FaultExceptionInfo[]` (from P-125). The adapter uses the same `ConsumerBase<T>` error-logging and CorrelationId-propagation pattern.
+
+**`CLAUDE.md` documentation update** — add `WithCircuitBreaker()` and `AddFaultConsumer<TMessage, TFaultConsumer>()` to the DI registration surface documentation. Add a hard violation rule: "Do not configure circuit breakers per-consumer via `IConsumerDefinition` — always use `WithCircuitBreaker()` for global policy."
+
+**Tests** — circuit breaker unit tests using MassTransit TestHarness: configure a consumer that always fails; assert the circuit opens after `TripThreshold` consecutive failures; assert subsequent messages are rejected with `CircuitBreakerException` without invoking the consumer. Fault consumer tests: wire `AddFaultConsumer`; publish a message that causes a fault; assert the fault consumer's method was invoked with the correct `FaultId` and `FaultedMessage`.
+
+#### Why this is needed
+Without `WithCircuitBreaker()`, a permanently-failing dependency (e.g., a crashed downstream service) causes every incoming message to exhaust its retry budget, saturating thread pools and amplifying load on already-degraded dependencies. The circuit breaker pattern is the standard mitigation — it short-circuits failing messages quickly once a failure threshold is crossed, preserving system stability until the dependency recovers. The fault consumer adapter is the structured path for handling dead-lettered messages without leaking MassTransit's `Fault<T>` type into application code.
+
+#### Acceptance criteria
+- [ ] `WithCircuitBreaker(Action<CircuitBreakerOptions>?)` method added to `MessagingBusBuilder`; applies MassTransit `UseCircuitBreaker` with correct field mappings from `CircuitBreakerOptions`
+- [ ] When both `WithRetry()` and `WithCircuitBreaker()` are called, retry is applied inner (first) and circuit breaker outer (second)
+- [ ] `AddFaultConsumer<TMessage, TFaultConsumer>()` registers internal `FaultConsumerAdapter<TMessage, TFaultConsumer>` for `Fault<TMessage>`
+- [ ] `FaultConsumerAdapter` maps `Fault<TMessage>.Exceptions` to `FaultExceptionInfo[]` correctly
+- [ ] TestHarness test: consumer trips circuit after `TripThreshold` failures; subsequent messages are short-circuited
+- [ ] TestHarness test: fault consumer is invoked after message fault with correct `FaultId` and `FaultedMessage`
+- [ ] `07.Messaging/CLAUDE.md` updated with new builder methods and hard violation rule
+- [ ] `dotnet build` clean; `dotnet test` passes
+---
+
+---
+### P-127 — Messaging MassTransit: Deferred Message Scheduling via IMessageScheduler
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-021
+**Domain:** 07.Messaging
+**Depends on:** P-125
+
+#### What is needed
+Add deferred message delivery capability to the messaging layer through a scheduling abstraction and MassTransit integration.
+
+**`IMessageScheduler` interface** (in `SharedKernel.Messaging.Abstractions`) — exposes two methods:
+- `ScheduleAsync<T>(T message, DateTimeOffset deliverAt, CancellationToken ct) → Task<Guid>` — schedules a message for delivery at the specified UTC time; returns a schedule token (Guid) for potential cancellation
+- `CancelAsync(Guid scheduleToken, CancellationToken ct) → Task` — cancels a previously scheduled message by token; no-op if already delivered
+
+**`SchedulingOptions` sealed POCO** (in Abstractions) — `SectionName = "SharedKernel:Messaging:Scheduling"`, property: `Provider` (enum: `InMemory`, `Quartz`, `HangfireDefault InMemory`) for selecting the scheduler backend. `UseInMemoryScheduler` (bool, default true when no Quartz/Hangfire integration is present).
+
+**`MassTransitMessageScheduler`** (in `SharedKernel.Messaging.MassTransit`) — `internal sealed` implementation of `IMessageScheduler`. Delegates to MassTransit's `IMessageScheduler` (via `MassTransit.MessageSchedulerExtensions.GetMessageScheduler(IServiceProvider)`). The token returned by `ScheduleAsync` maps to the MassTransit `ScheduledMessage.TokenId`.
+
+**`MessagingBusBuilder.WithInMemoryScheduler()` method** — wires MassTransit's in-memory scheduler (`cfg.UseInMemoryScheduler()`). Registers `IMessageScheduler → MassTransitMessageScheduler` as scoped. Adds a documentation note that in-memory scheduler does not survive process restarts — for production use Quartz or Hangfire integration.
+
+**`MessagingBusBuilder.WithQuartzScheduler(Action<QuartzSchedulerOptions>? configure = null)` method** — wires MassTransit's Quartz.NET scheduler integration (`MassTransit.QuartzIntegration`). `QuartzSchedulerOptions` exposes `ConnectionString` (required) and `Schema` (default `"quartz"`). Registers `IMessageScheduler → MassTransitMessageScheduler`.
+
+#### Why this is needed
+Deferred delivery is required for sagas with time-based transitions (e.g., "if payment not received within 24 hours, cancel the order"), scheduled reminders, and retry-with-significant-delay patterns that are too long for in-process retry backoff. Without `IMessageScheduler`, services either implement ad-hoc Hangfire jobs that bypass the messaging abstraction, or misuse `Task.Delay` inside consumers (which blocks threads and cannot survive service restarts). Making `IMessageScheduler` part of the messaging abstraction ensures scheduled messages are observable, cancellable, and transport-agnostic.
+
+#### Acceptance criteria
+- [ ] `IMessageScheduler` interface added to `SharedKernel.Messaging.Abstractions` with `ScheduleAsync` and `CancelAsync` methods; zero new NuGet dependencies in Abstractions
+- [ ] `SchedulingOptions` sealed POCO added to Abstractions with `SectionName` and `Provider` enum
+- [ ] `MassTransitMessageScheduler` internal implementation in MassTransit package delegates to MassTransit's `IMessageScheduler`
+- [ ] `WithInMemoryScheduler()` method on `MessagingBusBuilder` wires in-memory scheduler and registers `IMessageScheduler`
+- [ ] `WithQuartzScheduler()` method on `MessagingBusBuilder` wires Quartz integration; `MassTransit.Quartz` NuGet reference added only if this method is called (conditional registration)
+- [ ] Unit test: `WithInMemoryScheduler()` + publish scheduled message via `IMessageScheduler`; assert message consumed after `deliverAt` elapsed (TestHarness with in-memory scheduler)
+- [ ] Unit test: `CancelAsync` before delivery time; assert message never consumed
+- [ ] `07.Messaging/CLAUDE.md` updated with scheduler abstraction and hard violation (no direct `MassTransit.IMessageScheduler` injection)
+- [ ] `dotnet build` clean
+---
+
+---
+### P-128 — Messaging MassTransit: Saga State Machine Base
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-021
+**Domain:** 07.Messaging
+**Depends on:** P-125
+
+#### What is needed
+Add saga state machine support to `SharedKernel.Messaging.MassTransit` so services can implement durable orchestration workflows without referencing MassTransit types directly in their saga definitions.
+
+**`SagaStateBase` abstract record** — a base record type for saga state classes (i.e., the entity that holds the saga's persisted state). Must implement MassTransit's `ISagaVersion` interface (for optimistic concurrency via `Version` int) and expose: `CorrelationId` (Guid, primary key of the saga instance), `CurrentState` (string, the current state name), `CreatedAt` (DateTimeOffset), `UpdatedAt` (DateTimeOffset). The base record must be EF Core-mappable (no EF-specific attributes on this type — EF configuration lives in Persistence). Lives in `SharedKernel.Messaging.MassTransit` because it references `ISagaVersion` from MassTransit.
+
+**`SagaStateMachineBase<TSaga>` abstract class** — derives from MassTransit's `MassTransitStateMachine<TSaga>` where `TSaga : SagaStateBase`. Provides protected helper methods for common patterns: `TransitionTo(state)`, `Finalize()`, and event correlation helpers. Must not expose MassTransit's state machine API directly — consuming services inherit from `SagaStateMachineBase<TSaga>` and declare states, events, and transitions using the protected surface. This is a thin ergonomic wrapper, not a complete abstraction — consuming services that need advanced MassTransit state-machine features must reference MassTransit directly for those specific features.
+
+**`MessagingBusBuilder.AddSaga<TSaga>()` method** — registers a saga by type. Saga persistence defaults to in-memory repository (for development). Production persistence is configured via `AddSaga<TSaga, TDefinition>()` (companion overload accepting an `IConsumerDefinition<TSaga>`-equivalent saga definition).
+
+**`MessagingBusBuilder.WithEntityFrameworkSagaRepository<TDbContext, TSaga>()` method** — wires MassTransit's EF Core saga repository for `TSaga` using `TDbContext`. The `TDbContext` must include the EF Core saga state mappings. No compile-time reference to `SharedKernel.Persistence.EfCore` — the `TDbContext : DbContext` generic constraint only. Documents that consuming services must add the saga state entity to their DbContext and run EF migrations.
+
+**Tests** — TestHarness saga test: define a minimal two-state saga (Initial → Active → Final) triggered by two events; publish both events in sequence; assert saga reaches Final state.
+
+#### Why this is needed
+Event-choreographed sagas without state machine support devolve into ad-hoc flag-checking in consumers, scattered across multiple services with no central view of the workflow state. MassTransit's saga state machines provide durable, auditable orchestration — but the raw MassTransit `MassTransitStateMachine<T>` API is complex and leaks transport types into business workflow code. `SagaStateMachineBase<TSaga>` provides a thin ergonomic wrapper that guides teams toward the correct pattern while keeping the blast radius of MassTransit API changes contained to this package.
+
+#### Acceptance criteria
+- [ ] `SagaStateBase` abstract record in MassTransit package implements `ISagaVersion`; has `CorrelationId`, `CurrentState`, `CreatedAt`, `UpdatedAt`
+- [ ] `SagaStateMachineBase<TSaga>` abstract class extends `MassTransitStateMachine<TSaga>`; provides protected helpers for common patterns
+- [ ] `AddSaga<TSaga>()` and `AddSaga<TSaga, TDefinition>()` on `MessagingBusBuilder`; in-memory saga repository as default
+- [ ] `WithEntityFrameworkSagaRepository<TDbContext, TSaga>()` on `MessagingBusBuilder`; no `SharedKernel.Persistence.*` reference introduced
+- [ ] TestHarness test: two-state saga driven by two events reaches Final state; saga state is inspectable via harness
+- [ ] `07.Messaging/CLAUDE.md` updated with saga section and docs
+- [ ] `dotnet build` clean
+---
+
+---
+### P-129 — Messaging MassTransit: Batch Consumer Base
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-021
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+Add batch consumer support to `SharedKernel.Messaging.MassTransit` for high-throughput scenarios where processing individual messages one-by-one is inefficient.
+
+**`BatchConsumerBase<TMessage>` abstract class** — derives from MassTransit's `IConsumer<Batch<TMessage>>` interface. The base class implements `IConsumer<Batch<TMessage>>.Consume(ConsumeContext<Batch<TMessage>>)` as the sealed entry point, forwarding to `ConsumeAsync(IReadOnlyList<TMessage> messages, CancellationToken ct)` (the abstract method consuming services override). The base class performs: (1) structured logging with batch size and batch-level CorrelationId; (2) exception log-then-rethrow on failure (same pattern as `ConsumerBase<T>`); (3) extraction of the batch's cancellation token from the last message's `ConsumeContext.CancellationToken`.
+
+**`BatchOptions` sealed POCO** (DI options section `"SharedKernel:Messaging:Batch"`) — `MessageLimit` (int, default 10 — maximum messages per batch), `TimeLimit` (TimeSpan, default 1s — maximum wait time for a batch to fill), `ConcurrencyLimit` (int, default 1 — concurrent batch deliveries per endpoint). These options are applied to individual consumer endpoints via `MessagingBusBuilder.AddBatchConsumer<TConsumer>(Action<BatchOptions>? configure = null)`.
+
+**`MessagingBusBuilder.AddBatchConsumer<TConsumer>(Action<BatchOptions>? configure = null)` method** — registers `TConsumer` (where `TConsumer : BatchConsumerBase<TMessage>`) with MassTransit's batch endpoint configuration. Applies `BatchOptions` via `IConsumerConfigurator.Options<BatchOptions>()` and wires the batch size and time limit via MassTransit's batch configurator. Returns `MessagingBusBuilder` for fluent chaining.
+
+**Tests** — TestHarness batch test: publish 5 messages to a batch consumer with `MessageLimit = 5`; assert `ConsumeAsync` was called once with a list of 5 messages (not 5 times with 1 message each). Time-limit test: publish 2 messages with `MessageLimit = 10` and `TimeLimit = 100ms`; assert batch is delivered after `TimeLimit` elapses with 2 messages.
+
+#### Why this is needed
+High-throughput services (e.g., event ingestion, audit logging, analytics writes) cannot process messages one-by-one within reasonable throughput budgets. Batch consumers allow amortizing database round-trips and network calls across multiple messages in a single invocation, improving throughput by an order of magnitude. Without a `BatchConsumerBase<T>`, teams either implement `IConsumer<Batch<T>>` directly (leaking MassTransit types) or process messages individually (poor throughput). The platform providing a standard base ensures consistent logging, error handling, and configuration patterns across all batch consumers.
+
+#### Acceptance criteria
+- [ ] `BatchConsumerBase<TMessage>` abstract class in MassTransit package implements `IConsumer<Batch<TMessage>>`; provides `ConsumeAsync(IReadOnlyList<TMessage>, CancellationToken)` abstract method
+- [ ] `BatchOptions` sealed POCO with `MessageLimit`, `TimeLimit`, `ConcurrencyLimit` and documented defaults
+- [ ] `AddBatchConsumer<TConsumer>(Action<BatchOptions>?)` on `MessagingBusBuilder` applies batch configuration
+- [ ] TestHarness test: 5 messages consumed as a single batch of 5
+- [ ] TestHarness test: partial batch delivered after `TimeLimit` elapses
+- [ ] Exception from `ConsumeAsync` is logged and rethrown; fault is published by MassTransit
+- [ ] Full XML docs on all new types
+- [ ] `dotnet build` clean; `dotnet test` passes
+---
+
+---
+### P-130 — Messaging MassTransit: Fix Build() Eager ServiceProvider Anti-Pattern
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-021
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+Fix the architectural anti-pattern in `MessagingBusBuilder.Build()` where `Services.BuildServiceProvider()` is called to perform eager validation of `MessagingOptions.ServiceName`.
+
+**Current problem:** `Build()` calls `Services.BuildServiceProvider()` to resolve `IOptions<MessagingOptions>` and validate `ServiceName`. This creates a second root `IServiceProvider` (separate from the application's real root), triggers "A second operation was started on this context" warnings in EF Core, double-registers any singleton services, and silently discards any scoped service registrations made between `AddSharedKernelMessaging()` and `Build()`. This is a well-known anti-pattern in .NET DI composition.
+
+**Correct approach:** The validation should be performed by instantiating `MessagingOptions` directly from the captured `configure` action (stored by `AddSharedKernelMessaging`) and running `MessagingOptionsValidator.Validate()` on it inline at `Build()` time — no `BuildServiceProvider()` call required. The `MessagingBusBuilder` must capture the `Action<MessagingOptions>?` delegate passed to `AddSharedKernelMessaging()` and use it to construct a `MessagingOptions` instance for validation only. The `ServiceName` is also needed at Build time for the `KebabCaseEndpointNameFormatter` prefix — this too should come from the captured delegate, not from a built container.
+
+**Additionally:** The `MessagingBusBuilder` should store the validated `ServiceName` in a private field after `Build()` validation succeeds, so it is available for the formatter without re-building the container. If `MessagingOptions` was configured via `services.Configure<MessagingOptions>(...)` (the configuration-section binding path rather than the inline action path), the builder must fall back to a sentinel (empty string) that defers validation to the ASP.NET startup `ValidateOnStart()` call — document this path in `CLAUDE.md`.
+
+**Tests:** Add a test verifying that calling `Build()` after `AddSharedKernelMessaging()` does not produce a "second root service provider" diagnostic and does not cause duplicate service registration side effects.
+
+#### Why this is needed
+The current `BuildServiceProvider()` call inside `Build()` is classified as a hard anti-pattern in the Microsoft DI documentation. It causes subtle bugs: singleton services created in the early `BuildServiceProvider()` are different instances from those in the application's real container; EF Core DbContexts registered by the consuming service can be constructed twice; any `.AddSingleton()` call that captures state (like a connection pool) will create two pools. For a package consumed by hundreds of services, this time-bomb needs to be defused before it causes production incidents.
+
+#### Acceptance criteria
+- [ ] `MessagingBusBuilder.Build()` no longer calls `Services.BuildServiceProvider()`
+- [ ] `ServiceName` validation at `Build()` time uses the captured `Action<MessagingOptions>?` delegate directly — instantiates `MessagingOptions`, applies the delegate, calls `MessagingOptionsValidator.Validate()` — no DI container constructed
+- [ ] `KebabCaseEndpointNameFormatter` prefix is populated from the captured/validated `ServiceName`
+- [ ] When `MessagingOptions` was configured via `services.Configure<T>(config.GetSection(...))` (no inline action), `Build()` does not throw — defers `ServiceName` validation to startup `ValidateOnStart()` and logs a warning that naming convention prefix cannot be validated at build time
+- [ ] Test verifying `Build()` does not register or resolve services from a second root provider
+- [ ] Existing `MessagingBusBuilderGuardTests` all still pass
+- [ ] `07.Messaging/CLAUDE.md` updated to document the correct validation approach
+---
+
+---
+### P-131 — Messaging MassTransit: ISendEndpointResolver — Cross-Service Command Routing
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-021
+**Domain:** 07.Messaging
+**Depends on:** P-125
+
+#### What is needed
+Fix the hardcoded service-name assumption in `MassTransitMessageBus.SendAsync<T>()` and introduce a routing abstraction for cross-service command delivery.
+
+**Current problem:** `MassTransitMessageBus.SendAsync<T>()` builds the destination queue name as `{current-service-name}-{type-name}`. This is correct for self-addressed commands (e.g., a service queuing work for itself) but wrong for cross-service commands (e.g., `order-service` sending a `ProcessPaymentCommand` to `payment-service`). The current convention assumes the queue prefix always equals the current service's name — an assumption that breaks at scale.
+
+**`ISendEndpointResolver` interface** (in `SharedKernel.Messaging.Abstractions`) — a single-method interface: `Resolve<T>() → string` where the return value is the full queue name (e.g., `"payment-service-process-payment"`). Defaults can be provided by a convention-based implementation. Custom resolvers are registered per command type.
+
+**`ConventionSendEndpointResolver`** (in MassTransit package) — default implementation that uses `MessagingOptions.ServiceName` as prefix and `KebabCaseEndpointNameFormatter.SanitizeName(typeof(T).Name)` as suffix. This is the current hardcoded behavior, now made explicit and overrideable.
+
+**`MessagingBusBuilder.WithSendEndpointRoute<T>(string queueName)` method** — registers a per-command-type queue name override. Stores in a `Dictionary<Type, string>` on the builder. Passed to `MassTransitMessageBus` via constructor injection as `IReadOnlyDictionary<Type, string>`.
+
+**`MassTransitMessageBus.SendAsync<T>()` updated behavior** — checks the per-type route dictionary first; falls back to `ConventionSendEndpointResolver` if no route registered for `T`.
+
+**Tests** — test that `SendAsync<T>` uses the registered route when one is configured; test that it falls back to convention when no route is registered.
+
+#### Why this is needed
+Cross-service command routing is a fundamental pattern in microservice choreography. An `order-service` must be able to send a `ProcessPaymentCommand` directly to `payment-service`'s queue. The current convention (`{current-service}-{type-name}`) only works for self-addressed queues. Without `ISendEndpointResolver`, teams either hardcode queue names (violating MSG0104), use `IMessageBus.PublishAsync` where send semantics are needed (wrong routing), or inject `ISendEndpointProvider` directly (violating MSG0101). The per-type route dictionary provides an escape hatch with full visibility into the routing configuration.
+
+#### Acceptance criteria
+- [ ] `ISendEndpointResolver` interface added to `SharedKernel.Messaging.Abstractions` with `Resolve<T>() → string`; zero new NuGet dependencies
+- [ ] `ConventionSendEndpointResolver` default implementation in MassTransit package using service-name prefix + kebab-case type name
+- [ ] `WithSendEndpointRoute<T>(string queueName)` on `MessagingBusBuilder`; stores per-type overrides
+- [ ] `MassTransitMessageBus.SendAsync<T>()` checks per-type route first; falls back to `ConventionSendEndpointResolver`
+- [ ] Unit test: `SendAsync<ProcessPaymentCommand>()` with registered route `"payment-service-process-payment"` — sends to that exact queue
+- [ ] Unit test: `SendAsync<OrderCreatedCommand>()` with no registered route — uses convention-based name
+- [ ] `07.Messaging/CLAUDE.md` updated with routing section and hard violation rule (no hardcoded queue URIs — use `WithSendEndpointRoute`)
+---
+
+---
+### P-132 — ServiceDefaults: Messaging OpenTelemetry Wiring
+
+**Status:** `○` Pending
+**Work Order:** WO-021
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-117, P-118
+
+#### What is needed
+Add `WithMessagingTelemetry()` extension to `SharedKernel.ServiceDefaults` that wires MassTransit's OpenTelemetry instrumentation into the platform's OTel `TracerProvider` and `MeterProvider`.
+
+**`WithMessagingTelemetry()` extension on `IOpenTelemetryBuilder`** (or a compatible `IServiceCollection` extension) — calls `builder.WithTracing(t => t.AddSource("MassTransit"))` to capture MassTransit's built-in `ActivitySource` spans for publish, send, consume, and outbox delivery. Also calls `builder.WithMetrics(m => m.AddMeter("MassTransit"))` to capture MassTransit's built-in meters (message counts, consumer durations, fault rates). This wiring must be idempotent — calling it multiple times must not register duplicate instruments.
+
+**SharedKernel custom `ActivitySource`** — registers a static `ActivitySource("SharedKernel.Messaging", "1.0.0")` in the `SharedKernel.Messaging.MassTransit` package. The `ConsumerBase<TMessage>` `Consume()` entry point creates a child `Activity` from this source named `"Consumer.Consume"` with tag `messaging.message_type = typeof(TMessage).Name`. The `MassTransitEventPublisher.PublishAsync()` creates a child `Activity` named `"EventPublisher.Publish"` with tag `messaging.event_type = typeof(TEvent).Name`. These custom activities provide SharedKernel-namespaced traces in addition to MassTransit's own tracing. `WithMessagingTelemetry()` must also register `"SharedKernel.Messaging"` as a traced source.
+
+**Structured log enrichment** — `ConsumerBase<TMessage>.Consume()` must enrich the log scope with `messaging.destination` (the queue name from `ConsumeContext.DestinationAddress?.AbsolutePath`) and `messaging.message_type` (the message type name). These are OpenTelemetry semantic convention keys for messaging.
+
+**`13.ServiceDefaults/CLAUDE.md` update** — document the `WithMessagingTelemetry()` extension, its placement in the OTel setup chain, and which packages must be referenced.
+
+#### Why this is needed
+Without explicit OTel wiring, MassTransit's built-in ActivitySource spans are invisible in Jaeger, Zipkin, or Azure Monitor — they exist on the wire but are not exported. `13.ServiceDefaults` is the composition layer responsible for OTel setup across all services; every new infrastructure concern must have a corresponding OTel hook registered here. The custom SharedKernel `ActivitySource` provides a platform-namespaced trace hierarchy on top of MassTransit's own telemetry, enabling platform-wide observability dashboards that can aggregate across transport types.
+
+#### Acceptance criteria
+- [ ] `WithMessagingTelemetry()` extension method added to `SharedKernel.ServiceDefaults`; wires `"MassTransit"` and `"SharedKernel.Messaging"` as traced `ActivitySource` names
+- [ ] `WithMessagingTelemetry()` wires MassTransit meter `"MassTransit"` into `MeterProvider`
+- [ ] Static `ActivitySource("SharedKernel.Messaging", "1.0.0")` registered in `SharedKernel.Messaging.MassTransit`; `ConsumerBase.Consume()` creates child activity with `messaging.message_type` tag
+- [ ] `MassTransitEventPublisher.PublishAsync()` creates child activity with `messaging.event_type` tag
+- [ ] `ConsumerBase.Consume()` log scope enriched with `messaging.destination` and `messaging.message_type`
+- [ ] `WithMessagingTelemetry()` is idempotent — calling twice does not register duplicate instruments
+- [ ] Unit test: `ConsumerBase.Consume()` creates an `Activity` from the SharedKernel source with the correct message type tag
+- [ ] `dotnet build` clean for both `SharedKernel.ServiceDefaults` and `SharedKernel.Messaging.MassTransit`
+- [ ] `13.ServiceDefaults/CLAUDE.md` changelog updated
+---
+
+---
+### P-133 — Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards
+
+**Status:** `○` Pending
+**Work Order:** WO-021
+**Domain:** 00.Governance
+**Depends on:** P-125, P-126, P-127, P-128
+
+#### What is needed
+Extend `SharedKernel.ArchitectureTests` with additional messaging enforcement rules for the new capabilities introduced in P-125 through P-131.
+
+**Rule MSG0105 — `IFaultConsumer<T>` must not be used as a scoped or singleton service registration:** Fault consumers must be registered via `AddFaultConsumer<TMessage, TFaultConsumer>()` on `MessagingBusBuilder`, not via direct `services.AddScoped<IFaultConsumer<T>>()` registration. Direct registration bypasses the MassTransit adapter that translates `Fault<T>` context to the platform abstraction. Diagnostic: `MSG0105: IFaultConsumer<T> must be registered via MessagingBusBuilder.AddFaultConsumer<TMessage,TConsumer>(), not via direct DI registration.`
+
+**Rule MSG0106 — `MassTransit.IMessageScheduler` must not be injected directly:** Any type outside `SharedKernel.Messaging.*` that has a dependency on `MassTransit.IMessageScheduler` violates this rule. Use `SharedKernel.Messaging.Abstractions.IMessageScheduler` exclusively. Diagnostic: `MSG0106: Do not inject MassTransit.IMessageScheduler directly. Use SharedKernel.Messaging.Abstractions.IMessageScheduler.`
+
+**Rule MSG0107 — Saga state classes must extend `SagaStateBase`:** Any class implementing MassTransit's `ISaga` interface that does not derive from `SagaStateBase` violates this rule. This ensures all saga states carry the platform's standard correlation, versioning, and auditing fields. Diagnostic: `MSG0107: Saga state classes must extend SagaStateBase from SharedKernel.Messaging.MassTransit to ensure correlation ID, version, and audit field consistency.`
+
+**Rule MSG0108 — `BatchConsumerBase<T>` must be registered via `AddBatchConsumer`:** Any subclass of `BatchConsumerBase<T>` registered via plain `AddConsumer<T>()` violates this rule — batch consumers must be registered via `AddBatchConsumer<T>()` to apply batch-specific configuration (`MessageLimit`, `TimeLimit`). Diagnostic: `MSG0108: BatchConsumerBase<T> subclasses must be registered via MessagingBusBuilder.AddBatchConsumer<T>(), not AddConsumer<T>().`
+
+All rules must have compliant-pass and violation-fire test fixtures. Rules MSG0106 and MSG0107 are NetArchTest predicate checks. MSG0105 and MSG0108 are either Roslyn analyzers or startup-time architecture test predicates, depending on testability with NetArchTest.
+
+#### Why this is needed
+Each new messaging capability introduced in P-125 through P-131 creates a new class of misuse. Without rule enforcement, teams will bypass `AddFaultConsumer` and register fault consumers manually (breaking the adapter chain), inject `MassTransit.IMessageScheduler` directly (re-introducing transport coupling), create saga state classes without `SagaStateBase` (missing version field, causing saga persistence issues), and register batch consumers via `AddConsumer` (ignoring batch configuration, resulting in one-by-one processing). Architecture tests encode platform decisions as executable contracts that run in CI.
+
+#### Acceptance criteria
+- [ ] `MSG0105` fires when `IFaultConsumer<T>` is registered via `services.AddScoped` or `services.AddSingleton`; does not fire for `AddFaultConsumer` registrations
+- [ ] `MSG0106` fires when `MassTransit.IMessageScheduler` is a constructor dependency outside `SharedKernel.Messaging.*`; does not fire for `SharedKernel.Messaging.Abstractions.IMessageScheduler`
+- [ ] `MSG0107` fires when a class implements `ISaga` but does not extend `SagaStateBase`; does not fire for classes extending `SagaStateBase`
+- [ ] `MSG0108` fires when a `BatchConsumerBase<T>` subclass is registered via `AddConsumer<T>()`; does not fire for `AddBatchConsumer<T>()` registrations
+- [ ] All four rules have compliant-pass and violation-fire test fixtures in `SharedKernel.ArchitectureTests`
+- [ ] All existing governance tests (MSG0101–MSG0104) still pass — no regressions
+- [ ] `00.Governance/CLAUDE.md` updated with the four new rules
 ---
