@@ -24,6 +24,10 @@ This document covers how to consume each package in the `00.Governance` capabili
   - [SK0202 — IgnoreQueryFiltersOutsideTenantedRepository](#sk0202-ignorequeryfiltersoutsidetenantedrepository)
   - [SK0703 — MessageBusSingletonRegistration](#sk0703-messagebussingletonregistration)
   - [SK0704 — HardcodedQueueUriInGetSendEndpoint](#sk0704-hardcodedqueueuriingetsendendpoint)
+  - [SK0705 — FaultConsumerDirectRegistration](#sk0705-faultconsumerdirectregistration)
+  - [SK0706 — DirectMassTransitSchedulerInjection](#sk0706-directmasstransitschedulerinjection)
+  - [SK0707 — SagaStateMustExtendSagaStateBase](#sk0707-sagastatemustextendsagastatebase)
+  - [SK0708 — BatchConsumerRegisteredViaAddConsumer](#sk0708-batchconsumerregisteredviaaddconsumer)
 - [SharedKernel.ArchitectureTests — Layering Rules](#sharedkernelarchitecturetests--layering-rules)
   - [Referencing the Package](#referencing-the-package)
   - [Using SharedKernelLayeringRules](#using-sharedkernellayeringrules)
@@ -34,6 +38,7 @@ This document covers how to consume each package in the `00.Governance` capabili
   - [DomainGoldStandardRules — Domain Convention Enforcement](#domaingoldstandardrules--domain-convention-enforcement)
   - [ContractsPurityRules — Contracts Layer Purity Enforcement](#contractspurityrules--contracts-layer-purity-enforcement)
   - [MessagingArchitectureRules — Messaging Boundary Enforcement](#messagingarchitecturerules--messaging-boundary-enforcement)
+  - [ExtendedMessagingArchitectureRules — Extended Messaging Misuse Enforcement](#extendedmessagingarchitecturerules--extended-messaging-misuse-enforcement)
 - [SharedKernel.Linter — EditorConfig and CSharpier](#sharedkernellinter--editorconfig-and-csharpier)
   - [Applying the Linter Package](#applying-the-linter-package)
   - [CI Enforcement](#ci-enforcement)
@@ -961,6 +966,207 @@ var dlq = await provider.GetSendEndpoint(new Uri("queue:dead-letter"));
 
 ---
 
+### SK0705 — FaultConsumerDirectRegistration
+
+**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+
+SK0705 fires when `AddScoped` or `AddSingleton` is invoked with a type argument that is a
+generic `IFaultConsumer<TMessage>` reference — covering both
+`AddScoped<IFaultConsumer<TMessage>, TImpl>()` and `AddSingleton<IFaultConsumer<TMessage>>()`.
+
+**Rationale:** Fault consumers must be wired through
+`MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>()`, which registers the
+MassTransit `Fault<T>` adapter that translates a raw MassTransit fault context into the
+platform `IFaultConsumer<T>` abstraction. Direct DI registration via `AddScoped` or
+`AddSingleton` bypasses this adapter chain entirely — no MassTransit consumer subscribes to
+`Fault<T>` on the registered type's behalf, so the fault consumer is never invoked.
+
+**Offending pattern:**
+```csharp
+// SK0705: bypasses the Fault<T> adapter chain — OrderFaultConsumer is never invoked
+services.AddScoped<IFaultConsumer<OrderPlaced>, OrderFaultConsumer>();
+services.AddSingleton<IFaultConsumer<OrderPlaced>>();
+```
+
+**Compliant pattern:**
+```csharp
+// Correct: wires the MassTransit Fault<T> adapter to the platform abstraction
+builder.AddFaultConsumer<OrderPlaced, OrderFaultConsumer>();
+```
+
+**Suppression:** Per-call-site only — use `#pragma warning disable SK0705` only when
+explicitly bypassing the builder is intentional. Document the rationale inline:
+
+```csharp
+#pragma warning disable SK0705 // Test double registered for unit-test DI container only
+services.AddScoped<IFaultConsumer<OrderPlaced>, FakeFaultConsumer>();
+#pragma warning restore SK0705
+```
+
+**CI configuration:**
+```xml
+<WarningsAsErrors>$(WarningsAsErrors);SK0705</WarningsAsErrors>
+```
+
+---
+
+### SK0706 — DirectMassTransitSchedulerInjection
+
+**Category:** Design | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+
+SK0706 is implemented as a NetArchTest `ICustomRule`
+(`NoDirectSchedulerInjectionOutsideMessagingPredicate`), not a per-call-site Roslyn analyzer
+— it is enforced at the assembly level via
+`ExtendedMessagingArchitectureRules.NoDirectMassTransitSchedulerInjection`. It fires when a
+constructor parameter is typed `MassTransit.IMessageScheduler` (`ParameterType.Name ==
+"IMessageScheduler"` AND `ParameterType.Namespace.StartsWith("MassTransit")`) in a type
+whose namespace does **not** start with `SharedKernel.Messaging`.
+
+**Rationale:** `MassTransit.IMessageScheduler` is an implementation detail of the
+MassTransit transport. Injecting it directly in application handlers, domain services, or
+controllers couples that code to a specific scheduler implementation, making transport
+swaps impossible and creating an invisible MassTransit dependency in layers that should be
+transport-agnostic. `SharedKernel.Messaging.Abstractions.IMessageScheduler` is the only
+permitted scheduler injection point outside `SharedKernel.Messaging.*`.
+
+**Exemption list:**
+
+- Types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Messaging"` —
+  the messaging adapter layer (`SharedKernel.Messaging.Abstractions` and
+  `SharedKernel.Messaging.MassTransit`) may reference `MassTransit.IMessageScheduler`
+  freely for internal adapter wiring. Any additional exemption must be documented here
+  before it is applied in code.
+
+**Offending pattern:**
+```csharp
+using MassTransit;
+
+// SK0706: injects the MassTransit transport scheduler directly
+public class ScheduleReminderHandler(IMessageScheduler scheduler)
+{
+}
+```
+
+**Compliant pattern:**
+```csharp
+using SharedKernel.Messaging.Abstractions;
+
+// Correct: injects the platform scheduler abstraction — transport-independent
+public class ScheduleReminderHandler(IMessageScheduler scheduler)
+{
+}
+```
+
+**Failure message:** `"{offendingType} injects MassTransit.IMessageScheduler directly. Use
+SharedKernel.Messaging.Abstractions.IMessageScheduler to preserve transport independence."`
+
+---
+
+### SK0707 — SagaStateMustExtendSagaStateBase
+
+**Category:** Design | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+
+SK0707 is implemented as a NetArchTest `ICustomRule`
+(`SagaStateMustExtendSagaStateBasePredicate`), enforced at the assembly level via
+`ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase`. It fires when a
+type whose `TypeDefinition.Interfaces` contains an entry with `InterfaceType.Name ==
+"ISaga"` does not have `SagaStateBase` anywhere in its `BaseType` inheritance chain.
+
+**Rationale:** `SagaStateBase` (from `SharedKernel.Messaging.MassTransit`) provides the
+platform-standard `CorrelationId`, `Version` (optimistic concurrency counter), `CreatedAt`,
+and `ModifiedAt` audit fields required for correct saga state persistence and
+version-conflict resolution. A saga state class that implements `ISaga` without extending
+`SagaStateBase` is missing these fields, causing saga persistence to fail
+version-conflict detection and breaking the platform observability pipeline.
+
+**Exemption list:** None — every `ISaga` implementor must extend `SagaStateBase`.
+`SagaStateBase` itself is self-exempt (it implements `ISaga` but cannot extend itself).
+
+**Fail-open limitation:** if `BaseType.Resolve()` returns `null` at any step in the
+inheritance chain walk (the base type lives in an assembly that was not loaded), the
+predicate treats the type as possibly-compliant (`true`) to avoid false positives in
+assembly-isolation test setups. This is a documented limitation, not an exemption — if a
+saga state type's non-loadable base is itself a `SagaStateBase` descendant, this rule will
+not catch a missing `SagaStateBase` further up an unresolved chain.
+
+**Offending pattern:**
+```csharp
+// SK0707: implements ISaga but does not extend SagaStateBase — no Version/audit fields
+public class OrderSagaState : ISaga
+{
+    public Guid CorrelationId { get; set; }
+}
+```
+
+**Compliant pattern:**
+```csharp
+// Correct: extends SagaStateBase — carries CorrelationId, Version, CreatedAt, ModifiedAt
+public class OrderSagaState : SagaStateBase
+{
+}
+```
+
+**Failure message:** `"{offendingType} implements ISaga but does not extend
+SagaStateBase. All saga state classes must extend SagaStateBase to carry correlation ID,
+version, and audit fields."`
+
+---
+
+### SK0708 — BatchConsumerRegisteredViaAddConsumer
+
+**Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
+
+SK0708 fires when `AddConsumer<T>()` is called with a single type argument whose identifier
+text contains `"BatchConsumer"` as a substring (case-sensitive).
+
+**Rationale:** `AddConsumer<T>()` registers a consumer that processes messages one at a
+time and ignores any `MessageLimit` / `TimeLimit` batch configuration.
+`MessagingBusBuilder.AddBatchConsumer<T>()` is the correct registration method — it applies
+the configured batch window so the consumer receives a `Batch<T>` of messages.
+
+**Naming-convention limitation:** SK0708 is a **naming-convention-guided heuristic** — it
+fires only when the type argument's identifier text contains `"BatchConsumer"`. Batch
+consumer implementation classes **must** contain `"BatchConsumer"` in their class name
+(e.g., `OrderBatchConsumer`, `InvoiceLineBatchConsumer`) for this rule to provide coverage.
+A class named `OrderProcessor` that is, in fact, a batch consumer will **not** be detected
+— this is a documented false-negative limitation, not a bug. Recommend the naming
+convention `{Purpose}BatchConsumer` as an enforcement aid.
+
+**Offending pattern:**
+```csharp
+// SK0708: OrderBatchConsumer registered one-at-a-time — MessageLimit/TimeLimit ignored
+builder.AddConsumer<OrderBatchConsumer>();
+```
+
+**Compliant pattern:**
+```csharp
+// Correct: applies the configured batch window
+builder.AddBatchConsumer<OrderBatchConsumer>();
+```
+
+**Pass-through (not flagged):**
+```csharp
+// OrderCommandConsumer's name does not contain "BatchConsumer" — SK0708 does not apply
+builder.AddConsumer<OrderCommandConsumer>();
+```
+
+**Suppression:** Per-call-site only — use `#pragma warning disable SK0708` when a batch
+consumer class genuinely must be registered individually (e.g., a test fixture that
+processes one message at a time by design):
+
+```csharp
+#pragma warning disable SK0708 // Test fixture intentionally processes one message at a time
+builder.AddConsumer<OrderBatchConsumer>();
+#pragma warning restore SK0708
+```
+
+**CI configuration:**
+```xml
+<WarningsAsErrors>$(WarningsAsErrors);SK0708</WarningsAsErrors>
+```
+
+---
+
 ## SharedKernel.ArchitectureTests — Layering Rules
 
 `SharedKernel.ArchitectureTests` is a test-only package providing NetArchTest-based base
@@ -1783,6 +1989,140 @@ public class PersistenceLayerProtectionTests
             .GetResult();
         result.IsSuccessful.Should().BeTrue(
             because: "03.Domain must be persistence-ignorant per the root layering hard rules");
+    }
+}
+```
+
+---
+
+### ExtendedMessagingArchitectureRules — Extended Messaging Misuse Enforcement
+
+`ExtendedMessagingArchitectureRules` provides two predicates (added in WO-021 P-133) that
+close gaps left by per-call-site analyzers: a transport-coupling check that only static
+type analysis can catch reliably, and a structural saga-state contract that cannot be
+expressed as a single-statement diagnostic.
+
+#### Rule 1 — NoDirectMassTransitSchedulerInjection (SK0706)
+
+Asserts that no constructor parameter across the supplied assemblies is typed
+`MassTransit.IMessageScheduler`. The check is implemented by
+`NoDirectSchedulerInjectionOutsideMessagingPredicate` (a Mono.Cecil `ICustomRule` that
+inspects every `MethodDefinition` named `.ctor` and checks each
+`ParameterDefinition.ParameterType` for `Name == "IMessageScheduler"` AND
+`Namespace.StartsWith("MassTransit")`). Types whose `TypeDefinition.Namespace` starts with
+`"SharedKernel.Messaging"` are exempted unconditionally — the messaging adapter layer is
+the only place permitted to reference the MassTransit transport scheduler directly.
+
+**Rationale:** `MassTransit.IMessageScheduler` is an implementation detail of the
+MassTransit transport. Injecting it directly in application handlers, domain services, or
+controllers couples that code to a specific scheduler implementation, making transport
+swaps impossible and creating an invisible MassTransit dependency in layers that should be
+transport-agnostic.
+
+**Cross-reference:** Root `CLAUDE.md` — "07.Messaging may reference 01-04 (not
+06.Persistence directly)" and the `SharedKernel.Messaging.Abstractions` /
+`SharedKernel.Messaging.MassTransit` abstraction split: microservices depend on the
+abstraction package, never on the concrete MassTransit transport types.
+
+**Offending pattern:**
+```csharp
+using MassTransit;
+
+// Violation: application handler injects MassTransit.IMessageScheduler directly
+public class ScheduleReminderHandler(IMessageScheduler scheduler)
+{
+}
+```
+
+**Compliant pattern:**
+```csharp
+using SharedKernel.Messaging.Abstractions;
+
+// Correct: injects the platform scheduler abstraction — transport-independent
+public class ScheduleReminderHandler(IMessageScheduler scheduler)
+{
+}
+```
+
+#### Rule 2 — SagaStatesMustExtendSagaStateBase (SK0707)
+
+Asserts that every type implementing `ISaga` (`TypeDefinition.Interfaces` contains an
+entry with `InterfaceType.Name == "ISaga"`) has `SagaStateBase` somewhere in its
+`BaseType` inheritance chain. The check is implemented by
+`SagaStateMustExtendSagaStateBasePredicate` (a Mono.Cecil `ICustomRule` that walks the
+`BaseType` chain via iterative `TypeReference.Resolve()` calls until it finds
+`SagaStateBase`, reaches `Object`, or encounters an unresolved reference). `SagaStateBase`
+itself is self-exempt — it implements `ISaga` directly and cannot extend itself.
+Unresolved base types in the chain are treated fail-open (possibly-compliant) to avoid
+false positives when an assembly's transitive dependencies are not loaded into the test
+context.
+
+**Rationale:** `SagaStateBase` (from `SharedKernel.Messaging.MassTransit`) provides the
+platform-standard `CorrelationId`, `Version` (optimistic concurrency counter), `CreatedAt`,
+and `ModifiedAt` audit fields required for correct saga state persistence and
+version-conflict resolution. A saga state class that implements `ISaga` without extending
+`SagaStateBase` is missing these fields, breaking version-conflict detection and the
+platform observability pipeline for that saga.
+
+**Cross-reference:** Root `CLAUDE.md` "What Goes Where" — saga state persistence relies on
+the same audit/concurrency conventions as `TenantedAuditableAggregateRoot<TId>` in
+`03.Domain`; `SagaStateBase` is the `07.Messaging` equivalent for saga state classes.
+
+**Offending pattern:**
+```csharp
+using SharedKernel.Messaging.MassTransit;
+
+// Violation: implements ISaga but does not extend SagaStateBase — no Version/audit fields
+public class OrderSagaState : ISaga
+{
+    public Guid CorrelationId { get; set; }
+}
+```
+
+**Compliant pattern:**
+```csharp
+using SharedKernel.Messaging.MassTransit;
+
+// Correct: extends SagaStateBase — carries CorrelationId, Version, CreatedAt, ModifiedAt
+public class OrderSagaState : SagaStateBase
+{
+}
+```
+
+#### Usage Example
+
+```csharp
+using System.Reflection;
+using FluentAssertions;
+using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Messaging.MassTransit; // reference needed to supply the messaging assembly
+using Xunit;
+
+public class ExtendedMessagingArchitectureTests
+{
+    private static readonly Assembly ApplicationAssembly = typeof(ScheduleReminderHandler).Assembly;
+    private static readonly Assembly MessagingAssembly = typeof(SagaStateBase).Assembly;
+
+    [Fact]
+    public void Application_MustNot_InjectMassTransitSchedulerDirectly()
+    {
+        var result = ExtendedMessagingArchitectureRules
+            .NoDirectMassTransitSchedulerInjection(ApplicationAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue(
+            because: "use SharedKernel.Messaging.Abstractions.IMessageScheduler instead of " +
+                     "MassTransit.IMessageScheduler to preserve transport independence");
+    }
+
+    [Fact]
+    public void SagaStates_MustExtend_SagaStateBase()
+    {
+        var result = ExtendedMessagingArchitectureRules
+            .SagaStatesMustExtendSagaStateBase(MessagingAssembly)
+            .GetResult();
+        result.IsSuccessful.Should().BeTrue(
+            because: "every ISaga implementor must extend SagaStateBase to carry " +
+                     "correlation ID, version, and audit fields");
     }
 }
 ```

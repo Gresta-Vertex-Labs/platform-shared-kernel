@@ -64,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | `●` | All 20 tasks complete — MessagingArchitectureRules (SK0701–SK0704) with two ICustomRule predicates and two Roslyn analyzers implemented; 78 analyzer + 62 arch tests passing. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | `●` | All 20 tasks complete — ExtendedMessagingArchitectureRules (SK0705–SK0708) with two ICustomRule predicates and two Roslyn analyzers implemented; 85 analyzer + 66 arch tests passing. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 31 (OTel Metrics) | `●` | Phase 31 complete — static Meter + 5 instruments in FusionCacheService; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache + 154 Redis tests passing. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
@@ -1817,6 +1817,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-09] Messaging → Idempotency (●) — promoted from SK.07.Idempotency (state-map-phase)
 - [2026-06-09] Messaging → HeaderPropagation (●) — promoted from SK.07.HeaderPropagation (state-map-phase)
 - [2026-06-10] Messaging → VersionTranslation (●) — promoted from SK.07.VersionTranslation (state-map-phase)
+- [2026-06-10] Governance → Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards (●) — promoted from SK.00.ExtendedMessagingArchRules (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
