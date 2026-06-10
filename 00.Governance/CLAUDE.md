@@ -299,6 +299,89 @@ SK0704  HardcodedQueueUriInGetSendEndpoint
     Note      : No suppression namespace — SK0704 fires globally. ID block: 07xx
                 (messaging-domain). Introduced in WO-020 P-123.
 
+SK0705  FaultConsumerDirectRegistration
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose simple method name is "AddScoped"
+                or "AddSingleton" has a type argument that is a GenericNameSyntax whose
+                Identifier.Text is "IFaultConsumer" (simple name, exact match).
+                Covers AddScoped<IFaultConsumer<TMessage>>() and the two-argument form
+                AddScoped<IFaultConsumer<TMessage>, TImpl>(). Syntax-only; no SemanticModel.
+    Fix       : Register fault consumers via MessagingBusBuilder.AddFaultConsumer
+                <TMessage, TConsumer>() — the builder wires the MassTransit Fault<T>
+                adapter that translates Fault<T> context to the platform IFaultConsumer<T>
+                abstraction. Direct DI registration bypasses the adapter chain, causing
+                the consumer to receive a raw MassTransit Fault<T> context with no
+                platform translation.
+    Suppress  : Per-call-site via #pragma warning disable SK0705 only when explicitly
+                bypassing the builder (document the rationale inline).
+    Note      : No suppression namespace — SK0705 fires globally. ID block: 07xx
+                (messaging-domain). Introduced in WO-021 P-133.
+
+SK0706  DirectMassTransitSchedulerInjection
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A constructor parameter whose ParameterType.Name == "IMessageScheduler"
+                AND ParameterType.Namespace.StartsWith("MassTransit") is found in a type
+                whose namespace does NOT start with "SharedKernel.Messaging". Detected
+                via NoDirectSchedulerInjectionOutsideMessagingPredicate (ICustomRule) —
+                not a per-call-site Roslyn analyzer. Distinguishes MassTransit.IMessageScheduler
+                (forbidden) from SharedKernel.Messaging.Abstractions.IMessageScheduler
+                (permitted) by namespace check on ParameterType. Fallback: if namespace
+                cannot be resolved, checks ParameterType.Scope.Name.Contains("MassTransit").
+    Exempt    : Types whose TypeDefinition.Namespace starts with "SharedKernel.Messaging" —
+                the messaging adapter layer may reference MassTransit.IMessageScheduler
+                for internal adapter wiring. Any additional exemption must be documented
+                here before applying.
+    Fix       : Inject SharedKernel.Messaging.Abstractions.IMessageScheduler instead.
+                The platform scheduler abstraction preserves transport independence and
+                is the only permitted scheduler injection point outside SharedKernel.Messaging.
+    Note      : Implemented as a NetArchTest ICustomRule
+                (NoDirectSchedulerInjectionOutsideMessagingPredicate) — enforced at
+                assembly level (post-compile). Introduced in WO-021 P-133.
+
+SK0707  SagaStateMustExtendSagaStateBase
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A class whose TypeDefinition.Interfaces contains an entry with
+                InterfaceType.Name == "ISaga" (exact simple name match) does not have
+                "SagaStateBase" in its BaseType inheritance chain (iterative
+                TypeDefinition.BaseType walk stopping at null or "Object"). Fail-open
+                if BaseType.Resolve() returns null (unloaded assembly dependency) — the
+                type is treated as possibly-compliant to avoid false positives.
+    Exempt    : None — every ISaga implementor must extend SagaStateBase. The
+                fail-open policy (null BaseType.Resolve) is not an exemption; it is a
+                limitation of assembly-isolation test setups.
+    Fix       : Extend SagaStateBase from SharedKernel.Messaging.MassTransit. SagaStateBase
+                provides the platform's standard CorrelationId, Version (optimistic
+                concurrency), CreatedAt, and ModifiedAt audit fields required for correct
+                saga persistence and version-conflict resolution.
+    Note      : Implemented as a NetArchTest ICustomRule
+                (SagaStateMustExtendSagaStateBasePredicate). Introduced in WO-021 P-133.
+
+SK0708  BatchConsumerRegisteredViaAddConsumer
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose simple method name is "AddConsumer"
+                (exact match) has a single type argument whose Identifier.Text contains
+                "BatchConsumer" as a substring (case-sensitive). This is a naming-convention-
+                guided heuristic: if the batch consumer class name does not contain
+                "BatchConsumer", SK0708 will not fire (false negative). Syntax-only;
+                no SemanticModel required.
+    Fix       : Replace AddConsumer<T>() with MessagingBusBuilder.AddBatchConsumer<T>()
+                to apply MessageLimit and TimeLimit batch configuration. AddConsumer<T>()
+                ignores batch configuration and processes messages one at a time, defeating
+                the purpose of batch consumer registration.
+    Suppress  : Per-call-site via #pragma warning disable SK0708 when a batch consumer
+                class genuinely must be registered individually (e.g., for a test fixture
+                that processes one-at-a-time by design).
+    Naming    : Batch consumer implementation classes MUST contain "BatchConsumer" in
+                their class name to be detected (e.g., OrderBatchConsumer, not OrderProcessor).
+                Recommend the naming convention {Purpose}BatchConsumer as an enforcement aid.
+                Classes not following this convention will not receive the SK0708 diagnostic.
+    Note      : No suppression namespace — SK0708 fires globally. ID block: 07xx
+                (messaging-domain). Introduced in WO-021 P-133.
+
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
@@ -871,6 +954,80 @@ MessagingArchitectureRules  (static class — messaging abstraction boundary enf
         - SharedKernel.Messaging.MassTransit (concrete provider — owns transport type wiring)
         Any additional exemption must be documented here before it is applied in code.
 
+ExtendedMessagingArchitectureRules  (static class — extended messaging misuse enforcement predicates; WO-021 P-133)
+    All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
+    .NoDirectMassTransitSchedulerInjection(params Assembly[] assemblies)  → ConditionList
+        Asserts that no type in the supplied assemblies injects MassTransit.IMessageScheduler
+        as a constructor parameter. Uses NoDirectSchedulerInjectionOutsideMessagingPredicate
+        (ICustomRule — see below).
+        Exemption: types whose TypeDefinition.Namespace starts with "SharedKernel.Messaging"
+        pass unconditionally — the messaging adapter layer may reference
+        MassTransit.IMessageScheduler for internal wiring. All other assemblies must
+        inject SharedKernel.Messaging.Abstractions.IMessageScheduler.
+        Failure message: "{offendingType} injects MassTransit.IMessageScheduler directly.
+        Use SharedKernel.Messaging.Abstractions.IMessageScheduler to preserve transport
+        independence."
+        Rationale: MassTransit.IMessageScheduler is an implementation detail of the
+        MassTransit transport. Injecting it outside SharedKernel.Messaging couples
+        application and domain code to a specific scheduler implementation, making
+        transport swaps impossible and creating an invisible MassTransit dependency in
+        layers that should be transport-agnostic.
+        Offending pattern: class ScheduleReminderHandler(MassTransit.IMessageScheduler scheduler)
+        Compliant pattern: class ScheduleReminderHandler(IMessageScheduler scheduler) // platform abstraction
+
+    .SagaStatesMustExtendSagaStateBase(Assembly assembly)  → ConditionList
+        Asserts that every type implementing ISaga also extends SagaStateBase.
+        Uses SagaStateMustExtendSagaStateBasePredicate (ICustomRule — see below).
+        Scope: types whose TypeDefinition.Interfaces contains an entry with
+        InterfaceType.Name == "ISaga". Checks TypeDefinition.BaseType chain iteratively
+        (resolving each step) for any ancestor whose TypeReference.Name == "SagaStateBase".
+        Fail-open policy: if BaseType.Resolve() returns null (the base type is in an
+        unloaded assembly), the type is treated as possibly-compliant (returns true)
+        to avoid false positives in assembly-isolation test setups.
+        Failure message: "{offendingType} implements ISaga but does not extend SagaStateBase.
+        All saga state classes must extend SagaStateBase to carry correlation ID, version,
+        and audit fields."
+        Rationale: SagaStateBase provides the platform-standard CorrelationId, Version
+        (optimistic concurrency counter), CreatedAt, and ModifiedAt fields. Without these
+        fields, saga state persistence fails version-conflict detection, losing concurrent
+        update safety. Audit fields are also required for the platform observability pipeline.
+        Offending pattern: class OrderSagaState : ISagaVersion { ... } // no SagaStateBase
+        Compliant pattern: class OrderSagaState : SagaStateBase { ... }
+
+    Exemption list (assemblies whose types are exempt from NoDirectMassTransitSchedulerInjection):
+        - SharedKernel.Messaging (abstraction package — may reference transport scheduler for wiring)
+        - SharedKernel.Messaging.MassTransit (concrete provider — owns scheduler adapter wiring)
+        Any additional exemption must be documented here before it is applied in code.
+
+NoDirectSchedulerInjectionOutsideMessagingPredicate  (class : ICustomRule — internal predicate)
+    Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts with
+    "SharedKernel.Messaging" return true unconditionally.
+    For all other types, iterates TypeDefinition.Methods where IsConstructor is true. For each
+    constructor, checks each ParameterDefinition for two conditions both true:
+      (1) ParameterType.Name == "IMessageScheduler" (exact name match)
+      (2) ParameterType.Namespace.StartsWith("MassTransit") — distinguishes
+          MassTransit.IMessageScheduler (forbidden) from
+          SharedKernel.Messaging.Abstractions.IMessageScheduler (permitted)
+    Fallback: if ParameterType.Namespace is empty or null (type reference not fully resolved),
+    checks ParameterType.Scope.Name.Contains("MassTransit") as a secondary discriminator using
+    the assembly scope name. Returns false (rule violated) on the first match, with failure
+    message naming the offending type and the parameter. Lives in Predicates/ folder. Used by
+    ExtendedMessagingArchitectureRules.NoDirectMassTransitSchedulerInjection.
+
+SagaStateMustExtendSagaStateBasePredicate  (class : ICustomRule — internal predicate)
+    Scope check: types whose TypeDefinition.Interfaces contains an entry with
+    InterfaceType.Name == "ISaga" (exact simple name match). Types not implementing ISaga
+    return true unconditionally (not in scope).
+    For each ISaga implementor, walks the TypeDefinition.BaseType chain iteratively:
+      - At each step, checks TypeReference.Name == "SagaStateBase" (exact simple name match)
+      - Advances by calling BaseType.Resolve() to get the next TypeDefinition
+      - Terminates when BaseType is null or BaseType.Name is "Object"
+      - Fail-open: if Resolve() returns null at any step (unloaded assembly), returns true
+        unconditionally — avoids false positives when assemblies are not all loaded
+    Returns false (rule violated) if the chain terminates without finding "SagaStateBase",
+    with failure message naming the offending type. Lives in Predicates/ folder. Used by
+    ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase.
+
 NoDirectBusInjectionOutsideMessagingPredicate  (class : ICustomRule — internal predicate)
     Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts with
     "SharedKernel.Messaging" return true unconditionally.
@@ -1089,6 +1246,12 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0704 `HardcodedQueueUriAnalyzer` checks for both `ObjectCreationExpressionSyntax` (`new Uri(...)`) and `ImplicitObjectCreationExpressionSyntax` (`new(...)` where the type is inferred). The type name check for `Uri` is a simple name check on `ObjectCreationExpressionSyntax.Type` (`IdentifierNameSyntax.Identifier.Text == "Uri"` or `QualifiedNameSyntax` whose rightmost segment is `"Uri"`). For implicit creation, the containing argument context must be a `GetSendEndpoint` invocation — the type inference resolves to `Uri` by declaration context. The queue/exchange scheme check is case-insensitive (`StartsWith("queue:", StringComparison.OrdinalIgnoreCase)` and `StartsWith("exchange:", StringComparison.OrdinalIgnoreCase)`).
 - `MessagingArchitectureRules` and both predicates (`NoDirectBusInjectionOutsideMessagingPredicate`, `NoEventPublisherInDomainLayerPredicate`) reuse the established Mono.Cecil `TypeDefinition.Methods` constructor-parameter inspection pattern from `NoInfrastructureConstructorParametersPredicate`. No new NuGet dependency — `Mono.Cecil >= 0.11.5` already referenced in `SharedKernel.ArchitectureTests`.
 - SK0703 and SK0704 are the first SK analyzers in the 07xx messaging block. Both follow the same `netstandard2.0` constraint and `Microsoft.CodeAnalysis.CSharp 4.14.0` pin as all other SK analyzers. Neither requires a SemanticModel — both are syntax-only, keeping analysis cost minimal on large codebases.
+- SK0705 `FaultConsumerDirectRegistrationAnalyzer` checks both `AddScoped` and `AddSingleton` method names for the `IFaultConsumer` type argument simple name. The check uses `GenericNameSyntax.Identifier.Text == "IFaultConsumer"` on each type argument — this catches both the one-argument form `AddScoped<IFaultConsumer<TMessage>>()` and the two-argument form `AddScoped<IFaultConsumer<TMessage>, TImpl>()`. The outer generic wrapper (`IFaultConsumer<TMessage>`) is itself a `GenericNameSyntax` whose identifier is `IFaultConsumer` — no unwrapping required.
+- SK0706 `NoDirectSchedulerInjectionOutsideMessagingPredicate` uses a two-condition check: `ParameterType.Name == "IMessageScheduler"` AND `ParameterType.Namespace.StartsWith("MassTransit")`. Both conditions must be true to fire. The namespace check is what distinguishes the MassTransit transport scheduler from the platform abstraction. If `ParameterType.Namespace` is empty (type reference not fully resolved in the test assembly), fall back to `ParameterType.Scope.Name.Contains("MassTransit")` — the Mono.Cecil scope name for an externally-referenced type includes the assembly name, which contains `"MassTransit"` for MassTransit types.
+- SK0707 `SagaStateMustExtendSagaStateBasePredicate` uses a fail-open policy for unresolvable base types. If `BaseType.Resolve()` returns null at any point in the walk, the predicate returns true (passes) for that type. This prevents false positives in test assemblies that do not load all transitive dependencies. Document this limitation in test fixtures: if a saga state type has a non-loadable base that is itself a `SagaStateBase` descendant, the rule will not catch the violation.
+- SK0708 `BatchConsumerRegisteredViaAddConsumerAnalyzer` is a naming-convention-guided heuristic. It fires only when the type argument to `AddConsumer<T>()` contains `"BatchConsumer"` as a substring in its identifier text. The naming convention `{Purpose}BatchConsumer` (e.g., `OrderBatchConsumer`, `InvoiceLineBatchConsumer`) must be enforced across the codebase for this rule to provide complete coverage. Teams naming batch consumers without the `BatchConsumer` suffix will not receive SK0708 diagnostics — this is a documented false-negative limitation, not a bug.
+- `ExtendedMessagingArchitectureRules` and both predicates (`NoDirectSchedulerInjectionOutsideMessagingPredicate`, `SagaStateMustExtendSagaStateBasePredicate`) reuse the established Mono.Cecil `TypeDefinition.Methods` constructor-parameter inspection and `TypeDefinition.Interfaces` scope patterns. No new NuGet dependency — `Mono.Cecil >= 0.11.5` already referenced in `SharedKernel.ArchitectureTests` covers both new predicates.
+- SK0705 and SK0708 follow the same `netstandard2.0` constraint and `Microsoft.CodeAnalysis.CSharp 4.14.0` pin as SK0703/SK0704. Both are syntax-only analyzers — no SemanticModel required. SK0706 and SK0707 are NetArchTest ICustomRule predicates (assembly-level, post-compile), consistent with SK0701/SK0702.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
 
@@ -1137,3 +1300,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-05] SK0201 TenantedDbContextOnModelCreatingGuard and SK0202 IgnoreQueryFiltersOutsideTenantedRepository added to diagnostic registry (new 02xx multi-tenancy block); both implemented as Roslyn analyzers (syntax-only, no semantic model); SK0201 body-scan checks base.OnModelCreating and ApplyTenantFilters via InvocationExpressionSyntax descendants; SK0202 namespace-walk and class-name exemption follow the SK0001/SK0007 SyntaxNode.Parent pattern; two new implementation rules added — WO-020 SK.00.TenantedDbContextGuard
 - [2026-06-08] SK0703 MessageBusSingletonRegistration and SK0704 HardcodedQueueUriInGetSendEndpoint added to diagnostic registry (new 07xx messaging-domain block; both Roslyn syntax-only analyzers); SK0701 NoDirectBusInjectionOutsideMessaging and SK0702 NoEventPublisherInDomainLayer added as NetArchTest predicates (MessagingArchitectureRules static class; NoDirectBusInjectionOutsideMessagingPredicate and NoEventPublisherInDomainLayerPredicate ICustomRule predicates documented); eleven new implementation rules added — WO-020 P-123
 - [2026-06-09] SK.00.MessagingArchRules → ● — all 20 tasks complete; 78 analyzer + 62 arch tests passing; no new brain content (state-map-phase)
+- [2026-06-09] SK0705 FaultConsumerDirectRegistration, SK0706 DirectMassTransitSchedulerInjection, SK0707 SagaStateMustExtendSagaStateBase, SK0708 BatchConsumerRegisteredViaAddConsumer added to diagnostic registry (07xx messaging block extended); ExtendedMessagingArchitectureRules static class added to architecture test contracts (NoDirectMassTransitSchedulerInjection, SagaStatesMustExtendSagaStateBase predicates); NoDirectSchedulerInjectionOutsideMessagingPredicate and SagaStateMustExtendSagaStateBasePredicate ICustomRule predicates documented; six new implementation rules added — WO-021 P-133

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Domain.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
+using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.Options;
 
 // Alias to disambiguate from MassTransit.PublishContext
@@ -36,25 +37,51 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
 
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly MessagingOptions _messagingOptions;
+    private readonly IEnumerable<IMessageHeaderPropagator> _propagators;
 
     public MassTransitEventPublisher(
         IPublishEndpoint publishEndpoint,
-        IOptions<MessagingOptions> messagingOptions)
+        IOptions<MessagingOptions> messagingOptions,
+        IEnumerable<IMessageHeaderPropagator> propagators)
     {
         _publishEndpoint = publishEndpoint;
         _messagingOptions = messagingOptions.Value;
+        _propagators = propagators;
     }
 
     /// <inheritdoc />
     public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct) where TEvent : class =>
-        PublishEnvelopeAsync(integrationEvent, ctx: null, ct);
+        // HP-04: Run propagators first with no explicit configure callback.
+        PublishEnvelopeAsync(integrationEvent, ctx: BuildContextFromPropagators(configure: null), ct);
 
     /// <inheritdoc />
     public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<MessagingPublishContext> configure, CancellationToken ct) where TEvent : class
     {
-        var ctx = new MessagingPublishContext();
-        configure(ctx);
+        // HP-04: Propagators run first; explicit configure callback runs after (explicit wins on same key).
+        var ctx = BuildContextFromPropagators(configure);
         return PublishEnvelopeAsync(integrationEvent, ctx, ct);
+    }
+
+    /// Builds a <see cref="MessagingPublishContext"/> by running all registered propagators first,
+    /// then applying the optional explicit configure callback (which wins on key conflicts).
+    private MessagingPublishContext? BuildContextFromPropagators(Action<MessagingPublishContext>? configure)
+    {
+        var hasPropagators = _propagators.Any();
+        var hasExplicit = configure is not null;
+
+        if (!hasPropagators && !hasExplicit)
+            return null;
+
+        var ctx = new MessagingPublishContext();
+
+        // Propagators run first — their values can be overridden by the explicit callback.
+        foreach (var propagator in _propagators)
+            propagator.Propagate(ctx);
+
+        // Explicit callback runs last — its values overwrite anything set by propagators.
+        configure?.Invoke(ctx);
+
+        return ctx;
     }
 
     private Task PublishEnvelopeAsync<TEvent>(TEvent integrationEvent, MessagingPublishContext? ctx, CancellationToken ct)

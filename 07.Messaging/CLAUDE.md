@@ -68,6 +68,13 @@ IMessageBus
         CAUTION: Adds latency and tight temporal coupling — prefer event-driven fire-and-forget.
                  Always pass a timeout-bound CancellationToken; never pass CancellationToken.None.
 
+    .ExecuteRoutingSlipAsync(object routingSlip, CancellationToken ct)             → Task
+        Dispatches a routing slip produced by IRoutingSlipBuilder.Build() to MassTransit Courier.
+        The routingSlip argument must be the opaque object returned by IRoutingSlipBuilder.Build().
+        Do not construct MassTransit RoutingSlipBuilder directly in application code — always use
+        IRoutingSlipBuilder and pass the result here.
+        CAUTION: Throws ArgumentException if the object is not a valid MassTransit RoutingSlip.
+
     NOTE: IMessageBus is registered as a scoped service. Never inject as singleton.
           Scoped lifetime matches MassTransit's IPublishEndpoint/ISendEndpointProvider scoping model.
 ```
@@ -189,6 +196,52 @@ IMessageScheduler  (interface)
           use SharedKernel.Messaging.Abstractions.IMessageScheduler.
 ```
 
+#### Idempotency store (`Idempotency/`) — P-134
+
+```text
+IIdempotencyStore  (interface)
+    .HasProcessedAsync(Guid messageId, CancellationToken ct)  → Task<bool>
+        Returns true when the messageId has already been successfully processed.
+        The implementation decides the storage backend (Redis, SQL, etc.) and
+        the retention window (hint: IdempotencyOptions.ExpiryWindow).
+
+    .MarkProcessedAsync(Guid messageId, CancellationToken ct)  → Task
+        Records messageId as successfully processed. Called by IdempotentConsumerBehavior
+        ONLY after the consumer body completes without exception. Never called on failure
+        or on duplicate short-circuit.
+    NOTE: IIdempotencyStore is NOT provided by SharedKernel — the consuming service must
+          register its own implementation (e.g., RedisIdempotencyStore, EfCoreIdempotencyStore).
+          Register before calling WithIdempotency() on MessagingBusBuilder. If no implementation
+          is registered, Build() throws InvalidOperationException with a diagnostic message.
+          Never implement custom deduplication logic inside ConsumeAsync bodies — use
+          WithIdempotency() instead (hard violation).
+
+IdempotencyOptions  (sealed class, DI options section "SharedKernel:Messaging:Idempotency")
+    .ExpiryWindow   → TimeSpan  (default 24h — advisory hint to time-windowed store implementations)
+    NOTE: Consumed by the consuming service's IIdempotencyStore implementation.
+          Not enforced by the platform — SharedKernel does not prune expired records.
+```
+
+#### Header propagator (`HeaderPropagation/`) — P-135
+
+```text
+IMessageHeaderPropagator  (interface)
+    .Propagate(PublishContext context)  → void
+        Reads values from ambient scope (IHttpContextAccessor, Activity.Current.Baggage,
+        IOptions<T>, etc.) and populates PublishContext headers via context.WithHeader().
+        Invoked automatically at publish time for every IMessageBus.PublishAsync and
+        IEventPublisher.PublishAsync call when one or more propagators are registered.
+    PRECEDENCE RULE: Propagators run before the explicit Action<PublishContext> configure
+        callback. When a caller supplies an explicit configure callback AND a propagator
+        sets the same key, the explicit callback wins. This means per-call explicit overrides
+        always take precedence over propagated ambient values.
+    NOTE: Propagators are registered as scoped services. Multiple propagators are applied
+          in registration order. Implement IMessageHeaderPropagator in the consuming service's
+          composition root (referencing SharedKernel.Messaging.Abstractions); do not implement
+          propagators inside SharedKernel — they require service-specific ambient context.
+          Zero transport NuGet dependencies in the interface definition.
+```
+
 #### Send endpoint resolver (`MessageBus/`) — P-131
 
 ```text
@@ -274,6 +327,117 @@ OutboxOptions  (sealed class, configures MassTransit EF Core outbox delivery wor
     NOTE: OutboxOptions configures MassTransit's built-in EF Core outbox delivery background service.
           The consuming service's DbContext must include MassTransit outbox tables (see outbox migration rule).
           Delivery is at-least-once — consumers must be idempotent.
+```
+
+#### Idempotency behavior (`Consumers/`) — P-134
+
+```text
+IdempotentConsumerBehavior<TMessage>  (internal sealed class, implements IFilter<ConsumeContext<TMessage>>)
+    Applied as a global MassTransit consume pipeline filter when WithIdempotency() is called.
+    Pipeline logic:
+      1. Read ConsumeContext.MessageId as Guid?. If null, pass through without idempotency check.
+      2. Call IIdempotencyStore.HasProcessedAsync(messageId, ct).
+      3. If true (already processed): acknowledge the message to the broker without invoking the
+         consumer body. Do NOT call MarkProcessedAsync on the duplicate short-circuit path.
+      4. If false (novel message): call next.Send(context, ct) to invoke the consumer body.
+      5. After next.Send returns successfully: call IIdempotencyStore.MarkProcessedAsync(messageId, ct).
+      6. If next.Send throws: propagate the exception without calling MarkProcessedAsync
+         (the consumer failed; the message should be retried, not marked as processed).
+    NOTE: This is the ONLY approved deduplication mechanism. Never implement deduplication
+          logic inside ConsumeAsync bodies (hard violation).
+```
+
+#### Consumer definition base (`Consumers/`) — P-136
+
+```text
+ConsumerDefinitionBase<TConsumer>  (abstract class, implements IConsumerDefinition<TConsumer>)
+    Provides platform-standard per-consumer configuration with pre-wired retry exception filter.
+    Sealed Configure(IReceiveEndpointConfigurator, IConsumerConfigurator<TConsumer>) entry:
+      (a) Sets endpoint name from EndpointName if non-null (default: MassTransit convention)
+      (b) Sets prefetch count from PrefetchCount if non-null (default: MassTransit default)
+      (c) Wires retry exception filter: for each type in NonRetryableExceptions, calls
+          r.Ignore(exceptionType) so those exceptions bypass retry and dead-letter immediately
+      (d) Delegates to abstract ConfigureConsumer for subclass-specific configuration
+
+    protected abstract ConfigureConsumer(IReceiveEndpointConfigurator, IConsumerConfigurator<TConsumer>,
+                                          IBusRegistrationContext)  → void
+        Subclasses implement this for concurrency, additional filters, etc. Must NOT override
+        IConsumerDefinition<TConsumer>.Configure directly.
+
+    protected virtual NonRetryableExceptions  → IReadOnlyList<Type>
+        Default: empty list (all exceptions are retried per global policy).
+        Override to declare exception types that must bypass retry entirely.
+        Typical entries: ValidationException (01.Core), NotFoundException.
+
+    protected virtual EndpointName  → string?  (default null — MassTransit convention)
+    protected virtual PrefetchCount  → int?     (default null — MassTransit default)
+    NOTE: Register consuming-service definitions via AddConsumer<TConsumer, TDefinition>().
+          Prefer this base over raw IConsumerDefinition<TConsumer>; the retry exception filter
+          wiring is the platform's minimum standard for consumer configuration.
+```
+
+#### Version translator (`SchemaEvolution/`) — P-137
+
+```text
+IMessageVersionTranslator<TOld, TNew>  (interface)
+    .Translate(TOld old)  → TNew
+        Synchronous pure projection from old message schema to new message schema.
+        SYNCHRONOUS-ONLY CONSTRAINT: Translation must not perform I/O, call external services,
+        or produce side effects. It is a pure function called in the deserialization pipeline.
+        Implementations should be stateless.
+    NOTE: Registered as a singleton. WithVersionTranslator<TOld, TNew, TTranslator>() wires
+          the MassTransit deserialization pipeline so that TOld messages arriving at the transport
+          are transparently projected to TNew before consumer delivery. No consumer code change
+          required. If WithVersionTranslator is registered but no consumer for TNew exists in the
+          same service, Build() logs a Warning (advisory only — consumer may be in another service).
+```
+
+#### Routing slip base (`RoutingSlips/`) — P-139
+
+```text
+RoutingSlipActivityBase<TArguments, TLog>  (abstract class, implements IActivity<TArguments, TLog>)
+    Platform-standard base for MassTransit Courier activities.
+    Sealed Execute(ExecuteContext<TArguments>) entry:
+      — Propagates CorrelationId from routing slip tracking number into Activity.Current.
+      — Enriches log scope with routing_slip.tracking_number and routing_slip.activity_name.
+      — Delegates to abstract ExecuteAsync(TArguments, CancellationToken).
+      — Catches unhandled exceptions from ExecuteAsync: logs at Error with tracking number, rethrows.
+    Sealed Compensate(CompensateContext<TLog>) entry:
+      — Same correlation-propagation and log-scope enrichment as Execute.
+      — Delegates to abstract CompensateAsync(TLog, CancellationToken).
+      — Same exception log-then-rethrow semantics.
+
+    abstract .ExecuteAsync(TArguments arguments, CancellationToken ct)  → Task<ExecutionResult>
+    abstract .CompensateAsync(TLog log, CancellationToken ct)           → Task<CompensationResult>
+
+    Protected helpers:
+        Complete(TLog log)         → ExecutionResult   (returns context.Completed(log))
+        Faulted(Exception ex)      → ExecutionResult   (returns context.Faulted(ex))
+        CompensationComplete()     → CompensationResult (returns context.Compensated())
+
+    NOTE: Routing slips are for STATELESS multi-step coordination. When workflow state must survive
+          process restarts or requires durable persistence, use SagaStateMachineBase<TSaga> instead.
+          Do NOT override MassTransit Execute or Compensate directly — override ExecuteAsync and
+          CompensateAsync only.
+```
+
+#### Routing slip builder (`RoutingSlips/`) — P-139
+
+```text
+IRoutingSlipBuilder  (interface)
+    .AddActivity(string activityName, Uri executeAddress, object arguments) → IRoutingSlipBuilder
+        Adds an activity step to the routing slip. activityName is a human-readable label.
+        executeAddress is the MassTransit endpoint URI for the activity's execute endpoint.
+        arguments is an object matching the activity's TArguments type.
+        Returns this for fluent chaining.
+
+    .Build()  → object
+        Constructs and returns the opaque routing slip object (typed as object to avoid
+        a MassTransit reference in the Abstractions package). The returned value must be
+        passed directly to IMessageBus.ExecuteRoutingSlipAsync — do not cast or inspect it.
+    NOTE: The concrete implementation (MassTransitRoutingSlipBuilder) lives in the MassTransit
+          package. Resolve IRoutingSlipBuilder from DI; never construct MassTransit's
+          RoutingSlipBuilder directly in application code.
 ```
 
 #### Saga state machine base (`Sagas/`) — P-128
@@ -434,13 +598,63 @@ MessagingBusBuilder  (sealed class, implements IMessagingBuilder)
         — NOTE: This is the ONLY approved way to configure cross-service command routing.
           Never pass hardcoded queue URI strings to ISendEndpointProvider.GetSendEndpoint().
 
+    .WithIdempotency()
+        — registers IdempotentConsumerBehavior<TMessage> as a global MassTransit consume
+          pipeline filter applied to all consumers.
+        — At Build() time, if IIdempotencyStore is not registered in IServiceCollection,
+          throws InvalidOperationException with a diagnostic message.
+        — Returns MessagingBusBuilder for fluent chaining.
+        — NOTE: The consuming service must register a concrete IIdempotencyStore before calling
+          WithIdempotency(). SharedKernel does not provide an implementation.
+
+    .WithIdempotency(Action<IdempotencyOptions>)
+        — companion overload; configures IdempotencyOptions (ExpiryWindow) in addition to
+          registering the behavior.
+        — IdempotencyOptions is available via IOptions<IdempotencyOptions> to the consuming
+          service's IIdempotencyStore implementation.
+        — Returns MessagingBusBuilder for fluent chaining.
+
+    .WithHeaderPropagator<T>()
+        — registers T as a scoped IMessageHeaderPropagator in DI.
+        — Multiple calls are additive; propagators are applied in registration order.
+        — At every IMessageBus.PublishAsync and IEventPublisher.PublishAsync call, all registered
+          propagators are invoked before the explicit Action<PublishContext> configure callback.
+        — Returns MessagingBusBuilder for fluent chaining.
+
+    .WithVersionTranslator<TOld, TNew, TTranslator>()
+        — registers TTranslator as a singleton IMessageVersionTranslator<TOld, TNew> in DI.
+        — Registers VersionTranslatingConsumer<TOld, TNew> (internal IConsumer<TOld>) via
+          cfg.AddConsumer<>(). When a TOld message arrives, the consumer calls
+          TTranslator.Translate(TOld) synchronously and republishes the result via
+          ConsumeContext.Publish<TNew>(), so consumers registered for TNew receive the
+          translated payload with no code change.
+        — At host startup (not at Build() time), TranslatorRegistrationValidationHostedService
+          runs TranslatorRegistrationValidator and logs a Warning if no consumer for TNew is
+          registered in the same service (advisory — not a hard failure).
+        — Returns MessagingBusBuilder for fluent chaining.
+
+    .AddRoutingSlipActivity<TActivity>()
+        — registers the Courier activity with MassTransit via cfg.AddActivity<TActivity, TArguments, TLog>().
+        — TActivity must extend RoutingSlipActivityBase<TArguments, TLog> (or implement
+          IActivity<TArguments, TLog> directly for advanced use cases).
+        — Returns MessagingBusBuilder for fluent chaining.
+
     .Build() → IServiceCollection
         — Registers IMessageBus → MassTransitMessageBus (scoped).
         — Registers IEventPublisher → MassTransitEventPublisher (scoped).
         — Registers MessagingOptions via IOptions<MessagingOptions>.
         — Registers MassTransit IBus, IPublishEndpoint, ISendEndpointProvider (MassTransit-managed scoped).
         — Registers IHostedService for MassTransit bus lifecycle (start/stop via IBusControl).
+        — Registers MassTransitRoutingSlipBuilder as scoped IRoutingSlipBuilder (always, even when
+          AddRoutingSlipActivity has not been called — the interface is usable independently).
         — Startup validation: MessagingOptions.ServiceName non-null/non-empty; transport configured.
+        — If WithIdempotency() was called and IIdempotencyStore is not registered in IServiceCollection,
+          throws InvalidOperationException with diagnostic message.
+        — If WithVersionTranslator() was called, registers a singleton
+          TranslatorRegistrationValidationHostedService that runs once at host startup. It calls
+          TranslatorRegistrationValidator for each registration (advisory Warning log via the
+          real ILogger<T> from the host's DI container, no exception) when no consumer for TNew
+          is registered in this service.
         — ANTI-PATTERN FIX (P-130): Build() does NOT call Services.BuildServiceProvider() for
           validation. It applies the captured Action<MessagingOptions>? delegate inline to a
           local MessagingOptions instance, then calls MessagingOptionsValidator.Validate().
@@ -475,6 +689,11 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 | Batch Consumer Support | P-129 | `SK.07.Batch` | Abstractions (`BatchOptions`) + MassTransit (`BatchConsumerBase<TMessage>`, `AddBatchConsumer`) |
 | Build() Anti-Pattern Fix | P-130 | `SK.07.Core` | MassTransit (`MessagingBusBuilder.Build()` — remove BuildServiceProvider call) |
 | Cross-Service Command Routing | P-131 | `SK.07.Routing` | Abstractions (`ISendEndpointResolver`) + MassTransit (`ConventionSendEndpointResolver`, `WithSendEndpointRoute<T>`) |
+| Idempotency Abstraction | P-134 | `SK.07.Idempotency` | Abstractions (`IIdempotencyStore`, `IdempotencyOptions`) + MassTransit (`IdempotentConsumerBehavior<TMessage>`, `WithIdempotency`) |
+| Header Propagation | P-135 | `SK.07.HeaderPropagation` | Abstractions (`IMessageHeaderPropagator`) + MassTransit (`WithHeaderPropagator<T>`, propagator invocation in bus/publisher, header extraction in `ConsumerBase`) |
+| Per-Consumer Definition Base | P-136 | `SK.07.ConsumerDefinition` | MassTransit (`ConsumerDefinitionBase<TConsumer>`) |
+| Message Schema Evolution | P-137 | `SK.07.VersionTranslation` | Abstractions (`IMessageVersionTranslator<TOld, TNew>`) + MassTransit (`WithVersionTranslator`, `TranslatorRegistrationValidator`) |
+| Routing Slip Activity Base | P-139 | `SK.07.RoutingSlip` | Abstractions (`IRoutingSlipBuilder`, `IMessageBus.ExecuteRoutingSlipAsync`) + MassTransit (`RoutingSlipActivityBase<TArguments, TLog>`, `MassTransitRoutingSlipBuilder`, `AddRoutingSlipActivity`) |
 
 ---
 
@@ -502,6 +721,14 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 - Configuring circuit breakers per-consumer via `IConsumerDefinition<T>` — circuit breaker policy is global and must be configured via `WithCircuitBreaker()` on `MessagingBusBuilder`; per-consumer circuit-breaker overrides defeat the purpose of a shared failure-count window (added in P-126).
 - Using `Task.Delay` inside consumers as a substitute for deferred delivery — this blocks thread-pool threads, cannot survive process restarts, and loses the message on crash; use `IMessageScheduler.ScheduleAsync` instead (added in P-127).
 - Hardcoding queue names in `WithSendEndpointRoute<T>()` without namespacing by target service — the queue name must follow the `{target-service-name}-{command-type}` kebab-case convention matching the target service's `MessagingOptions.ServiceName` prefix (added in P-131).
+- Implementing custom deduplication logic inside `ConsumeAsync` bodies (e.g., checking a local `HashSet<Guid>` or querying the database on every message) — the platform-standard deduplication mechanism is `WithIdempotency()` with a registered `IIdempotencyStore` implementation; ad-hoc in-consumer deduplication is non-standard and creates inconsistency across services (added in P-134).
+- Calling `WithIdempotency()` on `MessagingBusBuilder` without first registering a concrete `IIdempotencyStore` — `Build()` throws `InvalidOperationException` at startup; SharedKernel does not provide a store implementation; the consuming service bridges to its own persistence layer (added in P-134).
+- Implementing `IMessageHeaderPropagator` inside `SharedKernel.*` packages — propagators require access to service-specific ambient context (e.g., `IHttpContextAccessor`, tenant resolution, feature flag state) that does not exist in the SharedKernel; propagators belong in the consuming service's composition root (added in P-135).
+- Overriding `IConsumerDefinition<TConsumer>.Configure` directly in a `ConsumerDefinitionBase<TConsumer>` subclass — the base class seals this method to guarantee that retry exception filter wiring always runs; subclasses must implement `ConfigureConsumer` instead (added in P-136).
+- Implementing `IMessageVersionTranslator<TOld, TNew>.Translate` with I/O, external service calls, or side effects — translation is called in the deserialization pipeline and must be a synchronous pure function; any async or stateful translation is a hard violation (added in P-137).
+- Constructing `MassTransit.RoutingSlipBuilder` directly in application code — use `IRoutingSlipBuilder` (from `SharedKernel.Messaging.Abstractions`) so application code has no compile-time dependency on MassTransit types; pass the `IRoutingSlipBuilder.Build()` result to `IMessageBus.ExecuteRoutingSlipAsync` (added in P-139).
+- Using `RoutingSlipActivityBase<TArguments, TLog>` for workflows requiring durable state persistence across process restarts — routing slips are stateless; use `SagaStateMachineBase<TSaga>` with an EF Core saga repository when persistent state is required (added in P-139).
+- Overriding MassTransit `Execute(ExecuteContext<TArguments>)` or `Compensate(CompensateContext<TLog>)` directly on a `RoutingSlipActivityBase<TArguments, TLog>` subclass — override `ExecuteAsync` and `CompensateAsync` only; the base class seals the entry points for consistent correlation propagation and structured logging (added in P-139).
 
 ### MassTransit 9.x API notes (discovered during Core implementation)
 
@@ -522,6 +749,13 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 - **Scoped `MassTransit.IMessageScheduler` in tests:** MassTransit registers `IMessageScheduler` as scoped. In tests, always resolve from a child scope: `using var scope = provider.CreateScope(); scope.ServiceProvider.GetRequiredService<global::MassTransit.IMessageScheduler>()`. Resolving from the root provider throws.
 - **`KebabCaseEndpointNameFormatter.SanitizeName` is an instance method:** Call via `KebabCaseEndpointNameFormatter.Instance.SanitizeName(typeof(T).Name)` — it is NOT a static method. Calling `KebabCaseEndpointNameFormatter.SanitizeName(...)` directly causes CS0120 compile error.
 - **Tests bypassing `MessagingBusBuilder.Build()` must register routing deps manually:** `MassTransitMessageBus` now requires `IReadOnlyDictionary<Type, string>` (route map) and `ConventionSendEndpointResolver` via constructor injection. Any test that registers `MassTransitMessageBus` directly (e.g. via `services.AddScoped<IMessageBus, MassTransitMessageBus>()`) must also register: `services.AddSingleton<IReadOnlyDictionary<Type, string>>(new ReadOnlyDictionary<Type, string>(new Dictionary<Type, string>()))` and `services.AddScoped<ConventionSendEndpointResolver>()`. Tests going through `MessagingBusBuilder.Build()` get these automatically.
+- **Global consume pipeline filter wiring (idempotency, future cross-cutting filters):** `IBusFactoryConfigurator` implements `IConsumePipeConfigurator`. To apply an open-generic `IFilter<ConsumeContext<TMessage>>` to ALL consumers globally, call `busCfg.UseConsumeFilter(typeof(MyFilter<>), ctx)` where `typeof(MyFilter<>)` is the open generic type and `ctx` is the `IBusRegistrationContext`. MassTransit 9.x resolves the closed generic (e.g., `MyFilter<OrderPlacedEvent>`) from DI per message type at runtime. The filter must be registered as an open generic: `services.AddScoped(typeof(MyFilter<>))`. Tests wiring the filter directly (bypassing `MessagingBusBuilder`) must call `AddScoped<MyFilter<ConcreteMessageType>>()` (closed generic) alongside `AddMassTransitTestHarness` and then call `busCfg.UseConsumeFilter(typeof(MyFilter<>), ctx)` inside the `UsingInMemory` configurator.
+- **`IEnumerable<IMessageHeaderPropagator>` resolution strategy:** `MassTransitEventPublisher` injects `IEnumerable<IMessageHeaderPropagator>` via constructor (always non-null — DI returns empty enumerable when none registered). `MassTransitMessageBus` resolves via `IServiceProvider.GetService<IEnumerable<IMessageHeaderPropagator>>()` at call time (also always non-null). Both approaches are safe; constructor injection is preferred when the dependency is always needed.
+- **`ConsumeContext.Headers.GetAll()` for header iteration:** In MassTransit 9.x, iterate all message headers via `context.Headers.GetAll()` which returns `IEnumerable<KeyValuePair<string, object?>>`. Do not use `context.Headers` as `IDictionary` — it does not implement that interface. Used in `ConsumerBase.Consume` to extract `x-sk-*` headers into the log scope.
+- **`PublishContext` alias required in test files:** Test files that import both `MassTransit` (via `MassTransit.Testing`) and `SharedKernel.Messaging.Abstractions.HeaderPropagation` must add `using MessagingPublishContext = SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext;` to resolve the `PublishContext` ambiguity, same as in production code files.
+- **Version translation pattern (P-137) — "translating consumer", not a deserializer hook:** MassTransit 9.x has no documented, stable cross-type (`TOld` → `TNew`) message-alias/deserializer hook (`MassTransit.ITransformConfigurator<T>` only transforms properties of the *same* type `T`). `WithVersionTranslator<TOld, TNew, TTranslator>()` instead registers an internal `VersionTranslatingConsumer<TOld, TNew> : IConsumer<TOld>` that resolves `IMessageVersionTranslator<TOld, TNew>` (singleton), calls `Translate()` synchronously, and republishes via `ConsumeContext.Publish<TNew>(translated, ct)`. Consumers registered for `TNew` receive the translated payload as if `TNew` had been published directly. This is fully testable with `MassTransit.Testing.TestHarness` (`UsingInMemory`).
+- **Advisory startup validation registered as `IHostedService`, not at `Build()` time:** `TranslatorRegistrationValidator.Validate(...)` needs an `ILogger`, but `Build()` must not call `Services.BuildServiceProvider()` (P-130). Solution: `Build()` registers a singleton `TranslatorRegistrationValidationHostedService` (only when `WithVersionTranslator` was called) that resolves `ILogger<TranslatorRegistrationValidationHostedService>` from the real host DI container and runs the validator once in `StartAsync`. This pattern (defer DI-dependent advisory checks to a startup `IHostedService`) is the template for any future `Build()`-time advisory validation that needs a real `ILogger` or other scoped/DI-resolved dependency.
+- **Tracking registered consumer types for advisory checks:** `MessagingBusBuilder` maintains `_registeredConsumerTypes: List<Type>` populated by `AddConsumer<TConsumer>()`, `AddConsumer<TConsumer, TConsumerDefinition>()`, and `AddBatchConsumer<TConsumer>()`. `TranslatorRegistrationValidator.HasConsumerFor` reflects over `consumerType.GetInterfaces()` checking for `IConsumer<TNew>` or `IConsumer<Batch<TNew>>`.
 
 ### CloudEvents compliance rule
 
@@ -741,6 +975,115 @@ public sealed class OrderSagaStateMachine : SagaStateMachineBase<OrderSagaState>
 }
 ```
 
+```csharp
+// Idempotency (P-134) — consuming service provides IIdempotencyStore implementation
+services.AddScoped<IIdempotencyStore, RedisIdempotencyStore>(); // consuming service bridge
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithRetry()
+    .WithIdempotency(o => o.ExpiryWindow = TimeSpan.FromHours(48))
+    .AddConsumer<OrderPlacedConsumer>()
+    .Build();
+
+// Header propagation (P-135) — propagators registered in consuming service
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithHeaderPropagator<TenantHeaderPropagator>()      // scoped; reads ITenantProvider
+    .WithHeaderPropagator<CorrelationHeaderPropagator>() // scoped; reads Activity.Current
+    .AddConsumer<OrderPlacedConsumer>()
+    .Build();
+
+// TenantHeaderPropagator example (in the consuming service — not in SharedKernel)
+public sealed class TenantHeaderPropagator : IMessageHeaderPropagator
+{
+    public TenantHeaderPropagator(ITenantProvider tenantProvider) { ... }
+    public void Propagate(PublishContext context)
+        => context.WithHeader("x-sk-tenant-id", _tenantProvider.TenantId.ToString());
+}
+
+// Per-consumer definition base (P-136) — in the consuming service
+public sealed class OrderPlacedConsumerDefinition : ConsumerDefinitionBase<OrderPlacedConsumer>
+{
+    protected override IReadOnlyList<Type> NonRetryableExceptions =>
+        [typeof(ValidationException), typeof(NotFoundException)];
+
+    protected override string? EndpointName => "order-service-order-placed-v2";
+
+    protected override void ConfigureConsumer(
+        IReceiveEndpointConfigurator endpointConfigurator,
+        IConsumerConfigurator<OrderPlacedConsumer> consumerConfigurator,
+        IBusRegistrationContext context) { /* additional config */ }
+}
+
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithRetry()
+    .AddConsumer<OrderPlacedConsumer, OrderPlacedConsumerDefinition>()
+    .Build();
+
+// Message schema evolution (P-137)
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithVersionTranslator<OrderPlacedEventV1, OrderPlacedEventV2, OrderPlacedV1ToV2Translator>()
+    .AddConsumer<OrderPlacedConsumer>() // registered for OrderPlacedEventV2
+    .Build();
+
+public sealed class OrderPlacedV1ToV2Translator
+    : IMessageVersionTranslator<OrderPlacedEventV1, OrderPlacedEventV2>
+{
+    public OrderPlacedEventV2 Translate(OrderPlacedEventV1 old)
+        => new() { OrderId = old.OrderId, CustomerId = old.CustomerId, TotalAmount = old.Amount };
+}
+
+// Routing slip (P-139) — two-activity distributed coordination
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "payment-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .AddRoutingSlipActivity<ValidatePaymentActivity>()
+    .AddRoutingSlipActivity<ChargeCardActivity>()
+    .Build();
+
+// Activity implementation
+public sealed class ValidatePaymentActivity
+    : RoutingSlipActivityBase<ValidatePaymentArguments, ValidatePaymentLog>
+{
+    protected override async Task<ExecutionResult> ExecuteAsync(
+        ValidatePaymentArguments args, CancellationToken ct)
+    {
+        // validate; return Complete(new ValidatePaymentLog { ... }) on success
+        return Complete(new ValidatePaymentLog { IsValid = true });
+    }
+
+    protected override Task<CompensationResult> CompensateAsync(
+        ValidatePaymentLog log, CancellationToken ct)
+        => Task.FromResult(CompensationComplete());
+}
+
+// Dispatch a routing slip from an application handler
+public sealed class ProcessPaymentHandler
+{
+    public ProcessPaymentHandler(IMessageBus bus, IRoutingSlipBuilder slipBuilder) { ... }
+
+    public async Task Handle(ProcessPaymentCommand cmd, CancellationToken ct)
+    {
+        var slip = _slipBuilder
+            .AddActivity("validate-payment",
+                new Uri("queue:payment-service-validate-payment"),
+                new ValidatePaymentArguments { OrderId = cmd.OrderId, Amount = cmd.Amount })
+            .AddActivity("charge-card",
+                new Uri("queue:payment-service-charge-card"),
+                new ChargeCardArguments { OrderId = cmd.OrderId })
+            .Build();
+
+        await _bus.ExecuteRoutingSlipAsync(slip, ct);
+    }
+}
+```
+
 `SharedKernel.Messaging.Abstractions` ships **no DI extensions** — it is a pure interface library.
 
 ---
@@ -766,6 +1109,11 @@ public sealed class OrderSagaStateMachine : SagaStateMachineBase<OrderSagaState>
 - `ISendEndpointResolver` is an interface — AOT-safe. `ConventionSendEndpointResolver` uses `KebabCaseEndpointNameFormatter.SanitizeName(typeof(T).Name)` which is a string transformation on the type name preserved by the trimmer (type metadata, not reflection-instantiation).
 - The per-type route dictionary (`Dictionary<Type, string>`) in `MessagingBusBuilder` is populated at startup (build time) — AOT-safe; no runtime type resolution required.
 - No `Activator.CreateInstance`, `Assembly.Load`, or dynamic reflection in hot paths within `07.Messaging` types.
+- `IIdempotencyStore` is an interface — AOT-safe. `IdempotencyOptions` is a plain POCO — AOT-safe. `IdempotentConsumerBehavior<TMessage>` is a closed generic sealed class; the trimmer preserves closed generic metadata at startup registration time.
+- `IMessageHeaderPropagator` is an interface — AOT-safe. The `IEnumerable<IMessageHeaderPropagator>` resolution at publish time relies on standard DI enumeration which is AOT-safe in `Microsoft.Extensions.DependencyInjection` on .NET 10.
+- `ConsumerDefinitionBase<TConsumer>` is a generic abstract class — AOT-safe at the base type level; closed generic instantiation by MassTransit at startup is model-build time only.
+- `IMessageVersionTranslator<TOld, TNew>` is a generic interface — AOT-safe. The MassTransit deserialization hook used by `WithVersionTranslator` relies on message type aliases; verify AOT compatibility of the specific MassTransit interception API on each major upgrade.
+- `IRoutingSlipBuilder` is an interface — AOT-safe. `MassTransitRoutingSlipBuilder` delegates to MassTransit `RoutingSlipBuilder` — verify AOT status of MassTransit Courier on each major upgrade. `RoutingSlipActivityBase<TArguments, TLog>` is a generic abstract class; closed generic instantiation at startup is model-build time only.
 
 ---
 
@@ -803,3 +1151,7 @@ public sealed class OrderSagaStateMachine : SagaStateMachineBase<OrderSagaState>
 - [2026-06-08] WO-021 deep architectural review — 9 gaps identified and queued as P-125–P-133: circuit breaker + fault consumer abstraction, IMessageScheduler deferred delivery, saga state machine base, batch consumer base, Build() ServiceProvider anti-pattern (critical fix), ISendEndpointResolver cross-service routing, OTel ActivitySource wiring (ServiceDefaults P-132), extended governance rules MSG0105-MSG0108 (P-133); planned capabilities table and 4 new hard violation rules added to this CLAUDE.md (arch-lead)
 - [2026-06-08] SK.07.Scheduling complete — MassTransitMessageScheduler description corrected (SchedulePublish/CancelScheduledPublish APIs); WithInMemoryScheduler transport-aware wiring documented; 7 new MassTransit 9.x scheduler API notes added (sync-brain)
 - [2026-06-09] SK.07.Routing complete — 2 MassTransit 9.x API notes added: KebabCaseEndpointNameFormatter.SanitizeName is an instance method (not static); tests bypassing Build() must register IReadOnlyDictionary<Type,string> + ConventionSendEndpointResolver manually (sync-brain)
+- [2026-06-09] WO-022 phase planning — 5 new capabilities added: IIdempotencyStore + IdempotentConsumerBehavior (P-134), IMessageHeaderPropagator + WithHeaderPropagator (P-135), ConsumerDefinitionBase (P-136), IMessageVersionTranslator + WithVersionTranslator (P-137), RoutingSlipActivityBase + IRoutingSlipBuilder + IMessageBus.ExecuteRoutingSlipAsync (P-139); interface contracts, builder methods, hard violation rules, AOT notes, and DI registration examples added; queued capabilities table extended (messaging-arch-planner)
+- [2026-06-09] SK.07.Idempotency complete — global consume filter API note added: UseConsumeFilter(typeof(MyFilter<>), ctx) wires open-generic IFilter<ConsumeContext<TMessage>> globally; open-generic DI registration pattern AddScoped(typeof(MyFilter<>)) documented; test harness wiring pattern for closed-generic filter in UsingInMemory documented (sync-brain)
+- [2026-06-09] SK.07.HeaderPropagation complete — 3 MassTransit 9.x API notes added: IEnumerable<IMessageHeaderPropagator> resolution strategy (constructor vs GetService); ConsumeContext.Headers.GetAll() for header iteration; PublishContext alias required in test files (sync-brain)
+- [2026-06-10] SK.07.VersionTranslation complete — `IMessageVersionTranslator<TOld, TNew>` in Abstractions; `WithVersionTranslator<TOld, TNew, TTranslator>()` implemented as a "translating consumer" (`VersionTranslatingConsumer<TOld, TNew>` republishes via `ConsumeContext.Publish<TNew>`) rather than a deserializer hook; advisory `TranslatorRegistrationValidator` runs via a new `TranslatorRegistrationValidationHostedService` at host startup (`Build()`-must-not-`BuildServiceProvider` pattern for DI-dependent advisory checks); `_registeredConsumerTypes` tracking added to `MessagingBusBuilder`; 5 new tests (sync-brain)

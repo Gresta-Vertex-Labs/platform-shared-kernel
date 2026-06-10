@@ -42,6 +42,8 @@
 | `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | All tasks in Phase: EfCore Package Hygiene Architecture Rules are `●` |
 | `SK.00.TenantedDbContextGuard` | Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule | All tasks in Phase: TenantedDbContext Tenant-Filter Guard are `●` |
 | `SK.00.EncryptionPatternGuard` | Governance: Architecture Rules for DB Encryption Pattern Correctness | All tasks in Phase: EncryptionPatternGuard are `●` |
+| `SK.00.MessagingArchRules` | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | All tasks in Phase: Messaging Architecture Rules are `●` |
+| `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | All tasks in Phase: Extended Messaging Architecture Rules are `●` |
 
 ---
 
@@ -1430,6 +1432,130 @@ Two rules (SK0701, SK0702) are NetArchTest assembly-level predicates. Two rules 
 
 ---
 
+## Phase: Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards <!-- phase-key: SK.00.ExtendedMessagingArchRules -->
+
+> Extend `SharedKernel.ArchitectureTests` and `SharedKernel.Analyzers` with four additional messaging enforcement rules covering fault-consumer registration misuse, direct `MassTransit.IMessageScheduler` injection, saga state classes missing `SagaStateBase`, and batch consumers registered via the wrong builder method. Introduced by WO-021 P-133 to close the misuse vectors created by P-125 through P-131.
+
+### ExtendedMessagingArchRules — Goal
+
+Each new messaging capability introduced in P-125 through P-131 (fault consumers, scheduling, sagas, batch consumers) creates a new class of misuse that the compiler cannot catch. Without rule enforcement, teams will bypass `AddFaultConsumer` and register fault consumers manually (breaking the MassTransit adapter chain), inject `MassTransit.IMessageScheduler` directly (re-introducing transport coupling), create saga state classes without `SagaStateBase` (missing version field, causing saga persistence failures), and register batch consumers via `AddConsumer` (ignoring batch configuration, resulting in one-by-one processing). Architecture tests and Roslyn analyzers encode platform decisions as executable contracts that run in CI.
+
+### ExtendedMessagingArchRules — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/ExtendedMessagingArchitectureRules.cs` — static class housing SK0706 and SK0707 NetArchTest predicate factory methods
+  - `SharedKernel.ArchitectureTests/Predicates/NoDirectSchedulerInjectionOutsideMessagingPredicate.cs` — `ICustomRule`: constructor parameter scan for `MassTransit.IMessageScheduler` simple name in types outside `SharedKernel.Messaging.*`
+  - `SharedKernel.ArchitectureTests/Predicates/SagaStateMustExtendSagaStateBasePredicate.cs` — `ICustomRule`: checks types implementing `ISaga` (simple name) extend `SagaStateBase` (simple name, inheritance chain check via `TypeDefinition.BaseType`)
+  - `SharedKernel.Analyzers/Diagnostics/SK0705_FaultConsumerDirectRegistrationAnalyzer.cs` — Roslyn analyzer: fires on `services.AddScoped<IFaultConsumer<...>>()` or `services.AddSingleton<IFaultConsumer<...>>()` registrations
+  - `SharedKernel.Analyzers/Diagnostics/SK0708_BatchConsumerRegisteredViaAddConsumerAnalyzer.cs` — Roslyn analyzer: fires on `AddConsumer<T>()` where `T` is a type whose simple name or base type contains `BatchConsumerBase`
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0705–SK0708 to diagnostic registry; add `ExtendedMessagingArchitectureRules` to architecture test contracts section; document all four rules with rationale, exemption lists, and offending/compliant patterns
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### ExtendedMessagingArchRules — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0705 | FaultConsumerDirectRegistration | Usage | Warning | `services.AddScoped<IFaultConsumer<T>>()` or `services.AddSingleton<IFaultConsumer<T>>()` detected — fault consumers must be registered via `MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>()` to wire the MassTransit `Fault<T>` adapter correctly |
+| SK0706 | DirectMassTransitSchedulerInjection | Design | Warning | `MassTransit.IMessageScheduler` appears as a constructor parameter in a type outside `SharedKernel.Messaging.*` — inject `SharedKernel.Messaging.Abstractions.IMessageScheduler` instead to preserve transport independence |
+| SK0707 | SagaStateMustExtendSagaStateBase | Design | Warning | A class implementing `ISaga` does not extend `SagaStateBase` from `SharedKernel.Messaging.MassTransit` — all saga state classes must extend `SagaStateBase` to carry the platform's standard correlation ID, version, and audit fields |
+| SK0708 | BatchConsumerRegisteredViaAddConsumer | Usage | Warning | A subclass of `BatchConsumerBase<T>` is registered via `AddConsumer<T>()` — batch consumers must be registered via `MessagingBusBuilder.AddBatchConsumer<T>()` to apply `MessageLimit` and `TimeLimit` batch configuration |
+
+### ExtendedMessagingArchRules — Implementation Rules
+
+1. SK0705 `FaultConsumerDirectRegistrationAnalyzer` operates on `InvocationExpressionSyntax` nodes. Trigger conditions (both must hold):
+   - The method name is one of `"AddScoped"` or `"AddSingleton"` (exact match on `MemberAccessExpressionSyntax.Name.Identifier.Text`).
+   - At least one type argument is a `GenericNameSyntax` whose `Identifier.Text` is `"IFaultConsumer"` (simple name check — unique within the SDK; covers `AddScoped<IFaultConsumer<TMessage>>()` and `AddScoped<IFaultConsumer<TMessage>, TImpl>()`).
+   Syntax-only; no SemanticModel required. Reports SK0705 on the invocation expression. No suppression namespace — suppress per-call-site via `#pragma warning disable SK0705` only when explicitly bypassing the builder (document the rationale inline).
+
+2. SK0706 `DirectMassTransitSchedulerInjection` is a NetArchTest architecture predicate (not a Roslyn analyzer). The rule: `NoDirectSchedulerInjectionOutsideMessagingPredicate` — an `ICustomRule` that iterates `TypeDefinition.Methods` where `IsConstructor` is true. For each constructor, checks each `ParameterDefinition.ParameterType.Name` for exact name match `"IMessageScheduler"`. The discriminating check is whether the parameter type's `ParameterType.Namespace` starts with `"MassTransit"` — this distinguishes `MassTransit.IMessageScheduler` (forbidden) from `SharedKernel.Messaging.Abstractions.IMessageScheduler` (permitted). Namespace exemption guard (first check): types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Messaging"` return true unconditionally — the messaging package itself may use `MassTransit.IMessageScheduler` freely for adapter wiring. Failure message: `"{offendingType} injects MassTransit.IMessageScheduler directly. Use SharedKernel.Messaging.Abstractions.IMessageScheduler to preserve transport independence."` Returns `ConditionList`.
+
+3. SK0707 `SagaStateMustExtendSagaStateBase` is a NetArchTest architecture predicate. The rule: `SagaStateMustExtendSagaStateBasePredicate` — an `ICustomRule` that scopes to types whose `TypeDefinition.Interfaces` contains an entry with `InterfaceType.Name == "ISaga"` (exact simple name match). For each such type, checks whether the inheritance chain (walking `TypeDefinition.BaseType` iteratively, stopping at `null` or `"Object"`) contains any `TypeReference` whose `Name == "SagaStateBase"` (exact simple name match). If no such ancestor is found, returns false (rule violated) with failure message: `"{offendingType} implements ISaga but does not extend SagaStateBase. All saga state classes must extend SagaStateBase to carry correlation ID, version, and audit fields."` Returns `ConditionList`.
+
+4. SK0708 `BatchConsumerRegisteredViaAddConsumerAnalyzer` operates on `InvocationExpressionSyntax` nodes. Trigger conditions (both must hold):
+   - The method name is `"AddConsumer"` (exact match on `MemberAccessExpressionSyntax.Name.Identifier.Text` or `IdentifierNameSyntax.Identifier.Text`).
+   - The method has exactly one type argument whose `ToString()` or `Identifier.Text` contains `"BatchConsumer"` (simple name substring check — unique within the SDK for `BatchConsumerBase<T>` subclasses).
+   Because type argument name checking requires the consumer class name to contain `"BatchConsumer"`, this rule is a naming-convention-guided heuristic. If the consumer class name does not contain `"BatchConsumer"`, the rule will not fire (a false negative). Document this limitation in `CLAUDE.md`. Syntax-only; no SemanticModel required. Reports SK0708 on the invocation expression. No suppression namespace — suppress per-call-site via `#pragma warning disable SK0708`.
+
+5. `ExtendedMessagingArchitectureRules` static class factory method signatures:
+   - `ExtendedMessagingArchitectureRules.NoDirectMassTransitSchedulerInjection(params Assembly[])` → `ConditionList`
+   - `ExtendedMessagingArchitectureRules.SagaStatesMustExtendSagaStateBase(Assembly)` → `ConditionList`
+
+6. `NoDirectSchedulerInjectionOutsideMessagingPredicate` distinguishes between the two `IMessageScheduler` interfaces by checking `ParameterDefinition.ParameterType.Namespace`: `"MassTransit"` → forbidden; `"SharedKernel.Messaging.Abstractions"` → permitted. This namespace check requires that the IL assembly references are resolved, which Mono.Cecil does from the loaded assembly metadata. If the namespace cannot be resolved (e.g., the assembly is tested in isolation without the MassTransit reference), the predicate falls back to checking whether `ParameterType.Scope.Name` contains `"MassTransit"` as a substring — the module scope name includes the assembly name.
+
+7. `SagaStateMustExtendSagaStateBasePredicate` walks `TypeDefinition.BaseType` iteratively (each step resolves `BaseType.Resolve()` to get the next `TypeDefinition`). The walk terminates when `BaseType` is null or `BaseType.Name` is `"Object"`. This handles multi-level inheritance chains (e.g., `OrderSagaState : SagaAuditBase : SagaStateBase`). If `BaseType.Resolve()` returns null (the base type is in an unloaded assembly), the predicate must treat the type as possibly-compliant (return true — fail open rather than false-positive) and document this limitation.
+
+8. Both architecture predicates (`NoDirectSchedulerInjectionOutsideMessagingPredicate`, `SagaStateMustExtendSagaStateBasePredicate`) reuse the established Mono.Cecil `TypeDefinition` access pattern from `DoesNotContainThrowIlPredicate`. No new NuGet dependency — the existing `Mono.Cecil >= 0.11.5` explicit reference covers both.
+
+9. SK0705 and SK0708 both follow `netstandard2.0` constraint. Zero new NuGet dependencies beyond `Microsoft.CodeAnalysis.CSharp`. Both use syntax-only analysis; neither requires `SemanticModel`.
+
+10. `ExtendedMessagingArchitectureRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside `MessagingArchitectureRules.cs`. It must not reference any MassTransit package directly. Type names are matched by simple name only.
+
+11. Exemption list for SK0706 (`NoDirectSchedulerInjectionOutsideMessagingPredicate`):
+    - Types whose `TypeDefinition.Namespace` starts with `"SharedKernel.Messaging"` — the messaging package adapter layer may reference `MassTransit.IMessageScheduler` for internal wiring. Any additional exemption must be documented in `00.Governance/CLAUDE.md` before applying.
+
+12. SK0708 naming convention requirement: batch consumer implementation classes must contain `"BatchConsumer"` in their class name to be detected by the analyzer. Teams naming their batch consumer `OrderProcessor` (without `"BatchConsumer"` in the name) will not receive the SK0708 diagnostic. Document this limitation in `00.Governance/CLAUDE.md` and `00.Governance/README.md`; recommend the naming convention `{Purpose}BatchConsumer` as an enforcement aid.
+
+### ExtendedMessagingArchRules — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/ExtendedMessagingArchitectureRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: two predicate factory methods for SK0706 and SK0707 returning ConditionList |
+| `Predicates/NoDirectSchedulerInjectionOutsideMessagingPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: constructor parameter scan for MassTransit.IMessageScheduler (namespace-disambiguated); exempts SharedKernel.Messaging.* |
+| `Predicates/SagaStateMustExtendSagaStateBasePredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: inheritance-chain walk for ISaga implementors; fails if SagaStateBase is absent in BaseType chain |
+| `Diagnostics/SK0705_FaultConsumerDirectRegistrationAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0705 fires on AddScoped/AddSingleton with IFaultConsumer<T> type argument |
+| `Diagnostics/SK0708_BatchConsumerRegisteredViaAddConsumerAnalyzer.cs` | SharedKernel.Analyzers | Create | Roslyn analyzer: SK0708 fires on AddConsumer<T> where T contains "BatchConsumer" in its name |
+
+### ExtendedMessagingArchRules — Acceptance Criteria
+
+- [ ] `SK0705` fires when `IFaultConsumer<T>` is registered via `services.AddScoped` or `services.AddSingleton`; does not fire for `AddFaultConsumer` registrations
+- [ ] `SK0706` fires when `MassTransit.IMessageScheduler` is a constructor dependency outside `SharedKernel.Messaging.*`; does not fire for `SharedKernel.Messaging.Abstractions.IMessageScheduler`
+- [ ] `SK0707` fires when a class implements `ISaga` but does not extend `SagaStateBase`; does not fire for classes extending `SagaStateBase`
+- [ ] `SK0708` fires when a `BatchConsumerBase<T>` subclass (identified by name containing `"BatchConsumer"`) is registered via `AddConsumer<T>()`; does not fire for `AddBatchConsumer<T>()` registrations
+- [ ] All four rules have compliant-pass and violation-fire test fixtures in `SharedKernel.ArchitectureTests` (SK0706, SK0707) and `SharedKernel.Analyzers.Tests` (SK0705, SK0708)
+- [ ] All existing governance tests (MSG0101–MSG0104 mapped as SK0701–SK0704) still pass — no regressions
+- [ ] `00.Governance/CLAUDE.md` updated with the four new rules, rationale, exemption lists, and SK0708 naming-convention limitation documented
+
+### ExtendedMessagingArchRules — Dependencies
+
+- Requires P-125 through P-131 (`IFaultConsumer<T>` interface, `MassTransit.IMessageScheduler` adapter, `SagaStateBase`, `BatchConsumerBase<T>` defined in `SharedKernel.Messaging.MassTransit`): yes — SK0705, SK0706, SK0707, and SK0708 reference these type names as their detection anchors; before these types exist the rules are checking for names that do not yet exist (rules will trivially pass, which is safe but vacuous)
+- Requires `MessagingArchitectureRules` (`SK.00.MessagingArchRules`) to be complete: yes — establishes the established Mono.Cecil constructor-parameter inspection pattern in `SharedKernel.ArchitectureTests`
+- Unblocks: CI enforcement of extended messaging misuse patterns across all downstream services
+
+### ExtendedMessagingArchRules — Tooling Version Notes
+
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0705 and SK0708 follow same constraint as all other SK analyzers; syntax-only analysis, no SemanticModel required)
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` — no change; covers both new predicates)
+- Target framework: `netstandard2.0` (Analyzers) / `net10.0` (ArchitectureTests)
+
+### ExtendedMessagingArchRules — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-44 | Define SK0705 `FaultConsumerDirectRegistration` — trigger: `AddScoped` or `AddSingleton` invocation with a type argument whose simple name is `"IFaultConsumer"` (GenericNameSyntax identifier text check); syntax-only; global scope; per-call-site `#pragma` suppression; fix message: use `MessagingBusBuilder.AddFaultConsumer<TMessage, TConsumer>()` | SharedKernel.Analyzers | `○` |
+| D-45 | Define SK0706 `DirectMassTransitSchedulerInjection` — `NoDirectSchedulerInjectionOutsideMessagingPredicate` shape: constructor parameter scan for `IMessageScheduler`; namespace disambiguation (`ParameterType.Namespace.StartsWith("MassTransit")` → forbidden vs. `"SharedKernel.Messaging.Abstractions"` → permitted); exemption: `SharedKernel.Messaging.*` namespace prefix; failure message naming offending type and recommended alternative | SharedKernel.ArchitectureTests | `○` |
+| D-46 | Define SK0707 `SagaStateMustExtendSagaStateBase` — `SagaStateMustExtendSagaStateBasePredicate` shape: scope to `ISaga` implementing types; `TypeDefinition.BaseType` iterative walk stopping at null/Object; check each ancestor `Name == "SagaStateBase"`; fail-open if `BaseType.Resolve()` returns null (unloaded assembly); failure message naming offending type | SharedKernel.ArchitectureTests | `○` |
+| D-47 | Define SK0708 `BatchConsumerRegisteredViaAddConsumer` — trigger: `AddConsumer` invocation (exact name) with a single type argument containing `"BatchConsumer"` as a substring in the type argument identifier text; syntax-only; document naming-convention dependency (class must contain `"BatchConsumer"` to be detected); no suppression namespace; per-call-site `#pragma` suppression | SharedKernel.Analyzers | `○` |
+| C-55 | Implement `NoDirectSchedulerInjectionOutsideMessagingPredicate` in `Predicates/` — `ICustomRule`; namespace exemption (`SharedKernel.Messaging.*`) as first guard; iterate `TypeDefinition.Methods` where `IsConstructor`; check `ParameterDefinition.ParameterType.Name == "IMessageScheduler"` AND `ParameterType.Namespace.StartsWith("MassTransit")` (or `Scope.Name.Contains("MassTransit")` fallback); return false with SK0706 failure message on violation | SharedKernel.ArchitectureTests | `○` |
+| C-56 | Implement `SagaStateMustExtendSagaStateBasePredicate` in `Predicates/` — `ICustomRule`; scope to types whose `TypeDefinition.Interfaces` contains an entry with `InterfaceType.Name == "ISaga"`; walk `TypeDefinition.BaseType` iteratively (`Resolve()` each step); check `TypeReference.Name == "SagaStateBase"` at each level; fail-open if `Resolve()` returns null; return false with SK0707 failure message if `SagaStateBase` not found in chain | SharedKernel.ArchitectureTests | `○` |
+| C-57 | Implement `ExtendedMessagingArchitectureRules` static class in `Rules/` — two factory methods: `NoDirectMassTransitSchedulerInjection(params Assembly[])` → `ConditionList`, `SagaStatesMustExtendSagaStateBase(Assembly)` → `ConditionList` | SharedKernel.ArchitectureTests | `○` |
+| C-58 | Implement SK0705 `FaultConsumerDirectRegistrationAnalyzer` — `InvocationExpressionSyntax` walker; filter to `AddScoped` or `AddSingleton` method names; check type arguments for `GenericNameSyntax` whose `Identifier.Text == "IFaultConsumer"`; report SK0705 on the invocation expression; syntax-only, no SemanticModel | SharedKernel.Analyzers | `○` |
+| C-59 | Implement SK0708 `BatchConsumerRegisteredViaAddConsumerAnalyzer` — `InvocationExpressionSyntax` walker; filter to `AddConsumer` method name; check type argument identifier text for `"BatchConsumer"` substring; report SK0708 on the invocation expression; syntax-only, no SemanticModel | SharedKernel.Analyzers | `○` |
+| T-96 | Architecture test SK0706 (fire path): pass an application assembly containing a command handler with a constructor parameter typed `MassTransit.IMessageScheduler` (namespace attribute `"MassTransit"`); assert `NoDirectMassTransitSchedulerInjection` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-97 | Architecture test SK0706 (pass path): pass an application assembly containing a service that injects `SharedKernel.Messaging.Abstractions.IMessageScheduler` only; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-98 | Architecture test SK0707 (fire path): pass an assembly containing a class that implements `ISaga` but extends `object` directly (no `SagaStateBase`); assert `SagaStatesMustExtendSagaStateBase` fails and failure message names the offending type | SharedKernel.ArchitectureTests | `○` |
+| T-99 | Architecture test SK0707 (pass path): pass an assembly containing a saga state class that implements `ISaga` and extends `SagaStateBase`; assert rule passes | SharedKernel.ArchitectureTests | `○` |
+| T-100 | Analyzer test SK0705 (fire path): `services.AddScoped<IFaultConsumer<OrderPlaced>, OrderFaultConsumer>()` triggers SK0705; `services.AddSingleton<IFaultConsumer<OrderPlaced>>()` triggers SK0705 | SharedKernel.Analyzers.Tests | `○` |
+| T-101 | Analyzer test SK0705 (pass path): `builder.AddFaultConsumer<OrderPlaced, OrderFaultConsumer>()` does not trigger SK0705; `services.AddScoped<IOrderFaultHandler, OrderFaultHandler>()` (no `IFaultConsumer` type arg) does not trigger SK0705 | SharedKernel.Analyzers.Tests | `○` |
+| T-102 | Analyzer test SK0708 (fire path): `builder.AddConsumer<OrderBatchConsumer>()` where the type name contains `"BatchConsumer"` triggers SK0708 | SharedKernel.Analyzers.Tests | `○` |
+| T-103 | Analyzer test SK0708 (pass path): `builder.AddBatchConsumer<OrderBatchConsumer>()` does not trigger SK0708; `builder.AddConsumer<OrderCommandConsumer>()` where the type name does not contain `"BatchConsumer"` does not trigger SK0708 | SharedKernel.Analyzers.Tests | `○` |
+| DO-19 | Document all four `ExtendedMessagingArchitectureRules` in `00.Governance/CLAUDE.md` and `00.Governance/README.md`: rationale (adapter-chain integrity, transport independence, saga-state consistency, batch-configuration enforcement), exemption lists, SK0708 naming-convention limitation, offending-pattern example, compliant-pattern example, failure message content | SharedKernel.ArchitectureTests, SharedKernel.Analyzers | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -1444,7 +1570,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 246.
+> Counts updated whenever a task state changes. Total tasks: 266.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -1466,6 +1592,7 @@ Format when active:
 | `SK.00.TenantedDbContextGuard` | Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule | 13 | 13 | 0 | `●` |
 | `SK.00.EncryptionPatternGuard` | Governance: Architecture Rules for DB Encryption Pattern Correctness | 14 | 14 | 0 | `●` |
 | `SK.00.MessagingArchRules` | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | 20 | 20 | 0 | `●` |
+| `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | 20 | 0 | 20 | `○` |
 
 ---
 
@@ -1510,3 +1637,4 @@ Format when active:
 - [2026-06-08] Phase SK.00.MessagingArchRules added — 20 tasks: D-40–D-43, C-50–C-54, T-87–T-95, DO-18; SK0701 NoDirectBusInjectionOutsideMessaging, SK0702 NoEventPublisherInDomainLayer (NetArchTest predicates), SK0703 MessageBusSingletonRegistration, SK0704 HardcodedQueueUriInGetSendEndpoint (Roslyn analyzers); new 07xx messaging ID block; total tasks now 246 — WO-020 P-123
 - [2026-06-09] D-40–D-43, C-50–C-54, T-87–T-95, DO-18 → ● in SK.00.MessagingArchRules — NoDirectBusInjectionOutsideMessagingPredicate, NoEventPublisherInDomainLayerPredicate, MessagingArchitectureRules implemented; SK0703 MessageBusSingletonRegistrationAnalyzer, SK0704 HardcodedQueueUriAnalyzer implemented; 78 analyzer tests pass, 62 arch tests pass; SK.00.MessagingArchRules → ● (state-map-phase)
 - [2026-06-09] SK.00.MessagingArchRules → ● — all 20 tasks complete; promoted to root state-map (state-map-phase)
+- [2026-06-09] Phase SK.00.ExtendedMessagingArchRules added — 20 tasks: D-44–D-47, C-55–C-59, T-96–T-103, DO-19; SK0705 FaultConsumerDirectRegistration, SK0708 BatchConsumerRegisteredViaAddConsumer (Roslyn analyzers); SK0706 DirectMassTransitSchedulerInjection, SK0707 SagaStateMustExtendSagaStateBase (NetArchTest predicates); 07xx messaging block extended; total tasks now 266 — WO-021 P-133

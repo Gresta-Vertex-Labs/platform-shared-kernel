@@ -43,20 +43,45 @@ public abstract class ConsumerBase<TMessage> : IConsumer<TMessage>
     }
 
     /// <summary>
-    /// MassTransit entry point. Propagates CorrelationId, forwards to <see cref="ConsumeAsync"/>,
-    /// and rethrows any unhandled exception after structured logging.
+    /// MassTransit entry point. Propagates CorrelationId, extracts <c>x-sk-*</c> headers into
+    /// the structured log scope, forwards to <see cref="ConsumeAsync"/>, and rethrows any
+    /// unhandled exception after structured logging.
     /// Do not override — override <see cref="ConsumeAsync"/> instead.
     /// </summary>
     /// <param name="context">The MassTransit consume context providing the message and metadata.</param>
+    /// <remarks>
+    /// <para>
+    /// Any header whose key starts with <c>"x-sk-"</c> (case-insensitive) is added to the
+    /// structured log scope automatically. This enriches downstream log entries with propagated
+    /// cross-cutting headers such as <c>x-sk-tenant-id</c> without manual extraction in each consumer.
+    /// </para>
+    /// <para>
+    /// Headers whose keys do <em>not</em> start with <c>"x-sk-"</c> are ignored and not added
+    /// to the log scope to avoid leaking unrelated transport metadata.
+    /// </para>
+    /// </remarks>
     public async Task Consume(ConsumeContext<TMessage> context)
     {
         var correlationIdStr = context.CorrelationId?.ToString("D") ?? string.Empty;
 
-        using var scope = Logger.BeginScope(new Dictionary<string, object?>
+        // HP-05: Build log scope with CorrelationId, MessageType, and any x-sk-* headers.
+        var scopeState = new Dictionary<string, object?>
         {
             ["CorrelationId"] = correlationIdStr,
             ["MessageType"] = typeof(TMessage).Name,
-        });
+        };
+
+        // Extract headers whose key starts with "x-sk-" (case-insensitive) into the log scope.
+        foreach (var header in context.Headers.GetAll())
+        {
+            if (header.Key.StartsWith("x-sk-", StringComparison.OrdinalIgnoreCase) &&
+                header.Value is not null)
+            {
+                scopeState[header.Key] = header.Value.ToString();
+            }
+        }
+
+        using var scope = Logger.BeginScope(scopeState);
 
         try
         {

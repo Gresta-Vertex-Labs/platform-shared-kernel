@@ -3,16 +3,24 @@ using MassTransit;
 using MassTransit.QuartzIntegration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using SharedKernel.Messaging.Abstractions.Batch;
 using SharedKernel.Messaging.Abstractions.Extensions;
 using SharedKernel.Messaging.Abstractions.Faults;
+using SharedKernel.Messaging.Abstractions.HeaderPropagation;
+using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.Abstractions.Scheduling;
+using SharedKernel.Messaging.Abstractions.SchemaEvolution;
 using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
 using SharedKernel.Messaging.MassTransit.MessageBus;
 using SharedKernel.Messaging.MassTransit.Options;
+using SharedKernel.Messaging.MassTransit.RoutingSlips;
 using SharedKernel.Messaging.MassTransit.Sagas;
+using SharedKernel.Messaging.MassTransit.SchemaEvolution;
+using System.Linq;
 
 // Alias our scheduling/batch options to disambiguate from same-named MassTransit types.
 using SkQuartzSchedulerOptions = SharedKernel.Messaging.Abstractions.Scheduling.QuartzSchedulerOptions;
@@ -51,8 +59,21 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
 
     private readonly List<Action<IBusRegistrationConfigurator>> _consumerRegistrations = [];
 
+    // VT-03: CLR types of all registered consumers, used by TranslatorRegistrationValidator
+    // to check whether a consumer for TNew exists in this service.
+    private readonly List<Type> _registeredConsumerTypes = [];
+
+    // VT-02 / VT-03: Version translator registrations — applied as consumer registrations
+    // and validated against _registeredConsumerTypes at Build() time.
+    private readonly List<Action<IBusRegistrationConfigurator>> _versionTranslatorRegistrations = [];
+    private readonly List<(Type OldType, Type NewType)> _versionTranslatorTypePairs = [];
+
     // Per-type send endpoint route overrides — populated by WithSendEndpointRoute<T>().
     private readonly Dictionary<Type, string> _sendEndpointRoutes = [];
+
+    // Idempotency (P-134) — set by WithIdempotency().
+    private bool _withIdempotency;
+    private IdempotencyOptions? _idempotencyOptions;
 
     // Saga registrations — applied inside AddMassTransit during Build().
     // Keyed by saga STATE type; WithEntityFrameworkSagaRepository overrides the repository.
@@ -188,6 +209,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     public MessagingBusBuilder AddConsumer<TConsumer>() where TConsumer : class, IConsumer
     {
         _consumerRegistrations.Add(cfg => cfg.AddConsumer<TConsumer>());
+        _registeredConsumerTypes.Add(typeof(TConsumer));
         return this;
     }
 
@@ -203,6 +225,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         where TConsumerDefinition : class, IConsumerDefinition<TConsumer>
     {
         _consumerRegistrations.Add(cfg => cfg.AddConsumer<TConsumer, TConsumerDefinition>());
+        _registeredConsumerTypes.Add(typeof(TConsumer));
         return this;
     }
 
@@ -573,6 +596,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     o.TimeLimit = timeLimit;
                     o.ConcurrencyLimit = concurrencyLimit;
                 })));
+        _registeredConsumerTypes.Add(typeof(TConsumer));
 
         return this;
     }
@@ -616,6 +640,206 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     }
 
     // -------------------------------------------------------------------------
+    // Idempotency (P-134)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registers <c>IdempotentConsumerBehavior&lt;TMessage&gt;</c> as a global MassTransit
+    /// consume pipeline filter applied to all consumers.
+    /// </summary>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// The consuming service must register a concrete <see cref="IIdempotencyStore"/>
+    /// implementation before calling this method. Calling <see cref="Build"/> without
+    /// a registered <see cref="IIdempotencyStore"/> throws <see cref="InvalidOperationException"/>
+    /// with a diagnostic message.
+    /// </para>
+    /// <para>
+    /// SharedKernel does not provide an <see cref="IIdempotencyStore"/> implementation —
+    /// the consuming service bridges to its own persistence layer
+    /// (e.g., <c>RedisIdempotencyStore</c>, <c>EfCoreIdempotencyStore</c>).
+    /// </para>
+    /// <para>
+    /// To configure <see cref="IdempotencyOptions"/> (e.g., <c>ExpiryWindow</c>) in addition to
+    /// registering the behavior, use
+    /// <see cref="WithIdempotency(Action{IdempotencyOptions})"/> instead.
+    /// </para>
+    /// </remarks>
+    public MessagingBusBuilder WithIdempotency()
+    {
+        _withIdempotency = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Registers <c>IdempotentConsumerBehavior&lt;TMessage&gt;</c> as a global MassTransit
+    /// consume pipeline filter and configures <see cref="IdempotencyOptions"/>.
+    /// </summary>
+    /// <param name="configure">
+    /// Action to configure <see cref="IdempotencyOptions"/> (e.g., set
+    /// <see cref="IdempotencyOptions.ExpiryWindow"/>).
+    /// </param>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// <see cref="IdempotencyOptions"/> is available to the consuming service's
+    /// <see cref="IIdempotencyStore"/> implementation via
+    /// <c>IOptions&lt;IdempotencyOptions&gt;</c>.
+    /// </para>
+    /// <para>
+    /// The consuming service must register a concrete <see cref="IIdempotencyStore"/>
+    /// implementation before calling this method. Calling <see cref="Build"/> without
+    /// a registered <see cref="IIdempotencyStore"/> throws <see cref="InvalidOperationException"/>
+    /// with a diagnostic message.
+    /// </para>
+    /// </remarks>
+    public MessagingBusBuilder WithIdempotency(Action<IdempotencyOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        _withIdempotency = true;
+        _idempotencyOptions = new IdempotencyOptions();
+        configure(_idempotencyOptions);
+        return this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Header Propagation (P-135)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registers <typeparamref name="T"/> as a scoped <see cref="IMessageHeaderPropagator"/> in DI.
+    /// Multiple calls are additive — all registered propagators are applied in registration order
+    /// at every <c>IMessageBus.PublishAsync</c> and <c>IEventPublisher.PublishAsync</c> call.
+    /// </summary>
+    /// <typeparam name="T">
+    /// The propagator implementation type. Must implement <see cref="IMessageHeaderPropagator"/>.
+    /// </typeparam>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Propagators run <em>before</em> the explicit <see cref="Action{T}"/> configure callback.
+    /// When the same header key is set by a propagator and by an explicit callback,
+    /// the explicit callback wins.
+    /// </para>
+    /// <para>
+    /// Implement propagators in the consuming service's composition root — not inside SharedKernel
+    /// packages. Propagators require access to service-specific ambient context
+    /// (e.g., <c>IHttpContextAccessor</c>, tenant resolution) that is not available in SharedKernel.
+    /// </para>
+    /// </remarks>
+    public MessagingBusBuilder WithHeaderPropagator<T>()
+        where T : class, IMessageHeaderPropagator
+    {
+        Services.AddScoped<IMessageHeaderPropagator, T>();
+        return this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Version Translation (P-137)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registers <typeparamref name="TTranslator"/> as a singleton
+    /// <see cref="IMessageVersionTranslator{TOld, TNew}"/> and wires a translating consumer so
+    /// that messages of the legacy schema <typeparamref name="TOld"/> arriving at the transport
+    /// are projected to <typeparamref name="TNew"/> before delivery to the consumer registered
+    /// for <typeparamref name="TNew"/>.
+    /// </summary>
+    /// <typeparam name="TOld">The legacy message schema type.</typeparam>
+    /// <typeparam name="TNew">The current message schema type.</typeparam>
+    /// <typeparam name="TTranslator">
+    /// The translator implementation type. Must implement
+    /// <see cref="IMessageVersionTranslator{TOld, TNew}"/>.
+    /// </typeparam>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// No consumer code change is required — the consumer for <typeparamref name="TNew"/> receives
+    /// the translated payload as if it had been published directly.
+    /// </para>
+    /// <para>
+    /// At <see cref="Build"/> time, an advisory <see cref="Microsoft.Extensions.Logging.LogLevel.Warning"/>
+    /// is logged if no consumer for <typeparamref name="TNew"/> is registered in this service —
+    /// this does not throw, since the consumer for <typeparamref name="TNew"/> may be registered
+    /// in a separate service.
+    /// </para>
+    /// </remarks>
+    public MessagingBusBuilder WithVersionTranslator<TOld, TNew, TTranslator>()
+        where TOld : class
+        where TNew : class
+        where TTranslator : class, IMessageVersionTranslator<TOld, TNew>
+    {
+        Services.AddSingleton<IMessageVersionTranslator<TOld, TNew>, TTranslator>();
+
+        _versionTranslatorRegistrations.Add(cfg =>
+            cfg.AddConsumer<VersionTranslatingConsumer<TOld, TNew>>());
+
+        _versionTranslatorTypePairs.Add((typeof(TOld), typeof(TNew)));
+
+        return this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Routing Slips (P-139)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registers a MassTransit Courier routing slip activity.
+    /// </summary>
+    /// <typeparam name="TActivity">
+    /// The activity type. Must extend
+    /// <see cref="SharedKernel.Messaging.MassTransit.RoutingSlips.RoutingSlipActivityBase{TArguments, TLog}"/>.
+    /// </typeparam>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <see cref="SharedKernel.Messaging.Abstractions.RoutingSlips.IRoutingSlipBuilder"/> is always
+    /// registered as a scoped service by <see cref="Build"/>, regardless of whether this method
+    /// has been called — the builder interface is usable independently of any registered activities.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if <typeparamref name="TActivity"/> does not extend
+    /// <see cref="SharedKernel.Messaging.MassTransit.RoutingSlips.RoutingSlipActivityBase{TArguments, TLog}"/>.
+    /// </exception>
+    public MessagingBusBuilder AddRoutingSlipActivity<TActivity>()
+        where TActivity : class
+    {
+        // RS-07: TArguments/TLog are not exposed as type parameters here — derive them by
+        // walking the base type chain to RoutingSlipActivityBase<TArguments, TLog> at
+        // registration time (model-build time only, not a hot path).
+        var activityType = typeof(TActivity);
+        var baseType = activityType.BaseType;
+
+        while (baseType is not null && (!baseType.IsGenericType
+            || baseType.GetGenericTypeDefinition() != typeof(RoutingSlipActivityBase<,>)))
+        {
+            baseType = baseType.BaseType;
+        }
+
+        if (baseType is null)
+            throw new InvalidOperationException(
+                $"{activityType.FullName} must extend RoutingSlipActivityBase<TArguments, TLog> " +
+                "to be registered via AddRoutingSlipActivity<TActivity>().");
+
+        var genericArgs = baseType.GetGenericArguments();
+        var argumentsType = genericArgs[0];
+        var logType = genericArgs[1];
+
+        var addActivityMethod = typeof(RegistrationConfiguratorExtensions)
+            .GetMethods()
+            .Single(m => m.Name == nameof(RegistrationConfiguratorExtensions.AddActivity)
+                && m.IsGenericMethodDefinition
+                && m.GetGenericArguments().Length == 3
+                && m.GetParameters().Length == 3)
+            .MakeGenericMethod(activityType, argumentsType, logType);
+
+        _consumerRegistrations.Add(cfg =>
+            addActivityMethod.Invoke(null, [cfg, null, null]));
+
+        return this;
+    }
+
+    // -------------------------------------------------------------------------
     // Build
     // -------------------------------------------------------------------------
 
@@ -655,6 +879,18 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     "Configure a valid database connection string.");
         }
 
+        // ID-04 / P-134: Guard — WithIdempotency() requires IIdempotencyStore to be registered.
+        if (_withIdempotency)
+        {
+            var storeDescriptor = Services.FirstOrDefault(
+                d => d.ServiceType == typeof(IIdempotencyStore));
+
+            if (storeDescriptor is null)
+                throw new InvalidOperationException(
+                    "IIdempotencyStore is not registered. " +
+                    "Call services.AddScoped<IIdempotencyStore, YourImplementation>() before calling WithIdempotency().");
+        }
+
         // C-21 / C-22: Validate and resolve ServiceName without BuildServiceProvider().
         // Inline-action path: apply the captured delegate to a local instance and validate inline.
         // Deferred path (config-section binding, no inline action): skip eager validation —
@@ -684,6 +920,18 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // and we fall back to an empty prefix (ValidateOnStart catches misconfiguration at startup).
         var serviceName = _validatedServiceName ?? string.Empty;
 
+        // ID-05 / P-134: Register IdempotencyOptions if WithIdempotency(Action<>) overload was used.
+        if (_withIdempotency && _idempotencyOptions is not null)
+        {
+            var idempotencyOpts = _idempotencyOptions;
+            Services.Configure<IdempotencyOptions>(o => o.ExpiryWindow = idempotencyOpts.ExpiryWindow);
+        }
+
+        // ID-03 / P-134: Register IdempotentConsumerBehavior as scoped so DI can inject IIdempotencyStore.
+        // The open-generic type is registered and resolved per-message-type by MassTransit.
+        if (_withIdempotency)
+            Services.AddScoped(typeof(IdempotentConsumerBehavior<>));
+
         // RO-05: Register the route map as a singleton (immutable snapshot captured at Build time).
         // Capture a read-only copy so further builder mutations don't affect the registered map.
         var routeMap = (IReadOnlyDictionary<Type, string>)
@@ -698,6 +946,12 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         Services.AddScoped<Abstractions.MessageBus.IMessageBus, MassTransitMessageBus>();
         Services.AddScoped<Abstractions.EventPublisher.IEventPublisher, MassTransitEventPublisher>();
 
+        // RS-07: Register IRoutingSlipBuilder as scoped, always — independent of whether
+        // AddRoutingSlipActivity<TActivity>() has been called.
+        Services.AddScoped<
+            SharedKernel.Messaging.Abstractions.RoutingSlips.IRoutingSlipBuilder,
+            MassTransitRoutingSlipBuilder>();
+
         // SC-06 / SC-07: Register IMessageScheduler → MassTransitMessageScheduler as scoped.
         // Uses the fully qualified abstraction type to avoid IMessageScheduler ambiguity
         // between MassTransit.IMessageScheduler and SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler.
@@ -705,6 +959,21 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             Services.AddScoped<
                 SharedKernel.Messaging.Abstractions.Scheduling.IMessageScheduler,
                 MassTransitMessageScheduler>();
+
+        // P-137: Register an advisory startup check for WithVersionTranslator registrations
+        // against consumers registered in this service. Runs once at host startup using the
+        // application's configured ILogger — does not throw, logs Warning only.
+        if (_versionTranslatorTypePairs.Count > 0)
+        {
+            var typePairs = (IReadOnlyList<(Type OldType, Type NewType)>)[.. _versionTranslatorTypePairs];
+            var registeredConsumerTypes = (IReadOnlyCollection<Type>)[.. _registeredConsumerTypes];
+
+            Services.AddSingleton<IHostedService>(sp =>
+                new TranslatorRegistrationValidationHostedService(
+                    typePairs,
+                    registeredConsumerTypes,
+                    sp.GetRequiredService<ILogger<TranslatorRegistrationValidationHostedService>>()));
+        }
 
         // Capture Quartz queue name for use inside closures.
         var quartzQueueName = _quartzOptions?.Schema ?? "quartz";
@@ -715,6 +984,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         {
             // Apply consumer registrations.
             foreach (var registration in _consumerRegistrations)
+                registration(cfg);
+
+            // P-137: Apply version translator registrations (translating consumers).
+            foreach (var registration in _versionTranslatorRegistrations)
                 registration(cfg);
 
             // SA-03 / SA-04 / SA-05: Apply saga registrations.
@@ -765,6 +1038,11 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     if (_scheduling == SchedulingKind.Quartz)
                         busCfg.UseMessageScheduler(quartzSchedulerUri);
 
+                    // ID-03 / P-134: Wire global idempotency consume pipeline filter.
+                    // UseConsumeFilter with the open generic type applies to all message types.
+                    if (_withIdempotency)
+                        busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
+
                     ConfigureResilience(busCfg);
                     busCfg.ConfigureEndpoints(ctx);
                 });
@@ -783,6 +1061,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     // SC-07: Route scheduled messages to the Quartz scheduler endpoint.
                     if (_scheduling == SchedulingKind.Quartz)
                         busCfg.UseMessageScheduler(quartzSchedulerUri);
+
+                    // ID-03 / P-134: Wire global idempotency consume pipeline filter.
+                    if (_withIdempotency)
+                        busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
 
                     ConfigureResilience(busCfg);
                     busCfg.ConfigureEndpoints(ctx);

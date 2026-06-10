@@ -77,4 +77,31 @@ public interface IMessageBus
     Task<TResponse> RequestAsync<TRequest, TResponse>(TRequest request, CancellationToken ct)
         where TRequest : class
         where TResponse : class;
+
+    /// <summary>
+    /// Dispatches a routing slip to MassTransit Courier for stateless multi-step coordination.
+    /// </summary>
+    /// <param name="routingSlip">
+    /// The opaque routing slip object produced by <see cref="RoutingSlips.IRoutingSlipBuilder.Build"/>.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the routing slip has been accepted by the transport.</returns>
+    /// <remarks>
+    /// <para>
+    /// The <paramref name="routingSlip"/> argument must be the object returned by
+    /// <see cref="RoutingSlips.IRoutingSlipBuilder.Build"/>. Do not construct MassTransit's
+    /// <c>RoutingSlipBuilder</c> directly in application code — always use
+    /// <see cref="RoutingSlips.IRoutingSlipBuilder"/> and pass the result here.
+    /// </para>
+    /// <para>
+    /// <strong>Caution:</strong> Throws <see cref="ArgumentException"/> if
+    /// <paramref name="routingSlip"/> is not a valid MassTransit routing slip produced by
+    /// <see cref="RoutingSlips.IRoutingSlipBuilder.Build"/>.
+    /// </para>
+    /// <para>
+    /// Routing slips are for stateless multi-step coordination; saga state machines
+    /// (<c>SagaStateMachineBase&lt;TSaga&gt;</c>) are for workflows requiring durable persistent state.
+    /// </para>
+    /// </remarks>
+    Task ExecuteRoutingSlipAsync(object routingSlip, CancellationToken ct);
 }

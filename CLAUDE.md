@@ -134,6 +134,12 @@ When a capability has more than one provider (Search, Persistence, Caching, Stor
 | A Redis-specific cache implementation | `02.Caching/SharedKernel.Caching.Redis` |
 | A new message bus abstraction | `07.Messaging/SharedKernel.Messaging.Abstractions` |
 | A MassTransit consumer base or configuration | `07.Messaging/SharedKernel.Messaging.MassTransit` |
+| An idempotent consumer deduplication hook | `07.Messaging/SharedKernel.Messaging.Abstractions` — implement `IIdempotencyStore` (`HasProcessedAsync`/`MarkProcessedAsync`) in the consuming service; enable via `MessagingBusBuilder.WithIdempotency()`; never implement custom deduplication inside `ConsumeAsync` body |
+| A cross-cutting message header propagator (tenant ID, correlation ID, feature flags) | `07.Messaging/SharedKernel.Messaging.Abstractions` — implement `IMessageHeaderPropagator.Propagate(PublishContext)` in the consuming service; register via `MessagingBusBuilder.WithHeaderPropagator<T>()`; explicit `PublishContext` overrides win over propagated values |
+| A per-consumer endpoint/retry filter definition with platform defaults | `07.Messaging/SharedKernel.Messaging.MassTransit` — extend `ConsumerDefinitionBase<TConsumer>`; override `NonRetryableExceptions` to declare exception types that skip retry (e.g., `ValidationException`); register via `AddConsumer<TConsumer, TDefinition>()` |
+| A message schema version translator for rolling upgrades | `07.Messaging/SharedKernel.Messaging.Abstractions` — implement `IMessageVersionTranslator<TOld, TNew>`; register via `MessagingBusBuilder.WithVersionTranslator<TOld, TNew, TTranslator>()`; `Translate` must be a synchronous pure projection — no I/O |
+| A routing slip activity for stateless multi-step distributed coordination | `07.Messaging/SharedKernel.Messaging.MassTransit` — extend `RoutingSlipActivityBase<TArguments, TLog>`; override `ExecuteAsync` and `CompensateAsync`; register via `MessagingBusBuilder.AddRoutingSlipActivity<TActivity>()`; use routing slips for stateless chains, sagas for stateful persistent workflows |
+| A routing slip builder or dispatcher | `07.Messaging/SharedKernel.Messaging.Abstractions` — use `IRoutingSlipBuilder` to compose the activity sequence; dispatch via `IMessageBus.ExecuteRoutingSlipAsync(slip, ct)`; never reference MassTransit `RoutingSlip` types directly in application code |
 | A `Result<T>` change or new primitive type | `01.Core/SharedKernel.Primitives` |
 | A new extension method on BCL types | `01.Core/SharedKernel.Core` |
 | An Options-pattern validator | `01.Core/SharedKernel.Configuration` |
@@ -141,6 +147,8 @@ When a capability has more than one provider (Search, Persistence, Caching, Stor
 | A new architecture enforcement rule | `00.Governance/SharedKernel.ArchitectureTests` |
 | A new Roslyn analyzer | `00.Governance/SharedKernel.Analyzers` |
 | Shared test fakers or container setup | `16.Testing/SharedKernel.Testing` |
+| In-process test double for `IMessageBus` in unit tests | `16.Testing/SharedKernel.Testing` — use `InMemoryMessageBus`; assert via `ShouldHavePublished<T>()`, `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()`, `ShouldNotHavePublished<T>()`; register via `AddInMemoryMessageBus()`; references only `SharedKernel.Messaging.Abstractions` |
+| In-process test double for `IEventPublisher` in unit tests | `16.Testing/SharedKernel.Testing` — use `InMemoryEventPublisher`; assert via `PublishedOf<TEvent>()` and assertion helpers; register via `AddInMemoryEventPublisher()`; references only `SharedKernel.Messaging.Abstractions` |
 | A Temporal workflow activity or state machine base | `17.Workflows/SharedKernel.Workflows.Temporal` |
 | OTel, health check, or probe wiring | `13.ServiceDefaults/SharedKernel.ServiceDefaults` |
 | Tenant resolution logic | `13.ServiceDefaults/SharedKernel.MultiTenancy` |
@@ -187,3 +195,4 @@ These are the packages microservices should depend on — never on the concrete 
 - [2026-06-03] WO-017: Abstractions table 06 updated with ITransactionalUnitOfWork; two "What Goes Where" rows added for explicit transaction scope and paged DTO projection (arch-lead)
 - [2026-06-03] WO-018: Abstractions table 06 corrected — NpgsqlConnectionFactory lives in .PostgreSQL not .Dapper; five "What Goes Where" rows added for write-side spec fetch, IDbContextFactory, custom interceptors, string includes, and EfCore compiled model; Dapper "What Goes Where" row updated (arch-lead)
 - [2026-06-04] WO-019: four "What Goes Where" rows added for field-level encryption, key rotation job, service identity options, and encryption-attribute prohibition; AES-256-GCM converter + versioned ciphertext + IModelFinalizingConvention pattern documented in 06.Persistence brain; audit fallback rule updated to use configurable PersistenceServiceOptions.ServiceName instead of hardcoded "system" (arch-lead)
+- [2026-06-09] WO-022: ten "What Goes Where" rows added for IIdempotencyStore, IMessageHeaderPropagator, ConsumerDefinitionBase, IMessageVersionTranslator, RoutingSlipActivityBase/IRoutingSlipBuilder, and InMemoryMessageBus/InMemoryEventPublisher test doubles (arch-lead)

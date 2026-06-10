@@ -71,7 +71,7 @@ Format when blocked:
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
-| 07 | [Messaging](07.Messaging/state-map.md) | Routing | `●` | SK.07.Routing complete (8/8) — ConventionSendEndpointResolver implemented; MassTransitMessageBus.SendAsync updated with routeMap+resolver injection; Build() registers singleton routeMap + scoped resolver; 79 MassTransit tests pass. | OTel phase (SK.07.OTel) pending; P-132 targets 13.ServiceDefaults. |
+| 07 | [Messaging](07.Messaging/state-map.md) | RoutingSlip | `●` | SK.07.RoutingSlip complete (10/10) — IRoutingSlipBuilder + IMessageBus.ExecuteRoutingSlipAsync in Abstractions; RoutingSlipActivityBase<TArgs,TLog>, MassTransitRoutingSlipBuilder, AddRoutingSlipActivity<T>() in MassTransit; 101 total MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
@@ -109,7 +109,7 @@ Format when active:
 | ● Phase 31 (OTel Metrics) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
 | ● Published | 4 |
-| ● Saga | 1 |
+| ● RoutingSlip | 1 |
 | ● Governance: Architecture Rules | 1 |
 | ● Docs | 0 |
 | ● Tests | 0 |
@@ -1814,6 +1814,9 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-09] Messaging → Batch (●) — promoted from SK.07.Batch (state-map-phase)
 - [2026-06-09] Messaging → Routing (●) — promoted from SK.07.Routing (state-map-phase)
 - [2026-06-09] Governance → Governance: Messaging Architecture Rules (●) — promoted from SK.00.MessagingArchRules (state-map-phase)
+- [2026-06-09] Messaging → Idempotency (●) — promoted from SK.07.Idempotency (state-map-phase)
+- [2026-06-09] Messaging → HeaderPropagation (●) — promoted from SK.07.HeaderPropagation (state-map-phase)
+- [2026-06-10] Messaging → VersionTranslation (●) — promoted from SK.07.VersionTranslation (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2078,6 +2081,11 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-01] Persistence → Scaffold (●) — promoted from SK.06.Scaffold (state-map-phase)
 - [2026-06-08] Phase(s) P-123 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
 - [2026-06-08] Phase(s) P-125, P-126, P-127, P-128, P-129, P-130, P-131 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-06-09] Phase(s) P-133 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-09] Phase(s) P-134, P-135, P-136, P-137, P-139 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-06-09] 07.Messaging → ConsumerDefinition (●) — promoted from SK.07.ConsumerDefinition (state-map-phase)
+- [2026-06-10] Messaging → RoutingSlip (●) — promoted from SK.07.RoutingSlip (state-map-phase)
+- [2026-06-10] Phase Backlog entries P-134, P-135, P-136, P-139 closed → ● Complete — WO-022 messaging phase backlog (Idempotency, HeaderPropagation, ConsumerDefinition, VersionTranslation, RoutingSlip) fully implemented (implement-phase-messaging)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -6151,7 +6159,7 @@ Without explicit OTel wiring, MassTransit's built-in ActivitySource spans are in
 ---
 ### P-133 — Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-021
 **Domain:** 00.Governance
 **Depends on:** P-125, P-126, P-127, P-128
@@ -6180,4 +6188,235 @@ Each new messaging capability introduced in P-125 through P-131 creates a new cl
 - [ ] All four rules have compliant-pass and violation-fire test fixtures in `SharedKernel.ArchitectureTests`
 - [ ] All existing governance tests (MSG0101–MSG0104) still pass — no regressions
 - [ ] `00.Governance/CLAUDE.md` updated with the four new rules
+---
+
+---
+### P-134 — Messaging: Idempotency Abstraction — IIdempotencyStore and IdempotentConsumerBehavior
+
+**Status:** `●` Complete
+**Work Order:** WO-022
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+
+At-least-once delivery is documented throughout the messaging domain but the platform provides no standard contract for how consumers implement idempotency. Every microservice currently re-invents its own deduplication strategy, leading to inconsistency. This phase introduces two layers:
+
+**Abstractions layer** — an `IIdempotencyStore` interface in `SharedKernel.Messaging.Abstractions` (zero transport dependencies) with two methods: `HasProcessedAsync(Guid messageId, CancellationToken ct) → Task<bool>` and `MarkProcessedAsync(Guid messageId, CancellationToken ct) → Task`. The interface is transport-agnostic — implementors can back it with Redis, SQL, or any durable store.
+
+**MassTransit layer** — an `IdempotentConsumerBehavior<TMessage>` internal pipeline behavior in `SharedKernel.Messaging.MassTransit`. When registered, it intercepts the `Consume` pipeline for any consumer, checks `IIdempotencyStore.HasProcessedAsync` before delegating to the consumer body, and calls `MarkProcessedAsync` after successful completion. The behavior reads the message ID from `ConsumeContext.MessageId` (populated by MassTransit from the transport message ID). If the message has already been processed, the behavior short-circuits and acknowledges the message without calling `ConsumeAsync`.
+
+**Builder method** — `WithIdempotency()` on `MessagingBusBuilder`. When called, registers the `IdempotentConsumerBehavior<TMessage>` middleware globally. A companion overload `WithIdempotency(Action<IdempotencyOptions>)` accepts `IdempotencyOptions.ExpiryWindow` (TimeSpan, default 24h) as a hint for store implementations that use time-windowed deduplication.
+
+**Registration rule** — `IIdempotencyStore` must be registered by the consuming service before calling `WithIdempotency()`. If `IIdempotencyStore` is not registered at startup, the behavior throws `InvalidOperationException` with a clear diagnostic message. The SharedKernel does not provide an `IIdempotencyStore` implementation — the consuming service bridges to its own persistence layer (e.g., `RedisIdempotencyStore`, `EfCoreIdempotencyStore`).
+
+**Documentation** — `07.Messaging/CLAUDE.md` must be updated with: the `IIdempotencyStore` interface contract, `IdempotencyOptions`, the hard violation rule (never implement custom deduplication in `ConsumeAsync` body — use `WithIdempotency()`), and the "What Goes Where" guidance for providing a concrete `IIdempotencyStore` implementation.
+
+#### Why this is needed
+
+MassTransit guarantees at-least-once delivery. Every consumer in the platform is required to be idempotent, but the current documentation treats this as advice rather than enforcing a standard pattern. Without a platform contract, teams implement ad-hoc deduplication — some use a local `HashSet<Guid>`, some query the database on every message, some skip it entirely and accept duplicate side-effects. A standard `IIdempotencyStore` interface makes idempotency a composable platform concern: teams register a store implementation once and opt into the behavior via `WithIdempotency()`. The `IdempotentConsumerBehavior<TMessage>` handles the check-then-process-then-mark lifecycle correctly at the pipeline level, which is the only reliable location for deduplication in a message-processing pipeline.
+
+#### Acceptance criteria
+- [ ] `IIdempotencyStore` interface added to `SharedKernel.Messaging.Abstractions` with `HasProcessedAsync` and `MarkProcessedAsync` methods; zero new NuGet references in Abstractions
+- [ ] `IdempotencyOptions` sealed class added to Abstractions with `ExpiryWindow` (TimeSpan, default 24h) and `SectionName`
+- [ ] `IdempotentConsumerBehavior<TMessage>` internal pipeline class in MassTransit package; short-circuits on duplicate message IDs; calls `MarkProcessedAsync` only on successful consumer completion
+- [ ] `WithIdempotency()` and `WithIdempotency(Action<IdempotencyOptions>)` added to `MessagingBusBuilder`; throws `InvalidOperationException` at startup if `IIdempotencyStore` is not registered
+- [ ] Hard violation rule documented in `07.Messaging/CLAUDE.md`: never implement custom deduplication inside `ConsumeAsync` body
+- [ ] Unit test: duplicate `MessageId` → consumer body not invoked on second delivery; `MarkProcessedAsync` called exactly once
+- [ ] Unit test: novel `MessageId` → consumer body invoked normally; `HasProcessedAsync` called before `ConsumeAsync`
+- [ ] `dotnet build` clean; zero new NuGet dependencies added to `SharedKernel.Messaging.Abstractions`
+---
+
+---
+### P-135 — Messaging: Header Propagation — IMessageHeaderPropagator and WithHeaderPropagator
+
+**Status:** `●` Complete
+**Work Order:** WO-022
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+
+Cross-cutting concerns such as tenant identifiers, correlation request IDs, feature flag overrides, and A/B test cohort identifiers must propagate through message headers when a message is published — without requiring every application handler to manually populate them via `PublishContext.WithHeader(...)`. This phase introduces a standard propagator contract and the builder integration to apply propagators automatically at publish time.
+
+**`IMessageHeaderPropagator` interface** in `SharedKernel.Messaging.Abstractions` — single method `Propagate(PublishContext context)`. Implementations read values from ambient scope (e.g., `IHttpContextAccessor`, ambient `Activity.Current.Baggage`, or `IOptions<T>`) and populate `PublishContext` headers. Zero transport NuGet dependencies in the interface definition.
+
+**`WithHeaderPropagator<T>()` builder method** on `MessagingBusBuilder` — registers `T` as an `IMessageHeaderPropagator` implementation in DI (scoped lifetime). Multiple propagators can be registered; they are applied in registration order. At publish time, `MassTransitMessageBus.PublishAsync<T>()` and `MassTransitEventPublisher.PublishAsync<TEvent>()` resolve all registered `IEnumerable<IMessageHeaderPropagator>` from the current scope and invoke `Propagate` on each before sending to the transport.
+
+**Explicit-override precedence rule** — when a caller supplies an explicit `Action<PublishContext>` configure callback, that callback runs after propagators, meaning explicit overrides always win over propagated values. This rule must be documented in the interface XML remarks.
+
+**Consumer header extraction** — `ConsumerBase<TMessage>.Consume()` should extract the propagated headers from `ConsumeContext.Headers` and populate the log scope with any headers whose keys match a configurable prefix (default `"x-sk-"`). This allows tenant ID and correlation headers to flow into structured logs on the consumer side without manual extraction.
+
+**`07.Messaging/CLAUDE.md` update** — document the `IMessageHeaderPropagator` contract, precedence rules, the consumer extraction behavior, and a "What Goes Where" row: implementing a header propagator belongs in the consuming service's composition root (referencing `07.Messaging` Abstractions), not in SharedKernel.
+
+#### Why this is needed
+
+Tenant isolation, distributed tracing, and feature flag propagation are recurring cross-cutting concerns in microservice platforms. The current `PublishContext` mechanism requires every call site to explicitly add headers, creating systemic omissions — a developer who forgets to propagate the tenant ID header causes subtle routing failures in multi-tenant deployments. A propagator pattern at the bus level ensures these concerns are applied uniformly at every publish/send point in the platform, reducing the surface area for human error from hundreds of call sites to one registration per service.
+
+#### Acceptance criteria
+- [ ] `IMessageHeaderPropagator` interface added to `SharedKernel.Messaging.Abstractions`; single `Propagate(PublishContext context)` method; zero new NuGet dependencies
+- [ ] `WithHeaderPropagator<T>()` added to `MessagingBusBuilder`; registers `T` as scoped `IMessageHeaderPropagator` in DI; multiple registrations are additive
+- [ ] `MassTransitMessageBus.PublishAsync<T>()` and `MassTransitEventPublisher.PublishAsync<TEvent>()` resolve `IEnumerable<IMessageHeaderPropagator>` and invoke all in registration order before publishing
+- [ ] Explicit `Action<PublishContext>` configure callback overrides propagated values (explicit-override precedence rule)
+- [ ] `ConsumerBase<TMessage>.Consume()` extracts headers matching the `"x-sk-"` prefix and adds them to the structured log scope
+- [ ] Unit test: two propagators registered; both headers present in published message; explicit override wins when the same key is set
+- [ ] Unit test: consumer log scope contains extracted header when `"x-sk-tenant-id"` is present in `ConsumeContext.Headers`
+- [ ] `07.Messaging/CLAUDE.md` updated with propagator contract, precedence rule, and consumer extraction behavior
+---
+
+---
+### P-136 — Messaging: ConsumerDefinitionBase — Platform-Standard Per-Consumer Configuration
+
+**Status:** `●` Complete
+**Work Order:** WO-022
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+
+MassTransit's `IConsumerDefinition<TConsumer>` allows per-consumer configuration of retry policies, endpoint names, prefetch counts, and exception filters. The current platform offers no base class for this, so microservices implementing `IConsumerDefinition<TConsumer>` must configure the retry exception filter from scratch — commonly misconfiguring it by retrying validation errors that should be dead-lettered immediately.
+
+**`ConsumerDefinitionBase<TConsumer>`** — an abstract class in `SharedKernel.Messaging.MassTransit` that implements `IConsumerDefinition<TConsumer>`. The base provides:
+
+- A pre-wired `IRetryConfigurator` integration that excludes a configurable set of non-retryable exception types. The base includes a protected abstract `ConfigureConsumer(...)` method for subclasses to add their own endpoint/prefetch configuration without overriding retry filter wiring.
+- A protected virtual `NonRetryableExceptions` property returning `IReadOnlyList<Type>` that defaults to an empty list — subclasses override it to declare which exception types should bypass retry and go directly to dead-letter. The most common entries are `ValidationException` (from `01.Core`) and `NotFoundException`.
+- A protected virtual `EndpointName` property that defaults to `null` (MassTransit convention-based naming). Subclasses override it to return a specific endpoint name string.
+- A protected virtual `PrefetchCount` property that defaults to `null` (MassTransit default). Subclasses override it to return an explicit prefetch count.
+
+The class must not introduce any new NuGet references beyond those already in `SharedKernel.Messaging.MassTransit`.
+
+**Documentation** — `07.Messaging/CLAUDE.md` updated with `ConsumerDefinitionBase<TConsumer>` contract, the `NonRetryableExceptions` virtual hook, and guidance that microservices should prefer this base over raw `IConsumerDefinition<TConsumer>`.
+
+**"What Goes Where" row** — implementing a per-consumer definition belongs in the consuming service; `ConsumerDefinitionBase<TConsumer>` is the base to extend; the consuming service registers via `AddConsumer<TConsumer, TDefinition>()`.
+
+#### Why this is needed
+
+The current pattern requires microservices to implement `IConsumerDefinition<TConsumer>` from scratch. Without a base class, teams frequently omit the retry exception filter, resulting in transient infrastructure errors and business validation errors being treated identically — both get retried 3 times before dead-lettering. The `NonRetryableExceptions` hook makes the platform-standard distinction explicit: business validation failures are not transient and should not be retried. This reduces consumer configuration from ~25 lines of boilerplate to a 3-line override of `NonRetryableExceptions`.
+
+#### Acceptance criteria
+- [ ] `ConsumerDefinitionBase<TConsumer>` abstract class in `SharedKernel.Messaging.MassTransit`; implements `IConsumerDefinition<TConsumer>`
+- [ ] Protected abstract `ConfigureConsumer(IReceiveEndpointConfigurator endpointConfigurator, IConsumerConfigurator<TConsumer> consumerConfigurator, IBusRegistrationContext context)` — subclasses implement this for endpoint-specific configuration
+- [ ] Protected virtual `NonRetryableExceptions` returns `IReadOnlyList<Type>` defaulting to empty list; retry filter excludes listed exception types
+- [ ] Protected virtual `EndpointName` (string?) and `PrefetchCount` (int?) with null defaults
+- [ ] When `NonRetryableExceptions` contains `ValidationException`, retry filter is wired to skip retry on those exceptions
+- [ ] Unit test: subclass returns `ValidationException` in `NonRetryableExceptions`; consumer throws `ValidationException`; assert no retry attempted; fault published immediately
+- [ ] Unit test: subclass returns empty `NonRetryableExceptions`; consumer throws `IOException`; assert retry attempted per global retry policy
+- [ ] `07.Messaging/CLAUDE.md` updated with `ConsumerDefinitionBase<TConsumer>` contract
+- [ ] Zero new NuGet references in `SharedKernel.Messaging.MassTransit`
+---
+
+---
+### P-137 — Messaging: Message Schema Evolution — IMessageVersionTranslator and WithVersionTranslator
+
+**Status:** `●` Complete
+**Work Order:** WO-022
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+
+As services evolve, the schema of published messages changes. A v2 producer may publish `OrderPlacedEventV2` while a consumer still processes `OrderPlacedEventV1`. The platform currently has no standard pattern for this: teams either maintain backward compatibility in a single message type (making it fragile) or force all consumers to upgrade simultaneously (coupling release cycles). This phase introduces a lightweight translation layer.
+
+**`IMessageVersionTranslator<TOld, TNew>` interface** in `SharedKernel.Messaging.Abstractions` — single method `Translate(TOld old) → TNew`. Zero transport dependencies. The interface contract is synchronous — translation is a pure projection; it must not perform I/O or call external services.
+
+**`WithVersionTranslator<TOld, TNew, TTranslator>()` builder method** on `MessagingBusBuilder` — registers `TTranslator` (implementing `IMessageVersionTranslator<TOld, TNew>`) as a singleton in DI. Registers a MassTransit message type alias/mapping so that when MassTransit deserializes a message of type `TOld`, it is transparently translated to `TNew` before being delivered to the consumer. Uses MassTransit's `cfg.SetMessageSerializer` / `AddTranslator` hook or the custom deserialization pipeline — the exact wiring strategy is left to the implementor, but the observable behavior must be: consumer receives `TNew`; producer publishes `TOld`; no consumer code change required.
+
+**`TranslatorRegistrationValidator` startup check** — at `Build()` time, if `WithVersionTranslator<TOld, TNew, TTranslator>()` was called but no consumer is registered for `TNew`, log a warning (not an error) indicating the translation is registered but has no consumer endpoint. This is advisory, not a hard failure — the consumer may be in a separate service.
+
+**Documentation** — `07.Messaging/CLAUDE.md` updated with the `IMessageVersionTranslator<TOld, TNew>` contract, usage pattern, the synchronous-only constraint, and guidance that translations should be stateless pure functions.
+
+#### Why this is needed
+
+Long-lived microservice deployments inevitably encounter schema drift between message versions. At scale (hundreds of services), forcing synchronized deployments for every message schema change is operationally untenable. The `IMessageVersionTranslator<TOld, TNew>` pattern enables rolling upgrades: the producer publishes the new shape while old consumers remain operational through the translation layer. This is a well-established pattern in event-sourced systems (upcasting) and in messaging systems (message transformers). Without a platform standard, teams either freeze their schemas or accumulate branching conditionals in consumer code.
+
+#### Acceptance criteria
+- [ ] `IMessageVersionTranslator<TOld, TNew>` interface added to `SharedKernel.Messaging.Abstractions`; synchronous `Translate(TOld) → TNew`; zero new NuGet dependencies
+- [ ] `WithVersionTranslator<TOld, TNew, TTranslator>()` added to `MessagingBusBuilder`; registers translator and wires MassTransit deserialization so `TOld` messages are delivered as `TNew` to registered consumers
+- [ ] `TranslatorRegistrationValidator` logs a warning at `Build()` time when `WithVersionTranslator` is called but no consumer for `TNew` is registered
+- [ ] Unit test: publish `TOld`; consumer for `TNew` receives the translated payload with correct field values
+- [ ] Unit test: translator registered with no `TNew` consumer; `Build()` logs warning; no exception thrown
+- [ ] `IMessageVersionTranslator<TOld, TNew>` contract and synchronous-only constraint documented in `07.Messaging/CLAUDE.md`
+- [ ] Zero new NuGet dependencies in `SharedKernel.Messaging.Abstractions`
+---
+
+---
+### P-138 — Testing: Messaging Test Doubles — InMemoryMessageBus, InMemoryEventPublisher, and TestHarnessFactory
+
+**Status:** `○` Pending
+**Work Order:** WO-022
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+P-124 (general messaging test helpers) covers `TestHarness` factory patterns but leaves a critical gap: application-layer unit tests (handlers, domain services) need `IMessageBus` and `IEventPublisher` test doubles that require no MassTransit harness, no broker, and no DI container setup. These are not mocks (which require per-test setup via NSubstitute) but proper test implementations that record calls and allow assertion in the test body.
+
+**`InMemoryMessageBus`** in `SharedKernel.Testing` — implements `IMessageBus`. Records all `PublishAsync<T>` and `SendAsync<T>` calls in typed collections accessible via `Published` and `Sent` properties. `RequestAsync<TRequest, TResponse>` is configurable: callers register a response handler via `SetResponseHandler<TRequest, TResponse>(Func<TRequest, TResponse>)` before the test; if no handler is registered, it throws `InvalidOperationException` with a clear message. Implements `IMessageBus` and is registered via `services.AddSingleton<IMessageBus, InMemoryMessageBus>()` — or via a convenience `AddInMemoryMessageBus(this IServiceCollection services)` extension.
+
+**`InMemoryEventPublisher`** in `SharedKernel.Testing` — implements `IEventPublisher`. Records all `PublishAsync<TEvent>` calls. Exposes `Published` as `IReadOnlyList<object>` and a typed accessor `PublishedOf<TEvent>()` that returns `IReadOnlyList<TEvent>`. Thread-safe (multiple async calls in the same test are supported). Registered via `services.AddSingleton<IEventPublisher, InMemoryEventPublisher>()` or a companion `AddInMemoryEventPublisher` extension.
+
+**Assertion helpers** — extension methods on `InMemoryMessageBus` and `InMemoryEventPublisher` for test assertions: `ShouldHavePublished<T>()` (asserts at least one message of type T was published, returns the first for further assertion), `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()`, `ShouldNotHavePublished<T>()`. These follow FluentAssertions conventions and return the recorded message for chaining.
+
+**`TestHarnessFactory`** — a convenience static class that configures a `MassTransit.Testing.InMemoryTestHarness` (or `ITestHarness`) with platform defaults: `KebabCaseEndpointNameFormatter`, a configurable `ServiceName`, and pre-registered `ConsumerBase<T>` subclasses. Exposes `Create(string serviceName, Action<IBusRegistrationConfigurator>? configure = null) → ITestHarness` so integration tests don't repeat harness setup boilerplate.
+
+**References** — `SharedKernel.Testing` references `SharedKernel.Messaging.Abstractions` (already allowed by layering rules — `16.Testing` may reference any layer). No reference to `SharedKernel.Messaging.MassTransit` in `SharedKernel.Testing.csproj` for the `InMemory*` types — they reference only Abstractions. The `TestHarnessFactory` may reference `SharedKernel.Messaging.MassTransit` as a test-only dependency since `SharedKernel.Testing` is never shipped as a production dependency.
+
+#### Why this is needed
+
+Application-layer unit tests — the most numerous and most frequently run tests in any microservice — should not require spinning up a MassTransit `InMemoryTestHarness`. The harness introduces meaningful startup time, background threading, and infrastructure overhead inappropriate for pure unit tests. `InMemoryMessageBus` and `InMemoryEventPublisher` fill the same role as `FakeCacheService` in the caching domain: they provide zero-infrastructure, immediately assertable test doubles that make handler unit tests fast, deterministic, and readable. Without them, teams either use NSubstitute mocks (verbose) or use the full harness (slow), and often skip publisher assertions entirely.
+
+#### Acceptance criteria
+- [ ] `InMemoryMessageBus` implements `IMessageBus`; records `PublishAsync<T>` in `Published` typed collection; records `SendAsync<T>` in `Sent` typed collection; `RequestAsync<TRequest, TResponse>` throws clearly if no handler registered
+- [ ] `InMemoryEventPublisher` implements `IEventPublisher`; records `PublishAsync<TEvent>` in `Published`; exposes typed `PublishedOf<TEvent>()` accessor; thread-safe
+- [ ] `AddInMemoryMessageBus()` and `AddInMemoryEventPublisher()` DI extension methods on `IServiceCollection`
+- [ ] Assertion helpers: `ShouldHavePublished<T>()`, `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()`, `ShouldNotHavePublished<T>()` on both test doubles; return the recorded message for chaining
+- [ ] `TestHarnessFactory.Create(...)` produces a configured `ITestHarness` with `KebabCaseEndpointNameFormatter` and platform defaults
+- [ ] `InMemoryMessageBus` and `InMemoryEventPublisher` reference only `SharedKernel.Messaging.Abstractions`; no `SharedKernel.Messaging.MassTransit` reference for these types
+- [ ] Tests for the test doubles themselves: assert `ShouldHavePublished<T>` throws `XunitException` when nothing was published; assert `ShouldHavePublishedOnce<T>` throws when published twice
+- [ ] `16.Testing/CLAUDE.md` updated with the new test doubles and assertion helpers
+---
+
+---
+### P-139 — Messaging: Routing Slip Activity Base — RoutingSlipActivityBase for MassTransit Courier
+
+**Status:** `●` Complete
+**Work Order:** WO-022
+**Domain:** 07.Messaging
+**Depends on:** P-128
+
+#### What is needed
+
+MassTransit Courier (routing slips) provides a lightweight distributed transaction pattern for multi-step processes where saga state persistence is not needed. A routing slip defines a sequence of activities executed across services; compensation activities run on failure. For a platform serving hundreds of microservices, providing a `RoutingSlipActivityBase<TArguments, TLog>` base class standardizes how teams implement routing slip activities: correlation propagation, structured logging, exception handling, and compensation semantics.
+
+**`RoutingSlipActivityBase<TArguments, TLog>`** — an abstract class in `SharedKernel.Messaging.MassTransit` extending MassTransit's `IActivity<TArguments, TLog>`. Provides:
+- `ExecuteAsync(TArguments arguments, CancellationToken ct) → Task<ExecutionResult>` as the abstract execute entry point. The base `Execute(ExecuteContext<TArguments>)` sealed implementation propagates `CorrelationId` from the routing slip context into `Activity.Current`, enriches the log scope with `routing_slip.tracking_number` and `routing_slip.activity_name`, and delegates to `ExecuteAsync`.
+- `CompensateAsync(TLog log, CancellationToken ct) → Task<CompensationResult>` as the abstract compensation entry point. The base `Compensate(CompensateContext<TLog>)` sealed implementation applies the same correlation and logging enrichment and delegates to `CompensateAsync`.
+- A protected `Complete(TLog log)` helper that returns `context.Completed(log)` — the idiomatic way to signal successful activity completion.
+- A protected `Faulted(Exception ex)` helper that returns `context.Faulted(ex)` — used to signal activity failure.
+- A protected `CompensationComplete()` helper for the compensation path.
+- Exception catch-then-rethrow semantics matching `ConsumerBase<T>` — unhandled exceptions from `ExecuteAsync` are logged at Error level with `routing_slip.tracking_number` then rethrown.
+
+**`AddRoutingSlipActivity<TActivity>()` builder method** on `MessagingBusBuilder` — registers the activity with MassTransit's `AddActivity<TActivity, TArguments, TLog>()`. Returns `MessagingBusBuilder` for fluent chaining.
+
+**`IRoutingSlipBuilder` abstraction** in `SharedKernel.Messaging.Abstractions` — wraps MassTransit's `RoutingSlip` creation so application code does not reference MassTransit types directly when building a slip. Exposes: `AddActivity(string activityName, Uri executeAddress, object arguments) → IRoutingSlipBuilder`, `Build() → object` (returns the opaque routing slip; publishing is done via `IMessageBus`). The `IMessageBus` interface gets an additional method `ExecuteRoutingSlipAsync(object routingSlip, CancellationToken ct)` that accepts the opaque routing slip object and dispatches it via MassTransit.
+
+**Documentation** — `07.Messaging/CLAUDE.md` updated with the routing slip pattern, `RoutingSlipActivityBase<TArguments, TLog>` contract, `IRoutingSlipBuilder` usage, and the hard rule: routing slips are for stateless multi-step coordination; saga state machines are for workflows requiring persistent state.
+
+#### Why this is needed
+
+Sagas (`SagaStateMachineBase<TSaga>`) are designed for long-running, stateful workflows. Many distributed multi-step processes in microservice platforms are stateless once triggered — for example, a four-step payment processing chain that does not need to survive a process restart. Using a saga for these cases adds unnecessary persistence overhead (EF Core table, optimistic concurrency, state machine boilerplate). Routing slips (Courier) provide exactly-once forward execution with compensation on failure, all without persisting state. Without a platform base class, teams who discover Courier implement it ad-hoc with inconsistent correlation, logging, and error handling. `RoutingSlipActivityBase<TArguments, TLog>` brings routing slips into the platform contract, identical in ergonomics to `ConsumerBase<T>` and `SagaStateMachineBase<TSaga>`.
+
+#### Acceptance criteria
+- [ ] `RoutingSlipActivityBase<TArguments, TLog>` abstract class in `SharedKernel.Messaging.MassTransit`; implements `IActivity<TArguments, TLog>`; sealed `Execute` and `Compensate` entry points
+- [ ] `ExecuteAsync(TArguments, CancellationToken)` abstract method; unhandled exceptions logged at Error then rethrown
+- [ ] `CompensateAsync(TLog, CancellationToken)` abstract method; same logging semantics
+- [ ] Protected helpers: `Complete(TLog)`, `Faulted(Exception)`, `CompensationComplete()`
+- [ ] Log scope enriched with `routing_slip.tracking_number` and `routing_slip.activity_name` in both execute and compensate paths
+- [ ] `AddRoutingSlipActivity<TActivity>()` on `MessagingBusBuilder`
+- [ ] `IRoutingSlipBuilder` interface added to `SharedKernel.Messaging.Abstractions` with `AddActivity` and `Build()` methods; zero transport NuGet dependencies
+- [ ] `IMessageBus` extended with `ExecuteRoutingSlipAsync(object routingSlip, CancellationToken ct)` method
+- [ ] `MassTransitMessageBus` implements `ExecuteRoutingSlipAsync` by publishing the routing slip via `IPublishEndpoint`
+- [ ] TestHarness test: two-activity routing slip executes in sequence; assert both `ExecuteAsync` calls received correct arguments; assert compensation fires on second activity failure
+- [ ] `07.Messaging/CLAUDE.md` updated with routing slip pattern, hard rule distinguishing routing slips from sagas
+- [ ] `dotnet build` clean; no new compile warnings
 ---

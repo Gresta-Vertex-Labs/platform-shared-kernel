@@ -37,6 +37,11 @@
 | `SK.07.Batch` | Batch | All tasks in Phase: Batch are `●` |
 | `SK.07.Routing` | Routing | All tasks in Phase: Routing are `●` |
 | `SK.07.OTel` | OTel | All tasks in Phase: OTel are `●` |
+| `SK.07.Idempotency` | Idempotency | All tasks in Phase: Idempotency are `●` |
+| `SK.07.HeaderPropagation` | HeaderPropagation | All tasks in Phase: HeaderPropagation are `●` |
+| `SK.07.ConsumerDefinition` | ConsumerDefinition | All tasks in Phase: ConsumerDefinition are `●` |
+| `SK.07.VersionTranslation` | VersionTranslation | All tasks in Phase: VersionTranslation are `●` |
+| `SK.07.RoutingSlip` | RoutingSlip | All tasks in Phase: RoutingSlip are `●` |
 
 ---
 
@@ -317,6 +322,92 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: Idempotency <!-- phase-key: SK.07.Idempotency -->
+
+> Standard contract for consumer-side message deduplication. Replaces ad-hoc deduplication strategies with a platform-managed `IIdempotencyStore` interface and pipeline behavior. Covers P-134.
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| ID-01 | Implement `IIdempotencyStore` interface in `Idempotency/` folder — `HasProcessedAsync(Guid messageId, CancellationToken ct) → Task<bool>`; `MarkProcessedAsync(Guid messageId, CancellationToken ct) → Task`; full XML docs; zero new NuGet dependencies in Abstractions (P-134) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+| ID-02 | Implement `IdempotencyOptions` sealed class in `Idempotency/` folder — `SectionName = "SharedKernel:Messaging:Idempotency"`; `ExpiryWindow` (TimeSpan, default 24h); full XML docs with note that ExpiryWindow is advisory for time-windowed store implementations (P-134) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+| ID-03 | Implement internal `IdempotentConsumerBehavior<TMessage>` sealed class in `Consumers/` folder — implements MassTransit `IFilter<ConsumeContext<TMessage>>`; reads `ConsumeContext.MessageId` as `Guid?`; calls `IIdempotencyStore.HasProcessedAsync` before delegating to the next filter; calls `IIdempotencyStore.MarkProcessedAsync` only after the next filter returns successfully; if `MessageId` is null, passes through without idempotency check (defensive); short-circuits by acknowledging without consuming when already processed (P-134) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| ID-04 | Implement `MessagingBusBuilder.WithIdempotency()` — registers `IdempotentConsumerBehavior<TMessage>` as a global MassTransit consume pipeline filter; at `Build()` time, if `IIdempotencyStore` is not registered in `IServiceCollection`, throws `InvalidOperationException` with message: "IIdempotencyStore is not registered. Call services.AddScoped<IIdempotencyStore, YourImplementation>() before calling WithIdempotency()."; returns `MessagingBusBuilder` for fluent chaining (P-134) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| ID-05 | Implement `MessagingBusBuilder.WithIdempotency(Action<IdempotencyOptions>)` companion overload — configures `IdempotencyOptions` in addition to registering the behavior; `ExpiryWindow` is available to store implementations via `IOptions<IdempotencyOptions>`; returns `MessagingBusBuilder` for fluent chaining (P-134) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| ID-06 | Unit test: duplicate `MessageId` → consumer body not invoked on second delivery — wire `WithIdempotency()` with an NSubstitute `IIdempotencyStore` pre-configured to return `true` from `HasProcessedAsync`; publish message; assert `ConsumeAsync` is never invoked; assert `MarkProcessedAsync` is NOT called (only called on success, not on duplicate short-circuit) (P-134) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| ID-07 | Unit test: novel `MessageId` → consumer body invoked — NSubstitute `IIdempotencyStore` returns `false` from `HasProcessedAsync`; publish message; assert `ConsumeAsync` is invoked; assert `HasProcessedAsync` called before consumer; assert `MarkProcessedAsync` called after success (P-134) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| ID-08 | Unit test: `WithIdempotency()` called without `IIdempotencyStore` registered — `Build()` throws `InvalidOperationException` containing diagnostic message about missing registration (P-134) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| ID-09 | XML docs on all new types — `IIdempotencyStore` (both methods), `IdempotencyOptions`, hard-violation rule in `IIdempotencyStore` remarks: "Never implement custom deduplication inside ConsumeAsync — use WithIdempotency() instead"; verify `dotnet build` clean; zero new NuGet references in Abstractions (P-134) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+
+---
+
+## Phase: HeaderPropagation <!-- phase-key: SK.07.HeaderPropagation -->
+
+> Automatic propagation of cross-cutting headers (tenant ID, correlation, feature flags) at publish time via a composable propagator chain. Eliminates systemic omissions from manual header population at every call site. Covers P-135.
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| HP-01 | Implement `IMessageHeaderPropagator` interface in `HeaderPropagation/` folder — single method `Propagate(PublishContext context)`; full XML docs including explicit-override precedence rule in remarks: "Propagators run before the explicit `Action<PublishContext>` configure callback; explicit overrides always win when the same key is set by both"; zero new NuGet dependencies in Abstractions (P-135) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+| HP-02 | Implement `MessagingBusBuilder.WithHeaderPropagator<T>()` — registers `T` as a scoped `IMessageHeaderPropagator` in DI; multiple calls are additive (all registered propagators are applied in registration order); returns `MessagingBusBuilder` for fluent chaining; `T` must implement `IMessageHeaderPropagator` (compile-time constraint) (P-135) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| HP-03 | Update `MassTransitMessageBus.PublishAsync<T>()` — resolve `IEnumerable<IMessageHeaderPropagator>` from the current DI scope; invoke `Propagate(context)` on each in order before publishing; explicit `Action<PublishContext>` configure callback runs after all propagators (explicit-override semantics) (P-135) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| HP-04 | Update `MassTransitEventPublisher.PublishAsync<TEvent>()` — same propagator invocation as HP-03; propagators populate `PublishContext`; explicit configure callback runs after all propagators (P-135) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| HP-05 | Update `ConsumerBase<TMessage>.Consume()` — after extracting `CorrelationId` from `ConsumeContext`, iterate all headers from `ConsumeContext.Headers`; add any header whose key starts with `"x-sk-"` (case-insensitive) to the structured log scope via `ILogger.BeginScope`; this enriches downstream structured logs with propagated tenant/correlation headers without manual extraction in each consumer (P-135) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| HP-06 | Unit test: two propagators registered via `WithHeaderPropagator<T1>()` and `WithHeaderPropagator<T2>()`; both headers present in published message; explicit `Action<PublishContext>` callback overrides a key set by a propagator; assert explicit value wins (P-135) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| HP-07 | Unit test: consumer log scope contains extracted header when `"x-sk-tenant-id"` is present in `ConsumeContext.Headers`; verify header with non-`"x-sk-"` prefix is NOT added to the log scope (P-135) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| HP-08 | XML docs on `IMessageHeaderPropagator`; update XML docs on `ConsumerBase<TMessage>` to document header extraction behavior; verify `dotnet build` clean; zero new NuGet references in Abstractions (P-135) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+
+---
+
+## Phase: ConsumerDefinition <!-- phase-key: SK.07.ConsumerDefinition -->
+
+> Platform-standard per-consumer configuration base class that pre-wires the retry exception filter. Reduces consumer definition boilerplate and prevents misconfigured retry policies for validation failures. Covers P-136.
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| CD-01 | Implement `ConsumerDefinitionBase<TConsumer>` abstract class in `Consumers/` folder — implements `IConsumerDefinition<TConsumer>` from MassTransit; `Configure(IReceiveEndpointConfigurator endpointConfigurator, IConsumerConfigurator<TConsumer> consumerConfigurator)` sealed entry point that: (a) sets endpoint name from `EndpointName` if non-null, (b) configures prefetch from `PrefetchCount` if non-null, (c) applies retry filter exclusion for all types in `NonRetryableExceptions`, (d) delegates to abstract `ConfigureConsumer` (P-136) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| CD-02 | Implement `protected abstract ConfigureConsumer(IReceiveEndpointConfigurator endpointConfigurator, IConsumerConfigurator<TConsumer> consumerConfigurator, IBusRegistrationContext context)` — subclasses implement this for endpoint-specific configuration (concurrency, additional filters); the base class seals `IConsumerDefinition<TConsumer>.Configure` so subclasses cannot bypass standard retry filter wiring (P-136) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| CD-03 | Implement `protected virtual NonRetryableExceptions` property returning `IReadOnlyList<Type>` — default returns empty list; subclasses override to declare exception types that must bypass retry and go directly to dead-letter; the base class wires a MassTransit retry filter using `r.Ignore(exceptionType)` for each entry; the full global retry policy (from `WithRetry()`) still applies to exception types NOT in this list (P-136) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| CD-04 | Implement `protected virtual EndpointName` (string?) and `protected virtual PrefetchCount` (int?) — both default to `null` (MassTransit convention-based naming and default prefetch); subclasses override to return explicit values; full XML docs (P-136) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| CD-05 | Unit test: subclass declares `ValidationException` in `NonRetryableExceptions`; consumer throws `ValidationException`; assert no retry attempted (fault published immediately, not after 3 attempts); uses NSubstitute + TestHarness (P-136) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| CD-06 | Unit test: subclass returns empty `NonRetryableExceptions`; consumer throws `IOException`; assert retry is attempted per global retry policy (fault not published until retry budget exhausted) (P-136) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| CD-07 | XML docs on `ConsumerDefinitionBase<TConsumer>` — class-level `<summary>` must describe the platform-standard per-consumer base; `ConfigureConsumer` `<remarks>` must state subclasses must NOT override `IConsumerDefinition<TConsumer>.Configure` directly; `NonRetryableExceptions` `<remarks>` must include example with `ValidationException`; verify `dotnet build` clean; zero new NuGet references (P-136) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+
+---
+
+## Phase: VersionTranslation <!-- phase-key: SK.07.VersionTranslation -->
+
+> Schema evolution support via a lightweight translation layer. Enables rolling upgrades when message schemas change without forcing synchronized consumer deployments. Covers P-137.
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| VT-01 | Implement `IMessageVersionTranslator<TOld, TNew>` interface in `SchemaEvolution/` folder — single synchronous method `Translate(TOld old) → TNew`; full XML docs with `<remarks>` stating: "Synchronous only — translation must be a pure projection; no I/O, no external service calls, no side effects"; zero new NuGet dependencies in Abstractions (P-137) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+| VT-02 | Implement `MessagingBusBuilder.WithVersionTranslator<TOld, TNew, TTranslator>()` — registers `TTranslator` as a singleton `IMessageVersionTranslator<TOld, TNew>` in DI; wires MassTransit message type aliasing so that when a message of CLR type `TOld` arrives at the transport, it is deserialized and projected to `TNew` before delivery to the consumer registered for `TNew`; uses MassTransit's `cfg.AddMessageDeserializer` or message type alias hook to intercept the deserialization pipeline (P-137) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| VT-03 | Implement `TranslatorRegistrationValidator` internal class — called at `Build()` time; for each registered `WithVersionTranslator<TOld, TNew, TTranslator>()` call, checks whether any consumer for `TNew` is registered in the same service; logs a `Warning` via `ILogger` if no consumer for `TNew` is found; does NOT throw — this is an advisory warning (the consumer may be in a separate service) (P-137) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| VT-04 | Unit test: publish message of type `TOld`; consumer registered for `TNew`; `WithVersionTranslator` registered; assert consumer receives `TNew` payload with correctly translated field values; uses TestHarness (P-137) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| VT-05 | Unit test: translator registered with no consumer for `TNew`; `Build()` completes without exception; assert warning was logged (capture `ILogger` via NSubstitute or test logger sink); assert no `InvalidOperationException` thrown (P-137) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| VT-06 | Unit test: `Translate()` method of the registered `TTranslator` is called exactly once per message; assert translator is not called for messages of unrelated types (P-137) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| VT-07 | XML docs on `IMessageVersionTranslator<TOld, TNew>` — `Translate` `<remarks>` must document synchronous-only constraint and stateless-pure-function guidance; verify `dotnet build` clean; zero new NuGet references in Abstractions (P-137) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+
+---
+
+## Phase: RoutingSlip <!-- phase-key: SK.07.RoutingSlip -->
+
+> Stateless multi-step coordination via MassTransit Courier routing slips. Provides a platform base class with correlation propagation and structured logging matching ConsumerBase ergonomics. Covers P-139. Depends on P-128 (SagaStateBase, saga infrastructure must be in place).
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| RS-01 | Implement `IRoutingSlipBuilder` interface in `RoutingSlips/` folder — `AddActivity(string activityName, Uri executeAddress, object arguments) → IRoutingSlipBuilder`; `Build() → object` (returns opaque routing slip object; typed as `object` to avoid MassTransit reference in Abstractions); full XML docs with `<remarks>` noting the returned object must be passed to `IMessageBus.ExecuteRoutingSlipAsync`; zero new NuGet dependencies in Abstractions (P-139) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+| RS-02 | Extend `IMessageBus` interface with `ExecuteRoutingSlipAsync(object routingSlip, CancellationToken ct) → Task` — accepts the opaque routing slip object from `IRoutingSlipBuilder.Build()`; full XML docs with `<remarks>` stating the argument must be produced by `IRoutingSlipBuilder.Build()`, not by direct MassTransit `RoutingSlipBuilder` construction (P-139) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+| RS-03 | Implement `MassTransitRoutingSlipBuilder` internal sealed class in MassTransit package — implements `IRoutingSlipBuilder`; wraps MassTransit `RoutingSlipBuilder`; `AddActivity` delegates to `MassTransit.RoutingSlipBuilder.AddActivity`; `Build()` calls `builder.Build()` and returns the resulting `RoutingSlip` typed as `object` (P-139) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| RS-04 | Update `MassTransitMessageBus` to implement `ExecuteRoutingSlipAsync(object routingSlip, CancellationToken ct)` — casts the `object` to `MassTransit.RoutingSlip`; publishes via `IPublishEndpoint.Publish<RoutingSlip>(slip, ct)`; throws `ArgumentException` if the cast fails with a diagnostic message (P-139) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| RS-05 | Implement `RoutingSlipActivityBase<TArguments, TLog>` abstract class in `RoutingSlips/` folder — implements `MassTransit.IActivity<TArguments, TLog>`; `Execute(ExecuteContext<TArguments>)` is sealed: propagates `CorrelationId` from routing slip tracking number into `Activity.Current`, enriches log scope with `routing_slip.tracking_number` and `routing_slip.activity_name`, calls abstract `ExecuteAsync(TArguments, CancellationToken)`; catches unhandled exceptions from `ExecuteAsync`, logs at `Error` with `routing_slip.tracking_number`, then rethrows (P-139) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| RS-06 | Implement `Compensate(CompensateContext<TLog>)` sealed entry on `RoutingSlipActivityBase<TArguments, TLog>` — same correlation-propagation and log-scope enrichment as `Execute`; catches unhandled exceptions from abstract `CompensateAsync(TLog, CancellationToken)`, logs at `Error`, then rethrows; protected helpers: `Complete(TLog log)`, `Faulted(Exception ex)`, `CompensationComplete()` — these return the correct `ExecutionResult`/`CompensationResult` values (P-139) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| RS-07 | Implement `MessagingBusBuilder.AddRoutingSlipActivity<TActivity>()` — registers the activity with MassTransit via `cfg.AddActivity<TActivity, TArguments, TLog>()`; returns `MessagingBusBuilder` for fluent chaining; `TActivity` must implement `IActivity<TArguments, TLog>` (compile-time or runtime constraint) (P-139) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| RS-08 | TestHarness test: define two activities using `RoutingSlipActivityBase`; build a routing slip via `IRoutingSlipBuilder`; execute via `IMessageBus.ExecuteRoutingSlipAsync`; assert both `ExecuteAsync` calls received correct arguments in order (P-139) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| RS-09 | TestHarness compensation test: first activity succeeds; second activity throws unhandled exception; assert first activity `CompensateAsync` is invoked (MassTransit Courier triggers compensation chain on failure); assert `RoutingSlipFaulted` event is published by MassTransit (P-139) | WO-022 | SharedKernel.Messaging.MassTransit | `●` |
+| RS-10 | XML docs on `IRoutingSlipBuilder`, `IMessageBus.ExecuteRoutingSlipAsync`, `RoutingSlipActivityBase<TArguments, TLog>` — class-level remarks must document the routing-slip-vs-saga distinction: "routing slips are for stateless multi-step coordination; saga state machines are for workflows requiring durable persistent state"; verify `dotnet build` clean; zero new NuGet references in Abstractions (P-139) | WO-022 | SharedKernel.Messaging.Abstractions | `●` |
+
+---
+
 ## Overall Progress
 
 > Counts updated whenever a task state changes.
@@ -335,6 +426,11 @@ Format when blocked — replace placeholder with table:
 | `SK.07.Batch` | Batch | 7 | 7 | 0 | `●` |
 | `SK.07.Routing` | Routing | 8 | 8 | 0 | `●` |
 | `SK.07.OTel` | OTel | — | — | — | `○` |
+| `SK.07.Idempotency` | Idempotency | 9 | 9 | 0 | `●` |
+| `SK.07.HeaderPropagation` | HeaderPropagation | 8 | 8 | 0 | `●` |
+| `SK.07.ConsumerDefinition` | ConsumerDefinition | 7 | 7 | 0 | `●` |
+| `SK.07.VersionTranslation` | VersionTranslation | 7 | 7 | 0 | `●` |
+| `SK.07.RoutingSlip` | RoutingSlip | 10 | 10 | 0 | `●` |
 
 ---
 
@@ -353,6 +449,11 @@ Format when blocked — replace placeholder with table:
 | P-131 | `SK.07.Routing` | ISendEndpointResolver and Cross-Service Command Routing | 07.Messaging | P-125 |
 | P-132 | — | Messaging OTel Wiring (13.ServiceDefaults) | 13.ServiceDefaults | P-117, P-118 |
 | P-133 | — | Extended Messaging Governance Rules MSG0105-MSG0108 (00.Governance) | 00.Governance | P-125, P-126, P-127, P-128 |
+| P-134 | `SK.07.Idempotency` | IIdempotencyStore and IdempotentConsumerBehavior | 07.Messaging | None |
+| P-135 | `SK.07.HeaderPropagation` | IMessageHeaderPropagator and WithHeaderPropagator | 07.Messaging | None |
+| P-136 | `SK.07.ConsumerDefinition` | ConsumerDefinitionBase Platform-Standard Per-Consumer Configuration | 07.Messaging | None |
+| P-137 | `SK.07.VersionTranslation` | IMessageVersionTranslator and WithVersionTranslator | 07.Messaging | None |
+| P-139 | `SK.07.RoutingSlip` | RoutingSlipActivityBase for MassTransit Courier | 07.Messaging | P-128 |
 
 ---
 
@@ -380,3 +481,9 @@ Format when blocked — replace placeholder with table:
 - [2026-06-09] SA-01→SA-07 → ● in SK.07.Saga — SagaStateBase/SagaStateMachineBase stubs verified; AddSaga/WithEntityFrameworkSagaRepository wired in MessagingBusBuilder; 4 saga tests pass; SK.07.Saga → ● (state-map-phase)
 - [2026-06-09] B-01→B-07 → ● in SK.07.Batch — BatchOptions stub verified complete; BatchConsumerBase stub verified complete; AddBatchConsumer wired in MessagingBusBuilder (replaced placeholder with real MassTransit BatchOptions configurator); 4 batch tests pass (MessageLimit delivery, TimeLimit partial batch, exception propagation, fault publication); MassTransit 9.x publishes Fault\<TMessage\> not Fault\<Batch\<TMessage\>\> on batch exception — documented; SK.07.Batch → ● (state-map-phase)
 - [2026-06-09] RO-01→RO-08 → ● in SK.07.Routing — ConventionSendEndpointResolver implemented; MassTransitMessageBus.SendAsync updated with routeMap+resolver injection; Build() registers singleton routeMap + scoped resolver; 11 routing tests pass; SK.07.Routing → ● (state-map-phase)
+- [2026-06-09] WO-022 phase planning complete — 5 new phases queued (P-134–P-137, P-139): Idempotency (ID-01–ID-09), HeaderPropagation (HP-01–HP-08), ConsumerDefinition (CD-01–CD-07), VersionTranslation (VT-01–VT-07), RoutingSlip (RS-01–RS-10); phase key registry extended; Overall Progress table updated; Pending Phases table updated — messaging-arch-planner
+- [2026-06-09] ID-01→ID-09 → ● in SK.07.Idempotency — IIdempotencyStore + IdempotencyOptions in Abstractions; IdempotentConsumerBehavior<TMessage> IFilter; WithIdempotency() + overload in MessagingBusBuilder; 8 idempotency tests pass; SK.07.Idempotency → ● (state-map-phase)
+- [2026-06-09] HP-01→HP-08 → ● in SK.07.HeaderPropagation — IMessageHeaderPropagator in Abstractions; WithHeaderPropagator<T>() in MessagingBusBuilder; propagator invocation in MassTransitMessageBus + MassTransitEventPublisher; x-sk-* header extraction in ConsumerBase; 3 header propagation tests pass; SK.07.HeaderPropagation → ● (state-map-phase)
+- [2026-06-09] CD-01→CD-07 → ● in SK.07.ConsumerDefinition — ConsumerDefinitionBase<TConsumer> extends ConsumerDefinition<TConsumer>; r.Ignore(exceptionType) wires non-retryable filter; 4 definition tests pass; SK.07.ConsumerDefinition → ● (state-map-phase)
+- [2026-06-10] VT-01→VT-07 → ● in SK.07.VersionTranslation — IMessageVersionTranslator<TOld,TNew> in Abstractions; VersionTranslatingConsumer<TOld,TNew> + WithVersionTranslator() + TranslatorRegistrationValidationHostedService in MassTransit; 5 tests pass; SK.07.VersionTranslation → ● (state-map-phase)
+- [2026-06-10] RS-01→RS-10 → ● in SK.07.RoutingSlip — IRoutingSlipBuilder + IMessageBus.ExecuteRoutingSlipAsync in Abstractions; MassTransitRoutingSlipBuilder, RoutingSlipActivityBase<TArgs,TLog>, AddRoutingSlipActivity<T>() in MassTransit; routing slip dispatch corrected to Send (not Publish) to first itinerary address; 2 TestHarness tests pass (execution order + compensation/RoutingSlipFaulted); SK.07.RoutingSlip → ● (state-map-phase)
