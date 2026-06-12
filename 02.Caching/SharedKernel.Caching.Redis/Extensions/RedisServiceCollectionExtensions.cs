@@ -1,28 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Polly;
-using Polly.CircuitBreaker;
 using SharedKernel.Caching.Abstractions;
-using StackExchange.Redis;
+using SharedKernel.Caching.Redis.Core.Extensions;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
 
 namespace SharedKernel.Caching.Redis.Extensions;
 
 /// <summary>
-/// Minimal <see cref="ICachingBuilder"/> implementation used internally in the Redis package
-/// to allow the <c>IServiceCollection</c> shim overload of <c>AddRedisDistributedLocking</c>
-/// to delegate to the canonical <c>ICachingBuilder</c> extension without taking a dependency
-/// on <c>SharedKernel.Caching.FusionCache</c> (sibling layering rule).
-/// </summary>
-internal sealed class RedisCachingBuilder(IServiceCollection services) : ICachingBuilder
-{
-    public IServiceCollection Services { get; } = services;
-}
-
-/// <summary>
-/// <see cref="IServiceCollection"/> extension methods for registering Redis-backed caching
-/// infrastructure: L2 distributed backplane and distributed locking via RedLock.net.
+/// <see cref="IServiceCollection"/> extension methods for registering the Redis L2 distributed
+/// backplane for FusionCache.
 /// </summary>
 public static class RedisServiceCollectionExtensions
 {
@@ -79,14 +65,14 @@ public static class RedisServiceCollectionExtensions
 
         var services = builder.Services;
 
-        // Register the shared IConnectionMultiplexer singleton if not already registered.
-        // This allows RedisChannelService and RedisHashService to reuse the same connection.
-        var configOptions = ConfigurationOptions.Parse(options.ConnectionString);
-        configOptions.ConnectTimeout = options.ConnectTimeoutMs;
-        configOptions.AbortOnConnectFail = false;
-
-        services.TryAddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect(configOptions));
+        // Register the shared IConnectionMultiplexer singleton (and connection health tracker)
+        // via SharedKernel.Caching.Redis.Core, if not already registered. This allows
+        // RedisChannelService and RedisHashService to reuse the same connection — first
+        // caller wins (TryAddSingleton), idempotent across multiple Add* calls.
+        services.AddRedisConnection(options.ConnectionString, coreOptions =>
+        {
+            coreOptions.ConnectTimeoutMs = options.ConnectTimeoutMs;
+        });
 
         // Register the Redis IDistributedCache for FusionCache L2 storage.
         services.AddStackExchangeRedisCache(redisOptions =>
@@ -119,29 +105,19 @@ public static class RedisServiceCollectionExtensions
                 backplaneOptions.Configuration = options.ConnectionString;
             });
 
-        // Register Polly circuit breaker pipeline only when explicitly enabled.
-        // When Enabled = false (the default), no Polly types are registered and
-        // all existing behavior is preserved unchanged.
-        if (options.CircuitBreaker.Enabled)
+        // Register the opt-in Polly v8 circuit breaker pipeline via
+        // SharedKernel.Caching.Redis.Core. When options.CircuitBreaker.Enabled = false
+        // (the default), no Polly types are registered and all existing behavior is
+        // preserved unchanged. The FailureRatio=1.0/MinimumThroughput mapping that
+        // emulates count-based circuit breaking lives in AddRedisCircuitBreaker.
+        services.AddRedisCircuitBreaker(cbOptions =>
         {
-            var cbOpts = options.CircuitBreaker;
-            services.TryAddSingleton(_ =>
-                new ResiliencePipelineBuilder()
-                    .AddCircuitBreaker(new CircuitBreakerStrategyOptions
-                    {
-                        // Polly v8 uses FailureRatio (0.0–1.0) + MinimumThroughput.
-                        // We map the count-based FailureThreshold intent as follows:
-                        //   MinimumThroughput = FailureThreshold (minimum calls before evaluation)
-                        //   FailureRatio = 1.0 (circuit opens when ALL MinimumThroughput calls fail)
-                        // This matches the semantic: "N failures within the window opens the circuit".
-                        FailureRatio = 1.0,
-                        MinimumThroughput = cbOpts.FailureThreshold,
-                        SamplingDuration = cbOpts.SamplingDuration,
-                        BreakDuration = cbOpts.BreakDuration,
-                        ShouldHandle = new PredicateBuilder().Handle<Exception>()
-                    })
-                    .Build());
-        }
+            cbOptions.Enabled = options.CircuitBreaker.Enabled;
+            cbOptions.FailureThreshold = options.CircuitBreaker.FailureThreshold;
+            cbOptions.SamplingDuration = options.CircuitBreaker.SamplingDuration;
+            cbOptions.BreakDuration = options.CircuitBreaker.BreakDuration;
+            cbOptions.MinimumThroughput = options.CircuitBreaker.MinimumThroughput;
+        });
 
         return builder;
     }

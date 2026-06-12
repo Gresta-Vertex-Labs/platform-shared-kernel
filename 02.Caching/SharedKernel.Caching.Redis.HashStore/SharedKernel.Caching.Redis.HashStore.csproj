@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Caching.Redis.HashStore</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Structured Redis Hash storage (IRedisHashService, ITypedHashStore&lt;T&gt;). Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), distributed locking, or pub/sub packages.</Description>
+    <PackageTags>shared-kernel;caching;redis;hash;structured-storage;aot</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- DI abstractions — required for ICachingBuilder extension signatures -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <!-- Optional Polly circuit breaker pipeline injection -->
+    <PackageReference Include="Polly.Core" Version="8.5.2" />
+    <!-- Redis client — hash commands -->
+    <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
+    <!-- Caching abstractions — ICachingBuilder, IRedisHashService, ITypedHashStore<T> -->
+    <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!-- Redis connection core — AddRedisConnection (IConnectionMultiplexer registration) -->
+    <ProjectReference Include="..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude nested test project from main project compilation -->
+    <Compile Remove="SharedKernel.Caching.Redis.HashStore.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Caching.Redis.HashStore.Tests\**" />
+    <None Remove="SharedKernel.Caching.Redis.HashStore.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Allow internal types (TypedHashStore<T>) to be accessed from the test project -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Caching.Redis.HashStore.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

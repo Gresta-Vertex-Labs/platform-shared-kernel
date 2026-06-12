@@ -59,26 +59,6 @@ public sealed class L1FallbackTests
     }
 
     /// <summary>
-    /// DI registration for distributed locking is independent of L2 cache â€”
-    /// <c>AddRedisDistributedLocking</c> can be called without <c>AddRedisL2</c>.
-    /// </summary>
-    [Fact]
-    public void AddRedisDistributedLocking_IndependentOfL2Cache_RegistersService()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        // L1 only â€” no AddRedisL2
-        services.AddSharedKernelCaching();
-        // Distributed locking registered separately
-        services.AddRedisDistributedLocking("localhost:6379");
-
-        using var provider = services.BuildServiceProvider();
-        var lockService = provider.GetService<IDistributedLockService>();
-
-        Assert.NotNull(lockService);
-    }
-
-    /// <summary>
     /// Verifies the DI registration for Redis L2 resolves ICacheService successfully.
     /// </summary>
     [Fact]

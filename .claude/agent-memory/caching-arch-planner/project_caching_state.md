@@ -1,13 +1,13 @@
 ---
 name: project-caching-state
-description: Three-package split for 02.Caching, phase history through WO-007, interface locations, layering rules, AOT decisions
+description: Package split for 02.Caching (3-package complete, 7-package WO-023 in flight), phase history through WO-007 + WO-023 plan, interface locations, layering rules, AOT decisions
 metadata:
   type: project
 ---
 
 # Caching Domain State
 
-## Three-Package Split (enforced after WO-006 / Phase 17)
+## Three-Package Split (enforced after WO-006 / Phase 17, complete)
 
 | Package | Role |
 | ------- | ---- |
@@ -21,13 +21,37 @@ metadata:
 
 **How to apply:** Any new interface goes in `SharedKernel.Caching.Abstractions`. Shared options that both providers need (e.g. `ServiceName`) go in `CachingCoreOptions` (Abstractions), not `CachingOptions` (FusionCache).
 
+## Seven-Package Split (WO-023, Phases 32–36 — PLANNED, not yet implemented)
+
+`SharedKernel.Caching.Redis` is being split into 5 packages, all sharing a new dependency-root package:
+
+| Package | Role | Status |
+| ------- | ---- | ------ |
+| `SharedKernel.Caching.Abstractions` | Unchanged — all contracts stay here | complete |
+| `SharedKernel.Caching.FusionCache` | Unchanged — L1 provider | complete |
+| `SharedKernel.Caching.Redis.Core` | NEW (Phase 32) — `AddRedisConnection` (`IConnectionMultiplexer` `TryAddSingleton`, first-caller-wins), `RedisConnectionHealthTracker` (passive `ConnectionHealthState` observer), `RedisCircuitBreakerOptions` + `AddRedisCircuitBreaker` (generalized Ph.30 circuit breaker). Zero refs to FusionCache/RedLock/capability types. **Dependency root for the other 4.** | planned |
+| `SharedKernel.Caching.Redis` | SLIMMED (Phase 33) — only `AddRedisL2`, `RedisL2Options`, `IRedisL2BatchService` (internal), FusionCache Redis backplane wiring. Sources multiplexer/pipeline from `.Redis.Core` via new `ProjectReference`. | planned |
+| `SharedKernel.Caching.Redis.DistributedLocking` | NEW (Phase 34) — `RedLockDistributedLockService`, `RedLockRenewableLock`, `KeepAliveAsync`, `RedisLockOptions`, `AddRedisDistributedLocking`. Refs Abstractions + `.Redis.Core` + RedLock.net. | planned |
+| `SharedKernel.Caching.Redis.HashStore` | NEW (Phase 35) — `RedisHashService`, `TypedHashStore<T>` (internal sealed), `AddRedisHashService`, `AddTypedHashStore<T>`. Refs Abstractions + `.Redis.Core`. | planned |
+| `SharedKernel.Caching.Redis.PubSub` | NEW (Phase 36) — `RedisChannelService` (with Ph.26 reconnect replay intact), `RedisCacheInvalidationBus`, `CacheInvalidationReceiver`. Refs Abstractions + `.Redis.Core` + Hosting.Abstractions. **Stays in 02.Caching, not 07.Messaging.** | planned |
+
+**Key rules:**
+
+- `.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub` are siblings depending only on `.Redis.Core` — never on each other.
+- All `Add*` extension signatures preserved exactly (no breaking DI changes). `RedisL2Options.CircuitBreaker` retypes from a nested class to top-level `RedisCircuitBreakerOptions` (Phase 32) — type relocation, not rename, source-compatible.
+- `[Obsolete]` `IServiceCollection` shims: each package that needs one defines its own tiny `internal ...CachingBuilder : ICachingBuilder` — not shared across packages.
+- `RedisConnectionHealthTracker` (Core, Phase 32) and `RedisChannelService`'s own reconnect/resubscribe replay (Ph.26, relocates intact to `.Redis.PubSub` Phase 36) are SEPARATE, coexisting mechanisms — not unified in WO-023.
+- See `02.Caching/state-map.md` Phases 32–36 for full file-level plans.
+
+**Why pub/sub stays in 02.Caching:** `IRedisChannelService`/`ICacheInvalidationBus` are at-most-once/no-durability — the architectural opposite of `07.Messaging`'s outbox-backed guarantees. `07.Messaging` cannot reference `02.Caching` types (`CacheInvalidationMessage`, `CachingCoreOptions`) per layering rules, and moving these types to `07.Messaging` would falsely imply they inherit its durability contract.
+
 ## Interface Canonical Locations
 
 - `ICacheService` — `SharedKernel.Caching.Abstractions`
 - `CachePolicy` — `SharedKernel.Caching.Abstractions`
 - `ICacheKeyProvider` — `SharedKernel.Caching.Abstractions`
 - `IDistributedLockService` — `SharedKernel.Caching.Abstractions`
-- `IRenewableLock` — `SharedKernel.Caching.Abstractions` (planned Phase 23)
+- `IRenewableLock` — `SharedKernel.Caching.Abstractions` (Phase 23, complete)
 - `IRedisChannelService` — `SharedKernel.Caching.Abstractions`
 - `IRedisHashService` — `SharedKernel.Caching.Abstractions`
 - `ITypedHashStore<T>` — `SharedKernel.Caching.Abstractions`
@@ -35,23 +59,24 @@ metadata:
 - `CacheInvalidationMessage` + `CacheInvalidationType` — `SharedKernel.Caching.Abstractions`
 - `ICachingBuilder` — `SharedKernel.Caching.Abstractions`
 - `CachingCoreOptions` — `SharedKernel.Caching.Abstractions` (added Phase 17; holds `ServiceName`)
-- `ConnectionHealthState` — `SharedKernel.Caching.Abstractions` (planned Phase 26; enum: Connected/Reconnecting/Disconnected)
-- `ICacheWarmupStrategy` — `SharedKernel.Caching.Abstractions` (planned Phase 28)
-- `ITenantCacheKeyProvider` — `SharedKernel.Caching.Abstractions` (planned Phase 29; extends ICacheKeyProvider)
+- `ConnectionHealthState` — `SharedKernel.Caching.Abstractions` (Phase 26, complete; enum: Connected/Reconnecting/Disconnected)
+- `ICacheWarmupStrategy` — `SharedKernel.Caching.Abstractions` (Phase 28, complete)
+- `ITenantCacheKeyProvider` — `SharedKernel.Caching.Abstractions` (Phase 29, complete; extends ICacheKeyProvider)
 - `CacheKeyProvider` — `SharedKernel.Caching.FusionCache`
-- `TenantCacheKeyProvider` — `SharedKernel.Caching.FusionCache` (planned Phase 29)
-- `CacheWarmupHostedService` — `SharedKernel.Caching.FusionCache` (planned Phase 28)
+- `TenantCacheKeyProvider` — `SharedKernel.Caching.FusionCache` (Phase 29, complete)
+- `CacheWarmupHostedService` — `SharedKernel.Caching.FusionCache` (Phase 28, complete)
 - `FusionCacheService` — `SharedKernel.Caching.FusionCache`
 - `CachingOptions` — `SharedKernel.Caching.FusionCache` (retains `ServiceName` for validation + FusionCache-specific fields)
 - `BrotliCacheSerializer` — `SharedKernel.Caching.FusionCache`
-- `RedLockDistributedLockService` — `SharedKernel.Caching.Redis`
-- `RedLockRenewableLock` — `SharedKernel.Caching.Redis` (planned Phase 23)
-- `RedisChannelService` — `SharedKernel.Caching.Redis`
-- `RedisHashService` — `SharedKernel.Caching.Redis`
-- `TypedHashStore<T>` — `SharedKernel.Caching.Redis` (internal sealed)
-- `IRedisL2BatchService` — `SharedKernel.Caching.Redis` (internal — planned Phase 22)
-- `RedisCacheInvalidationBus` — `SharedKernel.Caching.Redis`
-- `CacheInvalidationReceiver` — `SharedKernel.Caching.Redis`
+- `RedLockDistributedLockService` — `SharedKernel.Caching.Redis` (relocates to `.Redis.DistributedLocking` in planned Phase 34)
+- `RedLockRenewableLock` — `SharedKernel.Caching.Redis` (Phase 23, complete; relocates to `.Redis.DistributedLocking` in planned Phase 34)
+- `RedisChannelService` — `SharedKernel.Caching.Redis` (relocates to `.Redis.PubSub` in planned Phase 36)
+- `RedisHashService` — `SharedKernel.Caching.Redis` (relocates to `.Redis.HashStore` in planned Phase 35)
+- `TypedHashStore<T>` — `SharedKernel.Caching.Redis` (internal sealed; relocates to `.Redis.HashStore` in planned Phase 35)
+- `IRedisL2BatchService` — `SharedKernel.Caching.Redis` (internal, Phase 22 complete; stays in slimmed `.Redis` per Phase 33)
+- `RedisCacheInvalidationBus` — `SharedKernel.Caching.Redis` (relocates to `.Redis.PubSub` in planned Phase 36)
+- `CacheInvalidationReceiver` — `SharedKernel.Caching.Redis` (relocates to `.Redis.PubSub` in planned Phase 36)
+- **(Phase 32, planned)** `RedisConnectionOptions`, `RedisCircuitBreakerOptions`, `RedisConnectionHealthTracker`, `AddRedisConnection`, `AddRedisCircuitBreaker` — new `SharedKernel.Caching.Redis.Core` (not Abstractions — concrete connection/resilience primitives, dependency root for the 4 sibling Redis packages)
 
 ## Phase History Summary
 
@@ -68,16 +93,22 @@ metadata:
 - Phase 19 (DiErgonomics): complete — ICachingBuilder overload for AddRedisDistributedLocking; startup guards
 - Phase 20 (L1SizeLimit): complete — L1SizeLimit wired; L2 key format verified as {KeyPrefix}v2:{user-key}
 - Phase 21 (ValueTaskFactory): complete — GetOrSetAsync factory to ValueTask{T}; nullable overload; 102 FC + 93 Redis tests
-- Phase 22 (BatchOperations): PENDING — GetManyAsync/SetManyAsync; Redis pipeline helper (internal IRedisL2BatchService)
-- Phase 23 (RenewableLock): PENDING — IRenewableLock + AcquireRenewableAsync + KeepAliveAsync
-- Phase 24 (SlidingExpiration): PENDING — CachePolicy.Sliding + SlidingWindow; L1-only sliding; NeverExpire guard
-- Phase 25 (KeyVersioning): PENDING — CachePolicy.KeyVersion + WithVersion + ICacheKeyProvider version overload
-- Phase 26 (ChannelReconnect): PENDING — RedisChannelService reconnect + ConnectionHealthState enum
-- Phase 27 (CachingCoreOptionsDi): PENDING — AddCachingCoreOptions standalone extension in Abstractions
-- Phase 28 (CacheWarmup): PENDING — ICacheWarmupStrategy + CacheWarmupHostedService + AddCacheWarmup<T>
-- Phase 29 (TenantCacheKey): PENDING — ITenantCacheKeyProvider; format {service}:{tenant}:{entity}:{id}
-- Phase 30 (RedisCircuitBreaker): PENDING — Polly v8 opt-in circuit breaker for RedisL2; new dep Polly.Core
-- Phase 31 (OtelMeters): PENDING — BCL System.Diagnostics.Metrics on FusionCacheService; no new NuGet deps
+- Phase 22 (BatchOperations): complete — GetManyAsync/SetManyAsync; Redis pipeline helper (internal IRedisL2BatchService); 114 FC + 99 Redis tests
+- Phase 23 (RenewableLock): complete — IRenewableLock + AcquireRenewableAsync + KeepAliveAsync + RedLockRenewableLock; 114 FC + 125 Redis tests
+- Phase 24 (SlidingExpiration): complete — CachePolicy.Sliding + SlidingWindow; L1-only sliding; NeverExpire guard; 134 FC tests
+- Phase 25 (KeyVersioning): complete — CachePolicy.KeyVersion + WithVersion + ICacheKeyProvider version overload; 160 FC + 125 Redis tests
+- Phase 26 (ChannelReconnect): complete — RedisChannelService reconnect + ConnectionHealthState enum; 160 FC + 132 Redis tests
+- Phase 27 (CachingCoreOptionsDi): complete — AddCachingCoreOptions standalone extension in Abstractions; 160 FC + 142 Redis tests
+- Phase 28 (CacheWarmup): complete — ICacheWarmupStrategy + CacheWarmupHostedService + AddCacheWarmup<T>; 172 FC + 142 Redis tests
+- Phase 29 (TenantCacheKey): complete — ITenantCacheKeyProvider; format {service}:{tenant}:{entity}:{id}; 196 FC tests
+- Phase 30 (RedisCircuitBreaker): complete — Polly v8 opt-in circuit breaker for RedisL2; new dep Polly.Core 8.5.2; 196 FC + 154 Redis tests
+- Phase 31 (OtelMeters): complete — BCL System.Diagnostics.Metrics on FusionCacheService; no new NuGet deps; 209 FC tests
+- **WO-023 (Phases 32–36, planned, not yet implemented)** — split SharedKernel.Caching.Redis into 5 packages:
+  - Phase 32 (RedisConnectionCore): new `.Redis.Core` package — `AddRedisConnection`, `RedisConnectionHealthTracker`, `RedisCircuitBreakerOptions` + `AddRedisCircuitBreaker`. Dependency root.
+  - Phase 33 (RedisL2Refactor): slim `.Redis` to L2-only; `AddRedisL2` sources multiplexer/pipeline from `.Redis.Core`.
+  - Phase 34 (RedisLockingExtraction): new `.Redis.DistributedLocking` — RedLock.net types + `AddRedisDistributedLocking`.
+  - Phase 35 (RedisHashExtraction): new `.Redis.HashStore` — `IRedisHashService`/`ITypedHashStore<T>` impls + `AddRedisHashService`/`AddTypedHashStore<T>`.
+  - Phase 36 (RedisPubSubExtraction): new `.Redis.PubSub` — `RedisChannelService`/`RedisCacheInvalidationBus`/`CacheInvalidationReceiver`. Stays in 02.Caching, not 07.Messaging.
 
 ## Key Design Decisions (current state)
 
@@ -104,6 +135,10 @@ metadata:
 - All three Redis services share the single `IConnectionMultiplexer` singleton — no connection proliferation.
 - `BrotliCacheSerializer` magic bytes: `0x42 0x52` ("BR"). ArrayPool, no MemoryStream on hot path.
 - Broadcast invalidation (`All`) logs a structured warning and relies on TTL — no enumerate-all-keys.
+- **(Phase 32, planned)** `IConnectionMultiplexer` registration centralizes into `.Redis.Core`'s `AddRedisConnection` (`TryAddSingleton`, first-caller-wins) — `AddRedisL2`/`AddRedisDistributedLocking` call it internally instead of self-registering. No new multiplexer registrations permitted outside `.Redis.Core`.
+- **(Phase 32, planned)** `RedisCircuitBreakerOptions` generalizes Ph.30's `RedisL2Options.CircuitBreakerOptions` (same 5 properties/defaults) as a top-level class in `.Redis.Core`. `RedisL2Options.CircuitBreaker` retypes to it — source-compatible (`o.CircuitBreaker.Enabled = true` still compiles).
+- **(Phase 32, planned)** Two independent connection-health mechanisms coexist by design: `RedisConnectionHealthTracker` (`.Redis.Core`, passive observer, no replay logic) vs. `RedisChannelService`'s own `ConnectionRestored`/`ConnectionFailed` + registry-lock resubscription replay (Ph.26, relocates intact to `.Redis.PubSub` Phase 36). Do NOT unify these in WO-023 — explicitly deferred.
+- **(Phases 34–36, planned)** `.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub` are siblings — each refs only Abstractions + `.Redis.Core`, never each other. Each retains its own tiny `internal ...CachingBuilder : ICachingBuilder` for `[Obsolete]` `IServiceCollection` shims (no shared adapter type).
 
 ## Invalidation Channel Naming Convention
 
@@ -119,4 +154,14 @@ metadata:
 - StackExchange.Redis: 2.13.1
 - RedLock.net: 2.3.2
 - Microsoft.Extensions.DependencyInjection.Abstractions: 10.0.1
-- Polly.Core: >= 8.0.0 (new — planned Phase 30; verify AOT compatibility at implementation time)
+- Polly.Core: 8.5.2 (confirmed Phase 30, complete; AOT-safe `ResiliencePipeline` usage validated)
+- Microsoft.Extensions.Caching.StackExchangeRedis: 10.0.0
+- Microsoft.Extensions.Hosting.Abstractions: 10.0.0
+
+### Post-WO-023 owning package per pin (Phases 32–36, planned)
+
+- `.Redis.Core`: StackExchange.Redis 2.13.1, Polly.Core 8.5.2, Microsoft.Extensions.DependencyInjection.Abstractions 10.0.1
+- `.Redis` (slimmed): ZiggyCreatures.FusionCache 2.6.0, ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis 2.6.0, Microsoft.Extensions.Caching.StackExchangeRedis 10.0.0, + ProjectReference to `.Redis.Core`
+- `.Redis.DistributedLocking`: RedLock.net 2.3.2, + ProjectReference to `.Redis.Core`
+- `.Redis.HashStore`: + ProjectReference to `.Redis.Core` only (no new third-party packages)
+- `.Redis.PubSub`: Microsoft.Extensions.Hosting.Abstractions 10.0.0 (for `CacheInvalidationReceiver` `BackgroundService`), + ProjectReference to `.Redis.Core`

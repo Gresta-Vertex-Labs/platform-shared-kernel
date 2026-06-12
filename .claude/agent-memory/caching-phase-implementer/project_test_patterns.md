@@ -75,6 +75,36 @@ metadata:
 - **Connection string for reconnect tests**: use `abortConnect=false,connectRetry=10` (not `reconnectRetryPolicy` — that keyword is unsupported and throws `ArgumentException`).
 - **`SubscriptionCount` internal property**: `RedisChannelService` exposes `internal int SubscriptionCount` for test assertions about registry state.
 
+## Assert.Throws exact-type gotcha — Phase 32 pattern
+
+- xUnit's `Assert.Throws<TException>` requires an **exact type match** — a derived
+  exception does NOT satisfy a base-type assertion.
+- `ArgumentException.ThrowIfNullOrWhiteSpace(value)` throws `ArgumentNullException`
+  (a subclass of `ArgumentException`) when `value` is `null`, but plain
+  `ArgumentException` when `value` is empty/whitespace-but-non-null.
+- When testing this BCL guard: assert `Assert.Throws<ArgumentNullException>(...)`
+  for the `null` case and `Assert.Throws<ArgumentException>(...)` for the
+  whitespace case — two separate `[Fact]`s, two different expected types.
+
+## New-package test relocation — Phase 34 pattern
+
+- When a capability is extracted into a brand-new package (e.g.
+  `SharedKernel.Caching.Redis.DistributedLocking`), relocate the relevant test files
+  as **pure namespace-only renames**: only the `namespace` declaration and `using`
+  statements pointing at relocated extension/option types change. Test method names,
+  bodies, assertions, and pre-existing `[Obsolete]`-API call sites (CS0618 warnings)
+  must NOT change — preserves "pure move" semantics required by the phase spec.
+- `[Collection("Redis")]` works in a brand-new test project **without** an explicit
+  `[CollectionDefinition("Redis")]` class — xUnit creates an implicit named collection
+  per assembly. No need to copy a `CollectionDefinition` file when relocating tests.
+- Reflection-based interface contract tests (e.g.
+  `IDistributedLockServiceContractTests`) have zero Redis-specific dependencies — they
+  only need `SharedKernel.Caching.Abstractions` + `Xunit`, so they relocate cleanly
+  into any new package's test project with just a namespace change.
+- Verify old test project cleanup: after `git rm` of relocated files, check that any
+  now-empty subdirectories (e.g. `Abstractions/`) are gone too — `git rm` removes
+  empty dirs automatically but worth a sanity check.
+
 ## FakeCacheService in 16.Testing — Phase 22 pattern
 
 - `FakeCacheService` moved from concept to implementation in Phase 22 (previously missing from 16.Testing)

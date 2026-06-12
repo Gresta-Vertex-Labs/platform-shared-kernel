@@ -22,7 +22,7 @@ Each numbered folder is a capability domain. Each owns a `CLAUDE.md` with its in
 |---|--------|-----------------|
 | 00 | `00.Governance` | Roslyn analyzers, EditorConfig/CSharpier styling, Git hooks, benchmarking templates, architecture test suites (NetArchTest) |
 | 01 | `01.Core` | Primitives (`Result<T>`, `Error`, `IClock`, SmartEnums), base exceptions, system extensions, Options-pattern validation, Feature Flags |
-| 02 | `02.Caching` | FusionCache L1/L2 interfaces, stampede protection, Redis distributed cache, RedLock distributed locking |
+| 02 | `02.Caching` | FusionCache L1/L2 interfaces, stampede protection. Redis split by role: `.Redis.Core` (shared connection/health/resilience), `.Redis` (L2 backplane), `.Redis.DistributedLocking` (RedLock), `.Redis.HashStore`, `.Redis.PubSub` (cache invalidation signaling) |
 | 03 | `03.Domain` | DDD building blocks: `Entity`, `AggregateRoot`, `ValueObject`, `IDomainEvent`, tenanted aggregate bases (`TenantedAggregateRoot`, `TenantedAuditableAggregateRoot`, `TenantedFullAuditableAggregateRoot`) |
 | 04 | `04.Contracts` | Cross-service DTOs only: `PagedList`, `Envelope`, integration event payloads. No domain logic. |
 | 05 | `05.Application` | MediatR base handlers and dispatchers, pipeline behaviors (Validation, Logging, Metrics, Transaction) |
@@ -71,6 +71,7 @@ Dependencies flow **downward only** (lower number = more foundational). A packag
 - `04.Contracts` must never contain domain logic — pure DTOs and event payloads only.
 - `05.Application` must never reference a concrete infrastructure package — only abstractions.
 - `16.Testing` packages are never referenced by production code.
+- `07.Messaging` must never reference any `SharedKernel.Caching.*` package, and no `SharedKernel.Caching.*` package may reference any `SharedKernel.Messaging.*` package. Ephemeral/no-delivery-guarantee Redis Pub/Sub (cache invalidation signaling) stays in `02.Caching` as `SharedKernel.Caching.Redis.PubSub` — it is architecturally distinct from `07.Messaging`'s durable/outbox-backed delivery contract and must never be merged or relocated into `07.Messaging`.
 
 ---
 
@@ -90,6 +91,15 @@ SharedKernel.{Capability}.Tests             → test project, nested inside the 
 - `SharedKernel.Persistence.EfCore` — EF Core implementation of the above
 
 When a capability has more than one provider (Search, Persistence, Caching, Storage, etc.), **always split into `.Abstractions` + `.{Provider}`**. Microservices reference the abstraction and inject the provider of their choice.
+
+**Provider role-split variant:** when a single underlying technology serves multiple distinct architectural roles within one capability domain, split further:
+
+```
+SharedKernel.{Capability}.{Provider}.Core      → shared infrastructure (connection mgmt, health, resilience) for sibling role-packages
+SharedKernel.{Capability}.{Provider}.{Role}    → role-specific extension package, depends on .{Provider}.Core + .Abstractions only
+```
+
+Sibling role-packages must never reference each other — only the shared `.Core` package. Example (`02.Caching`): `SharedKernel.Caching.Redis.Core` (connection/health/resilience), `SharedKernel.Caching.Redis` (L2 FusionCache backplane), `SharedKernel.Caching.Redis.DistributedLocking`, `SharedKernel.Caching.Redis.HashStore`, `SharedKernel.Caching.Redis.PubSub`.
 
 ---
 
@@ -131,7 +141,11 @@ When a capability has more than one provider (Search, Persistence, Caching, Stor
 | Encryption attributes on a domain entity class | Prohibited — use `PropertyBuilder<T>.Encrypt()` in `IEntityTypeConfiguration<TEntity>` instead; placing encryption attributes on domain types leaks infrastructure concerns into the domain layer (SK0302) |
 | A new cache interface or policy | `02.Caching/SharedKernel.Caching.Abstractions` |
 | A FusionCache L1 provider implementation or option | `02.Caching/SharedKernel.Caching.FusionCache` |
-| A Redis-specific cache implementation | `02.Caching/SharedKernel.Caching.Redis` |
+| A Redis L2 cache backplane implementation (FusionCache) | `02.Caching/SharedKernel.Caching.Redis` |
+| A distributed lock / renewable lock over Redis | `02.Caching/SharedKernel.Caching.Redis.DistributedLocking` — implements `IDistributedLockService`/`IRenewableLock` from `SharedKernel.Caching.Abstractions` |
+| Structured Redis Hash storage (sessions, counters, typed DTOs) | `02.Caching/SharedKernel.Caching.Redis.HashStore` — implements `IRedisHashService`/`ITypedHashStore<T>` |
+| Ephemeral Redis Pub/Sub or cross-service cache invalidation signaling | `02.Caching/SharedKernel.Caching.Redis.PubSub` — implements `IRedisChannelService`/`ICacheInvalidationBus`; never `07.Messaging` (no delivery guarantees) |
+| Shared Redis `IConnectionMultiplexer`, connection health, or circuit breaker pipeline | `02.Caching/SharedKernel.Caching.Redis.Core` |
 | A new message bus abstraction | `07.Messaging/SharedKernel.Messaging.Abstractions` |
 | A MassTransit consumer base or configuration | `07.Messaging/SharedKernel.Messaging.MassTransit` |
 | An idempotent consumer deduplication hook | `07.Messaging/SharedKernel.Messaging.Abstractions` — implement `IIdempotencyStore` (`HasProcessedAsync`/`MarkProcessedAsync`) in the consuming service; enable via `MessagingBusBuilder.WithIdempotency()`; never implement custom deduplication inside `ConsumeAsync` body |
@@ -163,7 +177,7 @@ These are the packages microservices should depend on — never on the concrete 
 
 | Abstraction package | Implemented by |
 |---------------------|---------------|
-| `SharedKernel.Caching.Abstractions` | `.FusionCache`, `.Redis` |
+| `SharedKernel.Caching.Abstractions` | `.FusionCache`, `.Redis` (L2, via `.Redis.Core`), `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub` |
 | `SharedKernel.Persistence.Abstractions` | `.EfCore` (write + read repos, `IUnitOfWork` + `ITransactionalUnitOfWork`), `.PostgreSQL` (Npgsql + conventions, `NpgsqlConnectionFactory` implementing `IDbConnectionFactory`), `.Dapper` (read-side `DapperReadService`; references `.PostgreSQL` for the connection factory) |
 | `SharedKernel.Messaging.Abstractions` | `.MassTransit` |
 | `SharedKernel.Storage.Abstractions` | `.S3` |
@@ -196,3 +210,4 @@ These are the packages microservices should depend on — never on the concrete 
 - [2026-06-03] WO-018: Abstractions table 06 corrected — NpgsqlConnectionFactory lives in .PostgreSQL not .Dapper; five "What Goes Where" rows added for write-side spec fetch, IDbContextFactory, custom interceptors, string includes, and EfCore compiled model; Dapper "What Goes Where" row updated (arch-lead)
 - [2026-06-04] WO-019: four "What Goes Where" rows added for field-level encryption, key rotation job, service identity options, and encryption-attribute prohibition; AES-256-GCM converter + versioned ciphertext + IModelFinalizingConvention pattern documented in 06.Persistence brain; audit fallback rule updated to use configurable PersistenceServiceOptions.ServiceName instead of hardcoded "system" (arch-lead)
 - [2026-06-09] WO-022: ten "What Goes Where" rows added for IIdempotencyStore, IMessageHeaderPropagator, ConsumerDefinitionBase, IMessageVersionTranslator, RoutingSlipActivityBase/IRoutingSlipBuilder, and InMemoryMessageBus/InMemoryEventPublisher test doubles (arch-lead)
+- [2026-06-11] WO-023: 02.Caching Redis package split into Core + 4 role-specific packages (L2/.Redis, DistributedLocking, HashStore, PubSub); new .{Provider}.Core/.{Provider}.{Role} naming pattern documented; hard rule added forbidding 02.Caching <-> 07.Messaging cross-references; four "What Goes Where" rows added (arch-lead, P-140-P-146)

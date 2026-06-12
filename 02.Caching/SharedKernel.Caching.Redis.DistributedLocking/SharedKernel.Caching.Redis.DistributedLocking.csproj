@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Caching.Redis.DistributedLocking</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Distributed mutual-exclusion locking over Redis via RedLock.net. Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), hash store, or pub/sub packages.</Description>
+    <PackageTags>shared-kernel;caching;redis;redlock;distributed-locking;aot</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- DI abstractions — required for IServiceCollection extension signatures -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <!-- RedLock.net distributed locking over Redis -->
+    <PackageReference Include="RedLock.net" Version="2.3.2" />
+    <!-- Caching abstractions — ICachingBuilder, IDistributedLockService, IRenewableLock -->
+    <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!-- Redis connection core — AddRedisConnection (IConnectionMultiplexer registration) -->
+    <ProjectReference Include="..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude nested test project from main project compilation -->
+    <Compile Remove="SharedKernel.Caching.Redis.DistributedLocking.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Caching.Redis.DistributedLocking.Tests\**" />
+    <None Remove="SharedKernel.Caching.Redis.DistributedLocking.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Allow internal types to be accessed from the test project -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Caching.Redis.DistributedLocking.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

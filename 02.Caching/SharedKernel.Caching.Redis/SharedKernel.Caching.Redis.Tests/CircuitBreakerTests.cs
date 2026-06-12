@@ -6,6 +6,7 @@ using Polly;
 using Polly.CircuitBreaker;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Caching.Redis.Core;
 using SharedKernel.Caching.Redis.Extensions;
 using StackExchange.Redis;
 using Xunit;
@@ -13,7 +14,9 @@ using Xunit;
 namespace SharedKernel.Caching.Redis.Tests;
 
 /// <summary>
-/// Unit tests for the Polly v8 circuit breaker wiring in <see cref="RedisL2Options.CircuitBreakerOptions"/>.
+/// Unit tests for the Polly v8 circuit breaker wiring in <see cref="RedisCircuitBreakerOptions"/>
+/// (sourced from <c>SharedKernel.Caching.Redis.Core</c> as of Phase 33, exposed via
+/// <see cref="RedisL2Options.CircuitBreaker"/>).
 /// Covers: RCB-01 through RCB-06.
 /// </summary>
 public sealed class CircuitBreakerTests
@@ -250,7 +253,7 @@ public sealed class CircuitBreakerTests
     [Fact]
     public void CircuitBreakerOptions_PropertiesAreSettable()
     {
-        var opts = new RedisL2Options.CircuitBreakerOptions
+        var opts = new RedisCircuitBreakerOptions
         {
             Enabled = true,
             FailureThreshold = 10,
@@ -266,35 +269,4 @@ public sealed class CircuitBreakerTests
         Assert.Equal(5, opts.MinimumThroughput);
     }
 
-    // ─── DI: RedisHashService injects ResiliencePipeline when registered ─────
-
-    [Fact]
-    public void AddRedisHashService_WithCircuitBreakerEnabled_InjectsResiliencePipeline()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching()
-                .AddRedisL2("localhost:6379", o => o.CircuitBreaker.Enabled = true)
-                .AddRedisHashService();
-
-        // The pipeline and hash service must both be resolvable.
-        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IRedisHashService));
-        Assert.NotNull(descriptor);
-        // Pipeline descriptor must also be present.
-        Assert.Contains(services, d => d.ServiceType == typeof(ResiliencePipeline));
-    }
-
-    [Fact]
-    public void AddRedisChannelService_WithCircuitBreakerEnabled_InjectsResiliencePipeline()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSharedKernelCaching()
-                .AddRedisL2("localhost:6379", o => o.CircuitBreaker.Enabled = true)
-                .AddRedisChannelService();
-
-        var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IRedisChannelService));
-        Assert.NotNull(descriptor);
-        Assert.Contains(services, d => d.ServiceType == typeof(ResiliencePipeline));
-    }
 }

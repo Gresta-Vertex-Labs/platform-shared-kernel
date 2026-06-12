@@ -5,9 +5,9 @@ metadata:
   type: project
 ---
 
-As of 2026-06-08, the last phase written to `state-map.md` Phase Backlog is **P-133** under **WO-021**.
+As of 2026-06-11, the last phase written to `state-map.md` Phase Backlog is **P-146** under **WO-023**.
 
-Next new phase must be **P-134**. Next new Work Order must be **WO-022**.
+Next new phase must be **P-147**. Next new Work Order must be **WO-024**.
 
 **How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file.
 
@@ -39,3 +39,10 @@ Next new phase must be **P-134**. Next new Work Order must be **WO-022**.
 - 07.Messaging: already ● Published — new phases queued in backlog only; no state-map-phase call made
 - 13.ServiceDefaults: already ○ Not Started — P-132 queued; state-map-phase not called (P-122 already pending from WO-020 also targets this domain)
 - 00.Governance: already ● Complete — P-133 queued in backlog only; no state-map-phase call made
+
+**WO-023 context:** 02.Caching Redis package topology refactor (P-140–P-146) — see [[project_wo023_caching_redis_topology]] for full decision rationale. Splits `SharedKernel.Caching.Redis` into `.Redis.Core` + 4 role packages (`.Redis` L2, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub`). New `.{Provider}.Core`/`.{Provider}.{Role}` naming pattern + new root hard rule (02.Caching <-> 07.Messaging mutual exclusion) added to root CLAUDE.md.
+
+**Domains touched in WO-023:**
+- 02.Caching: already ● Complete — P-140–P-144 queued in backlog only; no state-map-phase call made
+- 00.Governance: already ● Complete — P-145 queued in backlog only; no state-map-phase call made
+- 16.Testing: already ◐ In Progress — P-146 queued in backlog only; no state-map-phase call made

@@ -21,8 +21,16 @@
   </Folder>
   <Folder Name="/02.Caching/">
     <Project Path="02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.Tests/SharedKernel.Caching.Redis.Core.Tests.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/SharedKernel.Caching.Redis.Tests.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.Tests/SharedKernel.Caching.Redis.DistributedLocking.Tests.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.Tests/SharedKernel.Caching.Redis.HashStore.Tests.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.csproj" />
+    <Project Path="02.Caching/SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.Tests/SharedKernel.Caching.Redis.PubSub.Tests.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.csproj" />
     <Project Path="02.Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.Tests/SharedKernel.Caching.FusionCache.Tests.csproj" />
   </Folder>

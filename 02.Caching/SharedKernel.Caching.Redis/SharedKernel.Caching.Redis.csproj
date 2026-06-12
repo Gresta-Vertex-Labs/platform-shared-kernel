@@ -10,8 +10,8 @@
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
-    <Description>Redis L2 distributed backplane and RedLock distributed locking for SharedKernel.Caching. Adds Redis-backed ICacheService (FusionCache L2 via StackExchange.Redis) and IDistributedLockService (RedLock.net). Requires SharedKernel.Caching. AOT-compatible.</Description>
-    <PackageTags>shared-kernel;caching;redis;fusioncache;redlock;distributed-locking;l2-cache;aot</PackageTags>
+    <Description>Redis L2 distributed backplane for SharedKernel.Caching. Adds Redis-backed ICacheService (FusionCache L2 via StackExchange.Redis). Requires SharedKernel.Caching. AOT-compatible.</Description>
+    <PackageTags>shared-kernel;caching;redis;fusioncache;l2-cache;aot</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
@@ -26,10 +26,7 @@
   <ItemGroup>
     <!-- DI abstractions — required for IServiceCollection extension signatures -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
-    <!-- Hosting abstractions — required for BackgroundService (CacheInvalidationReceiver) -->
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
-    <PackageReference Include="Polly.Core" Version="8.5.2" />
-    <!-- Redis client — L2 distributed cache backing and RedLock multiplexer -->
+    <!-- Redis client — L2 distributed cache backing -->
     <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
     <!-- IDistributedCache implementation over StackExchange.Redis for FusionCache L2 -->
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
@@ -37,10 +34,10 @@
     <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.6.0" />
     <!-- FusionCache Redis L2 distributed backplane -->
     <PackageReference Include="ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis" Version="2.6.0" />
-    <!-- RedLock.net distributed locking over Redis -->
-    <PackageReference Include="RedLock.net" Version="2.3.2" />
-    <!-- Caching abstractions — ICachingBuilder, ICacheService, IDistributedLockService, IRedisChannelService, IRedisHashService, CachingCoreOptions -->
+    <!-- Caching abstractions — ICachingBuilder, ICacheService, CachingCoreOptions -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!-- Redis connection core — AddRedisConnection (IConnectionMultiplexer registration) and AddRedisCircuitBreaker (Polly v8 ResiliencePipeline) -->
+    <ProjectReference Include="..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

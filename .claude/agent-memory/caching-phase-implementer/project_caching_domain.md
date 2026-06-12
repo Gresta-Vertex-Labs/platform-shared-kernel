@@ -12,6 +12,15 @@ metadata:
 - `SharedKernel.Caching.FusionCache` — FusionCache L1 provider; refs Abstractions + FusionCache packages + 01.Core
 - `SharedKernel.Caching.Redis` — Redis L2, RedLock, RedisChannelService, RedisHashService, RedLockRenewableLock; refs Abstractions directly (NOT SharedKernel.Caching.FusionCache)
 
+**WO-023 (Phases 32-36, in progress) — Redis package split into 5:** see
+[[project_redis_package_split]] for details. Phase 32 created
+`SharedKernel.Caching.Redis.Core` (dependency root: `AddRedisConnection`,
+`AddRedisCircuitBreaker`, `RedisConnectionHealthTracker`). Phase 33 (complete,
+2026-06-11) refactored `SharedKernel.Caching.Redis`'s `AddRedisL2` to consume Core
+instead of self-registering `IConnectionMultiplexer`/`ResiliencePipeline`. Test
+baseline after Phase 33: **154 Redis + 33 Redis.Core tests passing** (FusionCache
+tests unaffected — still 209 from Phase 31).
+
 **Phase 29 (TenantCacheKey) — key decisions:**
 
 - `ITenantCacheKeyProvider` extends `ICacheKeyProvider` — lives in `SharedKernel.Caching.Abstractions`. Zero dependency on `12.Security` or `IHttpContextAccessor`.

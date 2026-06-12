@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <!-- Testcontainers Redis for integration tests -->
+    <PackageReference Include="Testcontainers.Redis" Version="4.4.0" />
+    <!-- DI host for integration-style DI registration tests -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <!-- Logging null provider and capturing logger helpers for tests -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <!-- Hosting abstractions — required for BackgroundService (CacheInvalidationReceiver) tests -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <!-- StackExchange.Redis — required for IConnectionMultiplexer in test assertions -->
+    <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
+    <!-- Optional Polly circuit breaker pipeline injection tests -->
+    <PackageReference Include="Polly.Core" Version="8.5.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Caching.Redis.PubSub.csproj" />
+    <!-- SharedKernel.Caching.Redis.Core provides AddRedisConnection (IConnectionMultiplexer registration) and AddRedisCircuitBreaker -->
+    <ProjectReference Include="..\..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
+    <!-- SharedKernel.Testing provides FakeCacheService (ICacheService double for CacheInvalidationReceiver tests) -->
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

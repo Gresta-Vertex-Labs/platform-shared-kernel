@@ -53,12 +53,17 @@
 | `SK.02.TenantCacheKey` | Phase 29 (Multi-Tenant Cache Key Isolation) | All tasks in Phase: TenantCacheKey are `●` |
 | `SK.02.RedisCircuitBreaker` | Phase 30 (Polly v8 Circuit Breaker for Redis L2) | All tasks in Phase: RedisCircuitBreaker are `●` |
 | `SK.02.OtelMeters` | Phase 31 (ICacheService OTel Meters) | All tasks in Phase: OtelMeters are `●` |
+| `SK.02.RedisConnectionCore` | Phase 32 (Redis Connection Core Extraction) | All tasks in Phase: RedisConnectionCore are `●` |
+| `SK.02.RedisL2Refactor` | Phase 33 (Redis L2 Backplane Package Refactor) | All tasks in Phase: RedisL2Refactor are `●` |
+| `SK.02.RedisLockingExtraction` | Phase 34 (Redis Distributed Locking Package Extraction) | All tasks in Phase: RedisLockingExtraction are `●` |
+| `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | All tasks in Phase: RedisHashExtraction are `●` |
+| `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | All tasks in Phase: RedisPubSubExtraction are `●` |
 
 ---
 
 ## Active Work
 
-_Phases 24–25 (SlidingExpiration, KeyVersioning) complete. Phases 26–31 planned (WO-007) — pending implementation._
+_Nothing in progress — all 36 phases complete (WO-006 + WO-007 + WO-023). WO-023 (Redis package split, Phases 32–36) is fully complete. No further phases planned._
 
 <!--
 Format when active — replace placeholder with table:
@@ -86,9 +91,13 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
-| `SharedKernel.Caching.Abstractions` | Phase 21 (pending) | `○` | Needs `CachingCoreOptions` (Ph.17); `ICacheService` factory sig update (Ph.21) |
-| `SharedKernel.Caching.FusionCache` | Phase 21 (pending) | `○` | Needs `AddRedisL2` serializer fix (Ph.18); L1SizeLimit wiring (Ph.20); `GetOrSetAsync` factory sig (Ph.21) |
-| `SharedKernel.Caching.Redis` | Phase 19 (pending) | `○` | Needs layering fix (Ph.17); DI ergonomics (Ph.19); L2 prefix verification (Ph.20) |
+| `SharedKernel.Caching.Abstractions` | Phase 31 (complete) | `●` | All 31 phases of WO-006/WO-007 complete; no contract changes planned in WO-023 |
+| `SharedKernel.Caching.FusionCache` | Phase 31 (complete) | `●` | All 31 phases of WO-006/WO-007 complete; no changes planned in WO-023 |
+| `SharedKernel.Caching.Redis` | Phase 33 (complete) | `●` | `AddRedisL2` now sources `IConnectionMultiplexer` and the optional circuit breaker `ResiliencePipeline` from `.Redis.Core` (Ph.32) via `AddRedisConnection`/`AddRedisCircuitBreaker`; `RedisL2Options.CircuitBreaker` retyped to `RedisCircuitBreakerOptions` (Core); 154 tests passing. RedLock/hash/pub-sub types still physically reside here pending Phases 34-36 |
+| `SharedKernel.Caching.Redis.Core` | Phase 32 (complete) | `●` | New package created — `AddRedisConnection`/`AddRedisCircuitBreaker`, `RedisConnectionHealthTracker`, `RedisConnectionOptions`, `RedisCircuitBreakerOptions`; 33 tests passing; dependency root for Phases 33-36 |
+| `SharedKernel.Caching.Redis.DistributedLocking` | Phase 34 (complete) | `●` | New package — extracted from `SharedKernel.Caching.Redis`: `RedLockDistributedLockService`, `RedLockRenewableLock` + `KeepAliveAsync`, `RedisLockOptions`, `AddRedisDistributedLocking`; sources `IConnectionMultiplexer` via `AddRedisConnection` from `.Redis.Core`; 41 tests passing |
+| `SharedKernel.Caching.Redis.HashStore` | Phase 35 (pending) | `○` | New package — extracted from `SharedKernel.Caching.Redis`: `IRedisHashService`, `ITypedHashStore<T>` |
+| `SharedKernel.Caching.Redis.PubSub` | Phase 36 (pending) | `○` | New package — extracted from `SharedKernel.Caching.Redis`: `IRedisChannelService`, `ICacheInvalidationBus`, receiver |
 
 ---
 
@@ -1881,6 +1890,493 @@ Cache efficiency is operationally critical — a hit rate drop from 95% to 70% m
 
 ---
 
+## Phase: RedisConnectionCore <!-- phase-key: SK.02.RedisConnectionCore -->
+
+> Extract a new foundational `SharedKernel.Caching.Redis.Core` package owning `IConnectionMultiplexer` registration, `ConnectionHealthState` tracking, and a reusable Polly v8 `ResiliencePipeline` factory — the shared dependency root for L2, distributed locking, hash store, and pub/sub packages.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| RC-01 | Create `SharedKernel.Caching.Redis.Core.csproj` (`net10.0`; refs `SharedKernel.Caching.Abstractions`, `StackExchange.Redis`, `Polly.Core`, `Microsoft.Extensions.DependencyInjection.Abstractions`) | SharedKernel.Caching.Redis.Core | `●` |
+| RC-02 | Create `RedisConnectionOptions.cs` — `ConnectionString`, `ConnectTimeoutMs` (default `5000`), validated via `[Required]`/`[Range]` | SharedKernel.Caching.Redis.Core | `●` |
+| RC-03 | Create `RedisCircuitBreakerOptions.cs` — generalized from `RedisL2Options.CircuitBreakerOptions`: `Enabled`, `FailureThreshold`, `SamplingDuration`, `BreakDuration`, `MinimumThroughput` | SharedKernel.Caching.Redis.Core | `●` |
+| RC-04 | Create `RedisConnectionHealthTracker.cs` — wraps `IConnectionMultiplexer.ConnectionRestored`/`ConnectionFailed`, exposes `ConnectionHealthState ConnectionHealth`, `internal` event handlers with `InternalsVisibleTo` for test simulation | SharedKernel.Caching.Redis.Core | `●` |
+| RC-05 | Create `Extensions/RedisConnectionCoreExtensions.cs` — `AddRedisConnection(this IServiceCollection, string connectionString, Action<RedisConnectionOptions>? configure = null)`; `TryAddSingleton<IConnectionMultiplexer>` (first caller wins); `TryAddSingleton<RedisConnectionHealthTracker>` | SharedKernel.Caching.Redis.Core | `●` |
+| RC-06 | Create `Extensions/RedisCircuitBreakerExtensions.cs` — `AddRedisCircuitBreaker(this IServiceCollection, Action<RedisCircuitBreakerOptions>? configure = null)`; registers `ResiliencePipeline` singleton only when `Enabled = true`, using the FailureRatio=1.0/MinimumThroughput pattern from Phase 30 | SharedKernel.Caching.Redis.Core | `●` |
+| RC-07 | Register project in `Platform.SharedKernel.slnx` under `02.Caching` solution folder | Solution | `●` |
+| RC-08 | Stub `SharedKernel.Caching.Redis.Core.Tests` nested test project (xUnit, references `16.Testing`) | SharedKernel.Caching.Redis.Core.Tests | `●` |
+| RC-09 | Re-partition relevant subset of the existing 154 Redis tests: connection registration (`TryAddSingleton` first-caller-wins), `ConnectionHealthState` transitions, circuit breaker pipeline construction (enabled/disabled) | SharedKernel.Caching.Redis.Core.Tests | `●` |
+
+---
+
+### Ph32 (P-140) — Goal
+
+`SharedKernel.Caching.Redis` today bundles four infrastructure roles — L2 cache backplane, distributed locking, hash storage, pub/sub — all silently sharing one `IConnectionMultiplexer` via `TryAddSingleton` ordering, plus duplicated/scoped Polly circuit breaker plumbing (`RedisL2Options.CircuitBreakerOptions`) and connection-health tracking embedded inside `RedisChannelService`. This phase extracts those three cross-cutting concerns — connection lifecycle, health monitoring, and resilience — into a new standalone `SharedKernel.Caching.Redis.Core` package. It becomes the dependency root for Phases 33–36 (L2 refactor, distributed locking, hash store, pub/sub extraction), each of which sources `IConnectionMultiplexer` and the optional `ResiliencePipeline` from this package instead of registering or assuming a multiplexer independently.
+
+This package knows about Redis connections and resilience only — zero references to FusionCache, RedLock.net, or any capability-specific (hash/channel/lock) type.
+
+### Ph32 (P-140) — Scope
+
+- **Package(s) affected:** New `SharedKernel.Caching.Redis.Core` (create)
+- **New files:**
+  - `02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.csproj`
+  - `02.Caching/SharedKernel.Caching.Redis.Core/RedisConnectionOptions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis.Core/RedisCircuitBreakerOptions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis.Core/RedisConnectionHealthTracker.cs`
+  - `02.Caching/SharedKernel.Caching.Redis.Core/Extensions/RedisConnectionCoreExtensions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis.Core/Extensions/RedisCircuitBreakerExtensions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.Tests/` (nested test project)
+- **Modified files:** `Platform.SharedKernel.slnx` (register new project under `02.Caching`)
+- **Deleted files:** None in this phase — `SharedKernel.Caching.Redis` is not yet modified to consume this package; that begins in Phase 33. This phase only creates the new package and its own tests in isolation.
+
+### Ph32 (P-140) — Implementation Rules
+
+1. The `.csproj` references `SharedKernel.Caching.Abstractions` (for `ConnectionHealthState`, which already exists there per Phase 26 — do **not** redeclare it), `StackExchange.Redis` (>= 2.13.1), `Polly.Core` (8.5.2), and `Microsoft.Extensions.DependencyInjection.Abstractions` (10.0.1). No FusionCache packages, no RedLock.net, no `Microsoft.Extensions.Hosting.Abstractions`.
+2. `ConnectionHealthState` enum remains defined in `SharedKernel.Caching.Abstractions` (Phase 26) — it is **not** duplicated here. `RedisConnectionHealthTracker` consumes the existing enum.
+3. `AddRedisConnection(this IServiceCollection, string connectionString, Action<RedisConnectionOptions>? configure = null)` is the single DI entry point. It:
+   - Parses `ConfigurationOptions` from `connectionString`, applies `ConnectTimeoutMs` and `AbortOnConnectFail = false`.
+   - Calls `services.TryAddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(configOptions))` — preserves the existing "first caller wins" semantics verbatim from `AddRedisL2`/`AddRedisDistributedLocking`.
+   - Calls `services.TryAddSingleton<RedisConnectionHealthTracker>()`.
+4. `RedisConnectionHealthTracker` constructor takes `IConnectionMultiplexer` and `ILogger<RedisConnectionHealthTracker>`. It subscribes to `ConnectionRestored`/`ConnectionFailed` in its constructor (mirrors the Phase 26 `RedisChannelService` pattern: `volatile int _connectionHealth` cast to/from `ConnectionHealthState`, `internal` `OnConnectionRestored`/`OnConnectionFailed` handlers exposed via `InternalsVisibleTo` for test simulation). It exposes `ConnectionHealthState ConnectionHealth { get; }`.
+5. `RedisConnectionHealthTracker` does **not** itself perform any resubscription/replay logic — that is specific to `RedisChannelService` (pub/sub) and remains in the Phase 36 package. This tracker is a passive health-state observer that any dependent package can inject for health-check reporting (e.g., via `IHealthCheck`).
+6. `RedisCircuitBreakerOptions` is a direct generalization of `RedisL2Options.CircuitBreakerOptions` (Phase 30) — same five properties (`Enabled`, `FailureThreshold`, `SamplingDuration`, `BreakDuration`, `MinimumThroughput`), same defaults, same `[Range]` validation attributes. It is a top-level public class (not nested) so hash store, channel service, and distributed locking packages can each bind their own instance independently.
+7. `AddRedisCircuitBreaker(this IServiceCollection, Action<RedisCircuitBreakerOptions>? configure = null)` registers `ResiliencePipeline` as singleton **only** when `Enabled = true`, using the exact FailureRatio=1.0/MinimumThroughput mapping pattern established in Phase 30 (`FailureRatio = 1.0`, `MinimumThroughput = FailureThreshold`, `BreakDuration` minimum 500ms enforced by Polly itself). This is registered via `TryAddSingleton` so a service that calls it multiple times (once per capability package, e.g., hash store and pub/sub each calling it defensively) does not throw or duplicate.
+8. No service in this package depends on `ICachingBuilder` — `AddRedisConnection` and `AddRedisCircuitBreaker` are plain `IServiceCollection` extensions. `ICachingBuilder`-based fluent chaining is the responsibility of consuming packages (L2, locking, hash, pub/sub) which wrap these calls.
+9. All public types carry XML doc comments. `RedisConnectionOptions` and `RedisCircuitBreakerOptions` XML docs must state they are the canonical shapes — Phases 33–36 must bind to these types, not redeclare local copies.
+10. This package introduces **no breaking change** to `SharedKernel.Caching.Redis` in this phase — it exists standalone and is wired into the slimmed `SharedKernel.Caching.Redis` only in Phase 33.
+
+### Ph32 (P-140) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Caching.Redis.Core.csproj` | SharedKernel.Caching.Redis.Core | Create | Project definition; `net10.0`; refs Abstractions + StackExchange.Redis + Polly.Core |
+| `RedisConnectionOptions.cs` | SharedKernel.Caching.Redis.Core | Create | `ConnectionString`, `ConnectTimeoutMs` — canonical connection options shape |
+| `RedisCircuitBreakerOptions.cs` | SharedKernel.Caching.Redis.Core | Create | Generalized circuit breaker options (from Ph.30 `RedisL2Options.CircuitBreakerOptions`) |
+| `RedisConnectionHealthTracker.cs` | SharedKernel.Caching.Redis.Core | Create | `ConnectionHealthState` tracker; reconnect/failure event wiring (generalized from Ph.26 `RedisChannelService`) |
+| `Extensions/RedisConnectionCoreExtensions.cs` | SharedKernel.Caching.Redis.Core | Create | `AddRedisConnection` — `TryAddSingleton<IConnectionMultiplexer>` + health tracker registration |
+| `Extensions/RedisCircuitBreakerExtensions.cs` | SharedKernel.Caching.Redis.Core | Create | `AddRedisCircuitBreaker` — conditional `ResiliencePipeline` singleton |
+| `SharedKernel.Caching.Redis.Core.Tests/` | SharedKernel.Caching.Redis.Core.Tests | Create | Nested xUnit test project |
+| `Platform.SharedKernel.slnx` | Solution | Modify | Register `SharedKernel.Caching.Redis.Core` under `02.Caching` |
+
+### Ph32 (P-140) — Acceptance Criteria
+
+- [ ] New project `SharedKernel.Caching.Redis.Core` exists, targets `net10.0`, references only `SharedKernel.Caching.Abstractions`, `StackExchange.Redis`, `Polly.Core`, `Microsoft.Extensions.DependencyInjection.Abstractions`
+- [ ] `AddRedisConnection` registers `IConnectionMultiplexer` via `TryAddSingleton` — first caller wins, identical semantics to current `AddRedisL2`/`AddRedisDistributedLocking`
+- [ ] `RedisConnectionHealthTracker` exposes `ConnectionHealthState ConnectionHealth`; wired to `ConnectionRestored`/`ConnectionFailed`; `internal` handlers exposed via `InternalsVisibleTo`
+- [ ] `ConnectionHealthState` enum is NOT duplicated — sourced from `SharedKernel.Caching.Abstractions` (Phase 26)
+- [ ] `RedisCircuitBreakerOptions` matches the five-property shape of Phase 30's `RedisL2Options.CircuitBreakerOptions`
+- [ ] `AddRedisCircuitBreaker` registers `ResiliencePipeline` singleton only when `Enabled = true`, using FailureRatio=1.0/MinimumThroughput pattern
+- [ ] No FusionCache, RedLock.net, or capability-specific (hash/channel/lock) types present in this package
+- [ ] Project registered in `Platform.SharedKernel.slnx` under `02.Caching`
+- [ ] New tests cover: connection registration first-caller-wins, health state transitions (Connected/Reconnecting/Disconnected), circuit breaker pipeline construction (enabled returns non-null, disabled returns null)
+- [ ] All public types carry XML doc comments
+- [ ] `dotnet build` clean; no new compile warnings
+
+### Ph32 (P-140) — Dependencies
+
+- Requires prior incomplete phase: None — all phases 1–31 complete
+- Unblocks: Phase 33 (L2 refactor), Phase 34 (distributed locking extraction), Phase 35 (hash store extraction), Phase 36 (pub/sub extraction) — all four source `IConnectionMultiplexer` and `ResiliencePipeline` from this package
+
+### Ph32 (P-140) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: >= 2.13.1
+- Polly.Core: 8.5.2 (unchanged from Phase 30)
+- ZiggyCreatures.FusionCache: N/A (no reference in this package)
+- Microsoft.Extensions.DependencyInjection.Abstractions: 10.0.1
+- .NET: `net10.0`
+
+---
+
+## Phase: RedisL2Refactor <!-- phase-key: SK.02.RedisL2Refactor -->
+
+> Slim `SharedKernel.Caching.Redis` to contain only the FusionCache L2 distributed backplane (`AddRedisL2`, `RedisL2Options`, Brotli compression) — sourcing `IConnectionMultiplexer` and the circuit breaker pipeline from `SharedKernel.Caching.Redis.Core` (Phase 32) instead of self-registering.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| RL2-01 | Add `<ProjectReference>` to `SharedKernel.Caching.Redis.Core.csproj` | SharedKernel.Caching.Redis | `●` |
+| RL2-02 | Update `AddRedisL2` to call `services.AddRedisConnection(connectionString, ...)` (Phase 32) instead of inline `TryAddSingleton<IConnectionMultiplexer>` + `ConnectionMultiplexer.Connect` | SharedKernel.Caching.Redis | `●` |
+| RL2-03 | Update `AddRedisL2` to call `services.AddRedisCircuitBreaker(...)` (Phase 32) instead of the inline `RedisL2Options.CircuitBreakerOptions` Polly registration; remove `RedisL2Options.CircuitBreaker` nested class — replaced by `RedisCircuitBreakerOptions` from Core | SharedKernel.Caching.Redis | `●` |
+| RL2-04 | Remove `Polly.Core` direct `PackageReference` from `SharedKernel.Caching.Redis.csproj` (now transitive via `SharedKernel.Caching.Redis.Core`) — verify transitive resolution is sufficient or keep as direct ref if `RedisHashService`/`RedisChannelService` types still compile in this assembly during transition | SharedKernel.Caching.Redis | `●` |
+| RL2-05 | Verify `services.AddSharedKernelCaching(...).AddRedisL2(connectionString)` DI usage shape is unchanged for consumers — no signature changes to `AddRedisL2` or `RedisL2Options` (minus the removed `CircuitBreaker` nested class, replaced by a top-level `CircuitBreaker` property of type `RedisCircuitBreakerOptions` from Core for source-compat) | SharedKernel.Caching.Redis | `●` |
+| RL2-06 | Confirm `RedisChannelService.cs`, `RedisHashService.cs`, `TypedHashStore.cs`, `RedisCacheInvalidationBus.cs`, `CacheInvalidationReceiver.cs`, `RedLockDistributedLockService.cs`, `RedLockRenewableLock.cs`, `Batch/*`, and their corresponding `Extensions/*` files remain present and compiling in this package for this phase (their relocation is Phases 34–36 — not removed yet) | SharedKernel.Caching.Redis | `●` |
+| RL2-07 | Re-run full Redis test suite against the now-Core-backed `AddRedisL2`; verify zero regressions | SharedKernel.Caching.Redis.Tests | `●` |
+| RL2-08 | Update `02.Caching/CLAUDE.md` package table: `SharedKernel.Caching.Redis` row updated to reference `SharedKernel.Caching.Redis.Core` as a dependency | SharedKernel.Caching.Redis | `●` |
+
+---
+
+### Ph33 (P-141) — Goal
+
+This phase performs the minimal "wire the L2 path through Core" step: `AddRedisL2` stops self-registering `IConnectionMultiplexer` and the circuit breaker pipeline, sourcing both from `SharedKernel.Caching.Redis.Core` (Phase 32) instead. The public DI surface (`AddRedisL2(...)`, `AddBrotliCompression(...)`) remains functionally equivalent — `services.AddSharedKernelCaching(...).AddRedisL2(connectionString)` continues to work unchanged from the consumer's perspective.
+
+**Important scope clarification:** this phase does **not** yet remove distributed locking, hash store, or pub/sub types from `SharedKernel.Caching.Redis` — that physical relocation happens in Phases 34, 35, and 36 respectively (each of which depends on Phase 32, not on this phase). This phase's job is narrowly: make `AddRedisL2` itself Core-backed, and prepare the package's dependency graph (add `ProjectReference` to Core) so that Phases 34–36 can each independently move their slice out without `AddRedisL2` regressing. After Phases 34–36 land, `SharedKernel.Caching.Redis` will contain only the L2 backplane — but that end-state is reached cumulatively, not solely by this phase.
+
+### Ph33 (P-141) — Scope
+
+- **Package(s) affected:** `SharedKernel.Caching.Redis` (modify)
+- **New files:** None
+- **Modified files:**
+  - `SharedKernel.Caching.Redis.csproj` — add `<ProjectReference>` to `SharedKernel.Caching.Redis.Core.csproj`; re-evaluate `Polly.Core` direct reference
+  - `Extensions/RedisServiceCollectionExtensions.cs` — `AddRedisL2` sources `IConnectionMultiplexer` and `ResiliencePipeline` from Core extensions
+  - `Extensions/RedisL2Options.cs` — `CircuitBreaker` nested class replaced by a top-level `RedisCircuitBreakerOptions` (from Core) property; `RedisL2Options` itself retains `ConnectionString`, `KeyPrefix`, `ConnectTimeoutMs`
+  - `02.Caching/CLAUDE.md` — package table updated
+- **Deleted files:** None in this phase
+
+### Ph33 (P-141) — Implementation Rules
+
+1. `AddRedisL2` calls `services.AddRedisConnection(connectionString, o => { o.ConnectTimeoutMs = options.ConnectTimeoutMs; })` (Phase 32) in place of the inline `ConfigurationOptions.Parse` + `TryAddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(...))` block. The resulting `IConnectionMultiplexer` registration is identical in shape (`TryAddSingleton`, first caller wins) — only the registration call site moves.
+2. `AddRedisL2` calls `services.AddRedisCircuitBreaker(o => { /* map from RedisL2Options.CircuitBreaker */ })` (Phase 32) in place of the inline `ResiliencePipelineBuilder().AddCircuitBreaker(...)` registration. The `FailureRatio = 1.0` / `MinimumThroughput = FailureThreshold` mapping logic moves to Core verbatim — `AddRedisL2` only forwards configuration values.
+3. `RedisL2Options.CircuitBreaker` changes type from the locally-nested `RedisL2Options.CircuitBreakerOptions` class to `SharedKernel.Caching.Redis.Core.RedisCircuitBreakerOptions` (a top-level class). The property name `CircuitBreaker` and all five sub-property names (`Enabled`, `FailureThreshold`, `SamplingDuration`, `BreakDuration`, `MinimumThroughput`) are preserved exactly — this is a type-relocation, not a rename, so `options.CircuitBreaker.Enabled = true` continues to compile unchanged for consumers who configure `AddRedisL2(connectionString, o => o.CircuitBreaker.Enabled = true)`.
+4. `services.AddStackExchangeRedisCache(...)` and the `AddFusionCache().WithRegisteredDistributedCache().WithRegisteredSerializer().WithStackExchangeRedisBackplane(...)` chain are **unchanged** — these are the genuinely L2-specific FusionCache wiring calls and remain in `AddRedisL2` verbatim.
+5. The Phase 18 AOT rule is unaffected: `AddRedisL2` continues to use `.WithRegisteredSerializer()`, never `.WithSystemTextJsonSerializer()`.
+6. Brotli compression (`AddBrotliCompression`, `BrotliCacheSerializer`) lives in `SharedKernel.Caching.FusionCache` (per Phase 16/B-01..B-05) — it is **not** moved by this phase. The acceptance criterion "Brotli compression rules continue to function" refers to the existing cross-package wiring (`AddRedisL2` + `AddBrotliCompression` chain) continuing to work after `AddRedisL2`'s internals change.
+7. If `Polly.Core` is no longer directly used by any type compiled into `SharedKernel.Caching.Redis.csproj` after this phase (i.e., `AddRedisL2` no longer references `Polly.CircuitBreaker` types directly because `AddRedisCircuitBreaker` encapsulates them), remove the direct `PackageReference Include="Polly.Core"` — it remains available transitively via `SharedKernel.Caching.Redis.Core`. However, `RedisHashService` and `RedisChannelService` (still in this package until Phases 35/36) reference `Polly.ResiliencePipeline` directly via constructor injection — **keep** the direct `PackageReference` until those types are relocated. Verify the actual compile dependency before removing; do not remove speculatively.
+8. All public types carry XML doc comments. `RedisL2Options.CircuitBreaker` XML doc must note the type now originates from `SharedKernel.Caching.Redis.Core`.
+
+### Ph33 (P-141) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Caching.Redis.csproj` | SharedKernel.Caching.Redis | Modify | Add `ProjectReference` to `SharedKernel.Caching.Redis.Core`; re-evaluate `Polly.Core` direct ref |
+| `Extensions/RedisServiceCollectionExtensions.cs` | SharedKernel.Caching.Redis | Modify | `AddRedisL2` sources multiplexer + circuit breaker pipeline from Core |
+| `Extensions/RedisL2Options.cs` | SharedKernel.Caching.Redis | Modify | `CircuitBreaker` property retyped to `RedisCircuitBreakerOptions` (Core); nested `CircuitBreakerOptions` class removed |
+| `02.Caching/CLAUDE.md` | — | Modify | Package table: `SharedKernel.Caching.Redis` now depends on `SharedKernel.Caching.Redis.Core` |
+
+### Ph33 (P-141) — Acceptance Criteria
+
+- [ ] `SharedKernel.Caching.Redis.csproj` references `SharedKernel.Caching.Redis.Core`
+- [ ] `AddRedisL2` sources `IConnectionMultiplexer` via `services.AddRedisConnection(...)` (Phase 32) — no duplicate inline registration
+- [ ] `AddRedisL2` sources the circuit breaker `ResiliencePipeline` via `services.AddRedisCircuitBreaker(...)` (Phase 32) — `RedisL2Options.CircuitBreaker` is `RedisCircuitBreakerOptions` from Core
+- [ ] `services.AddSharedKernelCaching(...).AddRedisL2(connectionString)` DI usage shape unchanged — including `o => o.CircuitBreaker.Enabled = true` configuration syntax
+- [ ] Brotli compression chain (`AddRedisL2(...).AddBrotliCompression(...)`) continues to function — covered by existing tests
+- [ ] No duplicate `IConnectionMultiplexer` registration when both `AddRedisL2` and Core's `AddRedisConnection` are reachable in the same container
+- [ ] Distributed locking, hash store, and pub/sub types remain present in this package for this phase (relocation deferred to Phases 34–36)
+- [ ] Relevant subset of the 154 Redis tests (L2 round-trip, circuit breaker open/close/short-circuit, Brotli compression) passing against the Core-backed `AddRedisL2`
+- [ ] `02.Caching/CLAUDE.md` package table updated
+- [ ] `dotnet build` clean; no new compile warnings
+
+### Ph33 (P-141) — Dependencies
+
+- Requires Phase 32 (P-140) to be complete: Yes — `SharedKernel.Caching.Redis.Core` must exist with `AddRedisConnection` and `AddRedisCircuitBreaker`
+- Unblocks: Phases 34, 35, 36 can proceed independently once Core-backed `AddRedisL2` confirms the dependency graph pattern (`ProjectReference` to Core + sourcing multiplexer/pipeline from Core extensions) works end-to-end
+
+### Ph33 (P-141) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: >= 2.13.1 (unchanged)
+- ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis: 2.6.0 (unchanged)
+- Polly.Core: 8.5.2 (now sourced transitively via Core; direct ref retained pending Phase 35/36)
+- .NET: `net10.0`
+
+---
+
+## Phase: RedisLockingExtraction <!-- phase-key: SK.02.RedisLockingExtraction -->
+
+> Extract `IDistributedLockService`/`IRenewableLock` RedLock.net implementation (`RedLockDistributedLockService`, `RedLockRenewableLock`, `KeepAliveAsync`, `AddRedisDistributedLocking`) into a new standalone `SharedKernel.Caching.Redis.DistributedLocking` package depending on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` (Phase 32) + RedLock.net.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| RDL-01 | Create `SharedKernel.Caching.Redis.DistributedLocking.csproj` (`net10.0`; refs `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, `RedLock.net` 2.3.2) | SharedKernel.Caching.Redis.DistributedLocking | `●` |
+| RDL-02 | Move `Implementations/RedLockDistributedLockService.cs` from `SharedKernel.Caching.Redis` → new package, namespace updated to `SharedKernel.Caching.Redis.DistributedLocking.Implementations` | SharedKernel.Caching.Redis.DistributedLocking | `●` |
+| RDL-03 | Move `RedLockRenewableLock.cs` from `SharedKernel.Caching.Redis` → new package; `KeepAliveAsync` static extension moves with it via `Extensions/RenewableLockExtensions.cs` | SharedKernel.Caching.Redis.DistributedLocking | `●` |
+| RDL-04 | Move `Extensions/RedisDistributedLockingExtensions.cs` (`AddRedisDistributedLocking` on `ICachingBuilder` + `[Obsolete]` `IServiceCollection` shim) and `Extensions/RedisLockOptions.cs` → new package; `AddRedisDistributedLocking` now calls `services.AddRedisConnection(...)` (Phase 32) instead of inline multiplexer registration | SharedKernel.Caching.Redis.DistributedLocking | `●` |
+| RDL-05 | Move/recreate `RedisCachingBuilder` internal helper (used by the `[Obsolete]` `IServiceCollection` shim) into the new package — do not duplicate; if `SharedKernel.Caching.Redis` still needs an internal `ICachingBuilder` shim for its own `[Obsolete]` overloads, each package owns its own minimal copy (small, internal, no shared dependency) | SharedKernel.Caching.Redis.DistributedLocking | `●` |
+| RDL-06 | Remove `RedLockDistributedLockService.cs`, `RedLockRenewableLock.cs`, `Extensions/RedisDistributedLockingExtensions.cs`, `Extensions/RedisLockOptions.cs`, `Extensions/RenewableLockExtensions.cs` from `SharedKernel.Caching.Redis` | SharedKernel.Caching.Redis | `●` |
+| RDL-07 | Remove `RedLock.net` `PackageReference` from `SharedKernel.Caching.Redis.csproj` | SharedKernel.Caching.Redis | `●` |
+| RDL-08 | Register new project in `Platform.SharedKernel.slnx` under `02.Caching`; create nested `SharedKernel.Caching.Redis.DistributedLocking.Tests` | Solution / SharedKernel.Caching.Redis.DistributedLocking.Tests | `●` |
+| RDL-09 | Relocate RedLock-related tests from `SharedKernel.Caching.Redis.Tests` (`RedLockIntegrationTests.cs`, `RenewableLockIntegrationTests.cs`, `FakeRenewableLockTests.cs`, `IDistributedLockServiceContractTests.cs`) to `SharedKernel.Caching.Redis.DistributedLocking.Tests` | SharedKernel.Caching.Redis.DistributedLocking.Tests | `●` |
+| RDL-10 | Update `02.Caching/CLAUDE.md` package table with the new package's role and references | — | `●` |
+
+---
+
+### Ph34 (P-142) — Goal
+
+Distributed locking is an infrastructure coordination primitive, not a caching primitive — its presence in `SharedKernel.Caching.Redis` is a historical artifact of "it also uses Redis." This phase extracts `IDistributedLockService`/`IRenewableLock` RedLock.net implementation into `SharedKernel.Caching.Redis.DistributedLocking`, depending on `SharedKernel.Caching.Abstractions` (interfaces unchanged) and `SharedKernel.Caching.Redis.Core` (Phase 32) for `IConnectionMultiplexer` and connection health. A microservice that needs only distributed locks (e.g., a Hangfire job coordinator or leader-election worker) references `Abstractions` + `Redis.Core` + `Redis.DistributedLocking` — zero transitive dependency on FusionCache, hash-store types, or pub/sub types.
+
+The existing `AddRedisDistributedLocking(connectionString)` fluent registration shape (canonical `ICachingBuilder` overload + `[Obsolete]` `IServiceCollection` shim, per Phase 19) is preserved exactly.
+
+### Ph34 (P-142) — Scope
+
+- **Package(s) affected:** New `SharedKernel.Caching.Redis.DistributedLocking` (create); `SharedKernel.Caching.Redis` (remove relocated files)
+- **New files:**
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.csproj`
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/Implementations/RedLockDistributedLockService.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/RedLockRenewableLock.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/Extensions/RedisDistributedLockingExtensions.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/Extensions/RedisLockOptions.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/Extensions/RenewableLockExtensions.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.Tests/` (nested test project)
+- **Modified files:**
+  - `SharedKernel.Caching.Redis.csproj` — remove `RedLock.net` package reference
+  - `02.Caching/CLAUDE.md` — package table updated
+- **Deleted files (relocated, not deleted from solution):**
+  - `02.Caching/SharedKernel.Caching.Redis/Implementations/RedLockDistributedLockService.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/RedLockRenewableLock.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/Extensions/RedisDistributedLockingExtensions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/Extensions/RedisLockOptions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/Extensions/RenewableLockExtensions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/RedLockIntegrationTests.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/RenewableLockIntegrationTests.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/FakeRenewableLockTests.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/Abstractions/IDistributedLockServiceContractTests.cs`
+
+### Ph34 (P-142) — Implementation Rules
+
+1. `IDistributedLockService` and `IRenewableLock` interface contracts in `SharedKernel.Caching.Abstractions` are **unchanged** — no breaking change to the abstraction. Only the implementation (`RedLockDistributedLockService`, `RedLockRenewableLock`) and DI extension move.
+2. `RedLockDistributedLockService` and `RedLockRenewableLock` namespaces change from `SharedKernel.Caching.Redis.*` to `SharedKernel.Caching.Redis.DistributedLocking.*`. No behavioral changes.
+3. `AddRedisDistributedLocking(this ICachingBuilder, string connectionString, Action<RedisLockOptions>? configure = null)` is preserved verbatim in signature and behavior, with one internal change: it calls `services.AddRedisConnection(connectionString, o => o.ConnectTimeoutMs = options.ConnectTimeoutMs)` (Phase 32) instead of its own inline `ConfigurationOptions.Parse` + `TryAddSingleton<IConnectionMultiplexer>` block. The `TryAddSingleton` "first caller wins" guarantee is preserved — whichever of `AddRedisL2`, `AddRedisDistributedLocking`, `AddRedisHashService`, or `AddRedisChannelService` (Phases 33/35/36) runs first wins the multiplexer registration via Core.
+4. `RedLockFactory` registration (`services.TryAddSingleton(sp => RedLockFactory.Create(...))`) and `IDistributedLockFactory` exposure remain unchanged — these are RedLock.net-specific and stay in this package.
+5. The `[Obsolete]` `AddRedisDistributedLocking(this IServiceCollection, ...)` shim (Phase 19) is preserved. It needs an internal `ICachingBuilder` implementation to delegate to the canonical overload — this package defines its own minimal `internal sealed class RedisLockCachingBuilder(IServiceCollection services) : ICachingBuilder` (do not attempt to share `RedisCachingBuilder` across packages via a project reference — each extraction package owns a tiny private copy of this trivial adapter; this avoids introducing a dependency purely for a 3-line internal type).
+6. **Renewable lock re-acquisition behavior is preserved exactly** (Phase 23 rule): RedLock.net 2.3.2 has no public `ExtendAsync`; `RedLockRenewableLock` uses dispose-then-recreate (`CreateLockAsync` on the same resource after disposing the old lock). `KeepAliveAsync` remains a static extension method on `IRenewableLock`, now declared in `SharedKernel.Caching.Redis.DistributedLocking.Extensions`.
+7. `IRenewableLock.RenewAsync` returns `false` for a lost lock and never throws (Phase 23 rule, unchanged). `IsAcquired` transitions to `false` after `DisposeAsync` and after a failed renewal.
+8. `FakeDistributedLockService` and `FakeRenewableLock` (in `16.Testing`, Phase 23) are **not** moved — `16.Testing` is outside this domain's jurisdiction and those types reference only `SharedKernel.Caching.Abstractions`, which is unaffected.
+9. All public types carry XML doc comments. The package XML doc / `<Description>` must state: "Distributed mutual-exclusion locking over Redis via RedLock.net. Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), hash store, or pub/sub packages."
+
+### Ph34 (P-142) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Caching.Redis.DistributedLocking.csproj` | SharedKernel.Caching.Redis.DistributedLocking | Create | Project definition; refs Abstractions + Redis.Core + RedLock.net |
+| `Implementations/RedLockDistributedLockService.cs` | SharedKernel.Caching.Redis.DistributedLocking | Create (relocated) | `IDistributedLockService` impl via RedLock.net |
+| `RedLockRenewableLock.cs` | SharedKernel.Caching.Redis.DistributedLocking | Create (relocated) | `IRenewableLock` impl; re-acquisition strategy |
+| `Extensions/RedisDistributedLockingExtensions.cs` | SharedKernel.Caching.Redis.DistributedLocking | Create (relocated) | `AddRedisDistributedLocking` (canonical + `[Obsolete]` shim); sources multiplexer from Core |
+| `Extensions/RedisLockOptions.cs` | SharedKernel.Caching.Redis.DistributedLocking | Create (relocated) | Lock options (`ConnectionString`, `ConnectTimeoutMs`, lock-specific settings) |
+| `Extensions/RenewableLockExtensions.cs` | SharedKernel.Caching.Redis.DistributedLocking | Create (relocated) | `KeepAliveAsync` static extension |
+| `SharedKernel.Caching.Redis.DistributedLocking.Tests/` | SharedKernel.Caching.Redis.DistributedLocking.Tests | Create | Relocated RedLock + renewable lock tests |
+| `SharedKernel.Caching.Redis/Implementations/RedLockDistributedLockService.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/RedLockRenewableLock.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/Extensions/RedisDistributedLockingExtensions.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/Extensions/RedisLockOptions.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/Extensions/RenewableLockExtensions.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis.csproj` | SharedKernel.Caching.Redis | Modify | Remove `RedLock.net` package reference |
+| `02.Caching/CLAUDE.md` | — | Modify | Package table: add `SharedKernel.Caching.Redis.DistributedLocking` row |
+
+### Ph34 (P-142) — Acceptance Criteria
+
+- [ ] New package `SharedKernel.Caching.Redis.DistributedLocking` contains `RedLockDistributedLockService`, `RedLockRenewableLock`, `KeepAliveAsync`, `RedisLockOptions`, `AddRedisDistributedLocking`
+- [ ] Package depends on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` + `RedLock.net` — no reference to `SharedKernel.Caching.Redis` (L2), hash store, or pub/sub packages
+- [ ] `IDistributedLockService` and `IRenewableLock` contracts in `SharedKernel.Caching.Abstractions` unchanged
+- [ ] `AddRedisDistributedLocking(connectionString)` fluent registration shape preserved (canonical `ICachingBuilder` overload + `[Obsolete]` `IServiceCollection` shim); `IConnectionMultiplexer` sourced from Phase 32's `AddRedisConnection`
+- [ ] Renewable lock re-acquisition behavior (no public `ExtendAsync` in RedLock.net 2.3.2) and `KeepAliveAsync` background renewal preserved with existing test coverage
+- [ ] `RedLock.net` package reference removed from `SharedKernel.Caching.Redis.csproj`
+- [ ] Relevant subset of the 154 Redis tests (acquire/timeout/release/expiry/renewal) relocated and passing against the new package
+- [ ] `02.Caching/CLAUDE.md` package table updated with the new package's role and references
+- [ ] `dotnet build` clean; no new compile warnings
+
+### Ph34 (P-142) — Dependencies
+
+- Requires Phase 32 (P-140) to be complete: Yes — `SharedKernel.Caching.Redis.Core` must provide `AddRedisConnection`
+- Requires Phase 33 (P-141) to be complete: No — independent of the L2 refactor; both depend only on Phase 32
+- Unblocks: Microservices needing only distributed locking (Hangfire coordinators, leader election workers) can take a minimal `Abstractions` + `Redis.Core` + `Redis.DistributedLocking` dependency
+
+### Ph34 (P-142) — Redis / FusionCache Version Pins
+
+- RedLock.net: 2.3.2 (unchanged — no public `ExtendAsync`, re-acquisition strategy retained)
+- StackExchange.Redis: >= 2.13.1 (via Core)
+- ZiggyCreatures.FusionCache: N/A (no reference in this package)
+- .NET: `net10.0`
+
+---
+
+## Phase: RedisHashExtraction <!-- phase-key: SK.02.RedisHashExtraction -->
+
+> Extract `IRedisHashService`/`ITypedHashStore<T>` (`RedisHashService`, `TypedHashStore<T>`, `AddRedisHashService`, `AddTypedHashStore<T>`) into a new standalone `SharedKernel.Caching.Redis.HashStore` package depending on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` (Phase 32).
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| RHS-01 | Create `SharedKernel.Caching.Redis.HashStore.csproj` (`net10.0`; refs `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`) | SharedKernel.Caching.Redis.HashStore | `●` |
+| RHS-02 | Move `RedisHashService.cs` from `SharedKernel.Caching.Redis` → new package, namespace updated to `SharedKernel.Caching.Redis.HashStore` | SharedKernel.Caching.Redis.HashStore | `●` |
+| RHS-03 | Move `TypedHashStore.cs` (internal sealed) → new package | SharedKernel.Caching.Redis.HashStore | `●` |
+| RHS-04 | Move `Extensions/RedisHashServiceExtensions.cs` (`AddRedisHashService`, `AddTypedHashStore<T>`) → new package; startup guard now validates against Phase 32's `IConnectionMultiplexer` registration (registered by `AddRedisConnection` from any of L2/locking/hash/pubsub) | SharedKernel.Caching.Redis.HashStore | `●` |
+| RHS-05 | Update `AddRedisHashService` to resolve the optional `ResiliencePipeline` via `sp.GetService<ResiliencePipeline>()` — sourced from Phase 32's `AddRedisCircuitBreaker` (registered by whichever package calls it) | SharedKernel.Caching.Redis.HashStore | `●` |
+| RHS-06 | Remove `RedisHashService.cs`, `TypedHashStore.cs`, `Extensions/RedisHashServiceExtensions.cs` from `SharedKernel.Caching.Redis` | SharedKernel.Caching.Redis | `●` |
+| RHS-07 | Register new project in `Platform.SharedKernel.slnx` under `02.Caching`; create nested `SharedKernel.Caching.Redis.HashStore.Tests` | Solution / SharedKernel.Caching.Redis.HashStore.Tests | `●` |
+| RHS-08 | Relocate hash-related tests (`RedisHashServiceIntegrationTests.cs`, `TypedHashStoreIntegrationTests.cs`) to `SharedKernel.Caching.Redis.HashStore.Tests`; preserve `InternalsVisibleTo` for `TypedHashStore<T>` access | SharedKernel.Caching.Redis.HashStore.Tests | `●` |
+| RHS-09 | Update `02.Caching/CLAUDE.md` package table with the new package's role and references | — | `●` |
+
+---
+
+### Ph35 (P-143) — Goal
+
+`IRedisHashService` and `ITypedHashStore<T>` are a general-purpose structured-storage primitive over Redis Hashes (sessions, configuration snapshots, counters) — conceptually closer to a lightweight key-value/document store than to "caching." Today, any service using `ITypedHashStore<OrderDto>` for session storage transitively pulls in FusionCache, RedLock.net, and pub/sub code via `SharedKernel.Caching.Redis`. This phase extracts hash-store types into `SharedKernel.Caching.Redis.HashStore`, giving hash-store consumers (often BFF/session-management services) a minimal, purpose-named dependency: `Abstractions` + `Redis.Core` + `Redis.HashStore`.
+
+### Ph35 (P-143) — Scope
+
+- **Package(s) affected:** New `SharedKernel.Caching.Redis.HashStore` (create); `SharedKernel.Caching.Redis` (remove relocated files)
+- **New files:**
+  - `02.Caching/SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.csproj`
+  - `02.Caching/SharedKernel.Caching.Redis.HashStore/RedisHashService.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.HashStore/TypedHashStore.cs` (relocated, internal sealed)
+  - `02.Caching/SharedKernel.Caching.Redis.HashStore/Extensions/RedisHashServiceExtensions.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.Tests/` (nested test project)
+- **Modified files:**
+  - `02.Caching/CLAUDE.md` — package table updated
+- **Deleted files (relocated, not deleted from solution):**
+  - `02.Caching/SharedKernel.Caching.Redis/RedisHashService.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/TypedHashStore.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/Extensions/RedisHashServiceExtensions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/RedisHashServiceIntegrationTests.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/TypedHashStoreIntegrationTests.cs`
+
+### Ph35 (P-143) — Implementation Rules
+
+1. `IRedisHashService` and `ITypedHashStore<T>` interface contracts in `SharedKernel.Caching.Abstractions` are **unchanged** — no breaking change. Only `RedisHashService` and `TypedHashStore<T>` implementations and the DI extension move.
+2. `RedisHashService` namespace changes from `SharedKernel.Caching.Redis` to `SharedKernel.Caching.Redis.HashStore`. Constructor signature (`IConnectionMultiplexer multiplexer, ResiliencePipeline? pipeline = null`) is unchanged — `IDatabase` is still obtained once via `multiplexer.GetDatabase()` and cached (Phase 7 rule).
+3. `TypedHashStore<T>` remains `internal sealed` — it is `internal` to `SharedKernel.Caching.Redis.HashStore` now (not `SharedKernel.Caching.Redis`). The `InternalsVisibleTo` attribute in the new `.csproj` targets `SharedKernel.Caching.Redis.HashStore.Tests`.
+4. `AddRedisHashService(this ICachingBuilder)` startup guard changes from checking `services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))` registered by `AddRedisL2`/`AddRedisDistributedLocking` to checking the same `IConnectionMultiplexer` type — now potentially registered by Phase 32's `AddRedisConnection` (called from any of L2, locking, hash, or pub/sub packages). The guard message updates to: `"AddRedisHashService requires AddRedisConnection (directly, or transitively via AddRedisL2 / AddRedisDistributedLocking / AddRedisChannelService) to be called first to register IConnectionMultiplexer."` The underlying check (`services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))`) is unchanged — only the error message and conceptual framing change, since the registration source is now centralized in Core.
+5. All typed methods continue to use `JsonTypeInfo<T>` — no `typeof(T)` reflection introduced (Phase 15/AOT rule, unchanged).
+6. The optional Polly circuit breaker pipeline continues to be resolved via `sp.GetService<ResiliencePipeline>()` (optional, not required) — now the pipeline may have been registered by Phase 32's `AddRedisCircuitBreaker`, called by whichever capability package's extension method invoked it. `RedisHashService` has zero knowledge of which package registered the pipeline — it only resolves the type.
+7. `AddTypedHashStore<T>(JsonTypeInfo<T> typeInfo)` extension preserves its guard: throws `InvalidOperationException("AddTypedHashStore<T> requires AddRedisHashService to be called first.")` if `IRedisHashService` is not registered (Phase 15 rule, unchanged).
+8. All public types carry XML doc comments. Package `<Description>` must state: "Structured Redis Hash storage (IRedisHashService, ITypedHashStore<T>). Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), distributed locking, or pub/sub packages."
+
+### Ph35 (P-143) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Caching.Redis.HashStore.csproj` | SharedKernel.Caching.Redis.HashStore | Create | Project definition; refs Abstractions + Redis.Core |
+| `RedisHashService.cs` | SharedKernel.Caching.Redis.HashStore | Create (relocated) | `IRedisHashService` impl; `JsonTypeInfo<T>` typed; shared `IDatabase` |
+| `TypedHashStore.cs` | SharedKernel.Caching.Redis.HashStore | Create (relocated) | `ITypedHashStore<T>` impl; internal sealed |
+| `Extensions/RedisHashServiceExtensions.cs` | SharedKernel.Caching.Redis.HashStore | Create (relocated) | `AddRedisHashService`, `AddTypedHashStore<T>`; guard updated for Core registration |
+| `SharedKernel.Caching.Redis.HashStore.Tests/` | SharedKernel.Caching.Redis.HashStore.Tests | Create | Relocated hash store tests |
+| `SharedKernel.Caching.Redis/RedisHashService.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/TypedHashStore.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/Extensions/RedisHashServiceExtensions.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `02.Caching/CLAUDE.md` | — | Modify | Package table: add `SharedKernel.Caching.Redis.HashStore` row |
+
+### Ph35 (P-143) — Acceptance Criteria
+
+- [ ] New package `SharedKernel.Caching.Redis.HashStore` contains `RedisHashService`, `TypedHashStore<T>` (internal sealed), `AddRedisHashService`, `AddTypedHashStore<T>`
+- [ ] Package depends on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` — no reference to `SharedKernel.Caching.Redis` (L2), distributed locking, or pub/sub packages
+- [ ] `IRedisHashService` and `ITypedHashStore<T>` contracts in `SharedKernel.Caching.Abstractions` unchanged
+- [ ] `AddRedisHashService()` / `AddTypedHashStore(JsonTypeInfo<T>)` fluent registration shapes preserved; startup guard validates against `IConnectionMultiplexer` (sourced via Phase 32)
+- [ ] All typed methods continue to use `JsonTypeInfo<T>` — no `typeof(T)` reflection introduced
+- [ ] Optional Polly circuit breaker pipeline continues to be resolved via `sp.GetService<ResiliencePipeline>()` (optional, sourced from Phase 32)
+- [ ] Relevant subset of the 154 Redis tests (set/get/get-all/delete/increment, typed store round-trip, shared multiplexer) relocated and passing against the new package
+- [ ] `02.Caching/CLAUDE.md` package table updated with the new package's role and references
+- [ ] `dotnet build` clean; no new compile warnings
+
+### Ph35 (P-143) — Dependencies
+
+- Requires Phase 32 (P-140) to be complete: Yes — `SharedKernel.Caching.Redis.Core` must provide `IConnectionMultiplexer` registration and optional `ResiliencePipeline`
+- Requires Phase 33 (P-141) / Phase 34 (P-142) to be complete: No — independent; all three (33/34/35) depend only on Phase 32
+- Unblocks: Session-management/BFF services needing only structured Redis Hash storage can take a minimal `Abstractions` + `Redis.Core` + `Redis.HashStore` dependency
+
+### Ph35 (P-143) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: >= 2.13.1 (via Core)
+- Polly.Core: 8.5.2 (optional, via Core, when circuit breaker enabled)
+- ZiggyCreatures.FusionCache: N/A (no reference in this package)
+- .NET: `net10.0`
+
+---
+
+## Phase: RedisPubSubExtraction <!-- phase-key: SK.02.RedisPubSubExtraction -->
+
+> Extract `IRedisChannelService`/`ICacheInvalidationBus` (`RedisChannelService`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver`) into a new standalone `SharedKernel.Caching.Redis.PubSub` package depending on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` (Phase 32). Stays within `02.Caching` — not moved to `07.Messaging`.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| RPS-01 | Create `SharedKernel.Caching.Redis.PubSub.csproj` (`net10.0`; refs `SharedKernel.Caching.Abstractions`, `SharedKernel.Caching.Redis.Core`, `Microsoft.Extensions.Hosting.Abstractions` for `CacheInvalidationReceiver`) | SharedKernel.Caching.Redis.PubSub | `●` |
+| RPS-02 | Move `RedisChannelService.cs` from `SharedKernel.Caching.Redis` → new package, namespace updated to `SharedKernel.Caching.Redis.PubSub`; reconnect/resubscribe replay logic (Phase 26 `Dictionary` + `_registryLock`, `volatile int _connectionHealth`) relocated intact, but `ConnectionRestored`/`ConnectionFailed` subscription now composes with (or supersedes) Phase 32's `RedisConnectionHealthTracker` — see Implementation Rule 3 | SharedKernel.Caching.Redis.PubSub | `●` |
+| RPS-03 | Move `RedisCacheInvalidationBus.cs` and `CacheInvalidationReceiver.cs` → new package | SharedKernel.Caching.Redis.PubSub | `●` |
+| RPS-04 | Move `Extensions/RedisChannelServiceExtensions.cs` and `Extensions/CacheInvalidationExtensions.cs` (`AddRedisChannelService`, `AddRedisCacheInvalidationBus`, `AddCacheInvalidationReceiver`) → new package; startup guards updated to validate against Phase 32's `IConnectionMultiplexer` | SharedKernel.Caching.Redis.PubSub | `●` |
+| RPS-05 | Remove `RedisChannelService.cs`, `RedisCacheInvalidationBus.cs`, `CacheInvalidationReceiver.cs`, `Extensions/RedisChannelServiceExtensions.cs`, `Extensions/CacheInvalidationExtensions.cs` from `SharedKernel.Caching.Redis` | SharedKernel.Caching.Redis | `●` |
+| RPS-06 | Remove `Microsoft.Extensions.Hosting.Abstractions` `PackageReference` from `SharedKernel.Caching.Redis.csproj` if no longer used (verify — `CacheInvalidationReceiver` was the only `BackgroundService` consumer) | SharedKernel.Caching.Redis | `●` |
+| RPS-07 | Register new project in `Platform.SharedKernel.slnx` under `02.Caching`; create nested `SharedKernel.Caching.Redis.PubSub.Tests` | Solution / SharedKernel.Caching.Redis.PubSub.Tests | `●` |
+| RPS-08 | Relocate pub/sub + invalidation tests (`RedisChannelServiceIntegrationTests.cs`, `ChannelReconnectIntegrationTests.cs`, `CacheInvalidationIntegrationTests.cs`, `CachingCoreOptionsDiTests.cs` if pub/sub-specific) to `SharedKernel.Caching.Redis.PubSub.Tests` | SharedKernel.Caching.Redis.PubSub.Tests | `●` |
+| RPS-09 | Update `02.Caching/CLAUDE.md` package table with the new package's role and references; add explicit statement that this package stays in `02.Caching` and why (07.Messaging durability contrast) | — | `●` |
+
+---
+
+### Ph36 (P-144) — Goal
+
+`IRedisChannelService` and `ICacheInvalidationBus` carry an explicit, deliberate at-most-once / no-delivery-guarantee contract — the architectural opposite of `07.Messaging`'s durable, outbox-backed, retryable contract. This phase extracts these types into `SharedKernel.Caching.Redis.PubSub`, depending on `SharedKernel.Caching.Abstractions` (interfaces, `CacheInvalidationMessage`, `CachingCoreOptions`, `ConnectionHealthState` — all unchanged) and `SharedKernel.Caching.Redis.Core` (Phase 32) for `IConnectionMultiplexer`, connection health, and circuit breaker pipeline.
+
+**This package remains within `02.Caching` — it is NOT moved to `07.Messaging`.** Moving these types into `07.Messaging` would (a) violate the layering rule that `07.Messaging` may not reference `02.Caching` types (`CacheInvalidationMessage`, `CachingCoreOptions`), and (b) create a foreseeable trap where developers assume `07.Messaging`-housed abstractions inherit its delivery guarantees. The existing XML-doc boundary ("ephemeral, no delivery guarantees, not a substitute for `07.Messaging`") is preserved and reinforced by the package name itself.
+
+### Ph36 (P-144) — Scope
+
+- **Package(s) affected:** New `SharedKernel.Caching.Redis.PubSub` (create); `SharedKernel.Caching.Redis` (remove relocated files)
+- **New files:**
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.csproj`
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/RedisChannelService.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/RedisCacheInvalidationBus.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/CacheInvalidationReceiver.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/Extensions/RedisChannelServiceExtensions.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/Extensions/CacheInvalidationExtensions.cs` (relocated)
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.Tests/` (nested test project)
+- **Modified files:**
+  - `SharedKernel.Caching.Redis.csproj` — remove `Microsoft.Extensions.Hosting.Abstractions` reference if unused; remove direct `Polly.Core` reference if unused (final cleanup — by this phase, `RedisHashService`/`RedisChannelService` are both relocated, so `SharedKernel.Caching.Redis` should have no remaining direct `Polly.ResiliencePipeline` consumer)
+  - `02.Caching/CLAUDE.md` — package table updated; explicit "stays in 02.Caching" rationale added
+- **Deleted files (relocated, not deleted from solution):**
+  - `02.Caching/SharedKernel.Caching.Redis/RedisChannelService.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/RedisCacheInvalidationBus.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/CacheInvalidationReceiver.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/Extensions/RedisChannelServiceExtensions.cs`
+  - `02.Caching/SharedKernel.Caching.Redis/Extensions/CacheInvalidationExtensions.cs`
+  - Corresponding test files in `SharedKernel.Caching.Redis.Tests`: `RedisChannelServiceIntegrationTests.cs`, `ChannelReconnectIntegrationTests.cs`, `CacheInvalidationIntegrationTests.cs`
+
+### Ph36 (P-144) — Implementation Rules
+
+1. `IRedisChannelService`, `ICacheInvalidationBus`, `CacheInvalidationMessage`, `CacheInvalidationMessageJsonContext`, `ConnectionHealthState`, and `CachingCoreOptions` remain in `SharedKernel.Caching.Abstractions` — **unchanged**, no breaking change. Only `RedisChannelService`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver`, and their DI extensions move.
+2. Namespaces for the three relocated implementation types change from `SharedKernel.Caching.Redis` to `SharedKernel.Caching.Redis.PubSub`.
+3. **Connection health composition:** `RedisChannelService` (Phase 26) has its own `volatile int _connectionHealth` field and `ConnectionRestored`/`ConnectionFailed` subscriptions for resubscription replay — this logic is **relocated intact**, not replaced by Phase 32's `RedisConnectionHealthTracker`. `RedisChannelService.ConnectionHealth` continues to be the source of truth for `IRedisChannelService.ConnectionHealth` (the public contract). `RedisConnectionHealthTracker` (Phase 32, Core) is a separate, simpler tracker available for health-check use by packages that don't need resubscription replay (e.g., hash store, distributed locking). Both may coexist in the same DI container — they subscribe to the same multiplexer's events independently and do not conflict (StackExchange.Redis supports multiple subscribers to the same event). Do not attempt to unify them in this phase — that is a future consideration, not a Phase 36 requirement.
+4. Channel naming convention is **unchanged**: targeted `sharedkernel:cache:invalidation:{service-name}` (where `{service-name}` = `options.ServiceName.ToLowerInvariant().Replace(' ', '-')` from `CachingCoreOptions`), broadcast `sharedkernel:cache:invalidation:broadcast` (literal constant).
+5. `AddRedisChannelService(this ICachingBuilder)` startup guard updates from checking `IConnectionMultiplexer` registered by `AddRedisL2`/`AddRedisDistributedLocking` to the same type-presence check, with an updated error message reflecting that `AddRedisConnection` (Phase 32, directly or transitively via any capability package) is the source. `AddCacheInvalidationReceiver` guards (`IRedisChannelService` registered via `AddRedisChannelService`; `ICacheService` registered via `AddSharedKernelCaching`) are unchanged (Phase 19 rules).
+6. `RedisChannelService` continues to use `RedisChannel.Literal(channelName)` exclusively — never `RedisChannel.Pattern` (Phase 7 rule, unchanged). All handler exceptions caught and logged at `LogLevel.Error`, never propagated (Phase 7 rule, unchanged).
+7. `CacheInvalidationReceiver` remains a `BackgroundService` registered via `AddHostedService`; `StopAsync` calls `UnsubscribeAsync` for both channels before `base.StopAsync` (Phase 12 rule, unchanged). OTel span `"cache.invalidation.receive"` with tags `cache.invalidation.source`, `cache.invalidation.correlation_id`, `cache.invalidation.type` (Phase 12 rule, unchanged).
+8. The XML-doc boundary statement — "ephemeral, no delivery guarantees, not a substitute for `07.Messaging`" — is preserved verbatim on `IRedisChannelService` and `ICacheInvalidationBus` in `SharedKernel.Caching.Abstractions` (these types are not moved, so the doc comments are untouched by definition; this rule exists to explicitly confirm no accidental doc-comment loss during any incidental abstractions edits in this phase).
+9. The optional Polly circuit breaker pipeline (`sp.GetService<ResiliencePipeline>()`) continues to be resolved optionally in `RedisChannelService`, sourced from Phase 32's `AddRedisCircuitBreaker` (Phase 30 rule, unchanged).
+10. After this phase, `SharedKernel.Caching.Redis` contains **only**: `AddRedisL2`, `RedisL2Options`, FusionCache Redis backplane wiring, and (in `SharedKernel.Caching.FusionCache`, unaffected) Brotli compression. Verify and remove any now-unused `PackageReference` entries (`Microsoft.Extensions.Hosting.Abstractions`, `Polly.Core` if no longer directly consumed) from `SharedKernel.Caching.Redis.csproj`.
+11. All public types carry XML doc comments. Package `<Description>` must state: "Ephemeral Redis Pub/Sub signaling and cache invalidation (IRedisChannelService, ICacheInvalidationBus, CacheInvalidationReceiver). At-most-once delivery, no durability guarantees — not a substitute for SharedKernel.Messaging.* (07.Messaging). Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), distributed locking, or hash store packages."
+
+### Ph36 (P-144) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Caching.Redis.PubSub.csproj` | SharedKernel.Caching.Redis.PubSub | Create | Project definition; refs Abstractions + Redis.Core + Hosting.Abstractions |
+| `RedisChannelService.cs` | SharedKernel.Caching.Redis.PubSub | Create (relocated) | `IRedisChannelService` impl; reconnect replay intact |
+| `RedisCacheInvalidationBus.cs` | SharedKernel.Caching.Redis.PubSub | Create (relocated) | `ICacheInvalidationBus` publisher; channel naming |
+| `CacheInvalidationReceiver.cs` | SharedKernel.Caching.Redis.PubSub | Create (relocated) | `BackgroundService` subscriber; OTel span |
+| `Extensions/RedisChannelServiceExtensions.cs` | SharedKernel.Caching.Redis.PubSub | Create (relocated) | `AddRedisChannelService`; guard updated for Core registration |
+| `Extensions/CacheInvalidationExtensions.cs` | SharedKernel.Caching.Redis.PubSub | Create (relocated) | `AddRedisCacheInvalidationBus`, `AddCacheInvalidationReceiver` |
+| `SharedKernel.Caching.Redis.PubSub.Tests/` | SharedKernel.Caching.Redis.PubSub.Tests | Create | Relocated pub/sub + invalidation tests |
+| `SharedKernel.Caching.Redis/RedisChannelService.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/RedisCacheInvalidationBus.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/CacheInvalidationReceiver.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/Extensions/RedisChannelServiceExtensions.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis/Extensions/CacheInvalidationExtensions.cs` | SharedKernel.Caching.Redis | Delete (relocated) | — |
+| `SharedKernel.Caching.Redis.csproj` | SharedKernel.Caching.Redis | Modify | Remove unused `Hosting.Abstractions`/`Polly.Core` refs if confirmed unused |
+| `02.Caching/CLAUDE.md` | — | Modify | Package table: add `SharedKernel.Caching.Redis.PubSub` row; "stays in 02.Caching" rationale |
+
+### Ph36 (P-144) — Acceptance Criteria
+
+- [ ] New package `SharedKernel.Caching.Redis.PubSub` contains `RedisChannelService`, `RedisCacheInvalidationBus`, `CacheInvalidationReceiver`
+- [ ] `IRedisChannelService`, `ICacheInvalidationBus`, `CacheInvalidationMessage`, `CacheInvalidationMessageJsonContext`, `ConnectionHealthState`, `CachingCoreOptions` remain in `SharedKernel.Caching.Abstractions` — unchanged
+- [ ] Package depends on `SharedKernel.Caching.Abstractions` + `SharedKernel.Caching.Redis.Core` — no reference to `SharedKernel.Caching.Redis` (L2), distributed locking, or hash store packages, and no reference to any `07.Messaging` package
+- [ ] `AddRedisChannelService()`, `AddRedisCacheInvalidationBus()`, `AddCacheInvalidationReceiver()` fluent shapes preserved; startup guards updated to validate against Phase 32's `IConnectionMultiplexer`
+- [ ] Connection reconnect/resubscribe replay logic (Phase 26 `Dictionary` + lock registry, `ConnectionHealthState` transitions) relocated intact
+- [ ] Channel naming convention (`sharedkernel:cache:invalidation:{service-name}` / `:broadcast`) unchanged
+- [ ] XML doc boundary statement ("ephemeral, no delivery guarantees, not a substitute for 07.Messaging") preserved on `IRedisChannelService` and `ICacheInvalidationBus`
+- [ ] Relevant subset of the 154 Redis tests (pub/sub round-trip, unsubscribe, reconnect/resubscribe, invalidation receiver: key/tag/broadcast/offline) relocated and passing against the new package
+- [ ] `02.Caching/CLAUDE.md` package table updated with the new package's role and references; explicit statement that this package stays in `02.Caching` and why (linking the rationale to the `07.Messaging` durability contrast)
+- [ ] After this phase, `SharedKernel.Caching.Redis` contains only L2 backplane code (`AddRedisL2`, `RedisL2Options`, FusionCache Redis backplane wiring) — verify via file listing
+- [ ] `dotnet build` clean; no new compile warnings
+
+### Ph36 (P-144) — Dependencies
+
+- Requires Phase 32 (P-140) to be complete: Yes — `SharedKernel.Caching.Redis.Core` must provide `IConnectionMultiplexer` registration, `RedisConnectionHealthTracker`, and optional `ResiliencePipeline`
+- Requires Phase 33 (P-141) / Phase 34 (P-142) / Phase 35 (P-143) to be complete: No — independent; all four extraction phases (33/34/35/36) depend only on Phase 32, but Phase 36 is logically the "last" extraction since it leaves `SharedKernel.Caching.Redis` in its final L2-only state
+- Unblocks: Lightweight cross-instance signaling consumers (no FusionCache, no RedLock, no hash store) can take a minimal `Abstractions` + `Redis.Core` + `Redis.PubSub` dependency; completes the WO-023 package topology
+
+### Ph36 (P-144) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: >= 2.13.1 (via Core)
+- Microsoft.Extensions.Hosting.Abstractions: 10.0.0 (for `CacheInvalidationReceiver` `BackgroundService`)
+- Polly.Core: 8.5.2 (optional, via Core, when circuit breaker enabled)
+- ZiggyCreatures.FusionCache: N/A (no reference in this package)
+- `System.Diagnostics.DiagnosticSource`: BCL in `net10.0` — no additional NuGet reference
+- .NET: `net10.0`
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies._
@@ -1928,6 +2424,11 @@ Format when active:
 | `SK.02.TenantCacheKey` | Phase 29 (Multi-Tenant Cache Key) | 6 | 6 | `●` |
 | `SK.02.RedisCircuitBreaker` | Phase 30 (Redis Circuit Breaker) | 6 | 6 | `●` |
 | `SK.02.OtelMeters` | Phase 31 (OTel Metrics) | 9 | 9 | `●` |
+| `SK.02.RedisConnectionCore` | Phase 32 (Redis Connection Core Extraction) | 9 | 9 | `●` |
+| `SK.02.RedisL2Refactor` | Phase 33 (Redis L2 Backplane Package Refactor) | 8 | 8 | `●` |
+| `SK.02.RedisLockingExtraction` | Phase 34 (Redis Distributed Locking Package Extraction) | 10 | 10 | `●` |
+| `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | 9 | 9 | `●` |
+| `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 9 | 9 | `●` |
 
 ---
 
@@ -1939,6 +2440,7 @@ Format when active:
 - [2026-05-15] D-01→D-06 → ● in SK.02.Design — all interface contracts, CachePolicy shape, DI signatures, and NuGet versions confirmed (state-map-phase)
 - [2026-05-15] S-01→S-06 → ● in SK.02.Scaffold — NuGet refs, folder structure, solution registration, and xUnit test stubs all complete (state-map-phase)
 - [2026-05-15] C-01→C-09 → ● in SK.02.Core — FusionCache L1/L2, RedLock, DI extensions, STJ context, L1 fallback all implemented (state-map-phase)
+- [2026-06-11] RDL-01→RDL-10 → ● in SK.02.RedisLockingExtraction — SharedKernel.Caching.Redis.DistributedLocking package created; RedLock.net distributed locking extracted from SharedKernel.Caching.Redis (state-map-phase)
 - [2026-05-15] T-01→T-06 → ● in SK.02.Tests — unit + integration tests all passing (80 tests, 0 failed) (state-map-phase)
 - [2026-05-15] DO-01→DO-04 → ● in SK.02.Docs — XML docs verified, README with usage examples and config reference written (state-map-phase)
 - [2026-05-15] P-01→P-04 → ● in SK.02.Published — NuGet metadata added, packages packed to local feed, consumer dependency graph verified (state-map-phase)
@@ -1970,3 +2472,8 @@ Format when active:
 - [2026-05-22] TK-01→TK-06 → ● in SK.02.TenantCacheKey — ITenantCacheKeyProvider in Abstractions; TenantCacheKeyProvider + AddTenantCacheKeyProvider in FusionCache; FakeTenantCacheKeyProvider in Testing; 196 FusionCache tests passing (state-map-phase)
 - [2026-05-22] RCB-01→RCB-06 → ● in SK.02.RedisCircuitBreaker — Polly.Core 8.5.2 added; CircuitBreakerOptions nested class; ResiliencePipeline singleton when Enabled=true; 196 FusionCache + 154 Redis tests passing (state-map-phase)
 - [2026-05-22] OM-01→OM-09 → ● in SK.02.OtelMeters — static Meter+5 instruments; FusionCache events for hit/miss/eviction; factory Stopwatch; 209 FusionCache tests passing (state-map-phase)
+- [2026-06-11] Phases 32–36 planned (WO-023) — split SharedKernel.Caching.Redis into 5 packages: Ph32 SharedKernel.Caching.Redis.Core (IConnectionMultiplexer registration, RedisConnectionHealthTracker, AddRedisCircuitBreaker — dependency root); Ph33 SharedKernel.Caching.Redis slimmed to L2-only (AddRedisL2 sources multiplexer/pipeline from Core); Ph34 SharedKernel.Caching.Redis.DistributedLocking (RedLock.net extraction); Ph35 SharedKernel.Caching.Redis.HashStore (IRedisHashService/ITypedHashStore<T> extraction); Ph36 SharedKernel.Caching.Redis.PubSub (IRedisChannelService/ICacheInvalidationBus extraction, stays in 02.Caching not 07.Messaging). All Abstractions contracts unchanged; all existing AddRedis* fluent shapes preserved (caching-arch-planner)
+- [2026-06-11] RC-01→RC-09 → ● in SK.02.RedisConnectionCore — SharedKernel.Caching.Redis.Core created (RedisConnectionOptions, RedisCircuitBreakerOptions, RedisConnectionHealthTracker, AddRedisConnection, AddRedisCircuitBreaker); registered in slnx; 33 tests passing (state-map-phase)
+- [2026-06-11] RL2-01→RL2-08 → ● in SK.02.RedisL2Refactor — SharedKernel.Caching.Redis adds ProjectReference to .Redis.Core; AddRedisL2 sources IConnectionMultiplexer via AddRedisConnection and circuit breaker via AddRedisCircuitBreaker; RedisL2Options.CircuitBreaker retyped to RedisCircuitBreakerOptions (Core, source-compat); Polly.Core direct ref retained (RedisHashService/RedisChannelService still inject ResiliencePipeline); 154 Redis + 33 Redis.Core tests passing (state-map-phase)
+- [2026-06-12] RHS-01→RHS-09 → ● in SK.02.RedisHashExtraction — SharedKernel.Caching.Redis.HashStore package created; RedisHashService/TypedHashStore<T>/AddRedisHashService/AddTypedHashStore<T> extracted from SharedKernel.Caching.Redis (pure namespace rename, no Obsolete shim needed); startup guard message updated to reference AddRedisConnection; ResiliencePipeline resolution unchanged; 68 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core tests passing (state-map-phase)
+- [2026-06-12] RPS-01→RPS-09 → ● in SK.02.RedisPubSubExtraction — SharedKernel.Caching.Redis.PubSub package created; RedisChannelService/RedisCacheInvalidationBus/CacheInvalidationReceiver/AddRedisChannelService/AddRedisCacheInvalidationBus/AddCacheInvalidationReceiver extracted from SharedKernel.Caching.Redis (pure namespace rename, Phase 26 reconnect logic relocated intact); SharedKernel.Caching.Redis slimmed to L2-only end state (Hosting.Abstractions + Polly.Core PackageReferences removed); 02.Caching/CLAUDE.md updated; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing — WO-023 (Phases 32-36) fully complete (state-map-phase)
