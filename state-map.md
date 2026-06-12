@@ -2093,6 +2093,9 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-11] Caching → Phase 34 (Redis Distributed Locking Package Extraction) (●) — promoted from SK.02.RedisLockingExtraction (state-map-phase)
 - [2026-06-12] Caching → Phase 35 (Redis Hash Store Package Extraction) (●) — promoted from SK.02.RedisHashExtraction (state-map-phase)
 - [2026-06-12] Caching → Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) (●) — promoted from SK.02.RedisPubSubExtraction; WO-023 (Phases 32-36) fully complete (state-map-phase)
+- [2026-06-12] Phase(s) P-145 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-12] Phase(s) P-152 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-06-12] Phase(s) P-147, P-148, P-149, P-150, P-151 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -6587,7 +6590,7 @@ This package remains within `02.Caching` — it is **not** moved to `07.Messagin
 ---
 ### P-145 — Governance: Architecture Rules for Redis Package Topology
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-023
 **Domain:** 00.Governance
 
@@ -6641,4 +6644,209 @@ Update `SharedKernel.Testing` and any affected `.Tests` project references to al
 - [ ] All four new capability `.Tests` projects build and reference `SharedKernel.Testing` correctly
 - [ ] No `.Tests` project references the now-removed monolithic `SharedKernel.Caching.Redis` surface for types it does not test
 - [ ] `dotnet build` clean across all affected test projects; no new compile warnings
+---
+
+---
+### P-147 — Persistence: Fix Encryption Key Rotation Reflection Violation and Global-Version Coupling
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-024
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+Two defects in the WO-019 encryption subsystem must be corrected before this code is trusted for production rotation:
+
+1. **Reflection hard-violation in `EncryptionRotationService.LoadBatchAsync`.** The current implementation resolves `DbContext.Set<T>()` via `GetMethods().First(...)`, `MakeGenericMethod`, and `Invoke` — the exact pattern this domain's own hard-rule list forbids for `TenantedDbContext`, justified there only by being model-build-time/startup code. Key rotation is a long-running batch operation over potentially millions of rows and is not startup code. Replace with a non-reflective access pattern (e.g., a generic helper method invoked once per discovered entity type via a typed dispatch, or `EF.Constant`/expression-based `Set<T>()` resolution) that keeps `LoadBatchAsync` reflection-free in its hot loop.
+
+2. **Re-encryption depends on a global mutable `EncryptionOptions.CurrentVersion`.** Today, `RotateAsync` marks properties `IsModified = true` and relies on `EncryptedValueConverter` re-encrypting with whatever `EncryptionOptions.CurrentVersion` happens to be at save time — with an explicit code comment instructing operators to set `CurrentVersion == toVersion` globally *before* calling `RotateAsync`. This means every unrelated write across the entire running service silently re-encrypts with `toVersion` for the full duration of the rotation job, and `IOptionsMonitor` hot-reload makes the blast radius worse. Redesign so the rotation job can target `toVersion` for the rows it rewrites without mutating the steady-state `CurrentVersion` used by concurrent application writes — for example, by introducing an explicit per-operation encryption-version override (an `IEncryptionKeyResolver`-style seam, or a rotation-scoped converter instance) that `EncryptionRotationService` uses directly, decoupled from `EncryptedValueConverter`'s steady-state `CurrentVersion` read.
+
+3. **Documentation drift correction.** `CLAUDE.md` and multiple XML doc `<see cref>` references describe `EncryptedValueConverter<T>` (a generic type). The shipped type is non-generic (`EncryptedValueConverter : ValueConverter<string, string>`), which is the correct scope (string-only field encryption). Correct all doc references — in `06.Persistence/CLAUDE.md` and in-code XML docs — to the non-generic name, or formally promote the type to generic if a future `T : IConvertible` scope is desired (decide one direction and make code and docs agree).
+
+#### Why this is needed
+
+This domain enforces some of the strictest "no reflection in hot paths" and "expression trees only" rules in the entire SharedKernel specifically because it sets the pattern hundreds of downstream services copy. Shipping a reflection-based `MakeGenericMethod`/`Invoke` pattern in the same package that documents this as a hard violation elsewhere undermines the credibility of every other hard rule in `06.Persistence/CLAUDE.md`. The global `CurrentVersion` coupling is worse than a style issue — it is a latent production incident: any team that runs `RotateAsync` in a live multi-instance deployment will, for the duration of the job, change the encryption key used by every other write path in the fleet (if `IOptionsMonitor` propagates the config change across instances) or only the rotation-job's own instance (if it doesn't) — either way, an undocumented and surprising side effect for an "idempotent, safe" operation as currently described.
+
+#### Acceptance criteria
+- [ ] `EncryptionRotationService.LoadBatchAsync` (and any other rotation code path) contains zero `GetMethod`/`MakeGenericMethod`/`Invoke` calls
+- [ ] `RotateAsync(fromVersion, toVersion, ct)` re-encrypts targeted rows with `toVersion` without requiring or causing a change to `EncryptionOptions.CurrentVersion` observed by concurrent, non-rotation writes
+- [ ] A concurrent-write test proves: while `RotateAsync(v1, v2)` is in progress, a normal entity write through the same or a different DbContext instance continues to encrypt with the steady-state `CurrentVersion` (unchanged by the rotation job)
+- [ ] `EncryptedValueConverter` documentation (CLAUDE.md + XML docs) matches the actual non-generic type — no `<T>`/`{T}` references to a generic that does not exist
+- [ ] Existing rotation idempotency tests (rows already at `toVersion` skipped) continue to pass
+- [ ] `dotnet build` clean; no new compile warnings; all existing `06.Persistence` tests green
+---
+
+---
+### P-148 — Persistence: Set-Based Bulk Mutations via ExecuteUpdate/ExecuteDelete
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-024
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+A specification-driven, set-based bulk mutation capability on the write-side repository contract, backed by EF Core's `ExecuteUpdateAsync`/`ExecuteDeleteAsync`. This is distinct from the existing `UpdateRangeAsync`/`DeleteRangeAsync` (which load N tracked entities and rely on change-tracking/`SoftDeleteInterceptor`): the new capability issues a single set-based SQL statement against rows matching an `ISpecification<T>`'s criteria, without materializing entities.
+
+Scope:
+- A new method on `IRepository<TAggregate, TId>` (or a dedicated bulk-operations interface composed into it) accepting an `ISpecification<TAggregate>` for the filter and an expression-based "setter" description for `ExecuteUpdate`, returning the affected row count.
+- A corresponding bulk-delete method accepting an `ISpecification<TAggregate>`.
+- Clear documentation of the interceptor bypass: `ExecuteUpdate`/`ExecuteDelete` bypass `AuditInterceptor`, `SoftDeleteInterceptor`, and `ConcurrencyInterceptor` entirely (EF Core does not route these through `SaveChanges`). The contract must make this bypass explicit in its XML docs and the "what goes where" guidance — for `ISoftDeletable` aggregates, bulk-delete via this path is either disallowed or must require the caller to express the soft-delete semantics explicitly in the setter (e.g., set `IsDeleted = true` directly as part of the bulk update rather than calling bulk-delete).
+- The specification pipeline reuse question must be answered: does `ISpecificationEvaluator<T>` apply its full step 0–7 pipeline (filters/includes/ordering/paging) before handing off to `ExecuteUpdate`/`ExecuteDelete`, or only criteria + IncludeDeleted (steps 0–1)? EF Core's `ExecuteUpdate`/`ExecuteDelete` do not support `Include`, `OrderBy`, or `Skip`/`Take` — the evaluator must reject or ignore those spec properties for this path with a clear contract (fail fast at runtime with an explanatory exception, documented as a hard rule).
+
+#### Why this is needed
+
+Every aggregate-loading bulk operation (`UpdateRangeAsync`/`DeleteRangeAsync`) requires loading N entities into memory, running them through change-tracking, and issuing N (or batched) UPDATE/DELETE statements via `SaveChanges`. For genuinely bulk operations — "archive all orders older than 90 days," "anonymize all soft-deleted customer rows," "expire all pending invitations" — this is the dominant cost in services with large tables, and EF Core has shipped `ExecuteUpdate`/`ExecuteDelete` specifically to address it with a single round-trip. Without a SharedKernel-sanctioned abstraction, every downstream team will either (a) reach for raw `DbContext.Set<T>().Where(...).ExecuteUpdateAsync(...)` directly — bypassing `IRepository` entirely and violating the "no `IQueryable<T>` exposure" rule — or (b) suffer the N-entity-load cost on large tables. A specification-driven contract keeps this inside the abstraction boundary while being explicit about the interceptor-bypass trade-off.
+
+#### Acceptance criteria
+- [ ] New bulk-update method on the write-side repository contract accepts `ISpecification<TAggregate>` (criteria/IncludeDeleted only) plus a setter expression, returns affected row count, implemented via `ExecuteUpdateAsync`
+- [ ] New bulk-delete method accepts `ISpecification<TAggregate>` (criteria/IncludeDeleted only), returns affected row count, implemented via `ExecuteDeleteAsync`
+- [ ] XML docs and `06.Persistence/CLAUDE.md` explicitly document that `AuditInterceptor`/`SoftDeleteInterceptor`/`ConcurrencyInterceptor` and domain event dispatch do NOT fire for either method
+- [ ] Passing a specification with `Includes`, `OrderBy`/`OrderByDescending`, `ThenBys`, or `Skip`/`Take` to either method throws a documented exception at call time (fail fast, not silent ignore)
+- [ ] `ISoftDeletable` aggregates: bulk-delete either throws (directing callers to bulk-update with an explicit `IsDeleted` setter) or is documented as a hard physical delete bypassing soft-delete — pick one and enforce it
+- [ ] SQLite-based tests: bulk update affects only matching rows with correct new values; bulk delete removes only matching rows; spec with disallowed properties throws; row counts returned match affected rows
+- [ ] `dotnet build` clean; no new compile warnings
+---
+
+---
+### P-149 — Persistence: Streaming Reads via IAsyncEnumerable on IReadRepository
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-024
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+A streaming read method on `IReadRepository<TAggregate, TId>` (and its `EfReadRepository<TAggregate, TId>` implementation) returning `IAsyncEnumerable<TAggregate>` for a given `ISpecification<TAggregate>`, plus a projected variant returning `IAsyncEnumerable<TResult>` for `IProjectionSpecification<TAggregate, TResult>`. Both must:
+- Apply the full `ISpecificationEvaluator<T>` pipeline (criteria, includes, ordering, distinct, AsNoTracking) — `Skip`/`Take` interaction with streaming must be documented (paging + streaming together is unusual but not forbidden; document the semantics).
+- Always force `AsNoTracking` semantics for streamed results regardless of `spec.AsNoTracking` — streaming thousands of tracked entities through the change tracker is a memory leak in long-lived scopes. Document this override explicitly (it is the one place this contract deviates from "the spec's `AsNoTracking` flag is honored").
+- Be backed by EF Core's native `IAsyncEnumerable<T>` query support (`AsAsyncEnumerable()`), preserving server-side streaming (no client-side buffering of the full result set).
+
+#### Why this is needed
+
+`ListAsync` and `ListPagedAsync` both materialize the full result set into an `IReadOnlyList<T>` / `PagedList<T>` before returning. For export jobs, report generation, ETL pipelines, and Temporal workflow activities that need to process large tables row-by-row, this forces either an unbounded in-memory list or application-layer manual chunking via repeated `PagedSpecification<T>` calls (each paying a separate count-query round trip per `ListPagedAsync`'s documented two-round-trip pattern). A first-class streaming contract gives consuming services a server-side-streamed, constant-memory iteration path that stays inside the `ISpecification<T>` abstraction boundary — consistent with how `ListProjectedAsync` and `ListPagedProjectedAsync` already extended the read contract for other access patterns (P-080/P-101).
+
+#### Acceptance criteria
+- [ ] `IReadRepository<TAggregate, TId>` gains a method returning `IAsyncEnumerable<TAggregate>` for `ISpecification<TAggregate>`
+- [ ] `IReadRepository<TAggregate, TId>` gains a projected variant returning `IAsyncEnumerable<TResult>` for `IProjectionSpecification<TAggregate, TResult>`
+- [ ] `EfReadRepository<TAggregate, TId>` implements both via `ISpecificationEvaluator<T>.GetQuery`/`GetProjectedQuery` + `AsAsyncEnumerable()`
+- [ ] Both methods force `AsNoTracking` regardless of `spec.AsNoTracking` — documented as an explicit deviation in XML docs and `06.Persistence/CLAUDE.md`
+- [ ] `Skip`/`Take` interaction with streaming documented (either honored as a row-window before streaming, or explicitly disallowed with a fail-fast exception — pick one)
+- [ ] SQLite-based test: enumerate N entities via the streaming method, verify all N returned in spec order, verify entities are `EntityState.Detached`
+- [ ] `ContractShapeTests` verify both new methods exist on `IReadRepository<TAggregate, TId>`
+- [ ] `dotnet build` clean; no new compile warnings
+---
+
+---
+### P-150 — Persistence: Database Readiness Health-Check Contract
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-024
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+A lightweight, provider-agnostic database-readiness contract that `13.ServiceDefaults` (or the consuming service directly) can register as a `Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck`. Scope is limited to `06.Persistence` providing the *capability* — wiring the actual `IHealthCheck` registration into `AddHealthChecks()` remains a `13.ServiceDefaults` concern (per the existing layering rule: "OTel, health check, or probe wiring → `13.ServiceDefaults`").
+
+Concretely, `06.Persistence` should provide:
+- A simple readiness-check method reachable from `SharedKernelDbContext` (e.g., a lightweight `CanConnectAsync`/`ExecuteRawQueryAsync("SELECT 1")`-style probe) exposed in a form `13.ServiceDefaults` can wrap in an `IHealthCheck` without `13.ServiceDefaults` taking an EF Core dependency beyond what it already has.
+- For the Dapper/PostgreSQL path, an equivalent `IDbConnectionFactory`-based readiness probe (open a connection, run a trivial query, measure latency) since not every service using `SharedKernel.Persistence.Dapper` also uses EF Core.
+- Both probes should report enough structured detail (latency, provider name) to populate `HealthCheckResult.Data` usefully — but `06.Persistence` itself ships no `IHealthCheck` implementation, only the underlying probe primitives, to avoid a `Microsoft.Extensions.Diagnostics.HealthChecks` NuGet dependency in this layer if one is not already present.
+
+#### Why this is needed
+
+`02.Caching` (`Redis.Core`, per WO-023/P-140) now ships connection-health tracking specifically so dependent packages and `13.ServiceDefaults` can build health checks on top of it. `06.Persistence` — the layer every single microservice depends on for its primary datastore — has no equivalent. Every downstream team currently either omits a DB health check, or writes raw `context.Database.CanConnectAsync()` calls directly inside their `Program.cs` with no shared latency/diagnostics shape. For a platform that is explicitly "K8s-Native" (readiness probes gate traffic routing), the absence of a sanctioned DB-readiness primitive in the persistence layer is a gap relative to the standard this domain otherwise holds itself to.
+
+#### Acceptance criteria
+- [ ] A connection-readiness probe method is available via `SharedKernelDbContext` (or an extension method on it) returning success/failure + latency, without requiring `13.ServiceDefaults`-side EF Core internals knowledge
+- [ ] An equivalent `IDbConnectionFactory`-based readiness probe exists in `SharedKernel.Persistence.Dapper` or `SharedKernel.Persistence.PostgreSQL` (placement decided based on where `IDbConnectionFactory` already lives) for non-EF read-side services
+- [ ] No `Microsoft.Extensions.Diagnostics.HealthChecks` NuGet dependency introduced into `06.Persistence` unless it is already a transitive dependency with zero added weight — probes return plain result types, not `HealthCheckResult`
+- [ ] `06.Persistence/CLAUDE.md` documents how `13.ServiceDefaults` is expected to wrap these probes in `IHealthCheck` (cross-reference, not implementation)
+- [ ] SQLite/Testcontainers-based tests: probe returns success against a live connection, returns failure with diagnostic detail against an unreachable/disposed connection
+- [ ] `dotnet build` clean; no new compile warnings
+---
+
+---
+### P-151 — Persistence: Idempotent Migration and Seed Runner Abstraction
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-024
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+A small, opt-in abstraction for applying EF Core migrations and running idempotent data seeding at service startup, exposed via `EfCorePersistenceBuilder`. Scope:
+- A `IDataSeeder<TContext>` (or similar) marker contract — consuming services implement one or more seeders; each seeder's `SeedAsync(TContext, CancellationToken)` must be written idempotently by the implementer (the contract documents this requirement but cannot enforce it).
+- A builder method (e.g., `EfCorePersistenceBuilder<TContext>.WithMigrationsOnStartup()` and/or `.WithSeeders(...)`) that registers a hosted service or startup task: applies pending migrations via `Database.MigrateAsync()`, then runs registered seeders in registration order, all within a distributed lock or advisory-lock guard so multi-replica K8s deployments don't race to apply migrations concurrently.
+- Explicit non-goals documented: this is not a migration *authoring* tool (no `dotnet ef migrations add` wrapper) and not a replacement for `dotnet ef dbcontext optimize`/compiled models (P-106) — it is purely the startup orchestration of "apply what's pending, then seed."
+
+#### Why this is needed
+
+"Ensure DB created + apply migrations + seed reference data at startup" is one of the most universally reimplemented pieces of boilerplate across microservices, and it has a well-known multi-replica failure mode: N replicas of the same service starting simultaneously in K8s all call `Database.MigrateAsync()` concurrently, causing migration-lock contention or duplicate-seed races. A SharedKernel-sanctioned, lock-guarded startup orchestration — opt-in via the same fluent `EfCorePersistenceBuilder` every service already uses for `.WithMultiTenancy()`/`.WithEncryption()`/etc. — closes a gap that is currently left to each team to solve (or not solve) independently, with inconsistent results. Note: this phase is for the *EF Core migration* orchestration only — if the distributed-lock primitive needed for multi-replica coordination is best sourced from `02.Caching.Redis.DistributedLocking`, this phase should document that as an optional dependency (consuming service wires it in) rather than `06.Persistence` taking a hard reference to `02.Caching`.
+
+#### Acceptance criteria
+- [ ] `IDataSeeder<TContext>` (or equivalent) contract defined with clear idempotency documentation requirement
+- [ ] `EfCorePersistenceBuilder<TContext>` gains an opt-in method to register migration-on-startup + ordered seeder execution as a hosted service
+- [ ] Multi-replica race documented with a recommended mitigation (e.g., PostgreSQL advisory lock via `IDbConnectionFactory`, or an optional `02.Caching.Redis.DistributedLocking` integration point) — `06.Persistence` does not take a hard reference to `02.Caching`
+- [ ] Omitting this call leaves current behavior unchanged (no migrations applied automatically) — fully opt-in
+- [ ] SQLite-based test: seeder runs exactly once across two sequential startups when seed data already present (idempotency contract honored by a test seeder implementation); migrations applied when pending
+- [ ] `06.Persistence/CLAUDE.md` documents this as startup orchestration only — explicitly not a migration-authoring tool, not a compiled-model replacement
+- [ ] `dotnet build` clean; no new compile warnings
+---
+
+---
+### P-152 — Domain: Generic STJ JsonConverter for StronglyTypedId<TValue>
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-024
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+
+A generic `System.Text.Json.Serialization.JsonConverter<TStronglyTypedId>` (and an accompanying `JsonConverterFactory` for open-generic registration) for `StronglyTypedId<TValue>`-derived types, shipped in `SharedKernel.Domain`. The factory must:
+- Detect any closed type deriving from `StronglyTypedId<TValue>` and produce a converter that serializes to/from the underlying `TValue` (using the existing `implicit operator TValue` and the primary-constructor `Value` property — no reflection-based member access beyond what `JsonConverterFactory.CreateConverter` already requires for type inspection).
+- Support the common `TValue` shapes already implied elsewhere in the domain (`Guid`, `int`, `long`, `string`) without requiring per-ID-type converter classes in consuming services.
+- Be registered via a documented `JsonSerializerOptions` extension (e.g., `options.Converters.Add(new StronglyTypedIdJsonConverterFactory())`) — `03.Domain` ships the factory but does not force global STJ configuration; consuming services opt in.
+
+#### Why this is needed
+
+`03.Domain/CLAUDE.md` currently documents: *"`StronglyTypedId<TValue>` does not ship a STJ `JsonConverter` — consuming services must provide their own in their serialization context."* For a single service this is a minor inconvenience; across "hundreds of services across multiple teams," each implementing the same `JsonConverter<OrderId>`, `JsonConverter<CustomerId>`, etc. boilerplate is exactly the kind of duplication a shared kernel exists to eliminate. `03.Domain` already owns the `StronglyTypedId<TValue>` base and has zero external NuGet dependencies — `System.Text.Json` is part of the BCL (`System.Text.Json` ships in the shared framework for `net10.0`), so adding this does not introduce a new external dependency or violate the "zero external NuGet dependencies" rule for `SharedKernel.Domain`. This directly serves `04.Contracts` (DTOs referencing strongly-typed IDs) and `06.Persistence`/API serialization without requiring `04.Contracts` or `06.Persistence` to own ID-specific converters.
+
+#### Acceptance criteria
+- [ ] `StronglyTypedIdJsonConverterFactory` (or equivalently named) added to `SharedKernel.Domain`, in the `StronglyTypedIds/` area
+- [ ] Factory correctly handles `StronglyTypedId<Guid>`, `StronglyTypedId<int>`, `StronglyTypedId<long>`, and `StronglyTypedId<string>` derived types via a single registration
+- [ ] No reflection beyond standard `JsonConverterFactory.CanConvert`/`CreateConverter` type-inspection patterns already idiomatic to STJ converter factories — documented in the AOT Compatibility section consistent with existing AOT notes (e.g., `DomainEventVersionHelper`'s precedent for acceptable startup-time reflection)
+- [ ] `SharedKernel.Domain` remains zero-external-NuGet-dependency (verified: `System.Text.Json` is part of the shared framework, not an added package reference)
+- [ ] Unit tests: round-trip serialize/deserialize for each supported `TValue` shape via a concrete test `StronglyTypedId` subclass; serialized JSON is the bare primitive value (not an object wrapper)
+- [ ] `03.Domain/CLAUDE.md` updated — the "consuming services must provide their own" note is replaced with usage documentation for the new factory
+- [ ] `dotnet build` clean; no new compile warnings
+---
+
+---
+### P-153 — Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation Outside Documented Exceptions
+
+**Status:** `○` Pending
+**Work Order:** WO-024
+**Domain:** 00.Governance
+**Depends on:** P-147
+
+#### What is needed
+
+A new NetArchTest (and/or Roslyn analyzer, following the existing `SK0xxx` numbering convention) rule that flags use of `Type.GetMethod` combined with `MakeGenericMethod`/`Invoke` in production assemblies, except where an explicit, documented exception is registered (e.g., via an `[UnsafeReflectionJustification]`-style marker attribute or an allow-list maintained in governance configuration). The rule should run across all numbered domains, not just `06.Persistence`, since the pattern this rule targets is exactly the one found and fixed in P-147.
+
+#### Why this is needed
+
+P-147 found that `EncryptionRotationService.LoadBatchAsync` — in the same package whose `CLAUDE.md` explicitly documents `TenantedDbContext`'s expression-tree-only approach as the gold-standard alternative to `GetMethod`/`MakeGenericMethod`/`Invoke` — shipped exactly the forbidden pattern, justified by an inline comment claiming it was "not a hot path." Documentation alone did not prevent this from shipping once. A mechanical architecture rule, scoped platform-wide (not just `06.Persistence`), converts this from a documentation convention each domain must remember to restate into an enforced platform invariant — consistent with how P-145 (WO-023) converted the `02.Caching`/`07.Messaging` mutual-exclusion documentation into an enforced NetArchTest rule. Where a genuinely justified exception exists (if any), the rule's allow-list mechanism gives teams an explicit, reviewable opt-out rather than a silent violation.
+
+#### Acceptance criteria
+- [ ] New NetArchTest rule (and/or Roslyn analyzer `SK0xxx`) detects `MakeGenericMethod` calls on a `MethodInfo` obtained via `GetMethod`/`GetMethods` reflection in production assemblies across all numbered domains
+- [ ] An explicit, documented exception mechanism exists (marker attribute or governance allow-list) for any future justified case, requiring a written rationale
+- [ ] The fixed `EncryptionRotationService` from P-147 passes the new rule without needing an exception
+- [ ] Rule documented in `00.Governance/CLAUDE.md` with the `EncryptionRotationService` incident referenced as the motivating example
+- [ ] All existing production assemblies pass the new rule (or have explicit, reviewed exceptions) — `dotnet build` and architecture test suite both clean
 ---

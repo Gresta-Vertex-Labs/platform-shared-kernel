@@ -5,9 +5,9 @@ metadata:
   type: project
 ---
 
-As of 2026-06-11, the last phase written to `state-map.md` Phase Backlog is **P-146** under **WO-023**.
+As of 2026-06-12, the last phase written to `state-map.md` Phase Backlog is **P-153** under **WO-024**.
 
-Next new phase must be **P-147**. Next new Work Order must be **WO-024**.
+Next new phase must be **P-154**. Next new Work Order must be **WO-025**.
 
 **How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file.
 
@@ -46,3 +46,28 @@ Next new phase must be **P-147**. Next new Work Order must be **WO-024**.
 - 02.Caching: already ● Complete — P-140–P-144 queued in backlog only; no state-map-phase call made
 - 00.Governance: already ● Complete — P-145 queued in backlog only; no state-map-phase call made
 - 16.Testing: already ◐ In Progress — P-146 queued in backlog only; no state-map-phase call made
+
+**WO-024 context:** 06.Persistence deep architectural review gap fill (P-147–P-153) — 7 phases across 3 domains:
+- P-147 06.Persistence: Fix encryption key rotation reflection violation (MakeGenericMethod/Invoke in LoadBatchAsync) and global EncryptionOptions.CurrentVersion mutable-coupling during RotateAsync; also corrects EncryptedValueConverter<T> doc drift (actual type is non-generic) — no dependency
+- P-148 06.Persistence: Set-based bulk update/delete via ExecuteUpdateAsync/ExecuteDeleteAsync on IRepository, spec-driven (criteria/IncludeDeleted only — Includes/Ordering/Paging rejected); documents interceptor + domain-event bypass — no dependency
+- P-149 06.Persistence: IAsyncEnumerable streaming reads on IReadRepository for ISpecification<T> and IProjectionSpecification<T,TResult>; always forces AsNoTracking (documented deviation) — no dependency
+- P-150 06.Persistence: DB readiness probe primitives (SharedKernelDbContext for EF Core; IDbConnectionFactory-based for Dapper/PostgreSQL) — ships no IHealthCheck itself, 13.ServiceDefaults wraps — no dependency
+- P-151 06.Persistence: IDataSeeder<TContext> + EfCorePersistenceBuilder.WithMigrationsOnStartup()/.WithSeeders() — opt-in startup orchestration, advisory/distributed-lock guarded for multi-replica K8s; optional 02.Caching.Redis.DistributedLocking integration point (no hard reference) — no dependency
+- P-152 03.Domain: StronglyTypedIdJsonConverterFactory for StronglyTypedId<TValue> (Guid/int/long/string) — supersedes prior "no STJ converter, BYO" doc note; zero new NuGet dep (System.Text.Json is shared-framework) — no dependency
+- P-153 00.Governance: New SK0xxx NetArchTest/Roslyn rule banning GetMethod/MakeGenericMethod/Invoke platform-wide except via documented exception mechanism; motivated directly by the P-147 finding — depends P-147
+
+**Key architectural decisions made in WO-024:**
+1. Reflection-based generic dispatch (`GetMethod` + `MakeGenericMethod` + `Invoke`) is now a platform-wide prohibition, not just a 06.Persistence convention — P-147 found the exact forbidden pattern shipped inside the package that documents it as forbidden elsewhere (TenantedDbContext uses expression trees as the sanctioned alternative)
+2. Encryption rotation must decouple per-operation target version from steady-state `EncryptionOptions.CurrentVersion` — the original WO-019 design's "set CurrentVersion globally before rotating" instruction was a latent multi-instance production incident
+3. Bulk set-based mutations (ExecuteUpdate/ExecuteDelete) are a distinct capability from UpdateRangeAsync/DeleteRangeAsync — explicitly bypass interceptors/domain events, spec pipeline restricted to criteria + IncludeDeleted only
+4. Streaming reads always force AsNoTracking regardless of spec flag — the one documented deviation from "the spec's AsNoTracking is honored"
+5. DB readiness probes live in 06.Persistence as primitives only; IHealthCheck wiring stays a 13.ServiceDefaults concern (consistent with existing health-check placement rule)
+6. Migration/seed runner is opt-in via EfCorePersistenceBuilder, explicitly NOT a migration-authoring tool nor a compiled-model (P-106) replacement; distributed lock for multi-replica races is an optional integration point with 02.Caching.Redis.DistributedLocking, never a hard reference
+7. StronglyTypedId STJ converter factory is zero-new-dependency since System.Text.Json ships in the net10.0 shared framework — does not violate SharedKernel.Domain's zero-external-NuGet rule
+
+**Domains touched in WO-024:**
+- 06.Persistence: already ● Published — P-147–P-151 queued in backlog only; no state-map-phase call made
+- 03.Domain: already ● Published — P-152 queued in backlog only; no state-map-phase call made
+- 00.Governance: already ● Complete — P-153 queued in backlog only; no state-map-phase call made
+
+Root CLAUDE.md synced via sync-brain for WO-024: 6 new "What Goes Where" rows + 1 changelog line (2026-06-12).

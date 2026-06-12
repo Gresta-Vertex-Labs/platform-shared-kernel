@@ -83,6 +83,10 @@ IReadRepository<TAggregate, TId>
     .ListProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct)    → Task<IReadOnlyList<TResult>>
     .GetBySpecProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> s, ct)  → Task<TResult?>
     .ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct) → Task<PagedList<TResult>>
+    .StreamAsync(ISpecification<TAggregate> spec, CancellationToken ct)
+        → IAsyncEnumerable<TAggregate>
+    .StreamProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct)
+        → IAsyncEnumerable<TResult>
     NOTE: Read-side only. Specifications control tracking, filtering, ordering, paging, and includes.
           Callers use ReadOnlySpecification<T> or PagedSpecification<T> for read-heavy paths.
           GetByIdsAsync translates to IN (...) SQL; result order is not guaranteed; missing IDs produce
@@ -96,6 +100,12 @@ IReadRepository<TAggregate, TId>
           Migration: replace readRepo.GetByIdAsync(id, ct) with
                      readRepo.GetBySpecAsync(new ByIdSpecification<TAggregate, TId>(id), ct).
           Note: IRepository (write side) retains its own GetByIdAsync — only the read side is affected.
+          StreamAsync / StreamProjectedAsync<TResult> (P-149): BCL IAsyncEnumerable<T> — no new
+          .Abstractions dependency. Intended for large result sets (exports, batch processing) where
+          materializing an IReadOnlyList<T> would be memory-prohibitive. Spec's Skip/Take are honored
+          as a row-window applied before streaming begins (not special-cased). AsNoTracking is forced
+          unconditionally by the EfCore implementation regardless of the spec's AsNoTracking flag —
+          see EfReadRepository for rationale.
 ```
 
 #### Unit of Work (`UnitOfWork/`)
@@ -132,6 +142,25 @@ IDbConnectionFactory
     NOTE: Returns an open connection. Caller is responsible for disposal.
           Connection pooling is provider-managed. This factory is not restricted to Dapper —
           any component needing a raw IDbConnection may inject it.
+```
+
+#### Diagnostics (`Diagnostics/`) — P-150
+
+```text
+DatabaseReadinessResult  (sealed record)
+    (bool IsHealthy, TimeSpan Latency, string Provider, string? ErrorMessage)
+    NOTE: BCL-only — no ORM types. IsHealthy is true only if the probe completed without error.
+          ErrorMessage is null when IsHealthy is true.
+
+IDbConnectionFactory.CheckReadinessAsync(CancellationToken ct)  (extension method) → Task<DatabaseReadinessResult>
+    NOTE: Opens a connection via CreateConnectionAsync, runs "SELECT 1" via IDbCommand.ExecuteScalar,
+          times the round-trip with System.Diagnostics.Stopwatch. Provider is taken from the
+          IDbConnection.GetType().Namespace-derived label (e.g., "Npgsql"). Never throws — any
+          exception is caught and reported as IsHealthy = false with ErrorMessage populated.
+          Only System.Data and System.Diagnostics types are used — zero new dependencies.
+          This domain does NOT implement IHealthCheck — see Hard Violations. 13.ServiceDefaults
+          wraps this extension (or SharedKernelDbContext.CheckReadinessAsync) inside an
+          IHealthCheck adapter for ASP.NET Core health check middleware.
 ```
 
 #### Specification evaluator contract (`Specifications/`)
@@ -184,6 +213,16 @@ SharedKernelDbContext  (abstract class, extends DbContext)
           No OutboxInterceptor — outbox is MassTransit's concern at 07.Messaging.
           OnModelCreating calls modelBuilder.ApplyConfigurationsFromAssembly for the calling assembly.
           Does not declare any entity DbSets — those belong to the consuming service's DbContext subclass.
+
+SharedKernelDbContext.CheckReadinessAsync(CancellationToken ct)  (extension method) → Task<DatabaseReadinessResult>
+    NOTE: P-150. EfCore-side readiness probe — uses Database.CanConnectAsync wrapped in a
+          System.Diagnostics.Stopwatch, with Provider taken from Database.ProviderName (e.g.
+          "Npgsql.EntityFrameworkCore.PostgreSQL"). Never throws — exceptions are caught and
+          reported as IsHealthy = false with ErrorMessage populated. Returns the same
+          DatabaseReadinessResult record defined in SharedKernel.Persistence.Abstractions/Diagnostics/.
+          Prefer this overload when a DbContext is already in scope; prefer
+          IDbConnectionFactory.CheckReadinessAsync for Dapper-only read services that have no DbContext.
+          This domain does NOT implement IHealthCheck — see Hard Violations.
 ```
 
 #### EF Core repositories (`Repositories/`)
@@ -208,6 +247,37 @@ EfRepository<TAggregate, TId>  (abstract class, implements IRepository<TAggregat
           EF change detection handles dirty tracking automatically (avoids full-column UPDATE statements).
           UpdateRangeAsync applies the same detached-state check per entity. UpdateRange itself is synchronous.
 
+IBulkMutationRepository<TAggregate, TId>  (interface, SharedKernel.Persistence.EfCore — NOT Abstractions)
+    .ExecuteUpdateAsync(ISpecification<TAggregate> spec,
+        Expression<Func<SetPropertyCalls<TAggregate>, SetPropertyCalls<TAggregate>>> setPropertyCalls,
+        CancellationToken ct)                                                          → Task<int>
+    .ExecuteDeleteAsync(ISpecification<TAggregate> spec, CancellationToken ct)         → Task<int>
+    NOTE: Lives in SharedKernel.Persistence.EfCore because SetPropertyCalls<TAggregate> is an EF Core
+          type — placing this interface in .Abstractions would introduce an ORM dependency there.
+          Implemented directly by EfRepository<TAggregate, TId> (no separate base class).
+          Both methods translate to a single server-side ExecuteUpdate / ExecuteDelete SQL statement —
+          they bypass the ChangeTracker entirely, which means:
+            - IUnitOfWork.SaveChangesAsync is NOT invoked and has no effect on these rows.
+            - The three platform interceptors (Audit, SoftDelete, Concurrency) do NOT run.
+            - Domain events are NOT collected or dispatched for affected aggregates.
+          ExecuteDeleteAsync ALWAYS issues a hard physical DELETE, even when TAggregate implements
+          ISoftDeletable — there is no server-side translation for "set IsDeleted = true" semantics
+          via ExecuteDelete. Callers needing soft-delete semantics in bulk must use ExecuteUpdateAsync
+          with an explicit setPropertyCalls expression that sets the IsDeleted / DeletedOn columns.
+
+BulkSpecificationGuard  (internal static class)
+    .Validate<T>(ISpecification<T> spec)                                              → void
+    NOTE: Called at the start of both ExecuteUpdateAsync and ExecuteDeleteAsync. Throws
+          UnsupportedSpecificationException if the spec has any of: non-default Includes,
+          StringIncludes, OrderBy/OrderByDescending, ThenBys, Skip, or Take — these shapes have
+          no meaning for a single server-side ExecuteUpdate/ExecuteDelete statement.
+          IncludeDeleted, IsDistinct, and AsNoTracking are tolerated (the latter two are no-ops
+          in this path). Only Criteria and IncludeDeleted are applied by the evaluator.
+
+UnsupportedSpecificationException  (sealed class, extends SharedKernelException)
+    .ctor(string reason)
+    NOTE: Message format: "The specification cannot be used with bulk mutation operations: {reason}".
+
 EfReadRepository<TAggregate, TId>  (abstract class, implements IReadRepository<TAggregate, TId>)
     .GetBySpecAsync(ISpecification<TAggregate> spec, CancellationToken ct)                 → Task<TAggregate?>
     .ListAsync(ISpecification<TAggregate> spec, CancellationToken ct)                      → Task<IReadOnlyList<TAggregate>>
@@ -218,6 +288,10 @@ EfReadRepository<TAggregate, TId>  (abstract class, implements IReadRepository<T
     .ListProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct)    → Task<IReadOnlyList<TResult>>
     .GetBySpecProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> s, ct)  → Task<TResult?>
     .ListPagedProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct) → Task<PagedList<TResult>>
+    .StreamAsync(ISpecification<TAggregate> spec, CancellationToken ct)
+        → IAsyncEnumerable<TAggregate>
+    .StreamProjectedAsync<TResult>(IProjectionSpecification<TAggregate,TResult> spec, ct)
+        → IAsyncEnumerable<TResult>
     NOTE: Uses ISpecificationEvaluator<T> internally. Pass ReadOnlySpecification<T> subclasses to avoid
           unnecessary change-tracking. AsNoTracking() applied when spec.AsNoTracking == true.
           GetByIdsAsync uses an expression-tree Contains predicate (e => ids.Contains(e.Id)) so that
@@ -231,6 +305,13 @@ EfReadRepository<TAggregate, TId>  (abstract class, implements IReadRepository<T
           returns PagedList<TResult>. Use instead of ListPagedAsync when caller needs DTOs.
           Select applied after paging in all projection paths.
           GetByIdAsync has been removed (P-080 breaking change) — use GetBySpecAsync(new ByIdSpecification<>(...)).
+          StreamAsync / StreamProjectedAsync<TResult> (P-149): built on GetQuery / GetProjectedQuery via
+          ISpecificationEvaluator<T>, then .AsNoTracking().AsAsyncEnumerable() with [EnumeratorCancellation]
+          on the CancellationToken parameter. AsNoTracking() is applied UNCONDITIONALLY here — the ONE
+          documented exception to "spec's AsNoTracking flag is honored" — because a long-lived streaming
+          enumeration under change tracking would grow the ChangeTracker unbounded for the lifetime of
+          the enumeration. If spec.Skip / spec.Take are set, they are applied as a normal row-window by
+          the evaluator before the query is converted to IAsyncEnumerable<T> — no special-casing.
 ```
 
 #### EF Core unit of work (`UnitOfWork/`)
@@ -393,8 +474,11 @@ PersistenceServiceOptions  (options POCO, section "SharedKernel:Persistence")
           Register via EfCorePersistenceBuilder.WithServiceName(string).
           Startup validation: ServiceName must be non-null, non-empty, ≤ 256 characters.
 
-EncryptedValueConverter<T>  (sealed class, extends ValueConverter<T, string>)   where T : string
-    NOTE: Encryption direction: AES-256-GCM with a random 12-byte nonce per encryption.
+EncryptedValueConverter  (sealed class, extends ValueConverter<string, string>)
+    constructor: EncryptedValueConverter(IOptionsMonitor<EncryptionOptions> optionsMonitor,
+                                          IEncryptionVersionOverride? versionOverride = null)
+    NOTE: Non-generic — operates on string columns only. Encryption direction: AES-256-GCM with a
+          random 12-byte nonce per encryption.
           Ciphertext format: "v{version}:{Base64(nonce || ciphertext || 16-byte auth-tag)}".
           The version prefix is mandatory — it identifies the decryption key from EncryptionOptions.Keys.
           Decryption: parses the version prefix, looks up the key, decrypts, and verifies the auth tag.
@@ -402,7 +486,19 @@ EncryptedValueConverter<T>  (sealed class, extends ValueConverter<T, string>)   
           Enabled == false: pass-through in both directions, no AES operations performed.
           Holds IOptionsMonitor<EncryptionOptions> — hot-reload of CurrentVersion and key changes
           takes effect on the next read/write without a service restart.
+          Target encrypt version resolution (P-147): versionOverride?.OverrideVersion ?? options.CurrentVersion —
+          see IEncryptionVersionOverride below for the rotation-scoped override seam.
           Do NOT instantiate directly in IEntityTypeConfiguration — use .Encrypt() extension (SK0304).
+
+IEncryptionVersionOverride  (interface) / EncryptionVersionOverride  (sealed class — default impl)
+    .OverrideVersion  (string?, mutable)
+    NOTE: Scoped accessor (P-147) allowing EncryptionRotationService to direct a single batch's
+          EncryptedValueConverter instances to encrypt with toVersion, without mutating
+          EncryptionOptions.CurrentVersion. Registered as scoped by .WithEncryption(); a shared
+          no-op instance (OverrideVersion always null) is used when not registered.
+          EncryptionModelConvention resolves this from DI and passes it to every converter it constructs.
+          Concurrent unrelated scoped DbContext instances are unaffected — each resolves its own
+          scoped IEncryptionVersionOverride, defaulting to null (i.e., CurrentVersion).
 
 .Encrypt(bool? enabled = true)  (extension method on PropertyBuilder<T>)
     NOTE: Writes annotation "SharedKernel:Encrypt" = true/false on the property.
@@ -415,7 +511,8 @@ EncryptedValueConverter<T>  (sealed class, extends ValueConverter<T, string>)   
 EncryptionModelConvention  (sealed class, implements IModelFinalizingConvention)
     NOTE: Runs at model-finalization time (after all IEntityTypeConfiguration implementations).
           Scans all entity type properties for the "SharedKernel:Encrypt" annotation.
-          Applies EncryptedValueConverter<string> to each annotated property where annotation == true.
+          Applies EncryptedValueConverter to each annotated property where annotation == true,
+          passing the resolved IEncryptionVersionOverride (or shared no-op instance) to each converter.
           Registered automatically in SharedKernelDbContext.OnModelCreating — no manual call needed.
           Behavior is gated by EncryptionOptions.Enabled inside the converter, not the convention —
           the convention always wires the converter; Enabled == false makes the converter a pass-through.
@@ -440,8 +537,14 @@ EncryptionRotationResult  (record)
 EncryptionRotationService  (abstract class, implements IEncryptionRotationJob)
     NOTE: Uses IDbContextFactory<TContext> to open fresh contexts per batch (default batch size 500).
           Enumerates all entity types in the EF model that have encrypted properties.
+          LoadBatchAsync (P-147): reflection-free — uses the non-generic DbContext.Set(Type) overload,
+          the non-generic Queryable.Skip/Take extension methods, and the non-generic
+          EntityFrameworkQueryableExtensions.ToListAsync(IQueryable, ct) overload (returns Task<List<object>>).
+          No GetMethod/MakeGenericMethod/Invoke anywhere in the rotation hot path.
           For each batch: loads rows, checks whether stored value starts with "v{fromVersion}:";
-          decrypts with fromVersion key, re-encrypts with toVersion key, saves batch.
+          resolves the batch context's scoped IEncryptionVersionOverride and sets OverrideVersion = toVersion
+          for the duration of SaveChangesAsync (resetting to null afterward) so EncryptedValueConverter
+          re-encrypts with toVersion's key without mutating EncryptionOptions.CurrentVersion.
           Rotation is idempotent — rows already at toVersion are skipped.
           Keys read from IOptionsMonitor<EncryptionOptions> at RotateAsync call time.
           Subclasses supply TContext; may override batch size or pre/post-batch hooks.
@@ -528,6 +631,17 @@ EfCorePersistenceBuilder
         — When used, ValueObjectOwnershipBuilder.Apply and runtime model-building scans do not run —
           all mappings must be present in the compiled model.
         — Pure pass-through: builder does not validate the model.
+    .WithMigrationsOnStartup()
+        — Opt-in. Marks that Database.MigrateAsync should run during host startup.
+        — Does not by itself register a hosted service — see .Build() below.
+        — Compatible with .WithCompiledModel(): MigrateAsync still applies pending SQL migrations;
+          the compiled model only affects runtime query/model-building, not migration application.
+    .AddSeeder<TSeeder>()
+        — TSeeder : class, IDataSeeder<TContext> for the same TContext as the builder.
+        — Registers TSeeder as scoped. Multiple calls accumulate into an ordered list, executed in
+          call order during startup.
+        — Opt-in. Seeders are idempotent by contract (not enforced by the framework) — see
+          IDataSeeder<TContext> below.
     .Build()
         — Registers TContext as DbContext (scoped)
         — Registers IUnitOfWork → EfUnitOfWork (scoped)
@@ -538,10 +652,52 @@ EfCorePersistenceBuilder
           if no IUserContext already registered; uses SharedKernel.Security.Abstractions.IUserContext
         — Calls AddDbContextFactory<TContext> when .WithDbContextFactory() was invoked
         — Applies UseModel(compiledModel) when .WithCompiledModel() was invoked
+        — Registers MigrationAndSeedHostedService<TContext> as IHostedService ONLY when
+          .WithMigrationsOnStartup() was called, or at least one .AddSeeder<TSeeder>() was called.
+          If neither was called, no hosted service is registered — fully opt-in, zero overhead.
     NOTE: No outbox, Dapper, or PostgreSQL wiring in this builder. Those are separate concerns.
           ITransactionalUnitOfWork is only registered when .WithTransactionalUnitOfWork() is called.
           IUserContext and ITenantProvider are both sourced from SharedKernel.Security.Abstractions.
           All fluent methods return EfCorePersistenceBuilder for chaining.
+```
+
+#### Migrations and data seeding (`Seeding/`) — P-151
+
+```text
+IDataSeeder<TContext>  (interface)
+    where TContext : DbContext
+    .SeedAsync(TContext context, CancellationToken ct)          → Task
+    NOTE: Idempotency is a CONTRACT, not enforced by the framework — implementations must check
+          for existing data (or use upsert semantics) before inserting, since SeedAsync may run
+          on every application startup. Each registered seeder receives its own DI scope and its
+          own TContext instance, resolved via IDbContextFactory<TContext> (so .WithDbContextFactory()
+          is implicitly required when any seeder is registered — EfCorePersistenceBuilder.Build()
+          enables the factory automatically in this case if not already requested).
+
+MigrationAndSeedHostedService<TContext>  (internal sealed class, implements IHostedService)
+    where TContext : DbContext
+    .StartAsync(CancellationToken ct)
+    NOTE: Registered by EfCorePersistenceBuilder.Build() only when .WithMigrationsOnStartup() was
+          called, or at least one seeder was registered via .AddSeeder<TSeeder>().
+          Sequence on StartAsync:
+            1. Acquire a PostgreSQL advisory lock via pg_advisory_lock(hashtext(lockKey)), using the
+               existing IDbConnectionFactory — no new dependency on 02.Caching is introduced. The
+               lock key is derived from the context type's full name so multiple replicas racing on
+               startup serialize migration/seeding to a single instance.
+            2. If migrations-on-startup was requested, call context.Database.MigrateAsync(ct). The
+               compiled model (if supplied via .WithCompiledModel()) does not change this step —
+               MigrateAsync applies SQL DDL independently of the runtime model.
+            3. Run each registered seeder in registration order, each resolved in its own DI scope
+               with its own TContext instance via IDbContextFactory<TContext>.
+            4. Release the advisory lock via pg_advisory_unlock in a finally block, regardless of
+               success or failure of steps 2-3.
+          .StopAsync is a no-op.
+          Alternative for non-PostgreSQL providers or stronger guarantees: consumers may instead
+          wrap their own startup logic with SharedKernel.Caching.Redis.DistributedLocking — this is
+          documented as an option, not implemented by this hosted service.
+          Non-goals: this is not a migration-authoring tool (use `dotnet ef migrations add` as
+          normal) and does not replace .WithCompiledModel() (P-106) — compiled models and
+          migrations operate independently.
 ```
 
 ---
@@ -668,7 +824,7 @@ DapperReadService  (abstract class)
 - Omitting the nested test-project exclusion items from production `.csproj` files — every production csproj that has a nested `*.Tests` subfolder must include: `<Compile Remove="*.Tests\**" />`, `<EmbeddedResource Remove="*.Tests\**" />`, `<None Remove="*.Tests\**" />`. Without these the SDK globs pick up test `.cs` files and the production build fails.
 - Writing audit strings in any format other than `userId.ToString("D")` or `PersistenceServiceOptions.ServiceName` — the `"D"` lowercase hyphenated GUID format is the only permitted authenticated value; the unauthenticated fallback must come from options (never a hardcoded string literal other than the options default). `"N"`, `"B"`, `"P"`, `"X"` GUID formats are violations.
 - Placing encryption attributes (any attribute whose name contains `Encrypt` or `Encrypted`) on domain entity classes — encryption is configured exclusively via `PropertyBuilder<T>.Encrypt()` inside `IEntityTypeConfiguration<TEntity>` implementations. Attributes on domain types create an infrastructure concern in the domain layer, violating DDD purity (SK0302).
-- Instantiating `EncryptedValueConverter<T>` directly inside `IEntityTypeConfiguration<TEntity>.Configure(builder)` and passing it to `.HasConversion(converter)` — `EncryptionModelConvention` applies the converter automatically after model finalization; manual instantiation produces duplicate or inconsistent converter registration (SK0304).
+- Instantiating `EncryptedValueConverter` directly inside `IEntityTypeConfiguration<TEntity>.Configure(builder)` and passing it to `.HasConversion(converter)` — `EncryptionModelConvention` applies the converter automatically after model finalization; manual instantiation produces duplicate or inconsistent converter registration (SK0304).
 - Injecting `IEncryptionRotationJob` in any MediatR handler, domain service, application command/query handler, or any type in `03.Domain` or `05.Application` — key rotation is an infrastructure operation triggered via hosted service, Hangfire job, Temporal activity, or management endpoint only (SK0303).
 - Using `AesGcm`, `Aes`, `SymmetricAlgorithm`, or any BCL symmetric cipher directly in `03.Domain` or `05.Application` layer types — all field-level encryption goes through `EncryptedValueConverter<T>` registered by the model convention (SK0301).
 - Removing a key version from `EncryptionOptions.Keys` before completing the rotation of all rows that were encrypted with that version — doing so causes `EncryptionKeyNotFoundException` at query time for any row still carrying a ciphertext prefixed with the removed version.
@@ -682,6 +838,13 @@ DapperReadService  (abstract class)
 - Using `EF.Property<TId>(e, "Id")` inside a `Contains` predicate for `GetByIdsAsync` — this approach may silently fall back to client-side evaluation when `TId` is a strongly-typed ID with a registered `ValueConverter`; use an expression-tree `Contains` lambda instead so the converter is applied at the property level by the LINQ provider.
 - Registering consumer interceptors that fire before the platform three (Audit, SoftDelete, Concurrency) — platform interceptors are always composed first in `SharedKernelDbContext`; consumer interceptors added via `.AddInterceptor<T>()` are always appended after.
 - Setting `AsNoTracking = true` on a specification passed to `IRepository.GetBySpecAsync` (write-side) — the entity returned will be detached and subsequent mutations will not be detected by change tracking, forcing a full-column UPDATE via `.Update()`; write-side specs must leave `AsNoTracking` unset.
+- Expecting `IUnitOfWork.SaveChangesAsync`, the three platform interceptors, or domain event dispatch to run for rows affected by `IBulkMutationRepository.ExecuteUpdateAsync` or `ExecuteDeleteAsync` — both compile to a single server-side `ExecuteUpdate`/`ExecuteDelete` SQL statement that bypasses the `ChangeTracker` entirely. If audit fields, soft-delete flags, or domain events must be applied, do not use bulk mutation — load and save the aggregates normally.
+- Calling `IBulkMutationRepository.ExecuteDeleteAsync` on an `ISoftDeletable` aggregate and expecting a soft delete — `ExecuteDeleteAsync` always issues a hard physical `DELETE`. Use `ExecuteUpdateAsync` with an explicit `setPropertyCalls` expression that sets the `IsDeleted`/`DeletedOn` columns if soft-delete semantics are required in bulk.
+- Passing a specification with `Includes`, `StringIncludes`, `OrderBy`/`OrderByDescending`, `ThenBys`, `Skip`, or `Take` to `IBulkMutationRepository.ExecuteUpdateAsync`/`ExecuteDeleteAsync` — `BulkSpecificationGuard.Validate` throws `UnsupportedSpecificationException` for these shapes; only `Criteria` and `IncludeDeleted` are meaningful for a single bulk statement.
+- Expecting `StreamAsync`/`StreamProjectedAsync<TResult>` to honor `spec.AsNoTracking == false` — both methods force `AsNoTracking()` unconditionally regardless of the specification's flag, to prevent unbounded `ChangeTracker` growth during long-lived enumeration. If tracked entities are required, use `ListAsync`/`ListPagedAsync` instead.
+- Implementing `IHealthCheck` (Microsoft.Extensions.Diagnostics.HealthChecks) anywhere in `06.Persistence` — readiness probing is exposed as `DatabaseReadinessResult` plus `IDbConnectionFactory.CheckReadinessAsync`/`SharedKernelDbContext.CheckReadinessAsync` extension methods only; wrapping these in an `IHealthCheck` adapter is `13.ServiceDefaults`'s responsibility.
+- Adding a project reference from any `06.Persistence` package to `02.Caching` (any `SharedKernel.Caching.*` package) to implement the `MigrationAndSeedHostedService` advisory lock — the lock uses the existing `IDbConnectionFactory` and PostgreSQL `pg_advisory_lock`/`pg_advisory_unlock`. Consumers wanting a stronger or cross-database lock may wrap their own startup logic with `SharedKernel.Caching.Redis.DistributedLocking` themselves; this domain does not take that dependency.
+- Implementing `IDataSeeder<TContext>.SeedAsync` without an idempotency check (existence check or upsert) — `MigrationAndSeedHostedService` may invoke seeders on every application startup; non-idempotent seeders will duplicate data on redeploys.
 
 ### Specification evaluator ordering (canonical)
 
@@ -799,6 +962,45 @@ services
 
 // Triggering key rotation — inject IEncryptionRotationJob in a Hangfire job / hosted service
 //   await rotationJob.RotateAsync(fromVersion: "v1", toVersion: "v2", ct);
+
+// With migrations-on-startup and data seeders (optional — P-151)
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithMigrationsOnStartup()           // runs Database.MigrateAsync via MigrationAndSeedHostedService
+    .AddSeeder<ReferenceDataSeeder>()    // runs SeedAsync once per registered seeder, in order
+    .AddSeeder<DefaultTenantSeeder>()
+    .Build();
+// ReferenceDataSeeder : IDataSeeder<OrderDbContext> — SeedAsync must check for existing rows
+// before inserting (idempotency is a contract, not enforced by the framework).
+
+// Bulk mutation — server-side ExecuteUpdate / ExecuteDelete (P-148)
+// Bypasses SaveChangesAsync, the three platform interceptors, and domain event dispatch.
+var updatedCount = await orderRepository.ExecuteUpdateAsync(
+    new OrdersOlderThanSpecification(cutoffDate),
+    setters => setters.SetProperty(o => o.Status, OrderStatus.Archived),
+    ct);
+
+var deletedCount = await draftOrderRepository.ExecuteDeleteAsync(
+    new DraftOrdersSpecification(),
+    ct);
+// ExecuteDeleteAsync always issues a hard physical DELETE, even for ISoftDeletable aggregates.
+
+// Streaming large result sets (P-149) — AsNoTracking forced unconditionally
+await foreach (var order in orderReadRepository.StreamAsync(new AllOrdersSpecification(), ct))
+{
+    // process one Order at a time without materializing the full list
+}
+
+await foreach (var dto in orderReadRepository.StreamProjectedAsync(new OrderSummaryProjection(), ct))
+{
+    // process one OrderSummaryDto at a time
+}
+
+// Readiness probes (P-150) — consumed by 13.ServiceDefaults health check adapters
+var dbContextReadiness = await dbContext.CheckReadinessAsync(ct);
+var connectionFactoryReadiness = await connectionFactory.CheckReadinessAsync(ct);
+// Both return DatabaseReadinessResult { IsHealthy, Latency, Provider, ErrorMessage } and never throw.
 ```
 
 `SharedKernel.Persistence.Abstractions` ships **no DI extensions** — it is a pure interface library.
@@ -814,7 +1016,8 @@ services
 - `AuditInterceptor` and `SoftDeleteInterceptor` access EF Core shadow properties by string key — shadow property access via `CurrentValues[name]` is AOT-safe (no reflection on CLR types).
 - `TenantedDbContext.OnModelCreating` global filter is built with expression trees (`Expression.Parameter`, `Expression.Property`, `Expression.Equal`, `Expression.Lambda`) — no `GetMethod`/`MakeGenericMethod`/`Invoke` calls; fully AOT-safe.
 - `ValueObjectOwnershipBuilder` scans entity types at model-build time — O(n×m) startup cost (n entity types, m properties per type); early-exit when no `IValueObject` properties found prevents unnecessary allocation; model-build time only, not a hot path. The `GetProperties(BindingFlags.Public | BindingFlags.Instance)` call at the `entityType.ClrType` usage site carries `[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]` to suppress IL2026/IL2075 trim warnings; this annotation is acceptable because the call is model-build time only.
-- `EncryptedValueConverter<string>` uses `System.Security.Cryptography.AesGcm` and `RandomNumberGenerator` — both are BCL types fully AOT-compatible in .NET 10. No reflection in the hot path; `IOptionsMonitor<EncryptionOptions>` access is a property read on a DI-managed singleton. AOT-safe.
+- `EncryptedValueConverter` uses `System.Security.Cryptography.AesGcm` and `RandomNumberGenerator` — both are BCL types fully AOT-compatible in .NET 10. No reflection in the hot path; `IOptionsMonitor<EncryptionOptions>` and `IEncryptionVersionOverride` access are property reads on DI-managed instances. AOT-safe.
+- `IEncryptionVersionOverride`/`EncryptionVersionOverride` (P-147) are a pure interface plus a tiny mutable-property class — BCL-only, zero reflection, AOT-safe. `EncryptionModelConvention` resolves the scoped instance via normal DI and passes it to `EncryptedValueConverter`'s constructor — a constructor call, not `Activator.CreateInstance`.
 - `EncryptionModelConvention` scans `modelBuilder.Model.GetEntityTypes()` and `entityType.GetProperties()` at model-finalization time — model-build time only, not a hot path. The same `[DynamicallyAccessedMembers]` pattern applies if CLR property access is needed for annotation scanning; annotation access via EF Core's `IAnnotation` API is AOT-safe by design.
 - `EncryptionRotationService` uses `IDbContextFactory<TContext>` which is AOT-compatible as of EF Core 8+. Batch processing is ordinary LINQ against the already-materialized EF model — no runtime-model scanning in the hot path.
 - `SnakeCaseNamingConvention` operates on EF Core model metadata at model-building time — not in hot paths, AOT-safe.
@@ -828,6 +1031,12 @@ services
 - `ByIdSpecification<TAggregate, TId>` uses `e => e.Id.Equals(id)` as an expression tree — AOT-safe on `IQueryable`.
 - `SpecificationEvaluator<T>.GetProjectedQuery<TResult>` applies `.Select(spec.Selector)` where `Selector` is `Expression<Func<TAggregate, TResult>>` — expression trees on `IQueryable` are AOT-safe when the lambda body contains no runtime reflection APIs.
 - `EfUnitOfWork` domain event dispatch: `ChangeTracker.Entries<IHasDomainEvents>()` is a generic EF Core API — AOT-safe. `IDomainEventDispatcher` is a pure interface; no reflection in the dispatch path.
+- `EncryptionRotationService.LoadBatchAsync` (P-147) is reflection-free: uses the non-generic `DbContext.Set(Type)` overload, the non-generic `Queryable.Skip`/`Queryable.Take` (operating on `IQueryable` rather than `IQueryable<T>`), and the non-generic `EntityFrameworkQueryableExtensions.ToListAsync(IQueryable, CancellationToken)` returning `Task<List<object>>`. No `GetMethod`/`MakeGenericMethod`/`Invoke` anywhere in the rotation hot path — fully AOT-safe.
+- `IBulkMutationRepository.ExecuteUpdateAsync` (P-148) takes `Expression<Func<SetPropertyCalls<TAggregate>, SetPropertyCalls<TAggregate>>>` — an expression tree consumed by EF Core's `ExecuteUpdateAsync` LINQ provider. Expression trees on `IQueryable` are AOT-safe; `SetPropertyCalls<T>` is a provider-translated builder type, not reflected over at runtime.
+- `BulkSpecificationGuard.Validate<T>` (P-148) inspects `ISpecification<T>` properties (`Includes`, `StringIncludes`, `OrderBy`, etc.) via the interface's typed members — no reflection.
+- `StreamAsync`/`StreamProjectedAsync<TResult>` (P-149) return BCL `IAsyncEnumerable<T>` via EF Core's `AsAsyncEnumerable()` — AOT-safe as of EF Core 8+. `[EnumeratorCancellation]` is a BCL attribute consumed by the compiler-generated async iterator, no reflection at runtime.
+- `DatabaseReadinessResult` (P-150) is a BCL-only `sealed record` (`bool`, `TimeSpan`, `string`, `string?`) — AOT-safe by definition. `IDbConnectionFactory.CheckReadinessAsync` uses only `System.Data.IDbCommand.ExecuteScalar` and `System.Diagnostics.Stopwatch` — no reflection. `SharedKernelDbContext.CheckReadinessAsync` uses `Database.CanConnectAsync` and `Database.ProviderName` — both AOT-compatible EF Core APIs as of EF Core 8+.
+- `IDataSeeder<TContext>` (P-151) is a pure generic interface — AOT-safe. `MigrationAndSeedHostedService<TContext>` uses `Database.MigrateAsync` (AOT-compatible EF Core 8+) and `IDbContextFactory<TContext>.CreateDbContextAsync` (AOT-compatible) — no reflection. The PostgreSQL advisory lock uses parameterized `pg_advisory_lock(hashtext(@lockKey))`/`pg_advisory_unlock` via `IDbConnectionFactory` and `IDbCommand` — no reflection.
 
 ---
 
@@ -873,6 +1082,14 @@ services
 - `SpecificationEvaluator<T>` string include tests (P-107): string include path applied → navigation property populated; expression include + string include both applied → both navigation properties populated; string includes applied after expression includes and before primary sort (ordering verification via query log or expression tree); `ContractShapeTests` verify `ISpecification<T>` declares `StringIncludes` property.
 - PostgreSQL package integration tests (P-108) — all require real PostgreSQL Testcontainer: (1) `SnakeCaseNamingConvention` produces snake_case names in `DbContext.Model`; (2) JSONB round-trip: insert + fetch + verify deserialization; (3) pgvector round-trip: insert + fetch + verify dimensions; (4) `NpgsqlConnectionFactory.CreateConnectionAsync` returns open `NpgsqlConnection`; (5) `AddSharedKernelPostgreSQL` smoke: `IDbConnectionFactory` resolves as `NpgsqlConnectionFactory`.
 - Dapper package integration tests (P-109) — all require real PostgreSQL Testcontainer: (1) `QueryAsync` returns correct rows from parameterized query; (2) `QuerySingleOrDefaultAsync` returns entity / null; (3) `ExecuteAsync` returns affected row count; (4) connection opened once and disposed per operation (no leaks); (5) `StronglyTypedIdTypeHandler` round-trip; (6) `SmartEnumTypeHandler` round-trip.
+- `EncryptionRotationService.LoadBatchAsync` reflection-free regression tests (P-147): rotation over a multi-entity-type model rotates rows for all encrypted entity types via the non-generic `Set(Type)`/`Skip`/`Take`/`ToListAsync(IQueryable, ct)` path; batch-boundary tests at exactly, one less than, and one more than `BatchSize`; existing rotation idempotency tests continue to pass unmodified.
+- `IEncryptionVersionOverride` rotation-scoped override tests (P-147): `RotateAsync("v1","v2")` while `CurrentVersion == "v1"` re-encrypts rotated rows with `v2`'s key; `EncryptionOptions.CurrentVersion` remains `"v1"` after rotation; a concurrent unrelated scoped `EncryptedValueConverter` continues encrypting with `CurrentVersion` (no cross-scope leakage of the override); a fresh scoped converter after rotation resolves `OverrideVersion == null`.
+- Doc-drift correction verification (P-147): no `EncryptedValueConverter<T>`/`EncryptedValueConverter<string>` generic type exists in the `Encryption/` namespace; `EncryptionModelConvention` references the non-generic `EncryptedValueConverter`; existing converter round-trip tests continue to pass unmodified.
+- `IBulkMutationRepository.ExecuteUpdateAsync`/`ExecuteDeleteAsync` integration tests — SQLite (P-148): `ExecuteUpdateAsync` with a criteria-only spec returns the matched row count and updates only matched rows; `ExecuteDeleteAsync` physically removes matched rows even when the aggregate implements `ISoftDeletable`; both bypass `AuditInterceptor` (no `ModifiedBy`/`ModifiedOn` updates unless explicit in `SetPropertyCalls`) and domain event dispatch; `spec.IncludeDeleted == true` applies `IgnoreQueryFilters` so previously soft-deleted rows are also matched.
+- `BulkSpecificationGuard`/`UnsupportedSpecificationException` unit tests (P-148): each of `Includes`, `StringIncludes`, `OrderBy`/`OrderByDescending`, `ThenBys`, `Skip`, `Take` set to a non-default value throws `UnsupportedSpecificationException` naming the offending property; a spec with only `Criteria` (plus `IncludeDeleted`/`IsDistinct`/`AsNoTracking`) passes; `ExecuteUpdateAsync`/`ExecuteDeleteAsync` surface the exception directly with no SQL issued.
+- `IReadRepository.StreamAsync`/`StreamProjectedAsync<TResult>` integration tests — SQLite (P-149): streaming a spec matching N rows yields exactly N items via `IAsyncEnumerable<T>` regardless of `spec.AsNoTracking`, with `ChangeTracker.Entries().Count() == 0` after full enumeration; `StreamProjectedAsync<TResult>` matches `ListProjectedAsync` for the same spec; `Skip`/`Take` bounds the streamed count to the expected window; cancellation mid-enumeration stops further yields; `ContractShapeTests` confirm both methods are declared on `IReadRepository<TAggregate, TId>`.
+- `DatabaseReadinessResult`/`CheckReadinessAsync` tests (P-150): `SharedKernelDbContext.CheckReadinessAsync` against a healthy in-memory SQLite context returns `IsHealthy == true` with non-negative `Latency` and non-empty `Provider`; against an invalid connection string returns `IsHealthy == false` with `ErrorMessage` populated, without throwing; `IDbConnectionFactory.CheckReadinessAsync` against a healthy PostgreSQL Testcontainer returns `IsHealthy == true`; against a factory that throws on `CreateConnectionAsync` returns `IsHealthy == false` without throwing; `ContractShapeTests` confirm `DatabaseReadinessResult` is a `sealed record` with exactly the four documented properties in `SharedKernel.Persistence.Abstractions`.
+- `IDataSeeder<TContext>`/`MigrationAndSeedHostedService` integration tests — SQLite/Testcontainers (P-151): `.AddSeeder<TSeeder>()` registers the seeder as scoped and the hosted service; starting the host invokes `SeedAsync` exactly once per registered seeder in registration order; running the host twice does not duplicate rows when the seeder checks for existing data; `.WithMigrationsOnStartup()` against PostgreSQL applies all pending migrations before any seeder runs; omitting both options registers no hosted service; two concurrent host instances racing against the same PostgreSQL Testcontainer serialize via the advisory lock with no duplicate-key or migration-conflict errors.
 
 ---
 
@@ -889,3 +1106,4 @@ services
 - [2026-06-03] WO-017: GetProjectedQuery promoted to `ISpecificationEvaluator<T>`; ITransactionalUnitOfWork/IPersistenceTransaction added to Abstractions; EfTransactionalUnitOfWork/EfCorePersistenceBuilder.WithTransactionalUnitOfWork added to EfCore; ListPagedProjectedAsync added to IReadRepository/EfReadRepository; ValueObjectOwnershipConvention renamed to ValueObjectOwnershipBuilder with static-utility note; TenantedRepository.GetByIdForTenantAsync soft-delete-preserving semantics documented + GetByIdForTenantIncludingDeletedAsync added; EfUnitOfWork single-constructor hard rule added; three new hard violations (downcast, second constructor, direct IDbContextTransaction injection) (sync-brain)
 - [2026-06-03] WO-018 (P-105..P-109) planned: EfTransactionalUnitOfWork double-dispatch fix documented (dispatch deferred to EfPersistenceTransaction.CommitAsync when CurrentTransaction active); EfReadRepository.GetByIdsAsync expression-tree Contains fix documented (eliminates silent client-side evaluation with strongly-typed ID converters); ValueObjectOwnershipBuilder DynamicallyAccessedMembers annotation documented in AOT notes; IRepository.GetBySpecAsync added (write-side tracked fetch by spec); EfCorePersistenceBuilder gains `WithDbContextFactory()`, `AddInterceptor<T>()`, `WithCompiledModel(IModel)`; SharedKernelDbContext constructor extended for additional interceptors; SpecificationEvaluator canonical pipeline updated with step 2b (StringIncludes — between expression includes and OrderBy); PostgreSQL package fully documented (SnakeCaseNamingConvention, JSONB, pgvector, NpgsqlConnectionFactory, AddSharedKernelPostgreSQL); Dapper package fully documented (StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService, AddSharedKernelDapper); five new hard violations; DI registration examples expanded; test rules updated with nine new test scenarios (persistence-arch-planner)
 - [2026-06-04] WO-019 (P-111..P-113) planned: field-level AES-256-GCM encryption subsystem documented — EncryptedValueConverter<string>, EncryptionOptions, PersistenceServiceOptions, EncryptionModelConvention (IModelFinalizingConvention), PropertyBuilder.Encrypt() annotation extension, IEncryptionRotationJob/EncryptionRotationService, EncryptionKeyNotFoundException; audit fallback hardcoded "system" replaced by configurable PersistenceServiceOptions.ServiceName; EfCorePersistenceBuilder gains .WithEncryption() and .WithServiceName(); SharedKernelDbContext gains optional IOptionsMonitor<EncryptionOptions> constructor parameter; six new hard violations; AOT notes for AesGcm/EncryptionModelConvention/EncryptionRotationService; DI registration example updated; test rules added for converter round-trip, tamper detection, hot-reload, legacy plaintext path, convention integration, rotation idempotency (arch-lead)
+- [2026-06-12] WO-024 (P-147..P-151) planned: doc-drift corrected — `EncryptedValueConverter<string>`/`EncryptedValueConverter<T>` (nonexistent generic) replaced everywhere with the actual non-generic `EncryptedValueConverter : ValueConverter<string, string>`; new `IEncryptionVersionOverride`/`EncryptionVersionOverride` scoped seam documented (mutable `OverrideVersion`, resolved by `EncryptionModelConvention`, set/reset by `EncryptionRotationService.RotateAsync` around `SaveChangesAsync` without mutating `EncryptionOptions.CurrentVersion`); `EncryptionRotationService.LoadBatchAsync` documented as reflection-free via non-generic `Set(Type)`/`Skip`/`Take`/`ToListAsync(IQueryable, ct)`; new `IBulkMutationRepository<TAggregate, TId>` (EfCore-only — `SetPropertyCalls<TAggregate>` is an EF Core type) with `ExecuteUpdateAsync`/`ExecuteDeleteAsync`, implemented directly by `EfRepository<TAggregate, TId>`, both bypassing `SaveChangesAsync`/platform interceptors/domain event dispatch, `ExecuteDeleteAsync` always a hard physical DELETE even for `ISoftDeletable`; new `BulkSpecificationGuard`/`UnsupportedSpecificationException` restricting bulk specs to `Criteria`/`IncludeDeleted` only; `IReadRepository`/`EfReadRepository` gain `StreamAsync`/`StreamProjectedAsync<TResult>` returning `IAsyncEnumerable<T>` with AsNoTracking forced unconditionally (the one documented exception to the spec's AsNoTracking flag) and Skip/Take honored as a row-window; new `DatabaseReadinessResult` sealed record plus `IDbConnectionFactory.CheckReadinessAsync` (Abstractions) and `SharedKernelDbContext.CheckReadinessAsync` (EfCore) readiness probes, both BCL-only and never-throwing, with an explicit no-`IHealthCheck`-in-this-domain rule (that's `13.ServiceDefaults`'s job); new `IDataSeeder<TContext>` plus opt-in `EfCorePersistenceBuilder.WithMigrationsOnStartup()`/`.AddSeeder<TSeeder>()` registering `MigrationAndSeedHostedService<TContext>` which runs a PostgreSQL advisory lock (via existing `IDbConnectionFactory`, no new `02.Caching` reference), `Database.MigrateAsync`, and ordered seeders; ten new hard violations; AOT notes for the reflection-free rotation path, `IEncryptionVersionOverride`, `SetPropertyCalls<T>` expression trees, `IAsyncEnumerable<T>` streaming, BCL-only readiness probes, and `IDataSeeder`/`MigrationAndSeedHostedService`; eight new/expanded test-rule scenarios; four new DI registration examples (seeders/migrations, bulk mutation, streaming, readiness probes) (persistence-arch-planner)

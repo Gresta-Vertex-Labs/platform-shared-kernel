@@ -240,7 +240,38 @@ StronglyTypedId<TValue>  (abstract record, implements IStronglyTypedId<TValue>) 
     .Value                                                  → TValue  (required positional)
     .ToString()                                             → string  (= Value.ToString()!)
     implicit operator TValue
-    NOTE: STJ serialization requires a custom JsonConverter in the consuming service — this package ships none.
+    NOTE: STJ serialization is supported via StronglyTypedIdJsonConverterFactory (see StronglyTypedIds/Serialization/
+          below) — opt-in, not auto-registered. Concrete IDs must follow the documented shape:
+              public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);
+          i.e. a public primary constructor (TValue Value) on a non-abstract closed type.
+```
+
+#### Strongly-typed ID STJ serialization (`StronglyTypedIds/Serialization/`)
+
+```text
+StronglyTypedIdJsonConverterFactory  (sealed, extends JsonConverterFactory)
+    .CanConvert(Type typeToConvert)                        → bool
+        True when typeToConvert is non-abstract and its base type closes StronglyTypedId<TValue>
+        for TValue in { Guid, int, long, string }.
+    .CreateConverter(Type typeToConvert, JsonSerializerOptions options) → JsonConverter
+        Returns a closed StronglyTypedIdJsonConverter<TStronglyTypedId, TValue> via
+        Activator.CreateInstance(typeof(StronglyTypedIdJsonConverter<,>).MakeGenericType(idType, valueType)).
+        Called once per closed type by STJ; the result is cached by JsonSerializerOptions.
+
+StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>  (sealed, extends JsonConverter<TStronglyTypedId>)
+    where TStronglyTypedId : StronglyTypedId<TValue>  where TValue : notnull
+    .Read(...)                                             → TStronglyTypedId
+        Deserializes the raw TValue token via JsonSerializer.Deserialize<TValue>, then constructs
+        TStronglyTypedId via a cached Func<TValue, TStronglyTypedId> activator.
+    .Write(...)                                            → void
+        Writes value.Value via JsonSerializer.Serialize<TValue> — the wire format is the bare
+        primitive (e.g. a JSON string for Guid/string, a JSON number for int/long), never an
+        object wrapper such as { "value": ... }.
+
+USAGE (opt-in — consuming services register explicitly):
+    var options = new JsonSerializerOptions();
+    options.Converters.Add(new StronglyTypedIdJsonConverterFactory());
+    // OrderId, CustomerId, etc. now (de)serialize as their bare TValue.
 ```
 
 #### ValueObject base (`ValueObjects/`)
@@ -446,7 +477,10 @@ SpecificationExtensions
 - **`TenantId` is construction-time only** — the `TenantId` property on all tenanted aggregate bases has `private set` and must never change after construction. Tenant reassignment is a domain violation. The application layer (typically `ITenantProvider` from `12.Security`) resolves the tenant and passes it as a `Guid` primitive to the aggregate constructor. `ITenantProvider` must never be referenced from `03.Domain` — the domain receives `tenantId` as a primitive, not a resolved service.
 - `IHasTenant` is a marker only — the domain layer has no tenant resolution logic.
 - **All domain service implementations must extend `DomainService` abstract class** — do not implement `IDomainService` directly. Extending `DomainService` provides `CheckRule` access without any infrastructure coupling.
-- `StronglyTypedId<TValue>` does not ship a STJ `JsonConverter` — consuming services must provide their own in their serialization context (e.g., `04.Contracts` or `06.Persistence`).
+- `StronglyTypedIdJsonConverterFactory` supports exactly four `TValue` shapes — `Guid`, `int`, `long`, `string`. A closed `StronglyTypedId<TValue>` for any other `TValue` is not converted by the factory (`CanConvert` returns `false`); such types fall back to default STJ record serialization (an object wrapper `{ "value": ... }`) unless the consuming service provides its own converter.
+- Concrete strongly-typed ID types must follow the documented shape — `public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);` — i.e., a public primary constructor `(TValue Value)` on a non-abstract closed type. `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>` compiles its activator delegate against this constructor; a type that hides or omits this constructor will fail at first use with an `InvalidOperationException` from the converter, not at `CreateConverter` time.
+- The wire format produced by `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>` is the bare `TValue` (a JSON string for `Guid`/`string`, a JSON number for `int`/`long`) — never an object wrapper. This is a deliberate compatibility choice so strongly-typed IDs serialize identically to their underlying primitive across service boundaries.
+- `StronglyTypedIdJsonConverterFactory` is **opt-in** — `SharedKernel.Domain` does not call `JsonSerializerOptions.Converters.Add` anywhere itself and ships no global STJ configuration. Consuming services register it explicitly: `options.Converters.Add(new StronglyTypedIdJsonConverterFactory())`.
 - No static mutable state anywhere in this domain.
 - No persistence concerns (`DbContext`, repository interfaces, EF annotations) — those live in `06.Persistence`.
 - No messaging concerns (`IMessageBus`, `IEventPublisher`) — those live in `07.Messaging`.
@@ -504,6 +538,7 @@ Reasons for rejection:
 - `Specification<T>.IsSatisfiedBy` calls `Criteria.Compile()` — expression compilation is AOT-safe for expressions that do not use late-bound reflection inside the lambda body.
 - `ISpecification<T>.IncludeDeleted` is a `bool` property — BCL primitive, no reflection, AOT-safe. `Specification<T>.IncludeSoftDeleted()` is a simple field write — AOT-safe.
 - No `Activator.CreateInstance`, no `Assembly.Load`, no reflection in hot paths.
+- `StronglyTypedIdJsonConverterFactory.CreateConverter` uses `Activator.CreateInstance` on a closed generic converter type, and `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>` compiles a `Func<TValue, TStronglyTypedId>` activator once per closed type via `Expression.New` over the concrete `(TValue Value)` primary constructor. Both occur once per closed type — `CreateConverter` is called once per type by STJ and the result is cached by `JsonSerializerOptions`; the compiled `Expression` delegate is cached for the converter's lifetime. This is the same class of startup-time, type-inspection-only reflection as `DomainEventVersionHelper.GetVersion(Type)` — acceptable per the repo's pragmatic AOT guidance, not used in per-element hot paths. Native AOT trimming of `Expression.Compile()` requires the `System.Linq.Expressions` interpreter fallback or the `RequiresDynamicCode`/`RequiresUnreferencedCode` annotations on the converter's `CreateConverter`/factory methods if a consuming service publishes with `PublishAot=true`; this is documented as a consumer-facing caveat, not a hard blocker.
 
 ---
 
@@ -537,6 +572,7 @@ Reasons for rejection:
 - `TryCreate<T>`: success path; `BusinessRuleViolationException` → `Result.Failure` with `ErrorType.BusinessRule`; `ValidationException` → `Result.Failure`.
 - `ISpecification<T>.IncludeDeleted`: default `false`; `IncludeSoftDeleted()` sets `true`; `AndSpecification<T>` / `OrSpecification<T>` propagate `true` when either operand is `true`; remain `false` when both operands are `false`; `NotSpecification<T>` propagates `true` when operand is `true`; all existing specification tests continue to pass (additive change only).
 - `IDomainEventDispatcher` `ContractShapeTests`: (a) interface exists in assembly `SharedKernel.Domain` under namespace `SharedKernel.Domain`; (b) has exactly one method `DispatchAsync`; (c) method signature is `Task DispatchAsync(IReadOnlyList<IDomainEvent>, CancellationToken)` verified via reflection; (d) interface is `public`; (e) `IDomainEvent` parameter type resolves to the existing interface from the same package (no external type references introduced).
+- `StronglyTypedIdJsonConverterFactory` / `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>`: round-trip serialize/deserialize for concrete test ID records over each supported `TValue` (`Guid`, `int`, `long`, `string`) preserves equality; serialized JSON for each is the bare primitive token, not `{"value": ...}`; `CanConvert` returns `false` for unrelated types (plain `string`, a non-`StronglyTypedId` `ValueObject` subclass); a strongly-typed ID property inside a containing DTO record round-trips correctly when the factory is registered; without the factory registered, default STJ record serialization produces the object-wrapper shape (documents the opt-in contract).
 
 ---
 
@@ -554,3 +590,4 @@ Reasons for rejection:
 - [2026-05-27] SK.03.Published complete — SharedKernel.Domain 1.2.0 and 1.3.0 packed; manifests: Primitives + Core only; no new architectural signals (domain-phase-implementer)
 - [2026-06-02] P-095/WO-016 — ISpecification(T).IncludeDeleted flag added to public surface; Specification(T).IncludeSoftDeleted() builder documented; composite spec propagation rule added (IncludeDeleted = true if any operand true, mirrors AsNoTracking); implementation rules section updated with IgnoreQueryFilters() bypass warning and tenant isolation caveat; AOT note added; test rule added; version bump to 1.4.0 planned (domain-arch-planner)
 - [2026-06-02] P-081/WO-014 — IDomainEventDispatcher interface added to public surface (Abstractions/ section); implementation rule added (only dispatch interface permitted; empty-list no-op and exception propagation contract; opt-in DI; MediatR impl deferred to 05.Application); AOT note added; ContractShapeTests rule added; version bump to 1.5.0 planned (domain-arch-planner)
+- [2026-06-12] P-152/WO-024 — `StronglyTypedIdJsonConverterFactory` + `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>` added to public surface (new StronglyTypedIds/Serialization/ section); supports Guid/int/long/string, bare-primitive wire format, opt-in registration via `options.Converters.Add(...)`; `StronglyTypedId<TValue>` "ships none" note replaced; implementation rules added (supported TValue shapes, concrete-type constructor shape requirement, opt-in-only); AOT note added (cached `Expression.New` activator, same class as `DomainEventVersionHelper` precedent, PublishAot caveat documented); test rule added (round-trip, wire-format, CanConvert negative cases); version bump to 1.6.0 planned (domain-arch-planner)

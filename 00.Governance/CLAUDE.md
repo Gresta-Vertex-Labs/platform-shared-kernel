@@ -459,6 +459,87 @@ CachingAbstractionRules  (static class — caching boundary enforcement predicat
     Note: The method accepts a params Assembly[] so consuming test classes supply the
     production assemblies under test; assembly paths are never hard-coded in the predicate.
 
+RedisTopologyRules  (static class — five-package Redis topology enforcement predicates; WO-023 P-145)
+    All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
+    No Mono.Cecil, no ICustomRule, no new SK diagnostic IDs — every predicate is a pure
+    assembly-dependency-graph check using NetArchTest's .Should().NotHaveDependencyOn(...),
+    in the same style as CachingAbstractionRules.
+
+    .RedisCoreNeverReferencesCapabilityPackages(Assembly redisCoreAssembly) → ConditionList
+        Asserts that SharedKernel.Caching.Redis.Core has no dependency on any of the four
+        capability package assembly-name prefixes: "SharedKernel.Caching.Redis.DistributedLocking",
+        "SharedKernel.Caching.Redis.HashStore", "SharedKernel.Caching.Redis.PubSub", and the L2
+        backplane package "SharedKernel.Caching.Redis" (exact-match, excluding
+        "SharedKernel.Caching.Redis.Core" itself). Uses four iterative
+        .Should().NotHaveDependencyOn(term) calls — same pattern as
+        DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure. Failure message
+        names the offending capability package.
+        Rationale: Redis.Core is the shared connection/health/resilience foundation. A reference
+        from Core to any capability package is a layering inversion.
+
+    .CapabilityPackagesNeverReferenceEachOther(params Assembly[] capabilityAssemblies) → ConditionList
+        Asserts pairwise that none of the four capability packages (Redis (L2),
+        Redis.DistributedLocking, Redis.HashStore, Redis.PubSub) references any of the other
+        three. For each supplied assembly, asserts .Should().NotHaveDependencyOn(siblingName)
+        for each of the other three sibling package names. Excludes "SharedKernel.Caching.Redis.Core"
+        and "SharedKernel.Caching.Abstractions" from the forbidden set — both are permitted
+        dependencies (see exemption list below). Combines per-assembly ConditionLists using the
+        same multi-assembly iteration approach as
+        CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching. Failure message
+        names the offending capability package and the sibling it references.
+        Rationale: sibling role-packages must depend only on .{Provider}.Core (root CLAUDE.md
+        "Provider role-split variant" rule) — a sibling-to-sibling reference (e.g.,
+        Redis.DistributedLocking → Redis.HashStore) is exactly the shortcut this rule forecloses.
+
+    .PubSubNeverReferencesMessaging(Assembly pubSubAssembly) → ConditionList
+        Asserts that SharedKernel.Caching.Redis.PubSub has no dependency on any assembly whose
+        name starts with "SharedKernel.Messaging". Single
+        .Should().NotHaveDependencyOn("SharedKernel.Messaging") call — the prefix covers both
+        SharedKernel.Messaging.Abstractions and SharedKernel.Messaging.MassTransit via NetArchTest's
+        substring-based dependency matching.
+        Rationale: codifies the Issue 3 boundary — Redis.PubSub is an ephemeral,
+        no-delivery-guarantee signaling channel (ICacheInvalidationBus / IRedisChannelService) and
+        must never become a backdoor path into the durable IMessageBus abstraction.
+
+    .MessagingNeverReferencesCaching(params Assembly[] messagingAssemblies) → ConditionList
+        Asserts that no assembly in SharedKernel.Messaging.* (caller supplies
+        SharedKernel.Messaging.Abstractions and SharedKernel.Messaging.MassTransit) has a
+        dependency on any assembly whose name starts with "SharedKernel.Caching". Iterates
+        .Should().NotHaveDependencyOn("SharedKernel.Caching") per supplied assembly, combining
+        ConditionList results the same way as CapabilityPackagesNeverReferenceEachOther. Failure
+        message names the offending messaging assembly.
+        Rationale: structural converse of PubSubNeverReferencesMessaging and of the root
+        CLAUDE.md hard rule ("07.Messaging must never reference any SharedKernel.Caching.*
+        package, and no SharedKernel.Caching.* package may reference any SharedKernel.Messaging.*
+        package"). Both directions are asserted independently because NetArchTest dependency
+        checks are directional.
+
+    .CachingAbstractionsHasNoInfrastructureDependencies(Assembly abstractionsAssembly) → ConditionList
+        Re-verification of the existing guarantee that SharedKernel.Caching.Abstractions has zero
+        dependencies beyond Microsoft.Extensions.DependencyInjection.Abstractions. Asserts
+        .Should().NotHaveDependencyOn(term) for each of: "SharedKernel.Caching.Redis",
+        "StackExchange.Redis", "Microsoft.EntityFrameworkCore", "MassTransit" — the four
+        infrastructure families that must never leak into the abstractions package across the
+        five-package Redis topology. Same shape as SharedKernelLayeringRules.CoreReferencesNothing,
+        scoped to SharedKernel.Caching.Abstractions.
+        Rationale: confirms the five-package split did not introduce a transitive dependency from
+        any new capability package back into the abstraction the capability packages implement.
+
+    Permitted cross-reference exemption list (required for rules 1 and 2 to pass unmodified):
+        - Redis.Core → SharedKernel.Caching.Abstractions (permitted; Core implements
+          abstraction-facing health/connection contracts)
+        - Redis (L2), Redis.DistributedLocking, Redis.HashStore, Redis.PubSub → Redis.Core
+          (permitted; the shared foundation)
+        - Redis (L2), Redis.DistributedLocking, Redis.HashStore, Redis.PubSub →
+          SharedKernel.Caching.Abstractions (permitted; each implements abstraction interfaces)
+        Any additional exemption must be documented here before it is applied in code.
+
+    Note: All five factory methods accept Assembly / params Assembly[] supplied by the consuming
+    test project via typeof(SomeTypeInPackage).Assembly — no assembly paths are hard-coded.
+    RedisTopologyRules lives in SharedKernel.ArchitectureTests/Rules/ alongside
+    CachingAbstractionRules.cs and must not reference StackExchange.Redis, MassTransit, or EF Core
+    directly.
+
 DomainLayerPurityRules  (static class — domain layer purity predicates)
     All factory methods accept Assembly domainAssembly and return ConditionList.
     .DomainAssembliesNeverReferenceInfrastructure(Assembly)  → ConditionList
@@ -1254,6 +1335,12 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0705 and SK0708 follow the same `netstandard2.0` constraint and `Microsoft.CodeAnalysis.CSharp 4.14.0` pin as SK0703/SK0704. Both are syntax-only analyzers — no SemanticModel required. SK0706 and SK0707 are NetArchTest ICustomRule predicates (assembly-level, post-compile), consistent with SK0701/SK0702.
 - `SharedKernel.Analyzers.Tests.csproj` must explicitly reference `Microsoft.CodeAnalysis.CSharp` at the same version pinned in `SharedKernel.Analyzers.csproj` (currently 4.14.0). The `Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit` package pulls Roslyn 1.0.1 as a transitive dependency, causing a version conflict that breaks the build without this explicit override.
 - Namespace suppression in analyzers uses `SyntaxNode.Parent` walk to find `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` ancestors, checking `.Name.ToString().StartsWith("SharedKernel.Primitives")`. Do not use `SemanticModel` for this check — syntax-only is sufficient and cheaper.
+- `RedisTopologyRules` introduces zero new SK diagnostic IDs and zero new `ICustomRule`/Mono.Cecil predicates. All five factory methods are pure NetArchTest `ConditionList` assembly-dependency checks via `.Should().NotHaveDependencyOn(...)`, matching the implementation style of `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` — string-based assembly name prefix matching only.
+- `RedisTopologyRules.RedisCoreNeverReferencesCapabilityPackages` checks four forbidden assembly-name terms iteratively (one `.Should().NotHaveDependencyOn(term)` call per term), following the established iterative pattern from `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure`. The L2 backplane term `"SharedKernel.Caching.Redis"` must be matched carefully so it does not also match `"SharedKernel.Caching.Redis.Core"` (the assembly under test) — use an exact-name or prefix-exclusion check, not a bare substring match, for this specific term.
+- `RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther` accepts `params Assembly[]` for all four capability packages (`Redis`, `Redis.DistributedLocking`, `Redis.HashStore`, `Redis.PubSub`) and asserts each against the other three sibling names, excluding `"SharedKernel.Caching.Redis.Core"` and `"SharedKernel.Caching.Abstractions"` from the forbidden set (both are permitted dependencies per the exemption list). Combine the resulting per-assembly `ConditionList`s using the same multi-assembly iteration approach established by `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching`.
+- `RedisTopologyRules.PubSubNeverReferencesMessaging` and `RedisTopologyRules.MessagingNeverReferencesCaching` are directional converses of each other and must both be asserted — NetArchTest dependency checks are one-directional, so passing one does not imply the other passes. Both reuse the `"SharedKernel.Messaging"` / `"SharedKernel.Caching"` prefix-matching convention already established by `MessagingArchitectureRules` and `CachingAbstractionRules` respectively.
+- `RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies` is a re-verification, not a new guarantee — it confirms the existing zero-dependency contract on `SharedKernel.Caching.Abstractions` still holds across the five-package Redis topology (`Redis.Core`, `Redis`, `Redis.DistributedLocking`, `Redis.HashStore`, `Redis.PubSub`) plus `StackExchange.Redis`, EF Core, and MassTransit. Same shape as `SharedKernelLayeringRules.CoreReferencesNothing`.
+- `RedisTopologyRules` lives in `SharedKernel.ArchitectureTests/Rules/` alongside `CachingAbstractionRules.cs`. It introduces no new NuGet dependency — `NetArchTest.eNt >= 1.3.2` (existing pin) covers the entire phase. Do not add new files to `Predicates/` for this phase; no `ICustomRule` is required.
 
 ---
 
@@ -1301,3 +1388,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-08] SK0703 MessageBusSingletonRegistration and SK0704 HardcodedQueueUriInGetSendEndpoint added to diagnostic registry (new 07xx messaging-domain block; both Roslyn syntax-only analyzers); SK0701 NoDirectBusInjectionOutsideMessaging and SK0702 NoEventPublisherInDomainLayer added as NetArchTest predicates (MessagingArchitectureRules static class; NoDirectBusInjectionOutsideMessagingPredicate and NoEventPublisherInDomainLayerPredicate ICustomRule predicates documented); eleven new implementation rules added — WO-020 P-123
 - [2026-06-09] SK.00.MessagingArchRules → ● — all 20 tasks complete; 78 analyzer + 62 arch tests passing; no new brain content (state-map-phase)
 - [2026-06-09] SK0705 FaultConsumerDirectRegistration, SK0706 DirectMassTransitSchedulerInjection, SK0707 SagaStateMustExtendSagaStateBase, SK0708 BatchConsumerRegisteredViaAddConsumer added to diagnostic registry (07xx messaging block extended); ExtendedMessagingArchitectureRules static class added to architecture test contracts (NoDirectMassTransitSchedulerInjection, SagaStatesMustExtendSagaStateBase predicates); NoDirectSchedulerInjectionOutsideMessagingPredicate and SagaStateMustExtendSagaStateBasePredicate ICustomRule predicates documented; six new implementation rules added — WO-021 P-133
+- [2026-06-12] RedisTopologyRules static class added to architecture test contracts (five ConditionList predicates: RedisCoreNeverReferencesCapabilityPackages, CapabilityPackagesNeverReferenceEachOther, PubSubNeverReferencesMessaging, MessagingNeverReferencesCaching, CachingAbstractionsHasNoInfrastructureDependencies) enforcing the five-package Redis topology (Redis.Core, Redis, Redis.DistributedLocking, Redis.HashStore, Redis.PubSub) from P-140–P-144 and re-affirming the 02.Caching <-> 07.Messaging exclusion boundary; no new SK IDs, no Mono.Cecil — pure NetArchTest assembly-dependency checks; six new implementation rules added — WO-023 P-145
