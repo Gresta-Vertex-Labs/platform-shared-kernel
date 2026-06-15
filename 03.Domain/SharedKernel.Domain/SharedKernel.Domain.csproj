@@ -6,9 +6,18 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Domain</PackageId>
-    <Version>1.5.0</Version>
-    <PackageVersion>1.5.0</PackageVersion>
-    <PackageReleaseNotes>1.5.0 (WO-014 / P-081):
+    <Version>1.6.0</Version>
+    <PackageVersion>1.6.0</PackageVersion>
+    <PackageReleaseNotes>1.6.0 (WO-024 / P-152):
+- StronglyTypedIdJsonConverterFactory and StronglyTypedIdJsonConverter&lt;TStronglyTypedId, TValue&gt; added (C-37): generic System.Text.Json converter factory for StronglyTypedId&lt;TValue&gt; types.
+- Supported TValue shapes: Guid, int, long, string. CanConvert walks Type.BaseType to detect a closed StronglyTypedId&lt;TValue&gt; for these four shapes.
+- Wire format is the bare TValue primitive (a JSON string for Guid/string, a JSON number for int/long) — never an object wrapper such as { "value": ... }.
+- Opt-in only: not auto-registered. Consuming services call options.Converters.Add(new StronglyTypedIdJsonConverterFactory()).
+- Activator pattern: CreateConverter is called once per closed type by STJ (cached by JsonSerializerOptions); the converter compiles a Func&lt;TValue, TStronglyTypedId&gt; once via Expression.New over the concrete type's public (TValue Value) primary constructor — same class of startup-time reflection as DomainEventVersionHelper.GetVersion(Type).
+- Concrete strongly-typed ID types must follow the documented shape: public sealed record OrderId(Guid Value) : StronglyTypedId&lt;Guid&gt;(Value);
+- Zero new NuGet dependencies — System.Text.Json is part of the net10.0 shared framework.
+
+1.5.0 (WO-014 / P-081):
 - IDomainEventDispatcher interface added (C-36): single method Task DispatchAsync(IReadOnlyList&lt;IDomainEvent&gt;, CancellationToken); opt-in DI contract — not auto-registered by any infrastructure builder.
 - Contract rules: empty events list must be treated as a no-op by any conforming implementation; handler exceptions must propagate unchanged without swallowing.
 - Consumed by EfUnitOfWork in 06.Persistence.EfCore as an optional dependency; consuming services register an implementation alongside their persistence builder.

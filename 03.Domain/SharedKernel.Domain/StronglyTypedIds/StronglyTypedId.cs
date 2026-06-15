@@ -19,9 +19,13 @@ namespace SharedKernel.Domain.StronglyTypedIds;
 /// Record-based equality is derived from <typeparamref name="TValue"/> automatically.
 /// </para>
 /// <para>
-/// <strong>STJ serialisation note:</strong> This package ships no <c>JsonConverter</c>.
-/// Consuming services must provide their own <c>JsonConverter&lt;TId&gt;</c> and register it
-/// in their serialisation context (e.g., in <c>04.Contracts</c> or <c>06.Persistence</c>).
+/// <strong>STJ serialisation note:</strong> This package ships <see cref="Serialization.StronglyTypedIdJsonConverterFactory"/>,
+/// an opt-in <see cref="System.Text.Json.Serialization.JsonConverterFactory"/> that (de)serializes
+/// concrete <see cref="StronglyTypedId{TValue}"/> types as the bare underlying <typeparamref name="TValue"/>
+/// (e.g. a JSON string for <see cref="Guid"/>/<see cref="string"/>, a JSON number for <see cref="int"/>/<see cref="long"/>),
+/// never as an object wrapper. It is not registered automatically — consuming services opt in via
+/// <c>options.Converters.Add(new StronglyTypedIdJsonConverterFactory())</c>. Concrete types must follow
+/// the documented shape above (a public primary constructor <c>(TValue Value)</c> on a non-abstract closed type).
 /// </para>
 /// </remarks>
 public abstract record StronglyTypedId<TValue>(TValue Value) : IStronglyTypedId<TValue>

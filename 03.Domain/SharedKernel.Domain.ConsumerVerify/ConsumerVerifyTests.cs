@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Text.Json;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.BusinessRules;
@@ -7,6 +8,7 @@ using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Policies;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Domain.StronglyTypedIds.Serialization;
 using SharedKernel.Domain.ValueObjects;
 using SharedKernel.Primitives.Clocks;
 using Xunit;
@@ -246,6 +248,34 @@ public sealed class ConsumerVerifyTests
     public void IDomainService_MarkerInterface_IsAccessible_ResolvedFromPackage()
     {
         Assert.True(typeof(IDomainService).IsInterface);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // StronglyTypedIdJsonConverterFactory — opt-in STJ bare-primitive serialization
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void StronglyTypedIdJsonConverterFactory_RoundTrips_BarePrimitiveWireFormat_ResolvedFromPackage()
+    {
+        var options = new JsonSerializerOptions();
+        options.Converters.Add(new StronglyTypedIdJsonConverterFactory());
+
+        var id = new OrderId(Guid.NewGuid());
+
+        var json = JsonSerializer.Serialize(id, options);
+        var roundTripped = JsonSerializer.Deserialize<OrderId>(json, options);
+
+        Assert.Equal($"\"{id.Value}\"", json);
+        Assert.Equal(id, roundTripped);
+    }
+
+    [Fact]
+    public void StronglyTypedIdJsonConverterFactory_CanConvert_FalseForUnrelatedType_ResolvedFromPackage()
+    {
+        var factory = new StronglyTypedIdJsonConverterFactory();
+
+        Assert.False(factory.CanConvert(typeof(string)));
+        Assert.True(factory.CanConvert(typeof(OrderId)));
     }
 }
 

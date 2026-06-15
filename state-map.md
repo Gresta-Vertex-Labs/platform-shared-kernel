@@ -67,7 +67,7 @@ Format when blocked:
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for Redis Package Topology | `●` | All 16 tasks complete — RedisTopologyRules (5 ConditionList predicates) enforcing the five-package Redis topology; 9/9 + 75/75 arch tests passing, 0 build warnings/errors. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
-| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SharedKernel.Domain 1.4.0 and 1.5.0 packed; IncludeDeleted flag and IDomainEventDispatcher interface exported; all 9 Published tasks complete. | — |
+| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
@@ -1818,6 +1818,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-09] Messaging → HeaderPropagation (●) — promoted from SK.07.HeaderPropagation (state-map-phase)
 - [2026-06-10] Messaging → VersionTranslation (●) — promoted from SK.07.VersionTranslation (state-map-phase)
 - [2026-06-10] Governance → Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards (●) — promoted from SK.00.ExtendedMessagingArchRules (state-map-phase)
+- [2026-06-15] Domain → Published (●) — SK.03.Core completed (37/37, C-37 StronglyTypedIdJsonConverter/Factory); promoted from SK.03.Core (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2097,6 +2098,10 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-12] Phase(s) P-152 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
 - [2026-06-12] Phase(s) P-147, P-148, P-149, P-150, P-151 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
 - [2026-06-15] Governance → Architecture Rules for Redis Package Topology (●) — promoted from SK.00.RedisTopology (state-map-phase)
+- [2026-06-15] Domain → Published (●) — promoted from SK.03.Tests; T-30 StronglyTypedIdJsonConverterTests complete, 246 tests green (state-map-phase)
+- [2026-06-15] Domain → Published (●) — promoted from SK.03.Docs; DO-29 complete, csproj bumped to 1.6.0, 246 tests green (state-map-phase)
+- [2026-06-15] Domain → Published (●) — promoted from SK.03.Published; P-10 complete, SharedKernel.Domain 1.6.0 packed and verified, all 6 phases of 03.Domain now complete (state-map-phase)
+- [2026-06-15] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -6802,7 +6807,7 @@ A small, opt-in abstraction for applying EF Core migrations and running idempote
 ---
 ### P-152 — Domain: Generic STJ JsonConverter for StronglyTypedId<TValue>
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-024
 **Domain:** 03.Domain
 **Depends on:** None
