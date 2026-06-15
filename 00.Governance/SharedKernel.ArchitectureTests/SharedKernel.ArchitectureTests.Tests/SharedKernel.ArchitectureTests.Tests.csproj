@@ -31,6 +31,24 @@
     <!-- Required to resolve typeof(IIntegrationEvent) in ContractsPurityRules tests -->
     <ProjectReference Include="..\..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the five-package Redis topology assemblies in RedisTopologyRulesTests -->
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis\SharedKernel.Caching.Redis.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.DistributedLocking\SharedKernel.Caching.Redis.DistributedLocking.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.HashStore\SharedKernel.Caching.Redis.HashStore.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.PubSub\SharedKernel.Caching.Redis.PubSub.csproj"
+                      PrivateAssets="all" />
+    <!-- Required to resolve the messaging assemblies in RedisTopologyRulesTests -->
+    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
