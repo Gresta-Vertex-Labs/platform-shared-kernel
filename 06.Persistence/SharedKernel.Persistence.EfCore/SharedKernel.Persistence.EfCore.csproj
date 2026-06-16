@@ -29,6 +29,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,6 +37,13 @@
     <Compile Remove="SharedKernel.Persistence.EfCore.Tests\**" />
     <EmbeddedResource Remove="SharedKernel.Persistence.EfCore.Tests\**" />
     <None Remove="SharedKernel.Persistence.EfCore.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Allows the nested test project to access internal members (e.g.,
+         SharedKernelDbContext.CurrentEncryptionVersionOverride) for diagnostics
+         and white-box testing without expanding the public API surface. -->
+    <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Tests" />
   </ItemGroup>
 
 </Project>

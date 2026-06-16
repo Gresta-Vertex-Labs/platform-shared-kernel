@@ -44,6 +44,7 @@ public abstract class SharedKernelDbContext : DbContext
     private readonly ConcurrencyInterceptor _concurrencyInterceptor;
     private readonly IReadOnlyList<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor> _additionalInterceptors;
     private readonly IOptionsMonitor<EncryptionOptions> _encryptionOptions;
+    private readonly IEncryptionVersionOverride _encryptionVersionOverride;
 
     /// <summary>
     /// Initialises a new <see cref="SharedKernelDbContext"/> and registers the three
@@ -63,13 +64,20 @@ public abstract class SharedKernelDbContext : DbContext
     /// All existing <c>SharedKernelDbContext</c> subclass constructors remain compatible — this
     /// parameter is nullable optional and defaults to a no-op monitor.
     /// </param>
+    /// <param name="encryptionVersionOverride">
+    /// Optional scoped rotation-target-version accessor passed to <see cref="EncryptionModelConvention"/>.
+    /// When <see langword="null"/> (e.g., <c>WithEncryption()</c> has not been called), a shared
+    /// no-op instance is used and <see cref="EncryptedValueConverter"/> always encrypts with
+    /// <see cref="EncryptionOptions.CurrentVersion"/>.
+    /// </param>
     protected SharedKernelDbContext(
         DbContextOptions options,
         AuditInterceptor auditInterceptor,
         SoftDeleteInterceptor softDeleteInterceptor,
         ConcurrencyInterceptor concurrencyInterceptor,
         IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor>? additionalInterceptors = null,
-        IOptionsMonitor<EncryptionOptions>? encryptionOptions = null)
+        IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
+        IEncryptionVersionOverride? encryptionVersionOverride = null)
         : base(options)
     {
         _auditInterceptor = auditInterceptor;
@@ -77,7 +85,22 @@ public abstract class SharedKernelDbContext : DbContext
         _concurrencyInterceptor = concurrencyInterceptor;
         _additionalInterceptors = additionalInterceptors?.ToList() ?? [];
         _encryptionOptions = encryptionOptions ?? NullOptionsMonitor<EncryptionOptions>.Instance;
+        _encryptionVersionOverride = encryptionVersionOverride ?? EncryptionVersionOverride.NoOp;
     }
+
+    /// <summary>
+    /// Gets the scoped <see cref="IEncryptionVersionOverride"/> instance injected into this context,
+    /// or the shared no-op instance when <c>WithEncryption()</c> has not been called.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so that <see cref="EncryptionRotationService{TContext}"/> can direct this context's
+    /// <see cref="EncryptedValueConverter"/> instances to a target key version during a rotation
+    /// batch — the same instance is resolved by <see cref="EncryptionModelConvention"/> via
+    /// <see cref="ConfigureConventions"/>, so setting <see cref="IEncryptionVersionOverride.OverrideVersion"/>
+    /// here affects this context's converters without any additional DI resolution.
+    /// </remarks>
+    /// <seealso cref="IEncryptionVersionOverride"/>
+    internal IEncryptionVersionOverride CurrentEncryptionVersionOverride => _encryptionVersionOverride;
 
     /// <inheritdoc />
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
@@ -92,6 +115,14 @@ public abstract class SharedKernelDbContext : DbContext
         interceptors.AddRange(_additionalInterceptors);
 
         optionsBuilder.AddInterceptors(interceptors);
+
+        // EF Core's default model cache is keyed by context type and is shared process-wide across
+        // all DbContext instances of this type — including instances from different IServiceProvider
+        // containers. Incorporate this context's IEncryptionVersionOverride instance into the cache
+        // key so EncryptionModelConvention's converters are always bound to the override singleton
+        // actually injected into THIS container. See EncryptionAwareModelCacheKeyFactory for the
+        // full rationale.
+        optionsBuilder.WithEncryptionVersionOverride(_encryptionVersionOverride);
 
         base.OnConfiguring(optionsBuilder);
     }
@@ -116,7 +147,7 @@ public abstract class SharedKernelDbContext : DbContext
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         configurationBuilder.Conventions.Add(
-            _ => new EncryptionModelConvention(_encryptionOptions));
+            _ => new EncryptionModelConvention(_encryptionOptions, _encryptionVersionOverride));
 
         base.ConfigureConventions(configurationBuilder);
     }

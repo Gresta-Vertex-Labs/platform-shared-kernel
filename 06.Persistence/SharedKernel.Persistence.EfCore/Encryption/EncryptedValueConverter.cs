@@ -45,21 +45,29 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
     /// Initialises a new <see cref="EncryptedValueConverter"/>.
     /// </summary>
     /// <param name="optionsMonitor">Live options monitor for hot-reload support.</param>
-    public EncryptedValueConverter(IOptionsMonitor<EncryptionOptions> optionsMonitor)
+    /// <param name="versionOverride">
+    /// Optional scoped accessor allowing <see cref="EncryptionRotationService{TContext}"/> to direct
+    /// this converter to encrypt with a specific target key version for the duration of a rotation
+    /// batch. When <see langword="null"/> or when <see cref="IEncryptionVersionOverride.OverrideVersion"/>
+    /// is <see langword="null"/>, <see cref="EncryptionOptions.CurrentVersion"/> is used.
+    /// </param>
+    public EncryptedValueConverter(
+        IOptionsMonitor<EncryptionOptions> optionsMonitor,
+        IEncryptionVersionOverride? versionOverride = null)
         : base(
-            value => Encrypt(value, optionsMonitor.CurrentValue),
+            value => Encrypt(value, optionsMonitor.CurrentValue, versionOverride),
             stored => Decrypt(stored, optionsMonitor.CurrentValue))
     {
     }
 
-    private static string Encrypt(string value, EncryptionOptions options)
+    private static string Encrypt(string value, EncryptionOptions options, IEncryptionVersionOverride? versionOverride)
     {
         if (!options.Enabled)
         {
             return value;
         }
 
-        var version = options.CurrentVersion;
+        var version = versionOverride?.OverrideVersion ?? options.CurrentVersion;
         var keyBytes = Convert.FromBase64String(options.Keys[version]);
 
         var nonce = RandomNumberGenerator.GetBytes(NonceSizeBytes);

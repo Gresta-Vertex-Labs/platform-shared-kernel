@@ -184,4 +184,51 @@ public interface IReadRepository<TAggregate, TId>
     Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Streams all aggregates that satisfy the specification as an asynchronous sequence,
+    /// using constant memory regardless of result-set size.
+    /// </summary>
+    /// <param name="spec">The specification describing the desired aggregates.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An asynchronous sequence of matching aggregates.</returns>
+    /// <remarks>
+    /// Intended for large result sets (exports, batch processing) where materializing an
+    /// <see cref="IReadOnlyList{T}"/> would be memory-prohibitive. <see cref="ISpecification{T}.Skip"/>
+    /// and <see cref="ISpecification{T}.Take"/> are honored as a row-window applied before streaming
+    /// begins.
+    /// <para>
+    /// <strong>Deviation:</strong> the EF Core implementation forces no-tracking behaviour
+    /// unconditionally, regardless of <see cref="ISpecification{T}.AsNoTracking"/> — a long-lived
+    /// streaming enumeration under change tracking would grow the change tracker unbounded for the
+    /// lifetime of the enumeration.
+    /// </para>
+    /// </remarks>
+    IAsyncEnumerable<TAggregate> StreamAsync(ISpecification<TAggregate> spec, CancellationToken ct = default);
+
+    /// <summary>
+    /// Streams all aggregates that satisfy the specification, projected to
+    /// <typeparamref name="TResult"/>, as an asynchronous sequence, using constant memory
+    /// regardless of result-set size.
+    /// </summary>
+    /// <typeparam name="TResult">The projection output type.</typeparam>
+    /// <param name="spec">
+    /// The projection specification supplying filter criteria, ordering, paging, and the
+    /// <c>Selector</c> expression applied after paging.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>An asynchronous sequence of projected results.</returns>
+    /// <remarks>
+    /// Intended for large result sets (exports, batch processing) where materializing an
+    /// <see cref="IReadOnlyList{T}"/> would be memory-prohibitive. <see cref="ISpecification{T}.Skip"/>
+    /// and <see cref="ISpecification{T}.Take"/> are honored as a row-window applied before streaming
+    /// begins.
+    /// <para>
+    /// <strong>Deviation:</strong> the EF Core implementation forces no-tracking behaviour
+    /// unconditionally, regardless of <see cref="ISpecification{T}.AsNoTracking"/>.
+    /// </para>
+    /// </remarks>
+    IAsyncEnumerable<TResult> StreamProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        CancellationToken ct = default);
 }

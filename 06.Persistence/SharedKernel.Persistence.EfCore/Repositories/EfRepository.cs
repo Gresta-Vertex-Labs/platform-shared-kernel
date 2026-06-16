@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
@@ -37,7 +38,8 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// <see cref="MarkAsModifiedIfDetached"/> is virtual so subclasses may override the strategy.
 /// </para>
 /// </remarks>
-public abstract class EfRepository<TAggregate, TId> : IRepository<TAggregate, TId>
+public abstract class EfRepository<TAggregate, TId>
+    : IRepository<TAggregate, TId>, IBulkMutationRepository<TAggregate, TId>
     where TAggregate : class, IAggregateRoot<TId>
     where TId : notnull
 {
@@ -153,6 +155,59 @@ public abstract class EfRepository<TAggregate, TId> : IRepository<TAggregate, TI
     {
         DbContext.Set<TAggregate>().RemoveRange(aggregates);
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Bypasses the change tracker, <c>IUnitOfWork.SaveChangesAsync</c>, all three platform
+    /// interceptors, and domain event dispatch — see <see cref="IBulkMutationRepository{TAggregate,TId}"/>
+    /// for details. Only <see cref="ISpecification{TAggregate}.Criteria"/> and
+    /// <see cref="ISpecification{TAggregate}.IncludeDeleted"/> are applied; any other specification
+    /// shape throws <see cref="UnsupportedSpecificationException"/>.
+    /// </remarks>
+    public virtual async Task<int> ExecuteUpdateAsync(
+        ISpecification<TAggregate> spec,
+        Action<UpdateSettersBuilder<TAggregate>> setPropertyCalls,
+        CancellationToken ct = default)
+    {
+        BulkSpecificationGuard.Validate(spec);
+        var query = BuildBulkQuery(spec);
+        return await query.ExecuteUpdateAsync(setPropertyCalls, ct);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Bypasses the change tracker, <c>IUnitOfWork.SaveChangesAsync</c>, all three platform
+    /// interceptors, and domain event dispatch — see <see cref="IBulkMutationRepository{TAggregate,TId}"/>
+    /// for details. Always issues a hard physical <c>DELETE</c>, even for
+    /// <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/> aggregates. Only
+    /// <see cref="ISpecification{TAggregate}.Criteria"/> and
+    /// <see cref="ISpecification{TAggregate}.IncludeDeleted"/> are applied; any other specification
+    /// shape throws <see cref="UnsupportedSpecificationException"/>.
+    /// </remarks>
+    public virtual async Task<int> ExecuteDeleteAsync(
+        ISpecification<TAggregate> spec,
+        CancellationToken ct = default)
+    {
+        BulkSpecificationGuard.Validate(spec);
+        var query = BuildBulkQuery(spec);
+        return await query.ExecuteDeleteAsync(ct);
+    }
+
+    // Builds an IQueryable<TAggregate> applying ONLY IgnoreQueryFilters (when IncludeDeleted) and
+    // Criteria — the only specification shapes meaningful for a single ExecuteUpdate/ExecuteDelete
+    // statement. Does not use ISpecificationEvaluator<T>.GetQuery, which applies the full pipeline.
+    private IQueryable<TAggregate> BuildBulkQuery(ISpecification<TAggregate> spec)
+    {
+        var query = DbContext.Set<TAggregate>().AsQueryable();
+
+        if (spec.IncludeDeleted)
+            query = query.IgnoreQueryFilters();
+
+        if (spec.Criteria is not null)
+            query = query.Where(spec.Criteria);
+
+        return query;
     }
 
     /// <summary>

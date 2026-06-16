@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Abstractions;
@@ -229,6 +230,43 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
 
         var (page, pageSize) = ExtractPageInfo(spec);
         return PagedList<TResult>.Create(items, page, pageSize, totalCount);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Built on <see cref="ISpecificationEvaluator{T}.GetQuery"/> followed by an unconditional
+    /// <c>AsNoTracking()</c> and <c>AsAsyncEnumerable()</c> — the one documented exception to
+    /// "the spec's <see cref="ISpecification{T}.AsNoTracking"/> flag is honored", because a
+    /// long-lived streaming enumeration under change tracking would grow the change tracker
+    /// unbounded for the lifetime of the enumeration. <see cref="ISpecification{T}.Skip"/> and
+    /// <see cref="ISpecification{T}.Take"/>, if set, are applied as a normal row-window by the
+    /// evaluator before the query is converted to <see cref="IAsyncEnumerable{T}"/>.
+    /// </remarks>
+    public virtual async IAsyncEnumerable<TAggregate> StreamAsync(
+        ISpecification<TAggregate> spec,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec).AsNoTracking();
+
+        await foreach (var item in query.AsAsyncEnumerable().WithCancellation(ct))
+            yield return item;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Built on <see cref="ISpecificationEvaluator{T}.GetProjectedQuery{TResult}"/> followed by an
+    /// unconditional <c>AsNoTracking()</c> and <c>AsAsyncEnumerable()</c> — see
+    /// <see cref="StreamAsync"/> for rationale. Any <see cref="ISpecificationEvaluator{T}"/>
+    /// implementation works — no downcast to the concrete type is performed.
+    /// </remarks>
+    public virtual async IAsyncEnumerable<TResult> StreamProjectedAsync<TResult>(
+        IProjectionSpecification<TAggregate, TResult> spec,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var query = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>().AsNoTracking(), spec);
+
+        await foreach (var item in query.AsAsyncEnumerable().WithCancellation(ct))
+            yield return item;
     }
 
     // Strips Skip/Take from the already-evaluated query for count purposes.

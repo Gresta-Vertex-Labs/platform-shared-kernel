@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Options;
 
 namespace SharedKernel.Persistence.EfCore.Encryption;
@@ -20,15 +22,16 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 ///   <item>Enumerate all entity types in the EF model that have at least one
 ///   <c>"SharedKernel:Encrypt"</c>-annotated property.</item>
 ///   <item>For each such entity type, load rows in batches of <see cref="BatchSize"/>.</item>
-///   <item>For each row, check whether any encrypted property's stored string value starts with
-///   <c>"v{fromVersion}:"</c>.</item>
-///   <item>If so, read the property (the converter decrypts transparently), then write it back
-///   (the converter re-encrypts with <paramref name="toVersion"/>).</item>
-///   <item>Save the batch and update counters.</item>
+///   <item>For each row, mark every encrypted property as modified (the converter decrypts the
+///   existing value transparently on read, using whatever version prefix is actually stored).</item>
+///   <item>Save the batch with <see cref="IEncryptionVersionOverride"/> directing the converter to
+///   re-encrypt with <paramref name="toVersion"/>, then update counters.</item>
 /// </list>
 /// </para>
 /// <para>
-/// <strong>Idempotent:</strong> Rows already at <paramref name="toVersion"/> are skipped.
+/// <strong>Idempotent:</strong> Safe to run repeatedly. Re-running re-encrypts already-rotated
+/// rows again with <paramref name="toVersion"/> (a no-op data change), and never mutates
+/// <see cref="EncryptionOptions.CurrentVersion"/>.
 /// </para>
 /// <para>
 /// Registered as scoped via <c>EfCorePersistenceBuilder.Build()</c> only when
@@ -36,10 +39,11 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// </para>
 /// </remarks>
 public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJob
-    where TContext : DbContext
+    where TContext : SharedKernelDbContext
 {
     private readonly IDbContextFactory<TContext> _contextFactory;
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
+    private readonly EncryptedEntityBatchProcessorRegistry<TContext> _registry;
 
     /// <summary>
     /// Number of rows loaded and processed per batch. Default is <c>500</c>.
@@ -52,23 +56,43 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
     /// </summary>
     /// <param name="contextFactory">Factory for creating fresh DbContext instances per batch.</param>
     /// <param name="optionsMonitor">Live encryption options for key lookup at call time.</param>
+    /// <param name="registry">
+    /// Registry of <see cref="IEncryptedEntityBatchProcessor"/> instances, one per encrypted
+    /// entity CLR type, used to load batches without reflection.
+    /// </param>
     protected EncryptionRotationService(
         IDbContextFactory<TContext> contextFactory,
-        IOptionsMonitor<EncryptionOptions> optionsMonitor)
+        IOptionsMonitor<EncryptionOptions> optionsMonitor,
+        EncryptedEntityBatchProcessorRegistry<TContext> registry)
     {
         _contextFactory = contextFactory;
         _optionsMonitor = optionsMonitor;
+        _registry = registry;
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// <strong>Per-row detection limitation:</strong> <see cref="Microsoft.EntityFrameworkCore.ChangeTracking.PropertyEntry.CurrentValue"/>
+    /// always reflects the <em>decrypted</em> (CLR-side) value — the stored ciphertext's
+    /// <c>"v{version}:"</c> prefix is not observable through any public EF Core API once the
+    /// entity has been materialized. Consequently every row in every batch of every encrypted
+    /// entity type is unconditionally marked as modified and re-encrypted with
+    /// <paramref name="toVersion"/>. <paramref name="fromVersion"/> is retained for API
+    /// stability and audit/logging purposes but does not filter which rows are rewritten.
+    /// </para>
+    /// <para>
+    /// This is safe to run repeatedly: <see cref="EncryptedValueConverter"/> decrypts using the
+    /// version prefix recorded in the existing ciphertext (looked up in
+    /// <c>EncryptionOptions.Keys</c>) regardless of <see cref="EncryptionOptions.CurrentVersion"/>,
+    /// so plaintext round-trips correctly even when a row is rotated multiple times in a row.
+    /// </para>
+    /// </remarks>
     public async Task<EncryptionRotationResult> RotateAsync(
         string fromVersion,
         string toVersion,
         CancellationToken ct = default)
     {
-        var options = _optionsMonitor.CurrentValue;
-        var fromPrefix = $"v{fromVersion}:";
-
         var totalProcessed = 0;
         var totalRotated = 0;
         var totalFailed = 0;
@@ -92,7 +116,8 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
 
                 await using var batchContext = await _contextFactory.CreateDbContextAsync(ct);
 
-                // Load the next batch of rows as raw untyped objects.
+                // Load the next batch of rows as raw untyped objects via the reflection-free
+                // registry of closed-generic IEncryptedEntityBatchProcessor instances.
                 var batch = await LoadBatchAsync(batchContext, entityInfo.ClrType, skip, BatchSize, ct);
 
                 if (batch.Count == 0)
@@ -103,60 +128,75 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
                 var batchRotated = 0;
                 var batchFailed = 0;
 
-                foreach (var entity in batch)
+                // Disable automatic change detection for this batch: SaveChangesAsync's implicit
+                // DetectChanges() call would otherwise revert IsModified back to false for
+                // encrypted properties whose CLR (decrypted) value has not changed, even though
+                // we need EF to re-run the ValueConverter and rewrite the ciphertext.
+                var previousAutoDetect = batchContext.ChangeTracker.AutoDetectChangesEnabled;
+                batchContext.ChangeTracker.AutoDetectChangesEnabled = false;
+
+                try
                 {
-                    totalProcessed++;
-
-                    try
+                    foreach (var entity in batch)
                     {
-                        var entry = batchContext.Entry(entity);
-                        var needsRotation = false;
+                        totalProcessed++;
 
-                        foreach (var propName in entityInfo.EncryptedPropertyNames)
+                        try
                         {
-                            var currentStored = entry.Property(propName).CurrentValue as string;
-                            if (currentStored is not null && currentStored.StartsWith(fromPrefix, StringComparison.Ordinal))
+                            var entry = batchContext.Entry(entity);
+
+                            // CurrentValue reflects the decrypted (CLR-side) value — the stored
+                            // ciphertext's version prefix is not observable post-materialization.
+                            // Unconditionally mark every encrypted property as modified so the
+                            // ValueConverter re-encrypts with toVersion (via IEncryptionVersionOverride)
+                            // on save, regardless of which version it was previously stored with.
+                            foreach (var propName in entityInfo.EncryptedPropertyNames)
                             {
-                                needsRotation = true;
-                                // The ValueConverter decrypts on read and re-encrypts with the
-                                // current CurrentVersion (toVersion) on next save.
-                                // We force a re-write by marking the property as modified.
                                 entry.Property(propName).IsModified = true;
                             }
-                        }
 
-                        if (needsRotation)
-                        {
                             batchRotated++;
                         }
+                        catch (Exception ex)
+                        {
+                            batchFailed++;
+                            totalFailed++;
+                            errors.Add($"Failed to process row of type '{entityInfo.ClrType.Name}': {ex.Message}");
+                        }
                     }
-                    catch (Exception ex)
+
+                    if (batchRotated > 0)
                     {
-                        batchFailed++;
-                        totalFailed++;
-                        errors.Add($"Failed to process row of type '{entityInfo.ClrType.Name}': {ex.Message}");
+                        // Direct this batch's EncryptedValueConverter instances to encrypt with
+                        // toVersion for the duration of SaveChangesAsync, without mutating
+                        // EncryptionOptions.CurrentVersion. Reset afterward regardless of outcome.
+                        // IEncryptionVersionOverride is a singleton (AsyncLocal-backed) — the same
+                        // instance EncryptionModelConvention captured into every
+                        // EncryptedValueConverter, so mutating it here affects this batch's save.
+                        var versionOverride = batchContext.CurrentEncryptionVersionOverride;
+
+                        try
+                        {
+                            versionOverride.OverrideVersion = toVersion;
+                            await batchContext.SaveChangesAsync(ct);
+                            totalRotated += batchRotated;
+                        }
+                        catch (Exception ex)
+                        {
+                            totalFailed += batchRotated;
+                            errors.Add(
+                                $"Batch save failed for type '{entityInfo.ClrType.Name}' " +
+                                $"(batch {batchNumber}): {ex.Message}");
+                        }
+                        finally
+                        {
+                            versionOverride.OverrideVersion = null;
+                        }
                     }
                 }
-
-                if (batchRotated > 0)
+                finally
                 {
-                    try
-                    {
-                        // Temporarily switch CurrentVersion to toVersion so the converter encrypts
-                        // with the target key. We achieve this by relying on the fact that the
-                        // converter reads options.CurrentVersion at save time — callers must ensure
-                        // CurrentVersion == toVersion in EncryptionOptions before calling RotateAsync.
-                        await batchContext.SaveChangesAsync(ct);
-                        totalRotated += batchRotated;
-                    }
-                    catch (Exception ex)
-                    {
-                        totalFailed += batchRotated;
-                        totalRotated -= 0; // nothing was committed
-                        errors.Add(
-                            $"Batch save failed for type '{entityInfo.ClrType.Name}' " +
-                            $"(batch {batchNumber}): {ex.Message}");
-                    }
+                    batchContext.ChangeTracker.AutoDetectChangesEnabled = previousAutoDetect;
                 }
 
                 OnBatchCompleted(batchNumber, batch.Count);
@@ -182,36 +222,22 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
     /// <param name="batchSize">Number of rows in this batch (may be less than <see cref="BatchSize"/> for the last batch).</param>
     protected virtual void OnBatchCompleted(int batchNumber, int batchSize) { }
 
-    // Loads a page of entities of the given CLR type from the context using EF Core's
-    // non-generic entry point. Returns untyped objects so callers can call context.Entry(entity).
-    private static async Task<List<object>> LoadBatchAsync(
+    // Loads a page of entities of the given CLR type from the context via the reflection-free
+    // EncryptedEntityBatchProcessorRegistry — one closed-generic processor per encrypted entity
+    // type, registered at startup. Returns untyped objects so callers can call context.Entry(entity).
+    private async Task<List<object>> LoadBatchAsync(
         DbContext context,
         Type clrType,
         int skip,
         int take,
         CancellationToken ct)
     {
-        // EF Core 5+ exposes IQueryable via the non-generic Set method accessible through
-        // the model. We use the Set<T> method reflectively — this is model-build-time / startup
-        // code, not a hot path, so the reflection cost is acceptable.
-        var setMethod = typeof(DbContext)
-            .GetMethods()
-            .First(m => m.Name == nameof(DbContext.Set)
-                     && m.IsGenericMethod
-                     && m.GetParameters().Length == 0);
-
-        var genericSetMethod = setMethod.MakeGenericMethod(clrType);
-        var queryable = genericSetMethod.Invoke(context, null) as IQueryable<object>;
-
-        if (queryable is null)
+        if (!_registry.TryGet(clrType, out var processor) || processor is null)
         {
             return [];
         }
 
-        return await queryable
-            .Skip(skip)
-            .Take(take)
-            .ToListAsync(ct);
+        return await processor.LoadBatchAsync(context, skip, take, ct);
     }
 
     // Discovers entity types in the model that have at least one encrypted property.

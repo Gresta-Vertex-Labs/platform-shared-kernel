@@ -8,7 +8,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// </summary>
 /// <remarks>
 /// This is the <strong>only</strong> permitted way to mark a property for field-level encryption
-/// (SK0304). Do not instantiate <see cref="EncryptedValueConverter{T}"/> directly in
+/// (SK0304). Do not instantiate <see cref="EncryptedValueConverter"/> directly in
 /// <c>IEntityTypeConfiguration</c> implementations — <see cref="EncryptionModelConvention"/>
 /// applies the converter automatically during model finalization.
 /// </remarks>

@@ -1819,6 +1819,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-10] Messaging → VersionTranslation (●) — promoted from SK.07.VersionTranslation (state-map-phase)
 - [2026-06-10] Governance → Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards (●) — promoted from SK.00.ExtendedMessagingArchRules (state-map-phase)
 - [2026-06-15] Domain → Published (●) — SK.03.Core completed (37/37, C-37 StronglyTypedIdJsonConverter/Factory); promoted from SK.03.Core (state-map-phase)
+- [2026-06-16] Persistence → Docs (●) — SK.06.Docs 36/36 ●; DO-29..DO-36 XML docs complete for encryption, bulk mutation, streaming, readiness probes, seeding (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2102,6 +2103,7 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-15] Domain → Published (●) — promoted from SK.03.Docs; DO-29 complete, csproj bumped to 1.6.0, 246 tests green (state-map-phase)
 - [2026-06-15] Domain → Published (●) — promoted from SK.03.Published; P-10 complete, SharedKernel.Domain 1.6.0 packed and verified, all 6 phases of 03.Domain now complete (state-map-phase)
 - [2026-06-15] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
+- [2026-06-16] Persistence → Tests (●) — promoted from SK.06.Tests; T-40..T-54 complete, 245 tests green across all four test projects (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives

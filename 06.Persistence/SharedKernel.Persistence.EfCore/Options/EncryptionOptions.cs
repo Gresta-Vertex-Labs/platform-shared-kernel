@@ -17,7 +17,7 @@ namespace SharedKernel.Persistence.EfCore.Options;
 /// </para>
 /// <para>
 /// When <see cref="Enabled"/> is <see langword="false"/> (default), the
-/// <see cref="SharedKernel.Persistence.EfCore.Encryption.EncryptedValueConverter{T}"/> acts as a
+/// <see cref="SharedKernel.Persistence.EfCore.Encryption.EncryptedValueConverter"/> acts as a
 /// pass-through — no encryption or decryption is performed.
 /// </para>
 /// </remarks>

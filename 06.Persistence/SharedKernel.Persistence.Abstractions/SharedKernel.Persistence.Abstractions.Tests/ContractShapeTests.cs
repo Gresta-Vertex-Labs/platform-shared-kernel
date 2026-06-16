@@ -3,6 +3,7 @@ using System.Linq.Expressions;
 using FluentAssertions;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Persistence.Abstractions.Connections;
+using SharedKernel.Persistence.Abstractions.Diagnostics;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
@@ -364,5 +365,72 @@ public sealed class ContractShapeTests
 
         efReference.Should().BeFalse(
             "Abstractions must have zero ORM NuGet dependencies — EF Core must not be referenced");
+    }
+
+    // ---------------------------------------------------------------------------
+    // IReadRepository<TAggregate, TId> streaming contract (P-149)
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void IReadRepository_Has_StreamAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("StreamAsync");
+        method.Should().NotBeNull("IReadRepository must expose StreamAsync (P-149)");
+        method!.ReturnType.IsGenericType.Should().BeTrue();
+        method.ReturnType.GetGenericTypeDefinition().Should().Be(typeof(IAsyncEnumerable<>),
+            "StreamAsync must return IAsyncEnumerable<TAggregate>");
+    }
+
+    [Fact]
+    public void IReadRepository_Has_StreamProjectedAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("StreamProjectedAsync");
+        method.Should().NotBeNull("IReadRepository must expose StreamProjectedAsync<TResult> (P-149)");
+        method!.ReturnType.IsGenericType.Should().BeTrue();
+        method.ReturnType.GetGenericTypeDefinition().Should().Be(typeof(IAsyncEnumerable<>),
+            "StreamProjectedAsync<TResult> must return IAsyncEnumerable<TResult>");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Diagnostics — DatabaseReadinessResult / IDbConnectionFactory.CheckReadinessAsync (P-150)
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void DatabaseReadinessResult_IsSealedRecord_WithExpectedProperties()
+    {
+        var type = typeof(DatabaseReadinessResult);
+
+        type.IsSealed.Should().BeTrue("DatabaseReadinessResult must be a sealed record");
+        type.Namespace.Should().Be("SharedKernel.Persistence.Abstractions.Diagnostics");
+
+        var properties = type.GetProperties().Select(p => p.Name).ToList();
+        properties.Should().Contain(["IsHealthy", "Latency", "Provider", "ErrorMessage"]);
+
+        type.GetProperty("IsHealthy")!.PropertyType.Should().Be(typeof(bool));
+        type.GetProperty("Latency")!.PropertyType.Should().Be(typeof(TimeSpan));
+        type.GetProperty("Provider")!.PropertyType.Should().Be(typeof(string));
+        type.GetProperty("ErrorMessage")!.PropertyType.Should().Be(typeof(string));
+    }
+
+    [Fact]
+    public void DbConnectionFactoryDiagnosticsExtensions_Has_CheckReadinessAsync()
+    {
+        var type = typeof(DbConnectionFactoryDiagnosticsExtensions);
+        var method = type.GetMethod("CheckReadinessAsync");
+
+        method.Should().NotBeNull(
+            "DbConnectionFactoryDiagnosticsExtensions must expose CheckReadinessAsync(this IDbConnectionFactory, CancellationToken)");
+        method!.ReturnType.Should().Be(typeof(Task<DatabaseReadinessResult>));
+    }
+
+    [Fact]
+    public void Diagnostics_Assembly_DoesNotReference_EntityFramework()
+    {
+        var assembly = typeof(DatabaseReadinessResult).Assembly;
+        var efReference = assembly.GetReferencedAssemblies()
+            .Any(r => r.Name!.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal));
+
+        efReference.Should().BeFalse(
+            "DatabaseReadinessResult and its extensions must have zero ORM NuGet dependencies");
     }
 }

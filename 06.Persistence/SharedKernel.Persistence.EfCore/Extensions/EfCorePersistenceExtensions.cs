@@ -2,15 +2,18 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Domain;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Encryption;
+using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
@@ -91,8 +94,10 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _transactionalUnitOfWorkEnabled;
     private bool _registerFactory;
     private bool _registerEncryption;
+    private bool _migrationsOnStartup;
     private IModel? _compiledModel;
     private readonly List<Type> _additionalInterceptorTypes = [];
+    private readonly List<Func<IServiceProvider, TContext, CancellationToken, Task>> _seedSteps = [];
 
     internal EfCorePersistenceBuilder(
         IServiceCollection services,
@@ -200,6 +205,13 @@ public sealed class EfCorePersistenceBuilder<TContext>
         _services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
         _services.AddOptions<EncryptionOptions>().ValidateOnStart();
 
+        // Singleton, AsyncLocal-backed rotation-target-version accessor — resolved once by
+        // EncryptionModelConvention during model finalization (EF Core caches the compiled model,
+        // including converters, across DbContext instances of the same context type, so a scoped
+        // registration would only be observed by the very first context's converters). Mutated by
+        // EncryptionRotationService<TContext> for the duration of each batch's SaveChangesAsync.
+        _services.AddSingleton<IEncryptionVersionOverride, EncryptionVersionOverride>();
+
         return this;
     }
 
@@ -222,6 +234,48 @@ public sealed class EfCorePersistenceBuilder<TContext>
         _services.AddSingleton<IValidateOptions<PersistenceServiceOptions>, PersistenceServiceOptionsValidator>();
         _services.AddOptions<PersistenceServiceOptions>().ValidateOnStart();
 
+        return this;
+    }
+
+    /// <summary>
+    /// Opts in to applying pending EF Core migrations during host startup via
+    /// <c>Database.MigrateAsync</c>.
+    /// </summary>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// Does not by itself register a hosted service — <see cref="Build"/> registers
+    /// <c>MigrationAndSeedHostedService&lt;TContext&gt;</c> only when this method was called, or at
+    /// least one seeder was registered via <see cref="AddSeeder{TSeeder}"/>. Compatible with
+    /// <see cref="WithCompiledModel"/>: <c>MigrateAsync</c> still applies pending SQL migrations
+    /// independently of the runtime model.
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithMigrationsOnStartup()
+    {
+        _migrationsOnStartup = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a startup data seeder for <typeparamref name="TContext"/>.
+    /// </summary>
+    /// <typeparam name="TSeeder">
+    /// The seeder type. Must implement <see cref="IDataSeeder{TContext}"/> for the same
+    /// <typeparamref name="TContext"/> as this builder.
+    /// </typeparam>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <typeparamref name="TSeeder"/> is registered as scoped. Multiple calls accumulate into an
+    /// ordered list, executed in call order during startup, each in its own DI scope with its own
+    /// <typeparamref name="TContext"/> instance resolved via
+    /// <see cref="Microsoft.EntityFrameworkCore.IDbContextFactory{TContext}"/>. Seeders are
+    /// idempotent by contract — see <see cref="IDataSeeder{TContext}"/>.
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> AddSeeder<TSeeder>()
+        where TSeeder : class, IDataSeeder<TContext>
+    {
+        _services.AddScoped<TSeeder>();
+        _seedSteps.Add(static (sp, context, ct) =>
+            sp.GetRequiredService<TSeeder>().SeedAsync(context, ct));
         return this;
     }
 
@@ -331,6 +385,38 @@ public sealed class EfCorePersistenceBuilder<TContext>
             // Ensure IOptionsMonitor<EncryptionOptions> is available in the DI container.
             // AddOptions() is idempotent and does not duplicate registrations.
             _services.AddOptions<EncryptionOptions>();
+
+            // EncryptedEntityBatchProcessorRegistry<TContext> and EncryptionRotationService<TContext>
+            // both require IDbContextFactory<TContext> — register it if WithDbContextFactory() was
+            // not already called.
+            if (!_registerFactory)
+            {
+                _services.AddDbContextFactory<TContext>(effectiveConfigureDb);
+                _registerFactory = true;
+            }
+
+            // Singleton registry of reflection-free batch processors, one per encrypted entity
+            // type, populated lazily on first use from the model.
+            _services.AddSingleton<EncryptedEntityBatchProcessorRegistry<TContext>>();
+        }
+
+        // MigrationAndSeedHostedService<TContext> is registered only when migrations-on-startup
+        // was requested, or at least one seeder was registered — fully opt-in, zero overhead
+        // otherwise. Both paths require IDbContextFactory<TContext>; register it here if not
+        // already registered by .WithDbContextFactory() or .WithEncryption().
+        if (_migrationsOnStartup || _seedSteps.Count > 0)
+        {
+            if (!_registerFactory)
+            {
+                _services.AddDbContextFactory<TContext>(effectiveConfigureDb);
+                _registerFactory = true;
+            }
+
+            var migrationsOnStartup = _migrationsOnStartup;
+            var seedSteps = _seedSteps.ToArray();
+
+            _services.AddHostedService<MigrationAndSeedHostedService<TContext>>(sp =>
+                new MigrationAndSeedHostedService<TContext>(sp, migrationsOnStartup, seedSteps));
         }
 
         return _services;

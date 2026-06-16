@@ -7,7 +7,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 
 /// <summary>
 /// EF Core model-finalizing convention that automatically applies
-/// <see cref="EncryptedValueConverter{T}"/> to all string properties annotated with
+/// <see cref="EncryptedValueConverter"/> to all string properties annotated with
 /// <c>builder.Property(...).Encrypt()</c>.
 /// </summary>
 /// <remarks>
@@ -28,14 +28,23 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 public sealed class EncryptionModelConvention : IModelFinalizingConvention
 {
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
+    private readonly IEncryptionVersionOverride _versionOverride;
 
     /// <summary>
     /// Initialises a new <see cref="EncryptionModelConvention"/>.
     /// </summary>
     /// <param name="optionsMonitor">Live options monitor supplied by DI or a null-object fallback.</param>
-    public EncryptionModelConvention(IOptionsMonitor<EncryptionOptions> optionsMonitor)
+    /// <param name="versionOverride">
+    /// Scoped rotation-target-version accessor, resolved via DI, or the shared no-op instance when
+    /// <c>.WithEncryption()</c> was not called. Passed to every <see cref="EncryptedValueConverter"/>
+    /// this convention constructs.
+    /// </param>
+    public EncryptionModelConvention(
+        IOptionsMonitor<EncryptionOptions> optionsMonitor,
+        IEncryptionVersionOverride? versionOverride = null)
     {
         _optionsMonitor = optionsMonitor;
+        _versionOverride = versionOverride ?? EncryptionVersionOverride.NoOp;
     }
 
     /// <inheritdoc />
@@ -59,7 +68,7 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                     continue;
                 }
 
-                var converter = new EncryptedValueConverter(_optionsMonitor);
+                var converter = new EncryptedValueConverter(_optionsMonitor, _versionOverride);
                 property.SetValueConverter(converter);
             }
         }
