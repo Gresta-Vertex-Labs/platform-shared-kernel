@@ -30,9 +30,9 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 > Domains currently `◐ In Progress`. This section is the first thing to update when work starts or finishes in any domain.
 
-| Domain                                    | Current Phase   | Focus (one line)                                                                                                                                 |
-|-------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| [16.Testing](16.Testing/state-map.md)     | Design          | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing                         |
+| Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
+|-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| [16.Testing](16.Testing/state-map.md)                 | Design          | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing                         |
 
 <!--
 Format when active:
@@ -75,7 +75,7 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | — | `○` | — | — |
+| 11 | [Communication](11.Communication/state-map.md) | Scaffold | `●` | All 13 Scaffold tasks complete — four .csproj files with full NuGet metadata, four test .csproj files, all folder structures, all stub files; all 8 projects build clean (0 warnings, 0 errors); NuGet versions pinned. | Begin SK.11.Rest — implement typed HttpClient factory, Polly v8 resilience, CorrelationIdDelegatingHandler, TenantIdDelegatingHandler, and ProblemDetails error handling. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
@@ -111,14 +111,14 @@ Format when active:
 | ● Published | 4 |
 | ● RoutingSlip | 1 |
 | ● Governance: Architecture Rules | 1 |
+| ● Design | 0 |
 | ● Docs | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
-| ● Scaffold | 0 |
-| ● Design | 0 |
+| ● Scaffold | 1 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 9 |
+| ○ Not Started | 8 |
 
 ---
 
@@ -1820,6 +1820,8 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-10] Governance → Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards (●) — promoted from SK.00.ExtendedMessagingArchRules (state-map-phase)
 - [2026-06-15] Domain → Published (●) — SK.03.Core completed (37/37, C-37 StronglyTypedIdJsonConverter/Factory); promoted from SK.03.Core (state-map-phase)
 - [2026-06-16] Persistence → Docs (●) — SK.06.Docs 36/36 ●; DO-29..DO-36 XML docs complete for encryption, bulk mutation, streaming, readiness probes, seeding (state-map-phase)
+- [2026-06-16] Communication → Design (●) — promoted from SK.11.Design (state-map-phase)
+- [2026-06-16] Communication → Scaffold (●) — promoted from SK.11.Scaffold (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2104,6 +2106,9 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-15] Domain → Published (●) — promoted from SK.03.Published; P-10 complete, SharedKernel.Domain 1.6.0 packed and verified, all 6 phases of 03.Domain now complete (state-map-phase)
 - [2026-06-15] Phase Backlog entries for 03.Domain closed → ● Complete — 03.Domain reached Published (state-map-phase)
 - [2026-06-16] Persistence → Tests (●) — promoted from SK.06.Tests; T-40..T-54 complete, 245 tests green across all four test projects (state-map-phase)
+- [2026-06-16] Communication → Design (◐) — Implement SharedKernel.Communication.Rest - Polly v8 resilience, CorrelationId/TenantId delegation handlers, ProblemDetails deserialization (state-map-phase)
+- [2026-06-16] Phase(s) P-153 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-16] Phase(s) P-154, P-155, P-156, P-157 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -6838,7 +6843,7 @@ A generic `System.Text.Json.Serialization.JsonConverter<TStronglyTypedId>` (and 
 ---
 ### P-153 — Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation Outside Documented Exceptions
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-024
 **Domain:** 00.Governance
 **Depends on:** P-147
@@ -6857,4 +6862,312 @@ P-147 found that `EncryptionRotationService.LoadBatchAsync` — in the same pack
 - [ ] The fixed `EncryptionRotationService` from P-147 passes the new rule without needing an exception
 - [ ] Rule documented in `00.Governance/CLAUDE.md` with the `EncryptionRotationService` incident referenced as the motivating example
 - [ ] All existing production assemblies pass the new rule (or have explicit, reviewed exceptions) — `dotnet build` and architecture test suite both clean
+---
+
+### P-154 — Communication: REST Typed HttpClient Package
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-025
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Full implementation of `SharedKernel.Communication.Rest` — the platform-standard typed HTTP client factory for outbound REST communication between microservices.
+
+The package must deliver:
+
+**Builder and options:** A fluent `IRestCommunicationBuilder` entry-point registered via `AddSharedKernelRestCommunication(this IServiceCollection)`. The builder exposes `AddRestClient<TClient>(name, configure)` which wires a named, typed `HttpClient` with the full resilience and propagation stack. `RestClientOptions` carries `BaseAddress`, `TimeoutSeconds`, and a nested `RestResilienceOptions` block covering retry count, exponential base delay, circuit-breaker threshold, sampling duration, and break duration — all with production-safe defaults (retry 3, base delay 500 ms, CB on after 5 failures in 30 s, break for 30 s).
+
+**Resilience pipeline:** `Microsoft.Extensions.Http.Resilience`'s `StandardResilienceHandler` is the required wiring — no raw Polly pipelines built from scratch. The handler must be configured from `RestResilienceOptions` values. Timeout is a per-request timeout, not a global handler timeout.
+
+**Delegation handlers:** Two transient `DelegatingHandler` implementations:
+
+- Correlation ID handler: reads the ambient trace context (`Activity.Current`) and injects `x-correlation-id` on every outgoing request. Falls back to a new random ID when no trace is active. Must not overwrite an already-present `x-correlation-id` header set by the caller.
+- Tenant ID handler: reads `IUserContext` (from `12.Security.Abstractions`) from the **request scope** via `IHttpContextAccessor`-backed resolution. Injects `x-tenant-id` when `TenantId` is non-null. Silently no-ops when `IUserContext` is not registered or `TenantId` is absent — never throws.
+
+Both handlers must be registered as transient and must hold no cross-request state.
+
+**ProblemDetails error deserialization:** On non-2xx responses, the package must provide an extension or base typed-client helper that deserializes the response body as `application/problem+json` into a structured error shape. Use STJ source-generated context where available; fall back to reflection-based STJ. The deserialized error must map into `SharedKernel.Primitives.Error` so consuming application code stays within the `Result<T>` monad without referencing raw HTTP status codes.
+
+**Service discovery integration point:** `BaseAddress` on `RestClientOptions` is the only allowed way to set the base URI. When `IServiceEndpointResolver` (from the P-155 `Internal` package) is registered in DI, `AddRestClient<TClient>` should support omitting `BaseAddress` and resolving it at request time via the resolver. This integration is optional — typed clients with a static `BaseAddress` work without any service discovery registration.
+
+**DI registration shape:** follows the example in `11.Communication/CLAUDE.md` verbatim. The builder is fluent and chainable. `AddRestClient<TClient>` returns the builder for continued chaining.
+
+#### Why this is needed
+
+Every microservice in the platform makes outbound HTTP calls. Without a shared, pre-wired typed-client factory, each service re-implements resilience policies, correlation ID propagation, and tenant header injection independently — resulting in: (a) inconsistent retry strategies, (b) lost trace context at service boundaries, (c) tenant ID leakage or omission, and (d) raw `HttpClient` injections that bypass Polly entirely. This package eliminates all four failure modes at source.
+
+`Microsoft.Extensions.Http.Resilience`'s `StandardResilienceHandler` is chosen over raw Polly because it integrates with .NET 10's `IResilienceHttpClientBuilder` pipeline, composes correctly with `IHttpClientFactory`'s handler lifetime management, and aligns with Microsoft's documented guidance for typed HTTP clients — reducing platform maintenance burden when Polly or HttpClient APIs evolve.
+
+#### Acceptance criteria
+
+- [ ] `AddSharedKernelRestCommunication()` registers `IRestCommunicationBuilder` and both delegation handlers in the DI container
+- [ ] `AddRestClient<TClient>()` produces a typed client with the `StandardResilienceHandler` configured from `RestResilienceOptions` defaults
+- [ ] `RestClientOptions.TimeoutSeconds`, `RetryCount`, `RetryBaseDelayMs`, `CircuitBreakerEnabled`, `FailureThreshold`, `SamplingDurationSec`, `BreakDurationSec` are all applied when configured via `configure` callback
+- [ ] `CorrelationIdDelegatingHandler` injects `x-correlation-id` from `Activity.Current?.Id`; falls back to a new GUID; does not overwrite a caller-set header
+- [ ] `TenantIdDelegatingHandler` injects `x-tenant-id` from request-scoped `IUserContext.TenantId`; silently skips when context or `TenantId` is absent; resolves from request scope (not singleton)
+- [ ] Non-2xx responses deserialized as `application/problem+json` produce a typed `Error` value matching the `SharedKernel.Primitives.Error` shape
+- [ ] When `IServiceEndpointResolver` is registered and `BaseAddress` is omitted, the typed client resolves its base address dynamically at request time
+- [ ] Raw `HttpClient` is never injected directly by this package — all clients are registered via `IHttpClientFactory`
+- [ ] Package references: `01.Core`, `04.Contracts`, `12.Security.Abstractions`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience` — no reference to `02.Caching`, `05.Application`, `06.Persistence`, `07.Messaging`
+- [ ] XML doc comments on all public types
+- [ ] Test project nested inside `SharedKernel.Communication.Rest/` covering: delegation handler inject/skip/no-overwrite behavior, resilience policy fires (retry + CB), ProblemDetails deserialization to `Error`, and `AddRestClient` builder smoke test
+
+---
+
+### P-155 — Communication: K8s Service Discovery Package
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-025
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Full implementation of `SharedKernel.Communication.Internal` — the in-cluster service endpoint resolver for K8s-native microservice address resolution.
+
+The package must deliver:
+
+**Interface contract:** `IServiceEndpointResolver` with a single `ResolveAsync(string serviceName, CancellationToken ct) → ValueTask<Uri>` method. This is the only interface consuming typed clients may depend on — no concrete DNS types may leak into application code.
+
+**K8s resolver:** `KubernetesServiceEndpointResolver` implements `IServiceEndpointResolver`. It uses `Microsoft.Extensions.ServiceDiscovery` DNS resolution under the hood. Resolution order: DNS SRV records (`_http._tcp.<service>.<namespace>.svc.<clusterDomain>`) first; fall back to A-record for headless services. Namespace defaults to `"default"`, cluster domain defaults to `"cluster.local"`, scheme defaults to `"http"` (overridable via `K8sServiceDiscoveryOptions.SchemeOverride`). The resolver must never throw for an unresolvable name in production — it returns a constructed K8s convention URI and lets the caller's HTTP/gRPC stack surface the connection error.
+
+**Static resolver:** `StaticServiceEndpointResolver` implements `IServiceEndpointResolver` using a `Dictionary<string, Uri>` provided at registration time. Intended exclusively for local development and test environments. Registration via `AddStaticServiceDiscovery(Dictionary<string, Uri>)` must log a `Warning`-level startup message making clear this is not a production resolver. `AddStaticServiceDiscovery` must throw `InvalidOperationException` if `IServiceEndpointResolver` is already registered.
+
+**Options:** `K8sServiceDiscoveryOptions` carries `Namespace`, `ClusterDomain`, and `SchemeOverride`. Validated via Options-pattern validator.
+
+**DI registration:** `AddK8sServiceDiscovery(this IServiceCollection, Action<K8sServiceDiscoveryOptions>? configure)` registers `KubernetesServiceEndpointResolver` as the `IServiceEndpointResolver` singleton. `AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri>)` registers `StaticServiceEndpointResolver` as a singleton.
+
+**Integration with Rest/Grpc:** This package is a standalone dependency. `SharedKernel.Communication.Rest` and `SharedKernel.Communication.Grpc` each optionally detect `IServiceEndpointResolver` from DI to support omitting `BaseAddress`/`Address` in typed client options. The `Internal` package does not reference `Rest` or `Grpc` — dependency flows only into `Internal`.
+
+#### Why this is needed
+
+Without a platform-standard service discovery abstraction, typed clients hardcode service addresses from configuration or environment variables. In K8s, this produces: (a) configuration drift between environments, (b) missed headless-service scenarios where a single DNS name routes to multiple pod IPs, and (c) inability to swap resolution strategies between dev (static), staging (DNS), and production (DNS + SRV) without code changes. `IServiceEndpointResolver` provides a single injection point that allows environment-specific resolution without changing the typed client implementation.
+
+#### Acceptance criteria
+
+- [ ] `IServiceEndpointResolver` is defined in this package with `ResolveAsync` returning `ValueTask<Uri>`
+- [ ] `AddK8sServiceDiscovery()` registers `KubernetesServiceEndpointResolver` as `IServiceEndpointResolver` singleton; `K8sServiceDiscoveryOptions` wired via Options-pattern
+- [ ] `KubernetesServiceEndpointResolver.ResolveAsync` never throws for an unresolvable name — returns K8s convention URI on failure
+- [ ] `AddStaticServiceDiscovery()` registers `StaticServiceEndpointResolver`; logs `Warning` at startup
+- [ ] `AddStaticServiceDiscovery` throws `InvalidOperationException` if `IServiceEndpointResolver` already registered
+- [ ] `StaticServiceEndpointResolver.ResolveAsync` returns the registered `Uri` for known service names; returns K8s convention URI for unknown names
+- [ ] Package references: `01.Core`, `Microsoft.Extensions.ServiceDiscovery` — no reference to `02.Caching`, `05.Application`, `06.Persistence`, `07.Messaging`, `11.Communication.Rest`, or `11.Communication.Grpc`
+- [ ] XML doc comments on all public types
+- [ ] Test project nested inside `SharedKernel.Communication.Internal/` covering: static resolver known/unknown lookup, startup guard double-registration, warning log assertion, and Options validation
+
+---
+
+### P-156 — Communication: gRPC Channel Factory Package
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-025
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Full implementation of `SharedKernel.Communication.Grpc` — the platform-standard gRPC typed client factory with OTel tracing, correlation + tenant metadata injection, and Protobuf well-known type helpers.
+
+The package must deliver:
+
+**Builder and options:** A fluent `IGrpcCommunicationBuilder` entry-point registered via `AddSharedKernelGrpcCommunication(this IServiceCollection)`. The builder exposes `AddGrpcClient<TClient>(address, configure)` which wires a gRPC typed client with all interceptors registered globally via `AddGrpcClient<T>().AddInterceptor<T>()`. `GrpcClientOptions` carries `Address` (required), `DeadlineSeconds` (default 30), and `EnableRetry` (default true). `GrpcChannel` instances must be registered as singletons — use `Grpc.Net.ClientFactory` channel caching, not manual `GrpcChannel.ForAddress()` per-request.
+
+**Interceptors (global, not per-call):**
+
+- Correlation + OTel tracing interceptor: injects W3C trace context headers (`traceparent`, `tracestate`) and `x-correlation-id` gRPC metadata. Must read `Activity.Current` at the moment of the call (not at DI registration). Must not overwrite an already-present `x-correlation-id` metadata entry. Must catch all exceptions and log at `Error` level — never propagate into the gRPC call pipeline.
+- Tenant ID interceptor: reads `IUserContext.TenantId` (from `12.Security.Abstractions`) and injects `x-tenant-id` gRPC metadata. Silently no-ops when context or `TenantId` is absent. Same exception-swallowing contract as the tracing interceptor.
+
+**Protobuf well-known type helpers:** Pure static extension methods for lossless bidirectional conversion:
+
+- `Money` Protobuf type ↔ `decimal` — allocation-minimal, no intermediate object allocations
+- `Timestamp` Protobuf type ↔ `DateTimeOffset` — allocation-minimal
+
+These helpers must be pure, static, and verifiable without a running gRPC service.
+
+**Service discovery integration:** Same optional pattern as P-154 — when `IServiceEndpointResolver` is registered, `AddGrpcClient<TClient>` should support omitting `Address` and resolving it at channel creation time. Static `Address` continues to work without service discovery.
+
+**TLS:** Configured at the channel level only — no per-call TLS configuration.
+
+#### Why this is needed
+
+gRPC is the primary high-throughput inter-service protocol for same-cluster calls in this platform. Without shared interceptors, each service team independently implements — or forgets to implement — OTel trace propagation, correlation ID injection, and tenant context forwarding. A single missed interceptor registration breaks distributed tracing for an entire call chain and loses tenant isolation at the gRPC boundary. Centralizing this in a shared package with global interceptor registration (not per-call) ensures every gRPC call the platform makes is automatically instrumented and context-propagated, with no per-service boilerplate.
+
+`Grpc.Net.ClientFactory` is chosen for channel lifecycle management because it integrates with `IHttpClientFactory`'s named-client pattern and handles channel caching and reconnect correctly — avoiding the common mistake of creating a new `GrpcChannel` per call (expensive) or using a single static channel without proper lifecycle management.
+
+#### Acceptance criteria
+
+- [ ] `AddSharedKernelGrpcCommunication()` registers `IGrpcCommunicationBuilder` and both interceptors in the DI container
+- [ ] `AddGrpcClient<TClient>()` wires the typed client via `Grpc.Net.ClientFactory` with channels registered as singletons; `GrpcClientOptions.DeadlineSeconds` applied as a per-call deadline
+- [ ] Correlation + OTel interceptor injects `traceparent`, `tracestate`, and `x-correlation-id`; reads `Activity.Current` at call time; does not overwrite existing `x-correlation-id`; swallows its own exceptions with `Error` logging
+- [ ] Tenant ID interceptor injects `x-tenant-id` from request-scoped `IUserContext.TenantId`; silently no-ops when absent; swallows exceptions with `Error` logging
+- [ ] `MoneyProtoExtensions` converts `Money` Protobuf ↔ `decimal` with no intermediate allocations
+- [ ] `TimestampProtoExtensions` converts `Timestamp` Protobuf ↔ `DateTimeOffset` with no intermediate allocations
+- [ ] When `IServiceEndpointResolver` is registered and `Address` is omitted, the gRPC channel resolves its address at channel creation time
+- [ ] Package references: `01.Core`, `04.Contracts`, `12.Security.Abstractions`, `Grpc.Net.Client`, `Grpc.Net.ClientFactory`, `OpenTelemetry.Instrumentation.GrpcNetClient` — no reference to `02.Caching`, `05.Application`, `06.Persistence`, `07.Messaging`
+- [ ] XML doc comments on all public types
+- [ ] Test project nested inside `SharedKernel.Communication.Grpc/` covering: interceptor metadata inject/skip/no-overwrite, interceptor exception swallowing, Protobuf helper round-trip correctness, and `AddGrpcClient` builder smoke test
+
+---
+
+### P-157 — Communication: GraphQL Server Convention Package
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-025
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Full implementation of `SharedKernel.Communication.GraphQL` — the platform-standard HotChocolate server-side configuration package for microservices that expose a GraphQL API.
+
+The package must deliver:
+
+**Entry point:** `AddSharedKernelGraphQL(this IServiceCollection, Action<GraphQLOptions>? configure) → IRequestExecutorBuilder`. This must be called before any service-specific `AddGraphQL()` / `AddTypes()` calls — it establishes the base convention all types inherit.
+
+**Options:** `GraphQLOptions` carries: `EnableFiltering` (default true), `EnableSorting` (default true), `EnablePaging` (default true, offset paging), `MaxPageSize` (default 100, hard cap at 500), `AllowIntrospection` (default true — consuming services must gate this to `IsDevelopment()`).
+
+**Convention wiring:** `AddSharedKernelGraphQL` applies:
+
+- snake_case field naming convention across all types
+- `SharedKernelFilterConvention` — a pre-configured `FilterConvention` that registers standard filter operations for string, numeric, and date field types using snake_case binding names that match REST API field naming
+- Cursor pagination and offset pagination support, with `MaxPageSize` enforced globally (services must not increase beyond 500 without documented justification)
+- Error mapping via `IErrorFilter` that translates `IError` → the same `ProblemDetails`-compatible shape used by REST responses, so GraphQL errors and REST errors have a consistent shape for API consumers
+
+**Base input types for consuming services:** Two open generic base classes:
+
+- `FilterBase<T>` — extends HotChocolate's `FilterInputType<T>`; consuming services override `Descriptor()` to customise field visibility and operations; enforces snake_case binding
+- `SortBase<T>` — extends `SortInputType<T>`; same customisation model
+
+Consuming services must always subclass these bases — direct registration of raw `FilterInputType<T>` or `SortInputType<T>` without the base wrapper is a platform violation (enforced by P-159 governance rule).
+
+**Pagination helper:** `PagedResponseType<T>` — a wrapper type that presents HotChocolate paged results (both `CollectionSegment` for offset and `Connection` for cursor) with a consistent `TotalCount + Items` shape, matching the `PagedList<T>` shape used in REST responses from `06.Persistence`.
+
+#### Why this is needed
+
+HotChocolate's default configuration exposes raw C# PascalCase field names, allows unbounded page sizes, permits full-entity filter exposure without restriction, and produces HotChocolate-specific error shapes that diverge from the platform's REST `ProblemDetails` convention. Services that configure HotChocolate independently from scratch inevitably produce inconsistent API surfaces. This package locks in snake_case naming, bounded paging, restricted filter types, and unified error shapes as non-negotiable platform defaults, while leaving all domain-specific type registrations to each consuming service.
+
+The `AllowIntrospection` default of `true` requires explicit opt-out in production. This is intentional — introspection is essential for development and CI schema validation, and the burden of disabling it in production is placed on the consuming service's `Program.cs` environment gate, where it is visible to reviewers.
+
+#### Acceptance criteria
+
+- [ ] `AddSharedKernelGraphQL()` returns an `IRequestExecutorBuilder` for continued type registration chaining
+- [ ] snake_case field naming applied globally across all types registered after `AddSharedKernelGraphQL()`
+- [ ] `SharedKernelFilterConvention` registered; string/numeric/date filter operations available with snake_case binding names
+- [ ] `GraphQLOptions.MaxPageSize` enforced globally; attempts to request more items than `MaxPageSize` are rejected at the HotChocolate layer
+- [ ] `IErrorFilter` registered; `IError` items in GraphQL responses produce a `ProblemDetails`-compatible JSON shape matching the REST error convention
+- [ ] `FilterBase<T>` and `SortBase<T>` are public abstract base classes; consuming services extend them and override `Descriptor()` to configure visible fields
+- [ ] `PagedResponseType<T>` presents a `TotalCount + Items` shape for both offset and cursor paged queries
+- [ ] `GraphQLOptions.AllowIntrospection = false` disables GraphQL schema introspection; default is `true`
+- [ ] `AddSharedKernelGraphQL` must be idempotent — calling it twice does not double-register conventions
+- [ ] Package references: `01.Core`, `04.Contracts`, `HotChocolate.AspNetCore`, `HotChocolate.Data` — no reference to `02.Caching`, `05.Application`, `06.Persistence`, `07.Messaging`, `12.Security` (GraphQL tenant resolution is JWT-claim-based, done by the consuming service's security pipeline)
+- [ ] XML doc comments on all public types
+- [ ] Test project nested inside `SharedKernel.Communication.GraphQL/` using HotChocolate's `IRequestExecutor` test builder; covers: filter + sort + paging with configured convention, `MaxPageSize` enforcement, error mapping to ProblemDetails shape, `AllowIntrospection` flag behavior
+
+---
+
+### P-158 — Testing: Communication Package Test Helpers
+
+**Status:** `○` Pending
+**Work Order:** WO-025
+**Domain:** 16.Testing
+**Depends on:** P-154, P-155, P-156, P-157
+
+#### What is needed
+
+Additions to `SharedKernel.Testing` to support testing of code that depends on `11.Communication` packages.
+
+The additions must deliver:
+
+**HTTP delegation handler test infrastructure:**
+
+- A `FakeHttpMessageHandler` (or equivalent test-doubles pattern) that allows unit tests to assert which headers were injected on outgoing `HttpRequestMessage` instances without making real HTTP calls. Must support configurable response fixture (status code + body) and response sequence (first call returns 503, second returns 200) for resilience policy testing.
+- Extension helpers on `IServiceCollection` to register delegation handlers in test DI without a full `HttpClient` factory pipeline.
+
+**Correlation and tenant context fakes:**
+
+- A `FakeUserContext` (if not already present in SharedKernel.Testing) that implements `IUserContext` with configurable `TenantId`, `UserId`, and `Roles` — reusable for delegation handler tests, interceptor tests, and application-layer tests.
+- A helper to set an ambient `Activity` with a specific trace ID and parent for testing correlation ID propagation.
+
+**gRPC interceptor test infrastructure:**
+
+- A test helper or factory that produces a `ServerCallContext`-equivalent stub for testing Grpc interceptors in isolation without a real gRPC channel. Must allow inspecting injected metadata entries after interceptor execution.
+
+**Service discovery test doubles:**
+
+- An `InMemoryServiceEndpointResolver` implementing `IServiceEndpointResolver` with a configurable `Dictionary<string, Uri>` — simpler than `StaticServiceEndpointResolver` (which logs warnings); intended purely for test DI registration. Registered via `AddInMemoryServiceDiscovery(Dictionary<string, Uri>)`.
+
+**GraphQL test helpers:**
+
+- A pre-configured `IRequestExecutorBuilder` factory helper that wires `AddSharedKernelGraphQL()` with test-safe defaults (`AllowIntrospection = true`, `MaxPageSize = 10`) for HotChocolate filter/sort/paging unit tests.
+
+#### Why this is needed
+
+Without shared test infrastructure for `11.Communication`, each microservice team writes their own `FakeHttpMessageHandler`, their own `IUserContext` stub, and their own gRPC metadata inspection helpers — producing dozens of subtly different test doubles across the platform. Consolidating these into `SharedKernel.Testing` ensures a single, maintained, correct set of test primitives that stay in sync with the production interfaces as they evolve.
+
+The `InMemoryServiceEndpointResolver` is distinct from `StaticServiceEndpointResolver` (P-155) by design: the static resolver is production code that logs warnings; the in-memory resolver is a test-only double that never logs, never throws, and has no startup side effects.
+
+#### Acceptance criteria
+
+- [ ] `FakeHttpMessageHandler` added to `SharedKernel.Testing`; supports fixed and sequenced response fixtures; allows `RequestMessage` inspection after the call
+- [ ] Extension to set up delegation handler tests via `IServiceCollection` without full `IHttpClientFactory` pipeline
+- [ ] `FakeUserContext` with configurable `TenantId`, `UserId`, `Roles` added (or confirmed already present); implements `IUserContext` from `12.Security.Abstractions`
+- [ ] Ambient `Activity` factory helper for trace ID / parent injection in unit tests
+- [ ] gRPC `ServerCallContext` stub that allows metadata entry inspection after interceptor execution
+- [ ] `InMemoryServiceEndpointResolver` implementing `IServiceEndpointResolver`; registered via `AddInMemoryServiceDiscovery(Dictionary<string, Uri>)`; no startup warnings or side effects
+- [ ] GraphQL `IRequestExecutorBuilder` test factory helper wiring `AddSharedKernelGraphQL()` with test-safe defaults
+- [ ] All new types in `SharedKernel.Testing` reference only production packages via their abstraction interfaces — `SharedKernel.Communication.Rest`, `.Grpc`, `.GraphQL`, `.Internal` are NOT referenced by `SharedKernel.Testing`; test helpers reference only `SharedKernel.Security.Abstractions` for `IUserContext`
+- [ ] XML doc comments on all new public helpers
+
+---
+
+### P-159 — Governance: Architecture Rules for Communication Layer
+
+**Status:** `○` Pending
+**Work Order:** WO-025
+**Domain:** 00.Governance
+**Depends on:** P-154, P-155, P-156, P-157
+
+#### What is needed
+
+New architecture enforcement rules in `SharedKernel.ArchitectureTests` (NetArchTest) covering the `11.Communication` package family.
+
+The rules must mechanically enforce the following invariants across all platform assemblies:
+
+**Communication layering rules:**
+
+- `11.Communication.*` packages must not reference `02.Caching.*`, `05.Application`, `06.Persistence.*`, `07.Messaging.*` — the layering table in root CLAUDE.md permits only `01.Core`, `04.Contracts`, and `12.Security` abstractions
+- No assembly outside `11.Communication.*` may directly reference `Grpc.Net.Client`, `Grpc.Net.ClientFactory`, or `HotChocolate.*` — those libraries must be accessed only through the `SharedKernel.Communication.Grpc` and `SharedKernel.Communication.GraphQL` wrappers
+- `SharedKernel.Communication.Internal` must not reference `SharedKernel.Communication.Rest`, `SharedKernel.Communication.Grpc`, or `SharedKernel.Communication.GraphQL` — the dependency flows into `Internal`, not out of it
+
+**Raw injection guards:**
+
+- Production assemblies (any assembly not in `*.Tests`) must not declare a constructor parameter of type `HttpClient` directly — typed clients must be injected as their named `TClient` interface, never as `HttpClient`. Enforced via a NetArchTest or Roslyn analyzer SK0xxx rule.
+- Production assemblies must not reference `Grpc.Core.Interceptors.Interceptor` directly outside `11.Communication.Grpc` — interceptor implementations belong only in the Communication package.
+
+**GraphQL convention guard:**
+
+- Assemblies referencing `HotChocolate.Data` must not directly instantiate or inherit `FilterInputType<T>` or `SortInputType<T>` without going through `FilterBase<T>` or `SortBase<T>` from `SharedKernel.Communication.GraphQL`. This prevents accidental full-entity filter exposure and naming convention violations.
+
+**Hardcoded URI guard:**
+
+- Production typed clients (classes implementing a typed-client interface and depending on `HttpClient` or `GrpcChannel`) must not assign a `Uri` constructed from a string literal or `IConfiguration` value directly — `BaseAddress` or `Address` must be set only via `RestClientOptions`/`GrpcClientOptions` options objects or resolved via `IServiceEndpointResolver`. This is a documentation-enforced rule; a Roslyn analyzer can be added if mechanical enforcement is feasible without excessive false positives.
+
+#### Why this is needed
+
+P-145 (WO-023) demonstrated that documenting the `02.Caching`/`07.Messaging` mutual exclusion rule was insufficient — the pattern was violated in a package whose own CLAUDE.md documented it as forbidden. The same risk applies here: the `11.Communication` layering rules are clear in CLAUDE.md but nothing mechanically prevents a developer from injecting `HttpClient` directly, importing `Grpc.Net.Client` in an application assembly, or registering a raw `FilterInputType<T>`. Architecture tests convert these documentation rules into build-time failures.
+
+The raw `HttpClient` injection guard is particularly important: `IHttpClientFactory`-managed clients participate in connection pooling, DNS refresh, and handler lifetime management; a directly-injected `HttpClient` singleton bypasses all of this and is a known production reliability issue in .NET microservices.
+
+#### Acceptance criteria
+
+- [ ] NetArchTest rule: `11.Communication.*` assemblies have no reference to `02.Caching.*`, `05.Application`, `06.Persistence.*`, `07.Messaging.*`
+- [ ] NetArchTest rule: `SharedKernel.Communication.Internal` has no reference to `SharedKernel.Communication.Rest`, `.Grpc`, or `.GraphQL`
+- [ ] NetArchTest or Roslyn analyzer rule (SK0xxx): no production assembly constructor declares a parameter of raw `HttpClient` type (exception: `DelegatingHandler` subclasses in `SharedKernel.Communication.Rest` are explicitly exempted)
+- [ ] NetArchTest rule: no assembly outside `SharedKernel.Communication.Grpc` directly references `Grpc.Core.Interceptors.Interceptor` as a base class
+- [ ] NetArchTest rule: no assembly referencing `HotChocolate.Data` inherits from `FilterInputType<T>` or `SortInputType<T>` directly without going through `FilterBase<T>` / `SortBase<T>` (exemption: `SharedKernel.Communication.GraphQL` itself for defining those bases)
+- [ ] All rules documented in `00.Governance/CLAUDE.md` with the motivating principle and exemption mechanism for each
+- [ ] `dotnet build` and full architecture test suite clean with 0 violations on current codebase
+- [ ] Rules assigned SK0xxx numbers in the existing governance numbering sequence
 ---

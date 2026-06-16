@@ -5,9 +5,9 @@ metadata:
   type: project
 ---
 
-As of 2026-06-12, the last phase written to `state-map.md` Phase Backlog is **P-153** under **WO-024**.
+As of 2026-06-16, the last phase written to `state-map.md` Phase Backlog is **P-159** under **WO-025**.
 
-Next new phase must be **P-154**. Next new Work Order must be **WO-025**.
+Next new phase must be **P-160**. Next new Work Order must be **WO-026**.
 
 **How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file.
 

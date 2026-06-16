@@ -1,8 +1,57 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Communication.Internal</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>K8s-native service discovery for Platform.SharedKernel: IServiceEndpointResolver, KubernetesServiceEndpointResolver (DNS SRV + A-record via Microsoft.Extensions.ServiceDiscovery), StaticServiceEndpointResolver (dev/test only — logs Warning at startup), AddK8sServiceDiscovery and AddStaticServiceDiscovery DI extensions.</Description>
+    <PackageTags>service-discovery;kubernetes;k8s;dns;headless;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Layering: 11.Communication.Internal references 01.Core only.
+      No 04.Contracts, 12.Security, 02.Caching, 05.Application, 06.Persistence, or 07.Messaging.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.Extensions.ServiceDiscovery: DNS SRV + A-record resolution for K8s headless services.
+      Version 10.7.0 — net10.0 compatible; AOT status: compatible as of 10.7.0.
+    -->
+    <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" Version="10.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Allow test project to access internal types -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Communication.Internal.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Communication.Internal.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Communication.Internal.Tests\**" />
+    <None Remove="SharedKernel.Communication.Internal.Tests\**" />
+  </ItemGroup>
 
 </Project>

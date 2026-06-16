@@ -45,6 +45,7 @@
 | `SK.00.MessagingArchRules` | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | All tasks in Phase: Messaging Architecture Rules are `●` |
 | `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | All tasks in Phase: Extended Messaging Architecture Rules are `●` |
 | `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | All tasks in Phase: Redis Package Topology Architecture Rules are `●` |
+| `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | All tasks in Phase: Reflection Guard Architecture Rules are `●` |
 
 ---
 
@@ -1671,6 +1672,88 @@ _None._ This phase introduces zero new Roslyn analyzers and zero new SK diagnost
 
 ---
 
+## Phase: Reflection Guard Architecture Rules <!-- phase-key: SK.00.ReflectionGuard -->
+
+> Enforce the platform-wide prohibition on reflection-based generic method invocation (`GetMethod`/`GetMethods` + `MakeGenericMethod` + `Invoke`). P-147 demonstrated that documentation alone cannot prevent this pattern from shipping; this phase converts the documentation convention into a mechanical NetArchTest rule with an explicit, reviewable allow-list for any future justified exception.
+
+### ReflectionGuard — Goal
+
+P-147 fixed `EncryptionRotationService.LoadBatchAsync` which shipped the exact pattern that `06.Persistence/CLAUDE.md` documented as forbidden (expression-tree approach is the gold standard). The violation was justified by an inline comment claiming it was "not a hot path." This phase introduces a platform-wide NetArchTest `ICustomRule` (`NoMakeGenericMethodReflectionPredicate`) that flags any method body containing a `MakeGenericMethod` IL call opcode in production assemblies. Legitimate exceptions — if any ever arise — are handled by a `ReflectionExemptionRegistry` allow-list embedded in `SharedKernel.ArchitectureTests`, requiring a written governance rationale before the exception is registered. The fixed `EncryptionRotationService` from P-147 (which eliminated `MakeGenericMethod` in favour of expression trees) passes the rule without needing an exception. Consistent with how P-145 (WO-023) converted the `02.Caching`/`07.Messaging` mutual-exclusion documentation into `RedisTopologyRules`, this phase converts the reflection prohibition into `ReflectionGuardRules`.
+
+### ReflectionGuard — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/ReflectionGuardRules.cs` — static class housing `NoMakeGenericMethodReflection(Assembly assembly)` factory method
+  - `SharedKernel.ArchitectureTests/Predicates/NoMakeGenericMethodReflectionPredicate.cs` — `ICustomRule` walking `MethodDefinition.Body.Instructions` for `MakeGenericMethod` call opcodes; respects `ReflectionExemptionRegistry`
+  - `SharedKernel.ArchitectureTests/ReflectionExemptionRegistry.cs` — static allow-list of explicitly approved (type full name, method name) pairs that are exempt from SK0012; each entry must carry an XML doc comment with the governance rationale and the work order that approved it
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0012 to diagnostic registry; add `ReflectionGuardRules` to architecture test contracts; add `NoMakeGenericMethodReflectionPredicate` predicate; add `ReflectionExemptionRegistry` allow-list mechanism; add implementation rules
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+- Note: No Roslyn analyzer is introduced for this rule. The reflection pattern is only detectable post-compile (IL level) — `MakeGenericMethod` is not visible as a simple syntax pattern since `MethodInfo` is returned from runtime calls. Consistent with SK0301–SK0304 and SK0706–SK0707, this is a NetArchTest `ICustomRule` predicate enforced at assembly level.
+
+### ReflectionGuard — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0012 | MakeGenericMethodReflection | Design | Warning | A method body contains a `MakeGenericMethod` IL call opcode and the type is not in `ReflectionExemptionRegistry`; platform-wide scope across all numbered domains |
+
+### ReflectionGuard — Implementation Rules
+
+1. `NoMakeGenericMethodReflectionPredicate` inspects `TypeDefinition.Methods` for each type. For each `MethodDefinition` with a non-null `Body`, it walks `MethodDefinition.Body.Instructions` for any `Instruction` where `OpCode` is `Call` or `Callvirt` and `MethodReference.Name == "MakeGenericMethod"` (exact name match). If found, the predicate checks `ReflectionExemptionRegistry.IsExempt(typeFullName, methodName)` before returning false. Returns false (rule violated) only when the call is found AND the type+method combination is not in the allow-list. Failure message: `"{TypeDefinition.FullName}.{method.Name} calls MakeGenericMethod. Use typed dispatch or expression trees instead. If this is a genuinely justified exception, register the type and method in ReflectionExemptionRegistry with a written governance rationale."` Lives in `Predicates/` folder.
+2. `ReflectionExemptionRegistry` is a static class in `SharedKernel.ArchitectureTests/ReflectionExemptionRegistry.cs`. It exposes `IsExempt(string typeFullName, string methodName)` returning `bool`. Internally it maintains a `HashSet<(string, string)>` of approved (typeFullName, methodName) pairs. Each registered entry must carry an XML `<remarks>` doc comment stating: the governance rationale, the work order that approved the exception, and the date approved. The registry ships empty — no exemptions are pre-populated (the fixed P-147 code no longer uses `MakeGenericMethod` and therefore needs no exemption).
+3. `ReflectionGuardRules.NoMakeGenericMethodReflection(Assembly assembly)` returns `ConditionList` using `Types.InAssembly(assembly).That().AreNotAbstract().Should().MeetCustomRule(new NoMakeGenericMethodReflectionPredicate())`. The `.AreNotAbstract()` filter excludes compiler-generated abstract helper types. The factory method accepts a single `Assembly`; consumers call it once per production assembly under test.
+4. The rule is scoped to production assemblies — test projects must not be passed to `NoMakeGenericMethodReflection`. The consuming architecture test project must reference production assemblies via `typeof(SomeProductionType).Assembly` and must not pass `SharedKernel.ArchitectureTests` itself or any `.Tests` project assembly.
+5. `NoMakeGenericMethodReflectionPredicate` reuses the established Mono.Cecil `TypeDefinition` access pattern from `DoesNotContainThrowIlPredicate`. No new NuGet dependency — the existing `Mono.Cecil >= 0.11.5` explicit reference in `SharedKernel.ArchitectureTests` covers this predicate.
+6. The `ReflectionExemptionRegistry` allow-list is the ONLY mechanism for authorising a `MakeGenericMethod` call in production code. Inline `#pragma` suppressions, `// ReSharper disable` comments, or `[SuppressMessage]` attributes on the calling method are not valid substitutes — the allow-list requires governance review because the rule is assembly-level (not per-call-site).
+7. The motivating incident (P-147 `EncryptionRotationService.LoadBatchAsync`) is documented as the canonical example in `CLAUDE.md` and the `ReflectionExemptionRegistry` header comment to explain why the registry starts empty and why the expression-tree / typed-dispatch alternatives are always preferred.
+8. SK0012 severity is `Warning` at introduction, consistent with the established SK diagnostic lifecycle. Escalation to `Error` is gated on confirmation that the `ReflectionExemptionRegistry` allow-list mechanism produces zero false positives across all platform assemblies on the first governance scan.
+
+### ReflectionGuard — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/ReflectionGuardRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: `NoMakeGenericMethodReflection(Assembly)` → `ConditionList` |
+| `Predicates/NoMakeGenericMethodReflectionPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: Mono.Cecil IL walk for `MakeGenericMethod` call opcodes; consults `ReflectionExemptionRegistry` before failing |
+| `ReflectionExemptionRegistry.cs` | SharedKernel.ArchitectureTests | Create | Static allow-list of approved (typeFullName, methodName) pairs exempt from SK0012; ships empty |
+
+### ReflectionGuard — Acceptance Criteria
+
+- [ ] `NoMakeGenericMethodReflectionPredicate` fires when a method body contains a `MakeGenericMethod` call opcode (fire-path test)
+- [ ] The fixed `EncryptionRotationService` from P-147 (which uses expression trees, not `MakeGenericMethod`) passes the rule without any allow-list registration (pass-path test)
+- [ ] A type+method registered in `ReflectionExemptionRegistry` is exempt from SK0012 — the predicate returns true for that entry (exemption-path test)
+- [ ] `ReflectionExemptionRegistry` ships empty — no pre-populated exemptions
+- [ ] Rule documented in `00.Governance/CLAUDE.md` with the P-147 `EncryptionRotationService` incident as the motivating example
+- [ ] `dotnet build` and architecture test suite both clean after the rule is added (all existing platform assemblies pass because P-147 already eliminated the only known violation)
+
+### ReflectionGuard — Dependencies
+
+- Requires P-147 (`EncryptionRotationService` refactored to expression trees — eliminating the only known `MakeGenericMethod` violation) to be complete: yes — without P-147 the new rule would immediately fail on the existing `EncryptionRotationService` code, requiring a bootstrap exemption that contradicts the design intent
+- Requires `DoesNotContainThrowIlPredicate` (Mono.Cecil `TypeDefinition` access pattern) from `SK.00.GuardPurity` to be complete: yes (already complete — Mono.Cecil access pattern is established)
+- Unblocks: CI architecture gate for the platform-wide reflection prohibition
+
+### ReflectionGuard — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` — no change)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new Roslyn analyzer, no change)
+- Target framework: `net10.0` (ArchitectureTests)
+
+### ReflectionGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-49 | Define SK0012 `MakeGenericMethodReflection` rule shape: `NoMakeGenericMethodReflectionPredicate` design — IL walk for `MakeGenericMethod` call opcodes in `MethodDefinition.Body.Instructions`; `ReflectionExemptionRegistry` allow-list design (static `HashSet<(string, string)>`, `IsExempt(typeFullName, methodName)`); `ReflectionGuardRules.NoMakeGenericMethodReflection(Assembly)` factory shape returning `ConditionList`; document P-147 motivating incident; define severity lifecycle (Warning → Error) | SharedKernel.ArchitectureTests | `○` |
+| C-65 | Implement `NoMakeGenericMethodReflectionPredicate` in `Predicates/` and `ReflectionExemptionRegistry` in root of `SharedKernel.ArchitectureTests/` — predicate: Mono.Cecil IL walk for `MakeGenericMethod` name match on Call/Callvirt opcodes; consults `IsExempt(typeFullName, methodName)` before returning false; failure message names offending type and method; registry: static class with empty `HashSet<(string,string)>` allow-list, `IsExempt` method, XML doc header documenting P-147 incident and expression-tree alternative | SharedKernel.ArchitectureTests | `○` |
+| C-66 | Implement `ReflectionGuardRules` static class in `Rules/` — single factory method `NoMakeGenericMethodReflection(Assembly assembly)` → `ConditionList` using `Types.InAssembly(assembly).That().AreNotAbstract().Should().MeetCustomRule(new NoMakeGenericMethodReflectionPredicate())` | SharedKernel.ArchitectureTests | `○` |
+| T-113 | Architecture test (fire path): contrived in-memory assembly containing a method that calls `typeof(SomeClass).GetMethod("Foo").MakeGenericMethod(typeof(int)).Invoke(...)` — compiled to IL; assert `NoMakeGenericMethodReflection` fails and failure message names the offending type and method | SharedKernel.ArchitectureTests | `○` |
+| T-114 | Architecture test (pass path — expression tree): contrived assembly containing the P-147 fixed pattern (expression tree dispatching equivalent of the rotation method) with no `MakeGenericMethod` call; assert `NoMakeGenericMethodReflection` passes | SharedKernel.ArchitectureTests | `○` |
+| T-115 | Architecture test (exemption path): contrived assembly with a `MakeGenericMethod` call; register the offending type+method in `ReflectionExemptionRegistry`; assert `NoMakeGenericMethodReflection` passes with the exemption in place; verify the registry `IsExempt` returns true for that entry and false for unregistered entries | SharedKernel.ArchitectureTests | `○` |
+| DO-21 | Document SK0012 `MakeGenericMethodReflection` and `ReflectionGuardRules` in `00.Governance/CLAUDE.md`: rule rationale, P-147 `EncryptionRotationService` incident as motivating example, `ReflectionExemptionRegistry` allow-list usage instructions (how to request an exception, required XML doc format), offending-pattern example, compliant alternatives (typed dispatch, expression trees), failure message content | SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -1685,7 +1768,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 282.
+> Counts updated whenever a task state changes. Total tasks: 289.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -1709,6 +1792,7 @@ Format when active:
 | `SK.00.MessagingArchRules` | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | 20 | 20 | 0 | `●` |
 | `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | 20 | 20 | 0 | `●` |
 | `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | 16 | 16 | 0 | `●` |
+| `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | 7 | 0 | 7 | `○` |
 
 ---
 
@@ -1757,3 +1841,4 @@ Format when active:
 - [2026-06-10] D-44–D-47, C-55–C-59, T-96–T-103, DO-19 → ● in SK.00.ExtendedMessagingArchRules — all 20 tasks complete; SK0705 FaultConsumerDirectRegistrationAnalyzer and SK0708 BatchConsumerRegisteredViaAddConsumerAnalyzer implemented (Roslyn, netstandard2.0, syntax-only); SK0706 NoDirectSchedulerInjectionOutsideMessagingPredicate and SK0707 SagaStateMustExtendSagaStateBasePredicate implemented (NetArchTest ICustomRule, ExtendedMessagingArchitectureRules factory); fixed a SagaStateMustExtendSagaStateBasePredicate bug where SagaStateBase itself (which implements ISaga directly) was incorrectly flagged as a violation — added a self-exemption check; 85 analyzer tests pass, 66 architecture tests pass (0 failures); README.md documented with SK0705–SK0708 sections and a new ExtendedMessagingArchitectureRules architecture-test section; SK.00.ExtendedMessagingArchRules → ● (state-map-phase)
 - [2026-06-12] Phase SK.00.RedisTopology added — 16 tasks: D-48, C-60–C-64, T-104–T-112, DO-20; new RedisTopologyRules static class (five ConditionList predicates, no Mono.Cecil, no new SK IDs) enforcing the five-package Redis topology from P-140–P-144 (Redis.Core never references capability packages, capability packages never reference each other, Redis.PubSub never references `SharedKernel.Messaging.*`, `SharedKernel.Messaging.*` never references `SharedKernel.Caching.*`, Caching.Abstractions re-verified dependency-free); total tasks now 282 — WO-023 P-145
 - [2026-06-15] D-48, C-60–C-64, T-104–T-112, DO-20 → ● in SK.00.RedisTopology — all 16 tasks complete; corrected NotHaveDependencyOn matching contract (no trailing dots, namespace StartsWith) across all five predicates; CapabilityPackagesNeverReferenceEachOther redesigned to return ConditionList[] with per-package own-term dictionary; 9/9 RedisTopologyRulesTests pass, 75/75 full ArchitectureTests.Tests suite pass, 0 build warnings/errors; README architecture-test docs and implementation rules updated (state-map-phase)
+- [2026-06-16] Phase SK.00.ReflectionGuard added — 7 tasks: D-49, C-65–C-66, T-113–T-115, DO-21; SK0012 MakeGenericMethodReflection registered (NetArchTest ICustomRule, no Roslyn analyzer — pattern is IL-only detectable); NoMakeGenericMethodReflectionPredicate + ReflectionExemptionRegistry allow-list mechanism; ReflectionGuardRules static class; motivating incident: P-147 EncryptionRotationService.LoadBatchAsync; registry ships empty (P-147 fix eliminated the only known violation); total tasks now 289 — WO-024 P-153
