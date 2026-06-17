@@ -727,7 +727,7 @@ Any service that uses `ICacheInvalidationBus` to signal cross-service invalidati
 
 ### P-014 — Caching: Rename SharedKernel.Caching to SharedKernel.Caching.FusionCache + Add CachePolicy.NeverExpire
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-004
 **Domain:** 02.Caching
 **Depends on:** None
@@ -801,7 +801,7 @@ Without a `CachingBehavior`, every query handler in every microservice that want
 ---
 ### P-016 — Caching: Resolve Redis→FusionCache Layering Violation via ServiceName in Abstractions
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-006
 **Domain:** 02.Caching
 **Depends on:** None
@@ -839,7 +839,7 @@ Provider packages at the same layer must never depend on each other. `SharedKern
 ---
 ### P-017 — Caching: Fix AddRedisL2 Silent Serializer Override Breaking NativeAOT
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-006
 **Domain:** 02.Caching
 **Depends on:** None
@@ -866,7 +866,7 @@ This is a silent NativeAOT correctness bug. A microservice author sets `Serializ
 ---
 ### P-018 — Caching: DI Ergonomics Hardening — Builder Pattern and Startup Guards
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-006
 **Domain:** 02.Caching
 **Depends on:** P-016
@@ -905,7 +905,7 @@ DI ergonomics failures are a Day-1 microservice pain point. When a team calls `A
 ---
 ### P-019 — Caching: Wire L1SizeLimit into FusionCache Memory Cache + Verify L2 KeyPrefix Behavior
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-006
 **Domain:** 02.Caching
 **Depends on:** None
@@ -936,7 +936,7 @@ The correct wiring is through FusionCache's `WithOptions(o => o.SizeLimit = ...)
 ---
 ### P-020 — Caching: Upgrade GetOrSetAsync Factory Delegate to ValueTask
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-006
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1004,7 +1004,7 @@ Services that fetch lists of entities by ID (product catalogs, user profiles, re
 ---
 ### P-022 — Caching: IRenewableLock — Lock Heartbeat and Renewal for Long-Running Operations
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1115,7 +1115,7 @@ Silent deserialization failures after DTO schema changes are one of the most com
 ---
 ### P-025 — Caching: RedisChannelService Reconnect Resilience
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1147,7 +1147,7 @@ Redis rolling upgrades, pod restarts, and network blips all trigger connection d
 ---
 ### P-026 — Caching: CachingCoreOptions Standalone DI Registration
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1178,7 +1178,7 @@ A distributed locking or Pub/Sub-only consumer is a legitimate use case — back
 ---
 ### P-027 — Caching: ICacheWarmupStrategy Contract and Startup Runner
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1218,7 +1218,7 @@ Every K8s pod deployment starts with a cold L1 cache. The first wave of requests
 ---
 ### P-028 — Caching: Multi-Tenant Cache Key Isolation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1256,7 +1256,7 @@ Multi-tenancy is not a niche pattern — it is the default architecture for SaaS
 ---
 ### P-029 — Caching: Polly v8 Circuit Breaker for Redis L2 Path
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -1296,7 +1296,7 @@ FusionCache's fail-safe correctly protects L1 serving during Redis outages, but 
 ---
 ### P-030 — Caching: ICacheService OTel Meters (Hits / Misses / Errors / Duration)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-007
 **Domain:** 02.Caching
 **Depends on:** None
@@ -2116,7 +2116,7 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-010
 **Domain:** 01.Core
 **Depends on:** None
@@ -5285,7 +5285,7 @@ Multi-tenancy misconfiguration is one of the highest-severity bug categories in 
 ---
 ### P-111 — Persistence EfCore: Encryption Options, Service Identity Options, and AuditInterceptor Service-Name Fallback
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-019
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -5331,7 +5331,7 @@ The hardcoded `"system"` audit fallback is a known limitation — when hundreds 
 ---
 ### P-112 — Persistence EfCore: Encrypted Value Converter, PropertyBuilder Annotation Extension, Model Finalization Convention, and Key Rotation Infrastructure
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-019
 **Domain:** 06.Persistence
 **Depends on:** P-111
@@ -5413,7 +5413,7 @@ Field-level encryption at the persistence layer is the correct location for this
 ---
 ### P-113 — Persistence EfCore: Tests — Encryption Converter, Key Rotation, Service Name Audit Fallback, and Model Convention
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-019
 **Domain:** 06.Persistence
 **Depends on:** P-111, P-112
@@ -5913,7 +5913,7 @@ Every microservice team will write application-layer unit tests that exercise co
 ---
 ### P-125 — Messaging Abstractions: Circuit Breaker and Fault Consumer Contracts
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 07.Messaging
 **Depends on:** None
@@ -5945,7 +5945,7 @@ Retry alone is insufficient resilience — it is the *first* line of defense. Wh
 ---
 ### P-126 — Messaging MassTransit: Circuit Breaker Builder Method and Fault Consumer Wiring
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 07.Messaging
 **Depends on:** P-125
@@ -5978,7 +5978,7 @@ Without `WithCircuitBreaker()`, a permanently-failing dependency (e.g., a crashe
 ---
 ### P-127 — Messaging MassTransit: Deferred Message Scheduling via IMessageScheduler
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 07.Messaging
 **Depends on:** P-125
@@ -6016,7 +6016,7 @@ Deferred delivery is required for sagas with time-based transitions (e.g., "if p
 ---
 ### P-128 — Messaging MassTransit: Saga State Machine Base
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 07.Messaging
 **Depends on:** P-125
@@ -6050,7 +6050,7 @@ Event-choreographed sagas without state machine support devolve into ad-hoc flag
 ---
 ### P-129 — Messaging MassTransit: Batch Consumer Base
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 07.Messaging
 **Depends on:** None
@@ -6083,7 +6083,7 @@ High-throughput services (e.g., event ingestion, audit logging, analytics writes
 ---
 ### P-130 — Messaging MassTransit: Fix Build() Eager ServiceProvider Anti-Pattern
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 07.Messaging
 **Depends on:** None
@@ -6115,7 +6115,7 @@ The current `BuildServiceProvider()` call inside `Build()` is classified as a ha
 ---
 ### P-131 — Messaging MassTransit: ISendEndpointResolver — Cross-Service Command Routing
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 07.Messaging
 **Depends on:** P-125
@@ -6185,7 +6185,7 @@ Without explicit OTel wiring, MassTransit's built-in ActivitySource spans are in
 ---
 ### P-133 — Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 00.Governance
 **Depends on:** P-125, P-126, P-127, P-128
@@ -6450,7 +6450,7 @@ Sagas (`SagaStateMachineBase<TSaga>`) are designed for long-running, stateful wo
 ---
 ### P-140 — Caching: Redis Connection Core — Shared Multiplexer, Health, and Resilience Foundation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-023
 **Domain:** 02.Caching
 **Depends on:** None
@@ -6484,7 +6484,7 @@ The current `SharedKernel.Caching.Redis` package bundles four distinct infrastru
 ---
 ### P-141 — Caching: Redis L2 Cache Backplane Package Refactor
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-023
 **Domain:** 02.Caching
 **Depends on:** P-140
@@ -6514,7 +6514,7 @@ This is the "keep what's genuinely caching" half of the split. `AddRedisL2` is t
 ---
 ### P-142 — Caching: Redis Distributed Locking Package Extraction
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-023
 **Domain:** 02.Caching
 **Depends on:** P-140
@@ -6543,7 +6543,7 @@ Distributed locking is an infrastructure coordination primitive, not a caching p
 ---
 ### P-143 — Caching: Redis Hash Store Package Extraction
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-023
 **Domain:** 02.Caching
 **Depends on:** P-140
@@ -6573,7 +6573,7 @@ The existing fluent registration shapes (`AddRedisHashService()`, `AddTypedHashS
 ---
 ### P-144 — Caching: Redis Pub/Sub and Cache Invalidation Package Extraction
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-023
 **Domain:** 02.Caching
 **Depends on:** P-140
@@ -6606,7 +6606,7 @@ This package remains within `02.Caching` — it is **not** moved to `07.Messagin
 ---
 ### P-145 — Governance: Architecture Rules for Redis Package Topology
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-023
 **Domain:** 00.Governance
 
@@ -6665,7 +6665,7 @@ Update `SharedKernel.Testing` and any affected `.Tests` project references to al
 ---
 ### P-147 — Persistence: Fix Encryption Key Rotation Reflection Violation and Global-Version Coupling
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-024
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -6696,7 +6696,7 @@ This domain enforces some of the strictest "no reflection in hot paths" and "exp
 ---
 ### P-148 — Persistence: Set-Based Bulk Mutations via ExecuteUpdate/ExecuteDelete
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-024
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -6728,7 +6728,7 @@ Every aggregate-loading bulk operation (`UpdateRangeAsync`/`DeleteRangeAsync`) r
 ---
 ### P-149 — Persistence: Streaming Reads via IAsyncEnumerable on IReadRepository
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-024
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -6758,7 +6758,7 @@ A streaming read method on `IReadRepository<TAggregate, TId>` (and its `EfReadRe
 ---
 ### P-150 — Persistence: Database Readiness Health-Check Contract
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-024
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -6788,7 +6788,7 @@ Concretely, `06.Persistence` should provide:
 ---
 ### P-151 — Persistence: Idempotent Migration and Seed Runner Abstraction
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-024
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -6869,7 +6869,7 @@ P-147 found that `EncryptionRotationService.LoadBatchAsync` — in the same pack
 
 ### P-154 — Communication: REST Typed HttpClient Package
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-025
 **Domain:** 11.Communication
 **Depends on:** None
