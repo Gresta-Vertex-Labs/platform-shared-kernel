@@ -17,7 +17,12 @@ internal sealed class CorrelationIdDelegatingHandler : DelegatingHandler
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        // TODO: implement
-        throw new NotImplementedException();
+        if (!request.Headers.Contains(HeaderName))
+        {
+            var correlationId = Activity.Current?.Id ?? Guid.NewGuid().ToString("N");
+            request.Headers.TryAddWithoutValidation(HeaderName, correlationId);
+        }
+
+        return base.SendAsync(request, cancellationToken);
     }
 }

@@ -26,12 +26,15 @@
 
   <ItemGroup>
     <!--
-      Layering: 11.Communication may reference 01.Core, 04.Contracts, 12.Security.Abstractions only.
-      References to 02.Caching, 05.Application, 06.Persistence, 07.Messaging are hard violations.
+      Layering: 11.Communication may reference 01.Core, 04.Contracts, 12.Security.Abstractions only
+      for cross-domain references. References to 02.Caching, 05.Application, 06.Persistence,
+      07.Messaging are hard violations. Intra-domain reference to .Internal is permitted because
+      .Internal is the foundational service-discovery package within 11.Communication.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -39,16 +42,14 @@
       Microsoft.Extensions.Http: IHttpClientFactory and HttpClient DI wiring.
       Microsoft.Extensions.Http.Resilience: Polly v8 StandardResilienceHandler.
         Every AddRestClient<TClient> call must attach StandardResilienceHandler — never skip.
-      Microsoft.Extensions.Http.Abstractions: IHttpContextAccessor for request-scope TenantId resolution.
     -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
     <!--
-      Microsoft.AspNetCore.Http.Abstractions: IHttpContextAccessor used by TenantIdDelegatingHandler
-      to resolve IUserContext from the request scope. In net10.0 this is part of the shared framework
-      but an explicit reference is needed for net10.0 non-web classlib projects.
+      Microsoft.AspNetCore.Http: IHttpContextAccessor + HttpContextAccessor used by
+      TenantIdDelegatingHandler. Required for request-scope tenant ID resolution.
     -->
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.3.11" />
   </ItemGroup>
 
   <ItemGroup>

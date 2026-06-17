@@ -6,21 +6,42 @@ namespace SharedKernel.Communication.Rest.Handlers;
 
 /// <summary>
 /// Injects the <c>x-tenant-id</c> header into outgoing HTTP requests by resolving
-/// <c>IUserContext</c> from the current request scope via <see cref="IHttpContextAccessor"/>.
+/// <c>ITenantProvider</c> from the current request scope via <see cref="IHttpContextAccessor"/>.
 /// Silent no-op when <see cref="IHttpContextAccessor.HttpContext"/> is null,
-/// when <c>IUserContext</c> is not registered, or when <c>IUserContext.TenantId</c> is null.
+/// when <c>ITenantProvider</c> is not registered, or when <c>TenantId</c> is <see cref="Guid.Empty"/>.
 /// Never throws. Registered as transient to avoid cross-request state capture.
 /// </summary>
 internal sealed class TenantIdDelegatingHandler(IHttpContextAccessor httpContextAccessor) : DelegatingHandler
 {
-    private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     internal const string HeaderName = "x-tenant-id";
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        // TODO: implement
-        throw new NotImplementedException();
+        if (!request.Headers.Contains(HeaderName))
+        {
+            try
+            {
+                var httpContext = httpContextAccessor.HttpContext;
+                if (httpContext is not null)
+                {
+                    var tenantProvider = httpContext.RequestServices.GetService<ITenantProvider>();
+                    if (tenantProvider is not null && tenantProvider.TenantId != Guid.Empty)
+                    {
+                        request.Headers.TryAddWithoutValidation(
+                            HeaderName,
+                            tenantProvider.TenantId.ToString());
+                    }
+                }
+            }
+            catch
+            {
+                // Best-effort propagation — silently swallow all exceptions.
+                // Never let a header-injection failure disrupt the outgoing request.
+            }
+        }
+
+        return base.SendAsync(request, cancellationToken);
     }
 }

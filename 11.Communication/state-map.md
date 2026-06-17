@@ -67,7 +67,7 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 | --- | --- | --- | --- |
-| `SharedKernel.Communication.Rest` | Rest | `○` | P-154: Typed HttpClient factory, Polly v8, correlation + tenant handlers, ProblemDetails deserialization |
+| `SharedKernel.Communication.Rest` | Rest | `●` | P-154: Typed HttpClient factory, Polly v8, correlation + tenant handlers, ProblemDetails deserialization |
 | `SharedKernel.Communication.Grpc` | Rest | `○` | P-156: gRPC channel factory, OTel tracing + tenant interceptors, Protobuf helpers |
 | `SharedKernel.Communication.GraphQL` | GraphQL | `○` | P-157: HotChocolate v14 conventions, FilterBase/SortBase, pagination, error mapping |
 | `SharedKernel.Communication.Internal` | Internal | `○` | P-155: IServiceEndpointResolver, K8s DNS resolver, static dev resolver |
@@ -149,16 +149,16 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| R-01 | Implement `RestClientOptions` and `RestResilienceOptions` with all fields, production-safe defaults, and `IValidateOptions<RestClientOptions>` validator (require `BaseAddress` when no `IServiceEndpointResolver`) | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-02 | Implement `IRestCommunicationBuilder` interface and `RestCommunicationBuilder` concrete class; expose `Services` property; `AddRestClient<TClient>` must return `this` for chaining | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-03 | Implement `AddSharedKernelRestCommunication(this IServiceCollection) → IRestCommunicationBuilder` DI extension; registers builder, both delegation handlers as transient, and STJ `ProblemDetailsJsonContext` | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-04 | Implement `AddRestClient<TClient>` on the builder: call `services.AddHttpClient<TClient>()`, configure `BaseAddress` from `RestClientOptions`, attach `StandardResilienceHandler` configured from `RestResilienceOptions`, chain `CorrelationIdDelegatingHandler` and `TenantIdDelegatingHandler` in that order | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-05 | Implement `CorrelationIdDelegatingHandler` (internal sealed): read `Activity.Current?.Id`; fall back to `Guid.NewGuid().ToString("N")`; inject `x-correlation-id` header only if not already present; no cross-request state | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-06 | Implement `TenantIdDelegatingHandler` (internal sealed, transient): inject `IHttpContextAccessor` in constructor; resolve `IUserContext` from `IHttpContextAccessor.HttpContext.RequestServices`; inject `x-tenant-id` header when `TenantId` is non-null; silently no-op when `IHttpContextAccessor.HttpContext` is null, `IUserContext` not registered, or `TenantId` is null; never throw | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-07 | Implement `ProblemDetailsDeserializer` internal helper: STJ source-generated `ProblemDetailsJsonContext` for AOT path; reflection-STJ fallback when content type is `application/problem+json`; map deserialized fields to `SharedKernel.Primitives.Error` (code from `type`, message from `detail` or `title`) | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-08 | Implement `HttpResponseMessageExtensions.EnsureSuccessOrErrorAsync(this HttpResponseMessage, CancellationToken) → Task<Result<T>>` extension method available to typed-client base classes: returns `Result.Ok` on 2xx; deserializes `ProblemDetails` and returns `Result.Fail<Error>` on non-2xx | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-09 | Implement optional service-discovery integration in `AddRestClient<TClient>`: when `BaseAddress` is null/empty and `IServiceEndpointResolver` is registered in DI, configure a custom `HttpMessageHandler` that resolves the base URI via `IServiceEndpointResolver.ResolveAsync(clientName, ct)` at request time | WO-025 | `SharedKernel.Communication.Rest` | `○` |
-| R-10 | Validate that `StandardResilienceHandler` `RetryCount`, `RetryBaseDelayMs` (exponential backoff), `CircuitBreakerEnabled`, `FailureThreshold`, `SamplingDurationSec`, and `BreakDurationSec` from `RestResilienceOptions` are applied correctly to the built pipeline; write smoke test to confirm policy fires | WO-025 | `SharedKernel.Communication.Rest` | `○` |
+| R-01 | Implement `RestClientOptions` and `RestResilienceOptions` with all fields, production-safe defaults, and `IValidateOptions<RestClientOptions>` validator (require `BaseAddress` when no `IServiceEndpointResolver`) | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-02 | Implement `IRestCommunicationBuilder` interface and `RestCommunicationBuilder` concrete class; expose `Services` property; `AddRestClient<TClient>` must return `this` for chaining | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-03 | Implement `AddSharedKernelRestCommunication(this IServiceCollection) → IRestCommunicationBuilder` DI extension; registers builder, both delegation handlers as transient, and STJ `ProblemDetailsJsonContext` | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-04 | Implement `AddRestClient<TClient>` on the builder: call `services.AddHttpClient<TClient>()`, configure `BaseAddress` from `RestClientOptions`, attach `StandardResilienceHandler` configured from `RestResilienceOptions`, chain `CorrelationIdDelegatingHandler` and `TenantIdDelegatingHandler` in that order | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-05 | Implement `CorrelationIdDelegatingHandler` (internal sealed): read `Activity.Current?.Id`; fall back to `Guid.NewGuid().ToString("N")`; inject `x-correlation-id` header only if not already present; no cross-request state | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-06 | Implement `TenantIdDelegatingHandler` (internal sealed, transient): inject `IHttpContextAccessor` in constructor; resolve `IUserContext` from `IHttpContextAccessor.HttpContext.RequestServices`; inject `x-tenant-id` header when `TenantId` is non-null; silently no-op when `IHttpContextAccessor.HttpContext` is null, `IUserContext` not registered, or `TenantId` is null; never throw | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-07 | Implement `ProblemDetailsDeserializer` internal helper: STJ source-generated `ProblemDetailsJsonContext` for AOT path; reflection-STJ fallback when content type is `application/problem+json`; map deserialized fields to `SharedKernel.Primitives.Error` (code from `type`, message from `detail` or `title`) | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-08 | Implement `HttpResponseMessageExtensions.EnsureSuccessOrErrorAsync(this HttpResponseMessage, CancellationToken) → Task<Result<T>>` extension method available to typed-client base classes: returns `Result.Ok` on 2xx; deserializes `ProblemDetails` and returns `Result.Fail<Error>` on non-2xx | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-09 | Implement optional service-discovery integration in `AddRestClient<TClient>`: when `BaseAddress` is null/empty and `IServiceEndpointResolver` is registered in DI, configure a custom `HttpMessageHandler` that resolves the base URI via `IServiceEndpointResolver.ResolveAsync(clientName, ct)` at request time | WO-025 | `SharedKernel.Communication.Rest` | `●` |
+| R-10 | Validate that `StandardResilienceHandler` `RetryCount`, `RetryBaseDelayMs` (exponential backoff), `CircuitBreakerEnabled`, `FailureThreshold`, `SamplingDurationSec`, and `BreakDurationSec` from `RestResilienceOptions` are applied correctly to the built pipeline; write smoke test to confirm policy fires | WO-025 | `SharedKernel.Communication.Rest` | `●` |
 
 ---
 
@@ -276,7 +276,7 @@ Format when blocked — replace placeholder with table:
 | --- | --- | :---: | :---: | :---: | :---: |
 | `SK.11.Design` | Design | 22 | 22 | 0 | `●` |
 | `SK.11.Scaffold` | Scaffold | 13 | 13 | 0 | `●` |
-| `SK.11.Rest` | Rest | 10 | 0 | 10 | `○` |
+| `SK.11.Rest` | Rest | 10 | 10 | 0 | `●` |
 | `SK.11.Grpc` | Grpc | 9 | 0 | 9 | `○` |
 | `SK.11.GraphQL` | GraphQL | 8 | 0 | 8 | `○` |
 | `SK.11.Internal` | Internal | 6 | 0 | 6 | `○` |
@@ -295,3 +295,4 @@ Format when blocked — replace placeholder with table:
 - [2026-06-16] SK.11.Design complete — all 22 design tasks validated against CLAUDE.md (WO-025); all contracts, builder APIs, resilience options, interceptor rules, GraphQL conventions, and service discovery contracts confirmed documented; package board advanced to Scaffold
 - [2026-06-16] SK.11.Design → ● — all 22 Design tasks complete; promoting to root state-map (state-map-phase)
 - [2026-06-16] SK.11.Scaffold → ● — all 13 Scaffold tasks complete; 4 csproj + 4 test csproj + all stub files created, all build clean (state-map-phase)
+- [2026-06-17] R-01–R-10 → ● in SK.11.Rest — all 10 Rest tasks complete; 35/35 tests passing (state-map-phase)
