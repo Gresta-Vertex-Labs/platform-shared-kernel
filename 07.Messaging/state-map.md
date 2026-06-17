@@ -23,25 +23,25 @@
 > Phase keys are the sync bridge between this sub-state-map and the root `state-map.md`.
 > Each key maps a local milestone to a root-level phase. When a key's Promotion Condition is met, the root is updated via `/state-map-phase`.
 
-| Phase Key | Maps to Root Phase | Promotion Condition |
-| --- | --- | --- |
-| `SK.07.Design` | Design | All tasks in Phase: Design are `●` |
-| `SK.07.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` |
-| `SK.07.Core` | Core | All tasks in Phase: Core are `●` |
-| `SK.07.Tests` | Tests | All tasks in Phase: Tests are `●` |
-| `SK.07.Docs` | Docs | All tasks in Phase: Docs are `●` |
-| `SK.07.Published` | Published | All tasks in Phase: Published are `●` |
-| `SK.07.Resilience` | Resilience | All tasks in Phase: Resilience are `●` |
-| `SK.07.Scheduling` | Scheduling | All tasks in Phase: Scheduling are `●` |
-| `SK.07.Saga` | Saga | All tasks in Phase: Saga are `●` |
-| `SK.07.Batch` | Batch | All tasks in Phase: Batch are `●` |
-| `SK.07.Routing` | Routing | All tasks in Phase: Routing are `●` |
-| `SK.07.OTel` | OTel | All tasks in Phase: OTel are `●` |
-| `SK.07.Idempotency` | Idempotency | All tasks in Phase: Idempotency are `●` |
-| `SK.07.HeaderPropagation` | HeaderPropagation | All tasks in Phase: HeaderPropagation are `●` |
-| `SK.07.ConsumerDefinition` | ConsumerDefinition | All tasks in Phase: ConsumerDefinition are `●` |
-| `SK.07.VersionTranslation` | VersionTranslation | All tasks in Phase: VersionTranslation are `●` |
-| `SK.07.RoutingSlip` | RoutingSlip | All tasks in Phase: RoutingSlip are `●` |
+| Phase Key | Maps to Root Phase | Promotion Condition | Root Backlog ID |
+| --- | --- | --- | --- |
+| `SK.07.Design` | Design | All tasks in Phase: Design are `●` | — |
+| `SK.07.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` | — |
+| `SK.07.Core` | Core | All tasks in Phase: Core are `●` | P-130 |
+| `SK.07.Tests` | Tests | All tasks in Phase: Tests are `●` | — |
+| `SK.07.Docs` | Docs | All tasks in Phase: Docs are `●` | — |
+| `SK.07.Published` | Published | All tasks in Phase: Published are `●` | — |
+| `SK.07.Resilience` | Resilience | All tasks in Phase: Resilience are `●` | P-125, P-126 |
+| `SK.07.Scheduling` | Scheduling | All tasks in Phase: Scheduling are `●` | P-127 |
+| `SK.07.Saga` | Saga | All tasks in Phase: Saga are `●` | P-128 |
+| `SK.07.Batch` | Batch | All tasks in Phase: Batch are `●` | P-129 |
+| `SK.07.Routing` | Routing | All tasks in Phase: Routing are `●` | P-131 |
+| `SK.07.OTel` | OTel | All tasks in Phase: OTel are `●` | — |
+| `SK.07.Idempotency` | Idempotency | All tasks in Phase: Idempotency are `●` | P-134 |
+| `SK.07.HeaderPropagation` | HeaderPropagation | All tasks in Phase: HeaderPropagation are `●` | P-135 |
+| `SK.07.ConsumerDefinition` | ConsumerDefinition | All tasks in Phase: ConsumerDefinition are `●` | P-136 |
+| `SK.07.VersionTranslation` | VersionTranslation | All tasks in Phase: VersionTranslation are `●` | P-137 |
+| `SK.07.RoutingSlip` | RoutingSlip | All tasks in Phase: RoutingSlip are `●` | P-139 |
 
 ---
 
