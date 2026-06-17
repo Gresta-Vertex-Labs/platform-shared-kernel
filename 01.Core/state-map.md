@@ -23,15 +23,15 @@
 > Phase keys are the sync bridge between this sub-state-map and the root `state-map.md`.
 > Each key maps a local milestone to a root-level phase. When a key's Promotion Condition is met, the root is updated via `/state-map-phase`.
 
-| Phase Key | Maps to Root Phase | Promotion Condition |
-|-----------|-------------------|-------------------|
-| `SK.01.Design` | Design | All tasks in Phase: Design are `●` |
-| `SK.01.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` |
-| `SK.01.Core` | Core | All tasks in Phase: Core are `●` |
-| `SK.01.Tests` | Tests | All tasks in Phase: Tests are `●` |
-| `SK.01.Docs` | Docs | All tasks in Phase: Docs are `●` |
-| `SK.01.Published` | Published | All tasks in Phase: Published are `●` |
-| `SK.01.P042` | P-042 Error.BusinessRule Factory | All tasks in Phase: P-042 are `●` |
+| Phase Key | Maps to Root Phase | Promotion Condition | Root Backlog ID |
+|-----------|-------------------|-------------------|-----------------|
+| `SK.01.Design` | Design | All tasks in Phase: Design are `●` | — |
+| `SK.01.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` | — |
+| `SK.01.Core` | Core | All tasks in Phase: Core are `●` | — |
+| `SK.01.Tests` | Tests | All tasks in Phase: Tests are `●` | — |
+| `SK.01.Docs` | Docs | All tasks in Phase: Docs are `●` | — |
+| `SK.01.Published` | Published | All tasks in Phase: Published are `●` | — |
+| `SK.01.P042` | P-042 Error.BusinessRule Factory | All tasks in Phase: P-042 are `●` | P-042 |
 
 ---
 
