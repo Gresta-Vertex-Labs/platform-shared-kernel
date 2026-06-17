@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Options;
 
 namespace SharedKernel.Communication.GraphQL.Options;
 
@@ -21,7 +21,6 @@ public sealed class GraphQLOptions
     /// Maximum number of items a paging argument may request. Default: 100.
     /// Hard cap is 500 — the validator rejects values above this.
     /// </summary>
-    [Range(1, 500)]
     public int MaxPageSize { get; set; } = 100;
 
     /// <summary>
@@ -29,4 +28,32 @@ public sealed class GraphQLOptions
     /// Services must set this to <c>false</c> in production environments.
     /// </summary>
     public bool AllowIntrospection { get; set; } = true;
+}
+
+/// <summary>
+/// Validates <see cref="GraphQLOptions"/> at startup. Rejects <see cref="GraphQLOptions.MaxPageSize"/>
+/// values greater than 500.
+/// </summary>
+internal sealed class GraphQLOptionsValidator : IValidateOptions<GraphQLOptions>
+{
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, GraphQLOptions options)
+    {
+        if (options.MaxPageSize > 500)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{nameof(GraphQLOptions.MaxPageSize)} must not exceed 500. " +
+                $"Current value: {options.MaxPageSize}. " +
+                "Any override beyond 500 requires documented justification in the consuming service.");
+        }
+
+        if (options.MaxPageSize < 1)
+        {
+            return ValidateOptionsResult.Fail(
+                $"{nameof(GraphQLOptions.MaxPageSize)} must be at least 1. " +
+                $"Current value: {options.MaxPageSize}.");
+        }
+
+        return ValidateOptionsResult.Success;
+    }
 }
