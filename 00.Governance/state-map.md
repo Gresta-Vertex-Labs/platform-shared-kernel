@@ -23,29 +23,29 @@
 > Phase keys are the sync bridge between this sub-state-map and the root `state-map.md`.
 > Each key maps a local milestone to a root-level phase. When a key's Promotion Condition is met, the root is updated via `/state-map-phase`.
 
-| Phase Key | Maps to Root Phase | Promotion Condition |
-|-----------|-------------------|-------------------|
-| `SK.00.Design` | Design | All tasks in Phase: Design are `●` |
-| `SK.00.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` |
-| `SK.00.Core` | Core | All tasks in Phase: Core are `●` |
-| `SK.00.Tests` | Tests | All tasks in Phase: Tests are `●` |
-| `SK.00.Docs` | Docs | All tasks in Phase: Docs are `●` |
-| `SK.00.Published` | Published | All tasks in Phase: Published are `●` |
-| `SK.00.GuardPurity` | Guard Purity Enforcement | All tasks in Phase: Guard Purity Enforcement are `●` |
-| `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | All tasks in Phase: Caching Abstractions Enforcement are `●` |
-| `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | All tasks in Phase: Domain Layer Purity Enforcement are `●` |
-| `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | All tasks in Phase: Domain Gold-Standard Architecture Rules are `●` |
-| `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | All tasks in Phase: Contracts Layer Purity Architecture Rules are `●` |
-| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | All tasks in Phase: Persistence Architecture Enforcement are `●` |
-| `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | All tasks in Phase: Persistence Architecture Rules Phase 2 are `●` |
-| `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | All tasks in Phase: IUserContext Audit String Adapter and Repository Contract Completeness are `●` |
-| `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | All tasks in Phase: EfCore Package Hygiene Architecture Rules are `●` |
-| `SK.00.TenantedDbContextGuard` | Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule | All tasks in Phase: TenantedDbContext Tenant-Filter Guard are `●` |
-| `SK.00.EncryptionPatternGuard` | Governance: Architecture Rules for DB Encryption Pattern Correctness | All tasks in Phase: EncryptionPatternGuard are `●` |
-| `SK.00.MessagingArchRules` | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | All tasks in Phase: Messaging Architecture Rules are `●` |
-| `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | All tasks in Phase: Extended Messaging Architecture Rules are `●` |
-| `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | All tasks in Phase: Redis Package Topology Architecture Rules are `●` |
-| `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | All tasks in Phase: Reflection Guard Architecture Rules are `●` |
+| Phase Key | Maps to Root Phase | Promotion Condition | Root Backlog ID |
+|-----------|-------------------|-------------------|-----------------|
+| `SK.00.Design` | Design | All tasks in Phase: Design are `●` | — |
+| `SK.00.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` | — |
+| `SK.00.Core` | Core | All tasks in Phase: Core are `●` | — |
+| `SK.00.Tests` | Tests | All tasks in Phase: Tests are `●` | — |
+| `SK.00.Docs` | Docs | All tasks in Phase: Docs are `●` | — |
+| `SK.00.Published` | Published | All tasks in Phase: Published are `●` | — |
+| `SK.00.GuardPurity` | Guard Purity Enforcement | All tasks in Phase: Guard Purity Enforcement are `●` | — |
+| `SK.00.CachingEnforcement` | Caching Abstractions Enforcement | All tasks in Phase: Caching Abstractions Enforcement are `●` | — |
+| `SK.00.DomainLayerPurity` | Domain Layer Purity Enforcement | All tasks in Phase: Domain Layer Purity Enforcement are `●` | — |
+| `SK.00.DomainGoldStandard` | Domain Gold-Standard Architecture Rules | All tasks in Phase: Domain Gold-Standard Architecture Rules are `●` | — |
+| `SK.00.ContractsPurity` | Contracts Layer Purity Architecture Rules | All tasks in Phase: Contracts Layer Purity Architecture Rules are `●` | — |
+| `SK.00.PersistenceEnforcement` | Persistence Architecture Enforcement | All tasks in Phase: Persistence Architecture Enforcement are `●` | — |
+| `SK.00.PersistenceEnforcement2` | Persistence Architecture Rules Phase 2 — Interface Migration Enforcement | All tasks in Phase: Persistence Architecture Rules Phase 2 are `●` | — |
+| `SK.00.PersistenceContractCompleteness` | Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness | All tasks in Phase: IUserContext Audit String Adapter and Repository Contract Completeness are `●` | — |
+| `SK.00.EfCorePackageHygiene` | Governance: Architecture Rules for EfCore Package Hygiene | All tasks in Phase: EfCore Package Hygiene Architecture Rules are `●` | — |
+| `SK.00.TenantedDbContextGuard` | Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule | All tasks in Phase: TenantedDbContext Tenant-Filter Guard are `●` | — |
+| `SK.00.EncryptionPatternGuard` | Governance: Architecture Rules for DB Encryption Pattern Correctness | All tasks in Phase: EncryptionPatternGuard are `●` | — |
+| `SK.00.MessagingArchRules` | Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs | All tasks in Phase: Messaging Architecture Rules are `●` | — |
+| `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | All tasks in Phase: Extended Messaging Architecture Rules are `●` | P-133 |
+| `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | All tasks in Phase: Redis Package Topology Architecture Rules are `●` | P-145 |
+| `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | All tasks in Phase: Reflection Guard Architecture Rules are `●` | P-153 |
 
 ---
 
