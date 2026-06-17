@@ -64,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for Redis Package Topology | `●` | All 16 tasks complete — RedisTopologyRules (5 ConditionList predicates) enforcing the five-package Redis topology; 9/9 + 75/75 arch tests passing, 0 build warnings/errors. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | `●` | All 7 tasks complete — NoMakeGenericMethodReflectionPredicate, ReflectionExemptionRegistry, and ReflectionGuardRules implemented; 3 new tests pass (78/78 total); SK0012 enforced at IL level with governance allow-list. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -75,7 +75,7 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | Scaffold | `●` | All 13 Scaffold tasks complete — four .csproj files with full NuGet metadata, four test .csproj files, all folder structures, all stub files; all 8 projects build clean (0 warnings, 0 errors); NuGet versions pinned. | Begin SK.11.Rest — implement typed HttpClient factory, Polly v8 resilience, CorrelationIdDelegatingHandler, TenantIdDelegatingHandler, and ProblemDetails error handling. |
+| 11 | [Communication](11.Communication/state-map.md) | Rest | `●` | All 10 Rest tasks complete — RestClientOptions, RestCommunicationBuilder, AddSharedKernelRestCommunication, CorrelationId/TenantId handlers, ProblemDetailsDeserializer, EnsureSuccessOrErrorAsync, service-discovery handler, Polly StandardResilienceHandler; 35/35 tests passing. | Begin SK.11.Grpc — implement gRPC channel factory, OTel tracing interceptor, tenant/correlation metadata interceptors, and Protobuf helper extensions. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
@@ -480,7 +480,7 @@ Redis Pub/Sub and Redis Hashes are natural Redis capabilities that microservices
 ---
 ### P-009 — Governance: Caching Abstractions Enforcement Rules
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-003
 **Domain:** 00.Governance
 **Depends on:** P-005, P-006, P-007
@@ -1546,7 +1546,7 @@ Without these conventions and interceptors, every microservice team must manuall
 ---
 ### P-034 — Governance: Domain Layer Architecture Enforcement Rules
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-008
 **Domain:** 00.Governance
 **Depends on:** P-032
@@ -1822,6 +1822,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-16] Persistence → Docs (●) — SK.06.Docs 36/36 ●; DO-29..DO-36 XML docs complete for encryption, bulk mutation, streaming, readiness probes, seeding (state-map-phase)
 - [2026-06-16] Communication → Design (●) — promoted from SK.11.Design (state-map-phase)
 - [2026-06-16] Communication → Scaffold (●) — promoted from SK.11.Scaffold (state-map-phase)
+- [2026-06-17] Communication → Rest (●) — promoted from SK.11.Rest (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2109,6 +2110,8 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-16] Communication → Design (◐) — Implement SharedKernel.Communication.Rest - Polly v8 resilience, CorrelationId/TenantId delegation handlers, ProblemDetails deserialization (state-map-phase)
 - [2026-06-16] Phase(s) P-153 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
 - [2026-06-16] Phase(s) P-154, P-155, P-156, P-157 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
+- [2026-06-17] Governance → Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation (●) — promoted from SK.00.ReflectionGuard (state-map-phase)
+- [2026-06-17] P-009, P-034, P-056, P-063, P-075, P-083, P-096, P-103, P-110, P-114, P-123, P-153 → ● Complete — stale Governance Phase Backlog entries closed (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -2801,7 +2804,7 @@ CorrelationId and CausationId are universally needed for distributed tracing acr
 ---
 ### P-056 — Governance: Domain Gold-Standard Architecture Rules
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-011
 **Domain:** 00.Governance
 **Depends on:** P-045, P-047, P-053
@@ -3148,7 +3151,7 @@ A package that can be built but not consumed correctly has no value. The consume
 ---
 ### P-063 — Governance: Contracts Layer Purity Architecture Rules
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-012
 **Domain:** 00.Governance
 **Depends on:** P-059
@@ -3622,7 +3625,7 @@ The persistence layer is the most critical infrastructure boundary in the platfo
 
 ### P-075 — Governance: Persistence Architecture Rules
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-013
 **Domain:** 00.Governance
 **Depends on:** P-066
@@ -3924,7 +3927,7 @@ The reflection in `TenantedDbContext.OnModelCreating` violates the AOT-preferred
 ---
 ### P-083 — Governance: Persistence Architecture Rules Phase 2 — Interface Migration Enforcement
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-014
 **Domain:** 00.Governance
 **Depends on:** P-078
@@ -4519,7 +4522,7 @@ P-080 (Capability 5) removes `QueryableExtensions.IgnoreSoftDeleteFilter` — an
 ---
 ### P-096 — Governance: Architecture Rule — IUserContext Audit String Adapter and Repository Contract Completeness
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-016
 **Domain:** 00.Governance
 **Depends on:** P-091, P-093
@@ -4829,7 +4832,7 @@ Developer confusion from the naming mismatch is guaranteed. A developer building
 ---
 ### P-103 — Governance: Architecture Rules for EfCore Package Hygiene
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-017
 **Domain:** 00.Governance
 **Depends on:** P-097, P-099
@@ -5234,7 +5237,7 @@ CQRS at scale requires a fast read path. EF Core's change-tracking and identity-
 ---
 ### P-110 — Governance: TenantedDbContext Tenant-Filter Guard Architecture Rule
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-018
 **Domain:** 00.Governance
 **Depends on:** P-108
@@ -5487,7 +5490,7 @@ Encryption is a security-sensitive subsystem where subtle defects (nonce reuse, 
 ---
 ### P-114 — Governance: Architecture Rules for DB Encryption Pattern Correctness
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-019
 **Domain:** 00.Governance
 **Depends on:** P-112
@@ -5837,7 +5840,7 @@ K8s-native services depend on accurate health probes to route traffic safely. A 
 ---
 ### P-123 — Governance: Messaging Architecture Rules — No Raw IBus Injection, No IMessageBus Singleton, No Domain Messaging, No Hardcoded Queue URIs
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-020
 **Domain:** 00.Governance
 **Depends on:** P-117
@@ -6843,7 +6846,7 @@ A generic `System.Text.Json.Serialization.JsonConverter<TStronglyTypedId>` (and 
 ---
 ### P-153 — Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation Outside Documented Exceptions
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-024
 **Domain:** 00.Governance
 **Depends on:** P-147
