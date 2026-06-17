@@ -23,41 +23,41 @@
 > Phase keys are the sync bridge between this sub-state-map and the root `state-map.md`.
 > Each key maps a local milestone to a root-level phase. When a key's Promotion Condition is met, the root is updated via `/state-map-phase`.
 
-| Phase Key | Maps to Root Phase | Promotion Condition |
-|-----------|-------------------|-------------------|
-| `SK.02.Design` | Design | All tasks in Phase: Design are `●` |
-| `SK.02.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` |
-| `SK.02.Core` | Core | All tasks in Phase: Core are `●` |
-| `SK.02.Tests` | Tests | All tasks in Phase: Tests are `●` |
-| `SK.02.Docs` | Docs | All tasks in Phase: Docs are `●` |
-| `SK.02.Published` | Published | All tasks in Phase: Published are `●` |
-| `SK.02.Abstractions` | Phase 5 (Abstractions Package) | All tasks in Phase: Abstractions are `●` |
-| `SK.02.CachingRefactor` | Phase 6 (Caching Refactor) | All tasks in Phase: CachingRefactor are `●` |
-| `SK.02.RedisRefactor` | Phase 7 (Redis Refactor) | All tasks in Phase: RedisRefactor are `●` |
-| `SK.02.InvalidationBus` | Phase 12 (Invalidation Bus) | All tasks in Phase: InvalidationBus are `●` |
-| `SK.02.FusionCacheRename` | Phase 14 (FusionCache Rename + NeverExpire) | All tasks in Phase: FusionCacheRename are `●` |
-| `SK.02.AotHardening` | Phase 15 (AOT Hardening + ITypedHashStore) | All tasks in Phase: AotHardening are `●` |
-| `SK.02.BrotliCompression` | Phase 16 (Brotli L2 Compression) | All tasks in Phase: BrotliCompression are `●` |
-| `SK.02.LayeringFix` | Phase 17 (Redis→FusionCache Layering Violation Fix) | All tasks in Phase: LayeringFix are `●` |
-| `SK.02.AotSerializerFix` | Phase 18 (AddRedisL2 Silent Serializer Override Fix) | All tasks in Phase: AotSerializerFix are `●` |
-| `SK.02.DiErgonomics` | Phase 19 (DI Ergonomics Hardening) | All tasks in Phase: DiErgonomics are `●` |
-| `SK.02.L1SizeLimit` | Phase 20 (Wire L1SizeLimit + Verify L2 KeyPrefix) | All tasks in Phase: L1SizeLimit are `●` |
-| `SK.02.ValueTaskFactory` | Phase 21 (GetOrSetAsync ValueTask Factory Delegate) | All tasks in Phase: ValueTaskFactory are `●` |
-| `SK.02.BatchOperations` | Phase 22 (Batch Get and Set Operations) | All tasks in Phase: BatchOperations are `●` |
-| `SK.02.RenewableLock` | Phase 23 (IRenewableLock Heartbeat and Renewal) | All tasks in Phase: RenewableLock are `●` |
-| `SK.02.SlidingExpiration` | Phase 24 (Sliding Expiration in CachePolicy) | All tasks in Phase: SlidingExpiration are `●` |
-| `SK.02.KeyVersioning` | Phase 25 (Cache Key Versioning Strategy) | All tasks in Phase: KeyVersioning are `●` |
-| `SK.02.ChannelReconnect` | Phase 26 (RedisChannelService Reconnect Resilience) | All tasks in Phase: ChannelReconnect are `●` |
-| `SK.02.CachingCoreOptionsDi` | Phase 27 (CachingCoreOptions Standalone DI Registration) | All tasks in Phase: CachingCoreOptionsDi are `●` |
-| `SK.02.CacheWarmup` | Phase 28 (ICacheWarmupStrategy and Startup Runner) | All tasks in Phase: CacheWarmup are `●` |
-| `SK.02.TenantCacheKey` | Phase 29 (Multi-Tenant Cache Key Isolation) | All tasks in Phase: TenantCacheKey are `●` |
-| `SK.02.RedisCircuitBreaker` | Phase 30 (Polly v8 Circuit Breaker for Redis L2) | All tasks in Phase: RedisCircuitBreaker are `●` |
-| `SK.02.OtelMeters` | Phase 31 (ICacheService OTel Meters) | All tasks in Phase: OtelMeters are `●` |
-| `SK.02.RedisConnectionCore` | Phase 32 (Redis Connection Core Extraction) | All tasks in Phase: RedisConnectionCore are `●` |
-| `SK.02.RedisL2Refactor` | Phase 33 (Redis L2 Backplane Package Refactor) | All tasks in Phase: RedisL2Refactor are `●` |
-| `SK.02.RedisLockingExtraction` | Phase 34 (Redis Distributed Locking Package Extraction) | All tasks in Phase: RedisLockingExtraction are `●` |
-| `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | All tasks in Phase: RedisHashExtraction are `●` |
-| `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | All tasks in Phase: RedisPubSubExtraction are `●` |
+| Phase Key | Maps to Root Phase | Promotion Condition | Root Backlog ID |
+|-----------|-------------------|-------------------|-----------------|
+| `SK.02.Design` | Design | All tasks in Phase: Design are `●` | — |
+| `SK.02.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` | — |
+| `SK.02.Core` | Core | All tasks in Phase: Core are `●` | — |
+| `SK.02.Tests` | Tests | All tasks in Phase: Tests are `●` | — |
+| `SK.02.Docs` | Docs | All tasks in Phase: Docs are `●` | — |
+| `SK.02.Published` | Published | All tasks in Phase: Published are `●` | — |
+| `SK.02.Abstractions` | Phase 5 (Abstractions Package) | All tasks in Phase: Abstractions are `●` | — |
+| `SK.02.CachingRefactor` | Phase 6 (Caching Refactor) | All tasks in Phase: CachingRefactor are `●` | — |
+| `SK.02.RedisRefactor` | Phase 7 (Redis Refactor) | All tasks in Phase: RedisRefactor are `●` | — |
+| `SK.02.InvalidationBus` | Phase 12 (Invalidation Bus) | All tasks in Phase: InvalidationBus are `●` | — |
+| `SK.02.FusionCacheRename` | Phase 14 (FusionCache Rename + NeverExpire) | All tasks in Phase: FusionCacheRename are `●` | P-014 |
+| `SK.02.AotHardening` | Phase 15 (AOT Hardening + ITypedHashStore) | All tasks in Phase: AotHardening are `●` | — |
+| `SK.02.BrotliCompression` | Phase 16 (Brotli L2 Compression) | All tasks in Phase: BrotliCompression are `●` | — |
+| `SK.02.LayeringFix` | Phase 17 (Redis→FusionCache Layering Violation Fix) | All tasks in Phase: LayeringFix are `●` | P-016 |
+| `SK.02.AotSerializerFix` | Phase 18 (AddRedisL2 Silent Serializer Override Fix) | All tasks in Phase: AotSerializerFix are `●` | P-017 |
+| `SK.02.DiErgonomics` | Phase 19 (DI Ergonomics Hardening) | All tasks in Phase: DiErgonomics are `●` | P-018 |
+| `SK.02.L1SizeLimit` | Phase 20 (Wire L1SizeLimit + Verify L2 KeyPrefix) | All tasks in Phase: L1SizeLimit are `●` | P-019 |
+| `SK.02.ValueTaskFactory` | Phase 21 (GetOrSetAsync ValueTask Factory Delegate) | All tasks in Phase: ValueTaskFactory are `●` | P-020 |
+| `SK.02.BatchOperations` | Phase 22 (Batch Get and Set Operations) | All tasks in Phase: BatchOperations are `●` | — |
+| `SK.02.RenewableLock` | Phase 23 (IRenewableLock Heartbeat and Renewal) | All tasks in Phase: RenewableLock are `●` | P-022 |
+| `SK.02.SlidingExpiration` | Phase 24 (Sliding Expiration in CachePolicy) | All tasks in Phase: SlidingExpiration are `●` | — |
+| `SK.02.KeyVersioning` | Phase 25 (Cache Key Versioning Strategy) | All tasks in Phase: KeyVersioning are `●` | — |
+| `SK.02.ChannelReconnect` | Phase 26 (RedisChannelService Reconnect Resilience) | All tasks in Phase: ChannelReconnect are `●` | P-025 |
+| `SK.02.CachingCoreOptionsDi` | Phase 27 (CachingCoreOptions Standalone DI Registration) | All tasks in Phase: CachingCoreOptionsDi are `●` | P-026 |
+| `SK.02.CacheWarmup` | Phase 28 (ICacheWarmupStrategy and Startup Runner) | All tasks in Phase: CacheWarmup are `●` | P-027 |
+| `SK.02.TenantCacheKey` | Phase 29 (Multi-Tenant Cache Key Isolation) | All tasks in Phase: TenantCacheKey are `●` | P-028 |
+| `SK.02.RedisCircuitBreaker` | Phase 30 (Polly v8 Circuit Breaker for Redis L2) | All tasks in Phase: RedisCircuitBreaker are `●` | P-029 |
+| `SK.02.OtelMeters` | Phase 31 (ICacheService OTel Meters) | All tasks in Phase: OtelMeters are `●` | P-030 |
+| `SK.02.RedisConnectionCore` | Phase 32 (Redis Connection Core Extraction) | All tasks in Phase: RedisConnectionCore are `●` | P-140 |
+| `SK.02.RedisL2Refactor` | Phase 33 (Redis L2 Backplane Package Refactor) | All tasks in Phase: RedisL2Refactor are `●` | P-141 |
+| `SK.02.RedisLockingExtraction` | Phase 34 (Redis Distributed Locking Package Extraction) | All tasks in Phase: RedisLockingExtraction are `●` | P-142 |
+| `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | All tasks in Phase: RedisHashExtraction are `●` | P-143 |
+| `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | All tasks in Phase: RedisPubSubExtraction are `●` | P-144 |
 
 ---
 
