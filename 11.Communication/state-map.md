@@ -23,17 +23,17 @@
 > Phase keys are the sync bridge between this sub-state-map and the root `state-map.md`.
 > Each key maps a local milestone to a root-level phase. When a key's Promotion Condition is met, the root is updated via `/state-map-phase`.
 
-| Phase Key | Maps to Root Phase | Promotion Condition |
-| --- | --- | --- |
-| `SK.11.Design` | Design | All tasks in Phase: Design are `●` |
-| `SK.11.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` |
-| `SK.11.Rest` | Rest | All tasks in Phase: Rest are `●` |
-| `SK.11.Grpc` | Grpc | All tasks in Phase: Grpc are `●` |
-| `SK.11.GraphQL` | GraphQL | All tasks in Phase: GraphQL are `●` |
-| `SK.11.Internal` | Internal | All tasks in Phase: Internal are `●` |
-| `SK.11.Tests` | Tests | All tasks in Phase: Tests are `●` |
-| `SK.11.Docs` | Docs | All tasks in Phase: Docs are `●` |
-| `SK.11.Published` | Published | All tasks in Phase: Published are `●` |
+| Phase Key | Maps to Root Phase | Promotion Condition | Root Backlog ID |
+| --- | --- | --- | --- |
+| `SK.11.Design` | Design | All tasks in Phase: Design are `●` | — |
+| `SK.11.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` | — |
+| `SK.11.Rest` | Rest | All tasks in Phase: Rest are `●` | P-154 |
+| `SK.11.Grpc` | Grpc | All tasks in Phase: Grpc are `●` | P-156 |
+| `SK.11.GraphQL` | GraphQL | All tasks in Phase: GraphQL are `●` | P-157 |
+| `SK.11.Internal` | Internal | All tasks in Phase: Internal are `●` | P-155 |
+| `SK.11.Tests` | Tests | All tasks in Phase: Tests are `●` | — |
+| `SK.11.Docs` | Docs | All tasks in Phase: Docs are `●` | — |
+| `SK.11.Published` | Published | All tasks in Phase: Published are `●` | — |
 
 ---
 
