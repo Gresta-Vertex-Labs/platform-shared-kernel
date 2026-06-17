@@ -68,8 +68,8 @@ Format when blocked — replace placeholder with table:
 | Package | Current Phase | State | Notes |
 | --- | --- | --- | --- |
 | `SharedKernel.Communication.Rest` | Rest | `●` | P-154: Typed HttpClient factory, Polly v8, correlation + tenant handlers, ProblemDetails deserialization |
-| `SharedKernel.Communication.Grpc` | Rest | `○` | P-156: gRPC channel factory, OTel tracing + tenant interceptors, Protobuf helpers |
-| `SharedKernel.Communication.GraphQL` | GraphQL | `○` | P-157: HotChocolate v14 conventions, FilterBase/SortBase, pagination, error mapping |
+| `SharedKernel.Communication.Grpc` | Grpc | `●` | P-156: gRPC channel factory, OTel tracing + tenant interceptors, Protobuf helpers |
+| `SharedKernel.Communication.GraphQL` | GraphQL | `●` | P-157: HotChocolate v14 conventions, FilterBase/SortBase, pagination, error mapping |
 | `SharedKernel.Communication.Internal` | Internal | `○` | P-155: IServiceEndpointResolver, K8s DNS resolver, static dev resolver |
 
 ---
@@ -168,15 +168,15 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| G-01 | Implement `GrpcClientOptions` with all fields and defaults (`DeadlineSeconds = 30`, `EnableRetry = true`); add `IValidateOptions<GrpcClientOptions>` validator requiring `Address` when `IServiceEndpointResolver` not registered | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-02 | Implement `IGrpcCommunicationBuilder` interface and `GrpcCommunicationBuilder` concrete class; expose `Services` property; `AddGrpcClient<TClient>` must return `this` for chaining | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-03 | Implement `AddSharedKernelGrpcCommunication(this IServiceCollection) → IGrpcCommunicationBuilder` DI extension; registers builder and both interceptors via `services.AddGrpcClient` global interceptor pattern | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-04 | Implement `AddGrpcClient<TClient>` on the builder: call `services.AddGrpcClient<TClient>()`, configure channel `Address` from `GrpcClientOptions`, register `CorrelationTracingInterceptor` and `TenantIdInterceptor` as global interceptors via `.AddInterceptor<T>()`; apply `DeadlineSeconds` as per-call `CallOptions.Deadline`; channels registered as singletons via `Grpc.Net.ClientFactory` caching | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-05 | Implement `CorrelationTracingInterceptor` (internal sealed): override `AsyncUnaryCall`, `AsyncServerStreamingCall`, `AsyncClientStreamingCall`, `AsyncDuplexStreamingCall`; read `Activity.Current` at call time; inject `traceparent` (W3C format), `tracestate`, and `x-correlation-id` into `CallOptions.Headers` metadata; do not overwrite existing `x-correlation-id` entry; wrap interceptor body in try/catch — log `Error` on exception and continue without propagating | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-06 | Implement `TenantIdInterceptor` (internal sealed): same four call-type overrides as G-05; resolve `IUserContext` from request scope via `IHttpContextAccessor`; inject `x-tenant-id` metadata when `TenantId` non-null; silent no-op otherwise; wrap in try/catch — log `Error` on exception and continue | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-07 | Implement `MoneyProtoExtensions` (public static class): `ToDecimal(this Money money) → decimal` and `ToMoneyProto(this decimal value, string currencyCode) → Money`; no intermediate object allocations; pure arithmetic only | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-08 | Implement `TimestampProtoExtensions` (public static class): `ToDateTimeOffset(this Timestamp ts) → DateTimeOffset` and `ToTimestampProto(this DateTimeOffset dto) → Timestamp`; use `Timestamp.FromDateTimeOffset`/`ToDateTimeOffset` under the hood or direct ticks arithmetic — whichever avoids extra allocations | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
-| G-09 | Implement optional service-discovery integration in `AddGrpcClient<TClient>`: when `Address` is null/empty and `IServiceEndpointResolver` is registered in DI, resolve address via `IServiceEndpointResolver.ResolveAsync(clientName, ct)` at channel creation time and configure as channel `Address` | WO-025 | `SharedKernel.Communication.Grpc` | `○` |
+| G-01 | Implement `GrpcClientOptions` with all fields and defaults (`DeadlineSeconds = 30`, `EnableRetry = true`); add `IValidateOptions<GrpcClientOptions>` validator requiring `Address` when `IServiceEndpointResolver` not registered | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-02 | Implement `IGrpcCommunicationBuilder` interface and `GrpcCommunicationBuilder` concrete class; expose `Services` property; `AddGrpcClient<TClient>` must return `this` for chaining | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-03 | Implement `AddSharedKernelGrpcCommunication(this IServiceCollection) → IGrpcCommunicationBuilder` DI extension; registers builder and both interceptors via `services.AddGrpcClient` global interceptor pattern | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-04 | Implement `AddGrpcClient<TClient>` on the builder: call `services.AddGrpcClient<TClient>()`, configure channel `Address` from `GrpcClientOptions`, register `CorrelationTracingInterceptor` and `TenantIdInterceptor` as global interceptors via `.AddInterceptor<T>()`; apply `DeadlineSeconds` as per-call `CallOptions.Deadline`; channels registered as singletons via `Grpc.Net.ClientFactory` caching | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-05 | Implement `CorrelationTracingInterceptor` (internal sealed): override `AsyncUnaryCall`, `AsyncServerStreamingCall`, `AsyncClientStreamingCall`, `AsyncDuplexStreamingCall`; read `Activity.Current` at call time; inject `traceparent` (W3C format), `tracestate`, and `x-correlation-id` into `CallOptions.Headers` metadata; do not overwrite existing `x-correlation-id` entry; wrap interceptor body in try/catch — log `Error` on exception and continue without propagating | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-06 | Implement `TenantIdInterceptor` (internal sealed): same four call-type overrides as G-05; resolve `IUserContext` from request scope via `IHttpContextAccessor`; inject `x-tenant-id` metadata when `TenantId` non-null; silent no-op otherwise; wrap in try/catch — log `Error` on exception and continue | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-07 | Implement `MoneyProtoExtensions` (public static class): `ToDecimal(this Money money) → decimal` and `ToMoneyProto(this decimal value, string currencyCode) → Money`; no intermediate object allocations; pure arithmetic only | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-08 | Implement `TimestampProtoExtensions` (public static class): `ToDateTimeOffset(this Timestamp ts) → DateTimeOffset` and `ToTimestampProto(this DateTimeOffset dto) → Timestamp`; use `Timestamp.FromDateTimeOffset`/`ToDateTimeOffset` under the hood or direct ticks arithmetic — whichever avoids extra allocations | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
+| G-09 | Implement optional service-discovery integration in `AddGrpcClient<TClient>`: when `Address` is null/empty and `IServiceEndpointResolver` is registered in DI, resolve address via `IServiceEndpointResolver.ResolveAsync(clientName, ct)` at channel creation time and configure as channel `Address` | WO-025 | `SharedKernel.Communication.Grpc` | `●` |
 
 ---
 
@@ -186,14 +186,14 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| GQ-01 | Implement `GraphQLOptions` sealed class with all fields and defaults; add `IValidateOptions<GraphQLOptions>` validator rejecting `MaxPageSize > 500` | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
-| GQ-02 | Implement `SharedKernelFilterConvention` (extends `FilterConvention`): call `AddDefaults()`, configure snake_case binding names for all registered filter operations; register standard string (`eq`, `neq`, `contains`, `startsWith`, `endsWith`), numeric (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`), and date (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`) operations | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
-| GQ-03 | Implement `FilterBase<T>` (public abstract, extends `FilterInputType<T>`): seal default `Configure()` to enforce snake_case binding; require consuming services to override `Descriptor()` for field configuration; document that direct `FilterInputType<T>` registration without this base is a platform violation | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
-| GQ-04 | Implement `SortBase<T>` (public abstract, extends `SortInputType<T>`): same snake_case enforcement and `Descriptor()` override model as `FilterBase<T>` | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
-| GQ-05 | Implement `PagedResponseType<T>` (public sealed class): presents `TotalCount` (int) and `Items` (`IReadOnlyList<T>`) shape; supports both `CollectionSegment<T>` (offset) and `Connection<T>` (cursor) HotChocolate paged result types as source; aligns field naming with `PagedList<T>` from `04.Contracts` | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
-| GQ-06 | Implement `SharedKernelErrorFilter` (implements `IErrorFilter`): map `IError` → `ProblemDetails`-compatible shape: `status` from HTTP status code extension, `title` from `IError.Message`, `detail` from `IError.Exception?.Message`, `extensions` from `IError.Extensions`; produce consistent JSON shape matching REST `ProblemDetails` responses | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
-| GQ-07 | Implement `AddSharedKernelGraphQL(this IServiceCollection, Action<GraphQLOptions>? configure) → IRequestExecutorBuilder`: register `GraphQLOptions`, call `AddGraphQL()`, chain `.AddConvention<IFilterConvention, SharedKernelFilterConvention>()`, apply snake_case naming convention, register `SharedKernelErrorFilter`, configure `MaxPageSize` globally, set `AllowIntrospection` from `GraphQLOptions`; guard idempotency (check if already registered via service descriptor lookup) | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
-| GQ-08 | Apply offset and cursor pagination support in `AddSharedKernelGraphQL`: call `.AddOffsetPagination()` and `.AddPagination()` when `EnablePaging = true`; configure `SetPagingOptions` with `MaxPageSize` from `GraphQLOptions`; enforce global page-size cap | WO-025 | `SharedKernel.Communication.GraphQL` | `○` |
+| GQ-01 | Implement `GraphQLOptions` sealed class with all fields and defaults; add `IValidateOptions<GraphQLOptions>` validator rejecting `MaxPageSize > 500` | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
+| GQ-02 | Implement `SharedKernelFilterConvention` (extends `FilterConvention`): call `AddDefaults()`, configure snake_case binding names for all registered filter operations; register standard string (`eq`, `neq`, `contains`, `startsWith`, `endsWith`), numeric (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`), and date (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`) operations | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
+| GQ-03 | Implement `FilterBase<T>` (public abstract, extends `FilterInputType<T>`): seal default `Configure()` to enforce snake_case binding; require consuming services to override `Descriptor()` for field configuration; document that direct `FilterInputType<T>` registration without this base is a platform violation | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
+| GQ-04 | Implement `SortBase<T>` (public abstract, extends `SortInputType<T>`): same snake_case enforcement and `Descriptor()` override model as `FilterBase<T>` | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
+| GQ-05 | Implement `PagedResponseType<T>` (public sealed class): presents `TotalCount` (int) and `Items` (`IReadOnlyList<T>`) shape; supports both `CollectionSegment<T>` (offset) and `Connection<T>` (cursor) HotChocolate paged result types as source; aligns field naming with `PagedList<T>` from `04.Contracts` | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
+| GQ-06 | Implement `SharedKernelErrorFilter` (implements `IErrorFilter`): map `IError` → `ProblemDetails`-compatible shape: `status` from HTTP status code extension, `title` from `IError.Message`, `detail` from `IError.Exception?.Message`, `extensions` from `IError.Extensions`; produce consistent JSON shape matching REST `ProblemDetails` responses | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
+| GQ-07 | Implement `AddSharedKernelGraphQL(this IServiceCollection, Action<GraphQLOptions>? configure) → IRequestExecutorBuilder`: register `GraphQLOptions`, call `AddGraphQL()`, chain `.AddConvention<IFilterConvention, SharedKernelFilterConvention>()`, apply snake_case naming convention, register `SharedKernelErrorFilter`, configure `MaxPageSize` globally, set `AllowIntrospection` from `GraphQLOptions`; guard idempotency (check if already registered via service descriptor lookup) | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
+| GQ-08 | Apply offset and cursor pagination support in `AddSharedKernelGraphQL`: call `.AddOffsetPagination()` and `.AddPagination()` when `EnablePaging = true`; configure `SetPagingOptions` with `MaxPageSize` from `GraphQLOptions`; enforce global page-size cap | WO-025 | `SharedKernel.Communication.GraphQL` | `●` |
 
 ---
 
@@ -277,8 +277,8 @@ Format when blocked — replace placeholder with table:
 | `SK.11.Design` | Design | 22 | 22 | 0 | `●` |
 | `SK.11.Scaffold` | Scaffold | 13 | 13 | 0 | `●` |
 | `SK.11.Rest` | Rest | 10 | 10 | 0 | `●` |
-| `SK.11.Grpc` | Grpc | 9 | 0 | 9 | `○` |
-| `SK.11.GraphQL` | GraphQL | 8 | 0 | 8 | `○` |
+| `SK.11.Grpc` | Grpc | 9 | 9 | 0 | `●` |
+| `SK.11.GraphQL` | GraphQL | 8 | 8 | 0 | `●` |
 | `SK.11.Internal` | Internal | 6 | 0 | 6 | `○` |
 | `SK.11.Tests` | Tests | 18 | 0 | 18 | `○` |
 | `SK.11.Docs` | Docs | 5 | 0 | 5 | `○` |
@@ -296,3 +296,5 @@ Format when blocked — replace placeholder with table:
 - [2026-06-16] SK.11.Design → ● — all 22 Design tasks complete; promoting to root state-map (state-map-phase)
 - [2026-06-16] SK.11.Scaffold → ● — all 13 Scaffold tasks complete; 4 csproj + 4 test csproj + all stub files created, all build clean (state-map-phase)
 - [2026-06-17] R-01–R-10 → ● in SK.11.Rest — all 10 Rest tasks complete; 35/35 tests passing (state-map-phase)
+- [2026-06-17] G-01–G-09 → ● in SK.11.Grpc — all 9 Grpc tasks complete; 46/46 tests passing (state-map-phase)
+- [2026-06-17] GQ-01–GQ-08 → ● in SK.11.GraphQL — all 8 GraphQL tasks complete; 40/40 tests passing (state-map-phase)

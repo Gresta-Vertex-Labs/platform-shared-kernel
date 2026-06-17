@@ -14,7 +14,7 @@ Philosophy: **Protocol-Agnostic Resilience. Propagate Context Always. Fail Infor
 
 ## Current Phase
 
-**Design complete (SK.11.Design `●`). Scaffold phase next (SK.11.Scaffold `○`).** All 22 Design tasks validated and complete. Four packages ready for project scaffolding. No implementation code exists yet.
+**GraphQL complete (SK.11.GraphQL `●`). Internal phase next (SK.11.Internal `○`).** Rest (10/10), Grpc (9/9), and GraphQL (8/8) phases complete; 40/40 GraphQL tests passing. Next: implement `IServiceEndpointResolver`, `KubernetesServiceEndpointResolver`, `StaticServiceEndpointResolver`, and DI extensions in `SharedKernel.Communication.Internal`.
 
 ---
 
@@ -24,7 +24,7 @@ Philosophy: **Protocol-Agnostic Resilience. Propagate Context Always. Fail Infor
 | ------- | ---- | -------------------------- |
 | `SharedKernel.Communication.Rest` | Typed `HttpClient` factory with Polly v8 resilience (`StandardResilienceHandler`: retry, circuit breaker, timeout), `CorrelationIdDelegatingHandler`, `TenantIdDelegatingHandler`, `ProblemDetailsDeserializer` → `Error` mapping, `HttpResponseMessageExtensions.EnsureSuccessOrErrorAsync`, and fluent `IRestCommunicationBuilder` DI entry point | `01.Core`, `04.Contracts`, `12.Security.Abstractions`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Http.Resilience` |
 | `SharedKernel.Communication.Grpc` | gRPC channel factory via `Grpc.Net.ClientFactory`, `CorrelationTracingInterceptor` (W3C OTel + `x-correlation-id`), `TenantIdInterceptor` (`x-tenant-id`), `MoneyProtoExtensions` (`Money ↔ decimal`), `TimestampProtoExtensions` (`Timestamp ↔ DateTimeOffset`), and fluent `IGrpcCommunicationBuilder` DI entry point | `01.Core`, `04.Contracts`, `12.Security.Abstractions`, `Grpc.Net.Client`, `Grpc.Net.ClientFactory`, `OpenTelemetry.Instrumentation.GrpcNetClient` |
-| `SharedKernel.Communication.GraphQL` | HotChocolate v14 server-side conventions: `SharedKernelFilterConvention` (snake_case filter operations), `FilterBase<T>` + `SortBase<T>` abstract base types, `PagedResponseType<T>` (`TotalCount + Items`), `SharedKernelErrorFilter` (`IError` → `ProblemDetails` shape), and `AddSharedKernelGraphQL` DI entry point | `01.Core`, `04.Contracts`, `HotChocolate.Data`, `HotChocolate.AspNetCore` |
+| `SharedKernel.Communication.GraphQL` | HotChocolate v16 server-side conventions: `SharedKernelFilterConvention` (snake_case filter operations), `FilterBase<T>` + `SortBase<T>` abstract base types, `PagedResponseType<T>` (`TotalCount + Items`), `SharedKernelErrorFilter` (`IError` → `ProblemDetails` shape), and `AddSharedKernelGraphQL` DI entry point | `01.Core`, `04.Contracts`, `HotChocolate.Data`, `HotChocolate.AspNetCore` |
 | `SharedKernel.Communication.Internal` | `IServiceEndpointResolver` interface, `KubernetesServiceEndpointResolver` (DNS SRV + A-record, via `Microsoft.Extensions.ServiceDiscovery`), `StaticServiceEndpointResolver` (dev/test only), `K8sServiceDiscoveryOptions`, `AddK8sServiceDiscovery` and `AddStaticServiceDiscovery` DI extensions | `01.Core`, `Microsoft.Extensions.ServiceDiscovery` |
 
 All packages target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
@@ -39,11 +39,13 @@ All packages target `net10.0`. Test sub-folders live inside each project folder 
 | ------- | ---------- | ----------------- | -------------- |
 | Typed HTTP client DI | `Microsoft.Extensions.Http` | 10.0.0 | `.Rest` |
 | HTTP resilience (Polly v8) | `Microsoft.Extensions.Http.Resilience` | 9.x / 10.x | `.Rest` |
-| gRPC client | `Grpc.Net.Client` | 2.x | `.Grpc` |
-| gRPC DI factory | `Grpc.Net.ClientFactory` | 2.x | `.Grpc` |
-| gRPC OTel instrumentation | `OpenTelemetry.Instrumentation.GrpcNetClient` | 0.9.x | `.Grpc` |
-| GraphQL server | `HotChocolate.AspNetCore` | 14.x | `.GraphQL` |
-| GraphQL filtering/sorting | `HotChocolate.Data` | 14.x | `.GraphQL` |
+| gRPC client | `Grpc.Net.Client` | 2.80.0 | `.Grpc` |
+| gRPC DI factory | `Grpc.Net.ClientFactory` | 2.80.0 | `.Grpc` |
+| gRPC Protobuf | `Google.Protobuf` | 3.35.1 | `.Grpc` |
+| gRPC common protos (Money, Timestamp) | `Google.Api.CommonProtos` | 2.17.0 | `.Grpc` |
+| gRPC OTel instrumentation | `OpenTelemetry.Instrumentation.GrpcNetClient` | 1.15.1-beta.1 | `.Grpc` |
+| GraphQL server | `HotChocolate.AspNetCore` | 16.1.4 | `.GraphQL` |
+| GraphQL filtering/sorting | `HotChocolate.Data` | 16.1.4 | `.GraphQL` |
 | K8s service discovery | `Microsoft.Extensions.ServiceDiscovery` | 9.x / 10.x | `.Internal` |
 | DI abstractions | `Microsoft.Extensions.DependencyInjection.Abstractions` | 10.0.0 | all packages |
 
@@ -123,9 +125,10 @@ CorrelationTracingInterceptor  [internal sealed — Interceptor]
 
 TenantIdInterceptor  [internal sealed — Interceptor]
     // Same four call-type overrides.
-    // Resolves IUserContext from request scope via IHttpContextAccessor.
-    // Injects x-tenant-id metadata when TenantId non-null.
-    // Silent no-op otherwise. Same exception-swallow + Error-log contract.
+    // Resolves ITenantProvider from request scope via IHttpContextAccessor.HttpContext.RequestServices.
+    // Injects x-tenant-id metadata when TenantId != Guid.Empty.
+    // Silent no-op when HttpContext null, ITenantProvider absent, or TenantId == Guid.Empty.
+    // Same exception-swallow + Error-log contract.
 
 MoneyProtoExtensions  [public static class]
     ToDecimal(this Money money) → decimal
@@ -172,7 +175,10 @@ SortBase<T>  [public abstract — extends SortInputType<T>]
 PagedResponseType<T>  [public sealed]
     TotalCount  int
     Items       IReadOnlyList<T>
-    // Wraps CollectionSegment<T> (offset) and Connection<T> (cursor) paged results.
+    // HC v16: offset paging source is IPage (not CollectionSegment<T>); cursor source is Connection<T>.
+    // FromPage(IPage) — uses IPageTotalCountProvider.TotalCount + IPage.Items.OfType<T>().
+    // FromConnection(Connection<T>) — uses connection.Edges.Select(e => e.Node).
+    // From(IReadOnlyList<T>, int) — convenience factory for manual assembly.
     // Field names match PagedList<T> from 04.Contracts for API shape consistency.
 
 SharedKernelErrorFilter  [implements IErrorFilter — internal]
@@ -217,7 +223,7 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - Every outgoing `HttpClient` registered via `AddRestClient<TClient>` **must** have `StandardResilienceHandler` attached — never register a raw `HttpClient` without the resilience handler.
 - `StandardResilienceHandler` is the required Polly wiring — do not build retry/circuit-breaker pipelines from scratch with raw `Polly.Core`. Configure it from `RestResilienceOptions` values.
 - `CorrelationIdDelegatingHandler` and `TenantIdDelegatingHandler` are registered as **transient** — they must never hold cross-request state.
-- `TenantIdDelegatingHandler` must resolve `IUserContext` from the **request scope** via `IHttpContextAccessor.HttpContext.RequestServices` — injecting `IUserContext` directly into the handler constructor would capture the wrong scope.
+- `TenantIdDelegatingHandler` must resolve `ITenantProvider` from the **request scope** via `IHttpContextAccessor.HttpContext.RequestServices` — injecting `ITenantProvider` directly into the handler constructor would capture the wrong scope. Note: `IUserContext` (which carries user identity) does not expose `TenantId`; use `ITenantProvider` for tenant resolution in both REST and gRPC.
 - `BaseAddress` on `RestClientOptions` is the only allowed way to set the base URI — callers must never hardcode URIs inside typed client methods.
 - ProblemDetails deserialization uses STJ source-generated `ProblemDetailsJsonContext` in the primary path; reflection-based STJ is the fallback only.
 - The handler pipeline order is fixed: `CorrelationIdDelegatingHandler` → `TenantIdDelegatingHandler` → `StandardResilienceHandler` → transport.
@@ -225,13 +231,17 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 
 ### gRPC rules
 
-- All interceptors are registered globally via `AddGrpcClient<T>().AddInterceptor<T>()` — no per-call interceptor injection.
+- All interceptors are registered globally via `AddGrpcClient<T>().AddInterceptor<T>(InterceptorScope.Channel)` — no per-call interceptor injection. `InterceptorScope` is in the `Grpc.Net.ClientFactory` namespace.
 - `CorrelationTracingInterceptor` must read `Activity.Current` at the **moment of the call**, not at DI registration time.
 - Interceptors must catch **all** exceptions, log at `Error` level, and continue — they must never propagate exceptions into the gRPC call pipeline.
-- `MoneyProtoExtensions` and `TimestampProtoExtensions` are pure, static, and allocation-minimal — no `new()` allocations for conversion; no `ToString()`-based intermediate representations.
+- `MoneyProtoExtensions` and `TimestampProtoExtensions` are pure, static, and allocation-minimal — no `new()` allocations for conversion; no `ToString()`-based intermediate representations. Money conversion: `Units` (int64) + `Nanos` (int32, billionths) where `NanosPerUnit = 1_000_000_000`.
 - `GrpcChannel` instances are expensive — rely on `Grpc.Net.ClientFactory` channel caching (singleton pattern); never create a new `GrpcChannel.ForAddress()` per call.
 - TLS is configured at the channel level only (`ChannelCredentials.Insecure` for HTTP, `SslCredentials` for HTTPS) — no per-call TLS configuration.
 - Caller-supplied `x-correlation-id` or `x-tenant-id` metadata entries must never be overwritten by the interceptors.
+- gRPC retry policy is configured via `ServiceConfig` / `MethodConfig` / `RetryPolicy` in the `Grpc.Net.Client.Configuration` namespace — not via Polly. Wired into `GrpcChannelOptions.ServiceConfig` on the channel options.
+- **Namespace alias required:** The project namespace `SharedKernel.Communication.Grpc` collides with the `Grpc.Core` NuGet namespace. Always add `using GrpcCore = Grpc.Core;` in files that reference both.
+- When `IServiceEndpointResolver` is present and `Address` is omitted: resolve address synchronously at channel creation using `.GetAwaiter().GetResult()` inside the `AddGrpcClient<T>((sp, o) => ...)` factory action. This is safe because (a) `KubernetesServiceEndpointResolver.ResolveAsync` never throws, and (b) the channel is a singleton created once.
+- gRPC `Metadata` entries must be cloned before adding new entries to avoid mutating the original `CallOptions.Headers`. Use a `CloneAndAdd` pattern that copies all existing entries then appends.
 
 ### GraphQL rules
 
@@ -241,7 +251,14 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - GraphQL error responses must map to the same `ProblemDetails` shape as REST responses — `SharedKernelErrorFilter` handles this automatically when registered via `AddSharedKernelGraphQL`.
 - `MaxPageSize` default is 100. Hard cap is 500 — `GraphQLOptions` validator rejects values above 500. Any override beyond 500 requires documented justification in the consuming service.
 - `AddSharedKernelGraphQL` is idempotent — calling it twice does not double-register conventions, error filters, or pagination settings.
-- HotChocolate v14 is **not AOT-safe** — do not add `<IsAotCompatible>true</IsAotCompatible>` to `SharedKernel.Communication.GraphQL.csproj` or any consuming project that references it.
+- HotChocolate v16 is **not AOT-safe** — do not add `<IsAotCompatible>true</IsAotCompatible>` to `SharedKernel.Communication.GraphQL.csproj` or any consuming project that references it.
+- `DefaultFilterOperations` constants use `LowerThan` (= 20) and `LowerThanOrEquals` (= 22) — **not** `LessThan`/`LessThanOrEquals` (those names do not exist in HC v16).
+- HC v16 offset paging returns `IPage` (not `CollectionSegment<T>`); use `IPageTotalCountProvider.TotalCount` for count and `IPage.Items.OfType<T>()` for typed items.
+- `InputField.Name` is `string` in HC v16 (not `NameString`) — use `f.Name` directly, never `.Value`.
+- `IExecutionResult` does not expose `.Errors` directly; cast via `result.ExpectOperationResult()` to get `OperationResult` with `.Errors`.
+- Schema types used in HC v16 test schema builders must be **public** — private or private-nested classes are not discoverable by HC reflection and cause `SchemaException: Unable to infer or resolve a schema type`.
+- Register custom filter convention via `.AddFiltering<SharedKernelFilterConvention>()` (from `HotChocolateDataRequestBuilderExtensions`); add cursor paging support via `.AddQueryableCursorPagingProvider()`.
+- Idempotency is guarded via a private sentinel `SharedKernelGraphQLRegistrationMarker` class registered as a singleton; second call to `AddSharedKernelGraphQL` returns early.
 
 ### Service discovery rules
 
@@ -267,14 +284,14 @@ The following are unconditional violations that must be caught at design review:
 | --------- | ---- |
 | Any `.csproj` in this domain references `02.Caching`, `05.Application`, `06.Persistence`, or `07.Messaging` | Hard layering violation |
 | `TenantIdDelegatingHandler` or `TenantIdInterceptor` registered as singleton | Hard violation — must be transient |
-| `TenantIdDelegatingHandler` receives `IUserContext` in its constructor directly | Hard violation — must resolve from request scope via `IHttpContextAccessor` |
+| `TenantIdDelegatingHandler` or `TenantIdInterceptor` receives `ITenantProvider` in its constructor directly | Hard violation — must resolve from request scope via `IHttpContextAccessor.HttpContext.RequestServices` |
 | `AddRestClient<TClient>` without `StandardResilienceHandler` in the pipeline | Hard violation |
 | Typed client method contains a hardcoded `Uri` or `BaseAddress` string | Hard violation |
 | gRPC interceptor propagates an exception into the call stack | Hard violation — must catch, log `Error`, continue |
 | `AddStaticServiceDiscovery` used in a production environment | Hard violation |
 | `ResolveAsync` throws for an unresolvable name | Hard violation |
 | `FilterInputType<T>` or `SortInputType<T>` registered without `FilterBase<T>` / `SortBase<T>` wrapper | Platform violation |
-| `<IsAotCompatible>true</IsAotCompatible>` on `.GraphQL` project | Hard violation — HotChocolate v14 not AOT-safe |
+| `<IsAotCompatible>true</IsAotCompatible>` on `.GraphQL` project | Hard violation — HotChocolate v16 not AOT-safe |
 | `MaxPageSize` set above 500 without documented justification | Violation |
 | Reflection-based STJ used as primary ProblemDetails deserialization path (not as fallback) | Violation |
 
@@ -282,7 +299,7 @@ The following are unconditional violations that must be caught at design review:
 
 - Prefer STJ source-generated `ProblemDetailsJsonContext` for ProblemDetails deserialization in `.Rest`. Reflection-STJ is the fallback, not the default.
 - Avoid `dynamic` or reflection-based Protobuf serialization in `.Grpc` — use generated code only.
-- HotChocolate v14 in `.GraphQL` is **not AOT-safe** — `<IsAotCompatible>true</IsAotCompatible>` must never be added.
+- HotChocolate v16 in `.GraphQL` is **not AOT-safe** — `<IsAotCompatible>true</IsAotCompatible>` must never be added.
 - `Microsoft.Extensions.ServiceDiscovery` in `.Internal` — verify AOT compatibility status on each major upgrade.
 
 ---
@@ -365,3 +382,5 @@ services.AddSharedKernelRestCommunication()
 
 - [2026-06-16] Domain brain initialized — packages, interfaces, technology stack, implementation rules, DI shape, test rules
 - [2026-06-16] P-154/P-155/P-156/P-157 (WO-025): CLAUDE.md refreshed to reflect full post-design-task state — public surface expanded with all concrete types (`ProblemDetailsDeserializer`, `HttpResponseMessageExtensions`, `SharedKernelErrorFilter`, `PagedResponseType<T>`, `SharedKernelFilterConvention`); implementation rules expanded with handler pipeline order, per-request timeout note, interceptor exception-swallow contract, idempotency requirement for GraphQL, and complete layering-violation guard table; DI shape updated with service-discovery + REST combined example; test rules updated with `GC.GetAllocatedBytesForCurrentThread` guidance for Protobuf allocation tests
+- [2026-06-17] SK.11.Grpc complete (G-01–G-09, 46/46 tests): ITenantProvider used for tenant resolution in both REST and gRPC (IUserContext has no TenantId); gRPC package versions pinned (Grpc.Net.Client 2.80.0, Grpc.Net.ClientFactory 2.80.0, Google.Protobuf 3.35.1, Google.Api.CommonProtos 2.17.0); InterceptorScope in Grpc.Net.ClientFactory namespace; namespace alias pattern for Grpc.Core collision; ServiceConfig/RetryPolicy in Grpc.Net.Client.Configuration; GetAwaiter().GetResult() pattern for address resolution at channel creation; Metadata clone-and-add pattern documented
+- [2026-06-17] SK.11.GraphQL complete (GQ-01–GQ-08, 40/40 tests): HotChocolate upgraded to v16.1.4 (v14 incompatible with net10.0); DefaultFilterOperations uses LowerThan/LowerThanOrEquals; IPage replaces CollectionSegment for offset paging; test schema types must be public; ExpectOperationResult() required to access Errors; sentinel-marker idempotency pattern documented
