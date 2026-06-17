@@ -75,7 +75,7 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | Rest | `●` | All 10 Rest tasks complete — RestClientOptions, RestCommunicationBuilder, AddSharedKernelRestCommunication, CorrelationId/TenantId handlers, ProblemDetailsDeserializer, EnsureSuccessOrErrorAsync, service-discovery handler, Polly StandardResilienceHandler; 35/35 tests passing. | Begin SK.11.Grpc — implement gRPC channel factory, OTel tracing interceptor, tenant/correlation metadata interceptors, and Protobuf helper extensions. |
+| 11 | [Communication](11.Communication/state-map.md) | GraphQL | `●` | All 8 GraphQL tasks complete — GraphQLOptions, SharedKernelFilterConvention (snake_case), `FilterBase<T>`, `SortBase<T>`, `PagedResponseType<T>`, SharedKernelErrorFilter, AddSharedKernelGraphQL (idempotent, offset + cursor paging); 40/40 tests passing. | Begin SK.11.Internal — implement IServiceEndpointResolver and K8s/static service discovery. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
@@ -1823,6 +1823,10 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-16] Communication → Design (●) — promoted from SK.11.Design (state-map-phase)
 - [2026-06-16] Communication → Scaffold (●) — promoted from SK.11.Scaffold (state-map-phase)
 - [2026-06-17] Communication → Rest (●) — promoted from SK.11.Rest (state-map-phase)
+- [2026-06-17] Communication → Grpc (●) — promoted from SK.11.Grpc (state-map-phase)
+- [2026-06-17] Phase Backlog P-156 → ● Complete — SK.11.Grpc done (state-map-phase)
+- [2026-06-17] Communication → GraphQL (●) — promoted from SK.11.GraphQL (state-map-phase)
+- [2026-06-17] Phase Backlog P-157 → ● Complete — SK.11.GraphQL done (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -6964,7 +6968,7 @@ Without a platform-standard service discovery abstraction, typed clients hardcod
 
 ### P-156 — Communication: gRPC Channel Factory Package
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-025
 **Domain:** 11.Communication
 **Depends on:** None
@@ -7016,7 +7020,7 @@ gRPC is the primary high-throughput inter-service protocol for same-cluster call
 
 ### P-157 — Communication: GraphQL Server Convention Package
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-025
 **Domain:** 11.Communication
 **Depends on:** None
