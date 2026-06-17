@@ -1,5 +1,8 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Communication.Grpc.Builders;
+using SharedKernel.Communication.Grpc.Interceptors;
 
 namespace SharedKernel.Communication.Grpc.Extensions;
 
@@ -20,7 +23,16 @@ public static class ServiceCollectionExtensions
     public static IGrpcCommunicationBuilder AddSharedKernelGrpcCommunication(
         this IServiceCollection services)
     {
-        // TODO: implement
-        throw new NotImplementedException();
+        // IHttpContextAccessor required by TenantIdInterceptor for request-scope tenant resolution.
+        // TryAdd avoids double-registration in multi-call scenarios.
+        services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+
+        // Interceptors registered as singletons — they hold no request-level state.
+        // TenantIdInterceptor resolves ITenantProvider from request scope at call time via
+        // IHttpContextAccessor, so singleton lifetime is correct.
+        services.TryAddSingleton<CorrelationTracingInterceptor>();
+        services.TryAddSingleton<TenantIdInterceptor>();
+
+        return new GrpcCommunicationBuilder(services);
     }
 }

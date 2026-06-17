@@ -32,6 +32,11 @@
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <!--
+      Intra-domain reference: .Internal is the foundational service-discovery package within 11.Communication.
+      Used for optional IServiceEndpointResolver integration in AddGrpcClient<TClient> (G-09).
+    -->
+    <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -54,7 +59,11 @@
     -->
     <PackageReference Include="Google.Api.CommonProtos" Version="2.17.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.15.1-beta.1" />
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.11" />
+    <!--
+      Microsoft.AspNetCore.Http: provides IHttpContextAccessor (abstractions) and HttpContextAccessor
+      (concrete impl) for TenantIdInterceptor request-scope tenant resolution.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.3.11" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,15 +1,17 @@
 using Grpc.Core;
 using Grpc.Core.Interceptors;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Communication.Grpc.Interceptors;
 
 /// <summary>
 /// Injects <c>x-tenant-id</c> metadata into every outgoing gRPC call by resolving
-/// <c>IUserContext</c> from the current request scope via <see cref="IHttpContextAccessor"/>.
+/// <c>ITenantProvider</c> from the current request scope via <see cref="IHttpContextAccessor"/>.
 /// Silent no-op when <see cref="IHttpContextAccessor.HttpContext"/> is null,
-/// when <c>IUserContext</c> is not registered, or when <c>TenantId</c> is null.
+/// when <c>ITenantProvider</c> is not registered, or when <c>TenantId</c> is <see cref="Guid.Empty"/>.
 /// Catches all exceptions, logs at <see cref="LogLevel.Error"/>, and continues — never propagates.
 /// </summary>
 internal sealed class TenantIdInterceptor(
@@ -18,6 +20,7 @@ internal sealed class TenantIdInterceptor(
 {
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ILogger<TenantIdInterceptor> _logger = logger;
+
     internal const string TenantIdKey = "x-tenant-id";
 
     /// <inheritdoc />
@@ -26,8 +29,8 @@ internal sealed class TenantIdInterceptor(
         ClientInterceptorContext<TRequest, TResponse> context,
         AsyncUnaryCallContinuation<TRequest, TResponse> continuation)
     {
-        // TODO: implement
-        throw new NotImplementedException();
+        context = EnrichContext(context);
+        return continuation(request, context);
     }
 
     /// <inheritdoc />
@@ -36,8 +39,8 @@ internal sealed class TenantIdInterceptor(
         ClientInterceptorContext<TRequest, TResponse> context,
         AsyncServerStreamingCallContinuation<TRequest, TResponse> continuation)
     {
-        // TODO: implement
-        throw new NotImplementedException();
+        context = EnrichContext(context);
+        return continuation(request, context);
     }
 
     /// <inheritdoc />
@@ -45,8 +48,8 @@ internal sealed class TenantIdInterceptor(
         ClientInterceptorContext<TRequest, TResponse> context,
         AsyncClientStreamingCallContinuation<TRequest, TResponse> continuation)
     {
-        // TODO: implement
-        throw new NotImplementedException();
+        context = EnrichContext(context);
+        return continuation(context);
     }
 
     /// <inheritdoc />
@@ -54,7 +57,63 @@ internal sealed class TenantIdInterceptor(
         ClientInterceptorContext<TRequest, TResponse> context,
         AsyncDuplexStreamingCallContinuation<TRequest, TResponse> continuation)
     {
-        // TODO: implement
-        throw new NotImplementedException();
+        context = EnrichContext(context);
+        return continuation(context);
+    }
+
+    private ClientInterceptorContext<TRequest, TResponse> EnrichContext<TRequest, TResponse>(
+        ClientInterceptorContext<TRequest, TResponse> context)
+        where TRequest : class
+        where TResponse : class
+    {
+        try
+        {
+            var headers = context.Options.Headers ?? new Metadata();
+
+            // Do not overwrite a caller-supplied x-tenant-id entry
+            if (HasMetadataEntry(headers, TenantIdKey))
+                return context;
+
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext is null)
+                return context;
+
+            var tenantProvider = httpContext.RequestServices.GetService<ITenantProvider>();
+            if (tenantProvider is null || tenantProvider.TenantId == Guid.Empty)
+                return context;
+
+            headers = CloneAndAdd(headers, TenantIdKey, tenantProvider.TenantId.ToString());
+
+            var newOptions = context.Options.WithHeaders(headers);
+            return new ClientInterceptorContext<TRequest, TResponse>(
+                context.Method, context.Host, newOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "TenantIdInterceptor failed to inject x-tenant-id metadata. Continuing without tenant propagation.");
+            return context;
+        }
+    }
+
+    private static bool HasMetadataEntry(Metadata headers, string key)
+    {
+        foreach (var entry in headers)
+        {
+            if (string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static Metadata CloneAndAdd(Metadata source, string key, string value)
+    {
+        var clone = new Metadata();
+        foreach (var entry in source)
+        {
+            clone.Add(entry);
+        }
+        clone.Add(key, value);
+        return clone;
     }
 }

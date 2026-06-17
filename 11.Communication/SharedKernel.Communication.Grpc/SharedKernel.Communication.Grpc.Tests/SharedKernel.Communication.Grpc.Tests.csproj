@@ -26,7 +26,7 @@
     <PackageReference Include="FluentAssertions" Version="8.4.0" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
     <!--
       Grpc.Core.Testing: TestServerCallContext for interceptor unit tests without a real gRPC server.
     -->
