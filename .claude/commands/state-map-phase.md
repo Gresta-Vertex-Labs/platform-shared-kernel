@@ -188,6 +188,46 @@ Append the root changelog entry as:
 - [YYYY-MM-DD] {domain} → {phase} (●) — promoted from {phase_key} (state-map-phase)
 ```
 
+## Step S8a — Close individual Phase Backlog entries
+
+**Only execute this step if promotion fired in Step S7** (i.e., the phase key's Overall Progress state became `●`).
+**Skip this step if `phase` = `Published`** — Step S8b performs the domain-wide bulk-close at that milestone.
+
+Purpose: close the individual `### P-NNN` Phase Backlog entries in the root `state-map.md` that correspond to the just-completed `phase_key`. This makes every WO-specific or capability-extension phase self-closing without waiting for the domain to reach Published.
+
+### Determining which Phase Backlog IDs to close
+
+Using the Phase Key Registry row for the completed `phase_key` (already in memory from Step S7 — do not re-read the sub state-map):
+
+**Case 1 — `Root Backlog ID` column present and non-empty**
+If the Phase Key Registry table has a `Root Backlog ID` column and the row's value is not `—` or blank, parse it as a comma-separated list of Phase Backlog IDs (e.g. `P-125, P-126`). Proceed to **Closing the entries**.
+
+**Case 2 — `Maps to Root Phase` begins with a `P-NNN` token**
+If Case 1 does not apply, check whether the `Maps to Root Phase` value begins with `P-` followed by digits (e.g. `P-042 Error.BusinessRule Factory`). If yes, extract that leading `P-NNN` token as the single Phase Backlog ID. Proceed to **Closing the entries**.
+
+**Case 3 — Standard lifecycle phase**
+If `Maps to Root Phase` is exactly one of `Design`, `Scaffold`, `Core`, `Tests`, `Docs`, `Published`: **skip this step entirely**. Standard lifecycle phases update only the Domain Summary Board — they have no individual Phase Backlog entry.
+
+**Case 4 — No match**
+If none of Cases 1–3 apply: skip silently. This covers WO-specific phases whose Phase Key Registry row does not yet have a `Root Backlog ID` column. To activate automatic closing for such a phase, add the `Root Backlog ID` column to the sub state-map's Phase Key Registry and fill in the P-NNN value.
+
+### Closing the entries
+
+Using the **already-read** root `state-map.md` (Step S8 already read it — do not re-read the file again):
+
+For each Phase Backlog ID identified above:
+1. Find the heading line `### {ID} — ` in `## Phase Backlog`.
+2. Check its `**Status:**` line:
+   - `` `●` Complete `` — skip (nothing to update).
+   - `` `◐` Dispatched `` or `` `○` Pending `` — change `**Status:**` to `` `●` Complete ``.
+3. Do not modify any other field in that entry.
+
+After updating at least one entry, append exactly one line to the root `## Changelog`:
+```
+- [YYYY-MM-DD] Phase Backlog {comma-separated closed IDs} → ● Complete — {phase_key} done (state-map-phase)
+```
+If all identified entries were already `●` Complete, skip the changelog line silently.
+
 ## Step S8b — Close Phase Backlog entries (Published phase only)
 
 **Only execute this step if `phase` = `Published`** (i.e. the domain just reached its final milestone).
@@ -216,7 +256,8 @@ Output ≤ 5 bullet points: task updated, phase key state after update, whether 
 - Root mode operates on exactly one file: `state-map.md` at the repo root.
 - Sub-map mode operates on one sub state-map file, plus the root `state-map.md` only if promotion fires.
 - Never add new sections, rename sections, or reorder sections in either file.
-- Never edit the `## Legend`, `## Phase Key Registry`, or phase list — they are reference-only.
+- Never edit the `## Legend`, `## Phase Key Registry`, or phase list during command execution — they are maintained by arch-planner agents, not by this command at runtime.
+- Sub state-map Phase Key Registries may include an optional fourth column `Root Backlog ID`. When present and non-empty (not `—`), Step S8a uses it to resolve which `### P-NNN` Phase Backlog entries in the root state-map to close when that phase key completes. Add this column when creating new WO-specific phase keys so they self-close correctly.
 - The root `## Domain Summary Board` is always exactly 18 rows — no insertions, no deletions.
 - State symbols in tables must always be wrapped in backticks: `` `○` ``, `` `◐` ``, `` `●` ``, `` `⚑` ``.
 - Active Work and Blocked tables use the exact column headers shown above — never alter them.

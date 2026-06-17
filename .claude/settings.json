@@ -20,7 +20,9 @@
       "Bash(docker info *)",
       "Bash(find . -path '*/bin' -prune -o -path '*/obj' -prune -o -iname \"*UnsupportedSpecification*\" -print -o -iname \"*Readiness*\" -print -o -iname \"*Connection*Extension*\" -print)",
       "Bash(grep -n \"ExecuteUpdateAsync\\\\|ExecuteDeleteAsync\\\\|StreamAsync\\\\|StreamProjectedAsync\\\\|IBulkMutationRepository\" SharedKernel.Persistence.EfCore/Repositories/EfRepository.cs SharedKernel.Persistence.EfCore/Repositories/EfReadRepository.cs SharedKernel.Persistence.Abstractions/Repositories/IReadRepository.cs)",
-      "Bash(find SharedKernel.Persistence.Abstractions -path '*/bin' -prune -o -path '*/obj' -prune -o -iname \"*Diagnostics*\" -print -o -iname \"*Readiness*\" -print)"
+      "Bash(find SharedKernel.Persistence.Abstractions -path '*/bin' -prune -o -path '*/obj' -prune -o -iname \"*Diagnostics*\" -print -o -iname \"*Readiness*\" -print)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
