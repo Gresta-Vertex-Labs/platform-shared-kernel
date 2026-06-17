@@ -19,6 +19,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Expose internal test-support helpers (Register/Unregister on ReflectionExemptionRegistry)
+         to the nested test project so T-115 can exercise the exemption path. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>SharedKernel.ArchitectureTests.Tests</_Parameter1>
+    </AssemblyAttribute>
     <!-- Exclude nested test project from the parent compile glob -->
     <Compile Remove="SharedKernel.ArchitectureTests.Tests\**\*" />
   </ItemGroup>
