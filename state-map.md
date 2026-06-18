@@ -75,7 +75,7 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | GraphQL | `●` | All 8 GraphQL tasks complete — GraphQLOptions, SharedKernelFilterConvention (snake_case), `FilterBase<T>`, `SortBase<T>`, `PagedResponseType<T>`, SharedKernelErrorFilter, AddSharedKernelGraphQL (idempotent, offset + cursor paging); 40/40 tests passing. | Begin SK.11.Internal — implement IServiceEndpointResolver and K8s/static service discovery. |
+| 11 | [Communication](11.Communication/state-map.md) | Internal | `●` | All 6 Internal tasks complete — IServiceEndpointResolver, KubernetesServiceEndpointResolver (DNS SRV + A-record fallback via ServiceDiscovery), StaticServiceEndpointResolver, K8sServiceDiscoveryOptions with validator, AddK8sServiceDiscovery, AddStaticServiceDiscovery (startup Warning + guard); 27/27 tests passing. | Begin SK.11.Tests — unit and integration tests for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
@@ -1827,6 +1827,8 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-17] Phase Backlog P-156 → ● Complete — SK.11.Grpc done (state-map-phase)
 - [2026-06-17] Communication → GraphQL (●) — promoted from SK.11.GraphQL (state-map-phase)
 - [2026-06-17] Phase Backlog P-157 → ● Complete — SK.11.GraphQL done (state-map-phase)
+- [2026-06-18] Communication → Internal (●) — promoted from SK.11.Internal (state-map-phase)
+- [2026-06-18] Phase Backlog P-155 → ● Complete — SK.11.Internal done (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -6925,7 +6927,7 @@ Every microservice in the platform makes outbound HTTP calls. Without a shared, 
 
 ### P-155 — Communication: K8s Service Discovery Package
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-025
 **Domain:** 11.Communication
 **Depends on:** None
