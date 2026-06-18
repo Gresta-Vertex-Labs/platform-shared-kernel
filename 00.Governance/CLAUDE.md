@@ -412,6 +412,35 @@ SK0012  MakeGenericMethodReflection
                 confirmation that ReflectionExemptionRegistry produces zero false
                 positives across all platform assemblies.
 
+SK0013  RawHttpClientConstructorInjection
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : A ConstructorDeclarationSyntax parameter type is a SimpleNameSyntax or
+                IdentifierNameSyntax whose Identifier.Text == "HttpClient" (exact match),
+                and neither of the following exemptions applies:
+                  (a) Namespace exemption: any ancestor NamespaceDeclarationSyntax or
+                      FileScopedNamespaceDeclarationSyntax whose Name.ToString() starts
+                      with "SharedKernel.Communication.Rest" (SyntaxNode.Parent walk,
+                      same pattern as SK0001/SK0007/SK0202)
+                  (b) Base-class exemption: the enclosing ClassDeclarationSyntax has a
+                      BaseList containing a type whose simple name is "DelegatingHandler"
+                      (exact match on the rightmost SimpleNameSyntax/IdentifierNameSyntax
+                      in the base type entry)
+                No SemanticModel required — syntax-only check.
+    Fix       : Inject the named typed-client interface (TClient) via
+                IHttpClientFactory-managed AddRestClient<TClient>() instead of accepting
+                HttpClient directly. Direct HttpClient injection bypasses connection
+                pooling, DNS refresh cycles, and handler lifetime management, which are
+                production reliability concerns in .NET microservices.
+    Suppress  : Per-constructor via #pragma warning disable SK0013 when a raw HttpClient
+                is genuinely required (e.g., a unit-test helper); document the rationale
+                inline.
+    Note      : Introduced in WO-025 P-159. Exemption (a) covers all types inside the
+                SharedKernel.Communication.Rest package itself (which legitimately manages
+                HttpClient internally). Exemption (b) covers DelegatingHandler subclasses
+                that receive the inner handler HttpClient as part of the delegating chain
+                and must not be widened without a governance review and update to this entry.
+
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
@@ -1252,6 +1281,141 @@ ReflectionExemptionRegistry  (class — governance allow-list for SK0012 excepti
     No other suppression mechanism is accepted: #pragma warning disable SK0012,
     [SuppressMessage], or inline comments do not exempt a type from this rule.
 
+CommunicationLayeringRules  (static class — Communication layer boundary enforcement predicates; WO-025 P-159)
+    All factory methods accept Assembly (or params Assembly[]) and return ConditionList (or ConditionList[]).
+
+    .CommunicationPackagesNeverReferencesForbiddenLayers(Assembly communicationAssembly) → ConditionList[]
+        Asserts that no type in the supplied 11.Communication.* assembly has a dependency
+        on any of the following forbidden namespace terms:
+          "SharedKernel.Caching"    (covers all 02.Caching.* sub-packages via prefix)
+          "SharedKernel.Application" (covers 05.Application)
+          "SharedKernel.Persistence" (covers all 06.Persistence.* sub-packages via prefix)
+          "SharedKernel.Messaging"   (covers all 07.Messaging.* sub-packages via prefix)
+        Returns one ConditionList per forbidden term (four total), following the same
+        iterative pattern as DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure.
+        Caller must assert .GetResult().IsSuccessful on EACH element of the returned array.
+        The caller supplies one of the four 11.Communication.* assemblies; the method is
+        called once per communication assembly under test.
+        Rationale: the root CLAUDE.md layering table permits 11.Communication.* to reference
+        only 01.Core, 04.Contracts, and 12.Security abstractions. Any reference to caching,
+        application, persistence, or messaging infrastructure from a communication package
+        collapses the communication abstraction and makes protocol adapters impossible to
+        unit-test independently of infrastructure concerns.
+        Offending pattern: SharedKernel.Communication.Rest referencing IDistributedCache
+            (from 02.Caching) to cache response payloads
+        Compliant pattern: SharedKernel.Communication.Rest referencing only SharedKernel.Core
+            types for primitive extensions and SharedKernel.Contracts for envelope types
+
+    .CommunicationInternalNeverReferencesOtherCommunicationPackages(Assembly internalAssembly) → ConditionList[]
+        Asserts that SharedKernel.Communication.Internal has no dependency on any of:
+          "SharedKernel.Communication.Rest"
+          "SharedKernel.Communication.Grpc"
+          "SharedKernel.Communication.GraphQL"
+        Returns one ConditionList per forbidden term (three total). Caller must assert each.
+        Caller must pass only the SharedKernel.Communication.Internal assembly.
+        Rationale: Communication.Internal is the service-discovery foundation. Dependency
+        flow goes INTO Internal from the protocol packages (Rest, Grpc inject
+        IServiceEndpointResolver from Internal) — Internal must never reach out to its
+        consumers. A circular dependency would make Internal impossible to test in isolation
+        and would entangle the service-discovery abstraction with protocol-specific concerns.
+        Offending pattern: SharedKernel.Communication.Internal referencing
+            SharedKernel.Communication.Rest to construct typed REST endpoints
+        Compliant pattern: SharedKernel.Communication.Internal exposing only
+            IServiceEndpointResolver; Rest/Grpc/GraphQL inject it
+
+    .NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc(Assembly assembly) → ConditionList
+        Asserts that no type in the supplied assembly inherits from
+        Grpc.Core.Interceptors.Interceptor directly. Uses
+        NoDirectGrpcInterceptorInheritancePredicate (ICustomRule — see below).
+        Exemption: types whose TypeDefinition.Namespace starts with
+        "SharedKernel.Communication.Grpc" pass unconditionally — the Communication.Grpc
+        package is the sole legitimate host for gRPC interceptor implementations.
+        Failure message: "{TypeDefinition.FullName} inherits from
+        Grpc.Core.Interceptors.Interceptor directly. gRPC interceptor implementations
+        must live in SharedKernel.Communication.Grpc — never in application or domain
+        assemblies."
+        Rationale: gRPC interceptors that inject request-scoped services (IUserContext,
+        ITenantProvider, OTel tracer) must be registered once via the platform's
+        AddSharedKernelGrpcCommunication() builder. Ad-hoc interceptor classes scattered
+        across service assemblies bypass the platform registration, produce duplicate
+        tracing spans, and cannot be unit-tested without a full gRPC channel. Keeping
+        interceptor implementations inside Communication.Grpc is the single point of
+        control.
+        Note: the caller should pass any production assembly that is NOT
+        SharedKernel.Communication.Grpc. Passing Communication.Grpc itself is not useful
+        since the namespace exemption passes all its types unconditionally.
+
+    .NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL(Assembly assembly) → ConditionList
+        Asserts that no type in the supplied assembly inherits from
+        HotChocolate FilterInputType (any generic or non-generic form) or
+        SortInputType (any generic or non-generic form) without having FilterBase or
+        SortBase from SharedKernel.Communication.GraphQL in its BaseType chain first.
+        Uses NoDirectHotChocolateFilterSortInheritancePredicate (ICustomRule — see below).
+        Exemption: types whose TypeDefinition.Namespace starts with
+        "SharedKernel.Communication.GraphQL" pass unconditionally — the GraphQL package
+        itself defines FilterBase<T> and SortBase<T> as the platform wrappers and
+        legitimately inherits from FilterInputType<T> / SortInputType<T> to do so.
+        Failure message: "{TypeDefinition.FullName} inherits from
+        {FilterInputType/SortInputType} directly. Use FilterBase<T> or SortBase<T>
+        from SharedKernel.Communication.GraphQL to apply platform naming and exposure
+        conventions."
+        Rationale: FilterInputType<T> and SortInputType<T> expose the full entity field
+        surface to GraphQL clients by default, violating field-level access control and
+        the snake_case naming convention enforced by the platform. FilterBase<T> and
+        SortBase<T> are thin wrappers that apply the platform conventions (naming, allowed
+        field subset, pagination shape) automatically. Inheriting directly bypasses this
+        and risks over-exposing sensitive fields (e.g., internal flags, encrypted columns).
+        Offending pattern: class OrderFilterType : FilterInputType<Order> { ... }
+        Compliant pattern: class OrderFilterType : FilterBase<Order> { ... }
+
+    Permitted exemption list:
+        - SharedKernel.Communication.Grpc namespace — for NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc
+        - SharedKernel.Communication.GraphQL namespace — for NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL
+        Any additional exemption must be documented here before it is applied in code.
+
+NoDirectGrpcInterceptorInheritancePredicate  (class : ICustomRule — internal predicate)
+    Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts
+    with "SharedKernel.Communication.Grpc" return true unconditionally.
+    For all other types, walks the TypeDefinition.BaseType chain iteratively:
+      - At each step, checks TypeReference.Name == "Interceptor" (exact simple name match)
+        AND TypeReference.Namespace contains "Grpc.Core.Interceptors" (substring match)
+        to distinguish from any other "Interceptor"-named type in other namespaces
+      - Advances by calling BaseType.Resolve() to get the next TypeDefinition
+      - Terminates when BaseType is null or BaseType.Name is "Object"
+      - Fail-open: if Resolve() returns null at any step (unloaded assembly dependency),
+        returns true unconditionally — avoids false positives in test setups that do not
+        load all transitive gRPC dependencies
+    Returns false (rule violated) if the chain finds a match, with failure message naming
+    the offending type full name. Lives in Predicates/ folder. Used by
+    CommunicationLayeringRules.NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc.
+    Reuses the TypeDefinition.BaseType chain-walk pattern from
+    SagaStateMustExtendSagaStateBasePredicate. No new NuGet dependency.
+
+NoDirectHotChocolateFilterSortInheritancePredicate  (class : ICustomRule — internal predicate)
+    Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts
+    with "SharedKernel.Communication.GraphQL" return true unconditionally.
+    For all other types, walks the TypeDefinition.BaseType chain iteratively:
+      - At each step, checks TypeReference.Name against two target sets:
+          Forbidden set: TypeReference.Name.StartsWith("FilterInputType") OR
+                         TypeReference.Name.StartsWith("SortInputType")
+          Platform-wrapper set: TypeReference.Name.StartsWith("FilterBase") OR
+                                 TypeReference.Name.StartsWith("SortBase")
+        (StartsWith is used instead of exact match to handle generic type IL names
+         such as "FilterInputType`1", "FilterBase`1", etc.)
+      - If a platform-wrapper type (FilterBase/SortBase) is encountered BEFORE a
+        forbidden type, the type is compliant — returns true
+      - If a forbidden type (FilterInputType/SortInputType) is encountered WITHOUT
+        a preceding FilterBase/SortBase in the chain, returns false (rule violated)
+      - Advances by calling BaseType.Resolve() to get the next TypeDefinition
+      - Terminates when BaseType is null or BaseType.Name is "Object"
+      - Fail-open: if Resolve() returns null at any step, returns true unconditionally
+    Returns false (rule violated) if a forbidden base is reached before a platform
+    wrapper, with failure message naming the offending type and the direct HotChocolate
+    base class name. Lives in Predicates/ folder. Used by
+    CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL.
+    Reuses the TypeDefinition.BaseType chain-walk pattern from
+    SagaStateMustExtendSagaStateBasePredicate. No new NuGet dependency.
+
 EfCorePackageHygieneRules  (static class — EfCore package hygiene predicates; WO-017 P-103)
     All factory methods accept Assembly as their parameter and return ConditionList.
     .NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly)  → ConditionList
@@ -1514,3 +1678,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-12] RedisTopologyRules static class added to architecture test contracts (five predicates: RedisCoreNeverReferencesCapabilityPackages, CapabilityPackagesNeverReferenceEachOther, PubSubNeverReferencesMessaging, MessagingNeverReferencesCaching, CachingAbstractionsHasNoInfrastructureDependencies) enforcing the five-package Redis topology (Redis.Core, Redis, Redis.DistributedLocking, Redis.HashStore, Redis.PubSub) from P-140–P-144 and re-affirming the 02.Caching <-> 07.Messaging exclusion boundary; no new SK IDs, no Mono.Cecil — pure NetArchTest assembly-dependency checks; six new implementation rules added — WO-023 P-145
 - [2026-06-15] RedisTopologyRules fixed and finalized — 9/9 RedisTopologyRulesTests pass (75/75 full ArchitectureTests.Tests suite, 0 build warnings/errors). Corrected the NotHaveDependencyOn matching contract (no trailing dots; namespace-based StartsWith match) across all five predicates. CapabilityPackagesNeverReferenceEachOther redesigned to return ConditionList[] (one per input assembly) using a per-package own-namespace-term dictionary to eliminate the self-dependency false positive. Documented the fixture-assembly-naming and CreateFromImage patterns for in-memory NetArchTest fixtures; seven implementation rules revised/added — WO-023 SK.00.RedisTopology closeout
 - [2026-06-16] SK0012 MakeGenericMethodReflection added to diagnostic registry (general-purpose sequential block, next after SK0011); ReflectionGuardRules static class added to architecture test contracts (single predicate: NoMakeGenericMethodReflection(Assembly) → ConditionList); NoMakeGenericMethodReflectionPredicate ICustomRule (Mono.Cecil Call/Callvirt opcode walk for MakeGenericMethod name match) and ReflectionExemptionRegistry allow-list mechanism documented; eight new implementation rules added; motivating incident: P-147 EncryptionRotationService.LoadBatchAsync — WO-024 P-153
+- [2026-06-18] SK0013 RawHttpClientConstructorInjection added to diagnostic registry (Usage, Warning; DelegatingHandler base-class exemption and SharedKernel.Communication.Rest namespace exemption; syntax-only, no SemanticModel); CommunicationLayeringRules static class added to architecture test contracts (four predicates: CommunicationPackagesNeverReferencesForbiddenLayers, CommunicationInternalNeverReferencesOtherCommunicationPackages, NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc, NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL); NoDirectGrpcInterceptorInheritancePredicate and NoDirectHotChocolateFilterSortInheritancePredicate ICustomRule predicates documented; hardcoded-URI guard documented as documentation-only (feasibility concern); 93 analyzer + 86 arch tests pass — WO-025 P-159 (sync-brain)

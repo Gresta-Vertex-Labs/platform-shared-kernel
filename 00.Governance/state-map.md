@@ -46,6 +46,7 @@
 | `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | All tasks in Phase: Extended Messaging Architecture Rules are `●` | P-133 |
 | `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | All tasks in Phase: Redis Package Topology Architecture Rules are `●` | P-145 |
 | `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | All tasks in Phase: Reflection Guard Architecture Rules are `●` | P-153 |
+| `SK.00.CommunicationArchRules` | Governance: Architecture Rules for Communication Layer | All tasks in Phase: Communication Layer Architecture Rules are `●` | P-159 |
 
 ---
 
@@ -1754,6 +1755,113 @@ P-147 fixed `EncryptionRotationService.LoadBatchAsync` which shipped the exact p
 
 ---
 
+## Phase: Communication Layer Architecture Rules <!-- phase-key: SK.00.CommunicationArchRules -->
+
+> **Trigger:** WO-025 P-159. **Depends on:** P-154 (Rest package), P-155 (Internal package), P-156 (Grpc package), P-157 (GraphQL package) — all communication packages must exist before architecture rules can reference their assemblies.
+
+P-145 (WO-023) demonstrated that documenting the `02.Caching`/`07.Messaging` mutual-exclusion rule was insufficient — the pattern was violated in a package whose own CLAUDE.md documented it as forbidden. The same risk applies here: the `11.Communication` layering rules are clear in the root CLAUDE.md but nothing mechanically prevents a developer from injecting `HttpClient` directly, importing `Grpc.Net.Client` in an application assembly, or registering a raw `FilterInputType<T>`. This phase converts those documentation rules into build-time failures.
+
+### CommunicationArchRules — Goal
+
+Introduce `CommunicationLayeringRules` (NetArchTest static class) and SK0013 `RawHttpClientConstructorInjection` (Roslyn analyzer) to mechanically enforce the five invariants in the `11.Communication` family:
+
+1. `11.Communication.*` packages never reference `02.Caching.*`, `05.Application`, `06.Persistence.*`, or `07.Messaging.*`.
+2. `SharedKernel.Communication.Internal` never references `SharedKernel.Communication.Rest`, `.Grpc`, or `.GraphQL` — dependency flows into Internal, not out of it.
+3. No production constructor declares a parameter of raw type `HttpClient` (SK0013 Roslyn analyzer); exempt: `DelegatingHandler` subclasses in `SharedKernel.Communication.Rest`.
+4. No assembly outside `SharedKernel.Communication.Grpc` inherits from `Grpc.Core.Interceptors.Interceptor` as a base class.
+5. No assembly referencing `HotChocolate.Data` inherits from `FilterInputType<T>` or `SortInputType<T>` directly without going through `FilterBase<T>` or `SortBase<T>` from `SharedKernel.Communication.GraphQL` (exemption: `SharedKernel.Communication.GraphQL` itself for defining those bases).
+
+The hardcoded URI guard (rule described in the P-159 spec) remains documentation-enforced — mechanical enforcement is feasible only via a Roslyn analyzer that carries an unacceptable false-positive risk on legitimate URI construction patterns outside typed clients. This decision is recorded in `CLAUDE.md`.
+
+### CommunicationArchRules — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`, `SharedKernel.Analyzers`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/CommunicationLayeringRules.cs` — static class housing all NetArchTest-based Communication rules
+  - `SharedKernel.ArchitectureTests/Predicates/NoDirectGrpcInterceptorInheritancePredicate.cs` — ICustomRule: checks TypeDefinition.BaseType chain for `Grpc.Core.Interceptors.Interceptor`; exempt: types in `SharedKernel.Communication.Grpc` namespace
+  - `SharedKernel.ArchitectureTests/Predicates/NoDirectHotChocolateFilterSortInheritancePredicate.cs` — ICustomRule: checks TypeDefinition.BaseType chain for `FilterInputType` or `SortInputType` without `FilterBase` or `SortBase` in the chain; exempt: types in `SharedKernel.Communication.GraphQL` namespace
+  - `SharedKernel.Analyzers/Analyzers/RawHttpClientConstructorInjectionAnalyzer.cs` — SK0013, `netstandard2.0`, syntax-only
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add SK0013 to diagnostic registry; add `CommunicationLayeringRules` to architecture test contracts; add two new ICustomRule predicates; add implementation rules; add Changelog entry
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### CommunicationArchRules — Diagnostic Registry Changes
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0013 | RawHttpClientConstructorInjection | Usage | Warning | A constructor parameter is typed as `HttpClient` (exact simple name match) in a type that is not a `DelegatingHandler` subclass and not in the `SharedKernel.Communication.Rest` namespace |
+
+### CommunicationArchRules — Implementation Rules
+
+1. `CommunicationLayeringRules.CommunicationPackagesNeverReferencesForbiddenLayers(Assembly assembly)` uses iterative `.Should().NotHaveDependencyOn(term)` calls — one per forbidden namespace term: `"SharedKernel.Caching"`, `"SharedKernel.Application"`, `"SharedKernel.Persistence"`, `"SharedKernel.Messaging"`. The caller supplies one of the four `11.Communication.*` assemblies. The method returns one `ConditionList` per forbidden term — callers must assert each element. This is consistent with the iterative pattern from `DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure`.
+2. `CommunicationLayeringRules.CommunicationInternalNeverReferencesOtherCommunicationPackages(Assembly internalAssembly)` asserts that `SharedKernel.Communication.Internal` has no dependency on `"SharedKernel.Communication.Rest"`, `"SharedKernel.Communication.Grpc"`, or `"SharedKernel.Communication.GraphQL"`. Three iterative `.Should().NotHaveDependencyOn(term)` calls — returns one `ConditionList` per term. The caller must pass only the `SharedKernel.Communication.Internal` assembly.
+3. `CommunicationLayeringRules.NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc(Assembly assembly)` uses `NoDirectGrpcInterceptorInheritancePredicate` (ICustomRule) — see below. Returns `ConditionList`. The caller passes any assembly that is NOT `SharedKernel.Communication.Grpc`; passing `SharedKernel.Communication.Grpc` itself is not useful since the exemption inside the predicate would pass everything unconditionally.
+4. `CommunicationLayeringRules.NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL(Assembly assembly)` uses `NoDirectHotChocolateFilterSortInheritancePredicate` (ICustomRule) — see below. Returns `ConditionList`. Caller passes any assembly that references `HotChocolate.Data` but is NOT `SharedKernel.Communication.GraphQL`.
+5. `NoDirectGrpcInterceptorInheritancePredicate` — namespace exemption guard (first check): types whose `TypeDefinition.Namespace.StartsWith("SharedKernel.Communication.Grpc")` return true unconditionally. For all other types, walks the `TypeDefinition.BaseType` chain iteratively. At each step checks `TypeReference.Name == "Interceptor"` (exact simple name match) AND `TypeReference.Namespace` contains `"Grpc.Core.Interceptors"` (substring). Fail-open: if `BaseType.Resolve()` returns null at any step, returns true (not in scope / unloaded assembly). Returns false (rule violated) if the chain terminates with a match on `Interceptor` from the `Grpc.Core.Interceptors` namespace. Failure message: `"{TypeDefinition.FullName} inherits from Grpc.Core.Interceptors.Interceptor directly. gRPC interceptor implementations must live in SharedKernel.Communication.Grpc — never in application or domain assemblies."` Lives in `Predicates/` folder.
+6. `NoDirectHotChocolateFilterSortInheritancePredicate` — namespace exemption guard (first check): types whose `TypeDefinition.Namespace.StartsWith("SharedKernel.Communication.GraphQL")` return true unconditionally. For all other types, walks the `TypeDefinition.BaseType` chain iteratively. At each step checks `TypeReference.Name` against `{"FilterInputType", "SortInputType"}` (exact simple name match, covers both generic and non-generic IL forms since `FilterInputType<T>` in IL has `TypeReference.Name == "FilterInputType\`1"` — use `StartsWith("FilterInputType")` and `StartsWith("SortInputType")` to cover both). A type passes (returns true) if the BaseType chain contains `FilterBase` or `SortBase` BEFORE reaching `FilterInputType` or `SortInputType` (i.e., it extended the platform wrapper). A type fails if it reaches `FilterInputType` or `SortInputType` in the chain without first passing through `FilterBase` or `SortBase`. Fail-open on null `Resolve()`. Failure message: `"{TypeDefinition.FullName} inherits from {FilterInputType/SortInputType} directly. Use FilterBase<T> or SortBase<T> from SharedKernel.Communication.GraphQL to apply platform naming and exposure conventions."` Lives in `Predicates/` folder.
+7. SK0013 `RawHttpClientConstructorInjectionAnalyzer` operates on `ConstructorDeclarationSyntax` nodes. For each constructor parameter list, checks whether any `ParameterSyntax.Type` is a `SimpleNameSyntax` or `IdentifierNameSyntax` whose `Identifier.Text == "HttpClient"` (exact match). Two exemptions applied in order before firing: (a) namespace walk via `SyntaxNode.Parent` checking for any `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` whose `Name.ToString().StartsWith("SharedKernel.Communication.Rest")` — same SyntaxNode.Parent walk pattern as SK0001/SK0007/SK0202; (b) base type walk via `ClassDeclarationSyntax.BaseList.Types` checking for any type whose simple name is `"DelegatingHandler"` (exact match) — `DelegatingHandler` subclasses legitimately accept `HttpClient` in their constructors as part of the delegating chain. No `SemanticModel` required. Reports on the `ParameterSyntax` token if neither exemption applies. Severity: Warning. Category: Usage.
+8. SK0013 fires globally (no blanket suppression namespace). Per-constructor suppression via `#pragma warning disable SK0013` is permitted only when the injection is legitimately required (document the rationale inline). The `DelegatingHandler` exemption must not be broadened beyond the exact class name check without a governance review.
+9. The hardcoded URI guard (no production typed client may assign `BaseAddress` or `Address` from a string literal or `IConfiguration` value directly) remains **documentation-enforced only** — no NetArchTest rule or Roslyn analyzer. Reason: detecting URI assignment to `HttpClient.BaseAddress` or `GrpcChannel` configuration in a constructor or method body requires semantic model type resolution of the assignment target; false positives on legitimate URI construction patterns (tests, startup config helpers, utilities) are too high to justify a platform-wide rule at this time. If a dedicated test harness for typed-client factories is introduced in the future, a targeted rule may be feasible. This decision is recorded here and in `CLAUDE.md`.
+10. `NoDirectGrpcInterceptorInheritancePredicate` and `NoDirectHotChocolateFilterSortInheritancePredicate` reuse the established Mono.Cecil `TypeDefinition.BaseType` chain-walk pattern from `SagaStateMustExtendSagaStateBasePredicate`. No new NuGet dependency — `Mono.Cecil >= 0.11.5` already referenced in `SharedKernel.ArchitectureTests` covers both new predicates.
+11. `CommunicationLayeringRules` introduces zero new SK diagnostic IDs beyond SK0013. All NetArchTest predicates use the established `NotHaveDependencyOn(term)` / `MeetCustomRule(...)` patterns. No Mono.Cecil is needed for the layering and Internal-isolation rules (pure NetArchTest dependency graph checks).
+
+### CommunicationArchRules — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/CommunicationLayeringRules.cs` | SharedKernel.ArchitectureTests | Create | Static class: `CommunicationPackagesNeverReferencesForbiddenLayers`, `CommunicationInternalNeverReferencesOtherCommunicationPackages`, `NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc`, `NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` → `ConditionList` |
+| `Predicates/NoDirectGrpcInterceptorInheritancePredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: BaseType chain walk for `Grpc.Core.Interceptors.Interceptor`; exempt: `SharedKernel.Communication.Grpc` namespace |
+| `Predicates/NoDirectHotChocolateFilterSortInheritancePredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule: BaseType chain walk for `FilterInputType`/`SortInputType` without `FilterBase`/`SortBase` in chain; exempt: `SharedKernel.Communication.GraphQL` namespace |
+| `Analyzers/RawHttpClientConstructorInjectionAnalyzer.cs` | SharedKernel.Analyzers | Create | SK0013 Roslyn analyzer; syntax-only; `netstandard2.0`; ConstructorDeclarationSyntax walk; `DelegatingHandler` and `SharedKernel.Communication.Rest` exemptions |
+
+### CommunicationArchRules — Acceptance Criteria
+
+- [ ] NetArchTest rule: `CommunicationPackagesNeverReferencesForbiddenLayers` fires when a `11.Communication.*` assembly references `SharedKernel.Caching`, `SharedKernel.Application`, `SharedKernel.Persistence`, or `SharedKernel.Messaging`
+- [ ] NetArchTest rule: `CommunicationInternalNeverReferencesOtherCommunicationPackages` fires when `SharedKernel.Communication.Internal` references `SharedKernel.Communication.Rest`, `.Grpc`, or `.GraphQL`
+- [ ] SK0013: fires when a production constructor declares a parameter of type `HttpClient` (not a `DelegatingHandler` subclass, not inside `SharedKernel.Communication.Rest`)
+- [ ] SK0013: does NOT fire in `DelegatingHandler` subclasses or inside `SharedKernel.Communication.Rest` namespace
+- [ ] NetArchTest rule: `NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc` fires when an assembly outside `SharedKernel.Communication.Grpc` has a type inheriting from `Grpc.Core.Interceptors.Interceptor`
+- [ ] NetArchTest rule: `NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` fires when a type inherits from `FilterInputType<T>` or `SortInputType<T>` directly without going through `FilterBase<T>` or `SortBase<T>`
+- [ ] All rules documented in `00.Governance/CLAUDE.md` with motivating principle and exemption mechanism for each
+- [ ] `dotnet build` and full architecture test suite clean with 0 violations on current codebase
+
+### CommunicationArchRules — Dependencies
+
+- Requires P-154 (Communication.Rest), P-155 (Communication.Internal), P-156 (Communication.Grpc), P-157 (Communication.GraphQL) to be complete: yes — all four communication packages must exist before their assemblies can be referenced from architecture tests
+- Requires `SK.00.ReflectionGuard` (SK0012, Mono.Cecil pattern established) to be complete: yes (already complete)
+- Unblocks: CI architecture gate for the entire `11.Communication` capability domain
+
+### CommunicationArchRules — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing explicit ref in `SharedKernel.ArchitectureTests` — no change; required for the two new ICustomRule predicates)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0013 follows the same constraint as all prior SK Roslyn analyzers)
+- Target framework: `netstandard2.0` (Analyzers — SK0013), `net10.0` (ArchitectureTests — CommunicationLayeringRules and predicates)
+
+### CommunicationArchRules — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-50 | Define SK0013 `RawHttpClientConstructorInjection` rule shape: trigger (ConstructorDeclarationSyntax parameter type == "HttpClient"), two exemptions (`DelegatingHandler` base class and `SharedKernel.Communication.Rest` namespace), severity (Warning), category (Usage), no SemanticModel required; define `CommunicationLayeringRules` factory method signatures and parameter types; define `NoDirectGrpcInterceptorInheritancePredicate` and `NoDirectHotChocolateFilterSortInheritancePredicate` ICustomRule shapes (BaseType chain walk, fail-open on null Resolve(), namespace exemptions); document hardcoded-URI-guard as documentation-only (feasibility concern) | SharedKernel.Analyzers, SharedKernel.ArchitectureTests | `●` |
+| C-67 | Implement `CommunicationLayeringRules` static class in `Rules/`: four factory methods (`CommunicationPackagesNeverReferencesForbiddenLayers`, `CommunicationInternalNeverReferencesOtherCommunicationPackages`, `NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc`, `NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL`) using iterative `.Should().NotHaveDependencyOn(...)` and `.Should().MeetCustomRule(...)` patterns consistent with existing Rules/ classes | SharedKernel.ArchitectureTests | `●` |
+| C-68 | Implement `NoDirectGrpcInterceptorInheritancePredicate` in `Predicates/`: ICustomRule, Mono.Cecil BaseType chain walk, exact name `"Interceptor"` + namespace substring `"Grpc.Core.Interceptors"`, namespace exemption `SharedKernel.Communication.Grpc`, fail-open on null Resolve(); failure message names offending type; and implement `NoDirectHotChocolateFilterSortInheritancePredicate` in `Predicates/`: ICustomRule, Mono.Cecil BaseType chain walk, StartsWith `"FilterInputType"`/`"SortInputType"` detection vs. `"FilterBase"`/`"SortBase"` chain check, namespace exemption `SharedKernel.Communication.GraphQL`, fail-open on null Resolve(); failure message names offending type and direct HotChocolate base | SharedKernel.ArchitectureTests | `●` |
+| C-69 | Implement SK0013 `RawHttpClientConstructorInjectionAnalyzer` in `Analyzers/`: Roslyn `DiagnosticAnalyzer`, `netstandard2.0`, registers on `ConstructorDeclarationSyntax`, syntax-only check for `HttpClient` parameter type; applies `DelegatingHandler` base class exemption (ClassDeclarationSyntax.BaseList simple name check) and `SharedKernel.Communication.Rest` namespace exemption (SyntaxNode.Parent walk, same pattern as SK0001/SK0007/SK0202); reports on the offending ParameterSyntax; DiagnosticDescriptor with HelpLinkUri, category "Usage", severity Warning | SharedKernel.Analyzers | `●` |
+| T-116 | Architecture test (fire path): contrived in-memory assembly whose namespace is `"SomeApp.Caching"` — contains a class referencing `SharedKernel.Caching`; assert `CommunicationPackagesNeverReferencesForbiddenLayers` fails with the forbidden caching dependency in the failure message | SharedKernel.ArchitectureTests | `●` |
+| T-117 | Architecture test (pass path): contrived assembly with no forbidden layer references (references only `SharedKernel.Core` and `SharedKernel.Contracts`); assert `CommunicationPackagesNeverReferencesForbiddenLayers` passes | SharedKernel.ArchitectureTests | `●` |
+| T-118 | Architecture test (fire path): contrived in-memory assembly named `SharedKernel.Communication.Internal` that references `SharedKernel.Communication.Rest`; assert `CommunicationInternalNeverReferencesOtherCommunicationPackages` fails with the forbidden sibling reference | SharedKernel.ArchitectureTests | `●` |
+| T-119 | Architecture test (pass path): contrived `Communication.Internal`-shaped assembly with no references to `.Rest`, `.Grpc`, `.GraphQL`; assert `CommunicationInternalNeverReferencesOtherCommunicationPackages` passes | SharedKernel.ArchitectureTests | `●` |
+| T-120 | Architecture test (fire path): contrived assembly containing a class that directly inherits `Grpc.Core.Interceptors.Interceptor` and is NOT in `SharedKernel.Communication.Grpc`; assert `NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc` fails with the offending type name in the failure message | SharedKernel.ArchitectureTests | `●` |
+| T-121 | Architecture test (pass path): contrived assembly containing a type that inherits from a platform wrapper (e.g., `GrpcClientInterceptorBase`) rather than `Grpc.Core.Interceptors.Interceptor` directly; assert `NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc` passes | SharedKernel.ArchitectureTests | `●` |
+| T-122 | Architecture test (fire path): contrived assembly containing a class that directly inherits `FilterInputType<T>` (HotChocolate) without `FilterBase<T>` in the BaseType chain, and is NOT in `SharedKernel.Communication.GraphQL`; assert `NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` fails | SharedKernel.ArchitectureTests | `●` |
+| T-123 | Architecture test (pass path): contrived assembly containing a class that inherits from `FilterBase<T>` (which in turn inherits `FilterInputType<T>`); assert `NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL` passes because `FilterBase` is in the chain before `FilterInputType` | SharedKernel.ArchitectureTests | `●` |
+| T-124 | Analyzer test (fire path — SK0013): class with constructor `public OrderHandler(HttpClient client, IOrderRepository repo)` not in `SharedKernel.Communication.Rest` namespace, not a `DelegatingHandler` subclass; assert SK0013 fires on the `HttpClient` parameter | SharedKernel.Analyzers | `●` |
+| T-125 | Analyzer test (pass path — SK0013 DelegatingHandler exemption): class `public class TenantIdDelegatingHandler : DelegatingHandler` with constructor `public TenantIdDelegatingHandler(HttpClient client)` inside `SharedKernel.Communication.Rest`; assert SK0013 does NOT fire | SharedKernel.Analyzers | `●` |
+| T-126 | Analyzer test (pass path — SK0013 typed client): class with constructor `public OrderServiceClient(IHttpClientFactory factory)` — no `HttpClient` parameter; assert SK0013 does NOT fire | SharedKernel.Analyzers | `●` |
+| DO-22 | Document SK0013 `RawHttpClientConstructorInjection` and `CommunicationLayeringRules` in `00.Governance/CLAUDE.md`: SK0013 trigger, exemptions (DelegatingHandler, SharedKernel.Communication.Rest namespace), motivating principle (IHttpClientFactory lifecycle — connection pooling, DNS refresh, handler lifetime); CommunicationLayeringRules factory method signatures; two ICustomRule predicates with BaseType chain walk details; hardcoded URI guard documented as documentation-only with feasibility rationale | SharedKernel.Analyzers, SharedKernel.ArchitectureTests | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -1768,7 +1876,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 289.
+> Counts updated whenever a task state changes. Total tasks: 306.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -1793,6 +1901,7 @@ Format when active:
 | `SK.00.ExtendedMessagingArchRules` | Governance: Extended Messaging Architecture Rules — Fault Consumers, Scheduling, Singleton Guards | 20 | 20 | 0 | `●` |
 | `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | 16 | 16 | 0 | `●` |
 | `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | 7 | 7 | 0 | `●` |
+| `SK.00.CommunicationArchRules` | Governance: Architecture Rules for Communication Layer | 16 | 16 | 0 | `●` |
 
 ---
 
@@ -1842,4 +1951,6 @@ Format when active:
 - [2026-06-12] Phase SK.00.RedisTopology added — 16 tasks: D-48, C-60–C-64, T-104–T-112, DO-20; new RedisTopologyRules static class (five ConditionList predicates, no Mono.Cecil, no new SK IDs) enforcing the five-package Redis topology from P-140–P-144 (Redis.Core never references capability packages, capability packages never reference each other, Redis.PubSub never references `SharedKernel.Messaging.*`, `SharedKernel.Messaging.*` never references `SharedKernel.Caching.*`, Caching.Abstractions re-verified dependency-free); total tasks now 282 — WO-023 P-145
 - [2026-06-15] D-48, C-60–C-64, T-104–T-112, DO-20 → ● in SK.00.RedisTopology — all 16 tasks complete; corrected NotHaveDependencyOn matching contract (no trailing dots, namespace StartsWith) across all five predicates; CapabilityPackagesNeverReferenceEachOther redesigned to return ConditionList[] with per-package own-term dictionary; 9/9 RedisTopologyRulesTests pass, 75/75 full ArchitectureTests.Tests suite pass, 0 build warnings/errors; README architecture-test docs and implementation rules updated (state-map-phase)
 - [2026-06-16] Phase SK.00.ReflectionGuard added — 7 tasks: D-49, C-65–C-66, T-113–T-115, DO-21; SK0012 MakeGenericMethodReflection registered (NetArchTest ICustomRule, no Roslyn analyzer — pattern is IL-only detectable); NoMakeGenericMethodReflectionPredicate + ReflectionExemptionRegistry allow-list mechanism; ReflectionGuardRules static class; motivating incident: P-147 EncryptionRotationService.LoadBatchAsync; registry ships empty (P-147 fix eliminated the only known violation); total tasks now 289 — WO-024 P-153
+- [2026-06-18] Phase SK.00.CommunicationArchRules added — 17 tasks: D-50, C-67–C-69, T-116–T-126, DO-22; SK0013 RawHttpClientConstructorInjection registered (Roslyn syntax-only, netstandard2.0, DelegatingHandler and SharedKernel.Communication.Rest exemptions); CommunicationLayeringRules static class (four NetArchTest predicates: forbidden-layer isolation for 11.Communication.*, Communication.Internal sibling isolation, gRPC interceptor direct-inheritance guard, HotChocolate FilterInputType/SortInputType direct-inheritance guard); NoDirectGrpcInterceptorInheritancePredicate and NoDirectHotChocolateFilterSortInheritancePredicate (ICustomRule, Mono.Cecil BaseType chain walk); hardcoded-URI guard documented as documentation-only (feasibility concern); total tasks now 306 — WO-025 P-159
 - [2026-06-17] D-49, C-65–C-66, T-113–T-115, DO-21 → ● in SK.00.ReflectionGuard — all 7 tasks complete; NoMakeGenericMethodReflectionPredicate (Mono.Cecil Call/Callvirt IL walk for exact "MakeGenericMethod" name match) implemented in Predicates/; ReflectionExemptionRegistry (static allow-list, ships empty, internal Register/Unregister for test support via InternalsVisibleTo) implemented in root; ReflectionGuardRules.NoMakeGenericMethodReflection(Assembly) factory implemented in Rules/; 3/3 new tests pass (T-113 fire, T-114 pass, T-115 exemption), 78/78 full ArchitectureTests.Tests suite pass, 0 build warnings/errors; CLAUDE.md already contained complete SK0012 documentation from WO-024 planning — verified accurate, no duplication; SK.00.ReflectionGuard → ●
+- [2026-06-18] D-50, C-67–C-69, T-116–T-126, DO-22 → ● in SK.00.CommunicationArchRules — all 16 tasks complete; CommunicationLayeringRules (4 factory methods), NoDirectGrpcInterceptorInheritancePredicate, NoDirectHotChocolateFilterSortInheritancePredicate, SK0013 RawHttpClientConstructorInjectionAnalyzer implemented; 93 analyzer tests pass, 86 arch tests pass; SK.00.CommunicationArchRules → ● (state-map-phase)
