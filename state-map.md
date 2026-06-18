@@ -64,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | `●` | All 7 tasks complete — NoMakeGenericMethodReflectionPredicate, ReflectionExemptionRegistry, and ReflectionGuardRules implemented; 3 new tests pass (78/78 total); SK0012 enforced at IL level with governance allow-list. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for Communication Layer | `●` | All 16 tasks complete — CommunicationLayeringRules (4 factory methods), NoDirectGrpcInterceptorInheritancePredicate, NoDirectHotChocolateFilterSortInheritancePredicate, SK0013 RawHttpClientConstructorInjectionAnalyzer implemented; 93 analyzer + 86 arch tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -2118,6 +2118,9 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-16] Phase(s) P-154, P-155, P-156, P-157 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
 - [2026-06-17] Governance → Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation (●) — promoted from SK.00.ReflectionGuard (state-map-phase)
 - [2026-06-17] P-009, P-034, P-056, P-063, P-075, P-083, P-096, P-103, P-110, P-114, P-123, P-153 → ● Complete — stale Governance Phase Backlog entries closed (state-map-phase)
+- [2026-06-18] Phase(s) P-159 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-18] Governance → Governance: Architecture Rules for Communication Layer (●) — promoted from SK.00.CommunicationArchRules (state-map-phase)
+- [2026-06-18] Phase Backlog P-159 → ● Complete — SK.00.CommunicationArchRules done (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -7133,7 +7136,7 @@ The `InMemoryServiceEndpointResolver` is distinct from `StaticServiceEndpointRes
 
 ### P-159 — Governance: Architecture Rules for Communication Layer
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-025
 **Domain:** 00.Governance
 **Depends on:** P-154, P-155, P-156, P-157
