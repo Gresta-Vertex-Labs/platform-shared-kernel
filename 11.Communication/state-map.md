@@ -70,7 +70,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Communication.Rest` | Rest | `●` | P-154: Typed HttpClient factory, Polly v8, correlation + tenant handlers, ProblemDetails deserialization |
 | `SharedKernel.Communication.Grpc` | Grpc | `●` | P-156: gRPC channel factory, OTel tracing + tenant interceptors, Protobuf helpers |
 | `SharedKernel.Communication.GraphQL` | GraphQL | `●` | P-157: HotChocolate v14 conventions, FilterBase/SortBase, pagination, error mapping |
-| `SharedKernel.Communication.Internal` | Internal | `○` | P-155: IServiceEndpointResolver, K8s DNS resolver, static dev resolver |
+| `SharedKernel.Communication.Internal` | Internal | `●` | P-155: IServiceEndpointResolver, K8s DNS resolver, static dev resolver — 27/27 tests passing |
 
 ---
 
@@ -203,12 +203,12 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| I-01 | Implement `IServiceEndpointResolver` interface: single method `ResolveAsync(string serviceName, CancellationToken ct) → ValueTask<Uri>`; mark interface as public; XML doc comment mandates never-throw contract in production | WO-025 | `SharedKernel.Communication.Internal` | `○` |
-| I-02 | Implement `K8sServiceDiscoveryOptions` sealed class: `Namespace` (default `"default"`), `ClusterDomain` (default `"cluster.local"`), `SchemeOverride` (default `null` → `"http"`); add `IValidateOptions<K8sServiceDiscoveryOptions>` validator rejecting empty `Namespace` or `ClusterDomain` | WO-025 | `SharedKernel.Communication.Internal` | `○` |
-| I-03 | Implement `KubernetesServiceEndpointResolver` (implements `IServiceEndpointResolver`, registered as singleton): use `Microsoft.Extensions.ServiceDiscovery` to attempt DNS SRV lookup (`_http._tcp.<service>.<namespace>.svc.<clusterDomain>`) first; fall back to A-record (`<service>.<namespace>.svc.<clusterDomain>`); on any resolution failure, return constructed K8s convention URI `{scheme}://{serviceName}.{namespace}.svc.{clusterDomain}` without throwing | WO-025 | `SharedKernel.Communication.Internal` | `○` |
-| I-04 | Implement `StaticServiceEndpointResolver` (implements `IServiceEndpointResolver`, registered as singleton): constructor accepts `IReadOnlyDictionary<string, Uri>`; `ResolveAsync` returns registered `Uri` for known service names; for unknown names returns K8s convention URI `http://{serviceName}.default.svc.cluster.local` (never throws) | WO-025 | `SharedKernel.Communication.Internal` | `○` |
-| I-05 | Implement `AddK8sServiceDiscovery(this IServiceCollection, Action<K8sServiceDiscoveryOptions>? configure = null) → IServiceCollection`: bind `K8sServiceDiscoveryOptions` via `Configure<>()`; register `KubernetesServiceEndpointResolver` as `IServiceEndpointResolver` singleton; wire `Microsoft.Extensions.ServiceDiscovery` DNS resolver | WO-025 | `SharedKernel.Communication.Internal` | `○` |
-| I-06 | Implement `AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpoints) → IServiceCollection`: check if `IServiceEndpointResolver` is already registered — throw `InvalidOperationException` with clear message if so; register `StaticServiceEndpointResolver` as `IServiceEndpointResolver` singleton; log `LogLevel.Warning` at startup via `IStartupFilter` or `IHostedService`-based early log indicating this is a non-production resolver | WO-025 | `SharedKernel.Communication.Internal` | `○` |
+| I-01 | Implement `IServiceEndpointResolver` interface: single method `ResolveAsync(string serviceName, CancellationToken ct) → ValueTask<Uri>`; mark interface as public; XML doc comment mandates never-throw contract in production | WO-025 | `SharedKernel.Communication.Internal` | `●` |
+| I-02 | Implement `K8sServiceDiscoveryOptions` sealed class: `Namespace` (default `"default"`), `ClusterDomain` (default `"cluster.local"`), `SchemeOverride` (default `null` → `"http"`); add `IValidateOptions<K8sServiceDiscoveryOptions>` validator rejecting empty `Namespace` or `ClusterDomain` | WO-025 | `SharedKernel.Communication.Internal` | `●` |
+| I-03 | Implement `KubernetesServiceEndpointResolver` (implements `IServiceEndpointResolver`, registered as singleton): use `Microsoft.Extensions.ServiceDiscovery` to attempt DNS SRV lookup (`_http._tcp.<service>.<namespace>.svc.<clusterDomain>`) first; fall back to A-record (`<service>.<namespace>.svc.<clusterDomain>`); on any resolution failure, return constructed K8s convention URI `{scheme}://{serviceName}.{namespace}.svc.{clusterDomain}` without throwing | WO-025 | `SharedKernel.Communication.Internal` | `●` |
+| I-04 | Implement `StaticServiceEndpointResolver` (implements `IServiceEndpointResolver`, registered as singleton): constructor accepts `IReadOnlyDictionary<string, Uri>`; `ResolveAsync` returns registered `Uri` for known service names; for unknown names returns K8s convention URI `http://{serviceName}.default.svc.cluster.local` (never throws) | WO-025 | `SharedKernel.Communication.Internal` | `●` |
+| I-05 | Implement `AddK8sServiceDiscovery(this IServiceCollection, Action<K8sServiceDiscoveryOptions>? configure = null) → IServiceCollection`: bind `K8sServiceDiscoveryOptions` via `Configure<>()`; register `KubernetesServiceEndpointResolver` as `IServiceEndpointResolver` singleton; wire `Microsoft.Extensions.ServiceDiscovery` DNS resolver | WO-025 | `SharedKernel.Communication.Internal` | `●` |
+| I-06 | Implement `AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpoints) → IServiceCollection`: check if `IServiceEndpointResolver` is already registered — throw `InvalidOperationException` with clear message if so; register `StaticServiceEndpointResolver` as `IServiceEndpointResolver` singleton; log `LogLevel.Warning` at startup via `IStartupFilter` or `IHostedService`-based early log indicating this is a non-production resolver | WO-025 | `SharedKernel.Communication.Internal` | `●` |
 
 ---
 
@@ -279,7 +279,7 @@ Format when blocked — replace placeholder with table:
 | `SK.11.Rest` | Rest | 10 | 10 | 0 | `●` |
 | `SK.11.Grpc` | Grpc | 9 | 9 | 0 | `●` |
 | `SK.11.GraphQL` | GraphQL | 8 | 8 | 0 | `●` |
-| `SK.11.Internal` | Internal | 6 | 0 | 6 | `○` |
+| `SK.11.Internal` | Internal | 6 | 6 | 0 | `●` |
 | `SK.11.Tests` | Tests | 18 | 0 | 18 | `○` |
 | `SK.11.Docs` | Docs | 5 | 0 | 5 | `○` |
 | `SK.11.Published` | Published | 6 | 0 | 6 | `○` |
@@ -298,3 +298,4 @@ Format when blocked — replace placeholder with table:
 - [2026-06-17] R-01–R-10 → ● in SK.11.Rest — all 10 Rest tasks complete; 35/35 tests passing (state-map-phase)
 - [2026-06-17] G-01–G-09 → ● in SK.11.Grpc — all 9 Grpc tasks complete; 46/46 tests passing (state-map-phase)
 - [2026-06-17] GQ-01–GQ-08 → ● in SK.11.GraphQL — all 8 GraphQL tasks complete; 40/40 tests passing (state-map-phase)
+- [2026-06-18] I-01–I-06 → ● in SK.11.Internal — all 6 Internal tasks complete; 27/27 tests passing (state-map-phase)

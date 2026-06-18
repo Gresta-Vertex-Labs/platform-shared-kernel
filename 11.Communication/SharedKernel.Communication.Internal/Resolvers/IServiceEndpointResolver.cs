@@ -11,6 +11,11 @@ namespace SharedKernel.Communication.Internal.Resolvers;
 /// from the K8s DNS convention (<c>{scheme}://{serviceName}.{namespace}.svc.{clusterDomain}</c>)
 /// and lets the caller's transport layer surface the connection error.
 /// </para>
+/// <para>
+/// Callers should inject <see cref="IServiceEndpointResolver"/> and pass the result to typed
+/// client constructors — never construct <see cref="Uri"/> values from configuration strings
+/// directly inside a client method.
+/// </para>
 /// </remarks>
 public interface IServiceEndpointResolver
 {
