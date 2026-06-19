@@ -1,8 +1,42 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.MultiTenancy</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, JWT claim delegation, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
+    <PackageTags>shared-kernel;multi-tenancy;tenant-resolution;middleware</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.MultiTenancy.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.MultiTenancy.Tests\**" />
+    <None Remove="SharedKernel.MultiTenancy.Tests\**" />
+  </ItemGroup>
 
 </Project>
