@@ -88,3 +88,24 @@ public interface IServiceEndpointResolver { string Resolve(string name); }
 The Overall Progress table showed 17 tasks for `SK.00.CommunicationArchRules` but the task table
 only had 16 rows (D-50, C-67–C-69, T-116–T-126, DO-22 = 16). The count was corrected to 16/16 `●`
 during the state-map update. The phase header had "17 tasks" in text but the table was authoritative.
+
+## WO-026 P-167: GrpcNeverReferencesContracts — fifth CommunicationLayeringRules factory method
+
+Added a fifth method to the existing static class (no new class, per phase scope): single
+`Types.InAssembly(grpcAssembly).Should().NotHaveDependencyOn("SharedKernel.Contracts")` call,
+no ICustomRule, no Mono.Cecil. Locks the P-163 dead-reference removal permanently — no exemption
+permitted by design (any future need requires a governance review and explicit CLAUDE.md revision).
+
+Pattern observed: the governance-arch-planner agent had ALREADY written the full CLAUDE.md
+documentation for this rule (Architecture Test Contracts entry + WO-026 Governance Conventions
+section + changelog line) before the implementer ran. The implementer's job was to verify the
+spec matched what should be built, then implement code that matches it exactly — not to write
+new documentation. Always check whether the planner pre-wrote the brain content before treating
+DO-style tasks as "write from scratch."
+
+T-128 pass-path test used the REAL `SharedKernel.Communication.Grpc` assembly (not a contrived
+fixture) via `typeof(SharedKernel.Communication.Grpc.Builders.IGrpcCommunicationBuilder).Assembly`.
+This required adding a `<ProjectReference>` (with `PrivateAssets="all"`) to
+`11.Communication/SharedKernel.Communication.Grpc/SharedKernel.Communication.Grpc.csproj` in
+`SharedKernel.ArchitectureTests.Tests.csproj` — first cross-domain (00→11) real-assembly reference
+in this test project; prior tests in this file all used contrived in-memory fixtures.

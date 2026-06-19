@@ -1,6 +1,6 @@
 ---
 name: phase-sequencing
-description: Work order and phase sequencing for 04.Contracts — WO-011 and WO-012
+description: Work order and phase sequencing for 04.Contracts — WO-011, WO-012, WO-026
 metadata:
   type: project
 ---
@@ -18,6 +18,15 @@ metadata:
 
 **Total tasks as of 2026-05-30:** 32 tasks across 6 phases (D-01–D-06, S-01–S-04, C-01–C-06, T-01–T-06, DO-01–DO-06, P-01–P-04).
 
-**Why P-055 is separate from WO-012:** EventEnvelope<TEvent> was identified during WO-011 arch-lead analysis as a contracts-layer responsibility. It was logged as a standalone phase so it could be dispatched independently without blocking the full scaffold+core chain.
+**WO-026** covers P-166 (ResultEnvelopeExtensions) — additive to the already-published 1.0.0 package:
+- D-07 Design — pure static class shape, 4 extension method signatures, namespace, purity contract
+- S-05 Scaffold — create Mapping/ subfolder and empty placeholder file
+- C-07 Core — implement all 4 extension methods; verify Result factory names against SharedKernel.Primitives API before coding
+- T-07 Tests — 10 test scenarios (generic + non-generic, success + failure + double round-trip)
+- DO-07 Docs — XML doc on all 4 methods; README section 3 updated with usage examples
+- P-05 Published — version bump to 1.1.0; consumer-verify extended; all tests pass
+- No new NuGet dependencies. Both Result<T> (SharedKernel.Primitives) and Envelope<T> (this package) already in scope.
 
-**How to apply:** When dispatching P-059 (Core), verify P-055 has been completed first — C-05 in the core phase integrates EventEnvelope. If P-055 is not complete, C-05 must be implemented inline.
+**Why P-166 is separate from WO-012:** ResultEnvelopeExtensions was not part of the original 1.0.0 design. It was identified in WO-026 as a platform-standard bridge that eliminates per-site inline boilerplate across typed clients, controllers, and gRPC handlers.
+
+**How to apply:** When dispatching C-07 (Core), verify the exact `Result` factory method names (`Success`/`Failure` vs `Ok`/`Fail`) against the current SharedKernel.Primitives source before writing any code — the names must match exactly.

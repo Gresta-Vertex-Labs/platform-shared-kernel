@@ -1,22 +1,25 @@
 ---
 name: project-communication
-description: 11.Communication domain status, NuGet version pins, and key cross-phase implementation patterns discovered during SK.11.Rest and SK.11.Grpc
+description: 11.Communication domain status, NuGet version pins, and key cross-phase implementation patterns discovered during SK.11 implementation
 metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-06-17)
+## Phase completion status (as of 2026-06-18)
 
 - SK.11.Design: ● (22 tasks)
 - SK.11.Scaffold: ● (13 tasks)
-- SK.11.Rest: ● (10 tasks, 35/35 tests)
-- SK.11.Grpc: ● (9 tasks, 46/46 tests)
-- SK.11.Internal: pending
-- SK.11.GraphQL: pending
+- SK.11.Rest: ● (18 tasks, 66/66 tests) — WO-026 R-11–R-18 complete
+- SK.11.Grpc: ● (13 tasks, 55/55 tests) — WO-026 G-10–G-13 complete
+- SK.11.GraphQL: ● (9 tasks, 43/43 tests) — WO-026 GQ-09 complete
+- SK.11.Internal: ◐ (6/8 tasks done) — I-07, I-08 (TTL cache) pending
+- SK.11.Tests: ○ (26 tasks pending)
+- SK.11.Docs: ○ (5 tasks pending)
+- SK.11.Published: ○ (6 tasks pending)
 
-**Why:** WO-025 (P-154 through P-159) implementing the full 11.Communication domain.
+**Why:** WO-025 (P-154 through P-159) + WO-026 (P-160–P-165) implementing the full 11.Communication domain.
 
-**How to apply:** When resuming, start from the first non-● phase in sub state-map at `11.Communication/state-map.md`.
+**How to apply:** When resuming, start from the first non-● phase in sub state-map at `11.Communication/state-map.md`. Next pending: I-07, I-08 (Internal TTL cache).
 
 ## NuGet version pins (confirmed working)
 
@@ -32,8 +35,15 @@ metadata:
 - `Google.Api.CommonProtos` 2.17.0
 - `OpenTelemetry.Instrumentation.GrpcNetClient` 1.15.1-beta.1
 
+### SharedKernel.Communication.GraphQL
+
+- `HotChocolate.Data` 16.1.4
+- `HotChocolate.AspNetCore` 16.1.4
+- Note: architecture originally specified v14 but v14 is not available for net10.0; v16.1.4 used
+
 ### SharedKernel.Communication.Internal
-- `Microsoft.Extensions.ServiceDiscovery` (pin TBD when SK.11.Internal implemented)
+
+- `Microsoft.Extensions.ServiceDiscovery` (pin TBD when SK.11.Internal I-07/I-08 complete)
 
 ## Handler pipeline order (REST)
 
@@ -55,3 +65,12 @@ When `IServiceEndpointResolver` is registered and `Address` is omitted, the addr
 
 `decimal → Money`: `Units = (long)Truncate(value)`, `Nanos = (int)Round((value - units) * 1_000_000_000, 0)`
 `Money → decimal`: `Units + (decimal)Nanos / 1_000_000_000`
+
+## PagedResponseType factory method summary
+
+- `FromPage(IPage)` — offset paging source (HC v16 IPage, not `CollectionSegment<T>`)
+- `FromConnection(Connection<T>)` — cursor paging source
+- `From(IReadOnlyList<T>, int)` — manual assembly
+- `FromPagedList(PagedList<T>)` — bridge from 04.Contracts application layer result (GQ-09/P-165)
+
+`FromPagedList` requires the `SharedKernel.Contracts` (04.Contracts) project reference in the GraphQL csproj — already present in the original scaffold.

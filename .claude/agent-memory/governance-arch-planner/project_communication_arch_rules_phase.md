@@ -1,11 +1,13 @@
 ---
 name: communication-arch-rules-phase
-description: SK.00.CommunicationArchRules design decisions: CommunicationLayeringRules (NetArchTest), SK0013 RawHttpClientConstructorInjection (Roslyn), two ICustomRule predicates, hardcoded-URI guard decision
+description: SK.00.CommunicationArchRules (P-159) and SK.00.WO026CommunicationQuality (P-167) design decisions: CommunicationLayeringRules (NetArchTest), SK0013 RawHttpClientConstructorInjection (Roslyn), two ICustomRule predicates, hardcoded-URI guard decision, GrpcNeverReferencesContracts
 metadata:
   type: project
 ---
 
 SK.00.CommunicationArchRules added 2026-06-18 as part of WO-025 P-159. Phase key maps to root backlog P-159. Depends on P-154 (Rest), P-155 (Internal), P-156 (Grpc), P-157 (GraphQL) complete.
+
+SK.00.WO026CommunicationQuality added 2026-06-18 as part of WO-026 P-167. Depends on P-163 (Grpc dead-reference removal), P-165 (ResultEnvelopeExtensions), P-166 (PagedResponseType.FromPagedList), P-159 complete. 5 tasks (D-51, C-70, T-127–T-128, DO-23), all at ○ Pending.
 
 ## Phase summary
 
@@ -68,5 +70,19 @@ False positive rate across legitimate URI construction patterns (tests, startup 
 2. NoDirectHotChocolateFilterSortInheritancePredicate uses StartsWith pattern for generic IL type names — "FilterInputType`1" in IL must be caught by StartsWith("FilterInputType"), not exact match. Same applies to SortInputType, FilterBase, SortBase.
 
 3. CommunicationLayeringRules introduces ZERO new SK IDs beyond SK0013. The four NetArchTest predicates are assembly-level rules.
+
+## WO-026 P-167 additions to CommunicationLayeringRules
+
+`.GrpcNeverReferencesContracts(Assembly grpcAssembly)` — fifth factory method added to the existing CommunicationLayeringRules class. Single `Types.InAssembly(grpcAssembly).Should().NotHaveDependencyOn("SharedKernel.Contracts")` call returning ConditionList. No exemption is permitted — any future case requires governance review and explicit CLAUDE.md revision before an exemption can exist.
+
+**Why needed:** P-163 (WO-026) removed a dead `SharedKernel.Contracts` import from Communication.Grpc. Without a rule, this can silently re-enter on any future PR. Consistent with the P-145 (RedisTopology) pattern where documentation-only rules regressed.
+
+**WO-026 What Goes Where conventions documented in CLAUDE.md:**
+- `ResultEnvelopeExtensions.ToEnvelope()` / `ToResult()` → `04.Contracts/SharedKernel.Contracts`
+- `PagedResponseType<T>.FromPagedList(pagedList)` → `11.Communication.GraphQL`
+- `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds` → `11.Communication.Internal`
+- Multiple typed REST clients: inline factory pattern via `IServiceEndpointResolver` in DI callback — do NOT register `ServiceDiscoveryResolvingHandler` as a named DelegatingHandler from consuming code
+
+**Inline Result/Envelope mapping is a platform violation** — `result.ToEnvelope()` is mandatory at service boundaries. Future Roslyn analyzer (SK0014 candidate) tracked as backlog but no ID assigned yet.
 
 **Related:** [[sk-diagnostic-registry]], [[redis-topology-phase]]
