@@ -392,6 +392,47 @@ IMessageVersionTranslator<TOld, TNew>  (interface)
           same service, Build() logs a Warning (advisory only — consumer may be in another service).
 ```
 
+#### Messaging diagnostics (`Diagnostics/`) — P-172
+
+```text
+MessagingDiagnostics  (internal static class)
+    .ActivitySource     → ActivitySource  (static readonly; "SharedKernel.Messaging", "1.0.0")
+        NOTE: Single static ActivitySource instance for the whole SharedKernel.Messaging.MassTransit
+              package — this is the platform-standard static-instrument pattern (the same shape as
+              a static ILogger category name or a Meter instance), NOT a "static mutable state"
+              hard violation. ActivitySource carries no mutable business state; the .NET diagnostics
+              API is explicitly designed around process-lifetime static instrument instances.
+        Consumed by ConsumerBase<TMessage>.Consume() and MassTransitEventPublisher.PublishAsync<TEvent>()
+        to start child Activities. Consumed by 13.ServiceDefaults.WithMessagingTelemetry() (P-132),
+        which wires "SharedKernel.Messaging" into the host's TracerProvider via .AddSource(...) —
+        13.ServiceDefaults never constructs this ActivitySource itself; it only registers the
+        already-existing source name with the host's TracerProvider/MeterProvider.
+```
+
+#### Consumer and publisher instrumentation (`Consumers/`, `EventPublisher/`) — P-172
+
+```text
+ConsumerBase<TMessage>.Consume()  (sealed entry point — updated)
+    Starts a child Activity via MessagingDiagnostics.ActivitySource.StartActivity("Consumer.Consume")
+    before delegating to ConsumeAsync. Tags:
+        messaging.message_type = typeof(TMessage).Name
+    The activity is disposed after ConsumeAsync completes (success or exception) — standard
+    `using` disposal scope wrapping the existing CorrelationId-propagation and log-then-rethrow logic.
+    Log scope (ILogger.BeginScope) is enriched (additive to existing CorrelationId and x-sk-* header
+    scope values from P-135) with:
+        messaging.destination    = ConsumeContext.DestinationAddress?.AbsolutePath  (omitted if null)
+        messaging.message_type   = typeof(TMessage).Name
+
+MassTransitEventPublisher.PublishAsync<TEvent>()  (updated)
+    Starts a child Activity via MessagingDiagnostics.ActivitySource.StartActivity("EventPublisher.Publish")
+    before delegating to IPublishEndpoint. Tags:
+        messaging.event_type = typeof(TEvent).Name
+    The activity is disposed after the publish call completes (success or exception).
+    NOTE: This activity is independent of the EventEnvelope<TEvent> CloudEvents CorrelationId field —
+          the Activity's own TraceId/SpanId comes from .NET's ambient Activity.Current chain; the
+          envelope's CorrelationId is still sourced per the CloudEvents compliance rule below.
+```
+
 #### Routing slip base (`RoutingSlips/`) — P-139
 
 ```text
@@ -694,6 +735,7 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 | Per-Consumer Definition Base | P-136 | `SK.07.ConsumerDefinition` | MassTransit (`ConsumerDefinitionBase<TConsumer>`) |
 | Message Schema Evolution | P-137 | `SK.07.VersionTranslation` | Abstractions (`IMessageVersionTranslator<TOld, TNew>`) + MassTransit (`WithVersionTranslator`, `TranslatorRegistrationValidator`) |
 | Routing Slip Activity Base | P-139 | `SK.07.RoutingSlip` | Abstractions (`IRoutingSlipBuilder`, `IMessageBus.ExecuteRoutingSlipAsync`) + MassTransit (`RoutingSlipActivityBase<TArguments, TLog>`, `MassTransitRoutingSlipBuilder`, `AddRoutingSlipActivity`) |
+| ActivitySource and Consume/Publish Instrumentation | P-172 | `SK.07.OTel` | MassTransit (`MessagingDiagnostics.ActivitySource`, `ConsumerBase<TMessage>.Consume()` and `MassTransitEventPublisher.PublishAsync<TEvent>()` instrumentation) |
 
 ---
 
@@ -713,7 +755,8 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 - Placing transport credentials in `appsettings.json` files committed to source control — source credentials from environment variables, Kubernetes Secrets, or Azure Key Vault mappings only.
 - Adding a project reference from `SharedKernel.Messaging.MassTransit` to `SharedKernel.Persistence.EfCore` or any `06.Persistence.*` package — the outbox is wired via generic type parameter `TDbContext`; no compile-time reference to the persistence package is needed or permitted.
 - Adding domain logic to any type in this domain — this layer is pure messaging infrastructure.
-- Any static mutable state.
+- Any static mutable state. **Exception (P-172):** a static `readonly ActivitySource` (and, if ever needed, a static `readonly Meter`) instance is the platform-standard .NET diagnostics pattern — it carries no mutable business state and the BCL diagnostics API is explicitly designed around process-lifetime static instrument instances (the same shape as a static logger category). `MessagingDiagnostics.ActivitySource` is the only sanctioned static field in this domain; do not add additional ad-hoc static fields under cover of this exception.
+- Creating an `ActivitySource` or custom `Meter` in `13.ServiceDefaults` on behalf of `07.Messaging` — the source is owned and constructed here (`MessagingDiagnostics.ActivitySource`, P-172); `13.ServiceDefaults` only registers the already-existing source name with the host's `TracerProvider`/`MeterProvider` via `WithMessagingTelemetry()` (P-132). This was a latent cross-domain phase violation discovered during P-132 review — P-132 incorrectly assumed this source already existed.
 - Calling `Services.BuildServiceProvider()` inside `MessagingBusBuilder.Build()` for validation purposes — this creates a second root `IServiceProvider`, double-registers singletons, and silently discards scoped service state (see P-130 for the fix). Validation of `MessagingOptions.ServiceName` at build time must use the captured `Action<MessagingOptions>?` delegate directly.
 - Injecting `MassTransit.IMessageScheduler` directly in application handlers — use `SharedKernel.Messaging.Abstractions.IMessageScheduler` (added in P-127).
 - Registering `IFaultConsumer<T>` via `services.AddScoped` — fault consumers must be registered via `MessagingBusBuilder.AddFaultConsumer<TMessage,TConsumer>()` (added in P-126).
@@ -1114,6 +1157,7 @@ public sealed class ProcessPaymentHandler
 - `ConsumerDefinitionBase<TConsumer>` is a generic abstract class — AOT-safe at the base type level; closed generic instantiation by MassTransit at startup is model-build time only.
 - `IMessageVersionTranslator<TOld, TNew>` is a generic interface — AOT-safe. The MassTransit deserialization hook used by `WithVersionTranslator` relies on message type aliases; verify AOT compatibility of the specific MassTransit interception API on each major upgrade.
 - `IRoutingSlipBuilder` is an interface — AOT-safe. `MassTransitRoutingSlipBuilder` delegates to MassTransit `RoutingSlipBuilder` — verify AOT status of MassTransit Courier on each major upgrade. `RoutingSlipActivityBase<TArguments, TLog>` is a generic abstract class; closed generic instantiation at startup is model-build time only.
+- `MessagingDiagnostics.ActivitySource` and the `Activity` instances it produces (`System.Diagnostics`, BCL) are fully AOT-safe — no reflection, no dynamic code generation. `Activity.SetTag` uses object boxing for primitive tag values but performs no type scanning or `MakeGenericMethod` calls. Starting/disposing an `Activity` per consume/publish call is a hot-path allocation when a listener is attached (and a no-op fast path when no listener is attached) — acceptable for AOT and for steady-state throughput.
 
 ---
 
@@ -1137,6 +1181,7 @@ public sealed class ProcessPaymentHandler
 - **Never use the `file` modifier on consumer, message, or DbContext types in test files** — C# `file` types generate mangled CLR names containing `<` and hash characters (e.g., `<ConsumerBaseTests>F15BB...RecordingConsumer`). MassTransit type matching splits on `<`; the mangled names cause type resolution failures for `GetConsumerHarness<T>()`, `harness.Consumed.Select<T>()`, and outbox entity model building. Always use `internal` (with a unique name per file to avoid collisions).
 - **`await using` for `ServiceProvider` in tests** — `MassTransit.UsageTracking.UsageTracker` (registered by MassTransit 9.x startup) only implements `IAsyncDisposable`, not `IDisposable`. Using `using var sp` causes a synchronous disposal path that throws. Always use `await using var sp = services.BuildServiceProvider(...)` and declare test methods as `async Task`.
 - **SQLite keep-alive connection for in-memory database persistence** — when using a SQLite in-memory database across multiple `ServiceScope` instances in the same test, open a `SqliteConnection("Data Source=:memory:")` and keep it open for the test's lifetime. Pass that connection to `UseSqlite(connection)`. If the connection closes, the in-memory database is dropped and subsequent scopes see an empty schema.
+- **`ActivitySource` / `Activity` assertion pattern (P-172):** subscribe an `ActivityListener` with `ShouldListenTo = source => source.Name == "SharedKernel.Messaging"` and `Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData` BEFORE invoking `Consume()` or `PublishAsync()` — without an attached listener, `ActivitySource.StartActivity` returns `null` (fast-path no-op) and no activity is created to assert against. Collect started activities into a `List<Activity>` via `listener.ActivityStarted = act => list.Add(act)`. Always call `ActivitySource.AddActivityListener(listener)` and dispose/remove it at test teardown to avoid cross-test listener leakage (listeners are process-global, not scoped to a `ServiceProvider`).
 
 ---
 
@@ -1155,3 +1200,4 @@ public sealed class ProcessPaymentHandler
 - [2026-06-09] SK.07.Idempotency complete — global consume filter API note added: UseConsumeFilter(typeof(MyFilter<>), ctx) wires open-generic IFilter<ConsumeContext<TMessage>> globally; open-generic DI registration pattern AddScoped(typeof(MyFilter<>)) documented; test harness wiring pattern for closed-generic filter in UsingInMemory documented (sync-brain)
 - [2026-06-09] SK.07.HeaderPropagation complete — 3 MassTransit 9.x API notes added: IEnumerable<IMessageHeaderPropagator> resolution strategy (constructor vs GetService); ConsumeContext.Headers.GetAll() for header iteration; PublishContext alias required in test files (sync-brain)
 - [2026-06-10] SK.07.VersionTranslation complete — `IMessageVersionTranslator<TOld, TNew>` in Abstractions; `WithVersionTranslator<TOld, TNew, TTranslator>()` implemented as a "translating consumer" (`VersionTranslatingConsumer<TOld, TNew>` republishes via `ConsumeContext.Publish<TNew>`) rather than a deserializer hook; advisory `TranslatorRegistrationValidator` runs via a new `TranslatorRegistrationValidationHostedService` at host startup (`Build()`-must-not-`BuildServiceProvider` pattern for DI-dependent advisory checks); `_registeredConsumerTypes` tracking added to `MessagingBusBuilder`; 5 new tests (sync-brain)
+- [2026-06-19] WO-027 / P-172 queued — `MessagingDiagnostics.ActivitySource` ("SharedKernel.Messaging", "1.0.0") added to interface contracts (MassTransit package); `ConsumerBase<TMessage>.Consume()` and `MassTransitEventPublisher.PublishAsync<TEvent>()` instrumentation contracts documented ("Consumer.Consume"/"EventPublisher.Publish" child activities, `messaging.message_type`/`messaging.event_type`/`messaging.destination` tags and log-scope enrichment); queued capabilities table extended; new hard-violation clarifying the static-`ActivitySource`-is-not-a-mutable-state-violation exception and the `13.ServiceDefaults`-never-creates-this-source rule; AOT note added (BCL `System.Diagnostics`, fully AOT-safe); `ActivityListener` test assertion pattern added to Test Rules. Corrects a latent cross-domain dependency error in pending P-132, which assumed this source already existed — P-172 has no dependency and unblocks P-132 with a true prerequisite (messaging-arch-planner)

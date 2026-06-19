@@ -42,6 +42,7 @@
 | `SK.07.ConsumerDefinition` | ConsumerDefinition | All tasks in Phase: ConsumerDefinition are `●` | P-136 |
 | `SK.07.VersionTranslation` | VersionTranslation | All tasks in Phase: VersionTranslation are `●` | P-137 |
 | `SK.07.RoutingSlip` | RoutingSlip | All tasks in Phase: RoutingSlip are `●` | P-139 |
+| `SK.07.OTel` | OTel | All tasks in Phase: OTel are `●` | P-172 |
 
 ---
 
@@ -408,6 +409,23 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: OTel <!-- phase-key: SK.07.OTel -->
+
+> Custom `ActivitySource` and consume/publish instrumentation owned by `07.Messaging`. Corrects a latent cross-domain phase violation in P-132 (`13.ServiceDefaults`), which assumed this source already existed and only intended to wire an _existing_ source into the host's `TracerProvider`/`MeterProvider`. Creating the source is a `07.Messaging`-owned concern — `13.ServiceDefaults` never creates an `ActivitySource` or custom meter on behalf of another domain. Covers P-172, unblocks P-132 with a true dependency.
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| OT-01 | Implement static `ActivitySource` field `SharedKernel.Messaging.MassTransit.Diagnostics.MessagingDiagnostics.ActivitySource`, constructed as `new ActivitySource("SharedKernel.Messaging", "1.0.0")` — single instance for the whole package; full XML docs explaining this is the platform-standard static-instrument pattern (parallel to `ILogger`), not a "static mutable state" violation (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+| OT-02 | Update `ConsumerBase<TMessage>.Consume()` — start a child `Activity` via `MessagingDiagnostics.ActivitySource.StartActivity("Consumer.Consume")`; tag `messaging.message_type = typeof(TMessage).Name`; dispose the activity after `ConsumeAsync` completes or throws (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+| OT-03 | Update `ConsumerBase<TMessage>.Consume()` log scope — enrich the existing `ILogger.BeginScope` with `messaging.destination` (from `ConsumeContext.DestinationAddress?.AbsolutePath`) and `messaging.message_type` (`typeof(TMessage).Name`); additive to existing CorrelationId and `x-sk-*` header scope values from P-135 (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+| OT-04 | Update `MassTransitEventPublisher.PublishAsync<TEvent>()` — start a child `Activity` via `MessagingDiagnostics.ActivitySource.StartActivity("EventPublisher.Publish")`; tag `messaging.event_type = typeof(TEvent).Name`; dispose after the publish call completes or throws (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+| OT-05 | Unit test: `ConsumerBase<TMessage>.Consume()` produces an `Activity` from the `"SharedKernel.Messaging"` source with `OperationName == "Consumer.Consume"` and tag `messaging.message_type` equal to the concrete message type name; use `ActivityListener` subscribed to the source name in the test (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+| OT-06 | Unit test: `MassTransitEventPublisher.PublishAsync<TEvent>()` produces an `Activity` from the `"SharedKernel.Messaging"` source with `OperationName == "EventPublisher.Publish"` and tag `messaging.event_type` equal to the concrete event type name; use `ActivityListener` subscribed to the source name in the test (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+| OT-07 | Unit test: consumer log scope contains `messaging.destination` and `messaging.message_type` entries when `ConsumeContext.DestinationAddress` is set; verify no exception when `DestinationAddress` is null (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+| OT-08 | Verify `dotnet build` clean; `dotnet test` passes; zero new NuGet references added to either package — `ActivitySource`/`Activity` are BCL (`System.Diagnostics`); update `07.Messaging/CLAUDE.md` changelog documenting the new `ActivitySource` and its planned consumption by `13.ServiceDefaults.WithMessagingTelemetry()` (P-132) (P-172) | WO-027 | SharedKernel.Messaging.MassTransit | `○` |
+
+---
+
 ## Overall Progress
 
 > Counts updated whenever a task state changes.
@@ -425,7 +443,7 @@ Format when blocked — replace placeholder with table:
 | `SK.07.Saga` | Saga | 7 | 7 | 0 | `●` |
 | `SK.07.Batch` | Batch | 7 | 7 | 0 | `●` |
 | `SK.07.Routing` | Routing | 8 | 8 | 0 | `●` |
-| `SK.07.OTel` | OTel | — | — | — | `○` |
+| `SK.07.OTel` | OTel | 8 | 0 | 8 | `○` |
 | `SK.07.Idempotency` | Idempotency | 9 | 9 | 0 | `●` |
 | `SK.07.HeaderPropagation` | HeaderPropagation | 8 | 8 | 0 | `●` |
 | `SK.07.ConsumerDefinition` | ConsumerDefinition | 7 | 7 | 0 | `●` |
@@ -454,6 +472,7 @@ Format when blocked — replace placeholder with table:
 | P-136 | `SK.07.ConsumerDefinition` | ConsumerDefinitionBase Platform-Standard Per-Consumer Configuration | 07.Messaging | None |
 | P-137 | `SK.07.VersionTranslation` | IMessageVersionTranslator and WithVersionTranslator | 07.Messaging | None |
 | P-139 | `SK.07.RoutingSlip` | RoutingSlipActivityBase for MassTransit Courier | 07.Messaging | P-128 |
+| P-172 | `SK.07.OTel` | ActivitySource and Consume/Publish Instrumentation | 07.Messaging | None |
 
 ---
 
@@ -487,3 +506,4 @@ Format when blocked — replace placeholder with table:
 - [2026-06-09] CD-01→CD-07 → ● in SK.07.ConsumerDefinition — ConsumerDefinitionBase<TConsumer> extends ConsumerDefinition<TConsumer>; r.Ignore(exceptionType) wires non-retryable filter; 4 definition tests pass; SK.07.ConsumerDefinition → ● (state-map-phase)
 - [2026-06-10] VT-01→VT-07 → ● in SK.07.VersionTranslation — IMessageVersionTranslator<TOld,TNew> in Abstractions; VersionTranslatingConsumer<TOld,TNew> + WithVersionTranslator() + TranslatorRegistrationValidationHostedService in MassTransit; 5 tests pass; SK.07.VersionTranslation → ● (state-map-phase)
 - [2026-06-10] RS-01→RS-10 → ● in SK.07.RoutingSlip — IRoutingSlipBuilder + IMessageBus.ExecuteRoutingSlipAsync in Abstractions; MassTransitRoutingSlipBuilder, RoutingSlipActivityBase<TArgs,TLog>, AddRoutingSlipActivity<T>() in MassTransit; routing slip dispatch corrected to Send (not Publish) to first itinerary address; 2 TestHarness tests pass (execution order + compensation/RoutingSlipFaulted); SK.07.RoutingSlip → ● (state-map-phase)
+- [2026-06-19] WO-027 / P-172 — new Phase: OTel queued (OT-01–OT-08): `MessagingDiagnostics.ActivitySource` ("SharedKernel.Messaging", "1.0.0") in MassTransit package; `Consumer.Consume` and `EventPublisher.Publish` child activities with `messaging.message_type`/`messaging.event_type` tags; `messaging.destination` + `messaging.message_type` consumer log-scope enrichment. Corrects a latent cross-domain violation in pending P-132 (13.ServiceDefaults), which incorrectly assumed this source already existed — P-132 only wires already-existing sources into the host TracerProvider/MeterProvider per its own brain's rule. P-172 has no dependency and unblocks P-132 with a true prerequisite. Phase Key Registry, Cross-Domain Dependencies (none new — self-contained), Overall Progress, and Pending Phases tables updated (messaging-arch-planner, WO-027)
