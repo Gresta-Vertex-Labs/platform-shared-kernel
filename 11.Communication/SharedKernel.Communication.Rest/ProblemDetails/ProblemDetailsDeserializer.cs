@@ -19,6 +19,14 @@ internal static class ProblemDetailsDeserializer
         "An unexpected HTTP error occurred.");
 
     /// <summary>
+    /// Reflection-based <see cref="JsonSerializerOptions"/> used in the non-<c>application/problem+json</c>
+    /// fallback path. Initialized once at class load time to eliminate per-call allocation on every
+    /// non-2xx response (R-11 / P-160 Fix 1).
+    /// </summary>
+    internal static readonly JsonSerializerOptions ReflectionFallbackOptions =
+        new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>
     /// Attempts to deserialize a ProblemDetails body from the response.
     /// Returns a generic error for non-problem+json content types or on deserialization failure.
     /// Never throws.
@@ -58,7 +66,7 @@ internal static class ProblemDetailsDeserializer
                     {
                         var dto = JsonSerializer.Deserialize<ProblemDetailsDto>(
                             body,
-                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                            ReflectionFallbackOptions);
 
                         if (dto is not null && (dto.Type is not null || dto.Title is not null || dto.Detail is not null))
                         {

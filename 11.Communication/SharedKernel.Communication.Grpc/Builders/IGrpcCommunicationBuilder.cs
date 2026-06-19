@@ -17,11 +17,16 @@ public interface IGrpcCommunicationBuilder
     /// <c>TenantIdInterceptor</c> wired globally via <c>Grpc.Net.ClientFactory</c> channel caching.
     /// </summary>
     /// <typeparam name="TClient">The generated gRPC client class.</typeparam>
-    /// <param name="address">Channel address. Omit when <c>IServiceEndpointResolver</c> is registered.</param>
+    /// <param name="address">
+    /// Channel address. May be omitted (<see langword="null"/>) when <c>IServiceEndpointResolver</c>
+    /// is registered in DI — the resolver will supply the address at channel-creation time.
+    /// Throws <see cref="InvalidOperationException"/> when both <paramref name="address"/> is
+    /// <see langword="null"/> or whitespace and no <c>IServiceEndpointResolver</c> is present.
+    /// </param>
     /// <param name="configure">Optional delegate to customise <see cref="GrpcClientOptions"/>.</param>
     /// <returns>This builder for fluent chaining.</returns>
     IGrpcCommunicationBuilder AddGrpcClient<TClient>(
-        string address,
+        string? address = null,
         Action<GrpcClientOptions>? configure = null)
         where TClient : class;
 }

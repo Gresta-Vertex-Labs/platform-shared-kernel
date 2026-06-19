@@ -1,4 +1,5 @@
 using HotChocolate.Types.Pagination;
+using SharedKernel.Contracts.Pagination;
 
 namespace SharedKernel.Communication.GraphQL.Pagination;
 
@@ -70,4 +71,47 @@ public sealed class PagedResponseType<T>
     /// <returns>A new <see cref="PagedResponseType{T}"/>.</returns>
     public static PagedResponseType<T> From(IReadOnlyList<T> items, int totalCount) =>
         new() { Items = items, TotalCount = totalCount };
+
+    /// <summary>
+    /// Creates a <see cref="PagedResponseType{T}"/> from a <see cref="PagedList{T}"/> produced by
+    /// the application layer (e.g., from a repository projection).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use this factory when your GraphQL resolver receives a <see cref="PagedList{T}"/> from
+    /// the application or persistence layer. It maps <see cref="PagedList{T}.Items"/> and
+    /// <see cref="PagedList{T}.TotalCount"/> directly to the corresponding properties on
+    /// <see cref="PagedResponseType{T}"/>, preserving API shape parity with REST responses.
+    /// </para>
+    /// <para>
+    /// Use <see cref="FromPage"/> when the data source is a HotChocolate offset-paged
+    /// <see cref="IPage"/> result; use <see cref="FromConnection"/> for a cursor-paged
+    /// <see cref="Connection{T}"/> result; use <see cref="From"/> when assembling the shape
+    /// manually from a raw list and count.
+    /// </para>
+    /// <para>
+    /// This factory depends on the <c>SharedKernel.Contracts</c> (<c>04.Contracts</c>) project
+    /// reference in this package — required solely for this bridge method.
+    /// </para>
+    /// </remarks>
+    /// <param name="pagedList">
+    /// The <see cref="PagedList{T}"/> from the application layer. Must not be <c>null</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="PagedResponseType{T}"/> with <see cref="Items"/> and <see cref="TotalCount"/>
+    /// populated from the source <see cref="PagedList{T}"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="pagedList"/> is <c>null</c>.
+    /// </exception>
+    public static PagedResponseType<T> FromPagedList(PagedList<T> pagedList)
+    {
+        ArgumentNullException.ThrowIfNull(pagedList);
+
+        return new PagedResponseType<T>
+        {
+            Items = pagedList.Items,
+            TotalCount = pagedList.TotalCount,
+        };
+    }
 }

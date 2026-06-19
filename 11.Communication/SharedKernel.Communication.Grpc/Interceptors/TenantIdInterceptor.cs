@@ -71,7 +71,7 @@ internal sealed class TenantIdInterceptor(
             var headers = context.Options.Headers ?? new Metadata();
 
             // Do not overwrite a caller-supplied x-tenant-id entry
-            if (HasMetadataEntry(headers, TenantIdKey))
+            if (GrpcMetadataHelper.HasMetadataEntry(headers, TenantIdKey))
                 return context;
 
             var httpContext = _httpContextAccessor.HttpContext;
@@ -82,7 +82,7 @@ internal sealed class TenantIdInterceptor(
             if (tenantProvider is null || tenantProvider.TenantId == Guid.Empty)
                 return context;
 
-            headers = CloneAndAdd(headers, TenantIdKey, tenantProvider.TenantId.ToString());
+            headers = GrpcMetadataHelper.CloneAndAdd(headers, TenantIdKey, tenantProvider.TenantId.ToString());
 
             var newOptions = context.Options.WithHeaders(headers);
             return new ClientInterceptorContext<TRequest, TResponse>(
@@ -94,26 +94,5 @@ internal sealed class TenantIdInterceptor(
                 "TenantIdInterceptor failed to inject x-tenant-id metadata. Continuing without tenant propagation.");
             return context;
         }
-    }
-
-    private static bool HasMetadataEntry(Metadata headers, string key)
-    {
-        foreach (var entry in headers)
-        {
-            if (string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
-    private static Metadata CloneAndAdd(Metadata source, string key, string value)
-    {
-        var clone = new Metadata();
-        foreach (var entry in source)
-        {
-            clone.Add(entry);
-        }
-        clone.Add(key, value);
-        return clone;
     }
 }

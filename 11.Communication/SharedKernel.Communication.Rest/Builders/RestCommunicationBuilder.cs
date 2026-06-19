@@ -10,10 +10,19 @@ namespace SharedKernel.Communication.Rest.Builders;
 /// <summary>
 /// Default implementation of <see cref="IRestCommunicationBuilder"/>.
 /// </summary>
-internal sealed class RestCommunicationBuilder(IServiceCollection services) : IRestCommunicationBuilder
+internal sealed class RestCommunicationBuilder : IRestCommunicationBuilder
 {
+    // Captured once at construction time to avoid O(n) Services.Any(...) probe on every AddRestClient call.
+    private readonly bool _resolverRegistered;
+
+    internal RestCommunicationBuilder(IServiceCollection services)
+    {
+        Services = services;
+        _resolverRegistered = services.Any(d => d.ServiceType == typeof(IServiceEndpointResolver));
+    }
+
     /// <inheritdoc />
-    public IServiceCollection Services { get; } = services;
+    public IServiceCollection Services { get; }
 
     /// <inheritdoc />
     public IRestCommunicationBuilder AddRestClient<TClient>(
@@ -25,7 +34,7 @@ internal sealed class RestCommunicationBuilder(IServiceCollection services) : IR
         configure?.Invoke(options);
 
         var hasBaseAddress = !string.IsNullOrWhiteSpace(options.BaseAddress);
-        var hasResolver = Services.Any(d => d.ServiceType == typeof(IServiceEndpointResolver));
+        var hasResolver = _resolverRegistered;
 
         if (!hasBaseAddress && !hasResolver)
         {
@@ -48,20 +57,23 @@ internal sealed class RestCommunicationBuilder(IServiceCollection services) : IR
         }
         else
         {
-            // No BaseAddress — service discovery resolves at request time
+            // No BaseAddress — service discovery resolves at request time.
             builder.ConfigureHttpClient(client =>
             {
                 client.Timeout = Timeout.InfiniteTimeSpan;
             });
 
-            var capturedName = name;
-            Services.AddTransient(sp =>
-            {
-                var resolver = sp.GetRequiredService<IServiceEndpointResolver>();
-                return new ServiceDiscoveryResolvingHandler(resolver, capturedName);
-            });
+            // Per-client closure factory: each typed client captures its own service name.
+            // ServiceName overrides the logical registration name when set (R-18).
+            // Never registered as a shared DI type — avoids service-name collision across clients.
+            var capturedServiceName = !string.IsNullOrWhiteSpace(options.ServiceName)
+                ? options.ServiceName!
+                : name;
 
-            builder.AddHttpMessageHandler(sp => sp.GetRequiredService<ServiceDiscoveryResolvingHandler>());
+            builder.AddHttpMessageHandler(sp =>
+                new ServiceDiscoveryResolvingHandler(
+                    sp.GetRequiredService<IServiceEndpointResolver>(),
+                    capturedServiceName));
         }
 
         // Attach StandardResilienceHandler — mandatory; configures retry, circuit breaker, timeout.
@@ -84,7 +96,7 @@ internal sealed class RestCommunicationBuilder(IServiceCollection services) : IR
 
             o.AttemptTimeout.Timeout = attemptTimeout;
             o.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(
-                options.TimeoutSeconds * (resilience.RetryCount + 1) + 10);
+                options.TimeoutSeconds * (resilience.RetryCount + 1) + resilience.TotalTimeoutBufferSec);
 
             if (resilience.CircuitBreakerEnabled)
             {

@@ -23,4 +23,11 @@ public sealed class RestResilienceOptions
 
     /// <summary>Duration in seconds the circuit breaker stays open before allowing a probe request. Default: 30 s.</summary>
     public int BreakDurationSec { get; set; } = 30;
+
+    /// <summary>
+    /// Added to per-attempt timeout × (RetryCount + 1) to compute TotalRequestTimeout.
+    /// Provides headroom for jitter and circuit-breaker probe time.
+    /// Default: 10 s. Set to 0 for tight latency budgets. Minimum: 0.
+    /// </summary>
+    public int TotalTimeoutBufferSec { get; set; } = 10;
 }

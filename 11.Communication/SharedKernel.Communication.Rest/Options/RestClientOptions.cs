@@ -15,6 +15,14 @@ public sealed class RestClientOptions
     public string? BaseAddress { get; set; }
 
     /// <summary>
+    /// Overrides the <c>name</c> parameter for DNS lookup via <c>IServiceEndpointResolver</c>.
+    /// Use when the typed client's logical registration name differs from its DNS service name.
+    /// When <c>null</c> (default), the <c>name</c> parameter passed to
+    /// <c>AddRestClient&lt;TClient&gt;</c> is used for DNS resolution.
+    /// </summary>
+    public string? ServiceName { get; set; }
+
+    /// <summary>
     /// Per-request timeout in seconds applied via <c>StandardResilienceHandler</c>.
     /// Default: 30 s.
     /// </summary>

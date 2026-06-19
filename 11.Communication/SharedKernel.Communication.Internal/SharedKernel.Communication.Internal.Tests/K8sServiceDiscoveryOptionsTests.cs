@@ -62,6 +62,7 @@ public sealed class K8sServiceDiscoveryOptionsTests
         opts.Namespace.Should().Be("default");
         opts.ClusterDomain.Should().Be("cluster.local");
         opts.SchemeOverride.Should().BeNull();
+        opts.EndpointCacheTtlSeconds.Should().Be(30);
     }
 
     [Fact]

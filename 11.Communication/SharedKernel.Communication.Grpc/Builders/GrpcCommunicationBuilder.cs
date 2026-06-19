@@ -9,14 +9,24 @@ using SharedKernel.Communication.Internal.Resolvers;
 namespace SharedKernel.Communication.Grpc.Builders;
 
 /// <summary>Default implementation of <see cref="IGrpcCommunicationBuilder"/>.</summary>
-internal sealed class GrpcCommunicationBuilder(IServiceCollection services) : IGrpcCommunicationBuilder
+internal sealed class GrpcCommunicationBuilder : IGrpcCommunicationBuilder
 {
+    // G-10: Resolver presence is captured once at construction time.
+    // Services.Any(...) is called exactly once — never inside AddGrpcClient<TClient>.
+    private readonly bool _resolverRegistered;
+
+    internal GrpcCommunicationBuilder(IServiceCollection services)
+    {
+        Services = services;
+        _resolverRegistered = services.Any(d => d.ServiceType == typeof(IServiceEndpointResolver));
+    }
+
     /// <inheritdoc />
-    public IServiceCollection Services { get; } = services;
+    public IServiceCollection Services { get; }
 
     /// <inheritdoc />
     public IGrpcCommunicationBuilder AddGrpcClient<TClient>(
-        string address,
+        string? address = null,
         Action<GrpcClientOptions>? configure = null)
         where TClient : class
     {
@@ -24,9 +34,9 @@ internal sealed class GrpcCommunicationBuilder(IServiceCollection services) : IG
         configure?.Invoke(options);
 
         var hasAddress = !string.IsNullOrWhiteSpace(options.Address);
-        var hasResolver = Services.Any(d => d.ServiceType == typeof(IServiceEndpointResolver));
 
-        if (!hasAddress && !hasResolver)
+        // G-10: use pre-captured _resolverRegistered, not a fresh Services.Any(...) probe.
+        if (!hasAddress && !_resolverRegistered)
         {
             throw new InvalidOperationException(
                 $"GrpcClientOptions for '{typeof(TClient).Name}' requires either an Address or a registered " +
@@ -49,7 +59,7 @@ internal sealed class GrpcCommunicationBuilder(IServiceCollection services) : IG
         }
         else
         {
-            // G-09: Address omitted — resolve via IServiceEndpointResolver at channel-creation time.
+            // G-09 / G-12: Address omitted — resolve via IServiceEndpointResolver at channel-creation time.
             // GrpcClientFactoryOptions.Address is configured using a factory action that resolves
             // the address synchronously from DI. ConfigureChannel sets the channel ServiceConfig.
             clientBuilder = Services.AddGrpcClient<TClient>((sp, o) =>

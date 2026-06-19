@@ -1,5 +1,6 @@
 using HotChocolate.Types.Pagination;
 using SharedKernel.Communication.GraphQL.Pagination;
+using SharedKernel.Contracts.Pagination;
 
 namespace SharedKernel.Communication.GraphQL.Tests;
 
@@ -65,5 +66,37 @@ public sealed class PagedResponseTypeTests
         var result = PagedResponseType<string>.From([], 0);
         result.Items.Should().BeEmpty();
         result.TotalCount.Should().Be(0);
+    }
+
+    // T-26: FromPagedList factory tests (P-165)
+
+    [Fact]
+    public void FromPagedList_PopulatedList_MapsItemsAndTotalCount()
+    {
+        var items = new List<string> { "alpha", "beta", "gamma" };
+        var pagedList = PagedList<string>.Create(items, page: 1, pageSize: 10, totalCount: 42);
+
+        var result = PagedResponseType<string>.FromPagedList(pagedList);
+
+        result.TotalCount.Should().Be(42);
+        result.Items.Should().BeEquivalentTo(items);
+    }
+
+    [Fact]
+    public void FromPagedList_EmptyList_ProducesEmptyItemsAndZeroTotalCount()
+    {
+        var pagedList = PagedList<string>.Create([], page: 1, pageSize: 10, totalCount: 0);
+
+        var result = PagedResponseType<string>.FromPagedList(pagedList);
+
+        result.Items.Should().BeEmpty();
+        result.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void FromPagedList_NullArgument_ThrowsArgumentNullException()
+    {
+        var act = () => PagedResponseType<string>.FromPagedList(null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("pagedList");
     }
 }

@@ -72,24 +72,24 @@ internal sealed class CorrelationTracingInterceptor(ILogger<CorrelationTracingIn
             var activity = Activity.Current;
 
             // Inject traceparent in W3C format: 00-{traceId}-{spanId}-{flags}
-            if (activity is not null && !HasMetadataEntry(headers, TraceParentKey))
+            if (activity is not null && !GrpcMetadataHelper.HasMetadataEntry(headers, TraceParentKey))
             {
                 var traceParent = $"00-{activity.TraceId}-{activity.SpanId}-{(activity.ActivityTraceFlags.HasFlag(ActivityTraceFlags.Recorded) ? "01" : "00")}";
-                headers = CloneAndAdd(headers, TraceParentKey, traceParent);
+                headers = GrpcMetadataHelper.CloneAndAdd(headers, TraceParentKey, traceParent);
             }
 
             // Inject tracestate when present
             if (activity is not null && !string.IsNullOrEmpty(activity.TraceStateString)
-                && !HasMetadataEntry(headers, TraceStateKey))
+                && !GrpcMetadataHelper.HasMetadataEntry(headers, TraceStateKey))
             {
-                headers = CloneAndAdd(headers, TraceStateKey, activity.TraceStateString);
+                headers = GrpcMetadataHelper.CloneAndAdd(headers, TraceStateKey, activity.TraceStateString);
             }
 
             // Inject x-correlation-id — do not overwrite if caller set it
-            if (!HasMetadataEntry(headers, CorrelationIdKey))
+            if (!GrpcMetadataHelper.HasMetadataEntry(headers, CorrelationIdKey))
             {
                 var correlationId = activity?.Id ?? Guid.NewGuid().ToString("N");
-                headers = CloneAndAdd(headers, CorrelationIdKey, correlationId);
+                headers = GrpcMetadataHelper.CloneAndAdd(headers, CorrelationIdKey, correlationId);
             }
 
             var newOptions = context.Options.WithHeaders(headers);
@@ -102,26 +102,5 @@ internal sealed class CorrelationTracingInterceptor(ILogger<CorrelationTracingIn
                 "CorrelationTracingInterceptor failed to enrich gRPC metadata. Continuing without propagation.");
             return context;
         }
-    }
-
-    private static bool HasMetadataEntry(Metadata headers, string key)
-    {
-        foreach (var entry in headers)
-        {
-            if (string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
-    private static Metadata CloneAndAdd(Metadata source, string key, string value)
-    {
-        var clone = new Metadata();
-        foreach (var entry in source)
-        {
-            clone.Add(entry);
-        }
-        clone.Add(key, value);
-        return clone;
     }
 }

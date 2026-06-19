@@ -23,12 +23,20 @@ public sealed class K8sServiceDiscoveryOptions
     /// Default: <c>null</c> — resolved as <c>"http"</c>.
     /// </summary>
     public string? SchemeOverride { get; set; }
+
+    /// <summary>
+    /// TTL in seconds for the in-memory endpoint cache inside <c>KubernetesServiceEndpointResolver</c>.
+    /// Default: <c>30</c> seconds. Set to <c>0</c> to disable caching entirely.
+    /// Negative values are rejected by <see cref="K8sServiceDiscoveryOptionsValidator"/>.
+    /// </summary>
+    public int EndpointCacheTtlSeconds { get; set; } = 30;
 }
 
 /// <summary>
 /// Validates <see cref="K8sServiceDiscoveryOptions"/>.
-/// Rejects empty <see cref="K8sServiceDiscoveryOptions.Namespace"/> or
-/// <see cref="K8sServiceDiscoveryOptions.ClusterDomain"/>.
+/// Rejects empty <see cref="K8sServiceDiscoveryOptions.Namespace"/>,
+/// empty <see cref="K8sServiceDiscoveryOptions.ClusterDomain"/>, or
+/// negative <see cref="K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds"/>.
 /// </summary>
 internal sealed class K8sServiceDiscoveryOptionsValidator : IValidateOptions<K8sServiceDiscoveryOptions>
 {
@@ -42,6 +50,9 @@ internal sealed class K8sServiceDiscoveryOptionsValidator : IValidateOptions<K8s
 
         if (string.IsNullOrWhiteSpace(options.ClusterDomain))
             failures.Add($"{nameof(K8sServiceDiscoveryOptions.ClusterDomain)} must not be empty.");
+
+        if (options.EndpointCacheTtlSeconds < 0)
+            failures.Add($"{nameof(K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds)} must not be negative. Use 0 to disable caching.");
 
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)

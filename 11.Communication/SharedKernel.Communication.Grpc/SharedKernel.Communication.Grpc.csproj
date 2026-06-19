@@ -26,11 +26,12 @@
 
   <ItemGroup>
     <!--
-      Layering: 11.Communication may reference 01.Core, 04.Contracts, 12.Security.Abstractions only.
+      Layering: 11.Communication.Grpc may reference 01.Core and 12.Security.Abstractions only.
+      The 04.Contracts reference is intentionally absent — gRPC uses Protobuf-generated types directly.
+      Envelope<T>, PagedList<T>, and EventEnvelope<T> have no place in gRPC package code (G-13/P-163).
       References to 02.Caching, 05.Application, 06.Persistence, 07.Messaging are hard violations.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <!--
       Intra-domain reference: .Internal is the foundational service-discovery package within 11.Communication.

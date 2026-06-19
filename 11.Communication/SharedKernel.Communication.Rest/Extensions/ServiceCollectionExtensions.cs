@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using SharedKernel.Communication.Rest.Builders;
 using SharedKernel.Communication.Rest.Handlers;
+using SharedKernel.Communication.Rest.Options;
 
 namespace SharedKernel.Communication.Rest.Extensions;
 
@@ -32,6 +34,11 @@ public static class ServiceCollectionExtensions
         // IHttpContextAccessor, so it is safe to register as transient here.
         services.AddTransient<CorrelationIdDelegatingHandler>();
         services.AddTransient<TenantIdDelegatingHandler>();
+
+        // Register RestClientOptionsValidator so startup validation fires for invalid options.
+        // Uses AddSingleton so the validator is registered exactly once (TryAdd would silently skip
+        // on a second AddSharedKernelRestCommunication call, which is the desired idempotency).
+        services.AddSingleton<IValidateOptions<RestClientOptions>, RestClientOptionsValidator>();
 
         return new RestCommunicationBuilder(services);
     }
