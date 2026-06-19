@@ -36,7 +36,7 @@
 
 ## Active Work
 
-_Nothing in progress — Published phase complete._
+_P-166 (WO-026): ResultEnvelopeExtensions mapping class — all phases pending._
 
 <!--
 Format when active — replace placeholder with table:
@@ -64,7 +64,7 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
-| `SharedKernel.Contracts` | Published | `●` | Published — `SharedKernel.Contracts 1.0.0` packed to `nupkgs/`; xml docs included; consumer-verify passing; 62 tests green |
+| `SharedKernel.Contracts` | Published | `●` | Published — `SharedKernel.Contracts 1.1.0` packed to `nupkgs/`; ResultEnvelopeExtensions added; consumer-verify passing (6 surfaces); 72 tests green |
 
 ---
 
@@ -90,6 +90,7 @@ Format when blocked — replace placeholder with table:
 | D-04 | Define `EventEnvelope<TEvent>` sealed record shape (WO-011/P-055) — 8 properties: `EventId`, `OccurredOn`, `EventType`, `EventVersion`, `CorrelationId` (string?), `CausationId` (string?), `SourceService`, `Payload`; `Wrap` factory signature; `TEvent : IDomainEvent` constraint; `EventVersion` sourced from `DomainEventVersionHelper.GetVersion(typeof(TEvent))` defaulting to 1 | SharedKernel.Contracts | `●` |
 | D-05 | Define `ContractsJsonContext` partial `JsonSerializerContext` layout — `[JsonSourceGenerationOptions]`, `[JsonSerializable]` entries for all package types (`PagedList<object>`, `Envelope`, `Envelope<object>`, `IIntegrationEvent`, `EventEnvelope<DomainEvent>`); `internal` visibility; consumer extension pattern via `TypeInfoResolverChain` documented | SharedKernel.Contracts | `●` |
 | D-06 | Finalize `SharedKernel.Contracts` dependency graph — confirm `SharedKernel.Primitives` + `SharedKernel.Domain` as the only project references; zero external NuGet; document rationale for `IDomainEvent` and `DomainEventVersionHelper` imports from `03.Domain` | SharedKernel.Contracts | `●` |
+| D-07 | (WO-026/P-166) Design `ResultEnvelopeExtensions` static class in namespace `SharedKernel.Contracts.Mapping` — four extension method signatures: `ToEnvelope<T>(this Result<T>) → Envelope<T>`, `ToEnvelope(this Result) → Envelope`, `ToResult<T>(this Envelope<T>) → Result<T>`, `ToResult(this Envelope) → Result`; confirm placement in new `Mapping/` subfolder; confirm no new NuGet dependencies (both `Result<T>` via `SharedKernel.Primitives` and `Envelope<T>` via existing `SharedKernel.Contracts` types are already in scope); confirm namespace `SharedKernel.Contracts.Mapping` does not collide with existing `SharedKernel.Contracts.Envelope` namespace collision pattern; define purity contract (no allocations beyond output type, no side effects, no logging) | SharedKernel.Contracts | `●` |
 
 ---
 
@@ -103,6 +104,7 @@ Format when blocked — replace placeholder with table:
 | S-02 | Create empty placeholder subfolders inside `04.Contracts/SharedKernel.Contracts/`: `Pagination/`, `Envelope/`, `Events/`, `Serialization/` | SharedKernel.Contracts | `●` |
 | S-03 | Create `SharedKernel.Contracts.Tests/` nested test project as `classlib` targeting `net10.0`; add `SharedKernel.Contracts` and `SharedKernel.Testing` project references; add xUnit and FluentAssertions NuGet references; create one compilable placeholder test class | SharedKernel.Contracts | `●` |
 | S-04 | Register `SharedKernel.Contracts.csproj` and `SharedKernel.Contracts.Tests.csproj` in `Platform.SharedKernel.slnx` under solution folder `04.Contracts`; verify `dotnet build` passes with zero errors and zero warnings | SharedKernel.Contracts | `●` |
+| S-05 | (WO-026/P-166) Create `Mapping/` subfolder inside `04.Contracts/SharedKernel.Contracts/`; create empty `ResultEnvelopeExtensions.cs` placeholder in that folder; confirm `dotnet build` still passes with zero errors | SharedKernel.Contracts | `●` |
 
 ---
 
@@ -118,6 +120,7 @@ Format when blocked — replace placeholder with table:
 | C-04 | Implement `IIntegrationEvent` marker interface in `Events/` — `Guid EventId { get; }` and `DateTimeOffset OccurredOn { get; }`; XML doc stating implementations must be `sealed record` or `sealed class`, must be immutable DTOs, and must never carry domain logic | SharedKernel.Contracts | `●` |
 | C-05 | Implement `EventEnvelope<TEvent>` sealed record in `Events/` (WO-011/P-055) — `TEvent : IDomainEvent` constraint; 8 `required init` properties (`EventId`, `OccurredOn`, `EventType`, `EventVersion`, `CorrelationId string?`, `CausationId string?`, `SourceService`, `Payload TEvent`); static `EventEnvelope.Wrap<TEvent>(TEvent domainEvent, string sourceService, string? correlationId, string? causationId)` factory populating all fields; `EventVersion` via `DomainEventVersionHelper.GetVersion(typeof(TEvent))` defaulting to 1; `EventType` via `typeof(TEvent).Name` | SharedKernel.Contracts | `●` |
 | C-06 | Implement `ContractsJsonContext` as `internal partial class` in `Serialization/` — decorate with `[JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]` and `[JsonSerializable]` entries for all package types; no reflection-based fallback; consumer extension pattern documented in XML doc | SharedKernel.Contracts | `●` |
+| C-07 | (WO-026/P-166) Implement `ResultEnvelopeExtensions` static class in `Mapping/ResultEnvelopeExtensions.cs`, namespace `SharedKernel.Contracts.Mapping` — four pure extension methods: (1) `ToEnvelope<T>(this Result<T> result) → Envelope<T>`: if `result.IsSuccess` return `Envelope<T>.Ok(result.Value!)` else `Envelope<T>.Fail(result.Error!)`; (2) `ToEnvelope(this Result result) → Envelope`: if `result.IsSuccess` return `Envelope.Ok()` else `Envelope.Fail(result.Error!)`; (3) `ToResult<T>(this Envelope<T> envelope) → Result<T>`: if `envelope.IsSuccess` return `Result<T>.Success(envelope.Value!)` else `Result<T>.Failure(envelope.Error!)`; (4) `ToResult(this Envelope envelope) → Result`: if `envelope.IsSuccess` return `Result.Success()` else `Result.Failure(envelope.Error!)`; all methods are pure (no side effects, no logging, no allocations beyond output type); XML doc with usage examples on all four methods; `Result.Success()` / `Result.Failure(Error)` factory names must match the actual `SharedKernel.Primitives` `Result` API — verify before coding | SharedKernel.Contracts | `●` |
 
 ---
 
@@ -133,6 +136,7 @@ Format when blocked — replace placeholder with table:
 | T-04 | Unit tests for `IIntegrationEvent` — concrete `sealed record` implementing `IIntegrationEvent` is assignable to the interface; `EventId` and `OccurredOn` are accessible from interface reference | SharedKernel.Contracts.Tests | `●` |
 | T-05 | Unit tests for `EventEnvelope<TEvent>` — `Wrap` factory populates all 8 fields correctly; `EventVersion` defaults to 1 when `DomainEventVersionAttribute` absent; `EventVersion` uses declared version when attribute present; `CorrelationId` and `CausationId` are null when not provided; `EventType` equals `typeof(TEvent).Name`; record equality; STJ round-trip using source-generated context; all STJ tests use source-generated contexts — no reflection-based serialization | SharedKernel.Contracts.Tests | `●` |
 | T-06 | Cross-cutting test quality gate — verify all STJ round-trip tests use source-generated contexts (zero reflection-based `JsonSerializer.Serialize` overloads); verify all guard-clause tests use `[Theory]` with boundary data; run `dotnet test` and confirm zero failures, zero skipped tests | SharedKernel.Contracts.Tests | `●` |
+| T-07 | (WO-026/P-166) Unit tests for `ResultEnvelopeExtensions` — generic variants: (a) `Result<T>.Success(value).ToEnvelope()` round-trip: `IsSuccess=true`, `Value=value`; (b) `Result<T>.Failure(error).ToEnvelope()` round-trip: `IsSuccess=false`, `Error=error`; (c) `Envelope<T>.Ok(value).ToResult()` → success, value preserved; (d) `Envelope<T>.Fail(error).ToResult()` → failure, error preserved; (e) full `Result<T>.Success` → `ToEnvelope` → `ToResult` double round-trip preserves value identity; (f) full `Result<T>.Failure` → `ToEnvelope` → `ToResult` double round-trip preserves error identity; non-generic variants: (g) `Result.Success().ToEnvelope()` → `IsSuccess=true`; (h) `Result.Failure(error).ToEnvelope()` → `IsSuccess=false`, `Error=error`; (i) `Envelope.Ok().ToResult()` → success; (j) `Envelope.Fail(error).ToResult()` → failure, error preserved; all tests use `[Fact]` or `[Theory]` as appropriate; no reflection-based serialization involved (extension methods are pure mapping) | SharedKernel.Contracts.Tests | `●` |
 
 ---
 
@@ -148,6 +152,7 @@ Format when blocked — replace placeholder with table:
 | DO-04 | XML doc on `EventEnvelope<TEvent>` — `<summary>` and per-property `<remarks>` for all 8 properties: `EventId` vs domain event `Id` distinction, `OccurredOn` sourcing, `EventType` routing purpose, `EventVersion` attribute-sourcing and default-1 behaviour, `CorrelationId` null semantics, `CausationId` causal chain intent, `SourceService` publisher identity, `Payload` as the wrapped domain event | SharedKernel.Contracts | `●` |
 | DO-05 | XML doc on `ContractsJsonContext` — `<summary>` and `<remarks>` instructing consumers to not reference this context directly; instruct on creating own `partial JsonSerializerContext` with `[JsonSerializable(typeof(EventEnvelope<YourEvent>))]` and merging via `JsonSerializerOptions.TypeInfoResolverChain` | SharedKernel.Contracts | `●` |
 | DO-06 | Author `README.md` at `04.Contracts/SharedKernel.Contracts/README.md` with five sections: (1) purpose and what belongs / does not belong; (2) quick-start code examples for all five surfaces; (3) `Result<T>` vs `Envelope<T>` boundary rule; (4) STJ usage pattern for consuming services; (5) `EventEnvelope<TEvent>` composition pattern as used by `07.Messaging` | SharedKernel.Contracts | `●` |
+| DO-07 | (WO-026/P-166) XML doc on all four `ResultEnvelopeExtensions` methods — each method must have: `<summary>` stating direction of mapping (e.g. "Maps a Result&lt;T&gt; to an Envelope&lt;T&gt; for serialization at a service boundary"); `<remarks>` with a two-line usage example showing the call site pattern (typed client method, controller action, or gRPC server handler); `<seealso cref="Envelope{T}"/>` / `<seealso cref="Result{T}"/>` cross-references; update `README.md` section 3 (`Result<T>` vs `Envelope<T>` boundary rule) to include a subsection showing how `result.ToEnvelope()` and `envelope.ToResult()` replace inline mapping boilerplate at typed client call sites and controller actions | SharedKernel.Contracts | `●` |
 
 ---
 
@@ -161,6 +166,7 @@ Format when blocked — replace placeholder with table:
 | P-02 | Run `dotnet pack` on `SharedKernel.Contracts.csproj`; confirm `SharedKernel.Contracts.1.0.0.nupkg` is produced in `nupkgs/`; confirm the generated `.xml` documentation file is included in the package alongside the DLL | SharedKernel.Contracts | `●` |
 | P-03 | Create `consumer-verify` console project referencing `SharedKernel.Contracts`; exercise all five surfaces (create `PagedList<string>`, wrap `Envelope<string>`, define `IIntegrationEvent` record, call `EventEnvelope.Wrap`, serialize via consuming `JsonSerializerContext` extending `ContractsJsonContext`); run `dotnet run` and confirm zero reflection fallback | SharedKernel.Contracts | `●` |
 | P-04 | Final gate — confirm all existing tests pass with zero regressions; update Package Board in this state-map to reflect `Published` state with `.nupkg` manifest entry (`SharedKernel.Contracts 1.0.0`) | SharedKernel.Contracts | `●` |
+| P-05 | (WO-026/P-166) Re-pack `SharedKernel.Contracts` after `ResultEnvelopeExtensions` ships — bump version to `1.1.0`; update `PackageTags` to include `result-envelope-mapping`; run `dotnet pack` and confirm `SharedKernel.Contracts.1.1.0.nupkg` produced in `nupkgs/`; extend `consumer-verify` console project to call `result.ToEnvelope()` and `envelope.ToResult()` with both generic and non-generic variants and assert the mappings at runtime; run `dotnet test` and confirm all tests (including T-07) pass with zero regressions; update Package Board entry to `1.1.0` | SharedKernel.Contracts | `●` |
 
 ---
 
@@ -170,12 +176,12 @@ Format when blocked — replace placeholder with table:
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.04.Design` | Design | 6 | 6 | 0 | `●` |
-| `SK.04.Scaffold` | Scaffold | 4 | 4 | 0 | `●` |
-| `SK.04.Core` | Core | 6 | 6 | 0 | `●` |
-| `SK.04.Tests` | Tests | 6 | 6 | 0 | `●` |
-| `SK.04.Docs` | Docs | 6 | 6 | 0 | `●` |
-| `SK.04.Published` | Published | 4 | 4 | 0 | `●` |
+| `SK.04.Design` | Design | 7 | 7 | 0 | `●` |
+| `SK.04.Scaffold` | Scaffold | 5 | 5 | 0 | `●` |
+| `SK.04.Core` | Core | 7 | 7 | 0 | `●` |
+| `SK.04.Tests` | Tests | 7 | 7 | 0 | `●` |
+| `SK.04.Docs` | Docs | 7 | 7 | 0 | `●` |
+| `SK.04.Published` | Published | 5 | 5 | 0 | `●` |
 
 ---
 
@@ -191,3 +197,5 @@ Format when blocked — replace placeholder with table:
 - [2026-05-30] T-01–T-06 → ● in SK.04.Tests — 62 tests green; all DTO types covered; STJ round-trips via source-generated context; Docs next (state-map-phase)
 - [2026-05-30] DO-01–DO-06 → ● in SK.04.Docs — XML doc on all public APIs; seealso Result{T} cross-refs; per-property remarks on EventEnvelope; README.md authored (state-map-phase)
 - [2026-05-30] P-01–P-04 → ● in SK.04.Published — csproj metadata hardened; nupkg produced with XML docs; consumer-verify console harness exercises all 5 surfaces with source-generated STJ; 62 tests green; ContractsSerializerDefaults added for consumer resolver chain access (state-map-phase)
+- [2026-06-18] WO-026/P-166: 6 tasks added (D-07, S-05, C-07, T-07, DO-07, P-05) for ResultEnvelopeExtensions static class in SharedKernel.Contracts.Mapping — four pure extension methods bridging Result<T>/Result ↔ Envelope<T>/Envelope; namespace SharedKernel.Contracts.Mapping; Mapping/ subfolder; version bump to 1.1.0 on completion; all phases set to ◐ (contracts-arch-planner)
+- [2026-06-18] D-07, S-05, C-07, T-07, DO-07, P-05 → ● — ResultEnvelopeExtensions implemented; 72 tests green; SharedKernel.Contracts 1.1.0.nupkg produced; consumer-verify passing 6 surfaces; all phases now ● (P-166/WO-026)

@@ -128,6 +128,50 @@ return result.IsSuccess
     : Results.UnprocessableEntity(Envelope<OrderDto>.Fail(result.Error!));
 ```
 
+### 3.1 ResultEnvelopeExtensions — replacing inline mapping boilerplate
+
+`SharedKernel.Contracts.Mapping.ResultEnvelopeExtensions` provides four extension methods that
+replace the inline mapping pattern with a single call, enforcing the boundary rule without
+repetitive boilerplate:
+
+| Extension | Direction | Use case |
+| --------- | --------- | -------- |
+| `result.ToEnvelope()` | `Result<T>` → `Envelope<T>` | Controller action / minimal-API endpoint returning a typed result |
+| `result.ToEnvelope()` | `Result` → `Envelope` | Controller action / minimal-API endpoint for a void command |
+| `envelope.ToResult()` | `Envelope<T>` → `Result<T>` | Typed HTTP client after deserializing a downstream response |
+| `envelope.ToResult()` | `Envelope` → `Result` | Typed HTTP client for a void downstream call |
+
+**At a controller action or minimal-API endpoint (outbound serialization):**
+
+```csharp
+using SharedKernel.Contracts.Mapping;
+
+// Typed result:
+Result<OrderDto> result = await mediator.Send(query, ct);
+return result.IsSuccess
+    ? Results.Ok(result.ToEnvelope())
+    : Results.UnprocessableEntity(result.ToEnvelope());
+
+// Void command:
+Result commandResult = await mediator.Send(command, ct);
+return commandResult.IsSuccess
+    ? Results.NoContent()
+    : Results.UnprocessableEntity(commandResult.ToEnvelope());
+```
+
+**At a typed HTTP client (inbound deserialization):**
+
+```csharp
+using SharedKernel.Contracts.Mapping;
+
+// Receiving a typed response from a downstream service:
+Envelope<OrderDto> envelope = await httpClient.GetFromJsonAsync<Envelope<OrderDto>>(uri, ct);
+Result<OrderDto> result = envelope.ToResult();
+// continue with railway-oriented flow inside this service
+```
+
+All four methods are **pure**: no side effects, no logging, no allocations beyond the output type.
+
 ---
 
 ## 4. STJ Usage Pattern for Consuming Services

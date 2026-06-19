@@ -1,14 +1,16 @@
-// consumer-verify — exercises all five public surfaces of SharedKernel.Contracts
+// consumer-verify — exercises all public surfaces of SharedKernel.Contracts
 // and confirms zero reflection fallback via source-generated STJ serialization.
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SharedKernel.Contracts.Envelope;
 using SharedKernel.Contracts.Events;
+using SharedKernel.Contracts.Mapping;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Contracts.Serialization;
 using SharedKernel.Domain.Events;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
 
 // ── Surface 1: PagedList<string> ─────────────────────────────────────────────
 var items = new List<string> { "alpha", "beta", "gamma" };
@@ -84,6 +86,43 @@ Verify(evtBack.SourceService == "orders-service", "STJ round-trip EventEnvelope.
 Verify(evtBack.Payload.OrderId == domainEvent.OrderId, "STJ round-trip EventEnvelope.Payload.OrderId");
 
 Console.WriteLine("Surface 5 PASS: STJ source-generated serialization (zero reflection fallback)");
+Console.WriteLine();
+// ── Surface 6: ResultEnvelopeExtensions ─────────────────────────────────────
+var successResult = Result<string>.Success("mapped-value");
+var mappedEnvelope = successResult.ToEnvelope();
+Verify(mappedEnvelope.IsSuccess, "Result<T>.Success.ToEnvelope.IsSuccess");
+Verify(mappedEnvelope.Value == "mapped-value", "Result<T>.Success.ToEnvelope.Value");
+
+var failResult = Result<string>.Failure(Error.NotFound("CV-002", "not found"));
+var mappedFailEnvelope = failResult.ToEnvelope();
+Verify(!mappedFailEnvelope.IsSuccess, "Result<T>.Failure.ToEnvelope.IsSuccess=false");
+Verify(mappedFailEnvelope.Error!.Code == "CV-002", "Result<T>.Failure.ToEnvelope.Error.Code");
+
+var backResult = mappedEnvelope.ToResult();
+Verify(backResult.IsSuccess, "Envelope<T>.Ok.ToResult.IsSuccess");
+Verify(backResult.Value == "mapped-value", "Envelope<T>.Ok.ToResult.Value");
+
+var backFailResult = mappedFailEnvelope.ToResult();
+Verify(!backFailResult.IsSuccess, "Envelope<T>.Fail.ToResult.IsSuccess=false");
+Verify(backFailResult.Error!.Code == "CV-002", "Envelope<T>.Fail.ToResult.Error.Code");
+
+// Non-generic variants
+var voidSuccess = Result.Success();
+var voidEnvelope = voidSuccess.ToEnvelope();
+Verify(voidEnvelope.IsSuccess, "Result.Success.ToEnvelope.IsSuccess");
+
+var voidFail = Result.Failure(Error.Unexpected("CV-003", "unexpected"));
+var voidFailEnvelope = voidFail.ToEnvelope();
+Verify(!voidFailEnvelope.IsSuccess, "Result.Failure.ToEnvelope.IsSuccess=false");
+
+var voidBack = voidEnvelope.ToResult();
+Verify(voidBack.IsSuccess, "Envelope.Ok.ToResult.IsSuccess");
+
+var voidFailBack = voidFailEnvelope.ToResult();
+Verify(!voidFailBack.IsSuccess, "Envelope.Fail.ToResult.IsSuccess=false");
+Verify(voidFailBack.Error!.Code == "CV-003", "Envelope.Fail.ToResult.Error.Code");
+
+Console.WriteLine("Surface 6 PASS: ResultEnvelopeExtensions (ToEnvelope/ToResult)");
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
 

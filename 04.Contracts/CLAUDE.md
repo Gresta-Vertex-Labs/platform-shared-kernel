@@ -119,6 +119,32 @@ EventEnvelope<TEvent>  (sealed record)  where TEvent : IDomainEvent
           CorrelationId and CausationId are nullable — null is valid for root events with no ambient trace context.
 ```
 
+#### Mapping Extensions (`Mapping/`)
+
+```
+ResultEnvelopeExtensions  (static class — namespace SharedKernel.Contracts.Mapping)
+    ToEnvelope<T>(this Result<T> result)    → Envelope<T>
+        success: Envelope<T>.Ok(result.Value!)
+        failure: Envelope<T>.Fail(result.Error!)
+    ToEnvelope(this Result result)          → Envelope
+        success: Envelope.Ok()
+        failure: Envelope.Fail(result.Error!)
+    ToResult<T>(this Envelope<T> envelope)  → Result<T>
+        IsSuccess: Result<T>.Success(envelope.Value!)
+        !IsSuccess: Result<T>.Failure(envelope.Error!)
+    ToResult(this Envelope envelope)        → Result
+        IsSuccess: Result.Success()
+        !IsSuccess: Result.Failure(envelope.Error!)
+    NOTE: All four methods are pure — no allocations beyond the output type, no side effects, no logging.
+          Placement: SharedKernel.Contracts/Mapping/ResultEnvelopeExtensions.cs
+          Namespace:  SharedKernel.Contracts.Mapping
+          These extensions are the platform-standard bridge that enforces the Result<T>/Envelope<T> boundary
+          rule at service boundaries without ad-hoc inline boilerplate in typed clients, controller actions,
+          or gRPC server handlers.
+          No new NuGet dependencies are introduced — both Result<T> (SharedKernel.Primitives) and Envelope<T>
+          (this package) are already in scope.
+```
+
 #### STJ Serialization Context (`Serialization/`)
 
 ```
@@ -155,6 +181,8 @@ ContractsJsonContext  (JsonSerializerContext, internal partial)
 - **STJ source-generated context** — all serialization in this package must be AOT-safe. The `ContractsJsonContext` partial class provides the base context. No `JsonSerializer.Serialize(obj)` calls using reflection-based overloads in this package.
 - `PagedList<T>.Page` is **1-based** — page 1 is the first page. This is consistent with `PagedSpecification<T>` in `03.Domain`.
 - `PagedList<T>.Create` must guard `pageSize >= 1` — PageSize of 0 causes divide-by-zero in `TotalPages` and must be rejected with `ArgumentOutOfRangeException`.
+- **`ResultEnvelopeExtensions` is a pure static class** — all four methods (`ToEnvelope<T>`, `ToEnvelope`, `ToResult<T>`, `ToResult`) must be free of side effects, logging, and allocations beyond the output type. They are the platform-standard bridge for enforcing the `Result<T>` / `Envelope<T>` boundary rule. No logic or branching beyond the `IsSuccess` check is permitted in these methods.
+- **`ResultEnvelopeExtensions` namespace** is `SharedKernel.Contracts.Mapping` — distinct from `SharedKernel.Contracts.Envelope` (which has the type/namespace collision). The `Mapping/` subfolder holds a single file: `ResultEnvelopeExtensions.cs`.
 - No static mutable state anywhere in this domain.
 - No persistence concerns (`DbContext`, EF annotations) — those live in `06.Persistence`.
 - No messaging concerns (`IMessageBus`, consumer registration) — those live in `07.Messaging`.
@@ -203,6 +231,7 @@ options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
 - All STJ round-trip tests must use source-generated contexts — no reflection-based `JsonSerializer.Serialize(obj)` overloads in tests.
 - STJ round-trip tests must define a **test-level `partial JsonSerializerContext`** (e.g. `TestJsonContext`) that registers the concrete type arguments used in tests (e.g. `PagedList<string>`, `Envelope<string>`, `EventEnvelope<TestOrderCreatedEvent>`). Merge it with `ContractsJsonContext.Default` via `JsonSerializerOptions.TypeInfoResolverChain`. Set `PropertyNamingPolicy = JsonNamingPolicy.CamelCase` directly on the `JsonSerializerOptions` instance — the `[JsonSourceGenerationOptions]` attribute on a context does not auto-apply naming policy to the options object used in the serializer call.
 - All guard-clause tests use `[Theory]` with boundary data sets.
+- `ResultEnvelopeExtensions`: round-trip tests for all four methods — generic and non-generic, success path and failure path. Double round-trip tests (e.g., `Result<T>.Success` → `ToEnvelope` → `ToResult`) must verify value and error identity is preserved. No STJ serialization is involved — these are pure mapping tests using `[Fact]` or `[Theory]`.
 
 ---
 
@@ -213,3 +242,4 @@ options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
 - [2026-05-30] Domain brain initialized — packages, interfaces, rules, AOT notes, test rules; Design phase in progress
 - [2026-05-30] CLAUDE.md refreshed for WO-011 + WO-012: EventEnvelope<TEvent> spec updated to IDomainEvent constraint (not IIntegrationEvent); EventId is copied from domain event (no EnvelopeId); EventVersion replaces SchemaVersion; CorrelationId is nullable string?; SharedKernel.Domain added as second project reference; 32 tasks added across all 6 phases in state-map
 - [2026-05-30] SK.04.Design complete — PagedList internal+[JsonConstructor] pattern; Envelope namespace/type collision rule; EventEnvelope non-generic static Wrap class; InternalsVisibleTo for test context; STJ test-level context + CamelCase options pattern (contracts-phase-implementer)
+- [2026-06-18] WO-026/P-166: ResultEnvelopeExtensions static class added to Interface Contracts (Mapping/ section); Implementation Rules updated with purity contract and namespace rules; Test Rules updated with round-trip and double-round-trip requirements; CLAUDE.md reflects 1.1.0 surface (contracts-arch-planner)
