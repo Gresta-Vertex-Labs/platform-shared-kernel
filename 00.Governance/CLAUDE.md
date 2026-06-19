@@ -1490,6 +1490,122 @@ EfCorePackageHygieneRules  (static class — EfCore package hygiene predicates; 
         }
         Exemptions: SharedKernel.Persistence.* namespaces (persistence implementation layer).
 
+HealthCheckTagIntegrityRules  (static class — liveness/readiness tag integrity predicates; WO-027 P-173)
+    All factory methods accept Assembly (the SharedKernel.ServiceDefaults assembly under test) and
+    return ConditionList. Both predicates use an IL Ldstr-literal-collection technique — they are
+    NOT a full data-flow analysis (see Limitation note below).
+    .NoConflictingLivenessReadinessTags(Assembly serviceDefaultsAssembly)  → ConditionList
+        Asserts that no method in the supplied assembly whose name starts with "Add" and ends with
+        "HealthCheck" or "ReadinessCheck" (the platform's Add*HealthCheck/Add*ReadinessCheck
+        extension-method naming convention) collects a string-literal tag set containing both
+        "live" and "ready" for the same registration call. Uses
+        NoConflictingLivenessReadinessTagsPredicate (ICustomRule — see below). Failure message
+        names the offending method and the conflicting tag pair.
+        Rationale: 13.ServiceDefaults/CLAUDE.md states "live" and "ready" tags are mutually
+        exclusive as a central design invariant — a check must signal either pure process
+        liveness or readiness-to-serve-traffic, never both, because Kubernetes liveness and
+        readiness probes have different failure semantics (liveness failure restarts the pod;
+        readiness failure removes it from the Service endpoint list without restarting).
+        Offending pattern: AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live", "ready" })
+        Compliant pattern: AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
+
+    .DependencyHealthChecksCarryReadyNotLive(Assembly serviceDefaultsAssembly, params string[] dependencyCheckMethodNamePrefixes)  → ConditionList
+        Asserts that every method in the supplied assembly whose name starts with one of the
+        caller-supplied dependencyCheckMethodNamePrefixes (e.g., "AddRedis", "AddDatabase",
+        "AddRabbitMq", "AddAzureServiceBus", "AddCache") collects a string-literal tag set that
+        contains "ready" and does not contain "live". Uses
+        DependencyHealthChecksCarryReadyNotLivePredicate (ICustomRule — see below). The prefix
+        list is caller-supplied rather than hard-coded so the consuming test project can enumerate
+        the actual extension method names shipped by SharedKernel.ServiceDefaults once P-170 lands,
+        rather than this governance layer guessing names that do not exist yet. Failure message
+        names the offending method and whether the failure was a missing "ready" tag or a present
+        "live" tag.
+        Rationale: every dependency-specific health check (Redis, database, RabbitMQ, Azure Service
+        Bus, cache) reports whether the SERVICE can currently serve traffic given that dependency's
+        state — it must never be wired to the liveness probe, because a transient dependency outage
+        would otherwise restart a perfectly healthy process instead of just draining traffic from it.
+        Offending pattern: AddRedisHealthCheck(...) registers tags: new[] { "live" }
+        Compliant pattern: AddRedisHealthCheck(...) registers tags: new[] { "ready" }
+
+    Limitation (documented, not a defect): HealthCheckRegistration tags are an IEnumerable<string>
+    supplied at a call site — in the general case this is a runtime value, not a compile-time
+    constant. Both predicates only see tag values expressed as string literals (Ldstr IL opcode)
+    feeding directly into the array/initializer or tag-parameter argument at the call site being
+    inspected. If a future SharedKernel.ServiceDefaults extension computes its tag set dynamically
+    (e.g., reading a tag name from configuration), neither predicate observes that value and the
+    gate becomes advisory only for that call site — this must be flagged in code review for any
+    such case, since the architecture test cannot catch it.
+
+CompositionRootExclusivityRules  (static class — provider-family composition-root boundary enforcement; WO-027 P-173)
+    .OnlyAllowedAssembliesMayReferenceConcreteProviders(params Assembly[] assembliesUnderTest)
+                                            → ConditionList[]
+        Mirrors CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching exactly:
+        pure NetArchTest .Should().NotHaveDependencyOn(term) checks, no Mono.Cecil. Returns one
+        ConditionList per forbidden term (five total, in order): "SharedKernel.Persistence.EfCore",
+        "SharedKernel.Persistence.PostgreSQL", "SharedKernel.Persistence.Dapper",
+        "SharedKernel.Messaging.MassTransit", "SharedKernel.Security.Oidc". Caller must assert
+        .GetResult().IsSuccessful on EACH element of the returned array.
+        The caller supplies the assemblies to check — must NOT include SharedKernel.ServiceDefaults,
+        SharedKernel.MultiTenancy, or any of the five concrete provider packages themselves (the
+        self-reference exclusion discipline established by
+        RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther). Typical caller usage: pass
+        05.Application, 03.Domain, 04.Contracts, 11.Communication.*, 12.Security.Abstractions —
+        every production assembly that is NOT the composition root and NOT a provider package.
+        Rationale: 13.ServiceDefaults/CLAUDE.md claims "13.ServiceDefaults is the only composition
+        root permitted to reference concrete providers" is mechanically enforced by this domain's
+        SharedKernelLayeringRules — but SharedKernelLayeringRules.CachingReferencesOnlyCore (P-009,
+        WO-003) only ever covered 02.Caching providers, written before 13.ServiceDefaults existed.
+        This rule closes that gap for the Persistence, Messaging, and Security provider families,
+        mirroring the precedent set for Redis topology in RedisTopologyRules (P-145).
+        Offending pattern: a MediatR handler in SharedKernel.Application referencing
+            SharedKernel.Persistence.EfCore.EfRepository<T,TId> directly instead of
+            SharedKernel.Persistence.Abstractions.IRepository<T,TId>
+        Compliant pattern: SharedKernel.Application references only
+            SharedKernel.Persistence.Abstractions; SharedKernel.ServiceDefaults wires the concrete
+            EfCore/PostgreSQL/Dapper/MassTransit/Oidc implementations via DI at the composition root
+
+    Composition-root exemption list (assemblies that MAY reference the five concrete provider
+    packages):
+        - SharedKernel.ServiceDefaults  (composition root — wires all concrete providers)
+        - SharedKernel.MultiTenancy     (composition root — tenant resolution may need direct
+                                          provider access for tenant-aware connection routing)
+        - Each of the five provider packages referencing itself trivially (not a real exemption —
+          a package's own types are never "external references" to itself)
+        Any additional exemption must be documented here before it is applied in code.
+
+    Note: introduced in WO-027 P-173, before SharedKernel.ServiceDefaults and
+    SharedKernel.MultiTenancy exist as buildable assemblies (P-170 dependency). The architecture
+    test fixtures for this rule must use contrived in-memory assemblies (CSharpCompilation +
+    MetadataReference.CreateFromImage, the same technique documented for RedisTopologyRulesTests)
+    until P-170 ships a real SharedKernel.ServiceDefaults assembly. A follow-up confirmation pass
+    against the real assembly is required once P-170 lands and must be recorded in a future
+    Changelog entry — it is not a blocking condition for this phase's own completion.
+
+NoConflictingLivenessReadinessTagsPredicate  (class : ICustomRule — internal predicate)
+    Scope filter: MethodDefinition.Name starts with "Add" AND (ends with "HealthCheck" OR ends
+    with "ReadinessCheck"). Methods outside this scope return true unconditionally (not a
+    registration extension method).
+    For each in-scope method, walks MethodDefinition.Body.Instructions collecting all Ldstr
+    opcode operand string values that feed into the same array-initializer / tag-parameter
+    argument context as a single logical registration call's tag list. Returns false (rule
+    violated) if the collected literal set for that call contains both "live" and "ready",
+    with failure message naming the method and the conflicting tag pair.
+    Lives in Predicates/ folder. Used by
+    HealthCheckTagIntegrityRules.NoConflictingLivenessReadinessTags.
+
+DependencyHealthChecksCarryReadyNotLivePredicate  (class : ICustomRule — internal predicate)
+    Constructed with a caller-supplied string[] of dependency-check method-name prefixes (e.g.,
+    {"AddRedis","AddDatabase","AddRabbitMq","AddAzureServiceBus","AddCache"}). Scope filter:
+    MethodDefinition.Name starts with any configured prefix. Methods outside this scope return
+    true unconditionally.
+    For each in-scope method, uses the same Ldstr literal-collection walk as
+    NoConflictingLivenessReadinessTagsPredicate. Returns false (rule violated) if the collected
+    literal set does not contain "ready", OR if it contains "live" — either condition fails
+    independently, with a failure message stating which condition triggered (missing "ready" vs.
+    present "live").
+    Lives in Predicates/ folder. Used by
+    HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive.
+
 NoSpecificationEvaluatorDowncastPredicate  (class : ICustomRule — internal predicate)
     Walks TypeDefinition.Methods for each type. For each MethodDefinition.Body.Instructions,
     checks for Castclass opcodes whose operand TypeReference.Name starts with
@@ -1647,6 +1763,11 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0012 is the next sequential ID in the SK0001–SK00N general-purpose block (SK0001–SK0011 were the prior sequential IDs). The 02xx, 03xx, and 07xx blocks are separate domain-specific ranges. SK0012 begins in the general-purpose block because the reflection prohibition is platform-wide and does not belong to any single capability domain.
 - The P-147 motivating incident (EncryptionRotationService.LoadBatchAsync) MUST be referenced in the `ReflectionExemptionRegistry.cs` class-level XML doc comment and in the `NoMakeGenericMethodReflectionPredicate.cs` file header comment. This ensures future readers understand why the registry exists and why expression trees are always preferred over the `MakeGenericMethod` shortcut.
 - `CommunicationLayeringRules.GrpcNeverReferencesContracts` uses a single `.Should().NotHaveDependencyOn("SharedKernel.Contracts")` call — consistent with the established `NotHaveDependencyOn` matching contract (namespace StartsWith, no trailing dot). The term `"SharedKernel.Contracts"` is the exact identifying namespace of the Contracts package. No exemption is permitted — see rule entry in Architecture Test Contracts. Introduced in WO-026 P-167.
+- `HealthCheckTagIntegrityRules` introduces the platform's first IL **literal-collection** technique distinct from the established IL **opcode-presence** technique (e.g., `NoMakeGenericMethodReflectionPredicate` looks for a single opcode/method-name match; these two new predicates collect a *set* of `Ldstr` string operands within a scoped method and reason about set membership). This is a heavier pattern than prior predicates — document any new collection helper in `Predicates/` so it can be reused if a third tag-like literal-set rule is ever needed.
+- `HealthCheckTagIntegrityRules` predicates are scoped by `MethodDefinition.Name` prefix/suffix matching (`"Add"` + `"HealthCheck"`/`"ReadinessCheck"` for the first; caller-supplied prefixes for the second) — neither predicate inspects arbitrary call sites across the whole assembly. This intentionally limits the rule to `SharedKernel.ServiceDefaults`'s own registration extension methods, which are documented (root `CLAUDE.md`) as the sole sanctioned health-check registration surface; consuming services are expected to call these extensions, not register `IHealthCheck` instances directly.
+- The IL-literal-collection technique in `HealthCheckTagIntegrityRules` is **not** a full data-flow analysis. If a tag value is computed dynamically (e.g., from `IConfiguration`) rather than expressed as a literal at the call site, neither predicate observes it. This is a documented limitation, not a defect — record it in the predicate's XML doc and do not attempt to "fix" it with a heavier analysis unless a real false-negative is found in production code.
+- `CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders` is the structural sibling of `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` — same `ConditionList[]`-per-forbidden-term shape as `RedisTopologyRules.RedisCoreNeverReferencesCapabilityPackages`. It introduces zero new Mono.Cecil predicates; it is pure `NetArchTest.eNt` namespace-prefix dependency checking, consistent with the `NotHaveDependencyOn` matching contract documented earlier in this file (StartsWith on dependency namespaces, no trailing dot, no self-collision risk because none of the five forbidden terms is a prefix of `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`).
+- Both `HealthCheckTagIntegrityRules` and `CompositionRootExclusivityRules` were designed in WO-027 P-173 **before** `SharedKernel.ServiceDefaults` and `SharedKernel.MultiTenancy` exist as buildable assemblies (P-170 is still pending at design time). Test fixtures for this phase must use contrived in-memory assemblies built via `CSharpCompilation` + `MetadataReference.CreateFromImage` — the same technique documented for `RedisTopologyRulesTests` — rather than referencing the real packages. A follow-up confirmation pass against the real `SharedKernel.ServiceDefaults` assembly is required once P-170 ships; this is tracked as a follow-up, not a blocking condition on this phase's own completion.
 
 ---
 
@@ -1723,3 +1844,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-18] SK0013 RawHttpClientConstructorInjection added to diagnostic registry (Usage, Warning; DelegatingHandler base-class exemption and SharedKernel.Communication.Rest namespace exemption; syntax-only, no SemanticModel); CommunicationLayeringRules static class added to architecture test contracts (four predicates: CommunicationPackagesNeverReferencesForbiddenLayers, CommunicationInternalNeverReferencesOtherCommunicationPackages, NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc, NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL); NoDirectGrpcInterceptorInheritancePredicate and NoDirectHotChocolateFilterSortInheritancePredicate ICustomRule predicates documented; hardcoded-URI guard documented as documentation-only (feasibility concern); 93 analyzer + 86 arch tests pass — WO-025 P-159 (sync-brain)
 - [2026-06-18] GrpcNeverReferencesContracts added to CommunicationLayeringRules (single NotHaveDependencyOn("SharedKernel.Contracts") call; no exemption permitted; locks P-163 dead-reference removal permanently); WO-026 Governance Conventions section added (four What Goes Where patterns: ResultEnvelopeExtensions.ToEnvelope, PagedResponseType.FromPagedList, K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds, inline REST client factory pattern); inline Result/Envelope mapping documented as platform violation with future SK0xxx backlog note — WO-026 P-167
 - [2026-06-19] SK.00.WO026CommunicationQuality → ● — GrpcNeverReferencesContracts implemented and verified against pre-written spec (no discrepancy); 88/88 architecture tests passing — WO-026 closeout (sync-brain)
+- [2026-06-19] HealthCheckTagIntegrityRules added to architecture test contracts (two predicates: NoConflictingLivenessReadinessTags, DependencyHealthChecksCarryReadyNotLive — first use of an IL Ldstr literal-collection technique distinct from prior opcode-presence predicates; documented data-flow limitation for non-literal tag values); CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders added, mirroring CachingAbstractionRules to extend the composition-root exclusivity claim in 13.ServiceDefaults/CLAUDE.md from caching-only (P-009 scope) to Persistence (.EfCore/.PostgreSQL/.Dapper), Messaging (.MassTransit), and Security (.Oidc) provider families; no new SK IDs; five new implementation rules added; designed ahead of P-170 (13.ServiceDefaults Core) using contrived in-memory fixtures, real-assembly re-verification tracked as a post-P-170 follow-up — WO-027 P-173

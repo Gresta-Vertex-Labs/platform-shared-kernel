@@ -1946,6 +1946,107 @@ No new SK diagnostic IDs. The new rule is a pure NetArchTest assembly-dependency
 
 ---
 
+## Phase: Governance: ServiceDefaults Liveness/Readiness and Composition-Root Layering Rules <!-- phase-key: SK.00.ServiceDefaultsGovernance -->
+
+> **Trigger:** WO-027 P-173. **Depends on:** P-170 (13.ServiceDefaults Core phase — not yet implemented; this phase is designed now but its assembly-dependent test fixtures cannot run against the real `SharedKernel.ServiceDefaults` assembly until P-170 ships).
+
+`13.ServiceDefaults/CLAUDE.md` already states two hard rules as mechanically enforced: (1) every `IHealthCheck` carries either `"live"` or `"ready"` tags, never both, and dependency-specific checks always carry `"ready"` and never `"live"`; (2) `13.ServiceDefaults`/`SharedKernel.MultiTenancy` are the only production assemblies permitted to reference concrete provider packages. Rule (2) was only ever mechanically true for `02.Caching` providers (`SharedKernelLayeringRules` Rule 1, P-009, WO-003) — written before `13.ServiceDefaults` existed. This phase closes both gaps before `13.ServiceDefaults` ships its first package, mirroring the precedent set by `CachingAbstractionRules` (P-009) and `RedisTopologyRules` (P-145).
+
+### SK.00.ServiceDefaultsGovernance — Goal
+
+Add two architecture-enforcement rule groups to `SharedKernel.ArchitectureTests`:
+
+1. **`HealthCheckTagIntegrityRules`** — a Mono.Cecil-based `ICustomRule` group that inspects `HealthCheckRegistration` construction sites (or, if call-site inspection proves infeasible, the tag arrays passed to `Add*HealthCheck`/`Add*ReadinessCheck` extension methods declared in `SharedKernel.ServiceDefaults`) and fails when: (a) a registration carries both `"live"` and `"ready"` simultaneously; (b) a registration for a named dependency check (Redis/database/RabbitMQ/Azure Service Bus/cache) does not carry `"ready"`, or carries `"live"`.
+2. **`CompositionRootExclusivityRules`** — extends the `SharedKernelLayeringRules` family (mirroring `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching`) so that no production assembly other than `SharedKernel.ServiceDefaults`, `SharedKernel.MultiTenancy`, and the concrete provider packages themselves may reference `SharedKernel.Persistence.EfCore`, `SharedKernel.Persistence.PostgreSQL`, `SharedKernel.Persistence.Dapper`, `SharedKernel.Messaging.MassTransit`, or `SharedKernel.Security.Oidc`.
+
+No new SK Roslyn diagnostic IDs in this phase unless the health-check tag inspection proves expressible as syntax-only (see Implementation Rule 1 below for the decision gate) — the default design path is NetArchTest `ICustomRule`, consistent with every other assembly-level governance rule shipped in this domain (`RedisTopologyRules`, `CachingAbstractionRules`, `CommunicationLayeringRules`).
+
+### SK.00.ServiceDefaultsGovernance — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files:
+  - `SharedKernel.ArchitectureTests/Rules/HealthCheckTagIntegrityRules.cs`
+  - `SharedKernel.ArchitectureTests/Predicates/NoConflictingLivenessReadinessTagsPredicate.cs`
+  - `SharedKernel.ArchitectureTests/Predicates/DependencyHealthChecksCarryReadyNotLivePredicate.cs`
+  - `SharedKernel.ArchitectureTests/Rules/CompositionRootExclusivityRules.cs`
+- Modified files:
+  - `00.Governance/CLAUDE.md` — add `HealthCheckTagIntegrityRules` and `CompositionRootExclusivityRules` to Architecture Test Contracts; add implementation rules; add Changelog entry
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### SK.00.ServiceDefaultsGovernance — Diagnostic Registry Changes
+
+No new SK diagnostic IDs are assigned in this phase. Both rule groups are NetArchTest `ICustomRule` / `ConditionList` predicates operating at the assembly level (post-compile), consistent with `RedisTopologyRules`, `CachingAbstractionRules`, `ReflectionGuardRules`, and `EncryptionPatternGuardRules`. If a future need arises for a syntax-only Roslyn complement (e.g., catching a malformed tag array literal at edit time), the next available sequential-block ID is **SK0014** — not assigned here; tracked as a backlog note only (see Implementation Rule 1).
+
+### SK.00.ServiceDefaultsGovernance — Implementation Rules
+
+1. **Health check tag inspection approach (decision gate).** `HealthCheckRegistration` tags are supplied as an `IEnumerable<string>` constructor argument or via the `AddCheck(...).WithTags(...)` chain — both are *runtime values*, not compile-time-resolvable constants, in the general case. However, every dependency-specific extension shipped by `SharedKernel.ServiceDefaults` itself (`AddRedisHealthCheck`, `AddDatabaseReadinessCheck<TContext>`, etc.) is expected to pass a **literal string array** (e.g., `new[] { "ready" }`) at its own call site inside the `SharedKernel.ServiceDefaults` assembly — this is the only place the rule can mechanically inspect, and it is also the only place that needs inspecting, because these extensions are the platform's sole sanctioned health-check registration surface (consuming services call the extension, not `AddCheck` directly). The predicate therefore scopes to `MethodDefinition` bodies inside `SharedKernel.ServiceDefaults` whose name matches `Add*HealthCheck` or `Add*ReadinessCheck` (prefix/suffix match on `MethodDefinition.Name`), walks `Ldstr` IL opcodes within that method body to collect string literals passed into any `Newarr`/array-initializer or `WithTags`/tag-parameter call, and evaluates the literal set against the two checks below. This is an IL-literal-collection technique, not a full data-flow analysis — if a tag value is ever computed dynamically (e.g., from configuration) inside one of these extensions, the rule will not see it and the gate becomes advisory only for that call site; this limitation must be documented in the rule's XML doc and in this CLAUDE.md entry once implemented.
+2. `HealthCheckTagIntegrityRules.NoConflictingLivenessReadinessTags(Assembly serviceDefaultsAssembly)` → `ConditionList`. Uses `NoConflictingLivenessReadinessTagsPredicate` (`ICustomRule`). Scope: methods in the supplied assembly whose name starts with `"Add"` and ends with `"HealthCheck"` or `"ReadinessCheck"`. Fails if the collected literal tag set for a single registration call contains both `"live"` and `"ready"`.
+3. `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive(Assembly serviceDefaultsAssembly, params string[] dependencyCheckMethodNamePrefixes)` → `ConditionList`. Uses `DependencyHealthChecksCarryReadyNotLivePredicate` (`ICustomRule`). The caller supplies the recognized dependency-check method-name prefixes (e.g., `"AddRedis"`, `"AddDatabase"`, `"AddRabbitMq"`, `"AddAzureServiceBus"`, `"AddCache"`) rather than the rule hard-coding them — this keeps the predicate generic and lets the consuming test project enumerate the actual extension method names shipped by `SharedKernel.ServiceDefaults` once P-170 lands, instead of the governance layer guessing at names that don't exist yet. Fails if a matching method's collected literal tag set does not contain `"ready"`, or does contain `"live"`.
+4. `CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders(params Assembly[] assembliesUnderTest)` → `ConditionList[]`. Mirrors `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` exactly: pure NetArchTest `.Should().NotHaveDependencyOn(term)` checks, one `ConditionList` per forbidden term, no Mono.Cecil. Forbidden terms: `"SharedKernel.Persistence.EfCore"`, `"SharedKernel.Persistence.PostgreSQL"`, `"SharedKernel.Persistence.Dapper"`, `"SharedKernel.Messaging.MassTransit"`, `"SharedKernel.Security.Oidc"`. The caller supplies the assemblies to check — must NOT include `SharedKernel.ServiceDefaults`, `SharedKernel.MultiTenancy`, or any of the five concrete provider packages themselves (self-reference exclusion, same discipline as `RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther`). Typical caller usage: pass `05.Application`, `03.Domain`, `04.Contracts`, `11.Communication.*`, `12.Security.Abstractions` assemblies — i.e., every production assembly that is NOT the composition root and NOT a provider package.
+5. Composition-root exemption list (assemblies that MAY reference the five concrete provider packages): `SharedKernel.ServiceDefaults`, `SharedKernel.MultiTenancy`, and each provider package referencing itself trivially. This exemption list must be kept in `00.Governance/CLAUDE.md` alongside the rule, in the same format as the `CachingAbstractionRules` and `RedisTopologyRules` exemption lists. Any additional exemption must be documented there before being applied in code.
+6. Both new predicate classes reuse the established Mono.Cecil `TypeDefinition`/`MethodDefinition` access pattern from `NoMakeGenericMethodReflectionPredicate` (IL instruction walk) — no new NuGet dependency; `Mono.Cecil >= 0.11.5` already referenced in `SharedKernel.ArchitectureTests`.
+7. `CompositionRootExclusivityRules` introduces no Mono.Cecil dependency at all — it is pure `NetArchTest.eNt` dependency-graph checking, identical in style to `SharedKernelLayeringRules.CachingReferencesOnlyCore` and `CachingAbstractionRules`.
+8. Both rule groups must be assembly-parameterized (`Assembly` / `params Assembly[]`) with no hard-coded assembly paths — required because `SharedKernel.ServiceDefaults` and `SharedKernel.MultiTenancy` do not exist as buildable assemblies until P-170 lands. Until then, the architecture-test project for this phase must use contrived in-memory fixture assemblies (same `CSharpCompilation` + `MetadataReference.CreateFromImage` technique documented for `RedisTopologyRulesTests`), not the real packages. The phase-implementer must re-run the suite against the real `SharedKernel.ServiceDefaults` assembly once P-170 ships and confirm no fixture-vs-reality drift — record that confirmation in a future Changelog entry, not in this one.
+9. Failure messages must name the offending assembly/type and the specific forbidden term or tag conflict — consistent with every existing predicate's failure-message discipline in this domain.
+
+### SK.00.ServiceDefaultsGovernance — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/HealthCheckTagIntegrityRules.cs` | SharedKernel.ArchitectureTests | Create | Two factory methods: `NoConflictingLivenessReadinessTags`, `DependencyHealthChecksCarryReadyNotLive` |
+| `Predicates/NoConflictingLivenessReadinessTagsPredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule — IL `Ldstr` literal collection scoped to `Add*HealthCheck`/`Add*ReadinessCheck` methods; fails on simultaneous `"live"`+`"ready"` |
+| `Predicates/DependencyHealthChecksCarryReadyNotLivePredicate.cs` | SharedKernel.ArchitectureTests | Create | ICustomRule — same IL literal collection, scoped further to caller-supplied dependency-check method-name prefixes; fails when `"ready"` absent or `"live"` present |
+| `Rules/CompositionRootExclusivityRules.cs` | SharedKernel.ArchitectureTests | Create | `OnlyAllowedAssembliesMayReferenceConcreteProviders(params Assembly[])` → `ConditionList[]`; mirrors `CachingAbstractionRules` pattern for Persistence/Messaging/Security providers |
+
+### SK.00.ServiceDefaultsGovernance — Acceptance Criteria
+
+- [ ] `HealthCheckTagIntegrityRules.NoConflictingLivenessReadinessTags` fails against a contrived fixture method that passes both `"live"` and `"ready"` in the same registration's tag literal set
+- [ ] `HealthCheckTagIntegrityRules.NoConflictingLivenessReadinessTags` passes against a contrived fixture where every registration carries exactly one of `"live"`/`"ready"`
+- [ ] `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive` fails against a contrived `AddRedisHealthCheck`-shaped fixture method missing the `"ready"` tag
+- [ ] `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive` fails against a contrived dependency-check fixture method carrying `"live"`
+- [ ] `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive` passes against a contrived dependency-check fixture method carrying only `"ready"`
+- [ ] `CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders` fails when a non-exempt contrived assembly references any of the five forbidden provider terms
+- [ ] `CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders` passes when only exempt assemblies (`SharedKernel.ServiceDefaults`-shaped, `SharedKernel.MultiTenancy`-shaped fixtures) are scanned
+- [ ] Both rules documented in `00.Governance/CLAUDE.md` with rationale and the composition-root exemption list
+- [ ] Full governance architecture test suite passes with both new rule groups included (fixture-based; real-assembly re-verification deferred to post-P-170 follow-up, tracked via Dependencies section below)
+
+### SK.00.ServiceDefaultsGovernance — Dependencies
+
+- Requires P-170 (`13.ServiceDefaults` Core phase) to be complete for **real-assembly verification**: no for design/implementation of the rule predicates themselves (they are written and tested against contrived in-memory fixtures per Implementation Rule 8); yes for the final confirmation pass against the actual `SharedKernel.ServiceDefaults` assembly, which must be tracked as a follow-up task once P-170 ships (not blocking this phase's completion).
+- Requires `SK.00.CachingEnforcement` (P-009) pattern precedent: yes — `CompositionRootExclusivityRules` is a direct structural mirror of `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching`.
+- Unblocks: mechanical enforcement of the composition-root exception claimed in `13.ServiceDefaults/CLAUDE.md`; closes the same category of aspirational-but-unenforced-rule gap previously closed for Redis topology (P-145).
+
+### SK.00.ServiceDefaultsGovernance — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing pin — no change; both new predicates reuse the existing reference)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new Roslyn analyzer in this phase)
+- Target framework: `net10.0` (ArchitectureTests only)
+
+### SK.00.ServiceDefaultsGovernance — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-52 | Define `HealthCheckTagIntegrityRules` factory method signatures (`NoConflictingLivenessReadinessTags(Assembly)`, `DependencyHealthChecksCarryReadyNotLive(Assembly, params string[])`); define `NoConflictingLivenessReadinessTagsPredicate` and `DependencyHealthChecksCarryReadyNotLivePredicate` ICustomRule shapes (IL `Ldstr` literal collection scoped to `Add*HealthCheck`/`Add*ReadinessCheck` method names); define `CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders(params Assembly[])` mirroring `CachingAbstractionRules`; document the data-flow limitation (literal-only tag detection) | SharedKernel.ArchitectureTests | `○` |
+| C-71 | Implement `NoConflictingLivenessReadinessTagsPredicate` in `Predicates/`: ICustomRule, Mono.Cecil method-name scope filter (`Add*HealthCheck`/`Add*ReadinessCheck`), `Ldstr` IL walk collecting string literals per registration call, fails on `{"live","ready"}` subset match | SharedKernel.ArchitectureTests | `○` |
+| C-72 | Implement `DependencyHealthChecksCarryReadyNotLivePredicate` in `Predicates/`: ICustomRule, same IL literal collection technique scoped further by caller-supplied method-name-prefix list, fails when `"ready"` absent or `"live"` present | SharedKernel.ArchitectureTests | `○` |
+| C-73 | Implement `HealthCheckTagIntegrityRules` static class in `Rules/`: two factory methods wiring the two predicates above into `ConditionList` via `.Should().MeetCustomRule(...)` | SharedKernel.ArchitectureTests | `○` |
+| C-74 | Implement `CompositionRootExclusivityRules` static class in `Rules/`: `OnlyAllowedAssembliesMayReferenceConcreteProviders(params Assembly[])` → `ConditionList[]`, one element per forbidden term (`SharedKernel.Persistence.EfCore`, `.PostgreSQL`, `.Dapper`, `SharedKernel.Messaging.MassTransit`, `SharedKernel.Security.Oidc`), iterative `.Should().NotHaveDependencyOn(term)` pattern mirroring `CachingAbstractionRules` | SharedKernel.ArchitectureTests | `○` |
+| T-129 | Architecture test (fire path): contrived fixture method shaped as `AddDatabaseReadinessCheck` whose body pushes both `"live"` and `"ready"` string literals into the tag array; assert `NoConflictingLivenessReadinessTags` fails naming the offending method | SharedKernel.ArchitectureTests | `○` |
+| T-130 | Architecture test (pass path): contrived fixture assembly where every `Add*HealthCheck`/`Add*ReadinessCheck` method carries exactly one of `"live"`/`"ready"`; assert `NoConflictingLivenessReadinessTags` passes | SharedKernel.ArchitectureTests | `○` |
+| T-131 | Architecture test (fire path): contrived `AddRedisHealthCheck`-shaped fixture method whose tag literal set is `{"ready"}` is correctly recognized as passing, then a second fixture `AddRabbitMqHealthCheck` whose tag set is `{}` (no `"ready"`) is asserted to fail `DependencyHealthChecksCarryReadyNotLive` | SharedKernel.ArchitectureTests | `○` |
+| T-132 | Architecture test (fire path): contrived `AddAzureServiceBusHealthCheck`-shaped fixture method whose tag literal set is `{"live"}`; assert `DependencyHealthChecksCarryReadyNotLive` fails naming the offending method and the forbidden `"live"` tag | SharedKernel.ArchitectureTests | `○` |
+| T-133 | Architecture test (pass path): contrived `AddCacheHealthCheck`-shaped fixture method whose tag literal set is `{"ready"}` only; assert `DependencyHealthChecksCarryReadyNotLive` passes | SharedKernel.ArchitectureTests | `○` |
+| T-134 | Architecture test (fire path): contrived non-exempt assembly (shaped as `05.Application`) containing a type that references `SharedKernel.Persistence.EfCore`; assert `OnlyAllowedAssembliesMayReferenceConcreteProviders` fails on the `SharedKernel.Persistence.EfCore` element with the offending type named | SharedKernel.ArchitectureTests | `○` |
+| T-135 | Architecture test (fire path): contrived non-exempt assembly containing a type that references `SharedKernel.Messaging.MassTransit`; assert the corresponding `ConditionList` element fails | SharedKernel.ArchitectureTests | `○` |
+| T-136 | Architecture test (fire path): contrived non-exempt assembly containing a type that references `SharedKernel.Security.Oidc`; assert the corresponding `ConditionList` element fails | SharedKernel.ArchitectureTests | `○` |
+| T-137 | Architecture test (pass path): contrived fixture assemblies shaped as `SharedKernel.ServiceDefaults` and `SharedKernel.MultiTenancy` that DO reference the five forbidden provider terms; assert every `ConditionList` element in the returned array passes (composition-root exemption holds) | SharedKernel.ArchitectureTests | `○` |
+| T-138 | Architecture test (pass path): contrived non-exempt assembly referencing none of the five forbidden terms (only `SharedKernel.Core`/`SharedKernel.Contracts`); assert every element of the returned `ConditionList[]` passes | SharedKernel.ArchitectureTests | `○` |
+| DO-24 | Document `HealthCheckTagIntegrityRules` (both predicates, IL-literal-collection limitation) and `CompositionRootExclusivityRules` (forbidden-term list, composition-root exemption list) in `00.Governance/CLAUDE.md`; cross-reference `13.ServiceDefaults/CLAUDE.md`'s existing claim and confirm wording now matches actual mechanical coverage; add Changelog entry; add a follow-up note for the post-P-170 real-assembly re-verification pass | SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -1960,7 +2061,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 311.
+> Counts updated whenever a task state changes. Total tasks: 328.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -1987,6 +2088,7 @@ Format when active:
 | `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | 7 | 7 | 0 | `●` |
 | `SK.00.CommunicationArchRules` | Governance: Architecture Rules for Communication Layer | 16 | 16 | 0 | `●` |
 | `SK.00.WO026CommunicationQuality` | Governance: Architecture Rules for WO-026 Communication Quality Improvements | 5 | 5 | 0 | `●` |
+| `SK.00.ServiceDefaultsGovernance` | Governance: ServiceDefaults Liveness/Readiness and Composition-Root Layering Rules | 17 | 0 | 17 | `○` |
 
 ---
 
@@ -2041,3 +2143,4 @@ Format when active:
 - [2026-06-18] D-50, C-67–C-69, T-116–T-126, DO-22 → ● in SK.00.CommunicationArchRules — all 16 tasks complete; CommunicationLayeringRules (4 factory methods), NoDirectGrpcInterceptorInheritancePredicate, NoDirectHotChocolateFilterSortInheritancePredicate, SK0013 RawHttpClientConstructorInjectionAnalyzer implemented; 93 analyzer tests pass, 86 arch tests pass; SK.00.CommunicationArchRules → ● (state-map-phase)
 - [2026-06-18] Phase SK.00.WO026CommunicationQuality added — 5 tasks: D-51, C-70, T-127–T-128, DO-23; GrpcNeverReferencesContracts NetArchTest rule (adds to existing CommunicationLayeringRules class); no new SK IDs; four WO-026 What Goes Where governance conventions; inline Result/Envelope mapping documented as platform violation with future SK0xxx backlog note; total tasks now 311 — WO-026 P-167
 - [2026-06-19] D-51, C-70, T-127–T-128, DO-23 → ● in SK.00.WO026CommunicationQuality — all 5 tasks complete; GrpcNeverReferencesContracts implemented in CommunicationLayeringRules.cs; 2 new tests (T-127 fire-path, T-128 pass-path against the real SharedKernel.Communication.Grpc assembly) pass; 88/88 full ArchitectureTests.Tests suite passes, 0 build warnings/errors; CLAUDE.md documentation pre-written by governance-arch-planner verified accurate against the implementation, no edits needed; SK.00.WO026CommunicationQuality → ● (state-map-phase)
+- [2026-06-19] Phase SK.00.ServiceDefaultsGovernance added — 17 tasks: D-52, C-71–C-74, T-129–T-138, DO-24; HealthCheckTagIntegrityRules (two ICustomRule predicates: NoConflictingLivenessReadinessTags, DependencyHealthChecksCarryReadyNotLive — IL Ldstr literal-collection technique scoped to Add*HealthCheck/Add*ReadinessCheck method names, documented data-flow limitation for non-literal tags); CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders mirroring CachingAbstractionRules for Persistence (.EfCore/.PostgreSQL/.Dapper), Messaging (.MassTransit), and Security (.Oidc) provider families; no new SK IDs; closes the WO-003/P-009 caching-only scope gap in 13.ServiceDefaults/CLAUDE.md's composition-root claim; real-assembly verification deferred as a tracked follow-up pending P-170; total tasks now 328 — WO-027 P-173
