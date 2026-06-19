@@ -32,6 +32,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | [16.Testing](16.Testing/state-map.md)                 | Design          | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing                         |
 
 <!--
@@ -64,18 +65,18 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for Communication Layer | `●` | All 16 tasks complete — CommunicationLayeringRules (4 factory methods), NoDirectGrpcInterceptorInheritancePredicate, NoDirectHotChocolateFilterSortInheritancePredicate, SK0013 RawHttpClientConstructorInjectionAnalyzer implemented; 93 analyzer + 86 arch tests pass. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for WO-026 Communication Quality Improvements | `●` | All 5 tasks complete — GrpcNeverReferencesContracts added to CommunicationLayeringRules, locking the P-163 dead-reference removal permanently; 88/88 architecture tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
-| 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | SharedKernel.Contracts 1.0.0 packed to nupkgs/ with XML docs; ContractsSerializerDefaults public resolver added; consumer-verify exercises all 5 surfaces with source-generated STJ; 62 tests green. | — |
+| 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | RoutingSlip | `●` | SK.07.RoutingSlip complete (10/10) — IRoutingSlipBuilder + IMessageBus.ExecuteRoutingSlipAsync in Abstractions; RoutingSlipActivityBase<TArgs,TLog>, MassTransitRoutingSlipBuilder, AddRoutingSlipActivity<T>() in MassTransit; 101 total MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | Internal | `●` | All 6 Internal tasks complete — IServiceEndpointResolver, KubernetesServiceEndpointResolver (DNS SRV + A-record fallback via ServiceDiscovery), StaticServiceEndpointResolver, K8sServiceDiscoveryOptions with validator, AddK8sServiceDiscovery, AddStaticServiceDiscovery (startup Warning + guard); 27/27 tests passing. | Begin SK.11.Tests — unit and integration tests for all four packages. |
+| 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | T-01–T-26 complete — 203/203 tests passing across Rest (66), Grpc (55), GraphQL (43), Internal (39); all handler, interceptor, resilience, filter, and resolver tests green. | Begin Docs phase (XML doc comments across all four packages). |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
@@ -110,13 +111,13 @@ Format when active:
 | ● P-042 Error.BusinessRule Factory | 1 |
 | ● Published | 4 |
 | ● RoutingSlip | 1 |
-| ● Governance: Architecture Rules | 1 |
+| ● Governance: Architecture Rules for WO-026 Communication Quality Improvements | 1 |
 | ● Design | 0 |
 | ● Docs | 0 |
-| ● Tests | 0 |
+| ● Tests | 1 |
 | ● Core | 0 |
 | ● Scaffold | 1 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 8 |
 
@@ -1829,6 +1830,11 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-17] Phase Backlog P-157 → ● Complete — SK.11.GraphQL done (state-map-phase)
 - [2026-06-18] Communication → Internal (●) — promoted from SK.11.Internal (state-map-phase)
 - [2026-06-18] Phase Backlog P-155 → ● Complete — SK.11.Internal done (state-map-phase)
+- [2026-06-18] Communication → Rest (●) — R-11–R-18 WO-026 correctness fixes complete; promoted from SK.11.Rest (state-map-phase)
+- [2026-06-18] Communication → Grpc (●) — G-10–G-13 complete; promoted from SK.11.Grpc (state-map-phase)
+- [2026-06-18] Communication → GraphQL (●) — GQ-09 FromPagedList factory complete; 43/43 tests; promoted from SK.11.GraphQL (state-map-phase)
+- [2026-06-19] Governance → Governance: Architecture Rules for WO-026 Communication Quality Improvements (●) — promoted from SK.00.WO026CommunicationQuality (state-map-phase)
+- [2026-06-19] Phase Backlog P-167 → ● Complete — SK.00.WO026CommunicationQuality done (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2121,6 +2127,11 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-18] Phase(s) P-159 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
 - [2026-06-18] Governance → Governance: Architecture Rules for Communication Layer (●) — promoted from SK.00.CommunicationArchRules (state-map-phase)
 - [2026-06-18] Phase Backlog P-159 → ● Complete — SK.00.CommunicationArchRules done (state-map-phase)
+- [2026-06-18] Contracts → Design (◐) — Add ResultEnvelopeExtensions ToEnvelope/ToResult bridge in SharedKernel.Contracts.Mapping (state-map-phase)
+- [2026-06-18] Phase(s) P-166 dispatched to contracts-arch-planner for 04.Contracts (dispatch-phase)
+- [2026-06-18] Phase(s) P-160, P-161, P-162, P-163, P-164, P-165 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
+- [2026-06-18] Communication → Internal (●) — promoted from SK.11.Internal (state-map-phase)
+- [2026-06-18] Communication → Tests (●) — promoted from SK.11.Tests (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -7182,4 +7193,334 @@ The raw `HttpClient` injection guard is particularly important: `IHttpClientFact
 - [ ] All rules documented in `00.Governance/CLAUDE.md` with the motivating principle and exemption mechanism for each
 - [ ] `dotnet build` and full architecture test suite clean with 0 violations on current codebase
 - [ ] Rules assigned SK0xxx numbers in the existing governance numbering sequence
+---
+
+---
+### P-160 — Communication: REST Package — Four Correctness and Quality Fixes
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Four targeted correctness and quality fixes in `SharedKernel.Communication.Rest`:
+
+**Fix 1 — Cached `JsonSerializerOptions` in `ProblemDetailsDeserializer` fallback path.**
+The reflection-based STJ fallback inside `ProblemDetailsDeserializer.DeserializeAsync` allocates a new `JsonSerializerOptions` object on every call. `JsonSerializerOptions` initialization is expensive (internal state machine build). Promote it to a `static readonly` field. This is a hot-path allocation in production services that receive non-standard error responses.
+
+**Fix 2 — Register `RestClientOptionsValidator` in the DI container.**
+`RestClientOptionsValidator` exists in the codebase but is never registered via `services.AddSingleton<IValidateOptions<RestClientOptions>, RestClientOptionsValidator>()` in `ServiceCollectionExtensions.cs`. This means the validator never fires at startup — `TimeoutSeconds <= 0` and whitespace `BaseAddress` inputs go unchecked. Register the validator alongside the other options infrastructure.
+
+**Fix 3 — Replace `Services.Any(...)` O(n) DI probe with a sentinel-flag pattern.**
+Both `RestCommunicationBuilder.AddRestClient<TClient>` and `GrpcCommunicationBuilder.AddGrpcClient<TClient>` probe for `IServiceEndpointResolver` via `Services.Any(d => d.ServiceType == typeof(...))`. This walks the entire descriptor list on every typed-client registration. In large services this is O(n×m). The resolver-presence check should be captured at builder-construction time (when `AddSharedKernelRestCommunication()` / `AddSharedKernelGrpcCommunication()` is called) and stored as a `bool` on the builder, or use a sentinel-marker approach consistent with the GraphQL idempotency guard. The `AddStaticServiceDiscovery` guard uses the same pattern and should be cleaned up similarly.
+
+**Fix 4 — Expose and document the `TotalRequestTimeout` calculation formula.**
+`RestCommunicationBuilder` computes `TotalRequestTimeout` as `TimeoutSeconds × (RetryCount + 1) + 10`. The magic `+10` second buffer is undocumented. Add `RestResilienceOptions.TotalTimeoutBufferSec` (default: `10`, minimum: `0`) with XML documentation explaining that it accounts for jitter headroom and circuit-breaker probe time. The builder uses this value instead of the hardcoded literal. Consumers can override to `0` for tight latency budgets.
+
+#### Why this is needed
+
+Fix 1 directly impacts production throughput — `JsonSerializerOptions` allocation on every error response creates GC pressure at scale. Fix 2 means options-validation guarantees currently documented in code are actually silent — a `TimeoutSeconds = 0` config silently passes today. Fix 3 is a scalability anti-pattern in DI bootstrap that degrades as the number of registered clients grows. Fix 4 exposes a non-obvious production behaviour (real effective timeout is significantly higher than `TimeoutSeconds` implies) that catches operators by surprise in SLA-sensitive services.
+
+#### Acceptance criteria
+- [ ] `ProblemDetailsDeserializer` uses a `static readonly JsonSerializerOptions` field for the reflection fallback path — zero `new JsonSerializerOptions(...)` calls in `DeserializeAsync`
+- [ ] `RestClientOptionsValidator` is registered via `services.AddSingleton<IValidateOptions<RestClientOptions>, RestClientOptionsValidator>()` in `AddSharedKernelRestCommunication`
+- [ ] `RestCommunicationBuilder` captures resolver-presence as a `bool` at construction time, not per-client-registration (eliminates `Services.Any(...)` per-call)
+- [ ] `GrpcCommunicationBuilder` captures resolver-presence at construction time similarly
+- [ ] `RestResilienceOptions.TotalTimeoutBufferSec` property added (default `10`, minimum `0`); builder uses it in the `TotalRequestTimeout` formula
+- [ ] XML doc on `TotalTimeoutBufferSec` explains the formula: "Added to per-attempt timeout × (RetryCount + 1) to compute TotalRequestTimeout. Provides headroom for jitter and circuit-breaker probe time."
+- [ ] All existing REST tests continue to pass
+- [ ] New unit tests: options validator fires on invalid `TimeoutSeconds`; options validator fires on whitespace `BaseAddress`
+---
+
+---
+### P-161 — Communication: REST Package — Full-Response `ReadEnvelopeAsync<T>` and `Result<T>` / `Envelope<T>` Bridge
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 11.Communication
+**Depends on:** P-160, P-166
+
+#### What is needed
+
+Two related additions that complete the `Result<T>` → `Envelope<T>` boundary mapping in the REST communication layer:
+
+**Addition 1 — `ReadEnvelopeAsync<T>` on `HttpResponseMessageExtensions`.**
+The existing `EnsureSuccessOrErrorAsync<T>` checks the HTTP status and returns `Result<T>.Success(default!)` on 2xx — the caller must then separately deserialize the body. This is a two-step pattern that forces boilerplate in every typed client method. Add `ReadEnvelopeAsync<T>` that on a 2xx response deserializes the body using STJ, and returns `Envelope<T>.Ok(value)`. On non-2xx, it deserializes the ProblemDetails body via `ProblemDetailsDeserializer` and returns `Envelope<T>.Fail(error)`. This is the single-step typed-client entry point that matches the boundary responsibility rule ("the communication layer constructs `Envelope<T>` at service boundaries").
+
+The serialization in `ReadEnvelopeAsync<T>` uses `JsonTypeInfo<T>` passed by the caller for the AOT-safe primary path, plus a `JsonSerializerOptions?` overload for the reflection-based fallback. The static `JsonSerializerOptions` from P-160 Fix 1 applies here for consistency.
+
+**Addition 2 — `RestEnvelopeExtensions` bridge pattern removal note.**
+With P-166 delivering `ToEnvelope()`/`ToResult()` in `SharedKernel.Contracts`, the `Communication.Rest` package does not need to duplicate bridge extensions. However, `ReadEnvelopeAsync<T>` on `HttpResponseMessageExtensions` is the REST-specific entry point that internally uses `Envelope<T>.Ok()` / `Envelope<T>.Fail()` directly — no bridge extension needed here.
+
+#### Why this is needed
+
+`ReadEnvelopeAsync<T>` completes the boundary mapping story. Every typed HTTP client method today requires: (1) call the upstream service, (2) call `EnsureSuccessOrErrorAsync<T>`, (3) if success, deserialize the body separately, (4) construct `Envelope<T>` manually. Steps 2–4 collapse into a single `ReadEnvelopeAsync<T>` call. This is the developer-experience improvement that makes the platform feel cohesive rather than piecemeal.
+
+#### Acceptance criteria
+- [ ] `HttpResponseMessageExtensions.ReadEnvelopeAsync<T>(JsonTypeInfo<T> typeInfo, CancellationToken)` added — AOT-safe primary path
+- [ ] `HttpResponseMessageExtensions.ReadEnvelopeAsync<T>(JsonSerializerOptions? options, CancellationToken)` added — reflection fallback overload
+- [ ] On 2xx: body deserialized into `T`; returned as `Envelope<T>.Ok(value)`; null/empty body returns `Envelope<T>.Fail(Error.Unexpected("http.empty-body", "Response body was empty or null."))`
+- [ ] On non-2xx: `ProblemDetailsDeserializer.DeserializeAsync` used; returned as `Envelope<T>.Fail(error)` — consistent error mapping
+- [ ] All `ReadEnvelopeAsync<T>` paths covered by unit tests using `HttpMessageHandler` test doubles with controlled response bodies (success body, empty body, ProblemDetails body, non-ProblemDetails error body)
+- [ ] XML doc on all new API surface
+- [ ] All existing REST tests continue to pass
+---
+
+---
+### P-162 — Communication: REST Package — Fix `ServiceDiscoveryResolvingHandler` Per-Client-Name Registration Bug
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 11.Communication
+**Depends on:** P-160
+
+#### What is needed
+
+Fix a subtle but real production bug in `RestCommunicationBuilder.AddRestClient<TClient>` in the service-discovery path (when `BaseAddress` is omitted).
+
+**The bug:** When two typed clients are registered without a `BaseAddress` — for example, `AddRestClient<IOrderClient>("order-service", ...)` followed by `AddRestClient<IPaymentClient>("payment-service", ...)` — both calls register a transient factory for `ServiceDiscoveryResolvingHandler` in the DI container. The second registration overwrites the first. When `IOrderClient` later resolves its `ServiceDiscoveryResolvingHandler`, it gets the handler registered for "payment-service" (the last one registered), not "order-service". Both clients silently route to the wrong service.
+
+**The fix:** `ServiceDiscoveryResolvingHandler` must not be registered as a shared singleton or transient `ServiceDiscoveryResolvingHandler` DI type when multiple clients need distinct service names. The correct fix is to use `builder.AddHttpMessageHandler(sp => new ServiceDiscoveryResolvingHandler(sp.GetRequiredService<IServiceEndpointResolver>(), capturedName))` as an inline factory on the `IHttpClientBuilder` — bypassing DI type registration entirely. Each typed client's message handler pipeline gets its own closure-captured service name. This is a non-breaking fix — the external API shape does not change.
+
+Additionally, add `RestClientOptions.ServiceName` as an optional override (`string?`): when set, the resolver uses `ServiceName` for DNS lookup instead of the `name` parameter passed to `AddRestClient<TClient>`. This separates the typed client's logical registration name from its DNS service name.
+
+#### Why this is needed
+
+Any microservice that registers two or more typed clients using service-discovery (without explicit `BaseAddress`) will route at least one of them to the wrong DNS name. This is a production routing failure with no error at startup — requests succeed but reach the wrong service. The fix is straightforward and non-breaking since the external API shape does not change.
+
+#### Acceptance criteria
+- [ ] Registering two or more typed clients without `BaseAddress` in the same service correctly routes each client to its own service name
+- [ ] `ServiceDiscoveryResolvingHandler` is no longer registered as a shared DI type — each client gets its own instance via inline `AddHttpMessageHandler` factory closure
+- [ ] `RestClientOptions.ServiceName` property added (nullable `string?`, default `null`); when set, used as the DNS lookup key; when null, the `name` parameter is used
+- [ ] XML doc on `ServiceName` explains: "Overrides the `name` parameter for DNS lookup via IServiceEndpointResolver. Use when the typed client's logical registration name differs from its DNS service name."
+- [ ] Unit test: two typed clients registered without `BaseAddress` with different service names; assert each resolves its own service endpoint (using `MockServiceEndpointResolver` from P-168)
+- [ ] Unit test: `RestClientOptions.ServiceName` override correctly routes to the overridden DNS name
+- [ ] All existing REST tests continue to pass
+---
+
+---
+### P-163 — Communication: gRPC Package — Extract `GrpcMetadataHelper`, Fix Address Parameter, Remove Dead 04.Contracts Reference
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Three improvements in `SharedKernel.Communication.Grpc`:
+
+**Improvement 1 — Extract `GrpcMetadataHelper` internal static class.**
+`CorrelationTracingInterceptor` and `TenantIdInterceptor` both contain identical implementations of `HasMetadataEntry(Metadata, string)` and `CloneAndAdd(Metadata, string, string)`. These two utilities should live in a single `internal static class GrpcMetadataHelper` within the package, and both interceptors should delegate to it. This eliminates duplication and provides a single place to optimize or harden Metadata manipulation logic (e.g., span-based lookup for high-throughput scenarios in the future).
+
+**Improvement 2 — Make `AddGrpcClient<TClient>` address parameter optional.**
+`IGrpcCommunicationBuilder.AddGrpcClient<TClient>(string address, ...)` declares `address` as a required `string`. But the implementation treats it as optional (allows empty string when `IServiceEndpointResolver` is present). The interface is dishonest. Change the signature to `string? address = null` on both the interface and implementation. Callers using service discovery can omit the address cleanly without passing an empty string. The validation error message when neither address nor resolver is present remains unchanged.
+
+**Improvement 3 — Remove dead `04.Contracts` project reference from `.Grpc` csproj.**
+`SharedKernel.Communication.Grpc.csproj` references `SharedKernel.Contracts`. Inspecting all production `.cs` files in the package, no type from `SharedKernel.Contracts` is used anywhere — gRPC uses Protobuf-generated types directly; `Envelope<T>`, `PagedList<T>`, and `EventEnvelope<T>` do not appear in any file. This dead reference adds unnecessary transitive dependency weight to every downstream consumer. Remove it. The gRPC package only needs `SharedKernel.Primitives`, `SharedKernel.Security.Abstractions`, and the gRPC NuGet packages.
+
+#### Why this is needed
+
+The metadata helper duplication (Finding 5) means any bug in `HasMetadataEntry` must be fixed in two places independently. For a platform package consumed by hundreds of services, duplication in cross-cutting interceptors is a maintenance liability. The address parameter dishonesty (Finding 8) forces callers using service discovery to pass `""` — developer-hostile and not self-documenting. The dead `04.Contracts` reference (Finding 2/3) adds unnecessary package weight and can trigger false positives in future governance dependency checks.
+
+#### Acceptance criteria
+- [ ] `GrpcMetadataHelper` internal static class added with `HasMetadataEntry(Metadata, string): bool` and `CloneAndAdd(Metadata, string, string): Metadata` methods
+- [ ] `CorrelationTracingInterceptor` delegates to `GrpcMetadataHelper` — no local `HasMetadataEntry` or `CloneAndAdd`
+- [ ] `TenantIdInterceptor` delegates to `GrpcMetadataHelper` — no local `HasMetadataEntry` or `CloneAndAdd`
+- [ ] `IGrpcCommunicationBuilder.AddGrpcClient<TClient>` signature: `string? address = null`
+- [ ] `GrpcCommunicationBuilder` implementation updated — existing validation logic (throw when neither address nor resolver present) unchanged
+- [ ] `SharedKernel.Contracts` project reference removed from `SharedKernel.Communication.Grpc.csproj`
+- [ ] All existing gRPC tests pass
+- [ ] New unit test: `GrpcMetadataHelper.HasMetadataEntry` — case-insensitive match, no false positive on absent key, no false negative on present key; `GrpcMetadataHelper.CloneAndAdd` — new metadata instance, original preserved, new entry present
+---
+
+---
+### P-164 — Communication: Internal Package — TTL-Based Endpoint Resolution Cache in `KubernetesServiceEndpointResolver`
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Add a TTL-based, thread-safe in-memory endpoint cache to `KubernetesServiceEndpointResolver`.
+
+Currently, `ResolveAsync` performs live DNS SRV + A-record lookups on every call. For REST clients using the `ServiceDiscoveryResolvingHandler` path (resolving at request time), this means a DNS lookup on every outbound HTTP request — significant DNS amplification at scale.
+
+The cache design:
+- Keyed by `serviceName` (case-insensitive, `StringComparer.OrdinalIgnoreCase`)
+- Value: a struct holding the resolved `Uri` and `DateTimeOffset ExpiresAt`
+- TTL configurable via `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds` (int, default `30`, `0` = disabled)
+- Thread-safe: use `ConcurrentDictionary<string, CachedEntry>` with TTL-check on read
+- On cache hit (entry not expired): return cached `Uri` — no DNS I/O
+- On cache miss or TTL expiry with a successful DNS lookup: update cache with new `Uri` and new expiry; return new `Uri`
+- On DNS lookup failure with a stale cached entry (post-expiry): log `LogLevel.Warning` and return stale `Uri` (stale-while-revalidate — prefer known-good stale over unknown fallback)
+- On DNS lookup failure with no cache entry at all: fall through to existing K8s convention URI fallback
+- When `EndpointCacheTtlSeconds = 0`: no reads or writes to cache; exact existing behavior preserved
+
+`StaticServiceEndpointResolver` does not need caching — its map is already in-memory and static.
+
+#### Why this is needed
+
+Without caching, REST typed clients using service-discovery resolution trigger DNS lookups per request. In a microservice at 500 req/s making 3 downstream calls each, this is 1,500 DNS requests per second — unnecessary load on K8s DNS infrastructure (CoreDNS). K8s pod endpoints are stable within a deployment window; a 30-second TTL eliminates 99%+ of DNS traffic under normal operation while reacting to pod IP changes within one TTL window. The stale-while-revalidate pattern prevents cache expiry from becoming a cascading failure when the DNS server is transiently unavailable.
+
+#### Acceptance criteria
+- [ ] `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds` property added (int, default `30`)
+- [ ] `K8sServiceDiscoveryOptionsValidator` updated to reject negative `EndpointCacheTtlSeconds`
+- [ ] `KubernetesServiceEndpointResolver` uses `ConcurrentDictionary` for cache storage; cache struct holds `Uri` and `DateTimeOffset ExpiresAt`
+- [ ] Cache hit (not expired): returns cached `Uri` without calling `resolver.GetEndpointsAsync`
+- [ ] Cache miss / expired with successful DNS: updates cache and returns new `Uri`
+- [ ] Cache miss / expired with failed DNS + stale entry: logs `Warning` and returns stale `Uri`
+- [ ] Cache miss / expired with failed DNS + no prior entry: falls through to K8s convention URI (existing behavior)
+- [ ] `EndpointCacheTtlSeconds = 0`: cache bypassed entirely; all lookups are live
+- [ ] Unit tests cover all four cache scenarios; `EndpointCacheTtlSeconds = 0` bypass; negative value rejected by validator
+---
+
+---
+### P-165 — Communication: GraphQL Package — `PagedResponseType<T>.FromPagedList` Bridge Factory
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 11.Communication
+**Depends on:** None
+
+#### What is needed
+
+Add a `PagedResponseType<T>.FromPagedList(PagedList<T> pagedList)` static factory method to `SharedKernel.Communication.GraphQL.Pagination.PagedResponseType<T>`.
+
+Currently, `PagedResponseType<T>` provides `FromPage(IPage)` (HC offset paging), `FromConnection(Connection<T>)` (HC cursor paging), and `From(IReadOnlyList<T>, int)` (manual assembly). However, the persistence layer and application handlers return `PagedList<T>` from `SharedKernel.Contracts`. A GraphQL resolver receiving a `PagedList<T>` must manually unpack `.Items` and `.TotalCount` before calling `From(items, totalCount)`. The `FromPagedList` factory collapses this to a single call.
+
+The CLAUDE.md states "field names match `PagedList<T>` from `04.Contracts` for API shape consistency" — this factory makes that stated consistency executable, not just documented. The `SharedKernel.Communication.GraphQL` package already references `SharedKernel.Contracts` — this addition makes that reference purposeful rather than dead weight.
+
+Factory signature: `public static PagedResponseType<T> FromPagedList(PagedList<T> pagedList)` — maps `pagedList.Items` to `Items` and `pagedList.TotalCount` to `TotalCount`.
+
+#### Why this is needed
+
+Without `FromPagedList`, every GraphQL resolver that receives a `PagedList<T>` from the application layer must manually unpack `.Items` and `.TotalCount`. This is repetitive boilerplate, exposes the internal shape of `PagedList<T>` to each resolver, and will silently drift if either type evolves. The bridge factory seals the shape contract and makes the "same structure" claim between `PagedList<T>` and `PagedResponseType<T>` structurally enforced rather than merely documented.
+
+#### Acceptance criteria
+- [ ] `PagedResponseType<T>.FromPagedList(PagedList<T> pagedList)` static factory method added
+- [ ] Factory returns `new PagedResponseType<T> { Items = pagedList.Items, TotalCount = pagedList.TotalCount }`
+- [ ] `ArgumentNullException.ThrowIfNull(pagedList)` guard included
+- [ ] XML doc comment explains relationship to `PagedList<T>` and when to use `FromPagedList` vs `FromPage` / `FromConnection` vs `From`
+- [ ] `SharedKernel.Communication.GraphQL.csproj` comment updated to note that the `SharedKernel.Contracts` reference is used by `FromPagedList`
+- [ ] Unit test: `FromPagedList` with a populated `PagedList<string>` produces correct `Items` and `TotalCount`; null input throws `ArgumentNullException`
+- [ ] All existing GraphQL tests continue to pass
+---
+
+---
+### P-166 — Contracts: `Result<T>` ↔ `Envelope<T>` Mapping Extension Methods
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 04.Contracts
+**Depends on:** None
+
+#### What is needed
+
+Add a `ResultEnvelopeExtensions` static class to `SharedKernel.Contracts` providing mapping extension methods between `Result<T>` / `Result` (from `SharedKernel.Primitives`) and `Envelope<T>` / `Envelope` (from `SharedKernel.Contracts`).
+
+These extensions enable the documented boundary-mapping rule ("the communication layer maps `Result<T>` to `Envelope<T>` at service boundaries") without ad-hoc inline boilerplate in every typed client, controller action, or gRPC server handler.
+
+**Extensions needed:**
+- `ToEnvelope<T>(this Result<T> result) → Envelope<T>` — success maps to `Envelope<T>.Ok(result.Value)`; failure maps to `Envelope<T>.Fail(result.Error)`
+- `ToEnvelope(this Result result) → Envelope` — non-generic variant for void operations
+- `ToResult<T>(this Envelope<T> envelope) → Result<T>` — maps `Envelope<T>` back to `Result<T>`; useful in client adapters that receive a deserialized `Envelope<T>` and need to re-enter the railway pipeline
+- `ToResult(this Envelope envelope) → Result` — non-generic variant
+
+These extensions belong in `SharedKernel.Contracts` because that package already references both `SharedKernel.Primitives` (for `Error`, `Result<T>`) and owns `Envelope<T>`. No other package in the allowed layering graph can hold this bridge without introducing a forbidden reference. Placing them in `11.Communication.Rest` would force any non-HTTP boundary (e.g., `14.Presentation`, gRPC server handlers) to reference a HTTP-specific package for this fundamental conversion.
+
+Namespace: `SharedKernel.Contracts.Mapping` for discoverability.
+
+#### Why this is needed
+
+Every service boundary that converts `Result<T>` to `Envelope<T>` today writes inline `if (result.IsSuccess) Envelope<T>.Ok(result.Value!) else Envelope<T>.Fail(result.Error!)`. This pattern is duplicated across every typed HTTP client method, controller action, and gRPC server handler — potentially hundreds of sites across the ecosystem. Any evolution of `Result<T>` or `Envelope<T>` (e.g., adding `Error.Description`) requires touching every mapping site. A platform-standard bridge collapses all of these to `result.ToEnvelope()`.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Contracts.Mapping.ResultEnvelopeExtensions` static class added
+- [ ] `ToEnvelope<T>(this Result<T>)` extension: success → `Envelope<T>.Ok(result.Value)`; failure → `Envelope<T>.Fail(result.Error)`
+- [ ] `ToEnvelope(this Result)` non-generic extension: success → `Envelope.Ok()`; failure → `Envelope.Fail(result.Error)`
+- [ ] `ToResult<T>(this Envelope<T>)` extension: `IsSuccess` → `Result<T>.Success(envelope.Value!)`; `!IsSuccess` → `Result<T>.Failure(envelope.Error!)`
+- [ ] `ToResult(this Envelope)` non-generic extension: analogous mapping
+- [ ] All four extensions are pure — no allocations beyond the output type; no side effects; no logging
+- [ ] `SharedKernel.Contracts` acquires no new NuGet dependencies from this addition
+- [ ] XML doc on all extension methods with usage examples in the summary
+- [ ] Unit tests: round-trip `Result<T>.Success` → `ToEnvelope` → `ToResult` preserves value; round-trip `Result<T>.Failure` → `ToEnvelope` → `ToResult` preserves error; non-generic variants tested analogously; `Envelope<T>.Ok` → `ToResult` → success; `Envelope<T>.Fail` → `ToResult` → failure preserving error
+---
+
+---
+### P-167 — Governance: Architecture Rules for WO-026 Communication Quality Improvements
+
+**Status:** `●` Complete
+**Work Order:** WO-026
+**Domain:** 00.Governance
+**Depends on:** P-163, P-165, P-166
+
+#### What is needed
+
+Extend `SharedKernel.ArchitectureTests` and `00.Governance/CLAUDE.md` to lock in the WO-026 architectural decisions and prevent regression:
+
+**Rule 1 — `SharedKernel.Communication.Grpc` must not reference `SharedKernel.Contracts`.**
+P-163 removes this dead reference. This NetArchTest rule locks that state permanently — if the reference is accidentally re-added, the architecture test suite fails immediately.
+
+**Rule 2 — Governance CLAUDE.md `What Goes Where` additions.**
+Add table entries for:
+- "`Result<T>` → `Envelope<T>` boundary mapping extension" → `04.Contracts/SharedKernel.Contracts` via `ResultEnvelopeExtensions.ToEnvelope()` / `ToResult()`
+- "`PagedResponseType<T>` from a `PagedList<T>` source" → `11.Communication.GraphQL` via `PagedResponseType<T>.FromPagedList(pagedList)`
+- "Endpoint resolution cache TTL" → `11.Communication.Internal` via `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds`
+- "Multiple typed REST clients using service discovery" → `11.Communication.Rest` via inline factory pattern (not shared `ServiceDiscoveryResolvingHandler` DI type)
+
+**Rule 3 — Document inline `Result<T>` → `Envelope<T>` mapping as a platform violation.**
+Add to `00.Governance/CLAUDE.md` and to a governance convention note: "Inline `if (result.IsSuccess) Envelope<T>.Ok(...) else Envelope<T>.Fail(...)` at service boundaries is a platform violation — use `result.ToEnvelope()` from `SharedKernel.Contracts.Mapping`. The mechanical enforcement Roslyn rule is tracked as future SK0xxx."
+
+#### Why this is needed
+
+P-145 (WO-023) and P-159 (WO-025) demonstrated that documentation-only rules regress. The Grpc/Contracts dead reference is a concrete example of drift that cannot be detected by reading code. The `What Goes Where` additions are the standard WO closeout step that encodes architectural decisions for future developers who were not present for this review.
+
+#### Acceptance criteria
+- [ ] NetArchTest rule: `SharedKernel.Communication.Grpc` assembly has no dependency on `SharedKernel.Contracts` assembly; rule documented with P-163 rationale
+- [ ] Four `What Goes Where` entries added to root `CLAUDE.md` for the patterns established in WO-026
+- [ ] Platform violation documented for inline `Result<T>` → `Envelope<T>` mapping; future SK0xxx analyzer noted in backlog
+- [ ] Full architecture test suite passes with 0 violations on the WO-026 codebase
+- [ ] `00.Governance/CLAUDE.md` changelog entry added for WO-026
+---
+
+---
+### P-168 — Testing: Communication Package Test Infrastructure Consolidation
+
+**Status:** `○` Pending
+**Work Order:** WO-026
+**Domain:** 16.Testing
+**Depends on:** P-160, P-162
+
+#### What is needed
+
+Add three reusable Communication test helpers to `SharedKernel.Testing`, consolidating ad-hoc test doubles currently duplicated across `SharedKernel.Communication.Rest.Tests` and `SharedKernel.Communication.Grpc.Tests`:
+
+**Helper 1 — `MockServiceEndpointResolver`.**
+An in-memory `IServiceEndpointResolver` test double that maps service names to `Uri` values. Exposes: `Configure(string serviceName, Uri uri)` for per-service setup; `GetResolvedNames()` returning all service names resolved so far (for assertion); `ResolveAsync` never throws. Supports configuring a per-service exception to simulate resolver failures. Enables REST and gRPC typed-client tests to inject a controllable resolver without a live DNS or K8s cluster.
+
+**Helper 2 — `FakeHttpContextAccessor`.**
+A simple `IHttpContextAccessor` test double that holds a fixed `HttpContext` (or null) with a configurable `TenantId` on its backing `ITenantProvider`. Used by `TenantIdDelegatingHandler` and `TenantIdInterceptor` tests to inject controlled tenant context without a real ASP.NET Core host. Currently implemented ad-hoc in multiple test files — consolidate into `SharedKernel.Testing`.
+
+**Helper 3 — `HttpClientHandlerTestFactory`.**
+A factory that creates a pre-wired `DelegatingHandler` chain without a full `ServiceCollection`. Exposes: `WithInnerHandler(HttpMessageHandler)` (the test double at the bottom of the chain), `WithCorrelationIdHandler()`, `WithTenantIdHandler(Guid? tenantId)`. Returns the outermost handler for direct use in `HttpClient` construction in tests. This eliminates the `ServiceCollection`-based wiring boilerplate in handler unit tests.
+
+**Scope constraint:** `SharedKernel.Testing` must not reference `SharedKernel.Communication.Rest`, `.Grpc`, `.GraphQL` as project references. `MockServiceEndpointResolver` may reference `SharedKernel.Communication.Internal` for `IServiceEndpointResolver`. `FakeHttpContextAccessor` references `Microsoft.AspNetCore.Http` and `SharedKernel.Security.Abstractions`. `HttpClientHandlerTestFactory` references `Microsoft.Extensions.Http` only.
+
+#### Why this is needed
+
+The existing test files implement their own `FakeHttpContext`, `FakeTenantProvider`, and resolver variants. This duplication was appropriate during initial package implementation but should be consolidated now that all four Communication packages are stable. Shared test doubles reduce per-test boilerplate, enforce consistent test isolation patterns, and make test failures easier to diagnose by eliminating per-project variation in test setup code.
+
+#### Acceptance criteria
+- [ ] `MockServiceEndpointResolver` added to `SharedKernel.Testing`; implements `IServiceEndpointResolver`; `Configure`, `GetResolvedNames`, `ResolveAsync` methods present; never throws; supports failure injection per service name
+- [ ] `FakeHttpContextAccessor` added to `SharedKernel.Testing`; implements `IHttpContextAccessor`; configurable `TenantId`; null `HttpContext` supported
+- [ ] `HttpClientHandlerTestFactory` added to `SharedKernel.Testing`; creates handler chain without `ServiceCollection`; supports `WithInnerHandler`, `WithCorrelationIdHandler`, `WithTenantIdHandler` fluent configuration
+- [ ] `SharedKernel.Testing` does not gain project references to `SharedKernel.Communication.Rest`, `.Grpc`, or `.GraphQL`
+- [ ] Ad-hoc duplicates in `SharedKernel.Communication.Rest.Tests` and `SharedKernel.Communication.Grpc.Tests` removed in favour of the new shared helpers
+- [ ] All new helpers carry XML doc comments
+- [ ] Unit tests for the helpers themselves: `MockServiceEndpointResolver` — configured service returns correct Uri; unknown service does not throw; failure injection propagates; `FakeHttpContextAccessor` — null HttpContext returns null; `HttpClientHandlerTestFactory` — handler chain executes in correct order
 ---
