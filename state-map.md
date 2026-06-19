@@ -78,7 +78,7 @@ Format when blocked:
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | T-01–T-26 complete — 203/203 tests passing across Rest (66), Grpc (55), GraphQL (43), Internal (39); all handler, interceptor, resilience, filter, and resolver tests green. | Begin Docs phase (XML doc comments across all four packages). |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
-| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | — | `○` | — | — |
+| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Scaffold | `●` | Scaffold phase (S-01–S-10) complete — real project/package references landed for SharedKernel.ServiceDefaults and SharedKernel.MultiTenancy (replacing the bare .csproj stubs), Extensions/HealthChecks/Telemetry/Probes and Resolution/Middleware/Extensions folder structures, nested .Tests projects referencing SharedKernel.Testing, .slnx registration; dotnet build verified clean across all four projects. | Begin Core phase (C-01–C-19) — AddServiceDefaults, liveness/readiness health check split, StartupGate, full SharedKernel.MultiTenancy resolution-strategy surface, and dependency-specific health check/telemetry extensions. |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
 | 16 | [Testing](16.Testing/state-map.md) | Design | `◐` | — | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
@@ -112,14 +112,14 @@ Format when active:
 | ● Published | 4 |
 | ● RoutingSlip | 1 |
 | ● Governance: Architecture Rules for WO-026 Communication Quality Improvements | 1 |
-| ● Design | 0 |
+| ● Design | 1 |
 | ● Docs | 0 |
 | ● Tests | 1 |
 | ● Core | 0 |
 | ● Scaffold | 1 |
 | ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 8 |
+| ○ Not Started | 7 |
 
 ---
 
@@ -511,7 +511,7 @@ Without enforcement, teams will inevitably reference `SharedKernel.Caching` (the
 ---
 ### P-010 — ServiceDefaults: Redis Health Check and Cache Readiness Probe
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-003
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-005
@@ -1835,6 +1835,12 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-18] Communication → GraphQL (●) — GQ-09 FromPagedList factory complete; 43/43 tests; promoted from SK.11.GraphQL (state-map-phase)
 - [2026-06-19] Governance → Governance: Architecture Rules for WO-026 Communication Quality Improvements (●) — promoted from SK.00.WO026CommunicationQuality (state-map-phase)
 - [2026-06-19] Phase Backlog P-167 → ● Complete — SK.00.WO026CommunicationQuality done (state-map-phase)
+- [2026-06-19] 13 → Design (◐) — Scaffold real project references for ServiceDefaults/MultiTenancy, then AddServiceDefaults() with liveness/readiness split and StartupGate (state-map-phase)
+- [2026-06-19] 13 → Scaffold (●) — promoted from SK.13.Scaffold (10/10); dotnet build verified clean across SharedKernel.ServiceDefaults, SharedKernel.MultiTenancy, and both nested .Tests projects (state-map-phase)
+- [2026-06-19] Phase(s) P-173 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-19] Phase(s) P-172 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-06-19] Phase(s) P-010, P-122, P-132, P-169, P-170, P-171 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-06-19] 13 → Design (●) — promoted from SK.13.Design (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -5829,7 +5835,7 @@ NuGet metadata and XML docs are the developer experience contract for every team
 ---
 ### P-122 — ServiceDefaults: Messaging Health Checks — RabbitMQ and Azure Service Bus Connection Probes
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-020
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-117, P-118
@@ -6171,7 +6177,7 @@ Cross-service command routing is a fundamental pattern in microservice choreogra
 ---
 ### P-132 — ServiceDefaults: Messaging OpenTelemetry Wiring
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-021
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-117, P-118
@@ -7523,4 +7529,180 @@ The existing test files implement their own `FakeHttpContext`, `FakeTenantProvid
 - [ ] Ad-hoc duplicates in `SharedKernel.Communication.Rest.Tests` and `SharedKernel.Communication.Grpc.Tests` removed in favour of the new shared helpers
 - [ ] All new helpers carry XML doc comments
 - [ ] Unit tests for the helpers themselves: `MockServiceEndpointResolver` — configured service returns correct Uri; unknown service does not throw; failure injection propagates; `FakeHttpContextAccessor` — null HttpContext returns null; `HttpClientHandlerTestFactory` — handler chain executes in correct order
+---
+
+---
+### P-169 — ServiceDefaults: Scaffold — Project Structure and Solution Registration
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-027
+**Domain:** 13.ServiceDefaults
+**Depends on:** None
+
+#### What is needed
+
+Stand up real project structure for both packages so every subsequent phase has assemblies to build against. `SharedKernel.ServiceDefaults` gains project references to `SharedKernel.Primitives` (01.Core), `SharedKernel.Caching.Abstractions` (02.Caching), `SharedKernel.Persistence.Abstractions` (06.Persistence), `SharedKernel.Messaging.Abstractions` (07.Messaging), and the package references for `OpenTelemetry.*`, `Microsoft.Extensions.Diagnostics.HealthChecks`, and `Microsoft.Extensions.Hosting`. `SharedKernel.MultiTenancy` gains project references to `SharedKernel.Security.Abstractions` (12.Security), `SharedKernel.Persistence.Abstractions` (06.Persistence), and a package reference for `Microsoft.AspNetCore.Http.Abstractions`. Both gain nested `.Tests` projects referencing `SharedKernel.Testing` (16.Testing), following the standard test-project nesting rule.
+
+Folder structure inside each package mirrors the public-surface grouping already documented in `13.ServiceDefaults/CLAUDE.md` (`Extensions/`, `HealthChecks/`, `Telemetry/`, `Probes/` for `SharedKernel.ServiceDefaults`; `Resolution/`, `Middleware/`, `Extensions/` for `SharedKernel.MultiTenancy`) — exact file names remain the domain planner's call.
+
+#### Why this is needed
+
+Both `.csproj` files currently contain only `TargetFramework`/`Nullable`/`ImplicitUsings` — zero project or package references. None of the three already-queued phases (P-010, P-122, P-132) or the brain's documented public surface can be implemented without real references to the abstractions they wrap. Every other domain in this platform began with an explicit Scaffold phase before Core implementation; ServiceDefaults skipped straight to a brain write-up last session and needs this foundational step before code can land.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.ServiceDefaults.csproj` references `SharedKernel.Primitives`, `SharedKernel.Caching.Abstractions`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Messaging.Abstractions`, `OpenTelemetry.Extensions.Hosting`, `Microsoft.Extensions.Diagnostics.HealthChecks`
+- [ ] `SharedKernel.MultiTenancy.csproj` references `SharedKernel.Security.Abstractions`, `SharedKernel.Persistence.Abstractions`, `Microsoft.AspNetCore.Http.Abstractions`
+- [ ] `SharedKernel.ServiceDefaults.Tests` and `SharedKernel.MultiTenancy.Tests` projects created, nested inside their respective package folders, referencing `SharedKernel.Testing`
+- [ ] Both projects registered in `Platform.SharedKernel.slnx` under the `13.ServiceDefaults` solution folder
+- [ ] `dotnet build` clean across both new project trees with zero implementation code (empty namespaces compile)
+- [ ] `13.ServiceDefaults/CLAUDE.md` and `13.ServiceDefaults/state-map.md` changelog updated
+---
+
+---
+### P-170 — ServiceDefaults: Core — AddServiceDefaults, Liveness/Readiness Split, StartupGate, OpenTelemetry Wiring
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-027
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-169
+
+#### What is needed
+
+The foundational composition entry points exactly as already specified in `13.ServiceDefaults/CLAUDE.md`'s Interface Contracts section — this phase is the implementation of that existing design, not a new design pass:
+
+- `AddServiceDefaults(this IHostApplicationBuilder)` — the mandatory first call in every microservice's `Program.cs`. Wires OpenTelemetry (tracing, metrics, logging via OTLP exporter using the standard `OTEL_EXPORTER_OTLP_ENDPOINT`/`_PROTOCOL` env vars — no SharedKernel-specific config keys) and the base health check infrastructure.
+- `AddSharedKernelHealthChecks(this IServiceCollection)` plus the two endpoint mappings (`/health/live`, `/health/ready`) with the hard tag split: `"live"` checks process-alive only and must never depend on an external system; `"ready"` checks gate load-balancer routing and may depend on DB/cache/broker connectivity.
+- `AddSharedKernelTelemetry(this IHostApplicationBuilder, string serviceName)` — `ResourceBuilder` with service name + assembly version; ASP.NET Core, HttpClient, and (conditionally, when EF Core is referenced) EF Core instrumentation into `TracerProvider`; runtime + ASP.NET Core instrumentation into `MeterProvider`.
+- `StartupGate` (singleton, volatile-backed `IsReady`/`MarkReady()`) and `StartupGateHealthCheck` (tagged `"ready"`, registered automatically and unconditionally by `AddServiceDefaults()` — the only health check that is not opt-in, since it carries no dependency-specific coupling).
+
+This phase does **not** include any dependency-specific health check (Redis, DB, RabbitMQ, ASB) — those remain scoped to P-010 and P-122, which depend on this phase landing first.
+
+#### Why this is needed
+
+This is the load-bearing foundation every other ServiceDefaults phase (P-010, P-122, P-132) and every microservice's `Program.cs` builds on top of. The liveness/readiness tag split is, per the domain's own brain, "the central design invariant" of this package — getting it right here, once, in the base infrastructure prevents every downstream health check phase from having to re-litigate the distinction. Without this phase landing first, P-010 and P-122's `IHealthChecksBuilder` extension methods have no `AddSharedKernelHealthChecks()` base to extend.
+
+#### Acceptance criteria
+- [ ] `AddServiceDefaults()` wires OTLP-exporting tracing, metrics, and logging; registers base health check infrastructure; is documented as the mandatory first call in `Program.cs`
+- [ ] `/health/live` endpoint reports only process-alive signal — verified by a test that registers a deliberately-failing `"ready"`-tagged check and confirms `/health/live` still reports Healthy
+- [ ] `/health/ready` endpoint reports the aggregate of all `"ready"`-tagged checks, independent of `"live"`-tagged ones
+- [ ] `StartupGate.IsReady` defaults to `false`; `MarkReady()` is idempotent (callable multiple times without toggling state back or throwing)
+- [ ] `StartupGateHealthCheck` reports Unhealthy before `MarkReady()`, Healthy after; tagged `"ready"`; registered automatically by `AddServiceDefaults()` with zero additional configuration
+- [ ] `AddSharedKernelTelemetry()` is exposed independently of `AddServiceDefaults()` for services needing a custom `serviceName`
+- [ ] No dependency-specific (Redis/DB/RabbitMQ/ASB) health check is registered by this phase
+- [ ] `13.ServiceDefaults/CLAUDE.md` changelog and `13.ServiceDefaults/state-map.md` Phase: Core tasks updated
+---
+
+---
+### P-171 — ServiceDefaults: MultiTenancy Core — Resolution Strategies, AmbientTenantProvider, TenantResolutionMiddleware
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-027
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-169
+
+#### What is needed
+
+The `SharedKernel.MultiTenancy` public surface exactly as specified in `13.ServiceDefaults/CLAUDE.md`: `ITenantResolutionStrategy` (returns `Task<Guid?>`, null meaning "this strategy does not apply, try the next one" — never throws for an absent tenant signal); the three concrete strategies `HeaderTenantResolutionStrategy` (configurable header name, default `X-Tenant-Id`), `ClaimTenantResolutionStrategy` (thin delegating adapter to `SharedKernel.Security.Oidc.OidcTenantProvider` — must not reimplement claim parsing), and `DatabaseTenantResolutionStrategy` (parameterized tenant-directory lookup via `IDbConnectionFactory`, keyed by request host/subdomain); `TenantResolutionOptions` (Options-pattern POCO, default `StrategyOrder = ["Header", "Claim", "Database"]`); `AmbientTenantProvider` (scoped `ITenantProvider` implementation, `TenantId` defaults to `Guid.Empty`, private setter); `TenantResolutionMiddleware` (runs the configured strategy order, sets `AmbientTenantProvider.TenantId` from the first non-null result, must run after `UseAuthentication()`); and `AddSharedKernelMultiTenancy(IServiceCollection, Action<TenantResolutionOptions>?)` for DI registration.
+
+#### Why this is needed
+
+Multi-tenant SaaS services across the platform currently have no shared, composable tenant-resolution story — each team would otherwise hand-roll header parsing, claim extraction, or tenant-directory lookups independently, with no consistent fallback ordering or fail-safe-to-empty-tenant behavior. This package gives every multi-tenant service a single `AddSharedKernelMultiTenancy()` call with pluggable, ordered resolution strategies, while explicitly avoiding duplication of claim-parsing logic that already lives correctly in `12.Security.Oidc`.
+
+#### Acceptance criteria
+- [ ] `ITenantResolutionStrategy.TryResolveAsync` never throws for a not-applicable request; returns `null` to signal "try next strategy"
+- [ ] `HeaderTenantResolutionStrategy`: present + parseable header → resolved Guid; absent or malformed header → `null` (never throws)
+- [ ] `ClaimTenantResolutionStrategy` delegates to `OidcTenantProvider` for all claim parsing — zero duplicated claim-name string literals outside `SecurityClaimTypes`
+- [ ] `DatabaseTenantResolutionStrategy` uses parameterized queries exclusively — no string-interpolated or concatenated SQL with request-derived values
+- [ ] `TenantResolutionOptions.StrategyOrder` defaults to `["Header", "Claim", "Database"]`; omitting a strategy name from the order means it is never invoked
+- [ ] `AmbientTenantProvider.TenantId` defaults to `Guid.Empty`; setter is private; set exactly once per request by `TenantResolutionMiddleware`
+- [ ] `TenantResolutionMiddleware`: first non-null strategy result wins; zero resolving strategies leaves `TenantId` at `Guid.Empty` without throwing; documented as required to run after `UseAuthentication()`
+- [ ] `AddSharedKernelMultiTenancy()` registers `TenantResolutionOptions` via the Options pattern, `AmbientTenantProvider` as scoped `ITenantProvider`, and the configured strategy set
+- [ ] `13.ServiceDefaults/CLAUDE.md` changelog and `13.ServiceDefaults/state-map.md` Phase: Core tasks updated
+---
+
+---
+### P-172 — Messaging: SharedKernel.Messaging ActivitySource and Consume/Publish Instrumentation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-027
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+
+A static `ActivitySource("SharedKernel.Messaging", "1.0.0")` added to `SharedKernel.Messaging.MassTransit`. `ConsumerBase<TMessage>.Consume()` starts a child `Activity` named `"Consumer.Consume"` from this source, tagged `messaging.message_type = typeof(TMessage).Name`, and enriches its structured log scope with `messaging.destination` (from `ConsumeContext.DestinationAddress?.AbsolutePath`) and `messaging.message_type`. `MassTransitEventPublisher.PublishAsync()` starts a child `Activity` named `"EventPublisher.Publish"` from the same source, tagged `messaging.event_type = typeof(TEvent).Name`.
+
+#### Why this is needed
+
+This was originally assumed to already exist by the pending P-132 ServiceDefaults phase (which only intended to wire an *existing* source into the host's `TracerProvider`/`MeterProvider`). It does not exist — there is no `ActivitySource` anywhere in `07.Messaging` today. Creating custom instrumentation is a `07.Messaging`-owned concern (the domain that owns `ConsumerBase`/`MassTransitEventPublisher`), not a `13.ServiceDefaults` concern — `13.ServiceDefaults` only wires already-existing sources into the host, per its own brain's explicit rule ("`13.ServiceDefaults` never creates an `ActivitySource` or custom meter on behalf of another domain"). Splitting this out corrects a cross-domain phase violation that was latent in P-132 and unblocks it with a true dependency instead of a false assumption.
+
+#### Acceptance criteria
+- [ ] Static `ActivitySource("SharedKernel.Messaging", "1.0.0")` defined once in `SharedKernel.Messaging.MassTransit`
+- [ ] `ConsumerBase<TMessage>.Consume()` starts a child `Activity` named `"Consumer.Consume"` tagged with `messaging.message_type`
+- [ ] `MassTransitEventPublisher.PublishAsync()` starts a child `Activity` named `"EventPublisher.Publish"` tagged with `messaging.event_type`
+- [ ] `ConsumerBase<TMessage>.Consume()` log scope enriched with `messaging.destination` and `messaging.message_type`
+- [ ] Unit test: `Consume()` produces an `Activity` from the `"SharedKernel.Messaging"` source with the correct tag value
+- [ ] Unit test: `PublishAsync()` produces an `Activity` from the `"SharedKernel.Messaging"` source with the correct tag value
+- [ ] `dotnet build` clean; `07.Messaging/CLAUDE.md` changelog updated documenting the new `ActivitySource` and its consumption by `13.ServiceDefaults.WithMessagingTelemetry()` (P-132)
+---
+
+---
+### P-173 — Governance: ServiceDefaults Liveness/Readiness and Composition-Root Layering Rules
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-027
+**Domain:** 00.Governance
+**Depends on:** P-170
+
+#### What is needed
+
+Two new architecture enforcement rules added to `00.Governance/SharedKernel.ArchitectureTests`:
+
+**Rule 1 — Liveness/readiness tag integrity.** A NetArchTest-backed (or reflection-over-`HealthCheckRegistration`-backed) rule asserting that no `IHealthCheck` registered by any `Add*HealthCheck`/`Add*ReadinessCheck` extension in `SharedKernel.ServiceDefaults` ever carries both the `"live"` and `"ready"` tags simultaneously, and that every dependency-specific check (Redis, database, RabbitMQ, Azure Service Bus, cache) carries `"ready"` and never `"live"`. This makes the domain's own stated "central design invariant" mechanically enforced rather than relying on code review discipline.
+
+**Rule 2 — Composition-root exclusivity restated for ServiceDefaults' full provider set.** `P-009`'s `SharedKernelLayeringRules` Rule 1 currently only covers `02.Caching` concrete providers. Extend (or add a sibling rule alongside) it so that no production assembly other than `SharedKernel.ServiceDefaults`/`SharedKernel.MultiTenancy` themselves may reference concrete provider packages from `06.Persistence` (`.EfCore`, `.PostgreSQL`, `.Dapper`), `07.Messaging` (`.MassTransit`), or `12.Security` (`.Oidc`) — mirroring the existing Caching rule so the "13.ServiceDefaults is the only composition root permitted to reference concrete providers" exception, already documented as a hard rule in `13.ServiceDefaults/CLAUDE.md`, is mechanically enforced for every provider family it covers, not just Redis.
+
+#### Why this is needed
+
+`13.ServiceDefaults/CLAUDE.md` already states this composition-root exception as a hard rule and explicitly claims it is "mechanically enforced by `00.Governance`'s `SharedKernelLayeringRules`" — but that rule (P-009) was scoped only to caching providers when it was written for WO-003, before `13.ServiceDefaults` existed as a real package. The claim in the brain is currently aspirational, not actual, for the persistence/messaging/security provider families. Closing this gap before `13.ServiceDefaults` ships its first NuGet package prevents the same silent-coupling drift this platform has already paid down once in caching (P-009) and once in Redis topology (P-145) — `05.Application` or any domain/contract package quietly taking a dependency on `SharedKernel.Persistence.EfCore` or `SharedKernel.Messaging.MassTransit` directly, bypassing abstractions, with nothing to catch it.
+
+#### Acceptance criteria
+- [ ] NetArchTest (or equivalent reflection-based) rule fails when any registered `IHealthCheck` in `SharedKernel.ServiceDefaults`'s own extension methods carries both `"live"` and `"ready"` tags
+- [ ] Rule fails when a dependency-specific check (Redis/DB/RabbitMQ/ASB/cache) is registered without the `"ready"` tag, or with the `"live"` tag
+- [ ] `SharedKernelLayeringRules` extended so no production assembly other than `SharedKernel.ServiceDefaults`/`SharedKernel.MultiTenancy` and the concrete provider packages themselves references `SharedKernel.Persistence.EfCore`, `.PostgreSQL`, `.Dapper`, `SharedKernel.Messaging.MassTransit`, or `SharedKernel.Security.Oidc`
+- [ ] Both rules documented in `00.Governance/CLAUDE.md` with rationale and the exemption list (the composition-root packages themselves)
+- [ ] Full governance test suite passes with both new rules included
+---
+
+---
+### P-174 — Testing: ServiceDefaults Test Doubles — Tenant Resolution and Health Check Assertions
+
+**Status:** `○` Pending
+**Work Order:** WO-027
+**Domain:** 16.Testing
+**Depends on:** P-170, P-171
+
+#### What is needed
+
+Three reusable test helpers added to `SharedKernel.Testing`:
+
+**Helper 1 — `StaticTenantProvider`.** A trivial `ITenantProvider` test double constructed with a fixed `Guid` (or `Guid.Empty` for the no-tenant case). Used by any downstream domain's tests (Persistence, Application, Communication) that need a deterministic tenant context without standing up `AmbientTenantProvider` + middleware + HTTP context.
+
+**Helper 2 — `FakeTenantResolutionStrategy`.** A configurable `ITenantResolutionStrategy` test double — constructed with either a fixed `Guid?` result or a delegate, so `TenantResolutionMiddleware`/`TenantResolutionOptions.StrategyOrder` behavior can be unit tested without real HTTP headers, claims, or a database.
+
+**Helper 3 — `HealthCheckAssertionExtensions`.** Assertion helpers over `IHealthChecksBuilder`/`HealthCheckRegistration` for verifying tag composition in unit tests without booting a `WebApplicationFactory` — e.g. `ShouldBeTaggedReady(this HealthCheckRegistration)`, `ShouldNotBeTaggedLive(this HealthCheckRegistration)`. These give consuming-service test suites (and `13.ServiceDefaults`'s own test suite) a shared, readable way to assert the liveness/readiness invariant without hand-rolling tag-list assertions per test.
+
+**Scope constraint:** `SharedKernel.Testing` must not take a project reference to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy` themselves — `StaticTenantProvider`/`FakeTenantResolutionStrategy` reference only `SharedKernel.Security.Abstractions`; `HealthCheckAssertionExtensions` references only `Microsoft.Extensions.Diagnostics.HealthChecks`.
+
+#### Why this is needed
+
+Every other infrastructure domain in this platform (Caching, Messaging, Domain, Contracts) shipped a `16.Testing` phase alongside its core implementation so that both its own test suite and every downstream consumer's test suite have a sanctioned, shared test double rather than ad-hoc per-project fakes. `13.ServiceDefaults` is no exception, and is in fact higher-leverage here: `ITenantProvider` and tenant-aware health check tags are consumed by nearly every other domain's test suite (Persistence multi-tenancy tests, Application pipeline behavior tests), so a shared `StaticTenantProvider` prevents the same N-times-duplicated fake this platform already had to consolidate once for Communication (P-168).
+
+#### Acceptance criteria
+- [ ] `StaticTenantProvider` added to `SharedKernel.Testing`; implements `ITenantProvider`; constructed with a fixed `Guid`
+- [ ] `FakeTenantResolutionStrategy` added; implements `ITenantResolutionStrategy`-shaped contract (or a structurally compatible delegate-based double if `ITenantResolutionStrategy` itself is not referenced to avoid a project reference to `SharedKernel.MultiTenancy`); configurable fixed result or delegate
+- [ ] `HealthCheckAssertionExtensions` added with `ShouldBeTaggedReady`/`ShouldNotBeTaggedLive` (or equivalently named) assertion helpers over `HealthCheckRegistration`
+- [ ] `SharedKernel.Testing` does not gain a project reference to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`
+- [ ] All new helpers carry XML doc comments
+- [ ] Unit tests for the helpers themselves: `StaticTenantProvider` returns the configured Guid; `FakeTenantResolutionStrategy` returns configured result or delegate output; `HealthCheckAssertionExtensions` correctly passes/fails against tagged and untagged `HealthCheckRegistration` fixtures
 ---

@@ -103,6 +103,7 @@
     <Project Path="13.ServiceDefaults/SharedKernel.MultiTenancy/SharedKernel.MultiTenancy.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.MultiTenancy/SharedKernel.MultiTenancy.Tests/SharedKernel.MultiTenancy.Tests.csproj" />
     <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults/SharedKernel.ServiceDefaults.csproj" />
+    <Project Path="13.ServiceDefaults/SharedKernel.ServiceDefaults/SharedKernel.ServiceDefaults.Tests/SharedKernel.ServiceDefaults.Tests.csproj" />
   </Folder>
   <Folder Name="/14.Presentation/">
     <Project Path="14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.csproj" />
