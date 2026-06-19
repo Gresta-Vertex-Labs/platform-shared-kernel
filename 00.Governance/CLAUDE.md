@@ -1368,10 +1368,28 @@ CommunicationLayeringRules  (static class — Communication layer boundary enfor
         Offending pattern: class OrderFilterType : FilterInputType<Order> { ... }
         Compliant pattern: class OrderFilterType : FilterBase<Order> { ... }
 
+    .GrpcNeverReferencesContracts(Assembly grpcAssembly) → ConditionList
+        Asserts that no type in SharedKernel.Communication.Grpc has any dependency on the
+        SharedKernel.Contracts namespace. Single Types.InAssembly(grpcAssembly).Should()
+        .NotHaveDependencyOn("SharedKernel.Contracts") call.
+        Rationale: SharedKernel.Communication.Grpc is a protocol adapter. The cross-service
+        DTO layer (SharedKernel.Contracts — PagedList, Envelope, integration event payloads)
+        must not flow into gRPC transport code; the dependency was introduced as a dead import
+        in P-163 and was removed in the same PR. This rule mechanically prevents re-introduction.
+        Failure message: "SharedKernel.Communication.Grpc has a dependency on
+        SharedKernel.Contracts. The gRPC package is a protocol adapter — cross-service DTO
+        types must not flow into gRPC transport code (WO-026 P-163 rationale)."
+        No exemption is permitted for this rule. Any future case where Grpc genuinely needs a
+        Contracts type requires a governance review and an explicit revision of this entry before
+        any exemption can be applied.
+        Note: Introduced in WO-026 P-167. Added to the existing CommunicationLayeringRules
+        static class alongside the four predicates from P-159.
+
     Permitted exemption list:
         - SharedKernel.Communication.Grpc namespace — for NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc
         - SharedKernel.Communication.GraphQL namespace — for NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL
         Any additional exemption must be documented here before it is applied in code.
+        GrpcNeverReferencesContracts carries NO permitted exemptions — see rule note above.
 
 NoDirectGrpcInterceptorInheritancePredicate  (class : ICustomRule — internal predicate)
     Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts
@@ -1628,6 +1646,30 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `ReflectionGuardRules.NoMakeGenericMethodReflection` must be called with production assemblies only — never pass `SharedKernel.ArchitectureTests` itself, any `.Tests` project, or `SharedKernel.Benchmarks`. The `ReflectionExemptionRegistry` is part of `SharedKernel.ArchitectureTests` and references to `MakeGenericMethod` inside the test predicate infrastructure itself are not in scope (the predicate is called on the types of the SUPPLIED assembly, not on the predicate's own class).
 - SK0012 is the next sequential ID in the SK0001–SK00N general-purpose block (SK0001–SK0011 were the prior sequential IDs). The 02xx, 03xx, and 07xx blocks are separate domain-specific ranges. SK0012 begins in the general-purpose block because the reflection prohibition is platform-wide and does not belong to any single capability domain.
 - The P-147 motivating incident (EncryptionRotationService.LoadBatchAsync) MUST be referenced in the `ReflectionExemptionRegistry.cs` class-level XML doc comment and in the `NoMakeGenericMethodReflectionPredicate.cs` file header comment. This ensures future readers understand why the registry exists and why expression trees are always preferred over the `MakeGenericMethod` shortcut.
+- `CommunicationLayeringRules.GrpcNeverReferencesContracts` uses a single `.Should().NotHaveDependencyOn("SharedKernel.Contracts")` call — consistent with the established `NotHaveDependencyOn` matching contract (namespace StartsWith, no trailing dot). The term `"SharedKernel.Contracts"` is the exact identifying namespace of the Contracts package. No exemption is permitted — see rule entry in Architecture Test Contracts. Introduced in WO-026 P-167.
+
+---
+
+## WO-026 Governance Conventions
+
+> These conventions encode architectural decisions made in WO-026. They are the authoritative reference for the patterns established in that work order. The root CLAUDE.md "What Goes Where" table should be updated via `/sync-brain` to reflect these entries.
+
+### Cross-Service DTO Boundary Mapping
+
+- `Result<T>` → `Envelope<T>` boundary mapping: `04.Contracts/SharedKernel.Contracts` via `ResultEnvelopeExtensions.ToEnvelope()` / `ToResult()`. These are pure static extension methods on `Result<T>` and `Envelope<T>`; they carry no cross-layer dependency cost because `SharedKernel.Contracts` already references `SharedKernel.Primitives`.
+- **Platform violation — inline mapping forbidden:** Writing `if (result.IsSuccess) Envelope<T>.Ok(result.Value) else Envelope<T>.Fail(result.Error)` at service controller or endpoint boundaries is a platform violation. Always use `result.ToEnvelope()` from `SharedKernel.Contracts.Mapping`. Inline mapping diverges from the platform convention, duplicates the error-projection logic, and is undetectable by the current architecture test suite. A future Roslyn analyzer (next available ID in the general-purpose SK block after SK0013) is tracked as a backlog item to mechanically enforce this rule — no ID is assigned until that phase is planned.
+
+### GraphQL Paged Response
+
+- `PagedResponseType<T>` from a `PagedList<T>` source: `11.Communication.GraphQL` via `PagedResponseType<T>.FromPagedList(pagedList)`. The `PagedResponseType<T>` type is the GraphQL-transport-safe projection of the internal `PagedList<T>` shape from `04.Contracts`. Never construct a raw GraphQL connection type from `PagedList<T>` fields directly — the `FromPagedList` factory applies the correct cursor and total-count mapping.
+
+### K8s Endpoint Resolution TTL
+
+- Endpoint resolution cache TTL: `11.Communication.Internal` via `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds`. All endpoint cache TTL configuration must go through this options type — never through a raw `TimeSpan` or `int` field on a typed client constructor or DI registration. Changing the TTL in one place (options configuration) propagates to all endpoint resolvers; ad-hoc per-client TTL values fragment the discovery behaviour across the service mesh.
+
+### Multiple Typed REST Clients with Service Discovery
+
+- Multiple typed REST clients sharing service discovery: `11.Communication.Rest` via the inline factory pattern — pass the resolved base address from `IServiceEndpointResolver` directly into each `AddRestClient<TClient>()` registration callback. The `ServiceDiscoveryResolvingHandler` is a framework-internal type and must NOT be registered directly as a named `DelegatingHandler` from consuming service code; doing so bypasses the platform's handler-lifetime management and creates invisible coupling to the internal handler type name.
 
 ---
 
@@ -1679,3 +1721,5 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-15] RedisTopologyRules fixed and finalized — 9/9 RedisTopologyRulesTests pass (75/75 full ArchitectureTests.Tests suite, 0 build warnings/errors). Corrected the NotHaveDependencyOn matching contract (no trailing dots; namespace-based StartsWith match) across all five predicates. CapabilityPackagesNeverReferenceEachOther redesigned to return ConditionList[] (one per input assembly) using a per-package own-namespace-term dictionary to eliminate the self-dependency false positive. Documented the fixture-assembly-naming and CreateFromImage patterns for in-memory NetArchTest fixtures; seven implementation rules revised/added — WO-023 SK.00.RedisTopology closeout
 - [2026-06-16] SK0012 MakeGenericMethodReflection added to diagnostic registry (general-purpose sequential block, next after SK0011); ReflectionGuardRules static class added to architecture test contracts (single predicate: NoMakeGenericMethodReflection(Assembly) → ConditionList); NoMakeGenericMethodReflectionPredicate ICustomRule (Mono.Cecil Call/Callvirt opcode walk for MakeGenericMethod name match) and ReflectionExemptionRegistry allow-list mechanism documented; eight new implementation rules added; motivating incident: P-147 EncryptionRotationService.LoadBatchAsync — WO-024 P-153
 - [2026-06-18] SK0013 RawHttpClientConstructorInjection added to diagnostic registry (Usage, Warning; DelegatingHandler base-class exemption and SharedKernel.Communication.Rest namespace exemption; syntax-only, no SemanticModel); CommunicationLayeringRules static class added to architecture test contracts (four predicates: CommunicationPackagesNeverReferencesForbiddenLayers, CommunicationInternalNeverReferencesOtherCommunicationPackages, NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc, NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL); NoDirectGrpcInterceptorInheritancePredicate and NoDirectHotChocolateFilterSortInheritancePredicate ICustomRule predicates documented; hardcoded-URI guard documented as documentation-only (feasibility concern); 93 analyzer + 86 arch tests pass — WO-025 P-159 (sync-brain)
+- [2026-06-18] GrpcNeverReferencesContracts added to CommunicationLayeringRules (single NotHaveDependencyOn("SharedKernel.Contracts") call; no exemption permitted; locks P-163 dead-reference removal permanently); WO-026 Governance Conventions section added (four What Goes Where patterns: ResultEnvelopeExtensions.ToEnvelope, PagedResponseType.FromPagedList, K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds, inline REST client factory pattern); inline Result/Envelope mapping documented as platform violation with future SK0xxx backlog note — WO-026 P-167
+- [2026-06-19] SK.00.WO026CommunicationQuality → ● — GrpcNeverReferencesContracts implemented and verified against pre-written spec (no discrepancy); 88/88 architecture tests passing — WO-026 closeout (sync-brain)

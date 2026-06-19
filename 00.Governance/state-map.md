@@ -47,6 +47,7 @@
 | `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | All tasks in Phase: Redis Package Topology Architecture Rules are `●` | P-145 |
 | `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | All tasks in Phase: Reflection Guard Architecture Rules are `●` | P-153 |
 | `SK.00.CommunicationArchRules` | Governance: Architecture Rules for Communication Layer | All tasks in Phase: Communication Layer Architecture Rules are `●` | P-159 |
+| `SK.00.WO026CommunicationQuality` | Governance: Architecture Rules for WO-026 Communication Quality Improvements | All tasks in Phase: WO-026 Communication Quality are `●` | P-167 |
 
 ---
 
@@ -1862,6 +1863,89 @@ The hardcoded URI guard (rule described in the P-159 spec) remains documentation
 
 ---
 
+## Phase: Governance: Architecture Rules for WO-026 Communication Quality Improvements <!-- phase-key: SK.00.WO026CommunicationQuality -->
+
+> **Trigger:** WO-026 P-167. **Depends on:** P-163 (Communication.Grpc dead-reference removal), P-165 (ResultEnvelopeExtensions in Contracts), P-166 (PagedResponseType.FromPagedList in GraphQL).
+
+P-163 (WO-026) removed a dead `SharedKernel.Contracts` reference from `SharedKernel.Communication.Grpc`. Without a mechanical rule, this reference can silently re-enter on any future Grpc package PR. This phase adds one NetArchTest rule to lock that boundary permanently and documents the four WO-026 architectural patterns as governance conventions.
+
+### WO026CommunicationQuality — Goal
+
+Lock the WO-026 architectural decisions against regression:
+
+1. `SharedKernel.Communication.Grpc` must never reference `SharedKernel.Contracts` — the Grpc package is a protocol adapter that communicates via Protobuf; the `SharedKernel.Contracts` DTO layer is a cross-service concern that should not flow into gRPC transport code. The reference was added accidentally (dead import) and was removed in P-163; the NetArchTest rule mechanically prevents re-introduction.
+2. The four `What Goes Where` patterns established in WO-026 are documented as governance conventions: `ResultEnvelopeExtensions.ToEnvelope()` mapping, `PagedResponseType<T>.FromPagedList(pagedList)`, `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds`, and the inline factory pattern for multiple typed REST clients.
+3. The inline `Result<T>` → `Envelope<T>` mapping anti-pattern is documented as a platform violation with a future SK0xxx mechanical enforcement tracker.
+
+### WO026CommunicationQuality — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests`
+- New files: none — one factory method added to the existing `CommunicationLayeringRules.cs`
+- Modified files:
+  - `SharedKernel.ArchitectureTests/Rules/CommunicationLayeringRules.cs` — add `GrpcNeverReferencesContracts(Assembly grpcAssembly)` factory method
+  - `00.Governance/CLAUDE.md` — add `GrpcNeverReferencesContracts` to `CommunicationLayeringRules`; add four WO-026 `What Goes Where` governance conventions; document inline `Result<T>` → `Envelope<T>` mapping as a platform violation; add Changelog entry
+  - `00.Governance/state-map.md` — this update
+- Deleted files: none
+
+### WO026CommunicationQuality — Diagnostic Registry Changes
+
+No new SK diagnostic IDs. The new rule is a pure NetArchTest assembly-dependency check (the same pattern as all other `CommunicationLayeringRules` factory methods). The future Roslyn analyzer for inline `Result<T>` → `Envelope<T>` mapping is tracked as a backlog item here — no ID assigned yet.
+
+### WO026CommunicationQuality — Implementation Rules
+
+1. `CommunicationLayeringRules.GrpcNeverReferencesContracts(Assembly grpcAssembly)` uses a single `.Should().NotHaveDependencyOn("SharedKernel.Contracts")` call on `Types.InAssembly(grpcAssembly)`. Returns `ConditionList`. The caller passes `typeof(SomeTypeInGrpcPackage).Assembly` — no assembly path is hard-coded. The term `"SharedKernel.Contracts"` is the exact namespace of the `SharedKernel.Contracts` package; NetArchTest's `NotHaveDependencyOn` matches it as a namespace prefix (StartsWith) consistent with the established matching contract documented in the Implementation Rules section.
+2. The factory method lives in the existing `CommunicationLayeringRules` static class alongside the four methods introduced in P-159. No new static class is created.
+3. Failure message: `"SharedKernel.Communication.Grpc has a dependency on SharedKernel.Contracts. The gRPC package is a protocol adapter — cross-service DTO types must not flow into gRPC transport code. Reference was introduced accidentally in P-163 and is forbidden by this rule (WO-026)."` The failure is reported via `ConditionList.GetResult()` using the NetArchTest standard failure format.
+4. The permitted exemption list for `CommunicationLayeringRules` does NOT include `SharedKernel.Contracts` for `SharedKernel.Communication.Grpc` — this exemption must never be added. If a future Grpc package genuinely needs to reference a type from `SharedKernel.Contracts`, a governance review must be opened and the rule must be explicitly revised with the rationale documented here before any exemption is applied.
+5. Four WO-026 `What Goes Where` governance conventions are documented in `00.Governance/CLAUDE.md` (not in the root CLAUDE.md — the root brain is updated separately via `/sync-brain`):
+   - `Result<T>` → `Envelope<T>` boundary mapping extension: `04.Contracts/SharedKernel.Contracts` via `ResultEnvelopeExtensions.ToEnvelope()` / `ToResult()`. These are pure static extension methods on `Result<T>` and `Envelope<T>`; they introduce no cross-layer dependency because `SharedKernel.Contracts` already references `SharedKernel.Primitives` (where `Result<T>` lives).
+   - `PagedResponseType<T>` from a `PagedList<T>` source: `11.Communication.GraphQL` via `PagedResponseType<T>.FromPagedList(pagedList)`. The `PagedResponseType<T>` type lives in `SharedKernel.Communication.GraphQL` and is the GraphQL-transport-safe projection of the internal `PagedList<T>` shape from `04.Contracts`.
+   - Endpoint resolution cache TTL: `11.Communication.Internal` via `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds`. All endpoint cache TTL configuration must go through this options type — never through a raw `TimeSpan` or `int` field on a typed client.
+   - Multiple typed REST clients sharing service discovery: `11.Communication.Rest` via the inline factory pattern (pass the resolved base address directly to each `AddRestClient<TClient>()` call using `IServiceEndpointResolver` injected into the DI callback). The `ServiceDiscoveryResolvingHandler` is a framework-internal type and must NOT be registered directly as a `DelegatingHandler` from consuming code.
+6. The inline `Result<T>` → `Envelope<T>` anti-pattern is documented as a platform violation: writing `if (result.IsSuccess) Envelope<T>.Ok(result.Value) else Envelope<T>.Fail(result.Error)` at service controller/endpoint boundaries is forbidden — always use `result.ToEnvelope()` from `SharedKernel.Contracts.Mapping`. A future Roslyn analyzer (SK0014 or next available ID in the 11xx Communication block) is tracked in the backlog; no ID is assigned until that phase is planned.
+
+### WO026CommunicationQuality — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/CommunicationLayeringRules.cs` | SharedKernel.ArchitectureTests | Modify | Add `GrpcNeverReferencesContracts(Assembly grpcAssembly)` → `ConditionList` factory method |
+
+### WO026CommunicationQuality — Acceptance Criteria
+
+- [ ] NetArchTest rule: `CommunicationLayeringRules.GrpcNeverReferencesContracts` fires when `SharedKernel.Communication.Grpc` assembly has any dependency on `SharedKernel.Contracts`; rule documented with P-163 rationale
+- [ ] NetArchTest rule pass path: clean `SharedKernel.Communication.Grpc` assembly (post P-163) passes the rule with no violations
+- [ ] Full architecture test suite passes with 0 violations on the WO-026 codebase
+- [ ] `00.Governance/CLAUDE.md` updated with `GrpcNeverReferencesContracts` factory method in `CommunicationLayeringRules`
+- [ ] Four WO-026 `What Goes Where` governance conventions documented in `00.Governance/CLAUDE.md`
+- [ ] Inline `Result<T>` → `Envelope<T>` mapping platform violation documented in `00.Governance/CLAUDE.md` with future SK0xxx backlog note
+- [ ] `00.Governance/CLAUDE.md` changelog entry added for WO-026
+
+### WO026CommunicationQuality — Dependencies
+
+- Requires P-163 (`SharedKernel.Communication.Grpc` dead-reference removal — the rule fires against the actual assembly, so the assembly must be clean before the test is added): yes — without P-163 the new rule would immediately fail on the existing codebase, requiring a bootstrap workaround
+- Requires P-165 (`ResultEnvelopeExtensions.ToEnvelope()` / `ToResult()` in `SharedKernel.Contracts`): yes — the `What Goes Where` convention documents these extension methods; they must exist before the convention is accurate
+- Requires P-166 (`PagedResponseType<T>.FromPagedList(pagedList)` in `SharedKernel.Communication.GraphQL`): yes — same as P-165
+- Requires `SK.00.CommunicationArchRules` (P-159) to be complete: yes — `GrpcNeverReferencesContracts` is added to the existing `CommunicationLayeringRules` class
+- Unblocks: WO-026 governance closeout; CI architecture gate confirming Grpc/Contracts boundary
+
+### WO026CommunicationQuality — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new Roslyn analyzer in this phase)
+- Target framework: `net10.0` (ArchitectureTests only)
+
+### WO026CommunicationQuality — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-51 | Define `CommunicationLayeringRules.GrpcNeverReferencesContracts(Assembly)` factory method shape: single `.Should().NotHaveDependencyOn("SharedKernel.Contracts")` call; failure message naming P-163 rationale; no exemption permitted; document four WO-026 `What Goes Where` governance conventions and inline mapping anti-pattern in `00.Governance/CLAUDE.md` | SharedKernel.ArchitectureTests | `●` |
+| C-70 | Implement `CommunicationLayeringRules.GrpcNeverReferencesContracts(Assembly grpcAssembly)` in `Rules/CommunicationLayeringRules.cs` — single `Types.InAssembly(grpcAssembly).Should().NotHaveDependencyOn("SharedKernel.Contracts")` returning `ConditionList`; add XML doc comment with P-163 rationale and WO-026 context | SharedKernel.ArchitectureTests | `●` |
+| T-127 | Architecture test (fire path): contrived in-memory assembly shaped as `SharedKernel.Communication.Grpc` that contains a type referencing a type in `SharedKernel.Contracts`; assert `GrpcNeverReferencesContracts` fails and failure message names the dependency | SharedKernel.ArchitectureTests | `●` |
+| T-128 | Architecture test (pass path): pass the real post-P-163 `SharedKernel.Communication.Grpc` assembly (or a clean contrived fixture with no Contracts reference); assert `GrpcNeverReferencesContracts` passes | SharedKernel.ArchitectureTests | `●` |
+| DO-23 | Document `GrpcNeverReferencesContracts`, the four WO-026 `What Goes Where` governance conventions, and the inline `Result<T>` → `Envelope<T>` platform violation (with future SK0xxx backlog note) in `00.Governance/CLAUDE.md`; update Changelog entry | SharedKernel.ArchitectureTests | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -1876,7 +1960,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 306.
+> Counts updated whenever a task state changes. Total tasks: 311.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -1902,6 +1986,7 @@ Format when active:
 | `SK.00.RedisTopology` | Governance: Architecture Rules for Redis Package Topology | 16 | 16 | 0 | `●` |
 | `SK.00.ReflectionGuard` | Governance: Architecture Rule Forbidding Reflection-Based Generic Method Invocation | 7 | 7 | 0 | `●` |
 | `SK.00.CommunicationArchRules` | Governance: Architecture Rules for Communication Layer | 16 | 16 | 0 | `●` |
+| `SK.00.WO026CommunicationQuality` | Governance: Architecture Rules for WO-026 Communication Quality Improvements | 5 | 5 | 0 | `●` |
 
 ---
 
@@ -1954,3 +2039,5 @@ Format when active:
 - [2026-06-18] Phase SK.00.CommunicationArchRules added — 17 tasks: D-50, C-67–C-69, T-116–T-126, DO-22; SK0013 RawHttpClientConstructorInjection registered (Roslyn syntax-only, netstandard2.0, DelegatingHandler and SharedKernel.Communication.Rest exemptions); CommunicationLayeringRules static class (four NetArchTest predicates: forbidden-layer isolation for 11.Communication.*, Communication.Internal sibling isolation, gRPC interceptor direct-inheritance guard, HotChocolate FilterInputType/SortInputType direct-inheritance guard); NoDirectGrpcInterceptorInheritancePredicate and NoDirectHotChocolateFilterSortInheritancePredicate (ICustomRule, Mono.Cecil BaseType chain walk); hardcoded-URI guard documented as documentation-only (feasibility concern); total tasks now 306 — WO-025 P-159
 - [2026-06-17] D-49, C-65–C-66, T-113–T-115, DO-21 → ● in SK.00.ReflectionGuard — all 7 tasks complete; NoMakeGenericMethodReflectionPredicate (Mono.Cecil Call/Callvirt IL walk for exact "MakeGenericMethod" name match) implemented in Predicates/; ReflectionExemptionRegistry (static allow-list, ships empty, internal Register/Unregister for test support via InternalsVisibleTo) implemented in root; ReflectionGuardRules.NoMakeGenericMethodReflection(Assembly) factory implemented in Rules/; 3/3 new tests pass (T-113 fire, T-114 pass, T-115 exemption), 78/78 full ArchitectureTests.Tests suite pass, 0 build warnings/errors; CLAUDE.md already contained complete SK0012 documentation from WO-024 planning — verified accurate, no duplication; SK.00.ReflectionGuard → ●
 - [2026-06-18] D-50, C-67–C-69, T-116–T-126, DO-22 → ● in SK.00.CommunicationArchRules — all 16 tasks complete; CommunicationLayeringRules (4 factory methods), NoDirectGrpcInterceptorInheritancePredicate, NoDirectHotChocolateFilterSortInheritancePredicate, SK0013 RawHttpClientConstructorInjectionAnalyzer implemented; 93 analyzer tests pass, 86 arch tests pass; SK.00.CommunicationArchRules → ● (state-map-phase)
+- [2026-06-18] Phase SK.00.WO026CommunicationQuality added — 5 tasks: D-51, C-70, T-127–T-128, DO-23; GrpcNeverReferencesContracts NetArchTest rule (adds to existing CommunicationLayeringRules class); no new SK IDs; four WO-026 What Goes Where governance conventions; inline Result/Envelope mapping documented as platform violation with future SK0xxx backlog note; total tasks now 311 — WO-026 P-167
+- [2026-06-19] D-51, C-70, T-127–T-128, DO-23 → ● in SK.00.WO026CommunicationQuality — all 5 tasks complete; GrpcNeverReferencesContracts implemented in CommunicationLayeringRules.cs; 2 new tests (T-127 fire-path, T-128 pass-path against the real SharedKernel.Communication.Grpc assembly) pass; 88/88 full ArchitectureTests.Tests suite passes, 0 build warnings/errors; CLAUDE.md documentation pre-written by governance-arch-planner verified accurate against the implementation, no edits needed; SK.00.WO026CommunicationQuality → ● (state-map-phase)

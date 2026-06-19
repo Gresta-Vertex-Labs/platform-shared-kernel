@@ -374,6 +374,86 @@ public class CommunicationLayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
+    // T-127 — Fire path: contrived assembly references SharedKernel.Contracts
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-127: A contrived assembly shaped like <c>SharedKernel.Communication.Grpc</c> whose type
+    /// references <c>SharedKernel.Contracts</c> must fail
+    /// <see cref="CommunicationLayeringRules.GrpcNeverReferencesContracts"/> — this is the
+    /// regression that P-163 (WO-026) removed and that this rule mechanically forbids from
+    /// re-entering the codebase.
+    /// </summary>
+    [Fact]
+    public void GrpcNeverReferencesContracts_ContractsReference_RuleFails()
+    {
+        const string contractsStubSource = """
+            namespace SharedKernel.Contracts
+            {
+                public class PagedList<T> { }
+            }
+            """;
+
+        const string grpcSource = """
+            namespace SharedKernel.Communication.Grpc
+            {
+                public class GrpcResponseMapper
+                {
+                    // Violation: a dead reference into SharedKernel.Contracts, the regression
+                    // mechanically forbidden by GrpcNeverReferencesContracts (WO-026 P-163).
+                    private readonly SharedKernel.Contracts.PagedList<object> _paged;
+
+                    public GrpcResponseMapper(SharedKernel.Contracts.PagedList<object> paged)
+                    {
+                        _paged = paged;
+                    }
+                }
+            }
+            """;
+
+        var contractsAssembly = CompileInMemory(
+            "Fixture.GrpcContracts.SharedKernel.Contracts.Stub",
+            contractsStubSource);
+
+        var grpcAssembly = CompileInMemory(
+            "Fixture.GrpcContracts.ViolatingGrpc",
+            grpcSource,
+            extraReferences: new[] { contractsAssembly });
+
+        var result = CommunicationLayeringRules
+            .GrpcNeverReferencesContracts(grpcAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "GrpcResponseMapper depends on SharedKernel.Contracts — forbidden for " +
+                     "SharedKernel.Communication.Grpc (WO-026 P-163)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-128 — Pass path: the real SharedKernel.Communication.Grpc assembly (post P-163)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-128: The real, currently-built <c>SharedKernel.Communication.Grpc</c> assembly — clean
+    /// of the <c>SharedKernel.Contracts</c> dead reference removed in P-163 — must pass
+    /// <see cref="CommunicationLayeringRules.GrpcNeverReferencesContracts"/> with zero violations.
+    /// </summary>
+    [Fact]
+    public void GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses()
+    {
+        var grpcAssembly = typeof(SharedKernel.Communication.Grpc.Builders.IGrpcCommunicationBuilder)
+            .Assembly;
+
+        var result = CommunicationLayeringRules
+            .GrpcNeverReferencesContracts(grpcAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "SharedKernel.Communication.Grpc has no dependency on SharedKernel.Contracts " +
+                     "since the dead reference was removed in P-163 (WO-026)");
+    }
+
+    // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
 

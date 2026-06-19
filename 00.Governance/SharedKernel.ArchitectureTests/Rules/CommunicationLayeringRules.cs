@@ -195,4 +195,38 @@ public static class CommunicationLayeringRules
             .Should()
             .MeetCustomRule(new NoDirectHotChocolateFilterSortInheritancePredicate());
     }
+
+    /// <summary>
+    /// Asserts that no type in <c>SharedKernel.Communication.Grpc</c> has any dependency on
+    /// <c>SharedKernel.Contracts</c>.
+    /// </summary>
+    /// <param name="grpcAssembly">The <c>SharedKernel.Communication.Grpc</c> assembly.</param>
+    /// <returns>
+    /// A single <see cref="ConditionList"/>. The caller must assert
+    /// <c>.GetResult().IsSuccessful</c>.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <c>SharedKernel.Communication.Grpc</c> is a protocol adapter — it communicates via
+    /// Protobuf, not via the <c>SharedKernel.Contracts</c> cross-service DTO layer. A dead
+    /// reference from <c>Communication.Grpc</c> to <c>SharedKernel.Contracts</c> was introduced
+    /// accidentally and removed in P-163 (WO-026). This rule mechanically prevents the reference
+    /// from re-entering the project on any future Grpc package PR.
+    /// </para>
+    /// <para>
+    /// No exemption is permitted for this rule. If a future <c>Communication.Grpc</c> change
+    /// genuinely needs a type from <c>SharedKernel.Contracts</c>, a governance review must be
+    /// opened and this rule must be explicitly revised — with the rationale documented in
+    /// <c>00.Governance/CLAUDE.md</c> — before any exemption is applied.
+    /// </para>
+    /// </remarks>
+    public static ConditionList GrpcNeverReferencesContracts(Assembly grpcAssembly)
+    {
+        return Types
+            .InAssembly(grpcAssembly)
+            .That()
+            .HaveNameStartingWith(string.Empty) // select all types
+            .Should()
+            .NotHaveDependencyOn("SharedKernel.Contracts");
+    }
 }

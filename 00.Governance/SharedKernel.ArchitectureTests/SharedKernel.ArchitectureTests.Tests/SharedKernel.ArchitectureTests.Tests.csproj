@@ -49,6 +49,10 @@
                       PrivateAssets="all" />
     <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Communication.Grpc assembly in
+         CommunicationLayeringRulesTests.GrpcNeverReferencesContracts pass-path test (T-128) -->
+    <ProjectReference Include="..\..\..\11.Communication\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
