@@ -1,0 +1,16 @@
+---
+name: phase-sequencing
+description: Build order dependencies between 13.ServiceDefaults Scaffold/Core tasks and the cross-domain P-172 gate on WithMessagingTelemetry
+metadata:
+  type: project
+---
+
+As of 2026-06-19, the first real task breakdown landed for `13.ServiceDefaults` covering six root backlog items in one pass: P-169 (Scaffold), P-170 (Core foundation — `AddServiceDefaults`/`AddSharedKernelTelemetry`/`AddSharedKernelHealthChecks`/`StartupGate`), P-171 (Core — full `SharedKernel.MultiTenancy` surface), P-010 (Core — Redis/cache health + caching OTel, WO-003), P-122 (Core — RabbitMQ/ASB health, WO-020), P-132 (Core — `WithMessagingTelemetry`, WO-021).
+
+**Hard build order:** Scaffold (S-01→S-10, real `.csproj` references replacing bare stubs) before any Core task. Within Core, the foundation (C-01→C-12: `AddServiceDefaults`, `AddSharedKernelTelemetry`, `AddSharedKernelHealthChecks` + live/ready split, `StartupGate`/`StartupGateHealthCheck`, full MultiTenancy surface) before any dependency-specific extension (C-13→C-19), because every dependency-specific check extends the `IHealthChecksBuilder` returned by `AddSharedKernelHealthChecks()`.
+
+**Cross-domain gate:** C-19 (`WithMessagingTelemetry`) cannot be implemented until `07.Messaging`'s P-172 lands — that phase defines the static `ActivitySource("SharedKernel.Messaging", "1.0.0")` in `SharedKernel.Messaging.MassTransit.Diagnostics.MessagingDiagnostics`. As of this writing P-172 is still `○` pending in `07.Messaging/state-map.md`'s `SK.07.OTel` phase (work order WO-027, same WO as our own Scaffold/Core phases — coordinate timing). Before greenlighting C-19 implementation, re-check `07.Messaging/state-map.md` for `SK.07.OTel` phase state.
+
+**Why:** P-132's own acceptance criteria explicitly forbid redesigning the ActivitySource itself in this domain — that ownership boundary is what makes the cross-domain check necessary rather than just implementing inline.
+
+**How to apply:** When dispatching Core-phase implementation work for `13.ServiceDefaults`, always verify Scaffold is `●` first, and for C-19 specifically verify `07.Messaging`'s `SK.07.OTel` phase status before starting. See [[health_check_tag_calibration]] for the tag/status rules these tasks must satisfy.

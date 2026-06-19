@@ -55,4 +55,13 @@ metadata:
 - Correct flow: domain event → IDomainEventDispatcher → application handler → IEventPublisher
 - Never call IMessageBus or IEventPublisher from domain entities, value objects, or AggregateRoot
 
+## OTel ActivitySource Ownership (P-172, WO-027)
+
+- `MessagingDiagnostics.ActivitySource` ("SharedKernel.Messaging", "1.0.0") is created and owned in `SharedKernel.Messaging.MassTransit` — BCL `System.Diagnostics`, zero new NuGet deps
+- A static `readonly ActivitySource` is an explicit, documented exception to the "no static mutable state" hard rule — it's the platform-standard .NET diagnostics instrument pattern (same shape as a static logger category/Meter), carries no mutable business state
+- `13.ServiceDefaults` NEVER creates an `ActivitySource` or `Meter` on behalf of another domain — it only registers already-existing source names with the host's `TracerProvider`/`MeterProvider`. P-132 (pending, 13.ServiceDefaults) had wrongly assumed this source already existed in 07.Messaging; P-172 fixes the false premise so P-132 has a real dependency
+- `ConsumerBase<TMessage>.Consume()` starts child Activity "Consumer.Consume" tagged `messaging.message_type`; also enriches log scope with `messaging.destination` (from `ConsumeContext.DestinationAddress?.AbsolutePath`) + `messaging.message_type`
+- `MassTransitEventPublisher.PublishAsync<TEvent>()` starts child Activity "EventPublisher.Publish" tagged `messaging.event_type`
+- Pattern to watch for generally: when another domain's pending phase assumes a 07.Messaging instrumentation/contract exists that doesn't, fix it as a same-domain 07.Messaging phase first, not a workaround elsewhere
+
 Related: [[project-messaging-domain]]
