@@ -63,6 +63,7 @@ Look up the domain in this registry:
 | 07.Messaging | `implement-phase-messaging` |
 | 11.Communication | `implement-phase-communication` |
 | 12.Security | `implement-phase-security` |
+| 13.ServiceDefaults | `implement-phase-servicedefaults` |
 
 If the domain is **not in the registry**, output:
 ```
