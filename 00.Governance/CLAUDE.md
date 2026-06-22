@@ -1636,6 +1636,78 @@ NoDbContextTransactionInApplicationPredicate  (class : ICustomRule — internal 
     Returns false (rule violated) on the first match, with failure message naming the
     offending type and the specific declaration site. Lives in Predicates/ folder. Used by
     EfCorePackageHygieneRules.ApplicationLayerMustNotReferenceDbContextTransaction.
+
+HealthCheckConstantsUsageRules  (static class — generalized magic-string-vs-constants-class guard; WO-028 P-178)
+    Additive to HealthCheckTagIntegrityRules (WO-027 P-173) — a DIFFERENT concern. P-173 enforces
+    "live"/"ready" tag mutual-exclusivity semantics. This rule enforces a source-discipline
+    concern: a bare string literal must not duplicate a value already exposed by a sibling
+    constants class. The two rule groups must never be merged or confused; both apply to
+    SharedKernel.ServiceDefaults independently.
+    .NoBareHealthCheckLiteralWhereConstantsExist(Assembly assembly)  → ConditionList
+        Uses NoBareHealthCheckLiteralWhereConstantsExistPredicate (ICustomRule — see below).
+        Algorithm: (a) runs StringConstantsClassDetector once across the supplied assembly to
+        resolve the full set of (declaring type, field name, literal value) tuples exposed by
+        every detected "string constants class" in that assembly; if the resolved set is empty,
+        the rule passes unconditionally (nothing to enforce yet — covers any domain before it
+        adopts the constants-class pattern); (b) for each recognized health-check registration
+        call site (IHealthChecksBuilder.Add, .AddCheck, or HealthCheckRegistration's constructor),
+        collects every string literal argument via the established Ldstr literal-collection
+        technique (same technique as NoConflictingLivenessReadinessTagsPredicate /
+        DependencyHealthChecksCarryReadyNotLivePredicate, P-173); (c) fails if any collected
+        literal exactly matches a resolved constant value. Failure message names the offending
+        method, the literal value, and the constants-class type + field name that already
+        exposes that value.
+        Generality requirement (acceptance-critical): neither this method nor its predicate may
+        contain the literal strings "HealthCheckTags" or "HealthCheckNames" (or any other
+        concrete constants-class name) anywhere in the implementation. Detection is entirely
+        shape- and value-based (see StringConstantsClassDetector below) — the rule generalizes
+        unmodified to any future domain that introduces its own well-known-string constants
+        class guarding a registration API of the same general shape.
+        Rationale: P-177's audit found two generations of the same mistake in one domain —
+        HealthCheckTags was built correctly as a constants class, but five sibling files kept
+        hardcoding default health-check names as bare literals instead of extending the same
+        discipline. Nothing mechanically caught the inconsistency. This rule is the platform's
+        third instance of turning a one-time manual fix into a permanent, mechanically-enforced
+        guarantee (precedent: SharedKernelLayeringRules/CachingAbstractionRules P-009,
+        RedisTopologyRules P-145).
+        Offending pattern: builder.AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
+            when a sibling HealthCheckTags.Live constant with value "live" already exists
+        Compliant pattern: builder.AddCheck(HealthCheckNames.Self, () => HealthCheckResult.Healthy(), tags: new[] { HealthCheckTags.Live })
+
+StringConstantsClassDetector  (class — reusable helper; NOT itself an ICustomRule; WO-028 P-178)
+    Detects the "string constants class" shape and resolves the literal values it exposes.
+    A type qualifies if: TypeDefinition.IsAbstract && TypeDefinition.IsSealed (the C# `static
+    class` IL shape) AND it declares at least one field AND every field on the type is either
+    (a) IsLiteral with FieldType.FullName == "System.String" (a `const string`), or
+    (b) IsInitOnly && IsStatic with FieldType.FullName == "System.String" (a `static readonly
+    string`). Mixed-type constants classes (string constants alongside non-string constants)
+    still qualify — non-string fields are ignored, not disqualifying; only string-typed fields
+    contribute to the resolved value set. Returns the full set of (declaring type name, field
+    name, literal value) tuples found across every qualifying type in the supplied assembly.
+    Lives in Predicates/ folder despite not being an ICustomRule — co-located with its sole
+    consumer for discoverability. Used by
+    HealthCheckConstantsUsageRules.NoBareHealthCheckLiteralWhereConstantsExist. This is the
+    platform's third distinct Mono.Cecil IL/metadata technique in this domain: (1) opcode-
+    presence (single opcode/method-name match, e.g. NoMakeGenericMethodReflectionPredicate),
+    (2) Ldstr literal-collection (a set of string operands within a scoped method, e.g.
+    NoConflictingLivenessReadinessTagsPredicate), (3) field-shape + literal-value resolution
+    (this class — inspects TypeDefinition.Fields rather than method bodies).
+
+NoBareHealthCheckLiteralWhereConstantsExistPredicate  (class : ICustomRule — internal predicate)
+    Calls StringConstantsClassDetector once per assembly scan to build the resolved constant-
+    value set. Recognizes health-check registration call sites by MethodReference.Name plus a
+    declaring-type check (Implementation Rules below name the exact declaring-type names to
+    confirm during implementation): "Add"/"AddCheck" on the Microsoft.Extensions.Diagnostics
+    .HealthChecks IHealthChecksBuilder extension-method host type, and ".ctor" on
+    HealthCheckRegistration. For each matched call, walks the Ldstr-literal-collection technique
+    (reused from NoConflictingLivenessReadinessTagsPredicate) to gather every string literal
+    argument at that call site — covering both the check-name argument and any tag-array/tag-
+    parameter argument. Returns false (rule violated) on the first literal found whose value
+    exactly matches a resolved constant value, with failure message naming the offending method,
+    the literal value, and the matching constants-class type + field name. Returns true
+    (passes) unconditionally if the resolved constant-value set is empty (no constants class
+    exists yet in the assembly). Lives in Predicates/ folder. Used by
+    HealthCheckConstantsUsageRules.NoBareHealthCheckLiteralWhereConstantsExist.
 ```
 
 ---
@@ -1768,6 +1840,11 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - The IL-literal-collection technique in `HealthCheckTagIntegrityRules` is **not** a full data-flow analysis. If a tag value is computed dynamically (e.g., from `IConfiguration`) rather than expressed as a literal at the call site, neither predicate observes it. This is a documented limitation, not a defect — record it in the predicate's XML doc and do not attempt to "fix" it with a heavier analysis unless a real false-negative is found in production code.
 - `CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders` is the structural sibling of `CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching` — same `ConditionList[]`-per-forbidden-term shape as `RedisTopologyRules.RedisCoreNeverReferencesCapabilityPackages`. It introduces zero new Mono.Cecil predicates; it is pure `NetArchTest.eNt` namespace-prefix dependency checking, consistent with the `NotHaveDependencyOn` matching contract documented earlier in this file (StartsWith on dependency namespaces, no trailing dot, no self-collision risk because none of the five forbidden terms is a prefix of `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`).
 - Both `HealthCheckTagIntegrityRules` and `CompositionRootExclusivityRules` were designed in WO-027 P-173 **before** `SharedKernel.ServiceDefaults` and `SharedKernel.MultiTenancy` exist as buildable assemblies (P-170 is still pending at design time). Test fixtures for this phase must use contrived in-memory assemblies built via `CSharpCompilation` + `MetadataReference.CreateFromImage` — the same technique documented for `RedisTopologyRulesTests` — rather than referencing the real packages. A follow-up confirmation pass against the real `SharedKernel.ServiceDefaults` assembly is required once P-170 ships; this is tracked as a follow-up, not a blocking condition on this phase's own completion.
+- `HealthCheckConstantsUsageRules` is **additive to, not a replacement for,** `HealthCheckTagIntegrityRules` (P-173). The two enforce different concerns on the same `SharedKernel.ServiceDefaults` assembly: `HealthCheckTagIntegrityRules` enforces tag *semantics* ("live"/"ready" mutual exclusivity); `HealthCheckConstantsUsageRules` enforces *source discipline* (bare literals must not duplicate an existing constant). Never collapse these into a single rule group — they were introduced in separate work orders (P-173, P-178) for separate motivating incidents and may evolve independently.
+- `StringConstantsClassDetector`'s shape check (`IsAbstract && IsSealed`) is the standard Mono.Cecil IL signature for a C# `static class` — there is no `IsStatic` flag on `TypeDefinition` in IL; `static` classes compile to `abstract sealed`. Do not attempt to find an `IsStatic` property on `TypeDefinition` — it does not exist for types (only for fields and methods).
+- `NoBareHealthCheckLiteralWhereConstantsExistPredicate` and `HealthCheckConstantsUsageRules` must **never** contain a concrete constants-class name (e.g. `"HealthCheckTags"`, `"HealthCheckNames"`) as a string literal anywhere in the implementation. This is the acceptance-critical generality requirement from WO-028 P-178 — the rule must generalize unmodified to any future domain's constants class. Code review must reject any PR that adds a name-specific check to this rule; if a domain needs name-specific enforcement, that belongs in a new, separately-scoped rule, not a special case bolted onto this one.
+- The exact declaring-type name for the `Microsoft.Extensions.Diagnostics.HealthChecks` `IHealthChecksBuilder.Add`/`.AddCheck` extension-method host type must be confirmed during implementation (it is an extension-method host class, e.g. `HealthChecksBuilderAddCheckExtensions` or similar — verify against the actual NuGet package version in use) and recorded in this file once confirmed. Do not guess the name in the predicate without verifying it against the real assembly metadata first — a wrong declaring-type name silently produces zero matches (false negative) rather than a build error.
+- `StringConstantsClassDetector` resolves literal *values*, not names — the predicate compares the bare literal's string value against the resolved constant value set, never against a field or class name. This is the design choice that lets the rule fire correctly regardless of what the constants class or its fields are named, and is what makes the rule catch the exact P-177 incident shape (a literal that happens to equal an existing constant's value) without requiring any naming convention from the consuming domain.
 
 ---
 
@@ -1844,4 +1921,5 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-18] SK0013 RawHttpClientConstructorInjection added to diagnostic registry (Usage, Warning; DelegatingHandler base-class exemption and SharedKernel.Communication.Rest namespace exemption; syntax-only, no SemanticModel); CommunicationLayeringRules static class added to architecture test contracts (four predicates: CommunicationPackagesNeverReferencesForbiddenLayers, CommunicationInternalNeverReferencesOtherCommunicationPackages, NoDirectGrpcInterceptorInheritanceOutsideCommunicationGrpc, NoDirectHotChocolateFilterSortInheritanceOutsideGraphQL); NoDirectGrpcInterceptorInheritancePredicate and NoDirectHotChocolateFilterSortInheritancePredicate ICustomRule predicates documented; hardcoded-URI guard documented as documentation-only (feasibility concern); 93 analyzer + 86 arch tests pass — WO-025 P-159 (sync-brain)
 - [2026-06-18] GrpcNeverReferencesContracts added to CommunicationLayeringRules (single NotHaveDependencyOn("SharedKernel.Contracts") call; no exemption permitted; locks P-163 dead-reference removal permanently); WO-026 Governance Conventions section added (four What Goes Where patterns: ResultEnvelopeExtensions.ToEnvelope, PagedResponseType.FromPagedList, K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds, inline REST client factory pattern); inline Result/Envelope mapping documented as platform violation with future SK0xxx backlog note — WO-026 P-167
 - [2026-06-19] SK.00.WO026CommunicationQuality → ● — GrpcNeverReferencesContracts implemented and verified against pre-written spec (no discrepancy); 88/88 architecture tests passing — WO-026 closeout (sync-brain)
+- [2026-06-19] HealthCheckConstantsUsageRules static class added to architecture test contracts (single predicate: NoBareHealthCheckLiteralWhereConstantsExist) — generalized magic-string-vs-constants-class guard, additive to (not a replacement for) HealthCheckTagIntegrityRules/CompositionRootExclusivityRules (P-173); StringConstantsClassDetector reusable helper documented (third distinct Mono.Cecil technique in this domain: field-shape + literal-value resolution, alongside opcode-presence and Ldstr literal-collection); no new SK IDs; five new implementation rules added; motivating incident: P-177 HealthCheckTags/HealthCheckNames inconsistency — WO-028 P-178
 - [2026-06-19] HealthCheckTagIntegrityRules added to architecture test contracts (two predicates: NoConflictingLivenessReadinessTags, DependencyHealthChecksCarryReadyNotLive — first use of an IL Ldstr literal-collection technique distinct from prior opcode-presence predicates; documented data-flow limitation for non-literal tag values); CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders added, mirroring CachingAbstractionRules to extend the composition-root exclusivity claim in 13.ServiceDefaults/CLAUDE.md from caching-only (P-009 scope) to Persistence (.EfCore/.PostgreSQL/.Dapper), Messaging (.MassTransit), and Security (.Oidc) provider families; no new SK IDs; five new implementation rules added; designed ahead of P-170 (13.ServiceDefaults Core) using contrived in-memory fixtures, real-assembly re-verification tracked as a post-P-170 follow-up — WO-027 P-173
