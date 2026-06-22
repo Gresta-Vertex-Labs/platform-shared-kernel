@@ -72,13 +72,13 @@ Format when blocked:
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
-| 07 | [Messaging](07.Messaging/state-map.md) | RoutingSlip | `●` | SK.07.RoutingSlip complete (10/10) — IRoutingSlipBuilder + IMessageBus.ExecuteRoutingSlipAsync in Abstractions; RoutingSlipActivityBase<TArgs,TLog>, MassTransitRoutingSlipBuilder, AddRoutingSlipActivity<T>() in MassTransit; 101 total MassTransit tests green. | — |
+| 07 | [Messaging](07.Messaging/state-map.md) | OTel | `●` | SK.07.OTel complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0") in MassTransit package; ConsumerBase.Consume() Consumer.Consume activity + messaging.destination/messaging.message_type log-scope enrichment; MassTransitEventPublisher EventPublisher.Publish activity; 106 total MassTransit tests green. Unblocks 13.ServiceDefaults C-19 (WithMessagingTelemetry). | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | T-01–T-26 complete — 203/203 tests passing across Rest (66), Grpc (55), GraphQL (43), Internal (39); all handler, interceptor, resilience, filter, and resolver tests green. | Begin Docs phase (XML doc comments across all four packages). |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
-| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Scaffold | `●` | Scaffold phase (S-01–S-10) complete — real project/package references landed for SharedKernel.ServiceDefaults and SharedKernel.MultiTenancy (replacing the bare .csproj stubs), Extensions/HealthChecks/Telemetry/Probes and Resolution/Middleware/Extensions folder structures, nested .Tests projects referencing SharedKernel.Testing, .slnx registration; dotnet build verified clean across all four projects. | Begin Core phase (C-01–C-19) — AddServiceDefaults, liveness/readiness health check split, StartupGate, full SharedKernel.MultiTenancy resolution-strategy surface, and dependency-specific health check/telemetry extensions. |
+| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
 | 16 | [Testing](16.Testing/state-map.md) | Design | `◐` | — | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
@@ -107,16 +107,16 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Phase 34 (Redis Distributed Locking Package Extraction) | 1 |
+| ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
 | ● Published | 4 |
-| ● RoutingSlip | 1 |
+| ● OTel | 1 |
 | ● Governance: Architecture Rules for WO-026 Communication Quality Improvements | 1 |
-| ● Design | 1 |
+| ● Design | 0 |
 | ● Docs | 0 |
 | ● Tests | 1 |
 | ● Core | 0 |
-| ● Scaffold | 1 |
+| ● Scaffold | 0 |
 | ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 7 |
@@ -511,7 +511,7 @@ Without enforcement, teams will inevitably reference `SharedKernel.Caching` (the
 ---
 ### P-010 — ServiceDefaults: Redis Health Check and Cache Readiness Probe
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-003
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-005
@@ -1841,6 +1841,16 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-19] Phase(s) P-172 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
 - [2026-06-19] Phase(s) P-010, P-122, P-132, P-169, P-170, P-171 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
 - [2026-06-19] 13 → Design (●) — promoted from SK.13.Design (state-map-phase)
+- [2026-06-19] Phase(s) P-175, P-176, P-177 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-06-19] Phase(s) P-178 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-22] 13 → Tests (●) — promoted from SK.13.Tests (22/22); closed pre-WO-028 test backlog T-01–T-14 (9 already covered incidentally, T-08 covered via existing strategy/options/middleware tests, T-13 covered for WithCachingTelemetry half only, 3 net-new tests added for ready/live endpoint isolation and database/messaging tag placement); 34/34 SharedKernel.ServiceDefaults.Tests + 26/26 SharedKernel.MultiTenancy.Tests passing (state-map-phase)
+- [2026-06-22] 07 → OTel (●) — promoted from SK.07.OTel (8/8); unblocks 13.ServiceDefaults C-19 (WithMessagingTelemetry) with a true dependency (state-map-phase)
+- [2026-06-22] Phase Backlog P-172 → ● Complete — SK.07.OTel done (state-map-phase)
+- [2026-06-22] 13 → Core (●) — promoted from SK.13.Core (28/28); C-19 (WithMessagingTelemetry) unblocked by 07.Messaging's P-172, wires "MassTransit"+"SharedKernel.Messaging" by string name only (state-map-phase)
+- [2026-06-22] Phase Backlog P-010, P-122, P-132, P-175, P-176, P-177 → ● Complete — SK.13.Core done (state-map-phase)
+- [2026-06-22] 13 → Docs (●) — promoted from SK.13.Docs (2/2); XML doc audit (one gap fixed) + README.md composition snippet written (state-map-phase)
+- [2026-06-22] 13 → Published (●) — promoted from SK.13.Published (3/3); both packages packed with NuGet metadata, consumer-verify proves end-to-end DI resolution; 13.ServiceDefaults domain fully complete (state-map-phase)
+- [2026-06-22] Phase Backlog entries for 13.ServiceDefaults closed → ● Complete — 13.ServiceDefaults reached Published (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -5835,7 +5845,7 @@ NuGet metadata and XML docs are the developer experience contract for every team
 ---
 ### P-122 — ServiceDefaults: Messaging Health Checks — RabbitMQ and Azure Service Bus Connection Probes
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-020
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-117, P-118
@@ -6177,7 +6187,7 @@ Cross-service command routing is a fundamental pattern in microservice choreogra
 ---
 ### P-132 — ServiceDefaults: Messaging OpenTelemetry Wiring
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-021
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-117, P-118
@@ -7534,7 +7544,7 @@ The existing test files implement their own `FakeHttpContext`, `FakeTenantProvid
 ---
 ### P-169 — ServiceDefaults: Scaffold — Project Structure and Solution Registration
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-027
 **Domain:** 13.ServiceDefaults
 **Depends on:** None
@@ -7561,7 +7571,7 @@ Both `.csproj` files currently contain only `TargetFramework`/`Nullable`/`Implic
 ---
 ### P-170 — ServiceDefaults: Core — AddServiceDefaults, Liveness/Readiness Split, StartupGate, OpenTelemetry Wiring
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-027
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-169
@@ -7595,7 +7605,7 @@ This is the load-bearing foundation every other ServiceDefaults phase (P-010, P-
 ---
 ### P-171 — ServiceDefaults: MultiTenancy Core — Resolution Strategies, AmbientTenantProvider, TenantResolutionMiddleware
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-027
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-169
@@ -7623,7 +7633,7 @@ Multi-tenant SaaS services across the platform currently have no shared, composa
 ---
 ### P-172 — Messaging: SharedKernel.Messaging ActivitySource and Consume/Publish Instrumentation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-027
 **Domain:** 07.Messaging
 **Depends on:** None
@@ -7705,4 +7715,118 @@ Every other infrastructure domain in this platform (Caching, Messaging, Domain, 
 - [ ] `SharedKernel.Testing` does not gain a project reference to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`
 - [ ] All new helpers carry XML doc comments
 - [ ] Unit tests for the helpers themselves: `StaticTenantProvider` returns the configured Guid; `FakeTenantResolutionStrategy` returns configured result or delegate output; `HealthCheckAssertionExtensions` correctly passes/fails against tagged and untagged `HealthCheckRegistration` fixtures
+---
+
+---
+### P-175 — ServiceDefaults: Fix Broken `ITenantResolutionStrategy` Name-Mapping and Per-Request Allocation
+
+**Status:** `●` Complete
+**Work Order:** WO-028
+**Domain:** 13.ServiceDefaults
+**Depends on:** None (corrects already-landed `SK.13.Core` C-05/C-11 code)
+
+#### What is needed
+
+`TenantResolutionMiddleware.InvokeAsync` currently maps each injected `ITenantResolutionStrategy` to a `"Header"`/`"Claim"`/`"Database"` name by switching on the strategy's concrete CLR type name (`s.GetType().Name`), then rebuilds that mapping into a brand-new `Dictionary` on every single HTTP request. This must be replaced with an explicit, type-safe naming contract:
+
+- Add a `StrategyName` member to `ITenantResolutionStrategy` (or an equivalent explicit-contract mechanism such as a small marker/metadata pattern — the domain planner's call) so a strategy declares its own resolution-order key instead of being identified by reflection over its type name. `HeaderTenantResolutionStrategy`, `ClaimTenantResolutionStrategy`, and `DatabaseTenantResolutionStrategy` each supply their canonical name through this contract.
+- Add a `TenantResolutionStrategyNames` constants class (mirroring the existing `HealthCheckTags` pattern in `SharedKernel.ServiceDefaults`) holding the `"Header"` / `"Claim"` / `"Database"` literals as named constants. `TenantResolutionOptions.StrategyOrder`'s default array and the three concrete strategies' `StrategyName` values both reference these constants — zero duplicated bare string literals.
+- Compute the name→strategy lookup once per resolution pass without re-allocating a fresh dictionary keyed by a switch expression on every request — the strategy set registered via DI is fixed for the process lifetime; the per-request cost must be limited to iterating `TenantResolutionOptions.StrategyOrder` against an already-available mapping, not rebuilding that mapping from scratch each time.
+- A custom `ITenantResolutionStrategy` implementation registered by a consuming service (the explicit extensibility point this strategy pattern exists to provide) must be reachable from `StrategyOrder` by supplying its own `StrategyName` — with no dependency on what the implementing class happens to be named.
+- Fix `TenantResolutionMiddlewareTests.InvokeAsync_StrategyOmittedFromOrder_IsNeverInvoked`: the current test passes because its `RecordingStrategy` test double's type name can never match any `StrategyOrder` entry regardless of configuration — a false-confidence test masking the underlying defect, not a true verification of the omission behavior. Replace it with a test that proves a real, named, registered strategy is skipped specifically because it is absent from `StrategyOrder`, not because it is structurally unreachable.
+
+#### Why this is needed
+
+This is the most severe finding from the gold-standard audit of `13.ServiceDefaults`. Two distinct defects compound here: (1) the type-name string-switch silently breaks the one explicitly-intended extensibility point of this package — a consuming team registering a fourth custom resolution strategy gets permanently-unreachable behavior with no compiler error and no runtime signal, which the domain's own brain (`13.ServiceDefaults/CLAUDE.md:267`) already documents as a known limitation rather than a bug to fix; (2) allocating a new `Dictionary<string, ITenantResolutionStrategy>` on every HTTP request, for a mapping that is fixed for the process lifetime, is unacceptable for a package that runs in the hot path of every request to every multi-tenant microservice on the platform. The existing test suite's own `RecordingStrategy` double — by the test file's own doc comment — was deliberately built to be unreachable "so the middleware's name-mapping never resolves it," which is the project quietly working around the bug instead of catching it. A platform-wide tenant resolution contract that silently fails for any strategy not in a hardcoded three-name list is not gold standard.
+
+#### Acceptance criteria
+- [ ] `ITenantResolutionStrategy` implementations declare their own resolution-order name via an explicit contract member — no `GetType().Name` reflection anywhere in `TenantResolutionMiddleware`
+- [ ] `TenantResolutionStrategyNames` constants class added; `"Header"`/`"Claim"`/`"Database"` literals exist in exactly one place and are referenced everywhere else (strategy implementations, `TenantResolutionOptions.StrategyOrder` default, tests)
+- [ ] The strategy name→instance lookup is not rebuilt as a fresh allocation on every `InvokeAsync` call — verified by a test or benchmark demonstrating no per-request `Dictionary` allocation tied to the strategy set itself
+- [ ] A test proves a custom, non-platform `ITenantResolutionStrategy` (a type not named `Header`/`Claim`/`Database`-anything) is correctly invoked when its declared `StrategyName` appears in `StrategyOrder`
+- [ ] `InvokeAsync_StrategyOmittedFromOrder_IsNeverInvoked` rewritten so it fails if the omission logic is broken — not merely because the test double is structurally unreachable regardless of `StrategyOrder` contents
+- [ ] All existing 23 `SharedKernel.MultiTenancy` tests continue passing after the refactor; net new tests added, none removed without a strictly-stronger replacement
+- [ ] `13.ServiceDefaults/CLAUDE.md` Implementation Rules section updated — the line documenting type-name-based mapping as a known test limitation is removed and replaced with the new contract
+- [ ] `dotnet build` clean; no new magic strings introduced
+---
+
+---
+### P-176 — ServiceDefaults: Fix Blocking Synchronous Database Call in `DatabaseTenantResolutionStrategy`
+
+**Status:** `●` Complete
+**Work Order:** WO-028
+**Domain:** 13.ServiceDefaults
+**Depends on:** None (corrects already-landed `SK.13.Core` C-08 code)
+
+#### What is needed
+
+`DatabaseTenantResolutionStrategy.TryResolveAsync` is declared `async` and accepts a `CancellationToken`, but its actual tenant-directory lookup calls the synchronous `IDbCommand.ExecuteScalar()` — blocking a thread-pool thread for the duration of the query — and never passes the cancellation token into the database call at all. Replace this with the asynchronous ADO.NET path (`DbCommand.ExecuteScalarAsync(CancellationToken)` or the equivalent async surface already available through `IDbConnectionFactory`/`IDbConnection` in `06.Persistence.Abstractions`), with the supplied `CancellationToken` actually threaded through to the database call. The parameterized-query discipline already in place (named `@host` parameter, no string interpolation) must be preserved exactly as-is — this phase corrects only the sync-over-async defect, not the query shape.
+
+#### Why this is needed
+
+Every request to a DB-isolation multi-tenant service that uses this strategy blocks a real thread-pool thread on a synchronous database round-trip, inside a method whose entire signature (`async Task<Guid?>`, `CancellationToken cancellationToken`) promises it will not do that. This is a thread-pool starvation risk under load — exactly the class of defect a platform-wide shared kernel must never ship, since the cost is paid by every consuming microservice's request-handling capacity, not just this package's own test suite. The unused `cancellationToken` parameter compounds the issue: a slow or hung tenant-directory query cannot be cancelled even when the caller (the ASP.NET Core request pipeline, via `context.RequestAborted`) explicitly asks for it.
+
+#### Acceptance criteria
+- [ ] `DatabaseTenantResolutionStrategy.TryResolveAsync` uses an asynchronous database call (`ExecuteScalarAsync` or equivalent) — zero synchronous, thread-blocking ADO.NET calls remain
+- [ ] The supplied `cancellationToken` is passed into the actual database call, not merely accepted and ignored
+- [ ] The existing parameterized-query test (`DatabaseTenantResolutionStrategyTests` — known host/subdomain resolves; unknown host → `null`; no string-built SQL in executed command text) continues passing unchanged in intent
+- [ ] A new test demonstrates that a cancelled `CancellationToken` actually cancels the in-flight database call rather than being silently ignored
+- [ ] `13.ServiceDefaults/CLAUDE.md` Test Rules section updated to note the async-call assertion alongside the existing parameterization assertion
+- [ ] `dotnet build` clean
+---
+
+---
+### P-177 — ServiceDefaults: Magic-String Elimination and Missing Database Readiness Health Check Adapters
+
+**Status:** `●` Complete
+**Work Order:** WO-028
+**Domain:** 13.ServiceDefaults
+**Depends on:** None
+
+#### What is needed
+
+A consolidated cleanup pass across `SharedKernel.ServiceDefaults`, addressing every remaining bare string literal found in the gold-standard audit, plus closing a real implementation gap:
+
+- **`HealthCheckNames` constants class** (mirroring the already-correct `HealthCheckTags` pattern) holding the default health-check registration-name literals currently hardcoded as bare string defaults across `RedisHealthCheckExtensions` (`"redis"`), `RabbitMqMessagingHealthCheckExtensions` (`"rabbitmq"`), `AzureServiceBusMessagingHealthCheckExtensions` (`"azure-service-bus"`), `CacheReadinessHealthCheckExtensions` (`"cache"`), and the inline `"startup"` literal in `HealthCheckExtensions.AddSharedKernelHealthChecks`. Every `Add*HealthCheck` method's `string name = "..."` default parameter references the corresponding constant instead of repeating the literal.
+- **`AzureServiceBusHealthCheck.LooksLikeConnectionString`**: promote the `"Endpoint="` / `"SharedAccessKey"` substring literals to named constants (or fold into the new `HealthCheckNames`/a small dedicated constants holder — domain planner's call) with a clear name explaining what they detect.
+- **`HeaderTenantResolutionStrategy`**'s `"X-Tenant-Id"` default header name: promote to a named constant in `SharedKernel.MultiTenancy` (e.g. alongside the `TenantResolutionStrategyNames` constants class introduced in P-175, or its own dedicated holder).
+- **Missing adapters**: implement `AddDatabaseReadinessCheck<TContext>(this IHealthChecksBuilder, string name = "database") where TContext : SharedKernelDbContext` and `AddDapperDatabaseReadinessCheck(this IHealthChecksBuilder, string name = "database")`, exactly as already specified in `13.ServiceDefaults/CLAUDE.md`'s Interface Contracts section — wrapping `06.Persistence.EfCore`'s `SharedKernelDbContext.CheckReadinessAsync` and `06.Persistence.Abstractions`'s `IDbConnectionFactory`-based readiness probe (confirmed both exist on disk: `06.Persistence/SharedKernel.Persistence.Abstractions/Diagnostics/DbConnectionFactoryDiagnosticsExtensions.cs`, `06.Persistence/SharedKernel.Persistence.EfCore/Diagnostics/DbContextDiagnosticsExtensions.cs`) in an `IHealthCheck`, surfacing `DatabaseReadinessResult.IsHealthy`/`Latency`/`Provider` via `HealthCheckResult.Data`, tagged `"ready"` + `"db"` via `HealthCheckTags.Ready`/`HealthCheckTags.Db` (both already defined).
+
+#### Why this is needed
+
+This closes out the magic-string findings from the audit that are not already covered by P-175's tenant-strategy-name fix, and corrects a second, separate kind of drift: `13.ServiceDefaults/CLAUDE.md` has documented `AddDatabaseReadinessCheck<TContext>` and `AddDapperDatabaseReadinessCheck` in full detail since the domain's brain was written, callable against real, already-shipped `06.Persistence` primitives (P-150) — but no code implementing either adapter exists anywhere in the repository. Every EF Core- or Dapper-based microservice on the platform currently has no sanctioned way to wire database readiness into `/health/ready`, despite the platform's own documentation telling them this capability exists. `HealthCheckTags` already proves the team applies this constants-class pattern correctly for tags; this phase extends the same discipline to names and closes the adapter gap in the same pass since both touch the same files.
+
+#### Acceptance criteria
+- [ ] `HealthCheckNames` constants class added; all five default health-check name literals (`redis`, `rabbitmq`, `azure-service-bus`, `cache`, `startup`) consolidated into it with zero remaining bare-literal defaults in the five affected files
+- [ ] `AzureServiceBusHealthCheck`'s connection-string-detection literals are named constants, not inline strings
+- [ ] `HeaderTenantResolutionStrategy`'s default header name is a named constant, not an inline string
+- [ ] `AddDatabaseReadinessCheck<TContext>` implemented exactly per the existing `CLAUDE.md` contract — generic constraint `where TContext : SharedKernelDbContext`, tagged `"ready"`+`"db"`, surfaces `IsHealthy`/`Latency`/`Provider` via `HealthCheckResult.Data`
+- [ ] `AddDapperDatabaseReadinessCheck` implemented exactly per the existing `CLAUDE.md` contract — wraps `IDbConnectionFactory`'s readiness extension, same tagging
+- [ ] Both new adapters covered by tests proving correct tag placement (`"ready"` + `"db"`, never `"live"`) and correct `Healthy`/`Unhealthy` mapping from `DatabaseReadinessResult.IsHealthy`
+- [ ] `13.ServiceDefaults/state-map.md` `SK.13.Core` phase gains explicit task rows for these two adapters (they were documented in `CLAUDE.md` but never tracked as Core tasks — a planning gap this phase also closes)
+- [ ] `dotnet build` clean; full existing 18 `SharedKernel.ServiceDefaults` test suite continues passing
+---
+
+---
+### P-178 — Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-028
+**Domain:** 00.Governance
+**Depends on:** P-177
+
+#### What is needed
+
+A NetArchTest (or Roslyn-analyzer-backed) rule, additive to the already-queued P-173 (which covers liveness/readiness tag integrity and composition-root exclusivity — a different concern), that flags bare string-literal arguments passed to health-check registration APIs (`IHealthChecksBuilder.Add`/`AddCheck`, `HealthCheckRegistration` construction, tag arrays) anywhere in `SharedKernel.ServiceDefaults` once a sibling constants class (`HealthCheckTags`, `HealthCheckNames` per P-177) already exists to provide the value. Scope this as a general, reusable rule shape — not hardcoded to this domain's two constants classes by name — so the same predicate can be pointed at any future domain that introduces its own well-known-string constants class, preventing the exact magic-string drift this audit found from recurring silently elsewhere on the platform.
+
+#### Why this is needed
+
+This audit found two generations of the same mistake in one domain: `HealthCheckTags` was built correctly as a constants class, but five sibling files kept hardcoding default health-check *names* as bare literals instead of extending the same discipline — nothing caught the inconsistency because nothing mechanically enforced it. The platform has precedent for exactly this kind of mechanical backstop (`SharedKernelLayeringRules`, `RedisTopologyRules` per WO-023's P-145 closeout) — turning a one-time manual fix into a permanent, automatically-enforced guarantee. Without this rule, the next health check or tenant-resolution extension method added to this domain (or copied as a template into a future domain) can silently reintroduce the same bare-literal pattern this Work Order just paid down.
+
+#### Acceptance criteria
+- [ ] New rule added to `00.Governance/SharedKernel.ArchitectureTests` detecting bare string-literal arguments to health-check tag/name APIs where a constants class already exists in the same assembly
+- [ ] Rule fails against the pre-P-177 code shape (reproduced as a fixture/regression case) and passes against the post-P-177 code shape
+- [ ] Rule is general-purpose — not hardcoded to reference `HealthCheckTags`/`HealthCheckNames` by name specifically, so it generalizes to future domains' constants classes
+- [ ] Rule documented in `00.Governance/CLAUDE.md` with rationale, scoped explicitly as additive to (not a replacement for) P-173's tag-integrity and composition-root rules
+- [ ] Full governance test suite passes with the new rule included
 ---
