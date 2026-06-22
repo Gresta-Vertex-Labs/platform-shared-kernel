@@ -5,11 +5,15 @@ metadata:
   type: project
 ---
 
-As of 2026-06-16, the last phase written to `state-map.md` Phase Backlog is **P-159** under **WO-025**.
+As of 2026-06-19, the last phase written to `state-map.md` Phase Backlog is **P-178** under **WO-028**.
 
-Next new phase must be **P-160**. Next new Work Order must be **WO-026**.
+Next new phase must be **P-179**. Next new Work Order must be **WO-029**.
 
-**How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file.
+**How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file. This memory file itself had drifted stale once already (still said P-159/WO-025 when the real file was at P-174/WO-027) — always verify against `grep -n "^### P-" state-map.md | tail` before trusting this note's numbers.
+
+**WO-027 context:** 13.ServiceDefaults initial delivery (P-169–P-171) + 2 cross-domain (07.Messaging ActivitySource P-172, 00.Governance liveness/readiness + composition-root rules P-173) + 16.Testing test doubles (P-174). Status at time of WO-028 audit: P-169–P-173 all `◐ Dispatched`; Core C-01–C-18 actually implemented and tested (41 tests green), C-19 correctly `⚑` blocked on real P-172 dependency.
+
+**WO-028 context:** 13.ServiceDefaults gold-standard hardening audit (P-175–P-178) — see [[project_wo028_servicedefaults_audit]] for full findings. Triggered by a direct user request to audit already-shipped code for bad practices/magic strings/multitenancy correctness, not a new-capability request. Found a broken strategy-extensibility mechanism masked by a false-confidence test, a blocking sync DB call in an async path, two generations of magic-string drift, and a documented-but-unimplemented health check adapter pair.
 
 **WO-020 context:** 07.Messaging domain initial delivery (P-115–P-124) — 7 messaging phases + 3 cross-domain (ServiceDefaults health checks P-122, Governance MSG rules P-123, Testing harness helpers P-124).
 

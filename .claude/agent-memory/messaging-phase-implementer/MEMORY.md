@@ -5,3 +5,4 @@
 - [MassTransit 9.x Idempotency Filter Wiring](project_masstransit_idempotency.md) — UseConsumeFilter open-generic API; open+closed DI registration; Build() guard without BuildServiceProvider(); test harness closed-generic registration pattern
 - [MassTransit 9.x Header Propagation](project_masstransit_header_propagation.md) — IMessageHeaderPropagator wiring; propagator precedence (before explicit callback); ConsumerBase x-sk-* scope extraction; PublishContext alias in tests; static store test pattern
 - [RoutingSlip TestHarness Patterns](project_routingslip_testharness_patterns.md) — Courier RoutingSlip TestHarness tests; GetExecuteActivityAddress; locale-safe decimal ToString; compensation assertions
+- [MassTransit OTel Instrumentation](project_masstransit_otel_instrumentation.md) — MessagingDiagnostics.ActivitySource (SK.07.OTel/P-172); Consumer.Consume/EventPublisher.Publish activity points; ActivityListener parallel-test-isolation hazard
