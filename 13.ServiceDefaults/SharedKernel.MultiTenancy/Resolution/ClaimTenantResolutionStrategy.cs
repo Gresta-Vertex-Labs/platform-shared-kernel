@@ -17,6 +17,9 @@ namespace SharedKernel.MultiTenancy.Resolution;
 public sealed class ClaimTenantResolutionStrategy : ITenantResolutionStrategy
 {
     /// <inheritdoc/>
+    public string StrategyName => TenantResolutionStrategyNames.Claim;
+
+    /// <inheritdoc/>
     public Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);

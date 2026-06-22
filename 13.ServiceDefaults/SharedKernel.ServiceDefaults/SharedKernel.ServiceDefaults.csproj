@@ -7,6 +7,7 @@
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.ServiceDefaults</PackageId>
     <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
@@ -18,6 +19,15 @@
     <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
     <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      NU5104: a stable package release must not depend on a prerelease package. This package
+      depends on OpenTelemetry.Instrumentation.EntityFrameworkCore, which as of this writing has
+      never shipped a stable (non-beta) release upstream — there is no stable version to pin to.
+      Suppressed at pack time only; re-evaluate and remove this suppression once OpenTelemetry
+      ships a stable EFCore instrumentation release.
+    -->
+    <NoWarn>$(NoWarn);NU5104</NoWarn>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
@@ -42,8 +52,13 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" Version="1.11.0-beta.2" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <!--
+      Microsoft.Extensions.Diagnostics.HealthChecks and Microsoft.Extensions.Hosting are NOT
+      referenced as explicit PackageReferences — both ship as part of the
+      Microsoft.AspNetCore.App shared framework (see FrameworkReference above), and NuGet's
+      asset-pruning (NU1510) flags an explicit reference to an already-framework-provided
+      package as redundant. Removing them avoids a build error under TreatWarningsAsErrors.
+    -->
     <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.Rabbitmq" Version="9.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.AzureServiceBus" Version="9.0.0" />

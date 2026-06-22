@@ -37,7 +37,7 @@ public static class HealthCheckExtensions
         return services
             .AddHealthChecks()
             .AddCheck<StartupGateHealthCheck>(
-                "startup",
+                HealthCheckNames.Startup,
                 tags: [HealthCheckTags.Ready]);
     }
 

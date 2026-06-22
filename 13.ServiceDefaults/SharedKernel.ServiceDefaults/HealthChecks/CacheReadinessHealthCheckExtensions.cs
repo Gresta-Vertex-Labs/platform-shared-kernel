@@ -13,7 +13,7 @@ public static class CacheReadinessHealthCheckExtensions
     /// synthetic key and a short timeout.
     /// </summary>
     /// <param name="builder">The health checks builder.</param>
-    /// <param name="name">The health check registration name. Defaults to <c>"cache"</c>.</param>
+    /// <param name="name">The health check registration name. Defaults to <see cref="HealthCheckNames.Cache"/>.</param>
     /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
     /// <remarks>
     /// Tagged <see cref="HealthCheckTags.Ready"/> and <see cref="HealthCheckTags.Cache"/>. Reports
@@ -22,7 +22,7 @@ public static class CacheReadinessHealthCheckExtensions
     /// </remarks>
     public static IHealthChecksBuilder AddCacheReadinessCheck(
         this IHealthChecksBuilder builder,
-        string name = "cache")
+        string name = HealthCheckNames.Cache)
     {
         ArgumentNullException.ThrowIfNull(builder);
 

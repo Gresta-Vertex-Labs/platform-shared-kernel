@@ -20,7 +20,7 @@ public static class RabbitMqMessagingHealthCheckExtensions
     /// (<c>07.Messaging.MassTransit</c>) rather than duplicating a connection string at the call
     /// site.
     /// </param>
-    /// <param name="name">The health check registration name. Defaults to <c>"rabbitmq"</c>.</param>
+    /// <param name="name">The health check registration name. Defaults to <see cref="HealthCheckNames.RabbitMq"/>.</param>
     /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
     /// <remarks>
     /// Tagged <see cref="HealthCheckTags.Ready"/> and <see cref="HealthCheckTags.Messaging"/>.
@@ -30,7 +30,7 @@ public static class RabbitMqMessagingHealthCheckExtensions
     public static IHealthChecksBuilder AddRabbitMqMessagingHealthCheck(
         this IHealthChecksBuilder builder,
         string amqpUri,
-        string name = "rabbitmq")
+        string name = HealthCheckNames.RabbitMq)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(amqpUri);

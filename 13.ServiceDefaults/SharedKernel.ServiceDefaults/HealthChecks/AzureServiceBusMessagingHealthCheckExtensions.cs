@@ -17,7 +17,7 @@ public static class AzureServiceBusMessagingHealthCheckExtensions
     /// hostname (e.g. <c>"my-namespace.servicebus.windows.net"</c>), in which case
     /// <see cref="Azure.Identity.DefaultAzureCredential"/> is used.
     /// </param>
-    /// <param name="name">The health check registration name. Defaults to <c>"azure-service-bus"</c>.</param>
+    /// <param name="name">The health check registration name. Defaults to <see cref="HealthCheckNames.AzureServiceBus"/>.</param>
     /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
     /// <remarks>
     /// Tagged <see cref="HealthCheckTags.Ready"/> and <see cref="HealthCheckTags.Messaging"/>.
@@ -27,7 +27,7 @@ public static class AzureServiceBusMessagingHealthCheckExtensions
     public static IHealthChecksBuilder AddAzureServiceBusMessagingHealthCheck(
         this IHealthChecksBuilder builder,
         string connectionStringOrNamespace,
-        string name = "azure-service-bus")
+        string name = HealthCheckNames.AzureServiceBus)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionStringOrNamespace);

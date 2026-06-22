@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.MultiTenancy.Resolution;
 
@@ -27,6 +28,17 @@ public sealed class TenantResolutionMiddleware(
     Microsoft.Extensions.Options.IOptions<TenantResolutionOptions> options)
 {
     /// <summary>
+    /// The <see cref="ITenantResolutionStrategy.StrategyName"/> → strategy lookup, computed once
+    /// against the fixed strategy set supplied to this middleware instance rather than rebuilt as
+    /// a fresh allocation on every <see cref="InvokeAsync"/> call. Matches each
+    /// <see cref="TenantResolutionOptions.StrategyOrder"/> entry against each strategy's declared
+    /// <see cref="ITenantResolutionStrategy.StrategyName"/> — never against the implementing
+    /// type's CLR type name.
+    /// </summary>
+    private readonly FrozenDictionary<string, ITenantResolutionStrategy> _strategiesByName =
+        strategies.ToFrozenDictionary(s => s.StrategyName);
+
+    /// <summary>
     /// Resolves the tenant for the current request and invokes the next middleware in the
     /// pipeline. Never throws when zero strategies resolve a tenant, or when zero strategies are
     /// configured.
@@ -38,17 +50,9 @@ public sealed class TenantResolutionMiddleware(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(tenantProvider);
 
-        var strategiesByName = strategies.ToDictionary(s => s.GetType().Name switch
-        {
-            nameof(HeaderTenantResolutionStrategy) => "Header",
-            nameof(ClaimTenantResolutionStrategy) => "Claim",
-            nameof(DatabaseTenantResolutionStrategy) => "Database",
-            var typeName => typeName,
-        });
-
         foreach (var strategyName in options.Value.StrategyOrder)
         {
-            if (!strategiesByName.TryGetValue(strategyName, out var strategy))
+            if (!_strategiesByName.TryGetValue(strategyName, out var strategy))
             {
                 continue;
             }

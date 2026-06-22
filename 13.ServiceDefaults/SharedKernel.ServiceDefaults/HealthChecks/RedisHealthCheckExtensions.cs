@@ -15,7 +15,7 @@ public static class RedisHealthCheckExtensions
     /// </summary>
     /// <param name="builder">The health checks builder.</param>
     /// <param name="connectionString">The Redis connection string to probe.</param>
-    /// <param name="name">The health check registration name. Defaults to <c>"redis"</c>.</param>
+    /// <param name="name">The health check registration name. Defaults to <see cref="HealthCheckNames.Redis"/>.</param>
     /// <returns>The same <paramref name="builder"/> instance, for fluent chaining.</returns>
     /// <remarks>
     /// Tagged <see cref="HealthCheckTags.Ready"/>, <see cref="HealthCheckTags.Redis"/>, and
@@ -27,7 +27,7 @@ public static class RedisHealthCheckExtensions
     public static IHealthChecksBuilder AddRedisHealthCheck(
         this IHealthChecksBuilder builder,
         string connectionString,
-        string name = "redis")
+        string name = HealthCheckNames.Redis)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);

@@ -1,3 +1,4 @@
+using System.Data.Common;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.Persistence.Abstractions.Connections;
 
@@ -26,6 +27,9 @@ public sealed class DatabaseTenantResolutionStrategy(IDbConnectionFactory connec
         "SELECT tenant_id FROM tenant_directory WHERE host = @host";
 
     /// <inheritdoc/>
+    public string StrategyName => TenantResolutionStrategyNames.Database;
+
+    /// <inheritdoc/>
     public async Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -47,7 +51,13 @@ public sealed class DatabaseTenantResolutionStrategy(IDbConnectionFactory connec
             parameter.Value = host;
             command.Parameters.Add(parameter);
 
-            var result = command.ExecuteScalar();
+            // Use the genuine async ADO.NET path (DbCommand.ExecuteScalarAsync) with the supplied
+            // CancellationToken threaded through, rather than blocking a thread-pool thread via the
+            // synchronous IDbCommand.ExecuteScalar(). Every IDbConnectionFactory implementation in
+            // this platform (NpgsqlConnectionFactory et al.) returns a DbCommand-derived command.
+            var result = command is DbCommand dbCommand
+                ? await dbCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+                : command.ExecuteScalar();
 
             return result is null or DBNull
                 ? null

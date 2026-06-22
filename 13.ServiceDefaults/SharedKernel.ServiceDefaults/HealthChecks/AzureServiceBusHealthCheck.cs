@@ -21,6 +21,14 @@ internal sealed class AzureServiceBusHealthCheck : IHealthCheck
 {
     private readonly ServiceBusAdministrationClient _client;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AzureServiceBusHealthCheck"/> class.
+    /// </summary>
+    /// <param name="connectionStringOrNamespace">
+    /// Either a full Service Bus connection string (detected via
+    /// <see cref="AzureServiceBusConnectionStringMarkers"/>) or a fully-qualified namespace
+    /// hostname, in which case <see cref="DefaultAzureCredential"/> is used.
+    /// </param>
     public AzureServiceBusHealthCheck(string connectionStringOrNamespace)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionStringOrNamespace);
@@ -47,6 +55,24 @@ internal sealed class AzureServiceBusHealthCheck : IHealthCheck
     }
 
     private static bool LooksLikeConnectionString(string value) =>
-        value.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase)
-        || value.Contains("SharedAccessKey", StringComparison.OrdinalIgnoreCase);
+        value.Contains(AzureServiceBusConnectionStringMarkers.Endpoint, StringComparison.OrdinalIgnoreCase)
+        || value.Contains(AzureServiceBusConnectionStringMarkers.SharedAccessKey, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Substrings that, when present in a connection-string-or-namespace value, indicate the value is
+/// a full Service Bus connection string rather than a fully-qualified namespace hostname.
+/// </summary>
+/// <remarks>
+/// Named so the detection intent is documented at the call site instead of relying on bare string
+/// literals. A connection string contains both markers; a fully-qualified namespace hostname
+/// (e.g. <c>"my-namespace.servicebus.windows.net"</c>) contains neither.
+/// </remarks>
+internal static class AzureServiceBusConnectionStringMarkers
+{
+    /// <summary>Marker substring present in the <c>Endpoint=</c> segment of a connection string.</summary>
+    public const string Endpoint = "Endpoint=";
+
+    /// <summary>Marker substring present in the <c>SharedAccessKey</c> segment of a connection string.</summary>
+    public const string SharedAccessKey = "SharedAccessKey";
 }

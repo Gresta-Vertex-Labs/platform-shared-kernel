@@ -17,7 +17,13 @@ public sealed class TenantResolutionOptions
 
     /// <summary>
     /// Gets or sets the ordered list of strategy names to attempt. Defaults to
-    /// <c>["Header", "Claim", "Database"]</c>.
+    /// <see cref="TenantResolutionStrategyNames.Header"/>, <see cref="TenantResolutionStrategyNames.Claim"/>,
+    /// <see cref="TenantResolutionStrategyNames.Database"/>, in that order.
     /// </summary>
-    public IReadOnlyList<string> StrategyOrder { get; set; } = ["Header", "Claim", "Database"];
+    public IReadOnlyList<string> StrategyOrder { get; set; } =
+    [
+        TenantResolutionStrategyNames.Header,
+        TenantResolutionStrategyNames.Claim,
+        TenantResolutionStrategyNames.Database,
+    ];
 }

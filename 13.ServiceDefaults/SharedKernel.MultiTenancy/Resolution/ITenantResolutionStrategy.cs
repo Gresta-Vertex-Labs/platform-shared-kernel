@@ -16,6 +16,19 @@ namespace SharedKernel.MultiTenancy.Resolution;
 public interface ITenantResolutionStrategy
 {
     /// <summary>
+    /// Gets the explicit resolution-order key this strategy is identified by.
+    /// </summary>
+    /// <remarks>
+    /// Matched against <see cref="TenantResolutionOptions.StrategyOrder"/> entries by
+    /// <see cref="Middleware.TenantResolutionMiddleware"/> — never against the implementing
+    /// type's CLR type name. The three platform strategies declare their <see cref="StrategyName"/>
+    /// from <see cref="TenantResolutionStrategyNames"/>; a custom strategy registered by a
+    /// consuming service declares its own value and becomes reachable from
+    /// <see cref="TenantResolutionOptions.StrategyOrder"/> purely by that declared value.
+    /// </remarks>
+    string StrategyName { get; }
+
+    /// <summary>
     /// Attempts to resolve a tenant identifier from <paramref name="context"/>.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>

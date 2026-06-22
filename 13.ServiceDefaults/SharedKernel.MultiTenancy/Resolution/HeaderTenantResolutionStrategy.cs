@@ -10,9 +10,15 @@ namespace SharedKernel.MultiTenancy.Resolution;
 /// Returns <see langword="null"/> when the header is absent or its value does not parse as a
 /// <see cref="Guid"/> — never throws.
 /// </remarks>
-public sealed class HeaderTenantResolutionStrategy(string headerName = "X-Tenant-Id")
+public sealed class HeaderTenantResolutionStrategy(string headerName = HeaderTenantResolutionStrategy.DefaultHeaderName)
     : ITenantResolutionStrategy
 {
+    /// <summary>The default HTTP request header name probed when no header name is supplied.</summary>
+    public const string DefaultHeaderName = "X-Tenant-Id";
+
+    /// <inheritdoc/>
+    public string StrategyName => TenantResolutionStrategyNames.Header;
+
     /// <inheritdoc/>
     public Task<Guid?> TryResolveAsync(HttpContext context, CancellationToken cancellationToken)
     {
