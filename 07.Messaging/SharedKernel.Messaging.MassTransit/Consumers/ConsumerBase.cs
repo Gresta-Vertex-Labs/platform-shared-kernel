@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using MassTransit;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Messaging.MassTransit.Diagnostics;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
@@ -43,17 +44,26 @@ public abstract class ConsumerBase<TMessage> : IConsumer<TMessage>
     }
 
     /// <summary>
-    /// MassTransit entry point. Propagates CorrelationId, extracts <c>x-sk-*</c> headers into
-    /// the structured log scope, forwards to <see cref="ConsumeAsync"/>, and rethrows any
-    /// unhandled exception after structured logging.
+    /// MassTransit entry point. Starts a consume <see cref="Activity"/>, propagates
+    /// CorrelationId, extracts <c>x-sk-*</c> headers into the structured log scope,
+    /// forwards to <see cref="ConsumeAsync"/>, and rethrows any unhandled exception
+    /// after structured logging.
     /// Do not override — override <see cref="ConsumeAsync"/> instead.
     /// </summary>
     /// <param name="context">The MassTransit consume context providing the message and metadata.</param>
     /// <remarks>
     /// <para>
+    /// A child <see cref="Activity"/> named <c>"Consumer.Consume"</c> is started via
+    /// <see cref="MessagingDiagnostics.ActivitySource"/> for the duration of the consume
+    /// operation, tagged with <c>messaging.message_type</c>. The activity is disposed
+    /// after <see cref="ConsumeAsync"/> completes, whether it succeeds or throws.
+    /// </para>
+    /// <para>
     /// Any header whose key starts with <c>"x-sk-"</c> (case-insensitive) is added to the
     /// structured log scope automatically. This enriches downstream log entries with propagated
     /// cross-cutting headers such as <c>x-sk-tenant-id</c> without manual extraction in each consumer.
+    /// The log scope is additionally enriched with <c>messaging.destination</c> (the consume
+    /// endpoint's queue/topic path, omitted when unavailable) and <c>messaging.message_type</c>.
     /// </para>
     /// <para>
     /// Headers whose keys do <em>not</em> start with <c>"x-sk-"</c> are ignored and not added
@@ -62,14 +72,23 @@ public abstract class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// </remarks>
     public async Task Consume(ConsumeContext<TMessage> context)
     {
+        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("Consumer.Consume");
+        activity?.SetTag("messaging.message_type", typeof(TMessage).Name);
+
         var correlationIdStr = context.CorrelationId?.ToString("D") ?? string.Empty;
 
         // HP-05: Build log scope with CorrelationId, MessageType, and any x-sk-* headers.
+        // OT-03: additive messaging.destination / messaging.message_type entries.
         var scopeState = new Dictionary<string, object?>
         {
             ["CorrelationId"] = correlationIdStr,
             ["MessageType"] = typeof(TMessage).Name,
+            ["messaging.message_type"] = typeof(TMessage).Name,
         };
+
+        var destination = context.DestinationAddress?.AbsolutePath;
+        if (destination is not null)
+            scopeState["messaging.destination"] = destination;
 
         // Extract headers whose key starts with "x-sk-" (case-insensitive) into the log scope.
         foreach (var header in context.Headers.GetAll())

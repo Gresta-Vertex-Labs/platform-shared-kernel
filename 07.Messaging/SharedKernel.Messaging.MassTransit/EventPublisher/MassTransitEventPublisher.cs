@@ -8,6 +8,7 @@ using SharedKernel.Domain.Events;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.Options;
+using SharedKernel.Messaging.MassTransit.Diagnostics;
 
 // Alias to disambiguate from MassTransit.PublishContext
 using MessagingPublishContext = SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext;
@@ -84,12 +85,18 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
         return ctx;
     }
 
-    private Task PublishEnvelopeAsync<TEvent>(TEvent integrationEvent, MessagingPublishContext? ctx, CancellationToken ct)
+    private async Task PublishEnvelopeAsync<TEvent>(TEvent integrationEvent, MessagingPublishContext? ctx, CancellationToken ct)
         where TEvent : class
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
 
         var eventType = typeof(TEvent);
+
+        // OT-04: child activity for the publish operation, disposed after the publish
+        // call completes or throws. Independent of the EventEnvelope CorrelationId field —
+        // this activity's TraceId/SpanId comes from the ambient Activity.Current chain.
+        using var activity = MessagingDiagnostics.ActivitySource.StartActivity("EventPublisher.Publish");
+        activity?.SetTag("messaging.event_type", eventType.Name);
 
         if (!typeof(IDomainEvent).IsAssignableFrom(eventType))
             throw new InvalidOperationException(
@@ -103,7 +110,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             return (PublishDelegate)method.Invoke(null, null)!;
         });
 
-        return publisher(_publishEndpoint, integrationEvent, _messagingOptions.ServiceName, ctx, ct);
+        await publisher(_publishEndpoint, integrationEvent, _messagingOptions.ServiceName, ctx, ct).ConfigureAwait(false);
     }
 
     // Called once per TEvent type via MakeGenericMethod — startup cost only, not a hot path.
