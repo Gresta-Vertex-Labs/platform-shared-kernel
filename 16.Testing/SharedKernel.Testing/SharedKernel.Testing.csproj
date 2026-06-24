@@ -4,11 +4,135 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      Never packed/published as a .nupkg (SK.16.Published P-01): consumption is ProjectReference-only
+      within this mono-repo per root CLAUDE.md Test Project Rules. Packing remains a future work order
+      if/when downstream consumers outside this repo need it.
+    -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Caching test doubles — FakeCacheService implements ICacheService -->
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!--
+      Domain test helpers (S-02, P-035/P-181): EntityFaker<TEntity,TId>, DomainEventAssertions,
+      BusinessRuleAssertions, SpecificationAssert, SingleValueObjectFaker, DomainVersionAssertions,
+      SpecificationTestBuilder, FakeDomainNotFoundException.
+    -->
+    <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+    <!--
+      IClock (S-02): SharedKernel.Domain already references SharedKernel.Primitives transitively,
+      but an explicit reference is added here so FakeClock (Clocks/) can depend on IClock directly
+      without relying on transitive resolution from a sibling-folder concern.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <!--
+      Contracts test helpers (S-03, P-064/P-182): PagedListBuilder<T>, EnvelopeAssertions,
+      IntegrationEventFaker<TEvent>, EventEnvelopeBuilder<TEvent>, PagedListAssertions.
+    -->
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+    <!--
+      Security fakes (S-04, P-035/P-186/P-187): FakeUserContext, FakeTenantProvider,
+      FakeHttpContextAccessor (backing ITenantProvider), StaticTenantProvider,
+      FakeTenantResolutionStrategy.
+    -->
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <!--
+      Messaging in-memory doubles (S-05, P-035/P-183): InMemoryMessageBus, InMemoryEventPublisher.
+    -->
+    <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+    <!--
+      Messaging test-only dependency (S-06, P-183): TestHarnessFactory only. InMemoryMessageBus and
+      InMemoryEventPublisher remain reference-isolated to SharedKernel.Messaging.Abstractions only —
+      this reference is additive to the project, never consumed outside Messaging/TestHarnessFactory.cs.
+    -->
+    <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
+    <!--
+      Persistence abstractions (S-07, P-182): FakeDbConnectionFactory (IDbConnectionFactory),
+      ProjectionSpecificationBuilder<TAggregate,TResult> (IProjectionSpecification<TAggregate,TResult>).
+    -->
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <!--
+      Persistence EF Core helpers (S-08, P-182): TestSharedKernelDbContext, EfContextExtensions,
+      PersistenceTestHelpers, AggregateRootFaker/TenantedAggregateFaker, BulkAggregateFaker,
+      WithDeletedSpecification<TAggregate>.
+    -->
+    <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" />
+    <!--
+      Communication test doubles (S-10, P-186): MockServiceEndpointResolver (IServiceEndpointResolver).
+      SCOPE LOCK: never reference SharedKernel.Communication.Rest, .Grpc, or .GraphQL from this package.
+    -->
+    <ProjectReference Include="..\..\11.Communication\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      EF Core in-memory SQLite provider (S-08) backing TestSharedKernelDbContext.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+    <!--
+      Testcontainers fixtures (S-09, P-184): PostgreSqlContainerFixture, RedisContainerFixture,
+      RabbitMqContainerFixture.
+    -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
+    <PackageReference Include="Testcontainers.Redis" Version="4.1.0" />
+    <PackageReference Include="Testcontainers.RabbitMq" Version="4.1.0" />
+    <!--
+      xunit.core (S-09): the Xunit.IAsyncLifetime contract ONLY — container fixtures implement
+      IAsyncLifetime directly. No test runner, no Xunit.Assert, no xunit.runner.visualstudio.
+    -->
+    <PackageReference Include="xunit.core" Version="2.9.3" />
+    <!--
+      HTTP types (S-10, P-186): FakeHttpContextAccessor's IHttpContextAccessor/HttpContext types.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
+    <!--
+      HttpClientHandlerTestFactory / FakeHttpMessageHandler (S-10, P-186).
+    -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
+    <!--
+      HealthCheckAssertionExtensions (S-11, P-187): HealthCheckRegistration type.
+      SCOPE LOCK: never reference SharedKernel.ServiceDefaults or SharedKernel.MultiTenancy.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.0" />
+    <!--
+      MassTransit.TestFramework (C-29): includes the in-memory ITestHarness used by
+      TestHarnessFactory only. InMemoryMessageBus/InMemoryEventPublisher remain reference-isolated
+      to SharedKernel.Messaging.Abstractions — this package is consumed solely by
+      Messaging/TestHarnessFactory.cs. Pinned to match SharedKernel.Messaging.MassTransit's
+      MassTransit version exactly (matches the pattern already used in
+      SharedKernel.Messaging.MassTransit.Tests.csproj).
+    -->
+    <PackageReference Include="MassTransit.TestFramework" Version="9.1.2" />
+    <!--
+      gRPC ServerCallContext stub (C-38, D-42): TestServerCallContext wraps
+      Grpc.Core.Testing.TestServerCallContext. Grpc.Core.Api supplies the ServerCallContext base
+      type itself.
+    -->
+    <PackageReference Include="Grpc.Core.Api" Version="2.80.0" />
+    <PackageReference Include="Grpc.Core.Testing" Version="2.46.6" />
+    <!--
+      GraphQL test-executor factory (C-39, D-43): GraphQLTestExecutorFactory wires
+      IRequestExecutorBuilder with test-safe defaults. Pinned to match
+      SharedKernel.Communication.GraphQL's HotChocolate version exactly.
+    -->
+    <PackageReference Include="HotChocolate.AspNetCore" Version="16.1.4" />
+    <PackageReference Include="HotChocolate.Data" Version="16.1.4" />
+    <!--
+      Bogus (C-02, C-09, C-13, C-18, C-22): deterministic fake-data generation backing
+      EntityFaker<TEntity,TId>, SingleValueObjectFaker<TValueObject,TValue>,
+      IntegrationEventFaker<TEvent>, AggregateRootFaker<TAggregate,TId>/TenantedAggregateFaker,
+      and BulkAggregateFaker<TAggregate,TId>.
+    -->
+    <PackageReference Include="Bogus" Version="35.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested SelfTests project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Testing.SelfTests\**" />
+    <EmbeddedResource Remove="SharedKernel.Testing.SelfTests\**" />
+    <None Remove="SharedKernel.Testing.SelfTests\**" />
   </ItemGroup>
 
 </Project>

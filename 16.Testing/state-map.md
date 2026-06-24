@@ -1,0 +1,311 @@
+﻿# 16.Testing — State Map
+
+> **What this file is:** Phase and task tracker for all work within `16.Testing`.
+> **What it is not:** The root tracker — that lives at `state-map.md`.
+> **Sync policy:** When all tasks under a Phase Key are `●`, run `/state-map-phase` with `phase_key: SK.16.{Phase}` to propagate that milestone to the root state-map.
+
+---
+
+## Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| `○` | Not started |
+| `◐` | In progress |
+| `●` | Complete |
+| `⚑` | Blocked |
+| `—` | N/A / Skipped |
+
+---
+
+## Phase Key Registry
+
+> Phase keys are the sync bridge between this sub-state-map and the root `state-map.md`.
+> Each key maps a local milestone to a root-level phase. When a key's Promotion Condition is met, the root is updated via `/state-map-phase`.
+
+| Phase Key | Maps to Root Phase | Promotion Condition |
+|-----------|---------------------|----------------------|
+| `SK.16.Design` | Design | All tasks in Phase: Design are `●` |
+| `SK.16.Scaffold` | Scaffold | All tasks in Phase: Scaffold are `●` |
+| `SK.16.Core` | Core | All tasks in Phase: Core are `●` |
+| `SK.16.Tests` | Tests | All tasks in Phase: Tests are `●` |
+| `SK.16.Docs` | Docs | All tasks in Phase: Docs are `●` |
+| `SK.16.Published` | Published | All tasks in Phase: Published are `●` |
+
+P-035, P-064, P-179–P-187 populate the phase tables below (this pass). See per-task `Source` notes inline.
+
+---
+
+## Active Work
+
+_Nothing in progress._
+
+<!--
+Format when active — replace placeholder with table:
+| Task | Phase Key | Package | State |
+|------|-----------|---------|:-----:|
+| Implement InMemoryMessageBus | SK.16.Core | SharedKernel.Testing | ◐ |
+-->
+
+---
+
+## Blocked
+
+_No blockers._
+
+<!--
+Format when blocked — replace placeholder with table:
+| Task | Phase Key | Blocker |
+|------|-----------|---------|
+| Example blocked task | SK.16.Core | Waiting on upstream decision |
+-->
+
+---
+
+## Package Board
+
+| Package | Current Phase | State | Notes |
+|---------|---------------|:-----:|-------|
+| `SharedKernel.Testing` | Scaffold | `●` | Scaffold phase complete (12/12) — all 9 project references added (`SharedKernel.Domain`, `SharedKernel.Primitives`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Messaging.MassTransit`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Communication.Internal`) plus 7 package references (`Microsoft.EntityFrameworkCore.Sqlite`, `Testcontainers.PostgreSql`/`.Redis`/`.RabbitMq`, `xunit.core`, `Microsoft.AspNetCore.Http.Abstractions`, `Microsoft.Extensions.Http`, `Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions`); `dotnet build` clean (0 errors). Next: Core phase implementation. |
+| `SharedKernel.Testing.SelfTests` | Scaffold | `●` | Project created at `16.Testing/SharedKernel.Testing/SharedKernel.Testing.SelfTests/`, registered in `Platform.SharedKernel.slnx`, builds clean (0 errors) as an empty project. |
+
+---
+
+## Cross-Domain Dependencies
+
+| This Phase Key | Needs From Domain | What | Status |
+|-----------------|--------------------|------|--------|
+| `SK.16.Core` | `01.Core` | `SharedKernel.Primitives` `IClock` interface, for `FakeClock` (P-035) | Available |
+| `SK.16.Core` | `03.Domain` | `SharedKernel.Domain` — `IDomainEvent`, `AggregateRoot<TId>.DomainEvents`, `IBusinessRule`, `ISpecification<T>`, `SingleValueObject<TValue>`, `DomainEventVersionAttribute`/`Helper`, `DomainNotFoundException` (P-035, P-181) | Available |
+| `SK.16.Core` | `04.Contracts` | `SharedKernel.Contracts` — `PagedList<T>`, `Envelope`/`Envelope<T>`, `IIntegrationEvent`, `EventEnvelope<TEvent>` (P-064) | Available |
+| `SK.16.Core` | `02.Caching` | `SharedKernel.Caching.Abstractions` — `ICacheService`, `IDistributedLockService`, `IRenewableLock`, `ITenantCacheKeyProvider`, `ICacheInvalidationBus`, `CacheInvalidationMessage` (P-180, P-185) | Available (already referenced) |
+| `SK.16.Core` | `06.Persistence` | `SharedKernel.Persistence.Abstractions` `IDbConnectionFactory` (existing `FakeDbConnectionFactory` planned surface); `SharedKernel.Persistence.EfCore` — `SharedKernelDbContext`, interceptors, specifications (P-182) | Available |
+| `SK.16.Core` | `07.Messaging` | `SharedKernel.Messaging.Abstractions` `IMessageBus`/`IEventPublisher`/`PublishContext`; `SharedKernel.Messaging.MassTransit` (test-only, `TestHarnessFactory`) (P-183) | Available |
+| `SK.16.Core` | `12.Security` | `SharedKernel.Security.Abstractions` `IUserContext`/`ITenantProvider` (P-035 `FakeUserContext`/`FakeTenantProvider`; reused by P-186/P-187) | Available |
+| `SK.16.Core` | `11.Communication` | `SharedKernel.Communication.Internal` `IServiceEndpointResolver` only — never `.Rest`/`.Grpc`/`.GraphQL` (P-186) | Available |
+| `SK.16.Scaffold` | `00.Governance` | None — `SharedKernel.Testing.SelfTests` is a new project, not an architecture-rule change (P-179) | N/A |
+
+`16.Testing` is exempt from the platform's normal downward-only layering direction (root `CLAUDE.md`: "`16.Testing` may reference any layer — test infrastructure only, never shipped"). This table tracks which abstraction packages each fake needs, not a layering constraint. `13.ServiceDefaults`'s `SharedKernel.MultiTenancy` (`ITenantResolutionStrategy`) is deliberately **excluded** — P-187's `FakeTenantResolutionStrategy` is structurally compatible only, no project reference taken.
+
+---
+
+## Phase: Design <!-- phase-key: SK.16.Design -->
+
+| ID | Task | Package(s) | State |
+|----|------|-------------|:-----:|
+| D-01 | Design `FakeClock` (implements `IClock` from `01.Core`): `SetUtcNow`, `Advance`, `UtcNow`, `Today`; thread-safe via lock/`Interlocked`; defaults to a fixed non-real instant, never `DateTimeOffset.UtcNow`. Source: P-035/WO-008. | `SharedKernel.Testing` | `●` |
+| D-02 | Design `EntityFaker<TEntity, TId>` abstract `Faker<TEntity>` base with `WithClock(IClock)` builder; no auto-rule generation — concrete fakers declare `RuleFor` explicitly. Source: P-035/WO-008. | `SharedKernel.Testing` | `●` |
+| D-03 | Design `DomainEventAssertions` static extensions on `IReadOnlyCollection<IDomainEvent>`: `ContainsEventOfType<T>()`, `ContainsExactly<T>(int)`, `HasNoEvents()`, `HasNoEventsOfType<T>()` — framework-agnostic, throw `InvalidOperationException` with descriptive messages. Source: P-035/WO-008. | `SharedKernel.Testing` | `●` |
+| D-04 | Design `BusinessRuleAssertions`: `ShouldBeBroken`/`ShouldNotBeBroken` extensions on `IBusinessRule` (03.Domain) — throw with `rule.Message` on failure. Source: P-035/WO-008. | `SharedKernel.Testing` | `●` |
+| D-05 | Design `SpecificationAssert.Satisfies<T>`/`DoesNotSatisfy<T>` — evaluates `ISpecification<T>.Criteria` via `.Compile()` against an in-memory entity; document `.Compile()` as test-only reflection, never production. Source: P-035/WO-008. | `SharedKernel.Testing` | `●` |
+| D-06 | Design `AddFakeDomainServices()` DI extension — registers `FakeClock` as `IClock` singleton only; other P-035 helpers remain static (no DI). Source: P-035/WO-008. | `SharedKernel.Testing` | `●` |
+| D-07 | Design `PagedListBuilder<T>` fluent builder over `PagedList<T>.Create(...)` (04.Contracts): `WithItems`, `WithPage`, `WithPageSize`, `WithTotalCount`, `Build()`; defaults `Page=1`, `PageSize=10`, `TotalCount=items.Count`; static `Empty<T>()`. Source: P-064/WO-012. | `SharedKernel.Testing` | `●` |
+| D-08 | Design `EnvelopeAssertions` static extensions on `Envelope`/`Envelope<T>` (04.Contracts): `ShouldBeSuccess`, `ShouldBeFailure` (optional `ErrorType?` check), `ShouldHaveError(string expectedCode)` — throw `InvalidOperationException`, no test-framework dependency. Source: P-064/WO-012. | `SharedKernel.Testing` | `●` |
+| D-09 | Design `IntegrationEventFaker<TEvent>` abstract Bogus base for `IIntegrationEvent` (04.Contracts): `RuleForEventId()` (`f.Random.Guid()`), `RuleForOccurredOn()` (`f.Date.RecentOffset()`) pre-wired protected helpers. Source: P-064/WO-012. | `SharedKernel.Testing` | `●` |
+| D-10 | Design `EventEnvelopeBuilder<TEvent>` fluent builder wrapping `EventEnvelope.Wrap<TEvent>(...)` (04.Contracts): `WithPayload`, `WithSourceService`, `WithCorrelationId`, `WithCausationId`, `Build()`; defaults `SourceService="test-service"`, `CorrelationId=Guid.NewGuid().ToString("N")`, `CausationId=null`. Source: P-064/WO-012. | `SharedKernel.Testing` | `●` |
+| D-11 | Decide DI shape for Contracts helpers: `AddFakeContractsServices()` deferred unless a concrete DI-backed need surfaces — `PagedListBuilder`/`EventEnvelopeBuilder`/`EnvelopeAssertions`/`IntegrationEventFaker<TEvent>` ship as static/instantiable helpers only, consistent with `Security/`/`Persistence/`/`Clocks/` precedent. Source: P-064/WO-012. | `SharedKernel.Testing` | `●` |
+| D-12 | Design the `SharedKernel.Testing.SelfTests` carve-out decision rule: "implements a consuming-domain-owned interface → proven in that domain's suite (unchanged); standalone helper/builder/convention with no owning interface → proven in `SelfTests`." Reaffirm `Caching/` fakes' existing proof-via-consuming-domain precedent as unchanged. Source: P-179/WO-029. | `SharedKernel.Testing`, `SharedKernel.Testing.SelfTests` | `●` |
+| D-13 | Design `FakeCacheService.GetManyAsync<T>`/`SetManyAsync<T>` extension — already implemented on disk exactly per spec (every requested key present in result, miss → `default`; `SetManyAsync` applies one shared `CachePolicy` to all entries). Design task closes as a verification, not new design. Source: P-180/WO-029. | `SharedKernel.Testing` | `●` |
+| D-14 | Verify `FakeTenantCacheKeyProvider` against current `ITenantCacheKeyProvider` contract (`BuildTenantKey`/two `BuildKey` overloads, `{service}:{tenant}:{entity}:{id}` format, zero `12.Security` dependency) — confirmed exact match on disk; no design change. Source: P-180/WO-029. | `SharedKernel.Testing` | `●` |
+| D-15 | Design `FakeCacheInvalidationBus` (implements `ICacheInvalidationBus` from `02.Caching.Abstractions`): records every `CacheInvalidationMessage` via all four publish overloads (`PublishKeyInvalidationAsync`, `PublishTagInvalidationAsync`, `PublishBroadcastInvalidationAsync`, `PublishInvalidationAsync`) into `PublishedInvalidations`; `OnInvalidation(Func<CacheInvalidationMessage, ValueTask>)` registers a handler invoked synchronously on publish; `Reset()` clears messages + handlers; zero dependency on `IRedisChannelService` or any Redis package. Source: P-180/WO-029. | `SharedKernel.Testing` | `●` |
+| D-16 | Design unified `AddFakeCachingServices()` registering all four caching fakes (`FakeCacheService`, `FakeDistributedLockService`, `FakeTenantCacheKeyProvider`, `FakeCacheInvalidationBus`) as singletons in one call — first DI convenience extension for `Caching/` (previously manual `new`/`AddSingleton` per fake). Source: P-180/WO-029. | `SharedKernel.Testing` | `●` |
+| D-17 | Design `SingleValueObjectFaker<TValueObject, TValue>` abstract Bogus base for `SingleValueObject<TValue>` subclasses (03.Domain): `WithValue(TValue)`, `WithRandomValue(Func<Faker, TValue>)`. Source: P-181/WO-029. | `SharedKernel.Testing` | `●` |
+| D-18 | Design `DomainVersionAssertions`: `ShouldHaveVersion<TEvent>(int expectedVersion)` (asserts `[DomainEventVersion(N)]` matches via `DomainEventVersionHelper.GetVersion`), `ShouldBeVersioned<TEvent>()` (asserts attribute present) — plain exceptions, no FluentAssertions. Source: P-181/WO-029. | `SharedKernel.Testing` | `●` |
+| D-19 | Design `DomainEventAssertions` extensions: `ContainsEventWithVersion<T>(int version)`, `HasRaisedExactlyNEvents(int n)` — additive to D-03's set, no breaking changes. Source: P-181/WO-029. | `SharedKernel.Testing` | `●` |
+| D-20 | Design `SpecificationTestBuilder<T>` fluent in-memory spec test helper: `For(spec).Against(entities).ExpectCount(n).ExpectMatch(predicate).Assert()` wrapping `ISpecification<T>.IsSatisfiedBy` (via `Specification<T>.IsSatisfiedBy`, in-test use only per 03.Domain rule) with descriptive failure messages including entity details. No owning consuming-domain interface — proven in `SelfTests` per D-12. Source: P-181/WO-029. | `SharedKernel.Testing` | `●` |
+| D-21 | Design `FakeDomainNotFoundException.For<TAggregate>(object id)` factory producing a `DomainNotFoundException` (03.Domain) for repository-fake not-found setups. No owning consuming-domain interface — proven in `SelfTests` per D-12. Source: P-181/WO-029. | `SharedKernel.Testing` | `●` |
+| D-22 | Design `TestSharedKernelDbContext` abstract class extending `SharedKernelDbContext` (06.Persistence.EfCore): SQLite in-memory provider, no-op `IUserContext` (fixed `"test-user"`), deterministic fixed-snapshot `IClock`, `EnableSensitiveDataLogging()`, `EnsureCreatedAsync()`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-23 | Design `AggregateRootFaker<TAggregate, TId>` / `TenantedAggregateFaker<TAggregate, TId>` abstract Bogus bases pre-configuring `CreatedBy`/`CreatedOn`/`IsDeleted=false`; tenanted variant additionally populates non-empty `TenantId`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-24 | Design `EfContextExtensions`: `DetachAll(DbContext)`, `ReloadAsync<T>(DbContext, T)` (fresh scoped `DbContext` round-trip read). Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-25 | Design `ProjectionSpecificationBuilder<TAggregate, TResult>` fluent builder producing `IProjectionSpecification<TAggregate, TResult>` (06.Persistence.Abstractions): `WithCriteria(...)`, `WithSelector(...)`, `Build()`. No owning consuming-domain interface (builder, not implementation) — proven in `SelfTests`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-26 | Design `PagedListAssertions` over `PagedList<T>` (04.Contracts): `ShouldHaveTotalCount(int)`, `ShouldHaveItems(params T[])`, `ShouldBeEmpty()` — plain exception-throwing boolean checks, **zero FluentAssertions reference** (corrects the superseded ask's FluentAssertions-based design per the standing hard rule). Proven in `SelfTests`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-27 | Design `BulkAggregateFaker<TAggregate, TId>` — generates configurable-count `List<TAggregate>` via Bogus with all audit fields populated, for `AddRangeAsync` seeding. Proven in `SelfTests`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-28 | Design `WithDeletedSpecification<TAggregate>` — wraps any `ISpecification<TAggregate>`, returns a copy with `IncludeDeleted=true`, original untouched. Proven in `SelfTests`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-29 | Design `PersistenceTestHelpers.AssertEntityTracked<T>`/`AssertEntityNotTracked<T>` — asserts EF Core `ChangeTracker` state (`EntityState.Detached` vs. tracked) directly. Proven in `SelfTests`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-30 | Scope-lock P-182: no `OutboxMessageFaker`, `OutboxAssertions`, or PostgreSQL Testcontainer dependency in this phase — explicitly deferred to a future work order. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| D-31 | Confirm `InMemoryMessageBus`/`InMemoryEventPublisher` design (carried forward unchanged from superseded P-138, supersedes P-011/P-124): implements `IMessageBus`/`IEventPublisher` (07.Messaging.Abstractions) exactly per the CLAUDE.md `[STATUS: Planned — WO-022 commitment]` block already on file — `Published`/`Sent` recorders, `RequestAsync` configurable via `SetResponseHandler<TRequest,TResponse>` (descriptive throw when unregistered — supersedes the `NotSupportedException` note, see D-32), `ShouldHavePublished<T>`/`ShouldHaveSent<T>`/`ShouldHavePublishedOnce<T>`/`ShouldNotHavePublished<T>` read-only assertions. Source: P-183/WO-029. | `SharedKernel.Testing` | `●` |
+| D-32 | Reconcile `RequestAsync` behavior conflict: existing `CLAUDE.md` draft says `NotSupportedException`; P-183's carried-forward spec says `SetResponseHandler<TRequest,TResponse>(Func<TRequest,TResponse>)` configurable with a descriptive `InvalidOperationException` when no handler is registered. P-183 (the dispatched phase text) wins — `CLAUDE.md` Interface Contracts updated accordingly in this pass; `ExecuteRoutingSlipAsync` retains its documented `NotSupportedException` (no superseding instruction for that member). Source: P-183/WO-029. | `SharedKernel.Testing` | `●` |
+| D-33 | Design `TestHarnessFactory` static factory configuring `MassTransit.Testing.ITestHarness` with platform defaults (`KebabCaseEndpointNameFormatter`, configurable `ServiceName`, pre-registered `ConsumerBase<T>` subclasses) via `Create(string serviceName, Action<IBusRegistrationConfigurator>?)`; may reference `SharedKernel.Messaging.MassTransit` as test-only (permitted, never shipped). Source: P-183/WO-029. | `SharedKernel.Testing` | `●` |
+| D-34 | Design `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture` — each `sealed class : IAsyncLifetime`; `ConnectionString` throws `InvalidOperationException` before init; pinned image tags (never `:latest`); one instance per `ICollectionFixture<T>` test collection, never per test method. Source: P-184/WO-029. | `SharedKernel.Testing` | `●` |
+| D-35 | Confirm `02.Caching`/`06.Persistence`/`07.Messaging` each currently roll ad-hoc Testcontainers setup inline — these three fixtures centralize without modifying those domains' tests in this pass (future migration phase adopts them). Source: P-184/WO-029. | `SharedKernel.Testing` | `●` |
+| D-36 | Verify Redis topology alignment (carried forward unchanged from superseded P-146): confirm `FakeCacheService`, `FakeDistributedLockService`, `FakeRenewableLock`, `FakeCacheInvalidationBus` (D-15), and any hash-store fakes depend only on `SharedKernel.Caching.Abstractions` — no project reference to the old monolithic `SharedKernel.Caching.Redis` surface. Confirm `RedisContainerFixture` (D-34) is independently usable by each of the four split capability `.Tests` projects. Source: P-185/WO-029. | `SharedKernel.Testing` | `●` |
+| D-37 | Design `MockServiceEndpointResolver` (implements `IServiceEndpointResolver` from `11.Communication.Internal`): `Configure(string serviceName, Uri uri)`, `GetResolvedNames()`, per-service failure injection, never throws on unconfigured name. Source: P-186/WO-029 (merges P-158+P-168, P-168 wins on conflict). | `SharedKernel.Testing` | `●` |
+| D-38 | Design `FakeHttpContextAccessor` (`IHttpContextAccessor` double, `Microsoft.AspNetCore.Http` + `SharedKernel.Security.Abstractions`): fixed/null `HttpContext`, configurable `TenantId` on backing `ITenantProvider`; consolidates ad-hoc duplicates in `.Rest.Tests`/`.Grpc.Tests`. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| D-39 | Design `HttpClientHandlerTestFactory` (`Microsoft.Extensions.Http` only): `WithInnerHandler(HttpMessageHandler)`, `WithCorrelationIdHandler()`, `WithTenantIdHandler(Guid?)`; returns outermost handler for direct `HttpClient` construction. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| D-40 | Design `FakeHttpMessageHandler`: fixed and sequenced response fixtures (e.g., 503 then 200), post-call `HttpRequestMessage` inspection for injected headers. Folded in from P-158. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| D-41 | Design ambient `Activity` test helper: sets an ambient `Activity` with a specific trace ID and parent for correlation-ID propagation tests. Folded in from P-158. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| D-42 | Design gRPC `ServerCallContext` stub test helper for isolated interceptor testing with post-execution metadata inspection. Folded in from P-158. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| D-43 | Design GraphQL `IRequestExecutorBuilder` test factory wiring `AddSharedKernelGraphQL()` with test-safe defaults (`AllowIntrospection=true`, `MaxPageSize=10`). Folded in from P-158. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| D-44 | Scope-lock P-186: no project reference from `SharedKernel.Testing` to `SharedKernel.Communication.Rest`/`.Grpc`/`.GraphQL`; `MockServiceEndpointResolver` → `.Internal` only. Identify and flag ad-hoc duplicate fakes in `.Rest.Tests`/`.Grpc.Tests` for removal once these helpers exist. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| D-45 | Design `StaticTenantProvider` (implements `ITenantProvider` from `12.Security.Abstractions`) — trivial fixed-`Guid` (or `Guid.Empty`) test double. Source: P-187/WO-029 (carried forward unchanged from superseded P-174). | `SharedKernel.Testing` | `●` |
+| D-46 | Design `FakeTenantResolutionStrategy` — configurable test double (fixed `Guid?` result or delegate); structurally compatible with `13.ServiceDefaults.SharedKernel.MultiTenancy`'s `ITenantResolutionStrategy` (`StrategyName` + `TryResolveAsync(HttpContext, CancellationToken) → Task<Guid?>`) rather than a direct interface implementation, since a project reference to `SharedKernel.MultiTenancy` is out of scope. Source: P-187/WO-029. | `SharedKernel.Testing` | `●` |
+| D-47 | Design `HealthCheckAssertionExtensions` (`Microsoft.Extensions.Diagnostics.HealthChecks` only): `ShouldBeTaggedReady(this HealthCheckRegistration)` / `ShouldNotBeTaggedLive(this HealthCheckRegistration)` (or equivalent names) — verifies tag composition without booting a `WebApplicationFactory`. Source: P-187/WO-029. | `SharedKernel.Testing` | `●` |
+| D-48 | Scope-lock P-187: no project reference from `SharedKernel.Testing` to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`. Source: P-187/WO-029. | `SharedKernel.Testing` | `●` |
+
+---
+
+## Phase: Scaffold <!-- phase-key: SK.16.Scaffold -->
+
+| ID | Task | Package(s) | State |
+|----|------|-------------|:-----:|
+| S-01 | Create `SharedKernel.Testing.SelfTests` project (`classlib`, `net10.0`) nested at `16.Testing/SharedKernel.Testing/SharedKernel.Testing.SelfTests/`; add `ProjectReference` to `SharedKernel.Testing`; add Standard Test Package Set (xUnit runner, FluentAssertions, NSubstitute) as direct `PackageReference`s. Register in `Platform.SharedKernel.slnx` under the `16.Testing` solution folder. `dotnet build` must succeed with zero errors for the empty project. Source: P-179/WO-029. | `SharedKernel.Testing.SelfTests` | `●` |
+| S-02 | Add `ProjectReference` to `SharedKernel.Domain` (03.Domain) in `SharedKernel.Testing.csproj` — needed for `EntityFaker<TEntity,TId>`, `DomainEventAssertions`, `BusinessRuleAssertions`, `SpecificationAssert`, `SingleValueObjectFaker`, `DomainVersionAssertions`, `SpecificationTestBuilder`, `FakeDomainNotFoundException`. `IClock` already resolves transitively via `SharedKernel.Primitives`; add an explicit `ProjectReference` to `SharedKernel.Primitives` if not already transitive. Source: P-035/WO-008, P-181/WO-029. | `SharedKernel.Testing` | `●` |
+| S-03 | Add `ProjectReference` to `SharedKernel.Contracts` (04.Contracts) in `SharedKernel.Testing.csproj` — needed for `PagedListBuilder<T>`, `EnvelopeAssertions`, `IntegrationEventFaker<TEvent>`, `EventEnvelopeBuilder<TEvent>`, `PagedListAssertions`. Source: P-064/WO-012, P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| S-04 | Add `ProjectReference` to `SharedKernel.Security.Abstractions` (12.Security) in `SharedKernel.Testing.csproj` — needed for `FakeUserContext`, `FakeTenantProvider`, `FakeHttpContextAccessor` (backing `ITenantProvider`), `StaticTenantProvider`, `FakeTenantResolutionStrategy`. Source: P-035/WO-008, P-186/WO-029, P-187/WO-029. | `SharedKernel.Testing` | `●` |
+| S-05 | Add `ProjectReference` to `SharedKernel.Messaging.Abstractions` (07.Messaging) in `SharedKernel.Testing.csproj` — needed for `InMemoryMessageBus`, `InMemoryEventPublisher`. Source: P-035/WO-008 (cross-dep table), P-183/WO-029. | `SharedKernel.Testing` | `●` |
+| S-06 | Add `ProjectReference` to `SharedKernel.Messaging.MassTransit` (07.Messaging) in `SharedKernel.Testing.csproj` — test-only dependency for `TestHarnessFactory`; confirm `InMemoryMessageBus`/`InMemoryEventPublisher` themselves do not pick up this reference (separate file/namespace; reference is additive to the project, not to those two types' compiled dependency surface in spirit — document the distinction in code review). Source: P-183/WO-029. | `SharedKernel.Testing` | `●` |
+| S-07 | Add `ProjectReference` to `SharedKernel.Persistence.Abstractions` (06.Persistence) in `SharedKernel.Testing.csproj` — needed for `FakeDbConnectionFactory` (`IDbConnectionFactory`, planned surface), `ProjectionSpecificationBuilder<TAggregate,TResult>` (`IProjectionSpecification<TAggregate,TResult>`). Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| S-08 | Add `ProjectReference` to `SharedKernel.Persistence.EfCore` (06.Persistence) in `SharedKernel.Testing.csproj` — needed for `TestSharedKernelDbContext` (extends `SharedKernelDbContext`), `EfContextExtensions`, `PersistenceTestHelpers`, `AggregateRootFaker`/`TenantedAggregateFaker`, `BulkAggregateFaker`, `WithDeletedSpecification<TAggregate>`. Add `Microsoft.EntityFrameworkCore.Sqlite` `PackageReference` for the in-memory SQLite provider backing `TestSharedKernelDbContext`. Source: P-182/WO-029. | `SharedKernel.Testing` | `●` |
+| S-09 | Add `Testcontainers.PostgreSql`, `Testcontainers.Redis`, `Testcontainers.RabbitMq` `PackageReference`s to `SharedKernel.Testing.csproj` for `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture`. Confirm `xunit.core` (the `Xunit.IAsyncLifetime` contract only) is already present or add it — no test runner, no `Xunit.Assert`. Source: P-184/WO-029. | `SharedKernel.Testing` | `●` |
+| S-10 | Add `ProjectReference` to `SharedKernel.Communication.Internal` (11.Communication) in `SharedKernel.Testing.csproj` — needed for `MockServiceEndpointResolver` (`IServiceEndpointResolver`). Add `Microsoft.AspNetCore.Http.Abstractions` (or equivalent) `PackageReference` for `FakeHttpContextAccessor`'s `IHttpContextAccessor`/`HttpContext` types and `Microsoft.Extensions.Http` for `HttpClientHandlerTestFactory`/`FakeHttpMessageHandler`. Explicitly verify no `ProjectReference` is added to `SharedKernel.Communication.Rest`, `.Grpc`, or `.GraphQL`. Source: P-186/WO-029. | `SharedKernel.Testing` | `●` |
+| S-11 | Add `Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions` (or equivalent) `PackageReference` to `SharedKernel.Testing.csproj` for `HealthCheckAssertionExtensions`'s `HealthCheckRegistration` type. Explicitly verify no `ProjectReference` is added to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`. Source: P-187/WO-029. | `SharedKernel.Testing` | `●` |
+| S-12 | Create folder scaffolding for new/extended capability areas: confirm `Clocks/`, `Security/`, `Messaging/`, `Persistence/`, `Containers/`, `Fakers/` folders exist (currently only `Caching/` exists on disk); create them with their first source file as part of the corresponding Core task, not as empty placeholders. Add a `Contracts/` folder (new — `SharedKernel.Testing.Contracts` namespace) for P-064's helpers, and a `Communication/` folder (new — `SharedKernel.Testing.Communication` namespace) for P-186's helpers, and a `ServiceDefaults/` folder (new — `SharedKernel.Testing.ServiceDefaults` namespace) for P-187's helpers. Update the Folder/Namespace Map in `CLAUDE.md` accordingly (done in this pass). Source: P-064/WO-012, P-186/WO-029, P-187/WO-029. | `SharedKernel.Testing` | `●` |
+
+---
+
+## Phase: Core <!-- phase-key: SK.16.Core -->
+
+| ID | Task | Package(s) | State |
+|----|------|-------------|:-----:|
+| C-01 | Implement `FakeClock` in `Clocks/FakeClock.cs` per D-01. | `SharedKernel.Testing` | `●` |
+| C-02 | Implement `EntityFaker<TEntity, TId>` in `Fakers/EntityFaker.cs` per D-02. | `SharedKernel.Testing` | `●` |
+| C-03 | Implement `DomainEventAssertions` in a new `Domain/` folder (`SharedKernel.Testing.Domain` namespace) per D-03; extend with `ContainsEventWithVersion<T>`/`HasRaisedExactlyNEvents` per D-19 in the same pass since both land together. | `SharedKernel.Testing` | `●` |
+| C-04 | Implement `BusinessRuleAssertions` in `Domain/BusinessRuleAssertions.cs` per D-04. | `SharedKernel.Testing` | `●` |
+| C-05 | Implement `SpecificationAssert` in `Domain/SpecificationAssert.cs` per D-05. | `SharedKernel.Testing` | `●` |
+| C-06 | Implement `AddFakeDomainServices()` DI extension per D-06. | `SharedKernel.Testing` | `●` |
+| C-07 | Implement `PagedListBuilder<T>` in `Contracts/PagedListBuilder.cs` (`SharedKernel.Testing.Contracts` namespace) per D-07. | `SharedKernel.Testing` | `●` |
+| C-08 | Implement `EnvelopeAssertions` in `Contracts/EnvelopeAssertions.cs` per D-08. | `SharedKernel.Testing` | `●` |
+| C-09 | Implement `IntegrationEventFaker<TEvent>` in `Contracts/IntegrationEventFaker.cs` per D-09. | `SharedKernel.Testing` | `●` |
+| C-10 | Implement `EventEnvelopeBuilder<TEvent>` in `Contracts/EventEnvelopeBuilder.cs` per D-10. | `SharedKernel.Testing` | `●` |
+| C-11 | Implement `FakeCacheInvalidationBus` in `Caching/FakeCacheInvalidationBus.cs` per D-15. | `SharedKernel.Testing` | `●` |
+| C-12 | Implement unified `AddFakeCachingServices()` in `Caching/CachingServiceCollectionExtensions.cs` (or similar) per D-16 — registers `FakeCacheService`, `FakeDistributedLockService`, `FakeTenantCacheKeyProvider`, `FakeCacheInvalidationBus` as singletons. | `SharedKernel.Testing` | `●` |
+| C-13 | Implement `SingleValueObjectFaker<TValueObject, TValue>` in `Fakers/SingleValueObjectFaker.cs` per D-17. | `SharedKernel.Testing` | `●` |
+| C-14 | Implement `DomainVersionAssertions` in `Domain/DomainVersionAssertions.cs` per D-18. | `SharedKernel.Testing` | `●` |
+| C-15 | Implement `SpecificationTestBuilder<T>` in `Domain/SpecificationTestBuilder.cs` per D-20. | `SharedKernel.Testing` | `●` |
+| C-16 | Implement `FakeDomainNotFoundException` static factory in `Domain/FakeDomainNotFoundException.cs` per D-21. | `SharedKernel.Testing` | `●` |
+| C-17 | Implement `TestSharedKernelDbContext` in `Persistence/TestSharedKernelDbContext.cs` per D-22. | `SharedKernel.Testing` | `●` |
+| C-18 | Implement `AggregateRootFaker<TAggregate, TId>` / `TenantedAggregateFaker<TAggregate, TId>` in `Persistence/AggregateRootFaker.cs` per D-23. | `SharedKernel.Testing` | `●` |
+| C-19 | Implement `EfContextExtensions` in `Persistence/EfContextExtensions.cs` per D-24. | `SharedKernel.Testing` | `●` |
+| C-20 | Implement `ProjectionSpecificationBuilder<TAggregate, TResult>` in `Persistence/ProjectionSpecificationBuilder.cs` per D-25. | `SharedKernel.Testing` | `●` |
+| C-21 | Implement `PagedListAssertions` in `Contracts/PagedListAssertions.cs` per D-26 — zero FluentAssertions reference. | `SharedKernel.Testing` | `●` |
+| C-22 | Implement `BulkAggregateFaker<TAggregate, TId>` in `Persistence/BulkAggregateFaker.cs` per D-27. | `SharedKernel.Testing` | `●` |
+| C-23 | Implement `WithDeletedSpecification<TAggregate>` in `Persistence/WithDeletedSpecification.cs` per D-28. | `SharedKernel.Testing` | `●` |
+| C-24 | Implement `PersistenceTestHelpers` in `Persistence/PersistenceTestHelpers.cs` per D-29. | `SharedKernel.Testing` | `●` |
+| C-25 | Implement `InMemoryMessageBus` in `Messaging/InMemoryMessageBus.cs` per D-31/D-32 (configurable `SetResponseHandler` design, not `NotSupportedException`, for `RequestAsync`). | `SharedKernel.Testing` | `●` |
+| C-26 | Implement `InMemoryEventPublisher` in `Messaging/InMemoryEventPublisher.cs` per D-31. | `SharedKernel.Testing` | `●` |
+| C-27 | Implement `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()` DI extensions (singleton, documented lifetime divergence) per D-31. | `SharedKernel.Testing` | `●` |
+| C-28 | Implement `ShouldHavePublished<T>`/`ShouldHaveSent<T>`/`ShouldHavePublishedOnce<T>`/`ShouldNotHavePublished<T>` assertion helpers on both doubles per D-31. | `SharedKernel.Testing` | `●` |
+| C-29 | Implement `TestHarnessFactory` in `Messaging/TestHarnessFactory.cs` per D-33. | `SharedKernel.Testing` | `●` |
+| C-30 | Implement `PostgreSqlContainerFixture` in `Containers/PostgreSqlContainerFixture.cs` per D-34. | `SharedKernel.Testing` | `●` |
+| C-31 | Implement `RedisContainerFixture` in `Containers/RedisContainerFixture.cs` per D-34. | `SharedKernel.Testing` | `●` |
+| C-32 | Implement `RabbitMqContainerFixture` in `Containers/RabbitMqContainerFixture.cs` per D-34. | `SharedKernel.Testing` | `●` |
+| C-33 | Implement `MockServiceEndpointResolver` in `Communication/MockServiceEndpointResolver.cs` per D-37. | `SharedKernel.Testing` | `●` |
+| C-34 | Implement `FakeHttpContextAccessor` in `Communication/FakeHttpContextAccessor.cs` per D-38. | `SharedKernel.Testing` | `●` |
+| C-35 | Implement `HttpClientHandlerTestFactory` in `Communication/HttpClientHandlerTestFactory.cs` per D-39. | `SharedKernel.Testing` | `●` |
+| C-36 | Implement `FakeHttpMessageHandler` in `Communication/FakeHttpMessageHandler.cs` per D-40. | `SharedKernel.Testing` | `●` |
+| C-37 | Implement ambient `Activity` test helper in `Communication/AmbientActivityTestHelper.cs` (or similar) per D-41. | `SharedKernel.Testing` | `●` |
+| C-38 | Implement gRPC `ServerCallContext` stub in `Communication/TestServerCallContext.cs` (or similar) per D-42. | `SharedKernel.Testing` | `●` |
+| C-39 | Implement GraphQL `IRequestExecutorBuilder` test factory in `Communication/GraphQLTestExecutorFactory.cs` (or similar) per D-43. | `SharedKernel.Testing` | `●` |
+| C-40 | Remove ad-hoc duplicate fakes in `SharedKernel.Communication.Rest.Tests` and `.Grpc.Tests` in favor of the shared helpers landed in C-33..C-39 — coordinate with `11.Communication`'s own test suites since this touches files outside `16.Testing` (informational cross-domain note; actual file edits happen in `11.Communication`'s own implementer pass, not here). Per D-44. | `SharedKernel.Testing` | `●` |
+| C-41 | Implement `StaticTenantProvider` in `ServiceDefaults/StaticTenantProvider.cs` per D-45. | `SharedKernel.Testing` | `●` |
+| C-42 | Implement `FakeTenantResolutionStrategy` in `ServiceDefaults/FakeTenantResolutionStrategy.cs` per D-46. | `SharedKernel.Testing` | `●` |
+| C-43 | Implement `HealthCheckAssertionExtensions` in `ServiceDefaults/HealthCheckAssertionExtensions.cs` per D-47. | `SharedKernel.Testing` | `●` |
+
+---
+
+## Phase: Tests <!-- phase-key: SK.16.Tests -->
+
+> Per the P-179 decision rule: types implementing a consuming-domain-owned interface are proven in that domain's own `.Tests` project (unchanged precedent). Standalone helpers/builders/conventions with no owning interface are proven in `SharedKernel.Testing.SelfTests`.
+
+| ID | Task | Package(s) | State |
+|----|------|-------------|:-----:|
+| T-01 | Prove `FakeClock` against the `IClock` contract owned by `01.Core`. CORRECTED at implementation time: `01.Core` references nothing per root layering rules, so it can never take a `ProjectReference` to `16.Testing` — `SharedKernel.Primitives.Tests`'s existing `ClockTests.cs` defines its own private nested fake for exactly this reason. Proven instead in `SharedKernel.Testing.SelfTests/Clocks/FakeClockTests.cs` — the architecturally correct home, not a fallback-of-convenience. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-02 | Prove `EntityFaker<TEntity, TId>` in `SharedKernel.Testing.SelfTests` — no owning consuming-domain interface (abstract Bogus base, not an interface implementation). | `SharedKernel.Testing.SelfTests` | `●` |
+| T-03 | Prove `DomainEventAssertions` (incl. `ContainsEventWithVersion<T>`/`HasRaisedExactlyNEvents` from P-181) in `SharedKernel.Testing.SelfTests` — assertion helper, no owning interface; exercised against `03.Domain`'s own `AggregateRoot<TId>`/`IDomainEvent` shapes as fixtures. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-04 | Prove `BusinessRuleAssertions` in `SharedKernel.Testing.SelfTests` — assertion helper over `IBusinessRule`, no owning interface to implement. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-05 | Prove `SpecificationAssert` in `SharedKernel.Testing.SelfTests` — wraps `.Compile()` evaluation, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-06 | Prove `AddFakeDomainServices()` DI registration in `SharedKernel.Testing.SelfTests` — registration-shape test, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-07 | Prove `PagedListBuilder<T>`/`Empty<T>()` in `SharedKernel.Testing.SelfTests` — fluent builder, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-08 | Prove `EnvelopeAssertions` in `SharedKernel.Testing.SelfTests` — assertion helper over `Envelope`/`Envelope<T>`, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-09 | Prove `IntegrationEventFaker<TEvent>` in `SharedKernel.Testing.SelfTests` — abstract Bogus base, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-10 | Prove `EventEnvelopeBuilder<TEvent>` in `SharedKernel.Testing.SelfTests` — fluent builder over `EventEnvelope.Wrap`, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-11 | Confirm `FakeCacheService.GetManyAsync<T>`/`SetManyAsync<T>`. CORRECTED at implementation time: no existing `02.Caching` consuming-domain test exercised these two batch methods against the fake directly (only incidental DI-registration usage existed in `SharedKernel.Caching.Redis.PubSub.Tests`). Coverage gap closed in `SharedKernel.Testing.SelfTests/Caching/FakeCacheServiceTests.cs` per the documented SelfTests fallback for an undocumented gap. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-12 | Confirm `FakeTenantCacheKeyProvider`. CORRECTED at implementation time: no existing `02.Caching` consuming-domain test exercised this fake directly. Coverage gap closed in `SharedKernel.Testing.SelfTests/Caching/FakeTenantCacheKeyProviderTests.cs`. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-13 | Prove `FakeCacheInvalidationBus` against `ICacheInvalidationBus`. CORRECTED at implementation time: no existing `02.Caching` consuming-domain test exercised this fake directly. Coverage gap closed in `SharedKernel.Testing.SelfTests/Caching/FakeCacheInvalidationBusTests.cs`. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-14 | Prove `AddFakeCachingServices()` registers all four caching fakes correctly in `SharedKernel.Testing.SelfTests` — registration-shape test, no single owning interface (it registers four). | `SharedKernel.Testing.SelfTests` | `●` |
+| T-15 | Prove `SingleValueObjectFaker<TValueObject, TValue>` in `SharedKernel.Testing.SelfTests` — abstract Bogus base, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-16 | Prove `DomainVersionAssertions` in `SharedKernel.Testing.SelfTests` — assertion helper over `DomainEventVersionAttribute`/`Helper`, no owning interface. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-17 | Prove `SpecificationTestBuilder<T>` in `SharedKernel.Testing.SelfTests` per P-181's explicit carve-out designation. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-18 | Prove `FakeDomainNotFoundException.For<TAggregate>` in `SharedKernel.Testing.SelfTests` per P-181's explicit carve-out designation. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-19 | Prove `TestSharedKernelDbContext`. CORRECTED at implementation time: `SharedKernel.Persistence.EfCore.Tests` carries a `ProjectReference` to `SharedKernel.Testing` but no `.cs` file there consumes any of these types yet (net-new fake/fixture with no existing consumer). Proven in `SharedKernel.Testing.SelfTests/Persistence/TestSharedKernelDbContextTests.cs` against real SQLite + interceptor behavior per the documented fallback for a net-new type with no consumer. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-20 | Prove `AggregateRootFaker<TAggregate, TId>`/`TenantedAggregateFaker<TAggregate, TId>`. CORRECTED at implementation time: no consumer yet in `06.Persistence.EfCore.Tests`. Proven in `SharedKernel.Testing.SelfTests/Persistence/AggregateRootFakerTests.cs`. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-21 | Prove `EfContextExtensions.DetachAll`/`ReloadAsync<T>`. CORRECTED at implementation time: no consumer yet in `06.Persistence.EfCore.Tests`. Proven in `SharedKernel.Testing.SelfTests/Persistence/EfContextExtensionsTests.cs` against a real SQLite-backed context. **Bug fixed during this phase**: `ReloadAsync<T>`'s `CreateFreshContext` could not resolve `DbContextOptions`/`DbContextOptions<TContext>` from a standalone (non-DI-hosted) context's internal service provider — EF Core does not register either shape there. Fixed via a `ConditionalWeakTable<DbContext, DbContextOptions>` populated by `TestSharedKernelDbContext`'s constructor (new `EfContextExtensions.RegisterOptions` public API). | `SharedKernel.Testing.SelfTests` | `●` |
+| T-22 | Prove `ProjectionSpecificationBuilder<TAggregate, TResult>` in `SharedKernel.Testing.SelfTests` per P-182's explicit carve-out designation (builder, not an implementation of `IProjectionSpecification` itself — it produces instances). | `SharedKernel.Testing.SelfTests` | `●` |
+| T-23 | Prove `PagedListAssertions` in `SharedKernel.Testing.SelfTests` per P-182's explicit carve-out designation. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-24 | Prove `BulkAggregateFaker<TAggregate, TId>` in `SharedKernel.Testing.SelfTests` per P-182's explicit carve-out designation. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-25 | Prove `WithDeletedSpecification<TAggregate>` in `SharedKernel.Testing.SelfTests` per P-182's explicit carve-out designation. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-26 | Prove `PersistenceTestHelpers.AssertEntityTracked`/`AssertEntityNotTracked` in `SharedKernel.Testing.SelfTests` per P-182's explicit carve-out designation. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-27 | Prove `InMemoryMessageBus`/`InMemoryEventPublisher` (incl. `ShouldHavePublished<T>`/`ShouldHaveSent<T>`/`ShouldHavePublishedOnce<T>`/`ShouldNotHavePublished<T>` self-checks) in `SharedKernel.Testing.SelfTests` per P-183's explicit carve-out designation — standalone recorders with no single owning consuming-domain suite. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-28 | Prove `TestHarnessFactory.CreateAsync(...)` produces a correctly configured `ITestHarness` — no existing `07.Messaging` suite exercises this exact factory shape; proven in `SharedKernel.Testing.SelfTests/Messaging/TestHarnessFactoryTests.cs` per P-183/P-179's "default to SelfTests if ambiguous" instruction. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-29 | Prove `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture` start/stop lifecycle in `SharedKernel.Testing.SelfTests` per P-184's explicit carve-out designation — full lifecycle smoke-tested against real Docker containers (pinned images, no `:latest`); container fixtures wrap infrastructure lifecycle, not a production contract. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-30 | Verify Redis topology alignment (P-185): confirmed via grep that no `.Tests` project anywhere on the platform references the removed monolithic `SharedKernel.Caching.Redis` surface incorrectly — the only two matches (`SharedKernel.Caching.Redis.Tests` testing its own package, `SharedKernel.ArchitectureTests.Tests` testing the topology rule itself) are both legitimate. `dotnet build` clean on `SharedKernel.Testing.csproj`. This is a platform-wide grep/build verification, not a new unit test. | Cross-domain verification (no new test project) | `●` |
+| T-31 | Prove `MockServiceEndpointResolver`/`FakeHttpContextAccessor`/`HttpClientHandlerTestFactory`/`FakeHttpMessageHandler`/ambient `Activity` helper/gRPC `ServerCallContext` stub/GraphQL test-executor factory in `SharedKernel.Testing.SelfTests` per P-186's explicit carve-out designation — cross-cutting Communication test doubles with no single owning consuming-domain suite. **Bug fixed during this phase**: `AmbientActivityTestHelper.Start` threw `InvalidOperationException` outside an OTel-instrumented host because `ActivitySource.StartActivity` returns `null` with no `ActivityListener` sampling the source — fixed by registering a static always-sampling `ActivityListener` scoped to this `ActivitySource` only (documented exception to the no-static-mutable-state rule, same class as `FakerSeeding`). | `SharedKernel.Testing.SelfTests` | `●` |
+| T-32 | Prove `StaticTenantProvider` implements `ITenantProvider` correctly. CORRECTED at implementation time: no generic `ITenantProvider` contract-shape test exists in `12.Security.Abstractions.Tests` (csproj has zero references to `SharedKernel.Testing`). Proven in `SharedKernel.Testing.SelfTests/ServiceDefaults/StaticTenantProviderTests.cs` per P-187's explicit fallback. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-33 | Prove `FakeTenantResolutionStrategy` in `SharedKernel.Testing.SelfTests` per P-187's explicit carve-out designation — structurally compatible only, not a direct interface implementation (no project reference to `SharedKernel.MultiTenancy`), so there is no owning-domain suite to anchor against. | `SharedKernel.Testing.SelfTests` | `●` |
+| T-34 | Prove `HealthCheckAssertionExtensions` in `SharedKernel.Testing.SelfTests` per P-187's explicit carve-out designation. | `SharedKernel.Testing.SelfTests` | `●` |
+
+---
+
+## Phase: Docs <!-- phase-key: SK.16.Docs -->
+
+| ID | Task | Package(s) | State |
+|----|------|-------------|:-----:|
+| DO-01 | XML doc comments on all P-035 public types: `FakeClock`, `EntityFaker<TEntity,TId>`, `DomainEventAssertions`, `BusinessRuleAssertions`, `SpecificationAssert`, `AddFakeDomainServices()`. | `SharedKernel.Testing` | `●` |
+| DO-02 | XML doc comments on all P-064 public types: `PagedListBuilder<T>`, `EnvelopeAssertions`, `IntegrationEventFaker<TEvent>`, `EventEnvelopeBuilder<TEvent>`. | `SharedKernel.Testing` | `●` |
+| DO-03 | `16.Testing/CLAUDE.md` Test Rules section amended with the P-179 decision rule (done in this pass — see CLAUDE.md changelog); existing `Caching/` proof-via-consuming-domain precedent explicitly reaffirmed as unchanged. | `SharedKernel.Testing`, `SharedKernel.Testing.SelfTests` | `●` |
+| DO-04 | XML doc comments on `FakeCacheInvalidationBus` and the unified `AddFakeCachingServices()`; `Caching/` CLAUDE.md section markers updated to reflect the four-fake set (done in this pass for CLAUDE.md; code-level XML docs land with C-11/C-12). | `SharedKernel.Testing` | `●` |
+| DO-05 | XML doc comments on all P-181 public types: `SingleValueObjectFaker<TValueObject,TValue>`, `DomainVersionAssertions`, the extended `DomainEventAssertions` members, `SpecificationTestBuilder<T>`, `FakeDomainNotFoundException`. | `SharedKernel.Testing` | `●` |
+| DO-06 | XML doc comments on all P-182 public types: `TestSharedKernelDbContext`, `AggregateRootFaker`/`TenantedAggregateFaker`, `EfContextExtensions`, `ProjectionSpecificationBuilder<TAggregate,TResult>`, `PagedListAssertions`, `BulkAggregateFaker`, `WithDeletedSpecification<TAggregate>`, `PersistenceTestHelpers`. | `SharedKernel.Testing` | `●` |
+| DO-07 | XML doc comments on `InMemoryMessageBus`, `InMemoryEventPublisher`, the four `Should*` assertion helpers, and `TestHarnessFactory`; doc the singleton-lifetime divergence explicitly at the registration site per the standing Implementation Rule. | `SharedKernel.Testing` | `●` |
+| DO-08 | XML doc comments on all three container fixtures documenting the `ICollectionFixture<T>` one-per-collection usage pattern and pinned image tag rationale; `Containers/` CLAUDE.md section markers updated from `[STATUS: Planned]` to implemented (done in this pass for CLAUDE.md). | `SharedKernel.Testing` | `●` |
+| DO-09 | XML doc comments on all P-186 Communication helper types; `16.Testing/CLAUDE.md` updated explicitly closing out both prior overlapping asks (P-158, P-168) — done in this pass. | `SharedKernel.Testing` | `●` |
+| DO-10 | XML doc comments on `StaticTenantProvider`, `FakeTenantResolutionStrategy`, `HealthCheckAssertionExtensions`. | `SharedKernel.Testing` | `●` |
+
+---
+
+## Phase: Published <!-- phase-key: SK.16.Published -->
+
+| ID | Task | Package(s) | State |
+|----|------|-------------|:-----:|
+| P-01 | Confirm `SharedKernel.Testing` consumption model: currently `ProjectReference`-only within this mono-repo (per root `CLAUDE.md` Test Project Rules — every `.Tests` project references `16.Testing/SharedKernel.Testing` directly). No `.nupkg` packing has been requested by any of P-035/P-064/P-179–P-187. This task formally records that decision rather than packing prematurely — packing remains a future work order if/when downstream consumers outside this repo need it. | `SharedKernel.Testing` | `●` |
+| P-02 | `SharedKernel.Testing.SelfTests` is explicitly never packed or published — it is a self-test project only, same non-shipping status as `SharedKernel.Testing` itself. No action needed beyond confirming this in `CLAUDE.md` (done in this pass). | `SharedKernel.Testing.SelfTests` | `●` |
+
+---
+
+## Overall Progress
+
+> Counts updated whenever a task state changes. Total tasks: 149.
+
+| Phase Key | Phase | Total | ● Done | ○ Pending | State |
+|-----------|-------|:-----:|:------:|:---------:|:-----:|
+| `SK.16.Design` | Design | 48 | 48 | 0 | `●` |
+| `SK.16.Scaffold` | Scaffold | 12 | 12 | 0 | `●` |
+| `SK.16.Core` | Core | 43 | 43 | 0 | `●` |
+| `SK.16.Tests` | Tests | 34 | 34 | 0 | `●` |
+| `SK.16.Docs` | Docs | 10 | 10 | 0 | `●` |
+| `SK.16.Published` | Published | 2 | 2 | 0 | `●` |
+
+---
+
+## Changelog
+
+> One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
+
+- [2026-06-22] Sub state-map initialized as a structural template — phase key registry, 6 phases scaffolded at `○` with no tasks yet; Package Board reflects current reality (`Caching/` fakes already implemented ad hoc, predating this state-map); Cross-Domain Dependencies table seeded from the planned surface documented in `CLAUDE.md`. No phase tasks defined — pending a future formal Design-phase breakdown.
+- [2026-06-22] First full task breakdown — 9 phases processed in order (P-035/WO-008, P-064/WO-012, P-179..P-187/WO-029): 149 tasks added across all 6 phase sections (48 Design, 12 Scaffold, 43 Core, 34 Tests, 10 Docs, 2 Published). Verified on disk that only `Caching/` fakes exist (`FakeCacheService` with `GetManyAsync`/`SetManyAsync` already implemented, `FakeDistributedLockService`+`FakeRenewableLock`, `FakeTenantCacheKeyProvider`) — no `FakeClock`/`EntityFaker`/`DomainEventAssertions`/`SelfTests` project exist yet despite the CLAUDE.md draft describing their target shape; P-181's "already-shipped baseline" framing corrected per its own dispatcher note — P-035 is the baseline this phase extends, folded into the same Design/Core sequence (D-01..D-06 then D-17..D-21, C-01..C-06 then C-13..C-16). P-179's SelfTests carve-out applied as the universal Tests-phase rule for all subsequent phases. P-180 confirmed `FakeCacheService` batch ops and `FakeTenantCacheKeyProvider` already match spec exactly (no code drift) — only `FakeCacheInvalidationBus` and the unified `AddFakeCachingServices()` are net-new. P-182's `PagedListAssertions` FluentAssertions reference explicitly corrected to zero-dependency per the standing hard rule, as instructed by the phase text itself. P-183's `RequestAsync` design conflict between the existing CLAUDE.md draft (`NotSupportedException`) and the carried-forward P-138 spec (`SetResponseHandler`-configurable) resolved in favor of the dispatched phase text (D-31/D-32). P-186 merges P-158+P-168 per instruction (P-168 wins on conflict). P-187's `FakeTenantResolutionStrategy` documented as structurally compatible only — no `SharedKernel.MultiTenancy` project reference. Package Board and Cross-Domain Dependencies tables refreshed accordingly (testing-arch-planner).
+- [2026-06-23] D-01→D-48 all marked `●` in `SK.16.Design` — every target-shape contract in `CLAUDE.md` cross-checked against the real owning-domain source (`IClock`, `IDomainEvent`/`AggregateRoot`/`IBusinessRule`/`ISpecification`/`Specification`/`SingleValueObject`/`DomainEventVersionHelper`/`DomainNotFoundException`, `PagedList`/`Envelope`/`Envelope<T>`/`IIntegrationEvent`/`EventEnvelope`, `IMessageBus`/`IEventPublisher`/`PublishContext`, `IUserContext`/`ITenantProvider`, `IDbConnectionFactory`/`SharedKernelDbContext`/`IProjectionSpecification`, `IServiceEndpointResolver`, `ITenantResolutionStrategy`/`HealthCheckRegistration`) — zero corrections required. D-13/D-14/D-36 confirmed `FakeCacheService.GetManyAsync`/`SetManyAsync`, `FakeTenantCacheKeyProvider`, `FakeDistributedLockService`/`FakeRenewableLock` match spec exactly on disk with zero drift. No code written — Core phase (`SK.16.Core`) implements. Phase promoted to root (testing-phase-implementer).
+- [2026-06-23] S-01→S-12 all marked `●` in `SK.16.Scaffold` — `SharedKernel.Testing.SelfTests` project created (classlib, net10.0, IsPackable=false) with ProjectReference to `SharedKernel.Testing` and Standard Test Package Set (xunit 2.9.3, xunit.runner.visualstudio 2.8.2, Microsoft.NET.Test.Sdk 17.13.0, coverlet.collector 6.0.4, FluentAssertions 8.4.0, NSubstitute 5.3.0); registered in `Platform.SharedKernel.slnx` under `/16.Testing/`; `SharedKernel.Testing.csproj` gained 9 ProjectReferences (Domain, Primitives, Contracts, Security.Abstractions, Messaging.Abstractions, Messaging.MassTransit, Persistence.Abstractions, Persistence.EfCore, Communication.Internal) and 7 PackageReferences (EntityFrameworkCore.Sqlite 10.0.5, Testcontainers.PostgreSql/.Redis/.RabbitMq 4.1.0, xunit.core 2.9.3, AspNetCore.Http.Abstractions 2.3.0, Extensions.Http 10.0.9 — bumped from 10.0.0 to satisfy a transitive NU1605 floor from Communication.Internal→ServiceDiscovery, Extensions.Diagnostics.HealthChecks.Abstractions 10.0.0); both projects build with 0 errors. No `SharedKernel.Communication.Rest`/`.Grpc`/`.GraphQL`, `SharedKernel.ServiceDefaults`, or `SharedKernel.MultiTenancy` references added (scope locks honored). Folder/Namespace Map already current from Design phase — no CLAUDE.md content changes needed beyond this scaffold. Phase promoted to root (testing-phase-implementer).
+- [2026-06-23] C-01→C-43 all marked `●` in `SK.16.Core` — all 43 Core deliverables implemented: `FakeClock` (Clocks/); `DomainEventAssertions`/`BusinessRuleAssertions`/`SpecificationAssert`/`DomainVersionAssertions`/`SpecificationTestBuilder<T>`/`FakeDomainNotFoundException` + `AddFakeDomainServices()` (Domain/); `EntityFaker<TEntity,TId>`/`SingleValueObjectFaker<TValueObject,TValue>` (Fakers/); `PagedListBuilder<T>`/`EnvelopeAssertions`/`IntegrationEventFaker<TEvent>`/`EventEnvelopeBuilder<TEvent>`/`PagedListAssertions` (Contracts/); `FakeCacheInvalidationBus` + `AddFakeCachingServices()` (Caching/); `TestSharedKernelDbContext`/`AggregateRootFaker`/`TenantedAggregateFaker`/`EfContextExtensions`/`ProjectionSpecificationBuilder<TAggregate,TResult>`/`BulkAggregateFaker`/`WithDeletedSpecification<TAggregate>`/`PersistenceTestHelpers` (Persistence/); `InMemoryMessageBus`/`InMemoryEventPublisher` (`RequestAsync` via `SetResponseHandler`, `ExecuteRoutingSlipAsync` throws `NotSupportedException` as designed) + DI extensions + `TestHarnessFactory` (Messaging/, exposed as `CreateAsync` since starting an `ITestHarness` is inherently async); `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture` (Containers/, pinned images `postgres:16.4`/`redis:7.4`/`rabbitmq:3.13-management`); `MockServiceEndpointResolver`/`FakeHttpContextAccessor`/`HttpClientHandlerTestFactory`/`FakeHttpMessageHandler`/`AmbientActivityTestHelper`/`TestServerCallContext`/`GraphQLTestExecutorFactory` (Communication/, GraphQL factory wires raw `AddGraphQLServer()`+`ModifyPagingOptions` rather than `AddSharedKernelGraphQL()` per the scope lock); `StaticTenantProvider`/`FakeTenantResolutionStrategy`/`HealthCheckAssertionExtensions` (ServiceDefaults/). C-40 is an informational cross-domain note only — no file edits made outside `16.Testing`. Five new `PackageReference`s added to `SharedKernel.Testing.csproj` beyond the Scaffold set: `Bogus` 35.6.1, `MassTransit.TestFramework` 9.1.2 (corrected from a nonexistent `MassTransit.Testing` package id — matches the pattern in `SharedKernel.Messaging.MassTransit.Tests.csproj`), `Grpc.Core.Api`/`Grpc.Core.Testing` 2.80.0/2.46.6, `HotChocolate.AspNetCore`/`HotChocolate.Data` 16.1.4 — all consumed only by their single designated file (`TestHarnessFactory.cs`, `TestServerCallContext.cs`, `GraphQLTestExecutorFactory.cs` respectively), never leaking into sibling-folder fakes. Corrected one namespace discrepancy discovered during implementation: `IUserContext`/`ITenantProvider` live in `SharedKernel.Security.Abstractions.Abstractions` (project name + folder name), not bare `SharedKernel.Security.Abstractions` as several Design-phase contract blocks implied. `dotnet build SharedKernel.Testing.csproj -c Release` succeeds with 0 errors, 0 new warnings (2 pre-existing NU1903 SQLitePCLRaw advisory warnings only, unrelated to this phase). Phase promoted to root (testing-phase-implementer).
+- [2026-06-24] DO-01→DO-10 all marked `●` in `SK.16.Docs` — verified rather than assumed: counted XML doc-comment lines (`///`) against public-member declarations in every `.cs` file under `SharedKernel.Testing/` (excluding `SelfTests`) and confirmed every file already carries substantial doc coverage, written inline during the Core phase rather than deferred — no code changes were needed in this pass. CLAUDE.md-side claims independently re-verified against the live file rather than trusted from prior agents' summaries: P-179 decision rule present in Test Rules (DO-03); `Caching/` four-fake set documented with zero stale `[STATUS: Planned]` markers (DO-04); `Containers/` section carries zero `[STATUS: Planned]` markers (DO-08); `Communication/` section header explicitly states "merges superseded P-158 + P-168" (DO-09). Remaining `[STATUS: Planned]` tags in CLAUDE.md (`FakeUserContext`/`FakeTenantProvider`, `FakeDbConnectionFactory`, `FakerSeeding`) confirmed correctly out of scope — none were in any of P-035/P-064/P-179–P-187's task lists. Final `dotnet build` on `SharedKernel.Testing.csproj` re-confirmed 0 errors. Phase promoted to root (testing-phase-implementer).
+- [2026-06-24] P-01→P-02 marked `●` in `SK.16.Published` — `IsPackable=false` added explicitly to `SharedKernel.Testing.csproj` (previously unset, defaulting to packable, inconsistent with the documented decision); `CLAUDE.md` gained a new "Publishing / Consumption Model" subsection documenting ProjectReference-only consumption for both packages; `dotnet build` succeeded 0 errors. All 6 phases of `16.Testing` now `●` — domain complete (WO-008/WO-012/WO-029). Phase promoted to root (state-map-phase).
+- [2026-06-23] T-01→T-34 all marked `●` in `SK.16.Tests` — 215 tests added to `SharedKernel.Testing.SelfTests` across `Clocks/`, `Domain/`, `Fakers/`, `Contracts/`, `Caching/`, `Persistence/`, `Messaging/`, `Containers/`, `Communication/`, `ServiceDefaults/`, all passing. **Routing corrections discovered at implementation time** (grep-verified zero existing consumers): T-01 (`FakeClock`) cannot be proven in `01.Core` — that domain references nothing per root layering rules, so it can never take a `ProjectReference` to `16.Testing`; proven in `SelfTests/Clocks/FakeClockTests.cs` as the architecturally correct home. T-11/T-12/T-13 (`FakeCacheService` batch ops, `FakeTenantCacheKeyProvider`, `FakeCacheInvalidationBus`) had zero existing consuming-domain test coverage in `02.Caching` (only incidental DI-registration usage existed) — coverage gap closed in `SelfTests/Caching/`. T-19/T-20/T-21 (`TestSharedKernelDbContext`, `AggregateRootFaker`/`TenantedAggregateFaker`, `EfContextExtensions`) had a `ProjectReference` from `SharedKernel.Persistence.EfCore.Tests` to `SharedKernel.Testing` but zero consuming `.cs` files — proven in `SelfTests/Persistence/` instead (net-new fake, no consumer yet). T-28 (`TestHarnessFactory`) had no `07.Messaging` consumer — proven in `SelfTests/Messaging/` per P-183/P-179's explicit "default to SelfTests if ambiguous" instruction. T-32 (`StaticTenantProvider`) — `12.Security.Abstractions.Tests` has zero `SharedKernel.Testing` references, so the P-187 fallback applies. **Two real bugs found and fixed in production `16.Testing` code while writing tests**: (1) `EfContextExtensions.ReloadAsync<T>`'s `CreateFreshContext` could not resolve `DbContextOptions`/`DbContextOptions<TContext>` via `DbContext.GetService<T>()` for a standalone (non-DI-hosted) context — EF Core's internal scoped provider does not register either shape outside `AddDbContext`. Fixed via a new `EfContextExtensions.RegisterOptions(DbContext, DbContextOptions)` public API backed by a `ConditionalWeakTable<DbContext, DbContextOptions>`, called automatically from `TestSharedKernelDbContext`'s constructor. (2) `AmbientActivityTestHelper.Start` threw because `ActivitySource.StartActivity` returns `null` when no `ActivityListener` samples the source (the default outside an OTel host) — fixed by registering a static always-sampling `ActivityListener` scoped to this `ActivitySource` only, a documented exception to the no-static-mutable-state rule (same class as `FakerSeeding`). T-30 platform-wide grep confirmed no `.Tests` project incorrectly references the removed monolithic `SharedKernel.Caching.Redis` surface. `dotnet build SharedKernel.Testing.csproj` and `SharedKernel.Testing.SelfTests.csproj` both succeed with 0 errors (pre-existing NU1903/CS1574 warnings only). Noted but not fixed (outside this phase's write scope and pre-existing from the Scaffold phase, unrelated to any change in this session): `02.Caching.Redis.DistributedLocking.Tests`/other consuming `.Tests` projects that pin `Microsoft.Extensions.Logging` 10.0.0 directly now hit an NU1605 downgrade error because `SharedKernel.Testing.csproj`'s `Microsoft.EntityFrameworkCore.Sqlite` 10.0.5 reference (added in Scaffold) floors that package at 10.0.5 transitively — flagged for a future cross-domain fix, not actioned here. Phase promoted to root (testing-phase-implementer).

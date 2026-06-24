@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Narrow exception to the no-nested-.Tests rule (WO-029, P-179): proves standalone
+      testing-infrastructure helpers in SharedKernel.Testing that have no owning
+      consuming-domain interface to anchor against (fluent builders, assertion-helper
+      classes, faker-seeding conventions, recorder/double self-checks).
+    -->
+    <ProjectReference Include="..\SharedKernel.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Standard Test Package Set — direct package references; must never leak into SharedKernel.Testing.csproj itself. -->
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="FluentAssertions" Version="8.4.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+  </ItemGroup>
+
+</Project>

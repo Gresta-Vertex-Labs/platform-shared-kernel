@@ -118,6 +118,7 @@
   </Folder>
   <Folder Name="/16.Testing/">
     <Project Path="16.Testing/SharedKernel.Testing/SharedKernel.Testing.csproj" />
+    <Project Path="16.Testing/SharedKernel.Testing/SharedKernel.Testing.SelfTests/SharedKernel.Testing.SelfTests.csproj" />
   </Folder>
   <Folder Name="/17.Workflows/">
     <Project Path="17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.csproj" />
