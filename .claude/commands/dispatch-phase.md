@@ -80,7 +80,7 @@ Group the remaining (unblocked) pending phases by their **Domain** field.
 | 13.ServiceDefaults | 13 | `servicedefaults-arch-planner` |
 | 14.Presentation | 14 | _(no agent — deferred)_ |
 | 15.Integration | 15 | _(no agent — deferred)_ |
-| 16.Testing | 16 | _(no agent — deferred)_ |
+| 16.Testing | 16 | `testing-arch-planner` |
 | 17.Workflows | 17 | _(no agent — deferred)_ |
 
 Split the grouped domains into two lists:
