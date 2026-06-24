@@ -33,7 +33,6 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-| [16.Testing](16.Testing/state-map.md)                 | Design          | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing                         |
 
 <!--
 Format when active:
@@ -65,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules for WO-026 Communication Quality Improvements | `●` | All 5 tasks complete — GrpcNeverReferencesContracts added to CommunicationLayeringRules, locking the P-163 dead-reference removal permanently; 88/88 architecture tests pass. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | `●` | All 9 tasks complete — HealthCheckConstantsUsageRules (NoBareHealthCheckLiteralWhereConstantsExist) and StringConstantsClassDetector added to SharedKernel.ArchitectureTests; 102/102 architecture tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -81,7 +80,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
-| 16 | [Testing](16.Testing/state-map.md) | Design | `◐` | — | Add EfCore test DbContext base, persistence-aware aggregate fakers, and EfCore assertion helpers to SharedKernel.Testing |
+| 16 | [Testing](16.Testing/state-map.md) | Published | `●` | SK.16.Published complete (2/2) — IsPackable=false made explicit on SharedKernel.Testing.csproj; CLAUDE.md documents ProjectReference-only consumption model for both packages; all 6 phases of 16.Testing now complete (Design→Published). | — |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -109,15 +108,15 @@ Format when active:
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 4 |
+| ● Published | 5 |
 | ● OTel | 1 |
-| ● Governance: Architecture Rules for WO-026 Communication Quality Improvements | 1 |
-| ● Design | 0 |
+| ● Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | 1 |
+| ● Design | 1 |
 | ● Docs | 0 |
 | ● Tests | 1 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 2 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 7 |
 
@@ -540,7 +539,7 @@ K8s readiness and liveness probes depend on accurate health check signals. A ser
 ---
 ### P-011 — Testing: Caching Test Doubles
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-180 (WO-029) — see WO-029 disposition table; stale fake shape predates WO-023 Redis topology split
 **Work Order:** WO-003
 **Domain:** 16.Testing
 **Depends on:** P-005
@@ -678,7 +677,7 @@ FusionCache's built-in Redis backplane is designed to propagate invalidations ac
 
 ### P-013 — Testing: FakeCacheInvalidationBus Test Double
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-180 (WO-029) — see WO-029 disposition table; folded into the consolidated caching gap-fill phase
 **Work Order:** WO-003
 **Domain:** 16.Testing
 **Depends on:** P-012
@@ -1340,7 +1339,7 @@ Cache efficiency is one of the most operationally critical metrics in a microser
 ---
 ### P-031 — Testing: Extend FakeCacheService with Batch Operations and Add FakeTenantCacheKeyProvider
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-180 (WO-029) — see WO-029 disposition table; Part B already shipped, Part A folded forward
 **Work Order:** WO-007
 **Domain:** 16.Testing
 **Depends on:** P-021, P-028
@@ -1586,7 +1585,7 @@ Types implementing `IDomainService` must not have constructor parameters whose t
 ---
 ### P-035 — Testing: Domain Primitive Fakers and Test Helpers
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-008
 **Domain:** 16.Testing
 **Depends on:** P-032
@@ -1851,6 +1850,14 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-22] 13 → Docs (●) — promoted from SK.13.Docs (2/2); XML doc audit (one gap fixed) + README.md composition snippet written (state-map-phase)
 - [2026-06-22] 13 → Published (●) — promoted from SK.13.Published (3/3); both packages packed with NuGet metadata, consumer-verify proves end-to-end DI resolution; 13.ServiceDefaults domain fully complete (state-map-phase)
 - [2026-06-22] Phase Backlog entries for 13.ServiceDefaults closed → ● Complete — 13.ServiceDefaults reached Published (state-map-phase)
+- [2026-06-22] Phase(s) P-035, P-064, P-179, P-180, P-181, P-182, P-183, P-184, P-185, P-186, P-187 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-06-23] 16 → Design (●) — promoted from SK.16.Design (48/48) (state-map-phase)
+- [2026-06-23] 16 → Scaffold (●) — promoted from SK.16.Scaffold (12/12) (state-map-phase)
+- [2026-06-23] 16 → Core (●) — promoted from SK.16.Core (43/43) (state-map-phase)
+- [2026-06-23] 16 → Tests (●) — promoted from SK.16.Tests (34/34); 209/209 tests passing in SharedKernel.Testing.SelfTests (state-map-phase)
+- [2026-06-24] 16 → Docs (●) — promoted from SK.16.Docs (10/10); XML doc coverage verified against live source files, no code changes needed (state-map-phase)
+- [2026-06-24] Governance → Governance: ServiceDefaults Liveness/Readiness and Composition-Root Layering Rules (●) — promoted from SK.00.ServiceDefaultsGovernance (16/16) (state-map-phase)
+- [2026-06-24] Phase Backlog P-173 → ● Complete — SK.00.ServiceDefaultsGovernance done (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -2148,6 +2155,10 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-18] Phase(s) P-160, P-161, P-162, P-163, P-164, P-165 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
 - [2026-06-18] Communication → Internal (●) — promoted from SK.11.Internal (state-map-phase)
 - [2026-06-18] Communication → Tests (●) — promoted from SK.11.Tests (state-map-phase)
+- [2026-06-24] 16 → Published (●) — promoted from SK.16.Published (2/2); IsPackable=false made explicit, CLAUDE.md documents ProjectReference-only consumption; 16.Testing domain fully complete (Design→Published) (state-map-phase)
+- [2026-06-24] Phase Backlog entries for 16.Testing closed → ● Complete — 16.Testing reached Published (state-map-phase)
+- [2026-06-24] Governance → Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists (●) — promoted from SK.00.HealthCheckConstantsGuard (state-map-phase)
+- [2026-06-24] Phase Backlog P-178 → ● Complete — SK.00.HealthCheckConstantsGuard done (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -2879,7 +2890,7 @@ Architecture rules without enforcement are suggestions. WO-011 introduces severa
 ---
 ### P-057 — Testing: Domain Gold-Standard Test Helpers — Extended Fakers and Assertion Extensions
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-181 (WO-029) — see WO-029 disposition table; carried forward unchanged
 **Work Order:** WO-011
 **Domain:** 16.Testing
 **Depends on:** P-045, P-046, P-048, P-050, P-054
@@ -3231,7 +3242,7 @@ A documentation-level rule (enforced by `13.ServiceDefaults` or equivalent compo
 ---
 ### P-064 — Testing: Contracts Test Helpers — Fakers, Builders, and Assertion Extensions
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-012
 **Domain:** 16.Testing
 **Depends on:** P-059
@@ -3697,7 +3708,7 @@ These three rules catch the most damaging persistence anti-patterns before they 
 
 ### P-076 — Testing: EfCore Test Helpers — Test DbContext, Domain Fakers, EF Extensions
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-182 (WO-029) — see WO-029 disposition table; folded into the consolidated persistence helpers phase
 **Work Order:** WO-013
 **Domain:** 16.Testing
 **Depends on:** P-066
@@ -3996,7 +4007,7 @@ Architecture test rules are the durable enforcement layer for `state-map.md` dec
 ---
 ### P-084 — Testing: Projection, Bulk, and Paged Read Test Helpers
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-182 (WO-029) — see WO-029 disposition table; FluentAssertions reference in original ask removed, hard-rule violation corrected
 **Work Order:** WO-014
 **Domain:** 16.Testing
 **Depends on:** P-080
@@ -4904,7 +4915,7 @@ Rule 1 prevents regression to the concrete-downcast anti-pattern that P-097 fixe
 ---
 ### P-104 — Testing: EfCore Persistence Test Coverage Gaps — AsNoTracking, Transaction Scope, Paged Projection
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-182 (WO-029) — see WO-029 disposition table; only the `PersistenceTestHelpers` portion is a 16.Testing concern, folded forward; EfCore-side test-gap work is out of this domain's scope
 **Work Order:** WO-017
 **Domain:** 16.Testing
 **Depends on:** P-097, P-099, P-101
@@ -5914,7 +5925,7 @@ With hundreds of microservices consuming `SharedKernel.Messaging`, developers un
 ---
 ### P-124 — Testing: Messaging Test Doubles and TestHarness Factory Helpers
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-183 + P-184 (WO-029) — see WO-029 disposition table; duplicates P-138's later, brain-aligned InMemoryMessageBus/InMemoryEventPublisher spec; harness/container asks folded into P-183/P-184
 **Work Order:** WO-020
 **Domain:** 16.Testing
 **Depends on:** P-116
@@ -6404,7 +6415,7 @@ Long-lived microservice deployments inevitably encounter schema drift between me
 ---
 ### P-138 — Testing: Messaging Test Doubles — InMemoryMessageBus, InMemoryEventPublisher, and TestHarnessFactory
 
-**Status:** `○` Pending
+**Status:** `⊘` Carried forward unchanged as P-183 (WO-029) — see WO-029 disposition table; this was the canonical spec, dispatch via P-183
 **Work Order:** WO-022
 **Domain:** 16.Testing
 **Depends on:** None
@@ -6674,7 +6685,7 @@ A package topology refactor of this scope is only "gold standard" if it is enfor
 ---
 ### P-146 — Testing: Update Shared Test Doubles and References for Redis Package Split
 
-**Status:** `○` Pending
+**Status:** `⊘` Carried forward unchanged as P-185 (WO-029) — see WO-029 disposition table; resequenced to dispatch in parallel, dispatch via P-185
 **Work Order:** WO-023
 **Domain:** 16.Testing
 
@@ -7108,7 +7119,7 @@ The `AllowIntrospection` default of `true` requires explicit opt-out in producti
 
 ### P-158 — Testing: Communication Package Test Helpers
 
-**Status:** `○` Pending
+**Status:** `⊘` Superseded by P-186 (WO-029) — see WO-029 disposition table; looser/earlier spec, non-overlapping asks folded into P-186 which favors P-168's more precise design
 **Work Order:** WO-025
 **Domain:** 16.Testing
 **Depends on:** P-154, P-155, P-156, P-157
@@ -7507,7 +7518,7 @@ P-145 (WO-023) and P-159 (WO-025) demonstrated that documentation-only rules reg
 ---
 ### P-168 — Testing: Communication Package Test Infrastructure Consolidation
 
-**Status:** `○` Pending
+**Status:** `⊘` Carried forward unchanged as P-186 (WO-029) — see WO-029 disposition table; this was the more precise, later spec, dispatch via P-186
 **Work Order:** WO-026
 **Domain:** 16.Testing
 **Depends on:** P-160, P-162
@@ -7659,7 +7670,7 @@ This was originally assumed to already exist by the pending P-132 ServiceDefault
 ---
 ### P-173 — Governance: ServiceDefaults Liveness/Readiness and Composition-Root Layering Rules
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-027
 **Domain:** 00.Governance
 **Depends on:** P-170
@@ -7687,7 +7698,7 @@ Two new architecture enforcement rules added to `00.Governance/SharedKernel.Arch
 ---
 ### P-174 — Testing: ServiceDefaults Test Doubles — Tenant Resolution and Health Check Assertions
 
-**Status:** `○` Pending
+**Status:** `⊘` Carried forward unchanged as P-187 (WO-029) — see WO-029 disposition table; resequenced to dispatch in parallel, dispatch via P-187
 **Work Order:** WO-027
 **Domain:** 16.Testing
 **Depends on:** P-170, P-171
@@ -7810,7 +7821,7 @@ This closes out the magic-string findings from the audit that are not already co
 ---
 ### P-178 — Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-028
 **Domain:** 00.Governance
 **Depends on:** P-177
@@ -7829,4 +7840,334 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [ ] Rule is general-purpose — not hardcoded to reference `HealthCheckTags`/`HealthCheckNames` by name specifically, so it generalizes to future domains' constants classes
 - [ ] Rule documented in `00.Governance/CLAUDE.md` with rationale, scoped explicitly as additive to (not a replacement for) P-173's tag-integrity and composition-root rules
 - [ ] Full governance test suite passes with the new rule included
+---
+
+---
+## WO-029 — 16.Testing Consolidation Pass
+
+> **arch-lead note (2026-06-22):** The 14 phases below — P-011, P-013, P-031, P-057, P-076, P-084, P-104, P-124, P-138, P-146, P-158, P-168, P-174 — were each written in isolation at the moment their *producing* domain (02.Caching, 03.Domain, 06.Persistence, 07.Messaging, 11.Communication, 13.ServiceDefaults) shipped a capability, across WO-003 through WO-027. Read together for the first time ahead of dispatch, they contain: direct duplication (three separate messaging-test-double asks — P-011/P-124/P-138 — only one of which matches what shipped), a hard-rule violation (P-084 specifies FluentAssertions inside `SharedKernel.Testing`, which `16.Testing/CLAUDE.md` explicitly forbids), a structural contradiction (9 of the 14 phases demand a `SharedKernel.Testing.Tests` project the domain brain deliberately does not have), already-shipped work re-requested (P-031 Part B, parts of P-146), and a stale-design phase superseded by a later work order (P-011 predates the WO-023 Redis topology split). Each phase below is superseded by its replacement in this Work Order and is marked `Superseded` rather than dispatched as originally written. See `16.Testing/CLAUDE.md` changelog for the full rationale.
+
+**Superseded phase dispositions:**
+
+| Original Phase | Disposition | Replaced By |
+|---|---|---|
+| P-011 | Superseded — stale `ICacheService`/`IDistributedLockService`/`IRedisChannelService` shape predates the WO-023 Redis topology split; does not match shipped `FakeCacheService`/`FakeDistributedLockService` contracts | P-180 |
+| P-013 | Superseded — folded into the broader caching gap-fill pass alongside P-031 | P-180 |
+| P-031 | Superseded — Part B (`FakeTenantCacheKeyProvider`) already shipped; Part A (`GetManyAsync`/`SetManyAsync`) folded forward | P-180 |
+| P-057 | Superseded — re-scoped unchanged into the consolidated domain-helpers phase | P-181 |
+| P-076 | Superseded — folded into the unified persistence test-helpers phase | P-182 |
+| P-084 | Superseded — FluentAssertions dependency stripped (hard-rule violation); remaining helpers folded forward | P-182 |
+| P-104 | Superseded — only the `PersistenceTestHelpers` (`AssertEntityTracked`/`AssertEntityNotTracked`) portion belongs in `16.Testing`; the EfCore-side test-gap portions belong to `06.Persistence` and are out of this domain's scope | P-182 |
+| P-124 | Superseded — `InMemoryMessageBus`/`InMemoryEventPublisher` duplicate P-138's later, brain-aligned spec; `MessagingTestHarnessFactory`/`RabbitMqTestContainerFactory`/`FakePublishContext` folded into container-fixture and messaging phases | P-183, P-184 |
+| P-138 | Carried forward unchanged — this is the canonical, brain-matching spec | P-183 |
+| P-146 | Carried forward unchanged — still valid, resequenced to dispatch in parallel | P-185 |
+| P-158 | Superseded — looser, earlier spec; overlapping asks consolidated into P-168's more precise design | P-186 |
+| P-168 | Carried forward unchanged — the more precise, later spec; absorbs P-158's non-overlapping asks | P-186 |
+| P-174 | Carried forward unchanged — still valid, independent, resequenced to dispatch in parallel | P-187 |
+
+---
+### P-179 — Testing: Scaffold — Self-Tests Carve-Out and Brain Amendment
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+A foundational structural decision and its physical scaffold, resolving the contradiction found across nine of the superseded phases: each assumed a `SharedKernel.Testing.Tests` project exists, while the domain brain's Test Rules section explicitly and deliberately states this package has no nested `.Tests` project — a fake's correctness is proven by the consuming domain's own contract tests instead (e.g., `FakeCacheService` is exercised through `02.Caching`'s suites, not a local one).
+
+That existing rule remains correct and unchanged for anything that **implements an interface owned by another domain** — those fakes keep proving themselves against the owning domain's contract tests. But several capabilities requested across the superseded phases are standalone testing-infrastructure logic with **no consuming-domain interface to anchor against** — a fluent specification builder, an assertion-helper class, a faker-seeding convention, a tenant-resolution-strategy test double shaped as a delegate rather than an interface implementation. These have nowhere else to be proven correct.
+
+This phase carves a narrow, explicit exception into the brain: a minimal second project, `SharedKernel.Testing.SelfTests`, scoped exclusively to self-contained unit tests of testing-infrastructure logic that has no natural home in any consuming domain's test suite. It is never referenced by production code (same as `SharedKernel.Testing` itself), and it is never the acceptance bar for anything that implements a production-owned interface — that bar stays in the consuming domain, unchanged. The distinction must be documented in the brain's Test Rules section as a decision rule future contributors can apply without re-litigating it: "does this type implement an interface owned by a numbered domain? If yes, prove it there. If no — pure helper, builder, or convention — prove it in `SelfTests`."
+
+Standard project scaffold: `classlib` targeting `net10.0`, nested at `16.Testing/SharedKernel.Testing/SharedKernel.Testing.SelfTests/`, references `SharedKernel.Testing`, adds the platform's Standard Test Package Set (xUnit runner, FluentAssertions, NSubstitute) as direct package references — exactly as any other `.Tests` project would, since this project is not itself `SharedKernel.Testing` and is free to take on the assertion/mocking dependencies that package must avoid. Registered in `Platform.SharedKernel.slnx` under the `16.Testing` solution folder.
+
+#### Why this is needed
+
+Without this decision recorded once, at the start, every subsequent phase in this consolidation would face the same ambiguity independently and likely resolve it inconsistently — exactly the drift pattern that produced the contradiction in the first place. Making the call explicit and amending the brain before any fake-adding phase dispatches means P-180 through P-187 can each cite a single, settled rule instead of re-deciding it. This also directly fixes the FluentAssertions leakage risk: `SharedKernel.Testing.SelfTests` is where FluentAssertions-based assertion helpers' *own* tests may live, while the production-shaped `SharedKernel.Testing` package itself still ships zero assertion-framework dependency, preserving the existing hard rule untouched.
+
+#### Acceptance criteria
+- [ ] `16.Testing/CLAUDE.md` Test Rules section amended with the explicit decision rule distinguishing "implements a consuming-domain interface → proven in that domain's suite" from "standalone helper/builder/convention → proven in `SelfTests`"
+- [ ] `SharedKernel.Testing.SelfTests` project created, nested under `16.Testing/SharedKernel.Testing/`, targets `net10.0`, references `SharedKernel.Testing`
+- [ ] `SharedKernel.Testing.SelfTests` carries the Standard Test Package Set (xUnit runner, FluentAssertions, NSubstitute) as direct package references — these dependencies must never appear in `SharedKernel.Testing.csproj` itself
+- [ ] Project registered in `Platform.SharedKernel.slnx` under the `16.Testing` solution folder
+- [ ] `dotnet build` succeeds with zero errors for the new empty project
+- [ ] Existing `Caching/` fakes' proof-via-consuming-domain pattern is explicitly reaffirmed in the brain amendment as unchanged precedent — this phase adds an exception, it does not relitigate or move existing coverage
+
+---
+### P-180 — Testing: Caching Capability Fakes — Batch Operations, Tenant Keys, Cross-Service Invalidation
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179
+
+#### What is needed
+
+The complete, current-state catch-up of `Caching/` fakes against everything `02.Caching` has actually shipped (the prior `Caching/` fakes predate the WO-007 batch-operation additions, WO-023's Redis topology split, and the cross-service invalidation bus introduced alongside it):
+
+**Extend `FakeCacheService` with `GetManyAsync<T>`/`SetManyAsync<T>`:** mirror the existing fake's established pattern (thread-safe `ConcurrentDictionary`, no expiry simulation) — `GetManyAsync` returns a dictionary entry for every requested key (hit or miss, miss maps to default per the brain's documented contract), `SetManyAsync` stores all entries.
+
+**Verify `FakeTenantCacheKeyProvider` against the current `ITenantCacheKeyProvider` contract:** this fake already exists and already matches the documented contract (`BuildTenantKey`/`BuildKey` overloads, `{service}:{tenant}:{entity}:{id}` format, no `12.Security` dependency) — this phase confirms it, closes the gap formally, and is not a rebuild.
+
+**Add `FakeCacheInvalidationBus`:** an in-memory `ICacheInvalidationBus` implementation per the contract `02.Caching` shipped — `PublishedInvalidations` records every constructed `CacheInvalidationMessage`; `OnInvalidation(Func<CacheInvalidationMessage, ValueTask>)` registers a handler invoked synchronously on publish so a test can chain a `FakeCacheService.RemoveAsync` as the downstream effect without async plumbing; `Reset()` clears both recorded messages and registered handlers. Must not depend on `IRedisChannelService` or any Redis package — pure in-memory, references `SharedKernel.Caching.Abstractions` only.
+
+A single `AddFakeCachingServices()` DI extension registers all caching fakes (existing three plus `FakeCacheInvalidationBus`) as singletons in one call.
+
+#### Why this is needed
+
+`16.Testing` must track `02.Caching`'s shipped surface, not its surface as of the fakes' original creation. Without the batch-operation methods, any handler using `GetManyAsync`/`SetManyAsync` cannot be unit-tested against the fake at all — it would throw `NotImplementedException` or fail to compile against the interface. Without `FakeCacheInvalidationBus`, no downstream service can unit-test cross-service cache invalidation behavior without standing up a real Redis Pub/Sub channel, defeating the entire purpose of `16.Testing`.
+
+#### Acceptance criteria
+- [ ] `FakeCacheService.GetManyAsync<T>` returns a dictionary entry for every requested key; misses map to `default`
+- [ ] `FakeCacheService.SetManyAsync<T>` stores all provided entries
+- [ ] `FakeTenantCacheKeyProvider` confirmed to match the current `ITenantCacheKeyProvider` contract exactly — no changes needed, or corrected if drift is found
+- [ ] `FakeCacheInvalidationBus` implements `ICacheInvalidationBus`; `PublishedInvalidations`, `OnInvalidation`, `Reset()` all behave per spec; zero dependency on `IRedisChannelService` or any Redis package
+- [ ] `AddFakeCachingServices()` registers all four caching fakes as singletons in one call
+- [ ] Each fake proven via the consuming domain's existing contract tests per the (now-reaffirmed) Test Rules precedent — no new tests added to `SharedKernel.Testing.SelfTests` for these, since each implements a `02.Caching`-owned interface
+- [ ] `16.Testing/CLAUDE.md` updated: `Caching/` section reflects the four-fake set, `[STATUS: Planned]` markers removed where now implemented
+
+---
+### P-181 — Testing: Domain Primitive Test Helpers — Versioned Events, Specification Builder, Value Object Fakers
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179
+
+#### What is needed
+
+Extended test helpers for `03.Domain`'s capability surface, building on the already-shipped `FakeClock`/`EntityFaker`/`DomainEventAssertions` baseline:
+
+**`SingleValueObjectFaker<TValueObject, TValue>` abstract base:** a Bogus-based faker for `SingleValueObject<TValue>` subclasses; `WithValue(TValue)` and `WithRandomValue(Func<Faker, TValue>)` builder methods.
+
+**`DomainVersionAssertions`:** `ShouldHaveVersion<TEvent>(int expectedVersion)` asserts `TEvent` carries `[DomainEventVersion(N)]` where `N` matches; `ShouldBeVersioned<TEvent>()` asserts any `[DomainEventVersion]` attribute is present. Both throw plain exceptions with descriptive messages — no FluentAssertions dependency inside `SharedKernel.Testing` itself.
+
+**Extend `DomainEventAssertions`** (the already-shipped extension set on `IReadOnlyCollection<IDomainEvent>`) with `ContainsEventWithVersion<T>(int version)` and `HasRaisedExactlyNEvents(int n)`.
+
+**`SpecificationTestBuilder<T>`:** a fluent in-memory specification test helper — `SpecificationTestBuilder.For(spec).Against(entities).ExpectCount(n).ExpectMatch(predicate).Assert()` — wrapping `spec.IsSatisfiedBy(entity)` with collection-level assertions and descriptive failure messages.
+
+**`FakeDomainNotFoundException.For<TAggregate>(object id)`:** factory producing a `DomainNotFoundException` for test setups needing a repository fake to throw a not-found exception.
+
+#### Why this is needed
+
+Domain test infrastructure must keep pace with domain capability. Without `SingleValueObjectFaker`, every service team writes its own inconsistent Bogus configuration for value objects. Without `DomainVersionAssertions`, there is no automated way to assert event-schema versioning was actually declared and correct — closing the gap between "I meant to version this event" and "I annotated it." `SpecificationTestBuilder` is a substantial ergonomics improvement over manual `IsSatisfiedBy` loop assertions and directly reduces the cost of writing thorough domain tests.
+
+#### Acceptance criteria
+- [ ] `SingleValueObjectFaker<TValueObject, TValue>` abstract base; `WithValue`/`WithRandomValue` builders function correctly
+- [ ] `DomainVersionAssertions.ShouldHaveVersion<TEvent>`/`ShouldBeVersioned<TEvent>` throw plain exceptions (not FluentAssertions) with descriptive messages on failure
+- [ ] `DomainEventAssertions` extended with `ContainsEventWithVersion<T>` and `HasRaisedExactlyNEvents` without breaking existing extension methods
+- [ ] `SpecificationTestBuilder<T>` fluent chain works correctly; `ExpectCount`/`ExpectMatch` produce descriptive failures including entity details
+- [ ] `FakeDomainNotFoundException.For<TAggregate>(object id)` produces a valid `DomainNotFoundException`
+- [ ] Standalone helpers with no consuming-domain interface (`SpecificationTestBuilder`, `FakeDomainNotFoundException` factory) proven in `SharedKernel.Testing.SelfTests` per P-179's carve-out; assertion extensions proven alongside `03.Domain`'s own suite per existing precedent
+- [ ] `16.Testing/CLAUDE.md` updated with the full helper set
+
+---
+### P-182 — Testing: Persistence Test Helpers — Test DbContext, Fakers, Projection Builder, Tracking Assertions
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179
+
+#### What is needed
+
+The complete persistence-side test-helper surface for `06.Persistence`, consolidated from three overlapping prior asks into one coherent set:
+
+**`TestSharedKernelDbContext`:** abstract class extending `SharedKernelDbContext`, preconfigured with SQLite in-memory provider; wires a no-op `IUserContext` (fixed `"test-user"`) so `AuditInterceptor` resolves without a real HTTP context; wires a deterministic `IClock` (fixed snapshot, never real time) for stable interceptor timestamps; `EnableSensitiveDataLogging()` for readable diagnostics; exposes `EnsureCreatedAsync()` (no migrations needed for SQLite tests).
+
+**`AggregateRootFaker<TAggregate, TId>` / `TenantedAggregateFaker<TAggregate, TId>`:** abstract Bogus faker bases pre-configuring `CreatedBy`/`CreatedOn`/`IsDeleted = false` to match EF interceptor expectations; the tenanted variant additionally populates a non-empty `TenantId`.
+
+**`EfContextExtensions`:** `DetachAll(DbContext)` detaches all tracked entities for a fresh same-database reload within one test; `ReloadAsync<T>(DbContext, T)` loads a fresh copy via a new scoped `DbContext` instance to assert round-trip persistence.
+
+**`ProjectionSpecificationBuilder<TAggregate, TResult>`:** fluent builder producing `IProjectionSpecification<TAggregate, TResult>` instances without a full concrete spec class per test — `WithCriteria(...)`, `WithSelector(...)`, `Build()`.
+
+**`PagedListAssertions`:** plain, dependency-free assertion helpers over `PagedList<T>` (from `04.Contracts`) — `ShouldHaveTotalCount(int)`, `ShouldHaveItems(params T[])`, `ShouldBeEmpty()` — implemented as boolean checks throwing descriptive exceptions directly. **Must not reference FluentAssertions** — the original ask for this helper specified a FluentAssertions implementation, which is corrected here per the brain's standing hard rule that `SharedKernel.Testing` ships zero assertion-framework dependency of its own.
+
+**`BulkAggregateFaker<TAggregate, TId>`:** generates a configurable-count `List<TAggregate>` via Bogus with all audit fields populated, for seeding bulk `AddRangeAsync` integration tests.
+
+**`WithDeletedSpecification<TAggregate>`:** wraps any `ISpecification<TAggregate>`, returning a copy with `IncludeDeleted = true`, for soft-delete integration tests.
+
+**`PersistenceTestHelpers`:** `AssertEntityTracked<T>(DbContext, T)` / `AssertEntityNotTracked<T>(DbContext, T)` — asserts EF Core change-tracker state directly (`EntityState.Detached` vs. tracked), filling the coverage gap around `AsNoTracking` behavioral verification.
+
+#### Why this is needed
+
+Every persistence test project verifying interceptor or specification behavior currently either re-implements this scaffolding locally (subtle divergence risk) or has no way to test it at all. The original three asks for this surface overlapped substantially and one of them (`PagedListAssertions`) specified a dependency this package is constitutionally barred from carrying — consolidating into one phase with the FluentAssertions reference removed closes both the duplication and the hard-rule violation in a single pass. `AsNoTracking` is one of EF Core's most performance-critical features; without `PersistenceTestHelpers`, a regression in that behavioral contract has no automated tripwire anywhere on the platform.
+
+#### Acceptance criteria
+- [ ] `TestSharedKernelDbContext` provides SQLite config, no-op `IUserContext`, deterministic `IClock`, sensitive logging, `EnsureCreatedAsync()`
+- [ ] `AggregateRootFaker`/`TenantedAggregateFaker` generate valid default audit fields and (for the tenanted variant) a non-empty `TenantId`
+- [ ] `EfContextExtensions.DetachAll`/`ReloadAsync<T>` both implemented and functioning
+- [ ] `ProjectionSpecificationBuilder<TAggregate, TResult>` produces valid `IProjectionSpecification` instances
+- [ ] `PagedListAssertions` implemented with zero FluentAssertions reference — plain exception-throwing boolean checks only
+- [ ] `BulkAggregateFaker` generates the requested count with valid audit fields
+- [ ] `WithDeletedSpecification<TAggregate>` correctly sets `IncludeDeleted = true` on a copy, leaving the original untouched
+- [ ] `PersistenceTestHelpers.AssertEntityTracked`/`AssertEntityNotTracked` correctly distinguish `EntityState.Detached` from tracked states
+- [ ] `SharedKernel.Testing.csproj` references `SharedKernel.Persistence.Abstractions` and `SharedKernel.Persistence.EfCore`
+- [ ] No `OutboxMessageFaker`, `OutboxAssertions`, or PostgreSQL Testcontainer dependency introduced in this phase — out of scope, future work order
+- [ ] Helpers with no consuming-domain interface to anchor against (`ProjectionSpecificationBuilder`, `PagedListAssertions`, `BulkAggregateFaker`, `WithDeletedSpecification`, `PersistenceTestHelpers`) proven in `SharedKernel.Testing.SelfTests` per P-179; `TestSharedKernelDbContext`/fakers proven alongside `06.Persistence.EfCore`'s own suite
+- [ ] `16.Testing/CLAUDE.md` updated with the full persistence helper set
+
+---
+### P-183 — Testing: Messaging Test Doubles — InMemoryMessageBus, InMemoryEventPublisher, TestHarnessFactory
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179
+
+#### What is needed
+
+Carried forward unchanged from the superseded P-138 — this was the canonical, brain-matching specification among the three prior competing asks (P-011's flat fake design predated the current `IMessageBus` shape entirely; P-124 duplicated this content with a slightly different and less complete assertion-helper surface).
+
+**`InMemoryMessageBus`** (implements `IMessageBus`): records every `PublishAsync<T>`/`SendAsync<T>` call in typed collections (`Published`/`Sent`); `RequestAsync<TRequest,TResponse>` is configurable via `SetResponseHandler<TRequest,TResponse>(Func<TRequest,TResponse>)`, throwing a descriptive `InvalidOperationException` if no handler is registered for the requested type. Registered via `services.AddSingleton<IMessageBus, InMemoryMessageBus>()` or `AddInMemoryMessageBus(this IServiceCollection)`.
+
+**`InMemoryEventPublisher`** (implements `IEventPublisher`): records every `PublishAsync<TEvent>` call; exposes `Published` (`IReadOnlyList<object>`) and typed `PublishedOf<TEvent>()`. Thread-safe. Registered via `AddInMemoryEventPublisher(this IServiceCollection)`.
+
+**Assertion helpers** on both doubles: `ShouldHavePublished<T>()`, `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()`, `ShouldNotHavePublished<T>()` — read-only queries over the recorded list, never mutating it; return the recorded message for assertion chaining.
+
+**`TestHarnessFactory`**: static factory configuring a `MassTransit.Testing.ITestHarness` with platform defaults (`KebabCaseEndpointNameFormatter`, configurable `ServiceName`, pre-registered `ConsumerBase<T>` subclasses) via `Create(string serviceName, Action<IBusRegistrationConfigurator>?)`. May reference `SharedKernel.Messaging.MassTransit` as a test-only dependency (permitted — `16.Testing` is never shipped); `InMemoryMessageBus`/`InMemoryEventPublisher` themselves reference only `SharedKernel.Messaging.Abstractions`.
+
+Both `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()` register as **singleton** — a deliberate, documented divergence from the production scoped lifetime, so the recorder instance outlives the DI scope of the system under test.
+
+#### Why this is needed
+
+Application-layer unit tests — the most numerous tests in any microservice — should not require spinning up a MassTransit `ITestHarness`, which carries meaningful startup time and background-threading overhead inappropriate for pure unit tests. `InMemoryMessageBus`/`InMemoryEventPublisher` give every team the same zero-infrastructure, immediately-assertable test doubles `FakeCacheService` already gives the caching domain.
+
+#### Acceptance criteria
+- [ ] `InMemoryMessageBus` implements `IMessageBus`; `Published`/`Sent` correctly record calls; `RequestAsync` throws descriptively when no handler registered
+- [ ] `InMemoryEventPublisher` implements `IEventPublisher`; `PublishedOf<TEvent>()` returns the correct typed list; thread-safe under concurrent publish
+- [ ] `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()` register as singleton, with the lifetime divergence documented at the registration site
+- [ ] `ShouldHavePublished<T>()`, `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()`, `ShouldNotHavePublished<T>()` implemented on both doubles, read-only, chainable
+- [ ] `TestHarnessFactory.Create(...)` produces a configured `ITestHarness` with platform defaults
+- [ ] `InMemoryMessageBus`/`InMemoryEventPublisher` reference only `SharedKernel.Messaging.Abstractions` — no `SharedKernel.Messaging.MassTransit` reference for these two types specifically
+- [ ] Both test doubles' own behavior (e.g., `ShouldHavePublished<T>` throwing when nothing published, `ShouldHavePublishedOnce<T>` throwing when published twice) proven in `SharedKernel.Testing.SelfTests` per P-179 — these are standalone recorders with no single owning consuming-domain suite
+- [ ] `16.Testing/CLAUDE.md` updated with the messaging test-double set, explicitly closing out the prior duplicate asks
+
+---
+### P-184 — Testing: Testcontainers Fixtures — PostgreSQL, Redis, RabbitMQ
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179
+
+#### What is needed
+
+The container-fixture surface the domain brain has documented as aspirational scaffolding since this state-map's initialization, but which no prior work order ever actually phased: shared `IAsyncLifetime`-based Testcontainers fixtures for the three engines already required ad hoc by `02.Caching` (Redis), `06.Persistence` (PostgreSQL), and `07.Messaging` (RabbitMQ).
+
+**`PostgreSqlContainerFixture`** / **`RedisContainerFixture`** / **`RabbitMqContainerFixture`** — each a `sealed class` implementing `IAsyncLifetime`: `InitializeAsync()` starts a pinned-tag container image (never `:latest`) via the matching `Testcontainers.{Engine}` package; `ConnectionString` throws `InvalidOperationException` if read before initialization completes; `DisposeAsync()` stops and removes the container. Each fixture is designed for xUnit's `[CollectionDefinition]` + `ICollectionFixture<T>` pattern — one container instance shared across an entire test collection, never started per test method.
+
+These fixtures formalize and centralize what `02.Caching.Redis.Tests`, `06.Persistence.EfCore.Tests`/`.Dapper.Tests`, and `07.Messaging.MassTransit.Tests` already each roll inline today — this phase does not change those domains' tests in this pass, but makes the canonical fixture available so a future migration in each domain can adopt it without re-inventing the container bootstrap.
+
+#### Why this is needed
+
+The brain has carried `[STATUS: Planned]` markers for these three fixtures since this sub-state-map's initialization, and the superseded P-124 partially addressed only the RabbitMQ case in a messaging-specific phase rather than as shared infrastructure. Centralizing all three here — rather than letting each consuming domain's test project independently roll its own Testcontainers bootstrap — is the entire reason `16.Testing` exists: a single, correct, pinned-tag container fixture that does not silently drift between `02.Caching`'s Redis setup and `07.Messaging`'s.
+
+#### Acceptance criteria
+- [ ] `PostgreSqlContainerFixture` implements `IAsyncLifetime`; `ConnectionString` throws before init; pinned PostgreSQL image tag
+- [ ] `RedisContainerFixture` implements `IAsyncLifetime`; same contract; pinned Redis image tag
+- [ ] `RabbitMqContainerFixture` implements `IAsyncLifetime`; same contract; pinned RabbitMQ image tag
+- [ ] All three designed for `ICollectionFixture<T>` usage — one instance per test collection, documented as never-per-test-method
+- [ ] `SharedKernel.Testing.csproj` gains `Testcontainers.PostgreSql`, `Testcontainers.Redis`, `Testcontainers.RabbitMq` package references
+- [ ] Each fixture's start/stop lifecycle proven in `SharedKernel.Testing.SelfTests` per P-179 (container fixtures have no single owning consuming-domain interface — they wrap infrastructure lifecycle, not a production contract)
+- [ ] `16.Testing/CLAUDE.md` `Containers/` section markers updated from `[STATUS: Planned]` to implemented
+
+---
+### P-185 — Testing: Redis Topology Test Double Alignment
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179, P-180
+
+#### What is needed
+
+Carried forward unchanged from the superseded P-146 — verification and correction (if any drift is found) that `16.Testing`'s caching fakes and any shared Redis Testcontainers usage correctly align with the WO-023 five-package Redis topology split (`Redis.Core`, `Redis` L2, `Redis.DistributedLocking`, `Redis.HashStore`, `Redis.PubSub`):
+
+- Confirm `FakeCacheService`, `FakeDistributedLockService`/`FakeRenewableLock`, `FakeCacheInvalidationBus` (from P-180), and any hash-store fakes depend only on `SharedKernel.Caching.Abstractions` — these are interface-based fakes, so the split should mean minimal-to-zero churn, but any project reference or Testcontainers integration-test base class that still points at the old monolithic `SharedKernel.Caching.Redis` surface must be corrected to the right new package.
+- Ensure the `RedisContainerFixture` (delivered in P-184) is usable independently by each of the four new capability `.Tests` projects without requiring all four capabilities wired up simultaneously.
+
+#### Why this is needed
+
+`16.Testing` is referenced by every `.Tests` project on the platform and is explicitly exempt from layering rules, but not exempt from staying correct. A package split of WO-023's scope, left unaddressed here, would leave shared fakes and container fixtures pointing at a package that no longer contains the types they were built to test — breaking compilation across four newly-split test projects simultaneously.
+
+#### Acceptance criteria
+- [ ] `FakeCacheService`, `FakeDistributedLockService`, `FakeRenewableLock`, `FakeCacheInvalidationBus`, and any hash-store fakes confirmed to depend only on `SharedKernel.Caching.Abstractions`
+- [ ] `RedisContainerFixture` (P-184) usable independently by each of the four capability `.Tests` projects
+- [ ] No `.Tests` project anywhere on the platform still references the now-removed monolithic `SharedKernel.Caching.Redis` surface for types it does not test
+- [ ] `dotnet build` clean across all affected test projects
+
+---
+### P-186 — Testing: Communication Package Test Infrastructure — Consolidated
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179
+
+#### What is needed
+
+The unified `11.Communication` test-helper surface, merging the two prior overlapping asks (the earlier, looser P-158 and the later, more precise P-168) into one consolidated set — P-168's design wins wherever the two conflict, since it was written with direct knowledge of what `11.Communication`'s four packages actually shipped.
+
+**`MockServiceEndpointResolver`** — in-memory `IServiceEndpointResolver` test double; `Configure(string serviceName, Uri uri)`; `GetResolvedNames()` for assertion; supports per-service failure injection; never throws on an unconfigured name.
+
+**`FakeHttpContextAccessor`** — `IHttpContextAccessor` test double holding a fixed (or null) `HttpContext` with configurable `TenantId` on its backing `ITenantProvider`; consolidates the ad-hoc duplicates currently in `SharedKernel.Communication.Rest.Tests`/`.Grpc.Tests`.
+
+**`HttpClientHandlerTestFactory`** — builds a pre-wired `DelegatingHandler` chain without a full `ServiceCollection`: `WithInnerHandler(HttpMessageHandler)`, `WithCorrelationIdHandler()`, `WithTenantIdHandler(Guid? tenantId)`; returns the outermost handler for direct `HttpClient` construction in tests.
+
+**`FakeHttpMessageHandler`** (folded in from P-158's non-overlapping ask) — supports fixed and sequenced response fixtures (e.g., first call 503, second 200) for resilience-policy testing; allows post-call `HttpRequestMessage` inspection (which headers were injected).
+
+**Ambient `Activity` test helper** (folded in from P-158) — sets an ambient `Activity` with a specific trace ID and parent for correlation-ID propagation tests.
+
+**gRPC `ServerCallContext` stub** (folded in from P-158) — a test helper producing a `ServerCallContext`-equivalent for testing gRPC interceptors in isolation, allowing post-execution metadata inspection.
+
+**GraphQL `IRequestExecutorBuilder` test factory** (folded in from P-158) — wires `AddSharedKernelGraphQL()` with test-safe defaults (`AllowIntrospection = true`, `MaxPageSize = 10`).
+
+**Scope constraint** (binding on all of the above): `SharedKernel.Testing` must not take a project reference to `SharedKernel.Communication.Rest`, `.Grpc`, or `.GraphQL`. `MockServiceEndpointResolver` may reference `SharedKernel.Communication.Internal` for `IServiceEndpointResolver`. `FakeHttpContextAccessor` references `Microsoft.AspNetCore.Http` and `SharedKernel.Security.Abstractions`. `HttpClientHandlerTestFactory`/`FakeHttpMessageHandler` reference `Microsoft.Extensions.Http` only.
+
+#### Why this is needed
+
+Each `11.Communication` package currently implements its own `FakeHttpContext`, `FakeTenantProvider`, and resolver variants — duplication appropriate during initial implementation but unnecessary now that all four Communication packages are stable. The two prior asks for this consolidation overlapped on three of their helpers; merging them into one phase against the more precise, later spec avoids building the same fake twice under two different names.
+
+#### Acceptance criteria
+- [ ] `MockServiceEndpointResolver`, `FakeHttpContextAccessor`, `HttpClientHandlerTestFactory`, `FakeHttpMessageHandler` all added per the specs above
+- [ ] Ambient `Activity` test helper, gRPC `ServerCallContext` stub, and GraphQL test-executor factory all added
+- [ ] `SharedKernel.Testing` gains no project reference to `SharedKernel.Communication.Rest`, `.Grpc`, or `.GraphQL`
+- [ ] Ad-hoc duplicate fakes in `SharedKernel.Communication.Rest.Tests` and `.Grpc.Tests` removed in favor of these shared helpers
+- [ ] Helpers proven in `SharedKernel.Testing.SelfTests` per P-179 — these are test doubles for cross-cutting Communication concerns with no single owning consuming-domain suite
+- [ ] `16.Testing/CLAUDE.md` updated with the full Communication helper set, explicitly closing out both prior overlapping asks
+
+---
+### P-187 — Testing: ServiceDefaults Test Doubles — Tenant Resolution and Health Check Assertions
+
+**Status:** `●` Complete
+**Work Order:** WO-029
+**Domain:** 16.Testing
+**Depends on:** P-179
+
+#### What is needed
+
+Carried forward unchanged from the superseded P-174 — three reusable test helpers for `13.ServiceDefaults`:
+
+**`StaticTenantProvider`** — trivial `ITenantProvider` test double constructed with a fixed `Guid` (or `Guid.Empty` for the no-tenant case); usable by any downstream domain's tests needing a deterministic tenant context without standing up `AmbientTenantProvider` + middleware + HTTP context.
+
+**`FakeTenantResolutionStrategy`** — configurable test double (fixed `Guid?` result or delegate) for testing `TenantResolutionMiddleware`/`TenantResolutionOptions.StrategyOrder` behavior without real HTTP headers, claims, or a database. Structurally compatible rather than a direct interface implementation if referencing `ITenantResolutionStrategy` directly would require a project reference to `SharedKernel.MultiTenancy`.
+
+**`HealthCheckAssertionExtensions`** — `ShouldBeTaggedReady(this HealthCheckRegistration)` / `ShouldNotBeTaggedLive(this HealthCheckRegistration)` (or equivalently named) assertions over `IHealthChecksBuilder`/`HealthCheckRegistration`, verifying tag composition without booting a `WebApplicationFactory`.
+
+**Scope constraint:** `SharedKernel.Testing` must not gain a project reference to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`. `StaticTenantProvider`/`FakeTenantResolutionStrategy` reference only `SharedKernel.Security.Abstractions`; `HealthCheckAssertionExtensions` references only `Microsoft.Extensions.Diagnostics.HealthChecks`.
+
+#### Why this is needed
+
+`ITenantProvider` and tenant-aware health-check tags are consumed by nearly every other domain's test suite (Persistence multi-tenancy tests, Application pipeline behavior tests) — a shared `StaticTenantProvider` prevents the same fake being independently re-invented across domains, the exact pattern this platform already had to consolidate once for Communication (P-186).
+
+#### Acceptance criteria
+- [ ] `StaticTenantProvider` implements `ITenantProvider`; constructed with a fixed `Guid`
+- [ ] `FakeTenantResolutionStrategy` configurable via fixed result or delegate
+- [ ] `HealthCheckAssertionExtensions` correctly passes/fails against tagged and untagged `HealthCheckRegistration` fixtures
+- [ ] `SharedKernel.Testing` gains no project reference to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`
+- [ ] Helpers proven in `SharedKernel.Testing.SelfTests` per P-179 — standalone doubles with no single owning consuming-domain suite at this layer
+- [ ] `16.Testing/CLAUDE.md` updated with the ServiceDefaults helper set
 ---
