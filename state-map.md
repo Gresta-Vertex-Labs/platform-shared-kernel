@@ -71,7 +71,7 @@ Format when blocked:
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
-| 07 | [Messaging](07.Messaging/state-map.md) | OTel | `●` | SK.07.OTel complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0") in MassTransit package; ConsumerBase.Consume() Consumer.Consume activity + messaging.destination/messaging.message_type log-scope enrichment; MassTransitEventPublisher EventPublisher.Publish activity; 106 total MassTransit tests green. Unblocks 13.ServiceDefaults C-19 (WithMessagingTelemetry). | — |
+| 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.Tests complete (20/20) — ConsumerVerifyTests retrofitted off NSubstitute onto 16.Testing's InMemoryMessageBus/InMemoryEventPublisher doubles (P-191); 50/50 Abstractions tests green; SK.07.OTel also complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0"), Consumer.Consume/EventPublisher.Publish activities, 106 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
@@ -80,7 +80,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
-| 16 | [Testing](16.Testing/state-map.md) | Published | `●` | SK.16.Published complete (2/2) — IsPackable=false made explicit on SharedKernel.Testing.csproj; CLAUDE.md documents ProjectReference-only consumption model for both packages; all 6 phases of 16.Testing now complete (Design→Published). | — |
+| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-030 (P-188/P-189) complete: SK.16.Design (54/54), SK.16.Scaffold (14/14), SK.16.Core (46/46), SK.16.Tests (37/37), and SK.16.Docs (12/12) all done — FakeUserContext/FakeTenantProvider/FakerSeeding implemented and proven in SharedKernel.Testing.SelfTests, full XML doc coverage confirmed, `[STATUS: Planned]` markers removed. | — |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -108,7 +108,7 @@ Format when active:
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 5 |
+| ● Published | 4 |
 | ● OTel | 1 |
 | ● Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | 1 |
 | ● Design | 1 |
@@ -116,7 +116,7 @@ Format when active:
 | ● Tests | 1 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 7 |
 
@@ -2159,6 +2159,17 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-24] Phase Backlog entries for 16.Testing closed → ● Complete — 16.Testing reached Published (state-map-phase)
 - [2026-06-24] Governance → Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists (●) — promoted from SK.00.HealthCheckConstantsGuard (state-map-phase)
 - [2026-06-24] Phase Backlog P-178 → ● Complete — SK.00.HealthCheckConstantsGuard done (state-map-phase)
+- [2026-06-24] Phase(s) P-191 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-06-24] Phase(s) P-188, P-189, P-190 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-06-24] P-190 → ● Complete (rejected, not implemented) — premise false, no SharedKernel-owned outbox contract exists in 06.Persistence to fake; closed without code per testing-arch-planner's design-time analysis (implement-next-phase)
+- [2026-06-24] 16 → Tests (●) — promoted from SK.16.Tests (37/37) (state-map-phase)
+- [2026-06-24] 16.Testing → Design (◐) — promoted from SK.16.Design (54/54); WO-030 FakeUserContext/FakeTenantProvider/FakerSeeding design verified, zero drift; Scaffold/Core next (state-map-phase)
+- [2026-06-24] 16.Testing → Scaffold (◐) — promoted from SK.16.Scaffold (14/14); S-13/S-14 confirmed Security/.Abstractions ref + no .Oidc ref, Fakers/+Bogus ref present; Core (C-44–C-46) next (state-map-phase)
+- [2026-06-24] 16.Testing → Core (◐) — promoted from SK.16.Core (46/46); FakeUserContext/FakeTenantProvider/FakerSeeding implemented; Tests (T-35–T-37)/Docs (DO-11/DO-12) next (state-map-phase)
+- [2026-06-24] 16 → Docs (●) — promoted from SK.16.Docs (12/12); FakeUserContext/FakeTenantProvider/FakerSeeding XML docs and CLAUDE.md markers confirmed complete (state-map-phase)
+- [2026-06-24] Phase Backlog P-188, P-189 → ● Complete — WO-030 fully implemented across all 6 phases of 16.Testing (state-map-phase)
+- [2026-06-24] 07 → Tests (●) — promoted from SK.07.Tests (20/20); T-18→T-20 retrofitted ConsumerVerifyTests onto InMemoryMessageBus/InMemoryEventPublisher (state-map-phase)
+- [2026-06-24] Phase Backlog P-191 → ● Complete — SK.07.Tests done (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -8170,4 +8181,109 @@ Carried forward unchanged from the superseded P-174 — three reusable test help
 - [ ] `SharedKernel.Testing` gains no project reference to `SharedKernel.ServiceDefaults` or `SharedKernel.MultiTenancy`
 - [ ] Helpers proven in `SharedKernel.Testing.SelfTests` per P-179 — standalone doubles with no single owning consuming-domain suite at this layer
 - [ ] `16.Testing/CLAUDE.md` updated with the ServiceDefaults helper set
+---
+
+### P-188 — Testing: Security Test Doubles — FakeUserContext and FakeTenantProvider
+
+**Status:** `●` Complete
+**Work Order:** WO-030
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+Build the two `Security/` capability fakes already specified at `[STATUS: Planned]` in `16.Testing/CLAUDE.md` but never implemented:
+
+**`FakeUserContext`** — implements `IUserContext` (`SharedKernel.Security.Abstractions`) with settable `UserId`, `Email`, `Username`, `Roles`, `Claims`, `IsAuthenticated`, and a `HasRole(string)` case-insensitive lookup. Must default to an **authenticated** user with a fixed non-empty test identity so most call sites need zero configuration, deliberately the opposite default of `AnonymousUserContext` (the production fallback sentinel, which always reports unauthenticated). Mutators let a test explicitly exercise the unauthenticated or role-restricted path.
+
+**`FakeTenantProvider`** — implements `ITenantProvider` (`SharedKernel.Security.Abstractions`) with a settable `TenantId`, constructed with an optional `Guid?` defaulting to a fixed non-empty test tenant id (never `Guid.Empty` by default) so tenant-scoped code under test exercises the tenanted path unless the test explicitly sets `Guid.Empty`.
+
+Both are `sealed`, hold no external dependency beyond `SharedKernel.Security.Abstractions`, and follow this package's existing "simple `new`-able class, not DI-wrapped unless it stands in for a production registration" convention — no `AddFake*` extension is required unless a concrete DI-backed need surfaces.
+
+#### Why this is needed
+
+`IUserContext`/`ITenantProvider` are the two most universally-consumed abstractions on this platform — every handler, every pipeline behavior, every repository's audit interceptor reads one or both. They have sat at `[STATUS: Planned]` since the domain's Design phase while every other planned capability in this same pass (Caching, Domain, Messaging, Persistence, Communication, ServiceDefaults) was built and shipped. Today, every downstream microservice that needs to fake an authenticated user in a handler test — which is most of them, on day one — has nothing in this package to reach for and will independently reinvent it, exactly the drift this domain exists to prevent. This is the single highest-leverage gap found in this audit because it blocks the most common test-authoring scenario on the entire platform, not a narrow one.
+
+#### Acceptance criteria
+- [ ] `FakeUserContext` implements `IUserContext`; defaults to an authenticated fixed test identity; `HasRole` is case-insensitive
+- [ ] `FakeTenantProvider` implements `ITenantProvider`; defaults to a fixed non-empty test tenant id, not `Guid.Empty`
+- [ ] Both are `sealed`; zero dependency beyond `SharedKernel.Security.Abstractions`
+- [ ] `[STATUS: Planned]` markers removed from `16.Testing/CLAUDE.md`'s `Security/` section once implemented
+- [ ] Proven in `SharedKernel.Testing.SelfTests` unless `12.Security.Abstractions.Tests`/`12.Security.Oidc.Tests` is found to have an actual consumer at implementation time (re-check per this domain's own documented fallback rule — do not assume from the interface's owning domain alone)
+- [ ] No project reference added to `SharedKernel.Security.Oidc` — only `SharedKernel.Security.Abstractions`
+---
+
+### P-189 — Testing: Bogus Determinism Convention — FakerSeeding
+
+**Status:** `●` Complete
+**Work Order:** WO-030
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+Build `FakerSeeding`, the `Fakers/` capability already specified at `[STATUS: Planned]` in `16.Testing/CLAUDE.md` but never implemented: a static class exposing an `Apply(int seed = <fixed-default>)` method that sets `Bogus.Randomizer.Seed` to a seeded `Random` instance, intended to be called once per test assembly so every `Bogus.Faker<T>` in that run produces identical output across repeated CI executions. Concrete `Faker<TAggregate>` definitions for business entities remain out of scope here — they stay in each consuming service's own test project, as already documented — this phase ships only the shared determinism convention every one of those fakers should opt into.
+
+#### Why this is needed
+
+The domain's own Implementation Rules section states determinism is "non-negotiable" and calls any fake's reliance on unseeded randomness a bug, not a flaky test to retry — yet the one convention that makes `Bogus` itself deterministic across this platform's `EntityFaker<TEntity,TId>`, `SingleValueObjectFaker<TValueObject,TValue>`, `AggregateRootFaker<TAggregate,TId>`, `IntegrationEventFaker<TEvent>`, and `BulkAggregateFaker` bases has been documented in prose since the Design phase and never built. Every consuming service generating fake data with these bases today has no seam to opt into reproducible output, leaving exactly the CI-flakiness risk this domain's own rules forbid.
+
+#### Acceptance criteria
+- [ ] `FakerSeeding.Apply(int seed = <documented-default>)` sets `Bogus.Randomizer.Seed`
+- [ ] Default seed value is fixed and documented, never derived from real time or environment
+- [ ] `[STATUS: Planned]` marker removed from `16.Testing/CLAUDE.md`'s `Fakers/` section once implemented
+- [ ] Proven in `SharedKernel.Testing.SelfTests` — standalone convention, no owning consuming-domain interface
+- [ ] No concrete business-entity `Faker<T>` definitions added to this package as part of this phase
+---
+
+### P-190 — Testing: Persistence Outbox Test Helpers — FakeOutboxStore and OutboxMessageFaker
+
+**Status:** `●` Complete — rejected by testing-arch-planner, not implemented. Premise was false: `06.Persistence` does not and cannot own an outbox contract (owned entirely by `07.Messaging`/MassTransit per both domains' `CLAUDE.md`). The P-182 scope lock was reaffirmed. See `16.Testing/state-map.md` WO-030 changelog and `16.Testing/CLAUDE.md` `Persistence/` SCOPE LOCK note for full rationale.
+**Work Order:** WO-030
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+Add a `Persistence/` fake for `06.Persistence`'s outbox pattern, previously and explicitly scope-locked **out** of P-182 ("no `OutboxMessageFaker`, no `OutboxAssertions`... deferred to a future work order"). `06.Persistence` has since reached `● Published`, and its `OutboxInterceptor`/outbox contract is now real, shipped, load-bearing infrastructure — the deferral's original justification (the capability didn't exist yet) no longer holds.
+
+**`OutboxMessageFaker`** — a `Bogus.Faker<T>`-derived abstract base (mirroring the existing `AggregateRootFaker<TAggregate,TId>` shape) pre-configuring whatever outbox message envelope fields `06.Persistence` defines (message type discriminator, payload, created-at, processed-at/dispatched state) so consuming tests don't hand-roll outbox row fixtures.
+
+**`OutboxAssertions`** (or equivalently named) — framework-agnostic extension methods asserting outbox-store post-conditions (e.g., "exactly one undispatched message of type T exists," "the store is empty after dispatch") in the same plain-exception, zero-FluentAssertions style already standardized across every other assertion helper in this package (`DomainEventAssertions`, `EnvelopeAssertions`, `PagedListAssertions`).
+
+Exact member shapes are intentionally not specified here — they must be derived from `06.Persistence`'s actual, currently-shipped outbox interceptor/contract types, not invented independently; the domain planner reads that contract before finalizing this fake's shape, consistent with how every other `16.Testing` fake mirrors its target abstraction exactly.
+
+#### Why this is needed
+
+Outbox-pattern correctness (exactly-once-effectively delivery alongside a transactional write) is one of the harder things to test reliably, and `06.Persistence` ships it as platform infrastructure today. Without a shared fake, every service adopting the outbox pattern independently hand-rolls an in-memory outbox store or reaches for a real database in a unit test — the precise cost this package exists to eliminate. The original P-182 deferral was correct at the time (the capability hadn't shipped); it is now a stale gap, not a deliberate permanent boundary.
+
+#### Acceptance criteria
+- [ ] `OutboxMessageFaker` mirrors `06.Persistence`'s actual outbox message contract — verified against the shipped interceptor/type, not assumed
+- [ ] `OutboxAssertions` (or equivalently named) uses plain exceptions only — zero `FluentAssertions` reference, consistent with this package's standing hard rule
+- [ ] Both live under `Persistence/` (namespace `SharedKernel.Testing.Persistence`), sibling-isolated from `Messaging/`, `Caching/`, etc.
+- [ ] `16.Testing/CLAUDE.md`'s `Persistence/` section updated; the P-182 "SCOPE LOCK: no OutboxMessageFaker" note is explicitly superseded, not silently removed
+- [ ] Proven against `06.Persistence.EfCore.Tests`'s own outbox interceptor tests if a real consumer exists there at implementation time; falls back to `SharedKernel.Testing.SelfTests` per this domain's documented fallback rule otherwise
+---
+
+### P-191 — Messaging: Retrofit ConsumerVerifyTests onto InMemoryMessageBus/InMemoryEventPublisher
+
+**Status:** `●` Complete
+**Work Order:** WO-030
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+
+`SharedKernel.Messaging.Abstractions.Tests/ConsumerVerifyTests.cs` currently constructs `Substitute.For<IMessageBus>()` and `Substitute.For<IEventPublisher>()` as ad-hoc NSubstitute stubs registered into a `ServiceCollection`. Replace both with `16.Testing`'s purpose-built doubles — `InMemoryMessageBus` and `InMemoryEventPublisher` (registered via `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()`) — which already implement these exact two interfaces and ship recording + assertion helpers (`ShouldHavePublished<T>()`, `ShouldHaveSent<T>()`, `ShouldHavePublishedOnce<T>()`, `ShouldNotHavePublished<T>()`, `PublishedOf<TEvent>()`) purpose-built for this scenario. Add the missing `ProjectReference` to `SharedKernel.Testing.csproj` from this test project.
+
+#### Why this is needed
+
+This is a confirmed, present-tense instance of the exact duplication `16.Testing` exists to prevent — happening inside `07.Messaging` itself, the very domain whose abstractions `InMemoryMessageBus`/`InMemoryEventPublisher` were purpose-built to fake. An NSubstitute stub asserts only "was this method called" by hand; the shared double gives a richer, already-tested, already-documented assertion surface for free and removes a second, independent implementation of "something that pretends to be `IMessageBus`" that must now be kept consistent with the real one by coincidence rather than by construction.
+
+#### Acceptance criteria
+- [x] `ConsumerVerifyTests.cs` no longer references `Substitute.For<IMessageBus>()` or `Substitute.For<IEventPublisher>()`
+- [x] Test setup uses `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()` (or direct instantiation) from `SharedKernel.Testing`
+- [x] `SharedKernel.Messaging.Abstractions.Tests.csproj` gains a `ProjectReference` to `SharedKernel.Testing.csproj`
+- [x] All existing assertions in this test file are preserved with equivalent or stronger coverage using the shared double's assertion helpers
+- [x] Full `07.Messaging.Abstractions.Tests` suite still passes after the swap
 ---
