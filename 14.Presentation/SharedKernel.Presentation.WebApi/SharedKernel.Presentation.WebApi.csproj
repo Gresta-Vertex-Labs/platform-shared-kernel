@@ -3,6 +3,64 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Presentation.WebApi</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>HTTP API surface conventions for SharedKernel microservices: RFC 9457 ProblemDetails error mapping (ErrorTypeStatusCodeMap, Error.ToProblemDetails), global IExceptionHandler (SharedKernelExceptionHandler), Result&lt;T&gt; to IResult/ActionResult HTTP-boundary extensions (ResultHttpExtensions), API versioning (AddSharedKernelApiVersioning), native OpenAPI document generation + Scalar interactive UI (AddSharedKernelOpenApi/MapSharedKernelOpenApi), and inbound correlation-id middleware (CorrelationIdMiddleware).</Description>
+    <PackageTags>shared-kernel;webapi;problemdetails;rfc9457;api-versioning;openapi;scalar;correlation-id;aspnetcore</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Layering: 14.Presentation may reference 01.Core, 04.Contracts, 12.Security, and
+      13.ServiceDefaults only. References to 05.Application, 06.Persistence, 07.Messaging, or any
+      other infrastructure layer are hard violations — this domain converts outcomes (Result<T>,
+      Error, exceptions) into HTTP responses; it never produces those outcomes itself.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      API versioning: URL-segment-primary + header-secondary version reader (AddSharedKernelApiVersioning).
+      Native OpenAPI document generation (Microsoft.AspNetCore.OpenApi) + Scalar interactive UI.
+      Swashbuckle/NSwag are deliberately never referenced — see 14.Presentation/CLAUDE.md.
+    -->
+    <PackageReference Include="Asp.Versioning.Http" Version="10.0.0" />
+    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.16.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Presentation.WebApi.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Presentation.WebApi.Tests\**" />
+    <None Remove="SharedKernel.Presentation.WebApi.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>
