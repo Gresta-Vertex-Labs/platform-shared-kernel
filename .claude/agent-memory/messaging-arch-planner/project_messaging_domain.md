@@ -1,6 +1,6 @@
 ---
 name: project-messaging-domain
-description: All WO-020/021/022 phases complete; WO-027 P-172 (OTel ActivitySource) queued and unblocks pending cross-domain P-132
+description: All WO-020/021/022/027 phases complete; WO-030 P-191 (16.Testing double retrofit) queued in SK.07.Tests
 metadata:
   type: project
 ---
@@ -25,5 +25,7 @@ Phase completion states as of 2026-06-19:
 Cross-domain notes:
 
 - P-132 (`13.ServiceDefaults` — wires "SharedKernel.Messaging" into host TracerProvider/MeterProvider) and P-133 (`00.Governance` — extended rules MSG0105-MSG0108) remain tracked in this state-map's Pending Phases table but are owned by other domains' planners.
+
+WO-030 (2026-06-24) added P-191 — a narrow Tests-phase retrofit, NOT new architecture. `SharedKernel.Messaging.Abstractions.Tests/ConsumerVerifyTests.cs` (the domain's own consumer-verify suite, P-121/WO-020) used raw `Substitute.For<IMessageBus>()`/`Substitute.For<IEventPublisher>()` instead of `16.Testing`'s purpose-built `InMemoryMessageBus`/`InMemoryEventPublisher` doubles — the exact duplication those doubles (added in WO-022, P-134-era testing infra) exist to prevent, surfacing inside `07.Messaging` itself. This demoted the previously-closed `SK.07.Tests` phase from ● back to ○ (17/20, tasks T-18→T-20 added). Pattern to watch for: when `16.Testing` ships a double for one of this domain's own interfaces, check this domain's own test projects for ad-hoc NSubstitute stubs of the same interface — they are candidates for the same retrofit.
 
 Related: [[project-arch-decisions]]

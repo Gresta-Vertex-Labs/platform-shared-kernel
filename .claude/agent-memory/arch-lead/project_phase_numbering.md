@@ -5,73 +5,30 @@ metadata:
   type: project
 ---
 
-As of 2026-06-19, the last phase written to `state-map.md` Phase Backlog is **P-178** under **WO-028**.
+As of 2026-06-24, the last phase written to `state-map.md` Phase Backlog is **P-191** under **WO-030**.
 
-Next new phase must be **P-179**. Next new Work Order must be **WO-029**.
+Next new phase must be **P-192**. Next new Work Order must be **WO-031**.
 
-**How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file. This memory file itself had drifted stale once already (still said P-159/WO-025 when the real file was at P-174/WO-027) — always verify against `grep -n "^### P-" state-map.md | tail` before trusting this note's numbers.
+**How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file. This note has drifted stale at least twice before (once at P-159/WO-025 when the real file was at P-174/WO-027; again at P-178/WO-028 when the real file was at P-187/WO-029) — always verify against `grep -n "^### P-" state-map.md | tail` and `grep -oE "WO-[0-9]{3}" state-map.md | sort -u | tail` before trusting this note's numbers.
 
-**WO-027 context:** 13.ServiceDefaults initial delivery (P-169–P-171) + 2 cross-domain (07.Messaging ActivitySource P-172, 00.Governance liveness/readiness + composition-root rules P-173) + 16.Testing test doubles (P-174). Status at time of WO-028 audit: P-169–P-173 all `◐ Dispatched`; Core C-01–C-18 actually implemented and tested (41 tests green), C-19 correctly `⚑` blocked on real P-172 dependency.
+**WO-030 context:** 16.Testing gold-standard audit, triggered by direct user request ("are we done, what's missing, does the rest of the repo need to adopt this package"). Two-part finding:
+1. **16.Testing self-audit (P-188–P-190):** three capabilities documented in `16.Testing/CLAUDE.md` at `[STATUS: Planned]`/scope-locked-out but never built, verified against actual `.cs` files on disk (none exist):
+   - P-188 `FakeUserContext`/`FakeTenantProvider` (`Security/`) — highest-leverage gap found; `IUserContext`/`ITenantProvider` are the most universally-consumed abstractions on the platform and have had zero shared fake since the Design phase, while every sibling capability (Caching, Domain, Messaging, Persistence, Communication, ServiceDefaults) was built and shipped in the same pass.
+   - P-189 `FakerSeeding` (`Fakers/`) — the Bogus determinism convention this package's own Implementation Rules call "non-negotiable," documented in prose, never implemented as code.
+   - P-190 `FakeOutboxStore`/`OutboxMessageFaker` (`Persistence/`) — explicitly scope-locked OUT at P-182 ("deferred to a future work order") because 06.Persistence's outbox capability hadn't shipped yet at the time; 06.Persistence has since reached `● Published` with a real outbox interceptor, so the original deferral justification no longer holds — this is "supersede a stale scope lock," not "introduce new scope."
+2. **Repo-wide adoption audit (P-191):** grepped all 39 `*.Tests.csproj` files for a `ProjectReference` to `SharedKernel.Testing.csproj` — only 16 had it. Verified (not assumed) which of the 23 non-referencing projects were genuine gaps vs. legitimate exemptions:
+   - Legitimate exemptions confirmed: `01.Core` sits below `16.Testing` in layering, can never reference it (by design — `SharedKernel.Primitives.Tests` correctly rolls its own private clock fake). `05.Application`, `08.Storage`, `09.Search`, `10.Intelligence`, `14.Presentation`, `15.Integration`, `17.Workflows` test projects are empty stub `.csproj` files (confirmed by reading file content, not by board state alone) — matches their `○ Not Started` board rows, nothing to retrofit.
+   - Ruled OUT despite no `16.Testing` reference: `02.Caching.FusionCache.Tests`, `02.Caching.Redis.HashStore.Tests` — these test the REAL `FusionCacheService`/`RedisHashService` implementations against lower-level collaborators (`IDistributedCache`, `IConnectionMultiplexer`), not against `ICacheService` as an injected dependency. You don't fake the thing under test. No retrofit applies.
+   - Confirmed REAL drift (P-191): `07.Messaging.Abstractions.Tests/ConsumerVerifyTests.cs` uses `Substitute.For<IMessageBus>()`/`Substitute.For<IEventPublisher>()` — hand-rolled NSubstitute stubs for the exact two interfaces `16.Testing`'s `InMemoryMessageBus`/`InMemoryEventPublisher` already fake, happening inside 07.Messaging itself.
 
-**WO-028 context:** 13.ServiceDefaults gold-standard hardening audit (P-175–P-178) — see [[project_wo028_servicedefaults_audit]] for full findings. Triggered by a direct user request to audit already-shipped code for bad practices/magic strings/multitenancy correctness, not a new-capability request. Found a broken strategy-extensibility mechanism masked by a false-confidence test, a blocking sync DB call in an async path, two generations of magic-string drift, and a documented-but-unimplemented health check adapter pair.
+**Key methodology note for future audits of "is package X done / does the repo use it":** grep csproj files for the actual ProjectReference, don't trust a domain's own CLAUDE.md "implemented" claims OR the Domain Summary Board's "Published" status as proof of either (a) completeness of every planned capability inside the domain, or (b) adoption by consumers outside it. Both can be true ("Published," 100% of dispatched phases done) while specific planned sub-capabilities remain stubs and real consumers nearby still duplicate what already exists. Cross-check `[STATUS: Planned]` / `SCOPE LOCK` markers against the filesystem directly.
 
-**WO-020 context:** 07.Messaging domain initial delivery (P-115–P-124) — 7 messaging phases + 3 cross-domain (ServiceDefaults health checks P-122, Governance MSG rules P-123, Testing harness helpers P-124).
+**Domains touched in WO-030:**
+- 16.Testing: already ● Published — P-188–P-190 queued in backlog only; no state-map-phase call made
+- 07.Messaging: already ● Published — P-191 queued in backlog only; no state-map-phase call made
 
-**WO-021 context:** 07.Messaging deep architectural review gap fill — 9 phases across 4 domains:
-- P-125 07.Messaging: IFaultConsumer<T>, FaultExceptionInfo, CircuitBreakerOptions in Abstractions
-- P-126 07.Messaging: WithCircuitBreaker(), AddFaultConsumer adapter in MassTransit — depends P-125
-- P-127 07.Messaging: IMessageScheduler, SchedulingOptions (Abstractions), MassTransitMessageScheduler, WithInMemoryScheduler(), WithQuartzScheduler() — depends P-125
-- P-128 07.Messaging: SagaStateBase, SagaStateMachineBase<TSaga>, AddSaga<T>, WithEntityFrameworkSagaRepository — depends P-125
-- P-129 07.Messaging: BatchConsumerBase<T>, BatchOptions, AddBatchConsumer<T>() — no dependency
-- P-130 07.Messaging: Fix Build() calling Services.BuildServiceProvider() — critical anti-pattern fix — no dependency
-- P-131 07.Messaging: ISendEndpointResolver, ConventionSendEndpointResolver, WithSendEndpointRoute<T> — depends P-125
-- P-132 13.ServiceDefaults: WithMessagingTelemetry() — MassTransit + SharedKernel.Messaging ActivitySource wiring — depends P-117, P-118
-- P-133 00.Governance: MSG0105-MSG0108 architecture rules — depends P-125, P-126, P-127, P-128
+No root CLAUDE.md changes this pass (sync-brain skipped) — no new technology, package, or naming pattern introduced; this was gap-filling inside an already-documented package shape, not new architecture.
 
-**Key architectural decisions made in WO-021:**
-1. Build() ServiceProvider anti-pattern identified: `Services.BuildServiceProvider()` inside `MessagingBusBuilder.Build()` creates a second root container — fix by using captured `Action<MessagingOptions>?` delegate directly for validation
-2. IFaultConsumer<T> lives in Abstractions (not MassTransit) so fault handler implementations never need a MassTransit reference; adapter lives in MassTransit package
-3. CircuitBreaker ordering rule: retry inner, circuit breaker outer — retry first within current breaker state, then breaker guards against sustained failure
-4. IMessageScheduler interface in Abstractions — zero NuGet deps; MassTransit.IMessageScheduler must never be injected directly outside 07.Messaging
-5. SagaStateBase is a record (not a class) — EF Core mappable, ISagaVersion compatible, platform audit fields standardized
-6. BatchConsumerBase<T> uses IConsumer<Batch<T>> — must be registered via AddBatchConsumer<T>() not AddConsumer<T>() to apply batch configuration
-7. ISendEndpointResolver fixes the hardcoded service-name prefix assumption in SendAsync<T>() — per-type route dictionary takes precedence over convention
-8. Custom ActivitySource("SharedKernel.Messaging", "1.0.0") added to ConsumerBase and MassTransitEventPublisher for platform-namespaced traces
-9. WithMessagingTelemetry() idempotency required — multiple registrations must not duplicate OTel instruments
+---
 
-**Domains touched in WO-021:**
-- 07.Messaging: already ● Published — new phases queued in backlog only; no state-map-phase call made
-- 13.ServiceDefaults: already ○ Not Started — P-132 queued; state-map-phase not called (P-122 already pending from WO-020 also targets this domain)
-- 00.Governance: already ● Complete — P-133 queued in backlog only; no state-map-phase call made
-
-**WO-023 context:** 02.Caching Redis package topology refactor (P-140–P-146) — see [[project_wo023_caching_redis_topology]] for full decision rationale. Splits `SharedKernel.Caching.Redis` into `.Redis.Core` + 4 role packages (`.Redis` L2, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub`). New `.{Provider}.Core`/`.{Provider}.{Role}` naming pattern + new root hard rule (02.Caching <-> 07.Messaging mutual exclusion) added to root CLAUDE.md.
-
-**Domains touched in WO-023:**
-- 02.Caching: already ● Complete — P-140–P-144 queued in backlog only; no state-map-phase call made
-- 00.Governance: already ● Complete — P-145 queued in backlog only; no state-map-phase call made
-- 16.Testing: already ◐ In Progress — P-146 queued in backlog only; no state-map-phase call made
-
-**WO-024 context:** 06.Persistence deep architectural review gap fill (P-147–P-153) — 7 phases across 3 domains:
-- P-147 06.Persistence: Fix encryption key rotation reflection violation (MakeGenericMethod/Invoke in LoadBatchAsync) and global EncryptionOptions.CurrentVersion mutable-coupling during RotateAsync; also corrects EncryptedValueConverter<T> doc drift (actual type is non-generic) — no dependency
-- P-148 06.Persistence: Set-based bulk update/delete via ExecuteUpdateAsync/ExecuteDeleteAsync on IRepository, spec-driven (criteria/IncludeDeleted only — Includes/Ordering/Paging rejected); documents interceptor + domain-event bypass — no dependency
-- P-149 06.Persistence: IAsyncEnumerable streaming reads on IReadRepository for ISpecification<T> and IProjectionSpecification<T,TResult>; always forces AsNoTracking (documented deviation) — no dependency
-- P-150 06.Persistence: DB readiness probe primitives (SharedKernelDbContext for EF Core; IDbConnectionFactory-based for Dapper/PostgreSQL) — ships no IHealthCheck itself, 13.ServiceDefaults wraps — no dependency
-- P-151 06.Persistence: IDataSeeder<TContext> + EfCorePersistenceBuilder.WithMigrationsOnStartup()/.WithSeeders() — opt-in startup orchestration, advisory/distributed-lock guarded for multi-replica K8s; optional 02.Caching.Redis.DistributedLocking integration point (no hard reference) — no dependency
-- P-152 03.Domain: StronglyTypedIdJsonConverterFactory for StronglyTypedId<TValue> (Guid/int/long/string) — supersedes prior "no STJ converter, BYO" doc note; zero new NuGet dep (System.Text.Json is shared-framework) — no dependency
-- P-153 00.Governance: New SK0xxx NetArchTest/Roslyn rule banning GetMethod/MakeGenericMethod/Invoke platform-wide except via documented exception mechanism; motivated directly by the P-147 finding — depends P-147
-
-**Key architectural decisions made in WO-024:**
-1. Reflection-based generic dispatch (`GetMethod` + `MakeGenericMethod` + `Invoke`) is now a platform-wide prohibition, not just a 06.Persistence convention — P-147 found the exact forbidden pattern shipped inside the package that documents it as forbidden elsewhere (TenantedDbContext uses expression trees as the sanctioned alternative)
-2. Encryption rotation must decouple per-operation target version from steady-state `EncryptionOptions.CurrentVersion` — the original WO-019 design's "set CurrentVersion globally before rotating" instruction was a latent multi-instance production incident
-3. Bulk set-based mutations (ExecuteUpdate/ExecuteDelete) are a distinct capability from UpdateRangeAsync/DeleteRangeAsync — explicitly bypass interceptors/domain events, spec pipeline restricted to criteria + IncludeDeleted only
-4. Streaming reads always force AsNoTracking regardless of spec flag — the one documented deviation from "the spec's AsNoTracking is honored"
-5. DB readiness probes live in 06.Persistence as primitives only; IHealthCheck wiring stays a 13.ServiceDefaults concern (consistent with existing health-check placement rule)
-6. Migration/seed runner is opt-in via EfCorePersistenceBuilder, explicitly NOT a migration-authoring tool nor a compiled-model (P-106) replacement; distributed lock for multi-replica races is an optional integration point with 02.Caching.Redis.DistributedLocking, never a hard reference
-7. StronglyTypedId STJ converter factory is zero-new-dependency since System.Text.Json ships in the net10.0 shared framework — does not violate SharedKernel.Domain's zero-external-NuGet rule
-
-**Domains touched in WO-024:**
-- 06.Persistence: already ● Published — P-147–P-151 queued in backlog only; no state-map-phase call made
-- 03.Domain: already ● Published — P-152 queued in backlog only; no state-map-phase call made
-- 00.Governance: already ● Complete — P-153 queued in backlog only; no state-map-phase call made
-
-Root CLAUDE.md synced via sync-brain for WO-024: 6 new "What Goes Where" rows + 1 changelog line (2026-06-12).
+**WO-029 context (prior):** 16.Testing: 14 long-pending, never-dispatched phases consolidated into 9 (P-179–P-187), full Design→Published delivery in one pass, plus `SharedKernel.Testing.SelfTests` carve-out for standalone helpers with no owning consuming-domain interface. See [[project_wo023_caching_redis_topology]] and [[project_wo028_servicedefaults_audit]] for unrelated prior work-order context still relevant to other domains.
