@@ -1,10 +1,10 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.Extensions;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Messaging.Abstractions.Options;
+using SharedKernel.Testing.Messaging;
 
 namespace SharedKernel.Messaging.Abstractions.Tests;
 
@@ -17,47 +17,104 @@ namespace SharedKernel.Messaging.Abstractions.Tests;
 public sealed class ConsumerVerifyTests
 {
     /// <summary>
-    /// Verifies that <see cref="IMessageBus"/> can be registered as a scoped service
-    /// and resolved from a plain <see cref="ServiceCollection"/> without any MassTransit assembly loaded.
+    /// Verifies that <see cref="IMessageBus"/> can be registered as a service and resolved from a
+    /// plain <see cref="ServiceCollection"/> without any MassTransit assembly loaded, using the
+    /// <see cref="InMemoryMessageBus"/> test double from <c>SharedKernel.Testing</c> rather than a
+    /// mocking-framework substitute.
     /// </summary>
     [Fact]
     public void IMessageBus_CanBeRegistered_AndResolvedAsInterface_WithoutMassTransit()
     {
-        // Arrange — substitute stand-in; no MassTransit concrete type involved
+        // Arrange
         var services = new ServiceCollection();
-        var stub = Substitute.For<IMessageBus>();
-        services.AddScoped<IMessageBus>(_ => stub);
+        services.AddInMemoryMessageBus();
 
         using var provider = services.BuildServiceProvider();
 
         // Act
         var resolved = provider.GetService<IMessageBus>();
+        var recorder = provider.GetRequiredService<InMemoryMessageBus>();
 
         // Assert
         resolved.Should().NotBeNull();
-        resolved.Should().BeSameAs(stub);
+        resolved.Should().BeSameAs(recorder);
     }
 
     /// <summary>
-    /// Verifies that <see cref="IEventPublisher"/> can be registered as a scoped service
-    /// and resolved from a plain <see cref="ServiceCollection"/> without any MassTransit assembly loaded.
+    /// Verifies that <see cref="IMessageBus"/>, resolved purely as an interface with zero
+    /// MassTransit assembly loaded, correctly records a published and a sent message — proving the
+    /// resolved instance is a real, working implementation and not just a non-null stand-in.
+    /// </summary>
+    [Fact]
+    public async Task IMessageBus_ResolvedAsInterface_RecordsPublishAndSend_WithoutMassTransit()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddInMemoryMessageBus();
+
+        using var provider = services.BuildServiceProvider();
+        var bus = provider.GetRequiredService<IMessageBus>();
+        var recorder = provider.GetRequiredService<InMemoryMessageBus>();
+
+        var published = new TestIntegrationMessage("published-payload");
+        var sent = new TestIntegrationMessage("sent-payload");
+
+        // Act
+        await bus.PublishAsync(published, CancellationToken.None);
+        await bus.SendAsync(sent, CancellationToken.None);
+
+        // Assert
+        recorder.ShouldHavePublished<TestIntegrationMessage>().Should().BeSameAs(published);
+        recorder.ShouldHaveSent<TestIntegrationMessage>().Should().BeSameAs(sent);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="IEventPublisher"/> can be registered as a service and resolved from
+    /// a plain <see cref="ServiceCollection"/> without any MassTransit assembly loaded, using the
+    /// <see cref="InMemoryEventPublisher"/> test double from <c>SharedKernel.Testing</c> rather than
+    /// a mocking-framework substitute.
     /// </summary>
     [Fact]
     public void IEventPublisher_CanBeRegistered_AndResolvedAsInterface_WithoutMassTransit()
     {
         // Arrange
         var services = new ServiceCollection();
-        var stub = Substitute.For<IEventPublisher>();
-        services.AddScoped<IEventPublisher>(_ => stub);
+        services.AddInMemoryEventPublisher();
 
         using var provider = services.BuildServiceProvider();
 
         // Act
         var resolved = provider.GetService<IEventPublisher>();
+        var recorder = provider.GetRequiredService<InMemoryEventPublisher>();
 
         // Assert
         resolved.Should().NotBeNull();
-        resolved.Should().BeSameAs(stub);
+        resolved.Should().BeSameAs(recorder);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="IEventPublisher"/>, resolved purely as an interface with zero
+    /// MassTransit assembly loaded, correctly records a published integration event — proving the
+    /// resolved instance is a real, working implementation and not just a non-null stand-in.
+    /// </summary>
+    [Fact]
+    public async Task IEventPublisher_ResolvedAsInterface_RecordsPublishedEvent_WithoutMassTransit()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddInMemoryEventPublisher();
+
+        using var provider = services.BuildServiceProvider();
+        var publisher = provider.GetRequiredService<IEventPublisher>();
+        var recorder = provider.GetRequiredService<InMemoryEventPublisher>();
+
+        var integrationEvent = new TestIntegrationMessage("integration-event-payload");
+
+        // Act
+        await publisher.PublishAsync(integrationEvent, CancellationToken.None);
+
+        // Assert
+        recorder.ShouldHavePublished<TestIntegrationMessage>().Should().BeSameAs(integrationEvent);
     }
 
     /// <summary>
@@ -132,3 +189,10 @@ public sealed class ConsumerVerifyTests
             .WhoseValue.Should().Be("acme");
     }
 }
+
+/// <summary>
+/// Minimal message type used to exercise <see cref="IMessageBus"/>/<see cref="IEventPublisher"/>
+/// publish/send recording in <see cref="ConsumerVerifyTests"/> — carries no transport dependency.
+/// </summary>
+/// <param name="Payload">An arbitrary string payload distinguishing one test message from another.</param>
+public sealed record TestIntegrationMessage(string Payload);

@@ -89,6 +89,7 @@ Format when blocked — replace placeholder with table:
 | `SK.07.Core` | `04.Contracts` | `SharedKernel.Contracts` ProjectReference (`EventEnvelope<TEvent>` — used in `MassTransitEventPublisher`) | Available |
 | `SK.07.Core` | `03.Domain` | `DomainEventVersionHelper.GetVersion(Type)` — used to populate `SchemaVersion` in published envelope | Available |
 | `SK.07.Saga` | `06.Persistence` (consuming service) | `TDbContext : DbContext` generic parameter for `WithEntityFrameworkSagaRepository` — no compile-time reference; consuming service bridges at composition root | Available (pattern mirrored from outbox) |
+| `SK.07.Tests` | `16.Testing` | `SharedKernel.Testing` ProjectReference (`InMemoryMessageBus`, `InMemoryEventPublisher`, `AddInMemoryMessageBus()`, `AddInMemoryEventPublisher()`) — for `ConsumerVerifyTests.cs` retrofit; test-only reference, never shipped in production packages | Available (P-191) |
 
 ---
 
@@ -197,6 +198,9 @@ Format when blocked — replace placeholder with table:
 | T-15 | CircuitBreakerOptions default values test — instantiate with no config; assert TripThreshold=5, ActiveThreshold=10, ResetInterval=60s, TrackingPeriod=60s (P-125) | WO-021 | SharedKernel.Messaging.Abstractions | `●` |
 | T-16 | FaultExceptionInfo record equality test — two records with same ExceptionType+Message are equal; different values are not equal; with-expression produces new instance (P-125) | WO-021 | SharedKernel.Messaging.Abstractions | `●` |
 | T-17 | Build() second-root-provider test — call Build() after AddSharedKernelMessaging; assert no "second root IServiceProvider" diagnostic; assert IMessageBus and IEventPublisher resolve to same instances in the real container (P-130) | WO-021 | SharedKernel.Messaging.MassTransit | `●` |
+| T-18 | Retrofit `ConsumerVerifyTests.cs` onto `16.Testing` doubles — replace `Substitute.For<IMessageBus>()` in `IMessageBus_CanBeRegistered_AndResolvedAsInterface_WithoutMassTransit` with `InMemoryMessageBus` registered via `AddInMemoryMessageBus()`; replace `Substitute.For<IEventPublisher>()` in `IEventPublisher_CanBeRegistered_AndResolvedAsInterface_WithoutMassTransit` with `InMemoryEventPublisher` registered via `AddInMemoryEventPublisher()`; preserve existing resolve/same-instance assertions; strengthen with `ShouldHavePublished<T>()`/`ShouldHaveSent<T>()` style assertions where a meaningful publish/send scenario can be added without expanding test scope beyond the original four assertions (P-191) | WO-030 | SharedKernel.Messaging.Abstractions | `●` |
+| T-19 | Add `ProjectReference` to `SharedKernel.Testing.csproj` from `SharedKernel.Messaging.Abstractions.Tests.csproj` — test-only reference; verify it introduces no production dependency (Abstractions project itself remains untouched); remove `NSubstitute` package reference from the test csproj only if no other test file in the project still uses it (P-191) | WO-030 | SharedKernel.Messaging.Abstractions | `●` |
+| T-20 | Verify full `SharedKernel.Messaging.Abstractions.Tests` suite passes after the swap — `dotnet test` exits 0; zero new warnings; assert `AbstractionsAssembly_ReferencesNo_MassTransit_Assembly` still passes (the Abstractions _production_ assembly must remain MassTransit-free; the _test_ assembly referencing `SharedKernel.Testing` is permitted since `SharedKernel.Testing` itself only references `SharedKernel.Messaging.Abstractions`, not MassTransit) (P-191) | WO-030 | SharedKernel.Messaging.Abstractions | `●` |
 
 ---
 
@@ -435,7 +439,7 @@ Format when blocked — replace placeholder with table:
 | `SK.07.Design` | Design | 23 | 23 | 0 | `●` |
 | `SK.07.Scaffold` | Scaffold | 8 | 8 | 0 | `●` |
 | `SK.07.Core` | Core | 24 | 24 | 0 | `●` |
-| `SK.07.Tests` | Tests | 17 | 17 | 0 | `●` |
+| `SK.07.Tests` | Tests | 20 | 20 | 0 | `●` |
 | `SK.07.Docs` | Docs | 14 | 14 | 0 | `●` |
 | `SK.07.Published` | Published | 5 | 5 | 0 | `●` |
 | `SK.07.Resilience` | Resilience | 9 | 9 | 0 | `●` |
@@ -473,6 +477,7 @@ Format when blocked — replace placeholder with table:
 | P-137 | `SK.07.VersionTranslation` | IMessageVersionTranslator and WithVersionTranslator | 07.Messaging | None |
 | P-139 | `SK.07.RoutingSlip` | RoutingSlipActivityBase for MassTransit Courier | 07.Messaging | P-128 |
 | P-172 | `SK.07.OTel` | ActivitySource and Consume/Publish Instrumentation | 07.Messaging | None |
+| P-191 | `SK.07.Tests` | Retrofit ConsumerVerifyTests onto InMemoryMessageBus/InMemoryEventPublisher (16.Testing doubles) | 07.Messaging | None |
 
 ---
 
@@ -508,3 +513,5 @@ Format when blocked — replace placeholder with table:
 - [2026-06-10] RS-01→RS-10 → ● in SK.07.RoutingSlip — IRoutingSlipBuilder + IMessageBus.ExecuteRoutingSlipAsync in Abstractions; MassTransitRoutingSlipBuilder, RoutingSlipActivityBase<TArgs,TLog>, AddRoutingSlipActivity<T>() in MassTransit; routing slip dispatch corrected to Send (not Publish) to first itinerary address; 2 TestHarness tests pass (execution order + compensation/RoutingSlipFaulted); SK.07.RoutingSlip → ● (state-map-phase)
 - [2026-06-19] WO-027 / P-172 — new Phase: OTel queued (OT-01–OT-08): `MessagingDiagnostics.ActivitySource` ("SharedKernel.Messaging", "1.0.0") in MassTransit package; `Consumer.Consume` and `EventPublisher.Publish` child activities with `messaging.message_type`/`messaging.event_type` tags; `messaging.destination` + `messaging.message_type` consumer log-scope enrichment. Corrects a latent cross-domain violation in pending P-132 (13.ServiceDefaults), which incorrectly assumed this source already existed — P-132 only wires already-existing sources into the host TracerProvider/MeterProvider per its own brain's rule. P-172 has no dependency and unblocks P-132 with a true prerequisite. Phase Key Registry, Cross-Domain Dependencies (none new — self-contained), Overall Progress, and Pending Phases tables updated (messaging-arch-planner, WO-027)
 - [2026-06-22] OT-01→OT-08 → ● in SK.07.OTel — MessagingDiagnostics (Diagnostics/MessagingDiagnostics.cs) with static ActivitySource; ConsumerBase.Consume() Consumer.Consume activity + messaging.destination/messaging.message_type log-scope enrichment; MassTransitEventPublisher.PublishEnvelopeAsync EventPublisher.Publish activity incl. non-domain-event throw path; 9 new tests (106 total); zero new NuGet refs; SK.07.OTel → ● (state-map-phase)
+- [2026-06-24] WO-030 / P-191 — new SK.07.Tests tasks T-18→T-20 queued: retrofit `ConsumerVerifyTests.cs` off ad-hoc `Substitute.For<IMessageBus>()`/`Substitute.For<IEventPublisher>()` onto `16.Testing`'s purpose-built `InMemoryMessageBus`/`InMemoryEventPublisher` doubles (`AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()`); adds a test-only `ProjectReference` from `SharedKernel.Messaging.Abstractions.Tests.csproj` to `SharedKernel.Testing.csproj`; this is a confirmed instance of the exact duplication `16.Testing` exists to prevent, surfacing inside `07.Messaging` itself; SK.07.Tests demoted from ● to ○ (17/20); Cross-Domain Dependencies gains a `16.Testing` row (test-only, never shipped); Pending Phases table updated; root state-map promotion deferred until T-18→T-20 are ● (messaging-arch-planner, WO-030)
+- [2026-06-24] T-18→T-20 → ● in SK.07.Tests — ConsumerVerifyTests retrofitted onto InMemoryMessageBus/InMemoryEventPublisher; added 2 publish/send recording tests; ProjectReference to SharedKernel.Testing added, NSubstitute removed (no other consumer); bumped Microsoft.Extensions.DependencyInjection to 10.0.9 to resolve transitive NU1605 from SharedKernel.Testing's EF Core Sqlite chain; 50/50 tests pass incl. AbstractionsAssembly_ReferencesNo_MassTransit_Assembly; SK.07.Tests → ● (state-map-phase)
