@@ -111,6 +111,7 @@
     <Project Path="14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/SharedKernel.Presentation.SignalR.Tests.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.Tests/SharedKernel.Presentation.WebApi.Tests.csproj" />
+    <Project Path="14.Presentation/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/15.Integration/">
     <Project Path="15.Integration/SharedKernel.Integration.Webhooks/SharedKernel.Integration.Webhooks.csproj" />

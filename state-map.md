@@ -64,7 +64,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | `●` | All 9 tasks complete — HealthCheckConstantsUsageRules (NoBareHealthCheckLiteralWhereConstantsExist) and StringConstantsClassDetector added to SharedKernel.ArchitectureTests; 102/102 architecture tests pass. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | `●` | All 9 tasks complete — PresentationLayeringRules (NoDirectProblemDetailsConstructionOutsideWebApi, NoInlineResultBranchBeforeHttpResultOutsideWebApi) added to SharedKernel.ArchitectureTests, closing the WO-026 P-166/167 backlog note; 108/108 architecture tests pass. | — |
 | 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -78,7 +78,7 @@ Format when blocked:
 | 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | T-01–T-26 complete — 203/203 tests passing across Rest (66), Grpc (55), GraphQL (43), Internal (39); all handler, interceptor, resilience, filter, and resolver tests green. | Begin Docs phase (XML doc comments across all four packages). |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
-| 14 | [Presentation](14.Presentation/state-map.md) | — | `○` | — | — |
+| 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
 | 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
 | 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-030 (P-188/P-189) complete: SK.16.Design (54/54), SK.16.Scaffold (14/14), SK.16.Core (46/46), SK.16.Tests (37/37), and SK.16.Docs (12/12) all done — FakeUserContext/FakeTenantProvider/FakerSeeding implemented and proven in SharedKernel.Testing.SelfTests, full XML doc coverage confirmed, `[STATUS: Planned]` markers removed. | — |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
@@ -108,17 +108,17 @@ Format when active:
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 4 |
+| ● Published | 5 |
 | ● OTel | 1 |
 | ● Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | 1 |
 | ● Design | 1 |
-| ● Docs | 0 |
-| ● Tests | 1 |
+| ● Docs | 1 |
+| ● Tests | 2 |
 | ● Core | 0 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 7 |
+| ○ Not Started | 6 |
 
 ---
 
@@ -2170,6 +2170,15 @@ The `Now` property is a footgun. A developer who sees `protected DateTimeOffset 
 - [2026-06-24] Phase Backlog P-188, P-189 → ● Complete — WO-030 fully implemented across all 6 phases of 16.Testing (state-map-phase)
 - [2026-06-24] 07 → Tests (●) — promoted from SK.07.Tests (20/20); T-18→T-20 retrofitted ConsumerVerifyTests onto InMemoryMessageBus/InMemoryEventPublisher (state-map-phase)
 - [2026-06-24] Phase Backlog P-191 → ● Complete — SK.07.Tests done (state-map-phase)
+- [2026-06-25] P-192–P-199 written for WO-031 — 14.Presentation full lifecycle (Design/Scaffold/Core×2/Tests/Docs/Published) plus 00.Governance ProblemDetails/Result-HTTP enforcement rules — arch-lead
+- [2026-06-25] 14 → Design (◐) — Lock interface contracts for SharedKernel.Presentation.WebApi and SharedKernel.Presentation.SignalR per P-192 (state-map-phase)
+- [2026-06-25] Phase(s) P-192, P-193, P-194, P-195, P-196, P-197, P-198 dispatched to presentation-arch-planner for 14.Presentation (dispatch-phase)
+- [2026-06-25] 14 → Scaffold (●) — promoted from SK.14.Scaffold (state-map-phase)
+- [2026-06-25] Phase Backlog P-193 → ● Complete — SK.14.Scaffold done (state-map-phase)
+- [2026-06-25] 14 → Core (●) — promoted from SK.14.Core (13/13); both packages fully implemented and unit-tested (state-map-phase)
+- [2026-06-25] Phase Backlog P-194, P-195 → ● Complete — SK.14.Core done (state-map-phase)
+- [2026-06-25] 14 → Tests (●) — promoted from SK.14.Tests (10/10); 48/48 tests passing across both packages (state-map-phase)
+- [2026-06-25] Phase Backlog P-196 → ● Complete — SK.14.Tests done (state-map-phase)
 
 ---
 ### P-042 — Core: Add Error.BusinessRule Factory to SharedKernel.Primitives
@@ -8287,3 +8296,200 @@ This is a confirmed, present-tense instance of the exact duplication `16.Testing
 - [x] All existing assertions in this test file are preserved with equivalent or stronger coverage using the shared double's assertion helpers
 - [x] Full `07.Messaging.Abstractions.Tests` suite still passes after the swap
 ---
+
+---
+### P-192 — Presentation: Design — Lock WebApi and SignalR Interface Contracts
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 14.Presentation
+**Depends on:** None
+
+#### What is needed
+Finalize the public interface contracts for both `SharedKernel.Presentation.WebApi` and `SharedKernel.Presentation.SignalR` as committed API shape, ahead of any implementation. This covers: the `Error` → RFC 9457 `ProblemDetails` mapping surface (status-code resolution table, extension construction), the `Result<T>` → HTTP boundary conversion surface (Minimal API `IResult` overloads and MVC `ActionResult` overloads, kept as two distinct overload families with no auto-detecting third form), the global `IExceptionHandler` contract and its known-exception-vs-unknown-exception branching, the API versioning defaults (URL-segment primary, header reader secondary, unversioned-request fallback behavior), the native OpenAPI + Scalar registration surface (one document per discovered API version), the inbound correlation-id middleware contract (header read/generate, `HttpContext.Items` storage key, `Activity` baggage key), and on the SignalR side: the tenant-context and exception-mapping hub filter contracts, the tenant group naming convention, and the Redis backplane opt-in wrapper surface. All of these are already drafted in `14.Presentation/CLAUDE.md`'s Interface Contracts section — this phase is the formal sign-off pass that confirms each contract's shape, removes the now-unnecessary "Pending" cross-domain dependency on `13.ServiceDefaults` for OTel baggage conventions (the correlation-id baggage key is this domain's own contract, not borrowed from ServiceDefaults), and confirms no contract leaks an infrastructure or business-logic concern across the `01.Core`/`04.Contracts`/`12.Security`/`13.ServiceDefaults`-only layering boundary.
+
+#### Why this is needed
+Every completed domain in this repo (11.Communication, 12.Security, 13.ServiceDefaults, 03.Domain) ran a Design phase before Scaffold to lock the public surface first — this avoids churn in downstream Core/Tests phases and gives consuming API/socket teams a stable contract to plan against immediately. This domain is exceptionally high-blast-radius ("serves so many api or socket projects" per the work order) — every microservice's error shape, versioning behavior, and real-time hub behavior derives from this package, so contract instability here would propagate platform-wide. Locking the contract first, and explicitly removing the incorrect `13.ServiceDefaults` coupling from the original draft, keeps `14.Presentation` thin and dependency-correct per the root layering rules.
+
+#### Acceptance criteria
+- [ ] `ErrorTypeStatusCodeMap` and `ErrorProblemDetailsExtensions` contracts confirmed (signatures, status-code table, `traceId`/`errorCode` extension keys)
+- [ ] `ResultHttpExtensions` confirmed as two non-overlapping overload families (Minimal API `IResult`, MVC `ActionResult`/`ActionResult<T>`) with no auto-detect overload
+- [ ] `SharedKernelExceptionHandler` contract confirmed (known `SharedKernelException` → `Error.ToProblemDetails()`; unknown → redacted 500 outside `IsDevelopment()`)
+- [ ] API versioning defaults confirmed (`DefaultApiVersion`, combined URL-segment + header reader, `AssumeDefaultVersionWhenUnspecified = true`)
+- [ ] OpenAPI/Scalar registration contract confirmed (one document per version group, Bearer scheme metadata only, no Swashbuckle/NSwag dependency)
+- [ ] `CorrelationIdMiddleware` contract confirmed as self-contained (own baggage key, no `13.ServiceDefaults` ProjectReference); Cross-Domain Dependencies row for `SK.14.Core` → `13.ServiceDefaults` removed from `14.Presentation/state-map.md`
+- [ ] `TenantContextHubFilter`, `HubExceptionMappingFilter`, `HubGroupNaming`, and the Redis backplane opt-in wrapper (`WithRedisBackplane`) contracts confirmed
+- [ ] No confirmed contract requires a `ProjectReference` outside `01.Core`, `04.Contracts`, `12.Security.Abstractions`
+---
+
+---
+### P-193 — Presentation: Scaffold — Project Wiring for WebApi and SignalR
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 14.Presentation
+**Depends on:** P-192
+
+#### What is needed
+Wire up the `.csproj` files for `SharedKernel.Presentation.WebApi` and `SharedKernel.Presentation.SignalR` with their NuGet package references (`Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` for WebApi; `Microsoft.AspNetCore.SignalR.StackExchangeRedis` for SignalR), `ProjectReference`s to `SharedKernel.Primitives`, `SharedKernel.Contracts`, and `SharedKernel.Security.Abstractions` per package per the confirmed Design-phase contracts, folder structure matching the documented contract groupings (Errors/, Results/, ExceptionHandling/, Versioning/, OpenApi/, Middleware/ for WebApi; Filters/, GroupNaming/, Extensions/ for SignalR), solution-folder registration in `Platform.SharedKernel.slnx`, and empty nested test project stubs (`SharedKernel.Presentation.WebApi.Tests`, `SharedKernel.Presentation.SignalR.Tests`) referencing `SharedKernel.Testing`.
+
+#### Why this is needed
+Standard scaffold-before-code discipline applied by every other domain in this repo — establishes the dependency graph and folder layout mechanically so the Core phase is pure logic, not also fighting project-reference plumbing. Confirms at the project-reference level (not just documentation level) that neither package can accidentally pull in `05.Application`, `06.Persistence`, `07.Messaging`, or any other layer forbidden by the root layering rules.
+
+#### Acceptance criteria
+- [ ] Both `.csproj` files target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled
+- [ ] `SharedKernel.Presentation.WebApi` references only `SharedKernel.Primitives`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, and the four named NuGet packages
+- [ ] `SharedKernel.Presentation.SignalR` references only `SharedKernel.Primitives`, `SharedKernel.Security.Abstractions`, and `Microsoft.AspNetCore.SignalR.StackExchangeRedis`
+- [ ] Folder structure matches the Design-phase contract groupings for each package
+- [ ] Both packages registered under the `14.Presentation` solution folder in `Platform.SharedKernel.slnx`
+- [ ] Empty nested test projects created and reference `SharedKernel.Testing`
+- [ ] Solution builds with zero warnings after scaffold (no implementation yet)
+---
+
+---
+### P-194 — Presentation: Core — WebApi ProblemDetails, Versioning, OpenAPI, and Correlation-Id
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 14.Presentation
+**Depends on:** P-193
+
+#### What is needed
+Full implementation of `SharedKernel.Presentation.WebApi`'s confirmed Design-phase contracts: `ErrorTypeStatusCodeMap` and `ErrorProblemDetailsExtensions` for RFC 9457-compliant error mapping; `ResultHttpExtensions` for both Minimal API and MVC `Result<T>` → HTTP conversion; `SharedKernelExceptionHandler` as the terminal `IExceptionHandler` in the pipeline; `AddSharedKernelApiVersioning` with URL-segment-primary + header-secondary version readers and `AssumeDefaultVersionWhenUnspecified = true`; `AddSharedKernelOpenApi`/`MapSharedKernelOpenApi` wrapping native `Microsoft.AspNetCore.OpenApi` + `Scalar.AspNetCore` with one document per discovered API version and a Bearer-scheme document transformer; and `CorrelationIdMiddleware` plus its `AddSharedKernelCorrelationId`/`UseSharedKernelCorrelationId` registration pair, writing to both `HttpContext.Items` and `Activity` baggage.
+
+#### Why this is needed
+This is the load-bearing implementation every downstream API service composes its HTTP pipeline from. Centralizing error-shape, versioning, and OpenAPI conventions here is what prevents each of the "many API projects" referenced in the work order from hand-rolling their own (and inevitably inconsistent) `ProblemDetails` construction, version-fallback behavior, or OpenAPI wiring — the same rationale already proven for `11.Communication`'s typed-client conventions and `13.ServiceDefaults`'s health-check wiring.
+
+#### Acceptance criteria
+- [ ] `ErrorTypeStatusCodeMap.Resolve` covers every `ErrorType` member with the documented mapping and a 500 fallback for unmapped types
+- [ ] `Error.ToProblemDetails()` populates `Title`, `Detail`, `Status`, RFC 9457 `Type` URI, and `Extensions["errorCode"]`/`Extensions["traceId"]` exactly per contract
+- [ ] `ResultHttpExtensions` Minimal API and MVC overloads both implemented, including the `onSuccess` projection overload (Minimal API only)
+- [ ] `SharedKernelExceptionHandler` maps known `SharedKernelException` subtypes via their carried `Error`, suppresses `Detail` outside `IsDevelopment()`, and always logs at `LogLevel.Error` before responding
+- [ ] `AddSharedKernelApiVersioning` sets `DefaultApiVersion = 1.0`, combined reader, `AssumeDefaultVersionWhenUnspecified = true`, `ReportApiVersions = true`, `GroupNameFormat = "'v'VVV"`
+- [ ] `AddSharedKernelOpenApi`/`MapSharedKernelOpenApi` produce one OpenAPI document per version group and map Scalar UI listing all versions; no Swashbuckle/NSwag dependency present
+- [ ] `CorrelationIdMiddleware` reads `X-Correlation-Id`, generates a new GUID when absent/whitespace, stores in `HttpContext.Items["CorrelationId"]`, calls `Activity.Current?.SetBaggage(...)`, and always writes the response header including on short-circuited pipelines
+- [ ] All public types carry XML doc stubs (full prose deferred to Docs phase, but stubs prevent CS1591 warnings)
+---
+
+---
+### P-195 — Presentation: Core — SignalR Hub Filters, Group Naming, and Redis Backplane
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 14.Presentation
+**Depends on:** P-193
+
+#### What is needed
+Full implementation of `SharedKernel.Presentation.SignalR`'s confirmed Design-phase contracts: `TenantContextHubFilter` resolving `ITenantProvider` at connect time and attaching `TenantId` to `Context.Items` without rejecting unresolved-tenant connections; `HubExceptionMappingFilter` wrapping hub method invocation so only `HubException` ever crosses the filter boundary (known `SharedKernelException` subtypes rethrown with `Error.Description`, unknown exceptions logged and redacted); `HubGroupNaming.TenantGroup` as the single source of truth for the `tenant:{tenantId:D}` format; and `AddSharedKernelSignalR`/`WithRedisBackplane` DI extensions registering both filters globally via `HubOptions.AddFilter<T>()` with an opt-out configuration callback, and wrapping `AddStackExchangeRedis` as a thin pass-through.
+
+#### Why this is needed
+Real-time hub behavior needs the same platform-wide consistency guarantee as the HTTP surface — every hub in every consuming service must get safe exception redaction and tenant context attachment by default, not by each team remembering to wire it up. This phase runs independently of P-194 (different package, no shared implementation surface) but both depend on the same Scaffold phase, so they are parallelizable once P-193 is complete.
+
+#### Acceptance criteria
+- [ ] `TenantContextHubFilter.OnConnectedAsync` resolves `ITenantProvider` from the connection's `HttpContext` and stores `TenantId` in `Context.Items["TenantId"]`; does not reject connections with no tenant
+- [ ] `HubExceptionMappingFilter.InvokeMethodAsync` never lets a non-`HubException` cross the boundary; known `SharedKernelException` subtypes surface caller-safe messages, unknown exceptions are logged at `LogLevel.Error` and redacted
+- [ ] `HubGroupNaming.TenantGroup(Guid)` produces the `tenant:{tenantId:D}` format exactly
+- [ ] `AddSharedKernelSignalR` registers both filters globally via `HubOptions.AddFilter<T>()`, configurable/opt-out via the `configureHubOptions` callback
+- [ ] `WithRedisBackplane` is a thin pass-through over `AddStackExchangeRedis` with zero added behavior, and never shares an `IConnectionMultiplexer` with `02.Caching.Redis.Core`
+- [ ] All public types carry XML doc stubs
+---
+
+---
+### P-196 — Presentation: Tests — WebApi and SignalR Coverage
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 14.Presentation
+**Depends on:** P-194, P-195
+
+#### What is needed
+Full test coverage for both packages per the Design-phase contracts: unit tests for `ErrorTypeStatusCodeMap`/`ErrorProblemDetailsExtensions` covering every `ErrorType` mapping plus the unmapped fallback; unit tests for `ResultHttpExtensions` across both Minimal API and MVC overloads, success and failure paths, including the projection overload; unit tests for `SharedKernelExceptionHandler` covering known-exception mapping, unknown-exception fallback, and `Detail` suppression outside development; integration tests via `WebApplicationFactory` for API versioning (unversioned-falls-back-to-default, URL-segment reader, header reader, `api-supported-versions` response header) and for OpenAPI/Scalar (valid document per version group, Scalar route responds); unit tests for `CorrelationIdMiddleware` covering header-present, header-absent-generates-new, and response-header-always-set-including-on-short-circuit; unit tests for the SignalR hub filters using SignalR's hub-testing harness; a unit test for `HubGroupNaming`'s format; and a Testcontainers-backed integration test (via `16.Testing`) proving a message sent through one `IHubContext` instance reaches a client connected through a second, independently configured instance sharing the same Redis backplane.
+
+#### Why this is needed
+This domain sits directly on the request/response and real-time boundary for every consuming API and socket service — a regression here is platform-wide and customer-visible immediately (wrong HTTP status codes, leaked stack traces, broken version negotiation, or hub messages silently failing to fan out across replicas). The Redis backplane fan-out test in particular is the only way to prove the scale-out claim actually holds across two independent `IHubContext` instances rather than trusting `AddStackExchangeRedis`'s documentation.
+
+#### Acceptance criteria
+- [ ] Every `ErrorType` → status code mapping covered, plus unmapped-fallback-to-500
+- [ ] `ResultHttpExtensions` covered for all four overloads (Minimal API plain, Minimal API with `onSuccess`, MVC `ActionResult`, MVC `ActionResult<T>`), success and failure paths
+- [ ] `SharedKernelExceptionHandler` tests cover known-exception status mapping, unknown-exception 500 fallback, and `Detail` suppression outside `IsDevelopment()`
+- [ ] `WebApplicationFactory` integration tests confirm unversioned requests resolve to `DefaultApiVersion`, both readers work, and `api-supported-versions` header is present
+- [ ] `WebApplicationFactory` integration tests confirm `MapOpenApi()` produces a valid document per version and `MapScalarApiReference` responds successfully
+- [ ] `CorrelationIdMiddleware` tests cover header-present, header-absent, and short-circuit-still-sets-response-header cases
+- [ ] Hub filter tests confirm tenant attachment on connect and safe exception redaction for both known and unknown exception types
+- [ ] `HubGroupNaming` format test passes
+- [ ] Testcontainers-backed Redis backplane fan-out test passes across two independently configured `IHubContext` instances
+- [ ] All tests green; no `16.Testing` capability gap discovered during authoring (if one is found, it is raised back to arch-lead, not worked around locally)
+---
+
+---
+### P-197 — Presentation: Docs — XML Comments, README, and Configuration Reference
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 14.Presentation
+**Depends on:** P-196
+
+#### What is needed
+Complete XML doc comments on every public type and member across both packages (replacing the Core-phase stubs), a README per package with the DI registration shape already drafted in `14.Presentation/CLAUDE.md` (minimal ProblemDetails-only setup, full versioning+OpenAPI+Scalar setup, `Result<T>` boundary usage for both Minimal API and MVC, SignalR minimal setup, SignalR with Redis backplane, tenant-scoped group broadcast example), and a configuration reference documenting every DI extension method's options and defaults.
+
+#### Why this is needed
+This package will be consumed by "so many api or socket projects" per the work order — undocumented DI extension surfaces directly translate into inconsistent adoption across teams, defeating the purpose of centralizing these conventions in the first place. Every other completed domain (11.Communication, 12.Security, 13.ServiceDefaults) closed out a Docs phase before Published for the same reason.
+
+#### Acceptance criteria
+- [ ] Zero CS1591 (missing XML doc) warnings across both packages
+- [ ] README for `SharedKernel.Presentation.WebApi` covers all DI registration shapes documented in the domain brain
+- [ ] README for `SharedKernel.Presentation.SignalR` covers minimal setup, Redis backplane setup, and tenant-group broadcast usage
+- [ ] Configuration reference documents every options type and its defaults (e.g., `DefaultApiVersion`, `GroupNameFormat`, hub filter opt-out callback)
+---
+
+---
+### P-198 — Presentation: Published — NuGet Packaging and Consumer Verification
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 14.Presentation
+**Depends on:** P-197
+
+#### What is needed
+NuGet packaging metadata (package id, version, description, license, repository URL matching platform convention) for both `SharedKernel.Presentation.WebApi` and `SharedKernel.Presentation.SignalR`, `dotnet pack` producing `.nupkg`/`.snupkg` for both, and a consumer-verify pass proving both packages resolve and wire up correctly end-to-end in a minimal host (ProblemDetails + exception handler + versioning + OpenAPI for WebApi; `AddSharedKernelSignalR` with and without Redis backplane for SignalR) with zero DI exceptions.
+
+#### Why this is needed
+Matches the closeout bar already established by every other `●`-complete domain in this repo (03.Domain, 06.Persistence, 12.Security, 13.ServiceDefaults, 16.Testing) — a domain is not done until it is packed, versioned, and proven resolvable by a consumer, not just unit-tested in isolation.
+
+#### Acceptance criteria
+- [ ] Both packages carry complete NuGet metadata consistent with platform convention
+- [ ] `dotnet pack` produces `.nupkg` + `.snupkg` for both packages with no warnings
+- [ ] Consumer-verify harness wires up `SharedKernel.Presentation.WebApi`'s full stack (ProblemDetails, exception handler, versioning, OpenAPI/Scalar) with zero DI exceptions
+- [ ] Consumer-verify harness wires up `SharedKernel.Presentation.SignalR` both with and without `WithRedisBackplane` with zero DI exceptions
+- [ ] `14.Presentation/state-map.md` Package Board updated to reflect both packages at `Published`/`●`
+---
+
+---
+### P-199 — Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching
+
+**Status:** `●` Complete
+**Work Order:** WO-031
+**Domain:** 00.Governance
+**Depends on:** P-194
+
+#### What is needed
+Two NetArchTest rules added to `SharedKernel.ArchitectureTests`, mirroring the precedent already set for raw `HttpClient` injection (P-159) and inline `Result`↔`Envelope` mapping (WO-026 P-166/167): (1) a rule flagging direct construction of `Microsoft.AspNetCore.Mvc.ProblemDetails` or `Microsoft.AspNetCore.Http.HttpValidationProblemDetails` outside `SharedKernel.Presentation.WebApi` itself — consuming services must go through `Error.ToProblemDetails()` / `ResultHttpExtensions`; (2) a rule flagging inline `if (result.IsSuccess) ... else ...` style branching on a `Result`/`Result<T>` immediately before returning an HTTP response type (`IResult`, `ActionResult`, `ActionResult<T>`) in endpoint/controller code outside `SharedKernel.Presentation.WebApi` — consuming services must use `ResultHttpExtensions` instead.
+
+#### Why this is needed
+`14.Presentation` only achieves its purpose — one consistent error and result-mapping shape across every API surface in the platform — if consuming services are mechanically prevented from bypassing it, not just told to use it via documentation. This is the exact enforcement gap the root brain has closed twice already for adjacent boundary-mapping concerns (raw `HttpClient`, `Result`↔`Envelope`); the same gap exists here for `Result`↔HTTP and must be closed the same way before the package sees adoption across "so many api or socket projects."
+
+#### Acceptance criteria
+- [ ] New NetArchTest rule fails any non-`SharedKernel.Presentation.WebApi` project that directly instantiates `ProblemDetails`/`HttpValidationProblemDetails`
+- [ ] New NetArchTest rule fails any non-`SharedKernel.Presentation.WebApi` project containing an `IsSuccess`/`IsFailure` branch immediately producing an `IResult`/`ActionResult`/`ActionResult<T>` without routing through `ResultHttpExtensions`
+- [ ] Both rules documented in `00.Governance/CLAUDE.md` alongside the existing SK0xxx rule table
+- [ ] Existing architecture test suite still green after the two new rules are added
+---
+
+- [2026-06-25] 14.Presentation → Docs (●) — promoted from SK.14.Docs (state-map-phase)
+- [2026-06-25] Phase Backlog P-197 → ● Complete — SK.14.Docs done (state-map-phase)
+- [2026-06-25] 14 → Published (●) — promoted from SK.14.Published (5/5); both packages packed and consumer-verified (state-map-phase)
+- [2026-06-25] Phase Backlog P-198 → ● Complete — SK.14.Published done (state-map-phase)
+- [2026-06-25] Phase P-199 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-25] 00.Governance → Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching (●) — promoted from SK.00.PresentationArchRules (state-map-phase)
+- [2026-06-25] Phase Backlog P-199 → ● Complete — SK.00.PresentationArchRules done (state-map-phase)
+- [2026-06-25] Phase Backlog P-192 → ● Complete — 14.Presentation domain (Design through Published) was already fully implemented; root status corrected from stale ◐ Dispatched (implement-next-phase)

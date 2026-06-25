@@ -34,7 +34,7 @@ Each numbered folder is a capability domain. Each owns a `CLAUDE.md` with its in
 | 11 | `11.Communication` | `SharedKernel.Communication.Rest` (typed HttpClient + Polly v8 resilience, CorrelationId/TenantId delegation handlers, ProblemDetails deserialization), `SharedKernel.Communication.Grpc` (gRPC channel factory + OTel tracing interceptors + Protobuf helpers), `SharedKernel.Communication.GraphQL` (HotChocolate server-side conventions: snake_case, filtering, sorting, paging, error mapping), `SharedKernel.Communication.Internal` (K8s headless DNS resolver + static dev resolver, `IServiceEndpointResolver`) |
 | 12 | `12.Security` | `IUserContext`, `ITenantProvider` abstractions, JWT mapping, Role/Policy logic, Azure B2C integration |
 | 13 | `13.ServiceDefaults` | OpenTelemetry wiring, HealthChecks, Startup/Liveness probes, Tenant resolution (Header/Claim/DB isolation) |
-| 14 | `14.Presentation` | ProblemDetails, API versioning, Swagger/Scalar, SignalR Hub filters and Redis Backplane config |
+| 14 | `14.Presentation` | `SharedKernel.Presentation.WebApi` (RFC 9457 ProblemDetails, global IExceptionHandler, API versioning, native OpenAPI + Scalar, correlation-id middleware, Result\<T\>→HTTP extensions), `SharedKernel.Presentation.SignalR` (Hub filters, tenant group naming, Redis scale-out backplane) |
 | 15 | `15.Integration` | Outbound Webhook dispatcher, signature verification |
 | 16 | `16.Testing` | Testcontainers setup, Bogus faker factories, auth mocks — shared test helpers consumed by all `.Tests` projects |
 | 17 | `17.Workflows` | Temporal durable orchestration state-machines |
@@ -60,7 +60,7 @@ Dependencies flow **downward only** (lower number = more foundational). A packag
 11.Communication    → may reference 01.Core, 04.Contracts, 12.Security abstractions
 12.Security         → may reference 01.Core
 13.ServiceDefaults  → may reference 01–12 (host composition layer)
-14.Presentation     → may reference 01.Core, 04.Contracts, 12.Security, 13.ServiceDefaults
+14.Presentation     → may reference 01.Core, 04.Contracts, 12.Security (table allows 13.ServiceDefaults; not used in practice — see WO-031)
 15.Integration      → may reference 01.Core, 04.Contracts, 07.Messaging abstractions
 16.Testing          → may reference any layer (test infrastructure only, never shipped)
 17.Workflows        → may reference 01.Core, 04.Contracts, 05.Application
@@ -185,6 +185,9 @@ Sibling role-packages must never reference each other — only the shared `.Core
 | Tenant resolution logic | `13.ServiceDefaults/SharedKernel.MultiTenancy` |
 | JWT / OIDC / B2C wiring | `12.Security/SharedKernel.Security.Oidc` |
 | `IUserContext` or `ITenantProvider` interface | `12.Security/SharedKernel.Security.Abstractions` |
+| RFC 9457 ProblemDetails error mapping, global IExceptionHandler, API versioning, native OpenAPI + Scalar, correlation-id middleware, or `Result<T>`→HTTP boundary extensions | `14.Presentation/SharedKernel.Presentation.WebApi` — use `Error.ToProblemDetails()` / `ResultHttpExtensions`; correlation-id middleware owns its own `Activity` baggage key directly against `System.Diagnostics.Activity` (BCL) — no `13.ServiceDefaults` reference needed (WO-031) |
+| A SignalR hub filter (tenant context attachment, exception-to-HubException mapping), tenant group naming convention, or Redis-backed SignalR scale-out backplane | `14.Presentation/SharedKernel.Presentation.SignalR` — register both filters globally via `AddSharedKernelSignalR()`; backplane is opt-in via `WithRedisBackplane()`; never shares an `IConnectionMultiplexer` with `02.Caching.Redis.Core` (WO-031) |
+| Hand-rolled `ProblemDetails` construction or inline `Result.IsSuccess`/`IsFailure` branching immediately before returning an HTTP result type | Prohibited outside `SharedKernel.Presentation.WebApi` — always use `Error.ToProblemDetails()` / `ResultHttpExtensions`; enforced platform-wide by SK0xxx governance rules, mirroring the raw-`HttpClient` (P-159) and `Result`/`Envelope` (WO-026 P-166/167) precedents (WO-031 P-199) |
 
 ---
 
@@ -233,3 +236,4 @@ These are the packages microservices should depend on — never on the concrete 
 - [2026-06-16] WO-025: Folder Map 11 expanded with all 4 packages; six "What Goes Where" rows added for Rest, Internal, Grpc, GraphQL, Protobuf helpers, and raw HttpClient prohibition (arch-lead, P-154–P-159)
 - [2026-06-19] WO-026 closeout: four "What Goes Where" rows added — Result<T>↔Envelope<T> mapping via ResultEnvelopeExtensions (P-166), PagedResponseType<T>.FromPagedList (P-165), K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds (P-164), inline factory pattern for multi-client service discovery (P-162); SharedKernel.Communication.Grpc → SharedKernel.Contracts dead reference removed and locked via NetArchTest GrpcNeverReferencesContracts rule; SharedKernel.Contracts re-packed to 1.1.0 (arch-lead, P-160–P-167)
 - [2026-06-22] WO-029: 14 long-pending, never-dispatched 16.Testing phases consolidated into 9 (P-179–P-187); "What Goes Where" row added for standalone testing-helper self-tests via new SharedKernel.Testing.SelfTests project (arch-lead, WO-029)
+- [2026-06-25] WO-031: Folder Map 14 updated with both package names; layering table narrowed (14.Presentation does not use its allowed 13.ServiceDefaults reference — correlation-id middleware is self-contained); three "What Goes Where" rows added for WebApi conventions, SignalR hub filters/backplane, and the new ProblemDetails/Result-HTTP governance prohibition (arch-lead, P-192–P-199)
