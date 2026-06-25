@@ -280,7 +280,7 @@ AddFakeContractsServices(this IServiceCollection)                               
 ### `Security/` — auth mocks (12.Security)
 
 ```text
-FakeUserContext  (sealed class, implements IUserContext)                            [STATUS: Planned]
+FakeUserContext  (sealed class, implements IUserContext)
     .UserId                                                    → Guid                      (settable; default: a fixed non-empty test Guid)
     .Email                                                     → string?                   (settable)
     .Username                                                  → string?                   (settable)
@@ -293,7 +293,7 @@ FakeUserContext  (sealed class, implements IUserContext)                        
           authenticated user so most test setups need zero configuration; call the mutators to
           exercise unauthenticated or role-restricted paths explicitly.
 
-FakeTenantProvider  (sealed class, implements ITenantProvider)                      [STATUS: Planned]
+FakeTenantProvider  (sealed class, implements ITenantProvider)
     .TenantId                                                  → Guid  (settable)
     constructor(Guid? tenantId = null)                         — defaults to a fixed non-empty test Guid, NOT Guid.Empty
     NOTE: Defaulting to a real tenant id (rather than Guid.Empty) means tenant-scoped code under
@@ -425,8 +425,21 @@ PersistenceTestHelpers  (static class)
     .AssertEntityNotTracked<T>(DbContext context, T entity)      → void  (throws if ChangeTracker reports any tracked state)
     NOTE: Fills the coverage gap around AsNoTracking behavioral verification. Proven in SelfTests.
 
-SCOPE LOCK (P-182/WO-029): No OutboxMessageFaker, OutboxAssertions, or PostgreSQL Testcontainer
-    dependency is introduced by this set — explicitly out of scope, deferred to a future work order.
+SCOPE LOCK (P-182/WO-029, REAFFIRMED P-190/WO-030): No OutboxMessageFaker, OutboxAssertions, or
+    PostgreSQL Testcontainer dependency is introduced by this set. P-190/WO-030 proposed lifting this
+    lock on the premise that 06.Persistence had since shipped a real OutboxInterceptor/outbox contract
+    — that premise is false and the proposal was rejected, not deferred. 06.Persistence's own CLAUDE.md
+    states explicitly: "The outbox pattern is owned entirely by 07.Messaging via MassTransit's
+    UseEntityFrameworkOutbox. No outbox types (OutboxMessage, IOutboxWriter, OutboxInterceptor) exist
+    in this domain. Introducing any such type here is a hard violation." 07.Messaging's CLAUDE.md
+    restates the same rule from the owning side. There is no SharedKernel-defined outbox message
+    envelope type anywhere on the platform to mirror in a Faker<T> — MassTransit's EF Core outbox
+    integration owns its own internal table schema, configured via 07.Messaging's OutboxOptions /
+    .WithEntityFrameworkOutbox<TDbContext>(), never exposed as a SharedKernel contract. If outbox-
+    pattern test tooling is wanted in the future, the correct target is 07.Messaging's MassTransit-
+    owned outbox surface (proven via this package's own TestHarnessFactory/ITestHarness, already
+    shipped in Messaging/) — never a 06.Persistence type, which cannot exist per that domain's own
+    hard rule.
 ```
 
 ### `Containers/` — Testcontainers fixtures
@@ -460,7 +473,7 @@ RabbitMqContainerFixture  (sealed class, implements IAsyncLifetime)
 ### `Fakers/` — Bogus convention (02.Caching-and-beyond, cross-cutting)
 
 ```text
-FakerSeeding  (static class)                                                        [STATUS: Planned]
+FakerSeeding  (static class)
     .Apply(int seed = 8675309)                                 → void
         Sets Bogus.Randomizer.Seed = new Random(seed). Call once per test assembly (e.g. from an
         xUnit AssemblyFixture or module initializer) so every Faker<T> in that run is deterministic
@@ -642,3 +655,5 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - [2026-06-23] `SK.16.Tests` implemented in full (T-01–T-34); 209/209 tests passing in `SharedKernel.Testing.SelfTests` (container-fixture lifecycle tests excluded from this count, requiring Docker). New Test Rules bullet added documenting the SelfTests fallback observed repeatedly in practice — most interface-implementing fakes had no actual consumer in their owning domain's `.Tests` project yet, so they were proven in `SelfTests` instead of "there," even though the original rule's default was "prove it in the owning domain." Two real bugs found and fixed during implementation, now documented in their respective Interface Contracts blocks: `EfContextExtensions` gained a new public `RegisterOptions(DbContext, DbContextOptions)` API (`TestSharedKernelDbContext` calls it automatically) because `ReloadAsync<T>` could not resolve `DbContextOptions` from a standalone context's internal service provider; `AmbientActivityTestHelper` now registers a single static always-sampling `ActivityListener` scoped to its own `ActivitySource` (a second documented exception to the "no static mutable state" rule, alongside `FakerSeeding.Apply`) because `ActivitySource.StartActivity` returns `null` outside an OTel-instrumented host. Stale "(planned —  ...)" parenthetical notes removed from the DI Registration code samples now that `AddFakeCachingServices()`/`AddFakeDomainServices()`/`AddInMemoryMessageBus()` are all implemented. `SK.16.Docs` is next (testing-phase-implementer).
 - [2026-06-24] `SK.16.Docs` completed (DO-01–DO-10) without further code changes — every public type's XML doc-comment coverage was verified (not assumed) against the live `.cs` files via a line-count check against public-member declarations, and every doc-only `CLAUDE.md` claim from prior phases ("done in this pass" for DO-03/04/08/09) was independently re-checked against the current file content rather than trusted from earlier agent summaries. `dotnet build` re-confirmed 0 errors. `SK.16.Published` is next (testing-phase-implementer).
 - [2026-06-24] `SK.16.Published` completed (P-01, P-02) — formally records the `ProjectReference`-only consumption model for both packages; new "Publishing / Consumption Model" subsection added under Packages documenting this explicitly. Verified rather than assumed: `SharedKernel.Testing.SelfTests.csproj` already had `<IsPackable>false</IsPackable>`, but `SharedKernel.Testing.csproj` had no `IsPackable` property at all — the SDK default (`true`) meant `dotnet pack` would have attempted to pack it, contradicting the documented decision. Fixed by adding `<IsPackable>false</IsPackable>` explicitly to `SharedKernel.Testing.csproj`. `[STATUS: Planned]` markers on `FakeUserContext`/`FakeTenantProvider` (`Security/`) and `FakerSeeding` (`Fakers/`) confirmed still correctly unimplemented on disk (no `Security/` folder exists; no `FakerSeeding.cs` in `Fakers/`) — out of scope for every phase to date, left unflipped. `dotnet build` succeeds 0 errors. All 6 phases of `16.Testing` (Design→Published) now complete — domain closed (WO-008/WO-012/WO-029) (testing-phase-implementer).
+- [2026-06-24] WO-030 dispatch processed (testing-arch-planner): P-188 (`FakeUserContext`/`FakeTenantProvider` — `Security/`) and P-189 (`FakerSeeding` — `Fakers/`) accepted; 16 new tasks added to `state-map.md` across Design/Scaffold/Core/Tests/Docs (D-49–D-54, S-13/S-14, C-44–C-46, T-35–T-37, DO-11/DO-12), all `○`. `IUserContext`/`ITenantProvider` member signatures re-verified directly against the live source at `12.Security/SharedKernel.Security.Abstractions/Abstractions/{IUserContext,ITenantProvider}.cs` (not from memory) — exact match to the `[STATUS: Planned]` blocks already on file below; zero signature drift. `[STATUS: Planned]` markers on both `Security/` types and `FakerSeeding` are left in place in this pass — they flip only once a future Core-phase implementer lands the code (Design documents target shape, not completion). **P-190 (`OutboxMessageFaker`/`OutboxAssertions` for `06.Persistence`) rejected outright, not deferred** — its premise that `06.Persistence` shipped a real `OutboxInterceptor`/outbox contract is false; that domain's own `CLAUDE.md` states outbox ownership belongs entirely to `07.Messaging` via MassTransit and that introducing any outbox type into `06.Persistence` is a hard violation, confirmed independently in `07.Messaging/CLAUDE.md`. No SharedKernel-owned outbox message contract exists anywhere to mirror in a `Faker<T>`. The P-182/WO-029 scope lock is reaffirmed, not stale — see the updated `Persistence/` SCOPE LOCK note below. No code changes in this pass — Design-only.
+- [2026-06-24] `SK.16.Core` (C-44–C-46) implemented: `FakeUserContext`/`FakeTenantProvider` (`Security/FakeUserContext.cs`/`FakeTenantProvider.cs`) and `FakerSeeding` (`Fakers/FakerSeeding.cs`) landed exactly per the D-49/D-50/D-53 target shape — zero signature drift re-confirmed against `12.Security/SharedKernel.Security.Abstractions/Abstractions/{IUserContext,ITenantProvider}.cs`. `[STATUS: Planned]` markers removed from all three Interface Contracts blocks (`Security/` section, `Fakers/` section). No `Add*` DI extension shipped for the two `Security/` fakes, per D-51's documented decision — both remain plain `new`-able classes consistent with the `Security/`/`Persistence/`/`Clocks/` convention. Grepped for an existing `12.Security` consumer of `SharedKernel.Testing` — none found (`SharedKernel.Security.Abstractions.Tests.csproj`/`.Oidc.Tests.csproj` carry no `ProjectReference` to this package), confirming T-35/T-36 will route to `SharedKernel.Testing.SelfTests` per the D-52 fallback when the Tests phase runs. `dotnet build SharedKernel.Testing.csproj -c Release` succeeds, 0 errors (pre-existing NU1903 advisory warnings only). `SK.16.Core` now 46/46 `●`, promoted to root. `SK.16.Tests` (T-35–T-37) and `SK.16.Docs` (DO-11/DO-12) remain pending to close out WO-030 (testing-phase-implementer).
