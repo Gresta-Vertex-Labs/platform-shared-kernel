@@ -1434,6 +1434,117 @@ NoDirectHotChocolateFilterSortInheritancePredicate  (class : ICustomRule — int
     Reuses the TypeDefinition.BaseType chain-walk pattern from
     SagaStateMustExtendSagaStateBasePredicate. No new NuGet dependency.
 
+PresentationLayeringRules  (static class — 14.Presentation Result/HTTP boundary-mapping enforcement predicates; WO-031 P-199)
+    All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
+
+    .NoDirectProblemDetailsConstructionOutsideWebApi(params Assembly[] assemblies) → ConditionList
+        Asserts that no type in the supplied assemblies directly instantiates
+        Microsoft.AspNetCore.Mvc.ProblemDetails or Microsoft.AspNetCore.Http.HttpValidationProblemDetails
+        via a newobj IL opcode. Uses NoDirectProblemDetailsConstructionPredicate (ICustomRule — see
+        below). The caller supplies every assembly to be checked EXCEPT
+        SharedKernel.Presentation.WebApi itself — there is no internal namespace exemption inside
+        the predicate; exclusion is achieved by the caller never passing that assembly, mirroring
+        the calling convention of MessagingArchitectureRules.NoDirectBusInjectionOutsideMessaging's
+        sibling rules where the in-package exemption is also available, except here it is
+        caller-controlled rather than predicate-internal because there is no single discriminating
+        namespace prefix shared by every legitimate construction site inside the WebApi package
+        (ErrorProblemDetailsExtensions, the global IExceptionHandler, and any future ProblemDetails
+        factory all legitimately construct the type).
+        Failure message: "{TypeDefinition.FullName}.{method} directly constructs {ProblemDetails |
+        HttpValidationProblemDetails}. Use Error.ToProblemDetails() / ResultHttpExtensions from
+        SharedKernel.Presentation.WebApi instead."
+        Rationale: hand-rolled ProblemDetails construction outside the WebApi package bypasses the
+        platform's single error-shape mapping (ErrorTypeStatusCodeMap, traceId population,
+        Detail-suppression-outside-Development) and reintroduces the inconsistent error-body problem
+        14.Presentation exists to close. Mirrors the precedent set by SK0013 (raw HttpClient) and
+        the WO-026 Result/Envelope inline-mapping prohibition — mechanical enforcement, not
+        documentation-only guidance.
+        Offending pattern: return Results.Problem(new ProblemDetails { Title = "Bad request",
+            Status = 400 }); inside a microservice endpoint
+        Compliant pattern: return error.ToProblemDetails() routed through Results.Problem(...), or
+            simply result.ToProblemDetailsResult() via ResultHttpExtensions
+
+    .NoInlineResultBranchBeforeHttpResultOutsideWebApi(params Assembly[] assemblies) → ConditionList
+        Asserts that no method body in the supplied assemblies reads Result/Result<T>.IsSuccess or
+        .IsFailure and, within the same method, also constructs/returns a value typed
+        Microsoft.AspNetCore.Http.IResult, Microsoft.AspNetCore.Mvc.ActionResult, or
+        Microsoft.AspNetCore.Mvc.ActionResult<T> — without that same method also containing a call
+        to a member named "ToProblemDetailsResult" (the ResultHttpExtensions entry point). Uses
+        NoInlineResultBranchBeforeHttpResultPredicate (ICustomRule — see below). This is a coarser,
+        method-level co-occurrence check (IsSuccess/IsFailure callsite + IResult/ActionResult return
+        type + absence of ToProblemDetailsResult callsite, all within one MethodDefinition) — not a
+        full control-flow analysis of "immediately before returning." A method containing all three
+        signals is flagged regardless of statement ordering; this is a deliberate over-approximation
+        favoring detection over precision, consistent with the documented limitation already
+        recorded for HealthCheckTagIntegrityRules's literal-collection technique (no full data-flow
+        analysis).
+        Caller supplies every assembly to be checked EXCEPT SharedKernel.Presentation.WebApi itself —
+        same caller-controlled exclusion convention as the sibling rule above (ResultHttpExtensions's
+        own implementation legitimately reads IsSuccess/IsFailure and returns IResult/ActionResult).
+        Failure message: "{TypeDefinition.FullName}.{method} branches on Result.IsSuccess/IsFailure
+        and returns {IResult | ActionResult | ActionResult<T>} without routing through
+        ResultHttpExtensions.ToProblemDetailsResult(). Use result.ToProblemDetailsResult() instead of
+        inline IsSuccess/IsFailure branching before an HTTP response."
+        Rationale: inline "if (result.IsSuccess) ... else ..." branching immediately before
+        returning an HTTP response type duplicates the platform's Result→HTTP mapping logic at every
+        call site, exactly the precedent already closed for Result<T>→Envelope<T> boundary mapping
+        (WO-026 P-166/167's documented backlog item — this phase is the SK0xxx-style mechanical
+        closure of that backlog note, implemented as a NetArchTest rule rather than a Roslyn
+        analyzer because the detection surface is IL-level method-body co-occurrence, consistent
+        with how SK0301-style domain/application misuse rules are implemented).
+        Offending pattern: if (result.IsSuccess) return Results.Ok(result.Value); else return
+            Results.Problem(...); inside a Minimal API endpoint delegate or controller action
+        Compliant pattern: return result.ToProblemDetailsResult(value => Results.Ok(value));
+
+    Permitted exemption list:
+        - SharedKernel.Presentation.WebApi — never passed to either factory method by the caller;
+          there is no internal namespace-prefix exemption inside either predicate. Any future
+          legitimate exception (e.g., a second presentation package that must also construct
+          ProblemDetails directly) must be documented here before being added to either predicate
+          as an internal exemption — until then, exclusion is achieved exclusively by caller choice
+          of which assemblies to pass, identical in spirit to RedisTopologyRules's caller-supplied
+          assembly lists.
+
+    Note: Introduced in WO-031 P-199. No new SK diagnostic ID assigned — both rules are pure
+    NetArchTest ConditionList predicates over Mono.Cecil IL inspection, following the same
+    "boundary-mapping prohibition via architecture test, not Roslyn analyzer" precedent already
+    established for SK-less rules in this domain (RedisTopologyRules, CompositionRootExclusivityRules,
+    GrpcNeverReferencesContracts). Lives in SharedKernel.ArchitectureTests/Rules/PresentationLayeringRules.cs.
+
+NoDirectProblemDetailsConstructionPredicate  (class : ICustomRule — internal predicate)
+    For each type (no namespace exemption — see PresentationLayeringRules note above), walks
+    TypeDefinition.Methods.Body.Instructions for Newobj opcodes. For each Newobj instruction,
+    checks MethodReference.DeclaringType.FullName against the set
+    {"Microsoft.AspNetCore.Mvc.ProblemDetails", "Microsoft.AspNetCore.Http.HttpValidationProblemDetails"}
+    (exact full-name match, case-sensitive — both are sealed/concrete framework types with no
+    subclass risk). Returns false (rule violated) on the first match, with failure message naming
+    the offending type, method, and the constructed type's simple name. Reuses the established
+    Mono.Cecil Newobj-walk pattern from NoDirectEncryptedValueConverterInstantiationPredicate.
+    Lives in Predicates/ folder. Used by
+    PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi.
+
+NoInlineResultBranchBeforeHttpResultPredicate  (class : ICustomRule — internal predicate)
+    For each type, iterates TypeDefinition.Methods. For each MethodDefinition with a non-null Body,
+    evaluates three independent signals over MethodDefinition.Body.Instructions and
+    MethodDefinition.ReturnType in a single pass:
+      (1) IsSuccess/IsFailure signal: a Call or Callvirt instruction whose MethodReference.Name is
+          "get_IsSuccess" or "get_IsFailure" and whose MethodReference.DeclaringType.Name is
+          "Result" or starts with "Result`1" (covers both Result and Result<T> IL representations)
+      (2) HTTP-result-type signal: MethodDefinition.ReturnType.Name is "IResult", "ActionResult", or
+          ReturnType.Name starts with "ActionResult`1" — OR any local variable
+          (MethodDefinition.Body.Variables) typed identically, to also catch the "build a local,
+          return it later" shape
+      (3) Escape-hatch signal: a Call or Callvirt instruction whose MethodReference.Name is
+          "ToProblemDetailsResult" anywhere in the method body — presence of this signal suppresses
+          the violation regardless of signals (1) and (2)
+    Returns false (rule violated) only when signals (1) AND (2) are both present AND signal (3) is
+    absent. Failure message includes the declaring type name, method name, and which HTTP result
+    type was detected. This is a method-level co-occurrence check, not a statement-order or
+    control-flow analysis — see the documented over-approximation rationale in
+    PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi. Lives in
+    Predicates/ folder. Used by
+    PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi.
+
 EfCorePackageHygieneRules  (static class — EfCore package hygiene predicates; WO-017 P-103)
     All factory methods accept Assembly as their parameter and return ConditionList.
     .NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly)  → ConditionList
@@ -1851,6 +1962,12 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `NoBareHealthCheckLiteralWhereConstantsExistPredicate` and `HealthCheckConstantsUsageRules` must **never** contain a concrete constants-class name (e.g. `"HealthCheckTags"`, `"HealthCheckNames"`) as a string literal anywhere in the implementation. This is the acceptance-critical generality requirement from WO-028 P-178 — the rule must generalize unmodified to any future domain's constants class. Code review must reject any PR that adds a name-specific check to this rule; if a domain needs name-specific enforcement, that belongs in a new, separately-scoped rule, not a special case bolted onto this one.
 - **Confirmed declaring-type names** (verified by direct Mono.Cecil inspection of the .NET 10 `Microsoft.AspNetCore.App.Ref` reference assemblies, package `Microsoft.Extensions.Diagnostics.HealthChecks` / `.Abstractions`): `Add(HealthCheckRegistration)` is declared on both the interface `Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder` and the concrete `Microsoft.Extensions.DependencyInjection.HealthChecksBuilder`. `AddCheck` overloads are declared across two extension-method host classes — `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderAddCheckExtensions` and `Microsoft.Extensions.DependencyInjection.HealthChecksBuilderDelegateExtensions` — both matched by `NoBareHealthCheckLiteralWhereConstantsExistPredicate` via a `declaringTypeName.StartsWith("HealthChecksBuilder")` check rather than an exact-name list, so it also covers any future extension-method host class following the same naming convention. The `HealthCheckRegistration` constructor is `Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckRegistration::.ctor`. Verified against package version shipped with the .NET 10 SDK (`Microsoft.AspNetCore.App.Ref` 10.0.7) — re-verify if the platform ever pins an explicit `Microsoft.Extensions.Diagnostics.HealthChecks` NuGet version that diverges from the SDK-bundled one.
 - `StringConstantsClassDetector` resolves literal *values*, not names — the predicate compares the bare literal's string value against the resolved constant value set, never against a field or class name. This is the design choice that lets the rule fire correctly regardless of what the constants class or its fields are named, and is what makes the rule catch the exact P-177 incident shape (a literal that happens to equal an existing constant's value) without requiring any naming convention from the consuming domain.
+- `PresentationLayeringRules` introduces zero new SK diagnostic IDs — both rules are pure NetArchTest `ConditionList` predicates over Mono.Cecil IL inspection, mirroring the existing precedent that boundary-mapping prohibitions (raw `HttpClient`, `Result`↔`Envelope`, now `Result`↔HTTP and `ProblemDetails` construction) are enforced via this domain's `ICustomRule` predicates rather than always minting a new Roslyn analyzer. Neither predicate carries an internal namespace exemption — exclusion of `SharedKernel.Presentation.WebApi` is achieved entirely by the consuming test project never passing that assembly to either factory method. Document any future internal exemption here before adding one to either predicate.
+- `NoDirectProblemDetailsConstructionPredicate` matches on `MethodReference.DeclaringType.FullName` exact string equality against `"Microsoft.AspNetCore.Mvc.ProblemDetails"` and `"Microsoft.AspNetCore.Http.HttpValidationProblemDetails"` — both are concrete framework types, so a `newobj` opcode is always the construction site (no factory-method indirection to account for, unlike `EncryptedValueConverter<T>`). Reuses the `Newobj`-walk pattern from `NoDirectEncryptedValueConverterInstantiationPredicate` — no new NuGet dependency.
+- `NoInlineResultBranchBeforeHttpResultPredicate` is a **method-level co-occurrence check, not a control-flow analysis**. It does not verify that the `IsSuccess`/`IsFailure` read occurs immediately before the `IResult`/`ActionResult` return — it only verifies that both signals appear somewhere in the same method body and that no `ToProblemDetailsResult` call also appears in that body. This is a deliberate over-approximation (same documented-limitation philosophy as `HealthCheckTagIntegrityRules`'s literal-collection technique) — a method that reads `IsSuccess` for an unrelated logging decision and separately returns an `IResult` for an unrelated reason would also be flagged. If this produces real false positives in practice, narrow the check to control-flow adjacency in a follow-up phase; do not narrow it speculatively now.
+- `NoInlineResultBranchBeforeHttpResultPredicate`'s `Result`/`Result<T>` type-name match (`"Result"` exact or `"Result\`1"` prefix for the IL generic-arity-suffixed name) targets `SharedKernel.Primitives.Result`/`Result<T>` specifically. If a consuming assembly defines an unrelated type also named `Result` with its own `IsSuccess`/`IsFailure` properties, this predicate cannot distinguish them without a `DeclaringType.Namespace` check — add a namespace guard (`"SharedKernel.Primitives"`) if this false-positive risk is ever confirmed in practice; it is not added pre-emptively because no such collision is known to exist in this platform's codebase today.
+- `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` and `.NoInlineResultBranchBeforeHttpResultOutsideWebApi` both accept `params Assembly[]` — the caller is responsible for never including `SharedKernel.Presentation.WebApi` in the supplied list. Unlike most prior `ICustomRule` predicates in this domain, there is no internal `TypeDefinition.Namespace.StartsWith(...)` guard inside either predicate; this is a deliberate design choice because no single namespace prefix covers every legitimate in-package construction site (`ErrorProblemDetailsExtensions`, the global `IExceptionHandler`, `ResultHttpExtensions` itself, and any future factory all legitimately trigger both signals).
+- `PresentationLayeringRules` lives in `SharedKernel.ArchitectureTests/Rules/PresentationLayeringRules.cs`; its two `ICustomRule` predicates live in `Predicates/`. Both reuse the existing `Mono.Cecil >= 0.11.5` reference — no new NuGet dependency introduced by this phase.
 - **`const string` vs `static readonly string` produce different IL at the *consuming* call site** — this matters for any future test fixture or predicate reasoning about field-reference detection. The C# compiler const-folds every `const string` field reference into a bare `Ldstr` literal at each call site (no `Ldsfld`, no trace that a constant was referenced at all); only `static readonly string` field references compile to `Ldsfld`. `StringConstantsClassDetector.ResolveStringConstants` correctly resolves the *declaring* type's own value for both field kinds (via `FieldDefinition.Constant` for `const`, via a `.cctor` `Ldstr`→`Stsfld` walk for `static readonly`), but `NoBareHealthCheckLiteralWhereConstantsExistPredicate`'s pass-path (field access instead of literal) only holds for `static readonly string` constants classes — a `const string` constants class can never produce a passing fixture for the "field access, not literal" scenario, because Roslyn erases the field reference before Mono.Cecil ever sees the consuming method's IL. Discovered while building the T-140 pass-path fixture for `SK.00.HealthCheckConstantsGuard` (WO-028 P-178); document this if a future domain's constants-class convention is ever questioned for using `const` instead of `static readonly`.
 
 ---
@@ -1930,4 +2047,6 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-19] SK.00.WO026CommunicationQuality → ● — GrpcNeverReferencesContracts implemented and verified against pre-written spec (no discrepancy); 88/88 architecture tests passing — WO-026 closeout (sync-brain)
 - [2026-06-19] HealthCheckConstantsUsageRules static class added to architecture test contracts (single predicate: NoBareHealthCheckLiteralWhereConstantsExist) — generalized magic-string-vs-constants-class guard, additive to (not a replacement for) HealthCheckTagIntegrityRules/CompositionRootExclusivityRules (P-173); StringConstantsClassDetector reusable helper documented (third distinct Mono.Cecil technique in this domain: field-shape + literal-value resolution, alongside opcode-presence and Ldstr literal-collection); no new SK IDs; five new implementation rules added; motivating incident: P-177 HealthCheckTags/HealthCheckNames inconsistency — WO-028 P-178
 - [2026-06-19] HealthCheckTagIntegrityRules added to architecture test contracts (two predicates: NoConflictingLivenessReadinessTags, DependencyHealthChecksCarryReadyNotLive — first use of an IL Ldstr literal-collection technique distinct from prior opcode-presence predicates; documented data-flow limitation for non-literal tag values); CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders added, mirroring CachingAbstractionRules to extend the composition-root exclusivity claim in 13.ServiceDefaults/CLAUDE.md from caching-only (P-009 scope) to Persistence (.EfCore/.PostgreSQL/.Dapper), Messaging (.MassTransit), and Security (.Oidc) provider families; no new SK IDs; five new implementation rules added; designed ahead of P-170 (13.ServiceDefaults Core) using contrived in-memory fixtures, real-assembly re-verification tracked as a post-P-170 follow-up — WO-027 P-173
+- [2026-06-25] PresentationLayeringRules added to architecture test contracts (two predicates: NoDirectProblemDetailsConstructionOutsideWebApi via NoDirectProblemDetailsConstructionPredicate — Newobj IL match on ProblemDetails/HttpValidationProblemDetails full names; NoInlineResultBranchBeforeHttpResultOutsideWebApi via NoInlineResultBranchBeforeHttpResultPredicate — method-level co-occurrence check for IsSuccess/IsFailure + IResult/ActionResult return + absence of ToProblemDetailsResult escape hatch); closes the WO-026 P-166/167 backlog note for a mechanical Result-to-HTTP boundary enforcement; no new SK IDs — both implemented as NetArchTest ICustomRule predicates, not Roslyn analyzers; no internal namespace exemption — caller excludes SharedKernel.Presentation.WebApi by never passing it; six new implementation rules added — WO-031 P-199
 - [2026-06-24] SK.00.HealthCheckConstantsGuard → ● closeout — StringConstantsClassDetector and NoBareHealthCheckLiteralWhereConstantsExistPredicate implemented in Predicates/; HealthCheckConstantsUsageRules implemented in Rules/; confirmed exact Microsoft.Extensions.Diagnostics.HealthChecks declaring-type names via direct Mono.Cecil inspection of the .NET 10 reference assemblies (IHealthChecksBuilder/HealthChecksBuilder for Add, HealthChecksBuilderAddCheckExtensions/HealthChecksBuilderDelegateExtensions for AddCheck, HealthCheckRegistration for the constructor) and recorded them in this file, resolving the two prior "confirm during implementation" placeholders; corrected the T-140 pass-path fixture from `const string` to `static readonly string` after discovering Roslyn const-folds `const string` field references into a bare Ldstr at the call site (no Ldsfld) — only `static readonly string` produces the Ldsfld IL shape the rule's pass-path depends on; reworded three XML-doc passages in the implementation files that referenced "HealthCheckTags"/"HealthCheckNames" by name to keep the acceptance-critical generality requirement unambiguous (CLAUDE.md prose retains the real names in its own offending/compliant examples, consistent with every other rule's documentation); T-139–T-142 added (4 new tests), 102/102 full ArchitectureTests.Tests suite passes, 0 build warnings/errors (state-map-phase)
+- [2026-06-25] SK.00.PresentationArchRules → ● closeout — NoDirectProblemDetailsConstructionPredicate and NoInlineResultBranchBeforeHttpResultPredicate implemented in Predicates/; PresentationLayeringRules implemented in Rules/, verified against the pre-written CLAUDE.md spec (Architecture Test Contracts, Implementation Rules, and Changelog entry all matched the shipped implementation exactly — no discrepancy found, no edits required); T-143–T-146 added (6 new tests: T-143 fire path, T-144 pass path plus a companion HttpValidationProblemDetails fire-path case, T-145 fire path, T-146 pass path plus a companion vacuous-pass case); fixed a self-inflicted false-positive in the first T-144 fixture draft — the fixture's own "factory method" was itself constructing ProblemDetails via newobj in the same assembly, which the predicate correctly flagged since it carries no namespace exemption; reworked the fixture so the factory call is an unimplemented external stub, isolating the assertion to OrderEndpoints alone; 108/108 full ArchitectureTests.Tests suite passes, 0 build warnings/errors (state-map-phase)

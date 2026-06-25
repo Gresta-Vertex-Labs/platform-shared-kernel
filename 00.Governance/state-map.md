@@ -49,6 +49,7 @@
 | `SK.00.CommunicationArchRules` | Governance: Architecture Rules for Communication Layer | All tasks in Phase: Communication Layer Architecture Rules are `●` | P-159 |
 | `SK.00.WO026CommunicationQuality` | Governance: Architecture Rules for WO-026 Communication Quality Improvements | All tasks in Phase: WO-026 Communication Quality are `●` | P-167 |
 | `SK.00.HealthCheckConstantsGuard` | Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | All tasks in Phase: Health-Check Constants Guard are `●` | P-178 |
+| `SK.00.PresentationArchRules` | Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | All tasks in Phase: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching are `●` | P-199 |
 
 ---
 
@@ -2138,6 +2139,85 @@ No new SK diagnostic ID is assigned in this phase. The rule is implemented as a 
 
 ---
 
+## Phase: Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching (`SK.00.PresentationArchRules`) <!-- phase-key: SK.00.PresentationArchRules -->
+
+> WO-031 P-199. Depends on P-194 (14.Presentation `ResultHttpExtensions`/`Error.ToProblemDetails()` must exist before real-assembly verification — design/implementation proceeds now against contrived in-memory fixtures, same technique as `SK.00.ServiceDefaultsGovernance`/`SK.00.HealthCheckConstantsGuard`).
+
+### SK.00.PresentationArchRules — Goal
+
+Two new NetArchTest rules in `SharedKernel.ArchitectureTests`, mirroring the precedent already established for raw `HttpClient` injection (SK0013, P-159) and inline `Result`↔`Envelope` mapping (WO-026 P-166/167's documented backlog item): (1) ban direct construction of `Microsoft.AspNetCore.Mvc.ProblemDetails` / `Microsoft.AspNetCore.Http.HttpValidationProblemDetails` outside `SharedKernel.Presentation.WebApi`; (2) ban inline `Result`/`Result<T>.IsSuccess`/`.IsFailure` branching co-occurring with an `IResult`/`ActionResult`/`ActionResult<T>` return in the same method, outside `SharedKernel.Presentation.WebApi`, unless the method also routes through `ResultHttpExtensions.ToProblemDetailsResult()`. `14.Presentation` only achieves its purpose if consuming services are mechanically prevented from bypassing it — not just told to via documentation.
+
+### SK.00.PresentationArchRules — Scope
+
+- Package(s) affected: `SharedKernel.ArchitectureTests` only.
+- New files:
+  - `Rules/PresentationLayeringRules.cs` — `NoDirectProblemDetailsConstructionOutsideWebApi(params Assembly[])`, `NoInlineResultBranchBeforeHttpResultOutsideWebApi(params Assembly[])`
+  - `Predicates/NoDirectProblemDetailsConstructionPredicate.cs` — `ICustomRule`, `Newobj` IL match on `ProblemDetails`/`HttpValidationProblemDetails` full names
+  - `Predicates/NoInlineResultBranchBeforeHttpResultPredicate.cs` — `ICustomRule`, method-level co-occurrence check (IsSuccess/IsFailure signal + IResult/ActionResult return-type signal + absence of ToProblemDetailsResult escape-hatch signal)
+- Modified files: `00.Governance/CLAUDE.md` (already updated by this planning pass — Architecture Test Contracts + Implementation Rules + Changelog)
+- Deleted files: none
+- No new SK diagnostic ID — both rules are `ICustomRule` predicates over Mono.Cecil IL inspection, following this domain's existing precedent (`RedisTopologyRules`, `CompositionRootExclusivityRules`, `GrpcNeverReferencesContracts`) that boundary-mapping prohibitions do not always require minting a new Roslyn analyzer.
+
+### SK.00.PresentationArchRules — Diagnostic Registry Changes
+
+None. No new SK ID assigned in this phase.
+
+### SK.00.PresentationArchRules — Implementation Rules
+
+1. Neither predicate carries an internal namespace exemption for `SharedKernel.Presentation.WebApi` — exclusion is achieved entirely by the consuming test project never passing that assembly to either factory method (no single namespace prefix covers every legitimate in-package construction site: `ErrorProblemDetailsExtensions`, the global `IExceptionHandler`, and `ResultHttpExtensions` itself all legitimately trigger both signals).
+2. `NoDirectProblemDetailsConstructionPredicate` matches via exact `MethodReference.DeclaringType.FullName` equality against `"Microsoft.AspNetCore.Mvc.ProblemDetails"` and `"Microsoft.AspNetCore.Http.HttpValidationProblemDetails"` on a `Newobj` opcode — reuses the `Newobj`-walk pattern from `NoDirectEncryptedValueConverterInstantiationPredicate`.
+3. `NoInlineResultBranchBeforeHttpResultPredicate` is a method-level co-occurrence check, not a control-flow/statement-order analysis — it is a deliberate over-approximation (same documented-limitation philosophy as `HealthCheckTagIntegrityRules`'s literal-collection technique).
+4. The escape-hatch signal (`MethodReference.Name == "ToProblemDetailsResult"` anywhere in the method body) suppresses the violation regardless of the other two signals being present.
+5. `Result`/`Result<T>` type-name matching targets `"Result"` exact or `"Result\`1"` IL-generic-arity-suffixed prefix, with no `DeclaringType.Namespace` guard for `SharedKernel.Primitives` — add the namespace guard only if a real false-positive (an unrelated `Result` type elsewhere in the platform) is ever confirmed.
+6. Both predicates reuse the existing `Mono.Cecil >= 0.11.5` reference already in `SharedKernel.ArchitectureTests` — zero new NuGet dependencies.
+
+### SK.00.PresentationArchRules — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Rules/PresentationLayeringRules.cs` | SharedKernel.ArchitectureTests | Create | Two factory methods wiring the two predicates into `ConditionList` |
+| `Predicates/NoDirectProblemDetailsConstructionPredicate.cs` | SharedKernel.ArchitectureTests | Create | `ICustomRule` — IL `Newobj` match on ProblemDetails/HttpValidationProblemDetails |
+| `Predicates/NoInlineResultBranchBeforeHttpResultPredicate.cs` | SharedKernel.ArchitectureTests | Create | `ICustomRule` — method-level three-signal co-occurrence check |
+
+### SK.00.PresentationArchRules — Acceptance Criteria
+
+- [ ] `NoDirectProblemDetailsConstructionOutsideWebApi` fails against a contrived fixture assembly (not named `SharedKernel.Presentation.WebApi`) containing a type that directly `new`s `ProblemDetails`
+- [ ] `NoDirectProblemDetailsConstructionOutsideWebApi` fails the same way for `HttpValidationProblemDetails`
+- [ ] `NoDirectProblemDetailsConstructionOutsideWebApi` passes against a fixture with no direct construction (e.g., constructs via a factory method only)
+- [ ] `NoInlineResultBranchBeforeHttpResultOutsideWebApi` fails against a contrived fixture method that reads `Result.IsSuccess`/`IsFailure` and returns `IResult`/`ActionResult`/`ActionResult<T>` with no `ToProblemDetailsResult` call in the same method
+- [ ] `NoInlineResultBranchBeforeHttpResultOutsideWebApi` passes against a fixture method exhibiting the same two signals but that also calls a member named `ToProblemDetailsResult`
+- [ ] `NoInlineResultBranchBeforeHttpResultOutsideWebApi` passes (vacuously) against a fixture with no `IsSuccess`/`IsFailure` usage at all
+- [ ] Both rules documented in `00.Governance/CLAUDE.md` alongside the existing architecture test contracts (done in this planning pass — verify against final implementation, no discrepancy expected)
+- [ ] Full `SharedKernel.ArchitectureTests.Tests` suite still green after the two new rules are added
+
+### SK.00.PresentationArchRules — Dependencies
+
+- Requires P-194 (14.Presentation `Error.ToProblemDetails()`/`ResultHttpExtensions` existence) for **real-assembly verification only** — design/implementation proceeds now against contrived in-memory fixtures (same `CSharpCompilation` + `MetadataReference.CreateFromImage` technique as `RedisTopologyRulesTests`, `SK.00.ServiceDefaultsGovernance`, and `SK.00.HealthCheckConstantsGuard`), since `SharedKernel.Presentation.WebApi` is being concurrently built under WO-031.
+- Not dependent on and does not modify `SK.00.CommunicationArchRules` (SK0013) or `SK.00.WO026CommunicationQuality` (`GrpcNeverReferencesContracts`) — sibling precedent only, no shared code.
+- Unblocks: closes the WO-026 P-166/167 documented backlog note ("A future Roslyn analyzer... is tracked as a backlog item") — though implemented here as a NetArchTest rule rather than a Roslyn analyzer, since the detection surface (IL method-body co-occurrence) matches this domain's existing `ICustomRule` precedent more closely than a syntax-only analyzer would.
+
+### SK.00.PresentationArchRules — Tooling Version Notes
+
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing pin — no change; both new predicates reuse the existing reference)
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — no new Roslyn analyzer in this phase)
+- Target framework: `net10.0` (ArchitectureTests only)
+
+### SK.00.PresentationArchRules — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-54 | Define `NoDirectProblemDetailsConstructionPredicate` shape (Newobj IL match on full-name set `{ProblemDetails, HttpValidationProblemDetails}`) and `NoInlineResultBranchBeforeHttpResultPredicate` shape (three-signal method-level co-occurrence: IsSuccess/IsFailure call, IResult/ActionResult/ActionResult\<T\> return-type or local-variable type, ToProblemDetailsResult escape hatch); define both `PresentationLayeringRules` factory signatures (`params Assembly[]`, no internal namespace exemption); document the caller-controlled exclusion convention | SharedKernel.ArchitectureTests | `●` |
+| C-78 | Implement `NoDirectProblemDetailsConstructionPredicate` in `Predicates/`: Mono.Cecil `Newobj` opcode walk, exact `MethodReference.DeclaringType.FullName` match against the two-type set | SharedKernel.ArchitectureTests | `●` |
+| C-79 | Implement `NoInlineResultBranchBeforeHttpResultPredicate` in `Predicates/`: three-signal pass over `MethodDefinition.Body.Instructions`/`ReturnType`/`Variables`; implement `PresentationLayeringRules` static class in `Rules/` wiring both predicates into `ConditionList` via `.Should().MeetCustomRule(...)` | SharedKernel.ArchitectureTests | `●` |
+| T-143 | Architecture test (fire path): contrived fixture with a type directly constructing `ProblemDetails` via `newobj`; assert `NoDirectProblemDetailsConstructionOutsideWebApi` fails, naming the offending type/method | SharedKernel.ArchitectureTests | `●` |
+| T-144 | Architecture test (pass path): contrived fixture with no direct `ProblemDetails`/`HttpValidationProblemDetails` construction (constructs via a factory method only); assert the rule passes; cover `HttpValidationProblemDetails` in the same or a companion fire-path case | SharedKernel.ArchitectureTests | `●` |
+| T-145 | Architecture test (fire path): contrived fixture method reading `Result.IsSuccess`/`IsFailure` and returning `IResult`/`ActionResult`/`ActionResult<T>` with no `ToProblemDetailsResult` call; assert `NoInlineResultBranchBeforeHttpResultOutsideWebApi` fails, naming the offending type/method | SharedKernel.ArchitectureTests | `●` |
+| T-146 | Architecture test (pass path): same two signals as T-145 but the method also calls a member named `ToProblemDetailsResult`; assert the rule passes. Companion vacuous-pass case: fixture with no `IsSuccess`/`IsFailure` usage at all; assert the rule passes | SharedKernel.ArchitectureTests | `●` |
+| DO-26 | Document `PresentationLayeringRules` and both new predicates in `00.Governance/CLAUDE.md`: rationale, the caller-controlled exclusion convention (no internal namespace guard), the method-level co-occurrence over-approximation limitation, and the explicit cross-reference closing the WO-026 P-166/167 backlog note; add Changelog entry (already pre-written by this planning pass — verify accuracy against final implementation, no edits expected unless a discrepancy is found) | SharedKernel.ArchitectureTests | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `00.Governance` references nothing._
@@ -2152,7 +2232,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 337.
+> Counts updated whenever a task state changes. Total tasks: 346.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -2181,6 +2261,7 @@ Format when active:
 | `SK.00.WO026CommunicationQuality` | Governance: Architecture Rules for WO-026 Communication Quality Improvements | 5 | 5 | 0 | `●` |
 | `SK.00.ServiceDefaultsGovernance` | Governance: ServiceDefaults Liveness/Readiness and Composition-Root Layering Rules | 16 | 16 | 0 | `●` |
 | `SK.00.HealthCheckConstantsGuard` | Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | 9 | 9 | 0 | `●` |
+| `SK.00.PresentationArchRules` | Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | 9 | 9 | 0 | `●` |
 
 ---
 
@@ -2238,4 +2319,6 @@ Format when active:
 - [2026-06-19] Phase SK.00.HealthCheckConstantsGuard added — 9 tasks (corrected from an initial miscount of 8 — the Task Rows table has D-53, C-75–C-77, T-139–T-142, DO-25 = 9 rows): D-53, C-75–C-77, T-139–T-142, DO-25; new HealthCheckConstantsUsageRules static class (single ICustomRule predicate: NoBareHealthCheckLiteralWhereConstantsExist) plus a new reusable StringConstantsClassDetector helper (Mono.Cecil field-shape detection + literal-value resolution — a third IL technique distinct from opcode-presence and Ldstr-literal-collection); generalized rule shape with no hardcoded constants-class names, explicitly additive to SK.00.ServiceDefaultsGovernance (P-173); no new SK IDs; total tasks now 337 — WO-028 P-178, depends on P-177
 - [2026-06-19] Phase SK.00.ServiceDefaultsGovernance added — 16 tasks (corrected from an initial miscount of 17 — the Overall Progress summary table is authoritative; D-52, C-71–C-74, T-129–T-138, DO-24 = 16 rows): HealthCheckTagIntegrityRules (two ICustomRule predicates: NoConflictingLivenessReadinessTags, DependencyHealthChecksCarryReadyNotLive — IL Ldstr literal-collection technique scoped to Add*HealthCheck/Add*ReadinessCheck method names, documented data-flow limitation for non-literal tags); CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders mirroring CachingAbstractionRules for Persistence (.EfCore/.PostgreSQL/.Dapper), Messaging (.MassTransit), and Security (.Oidc) provider families; no new SK IDs; closes the WO-003/P-009 caching-only scope gap in 13.ServiceDefaults/CLAUDE.md's composition-root claim; real-assembly verification deferred as a tracked follow-up pending P-170; total tasks now 327 — WO-027 P-173
 - [2026-06-24] D-52, C-71–C-74, T-129–T-138, DO-24 → ● in SK.00.ServiceDefaultsGovernance — all 16 tasks complete; HealthCheckTagIntegrityRules (NoConflictingLivenessReadinessTagsPredicate, DependencyHealthChecksCarryReadyNotLivePredicate) and CompositionRootExclusivityRules (OnlyAllowedAssembliesMayReferenceConcreteProviders) implemented in SharedKernel.ArchitectureTests using contrived in-memory CSharpCompilation fixtures (SharedKernel.ServiceDefaults/.MultiTenancy not yet buildable when this phase was designed); 10 new tests (T-129–T-138) pass, 98/98 full ArchitectureTests.Tests suite passes, 0 build warnings/errors; CLAUDE.md documentation pre-written by governance-arch-planner verified accurate against the implementation, no edits needed; note for follow-up — 13.ServiceDefaults' P-170 has since landed with a real SharedKernel.ServiceDefaults assembly matching the expected shape (HealthCheckTags.Live/.Ready constants, Add*HealthCheck literal tag arrays); a future session should add a real-assembly ProjectReference re-verification pass (non-blocking per Implementation Rule 8); SK.00.ServiceDefaultsGovernance → ● (state-map-phase)
+- [2026-06-25] Phase SK.00.PresentationArchRules added — 9 tasks: D-54, C-78–C-79, T-143–T-146, DO-26; new PresentationLayeringRules static class (two ICustomRule predicates: NoDirectProblemDetailsConstructionPredicate via Newobj IL match on ProblemDetails/HttpValidationProblemDetails full names; NoInlineResultBranchBeforeHttpResultPredicate via method-level three-signal co-occurrence check); no new SK IDs; no internal namespace exemption — caller excludes SharedKernel.Presentation.WebApi by never passing it to either factory method; closes the WO-026 P-166/167 documented backlog note for mechanical Result-to-HTTP boundary enforcement; depends on P-194 for real-assembly verification only, contrived in-memory fixtures used at design/implementation time (same technique as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard); total tasks now 346 — WO-031 P-199
 - [2026-06-24] D-53, C-75–C-77, T-139–T-142, DO-25 → ● in SK.00.HealthCheckConstantsGuard — all 9 tasks complete (Task Rows table has 9 rows; corrected from the stale "8" count in the Overall Progress row and phase-added changelog line); StringConstantsClassDetector, NoBareHealthCheckLiteralWhereConstantsExistPredicate, HealthCheckConstantsUsageRules implemented; confirmed exact Microsoft.Extensions.Diagnostics.HealthChecks declaring-type names via Mono.Cecil inspection of .NET 10 reference assemblies and recorded in CLAUDE.md, resolving prior placeholders; 4 new tests (T-139–T-142) pass, 102/102 full ArchitectureTests.Tests suite passes, 0 build warnings/errors; generality requirement verified — zero occurrences of "HealthCheckTags"/"HealthCheckNames" in the three implementation files (reworded 3 XML-doc passages that referenced them by name); SK.00.HealthCheckConstantsGuard → ● (state-map-phase)
+- [2026-06-25] D-54, C-78–C-79, T-143–T-146, DO-26 → ● in SK.00.PresentationArchRules — all 9 tasks complete; NoDirectProblemDetailsConstructionPredicate and NoInlineResultBranchBeforeHttpResultPredicate implemented in Predicates/, PresentationLayeringRules implemented in Rules/; 6 new tests (T-143 fire path, T-144 pass path + companion HttpValidationProblemDetails fire-path case, T-145 fire path, T-146 pass path + companion vacuous-pass case) pass, 108/108 full ArchitectureTests.Tests suite passes, 0 build warnings/errors; fixed a self-inflicted false positive in the first T-144 fixture draft (the fixture's own "factory" was itself constructing ProblemDetails via newobj in the same assembly, correctly flagged since the predicate carries no namespace exemption — reworked the fixture to isolate the assertion to the calling type alone); CLAUDE.md documentation (Architecture Test Contracts, Implementation Rules, Changelog) pre-written by governance-arch-planner verified accurate against the implementation, no edits needed; added the missing `<!-- phase-key: SK.00.PresentationArchRules -->` heading marker and Phase Key Registry row (both were absent from the original planning pass); SK.00.PresentationArchRules → ● (state-map-phase)
