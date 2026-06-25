@@ -1,0 +1,18 @@
+---
+name: feedback_verify_real_api_shapes
+description: Always verify third-party/SDK type names via reflection against installed packages before writing code against a design doc's assumed API shape — design docs and training data drift from actual NuGet package contents.
+type: feedback
+---
+
+When implementing against a phase spec that names specific framework/NuGet types (e.g. `ISignalRBuilder`, `StackExchangeRedisOptions`, `Microsoft.OpenApi.Models.OpenApiDocument`), do not trust the name in the spec or in training data. Verify the real type/namespace by loading the actual installed assembly via a throwaway probe project (`dotnet run` against a tiny console app referencing the same package version) and reflecting over `Assembly.GetExportedTypes()` / `GetMethods()`.
+
+**Why:** During SK.14.Core (14.Presentation), three design-doc type names were wrong against the actually-installed package versions:
+- `ISignalRBuilder` does not exist in `Microsoft.AspNetCore.SignalR` (net10.0) — the real stock builder type returned by `AddSignalR()` is `ISignalRServerBuilder`.
+- `StackExchangeRedisOptions` does not exist in `Microsoft.AspNetCore.SignalR.StackExchangeRedis` 10.0.9 — the real options type is `RedisOptions`.
+- `Microsoft.OpenApi.Models.OpenApiDocument` (and sibling model types) do not exist in `Microsoft.OpenApi` 2.0.0 — the models moved to the `Microsoft.OpenApi` namespace directly (no `.Models` suffix) as part of the 2.0 API reshape that ships with native `Microsoft.AspNetCore.OpenApi` in .NET 10.
+
+All three would have produced compile errors only after a full implementation pass, costing a rewrite cycle. Catching them via a 30-second reflection probe before writing the "real" file is far cheaper.
+
+**How to apply:** Whenever a phase spec or your own recollection names a specific type from `Asp.Versioning.*`, `Scalar.AspNetCore`, `Microsoft.AspNetCore.OpenApi`, `Microsoft.OpenApi`, `Microsoft.AspNetCore.SignalR.*`, or any other fast-moving/non-BCL package, spin up a throwaway console probe (`/tmp` or the scratchpad dir) referencing the exact pinned package version from the domain's `CLAUDE.md`, and reflect over the relevant type before writing production code. This is especially important for packages explicitly flagged in `14.Presentation/CLAUDE.md`'s AOT notes as "verify on this version, do not assume."
+
+**Second occurrence (SK.14.Tests, 2026-06-25):** `Asp.Versioning.Http` 10.0.0's `HttpContext.GetRequestedApiVersion()` does not exist as a callable method — reflection showed it compiles as the getter of an extension **property**, `HttpContext.RequestedApiVersion` (declaring type `Microsoft.AspNetCore.Http.HttpContextExtensions`). Also confirmed during the same session: `OpenApiExtensions.MapSharedKernelOpenApi` requires a `WebApplication` receiver, not `IApplicationBuilder` — a `WebApplicationFactory<T>` test host needing it must override `CreateHost(IHostBuilder)` and build a `WebApplication` directly (`WebApplication.CreateBuilder()` + `.WebHost.UseTestServer()` + `app.Start()`), not use the `IWebHostBuilder.Configure(IApplicationBuilder)` callback. Same lesson, different surface: a method-shaped name in docs/memory can actually be a property at the IL level — `GetMethods()` alone misses this; check `GetProperties()` too, or just try the property syntax when a "Get*" extension method 404s at compile time.

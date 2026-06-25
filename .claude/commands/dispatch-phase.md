@@ -78,7 +78,7 @@ Group the remaining (unblocked) pending phases by their **Domain** field.
 | 11.Communication | 11 | `communication-arch-planner` |
 | 12.Security | 12 | `security-arch-planner` |
 | 13.ServiceDefaults | 13 | `servicedefaults-arch-planner` |
-| 14.Presentation | 14 | _(no agent — deferred)_ |
+| 14.Presentation | 14 | `presentation-arch-planner` |
 | 15.Integration | 15 | _(no agent — deferred)_ |
 | 16.Testing | 16 | `testing-arch-planner` |
 | 17.Workflows | 17 | _(no agent — deferred)_ |

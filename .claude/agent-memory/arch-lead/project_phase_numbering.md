@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-06-24, the last phase written to `state-map.md` Phase Backlog is **P-191** under **WO-030**.
+As of 2026-06-25, the last phase written to `state-map.md` Phase Backlog is **P-199** under **WO-031**.
 
-Next new phase must be **P-192**. Next new Work Order must be **WO-031**.
+Next new phase must be **P-200**. Next new Work Order must be **WO-032**.
+
+**WO-031 context:** 14.Presentation first real build-out — P-192–P-198 (full 6-phase lifecycle, Core split into P-194 WebApi / P-195 SignalR) plus P-199 (00.Governance ProblemDetails/Result-HTTP enforcement rules). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`); 00.Governance already `● Complete` so P-199 queued in backlog only. See [[project_wo031_presentation_buildout]] for full detail including the correlation-id/13.ServiceDefaults decoupling upgrade.
 
 **How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file. This note has drifted stale at least twice before (once at P-159/WO-025 when the real file was at P-174/WO-027; again at P-178/WO-028 when the real file was at P-187/WO-029) — always verify against `grep -n "^### P-" state-map.md | tail` and `grep -oE "WO-[0-9]{3}" state-map.md | sort -u | tail` before trusting this note's numbers.
 
