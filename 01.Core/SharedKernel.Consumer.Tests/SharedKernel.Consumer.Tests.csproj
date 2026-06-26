@@ -12,6 +12,7 @@
     Consumer verification: resolves SharedKernel.* packages from the local NuGet feed (nupkgs/)
     to confirm the published dependency graph is correct.
     Primitives → Core → Configuration → FeatureManagement chain verified here.
+    Cryptography → Primitives + Configuration transitive chain also verified here.
   -->
   <ItemGroup>
     <PackageReference Include="SharedKernel.Primitives"        Version="1.0.0" />
@@ -19,6 +20,7 @@
     <PackageReference Include="SharedKernel.Configuration"     Version="1.0.0" />
     <PackageReference Include="SharedKernel.FeatureManagement" Version="1.0.0" />
     <PackageReference Include="SharedKernel.Guards"            Version="1.0.0" />
+    <PackageReference Include="SharedKernel.Cryptography"      Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,6 +1,6 @@
 # 01.Core
 
-Foundational building blocks for the Platform.SharedKernel ecosystem. Four independently publishable NuGet packages with zero infrastructure dependencies.
+Foundational building blocks for the Platform.SharedKernel ecosystem. Six independently publishable NuGet packages with zero infrastructure dependencies.
 
 | Package | Purpose |
 |---------|---------|
@@ -8,6 +8,8 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Four indep
 | `SharedKernel.Core` | Base exceptions, railway extensions, BCL helpers |
 | `SharedKernel.Configuration` | `AddValidatedOptions` startup-validation pattern |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
+| `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) |
+| `SharedKernel.Cryptography` | Password hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation |
 
 All packages target `net10.0` and are AOT-compatible.
 
@@ -749,6 +751,177 @@ public sealed class PaymentService
 
 ---
 
+## SharedKernel.Cryptography — Dependency-Free Crypto Primitives
+
+`SharedKernel.Cryptography` provides password hashing, authenticated symmetric encryption, asymmetric signing, HMAC signing, and secure random generation. It is pure BCL `System.Security.Cryptography` — zero third-party NuGet dependencies — and is deliberately decoupled from `12.Security`'s identity/JWT/OIDC concerns, so non-web worker services (background jobs, batch processors, internal tools) can consume it without pulling in an identity stack.
+
+### Registration
+
+```csharp
+// Program.cs
+builder.Services.AddSharedKernelCryptography(builder.Configuration);
+
+// Consuming services must separately register their own key providers —
+// this package ships no default implementation and holds no key material.
+builder.Services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
+builder.Services.AddSingleton<IAsymmetricKeyProvider, MyCertificateStoreKeyProvider>();
+```
+
+Optional configuration (`SharedKernel:Cryptography` section, all fields optional with safe defaults):
+
+```json
+{
+  "SharedKernel": {
+    "Cryptography": {
+      "Pbkdf2Iterations": 600000,
+      "DefaultSigningKeyId": "primary-2026"
+    }
+  }
+}
+```
+
+### Password Hashing
+
+`IPasswordHasher` produces a self-describing encoded hash (algorithm marker, iteration count, salt, and subkey all in one string) so the iteration count can be raised later without invalidating hashes already in the database.
+
+```csharp
+public sealed class AccountService(IPasswordHasher passwordHasher)
+{
+    public string RegisterUser(string plaintextPassword)
+    {
+        // Store the returned string verbatim — salt and iteration count travel with it.
+        return passwordHasher.Hash(plaintextPassword);
+    }
+
+    public bool TryLogin(string storedHash, string suppliedPassword, out bool needsRehash)
+    {
+        PasswordVerificationResult result = passwordHasher.Verify(storedHash, suppliedPassword);
+        needsRehash = result == PasswordVerificationResult.SuccessRehashNeeded;
+
+        // SuccessRehashNeeded: the hash matched, but it was produced under an older
+        // Pbkdf2Iterations value. Re-hash and persist the new value on this login.
+        if (needsRehash)
+        {
+            string upgraded = passwordHasher.Hash(suppliedPassword);
+            // persist `upgraded` in place of storedHash
+        }
+
+        return result is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded;
+    }
+}
+```
+
+Never hash passwords with raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IPasswordHasher`.
+
+### Symmetric Encryption (AES-256-GCM)
+
+`ISymmetricEncryptionService` is for general-purpose encryption of arbitrary payloads outside an EF Core column — before publishing to a queue, writing to blob storage, or returning from an API. It is distinct from `06.Persistence`'s `EncryptedValueConverter`, which remains the dedicated path for transparent EF Core column-level encryption.
+
+```csharp
+// Consuming service supplies key material — SharedKernel.Cryptography holds none of its own.
+public sealed class MyKeyVaultBackedKeyProvider : IEncryptionKeyProvider
+{
+    public CryptographicKey GetCurrentKey() =>
+        new("key-v2", LoadKeyMaterialFromVault("key-v2")); // 32 bytes for AES-256
+
+    public CryptographicKey? GetKey(string keyId) =>
+        TryLoadKeyMaterialFromVault(keyId, out byte[] material) ? new(keyId, material) : null;
+}
+
+public sealed class PayloadEncryptionExample(ISymmetricEncryptionService encryption)
+{
+    public EncryptedPayload EncryptForQueue(byte[] plaintext) =>
+        encryption.Encrypt(plaintext); // fresh random nonce every call — never reused
+
+    public Result<byte[]> DecryptFromQueue(EncryptedPayload payload) =>
+        encryption.Decrypt(payload); // Result<byte[]> — never throws CryptographicException directly
+
+    // Convenience string overloads for simple cases (e.g., a connection string or API token):
+    public string EncryptSecret(string plaintext) => encryption.EncryptToString(plaintext);
+
+    public Result<string> DecryptSecret(string encoded) => encryption.DecryptToString(encoded);
+}
+```
+
+Handling tamper/wrong-key failures via the railway pattern:
+
+```csharp
+Result<byte[]> decrypted = encryption.Decrypt(payload);
+
+decrypted.Match(
+    onSuccess: plaintext => ProcessPlaintext(plaintext),
+    onFailure: error => logger.LogWarning(
+        "Decryption failed: {Code} — {Message}", error.Code, error.Message));
+// error.Code is one of CryptographyErrorCodes.DecryptionFailed, .UnknownKeyId, or .MalformedPayload
+```
+
+`ISymmetricEncryptionService` always uses an AEAD cipher (AES-GCM) — never an unauthenticated mode such as CBC/ECB.
+
+### Asymmetric Signing (RSA / ECDSA)
+
+`IAsymmetricSignatureService` has two implementations sharing one interface — `RsaSignatureService` and `EcdsaSignatureService`. Both are registered as **keyed singletons**; `RsaSignatureService` is additionally registered as the unkeyed default.
+
+```csharp
+// Consuming service supplies key material.
+public sealed class MyCertificateStoreKeyProvider : IAsymmetricKeyProvider
+{
+    public RSA GetRsaKey(string keyId) => LoadRsaFromCertificateStore(keyId);
+    public ECDsa GetEcdsaKey(string keyId) => LoadEcdsaFromCertificateStore(keyId);
+}
+
+public sealed class TokenSigningExample(
+    [FromKeyedServices(CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey)]
+        IAsymmetricSignatureService ecdsaSigner)
+{
+    public byte[] SignPayload(byte[] data) => ecdsaSigner.Sign(data, keyId: "signing-key-2026");
+
+    public bool VerifyPayload(byte[] data, byte[] signature) =>
+        ecdsaSigner.Verify(data, signature, keyId: "signing-key-2026");
+}
+
+// Resolving explicitly from IServiceProvider:
+IAsymmetricSignatureService rsa = provider.GetRequiredService<IAsymmetricSignatureService>(); // unkeyed default = RSA
+IAsymmetricSignatureService ecdsa = provider.GetRequiredKeyedService<IAsymmetricSignatureService>(
+    CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey);
+```
+
+RSA uses 2048-bit minimum keys with PSS padding and SHA-256. ECDSA uses the P-256 curve with SHA-256.
+
+### HMAC Signing
+
+`IHmacSigner` signs and verifies data with a shared secret using HMACSHA256. `Verify` always uses a constant-time comparison — never `==` or `SequenceEqual` on secret-derived bytes.
+
+```csharp
+public sealed class WebhookSignatureExample(IHmacSigner hmacSigner)
+{
+    public string SignPayload(byte[] payload, byte[] sharedSecret) =>
+        Convert.ToHexString(hmacSigner.Sign(payload, sharedSecret));
+
+    public bool VerifyIncomingWebhook(byte[] payload, byte[] receivedSignature, byte[] sharedSecret) =>
+        hmacSigner.Verify(payload, receivedSignature, sharedSecret); // timing-attack resistant
+}
+```
+
+### Secure Random / Token Generation
+
+`ISecureRandomGenerator` is the only permitted source of randomness for tokens, keys, nonces, and salts anywhere in the platform. `System.Random` and `Guid.NewGuid()` are never acceptable substitutes for security-sensitive values.
+
+```csharp
+public sealed class TokenIssuanceExample(ISecureRandomGenerator randomGenerator)
+{
+    public string IssuePasswordResetToken() =>
+        randomGenerator.NextToken(); // 32 random bytes, URL-safe Base64, no padding
+
+    public string IssueApiKey() =>
+        randomGenerator.NextToken(length: 48); // longer token for higher-entropy use cases
+
+    public byte[] GenerateNewEncryptionKeyMaterial() =>
+        randomGenerator.NextBytes(32); // raw bytes — e.g., seeding a new AES-256 key for rotation
+}
+```
+
+---
+
 ## Dependency Graph
 
 ```
@@ -759,8 +932,10 @@ SharedKernel.Primitives              (no dependencies)
        |       +──► SharedKernel.Guards  (Guard.Against / Guard.Throw two-path guard system)
        |
        +──► SharedKernel.Configuration  (Options pattern + startup validation)
+       |       |
+       |       +──► SharedKernel.Cryptography  (password hashing, AES-GCM, RSA/ECDSA, HMAC, secure random)
        |
        +──► SharedKernel.FeatureManagement  (IFeatureManager + Microsoft.FeatureManagement adapter)
 ```
 
-All five packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed.
+All six packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed.

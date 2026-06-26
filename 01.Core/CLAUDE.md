@@ -2,9 +2,11 @@
 
 ## What This Domain Is
 
-The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships five independent packages covering: functional primitives (`Result<T>`, `Error`), system abstractions (`IClock`, SmartEnums, base exceptions, BCL extensions), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, and a Feature Flag abstraction.
+The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships six independent packages covering: functional primitives (`Result<T>`, `Error`), system abstractions (`IClock`, SmartEnums, base exceptions, BCL extensions), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction, and dependency-free cryptographic primitives (password hashing, AES-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random generation).
 
 Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Railway-oriented.**
+
+> **Why cryptography lives here, not in `12.Security`:** `12.Security` owns identity/authentication concerns (`IUserContext`, `ITenantProvider`, JWT/OIDC). Generic crypto primitives — hashing, encryption, signing, secure random — are a separate concern needed by services that have no identity stack at all (background workers, batch jobs, internal tools). Bundling them into `12.Security` would force every consumer to pull in OIDC/JWT machinery just to hash a password or encrypt a payload. `SharedKernel.Cryptography` lives in `01.Core` because, like `SharedKernel.Primitives`, it references nothing else in the platform — `12.Security.Oidc` may depend on it for token-signing primitives, never the reverse.
 
 ---
 
@@ -17,8 +19,9 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) | `SharedKernel.Primitives`, `SharedKernel.Core` |
 | `SharedKernel.Configuration` | Options-pattern validation, `AddValidatedOptions` DI extension | `SharedKernel.Primitives` |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
+| `SharedKernel.Cryptography` | Password hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 
-All five target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
+All six target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
 ---
 
@@ -31,6 +34,7 @@ All five target `net10.0`. Test sub-folders live inside each project folder (nev
 | Guard clauses | Pure C# 13 — no NuGet dependencies; compiled/cached `System.Text.RegularExpressions.Regex` for format/email guards |
 | Options validation | `Microsoft.Extensions.Options.DataAnnotations` |
 | Feature flags | `Microsoft.FeatureManagement` (abstracted behind `IFeatureManager`) |
+| Cryptographic primitives | Pure BCL `System.Security.Cryptography` only — `Rfc2898DeriveBytes` (PBKDF2), `AesGcm`, `RSA`, `ECDsa`, `HMACSHA256`, `RandomNumberGenerator`, `CryptographicOperations.FixedTimeEquals`. Zero third-party NuGet dependencies. |
 
 ---
 
@@ -230,6 +234,100 @@ AddSharedKernelFeatureManagement(IConfiguration config)
     → registers IFeatureManager backed by Microsoft.FeatureManagement
 ```
 
+### `SharedKernel.Cryptography` — public surface
+
+```
+IPasswordHasher
+    Hash(string password)                                       → string                  (self-describing encoded output: algorithm id + iteration count + salt + subkey, Base64)
+    Verify(string hash, string password)                        → PasswordVerificationResult
+
+PasswordVerificationResult  (enum)
+    Failed | Success | SuccessRehashNeeded
+    — SuccessRehashNeeded: the stored hash used an older iteration count/algorithm version; caller should re-Hash and persist the new value
+
+Pbkdf2PasswordHasher  (sealed class, implements IPasswordHasher)
+    — PBKDF2-HMACSHA256 via Rfc2898DeriveBytes.Pbkdf2; default 600,000 iterations (OWASP 2023+ guidance);
+      iteration count is read from CryptographyOptions.Pbkdf2Iterations and embedded in the output so
+      raising it later never invalidates already-stored hashes
+
+ISymmetricEncryptionService
+    Encrypt(byte[] plaintext)                                   → EncryptedPayload        (always encrypts with IEncryptionKeyProvider.GetCurrentKey())
+    Decrypt(EncryptedPayload payload)                           → Result<byte[]>          (failure: Error.Unexpected — tamper, wrong key, or unknown KeyId; never throws CryptographicException directly)
+    EncryptToString(string plaintext)                           → string                  (convenience: UTF-8 → Encrypt → single self-describing Base64 string, KeyId+Nonce+Ciphertext+Tag packed together)
+    DecryptToString(string encoded)                             → Result<string>          (convenience inverse of EncryptToString)
+
+EncryptedPayload  (sealed record)
+    .KeyId                                                      → string                  (which key version encrypted this payload)
+    .Nonce                                                      → byte[]                  (96-bit, random per call — never reused)
+    .Ciphertext                                                 → byte[]
+    .Tag                                                        → byte[]                  (128-bit AES-GCM authentication tag)
+
+AesGcmEncryptionService  (sealed class, implements ISymmetricEncryptionService)
+    — AES-256-GCM via System.Security.Cryptography.AesGcm; authenticated (tamper-evident) encryption only —
+      never an unauthenticated mode such as CBC/ECB
+
+IEncryptionKeyProvider
+    GetCurrentKey()                                             → CryptographicKey        (used for every new Encrypt call)
+    GetKey(string keyId)                                        → CryptographicKey?       (used to Decrypt older payloads; null if the key was retired/unknown)
+    — implemented by the consuming service (Key Vault, environment config, secret store); SharedKernel.Cryptography
+      ships no default implementation and holds no key material itself
+
+CryptographicKey  (sealed record)
+    .Id                                                         → string
+    .Material                                                   → byte[]                  (32 bytes for AES-256)
+
+IAsymmetricSignatureService
+    Sign(byte[] data, string keyId)                             → byte[]
+    Verify(byte[] data, byte[] signature, string keyId)         → bool
+
+RsaSignatureService  (sealed class, implements IAsymmetricSignatureService)
+    — RSA, 2048-bit minimum, PSS padding, SHA-256
+
+EcdsaSignatureService  (sealed class, implements IAsymmetricSignatureService)
+    — ECDSA on the P-256 curve, SHA-256
+
+IAsymmetricKeyProvider
+    GetRsaKey(string keyId)                                     → RSA                     (throws KeyNotFoundException if unknown)
+    GetEcdsaKey(string keyId)                                   → ECDsa                   (throws KeyNotFoundException if unknown)
+    — implemented by the consuming service (Key Vault, certificate store, environment config); mirrors IEncryptionKeyProvider
+      for the asymmetric-signing case. SharedKernel.Cryptography ships no default implementation and holds no key material.
+      Introduced during P-207 implementation — required because IAsymmetricSignatureService.Sign/Verify take only a `keyId`
+      string with no resolution mechanism defined; this is the resolver RsaSignatureService/EcdsaSignatureService depend on.
+
+IHmacSigner
+    Sign(byte[] data, byte[] secret)                            → byte[]
+    Verify(byte[] data, byte[] signature, byte[] secret)        → bool
+
+HmacSha256Signer  (sealed class, implements IHmacSigner)
+    — HMACSHA256; Verify uses CryptographicOperations.FixedTimeEquals — never `==` or `SequenceEqual`
+      on secret-derived bytes (timing-attack resistant)
+
+ISecureRandomGenerator
+    NextBytes(int length)                                       → byte[]
+    NextToken(int length = 32)                                  → string                  (URL-safe Base64, no padding — safe for query strings / headers)
+
+CryptoRandomGenerator  (sealed class, implements ISecureRandomGenerator)
+    — backed by System.Security.Cryptography.RandomNumberGenerator; System.Random and Guid.NewGuid()
+      are never acceptable substitutes for this interface
+
+CryptographyOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
+    .Pbkdf2Iterations                                           → int                     (default 600_000)
+    .DefaultSigningKeyId                                        → string?
+
+AddSharedKernelCryptography(IConfiguration configuration)
+    → registers CryptographyOptions (validated, ValidateOnStart), IPasswordHasher, ISymmetricEncryptionService,
+      IAsymmetricSignatureService, IHmacSigner, and ISecureRandomGenerator as singletons (all are stateless
+      and thread-safe)
+    — IAsymmetricSignatureService has two concrete implementations sharing one interface: RsaSignatureService
+      is registered as the unkeyed default; both RsaSignatureService and EcdsaSignatureService are additionally
+      registered as .NET 8+ keyed singletons via CryptographyServiceCollectionExtensions.RsaSignatureServiceKey
+      ("Rsa") / EcdsaSignatureServiceKey ("Ecdsa"). Resolve ECDSA explicitly via
+      provider.GetRequiredKeyedService<IAsymmetricSignatureService>(EcdsaSignatureServiceKey).
+    — does NOT register IEncryptionKeyProvider, IAsymmetricKeyProvider, or any signing key material — the
+      consuming service supplies its own IEncryptionKeyProvider and IAsymmetricKeyProvider (Key Vault,
+      environment config, certificate store, etc.); this package never ships default key material
+```
+
 ---
 
 ## Implementation Rules
@@ -255,6 +353,15 @@ AddSharedKernelFeatureManagement(IConfiguration config)
 - Collection guards (`Empty`, `MaxCount`, `MinCount`) must enumerate the `IEnumerable<T>` source **at most once** per call — use `Count()` or a single materialization pass.
 - `GuardDescriptions` is `internal` — it is not part of the public API and must not be exposed to consumers.
 - `InvalidSmartEnum<TEnum, TValue>` must use `SmartEnum<TEnum, TValue>.TryFromValue` — no reflection, no `Enumeration<T>` or parallel type.
+- `SharedKernel.Cryptography` has **zero third-party NuGet dependencies** — pure BCL `System.Security.Cryptography` only; references only `SharedKernel.Primitives` (for `Result<T>`/`Error`) and `SharedKernel.Configuration` (for `AddValidatedOptions`).
+- Never use `System.Random` or `Guid.NewGuid()` for any security-sensitive value (tokens, keys, nonces, salts) — always go through `ISecureRandomGenerator`, which is backed by `RandomNumberGenerator`.
+- Never compare HMACs, signatures, or any secret-derived byte sequence with `==`, `Equals`, or `SequenceEqual` — always `CryptographicOperations.FixedTimeEquals` to avoid timing attacks.
+- `IPasswordHasher` output must be self-describing (embed algorithm identity, iteration count, and salt in the stored string) so `CryptographyOptions.Pbkdf2Iterations` can be raised later without invalidating existing hashes. Never store salt and hash in separate columns requiring a schema migration to rotate.
+- No password hashing via raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IPasswordHasher`.
+- `ISymmetricEncryptionService` must use an AEAD cipher (AES-GCM) — never an unauthenticated mode (CBC/ECB without a separate MAC).
+- `ISymmetricEncryptionService.Decrypt` must return `Result<byte[]>`, never throw `CryptographicException` directly — a tampered payload or unrecognized key is an expected failure mode for this contract, not a bug.
+- Symmetric/asymmetric key material is never hardcoded, embedded in source, or read directly from `IConfiguration` inside `SharedKernel.Cryptography` itself — it is always resolved through `IEncryptionKeyProvider` (encryption) or a caller-supplied `keyId` (signing), both implemented by the consuming service.
+- `SharedKernel.Cryptography` must remain usable by non-web/worker services with zero ASP.NET Core, JWT, or OIDC dependencies. `12.Security.Oidc` may depend on `SharedKernel.Cryptography` for token-signing primitives; the dependency never runs in the other direction.
 - No static mutable state anywhere in this domain.
 
 ---
@@ -270,6 +377,12 @@ services.AddValidatedOptions<MyServiceOptions>(configuration.GetSection("MyServi
 
 // Feature Management
 services.AddSharedKernelFeatureManagement(configuration);
+
+// Cryptography — registers IPasswordHasher, ISymmetricEncryptionService, IAsymmetricSignatureService,
+// IHmacSigner, ISecureRandomGenerator. The consuming service must separately register its own
+// IEncryptionKeyProvider (and any signing key material) — this package ships no key material.
+services.AddSharedKernelCryptography(configuration);
+services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 ```
 
 `SharedKernel.Primitives`, `SharedKernel.Core`, and `SharedKernel.Guards` ship **no DI extensions** — they are pure libraries.
@@ -289,6 +402,8 @@ services.AddSharedKernelFeatureManagement(configuration);
 - `EqualityComparer<T>.Default` used in `Default<T>` guard is AOT-safe — it uses static dispatch via generic specialization in .NET 10.
 - `InvalidFormat` / `Email` use `Regex` constructed with `RegexOptions.Compiled` in a static field — the compiled delegate is created once at type-initialization, which is AOT-compatible. `ConcurrentDictionary` is used only for pattern-keyed caching of caller-supplied patterns in `InvalidFormat`; the email regex is a fixed static field.
 - `OutOfRange<T>` uses the `IComparable<T>` constraint — static generic dispatch, no boxing for value types, AOT-safe.
+- `Pbkdf2PasswordHasher`, `AesGcmEncryptionService`, `RsaSignatureService`, `EcdsaSignatureService`, `HmacSha256Signer`, and `CryptoRandomGenerator` are sealed classes calling directly into BCL `System.Security.Cryptography` types (`Rfc2898DeriveBytes`, `AesGcm`, `RSA`, `ECDsa`, `HMACSHA256`, `RandomNumberGenerator`) — no reflection, fully AOT-safe.
+- `CryptographyOptions` binds via `Microsoft.Extensions.Options`, the same AOT-compatible (.NET 8+) path used by `SharedKernel.Configuration`.
 
 ---
 
@@ -300,6 +415,7 @@ services.AddSharedKernelFeatureManagement(configuration);
 - `SharedKernel.Guards.Tests/` — guard functional path (Against.*), guard throw path (Throw.*), boundary theories
 - `SharedKernel.Configuration.Tests/` — ValidatedOptions eager validation
 - `SharedKernel.FeatureManagement.Tests/` — IFeatureManager enable/disable, context variant
+- `SharedKernel.Cryptography.Tests/` — `IPasswordHasher` hash/verify roundtrip and rehash-needed detection across iteration-count changes; `ISymmetricEncryptionService` encrypt/decrypt roundtrip, tamper detection (flipped ciphertext/tag byte must fail `Decrypt`), and unknown/retired `KeyId` handling; `IAsymmetricSignatureService` sign/verify roundtrip for both RSA and ECDSA with wrong-key and tampered-data failure cases; `IHmacSigner` sign/verify roundtrip and tamper detection; `ISecureRandomGenerator` output length and non-repetition across calls; DI registration sanity for `AddSharedKernelCryptography`
 - Railway-extension chains must be covered: map → bind → match over both success and failure paths.
 - `SmartEnum` must cover: FromValue hit, FromValue miss (throws), TryFromValue, List completeness.
 - Validated options test must assert that a misconfigured `TOptions` throws at `IHost.StartAsync()`.
@@ -317,3 +433,7 @@ services.AddSharedKernelFeatureManagement(configuration);
 - [2026-05-14] P-001/P-002 applied — added ValidationResult pair, ErrorCodes static class, clarified Result<T> as sealed class vs Result readonly struct, added MapError + void Match on non-generic Result, added async state machine allocation rule
 - [2026-05-14] P-003 applied — added SharedKernel.Guards package: IGuardClause marker, Guard.Against/Guard.Throw entry points, full guard extension surface (null/empty, string length, numeric, range, default, Guid, format, email, collection, boolean predicate, SmartEnum), GuardDescriptions internal class, AOT notes for cached Regex and EqualityComparer<T>.Default, updated test rules with boundary theory and single-enumeration requirements
 - [2026-05-27] P-042 applied — added ErrorType.BusinessRule enum member (HTTP 422 / domain-invariant-violation semantics), Error.BusinessRule(string code, string message) factory method, ErrorCodes.Domain nested class with RuleViolated constant; all additive — no existing types changed
+- [2026-06-26] WO-033 (P-205/P-206) applied — added sixth package `SharedKernel.Cryptography`: `IPasswordHasher`/`Pbkdf2PasswordHasher`, `ISymmetricEncryptionService`/`AesGcmEncryptionService` + `IEncryptionKeyProvider`/`CryptographicKey`/`EncryptedPayload`, `IAsymmetricSignatureService`/`RsaSignatureService`/`EcdsaSignatureService`, `IHmacSigner`/`HmacSha256Signer`, `ISecureRandomGenerator`/`CryptoRandomGenerator`, `CryptographyOptions`, `AddSharedKernelCryptography` DI extension — design locked and project scaffolded (csproj + test stub + slnx registration); zero third-party NuGet dependencies, references only `SharedKernel.Primitives` + `SharedKernel.Configuration`; implementation (Core/Tests/Docs/Published) remains pending (arch-lead)
+- [2026-06-26] WO-033 (P-207/P-208/P-209) queued for execution — pure implementation pass against the contracts already locked above; no interface, type, or DI-shape changes. P-207 implements the six sealed classes + `AddSharedKernelCryptography` against `01.Core/state-map.md` tasks C-33→C-38; P-208 delivers full unit coverage (tamper/wrong-key/rehash/DI-startup-failure cases) against T-23→T-28; P-209 closes out XML docs, README examples, NuGet packaging, and consumer dependency-graph verification against DO-10→DO-11 + P-10→P-12. Tracked under new state-map phase key `SK.01.WO033Impl` (core-arch-planner)
+- [2026-06-26] P-207 implemented — added `IAsymmetricKeyProvider` (mirrors `IEncryptionKeyProvider` for RSA/ECDSA signing key resolution; not registered by `AddSharedKernelCryptography`, consuming service supplies its own) and documented the keyed-singleton DI pattern resolving the two-implementations-one-interface conflict for `IAsymmetricSignatureService` (`RsaSignatureServiceKey`/`EcdsaSignatureServiceKey` constants); 51 new Cryptography unit tests passing, SK.01.Core now fully `●` (core-phase-implementer)
+- [2026-06-26] WO-033 closed (P-208, P-209) — full Cryptography unit-test coverage (58/58) confirmed; XML docs verified complete with zero warnings under `GenerateDocumentationFile`; NuGet metadata added matching the Guards convention; packed to the local feed; consumer-verify extended with 5 tests proving the `Primitives`+`Configuration` transitive chain resolves end-to-end through `AddSharedKernelCryptography`. No new types, interfaces, or DI shapes introduced — docs/packaging-only closeout. All six `01.Core` packages now `Published` (core-phase-implementer)

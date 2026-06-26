@@ -5,6 +5,11 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Core.Extensions;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Hashing;
+using SharedKernel.Cryptography.Random;
+using SharedKernel.Cryptography.Signing;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.FeatureManagement.Abstractions;
 using SharedKernel.FeatureManagement.Extensions;
 using SharedKernel.Guards;
@@ -445,6 +450,105 @@ public sealed class ConsumerDependencyGraphTests
 
         Assert.NotNull(error);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Cryptography — verifies the package resolves from the local
+    // feed and that its transitive dependencies (Primitives + Configuration)
+    // resolve without conflict, end-to-end through DI registration.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Cryptography_AddSharedKernelCryptography_AllServicesResolve_ResolvedFromPackage()
+    {
+        IHost host = Host.CreateDefaultBuilder()
+            .ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(new Dictionary<string, string?>()))
+            .ConfigureServices((ctx, services) =>
+            {
+                services.AddSharedKernelCryptography(ctx.Configuration);
+                // AddSharedKernelCryptography ships no key material — the consuming
+                // service must supply its own IAsymmetricKeyProvider before resolving
+                // IAsymmetricSignatureService (documented in 01.Core/CLAUDE.md).
+                services.AddSingleton<IAsymmetricKeyProvider, ConsumerAsymmetricKeyProvider>();
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        Assert.NotNull(host.Services.GetRequiredService<IPasswordHasher>());
+        Assert.NotNull(host.Services.GetRequiredService<IHmacSigner>());
+        Assert.NotNull(host.Services.GetRequiredService<ISecureRandomGenerator>());
+        Assert.NotNull(host.Services.GetRequiredService<IAsymmetricSignatureService>());
+        Assert.NotNull(host.Services.GetRequiredKeyedService<IAsymmetricSignatureService>(
+            CryptographyServiceCollectionExtensions.RsaSignatureServiceKey));
+        Assert.NotNull(host.Services.GetRequiredKeyedService<IAsymmetricSignatureService>(
+            CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey));
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public void Cryptography_PasswordHasher_HashAndVerifyRoundtrip_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCryptographyServiceProvider();
+        IPasswordHasher hasher = provider.GetRequiredService<IPasswordHasher>();
+
+        string hash = hasher.Hash("correct-horse-battery-staple");
+
+        Assert.Equal(PasswordVerificationResult.Success, hasher.Verify(hash, "correct-horse-battery-staple"));
+        Assert.Equal(PasswordVerificationResult.Failed, hasher.Verify(hash, "wrong-password"));
+    }
+
+    [Fact]
+    public void Cryptography_HmacSigner_SignAndVerifyRoundtrip_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCryptographyServiceProvider();
+        IHmacSigner signer = provider.GetRequiredService<IHmacSigner>();
+
+        byte[] secret = "shared-secret"u8.ToArray();
+        byte[] data = "payload"u8.ToArray();
+        byte[] signature = signer.Sign(data, secret);
+
+        Assert.True(signer.Verify(data, signature, secret));
+        Assert.False(signer.Verify("tampered"u8.ToArray(), signature, secret));
+    }
+
+    [Fact]
+    public void Cryptography_SecureRandomGenerator_ProducesRequestedLength_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCryptographyServiceProvider();
+        ISecureRandomGenerator generator = provider.GetRequiredService<ISecureRandomGenerator>();
+
+        byte[] bytes = generator.NextBytes(32);
+        string token = generator.NextToken();
+
+        Assert.Equal(32, bytes.Length);
+        Assert.NotEmpty(token);
+    }
+
+    [Fact]
+    public void Cryptography_SymmetricEncryption_EncryptDecryptRoundtrip_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCryptographyServiceProvider();
+        var keyProvider = new ConsumerEncryptionKeyProvider();
+        var encryption = new AesGcmEncryptionService(keyProvider);
+
+        EncryptedPayload payload = encryption.Encrypt("plaintext-from-consumer"u8.ToArray());
+        Result<byte[]> decrypted = encryption.Decrypt(payload);
+
+        Assert.True(decrypted.IsSuccess);
+        Assert.Equal("plaintext-from-consumer", System.Text.Encoding.UTF8.GetString(decrypted.Value));
+    }
+
+    private static ServiceProvider BuildCryptographyServiceProvider()
+    {
+        IServiceCollection services = new ServiceCollection();
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        services.AddSharedKernelCryptography(configuration);
+        return services.BuildServiceProvider();
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -463,4 +567,36 @@ internal sealed class ConsumerOptions
 {
     [Required]
     public string Name { get; init; } = "";
+}
+
+/// <summary>
+/// Minimal in-memory <see cref="IEncryptionKeyProvider"/> for consumer-verification purposes only.
+/// Production services must resolve key material from Key Vault, environment config, or a secret
+/// store — never hardcode it as done here for test convenience.
+/// </summary>
+internal sealed class ConsumerEncryptionKeyProvider : IEncryptionKeyProvider
+{
+    private static readonly CryptographicKey CurrentKey = new("consumer-key-v1", new byte[32]);
+
+    public CryptographicKey GetCurrentKey() => CurrentKey;
+
+    public CryptographicKey? GetKey(string keyId) => keyId == CurrentKey.Id ? CurrentKey : null;
+}
+
+/// <summary>
+/// Minimal in-memory <see cref="IAsymmetricKeyProvider"/> for consumer-verification purposes only.
+/// Production services must resolve key pairs from Key Vault or a certificate store — never
+/// generate ephemeral keys at resolution time as done here for test convenience.
+/// </summary>
+internal sealed class ConsumerAsymmetricKeyProvider : IAsymmetricKeyProvider
+{
+    private static readonly System.Security.Cryptography.RSA RsaKey =
+        System.Security.Cryptography.RSA.Create(2048);
+
+    private static readonly System.Security.Cryptography.ECDsa EcdsaKey =
+        System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+
+    public System.Security.Cryptography.RSA GetRsaKey(string keyId) => RsaKey;
+
+    public System.Security.Cryptography.ECDsa GetEcdsaKey(string keyId) => EcdsaKey;
 }

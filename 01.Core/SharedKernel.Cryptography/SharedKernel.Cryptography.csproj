@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Cryptography</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Dependency-free cryptographic primitives for the SharedKernel: password hashing (PBKDF2-HMACSHA256), AES-256-GCM symmetric encryption, RSA/ECDSA asymmetric signing, HMACSHA256 signing, and cryptographically secure random/token generation. Pure BCL System.Security.Cryptography only — zero third-party NuGet dependencies. AOT-compatible. Decoupled from identity/OIDC concerns so non-web worker services can consume it directly. Depends on SharedKernel.Primitives and SharedKernel.Configuration.</Description>
+    <PackageTags>shared-kernel;cryptography;password-hashing;aes-gcm;encryption;signing;rsa;ecdsa;hmac;secure-random;aot</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Cryptography.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Cryptography.Tests\**" />
+    <None Remove="SharedKernel.Cryptography.Tests\**" />
+  </ItemGroup>
+
+</Project>

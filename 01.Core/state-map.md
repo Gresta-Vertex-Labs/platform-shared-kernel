@@ -32,12 +32,13 @@
 | `SK.01.Docs` | Docs | All tasks in Phase: Docs are `●` | — |
 | `SK.01.Published` | Published | All tasks in Phase: Published are `●` | — |
 | `SK.01.P042` | P-042 Error.BusinessRule Factory | All tasks in Phase: P-042 are `●` | P-042 |
+| `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | All tasks in Phase: WO-033 Implementation are `●` | P-207, P-208, P-209 |
 
 ---
 
 ## Active Work
 
-_Nothing in progress._
+_Nothing in progress — all tasks complete._
 
 <!--
 Format when active — replace placeholder with table:
@@ -70,6 +71,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Configuration` | — | `○` | References Primitives |
 | `SharedKernel.FeatureManagement` | — | `○` | References Primitives |
 | `SharedKernel.Guards` | — | `○` | References Primitives + Core; two-path guard API |
+| `SharedKernel.Cryptography` | Published | `●` | References Primitives + Configuration; zero third-party NuGet deps; Core, Tests, Docs, Published all complete (P-207 ●, P-208 ●, P-209 ●); WO-033 fully closed |
 
 ---
 
@@ -95,6 +97,12 @@ Format when blocked — replace placeholder with table:
 | D-14 | Define full guard extension method surface on `IGuardClause`: null/empty, string length, numeric, range, default, Guid, regex-format, collection, email, boolean-predicate, SmartEnum | SharedKernel.Guards | `●` |
 | D-15 | Define `GuardDescriptions` internal static class — const string message templates, `{0}`/`{1}` placeholder convention | SharedKernel.Guards | `●` |
 | D-16 | Define `Guard.Throw` nested static class — mirror all `Against.*` extensions as void methods throwing `DomainException` on non-null `Error` return | SharedKernel.Guards | `●` |
+| D-20 | Define `IPasswordHasher` interface and `PasswordVerificationResult` enum shape — self-describing hash output, rehash-needed detection | SharedKernel.Cryptography | `●` |
+| D-21 | Define `ISymmetricEncryptionService` interface, `EncryptedPayload` record shape, and `IEncryptionKeyProvider`/`CryptographicKey` contracts for AES-256-GCM with versioned key rotation | SharedKernel.Cryptography | `●` |
+| D-22 | Define `IAsymmetricSignatureService` interface for RSA/ECDSA sign and verify | SharedKernel.Cryptography | `●` |
+| D-23 | Define `IHmacSigner` interface for keyed-hash sign and verify with constant-time comparison | SharedKernel.Cryptography | `●` |
+| D-24 | Define `ISecureRandomGenerator` interface for cryptographically secure byte/token generation | SharedKernel.Cryptography | `●` |
+| D-25 | Define `CryptographyOptions` shape and `AddSharedKernelCryptography` DI extension signature | SharedKernel.Cryptography | `●` |
 
 ---
 
@@ -119,6 +127,9 @@ Format when blocked — replace placeholder with table:
 | S-13 | Create folder structure (`Clauses/`, `Descriptions/`) inside `SharedKernel.Guards/` | SharedKernel.Guards | `●` |
 | S-14 | Create `SharedKernel.Guards.Tests.csproj` nested inside `SharedKernel.Guards/` with xUnit reference | SharedKernel.Guards | `●` |
 | S-15 | Register `SharedKernel.Guards` and `SharedKernel.Guards.Tests` in `Platform.SharedKernel.slnx` under solution folder `01.Core` | SharedKernel.Guards | `●` |
+| S-16 | Create `01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.csproj` targeting `net10.0`; add project references to `SharedKernel.Primitives` and `SharedKernel.Configuration` | SharedKernel.Cryptography | `●` |
+| S-17 | Create `SharedKernel.Cryptography.Tests.csproj` nested inside `SharedKernel.Cryptography/` with xUnit + NSubstitute references | SharedKernel.Cryptography | `●` |
+| S-18 | Register `SharedKernel.Cryptography` and `SharedKernel.Cryptography.Tests` in `Platform.SharedKernel.slnx` under solution folder `01.Core` | SharedKernel.Cryptography | `●` |
 
 ---
 
@@ -157,6 +168,12 @@ Format when blocked — replace placeholder with table:
 | C-27 | Implement `InvalidSmartEnum<TEnum, TValue>(TValue id)` constrained to `TEnum : SmartEnum<TEnum,TValue>` using `SmartEnum<TEnum,TValue>.TryFromValue` — zero reflection | SharedKernel.Guards | `●` |
 | C-28 | Implement `GuardDescriptions` internal static class with all const string message templates (not public API) | SharedKernel.Guards | `●` |
 | C-29 | Implement `Guard.Throw` nested static class — mirrors all `Against.*` extensions as void methods; throws `DomainException(error)` on non-null `Error` return | SharedKernel.Guards | `●` |
+| C-33 | Implement `IPasswordHasher` via PBKDF2-HMACSHA256 (`Rfc2898DeriveBytes.Pbkdf2`) with self-describing versioned output and configurable iteration count (default 600,000) | SharedKernel.Cryptography | `●` |
+| C-34 | Implement `ISymmetricEncryptionService` via AES-256-GCM (`System.Security.Cryptography.AesGcm`) with random 96-bit nonce per call and `IEncryptionKeyProvider`-resolved versioned keys; `Decrypt` returns `Result<byte[]>`, never throws `CryptographicException` directly | SharedKernel.Cryptography | `●` |
+| C-35 | Implement `IAsymmetricSignatureService` via RSA (2048-bit, PSS/SHA-256) and ECDSA (P-256/SHA-256) | SharedKernel.Cryptography | `●` |
+| C-36 | Implement `IHmacSigner` via HMACSHA256 with `CryptographicOperations.FixedTimeEquals` constant-time verification | SharedKernel.Cryptography | `●` |
+| C-37 | Implement `ISecureRandomGenerator` via `RandomNumberGenerator` — byte array and URL-safe Base64 token generation | SharedKernel.Cryptography | `●` |
+| C-38 | Implement `CryptographyOptions` validation and `AddSharedKernelCryptography` DI extension registering all five services as singletons via `AddValidatedOptions` | SharedKernel.Cryptography | `●` |
 
 ---
 
@@ -184,6 +201,12 @@ Format when blocked — replace placeholder with table:
 | T-16 | Unit: Guard functional path — collection guards: Empty, MaxCount, MinCount; verify single enumeration via stub | SharedKernel.Guards.Tests | `●` |
 | T-17 | Unit: Guard functional path — True/False boolean predicate guards; InvalidSmartEnum with known/unknown value | SharedKernel.Guards.Tests | `●` |
 | T-18 | Unit: Guard throw path (Throw.*) — assert `DomainException` thrown on violation; assert no exception on pass for all guard categories | SharedKernel.Guards.Tests | `●` |
+| T-23 | Unit: `IPasswordHasher` — hash/verify roundtrip, wrong password fails, rehash-needed detection across iteration-count changes | SharedKernel.Cryptography.Tests | `●` |
+| T-24 | Unit: `ISymmetricEncryptionService` — encrypt/decrypt roundtrip, tamper detection (flipped ciphertext/tag byte fails), unknown key id fails, multi-key-version decrypt | SharedKernel.Cryptography.Tests | `●` |
+| T-25 | Unit: `IAsymmetricSignatureService` — sign/verify roundtrip for RSA and ECDSA, verification fails with wrong key or tampered data | SharedKernel.Cryptography.Tests | `●` |
+| T-26 | Unit: `IHmacSigner` — sign/verify roundtrip, tamper detection, constant-time comparison behavior | SharedKernel.Cryptography.Tests | `●` |
+| T-27 | Unit: `ISecureRandomGenerator` — output length correctness, statistical non-repetition across calls, never delegates to `System.Random` | SharedKernel.Cryptography.Tests | `●` |
+| T-28 | Unit: `AddSharedKernelCryptography` DI registration sanity — all five services resolve; invalid `CryptographyOptions` throws at `IHost.StartAsync()` | SharedKernel.Cryptography.Tests | `●` |
 
 ---
 
@@ -199,6 +222,8 @@ Format when blocked — replace placeholder with table:
 | DO-04 | Document `AddValidatedOptions` startup-validation pattern with annotated example | SharedKernel.Configuration | `●` |
 | DO-05 | XML doc all public types, extension methods, and parameters in `SharedKernel.Guards` | SharedKernel.Guards | `●` |
 | DO-06 | Add Guards usage examples to `01.Core/README.md` — functional `Against.*` path and imperative `Throw.*` path with annotated samples | SharedKernel.Guards | `●` |
+| DO-10 | XML doc all public types in `SharedKernel.Cryptography` | SharedKernel.Cryptography | `●` |
+| DO-11 | Add Cryptography usage examples to `01.Core/README.md` — password hashing, encrypt/decrypt, signing, secure token generation | SharedKernel.Cryptography | `●` |
 
 ---
 
@@ -217,6 +242,9 @@ Format when blocked — replace placeholder with table:
 | P-07 | Add NuGet metadata to `SharedKernel.Guards.csproj` (authors, description, version, license) | SharedKernel.Guards | `●` |
 | P-08 | Pack and publish `SharedKernel.Guards` to feed | SharedKernel.Guards | `●` |
 | P-09 | Verify `SharedKernel.Guards` dependency graph in consumer: confirms Primitives + Core transitive refs resolve correctly | SharedKernel.Guards | `●` |
+| P-10 | Add NuGet metadata to `SharedKernel.Cryptography.csproj` (authors, description, version, license, tags) | SharedKernel.Cryptography | `●` |
+| P-11 | Pack and publish `SharedKernel.Cryptography` to feed | SharedKernel.Cryptography | `●` |
+| P-12 | Verify `SharedKernel.Cryptography` dependency graph in a consumer test project (Primitives + Configuration transitive refs resolve) | SharedKernel.Cryptography | `●` |
 
 ---
 
@@ -244,6 +272,19 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: WO-033 Implementation — Cryptography Core/Tests/Docs/Published <!-- phase-key: SK.01.WO033Impl -->
+
+> Execution-only phase: implements the `SharedKernel.Cryptography` contracts already locked in `01.Core/CLAUDE.md` by P-205/P-206 (Design + Scaffold). No new types, interfaces, or DI shapes are introduced here — this phase tracks P-207/P-208/P-209 against the pre-existing `Phase: Core` / `Phase: Tests` / `Phase: Docs` / `Phase: Published` task rows (C-33→C-38, T-23→T-28, DO-10→DO-11, P-10→P-12) so WO-033 progress is visible as a single work-order-scoped block.
+> WO-033.
+
+| ID | Task | Maps to | Package(s) | State |
+|----|------|---------|-----------|:-----:|
+| P-207 | Implement `Pbkdf2PasswordHasher`, `AesGcmEncryptionService`, `RsaSignatureService`, `EcdsaSignatureService`, `HmacSha256Signer`, `CryptoRandomGenerator`, `CryptographyOptions` validation, and `AddSharedKernelCryptography` DI extension — all five services registered as stateless thread-safe singletons | C-33, C-34, C-35, C-36, C-37, C-38 | SharedKernel.Cryptography | `●` |
+| P-208 | Full unit-test coverage: hash/verify roundtrips, tamper/wrong-key detection, RSA+ECDSA signature roundtrips, HMAC tamper detection, secure-random output correctness, DI registration sanity + startup-validation failure | T-23, T-24, T-25, T-26, T-27, T-28 | SharedKernel.Cryptography.Tests | `●` |
+| P-209 | XML docs on every public type, README usage examples, NuGet packaging metadata, `dotnet pack` zero-warning verification, consumer dependency-graph check, Package Board updated to `Published`/`●` | DO-10, DO-11, P-10, P-11, P-12 | SharedKernel.Cryptography | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `01.Core` references nothing._
@@ -258,17 +299,18 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 100.
+> Counts updated whenever a task state changes. Total tasks: 129 (126 base tasks + 3 WO-033 work-order tracking rows; the WO-033 phase cross-references rather than duplicates C-33→C-38/T-23→T-28/DO-10→DO-11/P-10→P-12).
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
-| `SK.01.Design` | Design | 16 | 16 | 0 | `●` |
-| `SK.01.Scaffold` | Scaffold | 15 | 15 | 0 | `●` |
-| `SK.01.Core` | Core | 29 | 29 | 0 | `●` |
-| `SK.01.Tests` | Tests | 18 | 18 | 0 | `●` |
-| `SK.01.Docs` | Docs | 6 | 6 | 0 | `●` |
-| `SK.01.Published` | Published | 9 | 9 | 0 | `●` |
+| `SK.01.Design` | Design | 22 | 22 | 0 | `●` |
+| `SK.01.Scaffold` | Scaffold | 18 | 18 | 0 | `●` |
+| `SK.01.Core` | Core | 35 | 35 | 0 | `●` |
+| `SK.01.Tests` | Tests | 24 | 24 | 0 | `●` |
+| `SK.01.Docs` | Docs | 8 | 8 | 0 | `●` |
+| `SK.01.Published` | Published | 12 | 12 | 0 | `●` |
 | `SK.01.P042` | P-042 Error.BusinessRule Factory | 13 | 13 | 0 | `●` |
+| `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | 3 | 3 | 0 | `●` |
 
 ---
 
@@ -293,3 +335,12 @@ Format when active:
 - [2026-05-15] P-07→P-09 → ● in SK.01.Published — SharedKernel.Guards NuGet metadata added, packed to local feed, consumer verification confirms transitive deps resolve (state-map-phase)
 - [2026-05-27] P-042 added — Error.BusinessRule factory, ErrorType.BusinessRule enum member, ErrorCodes.Domain nested class; 13 tasks (D-17→D-19, C-30→C-32, T-19→T-22, DO-07→DO-09) added at ○; total 100 tasks (WO-010)
 - [2026-05-27] D-17→D-19, C-30→C-32, T-19→T-22, DO-07→DO-09 → ● in SK.01.P042 — all 13 tasks complete; ErrorType.BusinessRule, Error.BusinessRule factory, ErrorCodes.Domain.RuleViolated implemented and tested (state-map-phase)
+- [2026-06-26] WO-033 processed — added sixth package `SharedKernel.Cryptography` (dependency-free hashing/encryption/signing/secure-random primitives, decoupled from `12.Security`'s identity concerns): D-20→D-25 (design), S-16→S-18 (scaffold), C-33→C-38 (implementation, pending), T-23→T-28 (tests, pending), DO-10→DO-11 (docs, pending), P-10→P-12 (publish, pending); total now 126 tasks across 7 phases (arch-lead)
+- [2026-06-26] D-20→D-25 → ● in SK.01.Design — `IPasswordHasher`/`PasswordVerificationResult`, `ISymmetricEncryptionService`/`EncryptedPayload`/`IEncryptionKeyProvider`/`CryptographicKey`, `IAsymmetricSignatureService`, `IHmacSigner`, `ISecureRandomGenerator`, and `CryptographyOptions`/`AddSharedKernelCryptography` contracts all locked in `01.Core/CLAUDE.md` (state-map-phase)
+- [2026-06-26] S-16→S-18 → ● in SK.01.Scaffold — `SharedKernel.Cryptography.csproj` (references `SharedKernel.Primitives` + `SharedKernel.Configuration`) and `SharedKernel.Cryptography.Tests.csproj` created and registered in `Platform.SharedKernel.slnx`; both build clean with 0 warnings / 0 errors. `SK.01.Core`, `SK.01.Tests`, `SK.01.Docs`, and `SK.01.Published` regress from `●` to `◐` — each now carries pending Cryptography implementation tasks (state-map-phase)
+- [2026-06-26] P-207/P-208/P-209 processed (WO-033 execution phase) — added `SK.01.WO033Impl` phase key cross-referencing existing C-33→C-38 (implement five services + DI extension), T-23→T-28 (full unit-test coverage), DO-10→DO-11 + P-10→P-12 (XML docs/README/NuGet packaging/consumer verification/Package Board closeout); no new types or contracts introduced — design was already locked by P-205/P-206; Package Board entry for `SharedKernel.Cryptography` updated from `Scaffold`/`◐` to `Core`/`◐`; total tracked rows now 129 (core-arch-planner)
+- [2026-06-26] C-33→C-38 → ● in SK.01.Core — implemented `Pbkdf2PasswordHasher`, `AesGcmEncryptionService` (+`EncryptedPayload`/`IEncryptionKeyProvider`/`CryptographicKey`), `RsaSignatureService`/`EcdsaSignatureService` (+`IAsymmetricKeyProvider`), `HmacSha256Signer`, `CryptoRandomGenerator`, and `AddSharedKernelCryptography` DI extension (RSA default + keyed RSA/ECDSA registrations); SK.01.Core now fully `●` (35/35); P-207 → ● in SK.01.WO033Impl; 51 new Cryptography unit tests passing as part of implementation due diligence (T-23→T-28 remain officially owned by Phase: Tests / P-208) (core-phase-implementer)
+- [2026-06-26] T-23→T-28 → ● in SK.01.Tests — verified existing 51 Cryptography tests already covered hash/verify roundtrip, tamper detection, unknown key id, multi-key-version decrypt, RSA/ECDSA roundtrip+wrong-key+tamper, HMAC roundtrip+tamper, DI registration sanity, and startup-validation failure; added 7 tests closing precise gaps (statistical non-repetition for `ISecureRandomGenerator` across 500 samples, never-all-zero check, explicit constant-time-comparison-shape tests for `IHmacSigner.Verify`, null-argument guards); 58/58 Cryptography tests passing; SK.01.Tests now fully `●` (24/24); P-208 → ● in SK.01.WO033Impl (core-phase-implementer)
+- [2026-06-26] DO-10/DO-11 → ● in SK.01.Docs — verified all `SharedKernel.Cryptography` public types already carried complete XML docs from the Core implementation pass; confirmed via `dotnet build` with `GenerateDocumentationFile` newly enabled producing 0 warnings/0 errors (fixed one ambiguous-cref CS0419 on `Pbkdf2PasswordHasher`); added full Cryptography usage section to `01.Core/README.md` (password hashing, AES-256-GCM encrypt/decrypt, RSA/ECDSA signing via keyed services, HMAC signing, secure random/token generation); SK.01.Docs now fully `●` (8/8)
+- [2026-06-26] P-10→P-12 → ● in SK.01.Published — added NuGet packaging metadata to `SharedKernel.Cryptography.csproj` (matching the Guards package convention); packed `SharedKernel.Cryptography.1.0.0.nupkg`/`.snupkg` into the root local feed (`./nupkgs/`); added `SharedKernel.Cryptography` package reference plus 5 new consumer-verification tests (DI registration sanity, password hash/verify roundtrip, HMAC roundtrip, secure random generation, AES-GCM encrypt/decrypt roundtrip) to `01.Core/SharedKernel.Consumer.Tests/`; all 42 consumer tests pass confirming Primitives + Configuration transitive chain resolves correctly; SK.01.Published now fully `●` (12/12)
+- [2026-06-26] P-209 → ● in SK.01.WO033Impl — all sub-tasks (DO-10, DO-11, P-10, P-11, P-12) complete; WO-033 fully closed (P-207 ●, P-208 ●, P-209 ●); Package Board entry for `SharedKernel.Cryptography` updated from `Docs`/`◐` to `Published`/`●` (core-phase-implementer)
