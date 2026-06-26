@@ -79,7 +79,7 @@ Format when blocked:
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
-| 15 | [Integration](15.Integration/state-map.md) | — | `○` | — | — |
+| 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
 | 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-030 (P-188/P-189) complete: SK.16.Design (54/54), SK.16.Scaffold (14/14), SK.16.Core (46/46), SK.16.Tests (37/37), and SK.16.Docs (12/12) all done — FakeUserContext/FakeTenantProvider/FakerSeeding implemented and proven in SharedKernel.Testing.SelfTests, full XML doc coverage confirmed, `[STATUS: Planned]` markers removed. | — |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
@@ -108,17 +108,17 @@ Format when active:
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 5 |
+| ● Published | 6 |
 | ● OTel | 1 |
 | ● Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | 1 |
 | ● Design | 1 |
 | ● Docs | 1 |
 | ● Tests | 2 |
-| ● Core | 0 |
+| ● Core | 1 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 6 |
+| ○ Not Started | 5 |
 
 ---
 
@@ -1645,6 +1645,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-05-14] Phase(s) P-001, P-002 dispatched to core-arch-planner for 01.Core (dispatch-phase)
 - [2026-05-14] Core → Design (●) — promoted from SK.01.Design (state-map-phase)
 - [2026-05-14] Core → Scaffold (●) — promoted from SK.01.Scaffold (state-map-phase)
+- [2026-06-26] Integration → Tests (●) — promoted from SK.15.Tests (state-map-phase)
 - [2026-05-14] Core → Core (●) — promoted from SK.01.Core (state-map-phase)
 - [2026-05-14] Core → Tests (●) — promoted from SK.01.Tests (state-map-phase)
 - [2026-05-14] Core → Docs (●) — promoted from SK.01.Docs (state-map-phase)
@@ -8493,3 +8494,125 @@ Two NetArchTest rules added to `SharedKernel.ArchitectureTests`, mirroring the p
 - [2026-06-25] 00.Governance → Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching (●) — promoted from SK.00.PresentationArchRules (state-map-phase)
 - [2026-06-25] Phase Backlog P-199 → ● Complete — SK.00.PresentationArchRules done (state-map-phase)
 - [2026-06-25] Phase Backlog P-192 → ● Complete — 14.Presentation domain (Design through Published) was already fully implemented; root status corrected from stale ◐ Dispatched (implement-next-phase)
+
+---
+### P-200 — Integration: Design — Lock Webhook Subscription, Dispatch, Signing, and Options Contracts
+
+**Status:** `●` Complete
+**Work Order:** WO-032
+**Domain:** 15.Integration
+**Depends on:** None
+
+#### What is needed
+Final review and lock of the interface contracts already drafted in `15.Integration/CLAUDE.md`: the `WebhookSubscription` read-only DTO and `IWebhookSubscriptionStore` lookup seam, the `IWebhookDispatcher` fan-out/single-delivery contract and `WebhookDeliveryResult` outcome shape, the `WebhookSignatureProvider`/`WebhookSignatureVerifier` signing/verification pair with shared `WebhookSignatureHeaders` constants, the `WebhookDeliveryExhaustedEvent` integration event, the optional `IWebhookDeliveryObserver` hook, and `WebhookDeliveryOptions` with its validation bounds. This phase is a verification and ratification pass over an existing design, not a from-scratch design exercise — confirm every contract still holds against the current state of `01.Core`, `04.Contracts`, and `07.Messaging.Abstractions` (which have all changed since the brain was drafted on 2026-06-25), then lock it as the basis for Scaffold.
+
+#### Why this is needed
+A domain brain was drafted directly into `15.Integration/CLAUDE.md` ahead of any phase being opened in the root backlog — useful upfront thinking, but it was never validated against root layering rules by this role, and three dependency surfaces it references (`SharedKernel.Configuration`, `SharedKernel.Contracts`, `SharedKernel.Messaging.Abstractions`) have shipped and evolved since that draft was written. Every other domain's Design phase exists to catch exactly this kind of drift before Scaffold locks in project references — Integration should not skip that gate just because a draft already exists.
+
+#### Acceptance criteria
+- [ ] Every interface, record, and options type listed in `15.Integration/CLAUDE.md`'s Interface Contracts section is re-confirmed against the current shape of `SharedKernel.Primitives`, `SharedKernel.Configuration`, `SharedKernel.Contracts` (`IIntegrationEvent`), and `SharedKernel.Messaging.Abstractions` (`IEventPublisher`) — no stale member or signature assumption carried forward unverified
+- [ ] Confirmed zero reference, direct or transitive, to `06.Persistence`, `11.Communication.*`, or `07.Messaging.MassTransit` in the locked design
+- [ ] `WebhookSignatureHeaders` constants and the timestamp-prefixed signing-input convention (`"{unixSeconds}.{payloadJson}"`) ratified as the single source of truth referenced by both signing and verification
+- [ ] `15.Integration/state-map.md` Phase: Design section populated with the locked task list (replacing the "pending dispatch" placeholder)
+---
+
+### P-201 — Integration: Scaffold — Project Wiring for SharedKernel.Integration.Webhooks
+
+**Status:** `●` Complete
+**Work Order:** WO-032
+**Domain:** 15.Integration
+**Depends on:** P-200
+
+#### What is needed
+Project file creation for `SharedKernel.Integration.Webhooks` (targeting `net10.0`, `ImplicitUsings` and `Nullable` enabled) wired into the `.slnx` under the `15.Integration` solution folder, with `ProjectReference`s limited exactly to `SharedKernel.Primitives`, `SharedKernel.Configuration`, `SharedKernel.Contracts`, and `SharedKernel.Messaging.Abstractions`, plus PackageReferences to `Microsoft.Extensions.Http` and `Microsoft.Extensions.Http.Resilience`. The nested test project (`SharedKernel.Integration.Webhooks.Tests`, also `net10.0` classlib) is created alongside it with a `ProjectReference` back to the main package and to `SharedKernel.Testing`, plus the standard test package set and `GlobalUsings.cs`. No implementation logic in this phase — folder structure and empty stub files only, matching every other domain's Scaffold phase.
+
+#### Why this is needed
+Locks the dependency graph decided in Design into actual `.csproj` references before any code is written, so a violation of the layering boundary (an accidental reference to `11.Communication.*` or `06.Persistence`) is caught by `dotnet build`/solution structure inspection rather than discovered later during a Core-phase code review.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Integration.Webhooks.csproj` exists, targets `net10.0`, and its `ProjectReference`/`PackageReference` list matches exactly what Design (P-200) ratified — no extra, no missing
+- [ ] `SharedKernel.Integration.Webhooks.Tests.csproj` exists nested inside the package folder, targets `net10.0` as a classlib, references the main package and `SharedKernel.Testing`
+- [ ] Both projects registered in `Platform.SharedKernel.slnx` under the `15.Integration` solution folder
+- [ ] `dotnet build` succeeds with zero errors and zero warnings on the empty scaffold
+- [ ] `15.Integration/state-map.md` Phase: Scaffold section populated with the dispatched task list
+---
+
+### P-202 — Integration: Core (Signing) — HMAC-SHA256 Sign and Verify Primitives
+
+**Status:** `●` Complete
+**Work Order:** WO-032
+**Domain:** 15.Integration
+**Depends on:** P-201
+
+#### What is needed
+Implementation of the signing/verification primitives locked in Design: `WebhookSignatureHeaders` (the single source of truth for the two header-name constants), `WebhookSignatureProvider.Sign` (stateless HMAC-SHA256 over the timestamp-prefixed payload, returning a lowercase hex digest), and `WebhookSignatureVerifier.Verify` (never-throwing verification with a configurable tolerance window, using constant-time digest comparison). This capability has zero dependency on the dispatcher, the subscription store, or DI — it is pure, stateless cryptographic logic and must be implementable and fully tested in isolation before Dispatch (P-203) is built on top of it.
+
+#### Why this is needed
+Splitting signing out from dispatch (rather than bundling both into one "Core" phase, as the original brain's six-phase template implied) gives the platform a verifiably-correct cryptographic primitive before any retry/fan-out/DI complexity is layered on top — the same discipline applied in WO-031 when 14.Presentation's Core phase was split into independently-verifiable WebApi and SignalR sub-phases. Getting the replay-protection and timing-attack-resistance properties right in isolation, with a dedicated round-trip/tamper/expiry test pass, is materially safer than verifying them as a side effect of dispatcher tests.
+
+#### Acceptance criteria
+- [ ] `WebhookSignatureProvider.Sign` computes HMAC-SHA256 over UTF-8 `"{unixSeconds}.{payloadJson}"` keyed by the subscription secret, returns lowercase hex
+- [ ] `WebhookSignatureVerifier.Verify` never throws for any malformed input (malformed timestamp, malformed signature, missing/empty values) — always returns `false` instead
+- [ ] Digest comparison inside `Verify` uses `CryptographicOperations.FixedTimeEquals` exclusively — no `==` or `string.Equals` on the digest anywhere in the implementation
+- [ ] Default tolerance window is 5 minutes, overridable per call; a signature whose timestamp falls outside tolerance fails verification regardless of digest correctness
+- [ ] Round-trip test (sign then verify succeeds), tamper tests (mutated payload or header fails), expired-timestamp test (outside tolerance fails), malformed-input tests (never throws) all pass
+- [ ] Zero reflection, zero allocation beyond what `HMACSHA256`/string formatting requires; both types are fully AOT-compatible (BCL only)
+---
+
+### P-203 — Integration: Core (Dispatch) — Retrying Webhook Dispatcher, Subscription Seam, and DI Wiring
+
+**Status:** `●` Complete
+**Work Order:** WO-032
+**Domain:** 15.Integration
+**Depends on:** P-202
+
+#### What is needed
+Implementation of the delivery pipeline built on top of P-202's signing primitives: `WebhookSubscription` (pure DTO) and `IWebhookSubscriptionStore` (the consuming-service-implemented lookup seam), `IWebhookDispatcher` with both `DispatchAsync` (fan-out, bounded by `MaxConcurrentDeliveries`) and `DispatchToSubscriptionAsync` (single-subscription path) — backed by a named `HttpClient` resolved through `IHttpClientFactory` and configured with `Microsoft.Extensions.Http.Resilience`'s standard resilience handler for retry/backoff, never a hand-rolled retry loop. Also: `WebhookDeliveryResult`, `WebhookDeliveryExhaustedEvent` (published exactly once per exhausted subscription via `IEventPublisher`), the optional `IWebhookDeliveryObserver` hook (exceptions caught and logged, never propagated), `WebhookDeliveryOptions` with its eager startup validator, and the `AddSharedKernelWebhooks()` / `WithDeliveryObserver<TObserver>()` DI extension methods.
+
+#### Why this is needed
+This is the capability's actual value delivery — reliable, signed, observable webhook dispatch — and it is where every hard rule from the domain brain converges: no raw `HttpClient` storage, no persistence dependency, one `WebhookDeliveryExhaustedEvent` per exhaustion (not zero, not many), a single subscription's failure never faulting the fan-out, and an observer's exception never affecting delivery outcome. Building it directly on top of an already-proven signing primitive (P-202) means dispatcher tests can assume signing correctness rather than re-prove it.
+
+#### Acceptance criteria
+- [ ] No `new HttpClient()` or raw `HttpClient` constructor injection anywhere — only the named client resolved via `IHttpClientFactory`, registered by `AddSharedKernelWebhooks`
+- [ ] `IWebhookDispatcher.DispatchAsync`/`DispatchToSubscriptionAsync` never throw for an HTTP-level failure — every outcome surfaces as a `WebhookDeliveryResult` with `IsSuccess == false` and `Error` populated
+- [ ] `DispatchAsync` fan-out is bounded by `WebhookDeliveryOptions.MaxConcurrentDeliveries` — no unbounded `Task.WhenAll` over the full subscription list
+- [ ] Exactly one `WebhookDeliveryExhaustedEvent` published per subscription that exhausts `MaxAttempts` without a 2xx response — verified via `16.Testing`'s `InMemoryEventPublisher.ShouldHavePublishedOnce<WebhookDeliveryExhaustedEvent>()`
+- [ ] A registered `IWebhookDeliveryObserver` that throws is caught, logged at `LogLevel.Warning`, and never affects the delivery outcome
+- [ ] `WebhookDeliveryOptions` validator rejects zero `MaxAttempts`, `MaxBackoffDelay < BaseBackoffDelay`, and any non-positive `TimeSpan` value at startup with an actionable message
+- [ ] `AddSharedKernelWebhooks()` registers everything except `IWebhookSubscriptionStore` (required, consumer-supplied) and observers (optional, consumer-supplied via `WithDeliveryObserver<T>()`) — DI resolution fails clearly if the consumer never registers a store
+- [ ] Fan-out test (N active subscriptions, inactive/non-matching excluded, one failure does not affect others), retry/backoff test (transient failure retried up to `MaxAttempts`, success on a later attempt reflected in `Attempts`) all pass
+- [ ] `15.Integration/state-map.md` Phase: Core section populated and Phase: Tests section reflects coverage delivered alongside P-202/P-203 rather than as a deferred standalone pass
+---
+
+### P-204 — Integration: Docs and Published — XML Docs, README, NuGet Packaging, Consumer Verification
+
+**Status:** `●` Complete
+**Work Order:** WO-032
+**Domain:** 15.Integration
+**Depends on:** P-203
+
+#### What is needed
+XML doc comments on every public type and member in `SharedKernel.Integration.Webhooks` (subscriptions, dispatch, signing, events, observability, options, DI extensions), a README covering the DI registration shapes already sketched in the domain brain (minimal setup, custom options, delivery observer, dispatching an event, verifying an inbound webhook), a configuration reference for `WebhookDeliveryOptions`, and full NuGet packaging metadata. Closes with a consumer-verification pass proving `AddSharedKernelWebhooks()` resolves cleanly end-to-end when a minimal `IWebhookSubscriptionStore` stub is registered alongside it, and that omitting the store produces a clear DI failure rather than a silent no-op.
+
+#### Why this is needed
+Matches the Docs→Published closeout pattern every other domain has followed before being marked `●` on the root board (most recently 14.Presentation's P-197/P-198). The consumer-verification requirement specifically validates the brain's documented hard rule that `IWebhookSubscriptionStore` has no default registration — this must be proven, not just asserted in prose, the same way WO-030's audit found documented-but-unverified claims elsewhere in the platform.
+
+#### Acceptance criteria
+- [ ] All public types carry XML doc comments; package builds with XML documentation file generation enabled and zero missing-doc warnings
+- [ ] README documents minimal setup, custom `WebhookDeliveryOptions`, observer registration, event dispatch call site, and inbound-webhook verification call site
+- [ ] `dotnet pack` produces `.nupkg` + `.snupkg` with correct NuGet metadata and zero warnings
+- [ ] Consumer-verify harness proves `AddSharedKernelWebhooks()` + a registered `IWebhookSubscriptionStore` resolves `IWebhookDispatcher` with zero DI exceptions
+- [ ] Consumer-verify harness proves omitting `IWebhookSubscriptionStore` registration produces a clear, actionable DI resolution failure (not a silent null or no-op)
+- [ ] `15.Integration/state-map.md` Package Board updated to reflect `SharedKernel.Integration.Webhooks` at `Published`/`●`
+---
+
+- [2026-06-26] WO-032: P-200–P-204 written for 15.Integration (Design/Scaffold/Core-Signing/Core-Dispatch/Docs+Published) — accepted the pre-drafted `15.Integration/CLAUDE.md` domain brain (`SharedKernel.Integration.Webhooks`: signed outbound webhook dispatch) with one upgrade: split the templated single "Core" phase into independently-verifiable Signing (P-202) and Dispatch (P-203) sub-phases, mirroring the WO-031 WebApi/SignalR split; 15.Integration was `○ Not Started` on the Domain Summary Board, promoted to `◐ Design` (arch-lead)
+- [2026-06-26] 15 → Design (◐) — Re-verify the pre-drafted webhook subscription, dispatch, signing, and options contracts in 15.Integration/CLAUDE.md against the current shape of 01.Core, 04.Contracts, and 07.Messaging.Abstractions, then lock them for Scaffold (state-map-phase)
+- [2026-06-26] Phase(s) P-200, P-201, P-202, P-203, P-204 dispatched to integration-arch-planner for 15.Integration (dispatch-phase)
+
+- [2026-06-26] Integration → Scaffold (●) — promoted from SK.15.Scaffold (state-map-phase)
+- [2026-06-26] Phase Backlog P-200, P-201 → ● Complete — SK.15.Design and SK.15.Scaffold done (state-map-phase)
+- [2026-06-26] Integration → Core (●) — promoted from SK.15.Core (state-map-phase)
+- [2026-06-26] Integration → Docs (●) — promoted from SK.15.Docs (state-map-phase)
+- [2026-06-26] Integration → Published (●) — promoted from SK.15.Published (state-map-phase)
+- [2026-06-26] Phase Backlog P-202, P-203, P-204 → ● Complete — SK.15.Core (Signing+Dispatch) and SK.15.Published done; 15.Integration (WO-032) complete end to end (state-map-phase)
