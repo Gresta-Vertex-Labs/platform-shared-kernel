@@ -3,6 +3,61 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Integration.Webhooks</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Outbound webhook delivery for SharedKernel microservices: signed, retried, fan-out-safe dispatch of platform integration events to externally-configured HTTP subscribers (IWebhookDispatcher, WebhookDispatcher), HMAC-SHA256 request signing with replay-resistant verification (WebhookSignatureProvider, WebhookSignatureVerifier), the subscription and delivery-observation seams implemented by the consuming service (IWebhookSubscriptionStore, IWebhookDeliveryObserver), the delivery-exhausted integration event (WebhookDeliveryExhaustedEvent), and DI registration (AddSharedKernelWebhooks/WithDeliveryObserver).</Description>
+    <PackageTags>shared-kernel;webhooks;outbound-integration;hmac;signing;resilience;retry;httpclientfactory</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Layering boundary (15.Integration/CLAUDE.md): exactly these four ProjectReferences are
+      permitted. SharedKernel.Primitives is referenced for future-proofing only (D-01) — not
+      consumed by the public surface today. No reference to 06.Persistence, 11.Communication.*,
+      or SharedKernel.Messaging.MassTransit is permitted.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+    <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Outbound HTTP delivery (IHttpClientFactory) and Polly v8 standard resilience handler.
+      Never construct new HttpClient() or inject a raw HttpClient — see CLAUDE.md hard rules.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Integration.Webhooks.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Integration.Webhooks.Tests\**" />
+    <None Remove="SharedKernel.Integration.Webhooks.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharedKernel.Integration.Webhooks.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

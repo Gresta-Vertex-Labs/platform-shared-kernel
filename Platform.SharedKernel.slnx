@@ -116,6 +116,7 @@
   <Folder Name="/15.Integration/">
     <Project Path="15.Integration/SharedKernel.Integration.Webhooks/SharedKernel.Integration.Webhooks.csproj" />
     <Project Path="15.Integration/SharedKernel.Integration.Webhooks/SharedKernel.Integration.Webhooks.Tests/SharedKernel.Integration.Webhooks.Tests.csproj" />
+    <Project Path="15.Integration/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/16.Testing/">
     <Project Path="16.Testing/SharedKernel.Testing/SharedKernel.Testing.csproj" />
