@@ -5,11 +5,13 @@ metadata:
   type: project
 ---
 
-As of 2026-06-25, the last phase written to `state-map.md` Phase Backlog is **P-199** under **WO-031**.
+As of 2026-06-26, the last phase written to `state-map.md` Phase Backlog is **P-204** under **WO-032**.
 
-Next new phase must be **P-200**. Next new Work Order must be **WO-032**.
+Next new phase must be **P-205**. Next new Work Order must be **WO-033**.
 
-**WO-031 context:** 14.Presentation first real build-out — P-192–P-198 (full 6-phase lifecycle, Core split into P-194 WebApi / P-195 SignalR) plus P-199 (00.Governance ProblemDetails/Result-HTTP enforcement rules). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`); 00.Governance already `● Complete` so P-199 queued in backlog only. See [[project_wo031_presentation_buildout]] for full detail including the correlation-id/13.ServiceDefaults decoupling upgrade.
+**WO-032 context:** 15.Integration first real build-out — P-200–P-204 (Design, Scaffold, Core split into P-202 Signing / P-203 Dispatch, combined Docs+Published). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`). Accepted a pre-drafted `15.Integration/CLAUDE.md` domain brain (`SharedKernel.Integration.Webhooks` — signed outbound webhook dispatch) with one upgrade: split the templated single Core phase into independently-verifiable Signing/Dispatch sub-phases, mirroring the WO-031 WebApi/SignalR split. No sync-brain needed — domain already documented in root CLAUDE.md. See [[project_wo032_integration_buildout]] for full detail.
+
+**WO-031 context (prior):** 14.Presentation first real build-out — P-192–P-198 (full 6-phase lifecycle, Core split into P-194 WebApi / P-195 SignalR) plus P-199 (00.Governance ProblemDetails/Result-HTTP enforcement rules). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`); 00.Governance already `● Complete` so P-199 queued in backlog only. See [[project_wo031_presentation_buildout]] for full detail including the correlation-id/13.ServiceDefaults decoupling upgrade.
 
 **How to apply:** Always read the current Phase Backlog before assigning new IDs — this memory is a starting point, not a substitute for reading the file. This note has drifted stale at least twice before (once at P-159/WO-025 when the real file was at P-174/WO-027; again at P-178/WO-028 when the real file was at P-187/WO-029) — always verify against `grep -n "^### P-" state-map.md | tail` and `grep -oE "WO-[0-9]{3}" state-map.md | sort -u | tail` before trusting this note's numbers.
 

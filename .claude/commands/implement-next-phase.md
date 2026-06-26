@@ -65,6 +65,7 @@ Look up the domain in this registry:
 | 12.Security | `implement-phase-security` |
 | 13.ServiceDefaults | `implement-phase-servicedefaults` |
 | 14.Presentation | `implement-phase-presentation` |
+| 15.Integration | `implement-phase-integration` |
 | 16.Testing | `implement-phase-testing` |
 
 If the domain is **not in the registry**, output:
