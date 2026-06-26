@@ -65,7 +65,7 @@ Format when blocked:
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | `●` | All 9 tasks complete — PresentationLayeringRules (NoDirectProblemDetailsConstructionOutsideWebApi, NoInlineResultBranchBeforeHttpResultOutsideWebApi) added to SharedKernel.ArchitectureTests, closing the WO-026 P-166/167 backlog note; 108/108 architecture tests pass. | — |
-| 01 | [Core](01.Core/state-map.md) | P-042 Error.BusinessRule Factory | `●` | ErrorType.BusinessRule enum member, Error.BusinessRule factory, and ErrorCodes.Domain.RuleViolated added to SharedKernel.Primitives; 56 Primitives + 65 Core tests passing. | — |
+| 01 | [Core](01.Core/state-map.md) | Published | `●` | WO-033 fully complete (P-207, P-208, P-209) — SharedKernel.Cryptography XML docs verified (0 warnings with doc-file generation enabled), README usage examples added for hashing/encryption/signing/secure-random, NuGet metadata added, packed to local feed, and consumer-verify confirms the Primitives + Configuration transitive chain resolves (42/42 consumer tests passing); all six 01.Core packages now Published. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
@@ -107,16 +107,13 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
-| ● P-042 Error.BusinessRule Factory | 1 |
-| ● Published | 6 |
+| ● Published | 7 |
 | ● OTel | 1 |
-| ● Governance: Architecture Rule Banning Bare Health-Check String Literals Where a Constants Class Exists | 1 |
-| ● Design | 1 |
+| ● Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | 1 |
 | ● Docs | 1 |
 | ● Tests | 2 |
-| ● Core | 1 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 2 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 5 |
 
@@ -8616,3 +8613,119 @@ Matches the Docs→Published closeout pattern every other domain has followed be
 - [2026-06-26] Integration → Docs (●) — promoted from SK.15.Docs (state-map-phase)
 - [2026-06-26] Integration → Published (●) — promoted from SK.15.Published (state-map-phase)
 - [2026-06-26] Phase Backlog P-202, P-203, P-204 → ● Complete — SK.15.Core (Signing+Dispatch) and SK.15.Published done; 15.Integration (WO-032) complete end to end (state-map-phase)
+
+---
+### P-205 — Core: Design — Lock SharedKernel.Cryptography Interface Contracts
+
+**Status:** `●` Complete
+**Work Order:** WO-033
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Lock the public interface contracts for a sixth `01.Core` package, `SharedKernel.Cryptography`: `IPasswordHasher` (self-describing PBKDF2 output, rehash-needed detection), `ISymmetricEncryptionService` (AES-256-GCM, versioned keys via `IEncryptionKeyProvider`), `IAsymmetricSignatureService` (RSA/ECDSA sign+verify), `IHmacSigner` (constant-time HMAC sign+verify), `ISecureRandomGenerator` (CSPRNG-backed byte/token generation), and the `CryptographyOptions`/`AddSharedKernelCryptography` DI registration shape.
+
+#### Why this is needed
+`12.Security` owns identity/authentication (JWT/OIDC, `IUserContext`, `ITenantProvider`). Generic cryptographic primitives — hashing, encryption, signing, secure random — are a distinct concern needed by services with no identity stack at all (workers, batch jobs). Bundling crypto into `12.Security` would force every consumer to pull in OIDC/JWT machinery just to hash a password. Placing it in `01.Core`, referencing nothing but `SharedKernel.Primitives` + `SharedKernel.Configuration`, keeps it usable standalone — mirroring why `SharedKernel.Primitives` itself has zero dependencies. `12.Security.Oidc` may depend on it; the reverse is forbidden.
+
+#### Acceptance criteria
+- [ ] `IPasswordHasher` / `PasswordVerificationResult` contract locked, including rehash-needed semantics
+- [ ] `ISymmetricEncryptionService` / `EncryptedPayload` / `IEncryptionKeyProvider` / `CryptographicKey` contracts locked, `Decrypt` returns `Result<byte[]>` rather than throwing
+- [ ] `IAsymmetricSignatureService` and `IHmacSigner` contracts locked, including the constant-time comparison rule for HMAC/signature verification
+- [ ] `ISecureRandomGenerator` contract locked, banning `System.Random`/`Guid.NewGuid()` for security-sensitive values platform-wide
+- [ ] `CryptographyOptions` / `AddSharedKernelCryptography` DI shape locked; confirmed it registers no default `IEncryptionKeyProvider` or key material
+- [ ] Root `CLAUDE.md` and `01.Core/CLAUDE.md` updated with the new package, technology stack, implementation rules, and disambiguation against `06.Persistence`'s existing `EncryptedValueConverter`
+---
+### P-206 — Core: Scaffold — Project Wiring for SharedKernel.Cryptography
+
+**Status:** `●` Complete
+**Work Order:** WO-033
+**Domain:** 01.Core
+**Depends on:** P-205
+
+#### What is needed
+Create the `SharedKernel.Cryptography` class library project (targeting `net10.0`, referencing only `SharedKernel.Primitives` and `SharedKernel.Configuration`) and its nested `SharedKernel.Cryptography.Tests` project, and register both in `Platform.SharedKernel.slnx` under the `01.Core` solution folder. No implementation code yet — this phase only proves the project shell builds clean.
+
+#### Why this is needed
+Matches the Scaffold-phase convention every other `01.Core` package (most recently `SharedKernel.Guards`) followed before any implementation began — project wiring and dependency direction are verified mechanically (a successful build) before a single line of cryptographic logic is written.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Cryptography.csproj` created with `net10.0` target and project references to `SharedKernel.Primitives` + `SharedKernel.Configuration` only
+- [ ] `SharedKernel.Cryptography.Tests.csproj` created nested inside the package folder with xUnit + NSubstitute references
+- [ ] Both projects registered in `Platform.SharedKernel.slnx` under `/01.Core/`
+- [ ] `dotnet build` succeeds for both projects with 0 warnings / 0 errors
+---
+### P-207 — Core: Core — Implement Password Hashing, Symmetric Encryption, Signing, and Secure Random Primitives
+
+**Status:** `●` Complete
+**Work Order:** WO-033
+**Domain:** 01.Core
+**Depends on:** P-206
+
+#### What is needed
+Implement the five `SharedKernel.Cryptography` services against the contracts locked in P-205: `Pbkdf2PasswordHasher`, `AesGcmEncryptionService`, `RsaSignatureService` + `EcdsaSignatureService`, `HmacSha256Signer`, and `CryptoRandomGenerator`, plus `CryptographyOptions` validation and the `AddSharedKernelCryptography` DI extension. All five service registrations must be stateless, thread-safe singletons.
+
+#### Why this is needed
+This is the actual capability delivery — until this phase lands, `SharedKernel.Cryptography` is an empty shell. Every implementation choice (PBKDF2 iteration count, AES-GCM nonce handling, constant-time comparison) is already pinned by the `01.Core/CLAUDE.md` implementation rules from P-205, so this phase is pure execution against a locked spec, not further design.
+
+#### Acceptance criteria
+- [x] `IPasswordHasher` implemented via `Rfc2898DeriveBytes.Pbkdf2`; output format is self-describing and rehash-needed detection works across iteration-count changes
+- [x] `ISymmetricEncryptionService` implemented via `AesGcm`; `Decrypt` returns `Result<byte[]>` on tamper or unknown key, never throws `CryptographicException` directly
+- [x] `IAsymmetricSignatureService` implemented for both RSA (2048-bit, PSS/SHA-256) and ECDSA (P-256/SHA-256)
+- [x] `IHmacSigner` implemented via `HMACSHA256`, verification uses `CryptographicOperations.FixedTimeEquals`
+- [x] `ISecureRandomGenerator` implemented via `RandomNumberGenerator`; no code path falls back to `System.Random` or `Guid.NewGuid()`
+- [x] `AddSharedKernelCryptography` registers all five services as singletons and validates `CryptographyOptions` on startup
+---
+### P-208 — Core: Tests — SharedKernel.Cryptography Coverage
+
+**Status:** `●` Complete
+**Work Order:** WO-033
+**Domain:** 01.Core
+**Depends on:** P-207
+
+#### What is needed
+Full unit-test coverage for all five `SharedKernel.Cryptography` services: hash/verify roundtrips, tamper and wrong-key detection, signature roundtrips for both asymmetric algorithms, HMAC tamper detection, secure-random output correctness, and DI registration sanity including startup-validation failure for invalid `CryptographyOptions`.
+
+#### Why this is needed
+This package has zero external infrastructure dependencies, so there is no excuse for anything less than full coverage — every failure mode (tampered ciphertext, wrong signing key, retired key id) must be proven, not just implemented, before this package is trusted by any downstream consumer.
+
+#### Acceptance criteria
+- [x] `IPasswordHasher` tests cover hash/verify roundtrip, wrong-password failure, and rehash-needed detection
+- [x] `ISymmetricEncryptionService` tests cover encrypt/decrypt roundtrip, flipped-byte tamper detection, and unknown/retired key id handling
+- [x] `IAsymmetricSignatureService` tests cover sign/verify roundtrip for RSA and ECDSA plus wrong-key and tampered-data failure
+- [x] `IHmacSigner` tests cover sign/verify roundtrip and tamper detection
+- [x] `ISecureRandomGenerator` tests cover output length and non-repetition across calls
+- [x] DI registration test proves all five services resolve, and an invalid `CryptographyOptions` throws at `IHost.StartAsync()`
+---
+### P-209 — Core: Docs and Published — XML Docs, README, NuGet Packaging
+
+**Status:** `●` Complete
+**Work Order:** WO-033
+**Domain:** 01.Core
+**Depends on:** P-208
+
+#### What is needed
+XML doc comments on every public type in `SharedKernel.Cryptography`, usage examples added to `01.Core/README.md` (password hashing, encrypt/decrypt, signing, secure token generation), full NuGet packaging metadata on the csproj, a `dotnet pack` producing `.nupkg`+`.snupkg` with zero warnings, and a consumer-verification pass confirming the `SharedKernel.Primitives` + `SharedKernel.Configuration` dependency graph resolves correctly.
+
+#### Why this is needed
+Matches the Docs→Published closeout pattern every other `01.Core` package (most recently `SharedKernel.Guards`, P-07–P-09) followed before being marked complete on the package board.
+
+#### Acceptance criteria
+- [ ] All public types carry XML doc comments; zero missing-doc warnings with documentation file generation enabled
+- [ ] `01.Core/README.md` documents password hashing, encrypt/decrypt, signing, and secure token generation usage
+- [ ] NuGet metadata (authors, description, version, license, tags) added to `SharedKernel.Cryptography.csproj`
+- [ ] `dotnet pack` produces `.nupkg` + `.snupkg` with zero warnings
+- [ ] Consumer-verify project confirms `SharedKernel.Primitives` + `SharedKernel.Configuration` transitive references resolve correctly
+- [ ] `01.Core/state-map.md` Package Board updated to reflect `SharedKernel.Cryptography` at `Published`/`●`
+---
+
+- [2026-06-26] WO-033: P-205–P-209 written for 01.Core (Design/Scaffold/Core/Tests/Docs+Published) — accepted the user's direct request to add a sixth 01.Core package, `SharedKernel.Cryptography`, splitting generic crypto primitives (hashing, AES-GCM, RSA/ECDSA, HMAC, secure random) out of `12.Security` so non-identity worker services can consume them without an OIDC/JWT dependency; 01.Core was already `●` complete on the Domain Summary Board, so the board regresses to `◐` to reflect the newly queued Core/Tests/Docs/Published work (arch-lead)
+- [2026-06-26] Phase Backlog P-205, P-206 → ● Complete — interface contracts locked in root `CLAUDE.md` + `01.Core/CLAUDE.md`, and `SharedKernel.Cryptography` + `SharedKernel.Cryptography.Tests` projects created and registered in `Platform.SharedKernel.slnx`, both building with 0 warnings / 0 errors (state-map-phase)
+- [2026-06-26] Core → Core (Cryptography) (◐) — Design and Scaffold complete for SharedKernel.Cryptography; next is implementing IPasswordHasher, ISymmetricEncryptionService, IAsymmetricSignatureService, IHmacSigner, and ISecureRandomGenerator per P-207 (state-map-phase)
+- [2026-06-26] Phase(s) P-207, P-208, P-209 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-06-26] Core → Core (Cryptography) (●) — promoted from SK.01.Core (state-map-phase)
+- [2026-06-26] Phase Backlog P-207 → ● Complete — SK.01.WO033Impl P-207 done (state-map-phase)
+- [2026-06-26] Core → Tests (Cryptography) (◐) — promoted from SK.01.Tests; SharedKernel.Cryptography full unit-test coverage delivered (58/58 passing); SK.01.WO033Impl P-209 (Docs/Published) remains pending so domain stays In Progress (state-map-phase)
+- [2026-06-26] Phase Backlog P-208 → ● Complete — SK.01.WO033Impl P-208 done; T-23→T-28 fully covered, including added statistical non-repetition and constant-time-comparison-shape tests (state-map-phase)
+- [2026-06-26] Core → Published (●) — promoted from SK.01.Docs and SK.01.Published; WO-033 P-209 closed out SharedKernel.Cryptography XML docs, README examples, NuGet packaging, and consumer-verify; all six 01.Core packages now Published (state-map-phase)
+- [2026-06-26] Phase Backlog P-209 → ● Complete — SK.01.WO033Impl P-209 done; WO-033 fully closed (P-207, P-208, P-209 all ●) (state-map-phase)
