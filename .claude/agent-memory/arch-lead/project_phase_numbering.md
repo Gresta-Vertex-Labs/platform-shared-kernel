@@ -5,11 +5,13 @@ metadata:
   type: project
 ---
 
-As of 2026-06-26, the last phase written to `state-map.md` Phase Backlog is **P-213** under **WO-034**.
+As of 2026-06-29, the last phase written to `state-map.md` Phase Backlog is **P-219** under **WO-035**.
 
-Next new phase must be **P-214**. Next new Work Order must be **WO-035**.
+Next new phase must be **P-220**. Next new Work Order must be **WO-036**.
 
-**WO-034 context:** User questioned the just-shipped (WO-033) `SharedKernel.Cryptography` package on three fronts — move out of `01.Core`? split into `.Abstractions`+per-algorithm packages? generalize away from password-specific naming? Declined the first two (no infrastructure-provider axis to justify either move), accepted the third as an Upgrade — `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult` rename to a secret-agnostic contract, mechanism unchanged, caught before any consumer adopted the just-packed `1.0.0`. P-210–P-213, all in `01.Core` (already `●` Published, so no `state-map-phase` call — backlog-only). `sync-brain` deferred to P-213 when final names lock. See [[project_wo034_cryptography_generalization]] for full reasoning.
+**WO-035 context:** 05.Application first real build-out — P-214–P-219 (Design, Scaffold, Core split into P-216 Contracts / P-217 Behaviors, Tests, Docs+Published). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`). Accepted the existing five-behavior design verbatim (Validation/Logging/Metrics/Transaction/Caching — the latter carrying forward root P-015/WO-004 unchanged), upgraded by adding two new opt-in behaviors (Authorization, Idempotency) each backed by a locally-owned seam interface — never reaching past `05.Application`'s `01–04` layering ceiling into `12.Security`/`07.Messaging`, mirroring the existing `IUnitOfWork`/`TransactionBehavior` bridge precedent. Canonical pipeline order revised to seven steps. See [[project_wo035_application_buildout]] for full detail.
+
+**WO-034 context (prior):** User questioned the just-shipped (WO-033) `SharedKernel.Cryptography` package on three fronts — move out of `01.Core`? split into `.Abstractions`+per-algorithm packages? generalize away from password-specific naming? Declined the first two (no infrastructure-provider axis to justify either move), accepted the third as an Upgrade — `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult` rename to a secret-agnostic contract, mechanism unchanged, caught before any consumer adopted the just-packed `1.0.0`. P-210–P-213, all in `01.Core` (already `●` Published, so no `state-map-phase` call — backlog-only). `sync-brain` deferred to P-213 when final names lock. See [[project_wo034_cryptography_generalization]] for full reasoning.
 
 **WO-033 context (prior):** P-205–P-209 — added `SharedKernel.Cryptography` as a sixth `01.Core` package (now superseded in naming by WO-034's P-210 rename, mechanism/structure otherwise unchanged).
 

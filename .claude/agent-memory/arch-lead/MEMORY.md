@@ -7,3 +7,4 @@
 - [WO-031: Presentation Build-Out](project_wo031_presentation_buildout.md) — 14.Presentation P-192-199, correlation-id decoupled from 13.ServiceDefaults, ProblemDetails/Result-HTTP governance rule
 - [WO-032: Integration Build-Out](project_wo032_integration_buildout.md) — 15.Integration P-200-204, accepted pre-drafted webhook brain, Core split into Signing/Dispatch sub-phases
 - [WO-034: Cryptography Generalization](project_wo034_cryptography_generalization.md) — declined domain move + abstractions split for SharedKernel.Cryptography; accepted IPasswordHasher rename to secret-agnostic contract
+- [WO-035: Application Build-Out](project_wo035_application_buildout.md) — 05.Application P-214-219, accepted existing 5-behavior design, added Authorization+Idempotency via local-seam pattern, seven-step pipeline order

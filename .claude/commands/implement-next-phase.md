@@ -59,6 +59,7 @@ Look up the domain in this registry:
 | 02.Caching | `implement-phase-caching` |
 | 03.Domain | `implement-phase-domain` |
 | 04.Contracts | `implement-phase-contracts` |
+| 05.Application | `implement-phase-application` |
 | 06.Persistence | `implement-phase-persistence` |
 | 07.Messaging | `implement-phase-messaging` |
 | 11.Communication | `implement-phase-communication` |
