@@ -65,7 +65,7 @@ Format when blocked:
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | `●` | All 9 tasks complete — PresentationLayeringRules (NoDirectProblemDetailsConstructionOutsideWebApi, NoInlineResultBranchBeforeHttpResultOutsideWebApi) added to SharedKernel.ArchitectureTests, closing the WO-026 P-166/167 backlog note; 108/108 architecture tests pass. | — |
-| 01 | [Core](01.Core/state-map.md) | Published | `●` | WO-033 fully complete (P-207, P-208, P-209) — SharedKernel.Cryptography XML docs verified (0 warnings with doc-file generation enabled), README usage examples added for hashing/encryption/signing/secure-random, NuGet metadata added, packed to local feed, and consumer-verify confirms the Primitives + Configuration transitive chain resolves (42/42 consumer tests passing); all six 01.Core packages now Published. | — |
+| 01 | [Core](01.Core/state-map.md) | Published | `●` | WO-034 fully complete (P-210–P-213) — `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult` renamed to secret-agnostic `IOneWayHasher`/`Pbkdf2OneWayHasher`/`HashVerificationResult`; SharedKernel.Cryptography re-packed and published at `2.0.0` with zero warnings; consumer-verify confirms the Primitives + Configuration transitive chain still resolves (42/42 consumer tests passing); all six 01.Core packages remain Published. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
@@ -8729,3 +8729,87 @@ Matches the Docs→Published closeout pattern every other `01.Core` package (mos
 - [2026-06-26] Phase Backlog P-208 → ● Complete — SK.01.WO033Impl P-208 done; T-23→T-28 fully covered, including added statistical non-repetition and constant-time-comparison-shape tests (state-map-phase)
 - [2026-06-26] Core → Published (●) — promoted from SK.01.Docs and SK.01.Published; WO-033 P-209 closed out SharedKernel.Cryptography XML docs, README examples, NuGet packaging, and consumer-verify; all six 01.Core packages now Published (state-map-phase)
 - [2026-06-26] Phase Backlog P-209 → ● Complete — SK.01.WO033Impl P-209 done; WO-033 fully closed (P-207, P-208, P-209 all ●) (state-map-phase)
+
+---
+### P-210 — Core: Generalize `IPasswordHasher` into a Secret-Agnostic One-Way Hashing Contract
+
+**Status:** `●` Complete
+**Work Order:** WO-034
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Rename the existing `IPasswordHasher` / `Pbkdf2PasswordHasher` / `PasswordVerificationResult` surface in `SharedKernel.Cryptography` to a secret-agnostic one-way hashing contract — same self-describing PBKDF2 output, same rehash-needed detection, same parameter shape — but with the interface name and parameter names generalized away from "password." The contract must serve any one-way, slow, salted-hash-then-verify secret (passwords, API keys, recovery codes, security-question answers) without baking auth-domain vocabulary into a `01.Core` primitive. This is a rename-and-clarify of an existing, already-implemented capability — no new algorithm, no new DI shape, no new dependency.
+
+#### Why this is needed
+`01.Core` packages must stay free of any single consuming-domain's vocabulary — that is precisely why this package was kept out of `12.Security` in WO-033 (so a non-identity worker service could consume it without pulling in an OIDC/JWT stack). An interface literally named `IPasswordHasher` undermines that intent the moment a service wants to hash an API key or recovery code with the identical PBKDF2 mechanism: it either misuses an interface named for a different concept, or hand-rolls a parallel KDF call — which `01.Core/CLAUDE.md`'s Implementation Rules already forbid platform-wide. The mechanism was right from day one; only the naming leaked domain vocabulary into a primitives package. Caught and fixed before any consumer outside `01.Core` itself has adopted the just-packed `1.0.0` build (confirmed via repo-wide grep — only `SharedKernel.Cryptography` and its own test/consumer-verify projects reference `IPasswordHasher` today), so this is a clean rename, not a deprecation cycle.
+
+#### Acceptance criteria
+- [ ] `IPasswordHasher` renamed to a secret-agnostic name; `Hash`/`Verify` parameter names generalized away from `password` (e.g., `secret`/`value`) while preserving exact existing behavior (self-describing output, rehash-needed detection via iteration-count comparison)
+- [ ] `PasswordVerificationResult` renamed to match the generalized contract name (still `Failed` / `Success` / `SuccessRehashNeeded`)
+- [ ] `Pbkdf2PasswordHasher` renamed to match (still PBKDF2-HMACSHA256 via `Rfc2898DeriveBytes.Pbkdf2`, still reads `CryptographyOptions.Pbkdf2Iterations`)
+- [ ] XML doc remarks updated to state explicitly that "password" is one example consumer of this contract, not its sole purpose — and to list at least one non-password example (API key, recovery code) inline
+- [ ] `AddSharedKernelCryptography` registration updated to the renamed interface/implementation; no change to singleton lifetime or registration shape
+- [ ] `01.Core/CLAUDE.md` and root `CLAUDE.md` interface-contract surfaces, "What Goes Where" rows, and the platform-wide "no hand-rolled hashing" prohibition row updated to reference the renamed contract
+- [ ] Package version bumped (breaking rename of a public interface) per existing `01.Core` versioning convention
+---
+### P-211 — Core: Scaffold — Apply Rename Across Production Source
+
+**Status:** `●` Complete
+**Work Order:** WO-034
+**Domain:** 01.Core
+**Depends on:** P-210
+
+#### What is needed
+Mechanically apply the rename locked in P-210 across all production source files in `SharedKernel.Cryptography`: the interface file, the implementation file, the result-enum file, the DI extension file, and any XML doc cross-references (`<see cref>`) elsewhere in the package that point at the old names. No behavioral change — this phase only proves the renamed shell builds clean before tests are touched.
+
+#### Why this is needed
+Matches the Scaffold-before-implementation discipline already established for this package in WO-033 (P-206) — a rename across multiple files is mechanically verified by a successful build before test files are touched, isolating "did the rename break a reference" from "do the tests still pass."
+
+#### Acceptance criteria
+- [ ] All production `.cs` files in `SharedKernel.Cryptography` use only the renamed interface/implementation/enum names — zero remaining references to `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult`
+- [ ] All `<see cref>` XML doc cross-references elsewhere in the package (e.g., in `CryptographyServiceCollectionExtensions` remarks) updated to the renamed types
+- [ ] `dotnet build` succeeds for `SharedKernel.Cryptography` with 0 warnings / 0 errors
+---
+### P-212 — Core: Tests — Update Coverage and Consumer-Verify for the Renamed Contract
+
+**Status:** `●` Complete
+**Work Order:** WO-034
+**Domain:** 01.Core
+**Depends on:** P-211
+
+#### What is needed
+Update the existing `SharedKernel.Cryptography.Tests` suite (hash/verify roundtrip, wrong-secret failure, rehash-needed detection, DI registration sanity) to reference the renamed contract, and add at least one test exercising a non-password use case (e.g., hashing/verifying an API key string) to prove the generalization is real and not naming-only. Update `SharedKernel.Consumer.Tests`' `ConsumerDependencyGraphTests` reference to the renamed type.
+
+#### Why this is needed
+The existing 58/58 test suite already proves the PBKDF2 mechanism is correct — that coverage must not be lost or weakened by the rename. The added non-password test case is the proof that this was a genuine generalization (contract now serves any one-way secret hash) and not merely a cosmetic find-and-replace.
+
+#### Acceptance criteria
+- [ ] All existing hash/verify, tamper, rehash-needed, and DI-registration tests pass unchanged in behavior under the renamed contract
+- [ ] At least one new test hashes and verifies a non-password secret (e.g., an API key string) through the renamed contract, proving generalized applicability
+- [ ] `SharedKernel.Consumer.Tests/ConsumerDependencyGraphTests.cs` updated to the renamed type; consumer dependency graph still resolves correctly
+- [ ] Full `SharedKernel.Cryptography.Tests` suite passes with 0 failures
+---
+### P-213 — Core: Docs and Published — README, NuGet Re-Pack for the Renamed Contract
+
+**Status:** `●` Complete
+**Work Order:** WO-034
+**Domain:** 01.Core
+**Depends on:** P-212
+
+#### What is needed
+Update `01.Core/README.md`'s hashing usage example to the renamed contract and broaden the example to show both a password and a non-password (API key) usage side by side. Re-pack `SharedKernel.Cryptography` at the bumped version from P-210, confirm zero warnings, and re-run consumer-verify to confirm the dependency graph still resolves under the new version.
+
+#### Why this is needed
+Closes out the rename the same way every other `01.Core` capability change closes out — docs reflect current reality, and the package is re-published at a version number that correctly signals the breaking interface rename to any future consumer (none exist yet, but the version history must be honest regardless).
+
+#### Acceptance criteria
+- [ ] `01.Core/README.md` hashing example updated to renamed contract; shows a non-password usage alongside the password usage
+- [ ] `dotnet pack` produces `.nupkg` + `.snupkg` at the bumped version with zero warnings
+- [ ] Consumer-verify re-run confirms `SharedKernel.Primitives` + `SharedKernel.Configuration` transitive references still resolve correctly under the renamed contract
+- [ ] `01.Core/state-map.md` Package Board and root `state-map.md` Domain Summary Board reflect the closed rename
+---
+
+- [2026-06-26] Phase(s) P-210, P-211, P-212, P-213 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-06-29] Phase Backlog P-210, P-211, P-212, P-213 → ● Complete — SK.01.WO034 done (state-map-phase)
+- [2026-06-29] 01.Core → Published (●) — promoted from SK.01.WO034 (state-map-phase)
