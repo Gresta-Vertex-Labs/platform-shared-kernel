@@ -5,9 +5,13 @@ metadata:
   type: project
 ---
 
-As of 2026-06-26, the last phase written to `state-map.md` Phase Backlog is **P-204** under **WO-032**.
+As of 2026-06-26, the last phase written to `state-map.md` Phase Backlog is **P-213** under **WO-034**.
 
-Next new phase must be **P-205**. Next new Work Order must be **WO-033**.
+Next new phase must be **P-214**. Next new Work Order must be **WO-035**.
+
+**WO-034 context:** User questioned the just-shipped (WO-033) `SharedKernel.Cryptography` package on three fronts — move out of `01.Core`? split into `.Abstractions`+per-algorithm packages? generalize away from password-specific naming? Declined the first two (no infrastructure-provider axis to justify either move), accepted the third as an Upgrade — `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult` rename to a secret-agnostic contract, mechanism unchanged, caught before any consumer adopted the just-packed `1.0.0`. P-210–P-213, all in `01.Core` (already `●` Published, so no `state-map-phase` call — backlog-only). `sync-brain` deferred to P-213 when final names lock. See [[project_wo034_cryptography_generalization]] for full reasoning.
+
+**WO-033 context (prior):** P-205–P-209 — added `SharedKernel.Cryptography` as a sixth `01.Core` package (now superseded in naming by WO-034's P-210 rename, mechanism/structure otherwise unchanged).
 
 **WO-032 context:** 15.Integration first real build-out — P-200–P-204 (Design, Scaffold, Core split into P-202 Signing / P-203 Dispatch, combined Docs+Published). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`). Accepted a pre-drafted `15.Integration/CLAUDE.md` domain brain (`SharedKernel.Integration.Webhooks` — signed outbound webhook dispatch) with one upgrade: split the templated single Core phase into independently-verifiable Signing/Dispatch sub-phases, mirroring the WO-031 WebApi/SignalR split. No sync-brain needed — domain already documented in root CLAUDE.md. See [[project_wo032_integration_buildout]] for full detail.
 
