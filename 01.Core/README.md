@@ -753,7 +753,7 @@ public sealed class PaymentService
 
 ## SharedKernel.Cryptography — Dependency-Free Crypto Primitives
 
-`SharedKernel.Cryptography` provides password hashing, authenticated symmetric encryption, asymmetric signing, HMAC signing, and secure random generation. It is pure BCL `System.Security.Cryptography` — zero third-party NuGet dependencies — and is deliberately decoupled from `12.Security`'s identity/JWT/OIDC concerns, so non-web worker services (background jobs, batch processors, internal tools) can consume it without pulling in an identity stack.
+`SharedKernel.Cryptography` provides secret-agnostic one-way hashing, authenticated symmetric encryption, asymmetric signing, HMAC signing, and secure random generation. It is pure BCL `System.Security.Cryptography` — zero third-party NuGet dependencies — and is deliberately decoupled from `12.Security`'s identity/JWT/OIDC concerns, so non-web worker services (background jobs, batch processors, internal tools) can consume it without pulling in an identity stack.
 
 ### Registration
 
@@ -780,38 +780,57 @@ Optional configuration (`SharedKernel:Cryptography` section, all fields optional
 }
 ```
 
-### Password Hashing
+### One-Way Hashing
 
-`IPasswordHasher` produces a self-describing encoded hash (algorithm marker, iteration count, salt, and subkey all in one string) so the iteration count can be raised later without invalidating hashes already in the database.
+`IOneWayHasher` produces a self-describing encoded hash (algorithm marker, iteration count, salt, and subkey all in one string) so the iteration count can be raised later without invalidating hashes already in the database. It is **secret-agnostic** — a password is one example consumer, not the sole purpose. The exact same `Hash`/`Verify` contract applies to API keys, recovery codes, security-question answers, or any other one-way, slow, salted-hash-then-verify secret.
+
+**Password usage:**
 
 ```csharp
-public sealed class AccountService(IPasswordHasher passwordHasher)
+public sealed class AccountService(IOneWayHasher hasher)
 {
     public string RegisterUser(string plaintextPassword)
     {
         // Store the returned string verbatim — salt and iteration count travel with it.
-        return passwordHasher.Hash(plaintextPassword);
+        return hasher.Hash(plaintextPassword);
     }
 
     public bool TryLogin(string storedHash, string suppliedPassword, out bool needsRehash)
     {
-        PasswordVerificationResult result = passwordHasher.Verify(storedHash, suppliedPassword);
-        needsRehash = result == PasswordVerificationResult.SuccessRehashNeeded;
+        HashVerificationResult result = hasher.Verify(storedHash, suppliedPassword);
+        needsRehash = result == HashVerificationResult.SuccessRehashNeeded;
 
         // SuccessRehashNeeded: the hash matched, but it was produced under an older
         // Pbkdf2Iterations value. Re-hash and persist the new value on this login.
         if (needsRehash)
         {
-            string upgraded = passwordHasher.Hash(suppliedPassword);
+            string upgraded = hasher.Hash(suppliedPassword);
             // persist `upgraded` in place of storedHash
         }
 
-        return result is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded;
+        return result is HashVerificationResult.Success or HashVerificationResult.SuccessRehashNeeded;
     }
 }
 ```
 
-Never hash passwords with raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IPasswordHasher`.
+**Non-password usage (API key):** the same hasher, same contract — no parallel "API key hashing" type needed.
+
+```csharp
+public sealed class ApiKeyService(IOneWayHasher hasher)
+{
+    public string IssueApiKey(string plaintextApiKey)
+    {
+        // Store the hash, return the plaintext key to the caller exactly once.
+        return hasher.Hash(plaintextApiKey);
+    }
+
+    public bool TryAuthenticate(string storedHash, string suppliedApiKey) =>
+        hasher.Verify(storedHash, suppliedApiKey) is
+            HashVerificationResult.Success or HashVerificationResult.SuccessRehashNeeded;
+}
+```
+
+Never hash passwords, API keys, recovery codes, or any other one-way secret with raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IOneWayHasher`.
 
 ### Symmetric Encryption (AES-256-GCM)
 
@@ -933,7 +952,7 @@ SharedKernel.Primitives              (no dependencies)
        |
        +──► SharedKernel.Configuration  (Options pattern + startup validation)
        |       |
-       |       +──► SharedKernel.Cryptography  (password hashing, AES-GCM, RSA/ECDSA, HMAC, secure random)
+       |       +──► SharedKernel.Cryptography  (one-way hashing, AES-GCM, RSA/ECDSA, HMAC, secure random)
        |
        +──► SharedKernel.FeatureManagement  (IFeatureManager + Microsoft.FeatureManagement adapter)
 ```

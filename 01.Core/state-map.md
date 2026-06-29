@@ -33,6 +33,7 @@
 | `SK.01.Published` | Published | All tasks in Phase: Published are `●` | — |
 | `SK.01.P042` | P-042 Error.BusinessRule Factory | All tasks in Phase: P-042 are `●` | P-042 |
 | `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | All tasks in Phase: WO-033 Implementation are `●` | P-207, P-208, P-209 |
+| `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | All tasks in Phase: WO-034 are `●` | P-210, P-211, P-212, P-213 |
 
 ---
 
@@ -71,7 +72,7 @@ Format when blocked — replace placeholder with table:
 | `SharedKernel.Configuration` | — | `○` | References Primitives |
 | `SharedKernel.FeatureManagement` | — | `○` | References Primitives |
 | `SharedKernel.Guards` | — | `○` | References Primitives + Core; two-path guard API |
-| `SharedKernel.Cryptography` | Published | `●` | References Primitives + Configuration; zero third-party NuGet deps; Core, Tests, Docs, Published all complete (P-207 ●, P-208 ●, P-209 ●); WO-033 fully closed |
+| `SharedKernel.Cryptography` | Published | `●` | References Primitives + Configuration; zero third-party NuGet deps; WO-033 fully closed; WO-034 rename (`IPasswordHasher`→`IOneWayHasher`) fully closed — re-packed and published at `2.0.0` |
 
 ---
 
@@ -285,6 +286,20 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: WO-034 — Generalize `IPasswordHasher` into a Secret-Agnostic One-Way Hashing Contract <!-- phase-key: SK.01.WO034 -->
+
+> Rename-and-clarify of an existing, already-implemented capability — no new algorithm, no new DI shape, no new dependency. `IPasswordHasher` → `IOneWayHasher`, `Pbkdf2PasswordHasher` → `Pbkdf2OneWayHasher`, `PasswordVerificationResult` → `HashVerificationResult`; `Hash(string password)`/`Verify(string hash, string password)` → `Hash(string secret)`/`Verify(string hash, string secret)`. Same PBKDF2-HMACSHA256 mechanism, self-describing output, rehash-needed detection. Motivation: `01.Core` primitives must stay free of any single consuming-domain's vocabulary — an interface named `IPasswordHasher` leaked auth-domain vocabulary into a `01.Core` primitive, undermining the same design intent that kept Cryptography out of `12.Security` in WO-033. Caught before any consumer outside `SharedKernel.Cryptography` itself adopted the packed `1.0.0` build — a clean rename, not a deprecation cycle.
+> WO-034.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| P-210 | Design: lock renamed contract — `IOneWayHasher` interface (`Hash(string secret)` / `Verify(string hash, string secret)`), `HashVerificationResult` enum (`Failed`/`Success`/`SuccessRehashNeeded`), `Pbkdf2OneWayHasher` implementation name; XML doc remarks state "password" is one example consumer among others (API key, recovery code); `AddSharedKernelCryptography` registration updated to renamed types; version bump to `2.0.0` planned | SharedKernel.Cryptography | `●` |
+| P-211 | Scaffold: mechanically apply the P-210 rename across all production `.cs` files — rename `IPasswordHasher.cs`→`IOneWayHasher.cs`, `Pbkdf2PasswordHasher.cs`→`Pbkdf2OneWayHasher.cs`, `PasswordVerificationResult.cs`→`HashVerificationResult.cs`; update `CryptographyServiceCollectionExtensions` registration call and all `<see cref>` XML doc cross-references; `dotnet build` succeeds with 0 warnings / 0 errors; zero remaining references to the old names in production source | SharedKernel.Cryptography | `●` |
+| P-212 | Tests: update `SharedKernel.Cryptography.Tests` hash/verify roundtrip, tamper, rehash-needed, and DI-registration tests to the renamed contract (all existing behavior preserved); add at least one new test hashing/verifying a non-password secret (e.g., an API key string) proving genuine generalization; update `SharedKernel.Consumer.Tests/ConsumerDependencyGraphTests.cs` to the renamed type; full `SharedKernel.Cryptography.Tests` suite passes with 0 failures | SharedKernel.Cryptography.Tests, SharedKernel.Consumer.Tests | `●` |
+| P-213 | Docs + Published: update `01.Core/README.md` hashing example to the renamed contract, showing a password usage and a non-password (API key) usage side by side; re-pack `SharedKernel.Cryptography` at `2.0.0` with zero warnings; re-run consumer-verify to confirm `Primitives`+`Configuration` transitive chain still resolves; `01.Core/state-map.md` Package Board and root `state-map.md` Domain Summary Board updated to reflect the closed rename | SharedKernel.Cryptography | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `01.Core` references nothing._
@@ -299,7 +314,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 129 (126 base tasks + 3 WO-033 work-order tracking rows; the WO-033 phase cross-references rather than duplicates C-33→C-38/T-23→T-28/DO-10→DO-11/P-10→P-12).
+> Counts updated whenever a task state changes. Total tasks: 133 (126 base tasks + 3 WO-033 work-order tracking rows + 4 WO-034 work-order tracking rows; both work-order phases cross-reference/extend rather than duplicate existing C-/T-/DO-/P- task rows).
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -311,6 +326,7 @@ Format when active:
 | `SK.01.Published` | Published | 12 | 12 | 0 | `●` |
 | `SK.01.P042` | P-042 Error.BusinessRule Factory | 13 | 13 | 0 | `●` |
 | `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | 3 | 3 | 0 | `●` |
+| `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | 4 | 4 | 0 | `●` |
 
 ---
 
@@ -344,3 +360,5 @@ Format when active:
 - [2026-06-26] DO-10/DO-11 → ● in SK.01.Docs — verified all `SharedKernel.Cryptography` public types already carried complete XML docs from the Core implementation pass; confirmed via `dotnet build` with `GenerateDocumentationFile` newly enabled producing 0 warnings/0 errors (fixed one ambiguous-cref CS0419 on `Pbkdf2PasswordHasher`); added full Cryptography usage section to `01.Core/README.md` (password hashing, AES-256-GCM encrypt/decrypt, RSA/ECDSA signing via keyed services, HMAC signing, secure random/token generation); SK.01.Docs now fully `●` (8/8)
 - [2026-06-26] P-10→P-12 → ● in SK.01.Published — added NuGet packaging metadata to `SharedKernel.Cryptography.csproj` (matching the Guards package convention); packed `SharedKernel.Cryptography.1.0.0.nupkg`/`.snupkg` into the root local feed (`./nupkgs/`); added `SharedKernel.Cryptography` package reference plus 5 new consumer-verification tests (DI registration sanity, password hash/verify roundtrip, HMAC roundtrip, secure random generation, AES-GCM encrypt/decrypt roundtrip) to `01.Core/SharedKernel.Consumer.Tests/`; all 42 consumer tests pass confirming Primitives + Configuration transitive chain resolves correctly; SK.01.Published now fully `●` (12/12)
 - [2026-06-26] P-209 → ● in SK.01.WO033Impl — all sub-tasks (DO-10, DO-11, P-10, P-11, P-12) complete; WO-033 fully closed (P-207 ●, P-208 ●, P-209 ●); Package Board entry for `SharedKernel.Cryptography` updated from `Docs`/`◐` to `Published`/`●` (core-phase-implementer)
+- [2026-06-26] WO-034 processed — added `SK.01.WO034` phase key and four new tasks (P-210→P-213) renaming `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult` to a secret-agnostic `IOneWayHasher`/`Pbkdf2OneWayHasher`/`HashVerificationResult` contract, with `Hash(string password)`/`Verify(string hash, string password)` generalized to `Hash(string secret)`/`Verify(string hash, string secret)`; rename-only — same PBKDF2-HMACSHA256 mechanism, output format, and rehash-needed detection; P-212 adds a non-password (API key) test case to prove genuine generalization, not cosmetic find-and-replace; P-213 re-packs at `2.0.0` (breaking public interface rename). Package Board entry for `SharedKernel.Cryptography` regressed from `Published`/`●` to `Published`/`◐` pending the rename; total tracked rows now 133 across 9 phase keys (core-arch-planner, WO-034)
+- [2026-06-29] P-210→P-213 → ● in SK.01.WO034 — mechanical rename applied across all production `.cs` files (`IOneWayHasher`, `HashVerificationResult`, `Pbkdf2OneWayHasher`); 0 warnings/0 errors build; `SharedKernel.Cryptography.Tests` updated (59/59 passing, including new `Hash_ThenVerify_WithApiKeySecret_ReturnsSuccess` proving genuine secret-agnostic generalization); `ConsumerDependencyGraphTests` updated to renamed types; `01.Core/README.md` hashing section rewritten with password + API-key usage side by side; re-packed `SharedKernel.Cryptography.2.0.0` to local feed; consumer-verify re-run (42/42 passing) confirming Primitives+Configuration transitive chain still resolves; `SK.01.WO034` now fully `●` (4/4); Package Board entry for `SharedKernel.Cryptography` restored to `Published`/`●` at `2.0.0` (core-phase-implementer)

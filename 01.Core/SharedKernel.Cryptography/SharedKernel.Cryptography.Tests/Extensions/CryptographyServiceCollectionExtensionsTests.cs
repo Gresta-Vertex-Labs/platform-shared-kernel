@@ -19,7 +19,7 @@ public sealed class CryptographyServiceCollectionExtensionsTests
         new ConfigurationBuilder().Build();
 
     [Fact]
-    public void AddSharedKernelCryptography_RegistersPasswordHasher()
+    public void AddSharedKernelCryptography_RegistersOneWayHasher()
     {
         var services = new ServiceCollection();
         services.AddSharedKernelCryptography(EmptyConfiguration());
@@ -28,7 +28,7 @@ public sealed class CryptographyServiceCollectionExtensionsTests
 
         using ServiceProvider provider = services.BuildServiceProvider();
 
-        Assert.IsType<Pbkdf2PasswordHasher>(provider.GetRequiredService<IPasswordHasher>());
+        Assert.IsType<Pbkdf2OneWayHasher>(provider.GetRequiredService<IOneWayHasher>());
     }
 
     [Fact]

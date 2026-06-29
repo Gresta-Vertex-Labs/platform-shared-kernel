@@ -474,7 +474,7 @@ public sealed class ConsumerDependencyGraphTests
 
         await host.StartAsync();
 
-        Assert.NotNull(host.Services.GetRequiredService<IPasswordHasher>());
+        Assert.NotNull(host.Services.GetRequiredService<IOneWayHasher>());
         Assert.NotNull(host.Services.GetRequiredService<IHmacSigner>());
         Assert.NotNull(host.Services.GetRequiredService<ISecureRandomGenerator>());
         Assert.NotNull(host.Services.GetRequiredService<IAsymmetricSignatureService>());
@@ -487,15 +487,15 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     [Fact]
-    public void Cryptography_PasswordHasher_HashAndVerifyRoundtrip_ResolvedFromPackage()
+    public void Cryptography_OneWayHasher_HashAndVerifyRoundtrip_ResolvedFromPackage()
     {
         using ServiceProvider provider = BuildCryptographyServiceProvider();
-        IPasswordHasher hasher = provider.GetRequiredService<IPasswordHasher>();
+        IOneWayHasher hasher = provider.GetRequiredService<IOneWayHasher>();
 
         string hash = hasher.Hash("correct-horse-battery-staple");
 
-        Assert.Equal(PasswordVerificationResult.Success, hasher.Verify(hash, "correct-horse-battery-staple"));
-        Assert.Equal(PasswordVerificationResult.Failed, hasher.Verify(hash, "wrong-password"));
+        Assert.Equal(HashVerificationResult.Success, hasher.Verify(hash, "correct-horse-battery-staple"));
+        Assert.Equal(HashVerificationResult.Failed, hasher.Verify(hash, "wrong-password"));
     }
 
     [Fact]

@@ -12,8 +12,8 @@ public sealed class CryptographyOptions
     public const string SectionName = "SharedKernel:Cryptography";
 
     /// <summary>
-    /// The number of PBKDF2-HMACSHA256 iterations used by <see cref="Hashing.Pbkdf2PasswordHasher"/>
-    /// when hashing new passwords. Defaults to 600,000 (OWASP 2023+ guidance). Raising this value
+    /// The number of PBKDF2-HMACSHA256 iterations used by <see cref="Hashing.Pbkdf2OneWayHasher"/>
+    /// when hashing new secrets. Defaults to 600,000 (OWASP 2023+ guidance). Raising this value
     /// does not invalidate already-stored hashes — the iteration count used at hash time is
     /// embedded in the stored hash string itself.
     /// </summary>

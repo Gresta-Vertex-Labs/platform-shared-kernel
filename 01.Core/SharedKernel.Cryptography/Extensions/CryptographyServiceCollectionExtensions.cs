@@ -29,7 +29,7 @@ public static class CryptographyServiceCollectionExtensions
     /// <summary>
     /// Registers <see cref="CryptographyOptions"/> (validated, eagerly checked at startup via
     /// <c>ValidateOnStart()</c>) and the five stateless, thread-safe cryptographic services —
-    /// <see cref="IPasswordHasher"/>, <see cref="ISymmetricEncryptionService"/>,
+    /// <see cref="IOneWayHasher"/>, <see cref="ISymmetricEncryptionService"/>,
     /// <see cref="IAsymmetricSignatureService"/> (both RSA and ECDSA variants, see remarks),
     /// <see cref="IHmacSigner"/>, and <see cref="ISecureRandomGenerator"/> — as singletons.
     /// </summary>
@@ -66,7 +66,7 @@ public static class CryptographyServiceCollectionExtensions
         services.AddValidatedOptions<CryptographyOptions>(
             configuration.GetSection(CryptographyOptions.SectionName));
 
-        services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+        services.AddSingleton<IOneWayHasher, Pbkdf2OneWayHasher>();
         services.AddSingleton<ISymmetricEncryptionService, AesGcmEncryptionService>();
         services.AddSingleton<IHmacSigner, HmacSha256Signer>();
         services.AddSingleton<ISecureRandomGenerator, CryptoRandomGenerator>();

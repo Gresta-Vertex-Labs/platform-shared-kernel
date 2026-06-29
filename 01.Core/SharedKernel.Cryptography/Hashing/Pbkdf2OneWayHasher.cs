@@ -7,7 +7,7 @@ using SharedKernel.Cryptography.Options;
 namespace SharedKernel.Cryptography.Hashing;
 
 /// <summary>
-/// Hashes and verifies passwords using PBKDF2-HMACSHA256
+/// Hashes and verifies one-way secrets using PBKDF2-HMACSHA256
 /// (<see cref="Rfc2898DeriveBytes.Pbkdf2(byte[], byte[], int, HashAlgorithmName, int)"/>).
 /// </summary>
 /// <remarks>
@@ -16,7 +16,7 @@ namespace SharedKernel.Cryptography.Hashing;
 /// salt, and the derived subkey, all in a single Base64 string. This means
 /// <see cref="CryptographyOptions.Pbkdf2Iterations"/> can be raised later without invalidating
 /// hashes already stored — <see cref="Verify"/> reads the iteration count back out of the hash
-/// itself and reports <see cref="PasswordVerificationResult.SuccessRehashNeeded"/> when the
+/// itself and reports <see cref="HashVerificationResult.SuccessRehashNeeded"/> when the
 /// stored count no longer matches the currently configured value.
 /// </para>
 /// <para>Binary layout (all integers big-endian):</para>
@@ -28,7 +28,7 @@ namespace SharedKernel.Cryptography.Hashing;
 /// [subkey bytes (32 bytes, SHA-256 output size)]
 /// </code>
 /// </remarks>
-public sealed class Pbkdf2PasswordHasher : IPasswordHasher
+public sealed class Pbkdf2OneWayHasher : IOneWayHasher
 {
     private const byte FormatMarker = 0x01;
     private const int SaltSize = 16;
@@ -37,49 +37,49 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
 
     private readonly IOptionsMonitor<CryptographyOptions> _options;
 
-    /// <summary>Creates a new <see cref="Pbkdf2PasswordHasher"/>.</summary>
+    /// <summary>Creates a new <see cref="Pbkdf2OneWayHasher"/>.</summary>
     /// <param name="options">The monitored cryptography options supplying the iteration count.</param>
-    public Pbkdf2PasswordHasher(IOptionsMonitor<CryptographyOptions> options)
+    public Pbkdf2OneWayHasher(IOptionsMonitor<CryptographyOptions> options)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options;
     }
 
     /// <inheritdoc />
-    public string Hash(string password)
+    public string Hash(string secret)
     {
-        ArgumentNullException.ThrowIfNull(password);
+        ArgumentNullException.ThrowIfNull(secret);
 
         int iterations = _options.CurrentValue.Pbkdf2Iterations;
         byte[] salt = RandomNumberGenerator.GetBytes(SaltSize);
-        byte[] subkey = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, Algorithm, SubkeySize);
+        byte[] subkey = Rfc2898DeriveBytes.Pbkdf2(secret, salt, iterations, Algorithm, SubkeySize);
 
         return Encode(iterations, salt, subkey);
     }
 
     /// <inheritdoc />
-    public PasswordVerificationResult Verify(string hash, string password)
+    public HashVerificationResult Verify(string hash, string secret)
     {
         ArgumentNullException.ThrowIfNull(hash);
-        ArgumentNullException.ThrowIfNull(password);
+        ArgumentNullException.ThrowIfNull(secret);
 
         if (!TryDecode(hash, out int storedIterations, out byte[]? salt, out byte[]? expectedSubkey))
         {
-            return PasswordVerificationResult.Failed;
+            return HashVerificationResult.Failed;
         }
 
-        byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(password, salt, storedIterations, Algorithm, expectedSubkey.Length);
+        byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(secret, salt, storedIterations, Algorithm, expectedSubkey.Length);
 
         bool matches = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
         if (!matches)
         {
-            return PasswordVerificationResult.Failed;
+            return HashVerificationResult.Failed;
         }
 
         int currentIterations = _options.CurrentValue.Pbkdf2Iterations;
         return storedIterations == currentIterations
-            ? PasswordVerificationResult.Success
-            : PasswordVerificationResult.SuccessRehashNeeded;
+            ? HashVerificationResult.Success
+            : HashVerificationResult.SuccessRehashNeeded;
     }
 
     private static string Encode(int iterations, byte[] salt, byte[] subkey)
