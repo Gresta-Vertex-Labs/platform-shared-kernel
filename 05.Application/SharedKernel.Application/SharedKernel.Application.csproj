@@ -3,6 +3,52 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Application</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>MediatR-based CQRS vocabulary for Platform.SharedKernel microservices: ICommand, ICommand&lt;TResponse&gt;, IQuery&lt;TResponse&gt;, handler-alias interfaces, and the domain-event-to-MediatR bridge (IDomainEventHandler, DomainEventNotification, MediatRDomainEventDispatcher). References only SharedKernel.Primitives, SharedKernel.Core, SharedKernel.Domain, and MediatR.</Description>
+    <PackageTags>cqrs;mediatr;application;command;query;domain-events;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Layering ceiling for SharedKernel.Application is 01.Core, 03.Domain, 04.Contracts.
+      This package never references 06.Persistence, 07.Messaging, 12.Security, or
+      SharedKernel.Caching.Abstractions (that reference belongs to .Behaviors only).
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      MediatR pinned to 12.4.x — the last MIT-licensed major (v13 introduced a commercial
+      license). This is a deliberate platform ceiling; see CLAUDE.md version-pin callout.
+    -->
+    <PackageReference Include="MediatR" Version="12.4.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Application.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Application.Tests\**" />
+    <None Remove="SharedKernel.Application.Tests\**" />
+  </ItemGroup>
 
 </Project>

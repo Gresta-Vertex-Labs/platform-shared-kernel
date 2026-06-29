@@ -3,6 +3,52 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Application.Behaviors</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Validation, Logging, Metrics, Transaction, Caching, Authorization, and Idempotency, composed in a fixed canonical order via ApplicationBehaviorsBuilder. References SharedKernel.Application, SharedKernel.Caching.Abstractions, MediatR, and FluentValidation.</Description>
+    <PackageTags>cqrs;mediatr;pipeline-behavior;validation;caching;transaction;authorization;idempotency;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      SharedKernel.Application.Behaviors may reference SharedKernel.Caching.Abstractions
+      (the only package in this domain permitted to do so) plus the same 01.Core ceiling
+      as SharedKernel.Application. Never 06.Persistence, 07.Messaging, or 12.Security.
+    -->
+    <ProjectReference Include="..\SharedKernel.Application\SharedKernel.Application.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same MediatR ceiling as SharedKernel.Application — see that project's version-pin note. -->
+    <PackageReference Include="MediatR" Version="12.4.1" />
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Application.Behaviors.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Application.Behaviors.Tests\**" />
+    <None Remove="SharedKernel.Application.Behaviors.Tests\**" />
+  </ItemGroup>
 
 </Project>
