@@ -33,7 +33,6 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-
 <!--
 Format when active:
 | Domain | Current Phase | Focus (one line) |
@@ -69,7 +68,7 @@ Format when blocked:
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-| 05 | [Application](05.Application/state-map.md) | — | `○` | — | — |
+| 05 | [Application](05.Application/state-map.md) | Published | `●` | WO-035 fully complete (P-214–P-219) — both packages' NuGet metadata confirmed, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings for both; new ConsumerVerifyTests prove the full DI chains resolve and execute end to end with zero exceptions (command/query/domain-event dispatch for `SharedKernel.Application`; full seven-behavior `ApplicationBehaviorsBuilder` pipeline incl. transaction commit and cache-hit short-circuit for `SharedKernel.Application.Behaviors`), and all four missing-dependency `Build()` guards throw `InvalidOperationException` as documented; 61/61 tests green (22 + 39); all 6 phases of 05.Application now complete. | — |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.Tests complete (20/20) — ConsumerVerifyTests retrofitted off NSubstitute onto 16.Testing's InMemoryMessageBus/InMemoryEventPublisher doubles (P-191); 50/50 Abstractions tests green; SK.07.OTel also complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0"), Consumer.Consume/EventPublisher.Publish activities, 106 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
@@ -107,15 +106,17 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
-| ● Published | 7 |
-| ● OTel | 1 |
+| ● Published | 8 |
+| ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | 1 |
 | ● Docs | 1 |
 | ● Tests | 2 |
+| ● Core | 0 |
+| ● Design | 0 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 5 |
+| ○ Not Started | 4 |
 
 ---
 
@@ -762,7 +763,7 @@ The current name `SharedKernel.Caching` creates a naming conflict with the menta
 
 ### P-015 — Application: ICacheableQuery Marker and CachingBehavior Pipeline Behavior
 
-**Status:** `○` Pending
+**Status:** `●` Complete — carried forward verbatim into P-217 (WO-035), now implemented and published
 **Work Order:** WO-004
 **Domain:** 05.Application
 **Depends on:** P-014
@@ -1856,6 +1857,21 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-24] 16 → Docs (●) — promoted from SK.16.Docs (10/10); XML doc coverage verified against live source files, no code changes needed (state-map-phase)
 - [2026-06-24] Governance → Governance: ServiceDefaults Liveness/Readiness and Composition-Root Layering Rules (●) — promoted from SK.00.ServiceDefaultsGovernance (16/16) (state-map-phase)
 - [2026-06-24] Phase Backlog P-173 → ● Complete — SK.00.ServiceDefaultsGovernance done (state-map-phase)
+- [2026-06-29] 05.Application → Design (◐) — WO-035 P-214–P-219 queued: seven-step pipeline (adds Authorization, Idempotency to existing five); domain moved off ○ Not Started (state-map-phase)
+- [2026-06-29] Phase(s) P-015, P-214, P-215, P-216, P-217, P-218, P-219 dispatched to application-arch-planner for 05.Application (dispatch-phase)
+- [2026-06-29] 05.Application → Design (●) — promoted from SK.05.Design (state-map-phase)
+- [2026-06-29] Phase Backlog P-214 → ● Complete — SK.05.Design done (state-map-phase)
+- [2026-06-29] 05.Application → Scaffold (●) — promoted from SK.05.Scaffold (state-map-phase)
+- [2026-06-29] Phase Backlog P-215 → ● Complete — SK.05.Scaffold done (state-map-phase)
+- [2026-06-29] 05.Application → Core (●) — promoted from SK.05.Core (state-map-phase)
+- [2026-06-29] Phase Backlog P-216, P-217 → ● Complete — SK.05.Core done (state-map-phase)
+- [2026-06-29] 05.Application → Tests (●) — promoted from SK.05.Tests (state-map-phase)
+- [2026-06-29] Phase Backlog P-218 → ● Complete — SK.05.Tests done (state-map-phase)
+- [2026-06-29] 05.Application → Docs (●) — promoted from SK.05.Docs (state-map-phase)
+- [2026-06-29] 05.Application → Published (●) — promoted from SK.05.Published (state-map-phase)
+- [2026-06-29] Phase Backlog P-219 → ● Complete — SK.05.Published done (state-map-phase)
+- [2026-06-29] Phase Backlog entries for 05.Application closed → ● Complete — 05.Application reached Published (state-map-phase)
+- [2026-06-29] Phase Backlog P-015 → ● Complete — superseded design fully implemented via P-217 (WO-035) (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -8813,3 +8829,175 @@ Closes out the rename the same way every other `01.Core` capability change close
 - [2026-06-26] Phase(s) P-210, P-211, P-212, P-213 dispatched to core-arch-planner for 01.Core (dispatch-phase)
 - [2026-06-29] Phase Backlog P-210, P-211, P-212, P-213 → ● Complete — SK.01.WO034 done (state-map-phase)
 - [2026-06-29] 01.Core → Published (●) — promoted from SK.01.WO034 (state-map-phase)
+
+---
+### P-214 — Application: Design — Lock Command/Query, Domain-Event-Bridge, and Pipeline-Behavior Contracts
+
+**Status:** `●` Complete
+**Work Order:** WO-035
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+Formalize and finalize the interface shapes for `SharedKernel.Application` and `SharedKernel.Application.Behaviors` as the tracked, dispatched breakdown of the design already drafted in `05.Application/CLAUDE.md`: the `ICommand`/`ICommand<TResponse>`/`IQuery<TResponse>`/`ICommandBase` vocabulary and handler aliases (`ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>`); the domain-event-to-MediatR bridge (`IDomainEventHandler<TDomainEvent>`, `DomainEventNotification<TDomainEvent>`, `MediatRDomainEventDispatcher` fulfilling `03.Domain`'s P-081 forward reference); and the seven pipeline behaviors that make up the gold-standard cross-cutting set for this layer: Validation, Logging, Metrics, Transaction, Caching (carrying forward root P-015/WO-004 verbatim — no redesign), **Authorization** (new), and **Idempotency** (new).
+
+**Authorization seam (new):** Define a local `IAuthorizationContext` interface (or equivalently named minimal seam) owned by `SharedKernel.Application.Behaviors` — exposing only what `AuthorizationBehavior` needs to evaluate a permission check (e.g., a way to ask "does the current caller satisfy this requirement"). This interface must NOT be `SharedKernel.Security.Abstractions.IUserContext` and must not cause a project reference to `12.Security` — the layering table permits `05.Application` to reference only `01–04`. The consuming service bridges this local seam to its real `IUserContext`/`ITenantProvider` at the composition root, exactly mirroring how `TransactionBehavior`'s local `IUnitOfWork` is bridged to `06.Persistence.Abstractions.IUnitOfWork`. Define a marker interface (e.g. `IAuthorizeRequest`) that a command/query implements to declare it requires an authorization check, carrying whatever minimal requirement shape (e.g. a permission/policy name) the request needs evaluated. Requests that do not implement the marker skip the behavior entirely (DI/runtime no-op, not a config flag). On failure, the behavior must short-circuit with `Result.Failure(Error.Unauthorized(...))` for `Result`/`Result<T>`-returning requests — never throw — consistent with this domain's existing rule that exceptions are reserved for validation and genuinely unexpected faults.
+
+**Idempotency seam (new):** Define a local `IIdempotencyKeyProvider` (or equivalent) and reuse-or-mirror the `HasProcessedAsync`/`MarkProcessedAsync` shape already proven by `07.Messaging.Abstractions.IIdempotencyStore` — but as this layer's own interface, since `05.Application` cannot reference `07.Messaging`. Define `IdempotentCommandBehavior<TRequest,TResponse>` constrained to `TRequest : ICommandBase` only (never queries, mirroring `TransactionBehavior`'s constraint). On a duplicate key, the behavior must short-circuit and return the previously recorded result (or a documented `Result.Failure(Error.Conflict(...))` if the prior result is not retrievable) without invoking `next()` a second time. Requests opt in via a marker interface exposing an idempotency key (e.g. `IIdempotentRequest.IdempotencyKey`).
+
+**Canonical pipeline order must be revised** to insert both new behaviors. Authorization belongs after Validation (reject malformed input before spending a permission check) and before Caching/Transaction (never let an unauthorized request reach a cache lookup or a mutation). Idempotency belongs innermost, immediately wrapping the handler-and-commit boundary for commands, so a duplicate is detected before `TransactionBehavior`'s `SaveChangesAsync` runs a second time for the same logical operation. Document the full seven-step order explicitly with rationale for each position, the same way the existing five-step order is documented.
+
+Both new behaviors follow the existing `ApplicationBehaviorsBuilder` pattern exactly: `.AddAuthorizationBehavior()` / `.AddIdempotencyBehavior()`, each guarded by a `Build()`-time `InvalidOperationException` if their required local seam interface is not registered — mirroring `AddTransactionBehavior()`/`AddCachingBehavior()`'s existing missing-dependency guards.
+
+#### Why this is needed
+
+A command/query pipeline that validates, logs, measures, caches, and commits but cannot answer "is this caller allowed to do this" or "did this exact request already run" is not gold-standard for a platform serving hundreds of services — these are the two most universally-needed cross-cutting concerns left undone after the original five. Both gaps are real, not speculative: authorization is the single most common hand-rolled-per-handler inconsistency teams introduce absent a platform behavior, and idempotency is a proven, already-shipped pattern one layer over in `07.Messaging` that has no equivalent at the in-process command boundary, where duplicate submission from retries/double-clicks is equally real. Both must use a locally-owned seam interface — never a direct reference to `12.Security` or `07.Messaging` — because `05.Application`'s layering ceiling is `01–04`; this is not a new pattern, it is the exact precedent `TransactionBehavior`'s `IUnitOfWork` already established in this same domain. Keeping P-015's `CachingBehavior` design unchanged (rather than redesigning it) respects the already-correct, already-reviewed WO-004 design — there is nothing wrong with it, it simply needed dispatching alongside the rest of the lifecycle.
+
+#### Acceptance criteria
+- [ ] `ICommandBase`, `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>` contracts finalized exactly as documented in `05.Application/CLAUDE.md`
+- [ ] `ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>` handler-alias contracts finalized
+- [ ] `IDomainEventHandler<TDomainEvent>`, `DomainEventNotification<TDomainEvent>`, `MediatRDomainEventDispatcher` contracts finalized, fulfilling `03.Domain` P-081
+- [ ] `ValidationBehavior`, `LoggingBehavior`, `MetricsBehavior`, `TransactionBehavior` contracts finalized exactly as documented
+- [ ] `CachingBehavior`/`ICacheableQuery<TResponse>` contract carried forward verbatim from root P-015 (WO-004) — no redesign
+- [ ] New `IAuthorizationContext` local seam + `IAuthorizeRequest` marker + `AuthorizationBehavior<TRequest,TResponse>` contract defined; zero project reference to `12.Security`
+- [ ] New `IIdempotencyKeyProvider`-shaped local seam + `IIdempotentRequest` marker + `IdempotentCommandBehavior<TRequest,TResponse>` contract defined, constrained to `ICommandBase`; zero project reference to `07.Messaging`
+- [ ] Revised seven-step canonical pipeline order documented with positional rationale for every step, including both new behaviors
+- [ ] `ApplicationBehaviorsBuilder` extended with `.AddAuthorizationBehavior()` and `.AddIdempotencyBehavior()`, each with a missing-dependency `Build()` guard mirroring the existing Transaction/Caching guards
+- [ ] `05.Application/CLAUDE.md` updated to reflect all of the above as the single source of truth before Scaffold begins
+
+---
+### P-215 — Application: Scaffold — Project Wiring for SharedKernel.Application and SharedKernel.Application.Behaviors
+
+**Status:** `●` Complete
+**Work Order:** WO-035
+**Domain:** 05.Application
+**Depends on:** P-214
+
+#### What is needed
+
+Wire up both packages' `.csproj` files (currently bare stubs with no package references and no source files): `SharedKernel.Application` takes a NuGet reference to `MediatR` 12.4.x and project references to `SharedKernel.Primitives`, `SharedKernel.Core`, and `SharedKernel.Domain`; `SharedKernel.Application.Behaviors` takes a project reference to `SharedKernel.Application` plus `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, NuGet references to `MediatR` and `FluentValidation` 11.x. Establish the folder structure described in `05.Application/CLAUDE.md` (`Messaging/`, `DomainEvents/`, `Extensions/` for the base package; `Validation/`, `Logging/`, `Metrics/`, `Transaction/`, `Caching/`, `Authorization/`, `Idempotency/`, `Extensions/` for Behaviors). Confirm both packages are correctly registered as solution folders in `Platform.SharedKernel.slnx`. Create empty nested test project stubs (`SharedKernel.Application.Tests`, `SharedKernel.Application.Behaviors.Tests`) referencing `16.Testing/SharedKernel.Testing` and the standard test package set (xunit, FluentAssertions, NSubstitute) — no test logic yet.
+
+#### Why this is needed
+
+Standard scaffold-before-code discipline applied by every other domain in this repo — establishes the dependency graph and folder layout mechanically so the Core phases are pure logic, not also fighting project-reference plumbing. Confirms at the project-reference level (not just documentation level) that `SharedKernel.Application` never pulls in `SharedKernel.Caching.Abstractions` (that reference belongs to Behaviors only, per the existing hard-violation rule) and that neither package can accidentally reference `06.Persistence`, `07.Messaging`, or `12.Security`.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Application.csproj` references `MediatR` 12.4.x, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Domain` — and nothing else
+- [ ] `SharedKernel.Application.Behaviors.csproj` references `SharedKernel.Application`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, `MediatR`, `FluentValidation` — and nothing else
+- [ ] Folder structure created matching the public-surface sections in `05.Application/CLAUDE.md`, including new `Authorization/` and `Idempotency/` folders
+- [ ] Both packages registered correctly under the `05.Application` solution folder in `Platform.SharedKernel.slnx`
+- [ ] Both nested test project stubs created, referencing `SharedKernel.Testing` and the standard test package pins; build succeeds with zero source files
+- [ ] `dotnet build` succeeds for both packages and both test stubs with zero warnings
+- [ ] No project reference to `06.Persistence`, `07.Messaging`, or `12.Security` exists anywhere in either package
+
+---
+### P-216 — Application: Core (Contracts) — Command/Query Vocabulary and Domain-Event-to-MediatR Bridge
+
+**Status:** `●` Complete
+**Work Order:** WO-035
+**Domain:** 05.Application
+**Depends on:** P-215
+
+#### What is needed
+
+Implement the full production surface of `SharedKernel.Application`: `ICommandBase`, `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>`, `ICommandHandler<TCommand>`, `ICommandHandler<TCommand,TResponse>`, `IQueryHandler<TQuery,TResponse>` exactly as specified in `05.Application/CLAUDE.md`'s Messaging/ section. Implement the domain-event bridge: `IDomainEventHandler<TDomainEvent>`, `DomainEventNotification<TDomainEvent>` (sealed record, `INotification`), the internal `DomainEventNotificationHandler<TDomainEvent>` adapter, and `MediatRDomainEventDispatcher` (implementing `03.Domain`'s `IDomainEventDispatcher`, single constructor accepting `IPublisher`, using the documented cached-delegate `MakeGenericMethod` exception — identical justified shape to `07.Messaging`'s `MassTransitEventPublisher`). Implement the two DI extensions: `AddSharedKernelApplication(IServiceCollection)` and `AddDomainEventHandler<TDomainEvent,THandler>(IServiceCollection)`. No `AddMediatR` call anywhere in this package.
+
+#### Why this is needed
+
+This is the foundational vocabulary every downstream handler in every microservice authors against, and the bridge that fulfills `03.Domain`'s long-standing P-081 forward reference, finally letting `IDomainEventDispatcher` have a real implementation. Splitting this into its own Core phase (separate from the Behaviors phase below) lets the base package — which every service must reference — ship and be verified independently of the opt-in Behaviors package.
+
+#### Acceptance criteria
+- [ ] `ICommandBase`, `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>` implemented exactly to the documented contract shapes, including the documented constraint that `IQuery<TResponse>` never implements `ICommandBase`
+- [ ] `ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>` implemented as pure `IRequestHandler<,>` aliases — zero additional members
+- [ ] `IDomainEventHandler<TDomainEvent>` implemented; consuming services implement it directly, never MediatR's `INotificationHandler<>` for domain events
+- [ ] `DomainEventNotification<TDomainEvent>` implemented as a sealed record implementing `INotification`
+- [ ] `DomainEventNotificationHandler<TDomainEvent>` implemented as internal-only, never directly registered by consuming code
+- [ ] `MediatRDomainEventDispatcher` implements `SharedKernel.Domain.IDomainEventDispatcher`; empty list is a no-op; handler exceptions propagate unchanged; exactly one public constructor accepting `IPublisher`
+- [ ] `MediatRDomainEventDispatcher.DispatchAsync`'s per-event-type dispatch uses a cached closed-generic delegate in a static `ConcurrentDictionary<Type, Delegate>` — built once per concrete event `Type`, never per-call reflection
+- [ ] `AddSharedKernelApplication()` registers `IDomainEventDispatcher → MediatRDomainEventDispatcher` (scoped); does not call `AddMediatR`
+- [ ] `AddDomainEventHandler<TDomainEvent,THandler>()` registers both the handler and the internal notification adapter via closed generics; zero assembly scanning, zero `MakeGenericType` at registration time
+- [ ] All public types carry XML doc comments matching the detail level already drafted in `05.Application/CLAUDE.md`
+- [ ] Package remains AOT-safe per the documented AOT Compatibility notes
+
+---
+### P-217 — Application: Core (Behaviors) — Seven-Step Pipeline Behavior Suite
+
+**Status:** `●` Complete
+**Work Order:** WO-035
+**Domain:** 05.Application
+**Depends on:** P-216
+
+#### What is needed
+
+Implement the full production surface of `SharedKernel.Application.Behaviors`: `ValidationBehavior<,>`, `LoggingBehavior<,>`, `ApplicationDiagnostics` + `MetricsBehavior<,>`, `IUnitOfWork` + `TransactionBehavior<,>`, `ICacheableQuery<TResponse>` + `CachingBehavior<,>` (carrying forward root P-015/WO-004 exactly as designed — no changes), and the two new behaviors locked in P-214: `IAuthorizationContext` + `IAuthorizeRequest` + `AuthorizationBehavior<,>`, and the idempotency seam + `IIdempotentRequest` + `IdempotentCommandBehavior<,>`. Implement `ApplicationBehaviorsBuilder` with all seven `.AddXBehavior()` methods plus `.Build()`, registering only opted-in behaviors in the fixed seven-step canonical order regardless of call order, with `Build()`-time `InvalidOperationException` guards for Transaction (missing `IUnitOfWork`), Caching (missing `ICacheService`), Authorization (missing `IAuthorizationContext`), and Idempotency (missing its local seam).
+
+#### Why this is needed
+
+This is the opt-in cross-cutting suite that eliminates hand-rolled, inconsistent validation/logging/metrics/transaction/caching/authorization/idempotency logic across every command and query handler on the platform. Sequencing this after P-216 means the behaviors can be built and tested against the now-real `ICommand`/`IQuery<TResponse>`/`ICommandBase` contracts rather than placeholder types.
+
+#### Acceptance criteria
+- [ ] `ValidationBehavior<,>` implemented exactly as documented — aggregates all `IValidator<TRequest>` failures, throws `ValidationException` without calling `next()`, zero registered validators is a no-op
+- [ ] `LoggingBehavior<,>` implemented — Information at start/success with elapsed time via `Stopwatch.GetTimestamp`/`GetElapsedTime`, Error + rethrow on exception, no payload logging
+- [ ] `ApplicationDiagnostics` static Meter/Histogram implemented exactly as documented; `MetricsBehavior<,>` records exactly one measurement per request via try/finally, tagged by request type name
+- [ ] `IUnitOfWork` (local, distinct from `06.Persistence.Abstractions.IUnitOfWork`) and `TransactionBehavior<,>` implemented — constrained to `ICommandBase`; calls `next()` then `SaveChangesAsync` with no surrounding try/catch; never inspects `Result`/`Result<T>` success/failure
+- [ ] `ICacheableQuery<TResponse>` and `CachingBehavior<,>` implemented exactly per root P-015 — `GetOrSetAsync` only, never `GetAsync`+`SetAsync`; registered after Validation
+- [ ] `IAuthorizationContext`, `IAuthorizeRequest`, `AuthorizationBehavior<,>` implemented per P-214's design — zero `12.Security` reference; short-circuits with `Result.Failure(Error.Unauthorized(...))`, never throws
+- [ ] Idempotency local seam, `IIdempotentRequest`, `IdempotentCommandBehavior<,>` implemented per P-214's design — constrained to `ICommandBase`; zero `07.Messaging` reference; duplicate key short-circuits without invoking `next()` twice
+- [ ] `ApplicationBehaviorsBuilder` registers behaviors in the fixed seven-step order regardless of `.AddXBehavior()` call order; never calls `AddMediatR`
+- [ ] All four documented missing-dependency `Build()` guards present and throwing `InvalidOperationException` with an actionable message
+- [ ] All public types carry XML doc comments matching the detail level already drafted in `05.Application/CLAUDE.md`
+- [ ] Package remains AOT-safe; no new reflection beyond the already-documented exceptions
+
+---
+### P-218 — Application: Tests — Contract Shape, Dispatcher, and Behavior Coverage
+
+**Status:** `●` Complete
+**Work Order:** WO-035
+**Domain:** 05.Application
+**Depends on:** P-217
+
+#### What is needed
+
+Implement the full test suite described in `05.Application/CLAUDE.md`'s Test Rules section for both packages, plus new coverage for `AuthorizationBehavior` and `IdempotentCommandBehavior`. `SharedKernel.Application.Tests`: contract-shape tests for the command/query vocabulary and handler aliases; `MediatRDomainEventDispatcher` dispatch tests (empty-list no-op, single event, multiple events of different concrete types each published as their own closed `DomainEventNotification<T>`, handler-exception propagation); `AddDomainEventHandler<,>` DI resolution test. `SharedKernel.Application.Behaviors.Tests`: one test class per behavior — Validation (zero/one-failing/mixed validators), Logging (success and fault paths), Metrics (exactly-one-measurement, recorded even on throw), Transaction (`SaveChangesAsync` call count, query bypass as a DI-contract test), Caching (miss/hit/stampede/command-never-satisfies-marker), Authorization (unauthorized short-circuits without invoking handler, authorized request proceeds, request without the marker skips the behavior entirely), Idempotency (duplicate key short-circuits without a second `next()` invocation, first call invokes handler and records the key, non-command request never resolves the behavior into its pipeline).
+
+#### Why this is needed
+
+Closes the loop on every behavior and contract locked in P-214/P-216/P-217 with the same rigor already proven across every other completed domain in this repo (`06.Persistence`, `07.Messaging`, `16.Testing`) — a pipeline behavior with no test proving its short-circuit and pass-through paths is not trustworthy at platform scale.
+
+#### Acceptance criteria
+- [ ] All contract-shape tests for `ICommand`/`ICommand<T>`/`IQuery<T>`/`ICommandHandler<>`/`IQueryHandler<,>` pass
+- [ ] `MediatRDomainEventDispatcher` dispatch tests cover empty-list, single-event, multi-type-event, and exception-propagation cases
+- [ ] `AddDomainEventHandler<,>` DI resolution test passes
+- [ ] `ValidationBehavior`, `LoggingBehavior`, `MetricsBehavior`, `TransactionBehavior`, `CachingBehavior` tests pass exactly as documented in the existing Test Rules section
+- [ ] `AuthorizationBehavior` tests cover: unauthorized short-circuit (handler never invoked, `Result.Failure` with `ErrorType.Unauthorized` returned), authorized pass-through, and no-marker skip (DI-contract test, not runtime branch)
+- [ ] `IdempotentCommandBehavior` tests cover: first call invokes handler and records key, duplicate key short-circuits without a second handler invocation, query types never resolve the behavior into their pipeline
+- [ ] Standard test package set pinned exactly as documented (`xunit` 2.9.3, `xunit.runner.visualstudio` 2.8.2, `Microsoft.NET.Test.Sdk` 17.13.0, `coverlet.collector` 6.0.4, `FluentAssertions` 8.4.0, `NSubstitute` 5.3.0)
+- [ ] `GlobalUsings.cs` with `global using Xunit;` present in both test projects
+- [ ] Full test suite green with zero failures and zero skips
+
+---
+### P-219 — Application: Docs and Published — XML Comments, README, and NuGet Packaging
+
+**Status:** `●` Complete
+**Work Order:** WO-035
+**Domain:** 05.Application
+**Depends on:** P-218
+
+#### What is needed
+
+Confirm full XML doc coverage on every public type across both packages (cross-check against the detail level already drafted in `05.Application/CLAUDE.md`, including the two new behaviors). Write or update `README.md` for both `SharedKernel.Application` and `SharedKernel.Application.Behaviors`, including a DI Registration usage example covering the full seven-behavior builder chain and the Authorization/Idempotency local-seam bridging pattern at the composition root. Set NuGet package metadata (`PackageId`, version, description, license, repository URL) on both `.csproj` files. Pack both packages, verify zero warnings, and run (or extend) the repo's consumer-verify harness to prove the full DI registration chain resolves with zero exceptions, including a negative-path check that the four `Build()`-time guards (Transaction/Caching/Authorization/Idempotency) actually throw when their dependency is missing.
+
+#### Why this is needed
+
+Closes the domain out the same way every other completed domain in this repo closes out — docs and packaging are not optional trailing work, they are the proof that the package is actually consumable by a downstream service team with no tribal knowledge required.
+
+#### Acceptance criteria
+- [x] 100% XML doc coverage on public types in both packages
+- [x] `05.Application/README.md`-equivalent (or package-level READMEs) updated with the full seven-behavior DI registration example and the local-seam bridging pattern for Authorization/Idempotency
+- [x] Both `.csproj` files carry complete NuGet metadata
+- [x] `dotnet pack` produces `.nupkg` + `.snupkg` for both packages with zero warnings
+- [x] Consumer-verify harness proves zero-DI-exception resolution for the full registration chain
+- [x] Consumer-verify harness proves all four missing-dependency `Build()` guards throw `InvalidOperationException` as documented
+- [x] `05.Application/state-map.md` Package Board and root `state-map.md` Domain Summary Board updated to reflect the completed domain
+- [x] Root `CLAUDE.md` "What Goes Where" table gains rows for the new Authorization and Idempotency behaviors (see sync-brain)
