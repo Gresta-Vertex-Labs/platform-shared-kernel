@@ -79,7 +79,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
-| 16 | [Testing](16.Testing/state-map.md) | Design | `●` | WO-036 (P-226) in progress: SK.16.Design now complete (58/58) — D-55–D-58 re-verified directly against live source (AmbientActivityTestHelper, FakeCacheService, 05.Application's ApplicationDiagnostics/TracingBehavior); ActivityRecorder design confirmed sound, not yet implemented. SK.16.Scaffold (14/15), SK.16.Core (46/47), SK.16.Tests (37/38), SK.16.Docs (12/13) each have one pending WO-036 task (S-15/C-47/T-38/DO-13). | Implement C-47 (ActivityRecorder in Communication/) to advance Core/Scaffold/Tests/Docs. |
+| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-036 (P-226) fully complete — SK.16.Design (58/58), SK.16.Scaffold (15/15), SK.16.Core (47/47), SK.16.Tests (38/38), and SK.16.Docs (13/13) all done: ActivityRecorder implemented, proven in SharedKernel.Testing.SelfTests (242/242 passing), and its XML docs verified to already document the ambient-context-setter vs. recording-listener distinction; both P-226 audit determinations confirmed recorded in the CLAUDE.md changelog. All 6 phases of 16.Testing (Design→Published) now complete — domain fully closed. | — |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -108,7 +108,7 @@ Format when active:
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● Published | 7 |
 | ● Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | 1 |
-| ● Docs | 1 |
+| ● Docs | 2 |
 | ● Tests | 2 |
 | ● Core | 1 |
 | ● Design | 1 |
@@ -9175,7 +9175,7 @@ Every prior `05.Application` work order (WO-035 and its predecessors) paired new
 ---
 ### P-226 — Testing: Support Fixtures for the Extended Application Pipeline
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-036
 **Domain:** 16.Testing
 **Depends on:** P-220, P-224
@@ -9189,9 +9189,100 @@ Audit `SharedKernel.Testing`'s existing surface against the two new cross-cuttin
 `16.Testing`'s own standing rule (documented in its `CLAUDE.md`, WO-029) is that a fake implementing another domain's interface is proven via that owning domain's contract tests, and standalone test infrastructure with no owning interface lives in `SharedKernel.Testing.SelfTests`. This work order's new behaviors are likely already covered by existing fakes (`FakeCacheService` already implements `ICacheService`; `AmbientActivityTestHelper` already exists for `Activity` assertions) — the risk is not "nothing exists" but "05.Application's test suite reinvents a fake that 16.Testing already shipped," which has been an explicit, named risk in this platform before (the WO-029 consolidation pass found exactly this kind of drift). This phase exists to make the audit explicit and prevent silent duplication, not to presume new code is required.
 
 #### Acceptance criteria
-- [ ] Explicit, documented determination of whether `AmbientActivityTestHelper` is sufficient as-is for P-220's tracing behavior tests, or what minimal additive extension is needed
-- [ ] Explicit, documented determination of whether `FakeCacheService`/`FakeCacheInvalidationBus` already cover P-224's cache-invalidation behavior tests, or what minimal additive fake is needed
-- [ ] Any new fake added follows the existing `16.Testing` pattern exactly (implements an interface owned by `02.Caching`/BCL `System.Diagnostics`, proven via that owning domain's contract tests per the standing rule)
-- [ ] No duplicate fake is created for a capability `16.Testing` already ships — if duplication is found mid-implementation, the existing fake is reused and this phase's scope is reduced accordingly, not silently expanded
-- [ ] `16.Testing/CLAUDE.md` changelog records the audit outcome either way (no-op confirmation or new addition)
+- [x] Explicit, documented determination of whether `AmbientActivityTestHelper` is sufficient as-is for P-220's tracing behavior tests, or what minimal additive extension is needed
+- [x] Explicit, documented determination of whether `FakeCacheService`/`FakeCacheInvalidationBus` already cover P-224's cache-invalidation behavior tests, or what minimal additive fake is needed
+- [x] Any new fake added follows the existing `16.Testing` pattern exactly (implements an interface owned by `02.Caching`/BCL `System.Diagnostics`, proven via that owning domain's contract tests per the standing rule)
+- [x] No duplicate fake is created for a capability `16.Testing` already ships — if duplication is found mid-implementation, the existing fake is reused and this phase's scope is reduced accordingly, not silently expanded
+- [x] `16.Testing/CLAUDE.md` changelog records the audit outcome either way (no-op confirmation or new addition)
 ---
+
+---
+### P-227 — Persistence: Field-Level Encryption Delegated to SharedKernel.Cryptography
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-037
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`SharedKernel.Persistence.EfCore`'s `EncryptedValueConverter` (WO-019) currently implements its own AES-256-GCM encryption directly against `System.Security.Cryptography.AesGcm`/`RandomNumberGenerator` — nonce generation, encrypt, tag-append, Base64 encode, version-prefix parse, key lookup, decrypt, tag verification. `01.Core/SharedKernel.Cryptography` (WO-033) now ships exactly this capability as `ISymmetricEncryptionService`/`AesGcmEncryptionService`, with an `EncryptedPayload` record (`KeyId`, `Nonce`, `Ciphertext`, `Tag`) and an `IEncryptionKeyProvider` seam for key resolution. Re-plumb `EncryptedValueConverter` to delegate every cryptographic operation to an injected `ISymmetricEncryptionService` instead of calling `AesGcm` itself. `06.Persistence.EfCore` takes a direct project reference to `SharedKernel.Cryptography` — this requires no layering exception and no detour through `05.Application`, since `01.Core` already sits beneath `06.Persistence` in the existing layering table (06.Persistence may reference 01–05).
+
+The on-disk wire format (`"v{version}:{Base64(nonce || ciphertext || tag)}"`) must be preserved exactly as-is so existing encrypted columns continue to decrypt without a data migration — this is a re-plumbing of the encryption *mechanism*, not a ciphertext format change. `EncryptionOptions.Keys` (the existing `Dictionary<string,string>` of version → Base64 key) becomes the backing store for a new internal `IEncryptionKeyProvider` implementation supplied by `06.Persistence.EfCore` itself (e.g. an `EncryptionOptionsKeyProvider` bridging `IOptionsMonitor<EncryptionOptions>` to `IEncryptionKeyProvider.GetCurrentKey()`/`GetKey(keyId)`), preserving the existing hot-reload-via-`IOptionsMonitor` behavior. `IEncryptionVersionOverride`'s rotation-scoped override mechanism (P-147) must continue to work unchanged — it now selects which `KeyId` is passed to `ISymmetricEncryptionService.Encrypt`'s underlying key resolution rather than which raw key bytes are read directly.
+
+#### Why this is needed
+
+This is a direct, confirmed violation of `01.Core/CLAUDE.md`'s own hard rule: *"Hand-rolled password hashing... or unauthenticated symmetric encryption... [is] Prohibited anywhere in the platform — always use `SharedKernel.Cryptography`'s `IPasswordHasher`/`ISecureRandomGenerator`/`ISymmetricEncryptionService` (AEAD-only)."* The duplication exists because `06.Persistence`'s column encryption (WO-019, 2026-06-04) was built and shipped before `SharedKernel.Cryptography` existed (WO-033, 2026-06-26) — sequencing drift, not a deliberate design split. The root `CLAUDE.md` "What Goes Where" table already anticipated a *boundary* between the two ("Distinct from `06.Persistence`'s `EncryptedValueConverter`... do not route column encryption through `SharedKernel.Cryptography` directly or vice versa") on the assumption they were parallel, non-overlapping mechanisms — that assumption no longer holds once both independently hand-roll the identical AES-256-GCM operation. Consolidating onto one cryptographic implementation means key-handling bugs, nonce-reuse risks, and algorithm upgrades (e.g. a future AES-256-GCM-SIV move) are fixed in exactly one place instead of two that can silently drift apart.
+
+No layering rule changes are needed or wanted to do this — `01.Core` is already two layers below `06.Persistence`. The user-proposed alternative (route through `05.Application`) was evaluated and declined: it would force a persistence package to couple to the Application layer for a primitive that is already directly reachable, a strictly worse dependency shape for no benefit.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Persistence.EfCore` has a direct `ProjectReference` to `SharedKernel.Cryptography`
+- [ ] `EncryptedValueConverter`'s `Encrypt`/`Decrypt` static methods are replaced with calls into an injected `ISymmetricEncryptionService` — zero direct `AesGcm`/`RandomNumberGenerator` calls remain in `06.Persistence.EfCore`
+- [ ] The `"v{version}:{Base64(nonce||ciphertext||tag)}"` wire format is byte-for-byte unchanged — existing encrypted rows decrypt correctly without a data migration (regression test required)
+- [ ] A new internal `IEncryptionKeyProvider` implementation bridges `EncryptionOptions.Keys`/`CurrentVersion` (via `IOptionsMonitor<EncryptionOptions>`) to `ISymmetricEncryptionService`'s key resolution, preserving existing hot-reload behavior
+- [ ] `IEncryptionVersionOverride`'s rotation-scoped override (P-147) continues to direct which key version a given `SaveChangesAsync` batch encrypts with, without mutating `EncryptionOptions.CurrentVersion`
+- [ ] All existing `EncryptedValueConverter`/`EncryptionModelConvention`/`EncryptionRotationService` tests continue to pass unmodified in behavior (only the internal mechanism changes)
+- [ ] `EncryptionKeyNotFoundException` continues to be thrown for an unknown version prefix, now surfaced via `ISymmetricEncryptionService.Decrypt`'s `Result<byte[]>` failure path instead of a raw `KeyNotFoundException`/dictionary miss
+- [ ] `06.Persistence/CLAUDE.md` updated: `EncryptedValueConverter`'s contract description reflects delegation to `SharedKernel.Cryptography`; the root `CLAUDE.md` "What Goes Where" row distinguishing column encryption from general-purpose encryption is corrected to describe the new *delegation* relationship rather than implying two independent implementations
+---
+
+---
+### P-228 — Persistence: EfUnitOfWork Bridges Application's Local IUnitOfWork Seam
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-037
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+
+`05.Application.Behaviors` defines a minimal local `IUnitOfWork` seam (`SaveChangesAsync(CancellationToken)` only) that `TransactionBehavior` depends on, by design, because `05.Application` cannot reference `06.Persistence` (layering runs the other direction). `06.Persistence` is permitted to reference `05.Application` (06 → may reference 01–05), so `EfUnitOfWork` (`SharedKernel.Persistence.EfCore`) should additionally implement `SharedKernel.Application.Behaviors.IUnitOfWork` directly, alongside its existing implementation of `SharedKernel.Persistence.Abstractions.IUnitOfWork`. Both interfaces expose a compatible `SaveChangesAsync` shape, so `EfUnitOfWork` satisfies both contracts from the same method body — no new logic, only an additional interface declaration and DI registration. `EfCorePersistenceBuilder.Build()` registers `EfUnitOfWork` against both `SharedKernel.Persistence.Abstractions.IUnitOfWork` and `SharedKernel.Application.Behaviors.IUnitOfWork` when `05.Application.Behaviors`' `TransactionBehavior` is in use by the consuming service.
+
+#### Why this is needed
+
+The bridge between these two `IUnitOfWork` interfaces is fully designed and documented in `05.Application/CLAUDE.md` (two named options: a future `06.Persistence` work order has `EfUnitOfWork` implement the local interface directly, or the composition root registers a one-line scoped adapter) but neither option has ever actually shipped as code — every consuming service is currently expected to hand-write this adapter itself from documentation alone. This is exactly the kind of "designed but never wired end-to-end" gap that turns into a recurring support question across every downstream microservice adopting `TransactionBehavior`. Implementing the dual-interface approach directly on `EfUnitOfWork` (rather than only documenting the composition-root adapter pattern) removes this repeated boilerplate from every consumer for the common case (a service using EF Core as its sole persistence provider), while the documented composition-root-adapter option remains available for services bridging a non-EF Core `IUnitOfWork` implementation to the same seam.
+
+This is not a layering change — `06.Persistence` was always permitted to reference `05.Application.Behaviors` for exactly this purpose; the design was simply never executed.
+
+#### Acceptance criteria
+- [ ] `EfUnitOfWork` implements both `SharedKernel.Persistence.Abstractions.IUnitOfWork` and `SharedKernel.Application.Behaviors.IUnitOfWork` from a single `SaveChangesAsync` implementation
+- [ ] `SharedKernel.Persistence.EfCore` takes a `ProjectReference` to `SharedKernel.Application.Behaviors` (legal under existing layering: 06 → 01–05)
+- [ ] `EfCorePersistenceBuilder` gains an opt-in registration step (e.g. `.WithApplicationTransactionBehavior()` or equivalent) that registers `EfUnitOfWork` against the `05.Application.Behaviors.IUnitOfWork` service type — opt-in because not every `06.Persistence` consumer uses `05.Application.Behaviors`' `TransactionBehavior`, mirroring the existing opt-in shape of `.WithTransactionalUnitOfWork()`/`.WithEncryption()`
+- [ ] Existing `EfUnitOfWork` behavior (interceptor firing order, domain event dispatch post-commit, single-constructor rule) is unchanged
+- [ ] A consumer-verify-style test proves `TransactionBehavior` resolves and successfully calls through to a real `EfUnitOfWork`-backed `SaveChangesAsync` end-to-end, replacing the documentation-only example in `05.Application/CLAUDE.md`'s DI Registration section
+- [ ] `05.Application/CLAUDE.md` and `06.Persistence/CLAUDE.md` both updated: the "future work order" forward-reference language is replaced with the shipped registration shape
+- [ ] No change to `05.Application.Behaviors.IUnitOfWork`'s shape or to the layering rules — this phase only ships the previously-documented bridge as code
+---
+
+---
+### P-229 — Governance: Architecture Rules Locking the Cryptography Delegation and IUnitOfWork Bridge
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-037
+**Domain:** 00.Governance
+**Depends on:** P-227, P-228
+
+#### What is needed
+
+Two new NetArchTest rules: (1) a rule asserting no type in `06.Persistence.*` (or any other domain) directly references `System.Security.Cryptography.AesGcm`, `Aes`, `SymmetricAlgorithm`, or calls `RandomNumberGenerator` for ciphertext/nonce generation outside `SharedKernel.Cryptography` itself — generalizing the existing SK0301 intent ("no raw BCL symmetric cipher in 03.Domain/05.Application") to cover the actual offending domain (06.Persistence) and to forbid the pattern platform-wide, not just in the two layers SK0301 currently names; (2) a rule asserting `SharedKernel.Application.Behaviors.IUnitOfWork` and `SharedKernel.Persistence.Abstractions.IUnitOfWork` remain two distinct interface declarations (never merged into one type, never one inheriting the other) — protecting the local-seam pattern from a future well-intentioned "simplification" that would silently reintroduce the 05→06 layering violation this work order's analysis explicitly declined.
+
+#### Why this is needed
+
+P-227 fixes today's hand-rolled-crypto violation in `06.Persistence`; without a mechanical rule, nothing stops the next field-level-encryption-shaped feature (or a future domain) from reintroducing the same hand-rolled `AesGcm` pattern the next time someone needs symmetric encryption and doesn't know `SharedKernel.Cryptography` exists. P-228 ships a bridge between two intentionally-separate `IUnitOfWork` interfaces; the entire point of the local-seam pattern (proven three times now: `IUnitOfWork`, `IAuthorizationContext`, `IIdempotencyKeyStore`) is that `05.Application` stays infrastructure-free, and that guarantee is only as strong as the next engineer's awareness of *why* two same-named interfaces exist — a mechanical test makes the "these are deliberately separate" rule self-enforcing instead of relying on a code comment being read.
+
+#### Acceptance criteria
+- [ ] New architecture test fails the build if any type outside `SharedKernel.Cryptography` references `AesGcm`, `Aes`, or `SymmetricAlgorithm` directly
+- [ ] New architecture test fails the build if any type outside `SharedKernel.Cryptography` calls `RandomNumberGenerator` members directly (existing `ISecureRandomGenerator`-prohibition tests, if any, are consolidated with this one rather than duplicated)
+- [ ] New architecture test fails the build if `SharedKernel.Application.Behaviors.IUnitOfWork` and `SharedKernel.Persistence.Abstractions.IUnitOfWork` are ever merged into a single type or made to inherit one another
+- [ ] Existing SK0301 (raw BCL symmetric cipher in 03.Domain/05.Application) is reconciled with the new platform-wide rule — either superseded or explicitly scoped as a narrower special case, with no contradictory duplicate rule left in the suite
+- [ ] All existing architecture tests continue to pass after `06.Persistence`'s P-227 delegation change lands (the new rule must recognize `SharedKernel.Cryptography`'s own `AesGcmEncryptionService` as the sole legitimate caller)
+- [ ] `00.Governance/CLAUDE.md` changelog records the new rules and the SK-number(s) assigned
+---
+
+- [2026-06-30] Phase(s) P-227, P-228 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-06-30] Phase(s) P-229 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-30] 16.Testing → Scaffold (●) — promoted from SK.16.Scaffold (15/15); S-15 confirmed ActivityRecorder needs zero new dependency (state-map-phase)
+- [2026-06-30] 16.Testing → Core (●) — promoted from SK.16.Core (47/47); ActivityRecorder implemented in Communication/ActivityRecorder.cs (state-map-phase)
+- [2026-06-30] 16.Testing → Tests (●) — promoted from SK.16.Tests (38/38); ActivityRecorder proven in SharedKernel.Testing.SelfTests, 242/242 passing (state-map-phase)
+- [2026-06-30] 16.Testing → Docs (●) — promoted from SK.16.Docs (13/13); ActivityRecorder XML docs verified, both WO-036 audit determinations confirmed in CLAUDE.md changelog; domain fully closed (state-map-phase)
