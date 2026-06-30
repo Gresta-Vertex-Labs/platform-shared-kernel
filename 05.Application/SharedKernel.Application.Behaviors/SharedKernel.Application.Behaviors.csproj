@@ -42,6 +42,17 @@
     <PackageReference Include="FluentValidation" Version="11.11.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <!--
+      Polly v8 resilience pipeline for ResilienceBehavior<,> (WO-036). Confirmed at Scaffold
+      (state-map.md S-09) that no existing reference in this repo brings Polly.Core in
+      transitively — this is a fresh, direct NuGet reference. Polly.Core (not the full Polly
+      meta-package) is the minimal package: it ships ResiliencePipeline/ResiliencePipelineBuilder/
+      ResiliencePipelineProvider with zero further third-party dependencies, matching this
+      domain's "minimal fresh reference" mandate. Pinned to 8.7.0, the latest stable Polly v8
+      release as of this phase — same major already proven in 11.Communication's typed HTTP
+      clients, so no new major-version risk is introduced to the platform.
+    -->
+    <PackageReference Include="Polly.Core" Version="8.7.0" />
   </ItemGroup>
 
   <ItemGroup>

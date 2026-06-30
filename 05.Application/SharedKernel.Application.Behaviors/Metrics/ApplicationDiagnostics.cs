@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace SharedKernel.Application.Behaviors.Metrics;
@@ -8,12 +9,15 @@ namespace SharedKernel.Application.Behaviors.Metrics;
 /// <remarks>
 /// This is the only sanctioned static state in this domain — the same platform-standard
 /// diagnostics-instrument pattern already approved for <c>07.Messaging</c>'s
-/// <c>MessagingDiagnostics.ActivitySource</c>. A static <see cref="Meter"/>/<see cref="Histogram{T}"/>
-/// pair carries no mutable business state; the BCL diagnostics API is explicitly designed around
-/// process-lifetime static instrument instances. Do not add further ad-hoc static fields under
-/// cover of this exception. <c>13.ServiceDefaults</c> (future work) registers the
-/// <c>"SharedKernel.Application"</c> meter name with the host's <c>MeterProvider</c> — this domain
-/// never reaches into <c>13.ServiceDefaults</c>.
+/// <c>MessagingDiagnostics.ActivitySource</c>. A static <see cref="Meter"/>/<see cref="Histogram{T}"/>/
+/// <see cref="System.Diagnostics.ActivitySource"/> set carries no mutable business state; the BCL
+/// diagnostics API is explicitly designed around process-lifetime static instrument instances. Do
+/// not add further ad-hoc static fields under cover of this exception. <c>13.ServiceDefaults</c>
+/// (future work) registers the <c>"SharedKernel.Application"</c> meter/source name with the host's
+/// <c>MeterProvider</c>/<c>TracerProvider</c> — this domain never reaches into
+/// <c>13.ServiceDefaults</c>. <see cref="ActivitySource"/> is named and versioned identically to
+/// <see cref="Meter"/> (same string <c>"SharedKernel.Application"</c>, same <c>"1.0.0"</c>) so both
+/// instruments share one logical diagnostics identity.
 /// </remarks>
 internal static class ApplicationDiagnostics
 {
@@ -23,4 +27,11 @@ internal static class ApplicationDiagnostics
     /// <summary>Records the duration, in milliseconds, of a single request's pipeline traversal.</summary>
     internal static readonly Histogram<double> RequestDuration =
         Meter.CreateHistogram<double>("sharedkernel.application.request.duration", unit: "ms");
+
+    /// <summary>
+    /// The single, process-lifetime <see cref="System.Diagnostics.ActivitySource"/> instance for
+    /// this domain. Used by <see cref="Tracing.TracingBehavior{TRequest,TResponse}"/> to start the
+    /// per-request traversal span.
+    /// </summary>
+    internal static readonly ActivitySource ActivitySource = new("SharedKernel.Application", "1.0.0");
 }

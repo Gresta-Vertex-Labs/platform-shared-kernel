@@ -2,12 +2,16 @@ using FluentAssertions;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using Polly.Registry;
 using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Logging;
 using SharedKernel.Application.Behaviors.Metrics;
+using SharedKernel.Application.Behaviors.Resilience;
+using SharedKernel.Application.Behaviors.Tracing;
 using SharedKernel.Application.Behaviors.Transaction;
 using SharedKernel.Application.Behaviors.Validation;
 using SharedKernel.Caching.Abstractions;
@@ -87,6 +91,50 @@ public sealed class ApplicationBehaviorsBuilderTests
     }
 
     [Fact]
+    public void Build_ResilienceBehaviorWithoutResiliencePipelineProvider_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddResilienceBehavior().Build();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ResiliencePipelineProvider*");
+    }
+
+    [Fact]
+    public void Build_CacheInvalidationBehaviorWithoutICacheService_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddCacheInvalidationBehavior().Build();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ICacheService*");
+    }
+
+    [Fact]
+    public void Build_CacheInvalidationBehaviorWithICacheServiceRegistered_DoesNotThrow()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ICacheService>());
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddCacheInvalidationBehavior().Build();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Build_ResilienceBehaviorWithProviderRegistered_DoesNotThrow()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ResiliencePipelineProvider<string>>());
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddResilienceBehavior().Build();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void Build_NeverCallsAddMediatR()
     {
         var services = new ServiceCollection();
@@ -111,6 +159,7 @@ public sealed class ApplicationBehaviorsBuilderTests
         services.AddSingleton(Substitute.For<ICacheService>());
         services.AddSingleton(Substitute.For<IAuthorizationContext>());
         services.AddSingleton(Substitute.For<IIdempotencyKeyStore>());
+        services.AddSingleton(Substitute.For<ResiliencePipelineProvider<string>>());
 
         var builder = services.AddSharedKernelApplicationBehaviors();
         configureInOrder(builder);
@@ -124,23 +173,29 @@ public sealed class ApplicationBehaviorsBuilderTests
         registeredBehaviorTypes.Should().Equal(
             typeof(LoggingBehavior<,>),
             typeof(MetricsBehavior<,>),
+            typeof(TracingBehavior<,>),
             typeof(ValidationBehavior<,>),
             typeof(AuthorizationBehavior<,>),
             typeof(CachingBehavior<,>),
+            typeof(ResilienceBehavior<,>),
             typeof(IdempotentCommandBehavior<,>),
-            typeof(TransactionBehavior<,>));
+            typeof(TransactionBehavior<,>),
+            typeof(CacheInvalidationBehavior<,>));
     }
 
     public static TheoryData<Action<ApplicationBehaviorsBuilder>> AllCallOrderPermutations()
     {
         return new TheoryData<Action<ApplicationBehaviorsBuilder>>
         {
-            b => b.AddLoggingBehavior().AddMetricsBehavior().AddValidationBehavior()
-                  .AddAuthorizationBehavior().AddCachingBehavior().AddIdempotencyBehavior().AddTransactionBehavior(),
-            b => b.AddTransactionBehavior().AddIdempotencyBehavior().AddCachingBehavior()
-                  .AddAuthorizationBehavior().AddValidationBehavior().AddMetricsBehavior().AddLoggingBehavior(),
-            b => b.AddCachingBehavior().AddLoggingBehavior().AddTransactionBehavior()
-                  .AddValidationBehavior().AddIdempotencyBehavior().AddMetricsBehavior().AddAuthorizationBehavior(),
+            b => b.AddLoggingBehavior().AddMetricsBehavior().AddTracingBehavior().AddValidationBehavior()
+                  .AddAuthorizationBehavior().AddCachingBehavior().AddResilienceBehavior()
+                  .AddIdempotencyBehavior().AddTransactionBehavior().AddCacheInvalidationBehavior(),
+            b => b.AddCacheInvalidationBehavior().AddTransactionBehavior().AddIdempotencyBehavior()
+                  .AddResilienceBehavior().AddCachingBehavior().AddAuthorizationBehavior()
+                  .AddValidationBehavior().AddTracingBehavior().AddMetricsBehavior().AddLoggingBehavior(),
+            b => b.AddCachingBehavior().AddLoggingBehavior().AddTransactionBehavior().AddTracingBehavior()
+                  .AddValidationBehavior().AddIdempotencyBehavior().AddCacheInvalidationBehavior()
+                  .AddMetricsBehavior().AddAuthorizationBehavior().AddResilienceBehavior(),
         };
     }
 }
