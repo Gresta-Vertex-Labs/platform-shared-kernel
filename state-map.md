@@ -63,12 +63,12 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | `●` | All 9 tasks complete — PresentationLayeringRules (NoDirectProblemDetailsConstructionOutsideWebApi, NoInlineResultBranchBeforeHttpResultOutsideWebApi) added to SharedKernel.ArchitectureTests, closing the WO-026 P-166/167 backlog note; 108/108 architecture tests pass. | — |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for the Extended Application Pipeline | `●` | All 13 tasks complete — ApplicationPipelineRules (BehaviorsNeverReferenceConcreteInfrastructure, NoExistingBehaviorMatchesStreamRequestConstraint, NoHandRolledRetryLoopOutsideResilienceBehavior) and PipelineOrderAssertion added to SharedKernel.ArchitectureTests, designed against contrived fixtures pending WO-036's 05.Application Core phase; 117/117 architecture tests pass. | Real-assembly re-verification once 05.Application's WO-036 Core phase (C-18..C-29) ships. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | WO-034 fully complete (P-210–P-213) — `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult` renamed to secret-agnostic `IOneWayHasher`/`Pbkdf2OneWayHasher`/`HashVerificationResult`; SharedKernel.Cryptography re-packed and published at `2.0.0` with zero warnings; consumer-verify confirms the Primitives + Configuration transitive chain still resolves (42/42 consumer tests passing); all six 01.Core packages remain Published. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-| 05 | [Application](05.Application/state-map.md) | Published | `●` | WO-035 fully complete (P-214–P-219) — both packages' NuGet metadata confirmed, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings for both; new ConsumerVerifyTests prove the full DI chains resolve and execute end to end with zero exceptions (command/query/domain-event dispatch for `SharedKernel.Application`; full seven-behavior `ApplicationBehaviorsBuilder` pipeline incl. transaction commit and cache-hit short-circuit for `SharedKernel.Application.Behaviors`), and all four missing-dependency `Build()` guards throw `InvalidOperationException` as documented; 61/61 tests green (22 + 39); all 6 phases of 05.Application now complete. | — |
+| 05 | [Application](05.Application/state-map.md) | Core | `●` | WO-035 (P-214–P-219) fully complete and published. WO-036 (P-220–P-224) Design, Scaffold, and Core phases now also complete: `ApplicationDiagnostics.ActivitySource`/`TracingBehavior`, `IStreamQuery`/`IStreamQueryHandler`, `IRetryableRequest`/`ResilienceBehavior` (Polly `ResiliencePipelineProvider<string>`), `IInvalidatesCache`/`CacheInvalidationBehavior`, the revised ten-slot `ApplicationBehaviorsBuilder.Build()` order, and the reusable `PipelineTestHarness` all implemented; both packages build 0 warnings/0 errors; 91 tests passing (38 + 53). | WO-036 Tests phase — refactor the seven WO-035 behavior test files onto `PipelineTestHarness` (T-17) and confirm full-suite green (T-18); then Docs/Published. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.Tests complete (20/20) — ConsumerVerifyTests retrofitted off NSubstitute onto 16.Testing's InMemoryMessageBus/InMemoryEventPublisher doubles (P-191); 50/50 Abstractions tests green; SK.07.OTel also complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0"), Consumer.Consume/EventPublisher.Publish activities, 106 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
@@ -79,7 +79,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
-| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-030 (P-188/P-189) complete: SK.16.Design (54/54), SK.16.Scaffold (14/14), SK.16.Core (46/46), SK.16.Tests (37/37), and SK.16.Docs (12/12) all done — FakeUserContext/FakeTenantProvider/FakerSeeding implemented and proven in SharedKernel.Testing.SelfTests, full XML doc coverage confirmed, `[STATUS: Planned]` markers removed. | — |
+| 16 | [Testing](16.Testing/state-map.md) | Design | `●` | WO-036 (P-226) in progress: SK.16.Design now complete (58/58) — D-55–D-58 re-verified directly against live source (AmbientActivityTestHelper, FakeCacheService, 05.Application's ApplicationDiagnostics/TracingBehavior); ActivityRecorder design confirmed sound, not yet implemented. SK.16.Scaffold (14/15), SK.16.Core (46/47), SK.16.Tests (37/38), SK.16.Docs (12/13) each have one pending WO-036 task (S-15/C-47/T-38/DO-13). | Implement C-47 (ActivityRecorder in Communication/) to advance Core/Scaffold/Tests/Docs. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -106,13 +106,12 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
-| ● Published | 8 |
-| ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
+| ● Published | 7 |
 | ● Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | 1 |
 | ● Docs | 1 |
 | ● Tests | 2 |
-| ● Core | 0 |
-| ● Design | 0 |
+| ● Core | 1 |
+| ● Design | 1 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
@@ -1872,6 +1871,9 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-06-29] Phase Backlog P-219 → ● Complete — SK.05.Published done (state-map-phase)
 - [2026-06-29] Phase Backlog entries for 05.Application closed → ● Complete — 05.Application reached Published (state-map-phase)
 - [2026-06-29] Phase Backlog P-015 → ● Complete — superseded design fully implemented via P-217 (WO-035) (state-map-phase)
+- [2026-06-29] WO-036 gold-standard gap analysis of 05.Application (post-WO-035) — found an orphaned, fully-written-but-never-dispatched WO-036 already in the backlog (P-220 tracing, P-221 streaming queries, P-222 resilience/retry, P-223 test harness — all `○` Pending, no board/changelog trace of dispatch). Reused those four verbatim rather than re-deriving; added one new gap they did not cover (P-224, write-side cache invalidation behavior — the symmetric counterpart to the already-shipped `CachingBehavior`) plus the two follow-through phases every prior `05.Application` work order has paired with new behaviors: P-225 (00.Governance — NetArchTest enforcement for the three new behaviors' abstractions-only references, the streaming-vocabulary non-interference guarantee, and a mechanical canonical-order assertion) and P-226 (16.Testing — explicit audit of whether `AmbientActivityTestHelper`/`FakeCacheService` already cover the new behaviors' test needs before any new fake is written, per the WO-029 anti-duplication rule). 05.Application board row remains `●` Published pending dispatch — WO-036 is fully scoped (P-220–P-226) and ready for `/dispatch-phase` (arch-lead)
+- [2026-06-30] 05.Application → Design (●) — promoted from SK.05.Design (WO-036 round): D-11..D-25 verified fully and consistently locked in CLAUDE.md, no gaps, no code changes; P-220–P-224 remain `◐` Dispatched (each spans the full WO-036 lifecycle through Tests/Docs, not Design alone — not yet eligible to close) (state-map-phase)
+- [2026-06-30] 05.Application → Scaffold (●) — promoted from SK.05.Scaffold (WO-036 round): Polly.Core 8.7.0 referenced, five new folders created, zero-warning build and zero forbidden references confirmed across all four projects; P-220–P-224 remain `◐` Dispatched (not yet eligible to close — span through Tests/Docs) (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -7876,6 +7878,15 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [ ] Full governance test suite passes with the new rule included
 ---
 
+- [2026-06-30] Phase(s) P-220, P-221, P-222, P-223, P-224 dispatched to application-arch-planner for 05.Application (dispatch-phase)
+- [2026-06-30] Phase(s) P-225 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-06-30] Phase(s) P-226 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-06-30] Application → Core (●) — promoted from SK.05.Core (state-map-phase)
+- [2026-06-30] Phase Backlog P-220, P-221, P-222, P-223, P-224 → ● Complete — SK.05.Core done (state-map-phase)
+- [2026-06-30] Governance → Governance: Architecture Enforcement for the Extended Application Pipeline (●) — promoted from SK.00.ApplicationPipelineArchRules (state-map-phase)
+- [2026-06-30] Phase Backlog P-225 → ● Complete — SK.00.ApplicationPipelineArchRules done (state-map-phase)
+- [2026-06-30] Testing → Design (●) — promoted from SK.16.Design (58/58); D-55–D-58 re-verified against live source, ActivityRecorder design confirmed sound (state-map-phase)
+
 ---
 ## WO-029 — 16.Testing Consolidation Pass
 
@@ -9001,3 +9012,186 @@ Closes the domain out the same way every other completed domain in this repo clo
 - [x] Consumer-verify harness proves all four missing-dependency `Build()` guards throw `InvalidOperationException` as documented
 - [x] `05.Application/state-map.md` Package Board and root `state-map.md` Domain Summary Board updated to reflect the completed domain
 - [x] Root `CLAUDE.md` "What Goes Where" table gains rows for the new Authorization and Idempotency behaviors (see sync-brain)
+---
+
+---
+### P-220 — Application: Distributed Tracing Parity for the Request Pipeline
+
+**Status:** `●` Complete
+**Work Order:** WO-036
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+`ApplicationDiagnostics` must carry a process-lifetime `ActivitySource` (BCL `System.Diagnostics.ActivitySource`) alongside its existing `Meter`/`Histogram<double>`, named consistently with the existing meter name (`"SharedKernel.Application"`). A new tracing capability must wrap every request traversal in a span — either folded into the existing `MetricsBehavior` (which already brackets `next()` in a try/finally at the correct outermost-but-inside-Logging position) or as a new behavior placed immediately adjacent to it in the canonical order. The span must be started before `next()` is invoked and disposed after, regardless of success, `Result.Failure`, or thrown exception, mirroring `07.Messaging`'s `ConsumerBase.Consume`/`MassTransitEventPublisher.Publish` shape exactly (`using var activity = ActivitySource.StartActivity(...)`). The span name and at least one identifying tag (the request type name) must be set so a trace viewer can distinguish `PlaceOrderCommand` from `GetOrderByIdQuery` without opening the span detail. The span must participate in the ambient `Activity.Current` trace context exactly as `StartActivity` already does by BCL default — no custom propagation logic is needed or wanted here.
+
+#### Why this is needed
+
+`05.Application/CLAUDE.md` already claims, in its own documentation for `ApplicationDiagnostics`, that this is "the same platform-standard diagnostics-instrument pattern already approved for `07.Messaging`'s `MessagingDiagnostics.ActivitySource`" — but the code only implements the `Meter` half of that pattern; there is no `ActivitySource` and `MetricsBehavior` never calls `StartActivity`. This means every command/query traversal through the seven-step pipeline produces a metric but is invisible as a span in distributed tracing backends (Jaeger/Tempo/Application Insights/anything OTel-compatible) — exactly where a request enters the CQRS layer and exactly where validation/authorization/caching/idempotency/transaction decisions are made. Today this hole is filled, inconsistently or not at all, by each consuming service hand-instrumenting its own handlers — the precise duplication a SharedKernel exists to eliminate. Closing this brings `05.Application` to the same tracing standard already shipped in `07.Messaging`, and the brain's own claim of parity becomes true rather than aspirational.
+
+#### Acceptance criteria
+- [ ] `ApplicationDiagnostics` exposes a static readonly `ActivitySource` named `"SharedKernel.Application"`, versioned consistently with the existing `Meter`
+- [ ] Every request passing through the pipeline produces exactly one span for its full traversal, started before `next()` and ended after, regardless of outcome (success / `Result.Failure` / thrown exception)
+- [ ] The span carries a tag identifying the request type name (mirroring `MetricsBehavior`'s existing `request.name` tag convention)
+- [ ] No new NuGet dependency introduced — `ActivitySource`/`Activity` are pure BCL `System.Diagnostics`
+- [ ] AOT-safe — no reflection introduced; `ActivitySource.StartActivity` is the same BCL API `07.Messaging` already ships
+- [ ] Unit tests use an `ActivityListener` (matching `07.Messaging`'s `OTelInstrumentationTests` pattern) to assert a span is recorded for success, `Result.Failure`, and thrown-exception paths
+- [ ] `05.Application/CLAUDE.md` Technology Stack, Interface Contracts (Metrics section), and AOT Compatibility sections updated to document the `ActivitySource` alongside the existing `Meter`
+- [ ] Canonical pipeline order documentation updated only if tracing is implemented as a distinct behavior rather than folded into `MetricsBehavior` — no reordering of the existing seven steps either way
+---
+
+---
+### P-221 — Application: Streaming Query Vocabulary
+
+**Status:** `●` Complete
+**Work Order:** WO-036
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+A platform-vocabulary counterpart to `IQuery<TResponse>` for streaming reads, built on MediatR's existing `IStreamRequest<TResponse>`/`IStreamRequestHandler<TRequest,TResponse>` (already part of the pinned `MediatR` 12.4.x dependency — no new package). Following the exact naming and aliasing convention already established by `IQueryHandler<TQuery,TResponse>`, define a streaming query marker and a corresponding handler-alias interface so a handler class can self-document its role (e.g. `ExportOrdersStreamQueryHandler : IStreamQueryHandler<ExportOrdersStreamQuery, OrderRow>`) instead of the less informative raw `IStreamRequestHandler<,>`. Decide deliberately, and document the decision, on whether `Result<T>`-wrapping applies per-item, per-stream, or not at all for this shape — streaming semantics differ fundamentally from the single-response `Result<T>` railway used everywhere else in this domain, and this difference must be explicit rather than silently inconsistent. None of the existing seven pipeline behaviors apply to this new request shape without a deliberate per-behavior decision (e.g., `ValidationBehavior`'s `TRequest : IRequest<TResponse>` constraint does not match `IStreamRequest<TResponse>` as written today) — this phase's scope is the vocabulary only; do not silently extend existing behaviors to streaming without an explicit follow-up decision recorded in the brain.
+
+#### Why this is needed
+
+A 2026 CQRS layer serving GraphQL subscriptions, SignalR streamed responses, or large paginated/cursor exports needs a first-class streaming read shape. MediatR has shipped `IStreamRequest<TResponse>` since long before this domain was built, but `05.Application` only exposes the single-response `IQuery<TResponse>` shape today. Without platform vocabulary for this, every consuming service either bypasses `05.Application` entirely for streaming use cases (reaching for raw MediatR or no mediator at all) or hand-rolls its own marker interface per service — exactly the inconsistency this layer exists to prevent. This is additive vocabulary only; it does not touch or destabilize the existing seven-step pipeline or any of the five already-published interface families.
+
+#### Acceptance criteria
+- [ ] A streaming query marker interface defined over MediatR's `IStreamRequest<TResponse>`, named consistently with the existing `IQuery<TResponse>` convention
+- [ ] A corresponding handler-alias interface over `IStreamRequestHandler<TRequest,TResponse>`, named consistently with `IQueryHandler<TQuery,TResponse>`
+- [ ] Explicit, documented decision on the `Result<T>`-wrapping question for streamed items (per-item, terminal-only, or none) — recorded in `05.Application/CLAUDE.md`, not left implicit
+- [ ] Explicit statement that none of the seven existing pipeline behaviors apply to this shape unless and until a future phase deliberately extends one — no silent behavior coverage assumed
+- [ ] Contract-shape tests proving the new interfaces compile and resolve through MediatR's `IStreamMediator`/`ISender.CreateStream` exactly as a hand-written `IStreamRequestHandler<,>` would
+- [ ] `05.Application/CLAUDE.md` Interface Contracts section gains a new subsection documenting the streaming vocabulary, mirroring the existing Messaging/DomainEvents subsection format
+- [ ] Zero new NuGet dependency — this is pure MediatR vocabulary already covered by the existing `MediatR` 12.4.1 pin
+- [ ] No project reference added to either package beyond what already exists
+---
+
+---
+### P-222 — Application: Resilience Pipeline Behavior
+
+**Status:** `●` Complete
+**Work Order:** WO-036
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+An opt-in pipeline behavior providing transient-failure resilience (retry with backoff, and optionally a circuit breaker) around the inner pipeline call for a single command or query traversal, following this platform's established Polly v8 resilience-pipeline pattern (already proven in `11.Communication`'s typed HTTP clients). The behavior must be configurable per-request-type rather than globally fixed — not every command/query should retry, and naive retry around a `TransactionBehavior`-wrapped command is actively dangerous (a retried mutation that already partially committed is a correctness hazard, not just a performance one). The design must explicitly resolve this hazard: either constrain the behavior to a marker interface analogous to `IAuthorizeRequest`/`IIdempotentRequest` (e.g., a request opts in only if it is provably safe to retry — naturally pairing well with `IIdempotentRequest`-marked commands, or queries, which are idempotent by definition) or scope the behavior to queries only in this phase and defer command-safe retry to a follow-up that requires `IIdempotentRequest`. Follow the existing `ApplicationBehaviorsBuilder` pattern exactly: a new `.AddResilienceBehavior(...)` opt-in method, a `Build()`-time missing-dependency guard if the behavior requires an externally-registered resilience pipeline provider, and a defined position in the canonical pipeline order with documented positional rationale for every existing step it sits beside.
+
+#### Why this is needed
+
+This platform instruments resilience as a first-class, reusable concern everywhere a transient failure is foreseeable: `02.Caching` has stampede protection, `07.Messaging` has MassTransit retry, `11.Communication` has Polly v8 resilience pipelines on every typed HTTP client. `05.Application`'s own in-process pipeline — the layer every command and query in every microservice passes through — has no equivalent today. A handler that calls a flaky downstream dependency (a typed REST client experiencing a transient 503, a cache momentarily unavailable) has no platform-provided retry composition and must hand-roll Polly per-handler, which is exactly the duplication this layer exists to prevent. This phase must be designed carefully around the retry-after-partial-commit hazard rather than bolted on naively — that hazard is the reason this wasn't included in the original seven-step design and must be resolved explicitly, not silently ignored.
+
+#### Why this is needed
+
+#### Acceptance criteria
+- [ ] A new opt-in pipeline behavior implementing retry-with-backoff (and documenting whether circuit-breaking is in scope for this phase or deferred) via a Polly v8 resilience pipeline
+- [ ] Explicit, documented resolution of the retry-after-partial-commit hazard — either a request-level opt-in marker proving retry-safety, or a documented command-exclusion (queries-only) with command-safe retry deferred to a follow-up phase
+- [ ] `ApplicationBehaviorsBuilder` gains `.AddResilienceBehavior(...)` following the exact existing opt-in/guard/fixed-order pattern as the other five guarded behaviors
+- [ ] A defined, documented position in the canonical pipeline order with positional rationale for every adjacent existing step (mirroring the seven-step documentation already in `05.Application/CLAUDE.md`)
+- [ ] No new NuGet dependency beyond Polly v8 (verify whether `Microsoft.Extensions.Resilience`/`Polly.Core` is already a transitive dependency via any existing reference, or must be added fresh — document the choice)
+- [ ] Unit tests proving: transient failure followed by success is retried and ultimately succeeds; a non-retry-safe request type never resolves this behavior into its pipeline (a DI-contract test, not a runtime branch); exhausted retries surface as a thrown exception or `Result.Failure` per the documented design decision
+- [ ] `05.Application/CLAUDE.md` Hard Violations section gains an explicit prohibition against hand-rolled retry/backoff loops inside handlers now that a platform alternative exists (mirroring the existing `System.Random`/`DateTime.UtcNow` prohibition pattern)
+---
+
+---
+### P-223 — Application: Reusable Pipeline Test Harness
+
+**Status:** `●` Complete
+**Work Order:** WO-036
+**Domain:** 05.Application
+**Depends on:** P-220, P-222
+
+#### What is needed
+
+A reusable test harness — living inside `SharedKernel.Application.Behaviors.Tests` as shared test infrastructure for this domain's own suite, not `16.Testing` (this is pipeline-composition-specific to MediatR behavior wiring, not a generic cross-domain fake) — that builds a real `ServiceCollection` with MediatR registered and an arbitrary subset of the seven-plus behaviors wired via `ApplicationBehaviorsBuilder`, then exposes a minimal fluent surface for a test to send a request and assert on the outcome (success, failure shape, exception, recorded metric, recorded span). This formalizes the existing test-rules guidance ("preferring a minimal real `ServiceCollection` + `AddMediatR` + the behavior under test over hand-rolled `RequestHandlerDelegate<TResponse>` mocks wherever practical") into a single reusable harness instead of every individual behavior test file re-deriving the same `ServiceCollection` wiring boilerplate by hand.
+
+#### Why this is needed
+
+Every one of the seven existing behavior test files already independently builds a `ServiceCollection` + `AddMediatR` + target behavior to test it in a realistic pipeline rather than against a hand-rolled delegate mock — this is explicitly the platform's stated preference per the domain's own Test Rules section. That wiring is currently duplicated per test file rather than centralized. As this phase order adds two more behaviors (tracing in P-220, resilience in P-222) that specifically need to assert cross-cutting effects (a span was recorded, a retry happened) rather than just request/response shape, a shared harness pays for itself immediately and prevents the seven-going-on-nine behavior test suite from drifting into inconsistent setup patterns across files. This stays inside `05.Application` rather than `16.Testing` because it is specific to composing this domain's own `IPipelineBehavior<,>` stack — it has no value to a consuming microservice's own test suite the way `InMemoryMessageBus`/`InMemoryEventPublisher` do for `07.Messaging` consumers.
+
+#### Acceptance criteria
+- [ ] A reusable harness type/builder in `SharedKernel.Application.Behaviors.Tests` that wires a real `ServiceCollection` + `AddMediatR` + a caller-chosen subset of behaviors via `ApplicationBehaviorsBuilder`
+- [ ] Existing seven behavior test files are refactored to use the harness where doing so does not reduce test clarity (a judgment call documented per file if any test is deliberately left as-is)
+- [ ] The new tracing behavior (P-220) and resilience behavior (P-222) test suites use this harness from the start rather than inventing their own wiring
+- [ ] Harness supports asserting on: final response shape (success/failure), thrown exceptions, recorded `ApplicationDiagnostics` metrics, and recorded `ActivitySource` spans (via an `ActivityListener`, matching `07.Messaging`'s existing `OTelInstrumentationTests` pattern)
+- [ ] Harness is internal to the test assembly only — never packaged, never referenced by `16.Testing` or any production code
+- [ ] `05.Application/CLAUDE.md` Test Rules section documents the harness and updates the "preferring a minimal real `ServiceCollection`" guidance to point at it explicitly
+---
+
+---
+### P-224 — Application: Write-Side Cache Invalidation Behavior
+
+**Status:** `●` Complete
+**Work Order:** WO-036
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+A new opt-in pipeline behavior that is the write-side counterpart to the existing `CachingBehavior`: after a command's inner pipeline completes successfully, it evicts one or more cache entries the command declares as stale. Following the exact `ICacheableQuery<TResponse>` precedent, define a marker interface a command implements to declare the cache key(s) (or a tag, if `02.Caching.Abstractions` exposes tag-based eviction) it invalidates on success — the command instance supplies this list itself, mirroring how `ICacheableQuery<TResponse>.CacheKey` is self-supplied rather than computed by the behavior. The behavior must call only `SharedKernel.Caching.Abstractions.ICacheService.RemoveAsync` (or the tag-based equivalent) — never a concrete `FusionCache`/`Redis` package — preserving the same abstractions-only reference `CachingBehavior` already established. Invalidation must run only after the inner pipeline succeeds (never on `Result.Failure` or a thrown exception — a failed mutation invalidated nothing, so there is nothing to evict) and must be positioned immediately around the commit boundary, with explicit, documented rationale for its place relative to `IdempotentCommandBehavior` and `TransactionBehavior` in the canonical order. Follow the `ApplicationBehaviorsBuilder` pattern exactly: a new `.AddCacheInvalidationBehavior()` opt-in method with a `Build()`-time `InvalidOperationException` guard if `ICacheService` is not registered (the same guard `CachingBehavior` already uses, reused rather than duplicated).
+
+#### Why this is needed
+
+`CachingBehavior` (already shipped) solves half of the read/write cache consistency problem: a query can opt in to automatic stampede-protected caching. The other half — "a command just mutated the data behind a cached key; evict it" — has no platform vocabulary today, even though `02.Caching.Abstractions` already exposes exactly the primitive needed (`ICacheService.RemoveAsync`, and cross-service `ICacheInvalidationBus` for the distributed case). Every consuming team must currently remember to manually call cache eviction inside command handler bodies — easy to forget, impossible to enforce, and the precise kind of recurring cross-cutting duplication this domain exists to centralize. Pairing this with the existing `CachingBehavior` completes the read/write caching story symmetrically rather than leaving it half-built.
+
+#### Acceptance criteria
+- [ ] A marker interface, named consistently with `ICacheableQuery<TResponse>`, that a command implements to declare the cache key(s) it invalidates on success
+- [ ] A new sealed pipeline behavior constrained to `ICommandBase` (commands only — mirroring `TransactionBehavior`/`IdempotentCommandBehavior`'s exact constraint) that calls `ICacheService.RemoveAsync` only after `next()` succeeds, never on failure or thrown exception
+- [ ] Zero direct reference to `SharedKernel.Caching.FusionCache`/`SharedKernel.Caching.Redis` or any concrete provider — `SharedKernel.Caching.Abstractions` only, matching `CachingBehavior`'s existing reference shape
+- [ ] `ApplicationBehaviorsBuilder` gains `.AddCacheInvalidationBehavior()` with a missing-`ICacheService` `Build()`-time guard, reusing the existing `ICacheService` registration check already written for `.AddCachingBehavior()` rather than duplicating it
+- [ ] A defined, documented position in the canonical pipeline order with positional rationale relative to `IdempotentCommandBehavior` and `TransactionBehavior` specifically (mirroring the existing seven-step documentation format in `05.Application/CLAUDE.md`)
+- [ ] Unit tests proving: successful command triggers exactly one `RemoveAsync` call per declared key; failed/`Result.Failure` command never calls `RemoveAsync`; thrown exception never calls `RemoveAsync`; a query type can never satisfy the new marker (compile-time/contract-shape assertion)
+- [ ] `05.Application/CLAUDE.md` Interface Contracts (Caching section) and canonical pipeline order documentation updated to document the now-paired read/write caching story
+---
+
+---
+### P-225 — Governance: Architecture Enforcement for the Extended Application Pipeline
+
+**Status:** `●` Complete
+**Work Order:** WO-036
+**Domain:** 00.Governance
+**Depends on:** P-220, P-221, P-222, P-224
+
+#### What is needed
+
+Extend `SharedKernel.ArchitectureTests` with rules covering the four new `05.Application` surfaces introduced in this work order: (1) the new tracing, resilience, and cache-invalidation behaviors must never carry a direct project reference to any concrete infrastructure package (`SharedKernel.Caching.FusionCache`, `SharedKernel.Caching.Redis*`, any `06.Persistence` or `07.Messaging` concrete package) — abstractions only, mirroring the existing rule already enforced for `CachingBehavior`; (2) the streaming query vocabulary (P-221) must never be silently wrapped by any of the existing seven `IPipelineBehavior<,>` implementations unless a future phase explicitly extends one — a NetArchTest (or reflection-based) assertion that no existing behavior type's generic constraints accidentally match `IStreamRequest<TResponse>`; (3) the resilience behavior's retry-safety marker (whatever P-222 lands on) is the only sanctioned path to opting a command into retry — no hand-rolled `Polly`/retry-loop usage anywhere under `05.Application` or any future consuming-service handler pattern this platform can statically detect; (4) the canonical pipeline registration order inside `ApplicationBehaviorsBuilder.Build()` is asserted mechanically (by reading the registration call sequence, not just documentation) so a future edit cannot silently reorder the now-ten-step sequence without a test failure forcing a deliberate, reviewed change.
+
+#### Why this is needed
+
+Every prior `05.Application` work order (WO-035 and its predecessors) paired new pipeline behaviors with a governance phase precisely because documented rules without mechanical enforcement decay the first time a future contributor edits the file under time pressure — the existing `RedisTopologyRules` (WO-023, P-145) and the raw-`HttpClient`/`Result`-`Envelope` rules (WO-026) are the established precedent for "every new platform-wide rule gets a NetArchTest, not just a CLAUDE.md sentence." This work order adds three new behaviors and a new request shape (streaming) to a domain that already had seven carefully-ordered behaviors with zero margin for accidental reordering or layering drift — the governance phase is not optional follow-through, it is the only thing that keeps the canonical order canonical once more than one team is editing this package.
+
+#### Acceptance criteria
+- [ ] New NetArchTest rule(s) confirm `TracingBehavior`/resilience behavior/`CacheInvalidationBehavior` (whatever final type names P-220/P-222/P-224 land on) carry zero reference to any concrete `02.Caching`/`06.Persistence`/`07.Messaging` provider package
+- [ ] A rule (NetArchTest or reflection-based xUnit assertion) proves the streaming query vocabulary from P-221 is not accidentally matched by any existing `IPipelineBehavior<,>` generic constraint
+- [ ] A rule proves no hand-rolled retry/backoff loop pattern exists anywhere under `05.Application` production code now that a platform resilience behavior exists (mirroring the existing `System.Random`/`DateTime.UtcNow` prohibition enforcement pattern)
+- [ ] A test mechanically asserts `ApplicationBehaviorsBuilder.Build()`'s registration order matches the documented canonical sequence exactly, failing loudly if a future edit reorders it
+- [ ] All new and pre-existing `SharedKernel.ArchitectureTests` continue to pass at 100% (no regression to the existing 108/108 baseline)
+- [ ] `00.Governance/CLAUDE.md` updated to document the new rules, mirroring the existing `RedisTopologyRules`/P-159/P-199 documentation pattern
+---
+
+---
+### P-226 — Testing: Support Fixtures for the Extended Application Pipeline
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-036
+**Domain:** 16.Testing
+**Depends on:** P-220, P-224
+
+#### What is needed
+
+Audit `SharedKernel.Testing`'s existing surface against the two new cross-cutting test needs this work order introduces, adding only what is genuinely missing rather than duplicating what already exists: (1) confirm whether the existing `AmbientActivityTestHelper` (already shipped per `16.Testing`'s WO-029/SK.16.Tests changelog) is sufficient for asserting `ActivitySource` spans recorded by the new tracing behavior (P-220), or whether a small, additive extension is needed for asserting span tags/duration specifically in a MediatR-pipeline context; (2) add a fake implementation of whatever local cache-invalidation seam `ICacheInvalidationBehavior`'s tests need beyond the already-shipped `FakeCacheService`/`FakeCacheInvalidationBus` (`02.Caching`'s `Caching/` section of `16.Testing`) — if those existing fakes already cover `ICacheService.RemoveAsync` assertions, this phase's scope shrinks to documentation only, and that determination must be made explicitly and recorded rather than assumed.
+
+#### Why this is needed
+
+`16.Testing`'s own standing rule (documented in its `CLAUDE.md`, WO-029) is that a fake implementing another domain's interface is proven via that owning domain's contract tests, and standalone test infrastructure with no owning interface lives in `SharedKernel.Testing.SelfTests`. This work order's new behaviors are likely already covered by existing fakes (`FakeCacheService` already implements `ICacheService`; `AmbientActivityTestHelper` already exists for `Activity` assertions) — the risk is not "nothing exists" but "05.Application's test suite reinvents a fake that 16.Testing already shipped," which has been an explicit, named risk in this platform before (the WO-029 consolidation pass found exactly this kind of drift). This phase exists to make the audit explicit and prevent silent duplication, not to presume new code is required.
+
+#### Acceptance criteria
+- [ ] Explicit, documented determination of whether `AmbientActivityTestHelper` is sufficient as-is for P-220's tracing behavior tests, or what minimal additive extension is needed
+- [ ] Explicit, documented determination of whether `FakeCacheService`/`FakeCacheInvalidationBus` already cover P-224's cache-invalidation behavior tests, or what minimal additive fake is needed
+- [ ] Any new fake added follows the existing `16.Testing` pattern exactly (implements an interface owned by `02.Caching`/BCL `System.Diagnostics`, proven via that owning domain's contract tests per the standing rule)
+- [ ] No duplicate fake is created for a capability `16.Testing` already ships — if duplication is found mid-implementation, the existing fake is reused and this phase's scope is reduced accordingly, not silently expanded
+- [ ] `16.Testing/CLAUDE.md` changelog records the audit outcome either way (no-op confirmation or new addition)
+---
