@@ -149,20 +149,33 @@ SK0011  GuidFormatCodeMisuse
 SK0301  DirectCryptoInDomainOrApplication
     Category  : Security
     Severity  : Warning
-    Trigger   : A type in a `03.Domain` or `05.Application` assembly references
-                `System.Security.Cryptography.AesGcm`, `System.Security.Cryptography.Aes`,
+    Trigger   : A type in a `03.Domain` or `05.Application` assembly (the assemblies the
+                caller passes to `EncryptionPatternGuardRules.NoCryptoCipherInDomainOrApplication`)
+                references `System.Security.Cryptography.AesGcm`, `System.Security.Cryptography.Aes`,
                 or `System.Security.Cryptography.SymmetricAlgorithm` — detected via IL
                 instruction walk (Call/Callvirt/Newobj opcodes) and field type inspection
-    Exempt    : Types whose namespace starts with `SharedKernel.Persistence.*` or
-                `SharedKernel.Security.*` — these are the only legitimate crypto consumers
-                in the platform (persistence-layer converter and JWT signing respectively)
+    Exempt    : Types whose namespace starts with `SharedKernel.Cryptography` — the sole
+                legitimate crypto consumer in the platform (narrowed in WO-037 P-229 from
+                the original two-namespace exemption `SharedKernel.Persistence.*` /
+                `SharedKernel.Security.*`; both layers now route through
+                `SharedKernel.Cryptography`'s `ISymmetricEncryptionService`/`AesGcmEncryptionService`
+                instead of touching BCL cipher types directly — see SK0301-GEN below)
     Fix       : Remove direct cipher usage from domain/application code. Route all
                 field-level encryption through the persistence-layer `EncryptedValueConverter<T>`
-                wired via `PropertyBuilder<T>.Encrypt()` in `IEntityTypeConfiguration<T>`.
+                wired via `PropertyBuilder<T>.Encrypt()` in `IEntityTypeConfiguration<T>`,
+                which itself delegates to `SharedKernel.Cryptography.ISymmetricEncryptionService`.
     Note      : Implemented as a NetArchTest `ICustomRule`
                 (`NoAesCipherInDomainOrApplicationPredicate`) — not a per-call-site
                 Roslyn analyzer. Enforced at assembly level (post-compile). Introduced
-                in WO-019 P-114. Part of the new 03xx encryption-domain ID block.
+                in WO-019 P-114. Part of the 03xx encryption-domain ID block. Exemption
+                list narrowed in WO-037 P-229 — see "SK0301 reconciliation" note under
+                `CryptoIsolationRules` in Architecture Test Contracts below. This rule
+                remains scoped to whichever assemblies the caller passes (in practice
+                `03.Domain`/`05.Application`); `CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography`
+                is the platform-wide generalization of the same trigger/exemption logic,
+                intended to be invoked against every production assembly. No new SK ID was
+                minted for the platform-wide rule — same diagnostic intent, wider caller-
+                supplied scope, identical exemption namespace.
 
 SK0302  EncryptionAttributeOnDomainEntity
     Category  : Design
@@ -952,13 +965,18 @@ EncryptionPatternGuardRules  (static class — encryption subsystem misuse enfor
         System.Security.Cryptography.AesGcm, System.Security.Cryptography.Aes, or
         System.Security.Cryptography.SymmetricAlgorithm directly. Uses
         NoAesCipherInDomainOrApplicationPredicate (ICustomRule — see below).
-        Exemption: types whose TypeDefinition.Namespace starts with "SharedKernel.Persistence.*"
-        or "SharedKernel.Security.*" pass unconditionally — these are the only legitimate
-        crypto consumers. Failure message names the offending type and the cipher type
-        referenced.
+        Exemption: types whose TypeDefinition.Namespace starts with "SharedKernel.Cryptography"
+        pass unconditionally — this is the platform's sole legitimate crypto consumer
+        (narrowed in WO-037 P-229 from the original two-namespace exemption
+        "SharedKernel.Persistence.*" / "SharedKernel.Security.*" — both layers now route
+        through SharedKernel.Cryptography's ISymmetricEncryptionService/AesGcmEncryptionService
+        rather than touching BCL cipher types directly; see CryptoIsolationRules below for the
+        platform-wide generalization of this same check). Failure message names the offending
+        type and the cipher type referenced.
         Rationale: cipher usage in 03.Domain or 05.Application destroys layering isolation
         and bypasses the platform-managed AES-256-GCM key rotation lifecycle. All
-        field-level encryption must route through EncryptedValueConverter<T>.
+        field-level encryption must route through EncryptedValueConverter<T>, which itself
+        delegates to SharedKernel.Cryptography.
         Offending pattern: class OrderEncryptionHelper { private AesGcm _cipher = new(key); }
         Compliant pattern: configure encryption via PropertyBuilder<T>.Encrypt() in
             IEntityTypeConfiguration<T>; never reference AesGcm in domain/application code.
@@ -1023,7 +1041,9 @@ EncryptionPatternGuardRules  (static class — encryption subsystem misuse enfor
 
 NoAesCipherInDomainOrApplicationPredicate  (class : ICustomRule — internal predicate)
     Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts
-    with "SharedKernel.Persistence" or "SharedKernel.Security" return true unconditionally.
+    with "SharedKernel.Cryptography" return true unconditionally. (Narrowed in WO-037 P-229
+    from the original two-namespace exemption "SharedKernel.Persistence" / "SharedKernel.Security"
+    — both layers route through SharedKernel.Cryptography now; see CryptoIsolationRules below.)
     For all other types, checks two surfaces for System.Security.Cryptography cipher types:
       (1) TypeDefinition.Fields — checks FieldDefinition.FieldType.Namespace ==
           "System.Security.Cryptography" and FieldDefinition.FieldType.Name in
@@ -1033,7 +1053,133 @@ NoAesCipherInDomainOrApplicationPredicate  (class : ICustomRule — internal pre
           same set.
     Returns false (rule violated) on the first match, with failure message naming the
     offending type and the cipher type name. Lives in Predicates/ folder. Used by
-    EncryptionPatternGuardRules.NoCryptoCipherInDomainOrApplication.
+    EncryptionPatternGuardRules.NoCryptoCipherInDomainOrApplication. This predicate remains
+    scoped to whichever assemblies the caller passes (in practice 03.Domain/05.Application) —
+    it is the narrower, SK0301-backing special case of the platform-wide
+    NoRawSymmetricCipherOutsideCryptographyPredicate (see below), which shares the same
+    exemption namespace and trigger logic but is intended to be invoked against every
+    production assembly.
+
+CryptoIsolationRules  (static class — platform-wide raw-cipher isolation predicate; WO-037 P-229)
+    .NoRawSymmetricCipherOutsideCryptography(params Assembly[])  → ConditionList
+        Asserts that no type in the supplied assemblies references
+        System.Security.Cryptography.AesGcm, System.Security.Cryptography.Aes, or
+        System.Security.Cryptography.SymmetricAlgorithm directly, AND that no type calls a
+        System.Security.Cryptography.RandomNumberGenerator member (ciphertext/nonce
+        generation). Uses NoRawSymmetricCipherOutsideCryptographyPredicate (ICustomRule —
+        see below).
+        Exemption: types whose TypeDefinition.Namespace starts with "SharedKernel.Cryptography"
+        pass unconditionally — the sole legitimate caller platform-wide once 06.Persistence
+        P-227 lands (EncryptedValueConverter delegates to
+        SharedKernel.Cryptography.ISymmetricEncryptionService/AesGcmEncryptionService instead
+        of constructing AesGcm directly). No SharedKernel.Security.* exemption is carried
+        forward: 12.Security.Oidc's JWT signing path must consume
+        SharedKernel.Cryptography.IHmacSigner/IAsymmetricSignatureService rather than
+        referencing BCL HMAC/asymmetric cipher types directly — if 12.Security.Oidc is found
+        to reference AesGcm/Aes/SymmetricAlgorithm/RandomNumberGenerator directly when this
+        rule is wired against its real assembly, that is a genuine violation this rule is
+        designed to catch, not a false positive to suppress.
+        Failure message names the offending type and the cipher/RNG member referenced.
+        Rationale: motivated by the 06.Persistence P-227 incident — a hand-rolled AesGcm
+        usage shipped inside a namespace ("SharedKernel.Persistence.*") that the
+        SK0301-backing predicate exempted wholesale, because that predicate was only ever
+        invoked by the caller against 03.Domain/05.Application assemblies, never against
+        06.Persistence itself. This rule closes that caller-scoping gap by being designed
+        for platform-wide invocation: the consuming test suite is expected to pass every
+        production assembly in the solution, not just the two layers most likely to violate
+        it historically.
+        Offending pattern: class SomeInfraHelper { private AesGcm _cipher = new(key); } in
+            ANY package outside SharedKernel.Cryptography, including SharedKernel.Persistence.*
+        Compliant pattern: inject SharedKernel.Cryptography.ISymmetricEncryptionService;
+            never reference AesGcm/Aes/SymmetricAlgorithm/RandomNumberGenerator directly
+            outside SharedKernel.Cryptography itself.
+
+    Relationship to SK0301: SK0301 (DirectCryptoInDomainOrApplication, backed by
+    NoAesCipherInDomainOrApplicationPredicate) and NoRawSymmetricCipherOutsideCryptography
+    share IDENTICAL exemption logic (SharedKernel.Cryptography only) and near-identical
+    trigger logic (the RandomNumberGenerator surface is new in the platform-wide rule) —
+    they differ only in which assemblies the consuming test suite passes. SK0301 remains a
+    narrower, caller-scoped special case by construction, not a contradictory duplicate. No
+    new SK diagnostic ID was assigned for the platform-wide rule.
+
+    Note: Introduced in WO-037 P-229. Lives in SharedKernel.ArchitectureTests/Rules/CryptoIsolationRules.cs.
+    Reuses the existing Mono.Cecil >= 0.11.5 reference — no new NuGet dependency.
+
+NoRawSymmetricCipherOutsideCryptographyPredicate  (class : ICustomRule — internal predicate)
+    Namespace exemption guard (first check): types whose TypeDefinition.Namespace starts
+    with "SharedKernel.Cryptography" return true unconditionally.
+    For all other types, checks three surfaces:
+      (1) TypeDefinition.Fields — checks FieldDefinition.FieldType.Namespace ==
+          "System.Security.Cryptography" and FieldDefinition.FieldType.Name in
+          {"AesGcm", "Aes", "SymmetricAlgorithm"} (reused from NoAesCipherInDomainOrApplicationPredicate)
+      (2) TypeDefinition.Methods.Body.Instructions — for Call, Callvirt, and Newobj opcodes,
+          checks the resolved TypeReference.Namespace and TypeReference.Name against the
+          same cipher-type set.
+      (3) TypeDefinition.Methods.Body.Instructions — for Call and Callvirt opcodes, checks
+          MethodReference.DeclaringType.FullName == "System.Security.Cryptography.RandomNumberGenerator"
+          (DeclaringType match rather than a single method-name match, since
+          RandomNumberGenerator exposes multiple static/instance entry points: Fill,
+          GetBytes, Create, etc. — a DeclaringType check catches all of them in one pass).
+    Returns false (rule violated) on the first match across any of the three surfaces, with
+    failure message naming the offending type and the cipher/RNG type name. Lives in
+    Predicates/ folder. Used by CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography.
+
+UnitOfWorkSeamRules  (static class — local-seam interface distinctness guard; WO-037 P-229)
+    .UnitOfWorkInterfacesRemainDistinct(Assembly applicationBehaviorsAssembly, Assembly persistenceAbstractionsAssembly)
+                                            → ConditionList
+        Asserts that SharedKernel.Application.Behaviors.IUnitOfWork and
+        SharedKernel.Persistence.Abstractions.IUnitOfWork remain two distinct interface
+        declarations — never merged into a single type, never one inheriting the other. Uses
+        UnitOfWorkInterfacesRemainDistinctPredicate (ICustomRule — see below). Takes TWO
+        Assembly parameters (not params Assembly[]) — one expected to contain each interface
+        by exact full name.
+        Failure message names which check failed: missing type, identity collapse
+        (ReferenceEquals match after resolution), or base-interface-list cross-reference in
+        either direction.
+        Rationale: the local-seam pattern (05.Application declares its own IUnitOfWork,
+        bridged to 06.Persistence's IUnitOfWork at the composition root — the same pattern
+        already proven for IAuthorizationContext and IIdempotencyKeyStore) only holds if the
+        two interfaces stay genuinely independent. A future "simplification" that merges them
+        or makes one inherit the other would silently reintroduce the 05.Application →
+        06.Persistence layering violation the local-seam pattern exists to prevent. This is a
+        negative-space / regression-guard rule — both interfaces are independently declared
+        today (the desired state), so the fire-path test fixture must be a CONTRIVED pair of
+        assemblies proving the predicate would catch a future merge attempt, mirroring the
+        established technique for negative-space rules in this domain (e.g.
+        RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther,
+        CommunicationLayeringRules.GrpcNeverReferencesContracts).
+        Offending pattern: interface IUnitOfWork : SharedKernel.Persistence.Abstractions.IUnitOfWork
+            declared inside SharedKernel.Application.Behaviors (or the reverse direction)
+        Compliant pattern: two independently-declared IUnitOfWork interfaces, bridged only by
+            a concrete adapter (e.g. EfUnitOfWork implementing both) at the composition root —
+            never by interface inheritance between the two abstractions themselves.
+
+    Note: Introduced in WO-037 P-229. No new SK diagnostic ID — pure structural ICustomRule
+    check, following the RedisTopologyRules/CompositionRootExclusivityRules/
+    PresentationLayeringRules precedent of SK-less rules for boundary/shape prohibitions.
+    Lives in SharedKernel.ArchitectureTests/Rules/UnitOfWorkSeamRules.cs. Reuses the existing
+    Mono.Cecil >= 0.11.5 reference — no new NuGet dependency.
+
+UnitOfWorkInterfacesRemainDistinctPredicate  (class : ICustomRule — internal predicate)
+    Resolves both TypeDefinitions by exact full name:
+      "SharedKernel.Application.Behaviors.IUnitOfWork" in applicationBehaviorsAssembly
+      "SharedKernel.Persistence.Abstractions.IUnitOfWork" in persistenceAbstractionsAssembly
+    Three independent checks, each a distinct failure mode:
+      (1) Existence: both types must be found. If either is missing, returns false — a
+          renamed or removed interface is itself a seam-pattern violation requiring
+          governance review, not a silent pass.
+      (2) Identity collapse: the two resolved TypeDefinitions must not be
+          ReferenceEquals-identical after resolution — catches an accidental
+          type-forwarding/alias merge collapsing both names onto one type.
+      (3) Bidirectional base-interface check: neither TypeDefinition's Interfaces collection
+          may contain an entry whose InterfaceType.FullName equals the other's full name —
+          catches "interface IUnitOfWork : {other}.IUnitOfWork" being introduced on either
+          side.
+    Returns false (rule violated) on the first failing check, with failure message naming
+    which check failed and the two full type names involved. Lives in Predicates/ folder.
+    Used by UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct. Reuses the
+    TypeDefinition.Interfaces enumeration pattern already used by
+    DoesNotImplementOpenGenericInterfacePredicate — no new technique, no new NuGet dependency.
 
 NoEncryptionAttributeOnDomainEntityPredicate  (class : ICustomRule — internal predicate)
     For each type, iterates TypeDefinition.CustomAttributes. For each CustomAttribute,
@@ -2055,6 +2201,10 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `EncryptionModelConvention` exemption in `NoDirectEncryptedValueConverterInstantiationPredicate` is by exact type name (`TypeDefinition.Name == "EncryptionModelConvention"`). If the convention class is renamed, update both the predicate and this rule entry in the same PR.
 - All four predicates (SK0301–SK0304) reuse the Mono.Cecil `TypeDefinition` access pattern established by `DoesNotContainThrowIlPredicate`. No new NuGet dependency — the existing `Mono.Cecil >= 0.11.5` explicit reference in `SharedKernel.ArchitectureTests` covers all four.
 - `EncryptionPatternGuardRules` factory methods are called with domain and application assemblies supplied by the consuming test project via `typeof(SomeDomainType).Assembly`. The factory methods never hard-code assembly paths.
+- `NoAesCipherInDomainOrApplicationPredicate`'s namespace exemption was narrowed in WO-037 P-229 from `{"SharedKernel.Persistence", "SharedKernel.Security"}` to `{"SharedKernel.Cryptography"}` only — the motivating incident was a hand-rolled `AesGcm` usage shipped inside `SharedKernel.Persistence.*` that this predicate exempted wholesale because it was only ever invoked against `03.Domain`/`05.Application`, never against `06.Persistence` itself. SK0301 remains scoped to whichever assemblies the caller passes; `CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography` is the platform-wide generalization intended to be invoked against every production assembly. No new SK ID was minted — see the `CryptoIsolationRules` entry in Architecture Test Contracts for the full reconciliation rationale.
+- `CryptoIsolationRules` and `UnitOfWorkSeamRules` (WO-037 P-229) introduce zero new SK diagnostic IDs and zero new NuGet dependencies — both reuse the existing `Mono.Cecil >= 0.11.5` reference. `UnitOfWorkInterfacesRemainDistinctPredicate` is a negative-space/regression-guard rule: both `IUnitOfWork` interfaces are independently declared today (the desired state), so its fire-path test fixtures must use contrived two-assembly pairs proving the predicate would catch a future interface-merge or interface-inheritance attempt — there is no existing bad pattern in the codebase to point the fire-path test at.
+- `NoRawSymmetricCipherOutsideCryptographyPredicate`'s `RandomNumberGenerator` surface uses a `MethodReference.DeclaringType.FullName` match rather than a single method-name match, because `RandomNumberGenerator` exposes multiple static and instance entry points (`Fill`, `GetBytes`, `Create`, etc.) — a `DeclaringType` check catches all of them in one IL walk pass, consistent with how `NoDirectSaveChangesPredicate` matches `DbContext.SaveChanges`/`SaveChangesAsync` by declaring-type-plus-name rather than enumerating every overload individually.
+- `UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct` is the only factory method in this domain that accepts exactly two named `Assembly` parameters (not a single `Assembly` or `params Assembly[]`) — this is deliberate: the rule's entire purpose is comparing two specific, named interfaces that live in two specific, named assemblies, so positional `params` would obscure which assembly is expected to hold which interface.
 - SK0201 `TenantedDbContextOnModelCreatingAnalyzer` scans `MethodDeclarationSyntax` nodes named `OnModelCreating` with the `override` modifier. Ancestry check walks `ClassDeclarationSyntax.BaseList.Types` for a type whose simple name is `TenantedDbContext`; if not found on the immediate class, walks parent `ClassDeclarationSyntax` nodes in the same file (syntax-only — cross-file ancestry is not resolved). Body scan calls `DescendantNodes().OfType<InvocationExpressionSyntax>()` on the method body and checks for: (a) `MemberAccessExpressionSyntax` with `BaseExpressionSyntax` receiver and `Name.Identifier.Text == "OnModelCreating"`, or (b) any invocation (simple name or member access) whose method name is `"ApplyTenantFilters"`. Fires on the method identifier if neither found. No suppression namespace — suppress per-site via `#pragma warning disable SK0201`.
 - SK0202 `IgnoreQueryFiltersOutsideTenantedRepositoryAnalyzer` scans `InvocationExpressionSyntax` nodes. Filter: simple method name (from `IdentifierNameSyntax` or `MemberAccessExpressionSyntax.Name`) is `"IgnoreQueryFilters"` AND argument list is empty (zero arguments). Two exemptions checked in order: (1) namespace walk via `SyntaxNode.Parent` for any `NamespaceDeclarationSyntax` or `FileScopedNamespaceDeclarationSyntax` whose `Name.ToString()` starts with `"SharedKernel.Persistence.EfCore"` — same pattern as SK0001/SK0007; (2) `FirstAncestorOrSelf<ClassDeclarationSyntax>()` with `Identifier.Text == "TenantedRepository"` (exact string match). Reports on the full invocation expression if neither exemption applies. Any additional exemption class or namespace must be documented in `00.Governance/CLAUDE.md` under SK0202 before applying suppression.
 - RS2008 (analyzer release tracking) must be suppressed via `<NoWarn>$(NoWarn);RS2008</NoWarn>` in `SharedKernel.Analyzers.csproj`. The release tracking text-file approach does not reliably suppress it with `EnforceExtendedAnalyzerRules=true`.
@@ -2192,3 +2342,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-24] SK.00.HealthCheckConstantsGuard → ● closeout — StringConstantsClassDetector and NoBareHealthCheckLiteralWhereConstantsExistPredicate implemented in Predicates/; HealthCheckConstantsUsageRules implemented in Rules/; confirmed exact Microsoft.Extensions.Diagnostics.HealthChecks declaring-type names via direct Mono.Cecil inspection of the .NET 10 reference assemblies (IHealthChecksBuilder/HealthChecksBuilder for Add, HealthChecksBuilderAddCheckExtensions/HealthChecksBuilderDelegateExtensions for AddCheck, HealthCheckRegistration for the constructor) and recorded them in this file, resolving the two prior "confirm during implementation" placeholders; corrected the T-140 pass-path fixture from `const string` to `static readonly string` after discovering Roslyn const-folds `const string` field references into a bare Ldstr at the call site (no Ldsfld) — only `static readonly string` produces the Ldsfld IL shape the rule's pass-path depends on; reworded three XML-doc passages in the implementation files that referenced "HealthCheckTags"/"HealthCheckNames" by name to keep the acceptance-critical generality requirement unambiguous (CLAUDE.md prose retains the real names in its own offending/compliant examples, consistent with every other rule's documentation); T-139–T-142 added (4 new tests), 102/102 full ArchitectureTests.Tests suite passes, 0 build warnings/errors (state-map-phase)
 - [2026-06-25] SK.00.PresentationArchRules → ● closeout — NoDirectProblemDetailsConstructionPredicate and NoInlineResultBranchBeforeHttpResultPredicate implemented in Predicates/; PresentationLayeringRules implemented in Rules/, verified against the pre-written CLAUDE.md spec (Architecture Test Contracts, Implementation Rules, and Changelog entry all matched the shipped implementation exactly — no discrepancy found, no edits required); T-143–T-146 added (6 new tests: T-143 fire path, T-144 pass path plus a companion HttpValidationProblemDetails fire-path case, T-145 fire path, T-146 pass path plus a companion vacuous-pass case); fixed a self-inflicted false-positive in the first T-144 fixture draft — the fixture's own "factory method" was itself constructing ProblemDetails via newobj in the same assembly, which the predicate correctly flagged since it carries no namespace exemption; reworked the fixture so the factory call is an unimplemented external stub, isolating the assertion to OrderEndpoints alone; 108/108 full ArchitectureTests.Tests suite passes, 0 build warnings/errors (state-map-phase)
 - [2026-06-30] ApplicationPipelineRules added to architecture test contracts (three ICustomRule predicates: BehaviorsNeverReferenceConcreteInfrastructure via NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate — caller-supplied behavior-name set + forbidden-namespace set, infra-purity for TracingBehavior/ResilienceBehavior/CacheInvalidationBehavior; NoExistingBehaviorMatchesStreamRequestConstraint via NoGenericConstraintMatchesStreamRequestPredicate — this domain's fourth distinct Mono.Cecil technique, IL generic-parameter-constraint inspection, proving no IPipelineBehavior<,> implementor structurally matches IStreamRequest<TResponse>; NoHandRolledRetryLoopOutsideResilienceBehavior via NoTaskDelayOutsideResilienceBehaviorPredicate — Task.Delay Call/Callvirt fingerprint heuristic with a ResilienceBehavior self-exemption); new PipelineOrderAssertion public reflection helper added — the first SharedKernel.ArchitectureTests artifact that is not a ConditionList/ICustomRule, walking ServiceDescriptor entries off an unbuilt IServiceCollection to assert IPipelineBehavior<,> registration order, intended for consumption by 05.Application.Behaviors.Tests against the real ApplicationBehaviorsBuilder.Build() output; no new SK IDs; five new implementation rules added; depends on 05.Application P-220/P-221/P-222/P-224 for real-assembly verification only — WO-036 is design-only as of 2026-06-30, so design proceeds against contrived in-memory fixtures (same technique as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard/SK.00.PresentationArchRules) — WO-036 P-225 (governance-arch-planner)
+- [2026-06-30] CryptoIsolationRules and UnitOfWorkSeamRules added to architecture test contracts (WO-037 P-229): CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography via NoRawSymmetricCipherOutsideCryptographyPredicate — platform-wide generalization of the SK0301-backing predicate, banning direct AesGcm/Aes/SymmetricAlgorithm field/IL references plus RandomNumberGenerator calls (new DeclaringType-match surface) outside a SharedKernel.Cryptography-prefixed namespace, motivated by the 06.Persistence P-227 incident where a hand-rolled AesGcm usage was structurally invisible to SK0301 because that rule was only ever invoked against 03.Domain/05.Application, never against 06.Persistence itself; UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct via UnitOfWorkInterfacesRemainDistinctPredicate — a negative-space/regression-guard rule (two-assembly, three-check: existence, identity-collapse, bidirectional base-interface) asserting SharedKernel.Application.Behaviors.IUnitOfWork and SharedKernel.Persistence.Abstractions.IUnitOfWork are never merged or made to inherit one another, protecting the local-seam pattern already proven for IAuthorizationContext/IIdempotencyKeyStore; SK0301 reconciled in place — NoAesCipherInDomainOrApplicationPredicate's exemption list narrowed from {SharedKernel.Persistence, SharedKernel.Security} to {SharedKernel.Cryptography} only, making it a caller-scoped special case of the new platform-wide rule rather than a contradictory duplicate; no new SK ID assigned; three new implementation rules added; depends on 06.Persistence P-227/P-228 for real-assembly verification only — both design-only as of 2026-06-30, so design proceeds against contrived in-memory fixtures matching the documented target shape (same technique as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard/SK.00.PresentationArchRules/SK.00.ApplicationPipelineArchRules) — WO-037 P-229 (governance-arch-planner)
