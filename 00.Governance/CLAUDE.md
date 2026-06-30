@@ -1545,6 +1545,142 @@ NoInlineResultBranchBeforeHttpResultPredicate  (class : ICustomRule — internal
     Predicates/ folder. Used by
     PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi.
 
+ApplicationPipelineRules  (static class — 05.Application extended-pipeline enforcement predicates; WO-036 P-225)
+    All factory methods accept Assembly (or params Assembly[]) and return ConditionList.
+    Predicates are designed and tested here against contrived in-memory fixture assemblies —
+    00.Governance never references 05.Application/05.Application.Behaviors directly (layering:
+    00.Governance references nothing). The owning domain (05.Application) is responsible for
+    invoking these factory methods against its own real assembly once WO-036's Core phase ships,
+    mirroring the existing cross-domain consumption pattern already established for
+    CachingAbstractionRules/RedisTopologyRules (consumed by 02.Caching's own test suites) and
+    PersistenceLayerProtectionRules (consumed by 06.Persistence's own test suites).
+
+    .BehaviorsNeverReferenceConcreteInfrastructure(params Assembly[] assemblies)  → ConditionList
+        Asserts that no type named "TracingBehavior", "ResilienceBehavior", or
+        "CacheInvalidationBehavior" (exact simple name match, caller-supplied HashSet<string> —
+        never hardcoded inside the predicate) in the supplied assemblies has a member, field, or
+        method-signature reference to a forbidden concrete-infrastructure namespace:
+        "SharedKernel.Caching.FusionCache", "SharedKernel.Caching.Redis" (bare prefix — matches
+        Redis.Core and all four Redis capability packages), "SharedKernel.Persistence" (excluding
+        "SharedKernel.Persistence.Abstractions"), "SharedKernel.Messaging" (excluding
+        "SharedKernel.Messaging.Abstractions"). Uses
+        NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate (ICustomRule — see below).
+        Failure message names the offending behavior type and the forbidden namespace referenced.
+        Rationale: mirrors the existing, already-enforced
+        SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure guarantee, made
+        explicit and behavior-scoped for the three new WO-036 behaviors — the same purity
+        expectation CachingBehavior (SharedKernel.Caching.Abstractions only) already satisfies by
+        construction. Abstractions-only references remain permitted; only concrete provider
+        packages are forbidden.
+        Offending pattern: class CacheInvalidationBehavior<TRequest,TResponse> {
+            private readonly IConnectionMultiplexer _redis; /* SharedKernel.Caching.Redis */ }
+        Compliant pattern: class CacheInvalidationBehavior<TRequest,TResponse> {
+            private readonly ICacheService _cacheService; /* SharedKernel.Caching.Abstractions */ }
+
+    .NoExistingBehaviorMatchesStreamRequestConstraint(Assembly behaviorsAssembly)  → ConditionList
+        Asserts that no type implementing the open generic IPipelineBehavior<,> in the supplied
+        assembly has a TRequest generic-parameter constraint that structurally satisfies
+        MediatR's IStreamRequest<TResponse> (directly or via interface closure). Uses
+        NoGenericConstraintMatchesStreamRequestPredicate (ICustomRule — see below). This is a
+        structural IL generic-constraint check, not a runtime DI resolution test — it fails at
+        the architecture-test stage, earlier than any runtime wiring attempt, if a future
+        behavior's TRequest constraint is loosened in a way that could accidentally capture
+        IStreamQuery<TResponse>/IStreamRequest<TResponse>.
+        Failure message names the offending behavior type and the matching constraint type.
+        Rationale: 05.Application/CLAUDE.md documents as an explicit, deliberate design decision
+        that none of the platform's pipeline behaviors apply to the streaming query vocabulary
+        (P-221) — ValidationBehavior's TRequest : IRequest<TResponse> constraint does not match
+        IStreamRequest<TResponse> today, and extending any behavior to streaming is a future,
+        deliberate phase, never silently assumed. This rule makes that documented fact mechanically
+        verified rather than merely asserted in prose.
+        Offending pattern: a hypothetical future behavior loosening its constraint to
+            where TRequest : IBaseRequest (a common ancestor MediatR gives both unary and
+            streaming requests) — would structurally start matching IStreamRequest<TResponse>
+        Compliant pattern: every behavior constrains TRequest to IRequest<TResponse> or a
+            subtype (ICommandBase, ICacheableQuery<TResponse>, IAuthorizeRequest, etc.) — never
+            the shared IBaseRequest ancestor
+
+    .NoHandRolledRetryLoopOutsideResilienceBehavior(Assembly behaviorsAssembly)  → ConditionList
+        Asserts that no type other than exactly "ResilienceBehavior" (exact simple name match) in
+        the supplied assembly calls System.Threading.Tasks.Task.Delay (any overload — matched on
+        MethodReference.Name == "Delay" AND DeclaringType.FullName ==
+        "System.Threading.Tasks.Task", covering both the int-millisecond and TimeSpan overloads in
+        one check). Uses NoTaskDelayOutsideResilienceBehaviorPredicate (ICustomRule — see below).
+        This is a fingerprint heuristic, not a full retry-loop detector — Task.Delay is the one
+        IL-detectable signal common to virtually every hand-rolled retry/backoff loop; a
+        legitimate non-retry Task.Delay call elsewhere in 05.Application would also be flagged
+        (none is known to exist at the time of this phase).
+        Failure message names the offending type, method, and the Task.Delay call site.
+        Rationale: extends 05.Application/CLAUDE.md's existing prohibition on hand-rolled
+        System.Random/DateTime.UtcNow usage to retry/backoff specifically, now that
+        ResilienceBehavior exists as the platform-sanctioned alternative (IRetryableRequest +
+        ApplicationBehaviorsBuilder.AddResilienceBehavior(...)) — documented as a Hard Violation
+        in 05.Application/CLAUDE.md but not previously mechanically enforced.
+        Offending pattern: a handler or behavior catching a transient exception and calling
+            await Task.Delay(backoffMs, ct); before retrying inline
+        Compliant pattern: implement IRetryableRequest on the request and rely on
+            ResilienceBehavior's externally-registered Polly v8 resilience pipeline
+
+    PipelineOrderAssertion  (public class — reflection-based registration-order helper, not ConditionList/ICustomRule)
+        .AssertRegistrationOrder(IServiceCollection services, params Type[] expectedBehaviorTypesInOrder)
+            Walks the ServiceDescriptor entries in the supplied (unbuilt) IServiceCollection whose
+            ServiceType is the open generic IPipelineBehavior<,>, in registration order, and asserts
+            their ImplementationType (closed-generic open-generic-definition compared via
+            GetGenericTypeDefinition()) sequence exactly matches expectedBehaviorTypesInOrder.
+            Deliberately does NOT call IServiceCollection.BuildServiceProvider() — MediatR resolves
+            IPipelineBehavior<,> instances in registration order, so inspecting the unbuilt
+            ServiceDescriptor list is sufficient and avoids the cost/side-effects of a full container
+            build. Throws an assertion failure (test-framework-agnostic exception) naming the
+            expected vs. actual sequence on mismatch.
+        Rationale: ApplicationBehaviorsBuilder.Build() registers behaviors in a fixed,
+        non-negotiable order (the ten-named-slot canonical sequence documented in
+        05.Application/CLAUDE.md) regardless of .AddXBehavior() call order. Without a mechanical
+        assertion, a future edit to Build() can silently reorder the sequence — this helper is the
+        primitive 05.Application.Behaviors.Tests uses to pin that order permanently. Lives in
+        SharedKernel.ArchitectureTests (not 16.Testing) because it asserts an *architectural*
+        invariant (fixed pipeline composition order), not a general test fixture — the same
+        rationale that places ArchitectureRuleBase and the ICustomRule predicates in this package
+        rather than in shared test infrastructure.
+        Note: ships as a plain public reflection helper, not a NetArchTest ConditionList — it has
+        no "fire on a contrived violating assembly" shape, since its input is an IServiceCollection
+        instance, not a compiled Assembly. Its own correctness (passing case + failing case) is
+        proven by a governance-owned unit test (T-153), distinct from 05.Application's own future
+        consumption of it against the real ApplicationBehaviorsBuilder.Build() output.
+
+NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate  (class : ICustomRule — internal predicate)
+    Constructed with (HashSet<string> behaviorTypeNames, HashSet<string> forbiddenNamespacePrefixes) —
+    both caller-supplied, never hardcoded, mirroring HealthCheckTagIntegrityRules's
+    caller-supplied-prefix-list convention. For each type whose TypeDefinition.Name is in
+    behaviorTypeNames (exact match), inspects TypeDefinition.Fields (FieldType.Namespace) and
+    TypeDefinition.Methods.Body.Instructions (Call/Callvirt/Newobj operand DeclaringType.Namespace)
+    for any namespace starting with a forbidden prefix, excluding any namespace ending in
+    ".Abstractions". Returns false (rule violated) on the first match, with failure message naming
+    the offending behavior type and the forbidden namespace. Lives in Predicates/ folder. Used by
+    ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure.
+
+NoGenericConstraintMatchesStreamRequestPredicate  (class : ICustomRule — internal predicate)
+    Scope check: types whose TypeDefinition.Interfaces contains an entry with InterfaceType.Name
+    starting with "IPipelineBehavior" (open generic IPipelineBehavior`2). For each such type,
+    inspects the GenericParameter.Constraints collection on the TRequest generic parameter (first
+    generic parameter position) for any constraint TypeReference whose FullName matches
+    "MediatR.IStreamRequest`1" or whose resolved interface closure (TypeDefinition.Interfaces,
+    recursively) includes it. Returns false (rule violated) on a structural match, with failure
+    message naming the offending behavior type and the matching constraint. Fail-open if
+    TypeReference.Resolve() returns null (unloaded assembly dependency) — consistent with the
+    fail-open policy already established by SagaStateMustExtendSagaStateBasePredicate. Lives in
+    Predicates/ folder. Used by ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint.
+
+NoTaskDelayOutsideResilienceBehaviorPredicate  (class : ICustomRule — internal predicate)
+    Self-exemption guard (first check): types whose TypeDefinition.Name == "ResilienceBehavior"
+    (exact match) return true unconditionally. For all other types, walks
+    TypeDefinition.Methods.Body.Instructions for Call or Callvirt opcodes whose
+    MethodReference.Name == "Delay" AND MethodReference.DeclaringType.FullName ==
+    "System.Threading.Tasks.Task" (covers all Task.Delay overloads in one check — both
+    DeclaringType and Name must match, avoiding false positives on unrelated "Delay" methods on
+    other types). Returns false (rule violated) on the first match, with failure message naming the
+    offending type and method. Lives in Predicates/ folder. Used by
+    ApplicationPipelineRules.NoHandRolledRetryLoopOutsideResilienceBehavior.
+
 EfCorePackageHygieneRules  (static class — EfCore package hygiene predicates; WO-017 P-103)
     All factory methods accept Assembly as their parameter and return ConditionList.
     .NoSpecificationEvaluatorDowncastInEfCoreAssembly(Assembly)  → ConditionList
@@ -1969,6 +2105,11 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `PresentationLayeringRules.NoDirectProblemDetailsConstructionOutsideWebApi` and `.NoInlineResultBranchBeforeHttpResultOutsideWebApi` both accept `params Assembly[]` — the caller is responsible for never including `SharedKernel.Presentation.WebApi` in the supplied list. Unlike most prior `ICustomRule` predicates in this domain, there is no internal `TypeDefinition.Namespace.StartsWith(...)` guard inside either predicate; this is a deliberate design choice because no single namespace prefix covers every legitimate in-package construction site (`ErrorProblemDetailsExtensions`, the global `IExceptionHandler`, `ResultHttpExtensions` itself, and any future factory all legitimately trigger both signals).
 - `PresentationLayeringRules` lives in `SharedKernel.ArchitectureTests/Rules/PresentationLayeringRules.cs`; its two `ICustomRule` predicates live in `Predicates/`. Both reuse the existing `Mono.Cecil >= 0.11.5` reference — no new NuGet dependency introduced by this phase.
 - **`const string` vs `static readonly string` produce different IL at the *consuming* call site** — this matters for any future test fixture or predicate reasoning about field-reference detection. The C# compiler const-folds every `const string` field reference into a bare `Ldstr` literal at each call site (no `Ldsfld`, no trace that a constant was referenced at all); only `static readonly string` field references compile to `Ldsfld`. `StringConstantsClassDetector.ResolveStringConstants` correctly resolves the *declaring* type's own value for both field kinds (via `FieldDefinition.Constant` for `const`, via a `.cctor` `Ldstr`→`Stsfld` walk for `static readonly`), but `NoBareHealthCheckLiteralWhereConstantsExistPredicate`'s pass-path (field access instead of literal) only holds for `static readonly string` constants classes — a `const string` constants class can never produce a passing fixture for the "field access, not literal" scenario, because Roslyn erases the field reference before Mono.Cecil ever sees the consuming method's IL. Discovered while building the T-140 pass-path fixture for `SK.00.HealthCheckConstantsGuard` (WO-028 P-178); document this if a future domain's constants-class convention is ever questioned for using `const` instead of `static readonly`.
+- `ApplicationPipelineRules` introduces zero new SK diagnostic IDs — all three new checks are pure Mono.Cecil `ICustomRule` predicates, mirroring the established precedent (`RedisTopologyRules`, `CompositionRootExclusivityRules`, `GrpcNeverReferencesContracts`, `PresentationLayeringRules`) that boundary-mapping and structural-purity prohibitions do not always require minting a new Roslyn analyzer. `00.Governance` never references `05.Application`/`05.Application.Behaviors` directly (layering: `00.Governance` references nothing) — all three predicates and `PipelineOrderAssertion` are designed and tested here against contrived in-memory fixture assemblies; `05.Application` is responsible for invoking them against its own real assembly once WO-036's Core phase (`05.Application/state-map.md` C-18..C-29) ships.
+- `NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate`'s behavior-name set (`"TracingBehavior"`, `"ResilienceBehavior"`, `"CacheInvalidationBehavior"`) and forbidden-namespace set are both caller-supplied `HashSet<string>` constructor parameters, never hardcoded inside the predicate — the same caller-supplied-list convention already established by `HealthCheckTagIntegrityRules.DependencyHealthChecksCarryReadyNotLive`'s `dependencyCheckMethodNamePrefixes` parameter. This lets a future fourth infra-adjacent behavior be covered by a caller-side change alone, no predicate code change required.
+- `NoGenericConstraintMatchesStreamRequestPredicate` introduces the platform's **fourth distinct Mono.Cecil technique** for this domain, alongside opcode-presence (`NoMakeGenericMethodReflectionPredicate`), `Ldstr` literal-collection (`HealthCheckTagIntegrityRules`), and field-shape/literal-value resolution (`StringConstantsClassDetector`): **IL generic-parameter-constraint inspection** (`GenericParameter.Constraints` on an open generic type's type parameter, with interface-closure resolution). This is a structural check at the type-definition level, not an instruction walk — document any new constraint-inspection helper here if a future rule needs the same technique, so it is reused rather than redefined.
+- `NoTaskDelayOutsideResilienceBehaviorPredicate` is a documented **fingerprint heuristic, not a full retry-loop detector** — it flags any `Task.Delay` call outside a type named exactly `ResilienceBehavior`, accepting the risk that a legitimate non-retry `Task.Delay` use elsewhere in `05.Application` would also be flagged. This mirrors the same documented-limitation philosophy already established for `HealthCheckTagIntegrityRules`'s literal-collection technique and `NoInlineResultBranchBeforeHttpResultPredicate`'s method-level co-occurrence check — do not narrow or broaden this heuristic speculatively; only revise it if a real false positive or false negative is found in production code.
+- `PipelineOrderAssertion` is the first artifact in `SharedKernel.ArchitectureTests` that is **not** a `ConditionList`/`ICustomRule` — it is a plain public reflection helper operating on an unbuilt `IServiceCollection`'s `ServiceDescriptor` entries, never calling `BuildServiceProvider()`. It exists in this package (not `16.Testing`) because it asserts an architectural invariant (fixed `IPipelineBehavior<,>` registration order), the same rationale that already places `ArchitectureRuleBase` and every `ICustomRule` predicate here rather than in shared test infrastructure. `05.Application.Behaviors.Tests` is the intended consumer — see `05.Application/state-map.md` T-17/T-18 (WO-036).
 
 ---
 
@@ -2050,3 +2191,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-25] PresentationLayeringRules added to architecture test contracts (two predicates: NoDirectProblemDetailsConstructionOutsideWebApi via NoDirectProblemDetailsConstructionPredicate — Newobj IL match on ProblemDetails/HttpValidationProblemDetails full names; NoInlineResultBranchBeforeHttpResultOutsideWebApi via NoInlineResultBranchBeforeHttpResultPredicate — method-level co-occurrence check for IsSuccess/IsFailure + IResult/ActionResult return + absence of ToProblemDetailsResult escape hatch); closes the WO-026 P-166/167 backlog note for a mechanical Result-to-HTTP boundary enforcement; no new SK IDs — both implemented as NetArchTest ICustomRule predicates, not Roslyn analyzers; no internal namespace exemption — caller excludes SharedKernel.Presentation.WebApi by never passing it; six new implementation rules added — WO-031 P-199
 - [2026-06-24] SK.00.HealthCheckConstantsGuard → ● closeout — StringConstantsClassDetector and NoBareHealthCheckLiteralWhereConstantsExistPredicate implemented in Predicates/; HealthCheckConstantsUsageRules implemented in Rules/; confirmed exact Microsoft.Extensions.Diagnostics.HealthChecks declaring-type names via direct Mono.Cecil inspection of the .NET 10 reference assemblies (IHealthChecksBuilder/HealthChecksBuilder for Add, HealthChecksBuilderAddCheckExtensions/HealthChecksBuilderDelegateExtensions for AddCheck, HealthCheckRegistration for the constructor) and recorded them in this file, resolving the two prior "confirm during implementation" placeholders; corrected the T-140 pass-path fixture from `const string` to `static readonly string` after discovering Roslyn const-folds `const string` field references into a bare Ldstr at the call site (no Ldsfld) — only `static readonly string` produces the Ldsfld IL shape the rule's pass-path depends on; reworded three XML-doc passages in the implementation files that referenced "HealthCheckTags"/"HealthCheckNames" by name to keep the acceptance-critical generality requirement unambiguous (CLAUDE.md prose retains the real names in its own offending/compliant examples, consistent with every other rule's documentation); T-139–T-142 added (4 new tests), 102/102 full ArchitectureTests.Tests suite passes, 0 build warnings/errors (state-map-phase)
 - [2026-06-25] SK.00.PresentationArchRules → ● closeout — NoDirectProblemDetailsConstructionPredicate and NoInlineResultBranchBeforeHttpResultPredicate implemented in Predicates/; PresentationLayeringRules implemented in Rules/, verified against the pre-written CLAUDE.md spec (Architecture Test Contracts, Implementation Rules, and Changelog entry all matched the shipped implementation exactly — no discrepancy found, no edits required); T-143–T-146 added (6 new tests: T-143 fire path, T-144 pass path plus a companion HttpValidationProblemDetails fire-path case, T-145 fire path, T-146 pass path plus a companion vacuous-pass case); fixed a self-inflicted false-positive in the first T-144 fixture draft — the fixture's own "factory method" was itself constructing ProblemDetails via newobj in the same assembly, which the predicate correctly flagged since it carries no namespace exemption; reworked the fixture so the factory call is an unimplemented external stub, isolating the assertion to OrderEndpoints alone; 108/108 full ArchitectureTests.Tests suite passes, 0 build warnings/errors (state-map-phase)
+- [2026-06-30] ApplicationPipelineRules added to architecture test contracts (three ICustomRule predicates: BehaviorsNeverReferenceConcreteInfrastructure via NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate — caller-supplied behavior-name set + forbidden-namespace set, infra-purity for TracingBehavior/ResilienceBehavior/CacheInvalidationBehavior; NoExistingBehaviorMatchesStreamRequestConstraint via NoGenericConstraintMatchesStreamRequestPredicate — this domain's fourth distinct Mono.Cecil technique, IL generic-parameter-constraint inspection, proving no IPipelineBehavior<,> implementor structurally matches IStreamRequest<TResponse>; NoHandRolledRetryLoopOutsideResilienceBehavior via NoTaskDelayOutsideResilienceBehaviorPredicate — Task.Delay Call/Callvirt fingerprint heuristic with a ResilienceBehavior self-exemption); new PipelineOrderAssertion public reflection helper added — the first SharedKernel.ArchitectureTests artifact that is not a ConditionList/ICustomRule, walking ServiceDescriptor entries off an unbuilt IServiceCollection to assert IPipelineBehavior<,> registration order, intended for consumption by 05.Application.Behaviors.Tests against the real ApplicationBehaviorsBuilder.Build() output; no new SK IDs; five new implementation rules added; depends on 05.Application P-220/P-221/P-222/P-224 for real-assembly verification only — WO-036 is design-only as of 2026-06-30, so design proceeds against contrived in-memory fixtures (same technique as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard/SK.00.PresentationArchRules) — WO-036 P-225 (governance-arch-planner)

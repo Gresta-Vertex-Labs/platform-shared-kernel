@@ -32,6 +32,9 @@
     <PackageReference Include="NetArchTest.Rules" Version="1.3.2" />
     <PackageReference Include="FluentAssertions" Version="8.10.0" />
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+    <!-- Required to resolve IServiceCollection/ServiceDescriptor for PipelineOrderAssertion
+         (WO-036 P-225). Abstractions-only package — no concrete DI container dependency. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
   </ItemGroup>
 
   <ItemGroup>

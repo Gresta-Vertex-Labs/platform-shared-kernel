@@ -18,6 +18,16 @@
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
     <!-- Roslyn CSharpCompilation for in-memory fixture assembly generation in T-12 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
+    <!-- MediatR pinned to match 05.Application/SharedKernel.Application.Behaviors's own pin
+         (see that project's version-pin note) — needed to reference MediatR.IStreamRequest<>/
+         IPipelineBehavior<,> as extraReferences when compiling WO-036 P-225 fixture assemblies
+         in ApplicationPipelineRulesTests. NuGet-only; 00.Governance never references
+         05.Application (layering: 00.Governance references nothing). -->
+    <PackageReference Include="MediatR" Version="12.4.1" />
+    <!-- Concrete DI container needed for T-153's IServiceCollection fixture in
+         PipelineOrderAssertionTests (BuildServiceProvider is never called, but
+         AddTransient/AddScoped extension methods require the concrete package). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>
