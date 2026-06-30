@@ -5,9 +5,13 @@ metadata:
   type: project
 ---
 
-As of 2026-06-29, the last phase written to `state-map.md` Phase Backlog is **P-219** under **WO-035**.
+As of 2026-06-29, the last phase written to `state-map.md` Phase Backlog is **P-226** under **WO-036**.
 
-Next new phase must be **P-220**. Next new Work Order must be **WO-036**.
+Next new phase must be **P-227**. Next new Work Order must be **WO-037**.
+
+**WO-036 context:** Direct user request to audit 05.Application for gold-standard fit post-WO-035. Found an orphaned anomaly: P-220–P-223 already existed in the Phase Backlog, fully written (tracing/ActivitySource parity, MediatR `IStreamRequest<TResponse>` vocabulary, Polly v8 resilience/retry behavior with an explicit retry-after-partial-commit hazard callout, and a reusable pipeline test harness) under WO-036 — but `○` Pending with zero board/changelog trace of ever being dispatched. Treated as a previously-drafted-but-orphaned pass, not a duplicate to redo: reused all four verbatim. Added one genuinely new gap found via my own source read (not in the orphaned draft): P-224, write-side cache invalidation behavior — `CachingBehavior` only covers reads; nothing evicts cache on a successful mutation even though `02.Caching.Abstractions.ICacheService.RemoveAsync`/`ICacheInvalidationBus` already exist for exactly this. Added P-225 (00.Governance) and P-226 (16.Testing) as the standard follow-through every prior 05.Application work order pairs with new behaviors — P-226 specifically requires an explicit audit of whether `AmbientActivityTestHelper`/`FakeCacheService` already cover the new test needs before any new fake is written (the WO-029 anti-duplication rule). 05.Application board row stays `●` Published — phases queued in backlog only, no `state-map-phase` call (hard rule: never call it on a domain already past `○`). No `sync-brain` call — these are phase definitions, not shipped capabilities; brain updates happen at implementation/closeout per the established pattern.
+
+**Lesson for future passes:** always check the Phase Backlog tail for orphaned work orders (entries with no matching board-state or changelog trace) before deriving new phases from scratch — re-deriving from zero would have produced near-duplicate P-220/222 content under new numbers, wasting both phase-ID space and review effort.
 
 **WO-035 context:** 05.Application first real build-out — P-214–P-219 (Design, Scaffold, Core split into P-216 Contracts / P-217 Behaviors, Tests, Docs+Published). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`). Accepted the existing five-behavior design verbatim (Validation/Logging/Metrics/Transaction/Caching — the latter carrying forward root P-015/WO-004 unchanged), upgraded by adding two new opt-in behaviors (Authorization, Idempotency) each backed by a locally-owned seam interface — never reaching past `05.Application`'s `01–04` layering ceiling into `12.Security`/`07.Messaging`, mirroring the existing `IUnitOfWork`/`TransactionBehavior` bridge precedent. Canonical pipeline order revised to seven steps. See [[project_wo035_application_buildout]] for full detail.
 
