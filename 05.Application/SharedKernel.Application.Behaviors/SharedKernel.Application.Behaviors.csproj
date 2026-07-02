@@ -53,6 +53,11 @@
       clients, so no new major-version risk is introduced to the platform.
     -->
     <PackageReference Include="Polly.Core" Version="8.7.0" />
+    <!--
+      BackgroundService lives in Microsoft.Extensions.Hosting.Abstractions — not available
+      transitively through DependencyInjection.Abstractions; must be explicit (WO-038, C-43).
+    -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
