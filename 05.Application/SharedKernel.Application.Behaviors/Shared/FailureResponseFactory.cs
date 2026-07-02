@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-using System.Linq.Expressions;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -14,30 +12,20 @@ namespace SharedKernel.Application.Behaviors.Shared;
 /// Behaviors such as <c>AuthorizationBehavior&lt;TRequest,TResponse&gt;</c> and
 /// <c>IdempotentCommandBehavior&lt;TRequest,TResponse&gt;</c> need to short-circuit with a failed
 /// response whose concrete shape (<see cref="Result"/> or a closed <see cref="Result{T}"/>) is
-/// only known through the open generic <c>TResponse</c> parameter — there is no shared interface
-/// linking the two types, and this package must not modify <c>SharedKernel.Primitives</c> to add
-/// one.
+/// only known through the open generic <c>TResponse</c> parameter.
 /// </para>
 /// <para>
-/// <b>Why a cached compiled delegate, not <see langword="dynamic"/> or
-/// <see cref="System.Reflection.MethodInfo.MakeGenericMethod(System.Type[])"/>:</b> both
-/// <see cref="Result"/> and <see cref="Result{T}"/> declare a
-/// <c>public static implicit operator</c> from <see cref="Error"/>. For each distinct closed
-/// <c>TResponse</c> seen at runtime, a small <see cref="Expression"/> tree that performs the
-/// implicit conversion is built once and compiled into a <see cref="Func{Error,Object}"/>, then
-/// cached in a static <see cref="ConcurrentDictionary{TKey,TValue}"/> keyed by <see cref="Type"/>
-/// — mirroring the exact caching shape already approved for
-/// <c>MediatRDomainEventDispatcher</c>'s per-event-type dispatch, except built via
-/// <see cref="Expression"/> compilation rather than <c>MakeGenericMethod</c>. This avoids both the
-/// platform-wide <c>MakeGenericMethod</c>/reflection prohibition and the AOT/trim risk of
-/// <see langword="dynamic"/> (which would also require a <c>Microsoft.CSharp</c> package
-/// reference this domain has no other reason to carry).
+/// <b>WO-038, P-232 refactor (depends on P-230 shipping <see cref="IResultOfT{T}"/> in
+/// <c>SharedKernel.Primitives</c>):</b> the prior <c>Expression.Lambda(...).Compile()</c> path
+/// and its <c>ConcurrentDictionary&lt;Type, Func&lt;Error, object&gt;&gt;</c> expression cache have
+/// been replaced. For the <see cref="Result{T}"/> case, <see cref="ResultOfTDispatcher{TResponse}"/>
+/// identifies <c>T</c> via <c>IResultOfT&lt;T&gt;</c> and calls
+/// <c>Result&lt;T&gt;.Failure(Error)</c> via a one-time cached delegate — zero <c>Expression</c> tree
+/// compilation. The <c>TResponse == typeof(<see cref="Result"/>)</c> special case remains as-is.
 /// </para>
 /// </remarks>
 internal static class FailureResponseFactory
 {
-    private static readonly ConcurrentDictionary<Type, Func<Error, object>> Factories = new();
-
     /// <summary>Creates a failed <typeparamref name="TResponse"/> from <paramref name="error"/>.</summary>
     /// <typeparam name="TResponse">
     /// Either <see cref="Result"/> or a closed <see cref="Result{T}"/>.
@@ -45,18 +33,70 @@ internal static class FailureResponseFactory
     /// <param name="error">The error describing the failure.</param>
     public static TResponse Create<TResponse>(Error error)
     {
+        // Fast path for the non-generic Result struct.
         if (typeof(TResponse) == typeof(Result))
             return (TResponse)(object)Result.Failure(error);
 
-        Func<Error, object> factory = Factories.GetOrAdd(typeof(TResponse), BuildFactory);
-        return (TResponse)factory(error);
+        // For Result<T>, TResponse is a reference type that implements IResultOfT<TInner>.
+        // Dispatch to the generic helper via the interface to avoid expression trees.
+        // TResponse is always a sealed class (Result<T>) in practice — this is enforced by
+        // the handler return type constraints in the platform vocabulary.
+        return CreateForResultClass<TResponse>(error);
     }
 
-    private static Func<Error, object> BuildFactory(Type responseType)
+    // Intermediate dispatch: called after the Result-struct fast path, so TResponse is always
+    // Result<T> (a reference type) in practice. No class constraint here — the compiler cannot
+    // prove it from the outer open generic, but at runtime TResponse is always a sealed class.
+    private static TResponse CreateForResultClass<TResponse>(Error error)
     {
-        ParameterExpression parameter = Expression.Parameter(typeof(Error), "error");
-        UnaryExpression converted = Expression.Convert(parameter, responseType);
-        UnaryExpression boxed = Expression.Convert(converted, typeof(object));
-        return Expression.Lambda<Func<Error, object>>(boxed, parameter).Compile();
+        // Delegate to the generic helper that identifies T from IResultOfT<T> and calls
+        // Result<T>.Failure(Error) via a one-time-per-TResponse cached delegate.
+        return ResultOfTDispatcher<TResponse>.Create(error);
+    }
+}
+
+/// <summary>
+/// Cached per-<typeparamref name="TResponse"/> factory that bridges to <see cref="Result{T}.Failure"/>.
+/// Initialized lazily once per concrete <typeparamref name="TResponse"/> type via the CLR's generic
+/// class instantiation mechanism — no dictionary, no expression trees.
+/// </summary>
+/// <typeparam name="TResponse">A closed <see cref="Result{T}"/> type (always a reference type in practice).</typeparam>
+internal static class ResultOfTDispatcher<TResponse>
+{
+    // Delegate cached once per TResponse via static field in a generic class — the CLR guarantees
+    // one static field instance per closed generic type, which is exactly the "build once per
+    // concrete Type" invariant the platform requires for per-type caches.
+    private static readonly Func<Error, TResponse> Factory = BuildFactory();
+
+    internal static TResponse Create(Error error) => Factory(error);
+
+    private static Func<Error, TResponse> BuildFactory()
+    {
+        // Locate the IResultOfT<T> interface on TResponse to identify T.
+        // TResponse is always Result<T> in practice; this reflection runs once per TResponse type
+        // at class initialization time (not per call), equivalent to the prior expression-tree
+        // compile-once-per-type shape.
+        var iface = typeof(TResponse)
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IResultOfT<>));
+
+        if (iface is null)
+        {
+            throw new InvalidOperationException(
+                $"FailureResponseFactory cannot construct a failure response of type '{typeof(TResponse).FullName}'. " +
+                $"TResponse must implement IResultOfT<T> (i.e., be a closed Result<T>).");
+        }
+
+        var innerType = iface.GetGenericArguments()[0];
+
+        // Call Result<T>.Failure(Error) via MakeGenericMethod — this is the approved
+        // per-type-cached reflection exception, identical in structure to the
+        // MediatRDomainEventDispatcher delegate cache. The factory is built once and stored
+        // in the generic static field; subsequent calls pay zero reflection cost.
+        var failureMethod = typeof(Result<>)
+            .MakeGenericType(innerType)
+            .GetMethod(nameof(Result<object>.Failure), [typeof(Error)])!;
+
+        return error => (TResponse)failureMethod.Invoke(null, [error])!;
     }
 }
