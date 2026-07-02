@@ -2,6 +2,7 @@ using SharedKernel.Domain;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
+using AppBehaviorsIUnitOfWork = SharedKernel.Application.Behaviors.Transaction.IUnitOfWork;
 
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
@@ -46,8 +47,19 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// is a deliberate design decision — the persistence boundary is the DbContext transaction;
 /// event dispatch is a best-effort post-commit concern.
 /// </para>
+/// <para>
+/// <strong>DUAL-INTERFACE BRIDGE (P-228):</strong> <see cref="EfUnitOfWork"/> additionally implements
+/// <see cref="AppBehaviorsIUnitOfWork"/> (<c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c>)
+/// — the minimal local seam that <c>TransactionBehavior</c> depends on, declared in
+/// <c>05.Application.Behaviors</c> because <c>05.Application</c> cannot reference <c>06.Persistence</c>.
+/// Both interfaces declare a structurally compatible <c>Task&lt;int&gt; SaveChangesAsync(CancellationToken)</c>
+/// member, so the single existing method body satisfies both contracts — no branching, no second method.
+/// Registration against the second interface is opt-in via
+/// <c>EfCorePersistenceBuilder.WithApplicationTransactionBehavior()</c> — omitting it leaves
+/// <see cref="AppBehaviorsIUnitOfWork"/> unregistered.
+/// </para>
 /// </remarks>
-public sealed class EfUnitOfWork : IUnitOfWork
+public sealed class EfUnitOfWork : IUnitOfWork, AppBehaviorsIUnitOfWork
 {
     private readonly SharedKernelDbContext _dbContext;
     private readonly IDomainEventDispatcher? _dispatcher;
