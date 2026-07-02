@@ -28,6 +28,6 @@ WO-036 dispatched 2026-06-30 (root `state-map.md` P-220–P-224) extends the pub
 ```
 Steps 6 and {7,8,9,10} remain mutually exclusive by request shape (`ICacheableQuery<TResponse>` vs `ICommandBase`), exactly like the prior five/seven-step design — a single request only ever traverses one branch, not all ten.
 
-**Status as of 2026-06-30: design-only.** `05.Application/CLAUDE.md` and `state-map.md` (Design phase D-11..D-25, 47 total new tasks across all 6 phases) are written, but Scaffold/Core/Tests/Docs/Published are still `○` pending. Before recommending or referencing any WO-036 type as if it exists in code, check `05.Application/state-map.md` Package Board first.
+**Status as of 2026-07-01: Core complete (C-18..C-29 ●).** D/S/Core phases complete. T-13..T-16 ●; T-17/T-18 and Docs/Published remain `○` pending. The ten-slot pipeline is implemented in production code. Before referencing any WO-036 type, verify against `05.Application/state-map.md` Package Board to confirm Tests/Docs/Published state.
 
 Root backlog IDs: P-220 (Tracing), P-221 (Streaming), P-222 (Resilience), P-223 (Test harness, depends on P-220+P-222), P-224 (Cache invalidation). All under WO-036.
