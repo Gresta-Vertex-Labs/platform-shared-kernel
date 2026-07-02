@@ -34,6 +34,7 @@
 | `SK.01.P042` | P-042 Error.BusinessRule Factory | All tasks in Phase: P-042 are `●` | P-042 |
 | `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | All tasks in Phase: WO-033 Implementation are `●` | P-207, P-208, P-209 |
 | `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | All tasks in Phase: WO-034 are `●` | P-210, P-211, P-212, P-213 |
+| `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | All tasks in Phase: P-230 are `●` | P-230 |
 
 ---
 
@@ -300,6 +301,25 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: P-230 — IHasSuccessFlag Marker and IResultOfT\<T\> Interface for Reflection-Free Application Seams <!-- phase-key: SK.01.P230 -->
+
+> Additive extension to `SharedKernel.Primitives`: adds two lightweight contracts that enable `05.Application` pipeline behaviors to inspect `Result<T>` / `Result` outcomes at the generic constraint level — without reflection, `dynamic`, or `Expression` tree compilation. Both interfaces are AOT-clean by construction.
+> Motivation: `LoggingBehavior` cannot distinguish failure from success on an unknown `TResponse` without either a shared marker interface or runtime type inspection; `FailureResponseFactory` compiles an `Expression<Func<Error, TResponse>>` at warm-up time, which carries `[RequiresUnreferencedCode]`. These two interfaces resolve both hazards at the primitive layer so `05.Application` can reference them.
+> WO-038.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-26 | Define `IHasSuccessFlag` — zero-member marker interface; `Result<T>` and `Result` (non-generic) both implement it; no properties, no methods; purpose is type-safe identity check via `is IHasSuccessFlag` without reflection; carries no `[RequiresUnreferencedCode]` annotation | SharedKernel.Primitives | `●` |
+| D-27 | Define `IResultOfT<T>` — typed interface implemented by `Result<T>` only; exposes `IsSuccess → bool`, `IsFailure → bool`, `Value → T`; enables `where TResponse : IResultOfT<TResponse>` generic constraint in pipeline behaviors as a reflection-free substitute for `Expression`-compiled factory delegates; carries no `[RequiresUnreferencedCode]` annotation | SharedKernel.Primitives | `●` |
+| C-39 | Implement `IHasSuccessFlag` as a public interface in `SharedKernel.Primitives`; apply `IHasSuccessFlag` to `Result<T>` (sealed class) and `Result` (readonly struct) — additive only, no existing member signatures change | SharedKernel.Primitives | `●` |
+| C-40 | Implement `IResultOfT<T>` as a public interface in `SharedKernel.Primitives`; apply to `Result<T>` — `IsSuccess`, `IsFailure`, and `Value` satisfy the interface explicitly or implicitly; `Result` (non-generic) does NOT implement `IResultOfT<T>` (it has no typed value payload) | SharedKernel.Primitives | `●` |
+| T-29 | Unit: `IHasSuccessFlag` — verify `Result<T>` and `Result` are assignable to `IHasSuccessFlag`; verify the flag reflects `IsSuccess`/`IsFailure` correctly for both success and failure instances | SharedKernel.Primitives.Tests | `●` |
+| T-30 | Unit: `IResultOfT<T>` — verify `Result<T>` is assignable to `IResultOfT<T>`; verify `IsSuccess`, `IsFailure`, `Value` surface through the interface; verify `Result` (non-generic) is NOT assignable to `IResultOfT<T>`; verify accessing `Value` on a failure `IResultOfT<T>` throws `InvalidOperationException` (consistent with the concrete `Result<T>` contract) | SharedKernel.Primitives.Tests | `●` |
+| DO-12 | XML doc `IHasSuccessFlag` — state purpose (pipeline-behavior type-safe success check without reflection or dynamic), which types implement it, and the AOT-clean guarantee | SharedKernel.Primitives | `●` |
+| DO-13 | XML doc `IResultOfT<T>` — state purpose (reflection-free `FailureResponseFactory`-style construction via generic constraint), which type implements it (`Result<T>` only), note `Result` (non-generic) is excluded, and the AOT-clean guarantee | SharedKernel.Primitives | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `01.Core` references nothing._
@@ -314,7 +334,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 133 (126 base tasks + 3 WO-033 work-order tracking rows + 4 WO-034 work-order tracking rows; both work-order phases cross-reference/extend rather than duplicate existing C-/T-/DO-/P- task rows).
+> Counts updated whenever a task state changes. Total tasks: 141 (133 prior tasks + 8 new P-230 tasks: D-26/D-27, C-39/C-40, T-29/T-30, DO-12/DO-13).
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -327,6 +347,7 @@ Format when active:
 | `SK.01.P042` | P-042 Error.BusinessRule Factory | 13 | 13 | 0 | `●` |
 | `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | 3 | 3 | 0 | `●` |
 | `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | 4 | 4 | 0 | `●` |
+| `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | 8 | 8 | 0 | `●` |
 
 ---
 
@@ -362,3 +383,5 @@ Format when active:
 - [2026-06-26] P-209 → ● in SK.01.WO033Impl — all sub-tasks (DO-10, DO-11, P-10, P-11, P-12) complete; WO-033 fully closed (P-207 ●, P-208 ●, P-209 ●); Package Board entry for `SharedKernel.Cryptography` updated from `Docs`/`◐` to `Published`/`●` (core-phase-implementer)
 - [2026-06-26] WO-034 processed — added `SK.01.WO034` phase key and four new tasks (P-210→P-213) renaming `IPasswordHasher`/`Pbkdf2PasswordHasher`/`PasswordVerificationResult` to a secret-agnostic `IOneWayHasher`/`Pbkdf2OneWayHasher`/`HashVerificationResult` contract, with `Hash(string password)`/`Verify(string hash, string password)` generalized to `Hash(string secret)`/`Verify(string hash, string secret)`; rename-only — same PBKDF2-HMACSHA256 mechanism, output format, and rehash-needed detection; P-212 adds a non-password (API key) test case to prove genuine generalization, not cosmetic find-and-replace; P-213 re-packs at `2.0.0` (breaking public interface rename). Package Board entry for `SharedKernel.Cryptography` regressed from `Published`/`●` to `Published`/`◐` pending the rename; total tracked rows now 133 across 9 phase keys (core-arch-planner, WO-034)
 - [2026-06-29] P-210→P-213 → ● in SK.01.WO034 — mechanical rename applied across all production `.cs` files (`IOneWayHasher`, `HashVerificationResult`, `Pbkdf2OneWayHasher`); 0 warnings/0 errors build; `SharedKernel.Cryptography.Tests` updated (59/59 passing, including new `Hash_ThenVerify_WithApiKeySecret_ReturnsSuccess` proving genuine secret-agnostic generalization); `ConsumerDependencyGraphTests` updated to renamed types; `01.Core/README.md` hashing section rewritten with password + API-key usage side by side; re-packed `SharedKernel.Cryptography.2.0.0` to local feed; consumer-verify re-run (42/42 passing) confirming Primitives+Configuration transitive chain still resolves; `SK.01.WO034` now fully `●` (4/4); Package Board entry for `SharedKernel.Cryptography` restored to `Published`/`●` at `2.0.0` (core-phase-implementer)
+- [2026-07-01] P-230 processed (WO-038) — added `SK.01.P230` phase key and 8 new tasks (D-26/D-27 design, C-39/C-40 implementation, T-29/T-30 tests, DO-12/DO-13 docs) for `IHasSuccessFlag` zero-member marker interface (implemented by `Result<T>` and `Result`) and `IResultOfT<T>` typed interface (implemented by `Result<T>` only); both contracts are AOT-clean by construction — no `[RequiresUnreferencedCode]`, no reflection, no Expression trees; purpose: unblock `05.Application.Behaviors` from reflection-based outcome detection in `LoggingBehavior` and `Expression`-compiled `FailureResponseFactory`; additive-only, no existing `Result<T>` or `Result` member signatures change; total tasks now 141 (core-arch-planner, WO-038)
+- [2026-07-02] D-26/D-27/C-39/C-40/T-29/T-30/DO-12/DO-13 → ● in SK.01.P230 — IHasSuccessFlag and IResultOfT<T> implemented, tested, and documented; 56/56 tests passing (state-map-phase)

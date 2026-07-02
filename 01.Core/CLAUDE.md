@@ -43,7 +43,23 @@ All six target `net10.0`. Test sub-folders live inside each project folder (neve
 ### `SharedKernel.Primitives` — public surface
 
 ```
+IHasSuccessFlag  (public interface — zero members)
+    — implemented by both Result<T> and Result (non-generic)
+    — purpose: pipeline behaviors use `response is IHasSuccessFlag f && !f.IsSuccess` to check outcome
+      without reflection or dynamic; fully AOT-clean, no [RequiresUnreferencedCode] annotation
+    — carries no properties: callers check IsSuccess/IsFailure on the concrete type after the cast
+
+IResultOfT<T>  (public interface — implemented by Result<T> only)
+    .IsSuccess                                             → bool
+    .IsFailure                                             → bool
+    .Value                                                 → T   (throws InvalidOperationException if failure)
+    — purpose: enables `where TResponse : IResultOfT<TResponse>` generic constraint in pipeline behaviors
+      so FailureResponseFactory-style construction is a direct interface call — zero reflection,
+      zero Expression tree compilation, AOT-clean
+    — Result (non-generic) does NOT implement this interface (it carries no typed value payload)
+
 Result<T>  (sealed class — not struct; zero-value problem with generic struct payloads)
+    implements IHasSuccessFlag, IResultOfT<T>
     .Success(T value)                                      → Result<T>
     .Failure(Error error)                                  → Result<T>
     .IsSuccess                                             → bool
@@ -54,6 +70,7 @@ Result<T>  (sealed class — not struct; zero-value problem with generic struct 
     implicit operator Result<T>(Error error)               → Result<T>.Failure
 
 Result  (non-generic, readonly struct — void operations; no typed value payload)
+    implements IHasSuccessFlag
     .Success()                                             → Result
     .Failure(Error error)                                  → Result
     implicit operator Result(Error error)                  → Result.Failure
@@ -338,6 +355,10 @@ AddSharedKernelCryptography(IConfiguration configuration)
 
 ## Implementation Rules
 
+- `IHasSuccessFlag` is a **zero-member marker interface** — it must never grow properties or methods. Its sole purpose is `is IHasSuccessFlag` identity checks in pipeline behaviors; any behavioral addition would couple it to a specific consumer concern.
+- `IResultOfT<T>` exposes **exactly** `IsSuccess`, `IsFailure`, and `Value` — the minimum surface needed for reflection-free `FailureResponseFactory`-style construction. It must never expose `.Error` (that would replicate the full `Result<T>` surface and encourage bypassing the concrete type).
+- Neither `IHasSuccessFlag` nor `IResultOfT<T>` may carry a `[RequiresUnreferencedCode]` annotation — the AOT-clean guarantee is non-negotiable. If any future change would require such an annotation, redesign instead.
+- `Result` (non-generic readonly struct) implements `IHasSuccessFlag` but must **never** implement `IResultOfT<T>` — it carries no typed value payload and the interface's `Value` property would be unsound.
 - `SharedKernel.Primitives` has **zero NuGet dependencies** — pure C# only.
 - `SharedKernel.Guards` has **zero NuGet dependencies** — references only `SharedKernel.Primitives` and `SharedKernel.Core`.
 - `Result<T>` is a **sealed class** (not a struct) — the zero-value problem with generic struct payloads makes struct unsound at scale.
@@ -398,6 +419,9 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 
 ## AOT Compatibility
 
+- `IHasSuccessFlag` and `IResultOfT<T>` are pure interface declarations — no reflection, no attributes, no generic constraints that require dynamic dispatch. AOT-safe by construction.
+- `Result<T>` and `Result` implement `IHasSuccessFlag` via normal C# interface implementation — no dynamic casting, no runtime type lookup needed. Callers use `is IHasSuccessFlag` pattern matching, which is a static IL `isinst` instruction, fully AOT-compatible.
+- `IResultOfT<T>` is used as a generic constraint (`where TResponse : IResultOfT<TResponse>`) in `05.Application` pipeline behaviors — generic constraints are resolved at JIT/AOT compile time, not at runtime via reflection.
 - `Result<T>`, `Result`, `Error`, `ValidationResult`, `ValidationResult<T>` are sealed classes/records — no reflection, fully AOT-safe.
 - `ErrorCodes` is a static class of string constants — no runtime lookup, fully AOT-safe.
 - `SmartEnum` base uses a static `IReadOnlyList<TEnum>` built at type-initialization — no reflection in value lookup.
@@ -417,7 +441,7 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 ## Test Rules
 
 - Unit tests for each package live in the nested `.Tests/` folder inside that package's folder.
-- `SharedKernel.Primitives.Tests/` — Result, Error, IClock, SmartEnum
+- `SharedKernel.Primitives.Tests/` — Result, Error, IClock, SmartEnum, IHasSuccessFlag, IResultOfT\<T\>
 - `SharedKernel.Core.Tests/` — exceptions, railway extensions, BCL extensions
 - `SharedKernel.Guards.Tests/` — guard functional path (Against.*), guard throw path (Throw.*), boundary theories
 - `SharedKernel.Configuration.Tests/` — ValidatedOptions eager validation
@@ -446,3 +470,4 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 - [2026-06-26] WO-033 closed (P-208, P-209) — full Cryptography unit-test coverage (58/58) confirmed; XML docs verified complete with zero warnings under `GenerateDocumentationFile`; NuGet metadata added matching the Guards convention; packed to the local feed; consumer-verify extended with 5 tests proving the `Primitives`+`Configuration` transitive chain resolves end-to-end through `AddSharedKernelCryptography`. No new types, interfaces, or DI shapes introduced — docs/packaging-only closeout. All six `01.Core` packages now `Published` (core-phase-implementer)
 - [2026-06-26] WO-034 (P-210) applied — locked the rename of the password-hashing surface to a secret-agnostic contract: `IPasswordHasher` → `IOneWayHasher`, `Pbkdf2PasswordHasher` → `Pbkdf2OneWayHasher`, `PasswordVerificationResult` → `HashVerificationResult`; `Hash(string password)`/`Verify(string hash, string password)` → `Hash(string secret)`/`Verify(string hash, string secret)`. Same PBKDF2-HMACSHA256 mechanism, self-describing output, and rehash-needed detection — naming and parameter-vocabulary change only. `AddSharedKernelCryptography` registration updated to the renamed interface/implementation, same singleton lifetime. New rule added: this contract must never regain domain-specific vocabulary. Package version bumps to `2.0.0` (breaking public interface rename) at P-213 closeout (arch-lead, WO-034)
 - [2026-06-29] WO-034 closed (P-211, P-212, P-213) — mechanical rename executed across all production `.cs` files (0 warnings/0 errors build); `SharedKernel.Cryptography.Tests` updated to the renamed contract plus a new `Hash_ThenVerify_WithApiKeySecret_ReturnsSuccess` test proving genuine secret-agnostic generalization (59/59 passing); `SharedKernel.Consumer.Tests/ConsumerDependencyGraphTests.cs` updated to `IOneWayHasher`/`HashVerificationResult` (42/42 consumer tests passing, confirming the published `2.0.0` package's Primitives+Configuration transitive chain resolves); `01.Core/README.md` hashing section rewritten showing password and API-key usage side by side. No new types or DI shapes — pure execution of the P-210 design. `SharedKernel.Cryptography` re-packed and published to the local feed at `2.0.0` (core-phase-implementer)
+- [2026-07-01] P-230 applied (WO-038) — added `IHasSuccessFlag` zero-member marker interface (implemented by `Result<T>` and `Result`) and `IResultOfT<T>` typed interface (implemented by `Result<T>` only, exposing `IsSuccess`/`IsFailure`/`Value`); both are AOT-clean by construction with no `[RequiresUnreferencedCode]` annotation; purpose: unblock `05.Application.Behaviors` from reflection-based outcome detection (`LoggingBehavior`) and `Expression`-compiled `FailureResponseFactory`; additive-only — no existing `Result<T>` or `Result` member signatures change; interface contracts, AOT notes, implementation rules, and test rules updated in this brain; 8 tasks added to `01.Core/state-map.md` under `SK.01.P230` (core-arch-planner, WO-038)

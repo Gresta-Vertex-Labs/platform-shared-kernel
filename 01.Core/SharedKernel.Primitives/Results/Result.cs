@@ -17,7 +17,7 @@ namespace SharedKernel.Primitives.Results;
 /// of state.
 /// </para>
 /// </remarks>
-public sealed class Result<T>
+public sealed class Result<T> : IHasSuccessFlag, IResultOfT<T>
 {
     private readonly T? _value;
     private readonly Errors.Error _error;
@@ -81,7 +81,7 @@ public sealed class Result<T>
 /// problem that affects <see cref="Result{T}"/> does not apply. Use this type for operations that
 /// have no meaningful return value on success (e.g., command handlers, side-effecting operations).
 /// </remarks>
-public readonly struct Result
+public readonly struct Result : IHasSuccessFlag
 {
     private readonly Errors.Error _error;
 
