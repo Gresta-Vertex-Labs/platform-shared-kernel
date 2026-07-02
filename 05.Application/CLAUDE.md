@@ -6,7 +6,9 @@ The MediatR-based CQRS plumbing layer. Every command, query, streaming query, do
 
 > **Local-seam bridging is the load-bearing pattern in this domain.** `TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), and `IdempotentCommandBehavior` (`IIdempotencyKeyStore`) each define a minimal interface owned by this package, never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging` respectively). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied three times, not three different patterns.
 >
-> **WO-036 status (2026-06-30): design-only.** `TracingBehavior`, the streaming query vocabulary (`IStreamQuery<TResponse>`/`IStreamQueryHandler<,>`), `ResilienceBehavior`, `CacheInvalidationBehavior`, and the reusable pipeline test harness are documented below as the target design but are **not yet implemented** — see `05.Application/state-map.md` Design phase (D-11..D-25) for current status before treating any WO-036 type as available in code.
+> **WO-036 status (2026-06-30): fully implemented.** `TracingBehavior`, the streaming query vocabulary (`IStreamQuery<TResponse>`/`IStreamQueryHandler<,>`), `ResilienceBehavior`, `CacheInvalidationBehavior`, the reusable pipeline test harness, and all WO-036 tests (T-13..T-18) are `●` complete. Docs/Published phases remain pending — see `05.Application/state-map.md`.
+>
+> **WO-038 status (2026-07-02): Core and Tests complete.** P-231 (bug fixes), P-232 (contract evolution), P-233 (parallel dispatch + fire-and-forget), and P-234 (streaming pipeline behaviors) are all fully implemented (C-30..C-50 ●) and tested (T-19..T-32 ●, 120 tests passing). Docs/Published phases remain pending — see `05.Application/state-map.md`.
 
 Philosophy: **MediatR-native. Result-returning. Behavior-composable. Zero infrastructure leakage.**
 
@@ -22,8 +24,8 @@ Philosophy: **MediatR-native. Result-returning. Behavior-composable. Zero infras
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Application` | `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>`, `ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>`, `IStreamQuery<TResponse>`, `IStreamQueryHandler<,>`, `IDomainEventHandler<TDomainEvent>`, `DomainEventNotification<TDomainEvent>`, `MediatRDomainEventDispatcher` — the MediatR vocabulary (including the streaming-query vocabulary, WO-036) and the domain-event-to-MediatR bridge | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Domain`, `MediatR` |
-| `SharedKernel.Application.Behaviors` | `ValidationBehavior<,>`, `LoggingBehavior<,>`, `MetricsBehavior<,>`, `TracingBehavior<,>` (WO-036), `TransactionBehavior<,>` + `IUnitOfWork`, `CachingBehavior<,>` + `ICacheableQuery<TResponse>`, `CacheInvalidationBehavior<,>` + `IInvalidatesCache` (WO-036), `AuthorizationBehavior<,>` + `IAuthorizationContext`/`IAuthorizeRequest`, `IdempotentCommandBehavior<,>` + idempotency seam/`IIdempotentRequest`, `ResilienceBehavior<,>` + `IRetryableRequest` (WO-036) — opt-in MediatR pipeline behaviors (ten total once WO-036 lands) | `SharedKernel.Application`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, `MediatR`, `FluentValidation`, Polly v8 resilience pipeline (WO-036, see Technology Stack) |
+| `SharedKernel.Application` | `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>`, `ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>`, `IStreamQuery<TResponse>`, `IStreamQueryHandler<,>`, `IDomainEventHandler<TDomainEvent>`, `DomainEventNotification<TDomainEvent>`, `MediatRDomainEventDispatcher` + `MediatRDomainEventDispatcherOptions` (WO-038 parallel dispatch), `IFireAndForgetCommand` (WO-038) — the MediatR vocabulary (including the streaming-query vocabulary, WO-036) and the domain-event-to-MediatR bridge | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Domain`, `MediatR` |
+| `SharedKernel.Application.Behaviors` | `ValidationBehavior<,>`, `LoggingBehavior<,>`, `MetricsBehavior<,>`, `TracingBehavior<,>`, `TransactionBehavior<,>` + `IUnitOfWork`, `CachingBehavior<,>` + `ICacheableQuery<TResponse>`, `CacheInvalidationBehavior<,>` + `IInvalidatesCache` + `InvalidateOnlyOnSuccess` opt-in flag (WO-038), `AuthorizationBehavior<,>` + `IAuthorizationContext` (multi-requirement, WO-038) / `IAuthorizeRequest` (AllOf/AnyOf, WO-038), `IdempotentCommandBehavior<,>` + idempotency seam/`IIdempotentRequest`, `ResilienceBehavior<,>` + `IRetryableRequest`, `FireAndForgetGuardBehavior<,>` + `IFireAndForgetDispatcher` + `FireAndForgetOptions` + `FireAndForgetBackgroundConsumer` (WO-038), streaming behaviors: `StreamLoggingBehavior<,>`, `StreamMetricsBehavior<,>`, `StreamTracingBehavior<,>`, `StreamValidationBehavior<,>`, `StreamAuthorizationBehavior<,>` (WO-038, `IStreamPipelineBehavior<,>`) — opt-in MediatR pipeline behaviors (ten unary + five streaming once WO-038 lands) | `SharedKernel.Application`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, `MediatR`, `FluentValidation`, Polly v8 resilience pipeline (see Technology Stack) |
 
 Both packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`). Both production `.csproj` files set `GenerateDocumentationFile=true` and `TreatWarningsAsErrors=true` (matching `06.Persistence`/`07.Messaging` convention) so a missing XML doc comment on any public member (CS1591) or an unresolved `<see cref="..."/>` (CS1574) fails the build — doc coverage is enforced mechanically, not just audited once at Docs phase.
 
@@ -92,7 +94,7 @@ IQueryHandler<TQuery, TResponse>  : IRequestHandler<TQuery, Result<TResponse>>
           boundary type only (WO-026 P-166/167); this layer returns Result<T> exclusively.
 ```
 
-#### Streaming query vocabulary (`Streaming/`) — WO-036, design-only
+#### Streaming query vocabulary (`Streaming/`) — WO-036, implemented
 
 ```text
 IStreamQuery<TResponse>  : IStreamRequest<TResponse>
@@ -119,16 +121,15 @@ IStreamQueryHandler<TQuery, TResponse>  : IStreamRequestHandler<TQuery, TRespons
           IStreamQueryHandler<ExportOrdersStreamQuery, OrderRow>) instead of the less informative
           IStreamRequestHandler<ExportOrdersStreamQuery, OrderRow>.
 
-NO PIPELINE BEHAVIOR COVERAGE (explicit, not an oversight): none of this domain's ten pipeline behaviors
-apply to IStreamQuery<TResponse> as of WO-036. ValidationBehavior<TRequest,TResponse>'s constraint
-(TRequest : IRequest<TResponse>) does not match IStreamRequest<TResponse> — MediatR treats unary and
-streaming requests as two separate generic hierarchies with no shared base. Logging/Metrics/Tracing/
-Caching/Authorization/etc. would each need a SEPARATE streaming-shaped sibling behavior
-(IPipelineBehavior<,> has no streaming equivalent in MediatR 12.4.x; that is MediatR's own
-IStreamPipelineBehavior<,>, a distinct interface this domain has not yet adopted). Extending any behavior
-to streaming is an explicit, deliberate FUTURE phase — never silently assumed to already work just because
-the unary behavior exists. A service consuming IStreamQuery<TResponse> today gets zero cross-cutting
-coverage (no logging, no metrics, no validation) unless and until that future phase ships.
+STREAMING PIPELINE BEHAVIOR COVERAGE (WO-038, P-234, implemented): five IStreamPipelineBehavior<,>
+implementations now cover the streaming path — StreamLoggingBehavior, StreamMetricsBehavior,
+StreamTracingBehavior, StreamValidationBehavior, and StreamAuthorizationBehavior — registered via
+ApplicationBehaviorsBuilder.AddStreamingBehaviors(). Transaction, Caching, CacheInvalidation,
+Idempotency, and Resilience remain explicitly excluded (read-only-by-contract, stream-materialisation
+unsound, retry-after-partial-consumption undefined — see Streaming Pipeline Behaviors section below).
+The five unary behaviors (Validation, etc.) do NOT apply to IStreamQuery<TResponse> — MediatR treats
+unary and streaming requests as two separate generic hierarchies (IRequest<> vs IStreamRequest<>);
+this is why the five separate streaming behaviors were needed.
 ```
 
 #### Domain event bridge (`DomainEvents/`)
@@ -176,13 +177,40 @@ MediatRDomainEventDispatcher  (sealed class, implements IDomainEventDispatcher f
           and calls IPublisher.Publish(notification, ct).
 ```
 
+#### Parallel dispatch options (`DomainEvents/`) — WO-038, P-233
+
+```text
+MediatRDomainEventDispatcherOptions  (options class)
+    .ParallelDispatch                                               → bool  (default false)
+    NOTE: When false (default), DispatchAsync publishes events serially in list order — each
+          IPublisher.Publish awaited before the next begins. Serial is the safe default: events sharing
+          an ordering dependency (e.g. domain-event A must be observed before domain-event B) are
+          correctly sequenced.
+          When true, DispatchAsync publishes all events concurrently via Task.WhenAll. All events are
+          dispatched even if early ones fault — exceptions from concurrent dispatches are collected and
+          rethrown as an AggregateException after all dispatches complete (not after the first fault).
+          DOCUMENTED CONSTRAINT: parallel dispatch is only valid for independently-observable events with
+          no ordering dependency between them. Opting in with ordered events is a documented misuse — not
+          mechanically prevented (no ordering declaration on IDomainEvent), so code review must catch it.
+          Configured via AddSharedKernelApplication(Action<MediatRDomainEventDispatcherOptions>? configure)
+          at the composition root — the parameterless overload retains the serial default.
+```
+
 #### DI extensions for `SharedKernel.Application` (`Extensions/`)
 
 ```text
 AddSharedKernelApplication(IServiceCollection services)            → IServiceCollection
-    — Registers IDomainEventDispatcher → MediatRDomainEventDispatcher (scoped).
+    — Registers IDomainEventDispatcher → MediatRDomainEventDispatcher (scoped) with default serial
+      dispatch (MediatRDomainEventDispatcherOptions.ParallelDispatch = false).
     — Does NOT call services.AddMediatR(...) — the consuming service owns MediatR registration and
       assembly scanning (RegisterServicesFromAssembly). This extension only adds the dispatcher bridge.
+
+AddSharedKernelApplication(IServiceCollection services, Action<MediatRDomainEventDispatcherOptions>? configure)
+                                                                   → IServiceCollection   (WO-038, P-233)
+    — Overload that accepts an optional options delegate, e.g.:
+        services.AddSharedKernelApplication(opts => opts.ParallelDispatch = true);
+    — When configure is null or omitted, behavior is identical to the parameterless overload (serial
+      dispatch, same default). Never breaks existing call sites.
 
 AddDomainEventHandler<TDomainEvent, THandler>(IServiceCollection services)   → IServiceCollection
     where TDomainEvent : IDomainEvent
@@ -221,11 +249,16 @@ ValidationBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBeha
 ```text
 LoggingBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavior<TRequest, TResponse>)
     where TRequest : IRequest<TResponse>
-    NOTE: Injects ILogger<TRequest>. Logs Information at start ("Handling {RequestName}") and at successful
-          completion ("Handled {RequestName} in {ElapsedMilliseconds}ms"), timed via
-          Stopwatch.GetTimestamp/GetElapsedTime (no Stopwatch allocation). On exception: logs Error with
-          the exception and elapsed time, then rethrows unchanged — never swallows, mirroring
-          07.Messaging's ConsumerBase.Consume log-then-rethrow contract.
+    NOTE: Injects ILogger<TRequest>. Logs Information at start ("Handling {RequestName}"), timed via
+          Stopwatch.GetTimestamp/GetElapsedTime (no Stopwatch allocation).
+          Post-handler log level is response-aware (WO-038, P-232, depends on P-230/IHasSuccessFlag):
+            - Response is IHasSuccessFlag with IsSuccess == false → logs at Warning ("Handled {RequestName}
+              with failure in {ElapsedMilliseconds}ms") so operations teams can alert on failure rates
+              without sifting through Information noise.
+            - Response is IHasSuccessFlag with IsSuccess == true, or response does not implement
+              IHasSuccessFlag → logs at Information ("Handled {RequestName} in {ElapsedMilliseconds}ms").
+          On exception: logs Error with the exception and elapsed time, then rethrows unchanged — never
+          swallows, mirroring 07.Messaging's ConsumerBase.Consume log-then-rethrow contract.
           Does NOT log request or response payloads by default (PII risk in command/query parameters) —
           opt-in payload logging is a future capability, not part of this phase.
 ```
@@ -250,11 +283,14 @@ ApplicationDiagnostics  (internal static class)
 MetricsBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavior<TRequest, TResponse>)
     where TRequest : IRequest<TResponse>
     NOTE: Records ApplicationDiagnostics.RequestDuration exactly once per request, tagged with
-          request.name = typeof(TRequest).Name, via a try/finally around next() so the measurement is
-          recorded whether the inner pipeline succeeds, returns a Result.Failure, or throws.
+          request.name = typeof(TRequest).FullName ?? typeof(TRequest).Name (WO-038, P-231 — prevents
+          key collisions when two assemblies define a request type with the same short name), via a
+          try/finally around next() so the measurement is recorded whether the inner pipeline succeeds,
+          returns a Result.Failure, or throws. Same FullName convention applies to LoggingBehavior and
+          TracingBehavior tag construction.
 ```
 
-#### Tracing (`Tracing/`) — WO-036, design-only
+#### Tracing (`Tracing/`) — WO-036, implemented
 
 ```text
 TracingBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavior<TRequest, TResponse>)
@@ -264,7 +300,7 @@ TracingBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavio
           and both bracket next() in a try/finally-equivalent shape. Mirrors 07.Messaging's
           ConsumerBase.Consume/MassTransitEventPublisher.Publish shape exactly:
               using var activity = ApplicationDiagnostics.ActivitySource.StartActivity("Request.Handle");
-              activity?.SetTag("request.name", typeof(TRequest).Name);
+              activity?.SetTag("request.name", typeof(TRequest).FullName ?? typeof(TRequest).Name);
           The activity is started before next() and disposed (via `using`) after, regardless of success,
           Result.Failure, or thrown exception — `using var` guarantees disposal even when next() throws, no
           explicit try/finally needed (StartActivity already returns null if no listener is registered, and
@@ -283,10 +319,13 @@ IUnitOfWork  (interface)
           SharedKernel.Persistence.Abstractions.IUnitOfWork. This package ships only the interface; no
           implementation. Bridging options for the consuming service (both legal under the layering rules
           since 06.Persistence may reference 05.Application):
-            (a) a future 06.Persistence work order has EfUnitOfWork additionally implement this interface
-                directly, or
-            (b) the composition root registers a one-line scoped adapter delegating to
+            (a) SHIPPED (P-228): EfUnitOfWork in 06.Persistence.EfCore additionally implements this
+                interface directly. Register via EfCorePersistenceBuilder.WithApplicationTransactionBehavior()
+                — both IUnitOfWork interfaces resolve the SAME scoped EfUnitOfWork instance per DI scope.
+                No hand-written adapter needed. This is the recommended path.
+            (b) The composition root registers a one-line scoped adapter delegating to
                 SharedKernel.Persistence.Abstractions.IUnitOfWork (see DI Registration below).
+                Use this fallback when not using EfUnitOfWork (e.g., custom persistence provider).
 
 TransactionBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavior<TRequest, TResponse>)
     where TRequest : ICommandBase, IRequest<TResponse>
@@ -329,7 +368,7 @@ CachingBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavio
           Pipeline Composition below).
 ```
 
-#### Cache Invalidation (`CacheInvalidation/`) — WO-036, design-only; the write-side counterpart to Caching above
+#### Cache Invalidation (`CacheInvalidation/`) — WO-036, implemented; the write-side counterpart to Caching above
 
 ```text
 IInvalidatesCache  (interface)
@@ -349,56 +388,74 @@ IInvalidatesCache  (interface)
 CacheInvalidationBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavior<TRequest, TResponse>)
     where TRequest : ICommandBase, IInvalidatesCache, IRequest<TResponse>
     NOTE: Constrained to ICommandBase ONLY, mirroring TransactionBehavior/IdempotentCommandBehavior's exact
-          constraint shape — never applies to queries (a DI-level fact). Calls next() first; only on success
-          (the inner pipeline returned without throwing — same "did not fault" signal TransactionBehavior
-          uses, NOT an inspection of Result.IsSuccess/IsFailure, for the identical reason TransactionBehavior
-          does not inspect it: a Result.Failure is a valid, deliberate handler outcome, and whatever the
-          handler already staged or didn't stage is the handler's own decision) does it call
-          ICacheService.RemoveAsync(key, ct) once per declared CacheKeysToInvalidate entry (and/or
-          RemoveByTagAsync per declared tag). NEVER calls removal on a thrown exception — a faulted handler
-          mutated nothing (or its mutation never committed, since this behavior runs after
-          TransactionBehavior — see Pipeline Composition below), so there is nothing to evict. Zero direct
-          reference to SharedKernel.Caching.FusionCache/SharedKernel.Caching.Redis or any concrete provider —
-          SharedKernel.Caching.Abstractions only, the exact same reference shape CachingBehavior already
-          established. Positioned innermost, immediately after TransactionBehavior — eviction must follow a
-          CONFIRMED commit, never a speculative one; running invalidation before the transaction commits
-          risks evicting a cache entry for a mutation that ultimately rolled back.
+          constraint shape — never applies to queries (a DI-level fact). Calls next() first; only on a
+          non-faulted outcome (the inner pipeline returned without throwing — same "did not fault" signal
+          TransactionBehavior uses) does it call ICacheService.RemoveAsync(key, ct) once per declared
+          CacheKeysToInvalidate entry (and/or RemoveByTagAsync per declared tag).
+          DEFAULT STANCE — ALWAYS INVALIDATE ON NON-THROW (documented, not an oversight): a Result.Failure
+          from the handler STILL triggers cache eviction in the default mode. This is deliberate: the
+          behavior mirrors TransactionBehavior's "do not inspect Result.IsSuccess/IsFailure" principle —
+          a Result.Failure is a valid, deliberate handler outcome, and whether to stage a mutation before
+          returning failure is the handler's own decision. Operations teams reading the code must not assume
+          a Result.Failure prevents eviction; it does not by default.
+          OPT-IN STRICT MODE (WO-038, P-231): set InvalidateOnlyOnSuccess = true on the behavior's options
+          to additionally gate eviction on IHasSuccessFlag.IsSuccess (requires P-230 IHasSuccessFlag
+          available in TResponse). Default is false (always-invalidate-on-non-throw) for backward
+          compatibility. This flag does NOT change the thrown-exception path — NEVER calls removal on a
+          thrown exception regardless of the flag, since a faulted handler mutated nothing (or its mutation
+          never committed, since this behavior runs after TransactionBehavior).
+          Zero direct reference to SharedKernel.Caching.FusionCache/SharedKernel.Caching.Redis or any
+          concrete provider — SharedKernel.Caching.Abstractions only. Positioned innermost, immediately
+          after TransactionBehavior — eviction must follow a CONFIRMED commit, never a speculative one.
 ```
 
 #### Authorization (`Authorization/`)
 
 ```text
 IAuthorizationContext  (interface — local seam, owned by this package)
-    .IsAuthorizedAsync(string requirement, CancellationToken ct)     → Task<bool>
+    .IsAuthorizedAsync(string requirement, CancellationToken ct)                   → Task<bool>
+    .AllOf(IEnumerable<string> requirements, CancellationToken ct)                 → Task<bool>  (WO-038, P-232)
+    .AnyOf(IEnumerable<string> requirements, CancellationToken ct)                 → Task<bool>  (WO-038, P-232)
     NOTE: This is NOT SharedKernel.Security.Abstractions.IUserContext, and this package carries no project
-          reference to 12.Security — the layering ceiling for 05.Application is 01–04. Exposes only the
-          minimal shape AuthorizationBehavior needs ("does the current caller satisfy this requirement").
+          reference to 12.Security — the layering ceiling for 05.Application is 01–04. Exposes the minimal
+          shape AuthorizationBehavior needs.
+          MULTI-REQUIREMENT EVOLUTION (WO-038, P-232): AllOf evaluates every requirement and returns true
+          only if ALL pass — short-circuits on the first failure. AnyOf evaluates requirements in order and
+          returns true as soon as ONE passes — short-circuits on the first success. IsAuthorizedAsync
+          remains as the single-requirement convenience (equivalent to AllOf([ requirement ])). Breaking
+          change from the original P-217 single-method contract — acceptable since these types are new and
+          no downstream consumer has yet adopted them.
           The consuming service bridges this seam to its real IUserContext/ITenantProvider at the
           composition root — the EXACT same bridging pattern TransactionBehavior's local IUnitOfWork
-          already established for 06.Persistence.Abstractions.IUnitOfWork. requirement is an opaque string
-          (permission/policy name) whose meaning is entirely owned by the consuming service's bridge
-          implementation — this package never interprets it.
+          already established for 06.Persistence.Abstractions.IUnitOfWork. Requirement strings are opaque
+          (permission/policy names) whose meaning is entirely owned by the consuming service's bridge
+          implementation — this package never interprets them.
 
-IAuthorizeRequest  (interface)
-    .Requirement                                                    → string
+IAuthorizeRequest  (interface — WO-038, P-232 evolution)
+    .AllOfRequirements                                              → IReadOnlyCollection<string>
+    .AnyOfRequirements                                              → IReadOnlyCollection<string>
+    .Requirement                                                    → string  (convenience; equivalent to AllOfRequirements = [ Requirement ])
     NOTE: Marker a command or query implements to declare it requires an authorization check before its
-          handler runs. The requirement string is whatever minimal shape (permission/policy name) the
-          consuming service's IAuthorizationContext bridge understands. Requests that do NOT implement this
-          marker skip AuthorizationBehavior entirely — a DI/runtime fact (the behavior never resolves into
-          that request's pipeline), not a config flag or an if-check inside the behavior. Can be implemented
-          by both commands and queries — unlike Transaction/Idempotency, authorization is not commands-only;
-          queries can require permission checks too (e.g. "view another tenant's data").
+          handler runs. MULTI-REQUIREMENT SHAPES (WO-038): AllOfRequirements declares a set where ALL must
+          pass (AND composition); AnyOfRequirements declares a set where AT LEAST ONE must pass (OR
+          composition). Both collections default to empty — only the non-empty collection(s) are evaluated.
+          The original single Requirement string remains as a convenience property (a default-interface-
+          member or explicit implementation equivalent to AllOfRequirements = [ Requirement ]). Requests
+          that do NOT implement this marker skip AuthorizationBehavior entirely — a DI/runtime fact, not a
+          config flag. Can be implemented by both commands and queries — unlike Transaction/Idempotency,
+          authorization is not commands-only; queries can require permission checks too.
 
 AuthorizationBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavior<TRequest, TResponse>)
     where TRequest : IAuthorizeRequest, IRequest<TResponse>
-    NOTE: Calls IAuthorizationContext.IsAuthorizedAsync(request.Requirement, ct). On false, short-circuits
-          WITHOUT calling next() and returns Result.Failure(Error.Unauthorized(...)) — for both Result and
-          Result<T> response shapes — NEVER throws. This is consistent with this domain's existing rule that
+    NOTE: Evaluates IAuthorizationContext.AllOf(request.AllOfRequirements, ct) first (short-circuit on
+          first failure), then IAuthorizationContext.AnyOf(request.AnyOfRequirements, ct) (short-circuit
+          on first pass). Both are no-ops on empty collections. On any failure, short-circuits WITHOUT
+          calling next() and returns Result.Failure(Error.Unauthorized(...)) — for both Result and Result<T>
+          response shapes — NEVER throws. This is consistent with this domain's existing rule that
           exceptions are reserved for ValidationException (the one deliberate behavior short-circuit) and
-          genuinely unexpected faults; an unauthorized caller is an expected, foreseeable outcome. On true,
-          calls next() and returns its result unchanged. Runs after ValidationBehavior (reject malformed
-          input before spending a permission check) and before CachingBehavior/TransactionBehavior (never
-          let an unauthorized request reach a cache lookup or a mutation).
+          genuinely unexpected faults; an unauthorized caller is an expected, foreseeable outcome. On full
+          pass, calls next() and returns its result unchanged. Runs after ValidationBehavior and before
+          CachingBehavior/TransactionBehavior.
 ```
 
 #### Idempotency (`Idempotency/`)
@@ -414,6 +471,17 @@ IIdempotencyKeyStore  (interface — local seam, owned by this package)
           07.Messaging's IIdempotencyStore uses, or a dedicated table/cache key) and registers it at the
           composition root. This package ships only the interface — no implementation, exactly like the
           IUnitOfWork precedent.
+          FAIL-AND-CONSUME-KEY INVARIANT (WO-038, P-231 — documented, not an oversight):
+          MarkProcessedAsync is called after next() even when the handler returns Result.Failure (a
+          business-rule failure, not a thrown exception). This means a failed command consumes its
+          idempotency key permanently: the client MUST use a new idempotency key to retry after a
+          business-rule failure. A thrown exception (fault) does NOT consume the key — MarkProcessedAsync
+          is only reached when next() returns normally. This asymmetry is intentional:
+            - Fault (exception) → key not consumed, retry with same key is safe.
+            - Failure (Result.Failure) → key consumed, retry requires a new key.
+          Rationale: a Result.Failure represents a deliberate, foreseeable business outcome that reached
+          the handler and was evaluated; retrying with the same key after a business-rule rejection would
+          bypass the duplicate-submission guard rather than correct the underlying business condition.
 
 IIdempotentRequest  (interface)
     .IdempotencyKey                                                 → string
@@ -441,7 +509,7 @@ IdempotentCommandBehavior<TRequest, TResponse>  (sealed class, implements IPipel
           logical operation.
 ```
 
-#### Resilience (`Resilience/`) — WO-036, design-only
+#### Resilience (`Resilience/`) — WO-036, implemented
 
 ```text
 IRetryableRequest  (interface)
@@ -476,6 +544,91 @@ ResilienceBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBeha
           behavior in this domain.
 ```
 
+#### Fire-and-Forget Dispatch (`FireAndForget/`) — WO-038, P-233, implemented
+
+```text
+IFireAndForgetCommand  (interface, extends ICommand — the void-returning, no-TResponse command shape)
+    NOTE: Marker that identifies a command as intended for enqueue-and-forget dispatch via
+          IFireAndForgetDispatcher, NOT direct ISender.Send(). A FireAndForgetGuardBehavior<,>
+          constrained to IFireAndForgetCommand intercepts any ISender.Send call and throws
+          InvalidOperationException with a descriptive message directing the caller to
+          IFireAndForgetDispatcher.EnqueueAsync. Lives in SharedKernel.Application (not .Behaviors)
+          since it is part of the command vocabulary, not a behavior.
+
+IFireAndForgetDispatcher  (interface — in SharedKernel.Application.Behaviors)
+    .EnqueueAsync(IFireAndForgetCommand command, CancellationToken ct)  → ValueTask
+    NOTE: Enqueues the command onto a bounded System.Threading.Channels.Channel(IFireAndForgetCommand)
+          and returns immediately (the caller does NOT await handler completion). The BackgroundService
+          consumer dequeues and executes handlers via IServiceScopeFactory (one scope per command,
+          matching ASP.NET Core's scoped-service-per-request pattern). Never blocks the caller's
+          request-processing thread.
+
+FireAndForgetOptions  (options class)
+    .Capacity                                                           → int  (default 1000)
+    .RejectionPolicy                                                    → FireAndForgetRejectionPolicy  (DropAndLog / Block)
+    NOTE: Configures the bounded channel. DropAndLog silently drops the command and emits a Warning log
+          when the channel is full. Block waits for capacity (can block the caller — use only when the
+          caller's thread can afford to wait). Default is DropAndLog.
+
+FireAndForgetBackgroundConsumer  (sealed class, extends BackgroundService)
+    NOTE: Reads IFireAndForgetCommand instances from the Channel, resolves a new IServiceScope per
+          command, resolves the appropriate IRequestHandler, executes the handler, and catches any
+          exception logging at Error level without stopping the consumer loop or the host. Never re-throws
+          from the consumer loop — an uncaught exception in a handler must not crash the hosted service.
+
+FireAndForgetGuardBehavior<TRequest,TResponse>  (sealed class, IPipelineBehavior<TRequest,TResponse>)
+    where TRequest : IFireAndForgetCommand, IRequest<TResponse>
+    NOTE: Throws InvalidOperationException immediately, never calling next(). Registered as the outermost
+          behavior for IFireAndForgetCommand requests so callers get an immediate, actionable error. Message:
+          "IFireAndForgetCommand implementations must be dispatched via IFireAndForgetDispatcher.EnqueueAsync,
+          not ISender.Send. Register the fire-and-forget dispatcher with
+          ApplicationBehaviorsBuilder.AddFireAndForgetDispatch()."
+```
+
+#### Streaming Pipeline Behaviors (`StreamingBehaviors/`) — WO-038, P-234, implemented; depends on P-232
+
+```text
+NON-APPLICABLE BEHAVIORS (explicit, not an oversight): Transaction, Caching, CacheInvalidation,
+Idempotency, and Resilience are NOT applicable to IStreamQuery<TResponse>:
+  - Transaction/Idempotency/CacheInvalidation are constrained to ICommandBase; streaming queries are
+    read-only by contract and never implement ICommandBase.
+  - Caching IAsyncEnumerable<TResponse> is architecturally unsound: materialising the stream to cache it
+    defeats the constant-memory guarantee and removes the streaming benefit entirely.
+  - Resilience retry on a partially-consumed stream has undefined semantics: the stream position cannot
+    be rewound after the consumer has already received and processed items.
+These exclusions are documented here AND in the XML docs of each non-implemented streaming interface.
+
+StreamLoggingBehavior<TRequest,TResponse>  (sealed class, IStreamPipelineBehavior<TRequest,TResponse>)
+    where TRequest : IStreamRequest<TResponse>
+    NOTE: Logs request entry at Information; first-item latency at Debug; stream-completion at Information;
+          stream-fault (handler throws) at Warning. Uses ILogger<TRequest>.
+
+StreamMetricsBehavior<TRequest,TResponse>  (sealed class, IStreamPipelineBehavior<TRequest,TResponse>)
+    NOTE: Emits ApplicationDiagnostics.RequestDuration from stream-open to stream-close/fault, tagged with
+          request.name = typeof(TRequest).FullName ?? typeof(TRequest).Name and outcome = "streamed" /
+          "faulted". Exactly one measurement per stream lifetime regardless of item count.
+
+StreamTracingBehavior<TRequest,TResponse>  (sealed class, IStreamPipelineBehavior<TRequest,TResponse>)
+    NOTE: Creates an Activity span via ApplicationDiagnostics.ActivitySource.StartActivity("StreamRequest.Handle")
+          covering stream-open to stream-close/fault; tags request.name = typeof(TRequest).FullName ?? ...;
+          same StartActivity/null-safe pattern as TracingBehavior<,>.
+
+StreamValidationBehavior<TRequest,TResponse>  (sealed class, IStreamPipelineBehavior<TRequest,TResponse>)
+    NOTE: Runs IEnumerable<IValidator<TRequest>> validation ONCE at stream-open before the first item is
+          yielded; throws ValidationException (same bridge as ValidationBehavior<,>) without opening the
+          stream if validation fails; no per-item validation; zero validators is a no-op.
+
+StreamAuthorizationBehavior<TRequest,TResponse>  (sealed class, IStreamPipelineBehavior<TRequest,TResponse>)
+    where TRequest : IAuthorizeRequest, IStreamRequest<TResponse>
+    NOTE: Evaluates IAuthorizationContext.AllOf/AnyOf (P-232 multi-requirement shape) ONCE at stream-open;
+          throws an authorization exception without opening the stream if the check fails. IStreamQuery<T>
+          types NOT implementing IAuthorizeRequest never resolve this behavior (DI-level, not a branch).
+
+STREAMING BEHAVIOR ORDER (when AddStreamingBehaviors() is called):
+  Logging → Metrics → Tracing → Validation → Authorization
+  (same positional logic as the unary pipeline's first five steps)
+```
+
 #### DI extensions for `SharedKernel.Application.Behaviors` (`Extensions/`)
 
 ```text
@@ -489,7 +642,7 @@ ApplicationBehaviorsBuilder
           omitted entirely, every request simply skips validation (no-op, not an error).
     .AddLoggingBehavior()
     .AddMetricsBehavior()
-    .AddTracingBehavior()                                          — WO-036, design-only
+    .AddTracingBehavior()
         — No missing-dependency guard needed: ApplicationDiagnostics.ActivitySource is always available
           (BCL static instance), exactly like AddMetricsBehavior()/AddLoggingBehavior() carry no guard.
     .AddTransactionBehavior()
@@ -498,7 +651,7 @@ ApplicationBehaviorsBuilder
     .AddCachingBehavior()
         — Build() throws InvalidOperationException if SharedKernel.Caching.Abstractions.ICacheService is
           not registered when this was called.
-    .AddCacheInvalidationBehavior()                                — WO-036, design-only
+    .AddCacheInvalidationBehavior()
         — Build() reuses the EXACT SAME ICacheService missing-dependency check already written for
           AddCachingBehavior() — not a duplicated guard. Calling only AddCacheInvalidationBehavior() without
           AddCachingBehavior() still requires ICacheService to be registered; the check is keyed on the
@@ -509,15 +662,32 @@ ApplicationBehaviorsBuilder
     .AddIdempotencyBehavior()
         — Build() throws InvalidOperationException if IIdempotencyKeyStore is not registered in
           IServiceCollection when this was called.
-    .AddResilienceBehavior()                                       — WO-036, design-only
+    .AddResilienceBehavior()
         — Build() throws InvalidOperationException if no ResiliencePipelineProvider/ResiliencePipeline is
           registered/supplied when this was called — same missing-dependency guard shape as the other four.
+    .AddFireAndForgetDispatch(Action<FireAndForgetOptions>? configure = null)  — WO-038, P-233, design-only
+        — Registers IFireAndForgetDispatcher → ChannelFireAndForgetDispatcher (singleton; the Channel
+          is process-lifetime state).
+        — Registers FireAndForgetBackgroundConsumer as a hosted service (IHostedService).
+        — Registers FireAndForgetGuardBehavior<,> against the open generic IPipelineBehavior<,> so
+          any ISender.Send(IFireAndForgetCommand) is caught and rejected with a descriptive error.
+        — NOT registered unless this method is called — entirely opt-in.
+    .AddStreamingBehaviors()                                        — WO-038, P-234, design-only
+        — Registers StreamLoggingBehavior<,>, StreamMetricsBehavior<,>, StreamTracingBehavior<,>,
+          StreamValidationBehavior<,>, StreamAuthorizationBehavior<,> against the open generic
+          IStreamPipelineBehavior<,> in the canonical streaming order (Logging → Metrics → Tracing →
+          Validation → Authorization).
+        — Build() guard: if called, verifies IAuthorizationContext is registered (for the streaming
+          Authorization behavior).
+        — DISTINCT from AddBehaviors() — calling neither is valid; calling both registers both unary and
+          streaming behaviors; calling only one registers only that path.
     .Build()                                                       → IServiceCollection
         — Registers only the behaviors that were opted into, ALWAYS in the fixed pipeline order below
           regardless of .AddXBehavior() call order — mirrors 06.Persistence's "platform three interceptors
           always fire first" precedent (non-negotiable ordering, not configurable).
         — Must NOT call services.AddMediatR() — the consuming service already registers MediatR; this
-          builder only appends behaviors via services.AddTransient(typeof(IPipelineBehavior<,>), ...).
+          builder only appends behaviors via services.AddTransient(typeof(IPipelineBehavior<,>), ...) and
+          services.AddTransient(typeof(IStreamPipelineBehavior<,>), ...).
 ```
 
 ---
@@ -526,7 +696,7 @@ ApplicationBehaviorsBuilder
 
 ### Pipeline composition (canonical order)
 
-> **WO-036 status: design-only.** The ten-named-slot order below is the target design recorded for implementation; `TracingBehavior`, `ResilienceBehavior`, and `CacheInvalidationBehavior` are not yet built (see `05.Application/state-map.md` Core phase C-18..C-29). Until WO-036's Core phase lands, the pipeline actually registered by `ApplicationBehaviorsBuilder.Build()` remains the seven-step WO-035 order (Logging → Metrics → Validation → Authorization → Caching → Idempotency → Transaction).
+> **WO-036 and WO-038 Core phases complete (C-18..C-50 ●).** The ten-named-slot unary order below is fully implemented. WO-038 adds `FireAndForgetGuardBehavior<,>` (for fire-and-forget dispatch) and five `IStreamPipelineBehavior<,>` streaming behaviors — none alter the canonical unary order.
 
 ```text
 1.  LoggingBehavior            ← outermost; logs the full pipeline, including validation/auth/resilience failures
@@ -558,7 +728,13 @@ Steps 6 and {7, 8, 9, 10} are mutually exclusive at the request-type level (`ICa
 
 ### Constructing a generic failure response (`AuthorizationBehavior`/`IdempotentCommandBehavior`)
 
-Both `AuthorizationBehavior<TRequest,TResponse>` and `IdempotentCommandBehavior<TRequest,TResponse>` must short-circuit with a failed response of type `TResponse`, where `TResponse` is statically only known to be `IRequest<TResponse>`'s response type — at runtime it is either the non-generic `Result` (struct) or a closed `Result<T>` (sealed class), and there is no shared interface linking the two (adding one to `SharedKernel.Primitives` is out of scope for this domain). `Shared/FailureResponseFactory.cs` (`internal static class FailureResponseFactory`) solves this with `TResponse Create<TResponse>(Error error)`: it special-cases `TResponse == typeof(Result)` directly, and for the `Result<T>` case builds a small `Expression` tree per distinct closed `TResponse` type that performs the implicit `Error → Result<T>` conversion, compiles it once into a `Func<Error,object>`, and caches it in a static `ConcurrentDictionary<Type,Func<Error,object>>` keyed by `TResponse`. This is the **same documented, justified exception** to the platform-wide `MakeGenericMethod`/reflection prohibition already used by `MediatRDomainEventDispatcher` — "build once per concrete `Type`, cache forever, invoke directly thereafter" — except built via `Expression` compilation (the governance rule's own recommended alternative to reflection) rather than `MakeGenericMethod`. It deliberately does **not** use `dynamic`/`Microsoft.CSharp` — that approach was tried and rejected because it pulls in a new NuGet dependency this domain has no other reason to carry and is not AOT/trim-safe. Do not replace this with `dynamic` or raw reflection, and do not duplicate this pattern elsewhere without updating this note — `FailureResponseFactory` is the single chosen answer to "construct an arbitrary `Result`/`Result<T>` failure from an `Error` when `TResponse` is generic," reused by both behaviors.
+Both `AuthorizationBehavior<TRequest,TResponse>` and `IdempotentCommandBehavior<TRequest,TResponse>` must short-circuit with a failed response of type `TResponse`, where `TResponse` is statically only known to be `IRequest<TResponse>`'s response type — at runtime it is either the non-generic `Result` (struct) or a closed `Result<T>` (sealed class).
+
+**Current implementation (pre-P-230/P-232):** `Shared/FailureResponseFactory.cs` (`internal static class FailureResponseFactory`) solves this with `TResponse Create<TResponse>(Error error)`: it special-cases `TResponse == typeof(Result)` directly, and for the `Result<T>` case builds a small `Expression` tree per distinct closed `TResponse` type that performs the implicit `Error → Result<T>` conversion, compiles it once into a `Func<Error,object>`, and caches it in a static `ConcurrentDictionary<Type,Func<Error,object>>` keyed by `TResponse`. This is a documented, justified exception to the platform-wide `MakeGenericMethod`/reflection prohibition — "build once per concrete `Type`, cache forever, invoke directly thereafter" — built via `Expression` compilation (the governance rule's own recommended alternative) rather than `MakeGenericMethod`. It deliberately does **not** use `dynamic`/`Microsoft.CSharp`. An `[RequiresUnreferencedCode]` annotation is applied as a short-term marker pending the P-232 refactor.
+
+**Target implementation (WO-038, P-232, depends on P-230):** Once P-230 ships `IResultOfT<T>` in `SharedKernel.Primitives`, the `Expression.Compile()` path is replaced by a direct generic constraint: the `Result<T>` case calls `IResultOfT<T>.Failure(Error)` directly without an expression tree. The `ConcurrentDictionary` cache and the `[RequiresUnreferencedCode]` annotation are removed. The external call site in `AuthorizationBehavior`/`IdempotentCommandBehavior` is unchanged.
+
+Do not replace the current implementation with `dynamic` or raw reflection. Do not duplicate this pattern elsewhere without updating this note — `FailureResponseFactory` is the single chosen answer to "construct an arbitrary `Result`/`Result<T>` failure from an `Error` when `TResponse` is generic," reused by both behaviors.
 
 ### Hard violations (never do these)
 
@@ -582,13 +758,23 @@ Both `AuthorizationBehavior<TRequest,TResponse>` and `IdempotentCommandBehavior<
 - Constraining `IdempotentCommandBehavior<TRequest,TResponse>` to anything other than `ICommandBase` — idempotency is commands-only, mirroring `TransactionBehavior`'s exact constraint; a query type must never satisfy `IIdempotentRequest`'s applicability.
 - `IdempotentCommandBehavior` calling `next()` more than once for the same request, or calling `MarkProcessedAsync` before `next()` succeeds — a faulted handler must remain safely retryable with the same idempotency key.
 - Reordering the canonical pipeline (currently the seven-step WO-035 order; the ten-named-slot WO-036 order once implemented) without updating the documented positional rationale for every affected step.
-- **(WO-036, design-only)** Hand-rolling a retry/backoff loop inside a handler or behavior now that `ResilienceBehavior` exists as the platform alternative — this extends the existing `System.Random`/`DateTime.UtcNow` prohibition above to retry/backoff specifically; use `IRetryableRequest` + `ApplicationBehaviorsBuilder.AddResilienceBehavior(...)` instead.
-- **(WO-036, design-only)** A command implementing `IRetryableRequest` without also implementing `IIdempotentRequest` — this is the documented, accepted gap in the retry-after-partial-commit hazard resolution (not mechanically enforceable across two independent marker interfaces); code review must catch this, the compiler will not.
-- **(WO-036, design-only)** Folding `TracingBehavior` into `MetricsBehavior` (or vice versa) — they are deliberately separate, single-responsibility behaviors occupying adjacent pipeline positions, not one merged behavior.
-- **(WO-036, design-only)** `CacheInvalidationBehavior` calling `ICacheService.RemoveAsync`/`RemoveByTagAsync` before `TransactionBehavior` has confirmed a commit, or on a thrown exception/`Result.Failure` — invalidation must follow a confirmed commit only; evicting speculatively risks invalidating a cache entry for a mutation that never actually persisted.
-- **(WO-036, design-only)** A query type implementing `IInvalidatesCache`, or a command type implementing `ICacheableQuery<TResponse>` — the read/write caching marker pair remains strictly query-only / command-only respectively, exactly like every other shape-constrained marker in this domain.
-- **(WO-036, design-only)** Wrapping a streamed `IStreamQuery<TResponse>` item in `Result<TResponse>` "for consistency" with the rest of the domain — this is a deliberate, documented deviation; do not silently retrofit the `Result` railway onto the streaming vocabulary.
-- **(WO-036, design-only)** Assuming any of the ten pipeline behaviors apply to `IStreamQuery<TResponse>` without a separate, deliberate extension phase — `ValidationBehavior`'s constraint does not match `IStreamRequest<TResponse>` today, and none of the others have been extended either.
+- **(WO-036)** Hand-rolling a retry/backoff loop inside a handler or behavior now that `ResilienceBehavior` exists as the platform alternative — this extends the existing `System.Random`/`DateTime.UtcNow` prohibition above to retry/backoff specifically; use `IRetryableRequest` + `ApplicationBehaviorsBuilder.AddResilienceBehavior(...)` instead.
+- **(WO-036)** A command implementing `IRetryableRequest` without also implementing `IIdempotentRequest` — this is the documented, accepted gap in the retry-after-partial-commit hazard resolution (not mechanically enforceable across two independent marker interfaces); code review must catch this, the compiler will not.
+- **(WO-036)** Folding `TracingBehavior` into `MetricsBehavior` (or vice versa) — they are deliberately separate, single-responsibility behaviors occupying adjacent pipeline positions, not one merged behavior.
+- **(WO-036)** `CacheInvalidationBehavior` calling `ICacheService.RemoveAsync`/`RemoveByTagAsync` before `TransactionBehavior` has confirmed a commit, or on a thrown exception/`Result.Failure` — invalidation must follow a confirmed commit only; evicting speculatively risks invalidating a cache entry for a mutation that never actually persisted.
+- **(WO-036)** A query type implementing `IInvalidatesCache`, or a command type implementing `ICacheableQuery<TResponse>` — the read/write caching marker pair remains strictly query-only / command-only respectively, exactly like every other shape-constrained marker in this domain.
+- **(WO-036)** Wrapping a streamed `IStreamQuery<TResponse>` item in `Result<TResponse>` "for consistency" with the rest of the domain — this is a deliberate, documented deviation; do not silently retrofit the `Result` railway onto the streaming vocabulary.
+- **(WO-036)** Assuming any of the ten unary pipeline behaviors apply to `IStreamQuery<TResponse>` via IPipelineBehavior<,> — they do not; use the five streaming behaviors (StreamLogging/Metrics/Tracing/Validation/Authorization via AddStreamingBehaviors()) for IStreamPipelineBehavior<,> coverage; Transaction/Caching/CacheInvalidation/Idempotency/Resilience remain explicitly non-applicable to streaming.
+- **(WO-038, P-231)** Using `typeof(TRequest).Name` (short name) for metric/log/trace tag construction — always use `typeof(TRequest).FullName ?? typeof(TRequest).Name` to prevent key collisions when two assemblies in the same host define a request type with the same short name; applies to `MetricsBehavior`, `LoggingBehavior`, `TracingBehavior`, and all WO-038 streaming behavior counterparts.
+- **(WO-038, P-231)** Calling `.AsTask()` on the `ValueTask<TResponse>` returned by `ICacheService.GetOrSetAsync` — `await` the `ValueTask` directly to avoid unconditional `Task` wrapper allocation on L1 synchronous cache hits; `.AsTask()` is a correctness-safe but allocation-wasteful anti-pattern on the hot cache path.
+- **(WO-038, P-231)** Registering `ResilienceBehavior<,>` against a closed generic `ResiliencePipeline<TResponse>` — register and resolve against the non-generic `ResiliencePipeline` keyed by request type name (or caller-supplied policy name); a per-`TResponse`-type registration silently falls back to no-op when the key does not match the exact closed type, which defeats the behavior with no warning.
+- **(WO-038, P-231)** Using `GetMethod(...)!` nullable-suppressed `MethodInfo` resolution in `MediatRDomainEventDispatcher` — the `Publish<T>` method reference must be captured at type-load time via a compile-time delegate binding (e.g. extract `MethodInfo` from a typed delegate instantiation), not deferred via `GetMethod` to the first dispatch call where a rename would produce a silent `NullReferenceException`.
+- **(WO-038, P-232)** Implementing `IAuthorizeRequest` using only the deprecated single-string `Requirement` property for new code — use `AllOfRequirements` / `AnyOfRequirements` (the multi-requirement shape); the single-string form remains as a convenience default-interface-member equivalent, not as the primary design surface.
+- **(WO-038, P-233)** Dispatching an `IFireAndForgetCommand` via `ISender.Send()` — always use `IFireAndForgetDispatcher.EnqueueAsync()`. `FireAndForgetGuardBehavior<,>` will throw `InvalidOperationException` at runtime if `Send()` is attempted; fix it at the call site, not by removing the guard.
+- **(WO-038, P-233)** Registering `FireAndForgetBackgroundConsumer` manually without calling `ApplicationBehaviorsBuilder.AddFireAndForgetDispatch()` — the hosted service, dispatcher, and guard behavior are a unit; registering any one without the others creates a partial, broken configuration; always use `AddFireAndForgetDispatch()`.
+- **(WO-038, P-234)** Registering any of the five streaming behaviors (`StreamLoggingBehavior<,>`, `StreamMetricsBehavior<,>`, `StreamTracingBehavior<,>`, `StreamValidationBehavior<,>`, `StreamAuthorizationBehavior<,>`) individually against `IStreamPipelineBehavior<,>` — always use `AddStreamingBehaviors()` on `ApplicationBehaviorsBuilder` to guarantee correct canonical streaming order.
+- **(WO-038, P-234)** Adding Transaction, Caching, CacheInvalidation, Idempotency, or Resilience behaviors to the streaming path (against `IStreamPipelineBehavior<,>`) — these behaviors are explicitly documented as not applicable to `IStreamQuery<TResponse>` (read-only contract, stream-materialization unsound, retry-after-partial-consumption undefined); see the "NON-APPLICABLE BEHAVIORS" note in the Streaming Pipeline Behaviors section above.
+- **(WO-038, P-234)** Per-item validation inside a streaming behavior — `StreamValidationBehavior<,>` validates the request ONCE at stream-open, never per yielded item; per-item validation would defeat constant-memory streaming guarantees.
 
 ---
 
@@ -604,20 +790,22 @@ services.AddSharedKernelApplication();   // IDomainEventDispatcher -> MediatRDom
 services.AddDomainEventHandler<OrderPlacedDomainEvent, OrderPlacedDomainEventHandler>();
 
 // Opt-in pipeline behaviors — fixed execution order regardless of call order (see Pipeline Composition)
-// WO-036 additions (AddTracingBehavior/AddResilienceBehavior/AddCacheInvalidationBehavior) are
-// design-only as of 2026-06-30 — not yet implemented; shown here for the target end-state shape.
+// WO-038 additions (AddFireAndForgetDispatch / AddStreamingBehaviors) are design-only as of 2026-07-01.
 services
     .AddSharedKernelApplicationBehaviors()
     .AddLoggingBehavior()
     .AddMetricsBehavior()
-    .AddTracingBehavior()          // WO-036, design-only — no missing-dependency guard (BCL ActivitySource)
+    .AddTracingBehavior()          // no missing-dependency guard (BCL ActivitySource)
     .AddValidationBehavior()
     .AddAuthorizationBehavior()    // requires IAuthorizationContext registered
     .AddCachingBehavior()          // requires SharedKernel.Caching.Abstractions.ICacheService registered
-    .AddCacheInvalidationBehavior()// WO-036, design-only — reuses the ICacheService guard above
-    .AddResilienceBehavior()       // WO-036, design-only — requires a ResiliencePipelineProvider registered
+    .AddCacheInvalidationBehavior()// reuses the ICacheService guard above
+    .AddResilienceBehavior()       // requires a ResiliencePipelineProvider<string> registered
     .AddIdempotencyBehavior()      // requires IIdempotencyKeyStore registered
     .AddTransactionBehavior()      // requires SharedKernel.Application.Behaviors.IUnitOfWork registered
+    // WO-038, design-only:
+    .AddFireAndForgetDispatch(opts => opts.Capacity = 500)   // opt-in; registers dispatcher + hosted service + guard behavior
+    .AddStreamingBehaviors()       // opt-in; registers 5 IStreamPipelineBehavior<,> implementations
     .Build();
 
 // Bridging this package's IUnitOfWork to 06.Persistence's concrete IUnitOfWork — composition root only,
@@ -660,12 +848,42 @@ public sealed class GetOrderByIdQueryHandler : IQueryHandler<GetOrderByIdQuery, 
     public Task<Result<OrderDto>> Handle(GetOrderByIdQuery request, CancellationToken ct) { /* ... */ }
 }
 
-// An authorized, idempotent command
+// An authorized, idempotent command — multi-requirement shape (WO-038, P-232, design-only)
+// (the single-string Requirement convenience form remains available as a default-interface-member)
 public sealed record PlaceOrderCommand(string IdempotencyKey, Guid CustomerId, decimal Total)
     : ICommand<Guid>, IAuthorizeRequest, IIdempotentRequest
 {
-    public string Requirement => "orders:create";
+    // AllOf: caller must have BOTH "orders:create" AND "orders:write" to proceed
+    public IReadOnlyCollection<string> AllOfRequirements => ["orders:create", "orders:write"];
+    public IReadOnlyCollection<string> AnyOfRequirements => [];
 }
+
+// A fire-and-forget command (WO-038, P-233, design-only)
+// Never dispatched via ISender.Send() — always via IFireAndForgetDispatcher.EnqueueAsync()
+public sealed record SendWelcomeEmailCommand(Guid UserId) : IFireAndForgetCommand;
+
+public sealed class SendWelcomeEmailCommandHandler : ICommandHandler<SendWelcomeEmailCommand>
+{
+    public async Task<Result> Handle(SendWelcomeEmailCommand request, CancellationToken ct)
+    {
+        // Background execution — caller has already received its HTTP response
+        return Result.Success();
+    }
+}
+
+// Enqueueing a fire-and-forget command from an application service
+public sealed class UserRegisteredDomainEventHandler : IDomainEventHandler<UserRegisteredDomainEvent>
+{
+    private readonly IFireAndForgetDispatcher _dispatcher;
+    public UserRegisteredDomainEventHandler(IFireAndForgetDispatcher dispatcher)
+        => _dispatcher = dispatcher;
+
+    public ValueTask Handle(UserRegisteredDomainEvent domainEvent, CancellationToken ct)
+        => _dispatcher.EnqueueAsync(new SendWelcomeEmailCommand(domainEvent.UserId), ct);
+}
+
+// Parallel domain event dispatch opt-in (WO-038, P-233, design-only)
+services.AddSharedKernelApplication(opts => opts.ParallelDispatch = true);
 
 // (WO-036, design-only) A retryable, idempotent command that also invalidates a cache entry on success —
 // IRetryableRequest is paired with IIdempotentRequest on the SAME command, resolving the retry-after-
@@ -710,7 +928,7 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
 
 - `ICommandBase`, `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>`, `ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>`, `IDomainEventHandler<TDomainEvent>`, `IUnitOfWork`, `ICacheableQuery<TResponse>`, `IAuthorizationContext`, `IAuthorizeRequest`, `IIdempotencyKeyStore`, `IIdempotentRequest`, and (WO-036, design-only) `IStreamQuery<TResponse>`, `IStreamQueryHandler<,>`, `IRetryableRequest`, `IInvalidatesCache` are interfaces — AOT-safe by definition.
 - `DomainEventNotification<TDomainEvent>` is a closed generic sealed record at every call site — AOT-safe.
-- `MediatRDomainEventDispatcher`'s per-event-type dispatch is the one documented `MakeGenericMethod` exception in this domain — cached once per concrete `Type` in a static `ConcurrentDictionary<Type, Delegate>`, not a per-call reflection cost. Identical, already-approved shape to `07.Messaging`'s `MassTransitEventPublisher` bridge.
+- `MediatRDomainEventDispatcher`'s per-event-type dispatch is the one documented `MakeGenericMethod` exception in this domain — cached once per concrete `Type` in a static `ConcurrentDictionary<Type, Delegate>`, not a per-call reflection cost. Identical, already-approved shape to `07.Messaging`'s `MassTransitEventPublisher` bridge. The `Publish<T>` `MethodInfo` must be captured at type-load time via a compile-time delegate binding (WO-038, P-231) rather than a nullable-suppressed `GetMethod(...)!` call deferred to first use.
 - `AddDomainEventHandler<TDomainEvent, THandler>()` is a closed generic at the call site — the consuming service supplies both type arguments at compile time; zero reflection.
 - `ValidationBehavior<,>`, `LoggingBehavior<,>`, `MetricsBehavior<,>`, `TransactionBehavior<,>`, `CachingBehavior<,>`, `AuthorizationBehavior<,>`, `IdempotentCommandBehavior<,>`, and (WO-036, design-only) `TracingBehavior<,>`, `ResilienceBehavior<,>`, `CacheInvalidationBehavior<,>` are closed generic sealed classes; MediatR resolves the open generic `IPipelineBehavior<,>` registration to a closed generic per request type via ordinary DI generics at runtime, not `MakeGenericType` per call.
 - `ApplicationDiagnostics.Meter` / `Histogram<double>` are BCL `System.Diagnostics.Metrics` — fully AOT-safe, no reflection.
@@ -718,9 +936,11 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
 - **(WO-036, design-only)** `IStreamQuery<TResponse>`/`IStreamQueryHandler<,>` are pure interface aliases over MediatR's own `IStreamRequest<TResponse>`/`IStreamRequestHandler<,>` — zero reflection beyond whatever AOT posture MediatR's `IStreamMediator`/`ISender.CreateStream` already carries (verify on each MediatR major upgrade, same caveat as the existing unary `IRequestHandler<,>` resolution).
 - **(WO-036, design-only)** `ResilienceBehavior<,>`'s Polly v8 resilience pipeline execution (`ResiliencePipeline.ExecuteAsync(...)`) is Polly v8's own delegate-based, reflection-free execution model — no `MakeGenericMethod`, no `Activator.CreateInstance`. Verify Polly v8's own AOT compatibility status on first integration (Scaffold phase, `state-map.md` S-09) and on each major upgrade thereafter.
 - `MediatR`'s own assembly-scanning registration (`AddMediatR(cfg => cfg.RegisterServicesFromAssembly(...))`) is reflection-based and is the **consuming service's** responsibility, performed once at startup — not part of this package, not a hot path. Verify MediatR's own AOT compatibility status on each major upgrade.
+- **(WO-038, P-233)** `System.Threading.Channels.Channel<T>` is BCL and fully AOT-safe — no reflection, no `Activator.CreateInstance`. `FireAndForgetBackgroundConsumer`'s handler resolution uses `IServiceScopeFactory`/`IServiceProvider.GetRequiredService<T>` (DI generics, not reflection); same AOT posture as any other DI-resolved scoped service.
+- **(WO-038, P-234)** `IStreamPipelineBehavior<TRequest,TResponse>` is an interface already part of the pinned `MediatR` 12.4.1 package — same AOT posture as `IPipelineBehavior<,>`. The five streaming behaviors are closed-generic sealed classes; MediatR's streaming pipeline resolves them via ordinary DI generics, same reflection-free path as the unary behaviors. Per-request-type resolution via `IStreamMediator`/`ISender.CreateStream` carries the same "verify on each MediatR major upgrade" caveat as the existing unary path.
 - `FluentValidation`'s `IValidator<T>` resolution uses ordinary DI generics — no reflection at the `ValidationBehavior` call site. FluentValidation's own rule-building DSL may use expression trees internally; verify on each major upgrade.
 - No `Activator.CreateInstance`, `Assembly.Load`, or dynamic reflection anywhere else in this domain's hot paths.
-- `FailureResponseFactory`'s per-`TResponse` `Expression.Lambda(...).Compile()` is the second documented, justified exception to the platform-wide `MakeGenericMethod`/reflection prohibition in this domain (the first being `MediatRDomainEventDispatcher`) — built once per distinct closed `TResponse` type and cached in a static `ConcurrentDictionary<Type, Func<Error, object>>`, never `dynamic`/`Microsoft.CSharp`. `Expression.Compile()` itself has the same Native AOT caveat as any other runtime-codegen path (the interpreter fallback engages without a JIT); since `TResponse` is closed at every call site (`Result` or a closed `Result<T>`) and the cache is populated lazily on first use per type, this is a narrow, well-understood AOT caveat — not a `dynamic`/DLR dependency. Services targeting Native AOT that opt into `.AddAuthorizationBehavior()`/`.AddIdempotencyBehavior()` should verify this path at publish time; services that only use the other five behaviors are unaffected.
+- `FailureResponseFactory`'s current `Expression.Lambda(...).Compile()` path (pre-P-230/P-232) is the second documented, justified exception to the platform-wide `MakeGenericMethod`/reflection prohibition in this domain — built once per distinct closed `TResponse` type and cached in a static `ConcurrentDictionary<Type, Func<Error, object>>`, never `dynamic`/`Microsoft.CSharp`. An `[RequiresUnreferencedCode]` annotation is applied as a short-term marker. Once P-232 lands (depends on P-230 shipping `IResultOfT<T>` in `SharedKernel.Primitives`), the expression tree is eliminated entirely: the `Result<T>` case calls `IResultOfT<T>.Failure(Error)` directly via a generic constraint, the cache is removed, and the `[RequiresUnreferencedCode]` annotation is removed — making the factory fully AOT-clean. Until P-232 lands, services targeting Native AOT that opt into `.AddAuthorizationBehavior()`/`.AddIdempotencyBehavior()` should verify this path at publish time; services that only use the other behaviors are unaffected.
 
 ---
 
@@ -741,6 +961,15 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
 - **(WO-036, design-only)** `ResilienceBehavior` tests: a transient failure followed by success is retried and ultimately succeeds; a request type not implementing `IRetryableRequest` never resolves this behavior into its pipeline — a DI-contract test, not a runtime branch; exhausted retries surface per the documented design decision (thrown exception or propagated `Result.Failure`, whichever the wrapped pipeline's last attempt produced).
 - **(WO-036, design-only)** `CacheInvalidationBehavior` tests: successful command triggers exactly one `RemoveAsync`/`RemoveByTagAsync` call per declared key/tag; failed (`Result.Failure`) command never calls removal; thrown exception never calls removal; a query type can never satisfy `IInvalidatesCache` — a compile-time/contract-shape assertion only.
 - **(WO-036, design-only) Reusable pipeline test harness** — `SharedKernel.Application.Behaviors.Tests`-internal only (never packaged, never referenced by `16.Testing` or production code); wires a real `ServiceCollection` + `AddMediatR` + a caller-chosen subset of behaviors via `ApplicationBehaviorsBuilder`, exposing a minimal fluent surface to send a request and assert on: final response shape (success/failure), thrown exceptions, recorded `ApplicationDiagnostics` metrics, and recorded `ActivitySource` spans (via `ActivityListener`). This formalizes the "preferring a minimal real `ServiceCollection`" guidance above into one reusable harness instead of each behavior test file re-deriving the same wiring; `TracingBehavior`/`ResilienceBehavior` tests use it from the start, and the seven WO-035 behavior test files are refactored to use it where doing so does not reduce test clarity (documented per file if any test is deliberately left as-is).
+- **(WO-038, P-231)** `IdempotentCommandBehavior` fail-and-consume-key test: dispatch a command where the handler returns `Result.Failure`; assert `MarkProcessedAsync` IS called; dispatch the SAME key again; assert `next()` is NOT invoked the second time (short-circuit with `Result.Failure(ErrorType.Conflict)`) — confirms the fail-and-consume invariant.
+- **(WO-038, P-231)** `TransactionBehavior` cancellation test: assert `OperationCanceledException` from `next()` prevents `SaveChangesAsync` from being called and propagates unchanged.
+- **(WO-038, P-231)** Key-uniqueness test: assert `typeof(TRequest).FullName` (not `.Name`) is used for metric/log/trace tag values for a request type in a named namespace.
+- **(WO-038, P-232)** `LoggingBehavior` level tests: `Result.Success` → `Information`; `Result.Failure` → `Warning`; non-`IHasSuccessFlag` response → `Information`; exception → `Error` + rethrow.
+- **(WO-038, P-232)** `AuthorizationBehavior` multi-requirement tests: single-requirement pass/fail, AllOf-all-pass, AllOf-first-fails, AnyOf-first-passes, AnyOf-all-fail — six scenarios, all covering correct short-circuit behavior.
+- **(WO-038, P-233)** `MediatRDomainEventDispatcher` parallel dispatch tests: serial order preserved (default), parallel all-succeed (all dispatched concurrently), parallel some-fail (all events dispatched, all exceptions collected in `AggregateException` before rethrow).
+- **(WO-038, P-233)** Fire-and-forget tests: immediate return on `EnqueueAsync`; background consumer executes handler without blocking caller; handler exception logged at `Error`, consumer continues; full channel + `DropAndLog` drops command without exception to caller; `AddFireAndForgetDispatch()` not called → `IFireAndForgetDispatcher` not registered.
+- **(WO-038, P-233)** `FireAndForgetGuardBehavior` rejection test: `ISender.Send(fireAndForgetCommand)` throws `InvalidOperationException` with the documented message; `next()` is never called.
+- **(WO-038, P-234)** Streaming behavior tests (one class per behavior): `StreamLoggingBehavior` — entry/completion/first-item/fault logging at correct levels; `StreamMetricsBehavior` — one `RequestDuration` measurement per stream with `outcome` tag; `StreamTracingBehavior` — one span per stream, tagged with `FullName`, safe when no `ActivityListener` registered; `StreamValidationBehavior` — validation once at open, fails before open, passes through; `StreamAuthorizationBehavior` — AllOf/AnyOf multi-requirement evaluation on streaming requests, DI-contract test for non-`IAuthorizeRequest` types.
 - **Standard test package set:** `xunit` 2.9.3, `xunit.runner.visualstudio` 2.8.2, `Microsoft.NET.Test.Sdk` 17.13.0, `coverlet.collector` 6.0.4, `FluentAssertions` 8.4.0, `NSubstitute` 5.3.0 — same pins already used across `06.Persistence`/`07.Messaging` unless a documented reason requires otherwise.
 - **GlobalUsings.cs required** — every test project must include a `GlobalUsings.cs` containing `global using Xunit;`. `ImplicitUsings` does not auto-import xUnit attributes.
 
@@ -757,3 +986,5 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
 - [2026-06-29] `FailureResponseFactory` revised — replaced the initial `dynamic`/`Microsoft.CSharp` implementation with a cached `Expression.Lambda(...).Compile()` per closed `TResponse` type (static `ConcurrentDictionary<Type, Func<Error, object>>`), removing the new `Microsoft.CSharp` package reference entirely. This is the second documented, justified exception to the platform-wide `MakeGenericMethod`/reflection prohibition (the first being `MediatRDomainEventDispatcher`), built via `Expression` compilation — the governance rule's own recommended alternative — rather than `dynamic`, which was rejected for pulling in an unnecessary dependency and being non-AOT-safe; Technology Stack table and AOT Compatibility section updated to match (root cause: design review before proceeding to the Tests phase)
 - [2026-06-29] SK.05.Docs complete (DO-01..DO-04) — enabled `GenerateDocumentationFile`/`TreatWarningsAsErrors` plus full NuGet metadata on both csproj files; fixed one CS1574 broken `cref` in `DomainEventNotificationHandler`; added `<inheritdoc/>` to all seven behaviors' `Handle()` overrides to clear CS1591; both packages build 0 warnings/0 errors under the new enforcement; `README.md` written for both packages; 50/50 tests still passing (application-phase-implementer)
 - [2026-06-30] WO-036 (root P-220–P-224) dispatched — design-only, not yet implemented (see `state-map.md` D-11..D-25). Five new capabilities documented: (1) **Tracing parity** — `ApplicationDiagnostics.ActivitySource` (BCL, same name/version as the existing `Meter`) + a new, distinct `TracingBehavior<,>` positioned immediately after `MetricsBehavior`, mirroring `07.Messaging.MassTransit.Diagnostics.MessagingDiagnostics.ActivitySource`'s exact static-instrument shape and `ConsumerBase.Consume`'s `using var activity = ActivitySource.StartActivity(...)` pattern; (2) **Streaming query vocabulary** — `IStreamQuery<TResponse>`/`IStreamQueryHandler<,>` over MediatR's already-pinned `IStreamRequest<TResponse>`/`IStreamRequestHandler<,>` (zero new NuGet dependency); locked decision: **no `Result<T>` wrapping** for streamed items (raw `TResponse` per item via `IAsyncEnumerable`, errors terminate the stream via thrown exception) — an explicit, documented deviation from this domain's `Result`-everywhere convention; explicit statement that none of the ten pipeline behaviors apply to this shape without a future deliberate extension; (3) **Resilience behavior** — new `IRetryableRequest` marker (mirrors `IAuthorizeRequest`/`IIdempotentRequest`) + `ResilienceBehavior<,>` backed by an externally-registered Polly v8 resilience pipeline (retry-with-backoff only this phase, circuit-breaking explicitly deferred); resolves the retry-after-partial-commit hazard by positioning Resilience to WRAP `IdempotentCommandBehavior` + `TransactionBehavior` (a retry re-runs the full duplicate-check-then-commit unit, never a bare second commit), with the `IRetryableRequest`-without-`IIdempotentRequest` gap documented as an accepted, non-compile-time-enforceable misuse; (4) **Reusable pipeline test harness** — internal to `SharedKernel.Application.Behaviors.Tests` only, never packaged, depends on Tracing and Resilience existing first; (5) **Write-side cache invalidation** — new `IInvalidatesCache` marker (mirrors `ICacheableQuery<TResponse>`'s self-supplied-key pattern) + `CacheInvalidationBehavior<,>` constrained to `ICommandBase`, calling `ICacheService.RemoveAsync`/`RemoveByTagAsync` only after `next()` succeeds, positioned innermost (after `TransactionBehavior`) so eviction only follows a confirmed commit, reusing `CachingBehavior`'s existing `ICacheService` `Build()`-time guard. Canonical pipeline order revised from seven to a ten-named-slot order: Logging → Metrics → Tracing → Validation → Authorization → Caching → Resilience → Idempotency → Transaction → CacheInvalidation, with full positional rationale for every new step; nine new Hard Violations added; AOT Compatibility and Test Rules sections extended for all five new capabilities; DI Registration example extended with the target end-state shape and three new usage examples (retryable+idempotent+invalidating command, streaming query) — all marked design-only pending Scaffold/Core implementation (application-arch-planner)
+- [2026-07-01] WO-038 (P-231–P-234) dispatched — design-only, not yet implemented (see `state-map.md` D-26..D-35, C-30..C-50). Four phases: (1) **P-231 Bug fixes** — 8 self-contained correctness fixes: `IIdempotencyKeyStore.MarkProcessedAsync` fail-and-consume-key invariant XML doc; `ValidationBehavior` double-enumeration guard removal; `CachingBehavior` direct `await` on `ValueTask` (eliminates `.AsTask()` allocation); `ResilienceBehavior` non-generic `ResiliencePipeline` registration (prevents silent no-op on type-key mismatch); `MediatRDomainEventDispatcher` compile-time `Publish<T>` method capture (eliminates nullable-suppressed `GetMethod(...)!`); `CacheInvalidationBehavior` `InvalidateOnlyOnSuccess` opt-in flag with explicit default-always-invalidate XML docs; `TransactionBehavior` `OperationCanceledException` test; `typeof(TRequest).FullName ?? .Name` for all metric/log/trace key construction. (2) **P-232 Contract evolution** (depends on P-230): `LoggingBehavior` logs at `Warning` on `Result.Failure` via `IHasSuccessFlag`; `FailureResponseFactory` eliminates `Expression.Compile()` via `IResultOfT<T>` constraint removing `[RequiresUnreferencedCode]`; `IAuthorizationContext`/`IAuthorizeRequest` multi-requirement evolution — `AllOf(IEnumerable<string>)`/`AnyOf(IEnumerable<string>)` alongside single-string convenience. (3) **P-233 New capabilities**: `MediatRDomainEventDispatcherOptions.ParallelDispatch` opt-in (Task.WhenAll, AggregateException collection, serial default unchanged); `IFireAndForgetCommand` marker (extends `ICommand`, SharedKernel.Application) + `IFireAndForgetDispatcher`/`ChannelFireAndForgetDispatcher` + `FireAndForgetBackgroundConsumer` (BCL `Channel<T>`, configurable bounded capacity, DropAndLog/Block rejection policies) + `FireAndForgetGuardBehavior<,>` (rejects `ISender.Send` with actionable exception), all registered via `ApplicationBehaviorsBuilder.AddFireAndForgetDispatch()`. (4) **P-234 Streaming pipeline** (depends on P-232): five `IStreamPipelineBehavior<,>` implementations (StreamLogging/StreamMetrics/StreamTracing/StreamValidation/StreamAuthorization) registered via new `AddStreamingBehaviors()` builder method; non-applicable behaviors (Transaction/Caching/CacheInvalidation/Idempotency/Resilience) explicitly documented with rationale. Packages table updated; eleven new Hard Violations; AOT notes for Channel/IStreamPipelineBehavior; Test Rules extended with new WO-038 scenarios; DI Registration updated with new builder methods and usage examples (application-arch-planner)
+- [2026-07-02] SK.05.Tests ● complete (T-17..T-32) — all 32 test tasks done; 28+92=120 tests passing (0 failed); "design-only" labels removed from Tracing/CacheInvalidation/Resilience/FireAndForget/StreamingBehaviors sections; WO-036 and WO-038 Hard Violations updated to remove design-only qualifiers; streaming behavior coverage note rewritten to reflect WO-038 P-234's five IStreamPipelineBehavior<,> implementations now shipped; root state-map P-231..P-234 → ● Complete (sync-brain)

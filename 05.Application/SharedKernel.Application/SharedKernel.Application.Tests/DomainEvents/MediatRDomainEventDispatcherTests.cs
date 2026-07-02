@@ -1,5 +1,6 @@
 using FluentAssertions;
 using MediatR;
+using Microsoft.Extensions.Options;
 using SharedKernel.Application.DomainEvents;
 using SharedKernel.Domain.Events;
 
@@ -54,7 +55,7 @@ public sealed class MediatRDomainEventDispatcherTests
     public async Task DispatchAsync_WithEmptyList_DoesNotCallPublish()
     {
         var publisher = new RecordingPublisher();
-        var dispatcher = new MediatRDomainEventDispatcher(publisher);
+        var dispatcher = new MediatRDomainEventDispatcher(publisher, Options.Create(new MediatRDomainEventDispatcherOptions()));
 
         await dispatcher.DispatchAsync([], CancellationToken.None);
 
@@ -65,7 +66,7 @@ public sealed class MediatRDomainEventDispatcherTests
     public async Task DispatchAsync_WithSingleEvent_PublishesWrappedNotification()
     {
         var publisher = new RecordingPublisher();
-        var dispatcher = new MediatRDomainEventDispatcher(publisher);
+        var dispatcher = new MediatRDomainEventDispatcher(publisher, Options.Create(new MediatRDomainEventDispatcherOptions()));
         var domainEvent = new FirstTestEvent { OccurredOn = DateTimeOffset.UtcNow };
 
         await dispatcher.DispatchAsync([domainEvent], CancellationToken.None);
@@ -79,7 +80,7 @@ public sealed class MediatRDomainEventDispatcherTests
     public async Task DispatchAsync_WithMultipleDifferentEventTypes_PublishesEachAsItsOwnClosedNotification()
     {
         var publisher = new RecordingPublisher();
-        var dispatcher = new MediatRDomainEventDispatcher(publisher);
+        var dispatcher = new MediatRDomainEventDispatcher(publisher, Options.Create(new MediatRDomainEventDispatcherOptions()));
         var first = new FirstTestEvent { OccurredOn = DateTimeOffset.UtcNow };
         var second = new SecondTestEvent { OccurredOn = DateTimeOffset.UtcNow };
 
@@ -97,7 +98,7 @@ public sealed class MediatRDomainEventDispatcherTests
     {
         var expected = new InvalidOperationException("handler exploded");
         var publisher = new RecordingPublisher((_, _) => Task.FromException(expected));
-        var dispatcher = new MediatRDomainEventDispatcher(publisher);
+        var dispatcher = new MediatRDomainEventDispatcher(publisher, Options.Create(new MediatRDomainEventDispatcherOptions()));
         var domainEvent = new FirstTestEvent { OccurredOn = DateTimeOffset.UtcNow };
 
         var act = async () => await dispatcher.DispatchAsync([domainEvent], CancellationToken.None);

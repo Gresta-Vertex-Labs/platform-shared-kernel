@@ -50,10 +50,10 @@ public sealed class TracingBehaviorTests
         await harness.SendAsync(new SucceedingCommand());
 
         var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.name"), nameof(SucceedingCommand)))
+            .Where(a => Equals(a.GetTagItem("request.name"), typeof(SucceedingCommand).FullName ?? nameof(SucceedingCommand)))
             .ToList();
         spans.Should().HaveCount(1);
-        spans[0].GetTagItem("request.name").Should().Be(nameof(SucceedingCommand));
+        spans[0].GetTagItem("request.name").Should().Be(typeof(SucceedingCommand).FullName ?? nameof(SucceedingCommand));
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class TracingBehaviorTests
         await harness.SendAsync(new FailingResultCommand());
 
         var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.name"), nameof(FailingResultCommand)))
+            .Where(a => Equals(a.GetTagItem("request.name"), typeof(FailingResultCommand).FullName ?? nameof(FailingResultCommand)))
             .ToList();
         spans.Should().HaveCount(1);
     }
@@ -84,7 +84,7 @@ public sealed class TracingBehaviorTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         var spans = harness.CapturedActivities
-            .Where(a => Equals(a.GetTagItem("request.name"), nameof(ThrowingCommand)))
+            .Where(a => Equals(a.GetTagItem("request.name"), typeof(ThrowingCommand).FullName ?? nameof(ThrowingCommand)))
             .ToList();
         spans.Should().HaveCount(1);
     }

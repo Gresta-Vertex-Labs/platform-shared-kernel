@@ -73,19 +73,26 @@ public sealed class MetricsBehaviorTests
     [Fact]
     public async Task Handle_OnSuccess_RecordsExactlyOneMeasurementTaggedWithRequestName()
     {
+        var expectedName = typeof(TestCommand).FullName ?? typeof(TestCommand).Name;
         using var capture = new MeasurementCapture();
         var provider = BuildProvider<SucceedingHandler>();
         var sender = provider.GetRequiredService<ISender>();
 
         await sender.Send(new TestCommand());
 
-        capture.Measurements.Should().ContainSingle();
-        capture.Measurements[0].RequestName.Should().Be(nameof(TestCommand));
+        // Filter by request name to be resilient to concurrent tests recording to the same shared Meter.
+        var myMeasurements = capture.Measurements
+            .Where(m => m.RequestName == expectedName)
+            .ToList();
+
+        myMeasurements.Should().ContainSingle("exactly one measurement must be recorded for this request type");
+        myMeasurements[0].RequestName.Should().Be(expectedName);
     }
 
     [Fact]
     public async Task Handle_WhenHandlerThrows_StillRecordsExactlyOneMeasurement()
     {
+        var expectedName = typeof(TestCommand).FullName ?? typeof(TestCommand).Name;
         using var capture = new MeasurementCapture();
         var provider = BuildProvider<ThrowingHandler>();
         var sender = provider.GetRequiredService<ISender>();
@@ -93,7 +100,12 @@ public sealed class MetricsBehaviorTests
         var act = async () => await sender.Send(new TestCommand());
         await act.Should().ThrowAsync<InvalidOperationException>();
 
-        capture.Measurements.Should().ContainSingle();
-        capture.Measurements[0].RequestName.Should().Be(nameof(TestCommand));
+        // Filter by request name to be resilient to concurrent tests recording to the same shared Meter.
+        var myMeasurements = capture.Measurements
+            .Where(m => m.RequestName == expectedName)
+            .ToList();
+
+        myMeasurements.Should().ContainSingle("exactly one measurement must be recorded even when the handler throws");
+        myMeasurements[0].RequestName.Should().Be(expectedName);
     }
 }

@@ -6,7 +6,6 @@ using Polly.Registry;
 using Polly.Retry;
 using SharedKernel.Application.Behaviors.Resilience;
 using SharedKernel.Application.Messaging;
-using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Application.Behaviors.Tests.Resilience;
@@ -50,11 +49,13 @@ public sealed class ResilienceBehaviorTests
     private static ResiliencePipelineProvider<string> BuildProvider(int retryCount)
     {
         var registry = new ResiliencePipelineRegistry<string>();
-        registry.TryAddBuilder<Result<string>>(
+        // Register a non-generic ResiliencePipeline — the behavior resolves via GetPipeline(key)
+        // (non-generic), not the generic ResiliencePipeline<TResponse> variant.
+        registry.TryAddBuilder(
             ResilienceBehavior<RetryableQuery, Result<string>>.DefaultPipelineKey,
-            (builder, _) => builder.AddRetry(new RetryStrategyOptions<Result<string>>
+            (builder, _) => builder.AddRetry(new RetryStrategyOptions
             {
-                ShouldHandle = new PredicateBuilder<Result<string>>().Handle<Exception>(),
+                ShouldHandle = new PredicateBuilder().Handle<Exception>(),
                 MaxRetryAttempts = retryCount,
                 Delay = TimeSpan.Zero,
             }));
