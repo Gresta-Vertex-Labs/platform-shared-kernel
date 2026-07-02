@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
@@ -45,6 +46,8 @@ public abstract class SharedKernelDbContext : DbContext
     private readonly IReadOnlyList<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor> _additionalInterceptors;
     private readonly IOptionsMonitor<EncryptionOptions> _encryptionOptions;
     private readonly IEncryptionVersionOverride _encryptionVersionOverride;
+    private readonly ISymmetricEncryptionService? _symmetricEncryptionService;
+    private readonly IEncryptionKeyProvider? _encryptionKeyProvider;
 
     /// <summary>
     /// Initialises a new <see cref="SharedKernelDbContext"/> and registers the three
@@ -70,6 +73,18 @@ public abstract class SharedKernelDbContext : DbContext
     /// no-op instance is used and <see cref="EncryptedValueConverter"/> always encrypts with
     /// <see cref="EncryptionOptions.CurrentVersion"/>.
     /// </param>
+    /// <param name="symmetricEncryptionService">
+    /// Optional cryptographic service used by <see cref="EncryptedValueConverter"/> for AES-256-GCM
+    /// operations (P-227). Resolved from DI when <c>AddSharedKernelCryptography()</c> and
+    /// <c>.WithEncryption()</c> have been called. When <see langword="null"/>, the converter operates
+    /// in disabled pass-through mode.
+    /// </param>
+    /// <param name="encryptionKeyProvider">
+    /// Optional key provider bridging <see cref="EncryptionOptions"/> to
+    /// <see cref="IEncryptionKeyProvider"/> (P-227). Registered as scoped by
+    /// <c>EfCorePersistenceBuilder.WithEncryption()</c>. When <see langword="null"/>, the converter
+    /// operates in disabled pass-through mode.
+    /// </param>
     protected SharedKernelDbContext(
         DbContextOptions options,
         AuditInterceptor auditInterceptor,
@@ -77,7 +92,9 @@ public abstract class SharedKernelDbContext : DbContext
         ConcurrencyInterceptor concurrencyInterceptor,
         IEnumerable<Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor>? additionalInterceptors = null,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
-        IEncryptionVersionOverride? encryptionVersionOverride = null)
+        IEncryptionVersionOverride? encryptionVersionOverride = null,
+        ISymmetricEncryptionService? symmetricEncryptionService = null,
+        IEncryptionKeyProvider? encryptionKeyProvider = null)
         : base(options)
     {
         _auditInterceptor = auditInterceptor;
@@ -86,6 +103,8 @@ public abstract class SharedKernelDbContext : DbContext
         _additionalInterceptors = additionalInterceptors?.ToList() ?? [];
         _encryptionOptions = encryptionOptions ?? NullOptionsMonitor<EncryptionOptions>.Instance;
         _encryptionVersionOverride = encryptionVersionOverride ?? EncryptionVersionOverride.NoOp;
+        _symmetricEncryptionService = symmetricEncryptionService;
+        _encryptionKeyProvider = encryptionKeyProvider;
     }
 
     /// <summary>
@@ -146,8 +165,14 @@ public abstract class SharedKernelDbContext : DbContext
     /// <inheritdoc />
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
+        // P-227: Pass ISymmetricEncryptionService and IEncryptionKeyProvider to the convention
+        // so EncryptedValueConverter uses the delegated crypto path.
         configurationBuilder.Conventions.Add(
-            _ => new EncryptionModelConvention(_encryptionOptions, _encryptionVersionOverride));
+            _ => new EncryptionModelConvention(
+                _encryptionOptions,
+                _symmetricEncryptionService,
+                _encryptionKeyProvider,
+                _encryptionVersionOverride));
 
         base.ConfigureConventions(configurationBuilder);
     }

@@ -23,9 +23,15 @@ public sealed class TenantedDbContextTests
         var tenantProvider2 = TestDbContextFactory.CreateTenantProvider(tenant2);
 
         var options1 = new DbContextOptionsBuilder<TenantedTestDbContext>()
-            .UseSqlite(connStr).EnableServiceProviderCaching(false).Options;
+            .UseSqlite(connStr)
+            .EnableServiceProviderCaching(false)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
         var options2 = new DbContextOptionsBuilder<TenantedTestDbContext>()
-            .UseSqlite(connStr).EnableServiceProviderCaching(false).Options;
+            .UseSqlite(connStr)
+            .EnableServiceProviderCaching(false)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
@@ -60,7 +66,10 @@ public sealed class TenantedDbContextTests
         var seedProvider = TestDbContextFactory.CreateTenantProvider(tenant);
         var emptyProvider = TestDbContextFactory.CreateTenantProvider(Guid.Empty);
 
-        var optionsSeed = new DbContextOptionsBuilder<TenantedTestDbContext>().UseSqlite(connStr).Options;
+        var optionsSeed = new DbContextOptionsBuilder<TenantedTestDbContext>()
+            .UseSqlite(connStr)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
         var optionsQuery = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite(connStr).EnableServiceProviderCaching(false).Options;
 
@@ -90,9 +99,15 @@ public sealed class TenantedDbContextTests
         var connStr = $"DataSource=file:{dbName}?mode=memory&cache=shared";
 
         var provider1 = TestDbContextFactory.CreateTenantProvider(tenant1);
-        var optionsSeed = new DbContextOptionsBuilder<TenantedTestDbContext>().UseSqlite(connStr).Options;
+        var optionsSeed = new DbContextOptionsBuilder<TenantedTestDbContext>()
+            .UseSqlite(connStr)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
         var optionsAdmin = new DbContextOptionsBuilder<TenantedTestDbContext>()
-            .UseSqlite(connStr).EnableServiceProviderCaching(false).Options;
+            .UseSqlite(connStr)
+            .EnableServiceProviderCaching(false)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);

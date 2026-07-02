@@ -10,6 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Persistence.EfCore.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- T-60: TransactionBehavior end-to-end test requires MediatR pipeline and Application.Behaviors -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
   </ItemGroup>
 
   <ItemGroup>

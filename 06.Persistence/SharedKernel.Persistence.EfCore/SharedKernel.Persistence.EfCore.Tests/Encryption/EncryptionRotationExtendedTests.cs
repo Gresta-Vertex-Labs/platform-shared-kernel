@@ -51,6 +51,9 @@ public sealed class EncryptionRotationExtendedTests
             .WithEncryption(configure)
             .WithDbContextFactory()
             .Build();
+        // P-227: register the crypto service (consuming service responsibility in production).
+        services.AddScoped<SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService,
+            SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService>();
         return new RotationExtHost { Provider = services.BuildServiceProvider(), Connection = conn };
     }
 
@@ -66,6 +69,9 @@ public sealed class EncryptionRotationExtendedTests
             .WithEncryption(configure)
             .WithDbContextFactory()
             .Build();
+        // P-227: register the crypto service (consuming service responsibility in production).
+        services.AddScoped<SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService,
+            SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService>();
         return new RotationExtHost { Provider = services.BuildServiceProvider(), Connection = conn };
     }
 
@@ -524,8 +530,11 @@ internal sealed class MultiEntityRotationDbContext : SharedKernelDbContext
         SoftDeleteInterceptor softDelete,
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
-        IEncryptionVersionOverride? encryptionVersionOverride = null)
-        : base(options, audit, softDelete, concurrency, null, encryptionOptions, encryptionVersionOverride)
+        IEncryptionVersionOverride? encryptionVersionOverride = null,
+        SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService? symmetricEncryptionService = null,
+        SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider? encryptionKeyProvider = null)
+        : base(options, audit, softDelete, concurrency, null, encryptionOptions,
+               encryptionVersionOverride, symmetricEncryptionService, encryptionKeyProvider)
     {
     }
 

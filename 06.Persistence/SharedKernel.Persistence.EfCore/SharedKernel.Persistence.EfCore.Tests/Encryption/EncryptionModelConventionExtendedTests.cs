@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Domain.StronglyTypedIds;
@@ -75,10 +76,23 @@ public sealed class EncryptionModelConventionExtendedTests
 
         // Pass a unique versionOverride instance (or a new NoOp-style override) so the EF Core
         // model cache key (context type + override reference) is unique per test.
+        var override_ = versionOverride ?? new EncryptionVersionOverride();
+        ISymmetricEncryptionService? encryptionService = null;
+        IEncryptionKeyProvider? keyProvider = null;
+
+        if (monitor is not null)
+        {
+            // P-227: Wire up real crypto delegation when options are provided.
+            keyProvider = new EncryptionOptionsKeyProvider(monitor, override_);
+            encryptionService = new AesGcmEncryptionService(keyProvider);
+        }
+
         return new MultiPropDbContext(
             dbOptions, audit, softDelete, concurrency,
             monitor,
-            versionOverride ?? new EncryptionVersionOverride());
+            override_,
+            encryptionService,
+            keyProvider);
     }
 
     // -------------------------------------------------------------------------
@@ -262,8 +276,11 @@ internal sealed class MultiPropDbContext : SharedKernelDbContext
         SoftDeleteInterceptor softDelete,
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
-        IEncryptionVersionOverride? encryptionVersionOverride = null)
-        : base(options, audit, softDelete, concurrency, null, encryptionOptions, encryptionVersionOverride)
+        IEncryptionVersionOverride? encryptionVersionOverride = null,
+        ISymmetricEncryptionService? symmetricEncryptionService = null,
+        IEncryptionKeyProvider? encryptionKeyProvider = null)
+        : base(options, audit, softDelete, concurrency, null, encryptionOptions,
+               encryptionVersionOverride, symmetricEncryptionService, encryptionKeyProvider)
     {
     }
 

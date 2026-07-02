@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Options;
 
@@ -8,6 +9,8 @@ namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 /// <summary>
 /// Unit tests for <see cref="EncryptedValueConverter"/> — verifies AES-256-GCM round-trip,
 /// pass-through mode, legacy plaintext handling, and key-not-found exception.
+/// After P-227 the converter delegates crypto to <see cref="ISymmetricEncryptionService"/>;
+/// tests use the real <see cref="AesGcmEncryptionService"/> with <see cref="EncryptionOptionsKeyProvider"/>.
 /// </summary>
 public sealed class EncryptedValueConverterTests
 {
@@ -35,13 +38,25 @@ public sealed class EncryptedValueConverterTests
         };
     }
 
+    /// <summary>
+    /// Builds a fully-wired <see cref="EncryptedValueConverter"/> using the real P-227 delegation chain:
+    /// EncryptionOptionsKeyProvider → AesGcmEncryptionService → EncryptedValueConverter.
+    /// </summary>
+    private static EncryptedValueConverter MakeConverter(
+        EncryptionOptions options,
+        IEncryptionVersionOverride? versionOverride = null)
+    {
+        var monitor = MakeMonitor(options);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp);
+        var encryptionService = new AesGcmEncryptionService(keyProvider);
+        return new EncryptedValueConverter(monitor, encryptionService, keyProvider, versionOverride);
+    }
+
     [Fact]
     public void Encrypt_Then_Decrypt_RoundTrips_Value()
     {
         // Arrange
-        var options = EnabledOptions();
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        var converter = MakeConverter(EnabledOptions());
 
         const string plaintext = "sensitive-email@example.com";
 
@@ -59,9 +74,7 @@ public sealed class EncryptedValueConverterTests
     public void Encrypt_ProducesUniqueCiphertexts_ForSamePlaintext()
     {
         // Arrange — random nonce means two encryptions of the same plaintext differ
-        var options = EnabledOptions();
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        var converter = MakeConverter(EnabledOptions());
         var toProvider = converter.ConvertToProviderExpression.Compile();
 
         // Act
@@ -75,10 +88,8 @@ public sealed class EncryptedValueConverterTests
     [Fact]
     public void Decrypt_WithDisabledEncryption_ReturnsStoredValueAsIs()
     {
-        // Arrange — Enabled == false — pass-through
-        var options = new EncryptionOptions { Enabled = false };
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        // Arrange — Enabled == false — pass-through (no crypto calls made)
+        var converter = MakeConverter(new EncryptionOptions { Enabled = false });
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
         const string stored = "plaintext-no-version-prefix";
@@ -93,10 +104,8 @@ public sealed class EncryptedValueConverterTests
     [Fact]
     public void Encrypt_WithDisabledEncryption_ReturnsValueAsIs()
     {
-        // Arrange — Enabled == false — pass-through
-        var options = new EncryptionOptions { Enabled = false };
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        // Arrange — Enabled == false — pass-through (no crypto calls made)
+        var converter = MakeConverter(new EncryptionOptions { Enabled = false });
         var toProvider = converter.ConvertToProviderExpression.Compile();
 
         const string value = "plaintext";
@@ -112,9 +121,7 @@ public sealed class EncryptedValueConverterTests
     public void Decrypt_LegacyPlaintext_NoVersionPrefix_ReturnsAsIs()
     {
         // Arrange — stored value has no "v" prefix → legacy plaintext path
-        var options = EnabledOptions();
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        var converter = MakeConverter(EnabledOptions());
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
         const string legacyValue = "old-unencrypted-data";
@@ -138,8 +145,7 @@ public sealed class EncryptedValueConverterTests
             CurrentVersion = "v2",
             Keys = { ["v2"] = base64Key }
         };
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        var converter = MakeConverter(options);
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
         // A ciphertext that was created with "v1" (which is now removed)
@@ -158,9 +164,7 @@ public sealed class EncryptedValueConverterTests
     public void Encrypt_ThenTamper_ThrowsCryptographicException()
     {
         // Arrange — authenticate tag check means tampering the ciphertext causes AES-GCM to fail
-        var options = EnabledOptions();
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        var converter = MakeConverter(EnabledOptions());
         var toProvider = converter.ConvertToProviderExpression.Compile();
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
@@ -196,8 +200,7 @@ public sealed class EncryptedValueConverterTests
                 ["v2"] = Convert.ToBase64String(key2)
             }
         };
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        var converter = MakeConverter(options);
         var toProvider = converter.ConvertToProviderExpression.Compile();
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
@@ -216,9 +219,7 @@ public sealed class EncryptedValueConverterTests
     public void EmptyString_Encrypts_And_Decrypts()
     {
         // Arrange
-        var options = EnabledOptions();
-        var monitor = MakeMonitor(options);
-        var converter = new EncryptedValueConverter(monitor);
+        var converter = MakeConverter(EnabledOptions());
         var toProvider = converter.ConvertToProviderExpression.Compile();
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 

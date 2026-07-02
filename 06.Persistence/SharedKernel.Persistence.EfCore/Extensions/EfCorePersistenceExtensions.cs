@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
@@ -18,6 +19,7 @@ using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
+using AppBehaviorsIUnitOfWork = SharedKernel.Application.Behaviors.Transaction.IUnitOfWork;
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 
 namespace SharedKernel.Persistence.EfCore.Extensions;
@@ -92,6 +94,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private readonly Action<DbContextOptionsBuilder> _configureDb;
     private bool _multiTenancyEnabled;
     private bool _transactionalUnitOfWorkEnabled;
+    private bool _applicationTransactionBehaviorEnabled;
     private bool _registerFactory;
     private bool _registerEncryption;
     private bool _migrationsOnStartup;
@@ -175,6 +178,31 @@ public sealed class EfCorePersistenceBuilder<TContext>
     }
 
     /// <summary>
+    /// Opts in to bridging the 05.Application.Behaviors <c>TransactionBehavior</c> to this
+    /// <c>EfUnitOfWork</c> by registering the same scoped instance against
+    /// <see cref="AppBehaviorsIUnitOfWork"/>.
+    /// </summary>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// After calling this method, both <c>SharedKernel.Persistence.Abstractions.IUnitOfWork</c>
+    /// and <c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c> resolve the SAME
+    /// scoped <see cref="EfUnitOfWork"/> instance per DI scope — not two independent instances.
+    /// </para>
+    /// <para>
+    /// This is opt-in. Omitting this call leaves <c>Build()</c> behavior completely unchanged —
+    /// <c>SharedKernel.Application.Behaviors.Transaction.IUnitOfWork</c> remains unregistered.
+    /// Services that do not use <c>TransactionBehavior</c>, or that bridge via a hand-written
+    /// composition-root adapter, are unaffected.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithApplicationTransactionBehavior()
+    {
+        _applicationTransactionBehaviorEnabled = true;
+        return this;
+    }
+
+    /// <summary>
     /// Opts in to field-level AES-256-GCM transparent encryption.
     /// </summary>
     /// <param name="configure">
@@ -211,6 +239,12 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // registration would only be observed by the very first context's converters). Mutated by
         // EncryptionRotationService<TContext> for the duration of each batch's SaveChangesAsync.
         _services.AddSingleton<IEncryptionVersionOverride, EncryptionVersionOverride>();
+
+        // P-227: Register EncryptionOptionsKeyProvider as scoped IEncryptionKeyProvider.
+        // Scoped lifetime matches IEncryptionVersionOverride's existing scoped lifetime.
+        // This is the IEncryptionKeyProvider that backs EncryptedValueConverter's ISymmetricEncryptionService
+        // for the persistence layer specifically.
+        _services.AddScoped<IEncryptionKeyProvider, EncryptionOptionsKeyProvider>();
 
         return this;
     }
@@ -351,6 +385,16 @@ public sealed class EfCorePersistenceBuilder<TContext>
             _services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         }
 
+        // P-228: Opt-in registration of the same scoped EfUnitOfWork against
+        // SharedKernel.Application.Behaviors.Transaction.IUnitOfWork.
+        // Both registrations resolve the SAME scoped EfUnitOfWork instance per DI scope — NOT two
+        // independent instances. The cast is safe because EfUnitOfWork implements both interfaces.
+        if (_applicationTransactionBehaviorEnabled)
+        {
+            _services.AddScoped<AppBehaviorsIUnitOfWork>(sp =>
+                (AppBehaviorsIUnitOfWork)sp.GetRequiredService<IUnitOfWork>());
+        }
+
         // ISpecificationEvaluator<T> — singleton because SpecificationEvaluator<T> is stateless.
         _services.AddSingleton(typeof(ISpecificationEvaluator<>), typeof(SpecificationEvaluator<>));
 
@@ -385,6 +429,15 @@ public sealed class EfCorePersistenceBuilder<TContext>
             // Ensure IOptionsMonitor<EncryptionOptions> is available in the DI container.
             // AddOptions() is idempotent and does not duplicate registrations.
             _services.AddOptions<EncryptionOptions>();
+
+            // P-227: Eager startup check — ISymmetricEncryptionService must be resolvable.
+            // The consuming service is responsible for calling AddSharedKernelCryptography().
+            // This check fires at IServiceProvider build time (via IStartupFilter/BuildServiceProvider)
+            // but we defer it to the first resolution via a validation-on-start pattern.
+            // Register a startup validator that throws an actionable error if not resolvable.
+            _services.AddOptions<EncryptionStartupOptions>().ValidateOnStart();
+            _services.AddSingleton<IValidateOptions<EncryptionStartupOptions>>(sp =>
+                new EncryptionStartupValidator(sp));
 
             // EncryptedEntityBatchProcessorRegistry<TContext> and EncryptionRotationService<TContext>
             // both require IDbContextFactory<TContext> — register it if WithDbContextFactory() was

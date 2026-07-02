@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Options;
 
 namespace SharedKernel.Persistence.EfCore.Encryption;
@@ -24,16 +26,34 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// <para>
 /// Properties without the <c>"SharedKernel:Encrypt"</c> annotation are untouched.
 /// </para>
+/// <para>
+/// <strong>P-227:</strong> This convention resolves <see cref="ISymmetricEncryptionService"/>
+/// and <see cref="IEncryptionKeyProvider"/> from DI alongside the existing
+/// <see cref="IEncryptionVersionOverride"/>, and passes all three to each
+/// <see cref="EncryptedValueConverter"/> it constructs.
+/// </para>
 /// </remarks>
 public sealed class EncryptionModelConvention : IModelFinalizingConvention
 {
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
     private readonly IEncryptionVersionOverride _versionOverride;
+    private readonly ISymmetricEncryptionService? _symmetricEncryptionService;
+    private readonly IEncryptionKeyProvider? _keyProvider;
 
     /// <summary>
     /// Initialises a new <see cref="EncryptionModelConvention"/>.
     /// </summary>
     /// <param name="optionsMonitor">Live options monitor supplied by DI or a null-object fallback.</param>
+    /// <param name="symmetricEncryptionService">
+    /// The cryptographic service used by <see cref="EncryptedValueConverter"/> for AES-256-GCM operations
+    /// (P-227). May be <see langword="null"/> when <c>.WithEncryption()</c> was not called and the
+    /// converter operates in disabled pass-through mode.
+    /// </param>
+    /// <param name="keyProvider">
+    /// The key provider bridging <see cref="EncryptionOptions"/> to <see cref="IEncryptionKeyProvider"/>
+    /// (P-227). Used by the converter for pre-check lookups on the decrypt path. May be
+    /// <see langword="null"/> when <c>.WithEncryption()</c> was not called.
+    /// </param>
     /// <param name="versionOverride">
     /// Scoped rotation-target-version accessor, resolved via DI, or the shared no-op instance when
     /// <c>.WithEncryption()</c> was not called. Passed to every <see cref="EncryptedValueConverter"/>
@@ -41,9 +61,13 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
     /// </param>
     public EncryptionModelConvention(
         IOptionsMonitor<EncryptionOptions> optionsMonitor,
+        ISymmetricEncryptionService? symmetricEncryptionService = null,
+        IEncryptionKeyProvider? keyProvider = null,
         IEncryptionVersionOverride? versionOverride = null)
     {
         _optionsMonitor = optionsMonitor;
+        _symmetricEncryptionService = symmetricEncryptionService;
+        _keyProvider = keyProvider;
         _versionOverride = versionOverride ?? EncryptionVersionOverride.NoOp;
     }
 
@@ -68,7 +92,28 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                     continue;
                 }
 
-                var converter = new EncryptedValueConverter(_optionsMonitor, _versionOverride);
+                ValueConverter converter;
+                if (_symmetricEncryptionService is not null && _keyProvider is not null)
+                {
+                    // P-227: full delegation to ISymmetricEncryptionService.
+                    converter = new EncryptedValueConverter(
+                        _optionsMonitor,
+                        _symmetricEncryptionService,
+                        _keyProvider,
+                        _versionOverride);
+                }
+                else
+                {
+                    // Fallback: encryption not configured — converter runs in pass-through mode
+                    // (EncryptionOptions.Enabled defaults to false). Uses a NullSymmetricEncryptionService
+                    // stub so the converter's pass-through branch is exercised without crypto.
+                    converter = new EncryptedValueConverter(
+                        _optionsMonitor,
+                        NullSymmetricEncryptionService.Instance,
+                        NullEncryptionKeyProvider.Instance,
+                        _versionOverride);
+                }
+
                 property.SetValueConverter(converter);
             }
         }

@@ -2,7 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.Options;
-using NSubstitute;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
 using SharedKernel.Persistence.EfCore.Configurations;
@@ -20,6 +20,9 @@ namespace SharedKernel.Persistence.EfCore.Tests.Encryption;
 /// Integration tests for <see cref="EncryptionModelConvention"/> and the
 /// <c>.Encrypt()</c> extension method — verifies convention wires the converter correctly and
 /// that encrypted properties round-trip through EF Core with SQLite.
+/// After P-227 the convention requires <see cref="ISymmetricEncryptionService"/> and
+/// <see cref="IEncryptionKeyProvider"/>; tests use the real <see cref="AesGcmEncryptionService"/>
+/// wired via <see cref="EncryptionOptionsKeyProvider"/>.
 /// </summary>
 public sealed class EncryptionModelConventionTests
 {
@@ -44,12 +47,30 @@ public sealed class EncryptionModelConventionTests
         };
     }
 
+    /// <summary>
+    /// Creates a fully-wired <see cref="EncryptedTestDbContext"/> using the real P-227
+    /// delegation chain: EncryptionOptionsKeyProvider → AesGcmEncryptionService →
+    /// SharedKernelDbContext(encryptionService, keyProvider).
+    /// </summary>
+    private static EncryptedTestDbContext MakeContext(
+        DbContextOptions<EncryptedTestDbContext> dbOptions,
+        AuditInterceptor audit,
+        SoftDeleteInterceptor softDelete,
+        ConcurrencyInterceptor concurrency,
+        EncryptionOptions opts,
+        IEncryptionVersionOverride? versionOverride = null)
+    {
+        var monitor = MakeMonitor(opts);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp);
+        var encryptionService = new AesGcmEncryptionService(keyProvider);
+        return new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor, encryptionService, keyProvider, versionOverride);
+    }
+
     [Fact]
     public async Task EncryptedProperty_RoundTrips_Through_EfCore_SQLite()
     {
         // Arrange — create context with encryption enabled
         var opts = EnabledOptions();
-        var monitor = MakeMonitor(opts);
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var svcOpts = TestDbContextFactory.DefaultServiceOptions();
@@ -60,12 +81,13 @@ public sealed class EncryptionModelConventionTests
 
         var dbOptions = new DbContextOptionsBuilder<EncryptedTestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
         var id = EncryptedTestId.New();
         const string email = "test-user@example.com";
 
-        await using (var ctx = new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor))
+        await using (var ctx = MakeContext(dbOptions, audit, softDelete, concurrency, opts))
         {
             ctx.Database.EnsureCreated();
 
@@ -75,7 +97,7 @@ public sealed class EncryptionModelConventionTests
         }
 
         // Re-open context — verify the value decrypts correctly on read
-        await using (var ctx = new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor))
+        await using (var ctx = MakeContext(dbOptions, audit, softDelete, concurrency, opts))
         {
             // Load all entities and filter in-memory to avoid any EF query translation issues
             // with the encrypted property converter.
@@ -93,7 +115,6 @@ public sealed class EncryptionModelConventionTests
     {
         // Arrange
         var opts = EnabledOptions();
-        var monitor = MakeMonitor(opts);
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var svcOpts = TestDbContextFactory.DefaultServiceOptions();
@@ -104,9 +125,10 @@ public sealed class EncryptionModelConventionTests
 
         var dbOptions = new DbContextOptionsBuilder<EncryptedTestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        using var ctx = new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor);
+        using var ctx = MakeContext(dbOptions, audit, softDelete, concurrency, opts);
 
         // Act — inspect model metadata
         var entityType = ctx.Model.FindEntityType(typeof(EncryptedTestCustomer));
@@ -123,7 +145,6 @@ public sealed class EncryptionModelConventionTests
     {
         // Arrange
         var opts = EnabledOptions();
-        var monitor = MakeMonitor(opts);
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
         var svcOpts = TestDbContextFactory.DefaultServiceOptions();
@@ -134,9 +155,10 @@ public sealed class EncryptionModelConventionTests
 
         var dbOptions = new DbContextOptionsBuilder<EncryptedTestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
-        using var ctx = new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor);
+        using var ctx = MakeContext(dbOptions, audit, softDelete, concurrency, opts);
 
         // Act — the Name property is NOT annotated with .Encrypt()
         var entityType = ctx.Model.FindEntityType(typeof(EncryptedTestCustomer));
@@ -200,8 +222,12 @@ internal sealed class EncryptedTestDbContext : SharedKernelDbContext
         AuditInterceptor audit,
         SoftDeleteInterceptor softDelete,
         ConcurrencyInterceptor concurrency,
-        IOptionsMonitor<EncryptionOptions>? encryptionOptions = null)
-        : base(options, audit, softDelete, concurrency, null, encryptionOptions)
+        IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
+        ISymmetricEncryptionService? symmetricEncryptionService = null,
+        IEncryptionKeyProvider? encryptionKeyProvider = null,
+        IEncryptionVersionOverride? versionOverride = null)
+        : base(options, audit, softDelete, concurrency, null, encryptionOptions,
+               versionOverride, symmetricEncryptionService, encryptionKeyProvider)
     {
     }
 

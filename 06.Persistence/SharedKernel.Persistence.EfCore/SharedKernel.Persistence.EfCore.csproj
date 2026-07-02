@@ -23,6 +23,20 @@
       create divergence risk. All other 12.Security.* packages are forbidden here.
     -->
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <!--
+      P-227: EncryptedValueConverter delegates all AES-256-GCM cryptographic operations to
+      ISymmetricEncryptionService from 01.Core/SharedKernel.Cryptography. Legal under existing
+      layering rules (06.Persistence may reference 01-05). No layering exception needed.
+      BCL-only, zero transitive NuGet dependencies introduced.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <!--
+      P-228: EfUnitOfWork implements SharedKernel.Application.Behaviors.IUnitOfWork in addition
+      to SharedKernel.Persistence.Abstractions.IUnitOfWork, enabling TransactionBehavior to
+      resolve a working unit-of-work without a hand-written composition-root adapter.
+      Legal under existing layering rules (06.Persistence may reference 01-05).
+    -->
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
   </ItemGroup>
 
   <ItemGroup>

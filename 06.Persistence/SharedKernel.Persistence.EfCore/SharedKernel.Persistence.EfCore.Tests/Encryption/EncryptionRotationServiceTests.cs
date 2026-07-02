@@ -65,6 +65,12 @@ public sealed class EncryptionRotationServiceTests
             .WithDbContextFactory()
             .Build();
 
+        // P-227: ISymmetricEncryptionService must be registered (consuming service responsibility).
+        // Tests register AesGcmEncryptionService as scoped (scoped to match the scoped IEncryptionKeyProvider
+        // registered by WithEncryption() as EncryptionOptionsKeyProvider).
+        services.AddScoped<SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService,
+            SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService>();
+
         var provider = services.BuildServiceProvider();
         return new RotationTestHost { Provider = provider, Connection = connection };
     }
@@ -519,8 +525,11 @@ internal sealed class RotationTestDbContext : SharedKernelDbContext
         SoftDeleteInterceptor softDelete,
         ConcurrencyInterceptor concurrency,
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
-        IEncryptionVersionOverride? encryptionVersionOverride = null)
-        : base(options, audit, softDelete, concurrency, null, encryptionOptions, encryptionVersionOverride)
+        IEncryptionVersionOverride? encryptionVersionOverride = null,
+        SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService? symmetricEncryptionService = null,
+        SharedKernel.Cryptography.Symmetric.IEncryptionKeyProvider? encryptionKeyProvider = null)
+        : base(options, audit, softDelete, concurrency, null, encryptionOptions,
+               encryptionVersionOverride, symmetricEncryptionService, encryptionKeyProvider)
     {
     }
 
