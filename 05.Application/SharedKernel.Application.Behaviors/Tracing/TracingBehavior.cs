@@ -20,6 +20,9 @@ namespace SharedKernel.Application.Behaviors.Tracing;
 /// makes <c>activity?.SetTag</c> and disposal both safe no-ops — zero allocation cost when tracing
 /// is not being collected. Participates in the ambient <c>Activity.Current</c> trace context
 /// exactly as <c>StartActivity</c> already does by BCL default — no custom propagation logic.
+/// The <c>request.name</c> tag uses <c>typeof(TRequest).FullName ?? typeof(TRequest).Name</c> to
+/// prevent tag collisions when two assemblies in the same host define a request type with the same
+/// short name.
 /// </remarks>
 public sealed class TracingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
@@ -31,7 +34,8 @@ public sealed class TracingBehavior<TRequest, TResponse> : IPipelineBehavior<TRe
         CancellationToken cancellationToken)
     {
         using var activity = ApplicationDiagnostics.ActivitySource.StartActivity("Request.Handle");
-        activity?.SetTag("request.name", typeof(TRequest).Name);
+        // Use FullName to prevent tag collisions when two assemblies define a same-named request type.
+        activity?.SetTag("request.name", typeof(TRequest).FullName ?? typeof(TRequest).Name);
 
         return await next().ConfigureAwait(false);
     }

@@ -24,17 +24,20 @@ public sealed class CachingBehavior<TRequest, TResponse>(ICacheService cacheServ
     where TRequest : ICacheableQuery<TResponse>
 {
     /// <inheritdoc/>
-    public Task<TResponse> Handle(
+    public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        return cacheService
+        // Direct await of the ValueTask<TResponse> returned by GetOrSetAsync — avoids the
+        // unconditional Task wrapper allocation that .AsTask() imposes on L1 synchronous cache
+        // hits (where GetOrSetAsync returns a synchronously-completed ValueTask).
+        return await cacheService
             .GetOrSetAsync(
                 request.CacheKey,
                 _ => new ValueTask<TResponse>(next()),
                 request.CachePolicy,
                 cancellationToken)
-            .AsTask();
+            .ConfigureAwait(false);
     }
 }

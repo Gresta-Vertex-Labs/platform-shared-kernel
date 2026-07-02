@@ -20,8 +20,40 @@ public interface IIdempotencyKeyStore
     /// <param name="cancellationToken">A token to observe for cancellation.</param>
     Task<bool> HasProcessedAsync(string idempotencyKey, CancellationToken cancellationToken);
 
-    /// <summary>Records <paramref name="idempotencyKey"/> as successfully processed.</summary>
+    /// <summary>Records <paramref name="idempotencyKey"/> as processed.</summary>
     /// <param name="idempotencyKey">The idempotency key supplied by the command instance.</param>
     /// <param name="cancellationToken">A token to observe for cancellation.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Fail-and-consume-key invariant (documented, not an oversight):</b>
+    /// <see cref="IdempotentCommandBehavior{TRequest,TResponse}"/> calls this method after
+    /// <c>next()</c> returns — including when the handler returns a <c>Result.Failure</c>
+    /// (a business-rule failure, not a thrown exception). This means a failed command
+    /// <b>permanently consumes its idempotency key</b>.
+    /// </para>
+    /// <para>
+    /// <b>Client retry rule:</b> after a business-rule failure the client <b>must</b> use a
+    /// <b>new</b> idempotency key if it wishes to retry the command. Retrying with the same
+    /// key after a business-rule rejection would bypass the duplicate-submission guard rather
+    /// than correct the underlying business condition.
+    /// </para>
+    /// <para>
+    /// <b>Fault vs. failure asymmetry:</b>
+    /// <list type="bullet">
+    ///   <item>
+    ///     <term>Fault (thrown exception)</term>
+    ///     <description>Key is <b>not</b> consumed — <see cref="MarkProcessedAsync"/> is only
+    ///     reached when <c>next()</c> returns normally; a thrown exception bypasses this call
+    ///     entirely, so retry with the same key is safe.</description>
+    ///   </item>
+    ///   <item>
+    ///     <term>Failure (<c>Result.Failure</c>)</term>
+    ///     <description>Key <b>is</b> consumed — the handler was reached, evaluated the command,
+    ///     and returned a deliberate business-rule rejection; a new idempotency key is required
+    ///     to retry.</description>
+    ///   </item>
+    /// </list>
+    /// </para>
+    /// </remarks>
     Task MarkProcessedAsync(string idempotencyKey, CancellationToken cancellationToken);
 }

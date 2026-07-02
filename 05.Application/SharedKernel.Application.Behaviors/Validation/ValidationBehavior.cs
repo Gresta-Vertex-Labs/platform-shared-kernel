@@ -33,9 +33,10 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        if (!validators.Any())
-            return await next().ConfigureAwait(false);
-
+        // Single enumeration only — no .Any() pre-check to avoid double-enumeration of the
+        // IEnumerable<IValidator<TRequest>>. Task.WhenAll on an empty sequence returns
+        // Task.FromResult(Array.Empty<ValidationResult>()), so the loop body is a no-op when
+        // zero validators are registered; DI convention guarantees the collection is never null.
         var validationResults = await Task.WhenAll(
                 validators.Select(validator => validator.ValidateAsync(request, cancellationToken)))
             .ConfigureAwait(false);
