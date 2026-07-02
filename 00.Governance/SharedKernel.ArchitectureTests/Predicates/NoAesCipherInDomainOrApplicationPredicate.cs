@@ -6,10 +6,9 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 
 /// <summary>
 /// Custom NetArchTest predicate (SK0301) that fails any type outside the
-/// <c>SharedKernel.Persistence.*</c> and <c>SharedKernel.Security.*</c> namespaces whose
-/// fields or method bodies reference <c>System.Security.Cryptography.AesGcm</c>,
-/// <c>System.Security.Cryptography.Aes</c>, or <c>System.Security.Cryptography.SymmetricAlgorithm</c>
-/// directly.
+/// <c>SharedKernel.Cryptography</c> namespace whose fields or method bodies reference
+/// <c>System.Security.Cryptography.AesGcm</c>, <c>System.Security.Cryptography.Aes</c>, or
+/// <c>System.Security.Cryptography.SymmetricAlgorithm</c> directly.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,10 +19,13 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first guard):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Persistence"</c> or
-/// <c>"SharedKernel.Security"</c> are returned as passing (<see langword="true"/>)
-/// unconditionally — these are the only legitimate crypto consumers in the platform
-/// (persistence-layer converter and JWT signing respectively).
+/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Cryptography"</c> are
+/// returned as passing (<see langword="true"/>) unconditionally — this is the
+/// <em>sole</em> legitimate crypto consumer in the platform (narrowed in WO-037 P-229 from
+/// the original two-namespace exemption <c>"SharedKernel.Persistence.*"</c> /
+/// <c>"SharedKernel.Security.*"</c>; both layers now route through
+/// <c>SharedKernel.Cryptography</c>'s <c>ISymmetricEncryptionService</c> /
+/// <c>AesGcmEncryptionService</c> instead of touching BCL cipher types directly).
 /// </para>
 /// <para>
 /// <strong>Detection surfaces:</strong>
@@ -69,14 +71,15 @@ public sealed class NoAesCipherInDomainOrApplicationPredicate : ICustomRule
     /// <param name="type">The Mono.Cecil <see cref="TypeDefinition"/> to inspect.</param>
     /// <returns>
     /// <see langword="false"/> when a direct <c>System.Security.Cryptography</c> cipher type
-    /// reference is found outside the exempted namespaces; <see langword="true"/> otherwise.
+    /// reference is found outside <c>SharedKernel.Cryptography</c>;
+    /// <see langword="true"/> otherwise.
     /// </returns>
     public bool MeetsRule(TypeDefinition type)
     {
-        // Namespace exemption — persistence and security layers are the only legitimate consumers.
+        // Namespace exemption — SharedKernel.Cryptography is the sole legitimate direct caller
+        // of BCL cipher types (narrowed from Persistence+Security in WO-037 P-229).
         if (type.Namespace is not null &&
-            (type.Namespace.StartsWith("SharedKernel.Persistence", StringComparison.Ordinal) ||
-             type.Namespace.StartsWith("SharedKernel.Security", StringComparison.Ordinal)))
+            type.Namespace.StartsWith("SharedKernel.Cryptography", StringComparison.Ordinal))
         {
             return true;
         }

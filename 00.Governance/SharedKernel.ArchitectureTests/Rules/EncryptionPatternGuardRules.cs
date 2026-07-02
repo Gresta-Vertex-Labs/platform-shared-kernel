@@ -57,9 +57,12 @@ public static class EncryptionPatternGuardRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Types whose namespace starts with <c>"SharedKernel.Persistence"</c> or
-    /// <c>"SharedKernel.Security"</c> are unconditionally exempt — these are the only legitimate
-    /// crypto consumers in the platform (persistence-layer converter and JWT signing respectively).
+    /// Types whose namespace starts with <c>"SharedKernel.Cryptography"</c> are unconditionally
+    /// exempt — this is the <em>sole</em> legitimate direct caller of BCL cipher types in the
+    /// platform (narrowed in WO-037 P-229 from the original two-namespace exemption
+    /// <c>"SharedKernel.Persistence.*"</c> / <c>"SharedKernel.Security.*"</c>; both layers now
+    /// route through <c>SharedKernel.Cryptography</c>'s <c>ISymmetricEncryptionService</c> /
+    /// <c>AesGcmEncryptionService</c> instead of touching BCL cipher types directly).
     /// </para>
     /// <para>
     /// This method accepts multiple assemblies because the rule is typically applied to both the
