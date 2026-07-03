@@ -5,9 +5,9 @@ metadata:
   type: project
 ---
 
-SK diagnostic ID registry as of 2026-06-18. Next available sequential ID: **SK0014**.
+SK diagnostic ID registry as of 2026-07-03. Next available sequential ID: **SK0017**.
 
-## Sequential block (SK0001–SK0013) — general SharedKernel patterns
+## Sequential block (SK0001–SK0016) — general SharedKernel patterns
 
 | ID | Rule Name | Status |
 |----|-----------|--------|
@@ -24,6 +24,9 @@ SK diagnostic ID registry as of 2026-06-18. Next available sequential ID: **SK00
 | SK0011 | GuidFormatCodeMisuse | Defined (WO-016 P-096) — Warning; requires SemanticModel.GetTypeInfo on receiver; first SK analyzer with semantic model check |
 | SK0012 | MakeGenericMethodReflection | Defined (WO-024 P-153) — Warning; MakeGenericMethod IL call in any method body; NetArchTest ICustomRule (NoMakeGenericMethodReflectionPredicate); allow-list via ReflectionExemptionRegistry; NO Roslyn analyzer (IL-only detectable); motivating incident: P-147 EncryptionRotationService; escalation to Error gated on zero false positives across all platform assemblies |
 | SK0013 | RawHttpClientConstructorInjection | Defined (WO-025 P-159) — Warning; ConstructorDeclarationSyntax parameter type == "HttpClient" (exact); Roslyn syntax-only analyzer (no SemanticModel); exemptions: (a) namespace starts with "SharedKernel.Communication.Rest", (b) ClassDeclarationSyntax.BaseList contains "DelegatingHandler" (exact); category: Usage |
+| SK0014 | ClosedGenericResiliencePipelineRegistration | Defined (WO-038 P-235) — Warning; GenericNameSyntax "ResiliencePipeline" with arity 1 (any usage — DI registration, parameter, field, local); Roslyn syntax-only analyzer; no namespace exemption (fires globally); category: Usage |
+| SK0015 | StreamPipelineBehaviorMisregistration | Defined (WO-038 P-235) — Warning; AddTransient/AddScoped/AddSingleton registering IPipelineBehavior<,> with a second type arg implementing IStreamPipelineBehavior<,>, outside a method named "AddStreamingBehaviors"; Roslyn analyzer requiring SemanticModel.GetSymbolInfo (2nd semantic-model SK rule after SK0011); category: Usage |
+| SK0016 | RequestTypeShortNameUsage | Defined (WO-038 P-235) — Warning; standalone typeof(X).Name (no ".FullName ??" companion) inside SharedKernel.Application/SharedKernel.Application.Behaviors namespaces; Roslyn syntax-only analyzer; trigger-IN namespace scope (inverse of the usual trigger-everywhere-except-exemption shape); category: Design |
 
 ## Multi-tenancy block (SK0201–SK0202) — EF Core tenant-filter guard
 
@@ -56,8 +59,8 @@ SK diagnostic ID registry as of 2026-06-18. Next available sequential ID: **SK00
 
 ## Block conventions
 
-- **SK0001–SK0013**: general SharedKernel coding patterns (mix of Roslyn analyzers and NetArchTest ICustomRules, sequential)
-- **SK0014–SK0199**: reserved for future sequential general-purpose rules; next is SK0014
+- **SK0001–SK0016**: general SharedKernel coding patterns (mix of Roslyn analyzers and NetArchTest ICustomRules, sequential)
+- **SK0017–SK0199**: reserved for future sequential general-purpose rules; next is SK0017
 - **SK0201–SK0299**: EF Core / multi-tenancy domain block; next is SK0203
 - **SK0301–SK0399**: encryption subsystem block; next is SK0305
 - **SK0701–SK0799**: messaging-domain block (domain 07); next is SK0709
@@ -65,7 +68,9 @@ SK diagnostic ID registry as of 2026-06-18. Next available sequential ID: **SK00
 
 **Why:** Tracking this prevents ID gaps, reuse, and block collisions. Block numbers follow the domain number (02xx = domain 02 EfCore/multi-tenancy, 03xx = encryption subsystem, 07xx = messaging domain). The 07xx block was introduced in WO-020 P-123; extended to SK0705–SK0708 in WO-021 P-133.
 
-**How to apply:** Before assigning a new SK ID, verify this registry. Use SK0014 for the next general-purpose rule, SK0203 for the next multi-tenancy rule, SK0305 for the next encryption rule, SK0709 for the next messaging rule. Update this memory file whenever a new rule is assigned.
+**How to apply:** Before assigning a new SK ID, verify this registry. Use SK0017 for the next general-purpose rule, SK0203 for the next multi-tenancy rule, SK0305 for the next encryption rule, SK0709 for the next messaging rule. Update this memory file whenever a new rule is assigned.
+
+**WO-038 P-235 (SK0014–SK0016):** Three new general-purpose IDs closing the WO-038 `05.Application` audit gaps. SK0014 (`ClosedGenericResiliencePipelineRegistration`) and SK0016 (`RequestTypeShortNameUsage`) are syntax-only Roslyn analyzers; SK0015 (`StreamPipelineBehaviorMisregistration`) is the domain's **second** semantic-model-based analyzer after SK0011 — a naming-heuristic approach (mirroring SK0708's `"BatchConsumer"` substring convention) was deliberately rejected for SK0015 because the streaming behavior names are a convention, not a structural guarantee, so `SemanticModel.GetSymbolInfo` + `ITypeSymbol.AllInterfaces` is used instead to resolve `IStreamPipelineBehavior<,>` implementation. SK0016 is also notable as the first namespace-scoped rule using a **trigger-IN** condition (fires only inside `SharedKernel.Application*`) rather than the usual trigger-everywhere-except-exemption shape (SK0001/SK0007/SK0013). A fourth WO-038 finding (missing `"outcome"` tag on `RequestDuration`) got **no SK ID** — implemented as `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag`, a NetArchTest `ICustomRule` reusing the `HealthCheckTagIntegrityRules` (WO-027 P-173) Ldstr literal-collection technique against a new `Histogram<T>.Record` call-site search. That rule is designed/tested against contrived fixtures only — it is EXPECTED TO FAIL if pointed at the real `SharedKernel.Application.Behaviors` assembly until a companion `05.Application` phase retrofits `MetricsBehavior<,>` (P-217) to emit the outcome tag (`StreamMetricsBehavior`/P-234 already has it). That retrofit is 05.Application production code, explicitly out of `00.Governance`'s jurisdiction — tracked as a Cross-Domain Dependency in `00.Governance/state-map.md`, not implemented by this domain.
 
 **Key design decision (P-153):** SK0012 is a NetArchTest ICustomRule predicate, NOT a Roslyn analyzer. Reason: MethodInfo.MakeGenericMethod is called at runtime on a variable — there is no compile-time syntax pattern to detect reliably. IL inspection (Mono.Cecil Call/Callvirt opcode name match on "MakeGenericMethod") is the only reliable detection mechanism. This is the first sequential SK rule that is NOT a Roslyn analyzer — all prior SK0001–SK0011 were Roslyn analyzers.
 
