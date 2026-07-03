@@ -64,7 +64,7 @@ Format when blocked:
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for WO-038 Application Audit Findings | `●` | All 15 tasks complete — SK0014 ClosedGenericResiliencePipelineRegistration, SK0015 StreamPipelineBehaviorMisregistration, SK0016 RequestTypeShortNameUsage analyzers plus MetricsInstrumentationRules/RequestDurationRecordMissingOutcomeTagPredicate added; 105/105 analyzer + 127/127 arch tests pass. | Real-assembly re-verification once 05.Application retrofits MetricsBehavior<,> (P-217) to emit the outcome tag. |
-| 01 | [Core](01.Core/state-map.md) | Published | `●` | P-230 (WO-038) complete — `IHasSuccessFlag` (zero-member marker, implemented by `Result<T>` and `Result`) and `IResultOfT<T>` (typed interface, implemented by `Result<T>` only) added to `SharedKernel.Primitives`; 56/56 tests passing; AOT-clean, additive-only. | — |
+| 01 | [Core](01.Core/state-map.md) | Published | `●` | P-236 (WO-039) complete — `IFailureFactory<TSelf>` (CRTP contract, `static abstract TSelf Failure(Error error)`, implemented by `Result<T>` only) added to `SharedKernel.Primitives`; 74/74 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
@@ -9519,3 +9519,210 @@ The WO-038 audit identified four patterns that will recur as new behaviors and b
 - [2026-07-03] Phase(s) P-235 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
 - [2026-07-03] Governance → Governance: Architecture Enforcement for WO-038 Application Audit Findings (●) — promoted from SK.00.MetricsOutcomeTagAndMisregistrationGuard (state-map-phase)
 - [2026-07-03] Phase Backlog P-235 → ● Complete — SK.00.MetricsOutcomeTagAndMisregistrationGuard done (state-map-phase)
+
+---
+### P-236 — Core: Reflection-Free Failure-Factory Contract for Generic `Result<T>` Construction
+
+**Status:** `●` Complete
+**Work Order:** WO-039
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+
+A new, minimal, self-referential contract that lets `Result<T>` construct a failure instance of itself from an `Error` via a **compile-time generic constraint** — no runtime type discovery, no `MethodInfo`/`Type` reflection, no `[RequiresUnreferencedCode]` annotation. Concretely: a contract shaped so that a caller who only knows an open generic `TResponse` (never learning the inner `T`) can write `where TResponse : {the new contract}<TResponse>` and call a static factory member directly against `TResponse`, using C# static abstract interface members. `Result<T>` implements this contract in terms of itself (`Result<T>` implements `{contract}<Result<T>>`), which is what makes the constraint resolvable from `TResponse` alone — the caller never needs to know `T`.
+
+This is additive to `IHasSuccessFlag`/`IResultOfT<T>` (P-230), not a replacement — those solve "read the outcome/value of a known-shape response"; this solves "construct a failure of an *unknown* `Result<T>` shape from just `TResponse`," which `IResultOfT<T>` cannot do because it is parameterized on the inner value type, not on itself.
+
+#### Why this is needed
+
+`05.Application.Behaviors`'s `FailureResponseFactory` (used by `AuthorizationBehavior`/`IdempotentCommandBehavior` to short-circuit with a typed failure when `TResponse` is only known as `IRequest<TResponse>`'s response type) was supposed to become reflection-free once `IResultOfT<T>` shipped — P-232's acceptance criteria state the factory "relies on `IResultOfT<T>` constraint instead" of `Expression.Compile()`. Reading the shipped code shows this was only partially achieved: the `Expression.Compile()` path and its `[RequiresUnreferencedCode]` annotation were removed as documented, but the replacement (`ResultOfTDispatcher<TResponse>.BuildFactory`) still calls `Type.GetInterfaces()`, `Type.MakeGenericType()`, `Type.GetMethod()`, and `MethodBase.Invoke()` to locate and invoke `Result<T>.Failure` — genuine reflection, cached per closed `TResponse` type but never eliminated. Because `Type.MakeGenericType`/`GetMethod`/`Invoke` (not `MethodInfo.MakeGenericMethod`) are the specific APIs used, this code is invisible to `00.Governance`'s SK0012 `NoMakeGenericMethodReflectionPredicate` (which matches only the exact IL call target `MakeGenericMethod`) — but it is exactly the shape SK0012 exists to eliminate, and it carries no AOT/trimming safety annotation despite being trimming-unsafe in the general case (nothing statically roots `Result<T>.Failure` for the runtime-discovered `T`). Root `CLAUDE.md`'s AOT guidance directs "if a feature can be written AOT-cleanly without reflection... do it that way" — this call site can be, once `Result<T>` carries a self-referential static factory contract. This phase gives `05.Application` (P-237) the primitive it needs to genuinely close the gap P-232 believed it had already closed.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Primitives` gains a self-referential contract implemented by `Result<T>` exposing a static failure-construction member reachable via a `where TResponse : {contract}<TResponse>` constraint — zero reflection, zero `[RequiresUnreferencedCode]`, fully AOT-clean per the existing `IHasSuccessFlag`/`IResultOfT<T>` AOT-compatibility bar
+- [ ] The non-generic `Result` struct is deliberately excluded from this contract, consistent with `IResultOfT<T>`'s existing exclusion rationale (callers needing a non-generic `Result` failure use the existing `TResponse == typeof(Result)` fast path)
+- [ ] Additive only — `IHasSuccessFlag`, `IResultOfT<T>`, and every existing `Result<T>`/`Result` member signature are unchanged
+- [ ] `01.Core/CLAUDE.md` interface contracts, AOT notes, and test rules updated to document the new contract alongside the existing P-230 entries
+- [ ] Unit tests cover: construction via the constraint for at least two distinct closed `Result<T>` shapes, and a compile-time proof (test fixture) that the constraint is satisfied without any `System.Reflection` call in the code path
+---
+
+---
+### P-237 — Application: Eliminate `FailureResponseFactory` Runtime Reflection
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-039
+**Domain:** 05.Application
+**Depends on:** P-236
+
+#### What is needed
+
+Rework `SharedKernel.Application.Behaviors`'s internal `FailureResponseFactory`/`ResultOfTDispatcher` so the `Result<T>` failure-construction path uses the new `01.Core` self-referential static-factory contract (P-236) via a direct generic constraint, removing every remaining `System.Reflection` call (`Type.GetInterfaces`, `Type.MakeGenericType`, `Type.GetMethod`, `MethodBase.Invoke`) from the hot path. The non-generic `Result` fast path is unchanged. The external contract consumed by `AuthorizationBehavior<TRequest,TResponse>` and `IdempotentCommandBehavior<TRequest,TResponse>` (`FailureResponseFactory.Create<TResponse>(Error)`) must not change — this is an internal implementation swap only.
+
+#### Why this is needed
+
+Closes the gap identified while reviewing this domain: P-232 (WO-038) claimed reflection was eliminated from this call site, but the shipped implementation still performs interface discovery and method invocation via reflection at runtime, just cached per type instead of using `Expression.Compile()`. This is invisible to SK0012 (different API surface) but is exactly the class of AOT/trimming hazard the platform's AOT guidance and the SK0012 rule both exist to prevent, and it leaves a documented acceptance criterion only nominally satisfied. Genuinely finishing this now — while the call site is small and well-tested — is cheaper than leaving a second generation of "reflection debt" for a future work order to rediscover the way WO-024's `EncryptionRotationService` incident and this review both did independently.
+
+#### Acceptance criteria
+- [ ] `FailureResponseFactory`/`ResultOfTDispatcher` contain zero `System.Reflection` API calls (`GetInterfaces`, `MakeGenericType`, `GetMethod`, `Invoke`, `MakeGenericMethod`) — verified by a governance-style IL/source check or, at minimum, an explicit unit test asserting the code path executes without triggering any `System.Reflection` member (e.g., via a reflection-call-counting test double, or by grep-style assertion in the test suite pending P-241's real architecture-test wiring)
+- [ ] `FailureResponseFactory.Create<TResponse>(Error)`'s external signature and short-circuit behavior in `AuthorizationBehavior`/`IdempotentCommandBehavior` are unchanged — no caller-visible breaking change
+- [ ] All existing `AuthorizationBehavior`/`IdempotentCommandBehavior`/`FailureResponseFactory`-adjacent tests continue to pass unmodified in intent (signature churn inside the internal factory is acceptable; behavior is not)
+- [ ] `05.Application/CLAUDE.md`'s `FailureResponseFactory` implementation-rules section is rewritten to describe the P-236-based constraint approach as the shipped (not "target") implementation, and the superseded reflection-based description is removed
+---
+
+---
+### P-238 — Application: Fix Fire-and-Forget Dispatch Self-Blocking Bug
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-039
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+A functional fix to the fire-and-forget dispatch infrastructure shipped in WO-038 (P-233): `ApplicationBehaviorsBuilder.AddFireAndForgetDispatch()` registers `FireAndForgetGuardBehavior<,>` globally against the open-generic `IPipelineBehavior<,>` in the same call that also registers `FireAndForgetBackgroundConsumer`, whose `ExecuteAsync` loop dispatches each dequeued command via `ISender.Send(...)`. Because the guard behavior's check (`if (request is IFireAndForgetCommand) throw ...`) has no way to distinguish "the background consumer's own legitimate internal dispatch" from "a caller mistakenly calling `ISender.Send` directly" — both traverse the identical MediatR pipeline against the identical service provider — the guard intercepts and rejects the consumer's own dispatch attempt every time. The thrown `InvalidOperationException` is then caught by the consumer's own catch-all exception handler, logged at `Error`, and silently discarded. Net effect: when wired exactly as documented (the only wiring path `AddFireAndForgetDispatch()` offers), **no fire-and-forget command ever actually executes** — the feature is non-functional end-to-end despite shipping as "Complete" with passing tests. The existing test suite does not catch this because it deliberately never exercises the guard and the consumer together in the same service provider (see the explicit workaround comment in `FireAndForgetDispatcherTests.BuildConsumerDirectProvider`).
+
+Fix the dispatch path so the background consumer's internal dispatch is not intercepted by its own guard — for example (implementer's judgment on the exact mechanism): have the consumer resolve and invoke the concrete `IRequestHandler<,>` directly rather than routing through `ISender.Send` (bypassing the pipeline-behavior chain entirely for the internal dispatch, which is arguably correct anyway since cross-cutting behaviors like Logging/Metrics/Validation should still be able to apply — so a resolution that keeps the rest of the pipeline intact while excluding only the guard is preferred over a full bypass), or give the guard a way to recognize "trusted internal dispatch" that cannot be spoofed by external callers. Whatever mechanism is chosen, add an end-to-end test that wires `AddFireAndForgetDispatch()` exactly as the public API and XML docs instruct, starts the real hosted consumer, enqueues via `IFireAndForgetDispatcher.EnqueueAsync`, and asserts the handler actually ran — closing the exact gap the current test suite leaves open.
+
+#### Why this is needed
+
+This is a functional correctness bug in a documented, "Complete," gold-standard platform capability that every consuming microservice adopting fire-and-forget dispatch would hit in production with zero warning — commands would be silently swallowed, logged only as an unexplained `InvalidOperationException` inside `FireAndForgetBackgroundConsumer`, with no indication to the caller (who received a successful, immediate `EnqueueAsync` return) that anything failed. A shared kernel whose stated purpose is to be "developer friendly" and "plug and play" cannot ship a feature that fails silently the moment it's used as documented. This must be fixed before any downstream service adopts `AddFireAndForgetDispatch()`.
+
+#### Acceptance criteria
+- [ ] A test wiring `AddFireAndForgetDispatch()` exactly per the documented DI registration shape, starting the real `FireAndForgetBackgroundConsumer` as a hosted service and dispatching via the real `IFireAndForgetDispatcher.EnqueueAsync`, proves the enqueued handler actually executes
+- [ ] `FireAndForgetGuardBehavior<,>` still rejects a caller's direct `ISender.Send(IFireAndForgetCommand)` call with the existing documented `InvalidOperationException` message — the external-misuse guard is not weakened or removed, only the internal self-blocking is fixed
+- [ ] The misleading `AddFireAndForgetDispatch()` XML doc remark ("Do not call `AddFireAndForgetDispatch` from the same composition root that also registers `FireAndForgetGuardBehavior<,>` as a global behavior") is removed and replaced with an accurate description of how internal dispatch and external-misuse detection now coexist
+- [ ] `FireAndForgetDispatcherTests`'s `BuildConsumerDirectProvider` workaround (wiring the consumer manually without the guard to avoid the bug) is deleted or repurposed now that the real registration path works end-to-end
+- [ ] `05.Application/CLAUDE.md`'s Fire-and-Forget Dispatch section is updated to describe the corrected dispatch mechanism
+---
+
+---
+### P-239 — Application: Retrofit `MetricsBehavior<,>` with an Outcome Tag
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-039
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+Add an `outcome` tag (e.g. `success` / `failure` / `exception`, matching the categories already meaningful to this domain's `Result`/`IHasSuccessFlag` railway) to every measurement `MetricsBehavior<TRequest,TResponse>` records on `ApplicationDiagnostics.RequestDuration`, mirroring what the streaming counterpart `StreamMetricsBehavior` (P-234) already does with its `streamed`/`faulted` outcome tag. Determine outcome the same way `LoggingBehavior` already does (via `IHasSuccessFlag` pattern matching where available, falling back to a `success`/`exception` binary for response types that do not implement it) so the two behaviors stay conceptually consistent without being merged.
+
+#### Why this is needed
+
+`00.Governance`'s WO-038 audit (P-235) identified this exact gap and built `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` to mechanically enforce it — but explicitly left the actual retrofit out of scope as "production code in 05.Application," tracking it as a companion dependency (see `00.Governance/CLAUDE.md`'s P-235 changelog entry and the root Domain Summary Board's row 00 "Summary: Next": *"Real-assembly re-verification once 05.Application retrofits `MetricsBehavior<,>` (P-217) to emit the outcome tag"*). Without this tag, dashboards built on `sharedkernel.application.request.duration` cannot distinguish success from failure from exception for the unary (non-streaming) request path — the single most common request shape in the platform — making the metric far less useful for alerting than its streaming sibling. This phase closes a gap the platform has already identified and is actively waiting on.
+
+#### Acceptance criteria
+- [ ] `MetricsBehavior<TRequest,TResponse>` records `outcome` alongside the existing `request.name` tag on every `RequestDuration.Record` call, covering the success, `Result.Failure`, and thrown-exception paths
+- [ ] Outcome classification is consistent with `LoggingBehavior`'s existing `IHasSuccessFlag`-based classification (no divergent taxonomy between the two behaviors)
+- [ ] Existing `MetricsBehavior` tests are extended to assert the `outcome` tag value for success, failure, and exception cases
+- [ ] `05.Application/CLAUDE.md`'s `MetricsBehavior` documentation is updated to describe the tag
+- [ ] Confirmed compatible with `00.Governance`'s `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` predicate shape (coordinate with the real-assembly wiring in P-241 below)
+---
+
+---
+### P-240 — Governance: Register `MediatRDomainEventDispatcher`'s Reflection Exemption
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-039
+**Domain:** 00.Governance
+**Depends on:** None
+
+#### What is needed
+
+Register `SharedKernel.Application.DomainEventDispatchers`'s `MediatRDomainEventDispatcher` (specifically the method that calls `MethodInfo.MakeGenericMethod` while building its per-event-type cached publish delegate) in `SharedKernel.ArchitectureTests.ReflectionExemptionRegistry.AllowList`, with the XML-doc-documented governance rationale, work order, and date the registry's own class-level remarks require for every entry.
+
+#### Why this is needed
+
+`MediatRDomainEventDispatcher.PublishSingle` calls `MethodInfo.MakeGenericMethod` to build a cached, closed-generic publish delegate per concrete runtime `IDomainEvent` type — a documented, deliberate exception to the platform-wide SK0012 prohibition, explicitly modeled on the already-accepted `07.Messaging.MassTransitEventPublisher` precedent for "publish-by-runtime-type through a generic API" (both `05.Application/CLAUDE.md` and the type's own XML docs say so). But the *only* sanctioned exception mechanism for SK0012 is registration in `ReflectionExemptionRegistry` — "No other suppression mechanism is accepted: `#pragma warning disable SK0012`, `[SuppressMessage]`, or inline comments do not exempt a type" — and the registry ships empty today. This means the moment `ReflectionGuardRules.NoMakeGenericMethodReflection` is pointed at the real `SharedKernel.Application` assembly (which P-241 below does), the build breaks for a call site the platform has already, independently decided is legitimate. Registering the exemption now — before P-241 wires the real-assembly check — avoids shipping a governance phase that is DOA against its own stated dependency.
+
+#### Acceptance criteria
+- [ ] `ReflectionExemptionRegistry.AllowList` contains the `(typeFullName, methodName)` entry for `MediatRDomainEventDispatcher`'s `MakeGenericMethod`-calling method, with an XML `<remarks>` comment stating the governance rationale, this work order (WO-039), and the approval date
+- [ ] `NoMakeGenericMethodReflectionPredicate`/`ReflectionGuardRules.NoMakeGenericMethodReflection`, when pointed at the real `SharedKernel.Application` assembly, passes without needing any further exemption for this call site
+- [ ] `00.Governance/CLAUDE.md`'s `ReflectionExemptionRegistry` documentation is updated to note the registry is no longer empty and to record this first real entry
+- [ ] No change to `NoMakeGenericMethodReflectionPredicate` itself — this phase is a registry entry only, not a rule-logic change
+---
+
+---
+### P-241 — Application: Wire Governance Architecture Tests Against the Real Assemblies
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-039
+**Domain:** 05.Application
+**Depends on:** P-237, P-239, P-240
+
+#### What is needed
+
+Add an architecture-test project reference from `05.Application`'s own test suites to `00.Governance/SharedKernel.ArchitectureTests`, and actually invoke, against the real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies, the four rule groups `00.Governance` already built specifically for this domain but that have never been pointed at anything but contrived in-memory fixtures:
+- `ReflectionGuardRules.NoMakeGenericMethodReflection` (WO-024 P-153)
+- `ApplicationPipelineRules.BehaviorsNeverReferenceConcreteInfrastructure` / `.NoExistingBehaviorMatchesStreamRequestConstraint` / `.NoHandRolledRetryLoopOutsideResilienceBehavior` (WO-036 P-225)
+- `PipelineOrderAssertion.AssertRegistrationOrder` against `ApplicationBehaviorsBuilder.Build()`'s real, unbuilt `IServiceCollection` output (WO-036 P-225)
+- `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` (WO-038 P-235)
+
+#### Why this is needed
+
+`00.Governance`'s own `CLAUDE.md` states plainly, for each of these rule groups, that "the owning domain (`05.Application`) is responsible for invoking these factory methods against its own real assembly once WO-036's Core phase ships" — and WO-036's Core phase has been `●` complete since before this review. Nothing in `05.Application`'s test suites currently does this. The result: mechanical enforcement that governance already designed, built, and tested against fixtures is providing zero actual protection for the real production assemblies it was built to protect — a future edit could reorder the canonical pipeline, reintroduce a closed-generic `ResiliencePipeline<TResponse>` registration, or regress the outcome tag added in P-239, and no CI signal would catch it. This phase closes that loop, turning already-built governance investment into an active guarantee.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Application.Tests` and/or `SharedKernel.Application.Behaviors.Tests` reference `SharedKernel.ArchitectureTests` and invoke all four rule groups listed above against the real production assemblies (not fixtures)
+- [ ] `PipelineOrderAssertion.AssertRegistrationOrder` is exercised against the actual `ApplicationBehaviorsBuilder.Build()` output, pinning the documented ten-step canonical order as a permanent regression guard
+- [ ] `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` passes against the real assembly now that P-239 has shipped the outcome tag
+- [ ] `ReflectionGuardRules.NoMakeGenericMethodReflection` passes against the real assembly now that P-237 (reflection eliminated from `FailureResponseFactory`) and P-240 (exemption registered for `MediatRDomainEventDispatcher`) have both shipped
+- [ ] `00.Governance/CLAUDE.md`'s follow-up notes for `ApplicationPipelineRules`/`MetricsInstrumentationRules` ("real-assembly re-verification tracked as a follow-up... once that companion phase ships") are updated to record this confirmation, and the root Domain Summary Board row for `00.Governance` is updated to drop the now-resolved "Summary: Next" note
+---
+
+---
+### P-242 — Application: Opt-In Idempotency Response Replay
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-039
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+Extend the idempotency local seam so a store capable of it can replay the original successful outcome for a duplicate submission, instead of `IdempotentCommandBehavior` unconditionally short-circuiting every duplicate with `Error.Conflict`. This must be additive and backward compatible: existing `IIdempotencyKeyStore` implementations (which only answer "has this key been seen" as a bare `bool`) continue to work exactly as today, unchanged. A store that opts in to replay support supplies both the duplicate check and a way to retrieve/store the prior outcome; `IdempotentCommandBehavior` detects replay capability at the seam level and, only when available, returns the stored original response instead of `Error.Conflict`. When replay capability is not present (today's default), behavior is unchanged.
+
+Response replay only needs to work for the platform's own known response shapes (`Result` and `Result<T>`) — it is not a general-purpose object cache. Reuse the platform's existing serialization stance (the same one `04.Contracts`/consuming services already use for wire payloads) rather than inventing a new one; the store implementation, not this package, owns the actual persistence mechanism.
+
+#### Why this is needed
+
+Idempotency keys exist, in essentially every real-world API convention this platform's design already cites as precedent (Stripe, AWS), to make a **retry after an ambiguous network outcome safe** — the client didn't get a response (timeout, connection drop) and cannot tell whether the mutation succeeded, so it retries with the same key and expects to get back the *original result*, not an error. The current `IdempotentCommandBehavior` cannot do this: on any second submission with the same key — including the exact "the first attempt actually succeeded but the client never saw the response" case the feature exists for — it returns `Error.Conflict`, forcing the client to treat a probably-successful operation as a failure. This is documented in the current code as "a deliberate scope boundary," which is a defensible MVP choice but not a gold-standard end state for a platform capability whose entire purpose is safe-retry semantics. Making replay an explicit opt-in (rather than mandatory) respects the existing design's minimalism for services that don't need it, while giving services that do (payment initiation, order placement, any financially or operationally significant command) a real, platform-provided answer instead of forcing every team to hand-roll their own replay cache.
+
+#### Acceptance criteria
+- [ ] A store implementing only the existing `IIdempotencyKeyStore` shape continues to compile and behave exactly as before — zero breaking change for current consumers
+- [ ] A new opt-in capability lets a store additionally support retrieving and persisting the original successful response for a given idempotency key
+- [ ] `IdempotentCommandBehavior<TRequest,TResponse>` detects the opt-in capability and, when present, returns the replayed original response on a duplicate submission instead of `Error.Conflict`; when absent, behavior is unchanged from today
+- [ ] The existing fault-vs-failure key-consumption asymmetry (documented on `IIdempotencyKeyStore.MarkProcessedAsync`) is preserved — a thrown exception still never consumes the key; a `Result.Failure` still consumes it (and, when replay is supported, replays the stored failure consistently with this rule, not a fresh `Error.Conflict`)
+- [ ] Tests cover: no-replay-capability duplicate (existing `Error.Conflict` behavior, unchanged), replay-capability duplicate after a successful first attempt (returns the original success payload), replay-capability duplicate after a `Result.Failure` first attempt (returns the original failure, not a new `Error.Conflict`)
+- [ ] `05.Application/CLAUDE.md`'s Idempotency section is updated to document the opt-in replay capability alongside the existing fail-and-consume-key invariant
+---
+
+---
+### P-243 — Application: Developer-Experience Preset for Common Pipeline Behaviors
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-039
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+A single, discoverable, opinionated entry point on `ApplicationBehaviorsBuilder` that registers the subset of pipeline behaviors requiring no infrastructure bridge — Logging, Metrics, Tracing, and Validation — in the platform's canonical order, for the common case of a new microservice wanting sane default observability and input validation with minimal ceremony. This is a convenience composition over the existing individual `.AddXBehavior()` calls, not a new behavior and not a new registration mechanism — it must be exactly equivalent to calling those four `.AddXBehavior()` methods individually. Behaviors that require a bridged infrastructure dependency (Transaction, Authorization, Caching, CacheInvalidation, Idempotency, Resilience, fire-and-forget dispatch, streaming behaviors) remain deliberate, individual opt-ins — never bundled into this preset — since each requires the consuming service to register a local-seam implementation first, and silently requiring one as a side effect of a "just get me started" call would violate this domain's `Build()`-time missing-dependency guard contract.
+
+#### Why this is needed
+
+The user's explicit goal for this domain is that it be "developer friendly" and "plug and play" — this package already achieves that for the *contracts* (`ICommand`, `IQuery<TResponse>`, handler aliases are all minimal and self-documenting), but the *behavior onboarding* path still requires a new consumer to read the full `CLAUDE.md` pipeline-composition section, know which four of ten behaviors carry no infrastructure prerequisite, and call each individually in the correct mental model (even though `Build()` fixes the actual wire order regardless of call order). A one-line, well-named preset for the genuinely zero-prerequisite subset removes that first-five-minutes friction for the common case without compromising the deliberate, infrastructure-gated opt-in model for everything else — mirroring how `13.ServiceDefaults`'s `AddServiceDefaults()` already gives new services a one-call sane baseline for OTel/health-checks rather than requiring each signal wired individually.
+
+#### Acceptance criteria
+- [ ] `ApplicationBehaviorsBuilder` exposes a single method that registers Logging, Metrics, Tracing, and Validation behaviors, provably equivalent (via a test comparing registration output) to calling all four `.AddXBehavior()` methods individually
+- [ ] Calling the preset alongside any other individual `.AddXBehavior()` call composes correctly with no duplicate registration and no change to the fixed canonical order
+- [ ] The preset registers nothing that carries a `Build()`-time missing-dependency guard — it must never throw `InvalidOperationException` on its own
+- [ ] `05.Application/CLAUDE.md`'s DI Registration section is updated with the one-line preset alongside the existing full individual-call example, clearly scoped as "the zero-prerequisite subset only"
+- [ ] `05.Application/README.md` (currently empty) gains a minimal quick-start snippet demonstrating the preset as the recommended first call for a new consuming service
+---
+
+- [2026-07-03] Phase P-240 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-03] Phase P-236 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-07-03] Phase(s) P-237, P-238, P-239, P-241, P-242, P-243 dispatched to application-arch-planner for 05.Application (dispatch-phase)
+- [2026-07-03] Core → Published (●) — promoted from SK.01.P236 (state-map-phase)
+- [2026-07-03] Phase Backlog P-236 → ● Complete — SK.01.P236 done (state-map-phase)
