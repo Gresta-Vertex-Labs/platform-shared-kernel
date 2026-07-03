@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-07-01, the last phase written to `state-map.md` Phase Backlog is **P-235** under **WO-038**.
+As of 2026-07-03, the last phase written to `state-map.md` Phase Backlog is **P-244** under **WO-039**.
 
-Next new phase must be **P-236**. Next new Work Order must be **WO-039**.
+Next new phase must be **P-245**. Next new Work Order must be **WO-040**.
+
+**WO-039 context:** User-initiated deep-dive review of `05.Application` for gold-standard fit, bad practices, over-engineering, and missing features — explicitly asked to read the actual code, not just docs. Found four real issues invisible from `CLAUDE.md`/`state-map.md` prose alone (see [[project_wo039_application_review]] for full detail): a confirmed functional bug in fire-and-forget dispatch (guard blocks its own consumer), an acceptance-criteria checkbox that was checked but not actually true (P-232 claimed reflection was eliminated from `FailureResponseFactory`; it wasn't — different reflection API, invisible to SK0012), a governance/domain handoff gap (governance built real-assembly enforcement for this domain in WO-036/038 and 05.Application never wired it in), and a genuine design gap (idempotency never supports response replay, defeating its real-world purpose). Phases: P-236 (`01.Core`, new primitive), P-237/238/239/241/242/243 (`05.Application`), P-240 (`00.Governance`). All three domains already past `○` on the board, so backlog-only — no `state-map-phase` calls. `sync-brain` called once for two "What Goes Where" row changes (idempotency replay note, new DX-preset row) plus one changelog line.
 
 **WO-038 context:** Post-build audit of `05.Application` (WO-035/WO-036 output) yielded 15 findings grouped into 6 phases across `01.Core`, `05.Application` (×3), and `00.Governance`. Key grouping decisions:
 - P-230 (`01.Core`): `IHasSuccessFlag` + `IResultOfT<T>` primitives — foundational, must ship before P-232 can remove reflection from `FailureResponseFactory` and enable `LoggingBehavior` level correction. All three domains (`01.Core`, `05.Application`, `00.Governance`) already past `○`, so all phases queued in backlog only — no `state-map-phase` calls made.
