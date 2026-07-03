@@ -63,7 +63,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Rules Locking the Cryptography Delegation and IUnitOfWork Bridge | `●` | All 14 tasks complete — CryptoIsolationRules (NoRawSymmetricCipherOutsideCryptographyPredicate, platform-wide AesGcm/RNG guard), UnitOfWorkSeamRules (UnitOfWorkInterfacesRemainDistinctPredicate, negative-space IUoW-distinctness guard), SK0301 exemption narrowed to SharedKernel.Cryptography; 125/125 arch tests pass. | Real-assembly re-verification once 06.Persistence P-227/P-228 ship. |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for WO-038 Application Audit Findings | `●` | All 15 tasks complete — SK0014 ClosedGenericResiliencePipelineRegistration, SK0015 StreamPipelineBehaviorMisregistration, SK0016 RequestTypeShortNameUsage analyzers plus MetricsInstrumentationRules/RequestDurationRecordMissingOutcomeTagPredicate added; 105/105 analyzer + 127/127 arch tests pass. | Real-assembly re-verification once 05.Application retrofits MetricsBehavior<,> (P-217) to emit the outcome tag. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-230 (WO-038) complete — `IHasSuccessFlag` (zero-member marker, implemented by `Result<T>` and `Result`) and `IResultOfT<T>` (typed interface, implemented by `Result<T>` only) added to `SharedKernel.Primitives`; 56/56 tests passing; AOT-clean, additive-only. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -107,7 +107,7 @@ Format when active:
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● Published | 7 |
-| ● Governance: Architecture Rules Locking the Cryptography Delegation and IUnitOfWork Bridge | 1 |
+| ● Governance: Architecture Enforcement for WO-038 Application Audit Findings | 1 |
 | ● Docs | 1 |
 | ● Tests | 3 |
 | ● Core | 0 |
@@ -9486,7 +9486,7 @@ The introduction of the streaming query vocabulary (P-221) without corresponding
 ---
 ### P-235 — Governance: Architecture Enforcement for WO-038 Application Audit Findings
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-038
 **Domain:** 00.Governance
 **Depends on:** P-234
@@ -9515,3 +9515,7 @@ The WO-038 audit identified four patterns that will recur as new behaviors and b
 - [ ] All new rules are assigned SK-numbers and recorded in `00.Governance/CLAUDE.md` changelog
 - [ ] Existing architecture test suite (117/117 passing as of WO-036 close) remains green after all new rules land
 ---
+
+- [2026-07-03] Phase(s) P-235 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-03] Governance → Governance: Architecture Enforcement for WO-038 Application Audit Findings (●) — promoted from SK.00.MetricsOutcomeTagAndMisregistrationGuard (state-map-phase)
+- [2026-07-03] Phase Backlog P-235 → ● Complete — SK.00.MetricsOutcomeTagAndMisregistrationGuard done (state-map-phase)
