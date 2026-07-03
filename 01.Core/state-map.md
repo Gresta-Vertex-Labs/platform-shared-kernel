@@ -35,6 +35,7 @@
 | `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | All tasks in Phase: WO-033 Implementation are `●` | P-207, P-208, P-209 |
 | `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | All tasks in Phase: WO-034 are `●` | P-210, P-211, P-212, P-213 |
 | `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | All tasks in Phase: P-230 are `●` | P-230 |
+| `SK.01.P236` | P-236 Reflection-Free Failure-Factory Contract | All tasks in Phase: P-236 are `●` | P-236 |
 
 ---
 
@@ -68,7 +69,7 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
-| `SharedKernel.Primitives` | — | `○` | Zero external dependencies |
+| `SharedKernel.Primitives` | — | `○` | Zero external dependencies; carries `IHasSuccessFlag`/`IResultOfT<T>`/`IFailureFactory<TSelf>` reflection-free application seams (P-230, P-236) |
 | `SharedKernel.Core` | — | `○` | References Primitives |
 | `SharedKernel.Configuration` | — | `○` | References Primitives |
 | `SharedKernel.FeatureManagement` | — | `○` | References Primitives |
@@ -320,6 +321,23 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: P-236 — Reflection-Free Failure-Factory Contract for Generic `Result<T>` Construction <!-- phase-key: SK.01.P236 -->
+
+> Additive extension to `SharedKernel.Primitives`: adds a self-referential (CRTP) contract, `IFailureFactory<TSelf>`, built on a C# static abstract interface member, so a caller who knows only an open generic `TResponse` — never the inner `T` — can construct a failure `Result<T>` via a `where TResponse : IFailureFactory<TResponse>` compile-time constraint and a direct `TResponse.Failure(error)` call. `Result<T>` implements `IFailureFactory<Result<T>>` through its existing `Failure(Error error)` static factory (P-001/C-01) — no new member is added to `Result<T>`, no existing signature changes.
+> Motivation: `05.Application.Behaviors`'s `FailureResponseFactory`/`ResultOfTDispatcher<TResponse>` was supposed to become reflection-free once `IResultOfT<T>` (P-230) shipped — P-232's acceptance criteria claimed exactly that. Reading the shipped code shows the replacement still calls `Type.GetInterfaces()`, `Type.MakeGenericType()`, `Type.GetMethod()`, and `MethodBase.Invoke()` to locate and invoke `Result<T>.Failure` — genuine reflection, cached per closed `TResponse` but never eliminated, and invisible to `00.Governance`'s SK0012 rule (which matches only the exact IL call target `MakeGenericMethod`, not `Type.MakeGenericType`/`GetMethod`/`Invoke`) despite being exactly the shape SK0012 exists to eliminate, and carrying no `[RequiresUnreferencedCode]` annotation despite being trimming-unsafe in the general case. `IFailureFactory<TSelf>` gives `05.Application` (P-237) the primitive needed to genuinely close this gap.
+> This is additive to `IHasSuccessFlag`/`IResultOfT<T>` (P-230), not a replacement — those answer "read the outcome/value of a known-shape response"; this answers "construct a failure of an unknown `Result<T>` shape from just `TResponse`," which `IResultOfT<T>` cannot do because it is parameterized on the inner value type, not on itself.
+> WO-039.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-28 | Define `IFailureFactory<TSelf>` — self-referential (CRTP) interface using a C# static abstract interface member: `static abstract TSelf Failure(Error error)`, constrained `where TSelf : IFailureFactory<TSelf>`; `Result<T>` implements `IFailureFactory<Result<T>>` via its existing `Failure(Error error)` static factory (no new member introduced); `Result` (non-generic) explicitly excluded, consistent with `IResultOfT<T>`'s exclusion rationale — callers needing a non-generic `Result` failure keep using the `TResponse == typeof(Result)` fast path in the consuming dispatcher; carries no `[RequiresUnreferencedCode]` annotation | SharedKernel.Primitives | `●` |
+| C-41 | Implement `IFailureFactory<TSelf>` as a public interface in `SharedKernel.Primitives`; declare `Result<T> : IFailureFactory<Result<T>>` (alongside its existing `IHasSuccessFlag, IResultOfT<T>`) — the existing `public static Result<T> Failure(Error error)` factory satisfies the interface implicitly; `Result` (non-generic readonly struct) does NOT implement `IFailureFactory<Result>` | SharedKernel.Primitives | `●` |
+| T-31 | Unit: `IFailureFactory<TSelf>` — a generic helper constrained `where TResponse : IFailureFactory<TResponse>` calls `TResponse.Failure(error)` and produces a correct failure instance for at least two distinct closed `Result<T>` shapes (e.g., `Result<int>`, `Result<string>`); test fixture demonstrates the dispatch compiles and executes via the static-abstract-member constraint with zero `System.Reflection` calls in the code path | SharedKernel.Primitives.Tests | `●` |
+| T-32 | Unit: `Result` (non-generic) is NOT assignable to `IFailureFactory<Result>` — proves the deliberate exclusion, mirroring the `IResultOfT<T>` non-generic-`Result` exclusion coverage in T-30 | SharedKernel.Primitives.Tests | `●` |
+| DO-14 | XML doc `IFailureFactory<TSelf>` — state purpose (reflection-free construction of a failure instance of an unknown `Result<T>` shape via a self-referential generic constraint; additive to, not a replacement for, `IResultOfT<T>`), which type implements it (`Result<T>` only), note `Result` (non-generic) is excluded, and the AOT-clean/zero-reflection guarantee | SharedKernel.Primitives | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `01.Core` references nothing._
@@ -334,7 +352,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 141 (133 prior tasks + 8 new P-230 tasks: D-26/D-27, C-39/C-40, T-29/T-30, DO-12/DO-13).
+> Counts updated whenever a task state changes. Total tasks: 146 (141 prior tasks + 5 new P-236 tasks: D-28, C-41, T-31/T-32, DO-14).
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -348,6 +366,7 @@ Format when active:
 | `SK.01.WO033Impl` | WO-033 Cryptography Implementation (P-207/P-208/P-209) | 3 | 3 | 0 | `●` |
 | `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | 4 | 4 | 0 | `●` |
 | `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | 8 | 8 | 0 | `●` |
+| `SK.01.P236` | P-236 Reflection-Free Failure-Factory Contract | 5 | 5 | 0 | `●` |
 
 ---
 
@@ -385,3 +404,5 @@ Format when active:
 - [2026-06-29] P-210→P-213 → ● in SK.01.WO034 — mechanical rename applied across all production `.cs` files (`IOneWayHasher`, `HashVerificationResult`, `Pbkdf2OneWayHasher`); 0 warnings/0 errors build; `SharedKernel.Cryptography.Tests` updated (59/59 passing, including new `Hash_ThenVerify_WithApiKeySecret_ReturnsSuccess` proving genuine secret-agnostic generalization); `ConsumerDependencyGraphTests` updated to renamed types; `01.Core/README.md` hashing section rewritten with password + API-key usage side by side; re-packed `SharedKernel.Cryptography.2.0.0` to local feed; consumer-verify re-run (42/42 passing) confirming Primitives+Configuration transitive chain still resolves; `SK.01.WO034` now fully `●` (4/4); Package Board entry for `SharedKernel.Cryptography` restored to `Published`/`●` at `2.0.0` (core-phase-implementer)
 - [2026-07-01] P-230 processed (WO-038) — added `SK.01.P230` phase key and 8 new tasks (D-26/D-27 design, C-39/C-40 implementation, T-29/T-30 tests, DO-12/DO-13 docs) for `IHasSuccessFlag` zero-member marker interface (implemented by `Result<T>` and `Result`) and `IResultOfT<T>` typed interface (implemented by `Result<T>` only); both contracts are AOT-clean by construction — no `[RequiresUnreferencedCode]`, no reflection, no Expression trees; purpose: unblock `05.Application.Behaviors` from reflection-based outcome detection in `LoggingBehavior` and `Expression`-compiled `FailureResponseFactory`; additive-only, no existing `Result<T>` or `Result` member signatures change; total tasks now 141 (core-arch-planner, WO-038)
 - [2026-07-02] D-26/D-27/C-39/C-40/T-29/T-30/DO-12/DO-13 → ● in SK.01.P230 — IHasSuccessFlag and IResultOfT<T> implemented, tested, and documented; 56/56 tests passing (state-map-phase)
+- [2026-07-03] P-236 processed (WO-039) — added `SK.01.P236` phase key and 5 new tasks (D-28 design, C-41 implementation, T-31/T-32 tests, DO-14 docs) for `IFailureFactory<TSelf>`, a self-referential (CRTP) contract built on a C# static abstract interface member (`static abstract TSelf Failure(Error error)`, constrained `where TSelf : IFailureFactory<TSelf>`); `Result<T>` implements `IFailureFactory<Result<T>>` through its existing `Failure(Error error)` static factory — no new member, no signature change; `Result` (non-generic) deliberately excluded, consistent with `IResultOfT<T>`'s exclusion. Motivation: `05.Application`'s `FailureResponseFactory`/`ResultOfTDispatcher<TResponse>` (P-232, WO-038) claimed to have eliminated reflection via `IResultOfT<T>` but still calls `Type.GetInterfaces()`/`MakeGenericType()`/`GetMethod()`/`Invoke()` — invisible to governance's SK0012 rule but exactly the shape it exists to eliminate; this phase gives `05.Application` (P-237) the primitive needed to genuinely close the gap. Additive only — `IHasSuccessFlag`, `IResultOfT<T>`, and every existing `Result<T>`/`Result` member signature unchanged. Total tasks now 146 (core-arch-planner, WO-039)
+- [2026-07-03] D-28/C-41/T-31/T-32/DO-14 → ● in SK.01.P236 — implemented `IFailureFactory<TSelf>` (`SharedKernel.Primitives/Results/IFailureFactory.cs`); `Result<T>` now declares `IFailureFactory<Result<T>>` alongside `IHasSuccessFlag, IResultOfT<T>`, satisfied implicitly by its pre-existing `Failure(Error)` factory; `Result` (non-generic) confirmed excluded — `IFailureFactory<Result>` is unnameable at compile time since `Result` doesn't satisfy the interface's own `where TSelf : IFailureFactory<TSelf>` constraint, proven via reflection over `Result`'s declared interfaces rather than a direct `is` check. Added 8 tests to `ResultInterfaceTests.cs` (dispatch for `Result<int>`/`Result<string>`, assignability, exclusion proof). While wiring these in, found and fixed a pre-existing broken test (`IResultOfT_GenericConstraintPattern_WorksWithoutReflection`, committed in 5e9ed3a) that used an unsatisfiable self-referential constraint (`where TResponse : IResultOfT<TResponse>`) against `Result<T> : IResultOfT<T>`, which was blocking `SharedKernel.Primitives.Tests` from compiling at all; corrected to the two-type-parameter form (`where TResponse : IResultOfT<TValue>`) matching `IResultOfT<T>`'s actual (non-self-referential) shape. 74/74 `SharedKernel.Primitives.Tests` passing; `SK.01.P236` now fully `●` (5/5); propagated to root `state-map.md` (core-phase-implementer)

@@ -17,7 +17,7 @@ namespace SharedKernel.Primitives.Results;
 /// of state.
 /// </para>
 /// </remarks>
-public sealed class Result<T> : IHasSuccessFlag, IResultOfT<T>
+public sealed class Result<T> : IHasSuccessFlag, IResultOfT<T>, IFailureFactory<Result<T>>
 {
     private readonly T? _value;
     private readonly Errors.Error _error;
@@ -62,8 +62,14 @@ public sealed class Result<T> : IHasSuccessFlag, IResultOfT<T>
     /// <param name="value">The success value.</param>
     public static Result<T> Success(T value) => new(value);
 
-    /// <summary>Creates a failed result containing the specified <paramref name="error"/>.</summary>
+    /// <summary>
+    /// Creates a failed result containing the specified <paramref name="error"/>.
+    /// </summary>
     /// <param name="error">The error describing the failure.</param>
+    /// <remarks>
+    /// This method also satisfies <see cref="IFailureFactory{TSelf}.Failure(Errors.Error)"/> for
+    /// <see cref="IFailureFactory{TSelf}"/> — no separate member was introduced for that interface.
+    /// </remarks>
     public static Result<T> Failure(Errors.Error error) => new(error);
 
     /// <summary>Implicitly converts a value to a successful <see cref="Result{T}"/>.</summary>

@@ -1,3 +1,4 @@
+using System.Linq;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 using Xunit;
@@ -126,18 +127,78 @@ public sealed class ResultInterfaceTests
     public void IResultOfT_GenericConstraintPattern_WorksWithoutReflection()
     {
         // Simulate the pipeline-behavior generic-constraint usage:
-        // InspectResult<TResponse> where TResponse : IResultOfT<TResponse>
-        // This proves the constraint resolves at compile time, not runtime.
+        // InspectResult<TResponse, TValue> where TResponse : IResultOfT<TValue>
+        // IResultOfT<T> is parameterized on the wrapped value type, not self-referentially on
+        // TResponse, so the constraint names both type parameters. This proves the constraint
+        // resolves at compile time, not runtime.
         var result = Result<int>.Success(7);
-        var isSuccess = InspectResult(result);
+        var isSuccess = InspectResult<Result<int>, int>(result);
         Assert.True(isSuccess);
 
         var failed = Result<int>.Failure(Error.Conflict("c.1", "conflict"));
-        Assert.False(InspectResult(failed));
+        Assert.False(InspectResult<Result<int>, int>(failed));
     }
 
     // Helper that mirrors the generic constraint pattern used in 05.Application pipeline behaviors
-    private static bool InspectResult<TResponse>(TResponse response)
-        where TResponse : IResultOfT<TResponse>
+    private static bool InspectResult<TResponse, TValue>(TResponse response)
+        where TResponse : IResultOfT<TValue>
         => response.IsSuccess;
+
+    // ---- T-31 / T-32: IFailureFactory<TSelf> ----
+
+    [Fact]
+    public void IFailureFactory_BuildFailure_ProducesCorrectFailure_ForResultOfInt()
+    {
+        var error = Error.Unexpected("e.3", "int failure");
+
+        var failure = BuildFailure<Result<int>>(error);
+
+        Assert.True(failure.IsFailure);
+        Assert.Equal(error, failure.Error);
+    }
+
+    [Fact]
+    public void IFailureFactory_BuildFailure_ProducesCorrectFailure_ForResultOfString()
+    {
+        var error = Error.Conflict("c.2", "string failure");
+
+        var failure = BuildFailure<Result<string>>(error);
+
+        Assert.True(failure.IsFailure);
+        Assert.Equal(error, failure.Error);
+    }
+
+    [Fact]
+    public void ResultOfT_IsAssignableTo_IFailureFactory()
+    {
+        // IFailureFactory<TSelf> carries a static abstract member, so it cannot be used as a type
+        // argument to a normal (unconstrained) generic method like Assert.IsAssignableFrom<T> —
+        // verify assignability via a direct pattern match instead.
+        object result = Result<int>.Success(1);
+        Assert.True(result is IFailureFactory<Result<int>>);
+    }
+
+    [Fact]
+    public void NonGenericResult_IsNotAssignableTo_IFailureFactory()
+    {
+        // IFailureFactory<TSelf> is declared `where TSelf : IFailureFactory<TSelf>`, so the closed
+        // type IFailureFactory<Result> cannot even be *named* in source unless Result satisfies
+        // that constraint — which it deliberately does not (a stronger, compile-time guarantee
+        // than a runtime check could offer). This test proves the exclusion via reflection over
+        // Result's declared interfaces, since IFailureFactory<Result> cannot be referenced
+        // directly, mirroring the IResultOfT<T> exclusion coverage in
+        // NonGenericResult_IsNotAssignableTo_IResultOfT.
+        var implementsFailureFactory = typeof(Result)
+            .GetInterfaces()
+            .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IFailureFactory<>));
+
+        Assert.False(implementsFailureFactory);
+    }
+
+    // Helper that mirrors the reflection-free dispatch pattern used by 05.Application's
+    // FailureResponseFactory / ResultOfTDispatcher<TResponse>: only TResponse is known, never the
+    // inner T. Zero System.Reflection calls in this code path.
+    private static TResponse BuildFailure<TResponse>(Error error)
+        where TResponse : IFailureFactory<TResponse>
+        => TResponse.Failure(error);
 }
