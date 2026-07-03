@@ -2411,9 +2411,112 @@ No new SK ID is assigned in this phase. SK0301's documented trigger and exemptio
 
 ---
 
+<!-- phase-key: SK.00.MetricsOutcomeTagAndMisregistrationGuard -->
+## Phase SK.00.MetricsOutcomeTagAndMisregistrationGuard — Governance: Architecture Enforcement for WO-038 Application Audit Findings
+
+### Goal
+
+The WO-038 audit of `05.Application` surfaced four recurring architectural anti-patterns that will keep resurfacing as new pipeline behaviors and streaming behaviors ship: (1) closed-generic `ResiliencePipeline<TResponse>` DI registration silently falling back to a no-op pipeline, (2) the non-streaming `MetricsBehavior` (P-217) recording `RequestDuration` with no `outcome` tag — unlike its streaming counterpart `StreamMetricsBehavior` (P-234) — making success/failure/exception/cached/duplicate/unauthorized outcomes indistinguishable in dashboards, (3) a type implementing `IStreamPipelineBehavior<,>` being registered against the wrong MediatR interface (`IPipelineBehavior<,>`), silently never invoked, and (4) `typeof(TRequest).Name` (short name) used for metric/log/cache keys instead of the collision-safe `typeof(TRequest).FullName ?? typeof(TRequest).Name` pattern mandated by P-231. This phase mechanically enforces all four findings inside `00.Governance`, mirroring the standing practice (WO-036 P-225, WO-037 P-229) of shipping the governance mechanism as its own phase rather than leaving a documented-but-unenforced rule to decay under time pressure.
+
+### Scope
+
+- Package(s) affected: `SharedKernel.Analyzers` (three new Roslyn analyzers, SK0014–SK0016), `SharedKernel.ArchitectureTests` (one new NetArchTest `ICustomRule` predicate + factory method, no new SK ID)
+- New files:
+  - `SharedKernel.Analyzers/Analyzers/SK0014ClosedGenericResiliencePipelineRegistrationAnalyzer.cs`
+  - `SharedKernel.Analyzers/Analyzers/SK0015StreamPipelineBehaviorMisregistrationAnalyzer.cs`
+  - `SharedKernel.Analyzers/Analyzers/SK0016RequestTypeShortNameUsageAnalyzer.cs`
+  - `SharedKernel.ArchitectureTests/Predicates/RequestDurationRecordMissingOutcomeTagPredicate.cs`
+  - `SharedKernel.ArchitectureTests/Rules/MetricsInstrumentationRules.cs`
+  - Corresponding test files in `SharedKernel.Analyzers.Tests/` and `SharedKernel.ArchitectureTests.Tests/`
+- Modified files: `00.Governance/CLAUDE.md` (diagnostic registry, architecture test contracts, implementation rules, changelog — already applied by this planning pass)
+- Deleted files: none
+
+### Diagnostic Registry Changes (analyzers only)
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0014 | ClosedGenericResiliencePipelineRegistration | Usage | Warning | `ResiliencePipeline<T>` (arity-1 generic) referenced anywhere — DI registration, parameter, field, or local — instead of the non-generic string-keyed `ResiliencePipeline` |
+| SK0015 | StreamPipelineBehaviorMisregistration | Usage | Warning | `AddTransient`/`AddScoped`/`AddSingleton<IPipelineBehavior<,>, T>()` where `T` implements `IStreamPipelineBehavior<,>`, outside the `AddStreamingBehaviors()` method |
+| SK0016 | RequestTypeShortNameUsage | Design | Warning | `typeof(X).Name` used standalone (no `.FullName ??` companion) inside `SharedKernel.Application`/`SharedKernel.Application.Behaviors` namespaces |
+
+No SK ID assigned to the `RequestDurationRecordsIncludeOutcomeTag` check — it is a NetArchTest `ICustomRule`, consistent with the `HealthCheckTagIntegrityRules` (WO-027 P-173) precedent of SK-less rules for tag/instrumentation completeness checks.
+
+### Implementation Rules
+
+1. SK0014 is syntax-only (no `SemanticModel`) — the arity-1 `ResiliencePipeline<T>` generic-name form is textually distinguishable from the correct arity-0 `ResiliencePipeline` simple name; fires globally, no namespace exemption.
+2. SK0015 requires `SemanticModel.GetSymbolInfo` on both DI-registration type arguments to resolve whether the second type argument implements `MediatR.IStreamPipelineBehavior<,>` — a naming-heuristic approach (mirroring SK0708's `"BatchConsumer"` substring convention) was deliberately rejected here because the five known streaming behavior names are a convention, not a structural guarantee, and a semantic check avoids the false-negative risk of a future streaming behavior not following the `Stream*` naming prefix. The `AddStreamingBehaviors` self-exemption check remains syntax-only and short-circuits before the semantic-model call.
+3. SK0016 is namespace-scoped as a trigger-IN condition (`SharedKernel.Application`/`SharedKernel.Application.Behaviors`) — the inverse of the usual trigger-everywhere-except-exemption shape used by SK0001/SK0007/SK0013 — because the `typeof(X).Name` collision risk this rule targets is intrinsic to MediatR request-type tag/key construction, which lives exclusively in this domain.
+4. `RequestDurationRecordMissingOutcomeTagPredicate` reuses the `Ldstr` literal-collection IL technique from `HealthCheckTagIntegrityRules` (WO-027 P-173) — no new Mono.Cecil technique, only a new call-site search target (`Histogram<T>.Record`, first use of this search target in the domain). It is a method-level co-occurrence check (not data-flow), same documented-limitation philosophy as `HealthCheckTagIntegrityRules`.
+5. The `MetricsInstrumentationRules` rule is designed and tested against CONTRIVED in-memory fixtures ONLY for this phase. It is EXPECTED TO FAIL if pointed at the real `SharedKernel.Application.Behaviors` assembly until a companion `05.Application` phase retrofits the non-streaming `MetricsBehavior<,>` (P-217) to emit the `"outcome"` tag. Retrofitting `MetricsBehavior<,>` is production code in `05.Application` and is explicitly OUT OF SCOPE for `00.Governance` — this domain writes no implementation files for other domains (see Cross-Domain Dependencies below).
+6. All three new analyzers target `netstandard2.0` and pin `Microsoft.CodeAnalysis.CSharp 4.14.0`, matching every prior SK analyzer. No new NuGet dependency for the NetArchTest predicate — reuses the existing `Mono.Cecil >= 0.11.5` reference.
+
+### File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Analyzers/SK0014ClosedGenericResiliencePipelineRegistrationAnalyzer.cs` | SharedKernel.Analyzers | Create | Flags `ResiliencePipeline<T>` (arity-1) usage anywhere |
+| `Analyzers/SK0015StreamPipelineBehaviorMisregistrationAnalyzer.cs` | SharedKernel.Analyzers | Create | Flags `IStreamPipelineBehavior<,>` implementors registered against `IPipelineBehavior<,>` outside `AddStreamingBehaviors()` |
+| `Analyzers/SK0016RequestTypeShortNameUsageAnalyzer.cs` | SharedKernel.Analyzers | Create | Flags standalone `typeof(X).Name` inside `SharedKernel.Application*` |
+| `Predicates/RequestDurationRecordMissingOutcomeTagPredicate.cs` | SharedKernel.ArchitectureTests | Create | IL Ldstr-literal-collection check for `Histogram<T>.Record` call sites missing an `"outcome"` tag |
+| `Rules/MetricsInstrumentationRules.cs` | SharedKernel.ArchitectureTests | Create | `RequestDurationRecordsIncludeOutcomeTag(Assembly)` factory method wiring the predicate into a `ConditionList` |
+| `SharedKernel.Analyzers.Tests/SK0014*Tests.cs`, `SK0015*Tests.cs`, `SK0016*Tests.cs` | SharedKernel.Analyzers.Tests | Create | Fire-path + pass-path tests per analyzer |
+| `SharedKernel.ArchitectureTests.Tests/MetricsInstrumentationRulesTests.cs` | SharedKernel.ArchitectureTests.Tests | Create | Fire-path + pass-path tests against contrived in-memory fixtures |
+| `00.Governance/CLAUDE.md` | — | Modify | Diagnostic registry, architecture test contracts, implementation rules, changelog (already applied) |
+
+### Acceptance Criteria
+
+- [ ] SK0014 fires on `AddSingleton<ResiliencePipeline<TResponse>>()` (and any other arity-1 `ResiliencePipeline<T>` usage) and does not fire on the non-generic `ResiliencePipeline` form
+- [ ] SK0015 fires on an `IStreamPipelineBehavior<,>`-implementing type registered via `AddTransient(typeof(IPipelineBehavior<,>), typeof(StreamXxxBehavior<,>))` outside `AddStreamingBehaviors()`, and does not fire on registrations inside that method or on unary `IPipelineBehavior<,>` registrations
+- [ ] SK0016 fires on standalone `typeof(TRequest).Name` inside `SharedKernel.Application*` namespaces and does not fire on the `typeof(TRequest).FullName ?? typeof(TRequest).Name` pattern or on `typeof(X).Name` usage outside those namespaces
+- [ ] `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` fires (contrived fixture) on a `Histogram<T>.Record` call with no `"outcome"` Ldstr literal in the same method body, and passes (contrived fixture) when the literal is present
+- [ ] All three new SK IDs (SK0014, SK0015, SK0016) and the new `MetricsInstrumentationRules`/`RequestDurationRecordMissingOutcomeTagPredicate` are recorded in `00.Governance/CLAUDE.md` — diagnostic registry, architecture test contracts, implementation rules, and changelog
+- [ ] Full `SharedKernel.ArchitectureTests.Tests` and `SharedKernel.Analyzers.Tests` suites remain green after the new tests land (baseline: 125/125 architecture tests as of SK.00.CryptoDelegationAndUowSeamGuard closeout, plus the existing analyzer suite) — the new `MetricsInstrumentationRules` test suite uses contrived fixtures only, so it does not turn red against the real (not-yet-retrofitted) `MetricsBehavior<,>`
+
+### Dependencies
+
+- Requires nothing from `05.Application` to design or implement this phase — all four checks are designed and tested against contrived in-memory fixtures, consistent with the standing pattern for governance phases whose triggering domain has already shipped or is mid-flight (WO-036 P-225, WO-037 P-229).
+- Depends on `05.Application` for **real-assembly verification only** of `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` — this rule is EXPECTED TO FAIL against the real `SharedKernel.Application.Behaviors` assembly until a companion `05.Application` work order retrofits `MetricsBehavior<,>` (P-217) to emit the `"outcome"` tag on `RequestDuration`, matching `StreamMetricsBehavior`'s (P-234) existing tag shape. Retrofitting `MetricsBehavior<,>` itself is 05.Application production code and is explicitly NOT performed by this governance phase — `00.Governance` writes planning/enforcement artifacts only, never implementation files for another domain.
+- Depends on `05.Application`'s already-shipped `MediatR.IPipelineBehavior<,>`/`IStreamPipelineBehavior<,>` and `ApplicationBehaviorsBuilder.AddStreamingBehaviors()` shapes (P-217, P-231, P-234 — all complete per `05.Application/state-map.md` as of 2026-07-02) for real-assembly re-verification of SK0015 once the implementer chooses to run it against the real assembly (SK0015 is a Roslyn analyzer and fires at compile time against any consuming project, so no explicit "real-assembly wiring" step is required the way NetArchTest rules need one).
+- Unblocks: gives `05.Application` a governance-owned, pre-built enforcement mechanism to wire the `MetricsInstrumentationRules` check into its own test suite once the `MetricsBehavior<,>` outcome-tag retrofit ships — consistent with this domain's standing practice of shipping the mechanism ahead of (or alongside) the triggering domain's implementation.
+
+### Tooling Version Notes
+
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0014/SK0015/SK0016 reuse it, no version change)
+- `NetArchTest.eNt`: >= 1.3.2 (existing pin — no change)
+- `Mono.Cecil`: >= 0.11.5 (existing pin — `RequestDurationRecordMissingOutcomeTagPredicate` reuses the existing reference)
+- Target framework: `netstandard2.0` (Analyzers) / `net10.0` (ArchitectureTests)
+
+### SK.00.MetricsOutcomeTagAndMisregistrationGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-57 | Define trigger/fix/suppress shape for SK0014 (arity-1 `ResiliencePipeline<T>` generic-name match), SK0015 (semantic-model interface-implementation check + method-name self-exemption), and SK0016 (namespace-scoped `typeof(X).Name` without `.FullName` companion); define `RequestDurationRecordMissingOutcomeTagPredicate` shape (`Histogram<T>.Record` call-site scan + companion `Ldstr "outcome"` check) and `MetricsInstrumentationRules` factory signature | SharedKernel.Analyzers, SharedKernel.ArchitectureTests | `●` |
+| C-90 | Implement SK0014 `ClosedGenericResiliencePipelineRegistrationAnalyzer` | SharedKernel.Analyzers | `●` |
+| C-91 | Implement SK0015 `StreamPipelineBehaviorMisregistrationAnalyzer` (semantic-model based) | SharedKernel.Analyzers | `●` |
+| C-92 | Implement SK0016 `RequestTypeShortNameUsageAnalyzer` | SharedKernel.Analyzers | `●` |
+| C-93 | Implement `RequestDurationRecordMissingOutcomeTagPredicate` in `Predicates/` | SharedKernel.ArchitectureTests | `●` |
+| C-94 | Implement `MetricsInstrumentationRules` static class in `Rules/`, wiring the predicate into a `ConditionList` factory method | SharedKernel.ArchitectureTests | `●` |
+| T-161 | Analyzer test (fire path): `AddSingleton<ResiliencePipeline<TResponse>>()` triggers SK0014 | SharedKernel.Analyzers.Tests | `●` |
+| T-162 | Analyzer test (pass path): non-generic `ResiliencePipeline` keyed registration does not trigger SK0014 | SharedKernel.Analyzers.Tests | `●` |
+| T-163 | Analyzer test (fire path): a contrived `IStreamPipelineBehavior<,>` implementor registered via `AddTransient(typeof(IPipelineBehavior<,>), typeof(StreamFixtureBehavior<,>))` outside `AddStreamingBehaviors()` triggers SK0015 | SharedKernel.Analyzers.Tests | `●` |
+| T-164 | Analyzer test (pass path): the same registration inside a method named `AddStreamingBehaviors`, and a plain `IPipelineBehavior<,>`-only implementor registered anywhere, do not trigger SK0015 | SharedKernel.Analyzers.Tests | `●` |
+| T-165 | Analyzer test (fire path): standalone `typeof(TRequest).Name` inside a `SharedKernel.Application`-namespaced fixture triggers SK0016 | SharedKernel.Analyzers.Tests | `●` |
+| T-166 | Analyzer test (pass path): `typeof(TRequest).FullName ?? typeof(TRequest).Name` inside the same namespace, and standalone `typeof(X).Name` outside `SharedKernel.Application*`, do not trigger SK0016 | SharedKernel.Analyzers.Tests | `●` |
+| T-167 | Architecture test (fire path): contrived fixture with a `Histogram<double>.Record(...)` call and no `"outcome"` Ldstr literal in the same method; assert `RequestDurationRecordsIncludeOutcomeTag` fails | SharedKernel.ArchitectureTests.Tests | `●` |
+| T-168 | Architecture test (pass path): contrived fixture with a `Histogram<double>.Record(...)` call carrying an `"outcome"` Ldstr literal in the same method; assert the rule passes | SharedKernel.ArchitectureTests.Tests | `●` |
+| DO-29 | Verify SK0014, SK0015, SK0016, `MetricsInstrumentationRules`, and `RequestDurationRecordMissingOutcomeTagPredicate` documentation in `00.Governance/CLAUDE.md` (diagnostic registry, architecture test contracts, implementation rules — pre-written by this planning pass) against the final implementation; add closeout Changelog entry | SharedKernel.Analyzers, SharedKernel.ArchitectureTests | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
-_No active cross-domain dependencies. `00.Governance` references nothing._
+_No active cross-domain dependencies for prior phases. `00.Governance` references nothing in production code._
+
+`SK.00.MetricsOutcomeTagAndMisregistrationGuard` depends on `05.Application` for **real-assembly verification only**:
+
+| This Phase Key | Needs From Domain | What | Status |
+|---------------|------------------|------|--------|
+| `SK.00.MetricsOutcomeTagAndMisregistrationGuard` | `05.Application` | `MetricsBehavior<,>` (P-217) retrofitted to emit an `"outcome"` tag on `RequestDuration`, matching `StreamMetricsBehavior`'s (P-234) existing shape — required only to re-point `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` at the real `SharedKernel.Application.Behaviors` assembly; not required for this phase's own design/implementation/tests, which use contrived fixtures | `○` Pending (05.Application retrofit not yet dispatched) |
 
 <!--
 Format when active:
@@ -2425,7 +2528,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 373.
+> Counts updated whenever a task state changes. Total tasks: 388.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -2457,6 +2560,7 @@ Format when active:
 | `SK.00.PresentationArchRules` | Governance: Architecture Rules Banning Hand-Rolled ProblemDetails and Inline Result-to-HTTP Branching | 9 | 9 | 0 | `●` |
 | `SK.00.ApplicationPipelineArchRules` | Governance: Architecture Enforcement for the Extended Application Pipeline | 13 | 13 | 0 | `●` |
 | `SK.00.CryptoDelegationAndUowSeamGuard` | Governance: Architecture Rules Locking the Cryptography Delegation and IUnitOfWork Bridge | 14 | 14 | 0 | `●` |
+| `SK.00.MetricsOutcomeTagAndMisregistrationGuard` | Governance: Architecture Enforcement for WO-038 Application Audit Findings | 15 | 15 | 0 | `●` |
 
 ---
 
@@ -2520,4 +2624,6 @@ Format when active:
 - [2026-06-30] Phase SK.00.ApplicationPipelineArchRules added — 13 tasks: D-55, C-80–C-84, T-147–T-153, DO-27; new `ApplicationPipelineRules` static class (three ICustomRule predicates: `NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate` — caller-supplied behavior-name set, infra-namespace reference ban, mirrors `HealthCheckTagIntegrityRules`'s caller-supplied-prefix convention; `NoGenericConstraintMatchesStreamRequestPredicate` — new IL generic-parameter-constraint structural technique, distinct from every prior opcode-presence/Ldstr-literal-collection/field-shape technique, proving no `IPipelineBehavior<,>` implementor's `TRequest` constraint structurally satisfies `IStreamRequest<TResponse>`; `NoTaskDelayOutsideResilienceBehaviorPredicate` — `Task.Delay` Call/Callvirt fingerprint heuristic with a `ResilienceBehavior` self-exemption, extending the existing hand-rolled-primitive prohibition pattern to retry/backoff); new `PipelineOrderAssertion` public reflection helper (not NetArchTest/ICustomRule — walks `ServiceDescriptor` entries off an unbuilt `IServiceCollection` to assert `IPipelineBehavior<,>` registration order, ships in `SharedKernel.ArchitectureTests` for `05.Application.Behaviors.Tests` to consume against its own real `ApplicationBehaviorsBuilder.Build()` output); no new SK IDs; depends on `05.Application` P-220/P-221/P-222/P-224 for real-assembly verification only — WO-036 is design-only as of 2026-06-30, so design/implementation proceeds against contrived in-memory fixtures (same technique as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard/SK.00.PresentationArchRules); total tasks now 359 — WO-036 P-225, depends on 05.Application P-220/P-221/P-222/P-224 (governance-arch-planner)
 - [2026-06-30] D-55, C-80–C-84, T-147–T-153, DO-27 → ● in SK.00.ApplicationPipelineArchRules — all 13 tasks complete; ApplicationPipelineRules, NoConcreteInfrastructureReferenceOnNamedBehaviorsPredicate, NoGenericConstraintMatchesStreamRequestPredicate, NoTaskDelayOutsideResilienceBehaviorPredicate, and PipelineOrderAssertion implemented; added Microsoft.Extensions.DependencyInjection.Abstractions (10.0.1) package reference to SharedKernel.ArchitectureTests for PipelineOrderAssertion's IServiceCollection/ServiceDescriptor surface; added MediatR (12.4.1, matching 05.Application's pin) and Microsoft.Extensions.DependencyInjection (10.0.9, transitive-conflict-resolved) to the test project only, for fixture compilation — 00.Governance still references nothing in production code; 9 new tests (T-147/T-148 fire+pass, T-149/T-150 fire+pass, T-151/T-152 fire+pass+vacuous-pass, T-153 PipelineOrderAssertion passing+failing) pass, 117/117 full ArchitectureTests.Tests suite passes, 0 build warnings/errors; two implementation-detail fixes discovered via direct Mono.Cecil IL inspection during testing (not spec discrepancies): (1) NetArchTest's Types.GetAllTypes deliberately excludes [CompilerGenerated] types, so async-lowered Task.Delay calls inside compiler-generated state-machine structs are invisible to IL-walk predicates — T-151/T-152 fixtures use synchronous Task.Delay(...).GetAwaiter().GetResult() instead of await; (2) a GenericParameter constraint's TypeReference.FullName for a closed-generic interface includes the generic-argument list (e.g. "MediatR.IStreamRequest`1<TResponse>"), so NoGenericConstraintMatchesStreamRequestPredicate compares against GenericInstanceType.ElementType.FullName for the open-generic form; CLAUDE.md documentation pre-written by governance-arch-planner verified accurate against the final implementation — zero discrepancy found, no edits made; SK.00.ApplicationPipelineArchRules → ● (state-map-phase)
 - [2026-07-02] D-56, C-85–C-89, T-154–T-160, DO-28 → ● in SK.00.CryptoDelegationAndUowSeamGuard — all 14 tasks complete; CryptoIsolationRules + NoRawSymmetricCipherOutsideCryptographyPredicate (platform-wide AesGcm/Aes/SymmetricAlgorithm/RandomNumberGenerator guard), UnitOfWorkSeamRules + UnitOfWorkInterfacesRemainDistinctPredicate (negative-space IUoW-distinctness guard), SK0301 exemption narrowed to SharedKernel.Cryptography only; 8 new tests pass, 125/125 full suite passes (state-map-phase)
+- [2026-07-03] Phase SK.00.MetricsOutcomeTagAndMisregistrationGuard added — 15 tasks: D-57, C-90–C-94, T-161–T-168, DO-29; SK0014 ClosedGenericResiliencePipelineRegistration (syntax-only), SK0015 StreamPipelineBehaviorMisregistration (semantic-model, second after SK0011), SK0016 RequestTypeShortNameUsage (syntax-only, trigger-IN namespace scope) registered (general-purpose sequential block, next after SK0013); MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag + RequestDurationRecordMissingOutcomeTagPredicate added (no new SK ID — reuses HealthCheckTagIntegrityRules' Ldstr literal-collection technique against a new Histogram<T>.Record call-site search); addresses all four WO-038 application-audit findings; the outcome-tag rule's MetricsBehavior<,> (P-217) retrofit is explicitly out of this domain's jurisdiction — tracked as a new Cross-Domain Dependency on 05.Application for real-assembly verification only; design/tests use contrived in-memory fixtures; total tasks now 388 — WO-038 P-235, depends on P-234 (governance-arch-planner)
 - [2026-06-30] Phase SK.00.CryptoDelegationAndUowSeamGuard added — 13 tasks: D-56, C-85–C-89, T-154–T-160, DO-28; new `CryptoIsolationRules` static class (`NoRawSymmetricCipherOutsideCryptographyPredicate` — platform-wide ICustomRule banning direct `AesGcm`/`Aes`/`SymmetricAlgorithm` field/IL references and `RandomNumberGenerator` calls outside a `SharedKernel.Cryptography`-prefixed namespace, the sole legitimate caller once 06.Persistence P-227 lands); new `UnitOfWorkSeamRules` static class (`UnitOfWorkInterfacesRemainDistinctPredicate` — two-assembly ICustomRule asserting `SharedKernel.Application.Behaviors.IUnitOfWork` and `SharedKernel.Persistence.Abstractions.IUnitOfWork` are never merged into one type or made to inherit one another; a negative-space/regression-guard rule protecting the local-seam pattern already proven for IAuthorizationContext/IIdempotencyKeyStore); SK0301 (DirectCryptoInDomainOrApplication) reconciled in place — its backing `NoAesCipherInDomainOrApplicationPredicate` exemption list narrowed from `{SharedKernel.Persistence, SharedKernel.Security}` to `{SharedKernel.Cryptography}` only, making it a caller-scoped special case of the new platform-wide rule rather than a contradictory duplicate; no new SK ID assigned; depends on 06.Persistence P-227/P-228 for real-assembly verification only — both design-only as of 2026-06-30, so design/implementation proceeds against contrived in-memory fixtures matching the documented target shape (same technique as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard/SK.00.PresentationArchRules/SK.00.ApplicationPipelineArchRules); total tasks now 372 — WO-037 P-229, depends on 06.Persistence P-227/P-228 (governance-arch-planner)
+- [2026-07-03] D-57, C-90–C-94, T-161–T-168, DO-29 → ● in SK.00.MetricsOutcomeTagAndMisregistrationGuard — all 15 tasks complete; SK0014 ClosedGenericResiliencePipelineRegistrationAnalyzer, SK0015 StreamPipelineBehaviorMisregistrationAnalyzer, SK0016 RequestTypeShortNameUsageAnalyzer, RequestDurationRecordMissingOutcomeTagPredicate, and MetricsInstrumentationRules implemented; two implementation-detail fixes discovered during testing (not spec discrepancies caught by DO-29's verification pass): (1) SK0015 — `INamedTypeSymbol.AllInterfaces` returns empty for an unbound generic type symbol (the shape `typeof(StreamFixtureBehavior<,>)` produces), so the interface-implementation check walks `type.OriginalDefinition.AllInterfaces` instead, confirmed via a standalone Roslyn symbol-inspection scratch script; (2) `RequestDurationRecordMissingOutcomeTagPredicate` initially used a `Name.StartsWith("Histogram")` heuristic — narrowed to match the pre-written CLAUDE.md contract exactly (`GenericInstanceType` + `ElementType.FullName == "System.Diagnostics.Metrics.Histogram\`1"`); 8 new tests (T-161–T-168) pass, 105/105 SharedKernel.Analyzers.Tests and 127/127 SharedKernel.ArchitectureTests.Tests pass, 0 build warnings/errors; CLAUDE.md documentation pre-written by governance-arch-planner verified accurate (Diagnostic Registry, Architecture Test Contracts, Implementation Rules) with one closeout changelog entry added; Phase Key Registry gap confirmed again (same as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard) — this phase key has a full phase section and Overall Progress row but no Phase Key Registry row; SK.00.MetricsOutcomeTagAndMisregistrationGuard → ● (state-map-phase)
