@@ -10,6 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Application.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!-- Test-project-only reference (WO-039 P-241 / D-46). Never referenced from SharedKernel.Application.csproj. -->
+    <ProjectReference Include="..\..\..\00.Governance\SharedKernel.ArchitectureTests\SharedKernel.ArchitectureTests.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +25,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="FluentAssertions" Version="8.4.0" />
+    <PackageReference Include="FluentAssertions" Version="8.10.0" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
   </ItemGroup>
 

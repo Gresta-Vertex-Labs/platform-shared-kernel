@@ -53,6 +53,41 @@ public sealed class ApplicationBehaviorsBuilder
         _services = services;
     }
 
+    /// <summary>
+    /// Opts in to the zero-prerequisite onboarding preset: <see cref="LoggingBehavior{TRequest,TResponse}"/>,
+    /// <see cref="MetricsBehavior{TRequest,TResponse}"/>, <see cref="TracingBehavior{TRequest,TResponse}"/>,
+    /// and <see cref="ValidationBehavior{TRequest,TResponse}"/>.
+    /// </summary>
+    /// <returns>This builder, for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Delegates to the four individual <c>.AddXBehavior()</c> methods below — provably equivalent,
+    /// not a reimplementation. These four are the only behaviors in this domain that carry zero
+    /// <see cref="Build"/>-time missing-dependency guard: every other behavior requires a registered
+    /// local-seam or infrastructure bridge (<see cref="IUnitOfWork"/>, <see cref="ICacheService"/>,
+    /// <see cref="IAuthorizationContext"/>, <see cref="IIdempotencyKeyStore"/>, a Polly resilience
+    /// pipeline) and must remain a deliberate, individual opt-in — no other behavior is ever eligible
+    /// for this preset.
+    /// </para>
+    /// <para>
+    /// <b>Composable, not exclusive (WO-039, P-243):</b> each underlying <c>.AddXBehavior()</c> call
+    /// only sets a <see langword="bool"/> opt-in flag, so calling <see cref="AddDefaultBehaviors"/>
+    /// alongside any individual call to <see cref="AddLoggingBehavior"/>/<see cref="AddMetricsBehavior"/>/
+    /// <see cref="AddTracingBehavior"/>/<see cref="AddValidationBehavior"/> for the same behavior is
+    /// idempotent — <see cref="Build"/> still registers exactly one <see cref="IPipelineBehavior{TRequest,TResponse}"/>
+    /// per behavior, in the unchanged fixed canonical order. This preset never throws
+    /// <see cref="InvalidOperationException"/> from <see cref="Build"/> on its own.
+    /// </para>
+    /// </remarks>
+    public ApplicationBehaviorsBuilder AddDefaultBehaviors()
+    {
+        AddLoggingBehavior();
+        AddMetricsBehavior();
+        AddTracingBehavior();
+        AddValidationBehavior();
+        return this;
+    }
+
     /// <summary>Opts in to <see cref="ValidationBehavior{TRequest,TResponse}"/>.</summary>
     /// <returns>This builder, for chaining.</returns>
     public ApplicationBehaviorsBuilder AddValidationBehavior()
@@ -197,11 +232,13 @@ public sealed class ApplicationBehaviorsBuilder
     /// </para>
     /// <para>
     /// <b>Note:</b> <see cref="FireAndForgetBackgroundConsumer"/> uses <c>ISender.Send</c>
-    /// internally to dispatch commands through the MediatR pipeline. Do not call
-    /// <see cref="AddFireAndForgetDispatch"/> from the same composition root that also registers
-    /// <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/> as a global behavior — the
-    /// guard is registered by this method specifically for the consumer's internal send calls, not
-    /// to intercept external <c>ISender.Send</c> calls of the same commands.
+    /// internally to dispatch commands through the MediatR pipeline. That internal dispatch is
+    /// marked as trusted (WO-039, P-238) via an unspoofable ambient marker, so
+    /// <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/> — registered by this same method
+    /// as a global behavior — permits the consumer's own dispatch through while still rejecting any
+    /// external caller's direct <c>ISender.Send</c> attempt for the same command types. Calling this
+    /// method once, exactly as documented, wires a fully functional unit — no special composition-root
+    /// ordering or separation is required.
     /// </para>
     /// </remarks>
     public ApplicationBehaviorsBuilder AddFireAndForgetDispatch(Action<FireAndForgetOptions>? configure = null)

@@ -22,6 +22,15 @@ namespace SharedKernel.Application.Behaviors.FireAndForget;
 /// In practice, <c>ApplicationBehaviorsBuilder.AddFireAndForgetDispatch()</c> registers it
 /// before all other behaviors.
 /// </para>
+/// <para>
+/// <b>Trusted-dispatch exemption (WO-039, P-238):</b> before throwing, this behavior checks the
+/// internal, unspoofable <see cref="FireAndForgetDispatchContext.IsTrusted"/> ambient marker. When
+/// set — which is only ever true inside <see cref="FireAndForgetBackgroundConsumer"/>'s own internal
+/// dispatch call — this behavior calls <c>next()</c> instead of throwing, letting the rest of the
+/// registered pipeline (Logging/Metrics/Validation/etc.) run for the internally-dispatched command.
+/// The marker has no public surface and cannot be set by consuming-service code, so the external-
+/// misuse guard below is never weakened by this exemption.
+/// </para>
 /// </remarks>
 public sealed class FireAndForgetGuardBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
@@ -34,6 +43,9 @@ public sealed class FireAndForgetGuardBehavior<TRequest, TResponse> : IPipelineB
     {
         if (request is IFireAndForgetCommand)
         {
+            if (FireAndForgetDispatchContext.IsTrusted)
+                return next();
+
             throw new InvalidOperationException(
                 $"The command '{typeof(TRequest).FullName ?? typeof(TRequest).Name}' implements " +
                 $"IFireAndForgetCommand and must not be dispatched through ISender.Send. " +

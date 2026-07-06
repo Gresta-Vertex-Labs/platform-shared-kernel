@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using MediatR;
 using Microsoft.Extensions.Logging;
-using SharedKernel.Primitives.Results;
+using SharedKernel.Application.Behaviors.Shared;
 
 namespace SharedKernel.Application.Behaviors.Logging;
 
@@ -20,18 +20,24 @@ namespace SharedKernel.Application.Behaviors.Logging;
 /// <b>Post-handler log level (WO-038, P-232, depends on P-230/IHasSuccessFlag):</b>
 /// <list type="bullet">
 ///   <item>
-///     <term>Response implements <see cref="IHasSuccessFlag"/> with <c>IsSuccess == false</c></term>
+///     <term>Response implements <c>IHasSuccessFlag</c> with <c>IsSuccess == false</c></term>
 ///     <description>Logs at <see cref="LogLevel.Warning"/> ("Handled {RequestName} with failure
 ///     in {ElapsedMilliseconds}ms") so operations teams can alert on failure rates without
 ///     sifting through <c>Information</c> noise.</description>
 ///   </item>
 ///   <item>
-///     <term>Response implements <see cref="IHasSuccessFlag"/> with <c>IsSuccess == true</c>,
-///     or response does not implement <see cref="IHasSuccessFlag"/></term>
+///     <term>Response implements <c>IHasSuccessFlag</c> with <c>IsSuccess == true</c>,
+///     or response does not implement <c>IHasSuccessFlag</c></term>
 ///     <description>Logs at <see cref="LogLevel.Information"/> ("Handled {RequestName} in
 ///     {ElapsedMilliseconds}ms").</description>
 ///   </item>
 /// </list>
+/// </para>
+/// <para>
+/// <b>Shared classification helper (WO-039, P-239):</b> the success/failure decision above is
+/// delegated to <see cref="ResponseOutcomeClassifier"/> — the same helper
+/// <see cref="Metrics.MetricsBehavior{TRequest,TResponse}"/> uses for its <c>outcome</c> tag, so the
+/// two behaviors' classification of a response can never silently diverge.
 /// </para>
 /// <para>
 /// On exception: logs <see cref="LogLevel.Error"/> with the exception and elapsed time, then
@@ -68,7 +74,7 @@ public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logge
             // Emit at Warning when the response signals a business-rule failure (IHasSuccessFlag);
             // emit at Information for success or for response types that do not participate in the
             // Result railway (e.g. raw T responses from streaming handlers).
-            if (response is IHasSuccessFlag flag && !flag.IsSuccess)
+            if (!ResponseOutcomeClassifier.IsSuccess(response))
             {
                 logger.LogWarning(
                     "Handled {RequestName} with failure in {ElapsedMilliseconds}ms",

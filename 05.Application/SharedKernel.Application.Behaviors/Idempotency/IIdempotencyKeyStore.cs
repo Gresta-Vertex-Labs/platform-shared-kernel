@@ -13,6 +13,15 @@ namespace SharedKernel.Application.Behaviors.Idempotency;
 /// table/cache key) and registers it at the composition root. This package ships only the
 /// interface — no implementation, exactly like the <c>IUnitOfWork</c> precedent.
 /// </remarks>
+/// <remarks>
+/// <b>Optional response replay (WO-039, P-242):</b> an implementation MAY additionally implement
+/// <see cref="IIdempotencyResponseStore"/> to opt in to replaying the original response on a
+/// duplicate submission instead of always returning <c>Error.Conflict</c>. This is purely additive —
+/// an implementation of only this interface continues to compile and behave exactly as before that
+/// capability existed. <see cref="IdempotentCommandBehavior{TRequest,TResponse}"/> always calls
+/// <see cref="HasProcessedAsync"/>/<see cref="MarkProcessedAsync"/> first, regardless of whether
+/// replay is supported.
+/// </remarks>
 public interface IIdempotencyKeyStore
 {
     /// <summary>Determines whether <paramref name="idempotencyKey"/> has already been processed.</summary>

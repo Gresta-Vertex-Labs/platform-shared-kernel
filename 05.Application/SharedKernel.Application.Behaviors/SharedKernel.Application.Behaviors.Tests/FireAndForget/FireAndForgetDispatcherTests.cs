@@ -7,44 +7,40 @@ using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.FireAndForget;
 using SharedKernel.Application.Messaging;
 using SharedKernel.Primitives.Results;
-using System.Threading.Channels;
 
 namespace SharedKernel.Application.Behaviors.Tests.FireAndForget;
 
 /// <summary>
-/// Verifies the fire-and-forget dispatch infrastructure (T-25):
+/// Verifies the fire-and-forget dispatch infrastructure (T-25, WO-039 P-238 end-to-end fix):
 /// <list type="bullet">
 ///   <item>EnqueueAsync is immediate (non-blocking) — channel write returns without waiting for the handler.</item>
-///   <item>The background consumer picks up the command and executes it via a scoped pipeline.</item>
+///   <item>The background consumer picks up the command and executes it via a scoped pipeline, wired exactly
+///   per the documented <see cref="ApplicationBehaviorsBuilder.AddFireAndForgetDispatch"/> shape — including
+///   the globally-registered <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/>, which no longer
+///   self-blocks the consumer's own internal dispatch (WO-039, P-238).</item>
 ///   <item>Handler exceptions are caught, logged, and do not terminate the consumer loop.</item>
 ///   <item>DropAndLog policy drops commands when the channel is full and does not throw.</item>
 ///   <item>Attempting to resolve <see cref="IFireAndForgetDispatcher"/> without registration throws.</item>
+///   <item>A caller's direct <c>ISender.Send</c> of an <see cref="IFireAndForgetCommand"/> is still rejected.</item>
 /// </list>
 /// </summary>
 public sealed class FireAndForgetDispatcherTests
 {
-    // ---- command types ----
-    // These are plain ICommand types (NOT IFireAndForgetCommand) used when testing the
-    // FireAndForgetBackgroundConsumer directly — the background consumer resolves handlers via
-    // ISender.Send, and if these implemented IFireAndForgetCommand, the FireAndForgetGuardBehavior
-    // would intercept them.
-    // For consumer tests we wire the consumer manually without the guard behavior registered.
+    private sealed record TrackableCommand(string Id) : IFireAndForgetCommand;
+    private sealed record ThrowingCommand(string Id) : IFireAndForgetCommand;
 
-    private sealed record ConsumerTrackableCommand(string Id) : IFireAndForgetCommand;
-    private sealed record ConsumerThrowingCommand(string Id) : IFireAndForgetCommand;
-
-    private sealed class ConsumerTrackableCommandHandler(SemaphoreSlim gate) : IRequestHandler<ConsumerTrackableCommand, Result>
+    private sealed class TrackableCommandHandler(SemaphoreSlim gate) : IRequestHandler<TrackableCommand, Result>
     {
-        public Task<Result> Handle(ConsumerTrackableCommand request, CancellationToken ct)
+        public Task<Result> Handle(TrackableCommand request, CancellationToken ct)
         {
             gate.Release();
             return Task.FromResult(Result.Success());
         }
     }
 
-    private sealed class ConsumerThrowingCommandHandler(SemaphoreSlim gate) : IRequestHandler<ConsumerThrowingCommand, Result>
+    private sealed class ThrowingCommandHandler(SemaphoreSlim gate) : IRequestHandler<ThrowingCommand, Result>
     {
-        public Task<Result> Handle(ConsumerThrowingCommand request, CancellationToken ct)
+        public Task<Result> Handle(ThrowingCommand request, CancellationToken ct)
         {
             gate.Release();
             throw new InvalidOperationException($"Handler for {request.Id} exploded.");
@@ -52,13 +48,14 @@ public sealed class FireAndForgetDispatcherTests
     }
 
     /// <summary>
-    /// Builds a service provider with the channel + consumer wired directly,
-    /// WITHOUT <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/>,
-    /// so the consumer can internally dispatch <see cref="IFireAndForgetCommand"/> via
-    /// <c>ISender.Send</c> without being intercepted by the guard.
+    /// Builds a service provider wired exactly per the documented, real
+    /// <see cref="ApplicationBehaviorsBuilder.AddFireAndForgetDispatch"/> shape — including the globally
+    /// registered <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/>. This replaces the prior
+    /// <c>BuildConsumerDirectProvider</c> workaround (which wired the consumer manually, without the guard
+    /// behavior, to sidestep the now-fixed self-blocking bug — WO-039, P-238).
     /// </summary>
-    private static (ServiceProvider Provider, ChannelWriter<IFireAndForgetCommand> Writer)
-        BuildConsumerDirectProvider(Action<ServiceCollection>? configureHandlers = null)
+    private static (ServiceProvider Provider, IFireAndForgetDispatcher Dispatcher, FireAndForgetBackgroundConsumer Consumer)
+        BuildRealProvider(Action<ServiceCollection>? configureHandlers = null, Action<FireAndForgetOptions>? configureOptions = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
@@ -67,14 +64,18 @@ public sealed class FireAndForgetDispatcherTests
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<FireAndForgetDispatcherTests>());
 
-        // Wire channel, reader, writer, and consumer directly — no guard behavior registered.
-        var channel = Channel.CreateBounded<IFireAndForgetCommand>(
-            new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
+        services
+            .AddSharedKernelApplicationBehaviors()
+            .AddFireAndForgetDispatch(configureOptions)
+            .Build();
 
-        services.AddSingleton<ChannelReader<IFireAndForgetCommand>>(channel.Reader);
-        services.AddSingleton<IHostedService, FireAndForgetBackgroundConsumer>();
+        var provider = services.BuildServiceProvider();
+        var dispatcher = provider.GetRequiredService<IFireAndForgetDispatcher>();
+        var consumer = provider.GetRequiredService<IEnumerable<IHostedService>>()
+            .OfType<FireAndForgetBackgroundConsumer>()
+            .Single();
 
-        return (services.BuildServiceProvider(), channel.Writer);
+        return (provider, dispatcher, consumer);
     }
 
     // ---- test: EnqueueAsync is immediate ----
@@ -82,60 +83,45 @@ public sealed class FireAndForgetDispatcherTests
     [Fact]
     public async Task EnqueueAsync_ReturnsImmediately_WithoutWaitingForHandlerCompletion()
     {
-        // Capacity=100, no consumer — the channel accepts one enqueue immediately.
         using var cts = new CancellationTokenSource();
-        var services = new ServiceCollection();
-        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<FireAndForgetDispatcherTests>());
-
-        // Register a plain ICommand handler so MediatR can find one (guard excluded from this test).
-        services
-            .AddSharedKernelApplicationBehaviors()
-            .AddFireAndForgetDispatch(opts => opts.Capacity = 100)
-            .Build();
-
-        // Re-add MediatR after Build() to include handlers.
-        // Actually the guard behavior would block any IFireAndForgetCommand; here we only test
-        // that EnqueueAsync (the TryWrite call) returns fast — no consumer runs in this test.
-        var provider = services.BuildServiceProvider();
-        var dispatcher = provider.GetRequiredService<IFireAndForgetDispatcher>();
+        var (_, dispatcher, _) = BuildRealProvider(configureOptions: opts => opts.Capacity = 100);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        // Use a valid IFireAndForgetCommand type — guard behavior is registered but there's no
-        // consumer, so nothing blocks: TryWrite succeeds immediately and EnqueueAsync returns.
-        await dispatcher.EnqueueAsync(new ConsumerTrackableCommand("fast"), cts.Token);
+        // No consumer running in this test — TryWrite succeeds immediately and EnqueueAsync returns
+        // without waiting for handler execution.
+        await dispatcher.EnqueueAsync(new TrackableCommand("fast"), cts.Token);
         sw.Stop();
 
         sw.ElapsedMilliseconds.Should().BeLessThan(500,
             "EnqueueAsync must return immediately — it should not wait for handler execution");
     }
 
-    // ---- test: background consumer executes the command ----
+    // ---- test: background consumer executes the command end-to-end via the real, documented wiring ----
 
     [Fact]
-    public async Task BackgroundConsumer_ExecutesEnqueuedCommand_ViaScopedMediatRPipeline()
+    public async Task BackgroundConsumer_ExecutesEnqueuedCommand_ViaRealDocumentedWiring()
     {
         var handlerGate = new SemaphoreSlim(0, 1);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        var (provider, channelWriter) = BuildConsumerDirectProvider(services =>
+        var (_, dispatcher, consumer) = BuildRealProvider(services =>
         {
             services.AddSingleton(handlerGate);
-            services.AddScoped<IRequestHandler<ConsumerTrackableCommand, Result>>(sp =>
-                new ConsumerTrackableCommandHandler(sp.GetRequiredService<SemaphoreSlim>()));
+            services.AddScoped<IRequestHandler<TrackableCommand, Result>>(sp =>
+                new TrackableCommandHandler(sp.GetRequiredService<SemaphoreSlim>()));
         });
-
-        var consumer = provider.GetRequiredService<IEnumerable<IHostedService>>()
-            .OfType<FireAndForgetBackgroundConsumer>()
-            .Single();
 
         await consumer.StartAsync(cts.Token);
 
-        // Write a command directly to the channel.
-        await channelWriter.WriteAsync(new ConsumerTrackableCommand("exec"), cts.Token);
+        // Dispatch via the real IFireAndForgetDispatcher — exercises the full documented path, including
+        // FireAndForgetGuardBehavior<,> registered globally by AddFireAndForgetDispatch(). Prior to the
+        // WO-039 P-238 fix, the guard self-blocked the consumer's own internal ISender.Send and this
+        // command would never actually execute.
+        await dispatcher.EnqueueAsync(new TrackableCommand("exec"), cts.Token);
 
         var completed = await handlerGate.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
-        completed.Should().BeTrue("the background consumer must have executed the handler");
+        completed.Should().BeTrue(
+            "the background consumer must actually execute the handler through the real, documented AddFireAndForgetDispatch() wiring");
 
         await consumer.StopAsync(CancellationToken.None);
     }
@@ -149,27 +135,23 @@ public sealed class FireAndForgetDispatcherTests
         var successGate = new SemaphoreSlim(0, 1);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        var (provider, channelWriter) = BuildConsumerDirectProvider(services =>
+        var (_, dispatcher, consumer) = BuildRealProvider(services =>
         {
-            services.AddScoped<IRequestHandler<ConsumerThrowingCommand, Result>>(
-                _ => new ConsumerThrowingCommandHandler(throwingGate));
-            services.AddScoped<IRequestHandler<ConsumerTrackableCommand, Result>>(
-                _ => new ConsumerTrackableCommandHandler(successGate));
+            services.AddScoped<IRequestHandler<ThrowingCommand, Result>>(
+                _ => new ThrowingCommandHandler(throwingGate));
+            services.AddScoped<IRequestHandler<TrackableCommand, Result>>(
+                _ => new TrackableCommandHandler(successGate));
         });
-
-        var consumer = provider.GetRequiredService<IEnumerable<IHostedService>>()
-            .OfType<FireAndForgetBackgroundConsumer>()
-            .Single();
 
         await consumer.StartAsync(cts.Token);
 
         // First: throwing command.
-        await channelWriter.WriteAsync(new ConsumerThrowingCommand("t1"), cts.Token);
+        await dispatcher.EnqueueAsync(new ThrowingCommand("t1"), cts.Token);
         var throwing = await throwingGate.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
         throwing.Should().BeTrue("consumer must have tried to process the throwing command");
 
         // Second: success command — proves the loop continued after the exception.
-        await channelWriter.WriteAsync(new ConsumerTrackableCommand("t2"), cts.Token);
+        await dispatcher.EnqueueAsync(new TrackableCommand("t2"), cts.Token);
         var success = await successGate.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
         success.Should().BeTrue("consumer loop must continue after handler exception");
 
@@ -182,26 +164,17 @@ public sealed class FireAndForgetDispatcherTests
     public async Task EnqueueAsync_ChannelFull_DropAndLogPolicy_DoesNotThrow()
     {
         using var cts = new CancellationTokenSource();
-        var services = new ServiceCollection();
-        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
-        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<FireAndForgetDispatcherTests>());
-        services
-            .AddSharedKernelApplicationBehaviors()
-            .AddFireAndForgetDispatch(opts =>
-            {
-                opts.Capacity = 1;
-                opts.RejectionPolicy = FireAndForgetRejectionPolicy.DropAndLog;
-            })
-            .Build();
+        var (_, dispatcher, _) = BuildRealProvider(configureOptions: opts =>
+        {
+            opts.Capacity = 1;
+            opts.RejectionPolicy = FireAndForgetRejectionPolicy.DropAndLog;
+        });
 
-        var provider = services.BuildServiceProvider();
-        var dispatcher = provider.GetRequiredService<IFireAndForgetDispatcher>();
-
-        // Fill the channel (capacity=1).
-        await dispatcher.EnqueueAsync(new ConsumerTrackableCommand("fill"), cts.Token);
+        // Fill the channel (capacity=1) — no consumer running in this test.
+        await dispatcher.EnqueueAsync(new TrackableCommand("fill"), cts.Token);
 
         // Second enqueue: channel is full → must drop silently (no exception).
-        var act = async () => await dispatcher.EnqueueAsync(new ConsumerTrackableCommand("dropped"), cts.Token);
+        var act = async () => await dispatcher.EnqueueAsync(new TrackableCommand("dropped"), cts.Token);
 
         await act.Should().NotThrowAsync("DropAndLog policy must silently drop when the channel is full");
     }
@@ -219,5 +192,26 @@ public sealed class FireAndForgetDispatcherTests
 
         act.Should().Throw<InvalidOperationException>(
             "IFireAndForgetDispatcher must not be registered without AddFireAndForgetDispatch()");
+    }
+
+    // ---- test: a caller's direct ISender.Send is still rejected (WO-039, P-238 — guard not weakened) ----
+
+    [Fact]
+    public async Task GuardBehavior_RejectsDirectSenderSend_EvenAfterTrustedDispatchFix()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        var (provider, _, _) = BuildRealProvider(services =>
+        {
+            services.AddScoped<IRequestHandler<TrackableCommand, Result>>(
+                _ => new TrackableCommandHandler(new SemaphoreSlim(0, 1)));
+        });
+
+        var sender = provider.GetRequiredService<ISender>();
+
+        var act = async () => await sender.Send(new TrackableCommand("direct"), cts.Token);
+
+        await act.Should().ThrowAsync<InvalidOperationException>(
+            "an external caller's direct ISender.Send of an IFireAndForgetCommand must still be rejected");
     }
 }

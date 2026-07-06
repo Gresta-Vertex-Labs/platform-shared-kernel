@@ -23,6 +23,14 @@ namespace SharedKernel.Application.Behaviors.FireAndForget;
 /// already relinquished result observation by choosing the fire-and-forget path. The background
 /// loop continues consuming subsequent commands.
 /// </para>
+/// <para>
+/// <b>Trusted dispatch marker (WO-039, P-238):</b> the internal <c>ISender.Send</c> call is wrapped
+/// in <see cref="FireAndForgetDispatchContext.EnterTrustedDispatch"/>'s disposable scope so
+/// <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/> permits this dispatch through
+/// instead of rejecting it as external misuse. The scope's <see cref="IDisposable.Dispose"/> resets
+/// the marker unconditionally — even if <c>Send</c> throws — because the <see langword="using"/>
+/// block guarantees disposal on exit via any path (normal return or exception).
+/// </para>
 /// </remarks>
 public sealed class FireAndForgetBackgroundConsumer(
     ChannelReader<IFireAndForgetCommand> reader,
@@ -39,7 +47,14 @@ public sealed class FireAndForgetBackgroundConsumer(
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var sender = scope.ServiceProvider.GetRequiredService<ISender>();
-                await sender.Send(command, stoppingToken).ConfigureAwait(false);
+
+                // Mark this dispatch as trusted so FireAndForgetGuardBehavior<,> permits it through
+                // instead of rejecting it as external misuse (WO-039, P-238). The using block
+                // guarantees the marker is reset on scope exit even if Send throws.
+                using (FireAndForgetDispatchContext.EnterTrustedDispatch())
+                {
+                    await sender.Send(command, stoppingToken).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
