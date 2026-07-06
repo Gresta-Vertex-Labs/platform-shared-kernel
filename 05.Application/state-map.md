@@ -92,13 +92,15 @@ Final verification: `SharedKernel.Application.Tests` 28/28 passing (unchanged); 
 
 Final verification this session: `SharedKernel.Application.Tests` 28/28 passing (unchanged, re-run as regression check); `SharedKernel.Application.Behaviors.Tests` 113/113 passing (107 pre-existing + 6 new: 3 `ApplicationPipelineRules` tests, 2 `PipelineOrderAssertion` tests, 1 `MetricsInstrumentationRules` test). Zero forbidden references introduced; new test file only touches the test project, no production code changed. `SK.05.Tests` phase key now **50/52** — only T-40 and T-44 remain `⚑` genuinely blocked on `00.Governance` P-240.
 
+> **Re-verification (2026-07-06, fourth session):** Re-read `00.Governance/state-map.md`'s `SK.00.DomainEventDispatcherReflectionExemption` phase directly (task rows and the phase-key summary table) rather than trusting the prior session's note — still 0/5 tasks (`D-58`/`C-95`/`T-169`/`T-170`/`DO-30` all `○`, phase-key summary row also shows `0 | 5 | ○`). The blocker is confirmed real and unchanged; T-40/T-44 were correctly NOT attempted this session — no assertion was loosened, no exemption entry fabricated, and no task silently marked `●`. Ran both test suites as a sanity regression check with zero code changes: `SharedKernel.Application.Tests` 28/28 passing, `SharedKernel.Application.Behaviors.Tests` 113/113 passing — no regressions, counts unchanged from the third session. Phase key remains **50/52 `◐`**; no phase-key promotion is earned this session, so none was forced. `state-map-phase`/`sync-brain` are not invoked this session since no task state changed.
+
 ---
 
 ## Blocked
 
 | Task | Phase Key | Blocker |
 |------|-----------|---------|
-| T-40 (`ReflectionGuardRules.NoMakeGenericMethodReflection` against real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies) | SK.05.Tests | `00.Governance` `SK.00.DomainEventDispatcherReflectionExemption` (P-240) — 0/5 tasks (`D-58`/`C-95`/`T-169`/`T-170`/`DO-30` all `○`) as of 2026-07-06. Re-verified this session; unchanged. May additionally require a second `ReflectionExemptionRegistry` entry for `ResultOfTDispatcher<TResponse>`'s own disclosed `MakeGenericMethod` call (see `05.Application/CLAUDE.md`, "Constructing a generic failure response") — to be confirmed once P-240 ships and T-40 is actually attempted. |
+| T-40 (`ReflectionGuardRules.NoMakeGenericMethodReflection` against real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies) | SK.05.Tests | `00.Governance` `SK.00.DomainEventDispatcherReflectionExemption` (P-240) — 0/5 tasks (`D-58`/`C-95`/`T-169`/`T-170`/`DO-30` all `○`) as of 2026-07-06 (re-verified a fourth time this session; unchanged). May additionally require a second `ReflectionExemptionRegistry` entry for `ResultOfTDispatcher<TResponse>`'s own disclosed `MakeGenericMethod` call (see `05.Application/CLAUDE.md`, "Constructing a generic failure response") — to be confirmed once P-240 ships and T-40 is actually attempted. |
 | T-44 (full test suite green with all four real-assembly architecture rule invocations passing) | SK.05.Tests | Transitively blocked on T-40 above — 3 of 4 rule groups (T-41/T-42/T-43) are invoked and passing; T-44's own acceptance criterion requires all four. |
 
 <!--
