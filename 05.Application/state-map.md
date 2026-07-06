@@ -72,6 +72,16 @@ WO-035 (P-214–P-219), WO-036 (P-220–P-224), and WO-038 (P-231–P-234) Tests
 
 Final verification: `SharedKernel.Application` and `SharedKernel.Application.Behaviors` both build 0 warnings/0 errors in Release; `SharedKernel.Application.Tests` 28/28 passing; `SharedKernel.Application.Behaviors.Tests` 93/93 passing (92 pre-existing + 1 new guard-rejection test) — 121 total, 0 failures. Zero forbidden references introduced. `SK.05.Core` phase key now 65/65 `●`.
 
+**SK.05.Tests → `◐` 47/52 (2026-07-06 session, WO-039 T-33..T-39/T-45..T-52).** Fifteen of the twenty new WO-039 test tasks now `●`:
+- **P-237 (T-33/T-34):** new `Shared/FailureResponseFactoryReflectionShapeTests.cs` — a Mono.Cecil IL-shape assertion (test-project-only `SharedKernel.ArchitectureTests` reference already in place from S-17) proving `FailureResponseFactory`/`ResultOfTDispatcher<TResponse>` contain none of `GetInterfaces`/`GetGenericArguments`/`MakeGenericType`/`GetMethod`/`GetMethods`/`MethodBase.Invoke`, while confirming the one disclosed `MakeGenericMethod`+`CreateDelegate` pair IS present exactly where documented (had to distinguish `MethodBase.Invoke` from an ordinary `Func<Error,TResponse>` delegate `Invoke` call by declaring-type check — the naive name-only match false-failed on the delegate invocation inside `ResultOfTDispatcher.Create`); plus three behavioral tests exercising `Create<TResponse>` via the real `AuthorizationBehavior` pipeline for `Result`, `Result<string>`, and `Result<int>`. T-34 re-run of existing `AuthorizationBehaviorTests`/`IdempotentCommandBehaviorTests` confirmed passing unmodified in intent.
+- **P-238 (T-35..T-37):** already fully satisfied by the existing `FireAndForgetDispatcherTests`/`FireAndForgetGuardBehaviorTests` shipped in the Core-phase session (`BackgroundConsumer_ExecutesEnqueuedCommand_ViaRealDocumentedWiring`, `GuardBehavior_RejectsDirectSenderSend_EvenAfterTrustedDispatchFix`) — verified still green, `BuildConsumerDirectProvider` confirmed absent (zero grep hits), no new test files needed.
+- **P-239 (T-38/T-39):** `MetricsBehaviorTests.cs` extended with an `Outcome` field on the measurement-capture tuple, a new `FailingHandler` + `Handle_OnResultFailure_RecordsMeasurementTaggedOutcomeFailure` test, and `Outcome` assertions added to the existing success/exception tests (`"success"`/`"failure"`/`"exception"`). `LoggingBehaviorTests`/`LoggingBehaviorFailureLevelTests` confirmed passing unmodified.
+- **P-241 (T-40..T-44): SKIPPED, left `○` — genuinely still blocked.** Re-verified `00.Governance/state-map.md`'s `SK.00.DomainEventDispatcherReflectionExemption` phase this session: `D-58`, `C-95`, `T-169`, `T-170`, `DO-30` all still `○` (0/5). Per the phase spec's explicit instruction, these five tasks were not attempted.
+- **P-242 (T-45..T-49):** T-45 already covered by the pre-existing `Handle_DuplicateKey_ShortCircuitsWithoutInvokingHandlerAgain` regression test (NSubstitute mock satisfying only `IIdempotencyKeyStore`); new `Idempotency/IdempotentCommandBehaviorReplayTests.cs` adds a hand-written `ReplayCapableStore` (implements both `IIdempotencyKeyStore` and `IIdempotencyResponseStore`) and `NoReplayStore` (implements only `IIdempotencyKeyStore`) to cover T-46 (replay original success), T-47 (replay original failure — `Error.BusinessRule`, confirmed NOT masked as `Error.Conflict`), and T-48 (processed-but-unstored key falls back to `Error.Conflict`); an additional sanity test confirms a `Result<string>` payload round-trips correctly through the replay path.
+- **P-243 (T-50..T-52):** `ApplicationBehaviorsBuilderTests.cs` extended with three new tests proving `AddDefaultBehaviors()` is provably equivalent to the four individual `.AddXBehavior()` calls (same registered types, same canonical order), composes idempotently with a redundant individual `.AddLoggingBehavior()` call (no duplicate registration), and never throws `InvalidOperationException` on its own.
+
+Final verification: `SharedKernel.Application.Tests` 28/28 passing (unchanged); `SharedKernel.Application.Behaviors.Tests` 107/107 passing (92 pre-existing + 1 P-237 guard test from Core session + 15 new this session: 4 reflection-shape tests, 2 metrics-outcome-tag tests, 5 idempotency-replay tests, 1 no-replay-store test, 3 `AddDefaultBehaviors` tests). Zero forbidden references introduced. `SK.05.Tests` phase key now 47/52 `◐` — 5 tasks (T-40..T-44) remain `○`/blocked pending `00.Governance` P-240.
+
 ---
 
 ## Blocked
@@ -91,8 +101,8 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 | --- | --- | --- | --- |
-| `SharedKernel.Application` | Design ● (WO-039), Core pending | `◐` | WO-035 + WO-036 + WO-038 scope complete (Tests ●, 28 tests passing). WO-039's Design phase (D-36..D-58) is now fully `●`, including P-241's D-46..D-48 (locked as forward-looking planning). Core/Tests/Docs phases for P-237/P-238/P-239/P-241/P-242/P-243 remain `○`; P-241's Core phase additionally remains blocked pending `00.Governance` P-240 (0/5 tasks) and this domain's own P-237/P-239 Core phases. |
-| `SharedKernel.Application.Behaviors` | Design ● (WO-039), Core pending | `◐` | WO-035 + WO-036 + WO-038 scope complete (Tests ●, 92 tests passing). WO-039 (P-237/P-238/P-239/P-241/P-242/P-243) is fully scoped to this package's internals plus its nested test project; Design phase now fully `●`. |
+| `SharedKernel.Application` | Core ● (WO-039), Tests `◐` | `◐` | WO-035 + WO-036 + WO-038 scope complete (Tests ●, 28 tests passing, unaffected by WO-039). WO-039 Design (D-36..D-58) and Core (C-51..C-65) are fully `●`. Tests phase 47/52 `◐` — T-40..T-44 (P-241) remain `○`/blocked pending `00.Governance` P-240 (0/5 tasks). Docs/Published phases remain `○`. |
+| `SharedKernel.Application.Behaviors` | Core ● (WO-039), Tests `◐` | `◐` | WO-035 + WO-036 + WO-038 scope complete (Tests ●, 92 tests passing). WO-039 (P-237/P-238/P-239/P-241/P-242/P-243) is fully scoped to this package's internals plus its nested test project; Design/Core fully `●`. Tests phase 47/52 `◐` — 107/107 tests passing; T-40..T-44 remain blocked. |
 
 ---
 
@@ -449,23 +459,23 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| T-33 | Add a reflection-call-counting/assertion test proving `FailureResponseFactory.Create<TResponse>(Error)` executes (for at least two distinct closed `Result<T>` shapes, plus the `Result` fast path) without invoking any `System.Reflection` member — via a reflection-call-counting test double or an explicit code-shape assertion, pending P-241's real architecture-test wiring | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-34 | Re-run all existing `AuthorizationBehavior`/`IdempotentCommandBehavior` tests and confirm they pass unmodified in intent — signature churn inside the internal factory is acceptable, behavior is not | WO-039 | SharedKernel.Application.Behaviors | `○` |
+| T-33 | Add a reflection-call-counting/assertion test proving `FailureResponseFactory.Create<TResponse>(Error)` executes (for at least two distinct closed `Result<T>` shapes, plus the `Result` fast path) without invoking any `System.Reflection` member — via a reflection-call-counting test double or an explicit code-shape assertion, pending P-241's real architecture-test wiring | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-34 | Re-run all existing `AuthorizationBehavior`/`IdempotentCommandBehavior` tests and confirm they pass unmodified in intent — signature churn inside the internal factory is acceptable, behavior is not | WO-039 | SharedKernel.Application.Behaviors | `●` |
 
 **Tests (WO-039, P-238 — Fire-and-Forget Dispatch Self-Blocking Bug tests):**
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| T-35 | End-to-end test: wire `AddFireAndForgetDispatch()` exactly per the documented DI shape, start the real `FireAndForgetBackgroundConsumer` as a hosted service, dispatch via the real `IFireAndForgetDispatcher.EnqueueAsync`, and assert the enqueued handler actually executed | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-36 | `FireAndForgetGuardBehavior` still rejects a caller's direct `ISender.Send(IFireAndForgetCommand)` call (outside the internal trusted-dispatch marker) with the existing documented `InvalidOperationException` message — the external-misuse guard is not weakened | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-37 | Full test suite green after the fix, including the new end-to-end test; confirm `BuildConsumerDirectProvider`'s workaround no longer exists | WO-039 | Both | `○` |
+| T-35 | End-to-end test: wire `AddFireAndForgetDispatch()` exactly per the documented DI shape, start the real `FireAndForgetBackgroundConsumer` as a hosted service, dispatch via the real `IFireAndForgetDispatcher.EnqueueAsync`, and assert the enqueued handler actually executed | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-36 | `FireAndForgetGuardBehavior` still rejects a caller's direct `ISender.Send(IFireAndForgetCommand)` call (outside the internal trusted-dispatch marker) with the existing documented `InvalidOperationException` message — the external-misuse guard is not weakened | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-37 | Full test suite green after the fix, including the new end-to-end test; confirm `BuildConsumerDirectProvider`'s workaround no longer exists | WO-039 | Both | `●` |
 
 **Tests (WO-039, P-239 — `MetricsBehavior<,>` outcome tag tests):**
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| T-38 | `MetricsBehavior` tests extended to assert the `outcome` tag value for success (`"success"`), `Result.Failure` (`"failure"`), and thrown-exception (`"exception"`) cases | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-39 | Confirm `LoggingBehavior` tests (T-22/existing) still pass unmodified in intent after the shared outcome-classification-helper refactor | WO-039 | SharedKernel.Application.Behaviors | `○` |
+| T-38 | `MetricsBehavior` tests extended to assert the `outcome` tag value for success (`"success"`), `Result.Failure` (`"failure"`), and thrown-exception (`"exception"`) cases | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-39 | Confirm `LoggingBehavior` tests (T-22/existing) still pass unmodified in intent after the shared outcome-classification-helper refactor | WO-039 | SharedKernel.Application.Behaviors | `●` |
 
 **Tests (WO-039, P-241 — Real-Assembly Architecture Test Wiring, blocked on P-237, P-239, `00.Governance` P-240):**
 
@@ -481,19 +491,19 @@ Format when blocked — replace placeholder with table:
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| T-45 | No-replay-capability duplicate test: a store implementing ONLY `IIdempotencyKeyStore` still returns `Error.Conflict` on a duplicate submission, unchanged — the exact pre-existing regression test | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-46 | Replay-capability duplicate after a successful first attempt: a store also implementing `IIdempotencyResponseStore` returns the ORIGINAL success payload on the duplicate submission, not `Error.Conflict` | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-47 | Replay-capability duplicate after a `Result.Failure` first attempt: returns the ORIGINAL stored failure on the duplicate submission, not a fresh `Error.Conflict` | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-48 | Replay-capability edge case: `TryGetStoredResponseAsync` returns `null` for a key already marked processed (e.g. a pre-replay-adoption key) — falls back to `Error.Conflict` | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-49 | Full test suite green after all P-242 additions | WO-039 | Both | `○` |
+| T-45 | No-replay-capability duplicate test: a store implementing ONLY `IIdempotencyKeyStore` still returns `Error.Conflict` on a duplicate submission, unchanged — the exact pre-existing regression test | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-46 | Replay-capability duplicate after a successful first attempt: a store also implementing `IIdempotencyResponseStore` returns the ORIGINAL success payload on the duplicate submission, not `Error.Conflict` | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-47 | Replay-capability duplicate after a `Result.Failure` first attempt: returns the ORIGINAL stored failure on the duplicate submission, not a fresh `Error.Conflict` | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-48 | Replay-capability edge case: `TryGetStoredResponseAsync` returns `null` for a key already marked processed (e.g. a pre-replay-adoption key) — falls back to `Error.Conflict` | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-49 | Full test suite green after all P-242 additions | WO-039 | Both | `●` |
 
 **Tests (WO-039, P-243 — Developer-Experience Preset tests):**
 
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
-| T-50 | Test proving `AddDefaultBehaviors()` produces an `IServiceCollection` registration set equivalent to calling the four individual `.AddLoggingBehavior().AddMetricsBehavior().AddTracingBehavior().AddValidationBehavior()` methods — compare registered `(ServiceType, ImplementationType)` pairs and canonical order | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-51 | Test proving `AddDefaultBehaviors()` combined with an individual `.AddLoggingBehavior()` call produces NO duplicate registration and preserves canonical order | WO-039 | SharedKernel.Application.Behaviors | `○` |
-| T-52 | Test proving `AddDefaultBehaviors()` alone never throws `InvalidOperationException` from `.Build()` — no missing-dependency guard is triggered by any of the four preset behaviors | WO-039 | SharedKernel.Application.Behaviors | `○` |
+| T-50 | Test proving `AddDefaultBehaviors()` produces an `IServiceCollection` registration set equivalent to calling the four individual `.AddLoggingBehavior().AddMetricsBehavior().AddTracingBehavior().AddValidationBehavior()` methods — compare registered `(ServiceType, ImplementationType)` pairs and canonical order | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-51 | Test proving `AddDefaultBehaviors()` combined with an individual `.AddLoggingBehavior()` call produces NO duplicate registration and preserves canonical order | WO-039 | SharedKernel.Application.Behaviors | `●` |
+| T-52 | Test proving `AddDefaultBehaviors()` alone never throws `InvalidOperationException` from `.Build()` — no missing-dependency guard is triggered by any of the four preset behaviors | WO-039 | SharedKernel.Application.Behaviors | `●` |
 
 ---
 
@@ -557,7 +567,7 @@ Format when blocked — replace placeholder with table:
 | `SK.05.Design` | Design | 58 | 58 | 0 | `●` |
 | `SK.05.Scaffold` | Scaffold | 17 | 17 | 0 | `●` |
 | `SK.05.Core` | Core | 65 | 65 | 0 | `●` |
-| `SK.05.Tests` | Tests | 52 | 32 | 20 | `◐` |
+| `SK.05.Tests` | Tests | 52 | 47 | 5 | `◐` |
 | `SK.05.Docs` | Docs | 18 | 4 | 14 | `◐` |
 | `SK.05.Published` | Published | 15 | 6 | 9 | `◐` |
 
@@ -569,6 +579,7 @@ Format when blocked — replace placeholder with table:
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
 
+- [2026-07-06] T-33..T-39, T-45..T-52 → ● in SK.05.Tests (15 of 20 new WO-039 test tasks) — FailureResponseFactoryReflectionShapeTests.cs (Mono.Cecil IL-shape assertion + 3 behavioral tests), MetricsBehaviorTests outcome-tag extensions, IdempotentCommandBehaviorReplayTests.cs (replay success/failure/no-stored-response), ApplicationBehaviorsBuilderTests AddDefaultBehaviors tests; T-40..T-44 (P-241) left ○/blocked — 00.Governance SK.00.DomainEventDispatcherReflectionExemption re-verified still 0/5; 107/107 SharedKernel.Application.Behaviors.Tests passing, 28/28 SharedKernel.Application.Tests passing; SK.05.Tests now 47/52 (state-map-phase)
 - [2026-07-03] SK.05.Design → `●` (58/58, second session this date) — D-46/D-47/D-48 (P-241) completed as forward-looking design/planning, judged separable from P-241's Core/Tests/Docs execution: locking a `SharedKernel.ArchitectureTests` test-project `ProjectReference` convention and an invocation plan naming already-shipped `00.Governance` rule-group methods/signatures requires only their documented public shape (present in `00.Governance/CLAUDE.md` today), not the actual registered `ReflectionExemptionRegistry` entry. Re-verified `00.Governance` P-240 is at 0/5 tasks (corrected a prior session's mis-read that `D-58` was `●` — it is not); P-241's Core/Tests/Docs phases remain explicitly blocked on `00.Governance` P-240 plus this domain's own P-237/P-239 Core phases, unaffected by this Design-phase completion. Overall Progress and Package Board updated (application-phase-implementer)
 - [2026-06-29] Sub state-map initialized — phase key registry, 6 phases scaffolded at `○`, no tasks yet; package board with 2 packages at not-started; Overall Progress table added (all phases 0 total / `○`)
 - [2026-06-29] WO-035 dispatched (root P-214–P-219): 57 tasks added across all 6 phases (D-01..D-10, S-01..S-08, C-01..C-17, T-01..T-12, DO-01..DO-04, P-01..P-06) — locks the command/query vocabulary, the domain-event-to-MediatR bridge fulfilling `03.Domain` P-081, and the full seven-step pipeline behavior suite: the original five (Validation/Logging/Metrics/Transaction/Caching — Caching carrying forward root P-015/WO-004 verbatim, no redesign) plus two new behaviors, Authorization (`IAuthorizationContext` local seam + `IAuthorizeRequest` marker, zero `12.Security` reference) and Idempotency (local seam mirroring `07.Messaging.Abstractions.IIdempotencyStore`'s shape, `IIdempotentRequest` marker, constrained to `ICommandBase` only, zero `07.Messaging` reference); revised canonical pipeline order to Logging → Metrics → Validation → Authorization → Caching → Idempotency → Transaction; Phase Key Registry Root Backlog ID column populated (P-214 through P-219); Package Board states moved from `○` to `◐`; Overall Progress counts populated

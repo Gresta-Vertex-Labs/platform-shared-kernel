@@ -198,4 +198,79 @@ public sealed class ApplicationBehaviorsBuilderTests
                   .AddMetricsBehavior().AddAuthorizationBehavior().AddResilienceBehavior(),
         };
     }
+
+    // ---- WO-039, P-243 (T-50/T-51/T-52): AddDefaultBehaviors() onboarding preset ----
+
+    [Fact]
+    public void Build_AddDefaultBehaviors_RegistersSameSetAsFourIndividualCalls_InCanonicalOrder()
+    {
+        var presetServices = new ServiceCollection();
+        presetServices.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors().Build();
+
+        var individualServices = new ServiceCollection();
+        individualServices.AddSharedKernelApplicationBehaviors()
+            .AddLoggingBehavior()
+            .AddMetricsBehavior()
+            .AddTracingBehavior()
+            .AddValidationBehavior()
+            .Build();
+
+        var presetTypes = presetServices
+            .Where(d => d.ServiceType == typeof(IPipelineBehavior<,>))
+            .Select(d => d.ImplementationType!.GetGenericTypeDefinition())
+            .ToList();
+
+        var individualTypes = individualServices
+            .Where(d => d.ServiceType == typeof(IPipelineBehavior<,>))
+            .Select(d => d.ImplementationType!.GetGenericTypeDefinition())
+            .ToList();
+
+        presetTypes.Should().Equal(individualTypes,
+            "AddDefaultBehaviors() must be provably equivalent to calling the four individual " +
+            ".AddXBehavior() methods — no reimplementation, no divergent registration logic");
+
+        presetTypes.Should().Equal(
+            typeof(LoggingBehavior<,>),
+            typeof(MetricsBehavior<,>),
+            typeof(TracingBehavior<,>),
+            typeof(ValidationBehavior<,>));
+    }
+
+    [Fact]
+    public void Build_AddDefaultBehaviors_CombinedWithIndividualLoggingCall_ProducesNoDuplicateRegistration()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSharedKernelApplicationBehaviors()
+            .AddDefaultBehaviors()
+            .AddLoggingBehavior()
+            .Build();
+
+        var registeredTypes = services
+            .Where(d => d.ServiceType == typeof(IPipelineBehavior<,>))
+            .Select(d => d.ImplementationType!.GetGenericTypeDefinition())
+            .ToList();
+
+        registeredTypes.Should().Equal(
+            [
+                typeof(LoggingBehavior<,>),
+                typeof(MetricsBehavior<,>),
+                typeof(TracingBehavior<,>),
+                typeof(ValidationBehavior<,>)
+            ],
+            "combining the preset with a redundant individual .AddLoggingBehavior() call must not " +
+            "double-register LoggingBehavior<,> or disturb the fixed canonical order");
+    }
+
+    [Fact]
+    public void Build_AddDefaultBehaviorsAlone_NeverThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddDefaultBehaviors().Build();
+
+        act.Should().NotThrow(
+            "none of Logging/Metrics/Tracing/Validation carries a Build()-time missing-dependency guard, " +
+            "so the zero-prerequisite preset must never throw InvalidOperationException on its own");
+    }
 }
