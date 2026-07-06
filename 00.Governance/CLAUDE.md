@@ -1466,21 +1466,44 @@ ReflectionGuardRules  (static class — platform-wide reflection prohibition enf
     Note: Historical claim corrected (WO-039 P-240) — "all production assemblies pass this
     rule" was never actually verified by pointing the rule at every real assembly; it was
     true only in the narrow sense that P-147 fixed the one violation manual/design-time
-    review had found. WO-039 P-240 PLANS to register
+    review had found. As of 2026-07-06, P-240 has SHIPPED:
     SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod
-    call site pre-emptively so the rule can be safely pointed at the real
-    SharedKernel.Application assembly, but as of this writing that entry has NOT been
-    implemented — ReflectionExemptionRegistry.AllowList ships empty in source and
-    D-58/C-95/T-169/T-170/DO-30 are all `○` in state-map.md (see the "Planned entry" note
-    above for the intended type/method pair and rationale once it ships). KNOWN OPEN GAP: direct source
-    inspection (2026-07-03) confirms 07.Messaging's SharedKernel.Messaging.MassTransit
-    .MassTransitEventPublisher.BuildPublisher (the same lambda-closure MakeGenericMethod
-    pattern — in fact the very precedent MediatRDomainEventDispatcher's own exemption cites)
-    and MessagingBusBuilder.AddActivity (a second, differently-shaped MakeGenericMethod call)
-    are UNREGISTERED and UNVERIFIED against this rule today. Both will break the build the
-    moment this rule is ever pointed at the real SharedKernel.Messaging.MassTransit assembly.
-    Tracked as a candidate follow-up work order, not yet dispatched. Introduced in WO-024
-    P-153.
+    call site is now registered in ReflectionExemptionRegistry.AllowList (the registry's
+    first real entry — see below). CORRECTED STATUS, NOT "now fully verified": pointing
+    this rule at the real SharedKernel.Application assembly via
+    ReflectionGuardRules.NoMakeGenericMethodReflection(assembly) currently reports success
+    REGARDLESS of whether the exemption is registered or not, because NetArchTest.Rules'
+    own type-discovery layer (Types.InAssembly(assembly), which this rule's factory method
+    uses internally) never surfaces compiler-generated closure types — such as the `<>c`
+    singleton display class that actually contains PublishSingle's MakeGenericMethod call —
+    to any ICustomRule. This was confirmed empirically by instrumenting a recording
+    ICustomRule and observing the `<>c` type is absent from the set of TypeDefinition
+    instances NetArchTest visits, with and without the `.AreNotAbstract()` filter. The
+    predicate itself (NoMakeGenericMethodReflectionPredicate) is correct and IS load-bearing
+    when invoked directly against the real `<>c` TypeDefinition (proven by
+    ReflectionGuardRulesRealAssemblyTests in SharedKernel.ArchitectureTests.Tests) — the gap
+    is entirely in NetArchTest's own type enumeration, not in this rule's IL-walk logic, and
+    P-240's scope explicitly forbids changing either. CANDIDATE FOLLOW-UP WORK ORDER: extend
+    ReflectionGuardRules.NoMakeGenericMethodReflection (or add a sibling factory method) to
+    enumerate nested compiler-generated types directly via Mono.Cecil
+    (TypeDefinition.NestedTypes, recursively) rather than relying solely on NetArchTest's
+    Types.InAssembly(...) projection, so closure-based MakeGenericMethod call sites are
+    actually caught end-to-end. Until that ships, this rule provides no real protection
+    against a NEW, unregistered closure-based MakeGenericMethod violation — only against
+    violations placed directly on an ordinary (non-compiler-generated) type, which remains
+    the common case this rule was originally designed for (see the T-113 fixture in
+    ReflectionGuardRulesTests, a plain top-level class). KNOWN OPEN GAP (separate from the
+    above): direct source inspection (2026-07-03) confirms 07.Messaging's
+    SharedKernel.Messaging.MassTransit.MassTransitEventPublisher.BuildPublisher (the same
+    lambda-closure MakeGenericMethod pattern — in fact the very precedent
+    MediatRDomainEventDispatcher's own exemption cites) and MessagingBusBuilder.AddActivity
+    (a second, differently-shaped MakeGenericMethod call) are UNREGISTERED in
+    ReflectionExemptionRegistry today; P-240 explicitly scoped registration to
+    SharedKernel.Application only (05.Application) and did not register either
+    07.Messaging entry. Both remain a candidate follow-up work order, not yet dispatched;
+    note that even once registered, the NetArchTest closure-visibility gap above would
+    still need to be resolved before this rule could reliably enforce against
+    MassTransitEventPublisher.BuildPublisher's real IL either. Introduced in WO-024 P-153.
 
 NoMakeGenericMethodReflectionPredicate  (class : ICustomRule — internal predicate)
     For each type (non-abstract types only — abstract filter applied at factory level):
@@ -1508,10 +1531,8 @@ ReflectionExemptionRegistry  (class — governance allow-list for SK0012 excepti
       — the governance rationale (why typed dispatch or expression trees cannot be used)
       — the approving work order and date
       — the reviewing team member
-    Held empty from introduction (WO-024 P-153) through WO-038 and, as of this writing,
-    still empty — WO-039 P-240 has only been PLANNED (the phase spec below), not
-    implemented. `AllowList` in the shipped source remains `new()` with zero entries;
-    D-58/C-95/T-169/T-170/DO-30 are all `○` in state-map.md. The fixed P-147
+    Held empty from introduction (WO-024 P-153) through WO-038. As of 2026-07-06
+    (WO-039 P-240), the registry contains its FIRST real entry — see below. The fixed P-147
     EncryptionRotationService uses expression trees and needs no exemption. Any team
     requesting an exemption must:
       1. Open a governance review in the root state-map with a written rationale.
@@ -1520,32 +1541,40 @@ ReflectionExemptionRegistry  (class — governance allow-list for SK0012 excepti
     No other suppression mechanism is accepted: #pragma warning disable SK0012,
     [SuppressMessage], or inline comments do not exempt a type from this rule.
 
-    Planned entry (P-240, WO-039 — NOT YET IMPLEMENTED; recorded here ahead of shipping
-    so the empirical-verification procedure is not re-derived from scratch when C-95 is
-    picked up):
+    Shipped entry (P-240, WO-039, 2026-07-06):
       1. SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher — the
          MakeGenericMethod call inside PublishSingle's factory delegate:
          PublishDelegateCache.GetOrAdd(eventType, static t => { ... MakeGenericMethod ... }).
-         IMPORTANT: because the call site is inside a closure-free `static` lambda, Roslyn
-         compiles it onto a compiler-generated `<>c` singleton cache class nested inside
-         MediatRDomainEventDispatcher, not onto the declaring type directly — the
-         Mono.Cecil-observed TypeDefinition.FullName/MethodDefinition.Name pair the
-         registry will actually need to key on is shaped like
+         REUSABLE IMPLEMENTATION NOTE — closure-free static-lambda naming: because the call
+         site is inside a closure-free `static` lambda, Roslyn compiles it onto a
+         compiler-generated `<>c` singleton cache class nested inside
+         MediatRDomainEventDispatcher, not onto the declaring type directly. The
+         empirically-verified Mono.Cecil TypeDefinition.FullName/MethodDefinition.Name pair
+         actually registered is:
          "SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c" /
-         "<PublishSingle>b__{token}_{ordinal}", NOT the literal
-         "MediatRDomainEventDispatcher"/"PublishSingle" pair a source-level reading
-         suggests. PLACEHOLDER — the exact ordinal must be confirmed empirically at
-         implementation time (D-58/C-95): compile, run
-         ReflectionGuardRules.NoMakeGenericMethodReflection against the real
-         SharedKernel.Application assembly, read the exact names out of the failure
-         message, and record the final verified pair here — see
-         SK.00.DomainEventDispatcherReflectionExemption in state-map.md for the
-         red-then-green procedure. Do not ship this phase with a guessed ordinal.
+         "<PublishSingle>b__8_0" — NOT the literal "MediatRDomainEventDispatcher"/
+         "PublishSingle" pair a source-level reading suggests. This pair was determined by
+         a temporary Mono.Cecil IL-walk (instrumented identically to
+         NoMakeGenericMethodReflectionPredicate) against the real compiled
+         SharedKernel.Application.dll — see ReflectionGuardRulesRealAssemblyTests in
+         SharedKernel.ArchitectureTests.Tests for the verification procedure and the
+         predicate-level red/green tests. Any future exemption request for a closure-free
+         static lambda must follow this same empirical (not source-level-assumed)
+         verification step; re-verify if PublishSingle's lambda body or position changes.
          Rationale: runtime-only IDomainEvent-type dispatch — the concrete event type is
          only known per element at DispatchAsync time; the same justification already
          accepted for 07.Messaging's MassTransitEventPublisher.BuildPublisher (itself
          still unregistered here — see the SK0012 entry's "KNOWN OPEN GAP" note above).
-         Proposed WO-039, 2026-07-03 — pending implementation, not yet approved/merged.
+         Approved: WO-039 (P-240 / SK.00.DomainEventDispatcherReflectionExemption),
+         2026-07-06. Reviewed by: governance-phase-implementer (00.Governance domain agent).
+         DISCOVERED GAP: registering this entry does NOT make
+         ReflectionGuardRules.NoMakeGenericMethodReflection actually detect-then-exempt this
+         violation end-to-end, because NetArchTest's own type discovery never visits the
+         `<>c` closure type in the first place — see the SK0012 entry's "CORRECTED STATUS"
+         note above for the full explanation and the candidate follow-up work order. The
+         entry is still the governance-correct action (documents intent, is ready the
+         moment the NetArchTest gap is closed, and is independently proven load-bearing at
+         the predicate layer by ReflectionGuardRulesRealAssemblyTests).
 
 CommunicationLayeringRules  (static class — Communication layer boundary enforcement predicates; WO-025 P-159)
     All factory methods accept Assembly (or params Assembly[]) and return ConditionList (or ConditionList[]).
@@ -2527,3 +2556,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-03] SK.00.MetricsOutcomeTagAndMisregistrationGuard → ● closeout — SK0014 ClosedGenericResiliencePipelineRegistrationAnalyzer, SK0015 StreamPipelineBehaviorMisregistrationAnalyzer, and SK0016 RequestTypeShortNameUsageAnalyzer implemented in SharedKernel.Analyzers/Diagnostics/; RequestDurationRecordMissingOutcomeTagPredicate implemented in Predicates/ and MetricsInstrumentationRules in Rules/; verified against the pre-written CLAUDE.md spec (diagnostic registry, architecture test contracts, implementation rules all matched) with one correction made to the implementation to match the documented contract exactly — the predicate now requires MethodReference.DeclaringType to be a GenericInstanceType whose ElementType.FullName == "System.Diagnostics.Metrics.Histogram`1" (narrowed from an initial Name.StartsWith("Histogram") heuristic) before scanning for the companion "outcome" Ldstr literal; SK0015's implementation required one fix beyond the written spec — INamedTypeSymbol.AllInterfaces returns empty for an unbound generic type symbol (the shape produced by typeof(StreamFixtureBehavior<,>)), so the interface-implementation check walks type.OriginalDefinition.AllInterfaces instead, confirmed via a standalone Roslyn symbol-inspection script before patching; T-161–T-168 added (8 new tests: 4 analyzer fire/pass pairs, 2 architecture-test fire/pass fixtures); 105/105 SharedKernel.Analyzers.Tests and 127/127 SharedKernel.ArchitectureTests.Tests pass, 0 build warnings/errors (state-map-phase)
 - [2026-07-03] SK0014 ClosedGenericResiliencePipelineRegistration, SK0015 StreamPipelineBehaviorMisregistration, SK0016 RequestTypeShortNameUsage added to diagnostic registry (general-purpose sequential block, next after SK0013; SK0014 and SK0016 syntax-only, SK0015 the domain's second semantic-model analyzer after SK0011); MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag and RequestDurationRecordMissingOutcomeTagPredicate added to architecture test contracts (no new SK ID — reuses the HealthCheckTagIntegrityRules Ldstr literal-collection technique against a new Histogram<T>.Record call-site search); five new implementation rules added; addresses all four WO-038 application audit findings (closed-generic ResiliencePipeline<TResponse> registration, missing outcome tag on RequestDuration, IStreamPipelineBehavior misregistration against IPipelineBehavior<,>, typeof(TRequest).Name short-name collision risk); the outcome-tag rule's real-assembly retrofit of MetricsBehavior<,> (P-217) is explicitly OUT OF SCOPE for this domain (production code in 05.Application) — tracked as a companion 05.Application dependency, not implemented here; design/tests use contrived in-memory fixtures only — WO-038 P-235, depends on 05.Application P-217/P-234 for real-assembly verification only (governance-arch-planner)
 - [2026-07-03] WO-039 P-240 PLANNED (design only — not yet implemented) — the phase spec proposes registering SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod call site (inside PublishSingle's ConcurrentDictionary.GetOrAdd factory delegate) in ReflectionExemptionRegistry, pre-emptively, so SK0012 can be safely pointed at the real SharedKernel.Application assembly; documented that the call site sits inside a closure-free `static` lambda, so the Mono.Cecil-observed key will be the compiler-generated `<>c` nested cache class, not the literal MediatRDomainEventDispatcher/PublishSingle pair — new reusable implementation-rules bullet added on this Roslyn/Mono.Cecil fact; corrected the SK0012 "all production assemblies pass this rule" note (never actually verified platform-wide) and recorded a newly-discovered OPEN gap — 07.Messaging's MassTransitEventPublisher.BuildPublisher (same closure pattern, itself this exemption's own cited precedent) and MessagingBusBuilder.AddActivity remain unregistered/unverified against SK0012, tracked as a candidate follow-up; no new SK ID; no predicate/rule-logic change; **implementation status (2026-07-06 correction): D-58/C-95/T-169/T-170/DO-30 are all still `○` in state-map.md and ReflectionExemptionRegistry.AllowList ships empty in source — a prior version of this changelog entry incorrectly described the registry entry as already shipped; corrected during a /dispatch-phase cross-check of WO-039** — WO-039 P-240 (governance-arch-planner)
+- [2026-07-06] SK.00.DomainEventDispatcherReflectionExemption ● complete (D-58, C-95, T-169, T-170, DO-30) — ReflectionExemptionRegistry.AllowList now ships with its FIRST real entry: ("SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c", "<PublishSingle>b__8_0"), determined empirically (red-then-green, D-58) via a temporary Mono.Cecil IL-walk against the real compiled SharedKernel.Application.dll rather than assumed from source, with a governance rationale block comment (WO-039, 2026-07-06, per C-95's spec — a HashSet field initializer cannot carry a compiler-recognized `///` doc comment on an individual tuple). MAJOR DISCOVERY during test authoring (not anticipated by the phase spec): NetArchTest.Rules' own type-discovery layer (Types.InAssembly(assembly), used internally by ReflectionGuardRules.NoMakeGenericMethodReflection) never surfaces compiler-generated closure types — such as the `<>c` singleton display class that actually contains PublishSingle's MakeGenericMethod call — to any ICustomRule, confirmed via an instrumented recording ICustomRule with and without the `.AreNotAbstract()` filter. This means the end-to-end rule call currently reports success regardless of whether this exemption is registered — the violation is never reached by NetArchTest's own type enumeration. T-169/T-170 were therefore implemented at the predicate layer (ReflectionGuardRulesRealAssemblyTests invokes NoMakeGenericMethodReflectionPredicate.MeetsRule directly against the real, Mono.Cecil-loaded `<>c` TypeDefinition) — proving the exemption and the predicate's IL-walk logic are genuinely load-bearing (fails when unregistered, passes when registered) — plus a third documentation test asserting and explaining the current end-to-end NetArchTest behavior, so a future NetArchTest upgrade or type-discovery fix is caught by a changed assertion rather than silently altering coverage. No change made to NoMakeGenericMethodReflectionPredicate or ReflectionGuardRules logic (verified by diff review, per phase scope). SK0012's diagnostic-registry note, the ReflectionExemptionRegistry documentation, and this file's prior "PLANNED"/"still empty" language all corrected to reflect the shipped entry and the discovered NetArchTest gap; the 07.Messaging open gap (MassTransitEventPublisher.BuildPublisher, MessagingBusBuilder.AddActivity — both still unregistered, P-240 scoped to 05.Application only) recorded as a candidate follow-up work order, now additionally noting the NetArchTest closure-visibility gap would need resolving too before that follow-up could enforce end-to-end. New candidate follow-up work order recorded: extend ReflectionGuardRules.NoMakeGenericMethodReflection (or a sibling factory method) to walk TypeDefinition.NestedTypes recursively via Mono.Cecil directly, rather than relying solely on NetArchTest's Types.InAssembly(...) projection, so closure-based MakeGenericMethod call sites are caught end-to-end. 130/130 SharedKernel.ArchitectureTests.Tests passing (127 baseline + 3 new), 0 build warnings/errors — WO-039 P-240 (governance-phase-implementer)

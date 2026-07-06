@@ -23,7 +23,31 @@ namespace SharedKernel.ArchitectureTests;
 /// <para>
 /// The fixed <c>EncryptionRotationService</c> (P-147) now uses
 /// <c>Expression.Call + Expression.Lambda.Compile()</c> and requires no entry in this
-/// registry. <strong>The registry therefore ships empty.</strong>
+/// registry.
+/// </para>
+/// <para>
+/// <strong>The registry is no longer empty as of WO-039 P-240 (2026-07-06).</strong> Its first
+/// real entry covers <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher</c>'s
+/// <c>PublishSingle</c> method — see the entry's own remarks in <see cref="AllowList"/>'s
+/// initializer for the full rationale, and the "Closure-free static-lambda naming" note below
+/// for why the registered type/method pair does not textually match the source-level
+/// <c>MediatRDomainEventDispatcher</c>/<c>PublishSingle</c> declaration.
+/// </para>
+/// <para>
+/// <strong>Closure-free static-lambda naming (reusable implementation note):</strong> when a
+/// lambda expression captures no outer state and is declared with the <c>static</c> modifier
+/// (e.g. <c>Dictionary.GetOrAdd(key, static t => {...})</c>), Roslyn does not compile it as a
+/// method on the declaring type. Instead it is hoisted onto a compiler-generated, cached
+/// singleton "display class" nested type — conventionally named <c>&lt;&gt;c</c> — nested
+/// inside the declaring type. Mono.Cecil's <c>TypeDefinition.FullName</c> reports the nesting
+/// separator as <c>/</c> (not <c>.</c>), e.g.
+/// <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/&lt;&gt;c</c>. The
+/// synthesized method itself is named <c>&lt;{EnclosingMethodName}&gt;b__{classToken}_{ordinal}</c>
+/// — the ordinal is assigned by the compiler and is NOT derivable from source alone; it must be
+/// read from the actual compiled IL (e.g. via a throwaway Mono.Cecil scan, or by reading the
+/// <see cref="Rules.ReflectionGuardRules"/> failure message with the exemption temporarily
+/// absent) before an <see cref="AllowList"/> entry can be added. Any future exemption request for
+/// a closure-free static lambda must follow this same empirical, not assumed, verification step.
 /// </para>
 /// <para>
 /// <strong>How to request an exception:</strong>
@@ -57,6 +81,17 @@ namespace SharedKernel.ArchitectureTests;
 /// method is overloaded, all overloads with the same name are covered by a single entry —
 /// the registry is method-name-scoped, not signature-scoped.
 /// </para>
+/// <para>
+/// <strong>Known open gap (WO-039, out of scope for P-240):</strong>
+/// <c>SharedKernel.Messaging.MassTransit.MassTransitEventPublisher.BuildPublisher</c> — the
+/// structurally identical lambda-closure <c>MakeGenericMethod</c> pattern cited as this
+/// registry's own precedent — and <c>MessagingBusBuilder.AddActivity</c> (a second, differently-
+/// shaped <c>MakeGenericMethod</c> call) are themselves UNREGISTERED in this allow-list today.
+/// Neither is registered by P-240; both remain a candidate follow-up work order against
+/// <c>07.Messaging</c>'s real assembly. Running <see cref="Rules.ReflectionGuardRules.NoMakeGenericMethodReflection"/>
+/// against the real <c>SharedKernel.Messaging.MassTransit</c> assembly will currently fail until
+/// that follow-up work order registers both entries.
+/// </para>
 /// </remarks>
 public static class ReflectionExemptionRegistry
 {
@@ -66,12 +101,39 @@ public static class ReflectionExemptionRegistry
     /// <remarks>
     /// Each entry must carry an XML <c>&lt;remarks&gt;</c> doc comment (on the registration
     /// call) stating: the governance rationale, the approving work order and date, and the
-    /// reviewing team member. Ships empty — no pre-populated exemptions.
+    /// reviewing team member. Individual tuple elements in a field initializer cannot carry a
+    /// compiler-recognized <c>///</c> XML doc comment, so each entry is instead documented with
+    /// a clearly demarcated block comment immediately above it (see below).
     /// </remarks>
-    private static readonly HashSet<(string TypeFullName, string MethodName)> AllowList = new();
-
-    // NOTE: The allow-list is intentionally empty. See class-level remarks for the
-    // governance process required before adding any entry.
+    private static readonly HashSet<(string TypeFullName, string MethodName)> AllowList = new()
+    {
+        // ===== WO-039 Exemption: MediatRDomainEventDispatcher =====
+        // Rationale: SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher.PublishSingle
+        // calls MethodInfo.MakeGenericMethod to build a cached, closed-generic MediatR publish
+        // delegate per concrete runtime IDomainEvent type — a documented, deliberate exception to
+        // the platform-wide SK0012 prohibition, explicitly modeled on the already-accepted
+        // 07.Messaging.MassTransitEventPublisher.BuildPublisher precedent (itself still unregistered
+        // in this allow-list — see the class-level "known open gap" remarks). The generic-method
+        // reference is captured once per closed IDomainEvent Type in a static
+        // ConcurrentDictionary<Type, Delegate> cache and invoked thereafter as a direct delegate
+        // call, never a per-dispatch MakeGenericMethod+Invoke pair — the platform-approved shape
+        // for "publish-by-runtime-type through a generic API."
+        //
+        // The registered pair below is NOT the source-level "MediatRDomainEventDispatcher"/
+        // "PublishSingle" text — PublishSingle's MakeGenericMethod call lives inside a closure-free
+        // `static` lambda passed to ConcurrentDictionary.GetOrAdd, which Roslyn compiles onto a
+        // compiler-generated `<>c` singleton nested type with a synthesized method name. The exact
+        // pair was verified empirically (red-then-green) against the real compiled
+        // SharedKernel.Application.dll — see 00.Governance/CLAUDE.md's SK0012 registry notes and
+        // ReflectionGuardRulesRealAssemblyTests for the verification procedure. Do not hand-edit
+        // this pair from a source-level reading; re-verify empirically if PublishSingle's lambda
+        // body or its position within the type changes.
+        //
+        // Approving work order: WO-039 (P-240 / SK.00.DomainEventDispatcherReflectionExemption).
+        // Approval date: 2026-07-06.
+        // Reviewing team member: governance-phase-implementer (00.Governance domain agent).
+        ("SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c", "<PublishSingle>b__8_0"),
+    };
 
     /// <summary>
     /// Returns <see langword="true"/> when the combination of <paramref name="typeFullName"/>

@@ -63,6 +63,13 @@
          CommunicationLayeringRulesTests.GrpcNeverReferencesContracts pass-path test (T-128) -->
     <ProjectReference Include="..\..\..\11.Communication\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj"
                       PrivateAssets="all" />
+    <!-- Test-only reference to the REAL compiled SharedKernel.Application assembly, required by
+         WO-039 P-240 (SK.00.DomainEventDispatcherReflectionExemption) to point
+         ReflectionGuardRules.NoMakeGenericMethodReflection at MediatRDomainEventDispatcher's actual
+         compiled IL rather than a contrived fixture. Test-project-only ProjectReference — does not
+         violate the "00.Governance references nothing" layering rule (production references only). -->
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
