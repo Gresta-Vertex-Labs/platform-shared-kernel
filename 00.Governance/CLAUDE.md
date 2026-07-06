@@ -1466,11 +1466,13 @@ ReflectionGuardRules  (static class — platform-wide reflection prohibition enf
     Note: Historical claim corrected (WO-039 P-240) — "all production assemblies pass this
     rule" was never actually verified by pointing the rule at every real assembly; it was
     true only in the narrow sense that P-147 fixed the one violation manual/design-time
-    review had found. As of WO-039 P-240, ReflectionExemptionRegistry holds its first real
-    entry — SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's
-    MakeGenericMethod call site — registered pre-emptively so the rule can be safely pointed
-    at the real SharedKernel.Application assembly (see the ReflectionExemptionRegistry entry
-    below for the registered type/method pair and rationale). KNOWN OPEN GAP: direct source
+    review had found. WO-039 P-240 PLANS to register
+    SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod
+    call site pre-emptively so the rule can be safely pointed at the real
+    SharedKernel.Application assembly, but as of this writing that entry has NOT been
+    implemented — ReflectionExemptionRegistry.AllowList ships empty in source and
+    D-58/C-95/T-169/T-170/DO-30 are all `○` in state-map.md (see the "Planned entry" note
+    above for the intended type/method pair and rationale once it ships). KNOWN OPEN GAP: direct source
     inspection (2026-07-03) confirms 07.Messaging's SharedKernel.Messaging.MassTransit
     .MassTransitEventPublisher.BuildPublisher (the same lambda-closure MakeGenericMethod
     pattern — in fact the very precedent MediatRDomainEventDispatcher's own exemption cites)
@@ -1506,16 +1508,21 @@ ReflectionExemptionRegistry  (class — governance allow-list for SK0012 excepti
       — the governance rationale (why typed dispatch or expression trees cannot be used)
       — the approving work order and date
       — the reviewing team member
-    Held empty from introduction (WO-024 P-153) through WO-038; contains its first real
-    entry as of WO-039 P-240. The fixed P-147 EncryptionRotationService uses expression
-    trees and needs no exemption. Any team requesting an exemption must:
+    Held empty from introduction (WO-024 P-153) through WO-038 and, as of this writing,
+    still empty — WO-039 P-240 has only been PLANNED (the phase spec below), not
+    implemented. `AllowList` in the shipped source remains `new()` with zero entries;
+    D-58/C-95/T-169/T-170/DO-30 are all `○` in state-map.md. The fixed P-147
+    EncryptionRotationService uses expression trees and needs no exemption. Any team
+    requesting an exemption must:
       1. Open a governance review in the root state-map with a written rationale.
       2. Add the (typeFullName, methodName) pair to this registry with the required XML docs.
       3. Reference the work order in both the XML doc and the exemption registration.
     No other suppression mechanism is accepted: #pragma warning disable SK0012,
     [SuppressMessage], or inline comments do not exempt a type from this rule.
 
-    Registered entries (as of WO-039 P-240):
+    Planned entry (P-240, WO-039 — NOT YET IMPLEMENTED; recorded here ahead of shipping
+    so the empirical-verification procedure is not re-derived from scratch when C-95 is
+    picked up):
       1. SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher — the
          MakeGenericMethod call inside PublishSingle's factory delegate:
          PublishDelegateCache.GetOrAdd(eventType, static t => { ... MakeGenericMethod ... }).
@@ -1523,23 +1530,22 @@ ReflectionExemptionRegistry  (class — governance allow-list for SK0012 excepti
          compiles it onto a compiler-generated `<>c` singleton cache class nested inside
          MediatRDomainEventDispatcher, not onto the declaring type directly — the
          Mono.Cecil-observed TypeDefinition.FullName/MethodDefinition.Name pair the
-         registry actually keys on is shaped like
+         registry will actually need to key on is shaped like
          "SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c" /
          "<PublishSingle>b__{token}_{ordinal}", NOT the literal
          "MediatRDomainEventDispatcher"/"PublishSingle" pair a source-level reading
-         suggests. PLACEHOLDER (confirm during implementation, same convention as the
-         two prior "confirm during implementation" placeholders resolved in
-         SK.00.HealthCheckConstantsGuard): the exact ordinal must be confirmed
-         empirically — compile, run ReflectionGuardRules.NoMakeGenericMethodReflection
-         against the real SharedKernel.Application assembly, read the exact names out of
-         the failure message, and record the final verified pair here — see
+         suggests. PLACEHOLDER — the exact ordinal must be confirmed empirically at
+         implementation time (D-58/C-95): compile, run
+         ReflectionGuardRules.NoMakeGenericMethodReflection against the real
+         SharedKernel.Application assembly, read the exact names out of the failure
+         message, and record the final verified pair here — see
          SK.00.DomainEventDispatcherReflectionExemption in state-map.md for the
          red-then-green procedure. Do not ship this phase with a guessed ordinal.
          Rationale: runtime-only IDomainEvent-type dispatch — the concrete event type is
          only known per element at DispatchAsync time; the same justification already
          accepted for 07.Messaging's MassTransitEventPublisher.BuildPublisher (itself
          still unregistered here — see the SK0012 entry's "KNOWN OPEN GAP" note above).
-         Approved WO-039, 2026-07-03.
+         Proposed WO-039, 2026-07-03 — pending implementation, not yet approved/merged.
 
 CommunicationLayeringRules  (static class — Communication layer boundary enforcement predicates; WO-025 P-159)
     All factory methods accept Assembly (or params Assembly[]) and return ConditionList (or ConditionList[]).
@@ -2520,4 +2526,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-06-30] CryptoIsolationRules and UnitOfWorkSeamRules added to architecture test contracts (WO-037 P-229): CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography via NoRawSymmetricCipherOutsideCryptographyPredicate — platform-wide generalization of the SK0301-backing predicate, banning direct AesGcm/Aes/SymmetricAlgorithm field/IL references plus RandomNumberGenerator calls (new DeclaringType-match surface) outside a SharedKernel.Cryptography-prefixed namespace, motivated by the 06.Persistence P-227 incident where a hand-rolled AesGcm usage was structurally invisible to SK0301 because that rule was only ever invoked against 03.Domain/05.Application, never against 06.Persistence itself; UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct via UnitOfWorkInterfacesRemainDistinctPredicate — a negative-space/regression-guard rule (two-assembly, three-check: existence, identity-collapse, bidirectional base-interface) asserting SharedKernel.Application.Behaviors.IUnitOfWork and SharedKernel.Persistence.Abstractions.IUnitOfWork are never merged or made to inherit one another, protecting the local-seam pattern already proven for IAuthorizationContext/IIdempotencyKeyStore; SK0301 reconciled in place — NoAesCipherInDomainOrApplicationPredicate's exemption list narrowed from {SharedKernel.Persistence, SharedKernel.Security} to {SharedKernel.Cryptography} only, making it a caller-scoped special case of the new platform-wide rule rather than a contradictory duplicate; no new SK ID assigned; three new implementation rules added; depends on 06.Persistence P-227/P-228 for real-assembly verification only — both design-only as of 2026-06-30, so design proceeds against contrived in-memory fixtures matching the documented target shape (same technique as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard/SK.00.PresentationArchRules/SK.00.ApplicationPipelineArchRules) — WO-037 P-229 (governance-arch-planner)
 - [2026-07-03] SK.00.MetricsOutcomeTagAndMisregistrationGuard → ● closeout — SK0014 ClosedGenericResiliencePipelineRegistrationAnalyzer, SK0015 StreamPipelineBehaviorMisregistrationAnalyzer, and SK0016 RequestTypeShortNameUsageAnalyzer implemented in SharedKernel.Analyzers/Diagnostics/; RequestDurationRecordMissingOutcomeTagPredicate implemented in Predicates/ and MetricsInstrumentationRules in Rules/; verified against the pre-written CLAUDE.md spec (diagnostic registry, architecture test contracts, implementation rules all matched) with one correction made to the implementation to match the documented contract exactly — the predicate now requires MethodReference.DeclaringType to be a GenericInstanceType whose ElementType.FullName == "System.Diagnostics.Metrics.Histogram`1" (narrowed from an initial Name.StartsWith("Histogram") heuristic) before scanning for the companion "outcome" Ldstr literal; SK0015's implementation required one fix beyond the written spec — INamedTypeSymbol.AllInterfaces returns empty for an unbound generic type symbol (the shape produced by typeof(StreamFixtureBehavior<,>)), so the interface-implementation check walks type.OriginalDefinition.AllInterfaces instead, confirmed via a standalone Roslyn symbol-inspection script before patching; T-161–T-168 added (8 new tests: 4 analyzer fire/pass pairs, 2 architecture-test fire/pass fixtures); 105/105 SharedKernel.Analyzers.Tests and 127/127 SharedKernel.ArchitectureTests.Tests pass, 0 build warnings/errors (state-map-phase)
 - [2026-07-03] SK0014 ClosedGenericResiliencePipelineRegistration, SK0015 StreamPipelineBehaviorMisregistration, SK0016 RequestTypeShortNameUsage added to diagnostic registry (general-purpose sequential block, next after SK0013; SK0014 and SK0016 syntax-only, SK0015 the domain's second semantic-model analyzer after SK0011); MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag and RequestDurationRecordMissingOutcomeTagPredicate added to architecture test contracts (no new SK ID — reuses the HealthCheckTagIntegrityRules Ldstr literal-collection technique against a new Histogram<T>.Record call-site search); five new implementation rules added; addresses all four WO-038 application audit findings (closed-generic ResiliencePipeline<TResponse> registration, missing outcome tag on RequestDuration, IStreamPipelineBehavior misregistration against IPipelineBehavior<,>, typeof(TRequest).Name short-name collision risk); the outcome-tag rule's real-assembly retrofit of MetricsBehavior<,> (P-217) is explicitly OUT OF SCOPE for this domain (production code in 05.Application) — tracked as a companion 05.Application dependency, not implemented here; design/tests use contrived in-memory fixtures only — WO-038 P-235, depends on 05.Application P-217/P-234 for real-assembly verification only (governance-arch-planner)
-- [2026-07-03] ReflectionExemptionRegistry gains its first real entry (WO-039 P-240) — SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod call site (inside PublishSingle's ConcurrentDictionary.GetOrAdd factory delegate), registered pre-emptively so SK0012 can be safely pointed at the real SharedKernel.Application assembly; documented that the call site sits inside a closure-free `static` lambda, so the Mono.Cecil-observed key is the compiler-generated `<>c` nested cache class, not the literal MediatRDomainEventDispatcher/PublishSingle pair — new reusable implementation-rules bullet added on this Roslyn/Mono.Cecil fact; corrected the SK0012 "all production assemblies pass this rule" note (never actually verified platform-wide) and recorded a newly-discovered OPEN gap — 07.Messaging's MassTransitEventPublisher.BuildPublisher (same closure pattern, itself this exemption's own cited precedent) and MessagingBusBuilder.AddActivity remain unregistered/unverified against SK0012, tracked as a candidate follow-up; no new SK ID; no predicate/rule-logic change — registry-entry-only — WO-039 P-240 (governance-arch-planner)
+- [2026-07-03] WO-039 P-240 PLANNED (design only — not yet implemented) — the phase spec proposes registering SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod call site (inside PublishSingle's ConcurrentDictionary.GetOrAdd factory delegate) in ReflectionExemptionRegistry, pre-emptively, so SK0012 can be safely pointed at the real SharedKernel.Application assembly; documented that the call site sits inside a closure-free `static` lambda, so the Mono.Cecil-observed key will be the compiler-generated `<>c` nested cache class, not the literal MediatRDomainEventDispatcher/PublishSingle pair — new reusable implementation-rules bullet added on this Roslyn/Mono.Cecil fact; corrected the SK0012 "all production assemblies pass this rule" note (never actually verified platform-wide) and recorded a newly-discovered OPEN gap — 07.Messaging's MassTransitEventPublisher.BuildPublisher (same closure pattern, itself this exemption's own cited precedent) and MessagingBusBuilder.AddActivity remain unregistered/unverified against SK0012, tracked as a candidate follow-up; no new SK ID; no predicate/rule-logic change; **implementation status (2026-07-06 correction): D-58/C-95/T-169/T-170/DO-30 are all still `○` in state-map.md and ReflectionExemptionRegistry.AllowList ships empty in source — a prior version of this changelog entry incorrectly described the registry entry as already shipped; corrected during a /dispatch-phase cross-check of WO-039** — WO-039 P-240 (governance-arch-planner)
