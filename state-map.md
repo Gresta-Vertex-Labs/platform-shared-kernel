@@ -63,7 +63,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for WO-038 Application Audit Findings | `●` | All 15 tasks complete — SK0014 ClosedGenericResiliencePipelineRegistration, SK0015 StreamPipelineBehaviorMisregistration, SK0016 RequestTypeShortNameUsage analyzers plus MetricsInstrumentationRules/RequestDurationRecordMissingOutcomeTagPredicate added; 105/105 analyzer + 127/127 arch tests pass. | Real-assembly re-verification once 05.Application retrofits MetricsBehavior<,> (P-217) to emit the outcome tag. |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | `●` | All 5 tasks complete — `MediatRDomainEventDispatcher`'s `MakeGenericMethod` call site registered as the first real `ReflectionExemptionRegistry` entry; discovered NetArchTest never surfaces compiler-generated closure types to any `ICustomRule`, so T-169/T-170 prove load-bearing-ness at the predicate layer directly; 130/130 arch tests pass. | Candidate follow-up: extend `ReflectionGuardRules` to walk nested types recursively via Mono.Cecil; register 07.Messaging's still-unregistered `MassTransitEventPublisher.BuildPublisher`/`MessagingBusBuilder.AddActivity`. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-236 (WO-039) complete — `IFailureFactory<TSelf>` (CRTP contract, `static abstract TSelf Failure(Error error)`, implemented by `Result<T>` only) added to `SharedKernel.Primitives`; 74/74 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -107,7 +107,7 @@ Format when active:
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● Published | 7 |
-| ● Governance: Architecture Enforcement for WO-038 Application Audit Findings | 1 |
+| ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
 | ● Docs | 1 |
 | ● Tests | 3 |
 | ● Core | 0 |
@@ -9624,7 +9624,7 @@ Add an `outcome` tag (e.g. `success` / `failure` / `exception`, matching the cat
 ---
 ### P-240 — Governance: Register `MediatRDomainEventDispatcher`'s Reflection Exemption
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-039
 **Domain:** 00.Governance
 **Depends on:** None
@@ -9730,3 +9730,5 @@ The user's explicit goal for this domain is that it be "developer friendly" and 
 - [2026-07-03] Phase Backlog P-236 → ● Complete — SK.01.P236 done (state-map-phase)
 - [2026-07-06] Verification pass over WO-039 dispatched phases (P-237–P-243) via /dispatch-phase — cross-checked each against its owning domain's state-map task board. P-237/P-238/P-239/P-242/P-243 (05.Application): Design/Scaffold/Core/Tests all `●`, but Docs and Published phases remain `○` — all five correctly stay `◐` Dispatched, not promoted to `●`. P-241 (05.Application): Design `●`, Core/Tests (T-40..T-44) genuinely blocked at 0/5 on 00.Governance P-240 — stays `◐` Dispatched. P-240 (00.Governance): task board shows 0/5 (D-58/C-95/T-169/T-170/DO-30 all `○`) — stays `◐` Dispatched. No Phase Backlog status transitions applied; all seven phases remain accurately `◐` Dispatched pending Docs/Published (05.Application) and full implementation (00.Governance P-240). Found and corrected a documentation/code mismatch in `00.Governance/CLAUDE.md`: its Changelog and SK0012/ReflectionExemptionRegistry prose falsely described the P-240 exemption entry as already shipped, while `ReflectionExemptionRegistry.AllowList` ships empty in source — corrected to describe the entry as planned/not-yet-implemented (dispatch-phase verification)
 - [2026-07-06] Application → Core (●) — promoted from SK.05.Core; 65/65, WO-039 C-51..C-65 done, 121 tests green (state-map-phase)
+- [2026-07-06] Governance → Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption (●) — promoted from SK.00.DomainEventDispatcherReflectionExemption (state-map-phase)
+- [2026-07-06] Phase Backlog P-240 → ● Complete — SK.00.DomainEventDispatcherReflectionExemption done (state-map-phase)
