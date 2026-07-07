@@ -64,6 +64,13 @@
       SCOPE LOCK: never reference SharedKernel.Communication.Rest, .Grpc, or .GraphQL from this package.
     -->
     <ProjectReference Include="..\..\11.Communication\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
+    <!--
+      Application behavior local-seam fakes + pipeline test harness (S-16, P-244/P-245/WO-040):
+      FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore, FakeIdempotencyResponseStore,
+      AddFakeApplicationBehaviorServices(), ApplicationPipelineTestHarness (all Application/). First
+      ProjectReference from 16.Testing to 05.Application.
+    -->
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -126,6 +133,16 @@
       and BulkAggregateFaker<TAggregate,TId>.
     -->
     <PackageReference Include="Bogus" Version="35.6.1" />
+    <!--
+      ApplicationPipelineTestHarness (S-17, P-245): AddMediatR(...) call and new ServiceCollection()/
+      .BuildServiceProvider() usage in Build<TMarker>(). MediatR pinned to the exact same 12.4.1 ceiling
+      as SharedKernel.Application.Behaviors.csproj. Microsoft.Extensions.DependencyInjection.Abstractions
+      is already transitively present via other references in this package, but the concrete
+      ServiceCollection/BuildServiceProvider() implementation package is genuinely new here — pinned to
+      10.0.9 to match the version already used elsewhere in this package (Microsoft.Extensions.Http).
+    -->
+    <PackageReference Include="MediatR" Version="12.4.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>

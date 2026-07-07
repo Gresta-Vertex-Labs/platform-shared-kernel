@@ -14,7 +14,7 @@ Philosophy: **Deterministic, dependency-light, conformance-first.** A fake's job
 
 | Package | Role | References |
 |---------|------|------------|
-| `SharedKernel.Testing` | Fakes, in-memory test doubles, Testcontainers fixtures, and Bogus faker conventions consumed by every `.Tests` project | Any layer's `.Abstractions` package (and, where a planning pass has justified it, a non-`.Abstractions` package — e.g. `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit` — on demand, as each capability area is added). Currently implemented: `SharedKernel.Caching.Abstractions`. Planned, per this pass: `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Messaging.MassTransit` (test-only), `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Communication.Internal`. |
+| `SharedKernel.Testing` | Fakes, in-memory test doubles, Testcontainers fixtures, and Bogus faker conventions consumed by every `.Tests` project | Any layer's `.Abstractions` package (and, where a planning pass has justified it, a non-`.Abstractions` package — e.g. `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit`, `SharedKernel.Application.Behaviors` — on demand, as each capability area is added). Implemented: `SharedKernel.Caching.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Primitives`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Messaging.MassTransit` (test-only), `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Communication.Internal`, `SharedKernel.Application.Behaviors` (WO-040 — the first `16.Testing` reference to `05.Application`; local-seam fakes + a promoted MediatR pipeline test harness, both in the `Application/` folder). |
 | `SharedKernel.Testing.SelfTests` | Self-contained unit tests for standalone testing-infrastructure helpers that have no owning consuming-domain interface to anchor against (fluent builders, assertion-helper classes, faker-seeding conventions, recorder/double self-checks) — see Test Rules below for the decision rule | `SharedKernel.Testing` + the Standard Test Package Set (xUnit runner, FluentAssertions, NSubstitute) as direct package references |
 
 There is no `.Abstractions`/`.{Provider}` split for `SharedKernel.Testing` itself — it is the "provider" of test doubles, and nothing downstream re-implements it. `SharedKernel.Testing.SelfTests` is a narrow, documented exception added in WO-029 — not a general-purpose `.Tests` project for the whole domain (see Test Rules below).
@@ -56,9 +56,10 @@ SharedKernel.Testing/
   Communication/   — SharedKernel.Testing.Communication   — cross-cutting Communication test doubles (11.Communication) — MockServiceEndpointResolver, FakeHttpContextAccessor, HttpClientHandlerTestFactory, FakeHttpMessageHandler, ambient Activity helper, gRPC ServerCallContext stub, GraphQL test-executor factory
   ServiceDefaults/ — SharedKernel.Testing.ServiceDefaults  — tenant resolution and health check test doubles (13.ServiceDefaults) — StaticTenantProvider, FakeTenantResolutionStrategy, HealthCheckAssertionExtensions
   Fakers/          — SharedKernel.Testing.Fakers          — Bogus deterministic-seeding convention + abstract Faker<T> bases — FakerSeeding, EntityFaker<TEntity,TId>, SingleValueObjectFaker<TValueObject,TValue>
+  Application/     — SharedKernel.Testing.Application     — local-seam test doubles + MediatR pipeline test harness (05.Application.Behaviors) — FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore, FakeIdempotencyResponseStore, ApplicationPipelineTestHarness
 ```
 
-Each capability folder maps 1:1 to the numbered domain whose abstraction it fakes. A new capability folder is added only when a concrete consumer needs it — this map is aspirational scaffolding, not a commitment to build every row immediately (see per-type `STATUS` markers below). `Domain/` and `Fakers/` are deliberately split: `Fakers/` holds abstract `Bogus.Faker<T>` base classes (construction-time concerns); `Domain/` holds assertion/verification helpers (post-condition concerns) — both fake sibling-isolation from each other since neither references the other's types.
+Each capability folder maps 1:1 to the numbered domain whose abstraction it fakes. A new capability folder is added only when a concrete consumer needs it — this map is aspirational scaffolding, not a commitment to build every row immediately (see per-type `STATUS` markers below). `Domain/` and `Fakers/` are deliberately split: `Fakers/` holds abstract `Bogus.Faker<T>` base classes (construction-time concerns); `Domain/` holds assertion/verification helpers (post-condition concerns) — both fake sibling-isolation from each other since neither references the other's types. `Application/` (added WO-040) is the newest folder — it fakes `05.Application.Behaviors`' own LOCAL seam interfaces (`IUnitOfWork`, `IAuthorizationContext`, `IIdempotencyKeyStore`/`IIdempotencyResponseStore`), never the real cross-domain interfaces those seams bridge to in production (`06.Persistence`, `12.Security`, `07.Messaging` are never referenced by anything in this folder) — see its Interface Contracts block below for the full rationale.
 
 ---
 
@@ -594,12 +595,171 @@ SCOPE LOCK (P-187/WO-029): SharedKernel.Testing must never take a project refere
     FakeTenantResolutionStrategy reference only SharedKernel.Security.Abstractions.
 ```
 
+### `Application/` — local-seam test doubles + MediatR pipeline test harness (05.Application.Behaviors) — added WO-040
+
+```text
+FakeUnitOfWork  (sealed class, implements SharedKernel.Application.Behaviors.IUnitOfWork)
+    NOTE: This is NOT a fake for SharedKernel.Persistence.Abstractions.IUnitOfWork — 05.Application
+          ships its own, deliberately narrower local IUnitOfWork seam (single member,
+          SaveChangesAsync(CancellationToken) → Task<int>), bridged to the real persistence
+          IUnitOfWork only at each consuming service's composition root. This fake satisfies the
+          LOCAL seam only. See root CLAUDE.md's own explicit disambiguation of the two same-named
+          interfaces across domains.
+    .SaveChangesCallCount                                      → int  (thread-safe via Interlocked)
+    .SaveChangesResult                                         → int  (settable; default 1)
+    .SimulateFailure                                           → bool (settable; when true,
+                                                                   SaveChangesAsync throws
+                                                                   InvalidOperationException instead
+                                                                   of returning — SaveChangesCallCount
+                                                                   still increments, since the call
+                                                                   happened, it just faulted)
+    .SaveChangesAsync(CancellationToken ct)                    → Task<int>
+    NOTE: Lets a test assert TransactionBehavior's exact contract — SaveChangesAsync is called
+          exactly once after next() returns, never called if next() throws — without a real
+          persistence provider.
+
+FakeAuthorizationContext  (sealed class, implements IAuthorizationContext from 05.Application.Behaviors)
+    constructor(bool defaultResult = true)
+        Unconfigured requirement strings evaluate to defaultResult — defaults to true so most
+        pipeline tests need zero configuration, mirroring FakeUserContext's authenticated-by-default
+        convention (Security/).
+    .Allow(string requirement)                                 → FakeAuthorizationContext  (fluent)
+    .Deny(string requirement)                                  → FakeAuthorizationContext  (fluent)
+    .IsAuthorizedAsync(string requirement, CancellationToken ct) → Task<bool>
+        Returns the configured value for requirement, or defaultResult if unconfigured.
+    .AllOf(IEnumerable<string> requirements, CancellationToken ct) → Task<bool>
+        Vacuous-true on an empty collection — matches the live IAuthorizationContext.AllOf XML doc
+        exactly (05.Application/SharedKernel.Application.Behaviors/Authorization/IAuthorizationContext.cs):
+        "An empty sequence returns true immediately (vacuous truth — no requirements to fail)."
+        Otherwise true only if every requirement resolves true (short-circuit on first failure).
+    .AnyOf(IEnumerable<string> requirements, CancellationToken ct) → Task<bool>
+        CORRECTED at Design-confirmation time (D-60/WO-040): NOT vacuous-true — an empty collection
+        returns FALSE, matching the live IAuthorizationContext.AnyOf XML doc verbatim: "An empty
+        sequence returns false (nothing to satisfy)." An earlier draft of this contract incorrectly
+        stated "same vacuous-true-on-empty rule" for AnyOf; that was never true of the live interface
+        and is superseded by this correction. Otherwise true as soon as one requirement resolves true
+        (short-circuit on first pass). NOTE: AuthorizationBehavior<,> itself never actually calls
+        IAuthorizationContext.AnyOf with an empty collection — it guards with a `Count > 0` check
+        first — so this empty-input edge case only matters for a test calling FakeAuthorizationContext
+        .AnyOf(...) directly, not through the behavior.
+    .RequirementsChecked                                       → IReadOnlyList<string>  (every
+                                                                   requirement string passed to any
+                                                                   of the three methods above, in
+                                                                   call order, for test assertions)
+    .Reset()                                                   → void  (clears the configured map
+                                                                   and the recorded list)
+    NOTE: Backed by ConcurrentDictionary<string,bool> + a thread-safe recorded-call list. This is
+          NOT SharedKernel.Security.Abstractions.IUserContext — it fakes 05.Application's own
+          narrower local seam only.
+
+FakeIdempotencyKeyStore  (sealed class, implements IIdempotencyKeyStore from 05.Application.Behaviors ONLY)
+    .HasProcessedAsync(string idempotencyKey, CancellationToken ct) → Task<bool>
+    .MarkProcessedAsync(string idempotencyKey, CancellationToken ct) → Task
+    .ProcessedKeys                                             → IReadOnlyCollection<string>
+    .MarkAsProcessed(string idempotencyKey)                    → void  (test-setup helper — pre-seeds
+                                                                   a key as already processed without
+                                                                   going through MarkProcessedAsync,
+                                                                   simulating "this key was already
+                                                                   consumed by a prior run")
+    NOTE: Deliberately does NOT implement IIdempotencyResponseStore — use this fake to exercise
+          IdempotentCommandBehavior's non-replay default path (duplicate → Result.Failure
+          (Error.Conflict)). Backed by a thread-safe ConcurrentDictionary<string, byte>.
+
+FakeIdempotencyResponseStore  (sealed class, implements IIdempotencyKeyStore AND IIdempotencyResponseStore
+                                from 05.Application.Behaviors)
+    .HasProcessedAsync / .MarkProcessedAsync / .ProcessedKeys / .MarkAsProcessed(...)
+        — identical semantics to FakeIdempotencyKeyStore above.
+    .TryGetStoredResponseAsync(string idempotencyKey, CancellationToken ct) → Task<string?>
+    .StoreResponseAsync(string idempotencyKey, string serializedResponse, CancellationToken ct) → Task
+    .StoredResponses                                           → IReadOnlyDictionary<string,string>
+    NOTE: Implements BOTH interfaces so IdempotentCommandBehavior's `is IIdempotencyResponseStore`
+          runtime pattern-match succeeds — this is the fake to register for response-replay
+          end-to-end tests. THIS MUST BE A SEPARATE CONCRETE TYPE FROM FakeIdempotencyKeyStore, not
+          a constructor flag on one type: C# cannot toggle interface implementation at runtime, and
+          IdempotentCommandBehavior's replay-capability detection depends on the CLR type actually
+          implementing the second interface. A test seeds via MarkAsProcessed + StoreResponseAsync
+          (or lets a first dispatch populate both naturally) then dispatches a second request with
+          the same key and asserts the ORIGINAL response is replayed rather than a fresh
+          Error.Conflict.
+
+AddFakeApplicationBehaviorServices(this IServiceCollection)
+    NOTE: Registers FakeUnitOfWork → IUnitOfWork, FakeAuthorizationContext (constructed with
+          defaultResult: true) → IAuthorizationContext, and FakeIdempotencyKeyStore (the non-replay
+          variant — the default production shape absent opt-in) → IIdempotencyKeyStore, all as
+          singletons — mirrors AddFakeCachingServices()'s one-call bundling pattern. For
+          response-replay tests, register FakeIdempotencyResponseStore manually instead:
+          services.AddSingleton<IIdempotencyKeyStore, FakeIdempotencyResponseStore>();
+          this call satisfies ApplicationBehaviorsBuilder's Build()-time missing-dependency guards
+          for AddTransactionBehavior()/AddAuthorizationBehavior()/AddIdempotencyBehavior() in one
+          step.
+
+ApplicationPipelineTestHarness  (sealed class, implements IDisposable)
+    NOTE: Public promotion of the internal-only PipelineTestHarness already proven in
+          SharedKernel.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs — same design,
+          renamed to avoid ambiguity with 07.Messaging's TestHarnessFactory/MassTransit ITestHarness
+          in the sibling Messaging/ folder. Wires a real ServiceCollection + AddMediatR + a
+          caller-chosen subset of ApplicationBehaviorsBuilder-registered behaviors, and dispatches a
+          request through the resulting pipeline.
+    .Services                                                  → ServiceCollection  (exposes the
+                                                                   underlying collection for
+                                                                   additional test-specific
+                                                                   registration, e.g. handlers or
+                                                                   this folder's other fakes)
+    .AddBehaviors()                                            → ApplicationBehaviorsBuilder
+                                                                   (delegates to
+                                                                   Services.AddSharedKernelApplicationBehaviors())
+    .WithActivityCapture()                                     → ApplicationPipelineTestHarness
+                                                                   (fluent; registers an opt-in
+                                                                   ActivityListener filtered to the
+                                                                   "SharedKernel.Application"
+                                                                   ActivitySource)
+    .Build<TMarker>()                                          → ApplicationPipelineTestHarness
+                                                                   (registers AddMediatR from the
+                                                                   assembly containing TMarker,
+                                                                   builds the ServiceProvider; must
+                                                                   be called after all behavior/
+                                                                   handler registration)
+    .SendAsync<TResponse>(IRequest<TResponse> request, CancellationToken ct = default) → Task<TResponse>
+        Throws InvalidOperationException if called before Build<TMarker>().
+    .CapturedActivities                                        → IReadOnlyList<Activity>  (populated
+                                                                   only when WithActivityCapture()
+                                                                   was called first)
+    .CapturedMeasurements                                      → IReadOnlyList<(string InstrumentName,
+                                                                   double Value,
+                                                                   IReadOnlyList<KeyValuePair<string,object?>> Tags)>
+        Always captured (no opt-in gate needed), filtered to the "SharedKernel.Application" Meter —
+        mirrors the internal harness's always-on MeterListener.
+    .Dispose()                                                 → void  (disposes the ActivityListener
+                                                                   if registered, the MeterListener,
+                                                                   and the ServiceProvider if built)
+    NOTE: Implements its OWN local ActivityListener wiring (self-contained BCL System.Diagnostics
+          code) rather than referencing Communication/ActivityRecorder, even though the two are
+          functionally similar — the sibling-capability-folder-isolation hard rule forbids
+          Application/ from referencing Communication/. This is a deliberate, accepted duplication
+          of a small amount of ActivityListener boilerplate, not an oversight. No Add* DI extension
+          — directly `new`-able, consistent with this package's builder-type convention
+          (SpecificationTestBuilder<T>, ProjectionSpecificationBuilder<TAggregate,TResult>).
+          CROSS-DOMAIN FOLLOW-UP (tracked, not performed here): the existing internal
+          PipelineTestHarness at 05.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs
+          is a candidate to become a thin wrapper over (or be deleted in favor of) this public type
+          once 05.Application.Behaviors.Tests adopts it — that is a 05.Application-side file edit,
+          out of 16.Testing's jurisdiction; this domain never touches a .Tests project, in this
+          domain or any other.
+
+SCOPE LOCK (P-244/WO-040): Every type in Application/ references only SharedKernel.Application.Behaviors
+    — never SharedKernel.Persistence.Abstractions, SharedKernel.Security.Abstractions, or
+    SharedKernel.Messaging.Abstractions directly, even though the real production bridges for these
+    local seams live in those domains. These fakes satisfy the LOCAL seam contracts only.
+```
+
 ---
 
 ## Implementation Rules
 
 - `SharedKernel.Testing` ships **no test runner, no assertion library, and no mocking framework** as a dependency of its own `.csproj` — only the minimal `Testcontainers.*`, `Bogus`, and `xunit.core` packages strictly required to implement fixtures and faker conventions. The Standard Test Package Set (xUnit runner, `FluentAssertions`, `NSubstitute`) is added per-`.Tests`-project, never transitively through this package. This includes the new `PagedListAssertions` (`Contracts/`) and `DomainVersionAssertions` (`Domain/`) — both are plain exception-throwing helpers, never FluentAssertions-backed, correcting an earlier superseded-phase draft for `PagedListAssertions`.
-- Sibling capability folders (`Caching/`, `Domain/`, `Contracts/`, `Security/`, `Messaging/`, `Persistence/`, `Clocks/`, `Containers/`, `Communication/`, `ServiceDefaults/`, `Fakers/`) must **never reference each other**. Each fake depends only on the single abstraction package it implements (e.g., `FakeCacheService` → `SharedKernel.Caching.Abstractions` only). Mirrors the platform's sibling-package-isolation rule already enforced in `02.Caching`. Standalone helpers with no owning abstraction (`SpecificationTestBuilder<T>`, `ProjectionSpecificationBuilder<TAggregate,TResult>`, etc.) depend only on the domain types they operate over, never on a sibling folder's fake types.
+- Sibling capability folders (`Caching/`, `Domain/`, `Contracts/`, `Security/`, `Messaging/`, `Persistence/`, `Clocks/`, `Containers/`, `Communication/`, `ServiceDefaults/`, `Fakers/`, `Application/`) must **never reference each other**. Each fake depends only on the single abstraction package it implements (e.g., `FakeCacheService` → `SharedKernel.Caching.Abstractions` only). Mirrors the platform's sibling-package-isolation rule already enforced in `02.Caching`. Standalone helpers with no owning abstraction (`SpecificationTestBuilder<T>`, `ProjectionSpecificationBuilder<TAggregate,TResult>`, etc.) depend only on the domain types they operate over, never on a sibling folder's fake types. Demonstrated concretely by `Application/ApplicationPipelineTestHarness` (WO-040): it needs `ActivityListener`-based span capture, functionally similar to `Communication/ActivityRecorder`, but the rule forbids reusing it across folders — it hand-rolls its own small, self-contained `ActivityListener` wiring instead. A little duplicated boilerplate across sibling folders is the accepted cost of this rule; it is not a bug to "fix" by punching a hole in the isolation rule.
+- A local-seam interface that a consuming domain deliberately ships with zero implementation (e.g. `05.Application.Behaviors`' own `IUnitOfWork`/`IAuthorizationContext`/`IIdempotencyKeyStore`) is faked against **that domain's own narrower interface**, never against a same-named interface owned by a different domain — `Application/FakeUnitOfWork` implements `SharedKernel.Application.Behaviors.IUnitOfWork`, never `SharedKernel.Persistence.Abstractions.IUnitOfWork`; the two are unrelated types that happen to share a name (root `CLAUDE.md` documents the same disambiguation). Fakes in this domain must document which of two same-named interfaces they satisfy whenever a naming collision like this exists.
+- When a real production implementation of an interface may **optionally** implement a second, additive capability interface detected at runtime via an `is`-check (e.g. `IIdempotencyKeyStore` optionally also implementing `IIdempotencyResponseStore`, `05.Application.Behaviors` P-242), the corresponding fakes must ship as **two separate concrete types** — one implementing only the base interface, one implementing both — never as a single type with a constructor flag that claims to toggle the optional capability. C# interface implementation is a compile-time, per-type fact; it cannot be turned on/off at runtime, so a flag-based single-type fake would make the `is`-check always succeed (or always fail) regardless of the flag, silently breaking whichever test path the flag was supposed to disable. `Application/FakeIdempotencyKeyStore` / `Application/FakeIdempotencyResponseStore` (WO-040) is the reference example for this rule.
 - Every fake is a **`sealed` class** — no inheritance extension point. Tests compose behavior via constructor parameters and mutable properties (`SimulateFailure`, `IsAuthenticated`, etc.), never by subclassing a fake. Abstract bases (`EntityFaker<TEntity,TId>`, `SingleValueObjectFaker<TValueObject,TValue>`, `AggregateRootFaker<TAggregate,TId>`, `TenantedAggregateFaker<TAggregate,TId>`, `TestSharedKernelDbContext`) are the deliberate, documented exception — they exist specifically to be subclassed by consuming test projects, unlike fakes which are leaf types.
 - Any fake holding mutable shared state (caches, recorded message lists) must use a **thread-safe collection** (`ConcurrentDictionary`, `ConcurrentQueue`) — xUnit runs test collections in parallel by default. `FakeCacheInvalidationBus.PublishedInvalidations` and its registered handler list follow the same rule.
 - Fakes simulate **behavioral correctness, not timing** — no fake enforces TTL/expiry/sliding-window semantics from `CachePolicy`, retry backoff, or any other time-based production behavior unless a test explicitly drives a `FakeClock`. Real `Task.Delay`/`Thread.Sleep` is forbidden anywhere in this package.
@@ -635,9 +795,16 @@ services.AddSingleton<ICacheInvalidationBus, FakeCacheInvalidationBus>();
 
 // Domain test helpers — registers FakeClock as IClock only
 services.AddFakeDomainServices();
+
+// Application local-seam doubles — one call satisfies ApplicationBehaviorsBuilder's Build()-time
+// missing-dependency guards for Transaction/Authorization/Idempotency behaviors (WO-040)
+services.AddFakeApplicationBehaviorServices();
+
+// Replay-capable idempotency store — manual override in place of the bundled non-replay default
+services.AddSingleton<IIdempotencyKeyStore, FakeIdempotencyResponseStore>();
 ```
 
-Fakes in `Security/`, `Persistence/`, `Clocks/` (outside `AddFakeDomainServices()`'s narrow `IClock` registration), `Contracts/`, `Communication/`, and `ServiceDefaults/` are intentionally **not** wrapped in `Add*` DI extensions — they are simple `new`-able classes or static helpers with test-controlled constructor parameters, and registering them via DI adds indirection most unit tests don't need. Only doubles that exist specifically to be swapped in for a production DI registration (caching, messaging, the single `IClock` registration in `AddFakeDomainServices()`) ship a convenience extension. `AddFakeContractsServices()` is explicitly **deferred** (P-064/WO-012) — none of the `Contracts/` helpers currently need DI registration; add it only if a concrete need surfaces.
+Fakes in `Security/`, `Persistence/`, `Clocks/` (outside `AddFakeDomainServices()`'s narrow `IClock` registration), `Contracts/`, `Communication/`, and `ServiceDefaults/` are intentionally **not** wrapped in `Add*` DI extensions — they are simple `new`-able classes or static helpers with test-controlled constructor parameters, and registering them via DI adds indirection most unit tests don't need. Only doubles that exist specifically to be swapped in for a production DI registration (caching, messaging, the single `IClock` registration in `AddFakeDomainServices()`, and now `Application/`'s three-fake bundle) ship a convenience extension. `AddFakeContractsServices()` is explicitly **deferred** (P-064/WO-012) — none of the `Contracts/` helpers currently need DI registration; add it only if a concrete need surfaces. `ApplicationPipelineTestHarness` (`Application/`) is deliberately **not** DI-registered — it is a directly `new`-able builder/harness type, consistent with `SpecificationTestBuilder<T>`/`ProjectionSpecificationBuilder<TAggregate,TResult>`'s existing convention for builder-shaped types.
 
 ---
 
@@ -661,6 +828,7 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - **The "prove it in the owning domain's suite" rule has a practical fallback, observed repeatedly during the Tests phase: if no consuming domain's existing `.Tests` project actually exercises the fake/fixture directly, prove it in `SharedKernel.Testing.SelfTests` instead, even when the type implements an interface owned elsewhere.** Confirmed cases: `FakeClock` — `01.Core` can never take a `ProjectReference` to `16.Testing` (it sits below this domain in the layering rules and references nothing), so `SharedKernel.Primitives.Tests` necessarily rolls its own private nested fake rather than referencing this package's `FakeClock`; `FakeCacheService.GetManyAsync`/`SetManyAsync`, `FakeTenantCacheKeyProvider`, `FakeCacheInvalidationBus` — no `02.Caching` test project exercised these three directly (only incidental DI-registration usage existed); `TestSharedKernelDbContext`, `AggregateRootFaker`/`TenantedAggregateFaker`, `EfContextExtensions` — net-new types with no consumer yet in `06.Persistence.EfCore.Tests` despite its `ProjectReference` to this package; `StaticTenantProvider` — `12.Security.Abstractions.Tests` carries no `ProjectReference` to this package and no generic `ITenantProvider` contract-shape test exists there. This is not a workaround — it is the documented fallback the original phase specs (P-181, P-187) anticipated; treat "prove it there" as the default and "no actual consumer exists yet" as the trigger for the `SelfTests` fallback, re-checked at the time each fake is proven rather than assumed from the interface's owning domain alone.
 - **Before adding a new fake/fixture for a downstream domain's test need, audit this package's existing surface first — do not assume a gap exists.** Demonstrated by P-226/WO-036: `05.Application`'s `TracingBehavior`/`CacheInvalidationBehavior` (both design-only, WO-036) looked at first glance like they might need two new fakes, but the audit found `FakeCacheService` already fully covers `CacheInvalidationBehavior`'s `ICacheService.RemoveAsync`/`RemoveByTagAsync` assertion need with zero new code, while only `TracingBehavior`'s span-recording need was a genuine, narrow gap (`AmbientActivityTestHelper` is an ambient-context *setter*, not a span-recording *listener* — a different capability, not a duplicate), closed by one small additive type (`ActivityRecorder`). Grep this package's existing types and their documented capabilities before designing a new fake; "the interface is owned elsewhere" does not by itself imply "no fake exists yet."
 - `ActivityRecorder` (`Communication/`) is proven in `SharedKernel.Testing.SelfTests` unconditionally — it implements no consuming-domain-owned interface (`ActivitySource`/`ActivityListener` are BCL, not a SharedKernel abstraction), mirroring `AmbientActivityTestHelper`'s own routing in the same folder.
+- **A live `ProjectReference` from a consuming domain's `.Tests` project to `SharedKernel.Testing` does not by itself mean a net-new fake should route there.** `SharedKernel.Application.Behaviors.Tests.csproj` already carries a `ProjectReference` to `SharedKernel.Testing` (confirmed by reading the `.csproj` directly, WO-040) — yet `FakeUnitOfWork`/`FakeAuthorizationContext`/`FakeIdempotencyKeyStore`/`FakeIdempotencyResponseStore`/`ApplicationPipelineTestHarness` (`Application/`) still route to `SharedKernel.Testing.SelfTests`, because they are net-new at the time of writing with zero existing consumer — the same reasoning already applied to `TestSharedKernelDbContext`/`AggregateRootFaker`/`EfContextExtensions` (T-19/T-20/T-21) despite `SharedKernel.Persistence.EfCore.Tests` also carrying a live reference. The rule is "is this type actually consumed there today," never "could it theoretically be consumed there." Re-check at implementation time, every time — a fake proven in `SelfTests` today may later be genuinely adopted by its owning domain's suite, at which point that becomes a documented cross-domain follow-up (never a file edit performed by this domain), not a retroactive routing change here.
 
 ---
 
@@ -679,3 +847,6 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - [2026-06-24] `SK.16.Core` (C-44–C-46) implemented: `FakeUserContext`/`FakeTenantProvider` (`Security/FakeUserContext.cs`/`FakeTenantProvider.cs`) and `FakerSeeding` (`Fakers/FakerSeeding.cs`) landed exactly per the D-49/D-50/D-53 target shape — zero signature drift re-confirmed against `12.Security/SharedKernel.Security.Abstractions/Abstractions/{IUserContext,ITenantProvider}.cs`. `[STATUS: Planned]` markers removed from all three Interface Contracts blocks (`Security/` section, `Fakers/` section). No `Add*` DI extension shipped for the two `Security/` fakes, per D-51's documented decision — both remain plain `new`-able classes consistent with the `Security/`/`Persistence/`/`Clocks/` convention. Grepped for an existing `12.Security` consumer of `SharedKernel.Testing` — none found (`SharedKernel.Security.Abstractions.Tests.csproj`/`.Oidc.Tests.csproj` carry no `ProjectReference` to this package), confirming T-35/T-36 will route to `SharedKernel.Testing.SelfTests` per the D-52 fallback when the Tests phase runs. `dotnet build SharedKernel.Testing.csproj -c Release` succeeds, 0 errors (pre-existing NU1903 advisory warnings only). `SK.16.Core` now 46/46 `●`, promoted to root. `SK.16.Tests` (T-35–T-37) and `SK.16.Docs` (DO-11/DO-12) remain pending to close out WO-030 (testing-phase-implementer).
 - [2026-06-30] P-226/WO-036 processed (testing-arch-planner) — audit-first phase dispatched against `05.Application`'s freshly-planned, design-only `TracingBehavior` (P-220) and `CacheInvalidationBehavior` (P-224); read `05.Application/CLAUDE.md` and `05.Application/state-map.md` in full for authoritative type names before writing this phase. **Audit 1 (Tracing):** `AmbientActivityTestHelper` found insufficient as-is for span-recording assertions — it is an ambient-context *setter* (sets `Activity.Current`), not a span-recording *listener*; designed a new, small, additive sibling type `ActivityRecorder` (`Communication/ActivityRecorder.cs`, `[STATUS: Planned]`) that registers a scoped `ActivityListener` against a named `ActivitySource` and exposes `RecordedActivities` for post-hoc assertion. Zero new `PackageReference` (BCL only). `AmbientActivityTestHelper` itself unmodified. **Audit 2 (Cache Invalidation):** `FakeCacheService` found **already fully sufficient** — its existing `RemoveAsync`/`RemoveByTagAsync` cover `CacheInvalidationBehavior`'s entire test need; `FakeCacheInvalidationBus` correctly identified as an unrelated abstraction (`ICacheInvalidationBus`, Redis pub/sub signaling) with no bearing here. **No new fake added for cache invalidation** — that half of the phase is documentation-only, the explicit "shrinks to documentation only" outcome the phase itself anticipated as valid. New Test Rules bullets added: a general "audit before adding" principle for future phases, plus `ActivityRecorder`'s unconditional `SelfTests` routing (mirrors `AmbientActivityTestHelper`). 9 new tasks added to `state-map.md` (D-55–D-58, S-15, C-47, T-38, DO-13), all `○`; total task count 165 → 173. Domain remains otherwise closed (WO-008/WO-012/WO-029/WO-030 all `●`) — this is the only in-progress phase pending a future Core-phase implementer session.
 - [2026-06-30] `SK.16.Core` closed: C-47 implemented — `ActivityRecorder` (`Communication/ActivityRecorder.cs`) lands per the D-56 target shape exactly: `static StartRecording(string activitySourceName)` registers a process-scoped `ActivityListener` (filtered via `ShouldListenTo`/`Sample = AllDataAndRecorded`) capturing every `Activity` stopped against the named source into a thread-safe `ConcurrentQueue<Activity>`, exposed read-only via `.RecordedActivities`; `.Dispose()` disposes the underlying `ActivityListener` to unregister it. Zero new `PackageReference`/`ProjectReference` (BCL `System.Diagnostics` only), confirming S-15. `AmbientActivityTestHelper` left unmodified — purely additive sibling in the same folder/namespace. `[STATUS: Planned — P-226/WO-036]` marker removed from both the Interface Contracts block and the Test Rules cross-reference. `dotnet build SharedKernel.Testing.csproj -c Release` succeeds, 0 errors (pre-existing NU1903 advisory warnings only). `SK.16.Core` now 47/47 `●`, promoted to root. `T-38` (prove in `SharedKernel.Testing.SelfTests`) and `DO-13` (XML docs — already written inline in this pass) remain pending to fully close WO-036 (testing-phase-implementer).
+- [2026-07-07] WO-040 (P-244/P-245) processed (testing-arch-planner): new `Application/` capability folder added — the first `16.Testing` reference to `05.Application`. Read `05.Application/CLAUDE.md` in full for the live `IUnitOfWork`/`IAuthorizationContext` (incl. P-232's `AllOf`/`AnyOf` multi-requirement evolution and its "no-op on empty collection" semantics)/`IIdempotencyKeyStore`/`IIdempotencyResponseStore` (P-242, additive/optional) signatures, and read the live internal `PipelineTestHarness.cs` source directly at `05.Application/SharedKernel.Application.Behaviors/SharedKernel.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs` to source `ApplicationPipelineTestHarness`'s promoted design from the already-proven shape rather than a fresh guess. P-244 adds `FakeUnitOfWork` (explicitly disambiguated from `SharedKernel.Persistence.Abstractions.IUnitOfWork`), `FakeAuthorizationContext` (configurable per-requirement pass/fail, `AllOf`/`AnyOf` vacuous-true-on-empty matching the real behavior exactly), and — because C# cannot toggle interface implementation at runtime and `IdempotentCommandBehavior` detects replay support via `is IIdempotencyResponseStore` — TWO separate idempotency-store fakes (`FakeIdempotencyKeyStore` non-replay-only, `FakeIdempotencyResponseStore` implementing both interfaces), plus `AddFakeApplicationBehaviorServices()` bundling all three as singletons. P-245 adds `ApplicationPipelineTestHarness`, a public promotion of the internal `PipelineTestHarness`, renamed to avoid ambiguity with `07.Messaging`'s `TestHarnessFactory`/MassTransit `ITestHarness`; it hand-rolls its own `ActivityListener` wiring rather than referencing `Communication/ActivityRecorder`, per the sibling-capability-folder-isolation hard rule (documented as a new concrete example of that rule, not an exception to it). Both fakes' Tests-phase routing is `SharedKernel.Testing.SelfTests`: `SharedKernel.Application.Behaviors.Tests.csproj` was confirmed to already carry a live `ProjectReference` to `SharedKernel.Testing`, but every one of these six types is net-new with zero existing consumer — same reasoning already applied to `TestSharedKernelDbContext`/`AggregateRootFaker` (T-19/T-20); a new Test Rules bullet generalizes this "live reference ≠ automatic routing there" principle explicitly. Adoption of these fakes (and retirement of the internal `PipelineTestHarness`) into `05.Application.Behaviors.Tests` is tracked as an explicit cross-domain follow-up for a future `05.Application` implementer pass — `16.Testing` never touches a `.Tests` project, in this domain or any other. Folder/Namespace Map, Interface Contracts (new `Application/` section, all `[STATUS: Planned — P-244/P-245/WO-040]`), Implementation Rules (sibling-isolation example + the two-type optional-capability-fake rule + the same-named-interface disambiguation rule), DI Registration, and Test Rules all updated in this pass. 23 new tasks added to `state-map.md` (D-59–D-71, S-16–S-18, C-48–C-53, T-39–T-44, DO-14/DO-15), all `○`.
+- [2026-07-07] `SK.16.Design` closed for WO-040 (D-59–D-71 → `●`, 71/71): confirmed the `Application/` Interface Contracts block against the LIVE `05.Application.Behaviors` source (`IUnitOfWork.cs`, `IAuthorizationContext.cs`, `AuthorizationBehavior.cs`, `IIdempotencyKeyStore.cs`, `IIdempotencyResponseStore.cs`, `ApplicationBehaviorsBuilder.cs`, `ApplicationBehaviorsServiceCollectionExtensions.cs`, and the live `PipelineTestHarness.cs`), not from the prior pass's draft alone. **One drift found and corrected**: `FakeAuthorizationContext.AnyOf`'s empty-collection behavior was mis-drafted as "same vacuous-true-on-empty rule" as `AllOf`; the live `IAuthorizationContext.AnyOf` XML doc states the opposite verbatim — `AllOf(empty) → true` (vacuous truth) but `AnyOf(empty) → false` (nothing to satisfy) — corrected in the Interface Contracts block above, with a note that `AuthorizationBehavior<,>` itself never actually calls either method with an empty collection (it guards with `Count > 0` first), so the correction only matters for a test calling the fake directly. All other target shapes (`FakeUnitOfWork`, `FakeIdempotencyKeyStore`/`FakeIdempotencyResponseStore`, `AddFakeApplicationBehaviorServices()`, `ApplicationPipelineTestHarness`) confirmed with zero drift. `[STATUS: Planned — P-244/P-245/WO-040]` markers remain in place — Design confirms target shape, Core (C-48–C-53, still `○`) is what flips them. `SK.16.Scaffold`/`SK.16.Core`/`SK.16.Tests`/`SK.16.Docs` remain pending for WO-040 (testing-phase-implementer).
+- [2026-07-07] `SK.16.Core` closed for WO-040 (C-48–C-53 → `●`, 53/53): all six `Application/` types implemented — `FakeUnitOfWork`, `FakeAuthorizationContext`, `FakeIdempotencyKeyStore`, `FakeIdempotencyResponseStore`, `AddFakeApplicationBehaviorServices()`, `ApplicationPipelineTestHarness` — against the live `05.Application.Behaviors` source, zero drift from the locked D-59–D-71 design. `ApplicationPipelineTestHarness` filters its `ActivityListener`/`MeterListener` by the literal string `"SharedKernel.Application"` rather than referencing `ApplicationDiagnostics` directly, since that type is `internal` to `SharedKernel.Application.Behaviors` — confirmed this is the only option, not an oversight. `dotnet build SharedKernel.Testing.csproj -c Release` succeeds, 0 errors (2 pre-existing NU1903 advisory warnings only). `SK.16.Core` now 53/53 `●`, promoted to root. `[STATUS: Planned — P-244/P-245/WO-040]` marker removed from the `Application/` Interface Contracts section header; Packages table row updated to list `SharedKernel.Application.Behaviors` as implemented. No consuming `.Tests` project yet references these six types — behavioral proof deferred to `SK.16.Tests` (T-39–T-44, still pending) (testing-phase-implementer).
