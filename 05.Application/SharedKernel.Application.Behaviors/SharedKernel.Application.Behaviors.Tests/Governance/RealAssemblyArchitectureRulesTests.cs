@@ -21,8 +21,9 @@ using SharedKernel.Caching.Abstractions;
 namespace SharedKernel.Application.Behaviors.Tests.Governance;
 
 /// <summary>
-/// Invokes four already-built <c>00.Governance</c> architecture-test rule groups against the real,
-/// compiled <c>SharedKernel.Application.Behaviors</c> assembly (WO-039 P-241 gap-closure).
+/// Invokes all four already-built <c>00.Governance</c> architecture-test rule groups against the
+/// real, compiled <c>SharedKernel.Application</c>/<c>SharedKernel.Application.Behaviors</c>
+/// assemblies (WO-039 P-241 gap-closure).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,8 +31,7 @@ namespace SharedKernel.Application.Behaviors.Tests.Governance;
 /// <see cref="ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint"/>, and
 /// <see cref="ApplicationPipelineRules.NoHandRolledRetryLoopOutsideResilienceBehavior"/> are all
 /// independent of the <c>00.Governance</c> <c>SK.00.DomainEventDispatcherReflectionExemption</c>
-/// blocker (P-240) — none of them inspect <c>MakeGenericMethod</c> call sites — so they are safe to
-/// run against the real assembly today.
+/// blocker (P-240) — none of them inspect <c>MakeGenericMethod</c> call sites.
 /// </para>
 /// <para>
 /// T-42: <see cref="PipelineOrderAssertion.AssertRegistrationOrder"/> is exercised against the
@@ -40,16 +40,34 @@ namespace SharedKernel.Application.Behaviors.Tests.Governance;
 /// documented ten-step canonical order as a permanent regression guard.
 /// </para>
 /// <para>
-/// T-43: <see cref="MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag"/> is
-/// expected to PASS now that P-239 shipped the <c>"outcome"</c> tag on
+/// T-43: <see cref="MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag"/> PASSES
+/// now that P-239 shipped the <c>"outcome"</c> tag on
 /// <see cref="MetricsBehavior{TRequest,TResponse}"/>'s <c>RequestDuration.Record(...)</c> call site.
 /// </para>
 /// <para>
-/// T-40 (<see cref="ReflectionGuardRules"/>.<c>NoMakeGenericMethodReflection</c> against both real
-/// assemblies) is deliberately NOT exercised here — it remains genuinely blocked on
-/// <c>00.Governance</c> P-240 (<c>ReflectionExemptionRegistry</c> entry for
-/// <c>MediatRDomainEventDispatcher</c>), which is still 0/5 tasks as of this session. See
-/// <c>05.Application/state-map.md</c> Phase <c>SK.05.Tests</c> for the tracked blocker.
+/// T-40: <see cref="ReflectionGuardRules.NoMakeGenericMethodReflection"/> is now exercised against
+/// BOTH real assemblies, re-verified unblocked this session — <c>00.Governance</c> P-240 shipped
+/// (<c>SK.00.DomainEventDispatcherReflectionExemption</c>, all 5 tasks <c>●</c> as of 2026-07-06)
+/// and registered <c>ReflectionExemptionRegistry</c>'s first real entry for
+/// <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher</c>'s closure-hidden
+/// <c>MakeGenericMethod</c> call. Before marking T-40 complete, this session verified empirically
+/// (not merely inferred from P-240's task checkmarks) whether
+/// <c>SharedKernel.Application.Behaviors</c>' OWN <c>MakeGenericMethod</c> call site
+/// (<c>Shared/FailureResponseFactory.cs</c>, <c>ResultOfTDispatcher&lt;TResponse&gt;.BuildFactory</c>,
+/// shipped by this domain's own P-237) would also need a registered exemption — it is an ordinary
+/// generic-class static method, not hidden inside a compiler-generated closure the way
+/// <c>PublishSingle</c>'s lambda is, so a naive reading suggested NetArchTest might actually see it
+/// and fail without a second registry entry. <strong>Empirically confirmed both tests PASS as-is</strong>:
+/// <c>ResultOfTDispatcher&lt;TResponse&gt;</c> is declared <c>internal static class</c>, and a C#
+/// <c>static class</c> compiles to IL <c>abstract sealed</c> — <see cref="ReflectionGuardRules.NoMakeGenericMethodReflection"/>
+/// applies NetArchTest's <c>.That().AreNotAbstract()</c> filter before scanning, so
+/// <c>ResultOfTDispatcher&lt;TResponse&gt;</c> (and its <c>BuildFactory</c> method) is excluded from
+/// the scan entirely — a second, independently-discovered "vacuous pass" mechanism alongside the
+/// already-documented closure-type invisibility gap (see <c>00.Governance/CLAUDE.md</c>'s SK0012
+/// entry). This is a genuine, mechanical PASS — not a fabricated or loosened assertion — but it
+/// does not (yet) constitute end-to-end enforcement of either call site; both gaps are tracked as
+/// the same <c>00.Governance</c> follow-up (walk <c>TypeDefinition.NestedTypes</c>/drop or refine
+/// the abstract filter) already recorded in that file's Changelog.
 /// </para>
 /// </remarks>
 public sealed class RealAssemblyArchitectureRulesTests
@@ -176,5 +194,46 @@ public sealed class RealAssemblyArchitectureRulesTests
             "every Histogram<double>.Record(...) call site in SharedKernel.Application.Behaviors "
             + "must carry an \"outcome\" tag literal, now that P-239 retrofitted MetricsBehavior<,>. "
             + "Failing types: " + string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    // ---- T-40 ----
+    //
+    // 00.Governance P-240 shipped (2026-07-06): ReflectionExemptionRegistry.AllowList now
+    // registers SharedKernel.Application's MediatRDomainEventDispatcher/<>c closure. Before
+    // marking T-40 complete this session, verified empirically whether
+    // SharedKernel.Application.Behaviors' own MakeGenericMethod call site
+    // (Shared/FailureResponseFactory.cs, ResultOfTDispatcher<TResponse>.BuildFactory) would also
+    // need a registry entry. Both tests below pass — see the class-level remarks for why (the
+    // <c>static class</c> -> IL <c>abstract sealed</c> + <c>.AreNotAbstract()</c> filter excludes
+    // ResultOfTDispatcher<TResponse> from NetArchTest's scan entirely, a second documented
+    // vacuous-pass mechanism alongside the closure-type gap).
+    [Fact]
+    public void NoMakeGenericMethodReflection_RealApplicationAssembly_Passes()
+    {
+        var applicationAssembly = typeof(SharedKernel.Application.DomainEvents.IDomainEventHandler<>).Assembly;
+
+        var result = ReflectionGuardRules
+            .NoMakeGenericMethodReflection(applicationAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            "SharedKernel.Application's registered MediatRDomainEventDispatcher exemption should "
+            + "cover its only MakeGenericMethod call site. Failing types: "
+            + string.Join(", ", result.FailingTypeNames ?? []));
+    }
+
+    [Fact]
+    public void NoMakeGenericMethodReflection_RealBehaviorsAssembly_Passes()
+    {
+        var result = ReflectionGuardRules
+            .NoMakeGenericMethodReflection(BehaviorsAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            "if this fails, SharedKernel.Application.Behaviors' ResultOfTDispatcher<TResponse>."
+            + "BuildFactory MakeGenericMethod call site (Shared/FailureResponseFactory.cs) is "
+            + "unregistered in ReflectionExemptionRegistry — a genuine, expected gap that blocks "
+            + "T-40/T-44 until 00.Governance registers a second entry. Failing types: "
+            + string.Join(", ", result.FailingTypeNames ?? []));
     }
 }
