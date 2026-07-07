@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-07-03, the last phase written to `state-map.md` Phase Backlog is **P-244** under **WO-039**.
+As of 2026-07-07, the last phase written to `state-map.md` Phase Backlog is **P-248** under **WO-040**.
 
-Next new phase must be **P-245**. Next new Work Order must be **WO-040**.
+Next new phase must be **P-249**. Next new Work Order must be **WO-041**.
+
+**Correction (2026-07-07):** this memory had drifted stale again exactly as its own "How to apply" note below warns — it previously claimed P-244/WO-039 as the last-written phase, but the real file's last entry was actually **P-243/WO-039** (verified via `grep -n "^### P-" state-map.md | tail` and a direct grep for "P-244" returning zero matches before this session wrote it). WO-040 then genuinely used P-244–P-248. See [[project_wo040_application_dx_audit]] for WO-040's content.
 
 **WO-039 context:** User-initiated deep-dive review of `05.Application` for gold-standard fit, bad practices, over-engineering, and missing features — explicitly asked to read the actual code, not just docs. Found four real issues invisible from `CLAUDE.md`/`state-map.md` prose alone (see [[project_wo039_application_review]] for full detail): a confirmed functional bug in fire-and-forget dispatch (guard blocks its own consumer), an acceptance-criteria checkbox that was checked but not actually true (P-232 claimed reflection was eliminated from `FailureResponseFactory`; it wasn't — different reflection API, invisible to SK0012), a governance/domain handoff gap (governance built real-assembly enforcement for this domain in WO-036/038 and 05.Application never wired it in), and a genuine design gap (idempotency never supports response replay, defeating its real-world purpose). Phases: P-236 (`01.Core`, new primitive), P-237/238/239/241/242/243 (`05.Application`), P-240 (`00.Governance`). All three domains already past `○` on the board, so backlog-only — no `state-map-phase` calls. `sync-brain` called once for two "What Goes Where" row changes (idempotency replay note, new DX-preset row) plus one changelog line.
 

@@ -1,0 +1,26 @@
+---
+name: project_design_conventions
+description: Recurring, non-obvious design conventions and gotchas specific to planning 16.Testing phases, learned across sessions
+type: project
+---
+
+**"Mock" requests get upgraded to deterministic in-memory fakes, never a mocking-framework substitute.**
+Why: `SharedKernel.Testing` has a hard dependency-hygiene rule — zero NSubstitute/Moq/FluentAssertions/test-runner references in `SharedKernel.Testing.csproj` itself (only in the sibling `.SelfTests` project, which carries the Standard Test Package Set). Every fake implements the target interface directly in plain C#.
+How to apply: if a phase input says "add a mock for X," design a `FakeX : IX` with settable properties/`SimulateFailure`-style toggles instead — this is the default translation, not a judgment call to re-litigate each time.
+
+**Sibling capability folders (`Caching/`, `Domain/`, `Security/`, `Messaging/`, `Persistence/`, `Communication/`, `Application/`, etc.) never reference each other — even when two folders need functionally identical machinery.**
+Concrete example (WO-040): `Application/ApplicationPipelineTestHarness` needed `ActivityListener`-based span capture, and `Communication/ActivityRecorder` already does exactly that. The rule still forbids the cross-reference — `ApplicationPipelineTestHarness` hand-rolls its own small `ActivityListener` wiring instead of depending on `ActivityRecorder`.
+How to apply: when a new fake in folder A needs a capability another folder B already has, do NOT design a cross-folder reference "just this once" — either duplicate the small amount of logic locally (the standing precedent), or (only if the duplication would be large) flag it to arch-lead as a possible signal that the shared logic belongs in a lower, non-capability-specific location. For anything at the scale of a single helper class/listener, duplicate.
+
+**A live `ProjectReference` from a consuming domain's `.Tests` project to `SharedKernel.Testing` does NOT by itself mean a net-new fake should be proven there.**
+The domain's default rule is "prove a fake in the owning domain's `.Tests` suite where the interface's real implementation already has contract tests." But repeatedly across WO-029/WO-030/WO-040, the actual finding was: the reference exists in the `.csproj`, but zero `.cs` files in that project consume the new type (because it's net-new). In every such case the fake was routed to `SharedKernel.Testing.SelfTests` instead, with adoption into the owning domain's suite tracked as an explicit, undone cross-domain follow-up.
+How to apply: always grep the actual `.cs` files of the candidate consuming `.Tests` project for real usage of the new type name — never assume routing from the mere existence of a `ProjectReference`. This has been true for `TestSharedKernelDbContext`/`AggregateRootFaker` (06.Persistence), `StaticTenantProvider`/`FakeUserContext`/`FakeTenantProvider` (12.Security), and `FakeUnitOfWork`/`FakeAuthorizationContext`/`FakeIdempotencyKeyStore`/`FakeIdempotencyResponseStore`/`ApplicationPipelineTestHarness` (05.Application, WO-040) — i.e. it is now the norm, not the exception, for a brand-new fake's first Tests-phase home to be `SelfTests` regardless of which domain "owns" the interface.
+
+**When a real production interface can optionally implement a second capability interface, detected via a runtime `is`-check (e.g. `IIdempotencyKeyStore` optionally also `IIdempotencyResponseStore` in 05.Application.Behaviors, P-242), the fake MUST ship as two separate concrete types, never one type with a constructor flag.**
+Why: C# interface implementation is a static, per-type fact — it can't be toggled at runtime, so a single flag-driven fake would make the `is`-check always pass or always fail regardless of the flag, silently breaking the test path the flag claimed to disable.
+How to apply: whenever a phase input describes a fake for an interface with a documented "MAY additionally implement X for opt-in behavior" pattern, always design two fake types (base-only, and base+extension) rather than one configurable type. First applied to `FakeIdempotencyKeyStore`/`FakeIdempotencyResponseStore` (WO-040) — treat as the reference precedent for any future optional-capability interface.
+
+**Before designing a new fake, always read the *owning* domain's live CLAUDE.md/source for the exact interface signature — including disambiguating same-named interfaces across domains.**
+Concrete trap: `05.Application.Behaviors.IUnitOfWork` and `06.Persistence.Abstractions.IUnitOfWork` share a name but are unrelated single-member vs. multi-member interfaces; the root `CLAUDE.md` and `05.Application/CLAUDE.md` both explicitly call this out. A fake for one must never be assumed to satisfy the other, and its doc comment should say so explicitly.
+
+**Before assuming a gap exists, audit this package's existing surface first.** Demonstrated repeatedly (P-226/WO-036's `CacheInvalidationBehavior` audit found `FakeCacheService` already fully sufficient with zero new code — only the `TracingBehavior` half was a genuine gap, closed by one small additive `ActivityRecorder` type). Grep existing types and their documented capabilities before designing something that looks new.
