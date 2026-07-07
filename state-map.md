@@ -33,6 +33,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
+| [16.Testing](16.Testing/state-map.md)                 | Core            | SK.16.Core complete (53/53) — WO-040's Application/ folder (FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore/ResponseStore, AddFakeApplicationBehaviorServices(), ApplicationPipelineTestHarness) implemented; Tests (T-39–T-44) next |
 <!--
 Format when active:
 | Domain | Current Phase | Focus (one line) |
@@ -79,7 +80,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
-| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-036 (P-226) fully complete — SK.16.Design (58/58), SK.16.Scaffold (15/15), SK.16.Core (47/47), SK.16.Tests (38/38), and SK.16.Docs (13/13) all done: ActivityRecorder implemented, proven in SharedKernel.Testing.SelfTests (242/242 passing), and its XML docs verified to already document the ambient-context-setter vs. recording-listener distinction; both P-226 audit determinations confirmed recorded in the CLAUDE.md changelog. All 6 phases of 16.Testing (Design→Published) now complete — domain fully closed. | — |
+| 16 | [Testing](16.Testing/state-map.md) | Core | `◐` | WO-040 (P-244/P-245) SK.16.Core now 53/53 `●` — implemented `Application/` folder's six types (`FakeUnitOfWork`, `FakeAuthorizationContext`, `FakeIdempotencyKeyStore`, `FakeIdempotencyResponseStore`, `AddFakeApplicationBehaviorServices()`, `ApplicationPipelineTestHarness`) against live `05.Application.Behaviors` interfaces; `dotnet build` clean, 0 errors. | Tests (T-39–T-44), Docs (DO-14/DO-15) for WO-040. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -106,14 +107,14 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
-| ● Published | 7 |
+| ● Published | 6 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
 | ● Docs | 2 |
 | ● Tests | 2 |
 | ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 4 |
 
@@ -1882,6 +1883,7 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-07-02] 05.Application → Scaffold (●) — promoted from SK.05.Scaffold (WO-038 round): S-16 done, all 16 scaffold tasks ●; P-231–P-234 remain ◐ Dispatched (state-map-phase)
 - [2026-07-03] 05.Application → Design (●) — promoted from SK.05.Design (WO-039 round): D-46/D-47/D-48 (P-241) locked as forward-looking plan; P-237, P-238, P-239, P-241, P-242, P-243 remain `◐` Dispatched (each spans through Core/Tests/Docs, not Design alone — P-241 additionally blocked on `00.Governance` P-240, 0/5 tasks) (state-map-phase)
 - [2026-07-03] 05.Application → Scaffold (●) — promoted from SK.05.Scaffold (WO-039 round): S-17 done — test-project-only `SharedKernel.ArchitectureTests` `ProjectReference` added to both nested test projects, zero leakage into production csproj confirmed; P-237, P-238, P-239, P-241, P-242, P-243 remain `◐` Dispatched (each spans through Core/Tests/Docs, not Scaffold alone) (state-map-phase)
+- [2026-07-07] 16.Testing → Core (●) — promoted from SK.16.Core (53/53); implemented WO-040's `Application/` folder (FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore/ResponseStore, AddFakeApplicationBehaviorServices(), ApplicationPipelineTestHarness) (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -7894,6 +7896,11 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-06-30] Governance → Governance: Architecture Enforcement for the Extended Application Pipeline (●) — promoted from SK.00.ApplicationPipelineArchRules (state-map-phase)
 - [2026-06-30] Phase Backlog P-225 → ● Complete — SK.00.ApplicationPipelineArchRules done (state-map-phase)
 - [2026-06-30] Testing → Design (●) — promoted from SK.16.Design (58/58); D-55–D-58 re-verified against live source, ActivityRecorder design confirmed sound (state-map-phase)
+- [2026-07-07] Phase(s) P-248 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-07] Phase(s) P-246 dispatched to application-arch-planner for 05.Application (dispatch-phase)
+- [2026-07-07] Phase(s) P-247 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-07-07] Phase(s) P-244, P-245 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-07-07] 16 → Scaffold (●) — promoted from SK.16.Scaffold (18/18); first-ever 16.Testing → 05.Application ProjectReference added (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -9736,3 +9743,136 @@ The user's explicit goal for this domain is that it be "developer friendly" and 
 - [2026-07-06] Phase Backlog P-241 → ● Complete — SK.05.Tests done (state-map-phase)
 - [2026-07-07] Application → Docs (●) — promoted from SK.05.Docs; 18/18, DO-05..DO-18 across WO-036/038/039 shipped — README.md rewrites for both packages plus the previously-empty root README, XML doc coverage reconfirmed via 0-warning Release build, CLAUDE.md's stale P-241 note refreshed to 4/4 real-assembly rule groups; 143/143 tests green, zero production code touched (state-map-phase)
 - [2026-07-07] Phase Backlog P-237, P-238, P-239, P-242, P-243 → ● Complete — SK.05.Docs done, matching the P-241/SK.05.Tests precedent. Note: P-237's first acceptance-criterion bullet is only partially literal — one disclosed `MakeGenericMethod` call remains in `ResultOfTDispatcher<TResponse>.BuildFactory` (documented, approved-shape exception); flagged inline on the entry itself rather than blocking closure, consistent with how P-241 was already closed with unresolved jurisdictional notes (state-map-phase)
+- [2026-07-07] 16.Testing → Design (◐) — promoted from SK.16.Design (71/71); WO-040 (P-244/P-245) Application/ fake-and-harness target-shape design confirmed against live 05.Application.Behaviors source, one drift corrected (IAuthorizationContext.AnyOf empty-collection semantics: returns false, not vacuous-true); Scaffold (S-16–S-18) next (state-map-phase)
+
+---
+## WO-040 — 05.Application Developer-Experience Gap Audit
+
+> **arch-lead note (2026-07-07):** User asked for a fresh "what else can we do to make 05.Application more developer-friendly" pass. `05.Application`/`05.Application.Behaviors` are extremely mature at this point (five prior work orders, ten unary + five streaming pipeline behaviors, a DX preset, real-assembly governance wiring — see WO-035/036/037/038/039 in this Changelog). Rather than re-litigate what already shipped, this pass read the actual shipped `.cs` files and the domain's own self-flagged forward references/deferred-scope callouts (per the standing rule to verify shipped code, not just prose) and found five concrete, low-risk gaps — none inside `05.Application` alone; all are *consumer-facing* friction the domain itself cannot close from within its own layering ceiling (`01–04`):
+>
+> 1. `16.Testing` ships fakes for `12.Security.Abstractions` (`FakeUserContext`/`FakeTenantProvider`) and `07.Messaging.Abstractions` (`InMemoryMessageBus`/`InMemoryEventPublisher`) but has **zero** fakes for `05.Application.Behaviors`' own three local-seam interfaces (`IUnitOfWork`, `IAuthorizationContext`, `IIdempotencyKeyStore`/`IIdempotencyResponseStore`) — confirmed by directory listing, not assumption. Every consuming service adopting Transaction/Authorization/Idempotency behaviors today hand-rolls the same throwaway fakes.
+> 2. `05.Application.Behaviors.Tests`' own reusable pipeline test harness (WO-036) is explicitly documented as "never packaged, never referenced by 16.Testing or production code" — a scope boundary that now blocks every downstream service from pipeline-level-testing its own commands/queries, the exact class of gap that let WO-039's fire-and-forget self-blocking bug ship undetected for two work orders.
+> 3. `LoggingBehavior`'s own doc comment self-flags "opt-in payload logging is a future capability, not part of this phase" since the very first WO-035 pass — never picked up since.
+> 4. `05.Application/CLAUDE.md` explicitly documents a forward reference to `13.ServiceDefaults` wiring the `"SharedKernel.Application"` Meter/ActivitySource into the host's OTel providers ("future work, out of scope here") — confirmed via direct grep that `13.ServiceDefaults` ships `WithMessagingTelemetry()`/`WithCachingTelemetry()` for the two sibling domains but no `WithApplicationTelemetry()` counterpart; the forward reference was never closed.
+> 5. `05.Application/CLAUDE.md`'s Hard Violations section carries three marker-interface misuse patterns explicitly labeled "not mechanically enforced — code review must catch this, the compiler will not" (command implementing `ICacheableQuery<TResponse>`; query implementing `IInvalidatesCache`; `IRetryableRequest` without `IIdempotentRequest`) — structurally identical in shape to the three gaps `00.Governance` already closed via `SK0014`/`SK0015`/`SK0016` (WO-038 P-235) for this same package, just not yet extended to these three.
+>
+> All five are grounded in either a sibling-domain precedent already shipped twice, a self-documented forward reference in the domain's own brain, or a direct filesystem/grep verification of absence — none are speculative additions. `05.Application` itself changes in only one of the five phases (P-246); the other four are the "full blast radius" this domain's own maturity now exposes in `16.Testing`, `13.ServiceDefaults`, and `00.Governance`.
+
+---
+### P-244 — Testing: Test Doubles for 05.Application.Behaviors' Local-Seam Interfaces
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-040
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+In-process, dependency-free test doubles for the three local-seam interfaces `SharedKernel.Application.Behaviors` defines and deliberately ships with zero implementation (`IUnitOfWork`, `IAuthorizationContext`, `IIdempotencyKeyStore`, plus its additive `IIdempotencyResponseStore` capability) — mirroring the existing `InMemoryMessageBus`/`InMemoryEventPublisher` pattern already shipped for `07.Messaging.Abstractions` and the `FakeUserContext`/`FakeTenantProvider` pattern shipped for `12.Security.Abstractions`. Specifically: a configurable in-memory unit-of-work double satisfying `IUnitOfWork` that lets a test assert how many times (and whether) `SaveChangesAsync` was invoked; a configurable authorization-context double satisfying `IAuthorizationContext` that lets a test declare which requirement strings pass or fail and correctly exercises `AllOf`/`AnyOf` composition without a real identity stack; a configurable idempotency-key-store double satisfying `IIdempotencyKeyStore`, with an opt-in mode that additionally implements `IIdempotencyResponseStore` so a test can exercise the response-replay path end-to-end; and a registration extension (or extensions) analogous to `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()`, referencing only `SharedKernel.Application.Behaviors` — these fakes satisfy the LOCAL seam contracts only, never the real cross-domain interfaces those seams are bridged to in production (`06.Persistence`, `12.Security`, `07.Messaging` are never referenced).
+
+#### Why this is needed
+
+`05.Application.Behaviors` ships three production-grade opt-in pipeline behaviors (Transaction, Authorization, Idempotency) whose entire design is a locally-owned seam interface with no shipped implementation, by design — the real implementation is bridged at each consuming service's own composition root. Every downstream microservice adopting these behaviors today has zero shared way to unit-test a command/query that flows through them, and hand-rolls the same trivial fake for `IUnitOfWork`/`IAuthorizationContext`/`IIdempotencyKeyStore` from scratch in every service across the platform. This is the exact class of gap `16.Testing`'s own established "What Goes Where" precedent already closes for `IMessageBus`/`IEventPublisher`/`IUserContext`/`ITenantProvider` (WO-022, WO-030) — extending the same precedent to `05.Application.Behaviors`' three local seams is a direct, low-risk completion of an established pattern, not a new one.
+
+#### Acceptance criteria
+- [ ] A test double exists for each of `IUnitOfWork`, `IAuthorizationContext`, and `IIdempotencyKeyStore`, living in `16.Testing/SharedKernel.Testing` and referencing only `SharedKernel.Application.Behaviors` plus whatever `16.Testing` already references.
+- [ ] The `IAuthorizationContext` double supports configuring pass/fail per requirement string and correctly exercises `AllOf`/`AnyOf` short-circuit semantics identically to the real behavior's expectations.
+- [ ] The `IIdempotencyKeyStore` double supports an opt-in mode implementing `IIdempotencyResponseStore` for response-replay test scenarios, mirroring the "purely additive" contract `05.Application.Behaviors` already documents.
+- [ ] A DI registration extension is provided for the full set, consistent with the existing `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()` naming and composition convention.
+- [ ] `SharedKernel.Testing.SelfTests` proves each double against its own owning interface's contract (per the WO-029 anti-duplication rule for standalone helpers).
+- [ ] Zero new third-party NuGet dependency introduced.
+---
+
+---
+### P-245 — Testing: Publicly Consumable MediatR Pipeline Test Harness
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-040
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+A packaged, publicly consumable test harness — built on `05.Application.Behaviors`' `ApplicationBehaviorsBuilder` and a real `IServiceCollection`/`AddMediatR` composition — that lets a CONSUMING microservice's own test suite dispatch a command or query through a caller-chosen subset of the platform's pipeline behaviors and assert on the final response shape, thrown exceptions, recorded `ApplicationDiagnostics` metrics, and recorded `ActivitySource` spans, without hand-wiring MediatR and the behavior pipeline in every test project. This is a promotion of an already-proven design: `SharedKernel.Application.Behaviors.Tests` already contains an internal-only reusable pipeline test harness serving exactly this purpose for the SharedKernel's OWN test suite (WO-036) — this phase promotes it into a first-class `16.Testing` capability so every downstream consumer gets the same tool, either by relocating the implementation or by having the existing internal harness become a thin wrapper over the new shared capability (domain planner's call; no duplicated wiring logic either way).
+
+#### Why this is needed
+
+`05.Application.Behaviors`' own `CLAUDE.md` documents this harness as deliberately "never packaged, never referenced by 16.Testing or production code" — a reasonable initial scope boundary when it was built solely to de-duplicate this domain's OWN behavior test files. That boundary now blocks every consuming service from getting the same benefit: a service composing `AuthorizationBehavior` + `IdempotentCommandBehavior` + `TransactionBehavior` around its own commands has no shared way to prove the composed pipeline actually short-circuits, retries, or commits correctly, and must either hand-roll the same `ServiceCollection`+`AddMediatR`+`ApplicationBehaviorsBuilder` wiring this domain already solved once, or skip pipeline-level testing entirely — missing exactly the cross-cutting-concern bugs this platform's own WO-039 review found (the fire-and-forget self-blocking bug is precisely the kind of defect a pipeline-level test would have caught immediately, and none existed for consumers to write one with). Publishing this harness through `16.Testing` (which may reference any layer including `05.Application.Behaviors`, and is never shipped to production) closes this gap without duplicating the design.
+
+#### Acceptance criteria
+- [ ] A `16.Testing/SharedKernel.Testing` capability lets a caller compose a real MediatR pipeline against `ApplicationBehaviorsBuilder`-registered behaviors (a caller-chosen subset, not forced to register all ten) and dispatch a request through it in a single fluent call.
+- [ ] Exposes assertions (or the raw captured data) for: final response (success/failure/thrown exception), `ApplicationDiagnostics.RequestDuration` measurements recorded during the dispatch, and `ActivitySource` spans recorded during the dispatch — mirroring what the existing internal-only harness already proves for this domain's own tests.
+- [ ] The existing `SharedKernel.Application.Behaviors.Tests`-internal harness is either promoted in place or kept as a thin wrapper over the new shared capability — no duplicated implementation of the same wiring logic.
+- [ ] `SharedKernel.Testing.SelfTests` proves the harness's own behavior independent of any one consuming domain's commands.
+- [ ] Zero change to `05.Application.Behaviors`' own public surface — this is a `16.Testing`-side capability consuming already-public `05.Application.Behaviors` types (`ApplicationBehaviorsBuilder`, `ApplicationDiagnostics`), not a new production API in `05.Application.Behaviors` itself.
+---
+
+---
+### P-246 — Application: Opt-In Structured Request/Response Payload Logging with Self-Supplied Redaction
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-040
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+
+An opt-in pipeline capability that lets a command or query author declare which of its own fields are safe to log, so structured request/response payload data can be emitted on top of the platform-name/duration logging `LoggingBehavior` already performs — closing the gap `LoggingBehavior`'s own documentation explicitly leaves open ("Does NOT log request or response payloads by default... opt-in payload logging is a future capability, not part of this phase"). Consistent with this domain's established "self-supplied" marker pattern (`ICacheableQuery.CacheKey` and `IInvalidatesCache.CacheKeysToInvalidate` are both computed and supplied by the request instance itself, never derived by the behavior via reflection), the request/query type itself should supply its own loggable/redacted field set — never a reflection-based property walk over an arbitrary `TRequest` — keeping the capability AOT-clean and consistent with this domain's platform-wide reflection posture.
+
+#### Why this is needed
+
+This is not a speculative feature — it is a gap the domain's own shipped documentation has flagged as deliberately deferred since the very first WO-035 pass, and it is one of the most commonly requested capabilities for a CQRS pipeline in a regulated or audited microservice environment (order/payment/user-data mutations routinely need an audit trail of "what was requested," not just "a request of type X happened in Yms"). Every downstream service that wants this today must hand-roll its own logging behavior or manually log inside every handler, defeating the entire cross-cutting-concern purpose this domain exists to serve. Building it as a self-supplied, opt-in marker — rather than reflection or an attribute-driven property walk — keeps it consistent with the two precedents already proven in this exact package and avoids introducing the platform's first reflection-based property enumeration in a hot pipeline path.
+
+#### Acceptance criteria
+- [ ] A command or query type can opt in to structured payload logging by supplying its own redacted/loggable field set — never via reflection over its own properties.
+- [ ] A request type that does NOT opt in produces byte-for-byte identical logging behavior to today — no accidental payload leakage as a side effect of shipping this feature.
+- [ ] Structured fields are attached to the existing `LoggingBehavior` log entries (or a clearly-positioned adjacent behavior, per the domain planner's placement decision within the canonical pipeline order) — not a second, competing logging pathway.
+- [ ] `05.Application/CLAUDE.md`'s Hard Violations section gains an explicit entry prohibiting logging a request/response payload by any means other than this opt-in mechanism.
+- [ ] Zero new third-party NuGet dependency; zero reflection introduced.
+---
+
+---
+### P-247 — ServiceDefaults: Wire "SharedKernel.Application" Telemetry into Host OTel Providers
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-040
+**Domain:** 13.ServiceDefaults
+**Depends on:** None
+
+#### What is needed
+
+A composition extension — following the exact shape and idempotency contract already proven twice in this domain (`WithMessagingTelemetry()` for `07.Messaging`'s `"SharedKernel.Messaging"` source, `WithCachingTelemetry()` for `02.Caching`'s `"SharedKernel.Caching"` meter) — that wires the already-shipped `"SharedKernel.Application"` `Meter`/`ActivitySource` pair (`ApplicationDiagnostics`, `05.Application.Behaviors`) into the host's OpenTelemetry `MeterProvider`/`TracerProvider` by name, so `sharedkernel.application.request.duration` measurements and the pipeline's trace spans actually reach the configured OTLP exporter for any service that adopts this domain's pipeline behaviors.
+
+#### Why this is needed
+
+`05.Application.Behaviors`' own `CLAUDE.md` explicitly documents this as a forward reference to `13.ServiceDefaults` ("13.ServiceDefaults (future work, out of scope here) registers the 'SharedKernel.Application' meter/source name with the host's MeterProvider/TracerProvider — this domain never reaches into 13.ServiceDefaults") — a forward reference never picked up, even though the two structurally identical sibling capabilities (`WithMessagingTelemetry`, `WithCachingTelemetry`) both shipped and closed their own equivalent forward references already. Without this, every metric and span this domain's `MetricsBehavior`/`TracingBehavior`/streaming counterparts record is silently dropped at the OTel SDK boundary for any service that has not manually wired the source itself — the instrumentation exists but is invisible in production without this one missing composition call, exactly the kind of silent gap this domain's own WO-039 review methodology (read the code, not the docs) exists to catch.
+
+#### Acceptance criteria
+- [ ] A new composition extension wires `"SharedKernel.Application"` as a traced `ActivitySource` name and a metered `Meter` name into the host's `TracerProvider`/`MeterProvider`, by string name only — mirroring `WithMessagingTelemetry()`/`WithCachingTelemetry()` exactly, including their "never create the source/meter here, only wire an already-existing one" invariant.
+- [ ] Idempotent — calling it more than once registers no duplicate instruments, consistent with the two existing sibling methods.
+- [ ] `13.ServiceDefaults/CLAUDE.md`'s Implementation Rules and DI Registration sections gain this method alongside its two siblings.
+- [ ] `05.Application/CLAUDE.md`'s forward-reference callout is updated to reflect that `13.ServiceDefaults` has closed it — cross-domain doc consistency, mirroring how `07.Messaging`'s P-172 forward reference was closed out in both domains' brains.
+---
+
+---
+### P-248 — Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-040
+**Domain:** 00.Governance
+**Depends on:** None
+
+#### What is needed
+
+New `SharedKernel.Analyzers` diagnostics (next sequential `SK00xx` IDs) that run inside a CONSUMING microservice's own compilation and catch three marker-interface misuse patterns `05.Application`/`05.Application.Behaviors`' own `CLAUDE.md` already documents as real, known footguns explicitly labeled "not mechanically enforced — code review must catch this, the compiler will not": (1) a command type (implements `ICommandBase`) also implementing `ICacheableQuery<TResponse>` (caching is queries-only by design); (2) a query type (implements `IQuery<TResponse>`, never `ICommandBase`) also implementing `IInvalidatesCache` (cache invalidation is commands-only by design); (3) a type implementing `IRetryableRequest` without also implementing `IIdempotentRequest` — the domain's own documented, explicitly-accepted gap in the retry-after-partial-commit hazard resolution, currently relying entirely on code review.
+
+#### Why this is needed
+
+This mirrors the exact precedent already set three times for this same package family — `SK0014` (closed-generic `ResiliencePipeline<TResponse>` registration), `SK0015` (streaming behavior misregistration), and `SK0016` (`typeof(TRequest).Name` short-name usage) were all built specifically because `05.Application`'s own design review surfaced a documented misuse pattern that NetArchTest (which only inspects the SharedKernel's own assemblies) structurally cannot catch, since the violation occurs in every CONSUMING service's command/query type declarations, not inside `SharedKernel.Application.Behaviors` itself. The three patterns above are the remaining "code review must catch this, the compiler will not" callouts in `05.Application/CLAUDE.md`'s Hard Violations section without a corresponding mechanical enforcement — closing them is a direct continuation of the same, already-validated governance pattern, not a new class of tooling.
+
+#### Acceptance criteria
+- [ ] Three new analyzer diagnostics ship, each flagging one of the three patterns above via the C# semantic model (declared/implemented interface list of a type), consistent with the existing `SK00xx` `AnalyzerBase` pattern, severity, and per-site `#pragma warning disable` suppression convention.
+- [ ] Each analyzer is proven against both a positive (violation present) and negative (correct usage) fixture, per the existing `SharedKernel.Analyzers.Tests` convention.
+- [ ] `00.Governance/CLAUDE.md`'s analyzer table gains all three entries with the same Category/Severity/Trigger/Rationale/Suppress/Note structure as `SK0013`–`SK0016`.
+- [ ] Zero false positive against any type in `05.Application`/`05.Application.Behaviors`'s own shipped source (the platform's own `MediatRDomainEventDispatcher`, behaviors, etc. must not trip these consumer-facing rules).
+---
