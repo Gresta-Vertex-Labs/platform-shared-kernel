@@ -528,6 +528,83 @@ SK0016  RequestTypeShortNameUsage
                 specific to MediatR request-type tag/key construction, which lives exclusively
                 in this domain.
 
+SK0017  CommandImplementsCacheableQuery
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A ClassDeclarationSyntax, RecordDeclarationSyntax, or StructDeclarationSyntax
+                (non-abstract) whose declared symbol's INamedTypeSymbol.AllInterfaces contains
+                an interface matching simple name "ICommandBase" (namespace starting with
+                "SharedKernel.Application") AND also contains an interface whose
+                OriginalDefinition matches the open generic "ICacheableQuery<TResponse>"
+                (arity 1, same namespace prefix) — directly or transitively through a narrower
+                interface (e.g. ICommand<TResponse> : ICommandBase). Requires SemanticModel
+                resolution of the full interface closure — a BaseList simple-name check is
+                insufficient because ICommandBase is typically implemented transitively.
+    Fix       : Remove ICacheableQuery<TResponse> from the command type. Caching is
+                queries-only by design — a command must never be cacheable. If a read-shaped
+                result genuinely needs caching, model it as a query instead.
+    Exempt    : Types carrying the abstract modifier (Modifiers.Any(SyntaxKind.AbstractKeyword))
+                are excluded — the same exemption already applied by SK0009.
+    Suppress  : Per-type via #pragma warning disable SK0017 with an inline comment documenting
+                the rationale; fires globally, no suppression namespace.
+    Note      : Introduced WO-040 P-248, closing one of the three remaining "not mechanically
+                enforced — code review must catch this" callouts in 05.Application/CLAUDE.md's
+                Hard Violations section. Third SK analyzer in this domain requiring a semantic
+                interface-closure check, after SK0011 and SK0015. Runs inside a CONSUMING
+                microservice's own compilation — the violation is a command/query type
+                declaration, which never occurs inside SharedKernel.Application.Behaviors itself.
+
+SK0018  QueryImplementsInvalidatesCache
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A ClassDeclarationSyntax, RecordDeclarationSyntax, or StructDeclarationSyntax
+                (non-abstract) whose declared symbol's AllInterfaces contains an interface whose
+                OriginalDefinition matches the open generic "IQuery<TResponse>" (arity 1,
+                namespace prefix "SharedKernel.Application"), does NOT contain an interface
+                matching simple name "ICommandBase" (same namespace prefix), AND also contains
+                an interface matching simple name "IInvalidatesCache" (same namespace prefix).
+    Fix       : Remove IInvalidatesCache from the query type. Cache invalidation is
+                commands-only by design — a pure query must never invalidate cache entries as
+                a side effect. If invalidation is genuinely required, model the operation as a
+                command instead.
+    Exempt    : Types carrying the abstract modifier are excluded (same exemption as SK0017).
+                A type implementing ICommandBase alongside IQuery<TResponse> and
+                IInvalidatesCache does NOT trigger SK0018 — that ICommandBase/ICacheableQuery
+                distinction belongs to SK0017, not this rule; the two rules are mutually
+                exclusive by the "does NOT contain ICommandBase" guard.
+    Suppress  : Per-type via #pragma warning disable SK0018 with an inline comment documenting
+                the rationale; fires globally, no suppression namespace.
+    Note      : Introduced WO-040 P-248. Fourth SK analyzer in this domain requiring a semantic
+                interface-closure check. Structural converse of SK0017 — together the two rules
+                enforce the platform's queries-cache / commands-invalidate split documented in
+                05.Application/CLAUDE.md.
+
+SK0019  RetryableRequestWithoutIdempotency
+    Category  : Design
+    Severity  : Warning
+    Trigger   : A ClassDeclarationSyntax, RecordDeclarationSyntax, or StructDeclarationSyntax
+                (non-abstract) whose declared symbol's AllInterfaces contains an interface
+                matching simple name "IRetryableRequest" (namespace prefix
+                "SharedKernel.Application") and does NOT also contain an interface matching
+                simple name "IIdempotentRequest" (same namespace prefix).
+    Fix       : Implement IIdempotentRequest alongside IRetryableRequest so
+                IdempotentCommandBehavior can guard against the retry-after-partial-commit
+                hazard (a retried request that already partially committed on the first
+                attempt is otherwise re-executed instead of returning the original outcome).
+                If idempotency truly cannot be guaranteed for this request, remove
+                IRetryableRequest instead of leaving the gap silently unguarded.
+    Exempt    : Types carrying the abstract modifier are excluded (same exemption as SK0017).
+    Suppress  : Per-type via #pragma warning disable SK0019 with an inline comment documenting
+                the rationale (e.g., an idempotency-key store is provided out-of-band); fires
+                globally, no suppression namespace.
+    Note      : Introduced WO-040 P-248. Fifth SK analyzer in this domain requiring a semantic
+                interface-closure check. Closes 05.Application/CLAUDE.md's own documented,
+                explicitly-accepted "not mechanically enforced" gap for the
+                IRetryableRequest/IIdempotentRequest pairing — the last of the three marker-
+                interface misuse patterns this phase addresses (the fourth pattern from the
+                same audit family, typeof(TRequest).Name short-name usage, was already closed
+                by SK0016 in WO-038 P-235).
+
 SK0007  RedisChannelServiceMessagingSubstitute
     Category  : Design
     Severity  : Warning
@@ -2470,6 +2547,11 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0016 `RequestTypeShortNameUsageAnalyzer`'s namespace scope (`SharedKernel.Application`/`SharedKernel.Application.Behaviors`) is a trigger-IN scope, not a trigger-OUTSIDE-with-exemption scope — this is the inverse of the pattern used by SK0001/SK0007/SK0013 (which fire everywhere except a named namespace). The inversion is deliberate: the `typeof(TRequest).Name` collision risk is intrinsic to MediatR pipeline-behavior tag/key construction, which lives exclusively in this domain, so scoping the rule to fire only inside it avoids false positives from unrelated `typeof(X).Name` usage elsewhere in the platform (e.g. legitimate short-name display strings).
 - `MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag` (WO-038 P-235) reuses the `Ldstr` literal-collection technique from `HealthCheckTagIntegrityRules` (WO-027 P-173) — no new Mono.Cecil technique is introduced, only a new call-site search target (`Histogram<T>.Record`). This rule is designed and tested against CONTRIVED in-memory fixtures only for this phase — it is EXPECTED TO FAIL if pointed at the real `SharedKernel.Application.Behaviors` assembly until a companion `05.Application` phase retrofits the non-streaming `MetricsBehavior<,>` (P-217) to emit the `"outcome"` tag the streaming `StreamMetricsBehavior` (P-234) already carries. `00.Governance` does not perform that retrofit — it is production code in `05.Application`, outside this domain's jurisdiction (`00.Governance` references nothing and writes no implementation files for other domains). Real-assembly re-verification is tracked as a follow-up once that companion phase ships, following the established `P-170`/`P-227`/`P-228` "real-assembly verification only" dependency pattern.
 - `ClosedGenericResiliencePipelineRegistrationAnalyzer` (SK0014) fires globally with no suppression namespace, unlike most namespace-scoped SK analyzers — `ResiliencePipeline<T>` (arity 1) is unsafe as a DI-registered or injected type in any assembly, not only `SharedKernel.Application`. Suppression is per-site only (`#pragma warning disable SK0014`).
+- SK0017 `CommandImplementsCacheableQueryAnalyzer`, SK0018 `QueryImplementsInvalidatesCacheAnalyzer`, and SK0019 `RetryableRequestWithoutIdempotencyAnalyzer` are the domain's third, fourth, and fifth analyzers requiring a `SemanticModel`-resolved interface closure (`INamedTypeSymbol.AllInterfaces`), after SK0011 and SK0015. A `BaseList` simple-name check is insufficient for these three rules because `ICommandBase`/`IQuery<TResponse>` are typically implemented transitively (e.g. through `ICommand<TResponse> : ICommandBase`), not declared directly on the command/query type.
+- All three interface matches (SK0017–SK0019) use `OriginalDefinition` + `ContainingNamespace` prefix check (`"SharedKernel.Application"`, covering both `SharedKernel.Application` and `SharedKernel.Application.Behaviors`) rather than exact-assembly `INamedTypeSymbol` identity — this is deliberate so analyzer test fixtures stay self-contained: a fixture-local interface declared inside a matching-namespace code block in the SAME test compilation satisfies the check, with no `ProjectReference` to the real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies required for fire/pass-path tests.
+- SK0017/SK0018/SK0019 all exclude types carrying the `abstract` modifier (`Modifiers.Any(SyntaxKind.AbstractKeyword)`) — the same exemption already established by SK0009 — so a generic abstract request base class spanning multiple marker-interface families behind a type parameter is not prematurely flagged; concrete (non-abstract) types further down the same inheritance chain are still checked via the full `AllInterfaces` closure.
+- SK0017/SK0018/SK0019 fire globally with no namespace-scoped trigger condition — unlike SK0016's trigger-IN scope, these three are explicitly consumer-side rules: the violation (a command/query type implementing an incompatible marker-interface combination) occurs in a CONSUMING microservice's own type declarations, never inside `SharedKernel.Application`/`SharedKernel.Application.Behaviors` itself, which declares no command or query types at all (only the generic pipeline-behavior classes that consume them). This is why the zero-false-positive requirement against this domain's own shipped source is a structural argument (verifiable by inspection), not a real-assembly architecture test the way NetArchTest `ICustomRule` phases require.
+- SK0017, SK0018, and SK0019 are the next three sequential IDs in the SK0001–SK00N general-purpose block (SK0016 was the prior ID). They introduce zero new `SharedKernel.ArchitectureTests` artifacts — pure Roslyn analyzers, `netstandard2.0`, `Microsoft.CodeAnalysis.CSharp` 4.14.0, matching every prior SK analyzer.
 
 ---
 
@@ -2557,3 +2639,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-03] SK0014 ClosedGenericResiliencePipelineRegistration, SK0015 StreamPipelineBehaviorMisregistration, SK0016 RequestTypeShortNameUsage added to diagnostic registry (general-purpose sequential block, next after SK0013; SK0014 and SK0016 syntax-only, SK0015 the domain's second semantic-model analyzer after SK0011); MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag and RequestDurationRecordMissingOutcomeTagPredicate added to architecture test contracts (no new SK ID — reuses the HealthCheckTagIntegrityRules Ldstr literal-collection technique against a new Histogram<T>.Record call-site search); five new implementation rules added; addresses all four WO-038 application audit findings (closed-generic ResiliencePipeline<TResponse> registration, missing outcome tag on RequestDuration, IStreamPipelineBehavior misregistration against IPipelineBehavior<,>, typeof(TRequest).Name short-name collision risk); the outcome-tag rule's real-assembly retrofit of MetricsBehavior<,> (P-217) is explicitly OUT OF SCOPE for this domain (production code in 05.Application) — tracked as a companion 05.Application dependency, not implemented here; design/tests use contrived in-memory fixtures only — WO-038 P-235, depends on 05.Application P-217/P-234 for real-assembly verification only (governance-arch-planner)
 - [2026-07-03] WO-039 P-240 PLANNED (design only — not yet implemented) — the phase spec proposes registering SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod call site (inside PublishSingle's ConcurrentDictionary.GetOrAdd factory delegate) in ReflectionExemptionRegistry, pre-emptively, so SK0012 can be safely pointed at the real SharedKernel.Application assembly; documented that the call site sits inside a closure-free `static` lambda, so the Mono.Cecil-observed key will be the compiler-generated `<>c` nested cache class, not the literal MediatRDomainEventDispatcher/PublishSingle pair — new reusable implementation-rules bullet added on this Roslyn/Mono.Cecil fact; corrected the SK0012 "all production assemblies pass this rule" note (never actually verified platform-wide) and recorded a newly-discovered OPEN gap — 07.Messaging's MassTransitEventPublisher.BuildPublisher (same closure pattern, itself this exemption's own cited precedent) and MessagingBusBuilder.AddActivity remain unregistered/unverified against SK0012, tracked as a candidate follow-up; no new SK ID; no predicate/rule-logic change; **implementation status (2026-07-06 correction): D-58/C-95/T-169/T-170/DO-30 are all still `○` in state-map.md and ReflectionExemptionRegistry.AllowList ships empty in source — a prior version of this changelog entry incorrectly described the registry entry as already shipped; corrected during a /dispatch-phase cross-check of WO-039** — WO-039 P-240 (governance-arch-planner)
 - [2026-07-06] SK.00.DomainEventDispatcherReflectionExemption ● complete (D-58, C-95, T-169, T-170, DO-30) — ReflectionExemptionRegistry.AllowList now ships with its FIRST real entry: ("SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c", "<PublishSingle>b__8_0"), determined empirically (red-then-green, D-58) via a temporary Mono.Cecil IL-walk against the real compiled SharedKernel.Application.dll rather than assumed from source, with a governance rationale block comment (WO-039, 2026-07-06, per C-95's spec — a HashSet field initializer cannot carry a compiler-recognized `///` doc comment on an individual tuple). MAJOR DISCOVERY during test authoring (not anticipated by the phase spec): NetArchTest.Rules' own type-discovery layer (Types.InAssembly(assembly), used internally by ReflectionGuardRules.NoMakeGenericMethodReflection) never surfaces compiler-generated closure types — such as the `<>c` singleton display class that actually contains PublishSingle's MakeGenericMethod call — to any ICustomRule, confirmed via an instrumented recording ICustomRule with and without the `.AreNotAbstract()` filter. This means the end-to-end rule call currently reports success regardless of whether this exemption is registered — the violation is never reached by NetArchTest's own type enumeration. T-169/T-170 were therefore implemented at the predicate layer (ReflectionGuardRulesRealAssemblyTests invokes NoMakeGenericMethodReflectionPredicate.MeetsRule directly against the real, Mono.Cecil-loaded `<>c` TypeDefinition) — proving the exemption and the predicate's IL-walk logic are genuinely load-bearing (fails when unregistered, passes when registered) — plus a third documentation test asserting and explaining the current end-to-end NetArchTest behavior, so a future NetArchTest upgrade or type-discovery fix is caught by a changed assertion rather than silently altering coverage. No change made to NoMakeGenericMethodReflectionPredicate or ReflectionGuardRules logic (verified by diff review, per phase scope). SK0012's diagnostic-registry note, the ReflectionExemptionRegistry documentation, and this file's prior "PLANNED"/"still empty" language all corrected to reflect the shipped entry and the discovered NetArchTest gap; the 07.Messaging open gap (MassTransitEventPublisher.BuildPublisher, MessagingBusBuilder.AddActivity — both still unregistered, P-240 scoped to 05.Application only) recorded as a candidate follow-up work order, now additionally noting the NetArchTest closure-visibility gap would need resolving too before that follow-up could enforce end-to-end. New candidate follow-up work order recorded: extend ReflectionGuardRules.NoMakeGenericMethodReflection (or a sibling factory method) to walk TypeDefinition.NestedTypes recursively via Mono.Cecil directly, rather than relying solely on NetArchTest's Types.InAssembly(...) projection, so closure-based MakeGenericMethod call sites are caught end-to-end. 130/130 SharedKernel.ArchitectureTests.Tests passing (127 baseline + 3 new), 0 build warnings/errors — WO-039 P-240 (governance-phase-implementer)
+- [2026-07-07] SK0017 CommandImplementsCacheableQuery, SK0018 QueryImplementsInvalidatesCache, SK0019 RetryableRequestWithoutIdempotency added to diagnostic registry (general-purpose sequential block, next after SK0016; third/fourth/fifth SK analyzers in this domain requiring SemanticModel-resolved AllInterfaces closure, after SK0011 and SK0015); closes the last three "not mechanically enforced — code review must catch this" callouts in 05.Application/CLAUDE.md's Hard Violations section (the fourth pattern from the same audit family, typeof(TRequest).Name short-name usage, was already closed by SK0016 in WO-038 P-235); all three are consumer-side rules firing in ANY assembly declaring a command/query type — zero new SharedKernel.ArchitectureTests artifacts, pure Roslyn analyzers; six new implementation rules added — WO-040 P-248 (governance-arch-planner)

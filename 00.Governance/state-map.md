@@ -54,6 +54,7 @@
 | `SK.00.CryptoDelegationAndUowSeamGuard` | Governance: Architecture Rules Locking the Cryptography Delegation and IUnitOfWork Bridge | All tasks in Phase: Architecture Rules Locking the Cryptography Delegation and IUnitOfWork Bridge are `●` | P-229 |
 | `SK.00.MetricsOutcomeTagAndMisregistrationGuard` | Governance: Architecture Enforcement for WO-038 Application Audit Findings | All tasks in Phase SK.00.MetricsOutcomeTagAndMisregistrationGuard are `●` | P-235 |
 | `SK.00.DomainEventDispatcherReflectionExemption` | Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | All tasks in Phase SK.00.DomainEventDispatcherReflectionExemption are `●` | P-240 |
+| `SK.00.MarkerInterfaceMisuseGuard` | Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application | All tasks in Phase SK.00.MarkerInterfaceMisuseGuard are `●` | P-248 |
 
 ---
 
@@ -2581,6 +2582,89 @@ None. No new SK ID. SK0012 (`MakeGenericMethodReflection`) is unchanged — this
 
 ---
 
+<!-- phase-key: SK.00.MarkerInterfaceMisuseGuard -->
+## Phase SK.00.MarkerInterfaceMisuseGuard — Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application
+
+### Goal
+
+`05.Application`/`05.Application.Behaviors`'s own `CLAUDE.md` documents three marker-interface misuse patterns in its Hard Violations section, each explicitly labeled "not mechanically enforced — code review must catch this, the compiler will not": (1) a command type (`ICommandBase`) also implementing `ICacheableQuery<TResponse>` — caching is queries-only by design; (2) a query type (`IQuery<TResponse>`, never `ICommandBase`) also implementing `IInvalidatesCache` — cache invalidation is commands-only by design; (3) a type implementing `IRetryableRequest` without also implementing `IIdempotentRequest` — the documented, explicitly-accepted retry-after-partial-commit hazard gap. All three violations occur in a CONSUMING microservice's own command/query type declarations, not inside `SharedKernel.Application.Behaviors` itself — structurally invisible to `NetArchTest`, which only inspects the SharedKernel's own assemblies. This phase closes all three gaps the same way `SK0014`/`SK0015`/`SK0016` (WO-038 P-235) closed the prior three "code review must catch this" callouts: a Roslyn analyzer shipped in `SharedKernel.Analyzers`, running inside the consumer's own compilation. This is a direct continuation of an already-validated governance pattern, not a new class of tooling.
+
+### Scope
+
+- Package(s) affected: `SharedKernel.Analyzers` (three new Roslyn analyzers, SK0017–SK0019)
+- New files:
+  - `SharedKernel.Analyzers/Analyzers/SK0017CommandImplementsCacheableQueryAnalyzer.cs`
+  - `SharedKernel.Analyzers/Analyzers/SK0018QueryImplementsInvalidatesCacheAnalyzer.cs`
+  - `SharedKernel.Analyzers/Analyzers/SK0019RetryableRequestWithoutIdempotencyAnalyzer.cs`
+  - Corresponding test files in `SharedKernel.Analyzers.Tests/`
+- Modified files: `00.Governance/CLAUDE.md` (diagnostic registry, implementation rules, changelog — already applied by this planning pass)
+- Deleted files: none
+
+### Diagnostic Registry Changes (analyzers only)
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0017 | CommandImplementsCacheableQuery | Design | Warning | A type whose interface list includes `ICommandBase` also includes the closed or open generic `ICacheableQuery<TResponse>` |
+| SK0018 | QueryImplementsInvalidatesCache | Design | Warning | A type whose interface list includes `IQuery<TResponse>` and does NOT include `ICommandBase` also includes `IInvalidatesCache` |
+| SK0019 | RetryableRequestWithoutIdempotency | Design | Warning | A type whose interface list includes `IRetryableRequest` does NOT also include `IIdempotentRequest` |
+
+### Implementation Rules
+
+1. All three analyzers require `SemanticModel` resolution of the declared type's full interface closure (`INamedTypeSymbol.AllInterfaces`) — a simple-name `BaseList` syntax check is insufficient because a command/query type typically implements `ICommandBase`/`IQuery<TResponse>` transitively through a narrower interface (e.g. `ICommand<TResponse> : ICommandBase`), not directly. SK0017, SK0018, and SK0019 are the domain's third, fourth, and fifth analyzers requiring a semantic-model check, after SK0011 and SK0015.
+2. Interface matching uses `OriginalDefinition` + `ContainingNamespace` prefix check (`"SharedKernel.Application"`, covering both `SharedKernel.Application` and `SharedKernel.Application.Behaviors`, mirroring SK0016's namespace-prefix convention) rather than an exact-assembly `INamedTypeSymbol` identity comparison — this keeps the analyzer test fixtures self-contained (a fixture-local interface declared inside a `SharedKernel.Application`/`SharedKernel.Application.Behaviors`-namespaced code block within the SAME compilation satisfies the check) with no `ProjectReference` to the real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies required for fire/pass-path tests, consistent with `CSharpAnalyzerTest`'s isolated-compilation model. Open-generic interfaces (`ICacheableQuery<TResponse>`, `IQuery<TResponse>`) are matched by `OriginalDefinition` metadata name (`ICacheableQuery` arity 1, `IQuery` arity 1) plus the namespace-prefix check; non-generic markers (`ICommandBase`, `IInvalidatesCache`, `IRetryableRequest`, `IIdempotentRequest`) are matched by simple name plus the same namespace-prefix check.
+3. Each analyzer targets `ClassDeclarationSyntax`, `RecordDeclarationSyntax`, and `StructDeclarationSyntax` nodes only (a command/query is always a concrete request DTO, never an interface or enum declaration). Types carrying the `abstract` modifier are excluded via `Modifiers.Any(SyntaxKind.AbstractKeyword)` — the same exemption already applied by SK0009 (`DomainEventMissingVersionAttributeAnalyzer`) — so a generic abstract base class that intentionally spans both interface families behind a type parameter is not prematurely flagged; the diagnostic still fires on every concrete (non-abstract) type in the inheritance chain that carries the offending combination, because `AllInterfaces` resolves the full transitive closure regardless of where in the hierarchy each interface was introduced.
+4. None of the three rules carries a namespace-scoped trigger condition (unlike SK0016's trigger-IN scope) — they fire globally in ANY assembly that declares a type implementing the relevant marker-interface combination, which is the explicit design intent (consumer-side enforcement). No exemption namespace is defined. Suppression is per-type only, via `#pragma warning disable SK0017`/`SK0018`/`SK0019` with an inline comment documenting the rationale.
+5. **Structural, not empirical, zero-false-positive argument for `05.Application`/`05.Application.Behaviors`'s own shipped source:** none of the platform's own pipeline behavior classes (`CachingBehavior<,>`, `CacheInvalidationBehavior<,>`, `ResilienceBehavior<,>`, `MediatRDomainEventDispatcher`, etc.) implement `ICommandBase`, `IQuery<TResponse>`, or `IRetryableRequest` — they implement `IPipelineBehavior<,>`/`IStreamPipelineBehavior<,>` instead, which is a structurally disjoint interface family from the request-marker interfaces these three rules key off. No type in `SharedKernel.Application`/`SharedKernel.Application.Behaviors`'s own shipped source declares a command or query type at all (those are always defined by consuming services). This argument is verifiable by inspection (`grep` for `: ICommandBase`/`: IQuery<` inside the two packages) rather than requiring a real-assembly architecture test the way NetArchTest `ICustomRule` phases do — Roslyn analyzers fire automatically at compile time wherever the `SharedKernel.Analyzers` package is referenced, with no separate "point the rule at an assembly" wiring step.
+6. All three analyzers target `netstandard2.0` and pin `Microsoft.CodeAnalysis.CSharp 4.14.0`, matching every prior SK analyzer. Zero new NuGet dependency.
+7. SK0017, SK0018, and SK0019 are the next three sequential IDs in the SK0001–SK00N general-purpose block (SK0016 was the prior ID). The 02xx/03xx/07xx domain-specific blocks are unaffected.
+
+### File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Analyzers/SK0017CommandImplementsCacheableQueryAnalyzer.cs` | SharedKernel.Analyzers | Create | Flags a type implementing both `ICommandBase` and `ICacheableQuery<TResponse>` |
+| `Analyzers/SK0018QueryImplementsInvalidatesCacheAnalyzer.cs` | SharedKernel.Analyzers | Create | Flags a type implementing `IQuery<TResponse>` (without `ICommandBase`) and `IInvalidatesCache` |
+| `Analyzers/SK0019RetryableRequestWithoutIdempotencyAnalyzer.cs` | SharedKernel.Analyzers | Create | Flags a type implementing `IRetryableRequest` without also implementing `IIdempotentRequest` |
+| `SharedKernel.Analyzers.Tests/SK0017*Tests.cs`, `SK0018*Tests.cs`, `SK0019*Tests.cs` | SharedKernel.Analyzers.Tests | Create | Fire-path + pass-path tests per analyzer, using fixture-local marker interfaces in a `SharedKernel.Application`-namespaced code block |
+| `00.Governance/CLAUDE.md` | — | Modify | Diagnostic registry, implementation rules, changelog (already applied) |
+
+### Acceptance Criteria
+
+- [ ] SK0017 fires on a type implementing both `ICommandBase` and `ICacheableQuery<TResponse>` (directly or transitively through a narrower interface) and does not fire on a command implementing only `ICommandBase`, or a query implementing only `ICacheableQuery<TResponse>`
+- [ ] SK0018 fires on a type implementing `IQuery<TResponse>` and `IInvalidatesCache` without also implementing `ICommandBase`, and does not fire when `ICommandBase` is also present (that combination is SK0017's concern, not SK0018's) or when `IInvalidatesCache` is absent
+- [ ] SK0019 fires on a type implementing `IRetryableRequest` without `IIdempotentRequest`, and does not fire when both are implemented together, or when `IRetryableRequest` is absent
+- [ ] Zero false positive against every type in `05.Application`/`05.Application.Behaviors`'s own shipped source — verified by structural inspection (no type in either package implements `ICommandBase`, `IQuery<TResponse>`, or `IRetryableRequest`) and recorded as a documented, non-blocking verification step, not a real-assembly test
+- [ ] All three new SK IDs (SK0017, SK0018, SK0019) are recorded in `00.Governance/CLAUDE.md`'s diagnostic registry, implementation rules, and changelog with the same Category/Severity/Trigger/Rationale/Suppress/Note structure as SK0013–SK0016
+- [ ] Full `SharedKernel.Analyzers.Tests` suite remains green after the new tests land (baseline: 105/105 as of `SK.00.MetricsOutcomeTagAndMisregistrationGuard` closeout, 2026-07-03; expect 111/111 after this phase's six new tests)
+
+### Dependencies
+
+- Depends on `05.Application`'s already-shipped marker interfaces (`ICommandBase`, `IQuery<TResponse>`, `ICacheableQuery<TResponse>`, `IInvalidatesCache`, `IRetryableRequest`, `IIdempotentRequest` — per root `CLAUDE.md`'s WO-035 P-214–219 and WO-036 changelog entries) for eventual real-world consumer-side firing only; NOT required for analyzer design, implementation, or fire/pass-path tests, since `CSharpAnalyzerTest` fixtures declare their own fixture-local marker interfaces in a matching namespace within the same compilation (see Implementation Rule 2) — no `ProjectReference` to `SharedKernel.Application`/`SharedKernel.Application.Behaviors` is required.
+- Unblocks: closes the last three "not mechanically enforced" callouts in `05.Application/CLAUDE.md`'s Hard Violations section that had no corresponding SK rule (the fourth, `typeof(TRequest).Name` short-name usage, was already closed by SK0016 in WO-038 P-235).
+
+### Tooling Version Notes
+
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0017/SK0018/SK0019 reuse it, no version change)
+- Target framework: `netstandard2.0` (`SharedKernel.Analyzers`)
+
+### SK.00.MarkerInterfaceMisuseGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-59 | Define trigger/fix/suppress shape for SK0017 (`ICommandBase` + `ICacheableQuery<TResponse>` co-implementation), SK0018 (`IQuery<TResponse>` without `ICommandBase` + `IInvalidatesCache` co-implementation), and SK0019 (`IRetryableRequest` without `IIdempotentRequest`); define the shared `AllInterfaces` + namespace-prefix + `OriginalDefinition` matching approach reused by all three | SharedKernel.Analyzers | `○` |
+| C-96 | Implement SK0017 `CommandImplementsCacheableQueryAnalyzer` | SharedKernel.Analyzers | `○` |
+| C-97 | Implement SK0018 `QueryImplementsInvalidatesCacheAnalyzer` | SharedKernel.Analyzers | `○` |
+| C-98 | Implement SK0019 `RetryableRequestWithoutIdempotencyAnalyzer` | SharedKernel.Analyzers | `○` |
+| T-171 | Analyzer test (fire path): a fixture type implementing both `ICommandBase` and `ICacheableQuery<TResponse>` (directly and via a narrower `ICommand<TResponse>`-style interface) triggers SK0017 | SharedKernel.Analyzers.Tests | `○` |
+| T-172 | Analyzer test (pass path): a command implementing only `ICommandBase`, and a query implementing only `ICacheableQuery<TResponse>`, do not trigger SK0017 | SharedKernel.Analyzers.Tests | `○` |
+| T-173 | Analyzer test (fire path): a fixture type implementing `IQuery<TResponse>` and `IInvalidatesCache` without `ICommandBase` triggers SK0018 | SharedKernel.Analyzers.Tests | `○` |
+| T-174 | Analyzer test (pass path): a type implementing `IQuery<TResponse>`, `IInvalidatesCache`, AND `ICommandBase` together does not trigger SK0018 (that combination belongs to SK0017); a plain query with no `IInvalidatesCache` does not trigger SK0018 either | SharedKernel.Analyzers.Tests | `○` |
+| T-175 | Analyzer test (fire path): a fixture type implementing `IRetryableRequest` without `IIdempotentRequest` triggers SK0019 | SharedKernel.Analyzers.Tests | `○` |
+| T-176 | Analyzer test (pass path): a type implementing both `IRetryableRequest` and `IIdempotentRequest` does not trigger SK0019; a type implementing neither does not trigger SK0019 | SharedKernel.Analyzers.Tests | `○` |
+| DO-31 | Verify SK0017, SK0018, SK0019 documentation in `00.Governance/CLAUDE.md` (diagnostic registry, implementation rules — pre-written by this planning pass) against the final implementation; record the structural zero-false-positive verification against `05.Application`/`05.Application.Behaviors`'s own shipped source; add closeout Changelog entry | SharedKernel.Analyzers | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies for prior phases. `00.Governance` references nothing in production code._
@@ -2601,7 +2685,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 393.
+> Counts updated whenever a task state changes. Total tasks: 404.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -2635,6 +2719,7 @@ Format when active:
 | `SK.00.CryptoDelegationAndUowSeamGuard` | Governance: Architecture Rules Locking the Cryptography Delegation and IUnitOfWork Bridge | 14 | 14 | 0 | `●` |
 | `SK.00.MetricsOutcomeTagAndMisregistrationGuard` | Governance: Architecture Enforcement for WO-038 Application Audit Findings | 15 | 15 | 0 | `●` |
 | `SK.00.DomainEventDispatcherReflectionExemption` | Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 5 | 5 | 0 | `●` |
+| `SK.00.MarkerInterfaceMisuseGuard` | Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application | 11 | 0 | 11 | `○` |
 
 ---
 
@@ -2703,3 +2788,4 @@ Format when active:
 - [2026-07-03] D-57, C-90–C-94, T-161–T-168, DO-29 → ● in SK.00.MetricsOutcomeTagAndMisregistrationGuard — all 15 tasks complete; SK0014 ClosedGenericResiliencePipelineRegistrationAnalyzer, SK0015 StreamPipelineBehaviorMisregistrationAnalyzer, SK0016 RequestTypeShortNameUsageAnalyzer, RequestDurationRecordMissingOutcomeTagPredicate, and MetricsInstrumentationRules implemented; two implementation-detail fixes discovered during testing (not spec discrepancies caught by DO-29's verification pass): (1) SK0015 — `INamedTypeSymbol.AllInterfaces` returns empty for an unbound generic type symbol (the shape `typeof(StreamFixtureBehavior<,>)` produces), so the interface-implementation check walks `type.OriginalDefinition.AllInterfaces` instead, confirmed via a standalone Roslyn symbol-inspection scratch script; (2) `RequestDurationRecordMissingOutcomeTagPredicate` initially used a `Name.StartsWith("Histogram")` heuristic — narrowed to match the pre-written CLAUDE.md contract exactly (`GenericInstanceType` + `ElementType.FullName == "System.Diagnostics.Metrics.Histogram\`1"`); 8 new tests (T-161–T-168) pass, 105/105 SharedKernel.Analyzers.Tests and 127/127 SharedKernel.ArchitectureTests.Tests pass, 0 build warnings/errors; CLAUDE.md documentation pre-written by governance-arch-planner verified accurate (Diagnostic Registry, Architecture Test Contracts, Implementation Rules) with one closeout changelog entry added; Phase Key Registry gap confirmed again (same as SK.00.ServiceDefaultsGovernance/SK.00.HealthCheckConstantsGuard) — this phase key has a full phase section and Overall Progress row but no Phase Key Registry row; SK.00.MetricsOutcomeTagAndMisregistrationGuard → ● (state-map-phase)
 - [2026-07-03] Phase SK.00.DomainEventDispatcherReflectionExemption added — 5 tasks: D-58, C-95, T-169–T-170, DO-30; registers `SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher`'s `MakeGenericMethod` call site (inside `PublishSingle`'s `ConcurrentDictionary.GetOrAdd` factory delegate) as the FIRST real entry in `ReflectionExemptionRegistry`, pre-empting a build break the moment SK0012 is pointed at the real `SharedKernel.Application` assembly; no new SK ID, no predicate/rule-logic change — registry-entry-only, with two new real-assembly tests (T-169 fire path with exemption temporarily unregistered, T-170 pass path with exemption registered) proving the exemption is load-bearing; flags a KEY RISK for the implementer — the call site sits inside a closure-free `static` lambda, so Roslyn compiles it onto a compiler-generated `<>c` nested cache class, not the literal `MediatRDomainEventDispatcher`/`PublishSingle` pair a source-level reading suggests; the exact `TypeDefinition.FullName`/`MethodDefinition.Name` pair must be derived empirically (red-then-green against the compiled assembly), never hand-guessed; also corrects the SK0012 registry's prior inaccurate "all production assemblies pass this rule" claim and documents a newly-discovered, still-OPEN gap — `07.Messaging`'s `MassTransitEventPublisher.BuildPublisher` (same closure pattern, cited as this exemption's own precedent) and `MessagingBusBuilder.AddActivity` are themselves unregistered and unverified against SK0012 (confirmed by direct source inspection 2026-07-03), out of scope for this phase, flagged as a candidate follow-up; also backfilled two Phase Key Registry rows missing from prior sessions (`SK.00.MetricsOutcomeTagAndMisregistrationGuard` P-235, and this phase's own `SK.00.DomainEventDispatcherReflectionExemption` P-240) — direct correction per the recurring gap noted in the entry immediately above; total tasks now 393 — WO-039 P-240 (governance-arch-planner)
 - [2026-07-06] D-58, C-95, T-169, T-170, DO-30 → ● in SK.00.DomainEventDispatcherReflectionExemption — all 5 tasks complete; empirically verified pair `("SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c", "<PublishSingle>b__8_0")` registered in `ReflectionExemptionRegistry.AllowList` with governance rationale block comment; MAJOR DISCOVERY — NetArchTest.Rules never surfaces compiler-generated closure types (e.g. `<>c`) to any `ICustomRule`, so `ReflectionGuardRules.NoMakeGenericMethodReflection` cannot currently detect this violation end-to-end regardless of registry state; T-169/T-170 implemented at the `NoMakeGenericMethodReflectionPredicate` layer instead (proven genuinely load-bearing against the real Mono.Cecil-loaded `<>c` TypeDefinition), plus a third documentation test recording the current always-passing end-to-end behavior; no change to predicate/rule logic (verified by diff review); new candidate follow-up work order recorded (extend the rule to walk `TypeDefinition.NestedTypes` recursively); `00.Governance/CLAUDE.md` SK0012 registry/exemption documentation corrected accordingly; 130/130 `SharedKernel.ArchitectureTests.Tests` passing, 0 build warnings/errors (state-map-phase)
+- [2026-07-07] Phase SK.00.MarkerInterfaceMisuseGuard added — 11 tasks: D-59, C-96–C-98, T-171–T-176, DO-31; SK0017 CommandImplementsCacheableQuery, SK0018 QueryImplementsInvalidatesCache, SK0019 RetryableRequestWithoutIdempotency registered (general-purpose sequential block, next after SK0016; third/fourth/fifth SK analyzers in this domain requiring SemanticModel.AllInterfaces resolution, after SK0011 and SK0015); closes the last three "not mechanically enforced — code review must catch this" callouts in `05.Application/CLAUDE.md`'s Hard Violations section (the fourth, `typeof(TRequest).Name`, was already closed by SK0016 in WO-038 P-235); consumer-side enforcement — all three fire in ANY assembly declaring a command/query type, not scoped to `SharedKernel.Application*`; zero-false-positive argument against 05.Application's own shipped source is structural (no command/query types are declared there), not a real-assembly test; no `SharedKernel.ArchitectureTests` involvement — pure Roslyn analyzers; total tasks now 404 — WO-040 P-248 (governance-arch-planner)
