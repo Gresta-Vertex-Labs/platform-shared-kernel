@@ -48,10 +48,18 @@
 | `SK.05.Tests` | Tests | All WO-039 test tasks are `●` | P-237, P-238, P-239, P-241, P-242, P-243 (WO-039) |
 | `SK.05.Docs` | Docs | All WO-039 docs tasks are `●` | P-237, P-238, P-239, P-241, P-242, P-243 (WO-039) |
 | `SK.05.Published` | Published | All WO-039 published tasks are `●` | P-237, P-238, P-239, P-241, P-242, P-243 (WO-039) |
+| `SK.05.Design` | Design | All WO-040 design tasks are `●` | P-246 (WO-040) |
+| `SK.05.Scaffold` | Scaffold | All WO-040 scaffold tasks are `●` | P-246 (WO-040) |
+| `SK.05.Core` | Core | All WO-040 core tasks are `●` | P-246 (WO-040) |
+| `SK.05.Tests` | Tests | All WO-040 test tasks are `●` | P-246 (WO-040) |
+| `SK.05.Docs` | Docs | All WO-040 docs tasks are `●` | P-246 (WO-040) |
+| `SK.05.Published` | Published | All WO-040 published tasks are `●` | P-246 (WO-040) |
 
 > **WO-039 (P-237, P-238, P-239, P-241, P-242, P-243) is a gap-closure work order**, not a new capability tier: it fixes two confirmed defects in already-shipped WO-038 code (`FailureResponseFactory` still performing runtime reflection despite P-232's claim to have eliminated it; `FireAndForgetGuardBehavior` self-blocking the fire-and-forget consumer's own internal dispatch), retrofits `MetricsBehavior<,>` with the `outcome` tag its streaming sibling already has, wires four already-built `00.Governance` architecture-test rule groups against this domain's real assemblies for the first time, adds opt-in idempotency response replay, and adds a zero-prerequisite `AddDefaultBehaviors()` onboarding preset. **P-240 (the `00.Governance` `ReflectionExemptionRegistry` entry for `MediatRDomainEventDispatcher`) is a prerequisite for P-241 but is NOT a task of this domain** — it is dispatched separately to `00.Governance`; this file tracks it only as a cross-domain dependency. Root `state-map.md` P-015 (WO-004) — the `ICacheableQuery<TResponse>`/`CachingBehavior` design — is carried forward **verbatim, no redesign** into P-214/P-217 below. WO-035 (P-214–P-219) is the full gold-standard build-out for this domain: command/query vocabulary, the domain-event-to-MediatR bridge, and the seven-step pipeline behavior suite (the original five — Validation/Logging/Metrics/Transaction/Caching — plus two new: Authorization and Idempotency).
 >
 > WO-036 (P-220–P-224) extends the published seven-step pipeline with: distributed tracing parity (`ApplicationDiagnostics.ActivitySource` + a new `TracingBehavior<,>`), a streaming query vocabulary (`IStreamQuery<TResponse>`/`IStreamQueryHandler<,>` over MediatR's `IStreamRequest<TResponse>`, additive-only, no behavior coverage), an opt-in resilience behavior (`ResilienceBehavior<,>` gated by a new `IRetryableRequest` marker to resolve the retry-after-partial-commit hazard), a reusable pipeline test harness (`SharedKernel.Application.Behaviors.Tests`-internal only), and the write-side counterpart to `CachingBehavior` (`CacheInvalidationBehavior<,>` + `IInvalidatesCache` marker). The pipeline grows from seven to **ten** named slots (Logging → Metrics → Tracing → Validation → Authorization → Caching → Resilience → Idempotency → Transaction → CacheInvalidation). WO-036 reuses the same six phase keys as WO-035 — both work orders' tasks coexist under each phase key in this file.
+>
+> **WO-040 (P-246) is a single, self-contained gap-closure capability, not a pipeline restructure:** opt-in structured request/response payload logging via a new `ILoggableRequest<TResponse>` marker interface (`Logging/`, `SharedKernel.Application.Behaviors`), extending the existing `LoggingBehavior<,>` **in place** rather than adding an eleventh pipeline slot or a second logging pathway — the canonical ten-step order is unchanged. This closes the gap `LoggingBehavior`'s own documentation has flagged as deliberately deferred since WO-035 ("Does NOT log request or response payloads by default... opt-in payload logging is a future capability, not part of this phase"). It follows the same self-supplied-marker precedent already proven twice in this package (`ICacheableQuery<TResponse>.CacheKey`, `IInvalidatesCache.CacheKeysToInvalidate`) — the request instance itself supplies its own redacted/loggable field set for both the request and (via a callback given the actual response) the response, never a reflection-based property walk. Zero new NuGet dependency (`ILogger.BeginScope(IReadOnlyDictionary<string,object?>)` is BCL), zero new reflection. WO-040 reuses the same six phase keys as WO-035/036/038/039.
 
 ---
 
@@ -100,6 +108,8 @@ Final verification this session: `SharedKernel.Application.Tests` 28/28 passing 
 >
 > Full suite re-run: `SharedKernel.Application.Tests` 28/28 passing (unchanged); `SharedKernel.Application.Behaviors.Tests` 115/115 passing (113 pre-existing + 2 new T-40 tests). `SK.05.Tests` phase key now **52/52 `●`** — all tasks complete, no remaining blockers. `state-map-phase` invoked this session (phase key fully closed); `sync-brain` evaluated separately.
 
+**WO-040 (P-246) dispatched (2026-07-07) — Design phase 0 of 7 tasks complete.** New opt-in structured request/response payload logging capability via `ILoggableRequest<TResponse>`, extending `LoggingBehavior<,>` in place rather than adding a new pipeline slot — see the Phase Key Registry note above for the full rationale. All six phase tables (D-59..D-65, S-18, C-66..C-68, T-53..T-59, DO-19..DO-21, P-16..P-19) added below, all `○`, awaiting a dedicated implementer session.
+
 ---
 
 ## Blocked
@@ -120,7 +130,7 @@ Format when blocked — replace placeholder with table:
 | Package | Current Phase | State | Notes |
 | --- | --- | --- | --- |
 | `SharedKernel.Application` | Docs ● (all WOs), Published ○ | `●` | WO-035 + WO-036 + WO-038 + WO-039 scope complete through Docs (Tests ● 28 passing; Docs ● — README.md fully rewritten with streaming/parallel-dispatch/fire-and-forget examples). Published phase remains `○`. |
-| `SharedKernel.Application.Behaviors` | Docs ● (all WOs), Published ○ | `●` | WO-035 + WO-036 + WO-038 + WO-039 scope complete through Docs (Tests ● 115 passing; Docs ● — README.md fully rewritten with ten-slot registration, resilience+idempotency pairing, caching+invalidation pairing, non-applicable-streaming-behaviors table, CLAUDE.md P-241 note refreshed to 4/4 real-assembly rule groups). Published phase remains `○`. |
+| `SharedKernel.Application.Behaviors` | Docs ● (WO-035/036/038/039), Design ◐ (WO-040), Published ○ | `◐` | WO-035 + WO-036 + WO-038 + WO-039 scope complete through Docs (Tests ● 115 passing; Docs ● — README.md fully rewritten with ten-slot registration, resilience+idempotency pairing, caching+invalidation pairing, non-applicable-streaming-behaviors table, CLAUDE.md P-241 note refreshed to 4/4 real-assembly rule groups). WO-040 (P-246, opt-in structured payload logging via `ILoggableRequest<TResponse>`) dispatched to Design, 0/7 tasks complete. Published phase (all WOs) remains `○`. |
 
 ---
 
@@ -250,6 +260,18 @@ Format when blocked — replace placeholder with table:
 | D-57 | Confirm and document that Logging, Metrics, Tracing, and Validation are the ONLY four behaviors carrying zero `Build()`-time missing-dependency guard today (Tracing uses only the always-available BCL `ActivitySource`; Validation no-ops cleanly with zero registered `IValidator<T>`) — this is the exact, sole eligibility criterion for preset inclusion; no other behavior may ever be added to this preset without first proving it carries no guard | WO-039 | SharedKernel.Application.Behaviors | `●` |
 | D-58 | Plan the CLAUDE.md DI Registration section update (one-line preset example alongside the existing full individual-call example, explicitly scoped as "the zero-prerequisite subset only") and the `05.Application/README.md` quick-start snippet plan (currently a 1-line empty file) | WO-039 | Both | `●` |
 
+**Design (WO-040, P-246 — Opt-In Structured Request/Response Payload Logging with Self-Supplied Redaction):**
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| D-59 | Design `ILoggableRequest<TResponse>` marker interface (`Logging/` folder, `SharedKernel.Application.Behaviors`) — `IReadOnlyDictionary<string, object?> LoggableRequestFields { get; }` plus `IReadOnlyDictionary<string, object?>? GetLoggableResponseFields(TResponse response)` — mirroring `ICacheableQuery<TResponse>`/`IInvalidatesCache`'s exact self-supplied-field precedent: the request instance alone decides which of its own fields (and which fields of the response it receives back) are safe to log; `LoggingBehavior<,>` never reflects over `TRequest`/`TResponse` to discover this set | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| D-60 | Lock the placement decision: extend the existing `LoggingBehavior<TRequest,TResponse>` in place with an additive `is ILoggableRequest<TResponse>` branch — do NOT add an eleventh pipeline slot or a second behavior. Document why: a competing/adjacent behavior would create two behaviors both writing to the request lifecycle's log entries, directly violating the acceptance criterion that this must not become "a second, competing logging pathway"; extending the existing behavior also means zero change to the canonical ten-step pipeline order | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| D-61 | Design the byte-for-byte-identical-when-not-opted-in guarantee: the `is ILoggableRequest<TResponse>` pattern-match is a pure additive branch around the existing log calls — when `TRequest` does not implement the marker, `LoggingBehavior<,>` must execute the exact log statements it does today, with no new scope, tag, level, or message-template change of any kind | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| D-62 | Design the structured-field attachment mechanism: `ILogger.BeginScope(IReadOnlyDictionary<string, object?>)` (BCL-native structured-logging-scope convention — the same mechanism ASP.NET Core's own `HttpLoggingMiddleware` uses, zero new NuGet dependency) entered around the entry log line with `LoggableRequestFields`, and separately around the completion log line with `GetLoggableResponseFields(response)` — entered only when the returned dictionary is non-null and non-empty (a null/empty result costs nothing beyond the `is`-check and the method call) | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| D-63 | Document the exception-path rule: `GetLoggableResponseFields` is never invoked when `next()` throws — there is no response to project. The request-side `LoggableRequestFields` scope, however, still applies to the entry log line and to the existing `Error`-level exception log line, since the request itself is always known regardless of outcome | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| D-64 | Design the new Hard Violations entry: logging a request or response payload (or any subset of its fields) by any means other than `ILoggableRequest<TResponse>` — direct `logger.Log...` calls inside a handler, a `ToString()` override consumed by a log call, or any reflection-based property walk — is prohibited platform-wide within this domain | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| D-65 | Refresh `05.Application/CLAUDE.md`'s `LoggingBehavior` documentation (removing the "opt-in payload logging is a future capability, not part of this phase" deferred note) and Interface Contracts section to reflect D-59..D-64 before Scaffold/Core begins | WO-040 | Both | `○` |
+
 ---
 
 ## Phase: Scaffold <!-- phase-key: SK.05.Scaffold -->
@@ -280,6 +302,12 @@ Format when blocked — replace placeholder with table:
 | ID | Task | Work Order | Package(s) | State |
 | --- | --- | --- | --- | --- |
 | S-17 | Add a `ProjectReference` to `00.Governance/SharedKernel.ArchitectureTests` in `SharedKernel.Application.Tests.csproj` and/or `SharedKernel.Application.Behaviors.Tests.csproj` (whichever test project ends up hosting the real-assembly rule invocations per D-46/D-47); confirm the reference is test-project-only — `dotnet build` confirms zero reference from either production `.csproj` (`SharedKernel.Application.csproj`, `SharedKernel.Application.Behaviors.csproj`) to `00.Governance` anywhere | WO-039 | Both (test projects) | `●` |
+
+**Scaffold (WO-040, P-246 — Opt-In Structured Request/Response Payload Logging):**
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| S-18 | Confirm zero new NuGet/project references are required — `ILogger.BeginScope`/`IReadOnlyDictionary<string, object?>` are BCL; `ILoggableRequest<TResponse>` is added to the existing `Logging/` folder in `SharedKernel.Application.Behaviors` (no new folder). `dotnet build` succeeds for both packages and both test projects with zero warnings and no `.csproj` changes; confirm zero new project reference to `06.Persistence`, `07.Messaging`, or `12.Security` | WO-040 | SharedKernel.Application.Behaviors | `○` |
 
 ---
 
@@ -412,6 +440,14 @@ Format when blocked — replace placeholder with table:
 | C-64 | Implement `ApplicationBehaviorsBuilder.AddDefaultBehaviors()` per D-55, delegating to the four existing `.AddXBehavior()` methods — no reimplementation | WO-039 | SharedKernel.Application.Behaviors | `●` |
 | C-65 | Verify (and, if needed, add) the idempotent opt-in-tracking guard per D-56 so calling `.AddDefaultBehaviors()` alongside any individual `.AddLoggingBehavior()`/`.AddMetricsBehavior()`/`.AddTracingBehavior()`/`.AddValidationBehavior()` call produces exactly one registration per behavior in `.Build()`'s output, with no change to the fixed canonical order | WO-039 | SharedKernel.Application.Behaviors | `●` |
 
+**Core (WO-040, P-246 — Opt-In Structured Request/Response Payload Logging):**
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| C-66 | Implement `ILoggableRequest<TResponse>` in `Logging/` (`SharedKernel.Application.Behaviors`) per D-59 | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| C-67 | Extend `LoggingBehavior<TRequest,TResponse>` with the opt-in `is ILoggableRequest<TResponse> loggable` branch per D-60..D-63 — `BeginScope(loggable.LoggableRequestFields)` around the entry log (skipped when the dictionary is null/empty), `BeginScope(loggable.GetLoggableResponseFields(response))` around the completion log line on a normal (non-throwing) return only, never on a thrown exception | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| C-68 | Smoke-verify (ahead of the dedicated Tests phase) that a request NOT implementing `ILoggableRequest<TResponse>` produces the same log call sequence as before this change — both production packages build with 0 warnings/0 errors | WO-040 | SharedKernel.Application.Behaviors | `○` |
+
 ---
 
 ## Phase: Tests <!-- phase-key: SK.05.Tests -->
@@ -523,6 +559,18 @@ Format when blocked — replace placeholder with table:
 | T-51 | Test proving `AddDefaultBehaviors()` combined with an individual `.AddLoggingBehavior()` call produces NO duplicate registration and preserves canonical order | WO-039 | SharedKernel.Application.Behaviors | `●` |
 | T-52 | Test proving `AddDefaultBehaviors()` alone never throws `InvalidOperationException` from `.Build()` — no missing-dependency guard is triggered by any of the four preset behaviors | WO-039 | SharedKernel.Application.Behaviors | `●` |
 
+**Tests (WO-040, P-246 — Opt-In Structured Request/Response Payload Logging tests):**
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| T-53 | Test proving a request implementing `ILoggableRequest<TResponse>` attaches `LoggableRequestFields` to the entry-log scope (captured via a log-capturing `ILoggerProvider`/test double) | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| T-54 | Test proving `GetLoggableResponseFields(response)` is attached to the completion-log scope on a successful (`Result.Success`) outcome | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| T-55 | Test proving `GetLoggableResponseFields(response)` is still attached to the completion-log scope on a `Result.Failure` outcome (Warning-level entry per the existing `IHasSuccessFlag` rule) — structured fields and failure-level logging compose correctly | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| T-56 | Test proving `GetLoggableResponseFields` is NEVER invoked and no response-fields scope is entered when `next()` throws — only the request-fields scope (if opted in) applies to the entry log and the existing `Error`-level exception log | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| T-57 | Regression test proving a request type NOT implementing `ILoggableRequest<TResponse>` produces a byte-for-byte identical log call sequence to the pre-WO-040 baseline — mechanically enforces D-61/the acceptance criterion, not just code review | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| T-58 | Test proving an opted-in request whose `LoggableRequestFields`/`GetLoggableResponseFields` return an empty (or null, for the response case) dictionary enters no scope — the zero-overhead path | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| T-59 | Full test suite green across both packages after all WO-040 additions — zero failures, zero skips | WO-040 | Both | `○` |
+
 ---
 
 ## Phase: Docs <!-- phase-key: SK.05.Docs -->
@@ -550,6 +598,14 @@ Format when blocked — replace placeholder with table:
 | DO-17 | Update CLAUDE.md's DI Registration section with the `AddDefaultBehaviors()` one-line preset example alongside the existing full individual-call example, scoped explicitly as "the zero-prerequisite subset only" | WO-039 | SharedKernel.Application.Behaviors | `●` |
 | DO-18 | Write a minimal quick-start snippet into `05.Application/README.md` (currently a 1-line empty file) demonstrating `AddDefaultBehaviors()` as the recommended first call for a new consuming service, alongside the domain-level command/query vocabulary quick-start | WO-039 | Both | `●` |
 
+**Docs (WO-040, P-246 — Opt-In Structured Request/Response Payload Logging):**
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| DO-19 | Confirm 100% XML doc coverage on `ILoggableRequest<TResponse>` and the extended `LoggingBehavior<,>` members (new opt-in branch) | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| DO-20 | Update `SharedKernel.Application.Behaviors/README.md` — add an opt-in structured payload logging usage example (a sample command implementing `ILoggableRequest<TResponse>`), with an explicit warning against including PII/secrets/credentials in the returned field set | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| DO-21 | Update `CLAUDE.md`'s `LoggingBehavior` section per D-65 — remove the "opt-in payload logging is a future capability, not part of this phase" note and replace with the shipped `ILoggableRequest<TResponse>` description; add the new Hard Violations entry per D-64 | WO-040 | SharedKernel.Application.Behaviors | `○` |
+
 ---
 
 ## Phase: Published <!-- phase-key: SK.05.Published -->
@@ -574,6 +630,15 @@ Format when blocked — replace placeholder with table:
 | P-14 | Extend consumer-verify harness — prove the fixed fire-and-forget dispatch path actually executes a handler end to end (P-238), prove a retried idempotent duplicate replays its original response when the store opts in (P-242), and prove `AddDefaultBehaviors()` resolves cleanly with zero missing-dependency exceptions (P-243) | WO-039 | Both | `○` |
 | P-15 | Update this file's Package Board and root `state-map.md` Domain Summary Board to reflect WO-039 completion | WO-039 | Both | `○` |
 
+**Published (WO-040, P-246 — Opt-In Structured Request/Response Payload Logging):**
+
+| ID | Task | Work Order | Package(s) | State |
+| --- | --- | --- | --- | --- |
+| P-16 | Confirm NuGet metadata still accurate on `SharedKernel.Application.Behaviors.csproj` after WO-040 (additive public-surface change — version bump consideration) | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| P-17 | `dotnet pack` — `.nupkg` + `.snupkg`, zero warnings | WO-040 | SharedKernel.Application.Behaviors | `○` |
+| P-18 | Extend consumer-verify harness — prove a request implementing `ILoggableRequest<TResponse>` logs both request and response structured fields end to end through the real DI-registered pipeline | WO-040 | Both | `○` |
+| P-19 | Update this file's Package Board and root `state-map.md` Domain Summary Board to reflect WO-040 completion | WO-040 | Both | `○` |
+
 ---
 
 ## Overall Progress
@@ -582,14 +647,14 @@ Format when blocked — replace placeholder with table:
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 | --- | --- | :---: | :---: | :---: | :---: |
-| `SK.05.Design` | Design | 58 | 58 | 0 | `●` |
-| `SK.05.Scaffold` | Scaffold | 17 | 17 | 0 | `●` |
-| `SK.05.Core` | Core | 65 | 65 | 0 | `●` |
-| `SK.05.Tests` | Tests | 52 | 52 | 0 | `●` |
-| `SK.05.Docs` | Docs | 18 | 18 | 0 | `●` |
-| `SK.05.Published` | Published | 15 | 6 | 9 | `◐` |
+| `SK.05.Design` | Design | 65 | 58 | 7 | `◐` |
+| `SK.05.Scaffold` | Scaffold | 18 | 17 | 1 | `◐` |
+| `SK.05.Core` | Core | 68 | 65 | 3 | `◐` |
+| `SK.05.Tests` | Tests | 59 | 52 | 7 | `◐` |
+| `SK.05.Docs` | Docs | 21 | 18 | 3 | `◐` |
+| `SK.05.Published` | Published | 19 | 6 | 13 | `◐` |
 
-> WO-035 (P-214–P-219) is fully `●` complete and published. WO-036 (P-220–P-224) is fully `●` through Docs (Published remains ○). WO-038 (P-231–P-234) is fully `●` through Docs (Published remains ○, shared with WO-036's open Published rows). WO-039 (P-237, P-238, P-239, P-241, P-242, P-243) is fully `●` through Docs (Published remains ○). **SK.05.Docs → `●` complete, 18/18 (2026-07-07 session).** DO-05..DO-18 verified: DO-05/DO-09 confirmed via Release build of both packages — 0 warnings/0 errors, mechanically proving 100% XML doc coverage (`GenerateDocumentationFile`/`TreatWarningsAsErrors` gate). DO-06/DO-07/DO-10/DO-11/DO-18 shipped by fully rewriting `SharedKernel.Application/README.md`, `SharedKernel.Application.Behaviors/README.md`, and the previously-empty root `05.Application/README.md` with all WO-036/038/039 usage examples (streaming queries, parallel dispatch, fire-and-forget, ten-slot registration, resilience+idempotency pairing, caching+invalidation pairing, non-applicable-streaming-behaviors table, `AddDefaultBehaviors()` quick start). DO-08/DO-12/DO-13/DO-14/DO-16/DO-17 were found ALREADY PRESENT and current in `CLAUDE.md` on direct inspection — no historical two-tier framing remained, verified by grep for the exact superseded phrases (none found) — so no edit was needed for those. DO-15 required one substantive fix: the P-241 Test Rules note was stale (said "3 of 4 rule groups shipped" when `SK.05.Tests`'s own changelog already shows T-40/T-44 shipped 2026-07-06 fifth session) — rewritten to describe all 4/4 rule groups passing against real assemblies, the `.AreNotAbstract()` vacuous-pass discovery, and the jurisdiction boundary for `00.Governance`-side follow-ups. Full regression: `SharedKernel.Application.Tests` 28/28, `SharedKernel.Application.Behaviors.Tests` 115/115 passing — zero production code touched this session (docs-only).
+> WO-035 (P-214–P-219) is fully `●` complete and published. WO-036 (P-220–P-224) is fully `●` through Docs (Published remains ○). WO-038 (P-231–P-234) is fully `●` through Docs (Published remains ○, shared with WO-036's open Published rows). WO-039 (P-237, P-238, P-239, P-241, P-242, P-243) is fully `●` through Docs (Published remains ○). **WO-040 (P-246) dispatched 2026-07-07** — 22 new tasks added across all six phases (D-59..D-65, S-18, C-66..C-68, T-53..T-59, DO-19..DO-21, P-16..P-19), all `○`; every phase key reopened from `●` to `◐` as a result. **SK.05.Docs → `●` complete, 18/18 (2026-07-07 session).** DO-05..DO-18 verified: DO-05/DO-09 confirmed via Release build of both packages — 0 warnings/0 errors, mechanically proving 100% XML doc coverage (`GenerateDocumentationFile`/`TreatWarningsAsErrors` gate). DO-06/DO-07/DO-10/DO-11/DO-18 shipped by fully rewriting `SharedKernel.Application/README.md`, `SharedKernel.Application.Behaviors/README.md`, and the previously-empty root `05.Application/README.md` with all WO-036/038/039 usage examples (streaming queries, parallel dispatch, fire-and-forget, ten-slot registration, resilience+idempotency pairing, caching+invalidation pairing, non-applicable-streaming-behaviors table, `AddDefaultBehaviors()` quick start). DO-08/DO-12/DO-13/DO-14/DO-16/DO-17 were found ALREADY PRESENT and current in `CLAUDE.md` on direct inspection — no historical two-tier framing remained, verified by grep for the exact superseded phrases (none found) — so no edit was needed for those. DO-15 required one substantive fix: the P-241 Test Rules note was stale (said "3 of 4 rule groups shipped" when `SK.05.Tests`'s own changelog already shows T-40/T-44 shipped 2026-07-06 fifth session) — rewritten to describe all 4/4 rule groups passing against real assemblies, the `.AreNotAbstract()` vacuous-pass discovery, and the jurisdiction boundary for `00.Governance`-side follow-ups. Full regression: `SharedKernel.Application.Tests` 28/28, `SharedKernel.Application.Behaviors.Tests` 115/115 passing — zero production code touched this session (docs-only).
 
 ---
 
@@ -597,6 +662,7 @@ Format when blocked — replace placeholder with table:
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
 
+- [2026-07-07] WO-040 dispatched (root P-246): 22 tasks added across all 6 phases (D-59..D-65, S-18, C-66..C-68, T-53..T-59, DO-19..DO-21, P-16..P-19) — designs a single, self-contained opt-in structured request/response payload logging capability: a new `ILoggableRequest<TResponse>` marker interface (`Logging/`, `SharedKernel.Application.Behaviors`) exposing a self-supplied `LoggableRequestFields` dictionary plus a `GetLoggableResponseFields(TResponse response)` callback, mirroring the exact self-supplied-field precedent already proven by `ICacheableQuery<TResponse>.CacheKey`/`IInvalidatesCache.CacheKeysToInvalidate` — never a reflection-based property walk over `TRequest`/`TResponse`. Placement decision: extend the existing `LoggingBehavior<,>` in place via an additive `is ILoggableRequest<TResponse>` branch, rather than adding an eleventh pipeline slot or a second logging pathway — the canonical ten-step order is unchanged, and a request that does not opt in produces byte-for-byte identical logging behavior to today (mechanically enforced by a dedicated regression test, T-57). Structured fields are attached via the BCL-native `ILogger.BeginScope(IReadOnlyDictionary<string,object?>)` — zero new NuGet dependency, zero new reflection. `GetLoggableResponseFields` is never invoked on a thrown exception (no response exists to project); request-side fields still apply to the entry log and the exception log. Closes the gap `LoggingBehavior`'s own documentation has flagged as deliberately deferred since WO-035. Phase Key Registry gained 6 new WO-040 rows; Package Board moved `SharedKernel.Application.Behaviors` from `●` back to `◐` (Design in progress); Overall Progress counts updated (all six phase keys reopened to `◐`); a new Hard Violations entry planned (D-64) prohibiting payload logging by any means other than this opt-in mechanism (application-arch-planner)
 - [2026-07-07] DO-05..DO-18 → ● in SK.05.Docs (18/18, all WO-036/038/039 docs tasks) — confirmed 100% XML doc coverage via 0-warning/0-error Release build of both packages (DO-05/DO-09); fully rewrote `SharedKernel.Application/README.md`, `SharedKernel.Application.Behaviors/README.md`, and the previously-empty root `05.Application/README.md` (DO-06/DO-07/DO-10/DO-11/DO-18); confirmed DO-08/DO-12/DO-13/DO-14/DO-16/DO-17 already current in `CLAUDE.md` (no historical two-tier framing found); fixed one stale note for DO-15 (P-241 Test Rules note said 3/4 rule groups when SK.05.Tests already shows 4/4 shipped) and added the `00.Governance`-jurisdiction boundary note. Regression: `SharedKernel.Application.Tests` 28/28, `SharedKernel.Application.Behaviors.Tests` 115/115 passing, zero production code changed. `SK.05.Docs` now 18/18 `●` (state-map-phase)
 - [2026-07-06] T-33..T-39, T-45..T-52 → ● in SK.05.Tests (15 of 20 new WO-039 test tasks) — FailureResponseFactoryReflectionShapeTests.cs (Mono.Cecil IL-shape assertion + 3 behavioral tests), MetricsBehaviorTests outcome-tag extensions, IdempotentCommandBehaviorReplayTests.cs (replay success/failure/no-stored-response), ApplicationBehaviorsBuilderTests AddDefaultBehaviors tests; T-40..T-44 (P-241) left ○/blocked — 00.Governance SK.00.DomainEventDispatcherReflectionExemption re-verified still 0/5; 107/107 SharedKernel.Application.Behaviors.Tests passing, 28/28 SharedKernel.Application.Tests passing; SK.05.Tests now 47/52 (state-map-phase)
 - [2026-07-06] Follow-up re-verification session (no code changes) — re-checked `00.Governance/state-map.md` `SK.00.DomainEventDispatcherReflectionExemption` (P-240): confirmed still 0/5 tasks, phase State still `○`. Blocker for T-40..T-44 (P-241) confirmed still real and unchanged; no workaround applied. Re-ran both test suites as a sanity check: `SharedKernel.Application.Tests` 28/28 passing, `SharedKernel.Application.Behaviors.Tests` 107/107 passing — no regressions. `SK.05.Tests` remains 47/52 `◐`, no task states changed this session (application-phase-implementer)
