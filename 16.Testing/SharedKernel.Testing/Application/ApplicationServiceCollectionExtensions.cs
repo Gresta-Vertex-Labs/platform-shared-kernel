@@ -25,6 +25,11 @@ public static class ApplicationServiceCollectionExtensions
     /// manually instead:
     /// <c>services.AddSingleton&lt;IIdempotencyKeyStore, FakeIdempotencyResponseStore&gt;();</c>
     /// </remarks>
+    /// <remarks>
+    /// Local-seam-only scope: every fake registered here implements one of <c>05.Application.Behaviors</c>'
+    /// own local seam interfaces exclusively — none references <c>06.Persistence</c>, <c>12.Security</c>,
+    /// or <c>07.Messaging</c>. This mirrors the isolation already documented on each individual fake type.
+    /// </remarks>
     /// <param name="services">The service collection to register against.</param>
     /// <returns><paramref name="services"/>, for fluent chaining.</returns>
     public static IServiceCollection AddFakeApplicationBehaviorServices(this IServiceCollection services)

@@ -30,6 +30,16 @@ namespace SharedKernel.Testing.Application;
 /// instances directly — it filters by the well-known name/version instead, exactly mirroring the
 /// internal harness's own approach.
 /// </remarks>
+/// <remarks>
+/// Outstanding cross-domain follow-up (tracked, not performed by this package): the original
+/// <c>internal sealed class PipelineTestHarness</c> at
+/// <c>05.Application.Behaviors.Tests/TestHarness/PipelineTestHarness.cs</c> still exists unchanged.
+/// A future <c>05.Application</c> implementer pass should repoint that project's call sites to this
+/// public <see cref="ApplicationPipelineTestHarness"/> and then retire (or thin-wrap) the internal
+/// type. <c>16.Testing</c> never edits another domain's <c>.Tests</c> project, so this package's
+/// obligation is satisfied by shipping this type with zero duplicated wiring logic versus the
+/// internal harness's already-proven shape — not by performing that repointing itself.
+/// </remarks>
 public sealed class ApplicationPipelineTestHarness : IDisposable
 {
     private const string ApplicationDiagnosticsName = "SharedKernel.Application";

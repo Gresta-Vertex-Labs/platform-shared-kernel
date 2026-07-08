@@ -15,6 +15,14 @@ namespace SharedKernel.Testing.Application;
 /// toggle interface implementation at runtime and <c>IdempotentCommandBehavior</c>'s replay-capability
 /// detection depends on the CLR type actually implementing the second interface.
 /// </remarks>
+/// <remarks>
+/// Local-seam-only scope: this type fakes <c>05.Application.Behaviors</c>' own
+/// <see cref="IIdempotencyKeyStore"/> exclusively and never references <c>06.Persistence</c>,
+/// <c>12.Security</c>, or <c>07.Messaging</c> — in particular it is unrelated to
+/// <c>07.Messaging.Abstractions.IIdempotencyStore</c> (consumer-side message deduplication); the two
+/// interfaces share a naming pattern but not an owning domain, and this fake never bridges to the
+/// messaging one.
+/// </remarks>
 public sealed class FakeIdempotencyKeyStore : IIdempotencyKeyStore
 {
     private readonly ConcurrentDictionary<string, byte> _processedKeys = new();

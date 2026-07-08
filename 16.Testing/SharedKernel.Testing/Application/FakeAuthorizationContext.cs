@@ -13,6 +13,13 @@ namespace SharedKernel.Testing.Application;
 /// the constructor-supplied default result, mirroring <see cref="FakeUserContext"/>'s
 /// authenticated-by-default convention.
 /// </remarks>
+/// <remarks>
+/// Local-seam-only scope: this type fakes <c>05.Application.Behaviors</c>' own
+/// <see cref="IAuthorizationContext"/> exclusively and never references <c>06.Persistence</c>,
+/// <c>12.Security</c>, or <c>07.Messaging</c> — bridging the local seam to a real
+/// <c>SharedKernel.Security.Abstractions.IUserContext</c>/<c>ITenantProvider</c> is a decision made
+/// only at each consuming service's composition root, never inside this package.
+/// </remarks>
 public sealed class FakeAuthorizationContext : IAuthorizationContext
 {
     private readonly ConcurrentDictionary<string, bool> _configured = new();

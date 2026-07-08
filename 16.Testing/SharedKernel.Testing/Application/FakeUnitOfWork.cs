@@ -16,6 +16,12 @@ namespace SharedKernel.Testing.Application;
 /// <see cref="SaveChangesAsync"/> is called exactly once after <c>next()</c> returns, never called
 /// if <c>next()</c> throws — without a real persistence provider.
 /// </remarks>
+/// <remarks>
+/// Local-seam-only scope: this type fakes <c>05.Application.Behaviors</c>' own <see cref="IUnitOfWork"/>
+/// exclusively and never references <c>06.Persistence</c>, <c>12.Security</c>, or <c>07.Messaging</c> —
+/// bridging the local seam to a real persistence provider is a decision made only at each consuming
+/// service's composition root, never inside this package.
+/// </remarks>
 public sealed class FakeUnitOfWork : IUnitOfWork
 {
     private int _saveChangesCallCount;

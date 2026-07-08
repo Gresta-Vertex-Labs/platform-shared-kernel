@@ -19,6 +19,13 @@ namespace SharedKernel.Testing.Application;
 /// a second request with the same key and asserts the ORIGINAL response is replayed rather than a
 /// fresh <c>Error.Conflict</c>.
 /// </remarks>
+/// <remarks>
+/// Local-seam-only scope: this type fakes <c>05.Application.Behaviors</c>' own
+/// <see cref="IIdempotencyKeyStore"/>/<see cref="IIdempotencyResponseStore"/> pair exclusively and
+/// never references <c>06.Persistence</c>, <c>12.Security</c>, or <c>07.Messaging</c> — in particular
+/// it is unrelated to <c>07.Messaging.Abstractions.IIdempotencyStore</c> (consumer-side message
+/// deduplication); the two interfaces share a naming pattern but not an owning domain.
+/// </remarks>
 public sealed class FakeIdempotencyResponseStore : IIdempotencyKeyStore, IIdempotencyResponseStore
 {
     private readonly ConcurrentDictionary<string, byte> _processedKeys = new();
