@@ -49,6 +49,17 @@ namespace SharedKernel.Application.Behaviors.Logging;
 /// to prevent log key collisions when two assemblies in the same host define a request type with
 /// the same short name.
 /// </para>
+/// <para>
+/// <b>Opt-in structured payload logging (WO-040, P-246):</b> when <c>TRequest</c> implements
+/// <see cref="ILoggableRequest{TResponse}"/>, the entry log line additionally opens an
+/// <see cref="ILogger.BeginScope{TState}"/> scope over <c>LoggableRequestFields</c> (skipped when
+/// null/empty), and the completion log line additionally opens a scope over
+/// <c>GetLoggableResponseFields(response)</c> — only when <c>next()</c> returns normally, never on
+/// a thrown exception. The request-side scope also wraps the fault-path <see cref="LogLevel.Error"/>
+/// log line. This is a pure additive branch: a <c>TRequest</c> not implementing
+/// <see cref="ILoggableRequest{TResponse}"/> produces byte-for-byte identical logging behavior to
+/// before this capability existed.
+/// </para>
 /// </remarks>
 public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logger)
     : IPipelineBehavior<TRequest, TResponse>
@@ -63,30 +74,43 @@ public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logge
         var requestName = typeof(TRequest).FullName ?? typeof(TRequest).Name;
         var startTimestamp = Stopwatch.GetTimestamp();
 
-        logger.LogInformation("Handling {RequestName}", requestName);
+        // WO-040 (P-246): pure additive opt-in — a TRequest not implementing ILoggableRequest<TResponse>
+        // takes the `loggable is null` path below and produces identical logging behavior to before
+        // this capability existed.
+        var loggable = request as ILoggableRequest<TResponse>;
+        var requestFields = loggable?.LoggableRequestFields;
+
+        using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
+        {
+            logger.LogInformation("Handling {RequestName}", requestName);
+        }
 
         try
         {
             var response = await next().ConfigureAwait(false);
 
             var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
+            var responseFields = loggable?.GetLoggableResponseFields(response);
 
-            // Emit at Warning when the response signals a business-rule failure (IHasSuccessFlag);
-            // emit at Information for success or for response types that do not participate in the
-            // Result railway (e.g. raw T responses from streaming handlers).
-            if (!ResponseOutcomeClassifier.IsSuccess(response))
+            using (responseFields is { Count: > 0 } ? logger.BeginScope(responseFields) : null)
             {
-                logger.LogWarning(
-                    "Handled {RequestName} with failure in {ElapsedMilliseconds}ms",
-                    requestName,
-                    elapsed.TotalMilliseconds);
-            }
-            else
-            {
-                logger.LogInformation(
-                    "Handled {RequestName} in {ElapsedMilliseconds}ms",
-                    requestName,
-                    elapsed.TotalMilliseconds);
+                // Emit at Warning when the response signals a business-rule failure (IHasSuccessFlag);
+                // emit at Information for success or for response types that do not participate in the
+                // Result railway (e.g. raw T responses from streaming handlers).
+                if (!ResponseOutcomeClassifier.IsSuccess(response))
+                {
+                    logger.LogWarning(
+                        "Handled {RequestName} with failure in {ElapsedMilliseconds}ms",
+                        requestName,
+                        elapsed.TotalMilliseconds);
+                }
+                else
+                {
+                    logger.LogInformation(
+                        "Handled {RequestName} in {ElapsedMilliseconds}ms",
+                        requestName,
+                        elapsed.TotalMilliseconds);
+                }
             }
 
             return response;
@@ -94,11 +118,16 @@ public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logge
         catch (Exception ex)
         {
             var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
-            logger.LogError(
-                ex,
-                "Handling {RequestName} failed after {ElapsedMilliseconds}ms",
-                requestName,
-                elapsed.TotalMilliseconds);
+
+            using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
+            {
+                logger.LogError(
+                    ex,
+                    "Handling {RequestName} failed after {ElapsedMilliseconds}ms",
+                    requestName,
+                    elapsed.TotalMilliseconds);
+            }
+
             throw;
         }
     }

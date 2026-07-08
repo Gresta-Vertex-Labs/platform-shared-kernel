@@ -203,6 +203,33 @@ public sealed class RedisIdempotencyKeyStore : IIdempotencyKeyStore, IIdempotenc
 
 `IdempotentCommandBehavior` detects the extra capability via a plain `is IIdempotencyResponseStore` check on the already-injected `IIdempotencyKeyStore` instance — no second DI registration needed. When replay is supported and a stored response exists for the duplicate key, the *original* outcome (success or failure) is returned verbatim. A store implementing only `IIdempotencyKeyStore` continues to behave exactly as before (`Error.Conflict` on every duplicate) — this is purely additive and backward-compatible.
 
+## Opt-in structured request/response payload logging — `ILoggableRequest<TResponse>`
+
+`LoggingBehavior<,>` never logs request or response payloads by default — command/query parameters routinely carry PII, and reflecting over arbitrary properties to redact them is exactly the kind of platform-wide reflection this domain forbids. A request that needs specific, hand-picked fields in its log lines opts in explicitly by implementing `ILoggableRequest<TResponse>`:
+
+```csharp
+public sealed record PlaceOrderCommand(Guid CustomerId, string CreditCardNumber, decimal Total)
+    : ICommand<Guid>, ILoggableRequest<Result<Guid>>
+{
+    // Only the fields YOU decide are safe to log — never the whole request.
+    public IReadOnlyDictionary<string, object?> LoggableRequestFields => new Dictionary<string, object?>
+    {
+        ["CustomerId"] = CustomerId,
+        ["Total"] = Total,
+        // CreditCardNumber is deliberately omitted — never log secrets, PII, or credentials here.
+    };
+
+    public IReadOnlyDictionary<string, object?>? GetLoggableResponseFields(Result<Guid> response) =>
+        response.IsSuccess
+            ? new Dictionary<string, object?> { ["OrderId"] = response.Value }
+            : null; // opt out of response-side logging on failure — nothing useful to attach here
+}
+```
+
+`LoggingBehavior<,>` attaches `LoggableRequestFields` to the entry-log line (and the fault-path `Error` log, if the handler throws) via `ILogger.BeginScope`, and attaches `GetLoggableResponseFields(response)` to the completion-log line — but only when `next()` returns normally, never on a thrown exception. Both are skipped entirely when the returned dictionary is null or empty, so an opted-in request with nothing to say for a given call costs nothing extra.
+
+> **Warning — never include PII, secrets, or credentials in the returned field set.** `LoggableRequestFields`/`GetLoggableResponseFields` are logged verbatim to whatever sink `ILogger<TRequest>` is wired to (console, file, a centralized log aggregator). Passwords, tokens, card numbers, government IDs, and full free-text user input must never appear in these dictionaries — log only identifiers (`OrderId`, `CustomerId`) and coarse-grained outcome fields (`Total`, `Status`). A request that does not implement `ILoggableRequest<TResponse>` is unaffected — its logging behavior is byte-for-byte identical to a platform without this capability.
+
 ## Package
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [05.Application/CLAUDE.md](../CLAUDE.md) for the full interface contracts, hard violations, the reusable pipeline test harness, and AOT notes.
