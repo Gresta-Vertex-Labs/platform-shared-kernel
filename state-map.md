@@ -33,7 +33,6 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-| [16.Testing](16.Testing/state-map.md)                 | Core            | SK.16.Core complete (53/53) — WO-040's Application/ folder (FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore/ResponseStore, AddFakeApplicationBehaviorServices(), ApplicationPipelineTestHarness) implemented; Tests (T-39–T-44) next |
 <!--
 Format when active:
 | Domain | Current Phase | Focus (one line) |
@@ -80,7 +79,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
-| 16 | [Testing](16.Testing/state-map.md) | Core | `◐` | WO-040 (P-244/P-245) SK.16.Core now 53/53 `●` — implemented `Application/` folder's six types (`FakeUnitOfWork`, `FakeAuthorizationContext`, `FakeIdempotencyKeyStore`, `FakeIdempotencyResponseStore`, `AddFakeApplicationBehaviorServices()`, `ApplicationPipelineTestHarness`) against live `05.Application.Behaviors` interfaces; `dotnet build` clean, 0 errors. | Tests (T-39–T-44), Docs (DO-14/DO-15) for WO-040. |
+| 16 | [Testing](16.Testing/state-map.md) | Tests | `●` | WO-040 (P-244/P-245) SK.16.Tests now 44/44 `●` — 41 new tests proving `Application/` folder's six types (`FakeUnitOfWork`, `FakeAuthorizationContext`, `FakeIdempotencyKeyStore`, `FakeIdempotencyResponseStore`, `AddFakeApplicationBehaviorServices()`, `ApplicationPipelineTestHarness`) in `SharedKernel.Testing.SelfTests`; 283/283 tests passing. | Docs (DO-14/DO-15) for WO-040. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -110,11 +109,11 @@ Format when active:
 | ● Published | 6 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
 | ● Docs | 2 |
-| ● Tests | 2 |
+| ● Tests | 3 |
 | ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 2 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 4 |
 
@@ -9744,6 +9743,7 @@ The user's explicit goal for this domain is that it be "developer friendly" and 
 - [2026-07-07] Application → Docs (●) — promoted from SK.05.Docs; 18/18, DO-05..DO-18 across WO-036/038/039 shipped — README.md rewrites for both packages plus the previously-empty root README, XML doc coverage reconfirmed via 0-warning Release build, CLAUDE.md's stale P-241 note refreshed to 4/4 real-assembly rule groups; 143/143 tests green, zero production code touched (state-map-phase)
 - [2026-07-07] Phase Backlog P-237, P-238, P-239, P-242, P-243 → ● Complete — SK.05.Docs done, matching the P-241/SK.05.Tests precedent. Note: P-237's first acceptance-criterion bullet is only partially literal — one disclosed `MakeGenericMethod` call remains in `ResultOfTDispatcher<TResponse>.BuildFactory` (documented, approved-shape exception); flagged inline on the entry itself rather than blocking closure, consistent with how P-241 was already closed with unresolved jurisdictional notes (state-map-phase)
 - [2026-07-07] 16.Testing → Design (◐) — promoted from SK.16.Design (71/71); WO-040 (P-244/P-245) Application/ fake-and-harness target-shape design confirmed against live 05.Application.Behaviors source, one drift corrected (IAuthorizationContext.AnyOf empty-collection semantics: returns false, not vacuous-true); Scaffold (S-16–S-18) next (state-map-phase)
+- [2026-07-08] 16.Testing → Tests (●) — promoted from SK.16.Tests (44/44); WO-040 T-39–T-44 added 41 tests proving Application/ folder's six types in SharedKernel.Testing.SelfTests, 283/283 tests passing; Docs (DO-14/DO-15) next (state-map-phase)
 
 ---
 ## WO-040 — 05.Application Developer-Experience Gap Audit
