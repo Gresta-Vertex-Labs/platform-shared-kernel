@@ -68,7 +68,7 @@ Format when blocked:
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-| 05 | [Application](05.Application/state-map.md) | Docs | `●` | SK.05.Docs complete (18/18) — DO-05..DO-18 across WO-036/038/039 all shipped: 100% XML doc coverage confirmed via 0-warning/0-error Release build of both packages, `SharedKernel.Application/README.md` and `SharedKernel.Application.Behaviors/README.md` fully rewritten with streaming/parallel-dispatch/fire-and-forget/ten-slot-registration/resilience+idempotency/caching+invalidation examples, root `05.Application/README.md` (previously empty) given a quick-start; `CLAUDE.md`'s P-241 real-assembly note refreshed from stale "3 of 4" to the actual 4/4-shipped state. 143/143 tests passing (28 + 115), zero production code touched. | WO-035/036/038/039's Published phases (P-07..P-15) remain `○`. |
+| 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-040's SK.05.Docs complete (21/21) — confirmed 100% XML doc coverage on `ILoggableRequest<TResponse>`/extended `LoggingBehavior<,>` via a clean 0-warning Release build; added an opt-in structured payload logging usage example (with an explicit PII/secrets/credentials warning) to `SharedKernel.Application.Behaviors/README.md`; verified `CLAUDE.md` already fully reflects the shipped state, no stale wording found. `SharedKernel.Application.Behaviors.Tests` 121/121 passing. All five work orders (WO-035/036/038/039/040) now fully `●` through Docs. | WO-035/036/038/039/040's Published phases (P-01..P-19) remain `○`/`◐` — the only phase left before this domain is fully published. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.Tests complete (20/20) — ConsumerVerifyTests retrofitted off NSubstitute onto 16.Testing's InMemoryMessageBus/InMemoryEventPublisher doubles (P-191); 50/50 Abstractions tests green; SK.07.OTel also complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0"), Consumer.Consume/EventPublisher.Publish activities, 106 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
@@ -76,7 +76,7 @@ Format when blocked:
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | T-01–T-26 complete — 203/203 tests passing across Rest (66), Grpc (55), GraphQL (43), Internal (39); all handler, interceptor, resilience, filter, and resolver tests green. | Begin Docs phase (XML doc comments across all four packages). |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
-| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Published complete (3/3) — both packages packed to nupkgs/ with embedded XML docs; consumer-verify harness resolves AddServiceDefaults() + AddSharedKernelMultiTenancy() together end-to-end with zero DI exceptions; 37/37 ServiceDefaults + 26/26 MultiTenancy tests passing; full domain (Design→Published) complete. | — |
+| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-040/P-247: `WithApplicationTelemetry()` implemented, wiring "SharedKernel.Application" (05.Application.Behaviors's ApplicationDiagnostics) into TracerProvider/MeterProvider, mirroring WithMessagingTelemetry()/WithCachingTelemetry(); SK.13.Core 29/29, SK.13.Tests 23/23, SK.13.Docs 3/3 all `●`; 40/40 ServiceDefaults + 26/26 MultiTenancy tests passing. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
 | 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-040 (P-244/P-245) SK.16.Docs now 15/15 `●` — `Application/` folder's six types fully documented (local-seam-only-scope `<remarks>` blocks naming `06.Persistence`/`12.Security`/`07.Messaging` explicitly, two-type idempotency-store split rationale, `ApplicationPipelineTestHarness`'s promoted-origin/sibling-isolation/D-70 follow-up notes); `dotnet build` 0 errors. | WO-040 fully closed — all 6 phases of `16.Testing` `●` again. |
@@ -108,11 +108,11 @@ Format when active:
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
 | ● Published | 6 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
-| ● Docs | 2 |
+| ● Docs | 1 |
 | ● Tests | 3 |
 | ● Core | 0 |
 | ● Design | 0 |
-| ● Scaffold | 0 |
+| ● Scaffold | 1 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 4 |
@@ -7900,6 +7900,14 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-07] Phase(s) P-247 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
 - [2026-07-07] Phase(s) P-244, P-245 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
 - [2026-07-07] 16 → Scaffold (●) — promoted from SK.16.Scaffold (18/18); first-ever 16.Testing → 05.Application ProjectReference added (state-map-phase)
+- [2026-07-08] Application → Core (●) — promoted from SK.05.Core (68/68); `ILoggableRequest<TResponse>` + `LoggingBehavior<,>` opt-in structured payload logging implemented (WO-040, C-66..C-68) (state-map-phase)
+- [2026-07-08] Application → Tests (●) — promoted from SK.05.Tests (59/59); WO-040's T-53..T-59 test coverage for `ILoggableRequest<TResponse>` shipped (application-phase-implementer, state-map-phase)
+- [2026-07-08] Application → Docs (●) — promoted from SK.05.Docs (21/21); WO-040's DO-19..DO-21 shipped — XML doc coverage confirmed, README usage example + PII warning added, CLAUDE.md verified already accurate (application-phase-implementer, state-map-phase)
+- [2026-07-08] Phase Backlog P-246 → ● Complete — SK.05.Docs done (state-map-phase)
+- [2026-07-08] ServiceDefaults → Core (●) — promoted from SK.13.Core (29/29); `WithApplicationTelemetry()` wires "SharedKernel.Application" into TracerProvider/MeterProvider (WO-040, C-29) (state-map-phase)
+- [2026-07-08] ServiceDefaults → Tests (●) — promoted from SK.13.Tests (23/23); T-23 idempotency coverage for `WithApplicationTelemetry()` shipped (state-map-phase)
+- [2026-07-08] ServiceDefaults → Docs (●) — promoted from SK.13.Docs (3/3); DO-03 XML doc + README.md composition snippet updated (state-map-phase)
+- [2026-07-08] Phase Backlog P-247 → ● Complete — SK.13.Core/Tests/Docs done; 05.Application/CLAUDE.md forward-reference callout remains for application-arch-planner (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -9746,9 +9754,8 @@ The user's explicit goal for this domain is that it be "developer friendly" and 
 - [2026-07-08] 16.Testing → Tests (●) — promoted from SK.16.Tests (44/44); WO-040 T-39–T-44 added 41 tests proving Application/ folder's six types in SharedKernel.Testing.SelfTests, 283/283 tests passing; Docs (DO-14/DO-15) next (state-map-phase)
 - [2026-07-08] 16.Testing → Docs (●) — promoted from SK.16.Docs (15/15); WO-040 DO-14/DO-15 added local-seam-only-scope and idempotency-split-rationale `<remarks>` to the six Application/ types; WO-040 fully closed (state-map-phase)
 - [2026-07-08] Phase Backlog P-244, P-245 → ● Complete — SK.16.Docs done, WO-040 fully implemented across all 6 phases of 16.Testing (state-map-phase)
-
----
-## WO-040 — 05.Application Developer-Experience Gap Audit
+- [2026-07-08] 05.Application/state-map.md SK.05.Design → `●` (65/65) — WO-040 D-59..D-65 (`ILoggableRequest<TResponse>` opt-in structured payload logging design) verified complete against already-written `CLAUDE.md` content, no redesign needed. Domain Summary Board row 05 Summary: Next updated to note WO-040's remaining Scaffold/Core/Tests/Docs/Published phases; Current Phase/State left at Docs/`●` (reflects the domain's furthest-shipped WO, per the same convention used for WO-039's mid-flight Design promotions). Phase Backlog P-246 intentionally left `◐` Dispatched — not closed — since the P-237/238/239/242/243 precedent (line 9744 above) shows a WO's Phase Backlog entry closes only once its domain reaches Docs, not at Design alone (state-map-phase)
+- [2026-07-08] 05.Application → Scaffold (●) — promoted from SK.05.Scaffold (WO-040 round, 18/18); S-18 verified 0-warning/0-error build for both production packages, zero new/forbidden references, no `.csproj` changes needed. Current Phase moved from Docs to Scaffold to reflect WO-040's own in-flight lifecycle, matching the identical convention used for the WO-036/038/039 rounds. Phase Backlog P-246 remains `◐` Dispatched — closes only once WO-040 reaches Docs, per the established precedent (state-map-phase)
 
 > **arch-lead note (2026-07-07):** User asked for a fresh "what else can we do to make 05.Application more developer-friendly" pass. `05.Application`/`05.Application.Behaviors` are extremely mature at this point (five prior work orders, ten unary + five streaming pipeline behaviors, a DX preset, real-assembly governance wiring — see WO-035/036/037/038/039 in this Changelog). Rather than re-litigate what already shipped, this pass read the actual shipped `.cs` files and the domain's own self-flagged forward references/deferred-scope callouts (per the standing rule to verify shipped code, not just prose) and found five concrete, low-risk gaps — none inside `05.Application` alone; all are *consumer-facing* friction the domain itself cannot close from within its own layering ceiling (`01–04`):
 >
@@ -9812,7 +9819,7 @@ A packaged, publicly consumable test harness — built on `05.Application.Behavi
 ---
 ### P-246 — Application: Opt-In Structured Request/Response Payload Logging with Self-Supplied Redaction
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-040
 **Domain:** 05.Application
 **Depends on:** None
@@ -9836,7 +9843,7 @@ This is not a speculative feature — it is a gap the domain's own shipped docum
 ---
 ### P-247 — ServiceDefaults: Wire "SharedKernel.Application" Telemetry into Host OTel Providers
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-040
 **Domain:** 13.ServiceDefaults
 **Depends on:** None
