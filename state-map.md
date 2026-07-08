@@ -63,7 +63,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | `●` | All 5 tasks complete — `MediatRDomainEventDispatcher`'s `MakeGenericMethod` call site registered as the first real `ReflectionExemptionRegistry` entry; discovered NetArchTest never surfaces compiler-generated closure types to any `ICustomRule`, so T-169/T-170 prove load-bearing-ness at the predicate layer directly; 130/130 arch tests pass. | Candidate follow-up: extend `ReflectionGuardRules` to walk nested types recursively via Mono.Cecil; register 07.Messaging's still-unregistered `MassTransitEventPublisher.BuildPublisher`/`MessagingBusBuilder.AddActivity`. |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application | `●` | All 11 tasks complete — SK0017/SK0018/SK0019 analyzers (`CommandImplementsCacheableQueryAnalyzer`, `QueryImplementsInvalidatesCacheAnalyzer`, `RetryableRequestWithoutIdempotencyAnalyzer`) close the last three "not mechanically enforced" marker-interface misuse callouts in `05.Application/CLAUDE.md`; 115/115 analyzer tests pass; zero-false-positive argument against 05.Application's own shipped source verified structurally. | This is the final phase key in `00.Governance/state-map.md` — every phase key in this domain is now `●`. Any future governance work requires a new phase to be planned by `governance-arch-planner`. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-236 (WO-039) complete — `IFailureFactory<TSelf>` (CRTP contract, `static abstract TSelf Failure(Error error)`, implemented by `Result<T>` only) added to `SharedKernel.Primitives`; 74/74 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -7908,6 +7908,8 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-08] ServiceDefaults → Tests (●) — promoted from SK.13.Tests (23/23); T-23 idempotency coverage for `WithApplicationTelemetry()` shipped (state-map-phase)
 - [2026-07-08] ServiceDefaults → Docs (●) — promoted from SK.13.Docs (3/3); DO-03 XML doc + README.md composition snippet updated (state-map-phase)
 - [2026-07-08] Phase Backlog P-247 → ● Complete — SK.13.Core/Tests/Docs done; 05.Application/CLAUDE.md forward-reference callout remains for application-arch-planner (state-map-phase)
+- [2026-07-08] Governance → Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application (●) — promoted from SK.00.MarkerInterfaceMisuseGuard (11/11); SK0017/SK0018/SK0019 close the last three "not mechanically enforced" marker-interface misuse callouts in 05.Application/CLAUDE.md; every phase key in 00.Governance/state-map.md is now ● (state-map-phase)
+- [2026-07-08] Phase Backlog P-248 → ● Complete — SK.00.MarkerInterfaceMisuseGuard done; 00.Governance is now fully complete across every phase key (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -9866,7 +9868,7 @@ A composition extension — following the exact shape and idempotency contract a
 ---
 ### P-248 — Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-040
 **Domain:** 00.Governance
 **Depends on:** None
