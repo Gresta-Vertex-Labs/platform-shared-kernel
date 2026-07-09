@@ -433,6 +433,28 @@ MassTransitEventPublisher.PublishAsync<TEvent>()  (updated)
           envelope's CorrelationId is still sourced per the CloudEvents compliance rule below.
 ```
 
+#### Shared log scope construction (`Logging/`) — P-254
+
+```text
+MessagingLogScope  (internal static class)
+    .Create(Guid? correlationId)  → Dictionary<string, object?>
+        Returns a new mutable dictionary seeded with exactly one entry:
+            ["CorrelationId"] = correlationId?.ToString("D") ?? string.Empty
+        This is the ONLY approved construction path for the base entry of an
+        ILogger.BeginScope(...) dictionary anywhere in this package. Callers add their
+        own type-specific entries to the returned dictionary before passing it to BeginScope
+        (e.g. MessageType, BatchSize, FaultId, routing_slip.tracking_number).
+    NOTE: Consumed by ConsumerBase<TMessage>.Consume(), BatchConsumerBase<TMessage>.Consume(),
+          FaultConsumerAdapter<TMessage,TFaultConsumer>.Consume(), and
+          RoutingSlipActivityBase<TArguments,TLog>.Execute()/Compensate() — the four
+          consumer/activity base types in this package that build a structured log scope.
+          Guarantees an identical "CorrelationId" key name and identical null-handling
+          across all four, instead of four independently hand-rolled dictionary literals
+          drifting out of sync with each other (the exact defect P-254 fixed).
+          VersionTranslatingConsumer and TranslatorRegistrationValidator do not use
+          BeginScope and are out of scope for this helper.
+```
+
 #### Routing slip base (`RoutingSlips/`) — P-139
 
 ```text
@@ -758,6 +780,8 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 - Any static mutable state. **Exception (P-172):** a static `readonly ActivitySource` (and, if ever needed, a static `readonly Meter`) instance is the platform-standard .NET diagnostics pattern — it carries no mutable business state and the BCL diagnostics API is explicitly designed around process-lifetime static instrument instances (the same shape as a static logger category). `MessagingDiagnostics.ActivitySource` is the only sanctioned static field in this domain; do not add additional ad-hoc static fields under cover of this exception.
 - Creating an `ActivitySource` or custom `Meter` in `13.ServiceDefaults` on behalf of `07.Messaging` — the source is owned and constructed here (`MessagingDiagnostics.ActivitySource`, P-172); `13.ServiceDefaults` only registers the already-existing source name with the host's `TracerProvider`/`MeterProvider` via `WithMessagingTelemetry()` (P-132). This was a latent cross-domain phase violation discovered during P-132 review — P-132 incorrectly assumed this source already existed.
 - Calling `Services.BuildServiceProvider()` inside `MessagingBusBuilder.Build()` for validation purposes — this creates a second root `IServiceProvider`, double-registers singletons, and silently discards scoped service state (see P-130 for the fix). Validation of `MessagingOptions.ServiceName` at build time must use the captured `Action<MessagingOptions>?` delegate directly.
+- Authoring a production log statement in `SharedKernel.Messaging.MassTransit` via a hand-written `LoggerMessage.Define<>()` static delegate or a direct `ILogger.LogXxx()` extension-method call — always use the `[LoggerMessage]` source-generated partial-method pattern with an explicit `EventId` inside this domain's reserved `7000-7999` range (see the EventId allocation table above); enforced by `00.Governance`'s SK0020/SK0021 analyzer (P-250, added in P-254).
+- Hand-building an ad hoc `Dictionary<string, object?>` for `ILogger.BeginScope` inside `ConsumerBase<TMessage>`, `BatchConsumerBase<TMessage>`, `FaultConsumerAdapter<TMessage,TFaultConsumer>`, or `RoutingSlipActivityBase<TArguments,TLog>` instead of seeding it via `MessagingLogScope.Create(correlationId)` — this is exactly how the domain accumulated three internal `EventId` collisions and a `CorrelationId`-scope shape that silently drifted out of sync across four independently-authored base types (added in P-254).
 - Injecting `MassTransit.IMessageScheduler` directly in application handlers — use `SharedKernel.Messaging.Abstractions.IMessageScheduler` (added in P-127).
 - Registering `IFaultConsumer<T>` via `services.AddScoped` — fault consumers must be registered via `MessagingBusBuilder.AddFaultConsumer<TMessage,TConsumer>()` (added in P-126).
 - Registering `BatchConsumerBase<T>` subclasses via `AddConsumer<T>()` — batch consumers must be registered via `AddBatchConsumer<T>()` to apply batch configuration (added in P-129).
@@ -844,6 +868,26 @@ When `.WithEntityFrameworkOutbox<TDbContext>()` is called:
 - The MassTransit outbox delivery background service polls for unsent rows and publishes to the broker.
 - At-least-once delivery is guaranteed; all consumers must be idempotent.
 - The consuming service owns and runs the EF migrations for outbox tables. `SharedKernel.Messaging.MassTransit` provides no migrations of its own.
+
+### Logging authoring standard and EventId allocation (P-254)
+
+All production log statements in this domain follow the root-brain platform Logging Conventions: `[LoggerMessage]` source-generated partial methods only, explicit `EventId`, PascalCase named template placeholders, no ambient CorrelationId/TraceId/TenantId as an explicit placeholder. `07.Messaging`'s reserved range is `7000-7999` (`{07} * 1000`, per `SharedKernel.Primitives.Logging.LoggingEventIdRanges.Messaging` in `01.Core`, P-249). Only `SharedKernel.Messaging.MassTransit` logs today — `SharedKernel.Messaging.Abstractions` has zero transport/logging NuGet dependencies and does not log — so the domain currently uses a single 100-wide sub-block, `7000-7099`, rather than subdividing per package.
+
+Final allocation (all in `SharedKernel.Messaging.MassTransit`):
+
+| EventId | Name | Level | Declaring type | File |
+| --- | --- | --- | --- | --- |
+| 7001 | `ConsumerConsumeError` | Error | `ConsumerBase<TMessage>` | `Consumers/ConsumerBase.cs` |
+| 7002 | `BatchConsumeEntry` | Information | `BatchConsumerBase<TMessage>` | `Consumers/BatchConsumerBase.cs` |
+| 7003 | `BatchConsumeError` | Error | `BatchConsumerBase<TMessage>` | `Consumers/BatchConsumerBase.cs` |
+| 7004 | `FaultConsumerHandling` | Error | `FaultConsumerAdapter<TMessage,TFaultConsumer>` | `Consumers/FaultConsumerAdapter.cs` |
+| 7005 | `FaultConsumerError` | Error | `FaultConsumerAdapter<TMessage,TFaultConsumer>` | `Consumers/FaultConsumerAdapter.cs` |
+| 7006 | `RoutingSlipExecuteError` | Error | `RoutingSlipActivityBase<TArguments,TLog>` | `RoutingSlips/RoutingSlipActivityBase.cs` |
+| 7007 | `RoutingSlipCompensateError` | Error | `RoutingSlipActivityBase<TArguments,TLog>` | `RoutingSlips/RoutingSlipActivityBase.cs` |
+| 7008 | `VersionTranslating` | Debug | `VersionTranslatingConsumer<TOld,TNew>` | `SchemaEvolution/VersionTranslatingConsumer.cs` |
+| 7009 | `VersionTranslatorNoConsumer` | Warning | `TranslatorRegistrationValidator` | `SchemaEvolution/TranslatorRegistrationValidator.cs` |
+
+This table resolves the three internal collisions that existed before P-254 (raw `EventId(1)`/`EventId(2)`/`EventId(3)` integer literals independently reused by unrelated hand-written `LoggerMessage.Define<>()` delegates across `ConsumerBase`, `BatchConsumerBase`, `FaultConsumerAdapter`, `RoutingSlipActivityBase`, and `VersionTranslatingConsumer`) and converts `FaultConsumerAdapter`'s one raw `_logger.LogError(...)` extension-method call (for the fault-consumer-handler-threw case) into `EventId` 7005. `7010-7099` remain reserved headroom for future `[LoggerMessage]` methods in this package before a second sub-block or package would be needed. Verified against `00.Governance`'s SK0020/SK0021 analyzer and `LoggingEventIdIntegrityAssertion` (P-250) with zero suppressions.
 
 ---
 
@@ -1158,6 +1202,7 @@ public sealed class ProcessPaymentHandler
 - `IMessageVersionTranslator<TOld, TNew>` is a generic interface — AOT-safe. The MassTransit deserialization hook used by `WithVersionTranslator` relies on message type aliases; verify AOT compatibility of the specific MassTransit interception API on each major upgrade.
 - `IRoutingSlipBuilder` is an interface — AOT-safe. `MassTransitRoutingSlipBuilder` delegates to MassTransit `RoutingSlipBuilder` — verify AOT status of MassTransit Courier on each major upgrade. `RoutingSlipActivityBase<TArguments, TLog>` is a generic abstract class; closed generic instantiation at startup is model-build time only.
 - `MessagingDiagnostics.ActivitySource` and the `Activity` instances it produces (`System.Diagnostics`, BCL) are fully AOT-safe — no reflection, no dynamic code generation. `Activity.SetTag` uses object boxing for primitive tag values but performs no type scanning or `MakeGenericMethod` calls. Starting/disposing an `Activity` per consume/publish call is a hot-path allocation when a listener is attached (and a no-op fast path when no listener is attached) — acceptable for AOT and for steady-state throughput.
+- `[LoggerMessage]`-attributed partial log methods (`Microsoft.Extensions.Logging.Abstractions`, P-254) are compiled by a Roslyn source generator at build time — zero reflection, zero `Activator.CreateInstance`, fully AOT-safe by construction; this is why the platform-wide logging standard mandates this pattern over hand-written `LoggerMessage.Define<>()` delegates or ad hoc `ILogger.LogXxx()` calls. `MessagingLogScope.Create(Guid?)` returns a plain `Dictionary<string, object?>` populated by direct indexer assignment — no reflection, AOT-safe.
 
 ---
 
@@ -1184,6 +1229,7 @@ public sealed class ProcessPaymentHandler
 - **SQLite keep-alive connection for in-memory database persistence** — when using a SQLite in-memory database across multiple `ServiceScope` instances in the same test, open a `SqliteConnection("Data Source=:memory:")` and keep it open for the test's lifetime. Pass that connection to `UseSqlite(connection)`. If the connection closes, the in-memory database is dropped and subsequent scopes see an empty schema.
 - **`ActivitySource` / `Activity` assertion pattern (P-172):** subscribe an `ActivityListener` with `ShouldListenTo = source => source.Name == "SharedKernel.Messaging"` and `Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData` BEFORE invoking `Consume()` or `PublishAsync()` — without an attached listener, `ActivitySource.StartActivity` returns `null` (fast-path no-op) and no activity is created to assert against. Collect started activities into a `List<Activity>` via `listener.ActivityStarted = act => list.Add(act)`. Always call `ActivitySource.AddActivityListener(listener)` and dispose/remove it at test teardown to avoid cross-test listener leakage (listeners are process-global, not scoped to a `ServiceProvider`).
 - **`ActivityListener` parallel-test-isolation hazard:** the listener registered via `ActivitySource.AddActivityListener` is process-wide, not scoped to the test method or class. Under xUnit's default parallel test-class execution, other test classes in the same run that also drive `ConsumerBase<T>.Consume()` or `MassTransitEventPublisher.PublishAsync<T>()` emit their own activities on the same `"SharedKernel.Messaging"` source while your listener is attached. Asserting `capturedActivities.Should().ContainSingle(a => a.OperationName == "...")` is flaky — it can capture activities from unrelated concurrently-running tests. Always filter by the test's own unique tag value (e.g. `a.GetTagItem("messaging.message_type") == nameof(MyTestMessage)`) in addition to `OperationName`, never by `OperationName` alone.
+- **`[LoggerMessage]` assertions use `EventId`, never message-text substring matching (P-254):** when a test needs to assert that a specific log statement fired, capture via a test `ILogger`/`ILoggerFactory` double (`16.Testing`) and assert on the structured `EventId.Id` (e.g. `7001` for `ConsumerBase`'s consume-error log) rather than parsing the rendered message string — the message template text is not a stable contract, the `EventId` is. **`MessagingLogScope`-seeded scope assertions:** any test asserting `BeginScope` contents on `ConsumerBase`, `BatchConsumerBase`, `FaultConsumerAdapter`, or `RoutingSlipActivityBase` must assert the `"CorrelationId"` key is present and formatted as `Guid.ToString("D")` (or empty string when unavailable) — this is the one shape `MessagingLogScope.Create` guarantees identically across all four types.
 
 ---
 
@@ -1207,3 +1253,4 @@ public sealed class ProcessPaymentHandler
 - [2026-06-22] Test Rules: added `ActivityListener` parallel-test-isolation hazard bullet — process-wide listener, filter by tag value not OperationName alone (messaging-phase-implementer)
 - [2026-06-24] WO-030 / P-191 queued — Test Rules gains a rule preferring `16.Testing`'s `InMemoryMessageBus`/`InMemoryEventPublisher` over ad-hoc `Substitute.For<IMessageBus>()`/`Substitute.For<IEventPublisher>()`; targets a confirmed duplication in `ConsumerVerifyTests.cs` inside this domain's own `SharedKernel.Messaging.Abstractions.Tests` project; new state-map tasks T-18→T-20 added to the (previously closed) `SK.07.Tests` phase, which is demoted from ● to ○ pending the retrofit; adds a test-only `16.Testing` cross-domain dependency row — never a production reference (messaging-arch-planner, WO-030)
 - [2026-06-24] WO-030 / P-191 implemented — `ConsumerVerifyTests.cs` retrofitted onto `InMemoryMessageBus`/`InMemoryEventPublisher`; added 2 publish/send recording tests; `NSubstitute` package reference removed from `SharedKernel.Messaging.Abstractions.Tests.csproj` (no remaining consumer); `Microsoft.Extensions.DependencyInjection` bumped 10.0.5→10.0.9 in that csproj to satisfy a transitive floor from `SharedKernel.Testing`'s EF Core Sqlite chain (`Microsoft.EntityFrameworkCore.Sqlite` 10.0.5 → `Microsoft.Extensions.Logging` 10.0.9 → `Microsoft.Extensions.DependencyInjection` ≥10.0.9), otherwise `dotnet build` fails with NU1605; 50/50 tests pass incl. `AbstractionsAssembly_ReferencesNo_MassTransit_Assembly` (asserts against the production assembly, unaffected by the test project's new `SharedKernel.Testing` reference); SK.07.Tests → ● (messaging-phase-implementer)
+- [2026-07-09] WO-041 / P-254 queued — new Phase: LoggingRetrofit (LR-01–LR-18). Audited every hand-written `LoggerMessage.Define<>()` delegate in `SharedKernel.Messaging.MassTransit` and confirmed the three internal `EventId` collisions the root brain flagged: raw literal `1` reused by `ConsumerBase.LogConsumeError` and `RoutingSlipActivityBase.LogExecuteError`; `2` reused by `BatchConsumerBase.LogBatchEntry`, `FaultConsumerAdapter.LogFaultHandling`, and `RoutingSlipActivityBase.LogCompensateError`; `3` reused by `BatchConsumerBase.LogBatchError` and `VersionTranslatingConsumer.LogTranslating`; plus one raw `_logger.LogError(...)` extension-method call in `FaultConsumerAdapter` (the fault-consumer-handler-threw path). New "Logging authoring standard and EventId allocation" section added documenting the final `7000-7099` sub-block allocation (`EventId`s 7001-7009 across 6 files/9 methods — this domain has only one logging package today so no further sub-division was needed). New "Shared log scope construction" interface-contract entry added for `MessagingLogScope.Create(Guid?) → Dictionary<string,object?>` (`Logging/MessagingLogScope.cs`), the single approved construction path for the `BeginScope` dictionary's `CorrelationId` entry, replacing four independently hand-rolled implementations in `ConsumerBase`, `BatchConsumerBase`, `FaultConsumerAdapter`, and `RoutingSlipActivityBase` — note `RoutingSlipActivityBase`'s retrofit is a deliberate behavior change: its scope gains a `CorrelationId` entry it never carried before (previously it only tagged `Activity.Current`, never `BeginScope`). Two new hard-violation rules added (no hand-written `LoggerMessage.Define`/raw `ILogger` calls; no ad hoc `BeginScope` dictionary bypassing `MessagingLogScope`). AOT note and Test Rules notes added (assert on `EventId`, not message text; assert the shared `CorrelationId` scope shape). Depends on `01.Core` P-249 (`LoggingEventIdRanges.Messaging` numeric constant — value already fixed by the root folder-map convention, not a hard blocker) and `00.Governance` P-250 (SK0020/SK0021 analyzer + `LoggingEventIdIntegrityAssertion`, verification-only, dev/test-time) (messaging-arch-planner, WO-041)
