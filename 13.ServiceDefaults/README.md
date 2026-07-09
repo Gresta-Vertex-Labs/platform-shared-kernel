@@ -44,4 +44,33 @@ app.Run();
 5. `app.UseMiddleware<TenantResolutionMiddleware>()` is **required** whenever `AddSharedKernelMultiTenancy()` is used, and **must** be placed after `app.UseAuthentication()` — `ClaimTenantResolutionStrategy` needs a populated `HttpContext.User`. Without this call, `AmbientTenantProvider.TenantId` stays permanently `Guid.Empty` (a silent, by-design failure mode, not a crash).
 6. `app.MapDefaultHealthCheckEndpoints()` maps `/health/live` (only `"live"`-tagged checks — process-alive signal only) and `/health/ready` (only `"ready"`-tagged checks — may depend on DB/cache/broker connectivity, gates load-balancer rotation, never restarts the pod).
 
+### Automatic log export and ambient TenantId/CorrelationId enrichment
+
+`builder.AddServiceDefaults()` (via `AddSharedKernelTelemetry`) automatically exports every
+`[LoggerMessage]`-authored log record through the same OTLP pipeline as traces and metrics —
+`IncludeScopes` and `IncludeFormattedMessage` are both enabled, and a `BaggageLogRecordProcessor`
+copies every `System.Diagnostics.Activity` baggage entry from `Activity.Current` onto each log
+record's attributes at export time. No application-code call-site changes are needed to get this.
+
+`BaggageLogRecordProcessor` is a **generic** mechanism — it carries no hardcoded baggage key
+names. This is what makes it automatically pick up:
+
+- `14.Presentation`'s correlation-id middleware, which sets its own `Activity` baggage key directly
+  against the BCL (WO-031) — with **zero** `ProjectReference` from `13.ServiceDefaults` to
+  `14.Presentation`.
+- `SharedKernel.MultiTenancy`'s `TenantResolutionMiddleware`, which — when
+  `AddSharedKernelMultiTenancy()` is used — sets `TenantBaggageKeys.TenantId` as `Activity` baggage
+  immediately after resolving (or confirming `Guid.Empty` for) the current request's tenant. The
+  baggage value is set even when no tenant resolves, so log aggregation can distinguish "no tenant
+  resolved for this request" from "TenantId enrichment was never wired."
+
+Any future domain that sets its own `Activity` baggage key gets the same free ambient-log
+enrichment — no `13.ServiceDefaults` change required.
+
+**Scope boundary:** this enrichment mechanism covers the HTTP-request path only, via whatever sets
+`Activity` baggage during that request. A message-consumption-scope equivalent (e.g. a MassTransit
+consumer filter setting the same baggage keys from propagated message headers) is **not**
+implemented here — it would be a future `07.Messaging`-owned follow-up, outside this domain's
+jurisdiction to dispatch.
+
 See `13.ServiceDefaults/CLAUDE.md` for the full interface contracts, tag taxonomy, and implementation rules.

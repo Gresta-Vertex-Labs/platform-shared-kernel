@@ -76,7 +76,7 @@ Format when blocked:
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | T-01–T-26 complete — 203/203 tests passing across Rest (66), Grpc (55), GraphQL (43), Internal (39); all handler, interceptor, resilience, filter, and resolver tests green. | Begin Docs phase (XML doc comments across all four packages). |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
-| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-040/P-247: `WithApplicationTelemetry()` implemented, wiring "SharedKernel.Application" (05.Application.Behaviors's ApplicationDiagnostics) into TracerProvider/MeterProvider, mirroring WithMessagingTelemetry()/WithCachingTelemetry(); SK.13.Core 29/29, SK.13.Tests 23/23, SK.13.Docs 3/3 all `●`; 40/40 ServiceDefaults + 26/26 MultiTenancy tests passing. | — |
+| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-041/P-251 fully landed — `BaggageLogRecordProcessor` (generic `Activity.Baggage`→`LogRecord.Attributes` copier), `AddSharedKernelTelemetry`'s `.WithLogging(...)` OTLP log-export registration, `TenantBaggageKeys` + `TenantResolutionMiddleware`'s ambient TenantId baggage set. SK.13.Core 33/33 `●`, SK.13.Tests 28/28 `●`, SK.13.Docs 4/4 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 29/29 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
 | 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-040 (P-244/P-245) SK.16.Docs now 15/15 `●` — `Application/` folder's six types fully documented (local-seam-only-scope `<remarks>` blocks naming `06.Persistence`/`12.Security`/`07.Messaging` explicitly, two-type idempotency-store split rationale, `ApplicationPipelineTestHarness`'s promoted-origin/sibling-isolation/D-70 follow-up notes); `dotnet build` 0 errors. | WO-040 fully closed — all 6 phases of `16.Testing` `●` again. |
@@ -106,13 +106,13 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
-| ● Published | 6 |
+| ● Published | 7 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
-| ● Docs | 1 |
-| ● Tests | 3 |
+| ● Docs | 2 |
+| ● Tests | 2 |
 | ● Core | 0 |
 | ● Design | 0 |
-| ● Scaffold | 1 |
+| ● Scaffold | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 4 |
@@ -7924,6 +7924,13 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-09] Phase Backlog P-249 → ● Complete — SK.01.P249 done, WO-041's `01.Core` registry phase fully implemented (state-map-phase)
 - [2026-07-09] Governance → Governance: Architecture Enforcement for the Platform Logging Standard (●) — promoted from SK.00.LoggingStandardEnforcement (11/11); SK0020/SK0021 (`LoggingAuthoringStyleAnalyzer`) ban direct `ILogger` extension-method calls and hand-written `LoggerMessage.Define` delegates; `LoggingEventIdIntegrityAssertion` mechanically enforces global `EventId` uniqueness and per-assembly range membership; 125/125 analyzer tests and 133/133 architecture tests pass; every phase key in `00.Governance/state-map.md` is now ● (state-map-phase)
 - [2026-07-09] Phase Backlog P-250 → ● Complete — SK.00.LoggingStandardEnforcement done (state-map-phase)
+- [2026-07-09] 13 → Design (●) — promoted from SK.13.Design (5/5); D-03–D-05 confirmed the OTel logging-export + TenantId/CorrelationId ambient-baggage-enrichment contract against ground truth, no code written, no discrepancy found (state-map-phase)
+- [2026-07-09] 13 → Scaffold (●) — promoted from SK.13.Scaffold (11/11); S-11 verified `OpenTelemetry.Extensions.Hosting` already pinned to 1.16.0, exceeding the 1.9.0 `WithLogging()` floor (state-map-phase)
+- [2026-07-09] 13 → Core (●) — promoted from SK.13.Core (33/33); `BaggageLogRecordProcessor`, `AddSharedKernelTelemetry`'s `.WithLogging(...)` OTLP log-export registration, `TenantBaggageKeys`, and `TenantResolutionMiddleware`'s ambient TenantId baggage set all implemented (WO-041/P-251) (state-map-phase)
+- [2026-07-09] 13 → Tests (●) — promoted from SK.13.Tests (28/28); T-24–T-28 added (BaggageLogRecordProcessor unit tests, AddSharedKernelTelemetry logging-export tests, TenantResolutionMiddleware baggage tests, and two end-to-end acceptance tests proving Correlation/Tenant baggage compose on the same LogRecord with zero 14.Presentation reference); 48/48 SharedKernel.ServiceDefaults.Tests + 29/29 SharedKernel.MultiTenancy.Tests passing (state-map-phase)
+- [2026-07-09] 13 → Docs (●) — promoted from SK.13.Docs (4/4); DO-04 XML docs + README.md "Automatic log export and ambient TenantId/CorrelationId enrichment" section added (state-map-phase)
+- [2026-07-09] 13 → Published (●) — WO-041/P-251 additive-internals-only, no new Published task per the WithApplicationTelemetry (WO-040/P-247) precedent; 13.ServiceDefaults domain remains fully complete end to end (state-map-phase)
+- [2026-07-09] Phase Backlog P-251 → ● Complete — WO-041's 13.ServiceDefaults OTel log export + ambient Correlation/Tenant enrichment phase done (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -9953,7 +9960,7 @@ The logging survey behind this work order found three incompatible logging-autho
 ---
 ### P-251 — ServiceDefaults: OpenTelemetry Log Export and Ambient Correlation/Tenant Enrichment
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-249, P-250

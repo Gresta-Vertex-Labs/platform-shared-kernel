@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using SharedKernel.MultiTenancy.Resolution;
 
@@ -50,6 +51,8 @@ public sealed class TenantResolutionMiddleware(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(tenantProvider);
 
+        var resolvedTenantId = Guid.Empty;
+
         foreach (var strategyName in options.Value.StrategyOrder)
         {
             if (!_strategiesByName.TryGetValue(strategyName, out var strategy))
@@ -63,10 +66,17 @@ public sealed class TenantResolutionMiddleware(
 
             if (resolved is { } tenantId)
             {
+                resolvedTenantId = tenantId;
                 tenantProvider.SetTenantId(tenantId);
                 break;
             }
         }
+
+        // Ambient enrichment: make TenantId available to every log record produced for the
+        // remainder of the request via SharedKernel.ServiceDefaults's BaggageLogRecordProcessor.
+        // Set unconditionally — including the Guid.Empty no-tenant sentinel — so log aggregation
+        // can distinguish "no tenant resolved for this request" from "enrichment was never wired".
+        Activity.Current?.SetBaggage(TenantBaggageKeys.TenantId, resolvedTenantId.ToString());
 
         await next(context).ConfigureAwait(false);
     }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using SharedKernel.MultiTenancy.Middleware;
@@ -123,6 +124,68 @@ public sealed class TenantResolutionMiddlewareTests
         await middleware.InvokeAsync(context, provider);
 
         Assert.Equal(expectedTenantId, provider.TenantId);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TenantResolves_SetsActivityBaggageToResolvedTenantId()
+    {
+        using var activity = new Activity("test-activity").Start();
+
+        var expectedTenantId = Guid.NewGuid();
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tenant-Id"] = expectedTenantId.ToString();
+
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = new TenantResolutionMiddleware(
+            next,
+            [new HeaderTenantResolutionStrategy()],
+            Options("Header"));
+        var provider = new AmbientTenantProvider();
+
+        await middleware.InvokeAsync(context, provider);
+
+        Assert.Equal(expectedTenantId.ToString(), Activity.Current!.GetBaggageItem(TenantBaggageKeys.TenantId));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_NoStrategyResolves_SetsActivityBaggageToGuidEmptySentinel()
+    {
+        using var activity = new Activity("test-activity").Start();
+
+        var context = new DefaultHttpContext();
+        RequestDelegate next = _ => Task.CompletedTask;
+
+        var middleware = new TenantResolutionMiddleware(
+            next,
+            [new HeaderTenantResolutionStrategy()],
+            Options("Header"));
+        var provider = new AmbientTenantProvider();
+
+        await middleware.InvokeAsync(context, provider);
+
+        // An explicit Guid.Empty sentinel value must be set — not merely absent — so log
+        // aggregation can distinguish "no tenant resolved" from "enrichment was never wired".
+        Assert.Equal(Guid.Empty.ToString(), Activity.Current!.GetBaggageItem(TenantBaggageKeys.TenantId));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ActivityCurrentIsNull_DoesNotThrow()
+    {
+        Assert.Null(Activity.Current);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tenant-Id"] = Guid.NewGuid().ToString();
+        RequestDelegate next = _ => Task.CompletedTask;
+
+        var middleware = new TenantResolutionMiddleware(
+            next,
+            [new HeaderTenantResolutionStrategy()],
+            Options("Header"));
+        var provider = new AmbientTenantProvider();
+
+        var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context, provider));
+
+        Assert.Null(exception);
     }
 
     /// <summary>Minimal recording test double carrying an explicit, caller-supplied

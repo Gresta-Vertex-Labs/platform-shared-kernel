@@ -10,6 +10,14 @@
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+    <!--
+      Test-only reference to the sibling SharedKernel.MultiTenancy package, used solely by
+      AmbientLoggingEnrichmentAcceptanceTests to prove TenantResolutionMiddleware's Activity
+      baggage and BaggageLogRecordProcessor compose correctly end-to-end (WO-041/P-251, T-28).
+      Both packages live under 13.ServiceDefaults — this is a same-domain sibling reference, not a
+      layering violation.
+    -->
+    <ProjectReference Include="..\..\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" />
   </ItemGroup>
 
   <ItemGroup>
