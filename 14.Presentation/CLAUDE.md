@@ -106,7 +106,8 @@ SharedKernelExceptionHandler  (sealed class, implements IExceptionHandler)
           an Error are mapped via Error.ToProblemDetails(); unknown exceptions fall back to a
           generic 500 ProblemDetails with Detail suppressed outside IHostEnvironment.IsDevelopment().
           Logs the full exception at LogLevel.Error before writing the response. Always returns
-          true — this is the terminal handler in the exception-handling chain.
+          true — this is the terminal handler in the exception-handling chain. [LoggerMessage]
+          EventId = LoggingEventIdRanges.Presentation + 1 (14001, WO-041 P-256).
 ```
 
 #### API versioning (`Versioning/`)
@@ -150,14 +151,22 @@ MapSharedKernelOpenApi(this WebApplication app) → WebApplication
 
 ```text
 CorrelationIdMiddleware  (sealed class)
+    .BaggageKey                                              → const string = "correlation.id"
+        (WO-041, P-256, D-13/C-17). Public named constant for the Activity baggage key this
+        middleware writes to — replaces the prior inline string literal. Exists so cross-domain
+        consumers (13.ServiceDefaults's BaggageLogRecordProcessor test suite, any future consumer)
+        reference the same compile-time value instead of hand-copying a literal that can silently
+        drift out of sync (see the Logging EventId & Correlation Verification subsection below for
+        the mismatch this closes).
     .InvokeAsync(HttpContext context, RequestDelegate next) → Task
     NOTE: Reads the "X-Correlation-Id" request header; generates Guid.NewGuid("N") when absent or
           whitespace. Stores the resolved value in HttpContext.Items["CorrelationId"] and calls
-          Activity.Current?.SetBaggage("correlation.id", value) so OTel spans and 11.Communication's
+          Activity.Current?.SetBaggage(BaggageKey, value) so OTel spans and 11.Communication's
           outbound CorrelationId delegating handler can propagate the same identifier end-to-end.
           Always writes the resolved value back as a response header, including on early
           pipeline short-circuits — this requires the middleware to be registered first, before
-          exception handling.
+          exception handling. [LoggerMessage] EventId = LoggingEventIdRanges.Presentation + 0
+          (14000, WO-041 P-256).
 
 AddSharedKernelCorrelationId(this IServiceCollection) / UseSharedKernelCorrelationId(this IApplicationBuilder)
     NOTE: Two-part registration matching the standard ASP.NET Core middleware convention.
@@ -185,7 +194,8 @@ HubExceptionMappingFilter  (sealed class, implements IHubFilter)
           trace, no internal type names. Unknown exceptions are logged at LogLevel.Error and
           rethrown as HubException("An unexpected error occurred.") — SignalR already redacts
           unhandled exception detail from clients by default; this filter is the explicit,
-          auditable safety net rather than relying on that default silently.
+          auditable safety net rather than relying on that default silently. [LoggerMessage]
+          EventId = LoggingEventIdRanges.Presentation + 100 (14100, WO-041 P-256).
 ```
 
 #### Group naming convention (`GroupNaming/`)
@@ -260,6 +270,15 @@ WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString,
 - The correlation ID value must flow into `Activity` baggage (`SetBaggage`, not `SetTag`) so it survives across process boundaries via W3C Baggage propagation, not just appear on the local span.
 - This middleware handles the *inbound* side only. Outbound propagation to downstream services is `11.Communication.Rest`'s `CorrelationIdDelegatingHandler` — the two are designed to share the same `HttpContext.Items["CorrelationId"]` key/`Activity` baggage key so a request's correlation ID is continuous end-to-end without this domain depending on `11.Communication`.
 - **Ownership (confirmed P-192, WO-031):** the `correlation.id` baggage key and the `HttpContext.Items["CorrelationId"]` storage key are `14.Presentation`'s own contract, defined and owned here — they are not borrowed from, nor do they require a `ProjectReference` on, `13.ServiceDefaults`. If `13.ServiceDefaults` wants to align its own OTel conventions with this key, that alignment flows from `13.ServiceDefaults` toward this domain's published contract, never the reverse.
+- **The baggage key is a public constant, never a hand-copied literal (WO-041, P-256):** `CorrelationIdMiddleware.BaggageKey` (`"correlation.id"`) is the single source of truth for this contract's key name. Cross-domain consumers (`13.ServiceDefaults`'s `BaggageLogRecordProcessor` test suite, any future consumer) must reference this constant rather than re-typing the literal — a hand-copied literal is exactly how `13.ServiceDefaults`'s own P-251 test design ended up asserting against `"CorrelationId"` instead of this middleware's actual `"correlation.id"` value, a mismatch invisible to either domain's test suite until this phase's cross-check (see the Logging subsection below).
+
+### Logging EventId assignment & correlation verification (WO-041, P-249/P-250/P-251/P-256)
+
+- Every `[LoggerMessage]`-attributed method in this domain carries an explicit `EventId` derived from `SharedKernel.Primitives.Logging.LoggingEventIdRanges.Presentation` (14000) — never a compiler-auto-assigned or ad hoc numeric literal. Compiler auto-numbering is a latent stability hazard: adding, removing, or reordering `[LoggerMessage]` methods in the same class silently renumbers every ID that follows.
+- Sub-block allocation, in package declaration order per the root registry convention (100-wide sub-blocks per package within the domain's 1000-wide block): `SharedKernel.Presentation.WebApi` = 14000–14099, `SharedKernel.Presentation.SignalR` = 14100–14199.
+- Assigned `EventId`s: `CorrelationIdMiddleware` = 14000, `SharedKernelExceptionHandler` = 14001 (both `.WebApi`); `HubExceptionMappingFilter` = 14100 (`.SignalR`). Any future `[LoggerMessage]` method added to either package continues sequentially within that package's sub-block — never reuse a retired ID.
+- This domain requires no code-shape changes to conform to `00.Governance`'s `SK0020`/`SK0021` (`LoggingAuthoringStyleAnalyzer`, P-250) — it already authors exclusively via `[LoggerMessage]`, never a direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate. The explicit `EventId` assignment is what closes the remaining gap against `00.Governance`'s `LoggingEventIdIntegrityAssertion` (global uniqueness + per-assembly range membership).
+- **Correlation-on-log-record verification is proven without a cross-domain `ProjectReference`.** `13.ServiceDefaults`'s `BaggageLogRecordProcessor` (P-251) is what makes `CorrelationIdMiddleware`'s `Activity` baggage land on emitted `LogRecord`s — but this domain must never take a `ProjectReference` on `SharedKernel.ServiceDefaults` to prove that (per the existing `13.ServiceDefaults` non-dependency rule above). This domain's own test suite instead uses a test-local minimal `BaseProcessor<LogRecord>` that mirrors `BaggageLogRecordProcessor`'s documented contract (generic `Activity.Baggage` → `LogRecord.Attributes` copy, never overwriting an explicit attribute) to prove its own middleware's output is compatible with that mechanism — the reciprocal of the technique `13.ServiceDefaults`'s own correlation test already uses in the opposite direction (simulating this middleware's baggage-setting call via raw BCL `Activity.SetBaggage(...)` rather than referencing this package).
 
 ### SignalR hub filter rules
 
@@ -338,6 +357,9 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - `TenantContextHubFilter` / `HubExceptionMappingFilter`: unit tests using SignalR's hub-testing harness — tenant attached to `Context.Items` on connect, known exceptions surfaced as `HubException` with safe messages, unknown exceptions logged and redacted.
 - `HubGroupNaming`: unit test for the `tenant:{tenantId:D}` format.
 - SignalR Redis backplane: integration test via Testcontainers (`16.Testing/SharedKernel.Testing`) verifying a message sent from one `IHubContext` instance is received by a client connected through a second, independently-configured instance sharing the same Redis backplane.
+- `EventId` regression pins (WO-041, P-256): unit tests asserting each of the three `[LoggerMessage]`-attributed methods carries its exact assigned `EventId` (14000, 14001, 14100) — read via reflection over the compiled `[LoggerMessage]` attribute, not by triggering the log call and inspecting a captured `EventId` at runtime, so the test fails immediately if a future edit silently renumbers the method.
+- `CorrelationIdMiddleware.BaggageKey` (WO-041, P-256): unit test asserting the constant's value equals the literal `"correlation.id"` exactly.
+- Correlation-on-log-record integration test (WO-041, P-256): exercises a request through `CorrelationIdMiddleware`, emits a log record downstream via `ILogger`, and — using a test-local minimal `BaseProcessor<LogRecord>` mirroring `13.ServiceDefaults`'s documented `BaggageLogRecordProcessor` contract — asserts the correlation id appears in `LogRecord.Attributes` under `CorrelationIdMiddleware.BaggageKey`. This test must never take a `ProjectReference` on `SharedKernel.ServiceDefaults` — see the Logging EventId assignment & correlation verification subsection above.
 
 ### WebApplicationFactory integration test pattern (confirmed at Tests phase)
 
@@ -363,3 +385,4 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - [2026-06-25] SK.14.Tests complete (T-01–T-10, P-196): T-01/T-02/T-03/T-06/T-07/T-08 were already fully covered by Core-phase unit tests. Three integration tests added: `ApiVersioningIntegrationTests` and `OpenApiIntegrationTests` (WebApi, `WebApplicationFactory<T>.CreateHost` override pattern) and `RedisBackplaneIntegrationTests` (SignalR, Testcontainers via `RedisContainerFixture`, two independent `TestServer` SignalR hosts cross-instance fan-out). New Test Rules subsection documents the `WebApplicationFactory`/`CreateHost` pattern and the `HttpContext.RequestedApiVersion` extension-property correction (not a method). No `16.Testing` capability gap found. 48/48 tests passing (38 WebApi + 10 SignalR) (presentation-phase-implementer)
 - [2026-06-25] SK.14.Docs complete (DO-01–DO-05, P-197): both `.csproj` files gained `GenerateDocumentationFile=true`, which surfaced and fixed 4 pre-existing unresolved-`cref` warnings; new Test Rules subsection documents this enforcement pattern. Added per-package `README.md`s and a shared `14.Presentation/CONFIGURATION.md`. 48/48 tests still passing (presentation-phase-implementer)
 - [2026-06-25] SK.14.Published complete (P-01–P-05, P-198) — verification-only, no design/interface changes. Both `.csproj` files gained full NuGet packaging metadata mirroring the `12.Security`/`13.ServiceDefaults` convention and now pack cleanly to `.nupkg`+`.snupkg` with zero warnings. A new shared `14.Presentation/consumer-verify` harness (mirroring `13.ServiceDefaults/consumer-verify`, registered in `Platform.SharedKernel.slnx`) proved both packages compose with zero DI exceptions — including `WithRedisBackplane` against a connection string with no live Redis instance required, since `AddStackExchangeRedis` defers the actual connection until first use, making DI-graph resolution alone a valid, low-cost proof of wiring correctness. 48/48 tests still passing. Both packages now `●` Published — 14.Presentation domain complete end to end (presentation-phase-implementer)
+- [2026-07-09] WO-041 P-256 dispatched — explicit `EventId` assignment and correlation verification. Added `CorrelationIdMiddleware.BaggageKey` public constant (replacing the inline `"correlation.id"` literal) and locked `EventId`s for all three existing `[LoggerMessage]` methods against `LoggingEventIdRanges.Presentation` (14000): `CorrelationIdMiddleware` = 14000, `SharedKernelExceptionHandler` = 14001 (both `.WebApi`, sub-block 14000–14099), `HubExceptionMappingFilter` = 14100 (`.SignalR`, sub-block 14100–14199). New "Logging EventId assignment & correlation verification" Implementation Rules subsection added. Correlation-on-log-record verification designed as a self-contained integration test using a test-local minimal `BaseProcessor<LogRecord>` mirroring `13.ServiceDefaults`'s documented `BaggageLogRecordProcessor` contract — deliberately zero `ProjectReference` to `SharedKernel.ServiceDefaults`, mirroring the reciprocal technique `13.ServiceDefaults`'s own correlation test (T-27, P-251) already uses in the opposite direction. **Cross-domain finding:** `13.ServiceDefaults`'s own P-251 test design (T-27) was found to hardcode a different, incorrect baggage-key literal (`"CorrelationId"`) instead of this middleware's actual `"correlation.id"` value — flagged in `state-map.md` (DO-07) as a correction for `servicedefaults-arch-planner`/`servicedefaults-phase-implementer`; out of this domain's jurisdiction to fix directly. New Cross-Domain Dependencies row added: `SK.14.Core` (C-14–C-16) is gated on `01.Core`'s P-249 `LoggingEventIdRanges.Presentation` constant landing (still `○` as of this writing). Task rows D-12/D-13, C-14–C-18, T-11–T-13, DO-06/DO-07, P-06 added to `state-map.md`, all `○` (presentation-arch-planner, WO-041)
