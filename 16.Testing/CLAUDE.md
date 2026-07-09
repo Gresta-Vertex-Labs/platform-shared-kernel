@@ -14,7 +14,7 @@ Philosophy: **Deterministic, dependency-light, conformance-first.** A fake's job
 
 | Package | Role | References |
 |---------|------|------------|
-| `SharedKernel.Testing` | Fakes, in-memory test doubles, Testcontainers fixtures, and Bogus faker conventions consumed by every `.Tests` project | Any layer's `.Abstractions` package (and, where a planning pass has justified it, a non-`.Abstractions` package — e.g. `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit`, `SharedKernel.Application.Behaviors` — on demand, as each capability area is added). Implemented: `SharedKernel.Caching.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Primitives`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Messaging.MassTransit` (test-only), `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Communication.Internal`, `SharedKernel.Application.Behaviors` (WO-040 — the first `16.Testing` reference to `05.Application`; local-seam fakes + a promoted MediatR pipeline test harness, both in the `Application/` folder). |
+| `SharedKernel.Testing` | Fakes, in-memory test doubles, Testcontainers fixtures, and Bogus faker conventions consumed by every `.Tests` project | Any layer's `.Abstractions` package (and, where a planning pass has justified it, a non-`.Abstractions` package — e.g. `SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.MassTransit`, `SharedKernel.Application.Behaviors` — on demand, as each capability area is added). Implemented: `SharedKernel.Caching.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Primitives`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Messaging.MassTransit` (test-only), `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.EfCore`, `SharedKernel.Communication.Internal`, `SharedKernel.Application.Behaviors` (WO-040 — the first `16.Testing` reference to `05.Application`; local-seam fakes + a promoted MediatR pipeline test harness, both in the `Application/` folder). Also references `Microsoft.Extensions.Logging.Abstractions` directly (P-258/WO-041, `Logging/`) — a NuGet `PackageReference` to a cross-cutting BCL logging contract, not a `SharedKernel.*` `ProjectReference`; the first capability folder in this package anchored to a foundational BCL package rather than a numbered domain's own abstraction. |
 | `SharedKernel.Testing.SelfTests` | Self-contained unit tests for standalone testing-infrastructure helpers that have no owning consuming-domain interface to anchor against (fluent builders, assertion-helper classes, faker-seeding conventions, recorder/double self-checks) — see Test Rules below for the decision rule | `SharedKernel.Testing` + the Standard Test Package Set (xUnit runner, FluentAssertions, NSubstitute) as direct package references |
 
 There is no `.Abstractions`/`.{Provider}` split for `SharedKernel.Testing` itself — it is the "provider" of test doubles, and nothing downstream re-implements it. `SharedKernel.Testing.SelfTests` is a narrow, documented exception added in WO-029 — not a general-purpose `.Tests` project for the whole domain (see Test Rules below).
@@ -36,6 +36,7 @@ Both packages in this domain are **never packed or published as a `.nupkg`**. `S
 | Deterministic fake data | `Bogus` — seeding convention only; concrete `Faker<TEntity>` definitions for business aggregates stay in each consuming service's own test project |
 | xUnit lifetime contract | `xunit.core` (the `Xunit.IAsyncLifetime` contract only) — added solely so container fixtures can implement `IAsyncLifetime` directly; no test runner, no `Xunit.Assert`, no `xunit.runner.visualstudio` |
 | Thread-safe state | `System.Collections.Concurrent` (`ConcurrentDictionary`, `ConcurrentQueue`) — every stateful fake must tolerate parallel xUnit test collections |
+| Structured log capture | `Microsoft.Extensions.Logging.Abstractions` (pinned `10.0.9`, matching this project's `Microsoft.Extensions.*` version convention) — `ILogger`/`ILoggerFactory`/`ILogger<T>` implemented directly; also reuses the package's own real `Microsoft.Extensions.Logging.Logger<>` open-generic adapter class for DI wiring, never a hand-rolled substitute |
 
 `SharedKernel.Testing` deliberately does **not** reference `FluentAssertions`, `NSubstitute`, or any xUnit runner package. Those belong to the **Standard Test Package Set** added directly by each `.Tests` project (see root `CLAUDE.md` Test Project Rules and each domain's own Test Rules section for the pinned versions). Mixing assertion/mocking libraries into a shared production-shaped dependency would force every consumer onto this package's framework choices.
 
@@ -57,9 +58,10 @@ SharedKernel.Testing/
   ServiceDefaults/ — SharedKernel.Testing.ServiceDefaults  — tenant resolution and health check test doubles (13.ServiceDefaults) — StaticTenantProvider, FakeTenantResolutionStrategy, HealthCheckAssertionExtensions
   Fakers/          — SharedKernel.Testing.Fakers          — Bogus deterministic-seeding convention + abstract Faker<T> bases — FakerSeeding, EntityFaker<TEntity,TId>, SingleValueObjectFaker<TValueObject,TValue>
   Application/     — SharedKernel.Testing.Application     — local-seam test doubles + MediatR pipeline test harness (05.Application.Behaviors) — FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore, FakeIdempotencyResponseStore, ApplicationPipelineTestHarness
+  Logging/         — SharedKernel.Testing.Logging          — structured log capture double (Microsoft.Extensions.Logging.Abstractions, cross-cutting — not owned by any single numbered domain) — LogRecord, InMemoryLogger, InMemoryLogger<TCategoryName>, InMemoryLoggerFactory, LoggerAssertions
 ```
 
-Each capability folder maps 1:1 to the numbered domain whose abstraction it fakes. A new capability folder is added only when a concrete consumer needs it — this map is aspirational scaffolding, not a commitment to build every row immediately (see per-type `STATUS` markers below). `Domain/` and `Fakers/` are deliberately split: `Fakers/` holds abstract `Bogus.Faker<T>` base classes (construction-time concerns); `Domain/` holds assertion/verification helpers (post-condition concerns) — both fake sibling-isolation from each other since neither references the other's types. `Application/` (added WO-040) is the newest folder — it fakes `05.Application.Behaviors`' own LOCAL seam interfaces (`IUnitOfWork`, `IAuthorizationContext`, `IIdempotencyKeyStore`/`IIdempotencyResponseStore`), never the real cross-domain interfaces those seams bridge to in production (`06.Persistence`, `12.Security`, `07.Messaging` are never referenced by anything in this folder) — see its Interface Contracts block below for the full rationale.
+Each capability folder maps 1:1 to the numbered domain whose abstraction it fakes. A new capability folder is added only when a concrete consumer needs it — this map is aspirational scaffolding, not a commitment to build every row immediately (see per-type `STATUS` markers below). `Domain/` and `Fakers/` are deliberately split: `Fakers/` holds abstract `Bogus.Faker<T>` base classes (construction-time concerns); `Domain/` holds assertion/verification helpers (post-condition concerns) — both fake sibling-isolation from each other since neither references the other's types. `Application/` (added WO-040) fakes `05.Application.Behaviors`' own LOCAL seam interfaces (`IUnitOfWork`, `IAuthorizationContext`, `IIdempotencyKeyStore`/`IIdempotencyResponseStore`), never the real cross-domain interfaces those seams bridge to in production (`06.Persistence`, `12.Security`, `07.Messaging` are never referenced by anything in this folder) — see its Interface Contracts block below for the full rationale. `Logging/` (added P-258/WO-041) is the newest folder and the first one anchored to a cross-cutting BCL contract (`Microsoft.Extensions.Logging.Abstractions`) rather than a numbered domain's own `.Abstractions` package — `[LoggerMessage]`-based structured logging (root `CLAUDE.md`'s WO-041 "Logging Conventions" section) is consumed by every domain and owned by none of them, so there is no single owning domain to model the folder after; it still obeys the sibling-isolation rule (never references `Caching/`, `Messaging/`, `Application/`, or any other capability folder).
 
 ---
 
@@ -752,6 +754,99 @@ SCOPE LOCK (P-244/WO-040): Every type in Application/ references only SharedKern
     local seams live in those domains. These fakes satisfy the LOCAL seam contracts only.
 ```
 
+### `Logging/` — structured log capture double (Microsoft.Extensions.Logging.Abstractions, cross-cutting) — added P-258/WO-041 — [STATUS: Planned]
+
+```text
+LogRecord  (sealed record)
+    .EventId                                                   → Microsoft.Extensions.Logging.EventId
+    .LogLevel                                                  → Microsoft.Extensions.Logging.LogLevel
+    .Message                                                   → string  (fully formatted, via the caller-supplied
+                                                                   Func<TState,Exception?,string> formatter — never
+                                                                   re-derived from .State)
+    .State                                                      → IReadOnlyList<KeyValuePair<string,object?>>?
+                                                                   (populated only when TState implements that
+                                                                   interface — the exact shape both [LoggerMessage]'s
+                                                                   source-generated state struct and standard
+                                                                   structured-logging calls produce; null otherwise)
+    .Exception                                                 → Exception?
+    .Scopes                                                    → IReadOnlyList<object?>  (active BeginScope stack at
+                                                                   the moment this record was logged, outer-to-inner)
+    .TryGetProperty(string name, out object? value)            → bool  (scans .State for a KeyValuePair whose Key
+                                                                   exactly matches name — case-sensitive, matching
+                                                                   the root CLAUDE.md logging convention's PascalCase
+                                                                   named-placeholder rule)
+    NOTE: The primitive LoggerAssertions.ShouldHaveLoggedWithProperty is built on. Never string-parses .Message.
+
+InMemoryLogger  (sealed class, implements Microsoft.Extensions.Logging.ILogger)
+    .MinLevel                                                  → LogLevel  (settable; default LogLevel.Trace —
+                                                                   captures everything by default)
+    .Log<TState>(LogLevel, EventId, TState, Exception?, Func<TState,Exception?,string>) → void
+        Appends a LogRecord (per above) to a thread-safe ConcurrentQueue<LogRecord>.
+    .IsEnabled(LogLevel level)                                 → bool  (level >= MinLevel)
+    .BeginScope<TState>(TState state)                          → IDisposable
+        Pushes state onto an AsyncLocal<ScopeNode?>-backed immutable linked-list scope stack; the returned
+        IDisposable pops exactly that node on Dispose(). AsyncLocal (not a plain field/thread-static) so
+        nested `using (logger.BeginScope(...))` blocks compose correctly across await boundaries the same
+        way a real logging provider's scope stack does, and parallel xUnit test collections never
+        cross-contaminate each other's scope state.
+    .Records                                                   → IReadOnlyList<LogRecord>  (snapshot of the queue)
+    .Clear()                                                   → void  (empties the queue — for multi-phase
+                                                                   single-test assertions)
+
+InMemoryLogger<TCategoryName>  (sealed class, implements ILogger<TCategoryName>)
+    NOTE: A directly `new`-able convenience type for tests that construct a handler under test by hand (no
+          DI container) and need an ILogger<THandler> constructor argument — mirrors FakeUserContext's
+          plain-new-able convention. Implemented via COMPOSITION, not inheritance (both InMemoryLogger and
+          InMemoryLogger<TCategoryName> stay sealed, per this package's standing rule): holds a private
+          InMemoryLogger instance and forwards Log/IsEnabled/BeginScope to it.
+    .Records / .MinLevel / .Clear()                            — forward to the wrapped InMemoryLogger
+
+InMemoryLoggerFactory  (sealed class, implements Microsoft.Extensions.Logging.ILoggerFactory)
+    .CreateLogger(string categoryName)                         → ILogger  (returns/creates a per-category
+                                                                   InMemoryLogger via
+                                                                   ConcurrentDictionary<string,InMemoryLogger>
+                                                                   .GetOrAdd — auto-creates, no pre-registration
+                                                                   needed)
+    .AddProvider(ILoggerProvider provider)                     → void  (documented no-op — this fake IS the
+                                                                   entire logging pipeline for the test; it does
+                                                                   not compose with additional providers)
+    .Dispose()                                                 → void  (no-op — nothing to release)
+    .GetLogger(string categoryName)                            → InMemoryLogger  (same GetOrAdd semantics as
+                                                                   CreateLogger, exposed under a more discoverable
+                                                                   name for assertion call sites)
+    .Loggers                                                   → IReadOnlyDictionary<string,InMemoryLogger>
+                                                                   (snapshot of every category created so far)
+
+LoggerAssertions  (static class — extension methods on IReadOnlyList<LogRecord>, i.e. InMemoryLogger.Records)
+    .ShouldHaveLogged(EventId eventId)                          → LogRecord  (first match; throws
+                                                                   InvalidOperationException if none found)
+    .ShouldHaveLogged(EventId eventId, LogLevel level)          → LogRecord  (level must also match)
+    .ShouldHaveLoggedWithProperty(EventId eventId, string propertyName, object? expectedValue) → LogRecord
+        Throws unless a record matches eventId AND LogRecord.TryGetProperty returns a value
+        object.Equals-equal to expectedValue — asserts by structured property value, never by
+        rendered-message string-matching.
+    .ShouldNotHaveLogged(EventId eventId)                       → void  (throws if any match exists)
+    .ShouldHaveLoggedCount(EventId eventId, int expectedCount)  → void
+    NOTE: All throw plain InvalidOperationException — zero test-framework dependency, mirroring
+          InMemoryMessageBus's Should* naming and EnvelopeAssertions's exception convention. Read-only
+          queries — never mutate .Records.
+
+AddInMemoryLoggerFactory(this IServiceCollection)
+    NOTE: Registers InMemoryLoggerFactory as a SINGLETON ILoggerFactory (same "assertions must survive past
+          the DI scope" rationale as AddInMemoryMessageBus/AddInMemoryEventPublisher), and additionally
+          registers the REAL BCL open-generic Microsoft.Extensions.Logging.Logger<> adapter class (from
+          Microsoft.Extensions.Logging.Abstractions itself — not a new SharedKernel type) as ILogger<>,
+          exactly mirroring the mechanism Microsoft.Extensions.Logging's own AddLogging() uses internally —
+          so ILogger<THandler> constructor-injected anywhere in the container under test resolves correctly
+          through the fake with zero additional SharedKernel code.
+
+SCOPE LOCK (P-258/WO-041): Logging/ references only Microsoft.Extensions.Logging.Abstractions — a NuGet
+    PackageReference, not a SharedKernel.*.Abstractions ProjectReference. This is the first capability
+    folder in this package anchored to a cross-cutting BCL contract rather than a specific numbered
+    domain's own abstraction package. Logging/ must never reference any sibling capability folder
+    (Caching/, Messaging/, Application/, etc.), per the standing sibling-isolation rule.
+```
+
 ---
 
 ## Implementation Rules
@@ -783,6 +878,10 @@ SCOPE LOCK (P-244/WO-040): Every type in Application/ references only SharedKern
 // Messaging test doubles — singleton by design, see Implementation Rules
 services.AddInMemoryMessageBus();
 services.AddInMemoryEventPublisher();
+
+// Structured log capture — singleton ILoggerFactory + real ILogger<> resolution via the BCL
+// Logger<> adapter, mirroring the singleton rationale above (P-258/WO-041)
+services.AddInMemoryLoggerFactory();
 
 // Caching fakes — one call registers all four as singletons
 services.AddFakeCachingServices();
@@ -829,6 +928,7 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - **Before adding a new fake/fixture for a downstream domain's test need, audit this package's existing surface first — do not assume a gap exists.** Demonstrated by P-226/WO-036: `05.Application`'s `TracingBehavior`/`CacheInvalidationBehavior` (both design-only, WO-036) looked at first glance like they might need two new fakes, but the audit found `FakeCacheService` already fully covers `CacheInvalidationBehavior`'s `ICacheService.RemoveAsync`/`RemoveByTagAsync` assertion need with zero new code, while only `TracingBehavior`'s span-recording need was a genuine, narrow gap (`AmbientActivityTestHelper` is an ambient-context *setter*, not a span-recording *listener* — a different capability, not a duplicate), closed by one small additive type (`ActivityRecorder`). Grep this package's existing types and their documented capabilities before designing a new fake; "the interface is owned elsewhere" does not by itself imply "no fake exists yet."
 - `ActivityRecorder` (`Communication/`) is proven in `SharedKernel.Testing.SelfTests` unconditionally — it implements no consuming-domain-owned interface (`ActivitySource`/`ActivityListener` are BCL, not a SharedKernel abstraction), mirroring `AmbientActivityTestHelper`'s own routing in the same folder.
 - **A live `ProjectReference` from a consuming domain's `.Tests` project to `SharedKernel.Testing` does not by itself mean a net-new fake should route there.** `SharedKernel.Application.Behaviors.Tests.csproj` already carries a `ProjectReference` to `SharedKernel.Testing` (confirmed by reading the `.csproj` directly, WO-040) — yet `FakeUnitOfWork`/`FakeAuthorizationContext`/`FakeIdempotencyKeyStore`/`FakeIdempotencyResponseStore`/`ApplicationPipelineTestHarness` (`Application/`) still route to `SharedKernel.Testing.SelfTests`, because they are net-new at the time of writing with zero existing consumer — the same reasoning already applied to `TestSharedKernelDbContext`/`AggregateRootFaker`/`EfContextExtensions` (T-19/T-20/T-21) despite `SharedKernel.Persistence.EfCore.Tests` also carrying a live reference. The rule is "is this type actually consumed there today," never "could it theoretically be consumed there." Re-check at implementation time, every time — a fake proven in `SelfTests` today may later be genuinely adopted by its owning domain's suite, at which point that becomes a documented cross-domain follow-up (never a file edit performed by this domain), not a retroactive routing change here.
+- `LogRecord`/`InMemoryLogger`/`InMemoryLogger<TCategoryName>`/`InMemoryLoggerFactory`/`LoggerAssertions` (`Logging/`, P-258/WO-041) are proven in `SharedKernel.Testing.SelfTests` unconditionally — this is a net-new capability with zero existing consumer in any domain's own `.Tests` project (no WO-041 domain retrofit to `[LoggerMessage]`-based logging has shipped yet — all ten domain phases are `○` Pending as of this design pass, including `01.Core`'s own `LoggingEventIdRanges` registry), so there is no owning-domain suite to "prove it there" against, consistent with the established no-consumer-yet fallback (`FakeClock`, `TestSharedKernelDbContext`, `Application/`'s six types, etc.). The `SelfTests` coverage for this folder must exercise a REAL `[LoggerMessage]`-attributed test-only call site, never a hand-written `ILogger.Log(...)` call standing in for one — per this phase's explicit acceptance criterion.
 
 ---
 
