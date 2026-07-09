@@ -14,7 +14,7 @@ Philosophy: **Protocol-Agnostic Resilience. Propagate Context Always. Fail Infor
 
 ## Current Phase
 
-**All four initial packages complete. WO-026 correctness and quality fixes in progress (○).** Rest (10/18 ◐), Grpc (9/13 ◐), GraphQL (8/9 ◐), Internal (6/8 ◐) — 23 new tasks added by P-160–P-165 (WO-026): 4 REST correctness fixes, `ReadEnvelopeAsync<T>` boundary bridge, `ServiceDiscoveryResolvingHandler` per-client bug fix, 3 gRPC improvements (`GrpcMetadataHelper` extraction, optional address parameter, dead-reference removal), TTL endpoint cache in `KubernetesServiceEndpointResolver`, and `PagedResponseType<T>.FromPagedList` factory.
+**All four packages fully implemented and tested (Core + Tests phases ● across Rest/Grpc/GraphQL/Internal — 203/203 tests passing).** Docs and Published phases remain `○` Pending from original scaffolding (WO-025) — not yet dispatched. **P-255 (WO-041) logging retrofit in progress (◐)** for `SharedKernel.Communication.Grpc` and `SharedKernel.Communication.Internal`: both packages currently mix hand-written `LoggerMessage.Define<>` delegates, ad-hoc `logger.LogDebug(...)`/`_logger.LogError(...)` calls, and (in `KubernetesServiceEndpointResolver`'s case) both styles in the same file. `SharedKernel.Communication.Rest` and `SharedKernel.Communication.GraphQL` carry zero logging today — no retrofit needed there. See the **Logging** section below for the full EventId sub-block allocation and per-method table.
 
 ---
 
@@ -146,14 +146,16 @@ CorrelationTracingInterceptor  [internal sealed — Interceptor]
     // Reads Activity.Current at call time (not DI registration time).
     // Injects traceparent (W3C format), tracestate, and x-correlation-id into metadata.
     // Does not overwrite existing x-correlation-id entry.
-    // Wraps body in try/catch — logs Error and continues on exception (never propagates).
+    // Wraps body in try/catch — logs Error via [LoggerMessage] (EventId 11100,
+    // LogCorrelationEnrichmentFailed) and continues on exception (never propagates).
 
 TenantIdInterceptor  [internal sealed — Interceptor]
     // Same four call-type overrides.
     // Resolves ITenantProvider from request scope via IHttpContextAccessor.HttpContext.RequestServices.
     // Injects x-tenant-id metadata when TenantId != Guid.Empty.
     // Silent no-op when HttpContext null, ITenantProvider absent, or TenantId == Guid.Empty.
-    // Same exception-swallow + Error-log contract.
+    // Same exception-swallow contract — logs Error via [LoggerMessage] (EventId 11101,
+    // LogTenantIdEnrichmentFailed).
 
 MoneyProtoExtensions  [public static class]
     ToDecimal(this Money money) → decimal
@@ -233,7 +235,8 @@ K8sServiceDiscoveryOptions  (sealed class)
     EndpointCacheTtlSeconds int              // default 30; 0 = no caching; negative = validator rejects
     // TTL-based in-memory endpoint cache. KubernetesServiceEndpointResolver uses a ConcurrentDictionary
     // keyed by serviceName (OrdinalIgnoreCase) with CachedEntry { Uri, DateTimeOffset ExpiresAt }.
-    // Stale-while-revalidate: on DNS failure with stale entry, logs Warning and returns stale Uri.
+    // Stale-while-revalidate: on DNS failure with stale entry, logs Warning via [LoggerMessage]
+    // (EventId 11304, LogStaleCacheUsed) and returns stale Uri.
 
 AddK8sServiceDiscovery(this IServiceCollection, Action<K8sServiceDiscoveryOptions>? configure = null)
     → IServiceCollection
@@ -244,7 +247,8 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
     → IServiceCollection
     // Registers StaticServiceEndpointResolver (singleton). Dev/test only.
     // Throws InvalidOperationException if IServiceEndpointResolver already registered.
-    // Logs LogLevel.Warning at startup.
+    // Logs LogLevel.Warning at startup via StaticServiceDiscoveryStartupWarning (IHostedService),
+    // via [LoggerMessage] (EventId 11308, LogStaticServiceDiscoveryActive).
 ```
 
 ---
@@ -345,6 +349,46 @@ The following are unconditional violations that must be caught at design review:
 | `SharedKernel.Contracts` project reference in `SharedKernel.Communication.Grpc.csproj` | Violation — gRPC package must not reference 04.Contracts |
 | `CorrelationTracingInterceptor` or `TenantIdInterceptor` defining local `HasMetadataEntry` or `CloneAndAdd` | Violation — must delegate to `GrpcMetadataHelper` |
 | Negative `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds` | Violation — validator must reject |
+| Direct `ILogger.LogXxx(...)` extension-method call or hand-written `LoggerMessage.Define<>()` delegate anywhere in `.Grpc` or `.Internal` production code | Hard violation — always author via `[LoggerMessage]` with an explicit `EventId` inside this domain's reserved sub-block; enforced by `00.Governance` SK0020/SK0021 (P-250) |
+| `EventId` used outside this domain's reserved range (11000-11999) or outside its package's own 100-wide sub-block | Hard violation — verified by `00.Governance`'s `LoggingEventIdIntegrityAssertion` (P-250) once real-assembly wiring lands |
+
+### Logging
+
+All production log statements in this domain follow the root `CLAUDE.md` Logging Conventions: `[LoggerMessage]` source-generated partial methods only, explicit `EventId` per call site, PascalCase named template placeholders, and ambient (never explicit-placeholder) correlation/trace/tenant context. Direct `ILogger.LogXxx(...)` extension-method calls and hand-written `LoggerMessage.Define<>()` static delegates are prohibited (root CLAUDE.md, WO-041; mechanically enforced by `00.Governance` SK0020/SK0021 once P-250 ships).
+
+`11.Communication`'s reserved block is `LoggingEventIdRanges.Communication = 11000` through `11999` (`01.Core`, P-249), subdivided into four 100-wide sub-blocks in package-declaration order:
+
+| Sub-block | Package | Status |
+| --- | --- | --- |
+| 11000-11099 | `SharedKernel.Communication.Rest` | Reserved — no logging exists in this package today |
+| 11100-11199 | `SharedKernel.Communication.Grpc` | In use — see table below |
+| 11200-11299 | `SharedKernel.Communication.GraphQL` | Reserved — no logging exists in this package today |
+| 11300-11399 | `SharedKernel.Communication.Internal` | In use — see table below |
+
+**`SharedKernel.Communication.Grpc` EventId table:**
+
+| EventId | Method | Level | Type | Trigger |
+| --- | --- | --- | --- | --- |
+| 11100 | `LogCorrelationEnrichmentFailed` | Error | `CorrelationTracingInterceptor` | `EnrichContext` catch-block — any exception during metadata enrichment; interceptor still returns the original `context` unmodified and never propagates |
+| 11101 | `LogTenantIdEnrichmentFailed` | Error | `TenantIdInterceptor` | `EnrichContext` catch-block — any exception during `x-tenant-id` metadata injection; same never-propagate contract |
+
+**`SharedKernel.Communication.Internal` EventId table:**
+
+| EventId | Method | Level | Type | Trigger |
+| --- | --- | --- | --- | --- |
+| 11300 | `LogSrvLookupAttempt` | Debug | `KubernetesServiceEndpointResolver` | Before issuing the DNS SRV lookup (`_http._tcp.{service}.{namespace}.svc.{clusterDomain}`) |
+| 11301 | `LogARecordLookupAttempt` | Debug | `KubernetesServiceEndpointResolver` | Before issuing the A-record lookup (`{service}.{namespace}.svc.{clusterDomain}`) fallback |
+| 11302 | `LogDnsFallback` | Warning | `KubernetesServiceEndpointResolver` | Both SRV and A-record lookups failed and no stale cache entry exists — returning the K8s convention URI |
+| 11303 | `LogServiceResolved` | Debug | `KubernetesServiceEndpointResolver` | DNS resolution succeeded (SRV or A-record) |
+| 11304 | `LogStaleCacheUsed` | Warning | `KubernetesServiceEndpointResolver` | DNS resolution failed but a stale (expired) cache entry exists — stale-while-revalidate path |
+| 11305 | `LogCacheHit` | Debug | `KubernetesServiceEndpointResolver` | Cache hit (not expired) — returned without DNS I/O |
+| 11306 | `LogSrvLookupFailed` | Debug | `KubernetesServiceEndpointResolver` | SRV lookup threw (caught, non-`OperationCanceledException`) — carries the caught `Exception` |
+| 11307 | `LogARecordLookupFailed` | Debug | `KubernetesServiceEndpointResolver` | A-record lookup threw (caught, non-`OperationCanceledException`) — carries the caught `Exception` |
+| 11308 | `LogStaticServiceDiscoveryActive` | Warning | `StaticServiceDiscoveryStartupWarning` | Once at host startup (`IHostedService.StartAsync`) whenever `AddStaticServiceDiscovery` is registered |
+
+- `SrvLookupFailed`/`ARecordLookupFailed` (11306/11307) are net-new `[LoggerMessage]` methods — prior to P-255 these two sites were ad-hoc `logger.LogDebug(ex, "...", serviceName)` calls that bypassed the same file's own `LoggerMessage.Define<>` delegate pattern; this was the platform's last mixed-authoring-style file (root CLAUDE.md WO-041 changelog).
+- EventIds 11300-11305 and 11308 are **renumbered**, not newly introduced — they existed pre-P-255 as hand-written `LoggerMessage.Define<>` delegate fields with small, file-local numbers (1-6 and 100 respectively) that collided in spirit (not in fact, since no other package used them) with the platform's numbering discipline. Renumbering carries no behavioral change: identical `LogLevel`, identical message templates, identical call sites.
+- `Rest` (11000-11099) and `GraphQL` (11200-11299) are reserved but currently unused — confirmed via source audit (P-255) that neither package logs anything today. The first log statement added to either package must draw its `EventId` from that package's own reserved sub-block, starting at the sub-block's base value.
 
 ### AOT compatibility
 
@@ -462,3 +506,4 @@ services.AddSharedKernelRestCommunication()
 - [2026-06-17] SK.11.GraphQL complete (GQ-01–GQ-08, 40/40 tests): HotChocolate upgraded to v16.1.4 (v14 incompatible with net10.0); DefaultFilterOperations uses LowerThan/LowerThanOrEquals; IPage replaces CollectionSegment for offset paging; test schema types must be public; ExpectOperationResult() required to access Errors; sentinel-marker idempotency pattern documented
 - [2026-06-18] SK.11.Internal complete (I-01–I-06, 27/27 tests): IServiceEndpointResolver, KubernetesServiceEndpointResolver (DNS SRV + A-record fallback), StaticServiceEndpointResolver (dev/test), AddK8sServiceDiscovery, AddStaticServiceDiscovery — all implemented and tested
 - [2026-06-18] WO-026 P-160–P-165: 23 new tasks added across Rest (R-11–R-18), Grpc (G-10–G-13), GraphQL (GQ-09), Internal (I-07–I-08), Tests (T-19–T-26); key design decisions recorded — static readonly JsonSerializerOptions for fallback path, RestClientOptionsValidator registration required, resolver-presence sentinel-bool pattern, ServiceDiscoveryResolvingHandler inline-factory fix (per-client closure), RestClientOptions.ServiceName override, `ReadEnvelopeAsync<T>` boundary bridge (JsonTypeInfo + JsonSerializerOptions overloads), GrpcMetadataHelper extraction, `AddGrpcClient<TClient>` address param changed to `string? = null`, 04.Contracts reference removed from .Grpc csproj, TTL endpoint cache in KubernetesServiceEndpointResolver (ConcurrentDictionary + stale-while-revalidate), `PagedResponseType<T>.FromPagedList` factory; layering violation guard table expanded with 8 new entries
+- [2026-07-09] P-255 (WO-041) applied — logging retrofit to the platform `[LoggerMessage]` standard for `.Grpc` and `.Internal`. Source audit confirmed the violation inventory: `CorrelationTracingInterceptor`/`TenantIdInterceptor` call `_logger.LogError(ex, "...")` directly; `KubernetesServiceEndpointResolver` mixes six hand-written `LoggerMessage.Define<>` delegates (local EventId 1-6) with two ad-hoc `logger.LogDebug(ex, "...", serviceName)` calls in the same file — the platform's last mixed-authoring-style file; `StaticServiceDiscoveryStartupWarning` has one hand-written `LoggerMessage.Define<int>` delegate (local EventId 100). `.Rest` and `.GraphQL` confirmed to carry zero logging today — their 100-wide sub-blocks (11000-11099, 11200-11299) are reserved but unused. New "Logging" section added documenting the full EventId sub-block allocation (`LoggingEventIdRanges.Communication` = 11000, subdivided in package-declaration order: Rest/Grpc/GraphQL/Internal) and the explicit per-method EventId table for `.Grpc` (11100-11101) and `.Internal` (11300-11308); Interface Contracts updated to reference the new EventIds; layering-violation guard table gained two new hard-violation rows (direct ILogger/LoggerMessage.Define usage; EventId outside reserved range/sub-block); 9 new tasks added to state-map.md (D-23, G-14/G-15, I-09/I-10/I-11, T-27/T-28, DO-06); depends on `01.Core` P-249 (`LoggingEventIdRanges`) and `00.Governance` P-250 (SK0020/SK0021, `LoggingEventIdIntegrityAssertion`), both `○` Pending as of this phase — design proceeds unblocked, only T-28's real-assembly verification is gated on those two phases shipping (communication-arch-planner, WO-041)
