@@ -28,6 +28,12 @@
          PipelineOrderAssertionTests (BuildServiceProvider is never called, but
          AddTransient/AddScoped extension methods require the concrete package). -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <!-- Provides LoggerMessageAttribute for compiling contrived [LoggerMessage] fixture
+         assemblies in LoggingEventIdIntegrityAssertionTests (WO-041 P-250). Safe to reference
+         directly here (unlike the CSharpAnalyzerTest sandbox in SharedKernel.Analyzers.Tests) —
+         fixture assemblies compiled via CompileInMemory run in-process against the current
+         runtime's own corelib, so there is no reference-assembly version mismatch. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>

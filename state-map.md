@@ -63,7 +63,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application | `●` | All 11 tasks complete — SK0017/SK0018/SK0019 analyzers (`CommandImplementsCacheableQueryAnalyzer`, `QueryImplementsInvalidatesCacheAnalyzer`, `RetryableRequestWithoutIdempotencyAnalyzer`) close the last three "not mechanically enforced" marker-interface misuse callouts in `05.Application/CLAUDE.md`; 115/115 analyzer tests pass; zero-false-positive argument against 05.Application's own shipped source verified structurally. | This is the final phase key in `00.Governance/state-map.md` — every phase key in this domain is now `●`. Any future governance work requires a new phase to be planned by `governance-arch-planner`. |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for the Platform Logging Standard | `●` | All 11 tasks complete — SK0020/SK0021 (`LoggingAuthoringStyleAnalyzer`) ban direct `ILogger` extension-method calls and hand-written `LoggerMessage.Define` delegates; `LoggingEventIdIntegrityAssertion` mechanically enforces global `EventId` uniqueness and per-assembly range membership via a recursive Mono.Cecil `NestedTypes` walk; 125/125 analyzer tests and 133/133 architecture tests pass; design/tests use contrived fixtures only — expected to fail against real assemblies until every WO-041 domain retrofit ships. | This is the final phase key in `00.Governance/state-map.md` — every phase key in this domain is now `●`. Any future governance work requires a new phase to be planned by `governance-arch-planner`. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-249 (WO-041) complete — `LoggingEventIdRanges` compile-time `const int` registry added to `SharedKernel.Primitives`, reserving one 1000-wide `EventId` block per root folder-map domain (00.Governance=0 through 17.Workflows=17000); 114/114 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only, zero new NuGet dependencies. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -7922,6 +7922,8 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-09] Phase(s) P-258 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
 - [2026-07-09] Core → Published (●) — promoted from SK.01.P249; `LoggingEventIdRanges` shipped in `SharedKernel.Primitives` (18 domain `const int` fields + `DomainRangeWidth`/`PackageSubBlockWidth`); 114/114 `SharedKernel.Primitives.Tests` passing (state-map-phase)
 - [2026-07-09] Phase Backlog P-249 → ● Complete — SK.01.P249 done, WO-041's `01.Core` registry phase fully implemented (state-map-phase)
+- [2026-07-09] Governance → Governance: Architecture Enforcement for the Platform Logging Standard (●) — promoted from SK.00.LoggingStandardEnforcement (11/11); SK0020/SK0021 (`LoggingAuthoringStyleAnalyzer`) ban direct `ILogger` extension-method calls and hand-written `LoggerMessage.Define` delegates; `LoggingEventIdIntegrityAssertion` mechanically enforces global `EventId` uniqueness and per-assembly range membership; 125/125 analyzer tests and 133/133 architecture tests pass; every phase key in `00.Governance/state-map.md` is now ● (state-map-phase)
+- [2026-07-09] Phase Backlog P-250 → ● Complete — SK.00.LoggingStandardEnforcement done (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -9927,7 +9929,7 @@ A dependency-free, compile-time constant registry that reserves a contiguous `Mi
 ---
 ### P-250 — Governance: Architecture Enforcement for the Platform Logging Standard
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 00.Governance
 **Depends on:** P-249
