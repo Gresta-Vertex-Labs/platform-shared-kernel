@@ -58,12 +58,17 @@
 | `SK.02.RedisLockingExtraction` | Phase 34 (Redis Distributed Locking Package Extraction) | All tasks in Phase: RedisLockingExtraction are `●` | P-142 |
 | `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | All tasks in Phase: RedisHashExtraction are `●` | P-143 |
 | `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | All tasks in Phase: RedisPubSubExtraction are `●` | P-144 |
+| `SK.02.LoggingRetrofit` | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | All tasks in Phase: LoggingRetrofit are `●` | P-252 |
 
 ---
 
 ## Active Work
 
-_Nothing in progress — all 36 phases complete (WO-006 + WO-007 + WO-023). WO-023 (Redis package split, Phases 32–36) is fully complete. No further phases planned._
+| Task | Phase Key | Package | State |
+|------|-----------|---------|:-----:|
+| LR-01 → LR-12 (see Phase 37 below) | SK.02.LoggingRetrofit | FusionCache, Redis.Core, Redis.DistributedLocking, Redis.PubSub | `○` |
+
+_All 36 prior phases (WO-006 + WO-007 + WO-023) remain complete. Phase 37 (WO-041, P-252) is newly planned — blocked on `01.Core` P-249 implementation (see Dependencies below) before code changes can compile._
 
 <!--
 Format when active — replace placeholder with table:
@@ -92,12 +97,12 @@ Format when blocked — replace placeholder with table:
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
 | `SharedKernel.Caching.Abstractions` | Phase 31 (complete) | `●` | All 31 phases of WO-006/WO-007 complete; no contract changes planned in WO-023 |
-| `SharedKernel.Caching.FusionCache` | Phase 31 (complete) | `●` | All 31 phases of WO-006/WO-007 complete; no changes planned in WO-023 |
-| `SharedKernel.Caching.Redis` | Phase 33 (complete) | `●` | `AddRedisL2` now sources `IConnectionMultiplexer` and the optional circuit breaker `ResiliencePipeline` from `.Redis.Core` (Ph.32) via `AddRedisConnection`/`AddRedisCircuitBreaker`; `RedisL2Options.CircuitBreaker` retyped to `RedisCircuitBreakerOptions` (Core); 154 tests passing. RedLock/hash/pub-sub types still physically reside here pending Phases 34-36 |
-| `SharedKernel.Caching.Redis.Core` | Phase 32 (complete) | `●` | New package created — `AddRedisConnection`/`AddRedisCircuitBreaker`, `RedisConnectionHealthTracker`, `RedisConnectionOptions`, `RedisCircuitBreakerOptions`; 33 tests passing; dependency root for Phases 33-36 |
-| `SharedKernel.Caching.Redis.DistributedLocking` | Phase 34 (complete) | `●` | New package — extracted from `SharedKernel.Caching.Redis`: `RedLockDistributedLockService`, `RedLockRenewableLock` + `KeepAliveAsync`, `RedisLockOptions`, `AddRedisDistributedLocking`; sources `IConnectionMultiplexer` via `AddRedisConnection` from `.Redis.Core`; 41 tests passing |
-| `SharedKernel.Caching.Redis.HashStore` | Phase 35 (pending) | `○` | New package — extracted from `SharedKernel.Caching.Redis`: `IRedisHashService`, `ITypedHashStore<T>` |
-| `SharedKernel.Caching.Redis.PubSub` | Phase 36 (pending) | `○` | New package — extracted from `SharedKernel.Caching.Redis`: `IRedisChannelService`, `ICacheInvalidationBus`, receiver |
+| `SharedKernel.Caching.FusionCache` | Phase 37 (◐ pending) | `◐` | All 31 phases of WO-006/WO-007 complete. Phase 37 (P-252): `CacheWarmupHostedService`'s 8 direct `ILogger` calls and `FusionCacheService`'s existing `EventId` 1001-1005 (colliding with `01.Core`'s reserved block) need retrofit to `LoggingEventIdRanges.Caching`-based `EventId`s |
+| `SharedKernel.Caching.Redis` | Phase 33 (complete) | `●` | `AddRedisL2` now sources `IConnectionMultiplexer` and the optional circuit breaker `ResiliencePipeline` from `.Redis.Core` (Ph.32) via `AddRedisConnection`/`AddRedisCircuitBreaker`; `RedisL2Options.CircuitBreaker` retyped to `RedisCircuitBreakerOptions` (Core); 154 tests passing. Carries no logging call sites — unaffected by Phase 37 |
+| `SharedKernel.Caching.Redis.Core` | Phase 37 (◐ pending) | `◐` | Phase 32 complete — `AddRedisConnection`/`AddRedisCircuitBreaker`, `RedisConnectionHealthTracker`, `RedisConnectionOptions`, `RedisCircuitBreakerOptions`; 33 tests passing; dependency root for `.Redis`/`.DistributedLocking`/`.HashStore`/`.PubSub`. Phase 37 (P-252): `RedisConnectionHealthTracker`'s `EventId` 4001/4002 collide with `.Redis.PubSub`'s `CacheInvalidationReceiver` and need retrofit |
+| `SharedKernel.Caching.Redis.DistributedLocking` | Phase 37 (◐ pending) | `◐` | Phase 34 complete — `RedLockDistributedLockService`, `RedLockRenewableLock` + `KeepAliveAsync`, `RedisLockOptions`, `AddRedisDistributedLocking`; sources `IConnectionMultiplexer` via `AddRedisConnection` from `.Redis.Core`; 41 tests passing. Phase 37 (P-252): 13 `EventId`s across both files need retrofit into this package's own sub-block |
+| `SharedKernel.Caching.Redis.HashStore` | Phase 35 (complete) | `●` | New package — extracted from `SharedKernel.Caching.Redis`: `IRedisHashService`, `ITypedHashStore<T>`. Carries no logging call sites — unaffected by Phase 37 |
+| `SharedKernel.Caching.Redis.PubSub` | Phase 37 (◐ pending) | `◐` | Phase 36 complete — `IRedisChannelService`, `ICacheInvalidationBus`, receiver. Phase 37 (P-252): `RedisChannelService`'s `EventId` 3001-3005 collide with `03.Domain`'s reserved block, `CacheInvalidationReceiver`'s `EventId` 4001-4005 collide with `.Redis.Core`, and `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define` delegate needs conversion to the attribute pattern |
 
 ---
 
@@ -2377,6 +2382,113 @@ The existing `AddRedisDistributedLocking(connectionString)` fluent registration 
 
 ---
 
+## Phase: LoggingRetrofit <!-- phase-key: SK.02.LoggingRetrofit -->
+
+> Retrofit every production log statement across `SharedKernel.Caching.FusionCache`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Caching.Redis.DistributedLocking`, and `SharedKernel.Caching.Redis.PubSub` to the platform-mandated `[LoggerMessage]` source-generated pattern, and renumber every `EventId` in this domain into its own `LoggingEventIdRanges.Caching` (2000-2999) reserved block. `SharedKernel.Caching.Redis` (L2) and `SharedKernel.Caching.Redis.HashStore` carry no logging call sites today and are unaffected.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| LR-01 | Add `<ProjectReference>` to `SharedKernel.Primitives` in all four affected packages' `.csproj` files (none currently reference it, despite the package table's aspirational "01.Core" note for FusionCache); reserve this domain's 100-wide per-package sub-blocks: `FusionCache` = `LoggingEventIdRanges.Caching`+0..99, `Redis.Core` = +100..199, `Redis` (L2, reserved/unused) = +200..299, `Redis.DistributedLocking` = +300..399, `Redis.HashStore` (reserved/unused) = +400..499, `Redis.PubSub` = +500..599 | All four + Abstractions unaffected | `○` |
+| LR-02 | Convert `CacheWarmupHostedService`'s 8 direct `ILogger` extension-method calls (`WaitingForWarmupCompletion`, `NoWarmupStrategiesRegistered`, `WarmupStarting`, `WarmupCancelled`, `StrategyExecuting`, `StrategyCompleted`, `StrategyFailed`, `WarmupCompleted`) to a new `private static partial class Log` with `[LoggerMessage]`-attributed methods, `EventId = LoggingEventIdRanges.Caching + 0` through `+ 7` | SharedKernel.Caching.FusionCache | `○` |
+| LR-03 | Renumber `FusionCacheService.Log`'s existing 5 methods (`CacheMiss`, `CacheSet`, `FactoryInvoked`, `CacheRemoved`, `CacheTagRemoved`) from literal `EventId` 1001-1005 (colliding with `01.Core`'s reserved 1000-1999 block) to `LoggingEventIdRanges.Caching + 10` through `+ 14` | SharedKernel.Caching.FusionCache | `○` |
+| LR-04 | Renumber `RedisConnectionHealthTracker.Log`'s 2 methods (`ConnectionRestored`, `ConnectionFailed`) from literal `EventId` 4001/4002 (colliding with `.Redis.PubSub`'s `CacheInvalidationReceiver`) to `LoggingEventIdRanges.Caching + 100` / `+ 101` | SharedKernel.Caching.Redis.Core | `○` |
+| LR-05 | Renumber `RedLockDistributedLockService.Log`'s 7 methods (`AcquiringLock`, `LockAcquired`, `LockNotAcquired`, `ReleasingLock`, `AcquiringRenewableLock`, `RenewableLockAcquired`, `RenewableLockNotAcquired`) from literal `EventId` 2001-2007 to `LoggingEventIdRanges.Caching + 300` through `+ 306` | SharedKernel.Caching.Redis.DistributedLocking | `○` |
+| LR-06 | Renumber `RedLockRenewableLock.Log`'s 6 methods (`LockAlreadyLost`, `RenewalNotAcquired`, `RenewalFailed`, `LockRenewed`, `ReleasingRenewableLock`, `OldLockDisposeFailed`) from literal `EventId` 2010-2015 to `LoggingEventIdRanges.Caching + 307` through `+ 312`, immediately following LR-05's range in the same `.DistributedLocking` sub-block | SharedKernel.Caching.Redis.DistributedLocking | `○` |
+| LR-07 | Renumber `RedisChannelService.Log`'s 5 methods (`HandlerException`, `ConnectionRestored`, `ChannelResubscribed`, `ChannelResubscriptionFailed`, `ConnectionFailed`) from literal `EventId` 3001-3005 (colliding with `03.Domain`'s reserved 3000-3999 block) to `LoggingEventIdRanges.Caching + 500` through `+ 504` | SharedKernel.Caching.Redis.PubSub | `○` |
+| LR-08 | Renumber `CacheInvalidationReceiver.Log`'s 5 methods (`DeserializationFailed`, `DeserializationReturnedNull`, `BroadcastAllReceived`, `DispatchFailed`, `UnknownInvalidationType`) from literal `EventId` 4001-4005 (colliding with `.Redis.Core`'s `RedisConnectionHealthTracker`) to `LoggingEventIdRanges.Caching + 505` through `+ 509` | SharedKernel.Caching.Redis.PubSub | `○` |
+| LR-09 | Convert `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define<string>` static delegate (`new EventId(1, nameof(RedisCacheInvalidationBus))`) to a `[LoggerMessage]`-attributed partial method (`DefaultServiceNameWarning`) on a new nested `Log` class, `EventId = LoggingEventIdRanges.Caching + 510` | SharedKernel.Caching.Redis.PubSub | `○` |
+| LR-10 | Sweep all four packages' production source confirming zero remaining direct `ILogger.LogInformation/LogWarning/LogError/LogDebug/LogCritical/LogTrace` extension-method calls and zero remaining hand-written `LoggerMessage.Define`/`LoggerMessage.DefineScope` delegates | SharedKernel.Caching.FusionCache, .Redis.Core, .Redis.DistributedLocking, .Redis.PubSub | `○` |
+| LR-11 | Update `02.Caching/CLAUDE.md`: replace the "EventId" scattered mentions with a single canonical per-package sub-block table (2000-2099 FusionCache, 2100-2199 Redis.Core, 2200-2299 Redis reserved, 2300-2399 Redis.DistributedLocking, 2400-2499 Redis.HashStore reserved, 2500-2599 Redis.PubSub) and a new "Logging rules" implementation-rules subsection | — | `○` |
+| LR-12 | Regression-run all existing `02.Caching` test suites (FusionCache, Redis.Core, Redis.DistributedLocking, Redis.PubSub, Redis L2, Redis.HashStore) confirming zero behavioral change to log message text, level, or structured property names — only `EventId` values and authoring mechanism change | All six test projects | `○` |
+
+---
+
+### Ph37 (P-252) — Goal
+
+Close the two confirmed, live cross-domain/intra-domain `EventId` collisions this domain introduced before the platform-wide `LoggingEventIdRanges` registry (`01.Core` P-249) existed: `SharedKernel.Caching.Redis.Core`'s `RedisConnectionHealthTracker` and `SharedKernel.Caching.Redis.PubSub`'s `CacheInvalidationReceiver` both independently chose `EventId` 4001/4002 while running in the same process; `SharedKernel.Caching.FusionCache`'s `FusionCacheService` used `EventId` 1001-1005, silently squatting on `01.Core`'s own reserved block; and `SharedKernel.Caching.Redis.PubSub`'s `RedisChannelService` used `EventId` 3001-3005, squatting on `03.Domain`'s reserved block. This phase also converts the two remaining non-attribute logging call sites — `CacheWarmupHostedService`'s direct `ILogger` calls and `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define<string>` delegate — to the mandatory `[LoggerMessage]` source-generated pattern, and gives every `EventId` in this domain a home inside its own `LoggingEventIdRanges.Caching` (2000-2999) block, subdivided into 100-wide per-package sub-blocks in package declaration order. This is the highest-value, highest-risk retrofit target in WO-041 — `02.Caching` has both the most logging call sites of any domain and the only two packages proven to collide in a shared process today.
+
+**Why `SharedKernel.Caching.FusionCache` gets its own sub-block even though it is absent from `01.Core`'s illustrative worked example:** `01.Core/CLAUDE.md`'s worked example for this domain (`Redis.Core=2000-2099, Redis (L2)=2100-2199, Redis.DistributedLocking=2200-2299, Redis.HashStore=2300-2399, Redis.PubSub=2400-2499`) was written to illustrate the Redis role-split package family and did not account for `FusionCache`'s own logging (`CacheWarmupHostedService`, `FusionCacheService`) — `01.Core`'s registry only reserves the domain-level 1000-wide block and explicitly defers intra-domain sub-block assignment to each domain. This phase is `02.Caching`'s authoritative sub-block allocation, superseding that illustrative example: `FusionCache` is declared first in the Packages table and gets the first sub-block (2000-2099); every Redis role-package shifts one sub-block later than the illustrative example (Redis.Core now 2100-2199, not 2000-2099). `SharedKernel.Caching.Redis` (L2) and `SharedKernel.Caching.Redis.HashStore` reserve sub-blocks (2200-2299, 2400-2499) they do not yet use — no logging call sites exist in either package today — so a future logging addition to either has a pre-reserved home and cannot collide with a sibling.
+
+### Ph37 (P-252) — Scope
+
+- **Package(s) affected:** `SharedKernel.Caching.FusionCache`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Caching.Redis.DistributedLocking`, `SharedKernel.Caching.Redis.PubSub` (all modify-only — no new packages, no new public types, no `Abstractions` contract changes)
+- **New files:** None
+- **Modified files:**
+  - `02.Caching/SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.csproj` — add `<ProjectReference>` to `SharedKernel.Primitives`
+  - `02.Caching/SharedKernel.Caching.FusionCache/CacheWarmupHostedService.cs` — 8 direct `ILogger` calls converted to attributed `Log` nested class
+  - `02.Caching/SharedKernel.Caching.FusionCache/Implementations/FusionCacheService.cs` — existing `Log` class's 5 `EventId`s renumbered
+  - `02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.csproj` — add `<ProjectReference>` to `SharedKernel.Primitives`
+  - `02.Caching/SharedKernel.Caching.Redis.Core/RedisConnectionHealthTracker.cs` — existing `Log` class's 2 `EventId`s renumbered
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.csproj` — add `<ProjectReference>` to `SharedKernel.Primitives`
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/Implementations/RedLockDistributedLockService.cs` — existing `Log` class's 7 `EventId`s renumbered
+  - `02.Caching/SharedKernel.Caching.Redis.DistributedLocking/RedLockRenewableLock.cs` — existing `Log` class's 6 `EventId`s renumbered
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.csproj` — add `<ProjectReference>` to `SharedKernel.Primitives`
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/RedisChannelService.cs` — existing `Log` class's 5 `EventId`s renumbered
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/CacheInvalidationReceiver.cs` — existing `Log` class's 5 `EventId`s renumbered
+  - `02.Caching/SharedKernel.Caching.Redis.PubSub/RedisCacheInvalidationBus.cs` — hand-written `LoggerMessage.Define` delegate converted to attributed `Log` nested class
+  - `02.Caching/CLAUDE.md` — canonical EventId sub-block table + logging rules subsection added
+- **Deleted files:** None
+
+### Ph37 (P-252) — Implementation Rules
+
+1. `EventId` values must be written as `LoggingEventIdRanges.Caching + {offset}` (a compile-time constant expression — `LoggingEventIdRanges.Caching` is `const int`, so the sum is itself a valid `[LoggerMessage(EventId = ...)]` argument) — never a bare literal integer. This makes the domain-block relationship visible at every call site and survives a future `01.Core` renumbering impossibility (domain bases never change, per `01.Core`'s own rule) with zero risk.
+2. Sub-block allocation (100-wide, per package, in Packages-table declaration order): `SharedKernel.Caching.FusionCache` = `+0..+99`, `SharedKernel.Caching.Redis.Core` = `+100..+199`, `SharedKernel.Caching.Redis` (L2, reserved) = `+200..+299`, `SharedKernel.Caching.Redis.DistributedLocking` = `+300..+399`, `SharedKernel.Caching.Redis.HashStore` (reserved) = `+400..+499`, `SharedKernel.Caching.Redis.PubSub` = `+500..+599`. `SharedKernel.Caching.Abstractions` gets no sub-block — it has zero infrastructure dependencies and can never carry a logging call site.
+3. No message template text, `LogLevel`, or structured parameter name changes for any renumbered method — this phase changes only the `EventId` value and, for the two non-conforming call sites, the authoring mechanism. A snapshot/string-diff of every log line's rendered output before and after this phase must be identical except for the numeric `EventId`.
+4. `CacheWarmupHostedService`'s new `Log` nested class must mirror the existing convention already used by `FusionCacheService`, `RedisConnectionHealthTracker`, `RedLockDistributedLockService`, `RedLockRenewableLock`, `RedisChannelService`, and `CacheInvalidationReceiver`: `private static partial class Log` nested inside the containing class, with `internal static partial void {MethodName}(ILogger logger, ...)` signatures. `CacheWarmupHostedService` itself must become `partial` (sealed partial class) to host the nested partial `Log` class's generated members.
+5. Message template placeholders stay PascalCase named properties matching the call's parameter names (root convention, unchanged): `CacheWarmupHostedService`'s new methods use `{StrategyCount}`, `{StrategyName}`, `{Order}`, `{ElapsedMs}` — matching the existing interpolated text verbatim, just moved into `[LoggerMessage(Message = "...")]`.
+6. `RedisCacheInvalidationBus`'s converted method (`DefaultServiceNameWarning`) keeps `LogLevel.Warning` and the exact existing message text (including the two follow-up sentences on `AddSharedKernelCaching`/`AddCachingCoreOptions`), with `{ServiceName}` as the single named placeholder — replacing the positional `Action<ILogger, string, Exception?>` delegate with an attributed `internal static partial void DefaultServiceNameWarning(ILogger logger, string serviceName)` call (no `Exception?` parameter needed — the original call site always passed `null`).
+7. This phase must not introduce, rename, or remove any public interface, DI extension signature, or `Abstractions` contract member — it is logging-authoring and `EventId`-numbering only.
+8. Every renumbered/converted `[LoggerMessage]` method keeps its existing `internal` accessibility and existing method name — only `RedisCacheInvalidationBus`'s new method needs a name at all (it previously had none; a static delegate field, not a method).
+9. All four `.csproj` files add exactly one new `<ProjectReference>` (to `SharedKernel.Primitives`) — no other package reference changes. This is layering-legal: `02.Caching` may reference `01.Core` per the root `CLAUDE.md` dependency table.
+10. `SharedKernel.Caching.Redis` (L2) and `SharedKernel.Caching.Redis.HashStore` receive no code changes in this phase — their sub-blocks (`+200..+299`, `+400..+499`) are reserved in documentation only, for the first logging call site either package adds in the future.
+11. After this phase, a repo-wide `EventId` search must show zero values in this domain outside `2000-2999`, and zero pairwise duplicates within that range.
+
+### Ph37 (P-252) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Caching.FusionCache.csproj` | SharedKernel.Caching.FusionCache | Modify | Add `<ProjectReference>` to `SharedKernel.Primitives` |
+| `CacheWarmupHostedService.cs` | SharedKernel.Caching.FusionCache | Modify | 8 direct `ILogger` calls → attributed `Log` class, `EventId` `+0..+7` |
+| `Implementations/FusionCacheService.cs` | SharedKernel.Caching.FusionCache | Modify | Existing `Log` class renumbered 1001-1005 → `+10..+14` |
+| `SharedKernel.Caching.Redis.Core.csproj` | SharedKernel.Caching.Redis.Core | Modify | Add `<ProjectReference>` to `SharedKernel.Primitives` |
+| `RedisConnectionHealthTracker.cs` | SharedKernel.Caching.Redis.Core | Modify | Existing `Log` class renumbered 4001/4002 → `+100`/`+101` |
+| `SharedKernel.Caching.Redis.DistributedLocking.csproj` | SharedKernel.Caching.Redis.DistributedLocking | Modify | Add `<ProjectReference>` to `SharedKernel.Primitives` |
+| `Implementations/RedLockDistributedLockService.cs` | SharedKernel.Caching.Redis.DistributedLocking | Modify | Existing `Log` class renumbered 2001-2007 → `+300..+306` |
+| `RedLockRenewableLock.cs` | SharedKernel.Caching.Redis.DistributedLocking | Modify | Existing `Log` class renumbered 2010-2015 → `+307..+312` |
+| `SharedKernel.Caching.Redis.PubSub.csproj` | SharedKernel.Caching.Redis.PubSub | Modify | Add `<ProjectReference>` to `SharedKernel.Primitives` |
+| `RedisChannelService.cs` | SharedKernel.Caching.Redis.PubSub | Modify | Existing `Log` class renumbered 3001-3005 → `+500..+504` |
+| `CacheInvalidationReceiver.cs` | SharedKernel.Caching.Redis.PubSub | Modify | Existing `Log` class renumbered 4001-4005 → `+505..+509` |
+| `RedisCacheInvalidationBus.cs` | SharedKernel.Caching.Redis.PubSub | Modify | Hand-written `LoggerMessage.Define` → attributed `Log` class, `EventId` `+510` |
+| `02.Caching/CLAUDE.md` | — | Modify | Canonical EventId sub-block table + logging rules subsection |
+
+### Ph37 (P-252) — Acceptance Criteria
+
+- [ ] No direct `ILogger` extension-method call (`LogInformation`/`LogWarning`/`LogError`/`LogDebug`/`LogCritical`/`LogTrace`) remains in production source across all four packages
+- [ ] No hand-written `LoggerMessage.Define`/`LoggerMessage.DefineScope` delegate remains in production source across all four packages
+- [ ] Every `[LoggerMessage]`-attributed method in this domain has an `EventId` expressed as `LoggingEventIdRanges.Caching + {offset}`, with `{offset}` inside its package's reserved 100-wide sub-block
+- [ ] Zero `EventId` collisions within `02.Caching` and zero collisions against `01.Core`'s or `03.Domain`'s reserved blocks (verified via a full-domain grep of every `EventId =` / `EventId = LoggingEventIdRanges` expression)
+- [ ] `00.Governance`'s SK0020 (`DirectILoggerExtensionMethodUsage`) and SK0021 (`HandWrittenLoggerMessageDefineDelegate`) analyzers (P-250, once implemented) produce zero findings against all four packages
+- [ ] `00.Governance`'s `LoggingEventIdIntegrityAssertion` (P-250, once implemented and pointed at real assemblies) passes against this domain with zero suppressions
+- [ ] All existing `02.Caching` test suites continue to pass across all six packages, with log message text, level, and structured property names unchanged — only `EventId` values and (for two call sites) authoring mechanism differ
+- [ ] `02.Caching/CLAUDE.md` documents the final per-package `EventId` sub-block allocation (2000-2099 FusionCache, 2100-2199 Redis.Core, 2200-2299 Redis reserved, 2300-2399 Redis.DistributedLocking, 2400-2499 Redis.HashStore reserved, 2500-2599 Redis.PubSub)
+- [ ] `dotnet build` clean; no new compile warnings
+
+### Ph37 (P-252) — Dependencies
+
+- Requires `01.Core` P-249 to be **implemented** (not merely designed) before this phase's code changes can compile: `SharedKernel.Primitives.Logging.LoggingEventIdRanges.Caching` must physically exist and be published/buildable for the new `<ProjectReference>` in LR-01 to resolve. As of this phase's authoring (2026-07-09), `01.Core`'s `SK.01.P249` tasks (D-29/C-42/T-33/DO-15) are all `○` Pending — this phase is planned now but **execution-blocked** until `01.Core` ships `LoggingEventIdRanges`.
+- Does **not** require `00.Governance` P-250 to be implemented for this phase's code changes to compile or its own tests to pass — SK0020/SK0021/`LoggingEventIdIntegrityAssertion` are verification tooling, not a compile-time dependency. Full acceptance (last two checkboxes above referencing SK0020/SK0021/`LoggingEventIdIntegrityAssertion`) does require `00.Governance` P-250 to have shipped by the time this phase is verified.
+- Unblocks: gives `02.Caching` — the domain with the most logging call sites and the only domain with a confirmed live cross-package `EventId` collision — a clean, collision-free `EventId` surface; removes the two confirmed collisions (`Redis.Core`/`Redis.PubSub` at 4001/4002) and the two confirmed cross-domain squats (`FusionCache` on `01.Core`'s block, `Redis.PubSub`'s `RedisChannelService` on `03.Domain`'s block) that motivated `01.Core` P-249 in the first place.
+
+### Ph37 (P-252) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: >= 2.13.1 (unchanged)
+- FusionCache: 2.6.0 (unchanged)
+- RedLock.net: 2.3.2 (unchanged)
+- `SharedKernel.Primitives`: new `<ProjectReference>` in all four packages (no version — solution-local project reference)
+- .NET: `net10.0`
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies._
@@ -2429,6 +2541,7 @@ Format when active:
 | `SK.02.RedisLockingExtraction` | Phase 34 (Redis Distributed Locking Package Extraction) | 10 | 10 | `●` |
 | `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | 9 | 9 | `●` |
 | `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 9 | 9 | `●` |
+| `SK.02.LoggingRetrofit` | Phase 37 (Logging Retrofit to Platform `[LoggerMessage]` Standard) | 12 | 0 | `○` |
 
 ---
 
@@ -2477,3 +2590,4 @@ Format when active:
 - [2026-06-11] RL2-01→RL2-08 → ● in SK.02.RedisL2Refactor — SharedKernel.Caching.Redis adds ProjectReference to .Redis.Core; AddRedisL2 sources IConnectionMultiplexer via AddRedisConnection and circuit breaker via AddRedisCircuitBreaker; RedisL2Options.CircuitBreaker retyped to RedisCircuitBreakerOptions (Core, source-compat); Polly.Core direct ref retained (RedisHashService/RedisChannelService still inject ResiliencePipeline); 154 Redis + 33 Redis.Core tests passing (state-map-phase)
 - [2026-06-12] RHS-01→RHS-09 → ● in SK.02.RedisHashExtraction — SharedKernel.Caching.Redis.HashStore package created; RedisHashService/TypedHashStore<T>/AddRedisHashService/AddTypedHashStore<T> extracted from SharedKernel.Caching.Redis (pure namespace rename, no Obsolete shim needed); startup guard message updated to reference AddRedisConnection; ResiliencePipeline resolution unchanged; 68 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core tests passing (state-map-phase)
 - [2026-06-12] RPS-01→RPS-09 → ● in SK.02.RedisPubSubExtraction — SharedKernel.Caching.Redis.PubSub package created; RedisChannelService/RedisCacheInvalidationBus/CacheInvalidationReceiver/AddRedisChannelService/AddRedisCacheInvalidationBus/AddCacheInvalidationReceiver extracted from SharedKernel.Caching.Redis (pure namespace rename, Phase 26 reconnect logic relocated intact); SharedKernel.Caching.Redis slimmed to L2-only end state (Hosting.Abstractions + Polly.Core PackageReferences removed); 02.Caching/CLAUDE.md updated; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing — WO-023 (Phases 32-36) fully complete (state-map-phase)
+- [2026-07-09] Phase 37 planned (WO-041, P-252) — logging retrofit to the platform `[LoggerMessage]` standard: audited all four logging-bearing packages (`FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` — confirmed `Redis` L2 and `Redis.HashStore` carry zero logging call sites) and found `CacheWarmupHostedService` uses 8 direct `ILogger` calls, `RedisCacheInvalidationBus` uses a hand-written `LoggerMessage.Define<string>` delegate, `FusionCacheService` squats on `01.Core`'s reserved `EventId` block (1001-1005), `RedisChannelService` squats on `03.Domain`'s reserved block (3001-3005), and `RedisConnectionHealthTracker`/`CacheInvalidationReceiver` collide with each other at 4001/4002 (the collision that motivated `01.Core` P-249). Designed this domain's authoritative 100-wide sub-block allocation inside `LoggingEventIdRanges.Caching` (2000-2999) in package declaration order — `FusionCache`=+0..99, `Redis.Core`=+100..199, `Redis` (L2, reserved)=+200..299, `Redis.DistributedLocking`=+300..399, `Redis.HashStore` (reserved)=+400..499, `Redis.PubSub`=+500..599 — superseding `01.Core/CLAUDE.md`'s illustrative worked example (which omitted `FusionCache` entirely). 12 tasks (LR-01→LR-12) added; execution is blocked until `01.Core` ships `LoggingEventIdRanges` (P-249's C-42, currently `○` Pending) since all four packages need a new `<ProjectReference>` to `SharedKernel.Primitives` (caching-arch-planner, WO-041)
