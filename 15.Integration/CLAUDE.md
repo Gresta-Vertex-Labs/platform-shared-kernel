@@ -157,6 +157,17 @@ WebhookDeliveryExhaustedEvent  (sealed record, implements IIntegrationEvent)
           EventId/OccurredOn shape), not because the publish call site demands it.
 ```
 
+#### Logging (`Dispatch/`)
+
+```text
+WebhookDispatcher — Log  (private static partial class nested inside WebhookDispatcher)
+    ObserverException(ILogger logger, string observerType)   [LoggerMessage, EventId = LoggingEventIdRanges.Integration + 0 (= 15000), Level = Warning]
+    NOTE: Backs the single shared LogObserverException(Exception ex, string observerTypeName) helper called from both
+          NotifyAttemptAsync and NotifyCompletedAsync when an IWebhookDeliveryObserver implementation throws. This is
+          the only production log statement in SharedKernel.Integration.Webhooks today (P-257, WO-041 logging
+          retrofit) — see "Logging (EventId allocation)" below.
+```
+
 #### Delivery observation hook (`Observability/`)
 
 ```text
@@ -243,6 +254,13 @@ WithDeliveryObserver<TObserver>(this IServiceCollection services) → IServiceCo
 - Retry/backoff is configured once, on the named `HttpClient`, via `Microsoft.Extensions.Http.Resilience`'s standard resilience handler — never a hand-rolled retry loop inside `WebhookDispatcher`.
 - `WebhookDeliveryOptions.MaxConcurrentDeliveries` bounds the fan-out in `DispatchAsync` — unbounded `Task.WhenAll` over an arbitrarily large subscription list is a hard violation.
 
+### Logging rules
+
+- Every production log statement in this package is authored via the `[LoggerMessage]` source-generated partial-method pattern (root `CLAUDE.md` Logging Conventions) — a direct `ILogger.LogInformation/LogWarning/LogError/LogCritical/LogTrace/LogDebug(...)` extension-method call or a hand-written `LoggerMessage.Define<>()` static delegate is a hard violation, mechanically enforced by `00.Governance`'s SK0020 (`DirectILoggerExtensionMethodUsage`) / SK0021 (`HandWrittenLoggerMessageDefineDelegate`) analyzers and `LoggingEventIdIntegrityAssertion` (P-250) once shipped.
+- Every `[LoggerMessage]` method's `EventId` is written as `LoggingEventIdRanges.Integration + {offset}` (`LoggingEventIdRanges.Integration` is `const int` = 15000, so the sum is itself a valid compile-time constant `[LoggerMessage(EventId = ...)]` argument) — never a bare literal integer.
+- Message template placeholders are PascalCase named properties matching the call's named arguments (e.g. `{ObserverType}`) — never positional placeholders, never string-interpolated into the template.
+- CorrelationId, distributed-trace context, and TenantId are never passed as explicit message-template placeholders on any log statement in this package — they flow ambiently through the OpenTelemetry logging pipeline (`13.ServiceDefaults`), consistent with the root convention.
+
 ---
 
 ## AOT Notes
@@ -251,6 +269,20 @@ WithDeliveryObserver<TObserver>(this IServiceCollection services) → IServiceCo
 - The outbound payload is serialized via a `System.Text.Json` source-generated `JsonSerializerContext` — no runtime reflection-based serialization.
 - `Microsoft.Extensions.Http.Resilience` (Polly v8) AOT status must be re-verified on every major version bump — third-party, not BCL.
 - No reflection anywhere in this package's hot path; `IWebhookSubscriptionStore` and `IWebhookDeliveryObserver` are plain interfaces resolved through ordinary DI.
+
+---
+
+## Logging (EventId allocation — P-257, WO-041)
+
+`15.Integration` reserves `LoggingEventIdRanges.Integration` (15000-15999, from `SharedKernel.Primitives` — `01.Core` P-249) as its platform-wide `EventId` block. Unlike every other domain retrofitted under WO-041, this is a **single-package domain** (`SharedKernel.Integration.Webhooks` — no `.Abstractions` sibling, per the package-split discipline in the Packages section above), so the root registry's 100-wide-per-package sub-block subdivision rule does not apply here: subdivision is required only "when a domain has multiple packages." The entire 15000-15999 block belongs to `SharedKernel.Integration.Webhooks` today.
+
+| Type | EventId | Level | Trigger |
+| --- | --- | --- | --- |
+| `WebhookDispatcher.Log.ObserverException` | `LoggingEventIdRanges.Integration + 0` (15000) | Warning | An `IWebhookDeliveryObserver` implementation's `OnAttemptAsync`/`OnCompletedAsync` throws; the exception is caught and logged, never propagated (see the observer-isolation hard violation above) |
+
+This is the domain's only production log statement. Offsets `+1` through `+999` (15001-15999) stay reserved for future logging additions to this package, or — should a genuinely new second outbound delivery channel ever warrant the `.Abstractions` + `.{Provider}` split described in the Packages section — for a second package's own 100-wide sub-block, at which point this table must be re-partitioned following the same declaration-order convention `02.Caching` established.
+
+Every `[LoggerMessage(EventId = ...)]` value in this package must be written as `LoggingEventIdRanges.Integration + {offset}` — never a bare literal integer. `SharedKernel.Integration.Webhooks.csproj` already carries a `<ProjectReference>` to `SharedKernel.Primitives` (added under S-01/D-01 for future-proofing before this package had any logging call site) — P-257 is the first phase to actually consume it.
 
 ---
 
@@ -295,7 +327,7 @@ var isValid = WebhookSignatureVerifier.Verify(
 - `WebhookSignatureProvider`/`WebhookSignatureVerifier`: round-trip tests (sign then verify succeeds), tamper tests (mutated payload or header fails verification), expired-timestamp tests (outside tolerance fails), malformed-input tests (never throws, always returns `false`).
 - `IWebhookDispatcher.DispatchAsync`: fan-out to N active subscriptions, inactive/non-matching subscriptions excluded, one subscription's failure does not affect others' results.
 - Retry/backoff: transient failures (e.g. 503 responses) retried up to `MaxAttempts`, success on a later attempt reflected correctly in `WebhookDeliveryResult.Attempts`, exhaustion publishes exactly one `WebhookDeliveryExhaustedEvent` — assert via `16.Testing`'s `InMemoryEventPublisher` (`ShouldHavePublishedOnce<WebhookDeliveryExhaustedEvent>()`) rather than a hand-rolled `IEventPublisher` stub.
-- `IWebhookDeliveryObserver`: registered observers invoked once per attempt and once per completion; an observer that throws does not affect the delivery outcome and is logged, not rethrown.
+- `IWebhookDeliveryObserver`: registered observers invoked once per attempt and once per completion; an observer that throws does not affect the delivery outcome and is logged (via `WebhookDispatcher.Log.ObserverException`, `EventId = LoggingEventIdRanges.Integration + 0`), not rethrown.
 - `WebhookDeliveryOptions` validator: each invalid combination (zero `MaxAttempts`, `MaxBackoffDelay < BaseBackoffDelay`, non-positive `TimeSpan` values) fails startup validation with an actionable message.
 - Standard test package set: `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `coverlet.collector`, `FluentAssertions`, plus `Microsoft.Extensions.Http` test doubles as needed. `GlobalUsings.cs` includes `global using Xunit;`.
 
@@ -310,3 +342,4 @@ var isValid = WebhookSignatureVerifier.Verify(
 - [2026-06-26] WO-032 Design phase (P-200) locked — every interface contract re-confirmed against current upstream source (`SharedKernel.Primitives`, `SharedKernel.Contracts`'s `IIntegrationEvent`/`EventEnvelope<TEvent>`, `SharedKernel.Messaging.Abstractions`'s `IEventPublisher`, `SharedKernel.Configuration`'s `OptionsExtensions`); one correction made — `WebhookDeliveryOptions` validates via DataAnnotations `[Range]` attributes + `IValidatableObject` through `AddValidatedOptions<TOptions>(IConfigurationSection)`, not a free-standing validator type as originally phrased, since `SharedKernel.Configuration` exposes no separate `IValidateOptions<T>` contract; `IWebhookDispatcher`'s `typeof(TEvent).Name` routing convention reconfirmed as a deliberate parallel to (not a shared constraint with) `EventEnvelope<TEvent>.EventType`; `WebhookDeliveryExhaustedEvent` implementing `IIntegrationEvent` reconfirmed as a convention choice, not an `IEventPublisher` requirement (`PublishAsync<TEvent>` constrains only `where TEvent : class`); zero reference to `06.Persistence`/`11.Communication.*`/`07.Messaging.MassTransit` re-verified across all four confirmed dependency surfaces (integration-arch-planner)
 - [2026-06-26] SK.15.Docs (DO-01–DO-03) complete — `GenerateDocumentationFile` enabled in `SharedKernel.Integration.Webhooks.csproj` (zero missing-doc warnings; one unresolved `<see cref="WebhookDispatcher"/>` in `WebhookSignatureVerifier.cs` fixed by switching to a `<c>` literal since the type lives in a different namespace than the doc comment's compilation context expects); `README.md` added covering minimal setup, custom `WebhookDeliveryOptions`, `WithDeliveryObserver<T>()`, `DispatchAsync`/`DispatchToSubscriptionAsync`, and inbound `WebhookSignatureVerifier.Verify` usage from a `14.Presentation` receiver; `docs/configuration-reference.md` added covering every `WebhookDeliveryOptions` property/default/bound and validation-failure examples; 48/48 tests still passing (integration-phase-implementer)
 - [2026-06-26] SK.15.Published (P-01–P-05) complete — verification-only, no interface/rule changes. `SharedKernel.Integration.Webhooks.csproj` gained full NuGet packaging metadata mirroring the `12.Security`/`13.ServiceDefaults`/`14.Presentation` convention (`PackageId`, MIT license, README packed via `PackagePath="\"`, symbol package); packs cleanly to `.nupkg`+`.snupkg` with zero warnings, output to root `artifacts/nupkg/` per the established repo convention (both extensions already `.gitignore`d). New `15.Integration/consumer-verify` harness (mirrors the `13.ServiceDefaults`/`14.Presentation` consumer-verify pattern, registered in `Platform.SharedKernel.slnx`) proves `AddSharedKernelWebhooks()` + a registered `IWebhookSubscriptionStore` + a stand-in `IEventPublisher` resolves `IWebhookDispatcher` and completes a real `DispatchAsync` call with zero DI exceptions, and proves omitting `IWebhookSubscriptionStore` causes `GetRequiredService<IWebhookDispatcher>()` itself to throw `InvalidOperationException` naming the missing type — failure surfaces immediately at first resolution (a constructor dependency of `WebhookDispatcher`), not deferred into a silently-resolved dispatcher that no-ops inside `DispatchAsync`. Harness discovery: `AddSharedKernelWebhooks()`'s `BindConfiguration` call requires `IConfiguration` registered in the container even with no bound section — any real host's builder already provides this; the harness registers an empty `ConfigurationBuilder().Build()` instance to satisfy it in isolation. 48/48 tests still passing. `SharedKernel.Integration.Webhooks` now `●` Published — **15.Integration domain (WO-032) complete end to end** (integration-phase-implementer)
+- [2026-07-09] LoggingRetrofit phase (P-257, WO-041) planned — audited the domain's entire production log surface: exactly one call site, `WebhookDispatcher.LogObserverException` (a shared private helper invoked from both `NotifyAttemptAsync` and `NotifyCompletedAsync`), currently a direct `_logger.LogWarning(...)` call, no pre-existing `EventId` and no hand-written `LoggerMessage.Define` delegate. Added a "Logging" entry to the Interface Contracts section (`WebhookDispatcher.Log.ObserverException`, `[LoggerMessage]`, `EventId = LoggingEventIdRanges.Integration + 0` = 15000), a new "Logging rules" implementation-rules subsection, and a new "Logging (EventId allocation)" section documenting that this single-package domain needs no 100-wide sub-block subdivision — the full 15000-15999 block belongs to `SharedKernel.Integration.Webhooks`, with `+1..+999` reserved for future growth or a genuine second delivery-channel package. Test Rules updated to reference the new `Log.ObserverException` method. 5 tasks (LR-01→LR-05) added to `15.Integration/state-map.md` under `SK.15.LoggingRetrofit` — execution-blocked until `01.Core` ships `LoggingEventIdRanges` (P-249, `0/4` done as of this planning pass) (integration-arch-planner, WO-041)
