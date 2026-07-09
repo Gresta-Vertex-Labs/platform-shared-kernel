@@ -7910,6 +7910,16 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-08] Phase Backlog P-247 → ● Complete — SK.13.Core/Tests/Docs done; 05.Application/CLAUDE.md forward-reference callout remains for application-arch-planner (state-map-phase)
 - [2026-07-08] Governance → Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application (●) — promoted from SK.00.MarkerInterfaceMisuseGuard (11/11); SK0017/SK0018/SK0019 close the last three "not mechanically enforced" marker-interface misuse callouts in 05.Application/CLAUDE.md; every phase key in 00.Governance/state-map.md is now ● (state-map-phase)
 - [2026-07-08] Phase Backlog P-248 → ● Complete — SK.00.MarkerInterfaceMisuseGuard done; 00.Governance is now fully complete across every phase key (state-map-phase)
+- [2026-07-09] Phase(s) P-249 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-07-09] Phase(s) P-250 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-09] Phase(s) P-252 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
+- [2026-07-09] Phase(s) P-253 dispatched to application-arch-planner for 05.Application (dispatch-phase)
+- [2026-07-09] Phase(s) P-254 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-07-09] Phase(s) P-255 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
+- [2026-07-09] Phase(s) P-251 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-07-09] Phase(s) P-256 dispatched to presentation-arch-planner for 14.Presentation (dispatch-phase)
+- [2026-07-09] Phase(s) P-257 dispatched to integration-arch-planner for 15.Integration (dispatch-phase)
+- [2026-07-09] Phase(s) P-258 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -9886,4 +9896,246 @@ This mirrors the exact precedent already set three times for this same package f
 - [ ] Each analyzer is proven against both a positive (violation present) and negative (correct usage) fixture, per the existing `SharedKernel.Analyzers.Tests` convention.
 - [ ] `00.Governance/CLAUDE.md`'s analyzer table gains all three entries with the same Category/Severity/Trigger/Rationale/Suppress/Note structure as `SK0013`–`SK0016`.
 - [ ] Zero false positive against any type in `05.Application`/`05.Application.Behaviors`'s own shipped source (the platform's own `MediatRDomainEventDispatcher`, behaviors, etc. must not trip these consumer-facing rules).
+---
+
+---
+### P-249 — Core: Logging EventId Range Registry and Structured Logging Convention Primitive
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+
+A dependency-free, compile-time constant registry that reserves a contiguous `Microsoft.Extensions.Logging` `EventId` numeric range for every capability domain in the root folder map (00 through 17), computed directly from each domain's two-digit folder number (domain `NN` reserves `NN * 1000` through `NN * 1000 + 999`). The registry must be consumable by every downstream domain that emits logs today (02, 05, 07, 11, 13, 14, 15) or ever will in the future, without pulling in any dependency beyond what `01.Core` already ships with. It must carry documentation describing the sub-range convention a multi-package domain is expected to layer on top of its reserved block (100-wide sub-blocks allocated in the order that domain's packages are declared), so packages within the same domain never collide with each other even though this registry only enforces domain-level boundaries.
+
+#### Why this is needed
+
+`EventId` numbering across the platform today is ad hoc and has already produced a real collision — `SharedKernel.Caching.Redis.Core` and `SharedKernel.Caching.Redis.PubSub` both independently use `EventId` 4001/4002 for unrelated events, and these two packages are documented to run in the same process together. A registry every domain can reference removes the guesswork and makes new domains "born compliant" instead of requiring a future clean-up work order. `01.Core` is the only domain reachable from every domain that currently logs (02, 05, 07, 11, 13, 14, 15 may all reference `01.Core` per the layering table), making it the correct — and only architecturally legal — home for a cross-domain constant registry.
+
+#### Acceptance criteria
+- [ ] A compile-time-safe numeric base value exists for every one of the 18 folder-map domains (00–17), directly derived from the domain's two-digit number
+- [ ] The registry introduces zero new third-party NuGet dependencies
+- [ ] Documentation on the registry explains both the domain-level 1000-wide block rule and the recommended 100-wide per-package sub-block convention for multi-package domains
+- [ ] New tests confirm the domain bases are unique and match the folder map numbering exactly
+- [ ] No breaking change to any existing `01.Core` public surface
+---
+
+---
+### P-250 — Governance: Architecture Enforcement for the Platform Logging Standard
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 00.Governance
+**Depends on:** P-249
+
+#### What is needed
+
+Two enforcement mechanisms mirroring the platform's existing precedent of banning a common anti-pattern via analyzer/architecture-test (as was done for raw `HttpClient` injection and inline `ProblemDetails` construction): (1) a Roslyn analyzer that flags any direct call to an `ILogger` logging-extension method (`LogInformation`, `LogWarning`, `LogError`, `LogCritical`, `LogTrace`, `LogDebug`, or `ILogger.Log`) from production source, and any hand-written `LoggerMessage.Define(...)` static-delegate declaration, steering authors toward the `[LoggerMessage]` source-generated partial-method pattern instead; (2) an architecture test that loads the platform's own shipped assemblies, enumerates every `[LoggerMessage]`-attributed method's `EventId`, and asserts both global uniqueness across the whole platform and that each `EventId` falls inside its declaring assembly's domain-reserved range as defined by the `01.Core` registry (P-249).
+
+#### Why this is needed
+
+The logging survey behind this work order found three incompatible logging-authoring styles coexisting today with zero mechanical enforcement, plus confirmed `EventId` collisions. A documented convention alone will drift the same way the ad hoc `EventId` numbering already has — this domain's own precedent (the reflection ban, the raw-`HttpClient` ban, the `ProblemDetails` ban) is that a platform-wide "always do X, never do Y" rule must be backed by a mechanical check or it will not hold under multi-team, multi-package growth.
+
+#### Acceptance criteria
+- [ ] A new analyzer rejects direct `ILogger` logging-extension-method calls and hand-written `LoggerMessage.Define` delegates in production code, with a diagnostic message pointing to the `[LoggerMessage]` pattern
+- [ ] The analyzer does not fire inside `16.Testing`-only test infrastructure or against the analyzer's own test fixtures
+- [ ] A new architecture test enumerates all `[LoggerMessage]`-attributed methods across the platform's shipped assemblies and fails on any duplicate `EventId` or any `EventId` outside its owning domain's reserved range
+- [ ] Both mechanisms are documented in `00.Governance/CLAUDE.md` with rule ID(s) and what they enforce
+- [ ] All existing governance analyzer and architecture tests continue to pass
+---
+
+---
+### P-251 — ServiceDefaults: OpenTelemetry Log Export and Ambient Correlation/Tenant Enrichment
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-249, P-250
+
+#### What is needed
+
+The host-composition telemetry wiring must extend its existing OpenTelemetry `WithTracing(...)`/`WithMetrics(...)` registration with a matching `WithLogging(...)` registration, exporting logs through the same OTLP pipeline already used for traces and metrics, with scopes and the formatted message included so every `[LoggerMessage]`-authored log record automatically carries the ambient `TraceId`/`SpanId` from `Activity.Current`. Additionally, since `13.ServiceDefaults` already owns tenant resolution (`SharedKernel.MultiTenancy`), it must provide a mechanism so every log record emitted during a tenant-resolved request or message-consumption scope automatically carries the current `TenantId` — without any individual call site needing to pass it as a template placeholder.
+
+#### Why this is needed
+
+The logging survey found `13.ServiceDefaults` wires tracing and metrics export today but has zero logging wiring at all — logs are not exported via OTLP alongside traces/metrics, breaking the "one signal pipeline" story this domain otherwise delivers. Separately, nothing in the platform today makes `TenantId` ambient to logs (only `CorrelationId`/trace context is even partially addressed, via `Activity` baggage set in `14.Presentation`, and even that is not verified to reach a log record without a logging pipeline that reads `Activity`). Multi-tenant log aggregation without a reliable `TenantId` on every line defeats the "easily manage the logs" goal driving this whole work order.
+
+#### Acceptance criteria
+- [ ] The telemetry wiring exports logs via OTLP alongside the existing trace/metric export, with scopes and formatted message enabled
+- [ ] A documented mechanism exists for `TenantId` to be ambiently attached to every log record produced while a tenant is resolved, without requiring call sites to pass it explicitly
+- [ ] `CorrelationId` set by `14.Presentation`'s middleware is verified to appear on log records produced during that request via the new logging pipeline
+- [ ] No existing tracing/metrics behavior regresses; all existing `13.ServiceDefaults` tests continue to pass
+- [ ] `13.ServiceDefaults/CLAUDE.md` documents the new logging wiring and enrichment mechanism
+---
+
+---
+### P-252 — Caching: Logging Retrofit to the Platform `[LoggerMessage]` Standard
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 02.Caching
+**Depends on:** P-249, P-250
+
+#### What is needed
+
+Every production log statement across `SharedKernel.Caching.FusionCache`, `SharedKernel.Caching.Redis.Core`, `SharedKernel.Caching.Redis.DistributedLocking`, and `SharedKernel.Caching.Redis.PubSub` must be authored exclusively through the `[LoggerMessage]` source-generated partial-method pattern — converting `CacheWarmupHostedService`'s direct `ILogger` extension-method calls and `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define<string>` delegate to the attribute-based form. Every `EventId` across all four packages must be renumbered to sit inside `02.Caching`'s reserved range from the P-249 registry, with each of the four packages occupying its own non-overlapping sub-block — eliminating the confirmed `EventId` 4001/4002 collision between `Redis.Core` and `Redis.PubSub`.
+
+#### Why this is needed
+
+This domain has the most logging call sites in the platform and the only confirmed live `EventId` collision between two packages that ship together in the same process — the highest-value, highest-risk retrofit target in this work order.
+
+#### Acceptance criteria
+- [ ] No direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate remains in production source across all four packages
+- [ ] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `02.Caching`'s reserved range, with no collisions within or across the four packages
+- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
+- [ ] All existing `02.Caching` test suites continue to pass, with log message text/structure preserved unless a genuine defect was found
+- [ ] `02.Caching/CLAUDE.md` documents the domain's final EventId sub-block allocation per package
+---
+
+---
+### P-253 — Application: Logging Retrofit to the Platform `[LoggerMessage]` Standard
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 05.Application
+**Depends on:** P-249, P-250
+
+#### What is needed
+
+Every production log statement in `SharedKernel.Application.Behaviors` — `LoggingBehavior`, `FireAndForgetBackgroundConsumer`, `ChannelFireAndForgetDispatcher`, and `StreamLoggingBehavior` — must be authored through the `[LoggerMessage]` source-generated partial-method pattern, replacing direct `ILogger` extension-method calls and `StreamLoggingBehavior`'s hand-written `LoggerMessage.Define<>()` delegates. `EventId`s must be renumbered into `05.Application`'s reserved range from the P-249 registry. The existing `ILoggableRequest<TResponse>`-driven `BeginScope` mechanism for opt-in structured payload fields must be preserved exactly as-is — this retrofit only changes how the underlying log statements are declared and numbered, never the opt-in redaction contract.
+
+#### Why this is needed
+
+`LoggingBehavior` is the platform's single most consequential logging call site — it fires on every MediatR request across every consuming microservice that adopts the pipeline. Standardizing it is the highest-leverage single change in this work order.
+
+#### Acceptance criteria
+- [ ] No direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate remains in production source in `SharedKernel.Application.Behaviors`
+- [ ] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `05.Application`'s reserved range with no internal collisions
+- [ ] `ILoggableRequest<TResponse>`'s opt-in `BeginScope` behavior for request/response fields is unchanged in observable behavior
+- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
+- [ ] All existing `SharedKernel.Application.Behaviors.Tests` continue to pass
+- [ ] `05.Application/CLAUDE.md` documents the domain's final EventId allocation
+---
+
+---
+### P-254 — Messaging: Logging Retrofit and Scope-Construction Consolidation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 07.Messaging
+**Depends on:** P-249, P-250
+
+#### What is needed
+
+Every production log statement in `SharedKernel.Messaging.MassTransit` — `ConsumerBase`, `RoutingSlipActivityBase`, `FaultConsumerAdapter`, `BatchConsumerBase`, `VersionTranslatingConsumer`, and `TranslatorRegistrationValidator` — must be converted from the hand-written `LoggerMessage.Define<>()` pattern (and, in `FaultConsumerAdapter`'s case, a mixed raw `ILogger` call) to the `[LoggerMessage]` source-generated partial-method pattern, with every `EventId` renumbered into `07.Messaging`'s reserved range, eliminating the confirmed internal collisions (`EventId` 1 reused for two unrelated meanings, `EventId` 2 for three, `EventId` 3 for two). Additionally, the duplicated pattern of each of these four consumer/activity base types independently hand-building its own `CorrelationId`/message-context scope dictionary for `BeginScope` must be consolidated into one shared construction path within the package, so the scope's shape is guaranteed identical across every consumer type rather than drifting per-author.
+
+#### Why this is needed
+
+This domain has three separate internal `EventId` collisions today and four independent, duplicated implementations of essentially the same "build a correlation scope dictionary" logic — a maintenance and consistency risk distinct from the pure `EventId`/authoring-style problem the other domains have.
+
+#### Acceptance criteria
+- [ ] No hand-written `LoggerMessage.Define` delegate or raw `ILogger` extension-method call remains in production source in `SharedKernel.Messaging.MassTransit`
+- [ ] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `07.Messaging`'s reserved range with the three confirmed internal collisions resolved
+- [ ] `ConsumerBase`, `BatchConsumerBase`, `FaultConsumerAdapter`, and `RoutingSlipActivityBase` all construct their `BeginScope` context through one shared mechanism, guaranteeing identical scope-property shape across all four
+- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
+- [ ] All existing `SharedKernel.Messaging.MassTransit` tests continue to pass
+- [ ] `07.Messaging/CLAUDE.md` documents the domain's final EventId allocation and the shared scope-construction mechanism
+---
+
+---
+### P-255 — Communication: Logging Retrofit to the Platform `[LoggerMessage]` Standard
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 11.Communication
+**Depends on:** P-249, P-250
+
+#### What is needed
+
+Every production log statement across `SharedKernel.Communication.Internal` and `SharedKernel.Communication.Grpc` — including `KubernetesServiceEndpointResolver`'s two ad-hoc `LogDebug` calls (which coexist alongside its own delegate-based logging in the same file), `StaticServiceDiscoveryStartupWarning`, `TenantIdInterceptor`, and `CorrelationTracingInterceptor` — must be authored exclusively through the `[LoggerMessage]` source-generated partial-method pattern, with every `EventId` renumbered into `11.Communication`'s reserved range with non-overlapping sub-blocks per package.
+
+#### Why this is needed
+
+`KubernetesServiceEndpointResolver` is a clear example of the platform's mixed-style problem within a single file — some log statements already use the delegate pattern while two others bypass it entirely. Consolidating to one style in this domain removes the last mixed-pattern file in the platform.
+
+#### Acceptance criteria
+- [ ] No direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate remains in production source across both packages
+- [ ] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `11.Communication`'s reserved range, with `Internal` and `Grpc` occupying distinct non-overlapping sub-blocks
+- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
+- [ ] All existing `11.Communication` test suites continue to pass
+- [ ] `11.Communication/CLAUDE.md` documents the domain's final EventId sub-block allocation per package
+---
+
+---
+### P-256 — Presentation: Explicit EventId Assignment and Correlation Verification
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 14.Presentation
+**Depends on:** P-249, P-250, P-251
+
+#### What is needed
+
+The three existing `[LoggerMessage]`-attributed methods in `SharedKernel.Presentation.WebApi` (`CorrelationIdMiddleware`, `SharedKernelExceptionHandler`) and `SharedKernel.Presentation.SignalR` (`HubExceptionMappingFilter`) must each be given an explicit `EventId` inside `14.Presentation`'s reserved range from the P-249 registry, replacing today's compiler-auto-assigned IDs, which are not guaranteed stable across future edits to these classes. Once `13.ServiceDefaults`'s OTel logging export and enrichment (P-251) is in place, this phase must verify — at an integration level — that a request's `CorrelationId` (set by `CorrelationIdMiddleware`) is actually observable on the log records produced while handling that request.
+
+#### Why this is needed
+
+This domain already follows the correct authoring pattern (`[LoggerMessage]` everywhere) but relies on compiler-assigned `EventId`s, which silently renumber if a method is added, removed, or reordered in the same class — a latent stability hazard for any log-based alerting or dashboard keyed on `EventId`. It also owns the `CorrelationId` contract this whole logging standard depends on for cross-cutting correlation, so it is the right place to close the loop on whether that correlation actually reaches the log output once `13.ServiceDefaults` wires the export path.
+
+#### Acceptance criteria
+- [ ] All three existing `[LoggerMessage]`-attributed methods have an explicit `EventId` inside `14.Presentation`'s reserved range, with `WebApi` and `SignalR` occupying distinct non-overlapping sub-blocks
+- [ ] An integration-level test proves a request's `CorrelationId` is present on the log records emitted for that request once P-251's logging pipeline is active
+- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
+- [ ] All existing `14.Presentation` test suites continue to pass
+- [ ] `14.Presentation/CLAUDE.md` documents the domain's final EventId sub-block allocation and the correlation verification result
+---
+
+---
+### P-257 — Integration: Logging Retrofit to the Platform `[LoggerMessage]` Standard
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 15.Integration
+**Depends on:** P-249, P-250
+
+#### What is needed
+
+The single production log statement in `SharedKernel.Integration.Webhooks`'s `WebhookDispatcher` (the delivery-observer-exception warning) must be converted from a direct `ILogger` extension-method call to the `[LoggerMessage]` source-generated partial-method pattern, with an explicit `EventId` inside `15.Integration`'s reserved range from the P-249 registry.
+
+#### Why this is needed
+
+Completes the platform-wide retrofit — this is the smallest of the affected domains but is included for the same consistency reason as the others: a platform-wide standard with even one exception stops being a standard.
+
+#### Acceptance criteria
+- [ ] The direct `ILogger` extension-method call in `WebhookDispatcher` is replaced with a `[LoggerMessage]`-attributed method
+- [ ] The method has an explicit `EventId` inside `15.Integration`'s reserved range
+- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
+- [ ] All existing `15.Integration` tests continue to pass
+- [ ] `15.Integration/CLAUDE.md` documents the domain's EventId allocation
+---
+
+---
+### P-258 — Testing: Structured Log Assertion Test Double
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-041
+**Domain:** 16.Testing
+**Depends on:** P-249, P-250
+
+#### What is needed
+
+A shared, in-process test double that captures structured log records emitted through `ILogger`/`ILoggerFactory` — including `EventId`, `LogLevel`, the formatted message, the underlying structured state (so property values are assertable, not just the rendered string), any active `BeginScope` payload, and the associated exception when present — without requiring a concrete logging provider or a mocking framework, mirroring the existing `InMemoryMessageBus`/`InMemoryEventPublisher` precedent in this same package. It must expose assertion-friendly query helpers (for example, "was this `EventId` logged at this level with this property value") so both this platform's own test suites and consuming microservices' test suites can verify their `[LoggerMessage]`-authored logging without brittle string-matching on rendered messages.
+
+#### Why this is needed
+
+Every domain in this work order is being retrofitted to a mechanically consistent logging shape (`[LoggerMessage]`, explicit `EventId`, ambient enrichment) specifically so logs are easy to query and alert on in production — the same shape should be just as easy to assert on in tests. Today nothing in `16.Testing` lets a consuming service verify "my handler logged EventId 5012 with RequestName=X" without hand-rolling an `ILogger` mock and inspecting raw string output, exactly the brittle pattern this work order is designed to move the platform away from.
+
+#### Acceptance criteria
+- [ ] A reusable in-memory `ILogger`/`ILoggerFactory` test double exists in `SharedKernel.Testing`, capturing `EventId`, `LogLevel`, formatted message, structured state, active scope payload, and exception per log record
+- [ ] Assertion helpers allow querying captured log records by `EventId`, level, and structured property value without string-matching the rendered message
+- [ ] The test double depends only on `Microsoft.Extensions.Logging.Abstractions`, never a mocking framework, matching this package's existing `InMemoryMessageBus`/`InMemoryEventPublisher` dependency posture
+- [ ] New tests in this domain's established self-test convention prove the double correctly captures a representative `[LoggerMessage]` call site
+- [ ] Root `CLAUDE.md`'s "What Goes Where" guidance is updated to point future logging-assertion needs at this double instead of ad hoc mocks
 ---
