@@ -2,7 +2,7 @@
 
 ## What This Domain Is
 
-The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships six independent packages covering: functional primitives (`Result<T>`, `Error`), system abstractions (`IClock`, SmartEnums, base exceptions, BCL extensions), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction, and dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random generation).
+The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships six independent packages covering: functional primitives (`Result<T>`, `Error`), system abstractions (`IClock`, SmartEnums, base exceptions, BCL extensions), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction, dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random generation), and the platform-wide `LoggingEventIdRanges` registry — a compile-time constant reserving each folder-map domain's `EventId` numbering block for the `[LoggerMessage]` logging convention enforced repo-wide.
 
 Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Railway-oriented.**
 
@@ -14,7 +14,7 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 
 | Package | Role | References |
 |---------|------|-----------|
-| `SharedKernel.Primitives` | `Result<T>`, `Error`, `ErrorType`, `IClock`, `SmartEnum<TEnum,TValue>` | nothing |
+| `SharedKernel.Primitives` | `Result<T>`, `Error`, `ErrorType`, `IClock`, `SmartEnum<TEnum,TValue>`, `LoggingEventIdRanges` | nothing |
 | `SharedKernel.Core` | Base exceptions, BCL extension methods, `Result<T>` railway extensions | `SharedKernel.Primitives` |
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) | `SharedKernel.Primitives`, `SharedKernel.Core` |
 | `SharedKernel.Configuration` | Options-pattern validation, `AddValidatedOptions` DI extension | `SharedKernel.Primitives` |
@@ -146,6 +146,37 @@ SmartEnum<TEnum, TValue>  (abstract base, TEnum : SmartEnum<TEnum,TValue>)
     .List                                                  → IReadOnlyList<TEnum>  (static compile-time list — no reflection)
     .Name                                                  → string
     .Value                                                 → TValue
+
+LoggingEventIdRanges  (static class — compile-time constant registry, zero reflection)
+    .DomainRangeWidth                                      → int  (= 1000; width of one domain's reserved EventId block)
+    .PackageSubBlockWidth                                  → int  (= 100; recommended width of one package's sub-block within a
+                                                                     multi-package domain's 1000-wide block, allocated in that
+                                                                     domain's package declaration order)
+    .Governance                                            → int  (= 0)      — 00.Governance
+    .Core                                                  → int  (= 1000)   — 01.Core
+    .Caching                                               → int  (= 2000)   — 02.Caching
+    .Domain                                                → int  (= 3000)   — 03.Domain
+    .Contracts                                             → int  (= 4000)   — 04.Contracts
+    .Application                                           → int  (= 5000)   — 05.Application
+    .Persistence                                           → int  (= 6000)   — 06.Persistence
+    .Messaging                                             → int  (= 7000)   — 07.Messaging
+    .Storage                                               → int  (= 8000)   — 08.Storage
+    .Search                                                → int  (= 9000)   — 09.Search
+    .Intelligence                                          → int  (= 10000)  — 10.Intelligence
+    .Communication                                         → int  (= 11000)  — 11.Communication
+    .Security                                              → int  (= 12000)  — 12.Security
+    .ServiceDefaults                                       → int  (= 13000)  — 13.ServiceDefaults
+    .Presentation                                          → int  (= 14000)  — 14.Presentation
+    .Integration                                           → int  (= 15000)  — 15.Integration
+    .Testing                                               → int  (= 16000)  — 16.Testing
+    .Workflows                                             → int  (= 17000)  — 17.Workflows
+    — each domain constant = {two-digit folder-map number} * 1000; reserves a contiguous 1000-wide EventId block
+      ({value}..{value}+999) exactly matching the root CLAUDE.md folder map (00 through 17)
+    — a domain with multiple packages must subdivide its own 1000-wide block into 100-wide sub-blocks, one per
+      package, in the order that domain's packages are declared (e.g., 02.Caching: Redis.Core=2000-2099,
+      Redis (L2)=2100-2199, Redis.DistributedLocking=2200-2299, Redis.HashStore=2300-2399, Redis.PubSub=2400-2499);
+      this registry enforces only the domain-level 1000-wide boundary — intra-domain sub-block assignment is each
+      domain's own responsibility (and where the historical Redis.Core/Redis.PubSub 4001/4002 collision came from)
 ```
 
 ### `SharedKernel.Core` — public surface
@@ -391,6 +422,10 @@ AddSharedKernelCryptography(IConfiguration configuration)
 - `ErrorCodes` uses a **nested static class string-constant** approach — not enums. Consuming packages may add local constants without forking the SharedKernel.
 - `IClock` is the only permitted source of time in all packages — `DateTime.UtcNow` or `DateTimeOffset.UtcNow` direct usage anywhere in this domain is a hard violation.
 - `SmartEnum` value lookup (`FromValue`, `FromName`) must **not** use reflection in the hot path — use a static compile-time list built at type initialization.
+- `LoggingEventIdRanges` is the single canonical source of domain-level `EventId` base values platform-wide — every package anywhere in the repo that authors `[LoggerMessage]` methods must derive its `EventId` values from this registry (domain base + local offset), never an ad hoc numeric literal disconnected from the domain's reserved block.
+- `LoggingEventIdRanges` fields are `const int` only — never `static readonly`, never enum-backed, never computed at runtime. `[LoggerMessage(EventId = ...)]` requires a compile-time constant expression (e.g. `EventId = LoggingEventIdRanges.Application + 42`), so anything short of a `const` breaks every consumer at compile time.
+- Adding a new folder-map domain (00–17 today) means adding exactly one new `const int` field to `LoggingEventIdRanges` — never renumbering or reassigning an existing domain's base value; doing so would silently invalidate every already-shipped `EventId` in that domain.
+- `LoggingEventIdRanges` only reserves the domain-level 1000-wide block. It does not (and must not attempt to) enforce or assign the 100-wide per-package sub-blocks inside a multi-package domain — that allocation is each domain's own documentation responsibility (see `13.ServiceDefaults`/`00.Governance` for the mechanical collision-detection layer).
 - Base exceptions always carry an `Error` payload; string-only constructors are not allowed.
 - Async railway extension methods must **not** use `async`/`await` on the outer extension body where the only async work is awaiting the input — avoid unnecessary state machine allocation.
 - `AddValidatedOptions` must call `.ValidateOnStart()` — misconfigured apps must fail at startup, not at first access.
@@ -448,6 +483,7 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 - `Result<T>`, `Result`, `Error`, `ValidationResult`, `ValidationResult<T>` are sealed classes/records — no reflection, fully AOT-safe.
 - `ErrorCodes` is a static class of string constants — no runtime lookup, fully AOT-safe.
 - `SmartEnum` base uses a static `IReadOnlyList<TEnum>` built at type-initialization — no reflection in value lookup.
+- `LoggingEventIdRanges` is a static class of compile-time `const int` values — no reflection, no runtime computation, fully AOT-safe, and directly usable as a `[LoggerMessage(EventId = ...)]` attribute argument (which itself requires a compile-time constant expression).
 - All railway extension methods are static — AOT-safe by default. Async overloads use `Task` continuation patterns to avoid AOT-hostile constructs.
 - `Microsoft.Extensions.Options` is AOT-compatible as of .NET 8+ — verify on each upgrade.
 - `Microsoft.FeatureManagement` — verify AOT status on each major upgrade; the `IFeatureManager` wrapper allows a swap if needed.
@@ -464,7 +500,7 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 ## Test Rules
 
 - Unit tests for each package live in the nested `.Tests/` folder inside that package's folder.
-- `SharedKernel.Primitives.Tests/` — Result, Error, IClock, SmartEnum, IHasSuccessFlag, IResultOfT\<T\>, IFailureFactory\<TSelf\> (generic-constraint dispatch producing a correct failure `Result<T>` for at least two distinct closed shapes, e.g. `Result<int>`/`Result<string>`, plus confirmation that `Result` (non-generic) is not assignable to `IFailureFactory<Result>`)
+- `SharedKernel.Primitives.Tests/` — Result, Error, IClock, SmartEnum, IHasSuccessFlag, IResultOfT\<T\>, IFailureFactory\<TSelf\> (generic-constraint dispatch producing a correct failure `Result<T>` for at least two distinct closed shapes, e.g. `Result<int>`/`Result<string>`, plus confirmation that `Result` (non-generic) is not assignable to `IFailureFactory<Result>`), `LoggingEventIdRanges` (all 18 domain base constants are pairwise unique, each is a multiple of 1000, and each equals exactly `{domain-folder-number} * 1000` matching the root CLAUDE.md folder map 00 through 17)
 - `SharedKernel.Core.Tests/` — exceptions, railway extensions, BCL extensions
 - `SharedKernel.Guards.Tests/` — guard functional path (Against.*), guard throw path (Throw.*), boundary theories
 - `SharedKernel.Configuration.Tests/` — ValidatedOptions eager validation
@@ -495,3 +531,4 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 - [2026-06-29] WO-034 closed (P-211, P-212, P-213) — mechanical rename executed across all production `.cs` files (0 warnings/0 errors build); `SharedKernel.Cryptography.Tests` updated to the renamed contract plus a new `Hash_ThenVerify_WithApiKeySecret_ReturnsSuccess` test proving genuine secret-agnostic generalization (59/59 passing); `SharedKernel.Consumer.Tests/ConsumerDependencyGraphTests.cs` updated to `IOneWayHasher`/`HashVerificationResult` (42/42 consumer tests passing, confirming the published `2.0.0` package's Primitives+Configuration transitive chain resolves); `01.Core/README.md` hashing section rewritten showing password and API-key usage side by side. No new types or DI shapes — pure execution of the P-210 design. `SharedKernel.Cryptography` re-packed and published to the local feed at `2.0.0` (core-phase-implementer)
 - [2026-07-01] P-230 applied (WO-038) — added `IHasSuccessFlag` zero-member marker interface (implemented by `Result<T>` and `Result`) and `IResultOfT<T>` typed interface (implemented by `Result<T>` only, exposing `IsSuccess`/`IsFailure`/`Value`); both are AOT-clean by construction with no `[RequiresUnreferencedCode]` annotation; purpose: unblock `05.Application.Behaviors` from reflection-based outcome detection (`LoggingBehavior`) and `Expression`-compiled `FailureResponseFactory`; additive-only — no existing `Result<T>` or `Result` member signatures change; interface contracts, AOT notes, implementation rules, and test rules updated in this brain; 8 tasks added to `01.Core/state-map.md` under `SK.01.P230` (core-arch-planner, WO-038)
 - [2026-07-03] P-236 applied (WO-039) — added `IFailureFactory<TSelf>` self-referential (CRTP) contract to `SharedKernel.Primitives`: a `static abstract TSelf Failure(Error error)` member reachable via `where TResponse : IFailureFactory<TResponse>`; `Result<T>` implements `IFailureFactory<Result<T>>` through its existing `Failure(Error)` static factory — no new member, no signature change; `Result` (non-generic) deliberately excluded, consistent with `IResultOfT<T>`'s exclusion. Purpose: `05.Application`'s `FailureResponseFactory`/`ResultOfTDispatcher<TResponse>` (P-232, WO-038) claimed reflection-elimination but the shipped code still calls `Type.GetInterfaces()`/`MakeGenericType()`/`GetMethod()`/`Invoke()` — invisible to governance's SK0012 rule (which matches only the literal `MakeGenericMethod` call) but exactly the shape SK0012 exists to eliminate; this phase gives `05.Application` (P-237) the primitive needed to genuinely close the gap. Additive only — `IHasSuccessFlag`, `IResultOfT<T>`, and every existing `Result<T>`/`Result` member signature unchanged. 5 tasks added to `01.Core/state-map.md` under `SK.01.P236` (core-arch-planner, WO-039)
+- [2026-07-08] P-249 applied (WO-041) — added `LoggingEventIdRanges` to `SharedKernel.Primitives`: a compile-time `const int` registry reserving one 1000-wide `EventId` block per folder-map domain (00.Governance=0 through 17.Workflows=17000, each = `{domain number} * 1000`), plus `DomainRangeWidth`(1000)/`PackageSubBlockWidth`(100) documentation constants describing the per-package sub-block convention multi-package domains layer on top. Motivation: a live `EventId` collision (`Caching.Redis.Core` vs `Redis.PubSub`, both using 4001/4002) plus zero platform-wide `EventId` coordination mechanism; `01.Core` is the only domain reachable from every domain that logs today (02, 05, 07, 11, 13, 14, 15), making `SharedKernel.Primitives` the correct — and only architecturally legal — home for a cross-domain constant registry. Additive only, zero new NuGet dependencies, no existing `Result<T>`/`Error`/`SmartEnum` member changes. 4 tasks added to `01.Core/state-map.md` under `SK.01.P249` (core-arch-planner, WO-041)

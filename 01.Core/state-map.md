@@ -36,6 +36,7 @@
 | `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | All tasks in Phase: WO-034 are `●` | P-210, P-211, P-212, P-213 |
 | `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | All tasks in Phase: P-230 are `●` | P-230 |
 | `SK.01.P236` | P-236 Reflection-Free Failure-Factory Contract | All tasks in Phase: P-236 are `●` | P-236 |
+| `SK.01.P249` | P-249 Logging EventId Range Registry | All tasks in Phase: P-249 are `●` | P-249 |
 
 ---
 
@@ -338,6 +339,22 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: P-249 — Logging EventId Range Registry <!-- phase-key: SK.01.P249 -->
+
+> Additive extension to `SharedKernel.Primitives`: adds `LoggingEventIdRanges`, a dependency-free, compile-time `const int` registry reserving a contiguous `Microsoft.Extensions.Logging` `EventId` numeric range for every capability domain in the root folder map (00 through 17), computed directly from each domain's two-digit folder number (`{domain number} * 1000` through `+999`). Ships with `DomainRangeWidth`(1000) and `PackageSubBlockWidth`(100) documentation constants describing the 100-wide-per-package sub-block convention a multi-package domain layers on top of its own reserved 1000-wide block — this registry enforces only the domain-level boundary, never the intra-domain sub-block assignment.
+> Motivation: `EventId` numbering across the platform today is ad hoc and has already produced a real, confirmed collision — `SharedKernel.Caching.Redis.Core` and `SharedKernel.Caching.Redis.PubSub` both independently use `EventId` 4001/4002 for unrelated events, and these two packages are documented to run in the same process together. `01.Core` is the only domain reachable from every domain that currently logs (02, 05, 07, 11, 13, 14, 15 may all reference `01.Core` per the root layering table), making it the correct — and only architecturally legal — home for a cross-domain constant registry every future `[LoggerMessage]`-authoring package can consume without a future clean-up work order.
+> Additive only — no existing `Result<T>`, `Error`, `IClock`, `SmartEnum<TEnum,TValue>`, guard, options, feature-flag, or cryptography member, interface, or DI shape changes. Zero new NuGet dependencies (pure `const int` fields, no `Microsoft.Extensions.Logging` package reference needed — `EventId` is a BCL-adjacent struct consumers construct themselves from the `int`).
+> WO-041.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-29 | Define `LoggingEventIdRanges` static class shape — one public `const int` field per root folder-map domain (00.Governance through 17.Workflows), each value = `{two-digit domain number} * 1000`; plus `DomainRangeWidth = 1000` and `PackageSubBlockWidth = 100` documentation constants; XML doc remarks state the domain-level 1000-wide block rule and the recommended 100-wide per-package sub-block convention, with a worked example (`02.Caching`'s Redis role-split) | SharedKernel.Primitives | `○` |
+| C-42 | Implement `LoggingEventIdRanges` in `SharedKernel.Primitives/Logging/LoggingEventIdRanges.cs` — all 18 domain `const int` fields plus the two width constants, matching the D-29 design exactly; no reflection, no runtime computation | SharedKernel.Primitives | `○` |
+| T-33 | Unit: `LoggingEventIdRanges` — assert all 18 domain base constants are pairwise unique; assert each is a multiple of `DomainRangeWidth` (1000); assert each equals exactly `{domain-folder-number} * 1000` matching the root `CLAUDE.md` folder map (00 through 17) by name-to-number table; regression-confirm existing `SharedKernel.Primitives.Tests` still pass unchanged | SharedKernel.Primitives.Tests | `○` |
+| DO-15 | XML doc `LoggingEventIdRanges` and every domain constant field — state the domain-level 1000-wide block rule, the 100-wide per-package sub-block convention with a worked multi-package example, and that this registry enforces only the domain-level boundary (not intra-domain sub-block collisions); add a short "EventId registry" usage example to `01.Core/README.md` showing a downstream package computing its own `EventId` (e.g. `LoggingEventIdRanges.Application + 42`) | SharedKernel.Primitives | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `01.Core` references nothing._
@@ -352,7 +369,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 146 (141 prior tasks + 5 new P-236 tasks: D-28, C-41, T-31/T-32, DO-14).
+> Counts updated whenever a task state changes. Total tasks: 150 (146 prior tasks + 4 new P-249 tasks: D-29, C-42, T-33, DO-15).
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -367,6 +384,7 @@ Format when active:
 | `SK.01.WO034` | WO-034 IOneWayHasher Rename (P-210/P-211/P-212/P-213) | 4 | 4 | 0 | `●` |
 | `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | 8 | 8 | 0 | `●` |
 | `SK.01.P236` | P-236 Reflection-Free Failure-Factory Contract | 5 | 5 | 0 | `●` |
+| `SK.01.P249` | P-249 Logging EventId Range Registry | 4 | 0 | 4 | `○` |
 
 ---
 
@@ -406,3 +424,4 @@ Format when active:
 - [2026-07-02] D-26/D-27/C-39/C-40/T-29/T-30/DO-12/DO-13 → ● in SK.01.P230 — IHasSuccessFlag and IResultOfT<T> implemented, tested, and documented; 56/56 tests passing (state-map-phase)
 - [2026-07-03] P-236 processed (WO-039) — added `SK.01.P236` phase key and 5 new tasks (D-28 design, C-41 implementation, T-31/T-32 tests, DO-14 docs) for `IFailureFactory<TSelf>`, a self-referential (CRTP) contract built on a C# static abstract interface member (`static abstract TSelf Failure(Error error)`, constrained `where TSelf : IFailureFactory<TSelf>`); `Result<T>` implements `IFailureFactory<Result<T>>` through its existing `Failure(Error error)` static factory — no new member, no signature change; `Result` (non-generic) deliberately excluded, consistent with `IResultOfT<T>`'s exclusion. Motivation: `05.Application`'s `FailureResponseFactory`/`ResultOfTDispatcher<TResponse>` (P-232, WO-038) claimed to have eliminated reflection via `IResultOfT<T>` but still calls `Type.GetInterfaces()`/`MakeGenericType()`/`GetMethod()`/`Invoke()` — invisible to governance's SK0012 rule but exactly the shape it exists to eliminate; this phase gives `05.Application` (P-237) the primitive needed to genuinely close the gap. Additive only — `IHasSuccessFlag`, `IResultOfT<T>`, and every existing `Result<T>`/`Result` member signature unchanged. Total tasks now 146 (core-arch-planner, WO-039)
 - [2026-07-03] D-28/C-41/T-31/T-32/DO-14 → ● in SK.01.P236 — implemented `IFailureFactory<TSelf>` (`SharedKernel.Primitives/Results/IFailureFactory.cs`); `Result<T>` now declares `IFailureFactory<Result<T>>` alongside `IHasSuccessFlag, IResultOfT<T>`, satisfied implicitly by its pre-existing `Failure(Error)` factory; `Result` (non-generic) confirmed excluded — `IFailureFactory<Result>` is unnameable at compile time since `Result` doesn't satisfy the interface's own `where TSelf : IFailureFactory<TSelf>` constraint, proven via reflection over `Result`'s declared interfaces rather than a direct `is` check. Added 8 tests to `ResultInterfaceTests.cs` (dispatch for `Result<int>`/`Result<string>`, assignability, exclusion proof). While wiring these in, found and fixed a pre-existing broken test (`IResultOfT_GenericConstraintPattern_WorksWithoutReflection`, committed in 5e9ed3a) that used an unsatisfiable self-referential constraint (`where TResponse : IResultOfT<TResponse>`) against `Result<T> : IResultOfT<T>`, which was blocking `SharedKernel.Primitives.Tests` from compiling at all; corrected to the two-type-parameter form (`where TResponse : IResultOfT<TValue>`) matching `IResultOfT<T>`'s actual (non-self-referential) shape. 74/74 `SharedKernel.Primitives.Tests` passing; `SK.01.P236` now fully `●` (5/5); propagated to root `state-map.md` (core-phase-implementer)
+- [2026-07-08] P-249 processed (WO-041) — added `SK.01.P249` phase key and 4 new tasks (D-29 design, C-42 implementation, T-33 tests, DO-15 docs) for `LoggingEventIdRanges`, a dependency-free `const int` registry reserving one 1000-wide `EventId` block per root folder-map domain (00.Governance=0 through 17.Workflows=17000, each = `{domain number} * 1000`), plus `DomainRangeWidth`(1000)/`PackageSubBlockWidth`(100) constants documenting the 100-wide per-package sub-block convention multi-package domains layer on top. Motivation: a confirmed live `EventId` collision (`Caching.Redis.Core` vs `Redis.PubSub`, both using 4001/4002) plus the complete absence of a platform-wide `EventId` coordination mechanism; `01.Core` is the only domain reachable from every domain that logs today (02, 05, 07, 11, 13, 14, 15 per the root layering table), making `SharedKernel.Primitives` the correct — and only architecturally legal — home. Additive only — no existing `Result<T>`/`Error`/`IClock`/`SmartEnum`/guard/options/feature-flag/cryptography member or DI shape changes; zero new NuGet dependencies. Total tasks now 150 (core-arch-planner, WO-041)
