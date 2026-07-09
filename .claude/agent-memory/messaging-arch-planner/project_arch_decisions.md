@@ -1,6 +1,6 @@
 ---
 name: project-arch-decisions
-description: Critical architecture decisions, package boundary rules, and MassTransit 9.x API discoveries for the 07.Messaging domain
+description: Critical architecture decisions, package boundary rules, MassTransit 9.x API discoveries, and the P-254 logging/EventId allocation for the 07.Messaging domain
 metadata:
   type: project
 ---
@@ -63,5 +63,16 @@ metadata:
 - `ConsumerBase<TMessage>.Consume()` starts child Activity "Consumer.Consume" tagged `messaging.message_type`; also enriches log scope with `messaging.destination` (from `ConsumeContext.DestinationAddress?.AbsolutePath`) + `messaging.message_type`
 - `MassTransitEventPublisher.PublishAsync<TEvent>()` starts child Activity "EventPublisher.Publish" tagged `messaging.event_type`
 - Pattern to watch for generally: when another domain's pending phase assumes a 07.Messaging instrumentation/contract exists that doesn't, fix it as a same-domain 07.Messaging phase first, not a workaround elsewhere
+
+## Logging Standard and EventId Allocation (P-254, WO-041)
+
+- Domain reserved range: `7000-7999` (`07 * 1000`, from `SharedKernel.Primitives.Logging.LoggingEventIdRanges.Messaging` in 01.Core, P-249)
+- Only `SharedKernel.Messaging.MassTransit` logs (Abstractions has zero logging deps) — single `7000-7099` sub-block, no per-package subdivision needed
+- Final allocation: 7001 `ConsumerBase.ConsumerConsumeError`, 7002 `BatchConsumerBase.BatchConsumeEntry`, 7003 `BatchConsumerBase.BatchConsumeError`, 7004 `FaultConsumerAdapter.FaultConsumerHandling`, 7005 `FaultConsumerAdapter.FaultConsumerError` (new — replaced a raw `_logger.LogError` call), 7006 `RoutingSlipActivityBase.RoutingSlipExecuteError`, 7007 `RoutingSlipActivityBase.RoutingSlipCompensateError`, 7008 `VersionTranslatingConsumer.VersionTranslating`, 7009 `TranslatorRegistrationValidator.VersionTranslatorNoConsumer` — continue sequentially from 7010 for future additions
+- Pre-P-254 state had 3 confirmed internal collisions from raw integer `EventId` literals (1, 2, 3) reused across unrelated `LoggerMessage.Define<>()` delegates — a good example of why the mechanical `[LoggerMessage]` + registry-range convention exists
+- New shared `MessagingLogScope.Create(Guid? correlationId) → Dictionary<string,object?>` (`Logging/MessagingLogScope.cs`, MassTransit package) is the single approved seed for any `BeginScope` dictionary in this package — always seeds `["CorrelationId"]`. Replaces four previously-independent hand-rolled implementations in `ConsumerBase`, `BatchConsumerBase`, `FaultConsumerAdapter`, `RoutingSlipActivityBase`
+- `RoutingSlipActivityBase`'s retrofit is a deliberate behavior change, not a pure refactor: its `BeginScope` dictionary never carried a `CorrelationId` key before P-254 (it only tagged `Activity.Current`) — now it does, via the shared helper seeded from `context.TrackingNumber`
+- `VersionTranslatingConsumer` and `TranslatorRegistrationValidator` never used `BeginScope` — out of scope for `MessagingLogScope`, only their `LoggerMessage.Define` calls needed converting
+- Pattern to watch for: when a future domain phase adds a new consumer/activity base type that logs, check whether it needs `MessagingLogScope.Create` too — the four-type list is not automatically closed
 
 Related: [[project-messaging-domain]]

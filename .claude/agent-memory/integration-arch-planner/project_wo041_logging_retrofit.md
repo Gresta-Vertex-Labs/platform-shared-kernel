@@ -1,0 +1,18 @@
+---
+name: wo041_logging_retrofit
+description: P-257 (WO-041) logging retrofit plan for 15.Integration — smallest of the ten WO-041 domain phases, single log statement, execution-blocked on 01.Core P-249
+type: project
+---
+
+P-257 (WO-041, dispatched 2026-07-08, planned by integration-arch-planner 2026-07-09) retrofits `SharedKernel.Integration.Webhooks` to the platform's mandatory `[LoggerMessage]` source-generated logging pattern (root `CLAUDE.md` Logging Conventions, `01.Core` P-249 registry, `00.Governance` P-250 analyzer/architecture-test).
+
+**This domain's retrofit is the smallest of the ten WO-041 domain phases.** The entire package has exactly one production log statement: `WebhookDispatcher.LogObserverException(Exception ex, string observerTypeName)`, a single shared private helper invoked from two call sites (`NotifyAttemptAsync` and `NotifyCompletedAsync`) when an `IWebhookDeliveryObserver` implementation throws. Unlike `02.Caching` (confirmed live 4001/4002 `EventId` collision plus cross-domain squats on `01.Core`/`03.Domain` blocks) there was no pre-existing defect to fix here — this phase exists purely so the platform-wide standard has zero exceptions.
+
+**Design decisions:**
+- `EventId = LoggingEventIdRanges.Integration + 0` (= 15000), `Level = Warning`, converted into a `private static partial class Log` nested inside `WebhookDispatcher` (mirroring the `private static partial class Log` convention already established in `02.Caching`'s `FusionCacheService`/`RedisConnectionHealthTracker`/etc.) — `WebhookDispatcher` becomes `sealed partial class`.
+- **No sub-block subdivision needed.** `15.Integration` is (today) a single-package domain — `SharedKernel.Integration.Webhooks` has no `.Abstractions` sibling. The root registry's 100-wide-per-package sub-block rule (`01.Core/CLAUDE.md`) applies only "when a domain has multiple packages" — so the entire `LoggingEventIdRanges.Integration` block (15000-15999) belongs to this one package. Offsets `+1..+999` are reserved for future growth or a genuine second delivery-channel package (see the domain's own `.Abstractions` + `.{Provider}` split-trigger rule in `CLAUDE.md`'s Packages section) — if that ever happens, re-partition following `02.Caching`'s declaration-order convention.
+- The `SharedKernel.Primitives` `<ProjectReference>` already exists in `SharedKernel.Integration.Webhooks.csproj` (added under D-01/S-01 purely for future-proofing, never actually consumed until now) — no new `.csproj` reference is needed, unlike every other WO-041 domain phase which each had to add one.
+
+**Blocking dependency (same shape as every other WO-041 domain phase):** execution is blocked until `01.Core` ships `SharedKernel.Primitives.Logging.LoggingEventIdRanges` (P-249) — as of 2026-07-09 that phase is `0/4` done (`○` Pending) in `01.Core/state-map.md`. Full acceptance (per P-257's own criteria) additionally needs `00.Governance`'s SK0020/SK0021/`LoggingEventIdIntegrityAssertion` (P-250) to have shipped, but that is verification tooling only — not a compile-time blocker for this phase's own code change.
+
+**How to apply:** Before implementing LR-01→LR-05 in `15.Integration/state-map.md`, re-check `01.Core/state-map.md`'s `SK.01.P249` status — if still `○`, the implementer should hold off (the `[LoggerMessage(EventId = LoggingEventIdRanges.Integration + 0)]` expression will not compile without the shipped constant). If a future phase adds a second package to this domain, re-open this memory and `CLAUDE.md`'s "Logging (EventId allocation)" section to assign the second package its own 100-wide sub-block rather than leaving both packages sharing the undivided block.

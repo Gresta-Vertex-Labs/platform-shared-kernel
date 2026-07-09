@@ -1,9 +1,13 @@
 ---
 name: project-caching-state
-description: Package split for 02.Caching (3-package complete, 7-package WO-023 in flight), phase history through WO-007 + WO-023 plan, interface locations, layering rules, AOT decisions
+description: Package split for 02.Caching (7-package split COMPLETE as of Phase 36), phase history through WO-007/WO-023/WO-041 P-252, interface locations, layering rules, AOT decisions, EventId sub-block allocation
 metadata:
   type: project
 ---
+
+## CORRECTION (2026-07-09): WO-023 is COMPLETE, not planned
+
+Earlier revisions of this memory said the 7-package split (Phases 32-36) was "planned, not yet implemented." That was stale — verified against the actual `02.Caching/state-map.md` and `CLAUDE.md` on 2026-07-09: **all of Phases 32-36 are complete (`●`)**. The 7-package topology (Abstractions, FusionCache, Redis.Core, Redis (L2), Redis.DistributedLocking, Redis.HashStore, Redis.PubSub) is shipped. Always re-verify phase completion state against the live files before trusting this memory's "planned" language below — it describes the design intent at authoring time, not necessarily current reality.
 
 # Caching Domain State
 
@@ -139,6 +143,35 @@ metadata:
 - **(Phase 32, planned)** `RedisCircuitBreakerOptions` generalizes Ph.30's `RedisL2Options.CircuitBreakerOptions` (same 5 properties/defaults) as a top-level class in `.Redis.Core`. `RedisL2Options.CircuitBreaker` retypes to it — source-compatible (`o.CircuitBreaker.Enabled = true` still compiles).
 - **(Phase 32, planned)** Two independent connection-health mechanisms coexist by design: `RedisConnectionHealthTracker` (`.Redis.Core`, passive observer, no replay logic) vs. `RedisChannelService`'s own `ConnectionRestored`/`ConnectionFailed` + registry-lock resubscription replay (Ph.26, relocates intact to `.Redis.PubSub` Phase 36). Do NOT unify these in WO-023 — explicitly deferred.
 - **(Phases 34–36, planned)** `.Redis`, `.DistributedLocking`, `.HashStore`, `.PubSub` are siblings — each refs only Abstractions + `.Redis.Core`, never each other. Each retains its own tiny `internal ...CachingBuilder : ICachingBuilder` for `[Obsolete]` `IServiceCollection` shims (no shared adapter type).
+
+## Phase 37 (WO-041, P-252) — Logging Retrofit to [LoggerMessage] Standard (PLANNED, execution-blocked)
+
+Designed 2026-07-09. Converts every production log statement in this domain to the mandatory `[LoggerMessage]` pattern and renumbers every `EventId` into `LoggingEventIdRanges.Caching` (2000-2999, from `SharedKernel.Primitives`, `01.Core` P-249).
+
+**Confirmed defects motivating this phase (found via direct grep of production .cs files, not assumed):**
+- `RedisConnectionHealthTracker` (Redis.Core) and `CacheInvalidationReceiver` (Redis.PubSub) both used EventId 4001/4002 — live collision, same process.
+- `FusionCacheService` (FusionCache) used EventId 1001-1005 — squatting on `01.Core`'s reserved 1000-1999 block.
+- `RedisChannelService` (Redis.PubSub) used EventId 3001-3005 — squatting on `03.Domain`'s reserved 3000-3999 block.
+- `CacheWarmupHostedService` (FusionCache) uses 8 direct `ILogger.LogInformation/LogWarning/LogError` calls — not `[LoggerMessage]` at all.
+- `RedisCacheInvalidationBus` (Redis.PubSub) uses a hand-written `LoggerMessage.Define<string>` static delegate with `new EventId(1, nameof(...))` — not the attribute pattern.
+- `SharedKernel.Caching.Redis` (L2) and `SharedKernel.Caching.Redis.HashStore` carry **zero** logging call sites — confirmed via grep, unaffected by this phase.
+
+**Authoritative EventId sub-block allocation (100-wide, package declaration order — this supersedes `01.Core/CLAUDE.md`'s illustrative worked example, which omitted FusionCache):**
+
+| Package | Sub-block |
+|---|---|
+| FusionCache | +0..+99 (CacheWarmupHostedService +0..+7, FusionCacheService +10..+14) |
+| Redis.Core | +100..+199 (RedisConnectionHealthTracker +100/+101) |
+| Redis (L2) | +200..+299 (reserved, unused) |
+| Redis.DistributedLocking | +300..+399 (RedLockDistributedLockService +300..+306, RedLockRenewableLock +307..+312) |
+| Redis.HashStore | +400..+499 (reserved, unused) |
+| Redis.PubSub | +500..+599 (RedisChannelService +500..+504, CacheInvalidationReceiver +505..+509, RedisCacheInvalidationBus +510) |
+
+EventId values must be written as `LoggingEventIdRanges.Caching + {offset}` (compile-time const expression), never a bare literal.
+
+**Hard blocker:** none of the four affected packages (FusionCache, Redis.Core, Redis.DistributedLocking, Redis.PubSub) currently have a `ProjectReference` to `SharedKernel.Primitives` — despite this domain's CLAUDE.md package table aspirationally listing "01.Core" as a FusionCache reference, the actual csproj has no such reference. This phase must add one to each of the four. Execution is blocked until `01.Core` P-249 (`LoggingEventIdRanges`, task C-42) actually ships — as of 2026-07-09 it is still `○` Pending in `01.Core/state-map.md`.
+
+Full task breakdown: `02.Caching/state-map.md` Phase 37 (`SK.02.LoggingRetrofit`, 12 tasks LR-01→LR-12).
 
 ## Invalidation Channel Naming Convention
 
