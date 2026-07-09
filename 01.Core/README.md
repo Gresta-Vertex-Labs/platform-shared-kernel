@@ -227,6 +227,32 @@ if (result.IsValid)
 
 ---
 
+### LoggingEventIdRanges — EventId Registry
+
+`LoggingEventIdRanges` is a compile-time `const int` registry reserving a contiguous 1000-wide `EventId` block per root folder-map domain (00.Governance through 17.Workflows). Every package anywhere in the repo that authors `[LoggerMessage]` methods must derive its `EventId` values from this registry — never an ad hoc numeric literal.
+
+```csharp
+using Microsoft.Extensions.Logging;
+using SharedKernel.Primitives.Logging;
+
+internal static partial class ApplicationLogMessages
+{
+    // 05.Application's reserved block starts at LoggingEventIdRanges.Application (5000).
+    // A downstream package computes its own EventId as "domain base + local offset" —
+    // the offset is a compile-time constant expression, which [LoggerMessage] requires.
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Application + 42,
+        Level = LogLevel.Information,
+        Message = "Handled request {RequestName} in {ElapsedMilliseconds}ms")]
+    public static partial void RequestHandled(
+        this ILogger logger, string requestName, long elapsedMilliseconds);
+}
+```
+
+A domain composed of multiple packages (e.g. `02.Caching`'s Redis role-split) subdivides its own 1000-wide block into 100-wide sub-blocks, one per package, in declaration order — `LoggingEventIdRanges` reserves only the domain-level boundary; the sub-block assignment is each domain's own documentation responsibility.
+
+---
+
 ## SharedKernel.Core — Railway-Oriented Extensions
 
 ### Result\<T\> Railway Pattern
