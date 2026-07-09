@@ -624,6 +624,79 @@ SK0007  RedisChannelServiceMessagingSubstitute
                 "IDomainEventHandler" as a class name suffix that is not a misuse.
     Exemption : Classes within SharedKernel.Caching* namespaces are always exempt.
                 Any additional exemption must be documented in 00.Governance/CLAUDE.md.
+
+SK0020  DirectILoggerExtensionMethodUsage
+    Category  : Design
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose invoked method resolves (via
+                SemanticModel.GetSymbolInfo) to a method whose ContainingType is exactly
+                "Microsoft.Extensions.Logging.LoggerExtensions" and whose Name starts with
+                "Log" (covers LogTrace/LogDebug/LogInformation/LogWarning/LogError/
+                LogCritical and any future same-family extension method added to that static
+                class), OR whose ContainingType is exactly "Microsoft.Extensions.Logging.ILogger"
+                and whose Name == "Log" (covers the base interface's Log<TState> call site,
+                e.g. logger.Log(LogLevel.Information, eventId, state, exception, formatter)).
+                Requires SemanticModel resolution — the method-name family (LogInformation,
+                LogWarning, etc.) is common enough across unrelated logging frameworks
+                (Serilog's ILogger, NLog, custom ILogger-shaped wrapper types) that a
+                syntax-only simple-name check would produce unacceptable false positives;
+                the exact ContainingType match is the discriminator.
+    Fix       : Author the log statement via the [LoggerMessage] source-generated
+                partial-method pattern (Microsoft.Extensions.Logging.LoggerMessageAttribute)
+                with an explicit EventId inside the calling assembly's domain-reserved range
+                (SharedKernel.Primitives.Logging.LoggingEventIdRanges, P-249) instead of a
+                direct ILogger extension-method call.
+    Exempt    : Namespace SharedKernel.Testing (and sub-namespaces) — the in-memory
+                ILogger/ILoggerFactory test double (P-258) legitimately implements/exercises
+                the ILogger surface directly as its own subject under test. Suppression uses
+                the established SyntaxNode.Parent namespace walk (same as SK0001/SK0007).
+                Generated code is never analyzed — the analyzer calls
+                context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None), so the
+                compiler-generated partial-method bodies [LoggerMessage]'s own source generator
+                emits (which internally call ILogger.Log) are never flagged; without this guard,
+                every correct [LoggerMessage] declaration would ironically trigger SK0020 against
+                its own generated implementation.
+    Suppress  : Per-call-site via #pragma warning disable SK0020 when a direct call is
+                genuinely required (e.g., a thin adapter around a third-party library that only
+                accepts a raw ILogger); document the rationale inline.
+    Note      : Introduced WO-041 P-250. Implemented in the same analyzer class as SK0021
+                (LoggingAuthoringStyleAnalyzer) — a single DiagnosticAnalyzer emitting two
+                DiagnosticDescriptors, since both diagnostics encode the same platform logging
+                standard ("always [LoggerMessage], never hand-rolled") and share the
+                GeneratedCodeAnalysisFlags.None guard and the SharedKernel.Testing exemption.
+                This is the first two-diagnostics-one-analyzer-class shape in this domain;
+                every prior SK analyzer was one class per ID.
+
+SK0021  HandWrittenLoggerMessageDefineDelegate
+    Category  : Design
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose Expression is a MemberAccessExpressionSyntax
+                with an Expression identifier text of "LoggerMessage" (or the rightmost segment
+                of a qualified "Microsoft.Extensions.Logging.LoggerMessage" name) and a Name
+                identifier text starting with "Define" (covers Define and DefineScope across all
+                generic arities: Define, Define<T1>, Define<T1,T2>, Define<T1,T2,T3>,
+                Define<T1,T2,T3,T4>). Syntax-only — no SemanticModel required; the qualified
+                "LoggerMessage.Define*" call shape is specific enough that a simple-name match
+                carries negligible false-positive risk, consistent with the domain's
+                cost-conscious "escalate to semantic model only when truly ambiguous" convention
+                (e.g. SK0703's AddSingleton<T> simple-name match).
+    Fix       : Replace the hand-written static Action<ILogger,...> delegate field plus its
+                LoggerMessage.Define(...) initializer with a [LoggerMessage]-attributed static
+                partial method declaration. The source generator produces the equivalent
+                delegate-caching machinery automatically, with compile-time message-template
+                validation the hand-written form does not get.
+    Exempt    : Namespace SharedKernel.Testing (and sub-namespaces) — same rationale and
+                SyntaxNode.Parent namespace-walk mechanism as SK0020, applied for symmetry, even
+                though no known legitimate use exists there today. The
+                ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None) guard is shared
+                with SK0020 in the same analyzer class — not actually load-bearing for this rule
+                today (LoggerMessage.Define is an implementation detail internal to the source
+                generator's own emitted code, not something the generator's public-facing
+                partial-method body calls directly), but applied uniformly across both
+                diagnostics for consistency and future-proofing.
+    Suppress  : Per-call-site via #pragma warning disable SK0021; document the rationale inline.
+    Note      : Introduced WO-041 P-250. Implemented in LoggingAuthoringStyleAnalyzer alongside
+                SK0020 — see that entry for the shared-analyzer-class rationale.
 ```
 
 ---
@@ -2388,6 +2461,67 @@ NoBareHealthCheckLiteralWhereConstantsExistPredicate  (class : ICustomRule — i
     (passes) unconditionally if the resolved constant-value set is empty (no constants class
     exists yet in the assembly). Lives in Predicates/ folder. Used by
     HealthCheckConstantsUsageRules.NoBareHealthCheckLiteralWhereConstantsExist.
+
+LoggingEventIdIntegrityAssertion  (public class — reflection/Mono.Cecil-based platform-wide
+invariant helper, not ConditionList/ICustomRule; WO-041 P-250)
+    .AssertGloballyUniqueAndInRange(IReadOnlyDictionary<Assembly, (int RangeMin, int RangeMax)> assemblyRanges)
+        Mirrors ApplicationPipelineRules.PipelineOrderAssertion's precedent — a plain public
+        helper, not a NetArchTest ConditionList, because "every [LoggerMessage] EventId across
+        every shipped assembly is globally unique and falls inside its own assembly's reserved
+        range" is a cross-assembly, whole-platform invariant with no single-assembly "fire on a
+        contrived violating assembly" shape a ConditionList/ICustomRule scan naturally expresses.
+        For each Assembly key in assemblyRanges, loads the assembly via Mono.Cecil
+        (AssemblyDefinition.ReadAssembly(assembly.Location)) and walks EVERY TypeDefinition in
+        the module PLUS every TypeDefinition.NestedTypes entry RECURSIVELY. This deliberately
+        does NOT use NetArchTest's Types.InAssembly(...) projection — SK0012's own documented gap
+        (see ReflectionGuardRules above) proved that projection is blind to compiler-generated
+        and nested types; walking Mono.Cecil's ModuleDefinition.Types/NestedTypes directly
+        sidesteps that gap entirely for this rule, so a [LoggerMessage] partial method declared
+        inside a nested logging-helper class (a common authoring pattern) is never missed.
+        For each MethodDefinition carrying a CustomAttribute whose AttributeType.FullName ==
+        "Microsoft.Extensions.Logging.LoggerMessageAttribute", extracts the EventId via the
+        attribute's "EventId" named property (CustomAttribute.Properties,
+        CustomAttributeNamedArgument.Name == "EventId") if present, falling back to the first
+        int-typed positional CustomAttribute.ConstructorArguments entry for the
+        constructor-overload authoring style (covers both `[LoggerMessage(EventId = 5042,
+        Level = LogLevel.Information, Message = "...")]` and
+        `[LoggerMessage(5042, LogLevel.Information, "...")]`). Collects every (EventId,
+        DeclaringType, MethodName, Assembly) tuple found across ALL supplied assemblies into one
+        aggregate pass, then performs two independent checks:
+          (1) Global uniqueness: any EventId value shared by more than one distinct
+              (DeclaringType, MethodName) tuple across the ENTIRE aggregate set — including
+              across different assemblies — is a collision.
+          (2) Range membership: for each tuple, RangeMin <= EventId <= RangeMax using the
+              caller-supplied range for that tuple's OWN declaring assembly (looked up from
+              assemblyRanges by the Assembly the tuple was discovered in).
+        Aggregates every violation found (does not stop at the first) and throws a single
+        test-framework-agnostic assertion exception listing every collision (naming both
+        offending declaring-type/method sites) and every out-of-range EventId (naming the
+        offending type/method, the actual EventId, and the expected range) — mirroring
+        PipelineOrderAssertion's aggregate-failure-message convention.
+        Caller-supplied range dictionary: 00.Governance never references SharedKernel.Primitives
+        directly (00.Governance references nothing). The consuming test project builds the
+        assemblyRanges dictionary itself, typically as
+        { typeof(SomeApplicationType).Assembly: (LoggingEventIdRanges.Application,
+        LoggingEventIdRanges.Application + 999), ... } for every shipped production assembly —
+        keeping SharedKernel.Primitives.Logging.LoggingEventIdRanges (P-249) as the single
+        source of truth for range values while this helper itself stays dependency-free.
+        Rationale: the WO-041 audit found a confirmed live EventId collision
+        (SharedKernel.Caching.Redis.Core vs SharedKernel.Caching.Redis.PubSub, both using
+        4001/4002) plus three internal collisions inside SharedKernel.Messaging.MassTransit —
+        this is the mechanical enforcement of the per-domain LoggingEventIdRanges registry the
+        root CLAUDE.md's Logging Conventions section now mandates; a documented convention alone
+        already drifted once and will drift again under multi-team, multi-package growth without
+        a build-time gate.
+        Real-assembly status: EXPECTED TO FAIL if pointed at the platform's real shipped
+        assemblies today — the WO-041 audit's own confirmed collisions have not yet been
+        retrofitted (all ten WO-041 phases are `○` Pending per root CLAUDE.md as of 2026-07-08,
+        including 01.Core's own P-249 LoggingEventIdRanges registry this rule's real-world range
+        dictionary depends on). Design/implementation/tests for this phase use contrived
+        in-memory multi-assembly Mono.Cecil fixtures only, consistent with every
+        "designed-ahead-of-a-pending-retrofit" precedent in this domain
+        (SK.00.ServiceDefaultsGovernance, SK.00.MetricsOutcomeTagAndMisregistrationGuard,
+        SK.00.CryptoDelegationAndUowSeamGuard, SK.00.ApplicationPipelineArchRules).
 ```
 
 ---
@@ -2552,6 +2686,12 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - SK0017/SK0018/SK0019 all exclude types carrying the `abstract` modifier (`Modifiers.Any(SyntaxKind.AbstractKeyword)`) — the same exemption already established by SK0009 — so a generic abstract request base class spanning multiple marker-interface families behind a type parameter is not prematurely flagged; concrete (non-abstract) types further down the same inheritance chain are still checked via the full `AllInterfaces` closure.
 - SK0017/SK0018/SK0019 fire globally with no namespace-scoped trigger condition — unlike SK0016's trigger-IN scope, these three are explicitly consumer-side rules: the violation (a command/query type implementing an incompatible marker-interface combination) occurs in a CONSUMING microservice's own type declarations, never inside `SharedKernel.Application`/`SharedKernel.Application.Behaviors` itself, which declares no command or query types at all (only the generic pipeline-behavior classes that consume them). This is why the zero-false-positive requirement against this domain's own shipped source is a structural argument (verifiable by inspection), not a real-assembly architecture test the way NetArchTest `ICustomRule` phases require.
 - SK0017, SK0018, and SK0019 are the next three sequential IDs in the SK0001–SK00N general-purpose block (SK0016 was the prior ID). They introduce zero new `SharedKernel.ArchitectureTests` artifacts — pure Roslyn analyzers, `netstandard2.0`, `Microsoft.CodeAnalysis.CSharp` 4.14.0, matching every prior SK analyzer.
+- SK0020 `DirectILoggerExtensionMethodUsage` and SK0021 `HandWrittenLoggerMessageDefineDelegate` are the next two sequential IDs in the SK0001–SK00N general-purpose block (SK0019 was the prior ID), and the first pair in this domain implemented as a SINGLE `DiagnosticAnalyzer` class (`LoggingAuthoringStyleAnalyzer`) emitting two `DiagnosticDescriptor`s rather than one class per ID — justified because both encode the same platform logging standard ("always `[LoggerMessage]`, never hand-rolled") and share both the `GeneratedCodeAnalysisFlags.None` guard and the `SharedKernel.Testing` namespace exemption. Do not split them into two classes purely to match the one-class-per-ID convention; do not add a third, unrelated diagnostic to this class either — the shared-class rationale is "same standard, same guards," not "convenient batching."
+- `LoggingAuthoringStyleAnalyzer` MUST call `context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None)` (or an equivalent generated-file exclusion) before registering its syntax-node actions. This is load-bearing, not stylistic: `[LoggerMessage]`'s own source generator emits a partial-method body that internally calls `ILogger.Log` directly — without this guard, SK0020 would fire against the compiler-generated implementation of every correct `[LoggerMessage]` declaration platform-wide, defeating the rule's entire purpose.
+- SK0020 requires `SemanticModel.GetSymbolInfo` on the invoked method to resolve `ContainingType` exactly (`Microsoft.Extensions.Logging.LoggerExtensions` for the six named extension methods; `Microsoft.Extensions.Logging.ILogger` + `Name == "Log"` for the interface-level call) — a syntax-only simple-name check on `LogInformation`/`LogWarning`/etc. was rejected because those names collide with unrelated logging frameworks (Serilog `ILogger`, NLog, custom wrapper types) commonly present in consuming microservices' own dependency trees. SK0021 is syntax-only by contrast — the qualified `LoggerMessage.Define*` call shape is specific enough that the domain's usual "escalate only when truly ambiguous" cost discipline (see SK0011, SK0015, SK0017–19 for the semantic-model precedents, and SK0703/SK0007 for the syntax-only precedents) favors the cheaper check here.
+- `LoggingEventIdIntegrityAssertion` (WO-041 P-250) is the domain's second non-`ConditionList`/`ICustomRule` public helper, after `ApplicationPipelineRules.PipelineOrderAssertion` — both exist because their invariant ("EventId global uniqueness + range membership across every shipped assembly," "fixed pipeline registration order") has no single-assembly "fire on a contrived violating assembly" shape a `ConditionList` naturally expresses. Unlike every `ICustomRule` predicate in this domain, `LoggingEventIdIntegrityAssertion` does NOT use `NetArchTest.Types.InAssembly(...)` — it walks `Mono.Cecil` `ModuleDefinition.Types` and `TypeDefinition.NestedTypes` recursively by hand, specifically to avoid the SK0012-documented gap where NetArchTest's own type-discovery layer never surfaces compiler-generated or nested types to an `ICustomRule`. Do not "simplify" this helper to use `Types.InAssembly(...)` — doing so would silently reintroduce that exact blind spot for `[LoggerMessage]` methods declared inside nested logging-helper classes.
+- `LoggingEventIdIntegrityAssertion.AssertGloballyUniqueAndInRange` takes an `IReadOnlyDictionary<Assembly, (int RangeMin, int RangeMax)>` supplied entirely by the caller — `00.Governance` never references `SharedKernel.Primitives` (it references nothing). The consuming test project is responsible for building this dictionary from `SharedKernel.Primitives.Logging.LoggingEventIdRanges` (P-249) values, keeping that registry the single source of truth for range numbers while this helper stays dependency-free, matching the same "caller supplies the assembly, never hard-code a path" discipline used by every `ConditionList` factory method in this file.
+- `LoggingEventIdIntegrityAssertion` is EXPECTED TO FAIL if pointed at the platform's real shipped assemblies as of this phase (2026-07-08) — the WO-041 audit's own confirmed collisions (`SharedKernel.Caching.Redis.Core` vs `SharedKernel.Caching.Redis.PubSub`, both 4001/4002; three internal `SharedKernel.Messaging.MassTransit` collisions) have not been retrofitted, and `01.Core`'s own `LoggingEventIdRanges` registry (P-249) is itself still `○` Pending. Design and tests for this phase use contrived in-memory multi-assembly Mono.Cecil fixtures only — do not attempt a real-assembly wiring pass until every WO-041 domain retrofit phase ships; track that as a follow-up, not a blocking condition on this phase.
 
 ---
 
@@ -2640,3 +2780,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-03] WO-039 P-240 PLANNED (design only — not yet implemented) — the phase spec proposes registering SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher's MakeGenericMethod call site (inside PublishSingle's ConcurrentDictionary.GetOrAdd factory delegate) in ReflectionExemptionRegistry, pre-emptively, so SK0012 can be safely pointed at the real SharedKernel.Application assembly; documented that the call site sits inside a closure-free `static` lambda, so the Mono.Cecil-observed key will be the compiler-generated `<>c` nested cache class, not the literal MediatRDomainEventDispatcher/PublishSingle pair — new reusable implementation-rules bullet added on this Roslyn/Mono.Cecil fact; corrected the SK0012 "all production assemblies pass this rule" note (never actually verified platform-wide) and recorded a newly-discovered OPEN gap — 07.Messaging's MassTransitEventPublisher.BuildPublisher (same closure pattern, itself this exemption's own cited precedent) and MessagingBusBuilder.AddActivity remain unregistered/unverified against SK0012, tracked as a candidate follow-up; no new SK ID; no predicate/rule-logic change; **implementation status (2026-07-06 correction): D-58/C-95/T-169/T-170/DO-30 are all still `○` in state-map.md and ReflectionExemptionRegistry.AllowList ships empty in source — a prior version of this changelog entry incorrectly described the registry entry as already shipped; corrected during a /dispatch-phase cross-check of WO-039** — WO-039 P-240 (governance-arch-planner)
 - [2026-07-06] SK.00.DomainEventDispatcherReflectionExemption ● complete (D-58, C-95, T-169, T-170, DO-30) — ReflectionExemptionRegistry.AllowList now ships with its FIRST real entry: ("SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher/<>c", "<PublishSingle>b__8_0"), determined empirically (red-then-green, D-58) via a temporary Mono.Cecil IL-walk against the real compiled SharedKernel.Application.dll rather than assumed from source, with a governance rationale block comment (WO-039, 2026-07-06, per C-95's spec — a HashSet field initializer cannot carry a compiler-recognized `///` doc comment on an individual tuple). MAJOR DISCOVERY during test authoring (not anticipated by the phase spec): NetArchTest.Rules' own type-discovery layer (Types.InAssembly(assembly), used internally by ReflectionGuardRules.NoMakeGenericMethodReflection) never surfaces compiler-generated closure types — such as the `<>c` singleton display class that actually contains PublishSingle's MakeGenericMethod call — to any ICustomRule, confirmed via an instrumented recording ICustomRule with and without the `.AreNotAbstract()` filter. This means the end-to-end rule call currently reports success regardless of whether this exemption is registered — the violation is never reached by NetArchTest's own type enumeration. T-169/T-170 were therefore implemented at the predicate layer (ReflectionGuardRulesRealAssemblyTests invokes NoMakeGenericMethodReflectionPredicate.MeetsRule directly against the real, Mono.Cecil-loaded `<>c` TypeDefinition) — proving the exemption and the predicate's IL-walk logic are genuinely load-bearing (fails when unregistered, passes when registered) — plus a third documentation test asserting and explaining the current end-to-end NetArchTest behavior, so a future NetArchTest upgrade or type-discovery fix is caught by a changed assertion rather than silently altering coverage. No change made to NoMakeGenericMethodReflectionPredicate or ReflectionGuardRules logic (verified by diff review, per phase scope). SK0012's diagnostic-registry note, the ReflectionExemptionRegistry documentation, and this file's prior "PLANNED"/"still empty" language all corrected to reflect the shipped entry and the discovered NetArchTest gap; the 07.Messaging open gap (MassTransitEventPublisher.BuildPublisher, MessagingBusBuilder.AddActivity — both still unregistered, P-240 scoped to 05.Application only) recorded as a candidate follow-up work order, now additionally noting the NetArchTest closure-visibility gap would need resolving too before that follow-up could enforce end-to-end. New candidate follow-up work order recorded: extend ReflectionGuardRules.NoMakeGenericMethodReflection (or a sibling factory method) to walk TypeDefinition.NestedTypes recursively via Mono.Cecil directly, rather than relying solely on NetArchTest's Types.InAssembly(...) projection, so closure-based MakeGenericMethod call sites are caught end-to-end. 130/130 SharedKernel.ArchitectureTests.Tests passing (127 baseline + 3 new), 0 build warnings/errors — WO-039 P-240 (governance-phase-implementer)
 - [2026-07-07] SK0017 CommandImplementsCacheableQuery, SK0018 QueryImplementsInvalidatesCache, SK0019 RetryableRequestWithoutIdempotency added to diagnostic registry (general-purpose sequential block, next after SK0016; third/fourth/fifth SK analyzers in this domain requiring SemanticModel-resolved AllInterfaces closure, after SK0011 and SK0015); closes the last three "not mechanically enforced — code review must catch this" callouts in 05.Application/CLAUDE.md's Hard Violations section (the fourth pattern from the same audit family, typeof(TRequest).Name short-name usage, was already closed by SK0016 in WO-038 P-235); all three are consumer-side rules firing in ANY assembly declaring a command/query type — zero new SharedKernel.ArchitectureTests artifacts, pure Roslyn analyzers; six new implementation rules added — WO-040 P-248 (governance-arch-planner)
+- [2026-07-08] Phase SK.00.LoggingStandardEnforcement added — SK0020 DirectILoggerExtensionMethodUsage and SK0021 HandWrittenLoggerMessageDefineDelegate added to diagnostic registry (general-purpose sequential block, next after SK0019; the domain's first two-diagnostics-one-analyzer-class shape — LoggingAuthoringStyleAnalyzer — since both encode the same "always [LoggerMessage], never hand-rolled" standard and share the GeneratedCodeAnalysisFlags.None guard plus the SharedKernel.Testing exemption; SK0020 requires SemanticModel.GetSymbolInfo ContainingType resolution to avoid false positives against unrelated logging frameworks, SK0021 is syntax-only); LoggingEventIdIntegrityAssertion added to architecture test contracts (WO-041 P-250) — the domain's second non-ConditionList/ICustomRule public helper after PipelineOrderAssertion, walking Mono.Cecil ModuleDefinition.Types/NestedTypes recursively (deliberately bypassing NetArchTest's Types.InAssembly(...) to avoid the SK0012-documented compiler-generated/nested-type blind spot) to assert global EventId uniqueness and per-assembly range membership against a caller-supplied Assembly→range dictionary sourced from 01.Core's SharedKernel.Primitives.Logging.LoggingEventIdRanges (P-249); mechanizes the root CLAUDE.md's new Logging Conventions section (WO-041 P-249/P-250) the same way SK0013/SK0014/SK0017-19 mechanized the raw-HttpClient/ProblemDetails/marker-interface conventions; EXPECTED TO FAIL against real shipped assemblies until every WO-041 domain retrofit ships (all ten are `○` Pending, including 01.Core's own P-249) — design/tests use contrived in-memory Mono.Cecil fixtures only; six new implementation rules added — WO-041 P-250, depends on 01.Core P-249 (governance-arch-planner)
