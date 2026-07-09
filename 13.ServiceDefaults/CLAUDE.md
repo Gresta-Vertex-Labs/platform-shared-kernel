@@ -14,8 +14,8 @@ Philosophy: **Composition-only. Opt-in by default. Liveness ≠ Readiness. No bu
 
 | Package | Role | References |
 |---------|------|-----------|
-| `SharedKernel.ServiceDefaults` | `AddServiceDefaults()` composition entry point; OpenTelemetry (tracing/metrics/logging) wiring; health check composition with a hard liveness/readiness split; opt-in dependency-specific health check adapters (DB, Redis, RabbitMQ, Azure Service Bus); startup-probe gating | `SharedKernel.Primitives`; abstractions from `02.Caching`, `06.Persistence`, `07.Messaging`; concrete providers from the same domains when wiring their health checks/telemetry (see Layering exception above); `OpenTelemetry.*`, `Microsoft.Extensions.Diagnostics.HealthChecks`, `AspNetCore.HealthChecks.*` |
-| `SharedKernel.MultiTenancy` | Concrete `ITenantProvider` resolution strategies (HTTP header, JWT claim delegation, DB-isolation directory lookup); `TenantResolutionMiddleware`; `AmbientTenantProvider` | `SharedKernel.Security.Abstractions` (`ITenantProvider`), `SharedKernel.Security.Oidc` (delegates claim resolution to `OidcTenantProvider` — does not reimplement it), `SharedKernel.Persistence.Abstractions` (`IDbConnectionFactory`, for DB-isolation lookups), `Microsoft.AspNetCore.Http.Abstractions` |
+| `SharedKernel.ServiceDefaults` | `AddServiceDefaults()` composition entry point; OpenTelemetry (tracing/metrics/logging) wiring, including OTLP log export with scopes + formatted message and generic `Activity.Baggage`→`LogRecord.Attributes` enrichment (`BaggageLogRecordProcessor`); health check composition with a hard liveness/readiness split; opt-in dependency-specific health check adapters (DB, Redis, RabbitMQ, Azure Service Bus); startup-probe gating | `SharedKernel.Primitives`; abstractions from `02.Caching`, `06.Persistence`, `07.Messaging`; concrete providers from the same domains when wiring their health checks/telemetry (see Layering exception above); `OpenTelemetry.*`, `Microsoft.Extensions.Diagnostics.HealthChecks`, `AspNetCore.HealthChecks.*` |
+| `SharedKernel.MultiTenancy` | Concrete `ITenantProvider` resolution strategies (HTTP header, JWT claim delegation, DB-isolation directory lookup); `TenantResolutionMiddleware` (also sets `TenantId` as `Activity` baggage so it becomes ambient to every log record via `SharedKernel.ServiceDefaults`'s log pipeline); `AmbientTenantProvider` | `SharedKernel.Security.Abstractions` (`ITenantProvider`), `SharedKernel.Security.Oidc` (delegates claim resolution to `OidcTenantProvider` — does not reimplement it), `SharedKernel.Persistence.Abstractions` (`IDbConnectionFactory`, for DB-isolation lookups), `Microsoft.AspNetCore.Http.Abstractions` |
 
 Both packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
@@ -179,6 +179,48 @@ WithApplicationTelemetry(this IHostApplicationBuilder builder)  → IHostApplica
           (same situation as WithMessagingTelemetry's internal MessagingDiagnostics) — no new
           ProjectReference to any SharedKernel.Application.* package is added or needed.
           Closes 05.Application.Behaviors' documented forward reference to this domain.
+
+AddSharedKernelTelemetry(...)  — logging export addition (WO-041/P-251)
+    In addition to the tracing/metrics wiring documented above, AddSharedKernelTelemetry's
+    existing OpenTelemetry builder chain gains a matching log-export registration:
+        .WithLogging(
+            loggerProviderBuilder => loggerProviderBuilder
+                .AddProcessor<BaggageLogRecordProcessor>()
+                .AddOtlpExporter(),
+            options =>
+            {
+                options.IncludeScopes = true;
+                options.IncludeFormattedMessage = true;
+            })
+    NOTE: No new public extension method — this is additive behavior inside AddSharedKernelTelemetry's
+          existing signature, the same way tracing and metrics were already wired. The OTLP log
+          exporter reads the same standard OTEL_EXPORTER_OTLP_ENDPOINT / _PROTOCOL env vars already
+          used for traces and metrics — no new SharedKernel-specific config keys. Every
+          [LoggerMessage]-authored log record platform-wide (root CLAUDE.md Logging Conventions,
+          WO-041) is now exported through the same OTLP pipeline as traces and metrics — closing the
+          "13.ServiceDefaults wires tracing/metrics but not logging" gap the WO-041 audit found.
+
+BaggageLogRecordProcessor  (sealed class, implements BaseProcessor<LogRecord>, in Telemetry/)
+    .OnEnd(LogRecord data)                                        → void
+        Reads Activity.Current?.Baggage at the moment the log record is finalized and appends every
+        baggage key not already present in LogRecord.Attributes. No-op (no throw, no attributes
+        added) when Activity.Current is null. Never overwrites an attribute already present at the
+        same key — an explicit call-site value always wins over ambient baggage.
+    NOTE: This is a GENERIC mechanism — it carries no hardcoded key names ("CorrelationId",
+          "TenantId", or otherwise). This is what lets 14.Presentation's pre-existing CorrelationId
+          Activity-baggage mechanism (WO-031 — correlation-id middleware "owns its own Activity
+          baggage key directly against System.Diagnostics.Activity") land on every log record
+          produced during that request, with ZERO ProjectReference from 13.ServiceDefaults to
+          14.Presentation. The same mechanism is what surfaces SharedKernel.MultiTenancy's new
+          TenantBaggageKeys.TenantId baggage (see below) onto every log record during a
+          tenant-resolved request. Any future domain that sets its own Activity baggage key
+          automatically gets the same free ambient-log-enrichment behavior — no 13.ServiceDefaults
+          change required.
+    SCOPE NOTE: This mechanism covers the HTTP-request path only, via whatever sets Activity baggage
+          during that request (TenantResolutionMiddleware, 14.Presentation's correlation-id
+          middleware). A message-consumption-scope equivalent (e.g. a MassTransit consumer filter
+          setting the same baggage keys from propagated message headers) is NOT implemented here —
+          it is a future 07.Messaging-owned follow-up, outside this domain's jurisdiction to dispatch.
 ```
 
 #### Startup / liveness probes (`Probes/`)
@@ -295,6 +337,22 @@ TenantResolutionMiddleware  (sealed class)
           lifetime) rather than rebuilt as a fresh Dictionary allocation on every InvokeAsync call;
           the per-request cost is limited to iterating StrategyOrder against that already-available
           mapping.
+    LOGGING ENRICHMENT NOTE (WO-041/P-251, C-33): Immediately after determining the winning
+          TenantId (or confirming Guid.Empty), also calls
+          Activity.Current?.SetBaggage(TenantBaggageKeys.TenantId, tenantId.ToString()). This makes
+          TenantId ambient to every log record produced for the remainder of the request via
+          SharedKernel.ServiceDefaults's BaggageLogRecordProcessor — no call site anywhere in the
+          request needs to pass TenantId as an explicit log template placeholder. The baggage value
+          is set even when TenantId is Guid.Empty, so log aggregation can distinguish "no tenant
+          resolved for this request" from "TenantId enrichment was never wired" (an explicit
+          sentinel value vs. a genuinely absent baggage key). Scoped to the HTTP-request path only —
+          see BaggageLogRecordProcessor's SCOPE NOTE above.
+
+TenantBaggageKeys  (static class, string constants — WO-041/P-251)
+    .TenantId = "TenantId"
+    NOTE: Mirrors the TenantResolutionStrategyNames/HealthCheckNames constants-class pattern.
+          TenantResolutionMiddleware's Activity.SetBaggage call references this constant — zero
+          bare string literals for the baggage key anywhere in SharedKernel.MultiTenancy.
 ```
 
 #### DI registration (`Extensions/`)
@@ -333,6 +391,11 @@ AddSharedKernelMultiTenancy(this IServiceCollection services,
 - **The `StrategyName → ITenantResolutionStrategy` lookup is computed once, never rebuilt per request.** The strategy set registered via DI is fixed for the process lifetime; `TenantResolutionMiddleware.InvokeAsync` must not allocate a fresh `Dictionary` keyed by strategy name on every HTTP request. This is a hot-path package — the per-request cost is limited to iterating `StrategyOrder` against an already-available mapping.
 - **`DatabaseTenantResolutionStrategy.TryResolveAsync` must use a genuinely asynchronous database call with the supplied `CancellationToken` actually threaded through** (WO-028/P-176). A method whose signature is `async Task<Guid?>(..., CancellationToken)` must not block a thread-pool thread via a synchronous ADO.NET call (`IDbCommand.ExecuteScalar()`) nor silently ignore the cancellation token — both are hard violations in a package that runs in every multi-tenant microservice's request hot path.
 - Every default health-check **registration name** (not just tags) is a named constant from `HealthCheckNames` (WO-028/P-177) — mirroring the `HealthCheckTags` constants-class pattern already established for tags. No `Add*HealthCheck` method's `name` parameter default may be a bare string literal.
+- **`AddSharedKernelTelemetry` exports logs through the same OTLP pipeline as traces and metrics** (WO-041/P-251) — `.WithLogging(...)` with `IncludeScopes = true` and `IncludeFormattedMessage = true`, reading the OTLP endpoint from the same standard env vars. This is additive behavior inside the existing method signature, not a new public extension method.
+- **`BaggageLogRecordProcessor` is the platform's single, generic mechanism for making `Activity` baggage ambient to every log record** (WO-041/P-251). It must never hardcode a specific baggage key name (no `"CorrelationId"`, no `"TenantId"` string literal inside the processor itself) — its entire value is that it works uniformly for any domain that sets `Activity` baggage, without `13.ServiceDefaults` needing to know that domain's concept by name. An explicit `LogRecord.Attributes` entry already present at a given key must never be overwritten by a baggage value at the same key.
+- **`TenantResolutionMiddleware` sets `TenantId` as `Activity` baggage (`TenantBaggageKeys.TenantId`), in addition to `AmbientTenantProvider.TenantId`** (WO-041/P-251, C-33) — this is what makes TenantId ambient to logs via `BaggageLogRecordProcessor`. The baggage value is set unconditionally, including for the `Guid.Empty` no-tenant sentinel — never skip setting it just because no tenant resolved, since an absent key and an explicit empty-sentinel value carry different diagnostic meaning.
+- **The ambient-logging-enrichment mechanism (`BaggageLogRecordProcessor` + `TenantResolutionMiddleware`'s baggage set) is scoped to the HTTP-request path only.** A message-consumption-scope equivalent (tenant/correlation enrichment during MassTransit consumer execution) is explicitly out of this domain's jurisdiction — it would require a parallel mechanism inside `07.Messaging`'s consumer pipeline (e.g., an `IMessageHeaderPropagator`-adjacent filter setting the same `Activity` baggage keys from propagated message headers) and must be dispatched as a separate cross-domain work order if needed, never implemented here as a workaround.
+- `13.ServiceDefaults` never takes a `ProjectReference` to `14.Presentation` to support the CorrelationId-on-logs acceptance criterion — `BaggageLogRecordProcessor` reads `Activity.Baggage` generically; verification uses a direct BCL `Activity.SetBaggage(...)` call simulating `14.Presentation`'s own documented mechanism (WO-031), never a real cross-domain reference.
 
 ---
 
@@ -366,6 +429,8 @@ app.Run();
 
 `SharedKernel.MultiTenancy` ships no telemetry or health check wiring of its own — that composition stays in `SharedKernel.ServiceDefaults`.
 
+**Log export + ambient enrichment (WO-041/P-251):** no additional call is required beyond `AddServiceDefaults()` (+ `AddSharedKernelMultiTenancy()` for TenantId enrichment) — OTLP log export, `IncludeScopes`/`IncludeFormattedMessage`, and the `BaggageLogRecordProcessor` wiring all happen automatically inside `AddSharedKernelTelemetry`. Application code never needs to pass `CorrelationId` or `TenantId` as an explicit log template placeholder.
+
 ---
 
 ## AOT Compatibility
@@ -375,6 +440,7 @@ app.Run();
 - `ITenantResolutionStrategy` implementations (`HeaderTenantResolutionStrategy`, `ClaimTenantResolutionStrategy`, `DatabaseTenantResolutionStrategy`) are plain sealed classes using `Guid.TryParse`, a `StrategyName` get-only property, and parameterized async ADO.NET queries — AOT-safe. `TenantResolutionMiddleware`'s once-computed `StrategyName → ITenantResolutionStrategy` lookup is a plain `Dictionary<string, ITenantResolutionStrategy>` (or `FrozenDictionary`) built from already-resolved DI instances — no reflection involved in the lookup itself.
 - `StartupGate` / `StartupGateHealthCheck` are plain classes with a `volatile bool` field — AOT-safe, no reflection.
 - No `Activator.CreateInstance`, no `Assembly.Load`, no `MakeGenericMethod`/`Invoke` reflection anywhere in this domain.
+- `BaggageLogRecordProcessor` (WO-041/P-251) is a plain sealed class over `System.Diagnostics.Activity.Baggage` (a BCL `IEnumerable<KeyValuePair<string,string?>>`) and `OpenTelemetry.Logs.LogRecord.Attributes` — no reflection, AOT-safe. `TenantBaggageKeys` is a static string-constants class, identical AOT profile to `HealthCheckNames`/`TenantResolutionStrategyNames`.
 
 ---
 
@@ -398,6 +464,10 @@ app.Run();
 - `/health/live`/`/health/ready` endpoint-mapping integration tests use `new HostBuilder().ConfigureWebHost(webHost => webHost.UseTestServer()...)` + `IHost.GetTestClient()` — not `WebApplicationFactory<TEntryPoint>`, since `SharedKernel.ServiceDefaults` is a class library with no `Program` marker type to target. This manual host setup does **not** implicitly register routing services the way `WebApplication.CreateBuilder()` does — an explicit `services.AddRouting()` call is required before `AddSharedKernelHealthChecks()` or `UseRouting()` throws `InvalidOperationException`.
 - `DatabaseTenantResolutionStrategy` tests mock at the raw ADO.NET interface level (`IDbConnection`/`IDbCommand`/`IDbDataParameter` via NSubstitute) — `16.Testing` has no `IDbConnectionFactory` fake yet.
 - `ClaimTenantResolutionStrategy` tests build a real `ClaimsPrincipal` carrying `SecurityClaimTypes.TenantId` rather than mocking `OidcTenantProvider` — it has no interface and is a concrete sealed class constructed from a `ClaimsPrincipal`, so delegation is verified end-to-end through the seam instead.
+- `BaggageLogRecordProcessor`: baggage entries present on `Activity.Current` are copied onto `LogRecord.Attributes`; an existing explicit attribute at the same key is never overwritten; `Activity.Current == null` produces no exception and adds no attributes.
+- `AddSharedKernelTelemetry` logging export: `OpenTelemetryLoggerOptions.IncludeScopes`/`IncludeFormattedMessage` are both asserted `true`; `BaggageLogRecordProcessor` is registered exactly once; the full pre-existing `AddSharedKernelTelemetry` tracing/metrics test suite is re-run as a regression gate (no assertions loosened or removed to accommodate the new logging wiring).
+- `TenantResolutionMiddleware` + `TenantBaggageKeys`: a resolved `TenantId` appears on `Activity.Current.Baggage` under `TenantBaggageKeys.TenantId`; an unresolved request sets the baggage value to the `Guid.Empty` string rather than leaving the key absent; no exception when `Activity.Current` is `null`.
+- **CorrelationId acceptance-criterion test (no `14.Presentation` reference):** a test sets `Activity.Current?.SetBaggage("CorrelationId", ...)` directly via the BCL — the same mechanism `14.Presentation`'s middleware itself uses (WO-031) — and asserts the value appears in the `LogRecord.Attributes` produced through the wired `BaggageLogRecordProcessor`. A companion combined test asserts both a `TenantBaggageKeys.TenantId` entry (set via `TenantResolutionMiddleware`) and a simulated CorrelationId entry are simultaneously present on the same `LogRecord.Attributes` set without collision.
 
 ---
 
@@ -414,3 +484,4 @@ app.Run();
 - [2026-06-22] `SK.13.Docs` (DO-01, DO-02) closed — 2/2. XML doc audit across the full public surface of both packages found and fixed one gap (`AzureServiceBusHealthCheck`'s public constructor lacked a doc comment); confirmed `GenerateDocumentationFile=true` already set and clean Release builds produce 0 CS1591 warnings. `13.ServiceDefaults/README.md` (previously empty) populated with the `Program.cs` composition snippet and ordering rules, sourced from this file's existing "DI Registration (expected shape)" section. No interface, tag-taxonomy, or rule changes — pure documentation-completeness pass (servicedefaults-phase-implementer)
 - [2026-07-08] WO-040/P-247 implemented: `WithApplicationTelemetry()` shipped in `Telemetry/ApplicationTelemetryExtensions.cs`, mirroring `WithMessagingTelemetry()`/`WithCachingTelemetry()` exactly — `AddSource("SharedKernel.Application")` + `AddMeter("SharedKernel.Application")`, string-name-only, no new `ProjectReference`. Added `Telemetry/ApplicationTelemetryExtensionsTests.cs` (3 tests, mirroring `MessagingTelemetryExtensionsTests.cs`). `SK.13.Core` 29/29 `●`, `SK.13.Tests` 23/23 `●`, `SK.13.Docs` 3/3 `●` — all promoted to root; Phase Backlog P-247 closed. README.md `Program.cs` snippet and ordering rule 4 updated to include `WithApplicationTelemetry()`. 40/40 SharedKernel.ServiceDefaults.Tests passing (26/26 MultiTenancy unchanged). Closing the `05.Application/CLAUDE.md` side of the forward-reference (P-247's last acceptance criterion) remains out of this domain's jurisdiction — flagged for `application-arch-planner` (servicedefaults-phase-implementer)
 - [2026-07-07] WO-040/P-247: `WithApplicationTelemetry(this IHostApplicationBuilder)` contract added to the OpenTelemetry wiring section — third sibling alongside `WithMessagingTelemetry()`/`WithCachingTelemetry()`, wiring `05.Application.Behaviors`'s pre-existing `"SharedKernel.Application"` `ActivitySource`/`Meter` pair (`ApplicationDiagnostics`, WO-035/WO-036, `internal`) into the host `TracerProvider`/`MeterProvider` by string name only, same idempotency contract, no new `ProjectReference`. Closes `05.Application.Behaviors`' documented forward reference to this domain ("13.ServiceDefaults (future work, out of scope here) registers the 'SharedKernel.Application' meter/source name..."). Implementation Rules, DI Registration shape, and Test Rules sections updated to fold the new method into the existing three-way OTel-wiring pattern description. State-map tasks added: C-29 (`SK.13.Core`), T-23 (`SK.13.Tests`), DO-03 (`SK.13.Docs`) — all `○` pending implementation. **Scope note:** the `05.Application/CLAUDE.md` side of this forward-reference closeout is outside this domain's jurisdiction (`13.ServiceDefaults`' planner may only write inside `13.ServiceDefaults/`) — flagged in the state-map for the `application-arch-planner` agent to close on the `05.Application` side (servicedefaults-arch-planner, WO-040)
+- [2026-07-09] WO-041/P-251: OpenTelemetry log export + ambient Correlation/Tenant enrichment phase added. `AddSharedKernelTelemetry` gains a `.WithLogging(...)` registration — additive inside its existing signature, no new public method — enabling OTLP log export (same standard env vars as tracing/metrics) with `IncludeScopes`/`IncludeFormattedMessage` both `true`. New `BaggageLogRecordProcessor` (`Telemetry/`, sealed `BaseProcessor<LogRecord>`) generically copies `Activity.Current?.Baggage` onto `LogRecord.Attributes` (never overwriting an explicit attribute, no hardcoded key names) — this is the single mechanism that surfaces both `14.Presentation`'s pre-existing CorrelationId `Activity`-baggage convention (WO-031) and a new `SharedKernel.MultiTenancy` TenantId baggage entry onto every log record, with zero `13.ServiceDefaults` → `14.Presentation` reference. `SharedKernel.MultiTenancy`'s `TenantResolutionMiddleware` gains a matching `Activity.Current?.SetBaggage(TenantBaggageKeys.TenantId, ...)` call (new `TenantBaggageKeys` constants class) alongside its existing `AmbientTenantProvider.TenantId` assignment — set unconditionally, including for the `Guid.Empty` no-tenant sentinel, so log aggregation can distinguish "no tenant resolved" from "enrichment never wired." Interface Contracts, Implementation Rules, AOT Compatibility, Test Rules, and DI Registration sections all updated. Explicit scope boundary documented: this mechanism covers the HTTP-request path only — a message-consumption-scope equivalent is a future `07.Messaging`-owned follow-up, outside this domain's jurisdiction to dispatch, not implemented here as a workaround. State-map tasks added: D-03–D-05 (`SK.13.Design`), S-11 (`SK.13.Scaffold`), C-30–C-33 (`SK.13.Core`), T-24–T-28 (`SK.13.Tests`), DO-04 (`SK.13.Docs`) — all `○` pending implementation; no new Published task (additive internals only, mirrors the WithApplicationTelemetry/WO-040 precedent) (servicedefaults-arch-planner, WO-041)
