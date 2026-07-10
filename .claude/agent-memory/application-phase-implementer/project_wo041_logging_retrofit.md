@@ -68,6 +68,24 @@ production wiring, since this WO-041 phase is an authoring-mechanism retrofit on
 behavioral fix. Flagged in `05.Application/CLAUDE.md` and state-map.md as a candidate follow-up
 functional-bug work order for a future session/arch-lead review.
 
+## Docs phase (DO-22..DO-24, completed 2026-07-10, follow-up session)
+
+Private `[LoggerMessage]`-attributed partial methods don't need XML docs to satisfy the
+`GenerateDocumentationFile`/`TreatWarningsAsErrors` CS1591 gate (CS1591 only fires on
+publicly-visible members) — a clean build does NOT by itself prove "100% XML doc coverage" on
+these methods if the phase spec explicitly calls them out. Read the actual task wording: if it
+names specific private members, add doc comments to them even though the compiler wouldn't force
+it — the build-gate argument only covers what's actually enforced.
+
+Also re-confirmed the stale-prose pattern from the D-66..D-71 correction: this file's own retrofit
+NOTE blocks in `CLAUDE.md` (`IFireAndForgetDispatcher`, `FireAndForgetBackgroundConsumer`,
+`StreamLoggingBehavior`) carried a "shipped 2026-07-10" tag but the prose body still used
+forward/present-tense phrasing ("becomes a [LoggerMessage]...", "is replaced with...") — read as
+design-intent language despite the shipped-date callout. Fixed to definite past tense ("is now a
+[LoggerMessage]...", "have been replaced with..."). Lesson: a "shipped" tag on a paragraph doesn't
+guarantee the paragraph's own verb tense agrees with it — grep for the tag AND read the surrounding
+sentence when sweeping for stale "design-only" language.
+
 ## Files touched this session
 
 - `05.Application/SharedKernel.Application.Behaviors/Shared/ApplicationBehaviorsLoggingEventIds.cs` (new)
