@@ -68,7 +68,7 @@ Format when blocked:
 | 02 | [Caching](02.Caching/state-map.md) | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | `●` | Phase 37 (WO-041, P-252) complete — all `EventId`s in `FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999) sub-blocks, closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; remaining direct `ILogger` calls and the hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing, zero behavioral change. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-| 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-040's SK.05.Docs complete (21/21) — confirmed 100% XML doc coverage on `ILoggableRequest<TResponse>`/extended `LoggingBehavior<,>` via a clean 0-warning Release build; added an opt-in structured payload logging usage example (with an explicit PII/secrets/credentials warning) to `SharedKernel.Application.Behaviors/README.md`; verified `CLAUDE.md` already fully reflects the shipped state, no stale wording found. `SharedKernel.Application.Behaviors.Tests` 121/121 passing. All five work orders (WO-035/036/038/039/040) now fully `●` through Docs. | WO-035/036/038/039/040's Published phases (P-01..P-19) remain `○`/`◐` — the only phase left before this domain is fully published. |
+| 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) carried through Design→Scaffold→Core→Tests this session (71/19/74/66 all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199; `SharedKernel.Application.Behaviors.Tests` now 130/130. WO-040's SK.05.Docs remains complete (21/21). | WO-041's Docs (DO-22..DO-24) and Published (P-20..P-22) remain `○`, plus WO-035/036/038/039/040's Published phases (P-01..P-19) — the only phases left before this domain is fully published. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.Tests complete (20/20) — ConsumerVerifyTests retrofitted off NSubstitute onto 16.Testing's InMemoryMessageBus/InMemoryEventPublisher doubles (P-191); 50/50 Abstractions tests green; SK.07.OTel also complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0"), Consumer.Consume/EventPublisher.Publish activities, 106 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
@@ -10024,12 +10024,12 @@ Every production log statement in `SharedKernel.Application.Behaviors` — `Logg
 `LoggingBehavior` is the platform's single most consequential logging call site — it fires on every MediatR request across every consuming microservice that adopts the pipeline. Standardizing it is the highest-leverage single change in this work order.
 
 #### Acceptance criteria
-- [ ] No direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate remains in production source in `SharedKernel.Application.Behaviors`
-- [ ] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `05.Application`'s reserved range with no internal collisions
-- [ ] `ILoggableRequest<TResponse>`'s opt-in `BeginScope` behavior for request/response fields is unchanged in observable behavior
-- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
-- [ ] All existing `SharedKernel.Application.Behaviors.Tests` continue to pass
-- [ ] `05.Application/CLAUDE.md` documents the domain's final EventId allocation
+- [x] No direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate remains in production source in `SharedKernel.Application.Behaviors` (confirmed mechanically by T-64's Mono.Cecil IL-shape assertion)
+- [x] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `05.Application`'s reserved range with no internal collisions (confirmed by T-65's real-assembly `LoggingEventIdIntegrityAssertion` invocation)
+- [x] `ILoggableRequest<TResponse>`'s opt-in `BeginScope` behavior for request/response fields is unchanged in observable behavior (T-60 regression suite passes unmodified)
+- [x] The P-250 analyzer and architecture test both pass against this domain with zero suppressions (T-65)
+- [x] All existing `SharedKernel.Application.Behaviors.Tests` continue to pass (130/130, T-66)
+- [ ] `05.Application/CLAUDE.md` documents the domain's final EventId allocation — Docs phase (DO-22..DO-24) not yet dispatched this session
 ---
 
 ---
@@ -10152,3 +10152,5 @@ Every domain in this work order is being retrofitted to a mechanically consisten
 - [ ] New tests in this domain's established self-test convention prove the double correctly captures a representative `[LoggerMessage]` call site
 - [ ] Root `CLAUDE.md`'s "What Goes Where" guidance is updated to point future logging-assertion needs at this double instead of ad hoc mocks
 ---
+
+- [2026-07-10] 05.Application's WO-041 (P-253) carried through Design → Scaffold → Core → Tests in one session (`05.Application/state-map.md` SK.05.Design/Scaffold/Core/Tests all now `●`, 71/19/74/66 respectively) — corrected a stale prior-session claim that Design was already locked when D-66..D-71 were genuinely still `○`; both cross-domain blockers (`01.Core` P-249, `00.Governance` P-250) re-verified shipped before proceeding. `SharedKernel.Application.Behaviors.Tests` now 130/130 passing. P-253's acceptance criteria updated: 5 of 6 now `[x]`, only the CLAUDE.md-EventId-allocation-doc criterion remains open pending a future Docs-phase session (state-map-phase)
