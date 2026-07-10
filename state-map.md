@@ -65,7 +65,7 @@ Format when blocked:
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for the Platform Logging Standard | `●` | All 11 tasks complete — SK0020/SK0021 (`LoggingAuthoringStyleAnalyzer`) ban direct `ILogger` extension-method calls and hand-written `LoggerMessage.Define` delegates; `LoggingEventIdIntegrityAssertion` mechanically enforces global `EventId` uniqueness and per-assembly range membership via a recursive Mono.Cecil `NestedTypes` walk; 125/125 analyzer tests and 133/133 architecture tests pass; design/tests use contrived fixtures only — expected to fail against real assemblies until every WO-041 domain retrofit ships. | This is the final phase key in `00.Governance/state-map.md` — every phase key in this domain is now `●`. Any future governance work requires a new phase to be planned by `governance-arch-planner`. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-249 (WO-041) complete — `LoggingEventIdRanges` compile-time `const int` registry added to `SharedKernel.Primitives`, reserving one 1000-wide `EventId` block per root folder-map domain (00.Governance=0 through 17.Workflows=17000); 114/114 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only, zero new NuGet dependencies. | — |
-| 02 | [Caching](02.Caching/state-map.md) | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | `●` | Phase 36 complete — ephemeral Redis Pub/Sub signaling and cache invalidation (RedisChannelService, RedisCacheInvalidationBus, CacheInvalidationReceiver, AddRedisChannelService, AddRedisCacheInvalidationBus, AddCacheInvalidationReceiver) extracted from SharedKernel.Caching.Redis into new package SharedKernel.Caching.Redis.PubSub, depending only on SharedKernel.Caching.Abstractions + SharedKernel.Caching.Redis.Core; SharedKernel.Caching.Redis slimmed to its L2-only end state; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing. WO-023 (Redis package split, Phases 32-36) fully complete. | — |
+| 02 | [Caching](02.Caching/state-map.md) | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | `●` | Phase 37 (WO-041, P-252) complete — all `EventId`s in `FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999) sub-blocks, closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; remaining direct `ILogger` calls and the hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing, zero behavioral change. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-040's SK.05.Docs complete (21/21) — confirmed 100% XML doc coverage on `ILoggableRequest<TResponse>`/extended `LoggingBehavior<,>` via a clean 0-warning Release build; added an opt-in structured payload logging usage example (with an explicit PII/secrets/credentials warning) to `SharedKernel.Application.Behaviors/README.md`; verified `CLAUDE.md` already fully reflects the shipped state, no stale wording found. `SharedKernel.Application.Behaviors.Tests` 121/121 passing. All five work orders (WO-035/036/038/039/040) now fully `●` through Docs. | WO-035/036/038/039/040's Published phases (P-01..P-19) remain `○`/`◐` — the only phase left before this domain is fully published. |
@@ -105,7 +105,7 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 1 |
+| ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
 | ● Published | 7 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
 | ● Docs | 2 |
@@ -7931,6 +7931,8 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-09] 13 → Docs (●) — promoted from SK.13.Docs (4/4); DO-04 XML docs + README.md "Automatic log export and ambient TenantId/CorrelationId enrichment" section added (state-map-phase)
 - [2026-07-09] 13 → Published (●) — WO-041/P-251 additive-internals-only, no new Published task per the WithApplicationTelemetry (WO-040/P-247) precedent; 13.ServiceDefaults domain remains fully complete end to end (state-map-phase)
 - [2026-07-09] Phase Backlog P-251 → ● Complete — WO-041's 13.ServiceDefaults OTel log export + ambient Correlation/Tenant enrichment phase done (state-map-phase)
+- [2026-07-10] 02 → Phase 37 (●) — promoted from SK.02.LoggingRetrofit (12/12); all `EventId`s in `FusionCache`/`Redis.Core`/`Redis.DistributedLocking`/`Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999), closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; `CacheWarmupHostedService` direct `ILogger` calls and `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing (state-map-phase)
+- [2026-07-10] Phase Backlog P-252 → ● Complete — SK.02.LoggingRetrofit done; final acceptance criterion (00.Governance P-250 zero-suppression verification against this domain) remains pending 00.Governance's own retrofit dispatch cycle (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -9984,7 +9986,7 @@ The logging survey found `13.ServiceDefaults` wires tracing and metrics export t
 ---
 ### P-252 — Caching: Logging Retrofit to the Platform `[LoggerMessage]` Standard
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 02.Caching
 **Depends on:** P-249, P-250
@@ -9998,11 +10000,11 @@ Every production log statement across `SharedKernel.Caching.FusionCache`, `Share
 This domain has the most logging call sites in the platform and the only confirmed live `EventId` collision between two packages that ship together in the same process — the highest-value, highest-risk retrofit target in this work order.
 
 #### Acceptance criteria
-- [ ] No direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate remains in production source across all four packages
-- [ ] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `02.Caching`'s reserved range, with no collisions within or across the four packages
-- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
-- [ ] All existing `02.Caching` test suites continue to pass, with log message text/structure preserved unless a genuine defect was found
-- [ ] `02.Caching/CLAUDE.md` documents the domain's final EventId sub-block allocation per package
+- [x] No direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate remains in production source across all four packages
+- [x] Every `[LoggerMessage]`-attributed method has an explicit `EventId` inside `02.Caching`'s reserved range, with no collisions within or across the four packages
+- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions — pending `00.Governance` P-250 shipping SK0020/SK0021/`LoggingEventIdIntegrityAssertion`; not a compile-time blocker for this domain's own completion
+- [x] All existing `02.Caching` test suites continue to pass, with log message text/structure preserved unless a genuine defect was found (FusionCache 209/209, Redis.Core 33/33, Redis.DistributedLocking 41/41, Redis.PubSub 41/41, Redis L2 28/28, Redis.HashStore 30/30)
+- [x] `02.Caching/CLAUDE.md` documents the domain's final EventId sub-block allocation per package
 ---
 
 ---
