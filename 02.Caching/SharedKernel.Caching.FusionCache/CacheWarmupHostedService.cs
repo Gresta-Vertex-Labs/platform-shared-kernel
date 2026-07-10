@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Primitives.Logging;
 using System.Diagnostics;
 
 namespace SharedKernel.Caching.FusionCache;
@@ -28,7 +29,7 @@ namespace SharedKernel.Caching.FusionCache;
 /// Register via <c>ICachingBuilder.AddCacheWarmup&lt;TStrategy&gt;()</c>.
 /// </para>
 /// </remarks>
-public sealed class CacheWarmupHostedService : BackgroundService, IHostedLifecycleService
+public sealed partial class CacheWarmupHostedService : BackgroundService, IHostedLifecycleService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IOptions<CachingOptions> _options;
@@ -81,8 +82,7 @@ public sealed class CacheWarmupHostedService : BackgroundService, IHostedLifecyc
     {
         if (_options.Value.WaitForWarmup)
         {
-            _logger.LogInformation(
-                "CacheWarmupHostedService: WaitForWarmup=true — awaiting warmup completion before host signals readiness.");
+            Log.WaitingForWarmupCompletion(_logger);
 
             await _warmupCompletion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -133,53 +133,74 @@ public sealed class CacheWarmupHostedService : BackgroundService, IHostedLifecyc
 
         if (strategies.Count == 0)
         {
-            _logger.LogInformation("CacheWarmupHostedService: No warmup strategies registered.");
+            Log.NoWarmupStrategiesRegistered(_logger);
             return;
         }
 
         var cache = _serviceProvider.GetRequiredService<ICacheService>();
 
-        _logger.LogInformation(
-            "CacheWarmupHostedService: Starting cache warmup — {StrategyCount} strategy(ies) registered.",
-            strategies.Count);
+        Log.WarmupStarting(_logger, strategies.Count);
 
         foreach (var strategy in strategies)
         {
             if (ct.IsCancellationRequested)
             {
-                _logger.LogWarning(
-                    "CacheWarmupHostedService: Warmup cancelled before executing strategy '{StrategyName}'.",
-                    strategy.Name);
+                Log.WarmupCancelled(_logger, strategy.Name);
                 break;
             }
 
             var sw = Stopwatch.StartNew();
-            _logger.LogInformation(
-                "CacheWarmupHostedService: Executing strategy '{StrategyName}' (Order={Order}).",
-                strategy.Name,
-                strategy.Order);
+            Log.StrategyExecuting(_logger, strategy.Name, strategy.Order);
 
             try
             {
                 await strategy.WarmupAsync(cache, ct).ConfigureAwait(false);
                 sw.Stop();
 
-                _logger.LogInformation(
-                    "CacheWarmupHostedService: Strategy '{StrategyName}' completed in {ElapsedMs}ms.",
-                    strategy.Name,
-                    sw.ElapsedMilliseconds);
+                Log.StrategyCompleted(_logger, strategy.Name, sw.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
                 sw.Stop();
-                _logger.LogError(
-                    ex,
-                    "CacheWarmupHostedService: Strategy '{StrategyName}' failed after {ElapsedMs}ms — continuing with next strategy.",
-                    strategy.Name,
-                    sw.ElapsedMilliseconds);
+                Log.StrategyFailed(_logger, strategy.Name, sw.ElapsedMilliseconds, ex);
             }
         }
 
-        _logger.LogInformation("CacheWarmupHostedService: Cache warmup complete.");
+        Log.WarmupCompleted(_logger);
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 0, Level = LogLevel.Information,
+            Message = "CacheWarmupHostedService: WaitForWarmup=true — awaiting warmup completion before host signals readiness.")]
+        internal static partial void WaitingForWarmupCompletion(ILogger logger);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 1, Level = LogLevel.Information,
+            Message = "CacheWarmupHostedService: No warmup strategies registered.")]
+        internal static partial void NoWarmupStrategiesRegistered(ILogger logger);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 2, Level = LogLevel.Information,
+            Message = "CacheWarmupHostedService: Starting cache warmup — {StrategyCount} strategy(ies) registered.")]
+        internal static partial void WarmupStarting(ILogger logger, int strategyCount);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 3, Level = LogLevel.Warning,
+            Message = "CacheWarmupHostedService: Warmup cancelled before executing strategy '{StrategyName}'.")]
+        internal static partial void WarmupCancelled(ILogger logger, string strategyName);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 4, Level = LogLevel.Information,
+            Message = "CacheWarmupHostedService: Executing strategy '{StrategyName}' (Order={Order}).")]
+        internal static partial void StrategyExecuting(ILogger logger, string strategyName, int order);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 5, Level = LogLevel.Information,
+            Message = "CacheWarmupHostedService: Strategy '{StrategyName}' completed in {ElapsedMs}ms.")]
+        internal static partial void StrategyCompleted(ILogger logger, string strategyName, long elapsedMs);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 6, Level = LogLevel.Error,
+            Message = "CacheWarmupHostedService: Strategy '{StrategyName}' failed after {ElapsedMs}ms — continuing with next strategy.")]
+        internal static partial void StrategyFailed(ILogger logger, string strategyName, long elapsedMs, Exception exception);
+
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 7, Level = LogLevel.Information,
+            Message = "CacheWarmupHostedService: Cache warmup complete.")]
+        internal static partial void WarmupCompleted(ILogger logger);
     }
 }

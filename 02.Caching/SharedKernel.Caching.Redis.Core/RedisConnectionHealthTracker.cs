@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Logging;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.Core;
@@ -83,13 +84,13 @@ public sealed partial class RedisConnectionHealthTracker
     private static partial class Log
     {
         [LoggerMessage(
-            EventId = 4001,
+            EventId = LoggingEventIdRanges.Caching + 100,
             Level = LogLevel.Information,
             Message = "Redis connection restored; connection health is now Connected")]
         internal static partial void ConnectionRestored(ILogger logger);
 
         [LoggerMessage(
-            EventId = 4002,
+            EventId = LoggingEventIdRanges.Caching + 101,
             Level = LogLevel.Warning,
             Message = "Redis connection failed; transitioning health state to {NewState}")]
         internal static partial void ConnectionFailed(ILogger logger, ConnectionHealthState newState);

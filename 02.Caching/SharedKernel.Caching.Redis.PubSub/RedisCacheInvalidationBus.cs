@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Caching.Redis.PubSub;
 
@@ -36,19 +37,10 @@ namespace SharedKernel.Caching.Redis.PubSub;
 /// <c>AddCachingCoreOptions(o =&gt; o.ServiceName = "my-service")</c> to suppress this.
 /// </para>
 /// </remarks>
-internal sealed class RedisCacheInvalidationBus : ICacheInvalidationBus
+internal sealed partial class RedisCacheInvalidationBus : ICacheInvalidationBus
 {
     private const string BroadcastChannel = "sharedkernel:cache:invalidation:broadcast";
     private const string DefaultServiceName = "app";
-
-    private static readonly Action<ILogger, string, Exception?> LogDefaultServiceNameWarning =
-        LoggerMessage.Define<string>(
-            LogLevel.Warning,
-            new EventId(1, nameof(RedisCacheInvalidationBus)),
-            "RedisCacheInvalidationBus is using the default ServiceName \"{ServiceName}\". " +
-            "This means all services with the default name share the same invalidation channel. " +
-            "Set a unique service name via AddSharedKernelCaching(o => o.ServiceName = \"my-service\") " +
-            "or AddCachingCoreOptions(o => o.ServiceName = \"my-service\").");
 
     private readonly IRedisChannelService _channelService;
     private readonly string _targetedChannel;
@@ -81,7 +73,7 @@ internal sealed class RedisCacheInvalidationBus : ICacheInvalidationBus
         // Warn at construction time (first DI resolution) if ServiceName is still the default.
         if (string.Equals(_serviceName, DefaultServiceName, StringComparison.OrdinalIgnoreCase))
         {
-            LogDefaultServiceNameWarning(logger, _serviceName, null);
+            Log.DefaultServiceNameWarning(logger, _serviceName);
         }
     }
 
@@ -148,5 +140,17 @@ internal sealed class RedisCacheInvalidationBus : ICacheInvalidationBus
             CacheInvalidationMessageJsonContext.Default.CacheInvalidationMessage);
 
         await _channelService.PublishAsync(channel, json, ct).ConfigureAwait(false);
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Caching + 510,
+            Level = LogLevel.Warning,
+            Message = "RedisCacheInvalidationBus is using the default ServiceName \"{ServiceName}\". " +
+                "This means all services with the default name share the same invalidation channel. " +
+                "Set a unique service name via AddSharedKernelCaching(o => o.ServiceName = \"my-service\") " +
+                "or AddCachingCoreOptions(o => o.ServiceName = \"my-service\").")]
+        internal static partial void DefaultServiceNameWarning(ILogger logger, string serviceName);
     }
 }

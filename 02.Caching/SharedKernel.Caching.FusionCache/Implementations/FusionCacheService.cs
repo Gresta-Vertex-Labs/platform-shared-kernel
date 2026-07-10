@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Logging;
 using ZiggyCreatures.Caching.Fusion;
 
 namespace SharedKernel.Caching.FusionCache.Implementations;
@@ -330,23 +331,23 @@ internal sealed partial class FusionCacheService : ICacheService
     // Source-generated log methods for hot-path logging.
     private static partial class Log
     {
-        [LoggerMessage(EventId = 1001, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 10, Level = LogLevel.Debug,
             Message = "Cache miss for key '{Key}'")]
         internal static partial void CacheMiss(ILogger logger, string key);
 
-        [LoggerMessage(EventId = 1002, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 11, Level = LogLevel.Debug,
             Message = "Cache set for key '{Key}'")]
         internal static partial void CacheSet(ILogger logger, string key);
 
-        [LoggerMessage(EventId = 1003, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 12, Level = LogLevel.Debug,
             Message = "Cache factory invoked for key '{Key}'")]
         internal static partial void FactoryInvoked(ILogger logger, string key);
 
-        [LoggerMessage(EventId = 1004, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 13, Level = LogLevel.Debug,
             Message = "Cache entry removed for key '{Key}'")]
         internal static partial void CacheRemoved(ILogger logger, string key);
 
-        [LoggerMessage(EventId = 1005, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 14, Level = LogLevel.Debug,
             Message = "Cache entries removed for tag '{Tag}'")]
         internal static partial void CacheTagRemoved(ILogger logger, string tag);
     }

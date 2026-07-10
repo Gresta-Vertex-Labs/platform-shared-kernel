@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using RedLockNet;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Caching.Redis.DistributedLocking;
 
@@ -160,27 +161,27 @@ internal sealed partial class RedLockRenewableLock : IRenewableLock
 
     private static partial class Log
     {
-        [LoggerMessage(EventId = 2010, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 307, Level = LogLevel.Warning,
             Message = "Renewable lock on '{Resource}' is no longer acquired — renewal skipped")]
         internal static partial void LockAlreadyLost(ILogger logger, string resource);
 
-        [LoggerMessage(EventId = 2011, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 308, Level = LogLevel.Warning,
             Message = "Renewable lock on '{Resource}' could not be re-acquired during renewal")]
         internal static partial void RenewalNotAcquired(ILogger logger, string resource);
 
-        [LoggerMessage(EventId = 2012, Level = LogLevel.Error,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 309, Level = LogLevel.Error,
             Message = "Renewable lock on '{Resource}' renewal threw an exception")]
         internal static partial void RenewalFailed(ILogger logger, string resource, Exception ex);
 
-        [LoggerMessage(EventId = 2013, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 310, Level = LogLevel.Debug,
             Message = "Renewable lock on '{Resource}' renewed successfully (new expiry: {Expiry})")]
         internal static partial void LockRenewed(ILogger logger, string resource, TimeSpan expiry);
 
-        [LoggerMessage(EventId = 2014, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 311, Level = LogLevel.Debug,
             Message = "Releasing renewable lock on '{Resource}'")]
         internal static partial void ReleasingRenewableLock(ILogger logger, string resource);
 
-        [LoggerMessage(EventId = 2015, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 312, Level = LogLevel.Warning,
             Message = "Failed to dispose old RedLock handle during renewal on '{Resource}'")]
         internal static partial void OldLockDisposeFailed(ILogger logger, string resource, Exception ex);
     }

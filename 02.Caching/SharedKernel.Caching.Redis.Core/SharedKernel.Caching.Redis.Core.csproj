@@ -32,6 +32,8 @@
     <PackageReference Include="Polly.Core" Version="8.5.2" />
     <!-- Caching abstractions — ConnectionHealthState (Phase 26) -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!-- LoggingEventIdRanges.Caching — this domain's reserved EventId block base (Phase 37, WO-041) -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
   </ItemGroup>
 
   <ItemGroup>

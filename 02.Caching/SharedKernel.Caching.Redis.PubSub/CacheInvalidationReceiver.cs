@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Caching.Redis.PubSub;
 
@@ -187,34 +188,34 @@ public sealed partial class CacheInvalidationReceiver : BackgroundService
     private static partial class Log
     {
         [LoggerMessage(
-            EventId = 4001,
+            EventId = LoggingEventIdRanges.Caching + 505,
             Level = LogLevel.Error,
             Message = "CacheInvalidationReceiver failed to deserialize message: '{RawMessage}'")]
         internal static partial void DeserializationFailed(
             ILogger logger, string rawMessage, Exception exception);
 
         [LoggerMessage(
-            EventId = 4002,
+            EventId = LoggingEventIdRanges.Caching + 506,
             Level = LogLevel.Error,
             Message = "CacheInvalidationReceiver deserialized null from message: '{RawMessage}'")]
         internal static partial void DeserializationReturnedNull(
             ILogger logger, string rawMessage);
 
         [LoggerMessage(
-            EventId = 4003,
+            EventId = LoggingEventIdRanges.Caching + 507,
             Level = LogLevel.Warning,
             Message = "CacheInvalidationReceiver received broadcast All invalidation. Full L1 flush is not supported; entries will expire via TTL.")]
         internal static partial void BroadcastAllReceived(ILogger logger);
 
         [LoggerMessage(
-            EventId = 4004,
+            EventId = LoggingEventIdRanges.Caching + 508,
             Level = LogLevel.Error,
             Message = "CacheInvalidationReceiver failed to dispatch invalidation of type '{InvalidationType}' from service '{SourceService}'")]
         internal static partial void DispatchFailed(
             ILogger logger, string invalidationType, string sourceService, Exception exception);
 
         [LoggerMessage(
-            EventId = 4005,
+            EventId = LoggingEventIdRanges.Caching + 509,
             Level = LogLevel.Warning,
             Message = "CacheInvalidationReceiver received message with unhandled InvalidationType '{InvalidationType}'")]
         internal static partial void UnknownInvalidationType(

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Polly;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Logging;
 using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.PubSub;
@@ -226,31 +227,31 @@ internal sealed partial class RedisChannelService : IRedisChannelService
     private static partial class Log
     {
         [LoggerMessage(
-            EventId = 3001,
+            EventId = LoggingEventIdRanges.Caching + 500,
             Level = LogLevel.Error,
             Message = "Unhandled exception in Redis channel handler for channel '{ChannelName}'")]
         internal static partial void HandlerException(ILogger logger, string channelName, Exception exception);
 
         [LoggerMessage(
-            EventId = 3002,
+            EventId = LoggingEventIdRanges.Caching + 501,
             Level = LogLevel.Information,
             Message = "Redis connection restored; resubscribing all registered channels")]
         internal static partial void ConnectionRestored(ILogger logger);
 
         [LoggerMessage(
-            EventId = 3003,
+            EventId = LoggingEventIdRanges.Caching + 502,
             Level = LogLevel.Information,
             Message = "Successfully resubscribed channel '{ChannelName}' after reconnect")]
         internal static partial void ChannelResubscribed(ILogger logger, string channelName);
 
         [LoggerMessage(
-            EventId = 3004,
+            EventId = LoggingEventIdRanges.Caching + 503,
             Level = LogLevel.Error,
             Message = "Failed to resubscribe channel '{ChannelName}' after reconnect")]
         internal static partial void ChannelResubscriptionFailed(ILogger logger, string channelName, Exception exception);
 
         [LoggerMessage(
-            EventId = 3005,
+            EventId = LoggingEventIdRanges.Caching + 504,
             Level = LogLevel.Warning,
             Message = "Redis connection failed; transitioning health state to {NewState}")]
         internal static partial void ConnectionFailed(ILogger logger, ConnectionHealthState newState);

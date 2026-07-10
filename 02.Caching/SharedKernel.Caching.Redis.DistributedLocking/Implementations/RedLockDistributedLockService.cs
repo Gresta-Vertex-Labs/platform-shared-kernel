@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using RedLockNet;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Caching.Redis.DistributedLocking.Implementations;
 
@@ -126,31 +127,31 @@ internal sealed partial class RedLockDistributedLockService : IDistributedLockSe
 
     private static partial class Log
     {
-        [LoggerMessage(EventId = 2001, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 300, Level = LogLevel.Debug,
             Message = "Acquiring distributed lock on '{Resource}' (expiry={Expiry}, wait={Wait})")]
         internal static partial void AcquiringLock(ILogger logger, string resource, TimeSpan expiry, TimeSpan wait);
 
-        [LoggerMessage(EventId = 2002, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 301, Level = LogLevel.Debug,
             Message = "Distributed lock acquired on '{Resource}'")]
         internal static partial void LockAcquired(ILogger logger, string resource);
 
-        [LoggerMessage(EventId = 2003, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 302, Level = LogLevel.Warning,
             Message = "Distributed lock NOT acquired on '{Resource}' within wait window")]
         internal static partial void LockNotAcquired(ILogger logger, string resource);
 
-        [LoggerMessage(EventId = 2004, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 303, Level = LogLevel.Debug,
             Message = "Releasing distributed lock on '{Resource}'")]
         internal static partial void ReleasingLock(ILogger logger, string resource);
 
-        [LoggerMessage(EventId = 2005, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 304, Level = LogLevel.Debug,
             Message = "Acquiring renewable distributed lock on '{Resource}' (expiry={Expiry}, wait={Wait})")]
         internal static partial void AcquiringRenewableLock(ILogger logger, string resource, TimeSpan expiry, TimeSpan wait);
 
-        [LoggerMessage(EventId = 2006, Level = LogLevel.Debug,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 305, Level = LogLevel.Debug,
             Message = "Renewable distributed lock acquired on '{Resource}'")]
         internal static partial void RenewableLockAcquired(ILogger logger, string resource);
 
-        [LoggerMessage(EventId = 2007, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 306, Level = LogLevel.Warning,
             Message = "Renewable distributed lock NOT acquired on '{Resource}' within wait window")]
         internal static partial void RenewableLockNotAcquired(ILogger logger, string resource);
     }
