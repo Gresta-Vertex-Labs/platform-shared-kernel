@@ -49,6 +49,7 @@ public sealed class LoggingBehaviorTests
     public async Task Handle_OnSuccess_LogsStartAndSuccessAtInformation()
     {
         var logger = Substitute.For<ILogger<LoggingTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<SucceedingHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 
@@ -66,6 +67,7 @@ public sealed class LoggingBehaviorTests
     public async Task Handle_OnException_LogsStartAtInformationAndFaultAtErrorThenRethrowsUnchanged()
     {
         var logger = Substitute.For<ILogger<LoggingTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<ThrowingHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 

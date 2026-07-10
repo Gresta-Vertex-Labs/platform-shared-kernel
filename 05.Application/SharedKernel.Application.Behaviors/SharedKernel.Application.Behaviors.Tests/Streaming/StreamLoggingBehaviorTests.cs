@@ -25,7 +25,8 @@ public sealed record StreamLoggingFaultQuery : IStreamQuery<string>;
 ///   <item><description>Fault log at <c>Warning</c> when the stream throws; exception propagates unchanged.</description></item>
 /// </list>
 /// <para>
-/// Uses a hand-rolled recording logger because <c>LoggerMessage.Define</c> delegates check
+/// Uses a hand-rolled recording logger because <c>[LoggerMessage]</c>-generated partial methods
+/// (WO-041, P-253 — previously hand-rolled <c>LoggerMessage.Define</c> delegates) check
 /// <c>IsEnabled()</c> before calling <c>Log()</c>; NSubstitute's <c>ILogger&lt;T&gt;</c> mock
 /// returns <c>false</c> for <c>IsEnabled()</c> by default, preventing the log call from firing.
 /// The recording logger always returns <c>true</c> from <c>IsEnabled()</c>.
@@ -37,11 +38,11 @@ public sealed class StreamLoggingBehaviorTests
 
     private sealed class RecordingLogger<T> : ILogger<T>
     {
-        private readonly List<(LogLevel Level, string Message, Exception? Ex)> _records = [];
+        private readonly List<(LogLevel Level, EventId EventId, string Message, Exception? Ex)> _records = [];
 
-        public IReadOnlyList<(LogLevel Level, string Message, Exception? Ex)> Records => _records;
+        public IReadOnlyList<(LogLevel Level, EventId EventId, string Message, Exception? Ex)> Records => _records;
 
-        public bool IsEnabled(LogLevel logLevel) => true; // Always enabled so LoggerMessage.Define delegates fire.
+        public bool IsEnabled(LogLevel logLevel) => true; // Always enabled so [LoggerMessage]-generated methods fire.
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -50,7 +51,7 @@ public sealed class StreamLoggingBehaviorTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            _records.Add((logLevel, formatter(state, exception), exception));
+            _records.Add((logLevel, eventId, formatter(state, exception), exception));
         }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
@@ -105,6 +106,11 @@ public sealed class StreamLoggingBehaviorTests
         infoCount.Should().BeGreaterThanOrEqualTo(2, "entry and completion are both Information-level");
         // First-item log is Debug.
         debugCount.Should().BeGreaterThanOrEqualTo(1, "first-item latency is logged at Debug");
+
+        // WO-041 (T-63): renumbered EventIds within the reserved 5120-5129 sub-range.
+        logger.Records.Should().Contain(r => r.EventId.Id == 5120, "stream-started log must carry EventId 5120");
+        logger.Records.Should().Contain(r => r.EventId.Id == 5121, "first-item log must carry EventId 5121");
+        logger.Records.Should().Contain(r => r.EventId.Id == 5122, "stream-completed log must carry EventId 5122");
     }
 
     [Fact]
@@ -132,6 +138,11 @@ public sealed class StreamLoggingBehaviorTests
         // Warning log must have been emitted on fault.
         logger.Records.Should().Contain(r => r.Level == LogLevel.Warning,
             "faulted stream must be logged at Warning level");
+
+        // WO-041 (T-63): renumbered EventId within the reserved 5120-5129 sub-range.
+        logger.Records.Should().Contain(
+            r => r.Level == LogLevel.Warning && r.EventId.Id == 5123,
+            "the stream-faulted log must carry EventId 5123");
 
         // Exception must not have been swallowed — confirmed by ThrowAsync above.
     }

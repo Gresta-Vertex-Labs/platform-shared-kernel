@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Application.Behaviors.Shared;
 using SharedKernel.Application.Messaging;
 using System.Threading.Channels;
 
@@ -32,7 +33,7 @@ namespace SharedKernel.Application.Behaviors.FireAndForget;
 /// block guarantees disposal on exit via any path (normal return or exception).
 /// </para>
 /// </remarks>
-public sealed class FireAndForgetBackgroundConsumer(
+public sealed partial class FireAndForgetBackgroundConsumer(
     ChannelReader<IFireAndForgetCommand> reader,
     IServiceScopeFactory scopeFactory,
     ILogger<FireAndForgetBackgroundConsumer> logger)
@@ -64,11 +65,14 @@ public sealed class FireAndForgetBackgroundConsumer(
             catch (Exception ex)
             {
                 // Log and swallow: the caller chose fire-and-forget, so result is not observable.
-                logger.LogError(
-                    ex,
-                    "Fire-and-forget command {CommandType} faulted and its result was discarded.",
-                    command.GetType().FullName ?? command.GetType().Name);
+                LogCommandFaulted(logger, ex, command.GetType().FullName ?? command.GetType().Name);
             }
         }
     }
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogCommandFaulted,
+        Level = LogLevel.Error,
+        Message = "Fire-and-forget command {CommandType} faulted and its result was discarded.")]
+    private static partial void LogCommandFaulted(ILogger logger, Exception exception, string commandType);
 }

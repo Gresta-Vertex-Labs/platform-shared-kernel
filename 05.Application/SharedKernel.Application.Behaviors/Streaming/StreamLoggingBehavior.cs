@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Application.Behaviors.Shared;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -29,26 +30,10 @@ namespace SharedKernel.Application.Behaviors.Streaming;
 /// </list>
 /// Never logs request or item payloads — only timing and type information.
 /// </remarks>
-public sealed class StreamLoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logger)
+public sealed partial class StreamLoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logger)
     : IStreamPipelineBehavior<TRequest, TResponse>
     where TRequest : IStreamRequest<TResponse>
 {
-    private static readonly Action<ILogger, string, Exception?> LogStreamStarted =
-        LoggerMessage.Define<string>(LogLevel.Information, new EventId(1, "StreamStarted"),
-            "Streaming {RequestName} started.");
-
-    private static readonly Action<ILogger, string, double, Exception?> LogFirstItem =
-        LoggerMessage.Define<string, double>(LogLevel.Debug, new EventId(2, "StreamFirstItem"),
-            "Streaming {RequestName} produced first item in {ElapsedMilliseconds}ms.");
-
-    private static readonly Action<ILogger, string, double, Exception?> LogStreamCompleted =
-        LoggerMessage.Define<string, double>(LogLevel.Information, new EventId(3, "StreamCompleted"),
-            "Streaming {RequestName} completed in {ElapsedMilliseconds}ms.");
-
-    private static readonly Action<ILogger, string, double, Exception?> LogStreamFaulted =
-        LoggerMessage.Define<string, double>(LogLevel.Warning, new EventId(4, "StreamFaulted"),
-            "Streaming {RequestName} faulted after {ElapsedMilliseconds}ms.");
-
     /// <inheritdoc/>
     public async IAsyncEnumerable<TResponse> Handle(
         TRequest request,
@@ -59,7 +44,7 @@ public sealed class StreamLoggingBehavior<TRequest, TResponse>(ILogger<TRequest>
         var startTimestamp = Stopwatch.GetTimestamp();
         var firstItemLogged = false;
 
-        LogStreamStarted(logger, requestName, null);
+        LogStreamStarted(logger, requestName);
 
         IAsyncEnumerator<TResponse> enumerator;
         try
@@ -96,7 +81,7 @@ public sealed class StreamLoggingBehavior<TRequest, TResponse>(ILogger<TRequest>
                 {
                     firstItemLogged = true;
                     var firstItemElapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-                    LogFirstItem(logger, requestName, firstItemElapsed, null);
+                    LogFirstItem(logger, requestName, firstItemElapsed);
                 }
 
                 yield return item;
@@ -104,6 +89,30 @@ public sealed class StreamLoggingBehavior<TRequest, TResponse>(ILogger<TRequest>
         }
 
         var completionElapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-        LogStreamCompleted(logger, requestName, completionElapsed, null);
+        LogStreamCompleted(logger, requestName, completionElapsed);
     }
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogStreamStarted,
+        Level = LogLevel.Information,
+        Message = "Streaming {RequestName} started.")]
+    private static partial void LogStreamStarted(ILogger logger, string requestName);
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogFirstItem,
+        Level = LogLevel.Debug,
+        Message = "Streaming {RequestName} produced first item in {ElapsedMilliseconds}ms.")]
+    private static partial void LogFirstItem(ILogger logger, string requestName, double elapsedMilliseconds);
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogStreamCompleted,
+        Level = LogLevel.Information,
+        Message = "Streaming {RequestName} completed in {ElapsedMilliseconds}ms.")]
+    private static partial void LogStreamCompleted(ILogger logger, string requestName, double elapsedMilliseconds);
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogStreamFaulted,
+        Level = LogLevel.Warning,
+        Message = "Streaming {RequestName} faulted after {ElapsedMilliseconds}ms.")]
+    private static partial void LogStreamFaulted(ILogger logger, string requestName, double elapsedMilliseconds, Exception exception);
 }

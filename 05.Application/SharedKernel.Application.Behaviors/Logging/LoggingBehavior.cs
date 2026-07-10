@@ -61,7 +61,7 @@ namespace SharedKernel.Application.Behaviors.Logging;
 /// before this capability existed.
 /// </para>
 /// </remarks>
-public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logger)
+public sealed partial class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logger)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
@@ -82,7 +82,7 @@ public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logge
 
         using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
         {
-            logger.LogInformation("Handling {RequestName}", requestName);
+            LogHandling(logger, requestName);
         }
 
         try
@@ -99,17 +99,11 @@ public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logge
                 // Result railway (e.g. raw T responses from streaming handlers).
                 if (!ResponseOutcomeClassifier.IsSuccess(response))
                 {
-                    logger.LogWarning(
-                        "Handled {RequestName} with failure in {ElapsedMilliseconds}ms",
-                        requestName,
-                        elapsed.TotalMilliseconds);
+                    LogHandledFailure(logger, requestName, elapsed.TotalMilliseconds);
                 }
                 else
                 {
-                    logger.LogInformation(
-                        "Handled {RequestName} in {ElapsedMilliseconds}ms",
-                        requestName,
-                        elapsed.TotalMilliseconds);
+                    LogHandledSuccess(logger, requestName, elapsed.TotalMilliseconds);
                 }
             }
 
@@ -121,14 +115,34 @@ public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<TRequest> logge
 
             using (requestFields is { Count: > 0 } ? logger.BeginScope(requestFields) : null)
             {
-                logger.LogError(
-                    ex,
-                    "Handling {RequestName} failed after {ElapsedMilliseconds}ms",
-                    requestName,
-                    elapsed.TotalMilliseconds);
+                LogHandlingFailed(logger, requestName, elapsed.TotalMilliseconds, ex);
             }
 
             throw;
         }
     }
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogHandling,
+        Level = LogLevel.Information,
+        Message = "Handling {RequestName}")]
+    private static partial void LogHandling(ILogger logger, string requestName);
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogHandledSuccess,
+        Level = LogLevel.Information,
+        Message = "Handled {RequestName} in {ElapsedMilliseconds}ms")]
+    private static partial void LogHandledSuccess(ILogger logger, string requestName, double elapsedMilliseconds);
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogHandledFailure,
+        Level = LogLevel.Warning,
+        Message = "Handled {RequestName} with failure in {ElapsedMilliseconds}ms")]
+    private static partial void LogHandledFailure(ILogger logger, string requestName, double elapsedMilliseconds);
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogHandlingFailed,
+        Level = LogLevel.Error,
+        Message = "Handling {RequestName} failed after {ElapsedMilliseconds}ms")]
+    private static partial void LogHandlingFailed(ILogger logger, string requestName, double elapsedMilliseconds, Exception exception);
 }

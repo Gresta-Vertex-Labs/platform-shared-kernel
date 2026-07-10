@@ -83,6 +83,7 @@ public sealed class LoggingBehaviorLoggableRequestTests
     public async Task Handle_LoggableRequest_AttachesRequestFieldsToEntryLogScope()
     {
         var logger = Substitute.For<ILogger<LoggableTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<LoggableTestCommand, Result, SucceedingLoggableHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 
@@ -105,6 +106,7 @@ public sealed class LoggingBehaviorLoggableRequestTests
     public async Task Handle_SuccessResponse_AttachesResponseFieldsToCompletionLogScope()
     {
         var logger = Substitute.For<ILogger<LoggableTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<LoggableTestCommand, Result, SucceedingLoggableHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 
@@ -133,6 +135,7 @@ public sealed class LoggingBehaviorLoggableRequestTests
     public async Task Handle_FailureResponse_AttachesResponseFieldsToCompletionLogScopeAndLogsWarning()
     {
         var logger = Substitute.For<ILogger<LoggableTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<LoggableTestCommand, Result, FailingLoggableHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 
@@ -166,6 +169,7 @@ public sealed class LoggingBehaviorLoggableRequestTests
     public async Task Handle_HandlerThrows_NeverInvokesResponseFieldsFactoryOrEntersResponseScope()
     {
         var logger = Substitute.For<ILogger<LoggableTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<LoggableTestCommand, Result, ThrowingLoggableHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 
@@ -206,6 +210,7 @@ public sealed class LoggingBehaviorLoggableRequestTests
     public async Task Handle_NonLoggableRequest_NeverEntersAnyLoggingScope()
     {
         var logger = Substitute.For<ILogger<NonLoggableTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<NonLoggableTestCommand, Result, NonLoggableHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 
@@ -228,6 +233,7 @@ public sealed class LoggingBehaviorLoggableRequestTests
     public async Task Handle_EmptyFieldDictionaries_EntersNoLoggingScope()
     {
         var logger = Substitute.For<ILogger<LoggableTestCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var provider = BuildProvider<LoggableTestCommand, Result, SucceedingLoggableHandler>(logger);
         var sender = provider.GetRequiredService<ISender>();
 

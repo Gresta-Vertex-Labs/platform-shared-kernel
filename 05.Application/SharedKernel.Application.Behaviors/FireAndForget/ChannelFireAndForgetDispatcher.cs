@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Application.Behaviors.Shared;
 using SharedKernel.Application.Messaging;
 using System.Threading.Channels;
 
@@ -32,7 +33,7 @@ namespace SharedKernel.Application.Behaviors.FireAndForget;
 /// </list>
 /// </para>
 /// </remarks>
-internal sealed class ChannelFireAndForgetDispatcher(
+internal sealed partial class ChannelFireAndForgetDispatcher(
     ChannelWriter<IFireAndForgetCommand> writer,
     IOptions<FireAndForgetOptions> options,
     ILogger<ChannelFireAndForgetDispatcher> logger)
@@ -53,12 +54,14 @@ internal sealed class ChannelFireAndForgetDispatcher(
         if (writer.TryWrite(command))
             return ValueTask.CompletedTask;
 
-        logger.LogWarning(
-            "Fire-and-forget channel is full (capacity={Capacity}). " +
-            "Command {CommandType} was dropped and will not be executed.",
-            _options.Capacity,
-            command.GetType().FullName ?? command.GetType().Name);
+        LogChannelFull(logger, _options.Capacity, command.GetType().FullName ?? command.GetType().Name);
 
         return ValueTask.CompletedTask;
     }
+
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogChannelFull,
+        Level = LogLevel.Warning,
+        Message = "Fire-and-forget channel is full (capacity={Capacity}). Command {CommandType} was dropped and will not be executed.")]
+    private static partial void LogChannelFull(ILogger logger, int capacity, string commandType);
 }

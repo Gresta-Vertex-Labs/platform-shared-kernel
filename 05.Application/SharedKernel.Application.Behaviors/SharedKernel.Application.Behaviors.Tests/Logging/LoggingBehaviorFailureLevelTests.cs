@@ -61,6 +61,7 @@ public sealed class LoggingBehaviorFailureLevelTests
     public async Task Handle_ResultSuccess_PostHandlerLogIsAtInformation()
     {
         var logger = Substitute.For<ILogger<SuccessResultCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var services = new ServiceCollection();
         services.AddSingleton(logger);
         services.AddTransient<IRequestHandler<SuccessResultCommand, Result>, SuccessHandler>();
@@ -89,6 +90,7 @@ public sealed class LoggingBehaviorFailureLevelTests
     public async Task Handle_ResultFailure_PostHandlerLogIsAtWarning()
     {
         var logger = Substitute.For<ILogger<FailureResultCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var services = new ServiceCollection();
         services.AddSingleton(logger);
         services.AddTransient<IRequestHandler<FailureResultCommand, Result>, FailureHandler>();
@@ -117,6 +119,7 @@ public sealed class LoggingBehaviorFailureLevelTests
     public async Task Handle_NonIHasSuccessFlagResponseType_PostHandlerLogIsAtInformation()
     {
         var logger = Substitute.For<ILogger<RawStringCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var services = new ServiceCollection();
         services.AddSingleton(logger);
         services.AddTransient<IRequestHandler<RawStringCommand, string>, RawStringHandler>();
@@ -145,6 +148,7 @@ public sealed class LoggingBehaviorFailureLevelTests
     public async Task Handle_HandlerThrows_LogsErrorAndRethrowsUnchanged()
     {
         var logger = Substitute.For<ILogger<ThrowingResultCommand>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var services = new ServiceCollection();
         services.AddSingleton(logger);
         services.AddTransient<IRequestHandler<ThrowingResultCommand, Result>, ThrowingHandler>();
