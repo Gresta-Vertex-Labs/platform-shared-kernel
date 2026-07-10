@@ -230,6 +230,32 @@ public sealed record PlaceOrderCommand(Guid CustomerId, string CreditCardNumber,
 
 > **Warning — never include PII, secrets, or credentials in the returned field set.** `LoggableRequestFields`/`GetLoggableResponseFields` are logged verbatim to whatever sink `ILogger<TRequest>` is wired to (console, file, a centralized log aggregator). Passwords, tokens, card numbers, government IDs, and full free-text user input must never appear in these dictionaries — log only identifiers (`OrderId`, `CustomerId`) and coarse-grained outcome fields (`Total`, `Status`). A request that does not implement `ILoggableRequest<TResponse>` is unaffected — its logging behavior is byte-for-byte identical to a platform without this capability.
 
+## Logging authoring standard and EventId allocation
+
+Every production log statement in this package is authored via the source-generated `[LoggerMessage]` partial-method pattern (`Microsoft.Extensions.Logging.Abstractions`) — never a direct `ILogger.LogInformation/LogWarning/LogError(...)` extension-method call, and never a hand-written `LoggerMessage.Define<>()` delegate. This is the platform-wide logging standard (root `CLAUDE.md`'s "Logging Conventions" section), mechanically enforced by `00.Governance`'s `LoggingAuthoringStyleAnalyzer`/architecture tests.
+
+Every `[LoggerMessage]` method carries an explicit `EventId` drawn from this domain's reserved block in `01.Core`'s `SharedKernel.Primitives.Logging.LoggingEventIdRanges` registry — never a bare numeric literal or compiler-auto-numbered id. `05.Application`'s domain range is `5000`-`5999`, sub-divided one 100-wide block per package in declaration order:
+
+| Package | Range | Status |
+| --- | --- | --- |
+| `SharedKernel.Application` | `5000`-`5099` | Reserved, currently unused (zero `ILogger` call sites in that package) |
+| `SharedKernel.Application.Behaviors` | `5100`-`5199` | Ten allocated EventIds (below); `5104`-`5109`/`5112`-`5119`/`5124`-`5129` reserved headroom |
+
+| EventId | Method | File | Level | Message |
+| --- | --- | --- | --- | --- |
+| 5100 | `LogHandling` | `Logging/LoggingBehavior.cs` | Information | `Handling {RequestName}` |
+| 5101 | `LogHandledSuccess` | `Logging/LoggingBehavior.cs` | Information | `Handled {RequestName} in {ElapsedMilliseconds}ms` |
+| 5102 | `LogHandledFailure` | `Logging/LoggingBehavior.cs` | Warning | `Handled {RequestName} with failure in {ElapsedMilliseconds}ms` |
+| 5103 | `LogHandlingFailed` | `Logging/LoggingBehavior.cs` | Error | `Handling {RequestName} failed after {ElapsedMilliseconds}ms` |
+| 5110 | `LogChannelFull` | `FireAndForget/ChannelFireAndForgetDispatcher.cs` | Warning | `Fire-and-forget channel is full (capacity={Capacity}). Command {CommandType} was dropped and will not be executed.` |
+| 5111 | `LogCommandFaulted` | `FireAndForget/FireAndForgetBackgroundConsumer.cs` | Error | `Fire-and-forget command {CommandType} faulted and its result was discarded.` |
+| 5120 | `LogStreamStarted` | `Streaming/StreamLoggingBehavior.cs` | Information | `Streaming {RequestName} started.` |
+| 5121 | `LogFirstItem` | `Streaming/StreamLoggingBehavior.cs` | Debug | `Streaming {RequestName} produced first item in {ElapsedMilliseconds}ms.` |
+| 5122 | `LogStreamCompleted` | `Streaming/StreamLoggingBehavior.cs` | Information | `Streaming {RequestName} completed in {ElapsedMilliseconds}ms.` |
+| 5123 | `LogStreamFaulted` | `Streaming/StreamLoggingBehavior.cs` | Warning | `Streaming {RequestName} faulted after {ElapsedMilliseconds}ms.` |
+
+The constants live in `Shared/ApplicationBehaviorsLoggingEventIds.cs` (`internal static class`, ten `const int` fields, each computed as `LoggingEventIdRanges.Application + offset`) — never a bare numeric literal disconnected from the registry. Message templates use PascalCase named placeholders (`{RequestName}`, `{ElapsedMilliseconds}`) that match the call's named arguments; correlation/trace/tenant context is never passed as an explicit placeholder — it flows ambiently through the OpenTelemetry logging pipeline (`13.ServiceDefaults`). See `05.Application/CLAUDE.md`'s "Logging EventId Allocation" section for the full narrative (WO-041, P-253).
+
 ## Package
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [05.Application/CLAUDE.md](../CLAUDE.md) for the full interface contracts, hard violations, the reusable pipeline test harness, and AOT notes.

@@ -70,6 +70,7 @@ public sealed partial class FireAndForgetBackgroundConsumer(
         }
     }
 
+    /// <summary>Handler-fault log (EventId 5111, Error) — the dispatched command's handler threw; the result is discarded (fire-and-forget contract), the background loop continues.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogCommandFaulted,
         Level = LogLevel.Error,

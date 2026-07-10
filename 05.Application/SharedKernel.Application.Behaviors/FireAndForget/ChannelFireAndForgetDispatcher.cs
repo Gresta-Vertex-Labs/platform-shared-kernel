@@ -59,6 +59,7 @@ internal sealed partial class ChannelFireAndForgetDispatcher(
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>Full-channel drop log (EventId 5110, Warning) — emitted under the <see cref="FireAndForgetRejectionPolicy.DropAndLog"/> policy when the bounded channel has no capacity for the command.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogChannelFull,
         Level = LogLevel.Warning,

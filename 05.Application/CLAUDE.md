@@ -705,8 +705,8 @@ IFireAndForgetDispatcher  (interface — in SharedKernel.Application.Behaviors)
           request-processing thread.
           LOGGING RETROFIT (WO-041, P-253, shipped 2026-07-10): the implementation,
           ChannelFireAndForgetDispatcher, logs a Warning ("channel is full, command dropped") when
-          DropAndLog rejects an enqueue attempt — this becomes a [LoggerMessage]-attributed static
-          partial method (EventId 5110 — see "Logging EventId Allocation" above); the class gains
+          DropAndLog rejects an enqueue attempt — this is now a [LoggerMessage]-attributed static
+          partial method (EventId 5110 — see "Logging EventId Allocation" above); the class carries
           partial; message text/level unchanged.
 
 FireAndForgetOptions  (options class)
@@ -725,9 +725,9 @@ FireAndForgetBackgroundConsumer  (sealed class, extends BackgroundService)
           FireAndForgetDispatchContext.EnterTrustedDispatch()'s disposable scope (set immediately before,
           cleared immediately after via using/try-finally, guaranteed even on handler exception) so
           FireAndForgetGuardBehavior<,> permits it through instead of rejecting it.
-          LOGGING RETROFIT (WO-041, P-253, shipped 2026-07-10): the Error-level fault log becomes a
+          LOGGING RETROFIT (WO-041, P-253, shipped 2026-07-10): the Error-level fault log is now a
           [LoggerMessage]-attributed static partial method (EventId 5111 — see "Logging EventId Allocation"
-          above); the class gains partial; message text/level unchanged.
+          above); the class carries partial; message text/level unchanged.
 
 FireAndForgetDispatchContext  (internal static class, AsyncLocal<bool>-backed)
     .IsTrusted                                                          → bool  (internal, get-only)
@@ -767,12 +767,12 @@ StreamLoggingBehavior<TRequest,TResponse>  (sealed class, IStreamPipelineBehavio
     where TRequest : IStreamRequest<TResponse>
     NOTE: Logs request entry at Information; first-item latency at Debug; stream-completion at Information;
           stream-fault (handler throws) at Warning. Uses ILogger<TRequest>.
-          LOGGING RETROFIT (WO-041, P-253, shipped 2026-07-10): the four hand-written
-          LoggerMessage.Define<>() static delegate fields (today's ad hoc EventId(1..4, "Name"), outside
-          any reserved range) are replaced with four [LoggerMessage]-attributed static partial methods
-          carrying the identical message templates/levels but renumbered into this domain's reserved
-          range: EventId 5120 (StreamStarted), 5121 (StreamFirstItem), 5122 (StreamCompleted), 5123
-          (StreamFaulted) — see "Logging EventId Allocation" above. The class gains partial.
+          LOGGING RETROFIT (WO-041, P-253, shipped 2026-07-10): the four previously hand-written
+          LoggerMessage.Define<>() static delegate fields (formerly ad hoc EventId(1..4, "Name"), outside
+          any reserved range) have been replaced with four [LoggerMessage]-attributed static partial
+          methods carrying the identical message templates/levels but renumbered into this domain's
+          reserved range: EventId 5120 (StreamStarted), 5121 (LogFirstItem), 5122 (StreamCompleted), 5123
+          (StreamFaulted) — see "Logging EventId Allocation" above. The class carries partial.
 
 StreamMetricsBehavior<TRequest,TResponse>  (sealed class, IStreamPipelineBehavior<TRequest,TResponse>)
     NOTE: Emits ApplicationDiagnostics.RequestDuration from stream-open to stream-close/fault, tagged with

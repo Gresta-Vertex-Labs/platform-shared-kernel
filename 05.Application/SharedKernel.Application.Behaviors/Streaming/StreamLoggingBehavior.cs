@@ -92,24 +92,28 @@ public sealed partial class StreamLoggingBehavior<TRequest, TResponse>(ILogger<T
         LogStreamCompleted(logger, requestName, completionElapsed);
     }
 
+    /// <summary>Stream-opened entry log (EventId 5120, Information) — emitted once before enumeration begins.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogStreamStarted,
         Level = LogLevel.Information,
         Message = "Streaming {RequestName} started.")]
     private static partial void LogStreamStarted(ILogger logger, string requestName);
 
+    /// <summary>First-item latency log (EventId 5121, Debug) — emitted once, the first time <c>MoveNextAsync</c> yields an item.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogFirstItem,
         Level = LogLevel.Debug,
         Message = "Streaming {RequestName} produced first item in {ElapsedMilliseconds}ms.")]
     private static partial void LogFirstItem(ILogger logger, string requestName, double elapsedMilliseconds);
 
+    /// <summary>Stream-completed log (EventId 5122, Information) — emitted once enumeration finishes normally.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogStreamCompleted,
         Level = LogLevel.Information,
         Message = "Streaming {RequestName} completed in {ElapsedMilliseconds}ms.")]
     private static partial void LogStreamCompleted(ILogger logger, string requestName, double elapsedMilliseconds);
 
+    /// <summary>Stream-faulted log (EventId 5123, Warning) — emitted when enumeration throws; the exception is rethrown unchanged after this log call.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogStreamFaulted,
         Level = LogLevel.Warning,

@@ -122,24 +122,28 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(ILogger<TReques
         }
     }
 
+    /// <summary>Entry log (EventId 5100, Information) — emitted once per request before <c>next()</c> runs.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandling,
         Level = LogLevel.Information,
         Message = "Handling {RequestName}")]
     private static partial void LogHandling(ILogger logger, string requestName);
 
+    /// <summary>Completion log, success path (EventId 5101, Information) — <c>next()</c> returned a successful response.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandledSuccess,
         Level = LogLevel.Information,
         Message = "Handled {RequestName} in {ElapsedMilliseconds}ms")]
     private static partial void LogHandledSuccess(ILogger logger, string requestName, double elapsedMilliseconds);
 
+    /// <summary>Completion log, failure path (EventId 5102, Warning) — <c>next()</c> returned a response classified as failed by <see cref="ResponseOutcomeClassifier"/>.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandledFailure,
         Level = LogLevel.Warning,
         Message = "Handled {RequestName} with failure in {ElapsedMilliseconds}ms")]
     private static partial void LogHandledFailure(ILogger logger, string requestName, double elapsedMilliseconds);
 
+    /// <summary>Fault log (EventId 5103, Error) — <c>next()</c> threw; the exception is rethrown unchanged after this log call.</summary>
     [LoggerMessage(
         EventId = ApplicationBehaviorsLoggingEventIds.LogHandlingFailed,
         Level = LogLevel.Error,
