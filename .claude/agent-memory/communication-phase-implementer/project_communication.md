@@ -5,21 +5,21 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-06-18)
+## Phase completion status (as of 2026-07-13)
 
-- SK.11.Design: ● (22 tasks)
+- SK.11.Design: ● (23 tasks, incl. D-23 EventId allocation)
 - SK.11.Scaffold: ● (13 tasks)
-- SK.11.Rest: ● (18 tasks, 66/66 tests) — WO-026 R-11–R-18 complete
-- SK.11.Grpc: ● (13 tasks, 55/55 tests) — WO-026 G-10–G-13 complete
-- SK.11.GraphQL: ● (9 tasks, 43/43 tests) — WO-026 GQ-09 complete
-- SK.11.Internal: ◐ (6/8 tasks done) — I-07, I-08 (TTL cache) pending
-- SK.11.Tests: ○ (26 tasks pending)
-- SK.11.Docs: ○ (5 tasks pending)
+- SK.11.Rest: ● (18 tasks, 66/66 tests)
+- SK.11.Grpc: ● (15 tasks, 60/60 tests) — includes G-14/G-15 [LoggerMessage] retrofit (EventId 11100/11101)
+- SK.11.GraphQL: ● (9 tasks, 43/43 tests)
+- SK.11.Internal: ● (11 tasks, 52/52 tests) — includes I-09/I-10/I-11 [LoggerMessage] retrofit (EventId 11300-11308)
+- SK.11.Tests: ● (28 tasks) — T-27/T-28 (WO-041 P-255 regression + real-assembly verification) complete
+- SK.11.Docs: ○ (6 tasks pending) — only DO-06 is P-255-specific; DO-01..DO-05 are original WO-025 backlog
 - SK.11.Published: ○ (6 tasks pending)
 
-**Why:** WO-025 (P-154 through P-159) + WO-026 (P-160–P-165) implementing the full 11.Communication domain.
+**Why:** WO-025/WO-026 built the domain; WO-041 (P-255) retrofitted `.Grpc`/`.Internal` onto the platform `[LoggerMessage]` logging standard (root CLAUDE.md).
 
-**How to apply:** When resuming, start from the first non-● phase in sub state-map at `11.Communication/state-map.md`. Next pending: I-07, I-08 (Internal TTL cache).
+**How to apply:** When resuming, start from the first non-● phase in sub state-map at `11.Communication/state-map.md`. Next pending: DO-06 (Docs — update CLAUDE.md's already-present Logging section is done; DO-06 itself may already be satisfied by prior sessions' edits — verify before redoing).
 
 ## NuGet version pins (confirmed working)
 
