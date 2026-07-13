@@ -2,6 +2,7 @@ using System.Diagnostics;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Messaging.MassTransit.Diagnostics;
+using SharedKernel.Messaging.MassTransit.Logging;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
@@ -20,15 +21,9 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// MassTransit retry and fault policies. Never swallow exceptions inside <see cref="ConsumeAsync"/>.
 /// </para>
 /// </remarks>
-public abstract class ConsumerBase<TMessage> : IConsumer<TMessage>
+public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     where TMessage : class
 {
-    private static readonly Action<ILogger, string, Exception?> LogConsumeError =
-        LoggerMessage.Define<string>(
-            LogLevel.Error,
-            new EventId(1, "ConsumerError"),
-            "Unhandled exception consuming message {MessageType}. See CorrelationId in scope.");
-
     /// <summary>
     /// Gets the logger for this consumer. Additional dependencies are constructor-injected by subclasses.
     /// </summary>
@@ -75,16 +70,11 @@ public abstract class ConsumerBase<TMessage> : IConsumer<TMessage>
         using var activity = MessagingDiagnostics.ActivitySource.StartActivity("Consumer.Consume");
         activity?.SetTag("messaging.message_type", typeof(TMessage).Name);
 
-        var correlationIdStr = context.CorrelationId?.ToString("D") ?? string.Empty;
-
         // HP-05: Build log scope with CorrelationId, MessageType, and any x-sk-* headers.
         // OT-03: additive messaging.destination / messaging.message_type entries.
-        var scopeState = new Dictionary<string, object?>
-        {
-            ["CorrelationId"] = correlationIdStr,
-            ["MessageType"] = typeof(TMessage).Name,
-            ["messaging.message_type"] = typeof(TMessage).Name,
-        };
+        var scopeState = MessagingLogScope.Create(context.CorrelationId);
+        scopeState["MessageType"] = typeof(TMessage).Name;
+        scopeState["messaging.message_type"] = typeof(TMessage).Name;
 
         var destination = context.DestinationAddress?.AbsolutePath;
         if (destination is not null)
@@ -124,4 +114,14 @@ public abstract class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// and trigger the configured retry and fault policies.
     /// </remarks>
     protected abstract Task ConsumeAsync(TMessage message, CancellationToken ct);
+
+    /// <summary>
+    /// Logs an unhandled exception raised from <see cref="ConsumeAsync"/>. See CorrelationId
+    /// in the structured log scope established by <see cref="Consume"/>.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7001,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception consuming message {MessageType}. See CorrelationId in scope.")]
+    private static partial void LogConsumeError(ILogger logger, string messageType, Exception exception);
 }

@@ -23,16 +23,8 @@ namespace SharedKernel.Messaging.MassTransit.SchemaEvolution;
 /// using the application's configured logging providers.
 /// </para>
 /// </remarks>
-internal static class TranslatorRegistrationValidator
+internal static partial class TranslatorRegistrationValidator
 {
-    private static readonly Action<ILogger, string, string, Exception?> LogNoConsumerForNewSchema =
-        LoggerMessage.Define<string, string>(
-            LogLevel.Warning,
-            new EventId(4, "VersionTranslatorNoConsumer"),
-            "WithVersionTranslator registered a translation from {OldType} to {NewType}, but no " +
-            "consumer for the new schema type was found in this service. This is advisory only — " +
-            "the consumer may be registered in a separate service.");
-
     /// <summary>
     /// Validates a single <c>WithVersionTranslator&lt;TOld, TNew, TTranslator&gt;()</c> registration
     /// against the set of message types consumed by registered consumer types.
@@ -51,7 +43,7 @@ internal static class TranslatorRegistrationValidator
         ILogger logger)
     {
         if (!HasConsumerFor(newType, registeredConsumerTypes))
-            LogNoConsumerForNewSchema(logger, oldType.Name, newType.Name, null);
+            LogNoConsumerForNewSchema(logger, oldType.Name, newType.Name);
     }
 
     /// <summary>
@@ -74,4 +66,15 @@ internal static class TranslatorRegistrationValidator
 
         return false;
     }
+
+    /// <summary>
+    /// Logs an advisory warning when no consumer for the new schema type was found in this service.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7009,
+        Level = LogLevel.Warning,
+        Message = "WithVersionTranslator registered a translation from {OldType} to {NewType}, but no " +
+            "consumer for the new schema type was found in this service. This is advisory only — " +
+            "the consumer may be registered in a separate service.")]
+    private static partial void LogNoConsumerForNewSchema(ILogger logger, string oldType, string newType);
 }

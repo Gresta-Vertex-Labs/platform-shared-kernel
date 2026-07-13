@@ -1,5 +1,6 @@
 using MassTransit;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Messaging.MassTransit.Logging;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
@@ -21,21 +22,9 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// will not be applied if <c>AddConsumer</c> is used.
 /// </para>
 /// </remarks>
-public abstract class BatchConsumerBase<TMessage> : IConsumer<Batch<TMessage>>
+public abstract partial class BatchConsumerBase<TMessage> : IConsumer<Batch<TMessage>>
     where TMessage : class
 {
-    private static readonly Action<ILogger, int, string, Exception?> LogBatchEntry =
-        LoggerMessage.Define<int, string>(
-            LogLevel.Information,
-            new EventId(2, "BatchConsumeEntry"),
-            "Processing batch of {BatchSize} messages for {MessageType}.");
-
-    private static readonly Action<ILogger, string, Exception?> LogBatchError =
-        LoggerMessage.Define<string>(
-            LogLevel.Error,
-            new EventId(3, "BatchConsumeError"),
-            "Unhandled exception processing batch for {MessageType}. See CorrelationId in scope.");
-
     /// <summary>
     /// Gets the logger for this batch consumer.
     /// </summary>
@@ -59,16 +48,14 @@ public abstract class BatchConsumerBase<TMessage> : IConsumer<Batch<TMessage>>
     public async Task Consume(ConsumeContext<Batch<TMessage>> context)
     {
         var messages = context.Message.Select(c => c.Message).ToList().AsReadOnly();
-        var correlationId = context.CorrelationId?.ToString("D") ?? string.Empty;
 
-        using var scope = Logger.BeginScope(new Dictionary<string, object?>
-        {
-            ["CorrelationId"] = correlationId,
-            ["MessageType"] = typeof(TMessage).Name,
-            ["BatchSize"] = messages.Count,
-        });
+        var scopeState = MessagingLogScope.Create(context.CorrelationId);
+        scopeState["MessageType"] = typeof(TMessage).Name;
+        scopeState["BatchSize"] = messages.Count;
 
-        LogBatchEntry(Logger, messages.Count, typeof(TMessage).Name, null);
+        using var scope = Logger.BeginScope(scopeState);
+
+        LogBatchEntry(Logger, messages.Count, typeof(TMessage).Name);
 
         try
         {
@@ -99,4 +86,23 @@ public abstract class BatchConsumerBase<TMessage> : IConsumer<Batch<TMessage>>
     /// </para>
     /// </remarks>
     protected abstract Task ConsumeAsync(IReadOnlyList<TMessage> messages, CancellationToken ct);
+
+    /// <summary>
+    /// Logs structured entry into batch processing with the batch size and message type.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7002,
+        Level = LogLevel.Information,
+        Message = "Processing batch of {BatchSize} messages for {MessageType}.")]
+    private static partial void LogBatchEntry(ILogger logger, int batchSize, string messageType);
+
+    /// <summary>
+    /// Logs an unhandled exception raised from <see cref="ConsumeAsync"/>. See CorrelationId
+    /// in the structured log scope established by <see cref="Consume"/>.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7003,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception processing batch for {MessageType}. See CorrelationId in scope.")]
+    private static partial void LogBatchError(ILogger logger, string messageType, Exception exception);
 }

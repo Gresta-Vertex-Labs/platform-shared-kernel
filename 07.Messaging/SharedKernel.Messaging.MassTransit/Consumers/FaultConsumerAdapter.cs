@@ -3,6 +3,7 @@ using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Messaging.Abstractions.Faults;
+using SharedKernel.Messaging.MassTransit.Logging;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
 
@@ -19,16 +20,10 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// directly and applies equivalent log-then-rethrow semantics. Registered by
 /// <c>MessagingBusBuilder.AddFaultConsumer&lt;TMessage, TFaultConsumer&gt;()</c> — never register directly.
 /// </remarks>
-internal sealed class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer<Fault<TMessage>>
+internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer<Fault<TMessage>>
     where TMessage : class
     where TFaultConsumer : class, IFaultConsumer<TMessage>
 {
-    private static readonly Action<ILogger, Guid, string, Exception?> LogFaultHandling =
-        LoggerMessage.Define<Guid, string>(
-            LogLevel.Error,
-            new EventId(2, "FaultConsumerHandling"),
-            "Handling fault {FaultId} for message type {MessageType}. Invoking fault consumer.");
-
     private readonly TFaultConsumer _faultConsumer;
     private readonly ILogger<FaultConsumerAdapter<TMessage, TFaultConsumer>> _logger;
 
@@ -60,12 +55,11 @@ internal sealed class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer
             // Attach correlation to structured logging scope for downstream context.
         }
 
-        using var scope = _logger.BeginScope(new Dictionary<string, object?>
-        {
-            ["FaultId"] = faultId,
-            ["MessageType"] = messageTypeName,
-            ["CorrelationId"] = correlationId?.ToString("D") ?? string.Empty,
-        });
+        var scopeState = MessagingLogScope.Create(correlationId);
+        scopeState["FaultId"] = faultId;
+        scopeState["MessageType"] = messageTypeName;
+
+        using var scope = _logger.BeginScope(scopeState);
 
         // Map MassTransit ExceptionInfo[] to FaultExceptionInfo[].
         var exceptions = fault.Exceptions
@@ -74,7 +68,7 @@ internal sealed class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer
                 Message: e.Message ?? string.Empty))
             .ToArray();
 
-        LogFaultHandling(_logger, faultId, messageTypeName, null);
+        LogFaultHandling(faultId, messageTypeName);
 
         try
         {
@@ -88,10 +82,26 @@ internal sealed class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "Unhandled exception in fault consumer {FaultConsumerType} for fault {FaultId}.",
-                typeof(TFaultConsumer).Name, faultId);
+            LogFaultConsumerError(typeof(TFaultConsumer).Name, faultId, ex);
             throw; // Never swallow — activates MassTransit fault tracking.
         }
     }
+
+    /// <summary>
+    /// Logs entry into fault handling for a given faulted message.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7004,
+        Level = LogLevel.Error,
+        Message = "Handling fault {FaultId} for message type {MessageType}. Invoking fault consumer.")]
+    private partial void LogFaultHandling(Guid faultId, string messageType);
+
+    /// <summary>
+    /// Logs an unhandled exception raised from <see cref="IFaultConsumer{TMessage}.HandleAsync"/>.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7005,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception in fault consumer {FaultConsumerType} for fault {FaultId}.")]
+    private partial void LogFaultConsumerError(string faultConsumerType, Guid faultId, Exception exception);
 }

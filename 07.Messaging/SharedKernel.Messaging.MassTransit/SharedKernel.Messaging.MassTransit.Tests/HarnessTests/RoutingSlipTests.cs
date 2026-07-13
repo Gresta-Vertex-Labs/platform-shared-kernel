@@ -3,6 +3,7 @@ using MassTransit;
 using MassTransit.Courier.Contracts;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Messaging.MassTransit.MessageBus;
 using SharedKernel.Messaging.MassTransit.RoutingSlips;
@@ -129,6 +130,69 @@ public sealed class RoutingSlipTests
 
         recorder.CompensatedSteps.Should().Contain("reserve-inventory:SKU-2:1",
             "the first (already-completed) activity must be compensated when a downstream activity faults");
+
+        await harness.Stop();
+    }
+
+    // -------------------------------------------------------------------------
+    // LR-15: Execute/Compensate log scope contains a CorrelationId entry equal to
+    // context.TrackingNumber.ToString("D") — the P-254 MessagingLogScope.Create seeding
+    // change on RoutingSlipActivityBase (previously only Activity.Current was tagged).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ExecuteRoutingSlip_LogScope_ContainsCorrelationIdEqualToTrackingNumber()
+    {
+        RoutingSlipLogScopeCaptureStore.Reset();
+        var recorder = new ExecutionRecorder();
+        var capturingLogger = new RoutingSlipCapturingLogger();
+
+        await using var provider = new ServiceCollection()
+            .AddSingleton(recorder)
+            .AddSingleton(capturingLogger)
+            .AddMassTransitTestHarness(cfg =>
+            {
+                cfg.AddActivity<LogScopeCapturingActivity, ReserveInventoryArguments, ReserveInventoryLog>();
+            })
+            .BuildServiceProvider(true);
+
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        var address = harness.GetExecuteActivityAddress<LogScopeCapturingActivity, ReserveInventoryArguments>();
+        var orderId = Guid.NewGuid();
+
+        ISkRoutingSlipBuilder slipBuilder = new MassTransitRoutingSlipBuilder();
+        var slip = slipBuilder
+            .AddActivity("reserve-inventory", address, new ReserveInventoryArguments { OrderId = orderId, Sku = "SKU-3", Quantity = 1 })
+            .Build();
+
+        var bus = new MassTransitMessageBus(
+            harness.Bus,
+            harness.Bus,
+            provider,
+            new Dictionary<Type, string>(),
+            new ConventionSendEndpointResolver(
+                Microsoft.Extensions.Options.Options.Create(
+                    new SharedKernel.Messaging.Abstractions.Options.MessagingOptions { ServiceName = "test-service" })));
+
+        var trackingNumber = ((RoutingSlip)slip).TrackingNumber;
+
+        await bus.ExecuteRoutingSlipAsync(slip, CancellationToken.None);
+
+        await harness.InactivityTask;
+
+        (await harness.Published.Any<RoutingSlipCompleted>()).Should().BeTrue();
+
+        RoutingSlipLogScopeCaptureStore.CapturedState.Should().ContainKey("CorrelationId",
+            "MessagingLogScope.Create seeds a CorrelationId entry in the Execute log scope (P-254)");
+        RoutingSlipLogScopeCaptureStore.CapturedState["CorrelationId"].Should().Be(
+            trackingNumber.ToString("D"),
+            "the CorrelationId scope entry must equal the routing slip's tracking number");
+        RoutingSlipLogScopeCaptureStore.CapturedState.Should().ContainKey("routing_slip.tracking_number",
+            "the pre-existing routing_slip.tracking_number entry must still be present alongside CorrelationId");
+        RoutingSlipLogScopeCaptureStore.CapturedState.Should().ContainKey("routing_slip.activity_name",
+            "the pre-existing routing_slip.activity_name entry must still be present alongside CorrelationId");
 
         await harness.Stop();
     }
@@ -266,4 +330,67 @@ internal sealed class FailingChargeCardActivity : RoutingSlipActivityBase<Charge
 
     protected override Task<CompensationResult> CompensateAsync(ChargeCardLog log, CancellationToken ct)
         => Task.FromResult(CompensationComplete());
+}
+
+// ---------------------------------------------------------------------------
+// LR-15: log-scope-capturing activity and supporting logger/store.
+// ---------------------------------------------------------------------------
+
+/// <summary>Static store for the last captured BeginScope state dictionary (LR-15).</summary>
+internal static class RoutingSlipLogScopeCaptureStore
+{
+    private static readonly Lock _gate = new();
+    private static Dictionary<string, object?> _capturedState = [];
+
+    public static IReadOnlyDictionary<string, object?> CapturedState
+    {
+        get { lock (_gate) { return _capturedState; } }
+    }
+
+    public static void Capture(IDictionary<string, object?> state)
+    {
+        lock (_gate) { _capturedState = new Dictionary<string, object?>(state); }
+    }
+
+    public static void Reset()
+    {
+        lock (_gate) { _capturedState = []; }
+    }
+}
+
+/// <summary>Logger that captures the full BeginScope dictionary for assertions (LR-15).</summary>
+internal sealed class RoutingSlipCapturingLogger : ILogger
+{
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+    {
+        if (state is IDictionary<string, object?> dict)
+            RoutingSlipLogScopeCaptureStore.Capture(dict);
+
+        return NullScope.Instance;
+    }
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+        Exception? exception, Func<TState, Exception?, string> formatter) { }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+        public void Dispose() { }
+    }
+}
+
+internal sealed class LogScopeCapturingActivity : RoutingSlipActivityBase<ReserveInventoryArguments, ReserveInventoryLog>
+{
+    public LogScopeCapturingActivity(RoutingSlipCapturingLogger logger)
+        : base(logger)
+    {
+    }
+
+    protected override Task<ExecutionResult> ExecuteAsync(ReserveInventoryArguments arguments, CancellationToken ct) =>
+        Task.FromResult(Complete(new ReserveInventoryLog { Sku = arguments.Sku, Quantity = arguments.Quantity }));
+
+    protected override Task<CompensationResult> CompensateAsync(ReserveInventoryLog log, CancellationToken ct) =>
+        Task.FromResult(CompensationComplete());
 }

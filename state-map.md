@@ -70,7 +70,7 @@ Format when blocked:
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) now fully `●` through Docs (Design/Scaffold/Core/Tests/Docs = 71/19/74/66/24, all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199, 100% XML doc coverage confirmed, README EventId table added, stale "design-only" phrasing swept from `CLAUDE.md`; `SharedKernel.Application.Behaviors.Tests` 130/130. | Published (P-20..P-22 for WO-041, plus P-01..P-19 for WO-035/036/038/039/040) is the only phase left before this domain is fully published. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
-| 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.Tests complete (20/20) — ConsumerVerifyTests retrofitted off NSubstitute onto 16.Testing's InMemoryMessageBus/InMemoryEventPublisher doubles (P-191); 50/50 Abstractions tests green; SK.07.OTel also complete (8/8) — MessagingDiagnostics.ActivitySource ("SharedKernel.Messaging", "1.0.0"), Consumer.Consume/EventPublisher.Publish activities, 106 MassTransit tests green. | — |
+| 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.LoggingRetrofit complete (18/18, P-254) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range, new `MessagingLogScope.Create` shared BeginScope helper; verified zero EventId collisions and zero SK0020/SK0021 diagnostics against the real built assembly; 108/108 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
@@ -10035,7 +10035,7 @@ Every production log statement in `SharedKernel.Application.Behaviors` — `Logg
 ---
 ### P-254 — Messaging: Logging Retrofit and Scope-Construction Consolidation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 07.Messaging
 **Depends on:** P-249, P-250
@@ -10155,3 +10155,5 @@ Every domain in this work order is being retrofitted to a mechanically consisten
 
 - [2026-07-10] 05.Application's WO-041 (P-253) carried through Design → Scaffold → Core → Tests in one session (`05.Application/state-map.md` SK.05.Design/Scaffold/Core/Tests all now `●`, 71/19/74/66 respectively) — corrected a stale prior-session claim that Design was already locked when D-66..D-71 were genuinely still `○`; both cross-domain blockers (`01.Core` P-249, `00.Governance` P-250) re-verified shipped before proceeding. `SharedKernel.Application.Behaviors.Tests` now 130/130 passing. P-253's acceptance criteria updated: 5 of 6 now `[x]`, only the CLAUDE.md-EventId-allocation-doc criterion remains open pending a future Docs-phase session (state-map-phase)
 - [2026-07-10] 05.Application → Docs (●) — DO-22..DO-24 (WO-041, P-253) shipped: 100% XML doc coverage confirmed on all ten `[LoggerMessage]` partial methods + `ApplicationBehaviorsLoggingEventIds`, `SharedKernel.Application.Behaviors/README.md` gained an EventId allocation table, and stale future-tense "design-only" phrasing swept from `CLAUDE.md`'s Logging/FireAndForget/Streaming NOTE blocks. P-253 marked `●` Complete (all 6 acceptance criteria `[x]`); `SK.05.Docs` now 24/24 `●` across all six work orders; 28/28 + 130/130 tests passing (state-map-phase)
+- [2026-07-10] Messaging → LoggingRetrofit (●) — promoted from SK.07.LoggingRetrofit (state-map-phase)
+- [2026-07-10] Phase Backlog P-254 → ● Complete — SK.07.LoggingRetrofit done (state-map-phase)

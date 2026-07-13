@@ -1,5 +1,6 @@
 using MassTransit;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Messaging.MassTransit.Logging;
 
 namespace SharedKernel.Messaging.MassTransit.RoutingSlips;
 
@@ -25,23 +26,20 @@ namespace SharedKernel.Messaging.MassTransit.RoutingSlips;
 /// <c>routing_slip.tracking_number</c> and <c>routing_slip.activity_name</c>, and rethrow any
 /// unhandled exception after structured logging.
 /// </para>
+/// <para>
+/// <strong>P-254 log scope change:</strong> the structured log scope is now seeded via
+/// <see cref="Logging.MessagingLogScope.Create(Guid?)"/> using the routing slip's tracking
+/// number, so it also carries a <c>CorrelationId</c> entry (previously only
+/// <c>Activity.Current</c> was tagged, never the log scope). This brings this type's scope
+/// shape in line with <see cref="Consumers.ConsumerBase{TMessage}"/>,
+/// <see cref="Consumers.BatchConsumerBase{TMessage}"/>, and
+/// <c>FaultConsumerAdapter&lt;TMessage,TFaultConsumer&gt;</c>.
+/// </para>
 /// </remarks>
-public abstract class RoutingSlipActivityBase<TArguments, TLog> : IActivity<TArguments, TLog>
+public abstract partial class RoutingSlipActivityBase<TArguments, TLog> : IActivity<TArguments, TLog>
     where TArguments : class
     where TLog : class
 {
-    private static readonly Action<ILogger, Guid, Exception?> LogExecuteError =
-        LoggerMessage.Define<Guid>(
-            LogLevel.Error,
-            new EventId(1, "RoutingSlipExecuteError"),
-            "Unhandled exception executing routing slip activity. TrackingNumber={TrackingNumber}.");
-
-    private static readonly Action<ILogger, Guid, Exception?> LogCompensateError =
-        LoggerMessage.Define<Guid>(
-            LogLevel.Error,
-            new EventId(2, "RoutingSlipCompensateError"),
-            "Unhandled exception compensating routing slip activity. TrackingNumber={TrackingNumber}.");
-
     private ExecuteContext<TArguments>? _executeContext;
     private CompensateContext<TLog>? _compensateContext;
 
@@ -72,11 +70,9 @@ public abstract class RoutingSlipActivityBase<TArguments, TLog> : IActivity<TArg
     {
         PropagateCorrelationId(context.TrackingNumber);
 
-        var scopeState = new Dictionary<string, object?>
-        {
-            ["routing_slip.tracking_number"] = context.TrackingNumber,
-            ["routing_slip.activity_name"] = context.ActivityName,
-        };
+        var scopeState = MessagingLogScope.Create(context.TrackingNumber);
+        scopeState["routing_slip.tracking_number"] = context.TrackingNumber;
+        scopeState["routing_slip.activity_name"] = context.ActivityName;
 
         using var scope = Logger.BeginScope(scopeState);
 
@@ -108,11 +104,9 @@ public abstract class RoutingSlipActivityBase<TArguments, TLog> : IActivity<TArg
     {
         PropagateCorrelationId(context.TrackingNumber);
 
-        var scopeState = new Dictionary<string, object?>
-        {
-            ["routing_slip.tracking_number"] = context.TrackingNumber,
-            ["routing_slip.activity_name"] = context.ActivityName,
-        };
+        var scopeState = MessagingLogScope.Create(context.TrackingNumber);
+        scopeState["routing_slip.tracking_number"] = context.TrackingNumber;
+        scopeState["routing_slip.activity_name"] = context.ActivityName;
 
         using var scope = Logger.BeginScope(scopeState);
 
@@ -217,4 +211,22 @@ public abstract class RoutingSlipActivityBase<TArguments, TLog> : IActivity<TArg
     {
         System.Diagnostics.Activity.Current?.SetTag("CorrelationId", trackingNumber.ToString("D"));
     }
+
+    /// <summary>
+    /// Logs an unhandled exception raised from <see cref="ExecuteAsync"/>.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7006,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception executing routing slip activity. TrackingNumber={TrackingNumber}.")]
+    private static partial void LogExecuteError(ILogger logger, Guid trackingNumber, Exception exception);
+
+    /// <summary>
+    /// Logs an unhandled exception raised from <see cref="CompensateAsync"/>.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7007,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception compensating routing slip activity. TrackingNumber={TrackingNumber}.")]
+    private static partial void LogCompensateError(ILogger logger, Guid trackingNumber, Exception exception);
 }

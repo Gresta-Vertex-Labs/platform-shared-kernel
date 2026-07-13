@@ -19,16 +19,10 @@ namespace SharedKernel.Messaging.MassTransit.SchemaEvolution;
 /// <c>ConsumeContext.Publish{T}(T, CancellationToken)</c>, preserving the original
 /// <c>ConsumeContext.CorrelationId</c>.
 /// </remarks>
-internal sealed class VersionTranslatingConsumer<TOld, TNew> : IConsumer<TOld>
+internal sealed partial class VersionTranslatingConsumer<TOld, TNew> : IConsumer<TOld>
     where TOld : class
     where TNew : class
 {
-    private static readonly Action<ILogger, string, string, Exception?> LogTranslating =
-        LoggerMessage.Define<string, string>(
-            LogLevel.Debug,
-            new EventId(3, "VersionTranslating"),
-            "Translating message {OldType} to {NewType}.");
-
     private readonly IMessageVersionTranslator<TOld, TNew> _translator;
     private readonly ILogger<VersionTranslatingConsumer<TOld, TNew>> _logger;
 
@@ -48,11 +42,20 @@ internal sealed class VersionTranslatingConsumer<TOld, TNew> : IConsumer<TOld>
     /// <inheritdoc />
     public async Task Consume(ConsumeContext<TOld> context)
     {
-        LogTranslating(_logger, typeof(TOld).Name, typeof(TNew).Name, null);
+        LogTranslating(typeof(TOld).Name, typeof(TNew).Name);
 
         // VT-01: Translate is a synchronous pure projection — no I/O, no side effects.
         var translated = _translator.Translate(context.Message);
 
         await context.Publish(translated, context.CancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Logs the translation of a legacy schema message to the current schema.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 7008,
+        Level = LogLevel.Debug,
+        Message = "Translating message {OldType} to {NewType}.")]
+    private partial void LogTranslating(string oldType, string newType);
 }
