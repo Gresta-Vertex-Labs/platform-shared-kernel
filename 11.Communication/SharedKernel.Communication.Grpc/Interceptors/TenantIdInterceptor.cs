@@ -14,7 +14,7 @@ namespace SharedKernel.Communication.Grpc.Interceptors;
 /// when <c>ITenantProvider</c> is not registered, or when <c>TenantId</c> is <see cref="Guid.Empty"/>.
 /// Catches all exceptions, logs at <see cref="LogLevel.Error"/>, and continues — never propagates.
 /// </summary>
-internal sealed class TenantIdInterceptor(
+internal sealed partial class TenantIdInterceptor(
     IHttpContextAccessor httpContextAccessor,
     ILogger<TenantIdInterceptor> logger) : Interceptor
 {
@@ -90,9 +90,14 @@ internal sealed class TenantIdInterceptor(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "TenantIdInterceptor failed to inject x-tenant-id metadata. Continuing without tenant propagation.");
+            LogTenantIdEnrichmentFailed(_logger, ex);
             return context;
         }
     }
+
+    [LoggerMessage(
+        EventId = 11101,
+        Level = LogLevel.Error,
+        Message = "TenantIdInterceptor failed to inject x-tenant-id metadata. Continuing without tenant propagation.")]
+    private static partial void LogTenantIdEnrichmentFailed(ILogger logger, Exception exception);
 }

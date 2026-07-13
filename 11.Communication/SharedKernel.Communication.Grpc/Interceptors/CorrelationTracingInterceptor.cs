@@ -13,7 +13,7 @@ namespace SharedKernel.Communication.Grpc.Interceptors;
 /// Catches all exceptions, logs at <see cref="LogLevel.Error"/>, and continues — never propagates
 /// into the gRPC call pipeline.
 /// </summary>
-internal sealed class CorrelationTracingInterceptor(ILogger<CorrelationTracingInterceptor> logger) : Interceptor
+internal sealed partial class CorrelationTracingInterceptor(ILogger<CorrelationTracingInterceptor> logger) : Interceptor
 {
     private readonly ILogger<CorrelationTracingInterceptor> _logger = logger;
 
@@ -98,9 +98,14 @@ internal sealed class CorrelationTracingInterceptor(ILogger<CorrelationTracingIn
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "CorrelationTracingInterceptor failed to enrich gRPC metadata. Continuing without propagation.");
+            LogCorrelationEnrichmentFailed(_logger, ex);
             return context;
         }
     }
+
+    [LoggerMessage(
+        EventId = 11100,
+        Level = LogLevel.Error,
+        Message = "CorrelationTracingInterceptor failed to enrich gRPC metadata. Continuing without propagation.")]
+    private static partial void LogCorrelationEnrichmentFailed(ILogger logger, Exception exception);
 }
