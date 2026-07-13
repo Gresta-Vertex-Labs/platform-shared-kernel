@@ -20,7 +20,7 @@ namespace SharedKernel.Communication.Internal.Resolvers;
 /// Stale-while-revalidate: on DNS failure with a stale cache entry, logs Warning and returns the stale <see cref="Uri"/>.
 /// Registered as singleton via <c>AddK8sServiceDiscovery</c>.
 /// </summary>
-internal sealed class KubernetesServiceEndpointResolver(
+internal sealed partial class KubernetesServiceEndpointResolver(
     ServiceEndpointResolver resolver,
     IOptions<K8sServiceDiscoveryOptions> options,
     ILogger<KubernetesServiceEndpointResolver> logger) : IServiceEndpointResolver
@@ -33,41 +33,53 @@ internal sealed class KubernetesServiceEndpointResolver(
     private readonly ConcurrentDictionary<string, CachedEntry> _cache =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly Action<ILogger, string, Exception?> _logSrvAttempt =
-        LoggerMessage.Define<string>(
-            LogLevel.Debug,
-            new EventId(1, "SrvLookupAttempt"),
-            "Attempting SRV DNS lookup for service '{ServiceName}'.");
+    [LoggerMessage(
+        EventId = 11300,
+        Level = LogLevel.Debug,
+        Message = "Attempting SRV DNS lookup for service '{ServiceName}'.")]
+    private static partial void LogSrvLookupAttempt(ILogger logger, string serviceName);
 
-    private static readonly Action<ILogger, string, Exception?> _logARecordAttempt =
-        LoggerMessage.Define<string>(
-            LogLevel.Debug,
-            new EventId(2, "ARecordLookupAttempt"),
-            "Attempting A-record DNS lookup for service '{ServiceName}'.");
+    [LoggerMessage(
+        EventId = 11301,
+        Level = LogLevel.Debug,
+        Message = "Attempting A-record DNS lookup for service '{ServiceName}'.")]
+    private static partial void LogARecordLookupAttempt(ILogger logger, string serviceName);
 
-    private static readonly Action<ILogger, string, Exception?> _logFallback =
-        LoggerMessage.Define<string>(
-            LogLevel.Warning,
-            new EventId(3, "DnsFallback"),
-            "DNS resolution failed for service '{ServiceName}'. Returning K8s convention URI.");
+    [LoggerMessage(
+        EventId = 11302,
+        Level = LogLevel.Warning,
+        Message = "DNS resolution failed for service '{ServiceName}'. Returning K8s convention URI.")]
+    private static partial void LogDnsFallback(ILogger logger, string serviceName);
 
-    private static readonly Action<ILogger, string, Uri, Exception?> _logResolved =
-        LoggerMessage.Define<string, Uri>(
-            LogLevel.Debug,
-            new EventId(4, "ServiceResolved"),
-            "Service '{ServiceName}' resolved to '{Uri}'.");
+    [LoggerMessage(
+        EventId = 11303,
+        Level = LogLevel.Debug,
+        Message = "Service '{ServiceName}' resolved to '{Uri}'.")]
+    private static partial void LogServiceResolved(ILogger logger, string serviceName, Uri uri);
 
-    private static readonly Action<ILogger, string, Uri, Exception?> _logStaleCache =
-        LoggerMessage.Define<string, Uri>(
-            LogLevel.Warning,
-            new EventId(5, "StaleCacheUsed"),
-            "DNS resolution failed for service '{ServiceName}'. Using stale cached URI '{Uri}'.");
+    [LoggerMessage(
+        EventId = 11304,
+        Level = LogLevel.Warning,
+        Message = "DNS resolution failed for service '{ServiceName}'. Using stale cached URI '{Uri}'.")]
+    private static partial void LogStaleCacheUsed(ILogger logger, string serviceName, Uri uri);
 
-    private static readonly Action<ILogger, string, Uri, Exception?> _logCacheHit =
-        LoggerMessage.Define<string, Uri>(
-            LogLevel.Debug,
-            new EventId(6, "CacheHit"),
-            "Cache hit for service '{ServiceName}', returning cached URI '{Uri}'.");
+    [LoggerMessage(
+        EventId = 11305,
+        Level = LogLevel.Debug,
+        Message = "Cache hit for service '{ServiceName}', returning cached URI '{Uri}'.")]
+    private static partial void LogCacheHit(ILogger logger, string serviceName, Uri uri);
+
+    [LoggerMessage(
+        EventId = 11306,
+        Level = LogLevel.Debug,
+        Message = "SRV DNS lookup failed for service '{ServiceName}'.")]
+    private static partial void LogSrvLookupFailed(ILogger logger, string serviceName, Exception exception);
+
+    [LoggerMessage(
+        EventId = 11307,
+        Level = LogLevel.Debug,
+        Message = "A-record DNS lookup failed for service '{ServiceName}'.")]
+    private static partial void LogARecordLookupFailed(ILogger logger, string serviceName, Exception exception);
 
     /// <inheritdoc />
     public async ValueTask<Uri> ResolveAsync(string serviceName, CancellationToken ct)
@@ -80,7 +92,7 @@ internal sealed class KubernetesServiceEndpointResolver(
         // Fast path — cache hit when TTL > 0 and entry has not expired.
         if (ttl > 0 && _cache.TryGetValue(serviceName, out var cached) && DateTimeOffset.UtcNow < cached.ExpiresAt)
         {
-            _logCacheHit(logger, serviceName, cached.Uri, null);
+            LogCacheHit(logger, serviceName, cached.Uri);
             return cached.Uri;
         }
 
@@ -96,20 +108,20 @@ internal sealed class KubernetesServiceEndpointResolver(
                 _cache[serviceName] = new CachedEntry(resolved, expiry);
             }
 
-            _logResolved(logger, serviceName, resolved, null);
+            LogServiceResolved(logger, serviceName, resolved);
             return resolved;
         }
 
         // DNS failed — try stale cache before falling back to convention URI.
         if (ttl > 0 && _cache.TryGetValue(serviceName, out var stale))
         {
-            _logStaleCache(logger, serviceName, stale.Uri, null);
+            LogStaleCacheUsed(logger, serviceName, stale.Uri);
             return stale.Uri;
         }
 
         // Convention URI fallback — never throws.
         var fallback = BuildFallbackUri(serviceName, scheme, ns, domain);
-        _logFallback(logger, serviceName, null);
+        LogDnsFallback(logger, serviceName);
         return fallback;
     }
 
@@ -124,7 +136,7 @@ internal sealed class KubernetesServiceEndpointResolver(
         var srvName = $"{scheme}://_http._tcp.{serviceName}.{ns}.svc.{domain}";
         try
         {
-            _logSrvAttempt(logger, serviceName, null);
+            LogSrvLookupAttempt(logger, serviceName);
             var srvSource = await resolver.GetEndpointsAsync(srvName, ct).ConfigureAwait(false);
             var srvEndpoint = srvSource.Endpoints.FirstOrDefault();
             if (srvEndpoint is not null)
@@ -136,14 +148,14 @@ internal sealed class KubernetesServiceEndpointResolver(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogDebug(ex, "SRV DNS lookup failed for service '{ServiceName}'.", serviceName);
+            LogSrvLookupFailed(logger, serviceName, ex);
         }
 
         // Step 2 — A-record lookup
         var aRecordName = $"{scheme}://{serviceName}.{ns}.svc.{domain}";
         try
         {
-            _logARecordAttempt(logger, serviceName, null);
+            LogARecordLookupAttempt(logger, serviceName);
             var aSource = await resolver.GetEndpointsAsync(aRecordName, ct).ConfigureAwait(false);
             var aEndpoint = aSource.Endpoints.FirstOrDefault();
             if (aEndpoint is not null)
@@ -155,7 +167,7 @@ internal sealed class KubernetesServiceEndpointResolver(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogDebug(ex, "A-record DNS lookup failed for service '{ServiceName}'.", serviceName);
+            LogARecordLookupFailed(logger, serviceName, ex);
         }
 
         return null;

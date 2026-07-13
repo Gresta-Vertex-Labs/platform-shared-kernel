@@ -74,8 +74,10 @@ public sealed class ServiceCollectionExtensionsTests
         foreach (var svc in hostedServices)
             await svc.StartAsync(CancellationToken.None);
 
-        // Assert — at least one Warning log was emitted
-        sink.Entries.Should().Contain(e => e.LogLevel == LogLevel.Warning);
+        // Assert — at least one Warning log was emitted, carrying the retrofitted EventId 11308
+        // (P-255/WO-041: LogStaticServiceDiscoveryActive, converted from a hand-written
+        // LoggerMessage.Define<int> delegate at local EventId 100 — no behavioral change).
+        sink.Entries.Should().Contain(e => e.LogLevel == LogLevel.Warning && e.EventId.Id == 11308);
     }
 
     // ─────────────────────────────────────────────────────────────
