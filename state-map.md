@@ -74,7 +74,7 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | WO-041 Logging Retrofit (Grpc `●`, Internal pending) | `◐` | SK.11.Grpc (P-255, G-14/G-15) complete — `CorrelationTracingInterceptor`/`TenantIdInterceptor` retrofitted to `[LoggerMessage]`-attributed static partial methods (EventId 11100/11101); 55/55 `SharedKernel.Communication.Grpc.Tests` passing. | Complete `SharedKernel.Communication.Internal` retrofit (I-09–I-11), then Tests (T-27/T-28) and Docs (DO-06) tasks for P-255. |
+| 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | SK.11.Tests (28/28) now complete — new regression tests confirm `CorrelationTracingInterceptor`/`TenantIdInterceptor` (EventId 11100/11101) and `KubernetesServiceEndpointResolver`/`StaticServiceDiscoveryStartupWarning` (EventId 11300-11308) still log correctly post-retrofit; `LoggingEventIdIntegrityAssertion` run against the real `SharedKernel.Communication.Grpc`/`.Internal` assemblies confirms zero collisions; SK0020/SK0021 verified zero-diagnostics via a temporary analyzer reference (added, built, reverted); 60/60 Grpc + 52/52 Internal tests passing. | DO-06 (update `CLAUDE.md`'s Grpc/Internal logging docs) is the only remaining P-255 task, in the Docs phase. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-041/P-251 fully landed — `BaggageLogRecordProcessor` (generic `Activity.Baggage`→`LogRecord.Attributes` copier), `AddSharedKernelTelemetry`'s `.WithLogging(...)` OTLP log-export registration, `TenantBaggageKeys` + `TenantResolutionMiddleware`'s ambient TenantId baggage set. SK.13.Core 33/33 `●`, SK.13.Tests 28/28 `●`, SK.13.Docs 4/4 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 29/29 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
@@ -109,11 +109,11 @@ Format when active:
 | ● Published | 7 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
 | ● Docs | 2 |
-| ● Tests | 2 |
+| ● Tests | 3 |
 | ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 0 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 4 |
 
@@ -10158,3 +10158,5 @@ Every domain in this work order is being retrofitted to a mechanically consisten
 - [2026-07-10] Messaging → LoggingRetrofit (●) — promoted from SK.07.LoggingRetrofit (state-map-phase)
 - [2026-07-10] Phase Backlog P-254 → ● Complete — SK.07.LoggingRetrofit done (state-map-phase)
 - [2026-07-13] Communication → WO-041 Logging Retrofit (◐) — SK.11.Grpc (G-14/G-15, P-255) complete, promoted from SK.11.Grpc; Internal (I-09–I-11), Tests (T-27/T-28), Docs (DO-06) still pending for P-255 (state-map-phase)
+- [2026-07-13] Communication → WO-041 Logging Retrofit (◐) — SK.11.Internal (I-09–I-11, P-255) complete: `KubernetesServiceEndpointResolver`/`StaticServiceDiscoveryStartupWarning` retrofitted to `[LoggerMessage]` (EventId 11300-11308), 39/39 tests passing; SK.11.Internal now 11/11 ●; Tests (T-27/T-28) and Docs (DO-06) still pending for P-255 (state-map-phase)
+- [2026-07-13] Communication → Tests (●) — T-27/T-28 (P-255) complete: regression tests confirm the Grpc/Internal [LoggerMessage] retrofit's EventIds (11100/11101, 11300-11308) still fire correctly; LoggingEventIdIntegrityAssertion passes against the real Grpc/Internal assemblies; SK0020/SK0021 verified zero-diagnostics via a temporary analyzer reference (reverted); 60/60 + 52/52 tests passing; promoted from SK.11.Tests — only DO-06 (Docs) remains for P-255 (state-map-phase)
