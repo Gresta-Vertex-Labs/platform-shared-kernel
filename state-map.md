@@ -79,7 +79,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-041/P-251 fully landed — `BaggageLogRecordProcessor` (generic `Activity.Baggage`→`LogRecord.Attributes` copier), `AddSharedKernelTelemetry`'s `.WithLogging(...)` OTLP log-export registration, `TenantBaggageKeys` + `TenantResolutionMiddleware`'s ambient TenantId baggage set. SK.13.Core 33/33 `●`, SK.13.Tests 28/28 `●`, SK.13.Docs 4/4 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 29/29 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-041/P-256 closed — explicit `EventId`s (14000/14001/14100) assigned to all three `[LoggerMessage]` methods, `CorrelationIdMiddleware.BaggageKey` constant regression-pinned, correlation-on-log-record integration test proves compatibility with `13.ServiceDefaults`'s `BaggageLogRecordProcessor` with zero cross-domain reference; both packages re-packed to `1.0.1`, `consumer-verify` re-confirms zero DI exceptions; 42/42 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
-| 16 | [Testing](16.Testing/state-map.md) | Core | `●` | WO-041 (P-258) SK.16.Core now 59/59 `●` — implemented `LogRecord`/`InMemoryLogger`/`InMemoryLoggerFactory`/`InMemoryLogger<TCategoryName>`/`LoggerAssertions`/`AddInMemoryLoggerFactory()` in the new `Logging/` folder; `dotnet build` clean for `SharedKernel.Testing` and `SharedKernel.Testing.SelfTests`. | Tests (T-45 — prove the `Logging/` types in `SharedKernel.Testing.SelfTests` via a real `[LoggerMessage]`-attributed call site) and Docs (DO-16) remain outstanding for this same P-258/WO-041 work. |
+| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-041 (P-258) SK.16.Docs now 16/16 `●` — added `<remarks>` docs to `InMemoryLogger.BeginScope` (`AsyncLocal` await/parallel-collection rationale) and `InMemoryLogger`'s class-level remarks (`Logging/` is the first capability folder anchored to a cross-cutting BCL contract rather than a numbered domain's `.Abstractions` package, and why); confirmed root `CLAUDE.md`'s structured-log-assertion "What Goes Where" row already existed, no edit needed; `dotnet build` clean. | — WO-041/P-258 fully closed; all 6 phases of `16.Testing` `●` again. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -108,9 +108,9 @@ Format when active:
 | ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
 | ● Published | 7 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
-| ● Docs | 2 |
+| ● Docs | 3 |
 | ● Tests | 1 |
-| ● Core | 1 |
+| ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 1 |
@@ -7935,6 +7935,7 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-10] Phase Backlog P-252 → ● Complete — SK.02.LoggingRetrofit done; final acceptance criterion (00.Governance P-250 zero-suppression verification against this domain) remains pending 00.Governance's own retrofit dispatch cycle (state-map-phase)
 - [2026-07-14] 15 → Published (●) — WO-041/P-257 code-level work landed on top of already-Published SK.15.LoggingRetrofit (5/5); `WebhookDispatcher.LogObserverException` converted to `[LoggerMessage]`-attributed `Log.ObserverException` (nested partial class), `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests passing (state-map-phase)
 - [2026-07-14] Phase Backlog P-257 → ● Complete — SK.15.LoggingRetrofit done; 00.Governance's P-250 (SK0020/SK0021 analyzers, LoggingEventIdIntegrityAssertion) already shipped 2026-07-09, satisfying the analyzer-pass acceptance criterion (state-map-phase)
+- [2026-07-14] 16 → Tests (●) — promoted from SK.16.Tests (45/45); `Logging/InMemoryLoggerTests.cs` added to `SharedKernel.Testing.SelfTests` (37 tests) proving `LogRecord`/`InMemoryLogger`/`InMemoryLogger<TCategoryName>`/`InMemoryLoggerFactory`/`LoggerAssertions`/`AddInMemoryLoggerFactory()` via a real `[LoggerMessage]`-attributed call site; 320/320 SelfTests passing (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -10134,7 +10135,7 @@ Completes the platform-wide retrofit — this is the smallest of the affected do
 ---
 ### P-258 — Testing: Structured Log Assertion Test Double
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 16.Testing
 **Depends on:** P-249, P-250
@@ -10148,11 +10149,13 @@ A shared, in-process test double that captures structured log records emitted th
 Every domain in this work order is being retrofitted to a mechanically consistent logging shape (`[LoggerMessage]`, explicit `EventId`, ambient enrichment) specifically so logs are easy to query and alert on in production — the same shape should be just as easy to assert on in tests. Today nothing in `16.Testing` lets a consuming service verify "my handler logged EventId 5012 with RequestName=X" without hand-rolling an `ILogger` mock and inspecting raw string output, exactly the brittle pattern this work order is designed to move the platform away from.
 
 #### Acceptance criteria
-- [ ] A reusable in-memory `ILogger`/`ILoggerFactory` test double exists in `SharedKernel.Testing`, capturing `EventId`, `LogLevel`, formatted message, structured state, active scope payload, and exception per log record
-- [ ] Assertion helpers allow querying captured log records by `EventId`, level, and structured property value without string-matching the rendered message
-- [ ] The test double depends only on `Microsoft.Extensions.Logging.Abstractions`, never a mocking framework, matching this package's existing `InMemoryMessageBus`/`InMemoryEventPublisher` dependency posture
-- [ ] New tests in this domain's established self-test convention prove the double correctly captures a representative `[LoggerMessage]` call site
-- [ ] Root `CLAUDE.md`'s "What Goes Where" guidance is updated to point future logging-assertion needs at this double instead of ad hoc mocks
+- [x] A reusable in-memory `ILogger`/`ILoggerFactory` test double exists in `SharedKernel.Testing`, capturing `EventId`, `LogLevel`, formatted message, structured state, active scope payload, and exception per log record — `LogRecord`/`InMemoryLogger`/`InMemoryLoggerFactory`/`InMemoryLogger<TCategoryName>` (`16.Testing/SharedKernel.Testing/Logging/`)
+- [x] Assertion helpers allow querying captured log records by `EventId`, level, and structured property value without string-matching the rendered message — `LoggerAssertions.ShouldHaveLogged`/`.ShouldHaveLoggedWithProperty`/`.ShouldNotHaveLogged`/`.ShouldHaveLoggedCount`
+- [x] The test double depends only on `Microsoft.Extensions.Logging.Abstractions`, never a mocking framework, matching this package's existing `InMemoryMessageBus`/`InMemoryEventPublisher` dependency posture — verified: `SharedKernel.Testing.csproj` carries no new mocking-framework `PackageReference`
+- [x] New tests in this domain's established self-test convention prove the double correctly captures a representative `[LoggerMessage]` call site — `SharedKernel.Testing.SelfTests/Logging/InMemoryLoggerTests.cs`, real `[LoggerMessage]`-attributed `TestLogMessages.OrderProcessed`/`.OrderFailed` call sites, 37 tests, all passing (320/320 full suite)
+- [x] Root `CLAUDE.md`'s "What Goes Where" guidance is updated to point future logging-assertion needs at this double instead of ad hoc mocks — confirmed present (row: "A test assertion on structured log output... → 16.Testing/SharedKernel.Testing")
+
+Verification pass (2026-07-14, testing-phase-implementer): all six local phase tables (Design D-72–D-78, Scaffold S-19/S-20, Core C-54–C-59, Tests T-45, Docs DO-16) and the local Overall Progress table were already `●` from prior sessions; this pass re-verified the on-disk `Logging/` implementation against the CLAUDE.md contract line-by-line (zero drift), ran `dotnet build` on both `SharedKernel.Testing.csproj` and `SharedKernel.Testing.SelfTests.csproj` (Release, 0 errors), and ran `dotnet test` on `SharedKernel.Testing.SelfTests.csproj` (320/320 passing). This header block's `Status`/acceptance-criteria checkboxes were the only remaining drift — they had never been promoted to Complete despite every underlying phase key already being `●`; corrected here.
 ---
 
 - [2026-07-10] 05.Application's WO-041 (P-253) carried through Design → Scaffold → Core → Tests in one session (`05.Application/state-map.md` SK.05.Design/Scaffold/Core/Tests all now `●`, 71/19/74/66 respectively) — corrected a stale prior-session claim that Design was already locked when D-66..D-71 were genuinely still `○`; both cross-domain blockers (`01.Core` P-249, `00.Governance` P-250) re-verified shipped before proceeding. `SharedKernel.Application.Behaviors.Tests` now 130/130 passing. P-253's acceptance criteria updated: 5 of 6 now `[x]`, only the CLAUDE.md-EventId-allocation-doc criterion remains open pending a future Docs-phase session (state-map-phase)
@@ -10168,3 +10171,5 @@ Every domain in this work order is being retrofitted to a mechanically consisten
 - [2026-07-14] 16.Testing → Design (◐) — promoted from SK.16.Design (78/78); WO-041 (P-258) `Logging/` folder target-shape design re-confirmed verbatim against CLAUDE.md, no drift; Scaffold (S-19/S-20) next (state-map-phase)
 - [2026-07-14] Testing → Scaffold (●) — promoted from SK.16.Scaffold (state-map-phase)
 - [2026-07-14] Testing → Core (●) — promoted from SK.16.Core (59/59); implemented Logging/ folder (LogRecord, InMemoryLogger, InMemoryLoggerFactory, InMemoryLogger<TCategoryName>, LoggerAssertions, AddInMemoryLoggerFactory); dotnet build clean for SharedKernel.Testing and SelfTests (state-map-phase)
+- [2026-07-14] 16 → Docs (●) — promoted from SK.16.Docs (16/16); DO-16 XML-doc pass added AsyncLocal scope-stack rationale to InMemoryLogger.BeginScope and BCL-anchored-folder rationale to InMemoryLogger's class remarks; WO-041/P-258 fully closed, all 6 phases of 16.Testing `●` again (state-map-phase)
+- [2026-07-14] Phase Backlog P-258 → ● Complete — verification/closeout pass (testing-phase-implementer): all six local `16.Testing` phase tables were already `●` from prior sessions but the `### P-258` header block's `Status` line and acceptance-criteria checkboxes had never been promoted to match; re-verified `Logging/` on-disk implementation (`LogRecord`, `InMemoryLogger`, `InMemoryLoggerFactory`, `InMemoryLogger<TCategoryName>`, `LoggerAssertions`, `AddInMemoryLoggerFactory()`) line-by-line against the CLAUDE.md contract with zero drift found; `dotnet build` clean (0 errors) on both `SharedKernel.Testing.csproj` and `SharedKernel.Testing.SelfTests.csproj` (Release); `dotnet test SharedKernel.Testing.SelfTests.csproj` 320/320 passing, including the 37 `Logging/InMemoryLoggerTests.cs` tests built on a real `[LoggerMessage]`-attributed call site. All five acceptance criteria checked `[x]`; `Status` flipped `◐ Dispatched` → `● Complete` (state-map-phase)
