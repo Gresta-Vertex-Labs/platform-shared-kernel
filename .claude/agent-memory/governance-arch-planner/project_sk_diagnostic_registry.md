@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-SK diagnostic ID registry as of 2026-07-07. Next available sequential ID: **SK0020**.
+SK diagnostic ID registry as of 2026-07-14. Next available sequential ID: **SK0023**.
 
 ## Sequential block (SK0001–SK0019) — general SharedKernel patterns
 
@@ -30,6 +30,9 @@ SK diagnostic ID registry as of 2026-07-07. Next available sequential ID: **SK00
 | SK0017 | CommandImplementsCacheableQuery | Defined (WO-040 P-248) — Warning; type implementing ICommandBase also implements ICacheableQuery<TResponse> (directly or transitively); Roslyn analyzer requiring SemanticModel AllInterfaces closure (3rd semantic-model SK rule after SK0011, SK0015); fires globally (consumer-side rule, no namespace scope); category: Design |
 | SK0018 | QueryImplementsInvalidatesCache | Defined (WO-040 P-248) — Warning; type implementing IQuery<TResponse> without ICommandBase also implements IInvalidatesCache; Roslyn analyzer, semantic AllInterfaces closure (4th semantic-model SK rule); structural converse of SK0017; category: Design |
 | SK0019 | RetryableRequestWithoutIdempotency | Defined (WO-040 P-248) — Warning; type implementing IRetryableRequest without also implementing IIdempotentRequest; Roslyn analyzer, semantic AllInterfaces closure (5th semantic-model SK rule); category: Design |
+| SK0020 | DirectILoggerExtensionMethodUsage | Defined (WO-041 P-250) — Warning; call resolves via SemanticModel.GetSymbolInfo to Microsoft.Extensions.Logging.LoggerExtensions.Log*/ILogger.Log; SharedKernel.Testing namespace exemption; shares LoggingAuthoringStyleAnalyzer class with SK0021 (domain's first two-diagnostics-one-class shape); category: Design |
+| SK0021 | HandWrittenLoggerMessageDefineDelegate | Defined (WO-041 P-250) — Warning; syntax-only LoggerMessage.Define*/DefineScope call shape; SharedKernel.Testing namespace exemption; implemented in LoggingAuthoringStyleAnalyzer alongside SK0020; category: Design |
+| SK0022 | CrossCuttingMagicStringLiteral | Defined (WO-042 P-264) — Warning; raw string-literal token at one of four semantic-model-resolved call-site shapes (HTTP header indexer/.Add/.TryAddWithoutValidation, Activity.SetBaggage/.SetTag, IConfiguration.GetSection, ClaimsPrincipal/Claim comparison); fires globally, no suppression namespace; discriminates on literal-vs-reference syntax shape only, never resolved value/declaring-class name; category: Usage; companion architecture-test helper WellKnownConstantOwnershipAssertion depends on 01.Core P-259/P-260-263 for real-assembly verification only (design-only as of 2026-07-14) |
 
 ## Multi-tenancy block (SK0201–SK0202) — EF Core tenant-filter guard
 
@@ -62,8 +65,8 @@ SK diagnostic ID registry as of 2026-07-07. Next available sequential ID: **SK00
 
 ## Block conventions
 
-- **SK0001–SK0019**: general SharedKernel coding patterns (mix of Roslyn analyzers and NetArchTest ICustomRules, sequential)
-- **SK0020–SK0199**: reserved for future sequential general-purpose rules; next is SK0020
+- **SK0001–SK0022**: general SharedKernel coding patterns (mix of Roslyn analyzers and NetArchTest ICustomRules, sequential)
+- **SK0023–SK0199**: reserved for future sequential general-purpose rules; next is SK0023
 - **SK0201–SK0299**: EF Core / multi-tenancy domain block; next is SK0203
 - **SK0301–SK0399**: encryption subsystem block; next is SK0305
 - **SK0701–SK0799**: messaging-domain block (domain 07); next is SK0709

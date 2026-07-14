@@ -50,3 +50,14 @@ the same reasoning here for `BaggageLogRecordProcessor`/`TenantBaggageKeys`.
 
 See [[phase_sequencing]] and [[health_check_tag_calibration]] for the domain's other established
 calibration/sequencing conventions this phase followed.
+
+**Confirmed defect, found via ground-truth grep, not assumption (WO-042/P-261, 2026-07-14):** the
+"CorrelationId" literal `BaggageLogRecordProcessorTests`/`AmbientLoggingEnrichmentAcceptanceTests`
+hardcode never actually matched what `14.Presentation.CorrelationIdMiddleware.BaggageKey` writes in
+production (`"correlation.id"`, lowercase-dotted, not `"CorrelationId"`). Confirmed by grepping
+`14.Presentation`'s source directly rather than trusting either file's doc comments. Fix: `01.Core`
+added `WellKnownHeaders`/`WellKnownBaggageKeys` (`SK.01.P259`) as the single shared source of truth
+for cross-service propagation literals (header names + baggage keys) — this domain's retrofit
+(`HeaderTenantResolutionStrategy.DefaultHeaderName` → `WellKnownHeaders.TenantId`;
+`BaggageLogRecordProcessorTests`/`AmbientLoggingEnrichmentAcceptanceTests` → `WellKnownBaggageKeys.
+CorrelationId`) is tracked as WO-042/P-261 in state-map.md (D-06/S-12/C-34/C-35/T-29–T-31/DO-05).
