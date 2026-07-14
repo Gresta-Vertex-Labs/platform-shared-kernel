@@ -58,6 +58,15 @@ public class CorrelationIdMiddlewareTests
     }
 
     [Fact]
+    public void BaggageKey_EqualsExpectedLiteral()
+    {
+        // Locks the contract value itself (WO-041, P-256), not merely its existence — cross-domain
+        // consumers (13.ServiceDefaults's BaggageLogRecordProcessor test suite, any future
+        // consumer) must reference this constant rather than hand-copying a literal.
+        CorrelationIdMiddleware.BaggageKey.Should().Be("correlation.id");
+    }
+
+    [Fact]
     public async Task InvokeAsync_ResponseHeaderAlwaysSet_EvenWhenNextShortCircuits()
     {
         var httpContext = CreateHttpContext(out var responseFeature);

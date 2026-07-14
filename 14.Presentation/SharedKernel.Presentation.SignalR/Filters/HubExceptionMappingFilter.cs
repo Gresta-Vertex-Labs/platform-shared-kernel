@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.SignalR.Filters;
 
@@ -67,7 +68,10 @@ public sealed partial class HubExceptionMappingFilter : IHubFilter
     /// </summary>
     private static partial class Log
     {
-        [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception in hub method {HubMethodName}.")]
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 100,
+            Level = LogLevel.Error,
+            Message = "Unhandled exception in hub method {HubMethodName}.")]
         public static partial void UnhandledHubException(ILogger logger, string hubMethodName, Exception exception);
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 
@@ -86,7 +87,10 @@ public sealed partial class SharedKernelExceptionHandler : IExceptionHandler
     /// </summary>
     private static partial class Log
     {
-        [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception caught by SharedKernelExceptionHandler.")]
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 1,
+            Level = LogLevel.Error,
+            Message = "Unhandled exception caught by SharedKernelExceptionHandler.")]
         public static partial void UnhandledException(ILogger logger, Exception exception);
     }
 }

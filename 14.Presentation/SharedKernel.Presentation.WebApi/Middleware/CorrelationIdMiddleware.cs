@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.WebApi.Middleware;
 
@@ -91,7 +92,10 @@ public sealed partial class CorrelationIdMiddleware
 
     private static partial class Log
     {
-        [LoggerMessage(Level = LogLevel.Debug, Message = "Generated new correlation id {CorrelationId} for inbound request.")]
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 0,
+            Level = LogLevel.Debug,
+            Message = "Generated new correlation id {CorrelationId} for inbound request.")]
         public static partial void CorrelationIdGenerated(ILogger logger, string correlationId);
     }
 }
