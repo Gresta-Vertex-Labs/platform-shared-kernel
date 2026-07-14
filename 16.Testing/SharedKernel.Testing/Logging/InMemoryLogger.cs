@@ -8,8 +8,24 @@ namespace SharedKernel.Testing.Logging;
 /// thread-safe queue for later assertion via <see cref="LoggerAssertions"/>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Simulates behavioral correctness only — it never enforces timing, filtering beyond
 /// <see cref="MinLevel"/>, or any other production logging-provider concern.
+/// </para>
+/// <para>
+/// <c>Logging/</c> (this namespace) is the first capability folder in
+/// <c>SharedKernel.Testing</c> anchored to a cross-cutting BCL contract
+/// (<c>Microsoft.Extensions.Logging.Abstractions</c>, a NuGet <c>PackageReference</c>) rather
+/// than a numbered domain's own <c>.Abstractions</c> <c>ProjectReference</c>. Every other
+/// capability folder in this package fakes one specific numbered domain's interface
+/// (<c>ICacheService</c> → <c>02.Caching</c>, <c>IMessageBus</c> → <c>07.Messaging</c>, etc.).
+/// <c>[LoggerMessage]</c>-based structured logging (root <c>CLAUDE.md</c>'s WO-041 "Logging
+/// Conventions" section) has no single owning domain — it is a platform-wide authoring
+/// standard consumed by every domain and owned by none — so there is no domain-specific
+/// <c>.Abstractions</c> package for this folder to anchor against instead. It still obeys the
+/// standing sibling-isolation rule: nothing here references <c>Caching/</c>, <c>Messaging/</c>,
+/// <c>Application/</c>, or any other capability folder in this package.
+/// </para>
 /// </remarks>
 public sealed class InMemoryLogger : ILogger
 {
@@ -54,6 +70,22 @@ public sealed class InMemoryLogger : ILogger
     /// <inheritdoc />
     public bool IsEnabled(LogLevel logLevel) => logLevel >= MinLevel;
 
+    /// <summary>
+    /// Pushes <paramref name="state"/> onto an <see cref="AsyncLocal{T}"/>-backed immutable
+    /// linked-list scope stack; the returned <see cref="IDisposable"/> pops exactly this node on
+    /// <see cref="IDisposable.Dispose"/>.
+    /// </summary>
+    /// <remarks>
+    /// The stack is backed by <see cref="AsyncLocal{T}"/> — not a plain field or
+    /// <c>[ThreadStatic]</c> — for two reasons. First, correctness across <see langword="await"/>
+    /// boundaries: a real logging provider's scope stack must still report the correct
+    /// outer-to-inner chain after a nested <c>using (logger.BeginScope(...))</c> block resumes on
+    /// a different thread-pool thread post-await, which <see cref="AsyncLocal{T}"/> preserves and
+    /// a thread-local field would silently break. Second, isolation across parallel xUnit test
+    /// collections: xUnit runs test collections concurrently by default, and a shared mutable
+    /// stack (rather than one flowed per logical call context) would let one collection's scope
+    /// pushes leak into another's captured <see cref="LogRecord.Scopes"/>.
+    /// </remarks>
     /// <inheritdoc />
     public IDisposable BeginScope<TState>(TState state)
         where TState : notnull
