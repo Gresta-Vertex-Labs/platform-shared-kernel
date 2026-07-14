@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Communication.Rest.Handlers;
@@ -13,7 +14,8 @@ namespace SharedKernel.Communication.Rest.Handlers;
 /// </summary>
 internal sealed class TenantIdDelegatingHandler(IHttpContextAccessor httpContextAccessor) : DelegatingHandler
 {
-    internal const string HeaderName = "x-tenant-id";
+    // Sourced from 01.Core's WellKnownHeaders (P-259/P-260) — never an independently-declared literal.
+    internal const string HeaderName = WellKnownHeaders.TenantId;
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Communication.Rest.Handlers;
 
@@ -11,7 +12,8 @@ namespace SharedKernel.Communication.Rest.Handlers;
 /// </summary>
 internal sealed class CorrelationIdDelegatingHandler : DelegatingHandler
 {
-    internal const string HeaderName = "x-correlation-id";
+    // Sourced from 01.Core's WellKnownHeaders (P-259/P-260) — never an independently-declared literal.
+    internal const string HeaderName = WellKnownHeaders.CorrelationId;
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
