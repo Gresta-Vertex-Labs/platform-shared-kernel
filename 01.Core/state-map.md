@@ -37,6 +37,7 @@
 | `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | All tasks in Phase: P-230 are `●` | P-230 |
 | `SK.01.P236` | P-236 Reflection-Free Failure-Factory Contract | All tasks in Phase: P-236 are `●` | P-236 |
 | `SK.01.P249` | P-249 Logging EventId Range Registry | All tasks in Phase: P-249 are `●` | P-249 |
+| `SK.01.P259` | P-259 Well-Known Cross-Domain Propagation Constants | All tasks in Phase: P-259 are `●` | P-259 |
 
 ---
 
@@ -70,7 +71,7 @@ Format when blocked — replace placeholder with table:
 
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
-| `SharedKernel.Primitives` | — | `○` | Zero external dependencies; carries `IHasSuccessFlag`/`IResultOfT<T>`/`IFailureFactory<TSelf>` reflection-free application seams (P-230, P-236) |
+| `SharedKernel.Primitives` | — | `○` | Zero external dependencies; carries `IHasSuccessFlag`/`IResultOfT<T>`/`IFailureFactory<TSelf>` reflection-free application seams (P-230, P-236); `WellKnownHeaders`/`WellKnownBaggageKeys` propagation constants design-locked, implementation pending (P-259, WO-042) |
 | `SharedKernel.Core` | — | `○` | References Primitives |
 | `SharedKernel.Configuration` | — | `○` | References Primitives |
 | `SharedKernel.FeatureManagement` | — | `○` | References Primitives |
@@ -355,6 +356,22 @@ Format when blocked — replace placeholder with table:
 
 ---
 
+## Phase: P-259 — Well-Known Cross-Domain Propagation Constants (Headers + Baggage Keys) <!-- phase-key: SK.01.P259 -->
+
+> Additive extension to `SharedKernel.Primitives`: adds `WellKnownHeaders` (HTTP/gRPC-metadata header name constants: `CorrelationId` = `"X-Correlation-Id"`, `TenantId` = `"X-Tenant-Id"`) and `WellKnownBaggageKeys` (`Activity` baggage / distributed-trace propagation key constants: `CorrelationId` = `"correlation.id"`) — a dependency-free, compile-time constant registry mirroring the `LoggingEventIdRanges` precedent (WO-041, P-249): a small, `01.Core`-hosted registry every layer is already permitted to reference.
+> Motivation: a live, confirmed defect proves the risk of today's pattern — `14.Presentation`'s `CorrelationIdMiddleware` writes `Activity` baggage under `"correlation.id"` while `13.ServiceDefaults`'s `BaggageLogRecordProcessor` test suite independently hardcodes the literal `"CorrelationId"` for the same concept (flagged in `14.Presentation/CLAUDE.md`'s WO-041 changelog DO-07 but left unfixed for lack of a shared source of truth). The identical duplication pattern exists for the tenant/correlation _header_ names: `TenantIdDelegatingHandler.HeaderName` (`11.Communication.Rest`), `TenantIdInterceptor.TenantIdKey` (`11.Communication.Grpc`), and `HeaderTenantResolutionStrategy.DefaultHeaderName` (`13.ServiceDefaults.MultiTenancy`) are three independent declarations of `"x-tenant-id"`, kept in sync only by manual vigilance. `04.Contracts` was considered and rejected: `SharedKernel.Communication.Grpc.csproj` carries a hard, mechanically-enforced rule (P-163, `GrpcNeverReferencesContracts`) forbidding a `04.Contracts` reference — routing these constants through `04.Contracts` would force reintroducing exactly the coupling that rule exists to remove. `01.Core` carries no such constraint: every consumer (`11.Communication`, `13.ServiceDefaults`, `14.Presentation`, `07.Messaging`) already references it unconditionally.
+> Pure promotion, zero behavioral change — values match today's de facto standard exactly. Consuming domains (`11.Communication`, `13.ServiceDefaults`, `14.Presentation`) retrofit their own local literals to reference these constants in their own follow-on phases; that retrofit work is out of `01.Core`'s jurisdiction and is not tracked here.
+> WO-042.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-30 | Define `WellKnownHeaders` static class shape — `public const string CorrelationId = "X-Correlation-Id";` and `public const string TenantId = "X-Tenant-Id";`; XML doc remarks name the consuming types (`11.Communication.Rest.TenantIdDelegatingHandler`, `11.Communication.Grpc.TenantIdInterceptor`, `13.ServiceDefaults.MultiTenancy.HeaderTenantResolutionStrategy`) each constant is intended to replace. Define `WellKnownBaggageKeys` static class shape — `public const string CorrelationId = "correlation.id";`; XML doc remarks name `14.Presentation.CorrelationIdMiddleware` (writer) and `13.ServiceDefaults.BaggageLogRecordProcessor` (reader) as the two sides of the contract this constant reconciles | SharedKernel.Primitives | `●` |
+| C-43 | Implement `WellKnownHeaders` and `WellKnownBaggageKeys` in `SharedKernel.Primitives/Propagation/` — `public const string` fields only, no `static readonly`, no computed values; matches the D-30 design exactly; no reflection, no runtime computation | SharedKernel.Primitives | `●` |
+| T-34 | Unit: `WellKnownHeaders.CorrelationId` equals `"X-Correlation-Id"`; `WellKnownHeaders.TenantId` equals `"X-Tenant-Id"`; `WellKnownBaggageKeys.CorrelationId` equals `"correlation.id"` — pins every literal value so a future edit cannot silently drift it; regression-confirm existing `SharedKernel.Primitives.Tests` still pass unchanged | SharedKernel.Primitives.Tests | `●` |
+| DO-16 | XML doc `WellKnownHeaders` and `WellKnownBaggageKeys` and every constant field — state which domains/types consume each constant today, and that this registry is the single authoritative source for cross-service propagation identifier literals platform-wide; add a short "Well-Known Propagation Constants" usage section to `01.Core/README.md` showing a downstream typed-client/middleware reading `WellKnownHeaders.TenantId` / `WellKnownBaggageKeys.CorrelationId` instead of a local literal | SharedKernel.Primitives | `●` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies. `01.Core` references nothing._
@@ -369,7 +386,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 150 (146 prior tasks + 4 new P-249 tasks: D-29, C-42, T-33, DO-15).
+> Counts updated whenever a task state changes. Total tasks: 154 (150 prior tasks + 4 new P-259 tasks: D-30, C-43, T-34, DO-16).
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -385,6 +402,7 @@ Format when active:
 | `SK.01.P230` | P-230 IHasSuccessFlag + IResultOfT\<T\> Application Seams | 8 | 8 | 0 | `●` |
 | `SK.01.P236` | P-236 Reflection-Free Failure-Factory Contract | 5 | 5 | 0 | `●` |
 | `SK.01.P249` | P-249 Logging EventId Range Registry | 4 | 4 | 0 | `●` |
+| `SK.01.P259` | P-259 Well-Known Cross-Domain Propagation Constants | 4 | 4 | 0 | `●` |
 
 ---
 
@@ -426,3 +444,5 @@ Format when active:
 - [2026-07-03] D-28/C-41/T-31/T-32/DO-14 → ● in SK.01.P236 — implemented `IFailureFactory<TSelf>` (`SharedKernel.Primitives/Results/IFailureFactory.cs`); `Result<T>` now declares `IFailureFactory<Result<T>>` alongside `IHasSuccessFlag, IResultOfT<T>`, satisfied implicitly by its pre-existing `Failure(Error)` factory; `Result` (non-generic) confirmed excluded — `IFailureFactory<Result>` is unnameable at compile time since `Result` doesn't satisfy the interface's own `where TSelf : IFailureFactory<TSelf>` constraint, proven via reflection over `Result`'s declared interfaces rather than a direct `is` check. Added 8 tests to `ResultInterfaceTests.cs` (dispatch for `Result<int>`/`Result<string>`, assignability, exclusion proof). While wiring these in, found and fixed a pre-existing broken test (`IResultOfT_GenericConstraintPattern_WorksWithoutReflection`, committed in 5e9ed3a) that used an unsatisfiable self-referential constraint (`where TResponse : IResultOfT<TResponse>`) against `Result<T> : IResultOfT<T>`, which was blocking `SharedKernel.Primitives.Tests` from compiling at all; corrected to the two-type-parameter form (`where TResponse : IResultOfT<TValue>`) matching `IResultOfT<T>`'s actual (non-self-referential) shape. 74/74 `SharedKernel.Primitives.Tests` passing; `SK.01.P236` now fully `●` (5/5); propagated to root `state-map.md` (core-phase-implementer)
 - [2026-07-08] P-249 processed (WO-041) — added `SK.01.P249` phase key and 4 new tasks (D-29 design, C-42 implementation, T-33 tests, DO-15 docs) for `LoggingEventIdRanges`, a dependency-free `const int` registry reserving one 1000-wide `EventId` block per root folder-map domain (00.Governance=0 through 17.Workflows=17000, each = `{domain number} * 1000`), plus `DomainRangeWidth`(1000)/`PackageSubBlockWidth`(100) constants documenting the 100-wide per-package sub-block convention multi-package domains layer on top. Motivation: a confirmed live `EventId` collision (`Caching.Redis.Core` vs `Redis.PubSub`, both using 4001/4002) plus the complete absence of a platform-wide `EventId` coordination mechanism; `01.Core` is the only domain reachable from every domain that logs today (02, 05, 07, 11, 13, 14, 15 per the root layering table), making `SharedKernel.Primitives` the correct — and only architecturally legal — home. Additive only — no existing `Result<T>`/`Error`/`IClock`/`SmartEnum`/guard/options/feature-flag/cryptography member or DI shape changes; zero new NuGet dependencies. Total tasks now 150 (core-arch-planner, WO-041)
 - [2026-07-09] D-29/C-42/T-33/DO-15 → ● in SK.01.P249 — implemented `LoggingEventIdRanges` (`SharedKernel.Primitives/Logging/LoggingEventIdRanges.cs`) with all 18 domain `const int` fields plus `DomainRangeWidth`/`PackageSubBlockWidth`; added `LoggingEventIdRangesTests` (uniqueness, multiple-of-1000, name-to-folder-number theory across all 18 domains); added README "LoggingEventIdRanges — EventId Registry" section with a `LoggingEventIdRanges.Application + 42` usage example. 114/114 `SharedKernel.Primitives.Tests` passing, 0 build warnings; `SK.01.P249` now fully `●` (4/4); propagated to root `state-map.md` (core-phase-implementer)
+- [2026-07-14] P-259 processed (WO-042) — added `SK.01.P259` phase key and 4 new tasks (D-30 design, C-43 implementation, T-34 tests, DO-16 docs) for `WellKnownHeaders` (`CorrelationId`="X-Correlation-Id", `TenantId`="X-Tenant-Id") and `WellKnownBaggageKeys` (`CorrelationId`="correlation.id") — dependency-free `const string` registries mirroring the `LoggingEventIdRanges` precedent. Motivation: a confirmed live defect (`14.Presentation.CorrelationIdMiddleware` writes `Activity` baggage under `"correlation.id"` while `13.ServiceDefaults.BaggageLogRecordProcessor`'s test suite independently hardcodes `"CorrelationId"` for the same concept — flagged in WO-041 DO-07, left unfixed for lack of a shared source of truth) plus three independent redeclarations of the `"x-tenant-id"` header across `11.Communication.Rest`, `11.Communication.Grpc`, and `13.ServiceDefaults.MultiTenancy`; `04.Contracts` was considered and rejected as the home because `SharedKernel.Communication.Grpc` carries a hard governance rule (P-163) forbidding a `04.Contracts` reference. Pure promotion of existing de facto literal values — zero behavioral change, zero new NuGet dependencies. Consuming-domain retrofits (pointing existing literals at these constants) are out of `01.Core`'s jurisdiction and tracked by each consuming domain's own planner. D-30 design locked in `01.Core/CLAUDE.md` this pass; C-43/T-34/DO-16 remain `○` pending implementation. Total tasks now 154 (core-arch-planner, WO-042)
+- [2026-07-14] C-43/T-34/DO-16 → ● in SK.01.P259 — implemented `WellKnownHeaders`/`WellKnownBaggageKeys` (`SharedKernel.Primitives/Propagation/`); added `WellKnownPropagationConstantsTests` pinning all 3 literals; added README "Well-Known Propagation Constants" usage section. 117/117 `SharedKernel.Primitives.Tests` passing; `SK.01.P259` now fully `●` (4/4); propagated to root `state-map.md` (core-phase-implementer)

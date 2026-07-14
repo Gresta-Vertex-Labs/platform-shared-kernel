@@ -253,6 +253,36 @@ A domain composed of multiple packages (e.g. `02.Caching`'s Redis role-split) su
 
 ---
 
+### Well-Known Propagation Constants — WellKnownHeaders / WellKnownBaggageKeys
+
+`WellKnownHeaders` and `WellKnownBaggageKeys` are compile-time `const string` registries reserving the platform's cross-service propagation identifier literals — HTTP/gRPC-metadata header names and `System.Diagnostics.Activity` baggage keys. Every domain that reads or writes a correlation-id or tenant-id header, or an `Activity` baggage entry for the same concepts, must reference these constants instead of redeclaring the literal locally.
+
+```csharp
+using SharedKernel.Primitives.Propagation;
+
+// A downstream typed REST client reads the tenant header instead of a local literal:
+internal sealed class TenantIdDelegatingHandler(ITenantProvider tenantProvider) : DelegatingHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        request.Headers.TryAddWithoutValidation(
+            WellKnownHeaders.TenantId, tenantProvider.TenantId.ToString());
+
+        return base.SendAsync(request, cancellationToken);
+    }
+}
+
+// Presentation-layer middleware writes Activity baggage under the shared correlation key,
+// and 13.ServiceDefaults's log-record processor reads the identical key back out — both
+// sides reference WellKnownBaggageKeys.CorrelationId so they can never drift apart again:
+Activity.Current?.AddBaggage(WellKnownBaggageKeys.CorrelationId, correlationId);
+```
+
+`WellKnownHeaders.CorrelationId` = `"X-Correlation-Id"`, `WellKnownHeaders.TenantId` = `"X-Tenant-Id"`, `WellKnownBaggageKeys.CorrelationId` = `"correlation.id"`. These values are a pure promotion of today's de facto platform standard — changing one is a breaking, cross-domain change, never a routine edit.
+
+---
+
 ## SharedKernel.Core — Railway-Oriented Extensions
 
 ### Result\<T\> Railway Pattern
