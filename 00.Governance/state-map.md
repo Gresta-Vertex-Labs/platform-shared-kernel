@@ -56,6 +56,7 @@
 | `SK.00.DomainEventDispatcherReflectionExemption` | Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | All tasks in Phase SK.00.DomainEventDispatcherReflectionExemption are `●` | P-240 |
 | `SK.00.MarkerInterfaceMisuseGuard` | Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application | All tasks in Phase SK.00.MarkerInterfaceMisuseGuard are `●` | P-248 |
 | `SK.00.LoggingStandardEnforcement` | Governance: Architecture Enforcement for the Platform Logging Standard | All tasks in Phase SK.00.LoggingStandardEnforcement are `●` | P-250 |
+| `SK.00.MagicStringGuard` | Governance: Roslyn Analyzer + Architecture Test for Magic-String Prohibition | All tasks in Phase SK.00.MagicStringGuard are `●` | P-264 |
 
 ---
 
@@ -2756,6 +2757,95 @@ WO-041 (P-249/P-250) introduced the root `CLAUDE.md`'s new "Logging Conventions"
 
 ---
 
+## Phase SK.00.MagicStringGuard — Governance: Roslyn Analyzer + Architecture Test for Magic-String Prohibition
+
+### Goal
+
+WO-042 (P-264) closes the class of incident P-261 exemplified — `01.Core`'s new `WellKnownHeaders`/`WellKnownBaggageKeys` (P-259 design) exist as documented constants, but nothing stops a second, independently-typed literal (e.g. `"CorrelationId"` vs `"correlation.id"`) from being hand-rolled at a call site that should have referenced them, or from being redeclared under a different name in a second package. This phase mirrors the established precedent — raw `HttpClient` (SK0013/P-159), inline `ProblemDetails` (`PresentationLayeringRules`/P-199), ad hoc logging (SK0020/SK0021/P-250) — by shipping a Roslyn diagnostic (SK0022) that flags a raw string literal at any of four recognized cross-cutting call-site shapes (HTTP header indexer/setter, `Activity.SetBaggage`/`.SetTag`, `IConfiguration.GetSection`, `ClaimsPrincipal`/`Claim` comparison), plus a companion architecture-test helper confirming `01.Core`'s `WellKnownHeaders`/`WellKnownBaggageKeys` are the sole declared literal for their own values platform-wide.
+
+### Scope
+
+- Package(s) affected: `SharedKernel.Analyzers` (one new analyzer class, one new diagnostic: SK0022); `SharedKernel.ArchitectureTests` (one new public helper class: `WellKnownConstantOwnershipAssertion`)
+- New files:
+  - `SharedKernel.Analyzers/Analyzers/CrossCuttingMagicStringLiteralAnalyzer.cs`
+  - Corresponding test files in `SharedKernel.Analyzers.Tests/`
+  - `SharedKernel.ArchitectureTests/WellKnownConstantOwnershipAssertion.cs`
+  - Corresponding test files in `SharedKernel.ArchitectureTests.Tests/`
+- Modified files: `00.Governance/CLAUDE.md` (diagnostic registry, architecture test contracts, implementation rules, changelog — already applied by this planning pass)
+- Deleted files: none
+
+### Diagnostic Registry Changes (analyzers only)
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0022 | CrossCuttingMagicStringLiteral | Usage | Warning | A raw string-literal token (`LiteralExpressionSyntax` of kind `StringLiteralExpression`) supplied at one of four recognized call-site shapes: `HttpHeaders`/`IHeaderDictionary` indexer or `.Add`/`.TryAddWithoutValidation`; `Activity.SetBaggage`/`.SetTag`; `IConfiguration.GetSection`; `ClaimsPrincipal`/`Claim` comparison against a claim-type string |
+
+### Implementation Rules
+
+1. SK0022 is ONE `DiagnosticAnalyzer` class, `CrossCuttingMagicStringLiteralAnalyzer`, covering all four call-site shapes with a single `DiagnosticDescriptor` — precedent set by SK0020/SK0021's `LoggingAuthoringStyleAnalyzer` for "one class, one platform standard," here narrowed further to "one class, one diagnostic ID, four trigger shapes" because all four are the same underlying rule ("never a raw literal at a cross-cutting call site") rather than four distinct standards.
+2. The rule flags the LITERAL SYNTAX SHAPE, not any resolved value or declaring-class name — mirroring the acceptance-critical generality requirement already established for `NoBareHealthCheckLiteralWhereConstantsExistPredicate` (WO-028 P-178): the implementation MUST NOT contain any specific constants-class name (`WellKnownHeaders`, `SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming`, etc.) as a string literal or type-name check anywhere in its logic. Any expression that is not itself a `StringLiteralExpression` at the checked argument/indexer-key position — an `IdentifierNameSyntax`, `MemberAccessExpressionSyntax` (`Foo.Bar`), or any other non-literal expression — passes clean, regardless of which class declares the referenced field. This is deliberately a syntax-shape check, not a value/identity check: the analyzer never needs to resolve what the referenced constant IS, only that the argument is NOT a bare literal.
+3. Each of the four call-site shapes requires `SemanticModel.GetSymbolInfo` to resolve the receiver/method/indexer to its EXACT `ContainingType`, following the SK0020 discipline (syntax-only simple-name matching on `SetTag`/`GetSection`/etc. would produce unacceptable false positives against unrelated types sharing those common method names):
+   - HTTP header shapes: element-access (`headers["X"] = ...`) where the indexed expression's type is exactly `System.Net.Http.Headers.HttpHeaders` (or a type in that inheritance chain — `HttpRequestHeaders`/`HttpResponseHeaders`/`HttpContentHeaders`) or `Microsoft.AspNetCore.Http.IHeaderDictionary`; plus invocations of `.Add`/`.TryAddWithoutValidation` resolved to the same containing types.
+   - `Activity.SetBaggage`/`.SetTag`: invocation resolved to `System.Diagnostics.Activity.SetBaggage` or `System.Diagnostics.Activity.SetTag`.
+   - `IConfiguration.GetSection`: invocation resolved to `Microsoft.Extensions.Configuration.IConfiguration.GetSection` (or its `ConfigurationExtensions` static-extension-method overload, both checked by `ContainingType` name).
+   - `ClaimsPrincipal`/`Claim` comparison: a binary equality expression, `Claim.Type ==`/`.Equals(...)`, or a LINQ `.FirstOrDefault(c => c.Type == "...")`-shaped lambda predicate, where the compared member resolves to `System.Security.Claims.Claim.Type` or an invocation on `System.Security.Claims.ClaimsPrincipal`/`ClaimsIdentity` (`HasClaim`, `FindFirst`, `FindAll`) whose string argument is the checked position.
+4. Diagnostic message text references BOTH remediation paths per the root `CLAUDE.md` decision guide, without asserting which applies (the analyzer cannot semantically distinguish a correlation/tenant literal from a domain-local one — that judgment is left to the developer): *"Raw string literal at a cross-cutting call site. Declare a named constant instead: use `SharedKernel.Primitives.CrossCutting.WellKnownHeaders`/`WellKnownBaggageKeys` (`01.Core`) if this value is a platform-shared correlation/tenant identifier consumed across multiple domains, or a domain-local `static readonly`/`const` constants class (mirroring `SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming`) if it is specific to this package."*
+5. No namespace-scoped exemption — this rule fires globally like SK0014/SK0017–19, not with a suppression namespace like SK0001/SK0007/SK0013/SK0020/SK0021. A domain-local constants-holder class satisfies the rule by definition (it is referenced via `Identifier`/`MemberAccess`, never a literal at the call site) — there is no legitimate "exempt namespace" for a raw literal at any of these four call-site shapes.
+6. `WellKnownConstantOwnershipAssertion` is a plain public helper class, NOT a `ConditionList`/`ICustomRule` — mirroring `LoggingEventIdIntegrityAssertion`'s precedent (WO-041 P-250): "no other assembly may declare its own independently-valued literal for a value `01.Core` already owns" is a cross-assembly, whole-platform invariant with no single-assembly "fire on one contrived violating assembly" shape. It reuses `StringConstantsClassDetector`'s field-shape + literal-value resolution technique (WO-028 P-178) — extended to walk EVERY `TypeDefinition` (not only `abstract sealed` "constants class" shapes) so a stray `const`/`static readonly string` field on an ordinary class is caught too — across a caller-supplied set of non-owning assemblies, and flags any resolved field value that matches a canonical value from a caller-supplied `IReadOnlyDictionary<string LogicalName, string Value>` (e.g. `{"CorrelationIdHeader": "X-Correlation-Id", "CorrelationIdBaggageKey": "correlation.id", ...}`), EXCLUDING fields declared on the owning type(s) themselves (matched by `TypeDefinition.FullName`, caller-supplied, e.g. `"SharedKernel.Primitives.CrossCutting.WellKnownHeaders"`/`"...WellKnownBaggageKeys"`).
+7. `WellKnownConstantOwnershipAssertion.AssertSoleDeclaration(IReadOnlyDictionary<string,string> canonicalValues, IReadOnlyCollection<string> owningTypeFullNames, IReadOnlyCollection<Assembly> assembliesToScan)` aggregates every violation found across the ENTIRE supplied assembly set before throwing (naming the offending declaring-type/field/value), mirroring `LoggingEventIdIntegrityAssertion`'s and `PipelineOrderAssertion`'s aggregate-failure-message convention. `00.Governance` never references `SharedKernel.Primitives` directly (it references nothing) — the consuming test project supplies `canonicalValues` and `owningTypeFullNames` itself, sourced from the real `WellKnownHeaders`/`WellKnownBaggageKeys` values once `01.Core` C-43 ships.
+8. **Real-assembly status:** this rule's real-assembly acceptance criterion CANNOT be verified today. As of this phase's authoring (2026-07-14), only `01.Core`'s D-30 design for `WellKnownHeaders`/`WellKnownBaggageKeys` is locked (`01.Core/state-map.md`) — the C-43/T-34/DO-16 implementation has not shipped, and P-260/P-261/P-262/P-263 (the consuming-domain retrofits that would otherwise still be hand-rolling the correlation/tenant literals this rule watches for) have not landed either. Design, implementation, and tests for this phase use CONTRIVED in-memory multi-assembly Mono.Cecil fixtures only — the same "designed-ahead-of-a-pending-dependency" technique already used by `SK.00.ServiceDefaultsGovernance`, `SK.00.MetricsOutcomeTagAndMisregistrationGuard`, `SK.00.CryptoDelegationAndUowSeamGuard`, and `SK.00.LoggingStandardEnforcement`. Do not attempt a real-assembly wiring pass until `01.Core` C-43 ships AND P-260–P-263 land; track that as a follow-up, not a blocking condition on this phase's own completion.
+9. SK0022 is the next sequential ID in the SK0001–SK00N general-purpose block (SK0021 was the prior ID). Targets `netstandard2.0`, pins `Microsoft.CodeAnalysis.CSharp 4.14.0` (no version change), zero new NuGet dependency. `WellKnownConstantOwnershipAssertion` reuses the existing `Mono.Cecil >= 0.11.5` reference in `SharedKernel.ArchitectureTests` — zero new NuGet dependency there either.
+10. Analyzer test fixtures for the four call-site shapes should use the in-compilation-stub technique established for SK0013/SK0020/SK0021 (declaring minimal self-contained stand-ins for `HttpHeaders`/`IHeaderDictionary`/`Activity`/`IConfiguration`/`ClaimsPrincipal` matching the real BCL namespace/type/member names) to avoid the same `CSharpAnalyzerTest` reference-assembly version-conflict class documented for SK0020/SK0021, rather than referencing the real `Microsoft.Extensions.Configuration.Abstractions`/`System.Diagnostics.DiagnosticSource`/ASP.NET Core packages directly.
+
+### File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Analyzers/CrossCuttingMagicStringLiteralAnalyzer.cs` | SharedKernel.Analyzers | Create | SK0022 — bans a raw string literal at the four recognized cross-cutting call-site shapes |
+| `SharedKernel.Analyzers.Tests/CrossCuttingMagicStringLiteralAnalyzerTests.cs` | SharedKernel.Analyzers.Tests | Create | Fire-path tests (one per call-site shape) + pass-path tests (named-constant reference at each shape, including a fixture-local domain constants class) |
+| `WellKnownConstantOwnershipAssertion.cs` | SharedKernel.ArchitectureTests | Create | Cross-assembly assertion that no non-owning assembly redeclares a canonical `01.Core` cross-cutting literal value under a different name |
+| `SharedKernel.ArchitectureTests.Tests/WellKnownConstantOwnershipAssertionTests.cs` | SharedKernel.ArchitectureTests.Tests | Create | Contrived multi-assembly fixtures: duplicate-value fire path, clean pass path (only the owning-type fixture declares the canonical values) |
+| `00.Governance/CLAUDE.md` | — | Modify | Diagnostic registry, architecture test contracts, implementation rules, changelog (already applied) |
+
+### Acceptance Criteria
+
+- [ ] SK0022 fires on a raw string-literal argument at each of the four call-site shapes (HTTP header indexer/`.Add`/`.TryAddWithoutValidation`, `Activity.SetBaggage`/`.SetTag`, `IConfiguration.GetSection`, `ClaimsPrincipal`/`Claim` comparison), and does NOT fire when the argument is a reference to any named constant or `static readonly` field — including a fixture-local domain constants class distinct from any `01.Core` cross-cutting holder
+- [ ] `WellKnownConstantOwnershipAssertion.AssertSoleDeclaration` throws an aggregate exception naming the offending declaring-type/field/value when a contrived non-owning fixture assembly declares a field whose value matches a caller-supplied canonical value
+- [ ] `WellKnownConstantOwnershipAssertion.AssertSoleDeclaration` does not throw when only the owning-type fixture (standing in for `WellKnownHeaders`/`WellKnownBaggageKeys`) declares the canonical values and no other fixture assembly duplicates them
+- [ ] SK0022 and `WellKnownConstantOwnershipAssertion` are recorded in `00.Governance/CLAUDE.md`'s diagnostic registry, architecture test contracts, and implementation rules with the same structure as every prior SK entry
+- [ ] Full `SharedKernel.Analyzers.Tests` and `SharedKernel.ArchitectureTests.Tests` suites remain green after the new tests land (baseline: 125/125 analyzer tests and 133/133 architecture tests as of `SK.00.LoggingStandardEnforcement` closeout)
+- [ ] **Deferred, tracked explicitly, NOT gating this phase's own completion:** re-point `WellKnownConstantOwnershipAssertion` at the REAL `SharedKernel.Primitives` assembly (and every domain assembly retrofitted by P-260–P-263) once `01.Core` C-43/T-34/DO-16 ship — this is the acceptance criterion the phase input itself flags as unverifiable today
+
+### Dependencies
+
+- Depends on `01.Core` P-259 for **real-assembly verification only**: only D-30 (design) is locked in `01.Core/state-map.md` as of this phase's authoring (2026-07-14); C-43/T-34/DO-16 (the actual `WellKnownHeaders`/`WellKnownBaggageKeys` implementation) have not shipped. Not required for this phase's own design, implementation, or tests, which supply their own contrived canonical-value dictionaries and fixture assemblies standing in for the eventual owning type.
+- Depends on `01.Core` P-260/P-261/P-262/P-263 for the SAME real-assembly-verification-only reason — these are the consuming-domain retrofit phases that would otherwise still be hand-rolling the correlation/tenant literals this rule watches for; until they land, real-assembly wiring would report a wall of pre-existing violations rather than validating the rule.
+- Unblocks: gives the root `CLAUDE.md`'s implicit "declare cross-cutting magic strings as named constants" convention (reinforced by the `SecurityClaimTypes`/`WebhookSignatureHeaders`/`HubGroupNaming` precedent and the P-261 incident) a mechanical enforcement mechanism, mirroring SK0013 (raw `HttpClient`), `PresentationLayeringRules` (`ProblemDetails`/inline `Result`), and SK0020/SK0021 (ad hoc logging) — without this phase, the exact mismatch class P-261 exemplified (`"CorrelationId"` vs `"correlation.id"`) remains catchable only by architecture audit, not by PR-time CI.
+
+### Tooling Version Notes
+
+- `Microsoft.CodeAnalysis.CSharp`: 4.14.0 (existing pin — SK0022 reuses it, no version change)
+- `Mono.Cecil`: >= 0.11.5 (existing pin — `WellKnownConstantOwnershipAssertion` reuses it, no version change)
+- Target framework: `netstandard2.0` (`SharedKernel.Analyzers`) / `net10.0` (`SharedKernel.ArchitectureTests`)
+
+### SK.00.MagicStringGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-61 | Define trigger shape for SK0022 across all four call-site shapes (HTTP header, `Activity` baggage/tag, `IConfiguration.GetSection`, `ClaimsPrincipal`/`Claim`); define the literal-vs-reference syntax-shape discriminator (no value/identity resolution); define `WellKnownConstantOwnershipAssertion`'s caller-supplied canonical-value-dictionary + owning-type-exclusion-list contract | SharedKernel.Analyzers, SharedKernel.ArchitectureTests | `○` |
+| C-101 | Implement `CrossCuttingMagicStringLiteralAnalyzer` (SK0022) in `SharedKernel.Analyzers/Analyzers/` | SharedKernel.Analyzers | `○` |
+| C-102 | Implement `WellKnownConstantOwnershipAssertion` in `SharedKernel.ArchitectureTests/` — extend `StringConstantsClassDetector`'s field-shape + literal-value resolution to walk every `TypeDefinition` (not only constants-class shapes), canonical-value matching, owning-type exclusion, aggregate exception | SharedKernel.ArchitectureTests | `○` |
+| T-184 | Analyzer test (fire path): raw string literal at HTTP header indexer/`.Add`/`.TryAddWithoutValidation` (stubbed `HttpHeaders`/`IHeaderDictionary`) triggers SK0022 | SharedKernel.Analyzers.Tests | `○` |
+| T-185 | Analyzer test (fire path): raw string literal passed to `Activity.SetBaggage`/`.SetTag` (stubbed `Activity`) triggers SK0022 | SharedKernel.Analyzers.Tests | `○` |
+| T-186 | Analyzer test (fire path): raw string literal passed to `IConfiguration.GetSection` (stubbed `IConfiguration`) triggers SK0022 | SharedKernel.Analyzers.Tests | `○` |
+| T-187 | Analyzer test (fire path): raw string literal compared against `Claim.Type`/passed to `ClaimsPrincipal.HasClaim`/`FindFirst` (stubbed `ClaimsPrincipal`/`Claim`) triggers SK0022 | SharedKernel.Analyzers.Tests | `○` |
+| T-188 | Analyzer test (pass path): a named-constant/`static readonly` field reference at each of the four call-site shapes does not trigger SK0022 — including a fixture-local domain constants class distinct from any `01.Core` holder, proving the rule is declaring-class-agnostic | SharedKernel.Analyzers.Tests | `○` |
+| T-189 | `WellKnownConstantOwnershipAssertion` test: a contrived non-owning fixture assembly declaring a field whose value matches a caller-supplied canonical value throws, naming the offending type/field/value | SharedKernel.ArchitectureTests.Tests | `○` |
+| T-190 | `WellKnownConstantOwnershipAssertion` test: a contrived fixture set where only the owning-type stand-in declares the canonical values does not throw | SharedKernel.ArchitectureTests.Tests | `○` |
+| DO-33 | Verify SK0022/`WellKnownConstantOwnershipAssertion` documentation in `00.Governance/CLAUDE.md` (diagnostic registry, architecture test contracts, implementation rules — pre-written by this planning pass) against the final implementation; record the empirically-verified call-site-shape resolution details; record the still-pending `01.Core` real-assembly dependency status; add closeout Changelog entry | SharedKernel.Analyzers, SharedKernel.ArchitectureTests | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies for prior phases. `00.Governance` references nothing in production code._
@@ -2773,6 +2863,13 @@ _No active cross-domain dependencies for prior phases. `00.Governance` reference
 | `SK.00.LoggingStandardEnforcement` | `01.Core` | `SharedKernel.Primitives.Logging.LoggingEventIdRanges` (P-249) shipped, so a real `assemblyRanges` dictionary can be built and `LoggingEventIdIntegrityAssertion` re-pointed at every platform assembly | `○` Pending (P-249 not yet implemented) |
 | `SK.00.LoggingStandardEnforcement` | every domain that logs (02, 05, 07, 11, 13, 14, 15 per the root layering table) | Retrofit of existing ad hoc/hand-written log statements to the `[LoggerMessage]` pattern with in-range `EventId`s, per WO-041's ten dispatched-but-pending domain phases — required before `LoggingEventIdIntegrityAssertion` can pass against real assemblies (two confirmed live collisions exist today) | `○` Pending (all ten WO-041 domain retrofit phases pending) |
 
+`SK.00.MagicStringGuard` depends on `01.Core` for **real-assembly verification only**:
+
+| This Phase Key | Needs From Domain | What | Status |
+|---------------|------------------|------|--------|
+| `SK.00.MagicStringGuard` | `01.Core` | `SharedKernel.Primitives.CrossCutting.WellKnownHeaders`/`WellKnownBaggageKeys` (P-259) shipped — only D-30 (design) is locked in `01.Core/state-map.md` as of 2026-07-14; C-43/T-34/DO-16 (implementation) have not shipped. Needed so `WellKnownConstantOwnershipAssertion` can be re-pointed at the real owning assembly/types | `○` Pending (P-259 design-only; C-43/T-34/DO-16 not yet implemented) |
+| `SK.00.MagicStringGuard` | `01.Core` (P-260/P-261/P-262/P-263) | Consuming-domain retrofit of existing hand-rolled correlation/tenant header and baggage-key literals to reference `WellKnownHeaders`/`WellKnownBaggageKeys` — required before `WellKnownConstantOwnershipAssertion` can pass against real assemblies without reporting a wall of pre-existing violations | `○` Pending (P-260–P-263 not yet dispatched/landed) |
+
 <!--
 Format when active:
 | This Phase Key | Needs From Domain | What | Status |
@@ -2783,7 +2880,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 415.
+> Counts updated whenever a task state changes. Total tasks: 426.
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -2819,6 +2916,7 @@ Format when active:
 | `SK.00.DomainEventDispatcherReflectionExemption` | Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 5 | 5 | 0 | `●` |
 | `SK.00.MarkerInterfaceMisuseGuard` | Governance: Roslyn Analyzers for Consumer-Side Marker-Interface Misuse in 05.Application | 11 | 11 | 0 | `●` |
 | `SK.00.LoggingStandardEnforcement` | Governance: Architecture Enforcement for the Platform Logging Standard | 11 | 11 | 0 | `●` |
+| `SK.00.MagicStringGuard` | Governance: Roslyn Analyzer + Architecture Test for Magic-String Prohibition | 11 | 0 | 11 | `○` |
 
 ---
 

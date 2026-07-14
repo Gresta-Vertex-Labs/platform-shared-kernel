@@ -697,6 +697,60 @@ SK0021  HandWrittenLoggerMessageDefineDelegate
     Suppress  : Per-call-site via #pragma warning disable SK0021; document the rationale inline.
     Note      : Introduced WO-041 P-250. Implemented in LoggingAuthoringStyleAnalyzer alongside
                 SK0020 — see that entry for the shared-analyzer-class rationale.
+
+SK0022  CrossCuttingMagicStringLiteral
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : A raw string-literal token (LiteralExpressionSyntax of kind
+                StringLiteralExpression) supplied at one of four recognized cross-cutting
+                call-site shapes, each requiring SemanticModel.GetSymbolInfo to resolve the
+                receiver/method/indexer to its EXACT ContainingType (syntax-only simple-name
+                matching on "SetTag"/"GetSection"/etc. would collide with unrelated types):
+                  (1) HTTP header indexer/setter — element-access or .Add/
+                      .TryAddWithoutValidation invocation resolved to
+                      System.Net.Http.Headers.HttpHeaders (or HttpRequestHeaders/
+                      HttpResponseHeaders/HttpContentHeaders) or
+                      Microsoft.AspNetCore.Http.IHeaderDictionary.
+                  (2) Activity.SetBaggage / Activity.SetTag — invocation resolved to
+                      System.Diagnostics.Activity.SetBaggage or .SetTag.
+                  (3) IConfiguration.GetSection — invocation resolved to
+                      Microsoft.Extensions.Configuration.IConfiguration.GetSection (or its
+                      ConfigurationExtensions static-extension-method overload).
+                  (4) ClaimsPrincipal/Claim comparison — a binary equality expression or
+                      .Equals(...) against System.Security.Claims.Claim.Type, or an invocation
+                      on System.Security.Claims.ClaimsPrincipal/ClaimsIdentity (HasClaim,
+                      FindFirst, FindAll) whose string argument is the checked position.
+                The rule flags the LITERAL SYNTAX SHAPE only — never a resolved value or
+                declaring-class name. Any expression that is not itself a
+                StringLiteralExpression at the checked position (an IdentifierNameSyntax,
+                MemberAccessExpressionSyntax, or any other non-literal expression) passes
+                clean, regardless of which class declares the referenced field — a
+                domain-local constants class (mirroring SecurityClaimTypes,
+                WebhookSignatureHeaders, HubGroupNaming) is just as valid as a reference to
+                01.Core's WellKnownHeaders/WellKnownBaggageKeys.
+    Fix       : Declare a named constant instead of the raw literal: use
+                SharedKernel.Primitives.CrossCutting.WellKnownHeaders/WellKnownBaggageKeys
+                (01.Core) if the value is a platform-shared correlation/tenant identifier
+                consumed across multiple domains, or a domain-local static readonly/const
+                constants class if it is specific to this package. The analyzer message
+                references both remediation paths — it cannot semantically distinguish which
+                applies; that judgment is left to the developer per the root CLAUDE.md
+                decision guide.
+    Exempt    : None — no suppression namespace. Fires globally, like SK0014/SK0017–19: a
+                domain-local constants-holder class already satisfies the rule (it is
+                referenced via Identifier/MemberAccess, never a literal), so there is no
+                legitimate "exempt namespace" for a raw literal at any of these four shapes.
+    Suppress  : Per-call-site via #pragma warning disable SK0022; document the rationale
+                inline (e.g. a genuinely one-off literal with no plausible cross-call-site
+                reuse).
+    Note      : Introduced WO-042 P-264. Implemented in a SINGLE DiagnosticAnalyzer class
+                (CrossCuttingMagicStringLiteralAnalyzer) covering all four call-site shapes
+                under one DiagnosticDescriptor — the same underlying rule ("never a raw
+                literal at a cross-cutting call site"), not four distinct standards. Depends
+                on 01.Core P-259 for REAL-ASSEMBLY verification only (design/tests use
+                contrived fixtures) — see Cross-Domain Dependencies in
+                00.Governance/state-map.md; only D-30 (design) is locked in 01.Core's own
+                state-map as of 2026-07-14, C-43/T-34/DO-16 have not shipped.
 ```
 
 ---
@@ -2522,6 +2576,57 @@ invariant helper, not ConditionList/ICustomRule; WO-041 P-250)
         "designed-ahead-of-a-pending-retrofit" precedent in this domain
         (SK.00.ServiceDefaultsGovernance, SK.00.MetricsOutcomeTagAndMisregistrationGuard,
         SK.00.CryptoDelegationAndUowSeamGuard, SK.00.ApplicationPipelineArchRules).
+
+WellKnownConstantOwnershipAssertion  (public class — Mono.Cecil-based cross-assembly platform-
+wide invariant helper, not ConditionList/ICustomRule; WO-042 P-264)
+    .AssertSoleDeclaration(IReadOnlyDictionary<string, string> canonicalValues,
+                           IReadOnlyCollection<string> owningTypeFullNames,
+                           IReadOnlyCollection<Assembly> assembliesToScan)
+        Mirrors LoggingEventIdIntegrityAssertion's precedent — a plain public helper, not a
+        NetArchTest ConditionList, because "no assembly other than the owning one may declare
+        its own independently-valued literal for a canonical cross-cutting value" is a
+        cross-assembly, whole-platform invariant with no single-assembly "fire on a contrived
+        violating assembly" shape a ConditionList/ICustomRule scan naturally expresses.
+        Reuses StringConstantsClassDetector's field-shape + literal-value resolution technique
+        (WO-028 P-178) — extended here to walk EVERY TypeDefinition in each scanned assembly
+        (not only the abstract-sealed "constants class" shape StringConstantsClassDetector's
+        original caller assumed), so a stray const/static readonly string field on an ordinary
+        class is caught too. For each TypeDefinition whose FullName is NOT present in
+        owningTypeFullNames, resolves every const/static readonly string field's literal value
+        (const via FieldDefinition.Constant; static readonly via the .cctor Ldstr->Stsfld walk,
+        same as StringConstantsClassDetector) and checks it against every value in
+        canonicalValues. Any match is a violation — a second, independently-declared field
+        holding the exact same string value as a canonical cross-cutting constant, outside the
+        type(s) that are supposed to own it.
+        Aggregates every violation found across the ENTIRE supplied assembly set before
+        throwing (does not stop at the first) and throws a single test-framework-agnostic
+        assertion exception naming every offending declaring-type/field/value — mirroring
+        LoggingEventIdIntegrityAssertion's and PipelineOrderAssertion's aggregate-failure-
+        message convention.
+        Caller-supplied everything: 00.Governance never references SharedKernel.Primitives
+        directly (00.Governance references nothing). The consuming test project supplies
+        canonicalValues (the real WellKnownHeaders/WellKnownBaggageKeys values),
+        owningTypeFullNames (e.g. "SharedKernel.Primitives.CrossCutting.WellKnownHeaders",
+        "SharedKernel.Primitives.CrossCutting.WellKnownBaggageKeys"), and assembliesToScan
+        (every other shipped production assembly) — keeping 01.Core's WellKnownHeaders/
+        WellKnownBaggageKeys (P-259) as the single source of truth for the canonical values
+        while this helper itself stays dependency-free.
+        Rationale: motivated by the exact incident class P-261 exemplified — a
+        "CorrelationId" vs "correlation.id" mismatch between a hand-rolled literal and the
+        value 01.Core's registry actually declared. A documented "always reference the
+        01.Core constant" convention alone is exactly the kind of rule this domain's own
+        precedent (SK0013, PresentationLayeringRules, SK0020/SK0021) has shown will drift
+        without a build-time gate.
+        Real-assembly status: EXPECTED TO FAIL / UNVERIFIABLE if pointed at the platform's
+        real shipped assemblies today (2026-07-14) — only 01.Core's D-30 design for
+        WellKnownHeaders/WellKnownBaggageKeys is locked; the C-43/T-34/DO-16 implementation
+        has not shipped, and the P-260/P-261/P-262/P-263 consuming-domain retrofits (which
+        would otherwise still be hand-rolling the literals this rule watches for) have not
+        landed either. Design/implementation/tests for this phase use contrived in-memory
+        multi-assembly Mono.Cecil fixtures only, consistent with every
+        "designed-ahead-of-a-pending-dependency" precedent in this domain
+        (SK.00.ServiceDefaultsGovernance, SK.00.MetricsOutcomeTagAndMisregistrationGuard,
+        SK.00.CryptoDelegationAndUowSeamGuard, SK.00.LoggingStandardEnforcement).
 ```
 
 ---
@@ -2693,6 +2798,13 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `LoggingEventIdIntegrityAssertion.AssertGloballyUniqueAndInRange` takes an `IReadOnlyDictionary<Assembly, (int RangeMin, int RangeMax)>` supplied entirely by the caller — `00.Governance` never references `SharedKernel.Primitives` (it references nothing). The consuming test project is responsible for building this dictionary from `SharedKernel.Primitives.Logging.LoggingEventIdRanges` (P-249) values, keeping that registry the single source of truth for range numbers while this helper stays dependency-free, matching the same "caller supplies the assembly, never hard-code a path" discipline used by every `ConditionList` factory method in this file.
 - `LoggingEventIdIntegrityAssertion` is EXPECTED TO FAIL if pointed at the platform's real shipped assemblies as of this phase (2026-07-08) — the WO-041 audit's own confirmed collisions (`SharedKernel.Caching.Redis.Core` vs `SharedKernel.Caching.Redis.PubSub`, both 4001/4002; three internal `SharedKernel.Messaging.MassTransit` collisions) have not been retrofitted, and `01.Core`'s own `LoggingEventIdRanges` registry (P-249) is itself still `○` Pending. Design and tests for this phase use contrived in-memory multi-assembly Mono.Cecil fixtures only — do not attempt a real-assembly wiring pass until every WO-041 domain retrofit phase ships; track that as a follow-up, not a blocking condition on this phase.
 - `LoggingAuthoringStyleAnalyzer`'s (SK0020/SK0021) test fixtures in `SharedKernel.Analyzers.Tests` deliberately do NOT reference the real `Microsoft.Extensions.Logging.Abstractions` NuGet package — `CSharpAnalyzerTest`'s default (older) reference-assembly set conflicts with a `net10.0`-targeted build of that package (`CS1705` `System.Runtime` version mismatch). Instead, each test compiles a self-contained in-compilation stub declaring the exact real namespace/type/member names the analyzer checks against (`Microsoft.Extensions.Logging.ILogger`, `LoggerExtensions`, `LoggerMessage`, `LoggerMessageAttribute`) — the same technique already used by SK0013's `IHttpClientFactory` fixture. By contrast, `LoggingEventIdIntegrityAssertionTests` in `SharedKernel.ArchitectureTests.Tests` DOES reference the real `Microsoft.Extensions.Logging.Abstractions` package directly for its `CompileInMemory` fixtures — no such conflict exists there because those fixtures are compiled and then loaded in-process via `Assembly.LoadFrom` against the current running runtime, never through the analyzer-testing framework's isolated reference-assembly sandbox. Any future SK analyzer whose test fixtures need a BCL-adjacent type from a versioned `Microsoft.Extensions.*` package should default to the in-compilation stub technique to avoid this class of reference-assembly conflict.
+- SK0022 `CrossCuttingMagicStringLiteralAnalyzer` (WO-042 P-264) is the next sequential ID in the SK0001–SK00N general-purpose block (SK0021 was the prior ID). It is ONE `DiagnosticAnalyzer` class covering FOUR distinct call-site shapes (HTTP header indexer/setter, `Activity.SetBaggage`/`.SetTag`, `IConfiguration.GetSection`, `ClaimsPrincipal`/`Claim` comparison) under a SINGLE `DiagnosticDescriptor` — narrower than SK0020/SK0021's "one class, two IDs" precedent, here it is "one class, one ID, four trigger shapes," because all four encode the exact same underlying rule ("never a raw literal at a cross-cutting call site"), not four separate standards.
+- SK0022's core discriminator is SYNTAX SHAPE, not resolved value or declaring-class identity: the checked argument/indexer-key position must be a `LiteralExpressionSyntax` of kind `StringLiteralExpression` to fire. Any other expression shape (`IdentifierNameSyntax`, `MemberAccessExpressionSyntax`, or anything else) passes automatically — the analyzer never inspects what a referenced field's value IS or which class declares it. This carries forward the acceptance-critical generality requirement first established for `NoBareHealthCheckLiteralWhereConstantsExistPredicate` (WO-028 P-178): the implementation must never contain a specific constants-class name as a string literal or type check. A domain-local constants class (`SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming`) satisfies the rule exactly as well as a reference to `01.Core`'s `WellKnownHeaders`/`WellKnownBaggageKeys` — the analyzer cannot and does not distinguish them.
+- Each of SK0022's four call-site shapes requires `SemanticModel.GetSymbolInfo` to resolve the receiver/method/indexer's exact `ContainingType` (`System.Net.Http.Headers.HttpHeaders`/`Microsoft.AspNetCore.Http.IHeaderDictionary`; `System.Diagnostics.Activity`; `Microsoft.Extensions.Configuration.IConfiguration`/`ConfigurationExtensions`; `System.Security.Claims.Claim`/`ClaimsPrincipal`/`ClaimsIdentity`) — a syntax-only simple-name check on method names like `SetTag`/`GetSection`/`FindFirst` was rejected as too collision-prone against unrelated types sharing those common names, the same discipline already applied to SK0020.
+- SK0022 fires globally with NO namespace-scoped exemption (unlike SK0001/SK0007/SK0013/SK0020/SK0021's `SharedKernel.Testing`/other suppression-namespace pattern) — there is no legitimate namespace where a raw literal at one of these four call-site shapes should pass; a domain-local constants holder already satisfies the rule anywhere it is used, by construction (it is a reference, never a literal).
+- `WellKnownConstantOwnershipAssertion` (WO-042 P-264) is the domain's THIRD non-`ConditionList`/`ICustomRule` public helper, after `ApplicationPipelineRules.PipelineOrderAssertion` and `LoggingEventIdIntegrityAssertion` — same rationale: "no other assembly may redeclare `01.Core`'s canonical cross-cutting literal values under a different name" is a cross-assembly, whole-platform invariant with no single-assembly "fire on one contrived violating assembly" shape. It extends `StringConstantsClassDetector`'s field-shape + literal-value resolution technique (WO-028 P-178) to walk every `TypeDefinition` in a scanned assembly, not only the `abstract sealed` "constants class" shape the original caller assumed — a stray `const`/`static readonly string` field on an ordinary class must be caught too.
+- `WellKnownConstantOwnershipAssertion.AssertSoleDeclaration` takes a fully caller-supplied `canonicalValues` dictionary, `owningTypeFullNames` exclusion list, and `assembliesToScan` collection — `00.Governance` never references `SharedKernel.Primitives` (it references nothing). The consuming test project builds `canonicalValues` from the real `SharedKernel.Primitives.CrossCutting.WellKnownHeaders`/`WellKnownBaggageKeys` field values (P-259) once that package ships, matching the same "caller supplies the assembly/values, never hard-code them here" discipline established by `LoggingEventIdIntegrityAssertion` and every `ConditionList` factory method in this file.
+- **SK0022 and `WellKnownConstantOwnershipAssertion` are EXPECTED TO FAIL / UNVERIFIABLE against real assemblies as of this phase's authoring (2026-07-14)** — `01.Core`'s `WellKnownHeaders`/`WellKnownBaggageKeys` (P-259) exist only as a locked design (D-30 in `01.Core/state-map.md`); the C-43/T-34/DO-16 implementation has not shipped, and the P-260/P-261/P-262/P-263 consuming-domain retrofits have not landed. Design/implementation/tests for this phase use CONTRIVED in-memory Mono.Cecil fixtures only, consistent with every "designed-ahead-of-a-pending-dependency" precedent in this domain. Do not attempt a real-assembly wiring pass until `01.Core` C-43 ships AND P-260–P-263 land — see Cross-Domain Dependencies in `00.Governance/state-map.md`.
 
 ---
 
@@ -2783,3 +2895,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-07] SK0017 CommandImplementsCacheableQuery, SK0018 QueryImplementsInvalidatesCache, SK0019 RetryableRequestWithoutIdempotency added to diagnostic registry (general-purpose sequential block, next after SK0016; third/fourth/fifth SK analyzers in this domain requiring SemanticModel-resolved AllInterfaces closure, after SK0011 and SK0015); closes the last three "not mechanically enforced — code review must catch this" callouts in 05.Application/CLAUDE.md's Hard Violations section (the fourth pattern from the same audit family, typeof(TRequest).Name short-name usage, was already closed by SK0016 in WO-038 P-235); all three are consumer-side rules firing in ANY assembly declaring a command/query type — zero new SharedKernel.ArchitectureTests artifacts, pure Roslyn analyzers; six new implementation rules added — WO-040 P-248 (governance-arch-planner)
 - [2026-07-08] Phase SK.00.LoggingStandardEnforcement added — SK0020 DirectILoggerExtensionMethodUsage and SK0021 HandWrittenLoggerMessageDefineDelegate added to diagnostic registry (general-purpose sequential block, next after SK0019; the domain's first two-diagnostics-one-analyzer-class shape — LoggingAuthoringStyleAnalyzer — since both encode the same "always [LoggerMessage], never hand-rolled" standard and share the GeneratedCodeAnalysisFlags.None guard plus the SharedKernel.Testing exemption; SK0020 requires SemanticModel.GetSymbolInfo ContainingType resolution to avoid false positives against unrelated logging frameworks, SK0021 is syntax-only); LoggingEventIdIntegrityAssertion added to architecture test contracts (WO-041 P-250) — the domain's second non-ConditionList/ICustomRule public helper after PipelineOrderAssertion, walking Mono.Cecil ModuleDefinition.Types/NestedTypes recursively (deliberately bypassing NetArchTest's Types.InAssembly(...) to avoid the SK0012-documented compiler-generated/nested-type blind spot) to assert global EventId uniqueness and per-assembly range membership against a caller-supplied Assembly→range dictionary sourced from 01.Core's SharedKernel.Primitives.Logging.LoggingEventIdRanges (P-249); mechanizes the root CLAUDE.md's new Logging Conventions section (WO-041 P-249/P-250) the same way SK0013/SK0014/SK0017-19 mechanized the raw-HttpClient/ProblemDetails/marker-interface conventions; EXPECTED TO FAIL against real shipped assemblies until every WO-041 domain retrofit ships (all ten are `○` Pending, including 01.Core's own P-249) — design/tests use contrived in-memory Mono.Cecil fixtures only; six new implementation rules added — WO-041 P-250, depends on 01.Core P-249 (governance-arch-planner)
 - [2026-07-09] SK.00.LoggingStandardEnforcement → ● closeout — LoggingAuthoringStyleAnalyzer (SK0020/SK0021) implemented in SharedKernel.Analyzers/Diagnostics/; LoggingEventIdIntegrityAssertion implemented in SharedKernel.ArchitectureTests/; verified against the pre-written CLAUDE.md spec (diagnostic registry, architecture test contracts, all eleven implementation-rule bullets) — no discrepancy found, no edits required to those sections. One new implementation-rule bullet added below to record a technique divergence discovered during test authoring: SK0020/SK0021 analyzer test fixtures (SharedKernel.Analyzers.Tests) use a self-contained in-compilation stub of the Microsoft.Extensions.Logging surface — CSharpAnalyzerTest's default (older) reference-assembly set conflicts (CS1705 System.Runtime version mismatch) with a net10.0-targeted Microsoft.Extensions.Logging.Abstractions package reference, the same stub technique already used by SK0013's IHttpClientFactory fixture — while LoggingEventIdIntegrityAssertionTests' CompileInMemory fixtures reference the real Microsoft.Extensions.Logging.Abstractions package directly with no such conflict, since those fixtures compile and run in-process against the current runtime rather than through the analyzer-testing framework's isolated reference-assembly sandbox. 14 new analyzer tests (T-177–T-180) — 125/125 SharedKernel.Analyzers.Tests pass; 3 new architecture tests (T-181–T-183, including the load-bearing nested-type case) — 133/133 SharedKernel.ArchitectureTests.Tests pass; 0 build warnings/errors. This is the last `○` phase key — every phase key in 00.Governance/state-map.md is now `●` (governance-phase-implementer, state-map-phase)
+- [2026-07-14] Phase SK.00.MagicStringGuard added — SK0022 CrossCuttingMagicStringLiteral added to diagnostic registry (general-purpose sequential block, next after SK0021; ONE analyzer class covering FOUR call-site shapes — HTTP header indexer/setter, Activity.SetBaggage/.SetTag, IConfiguration.GetSection, ClaimsPrincipal/Claim comparison — under a single DiagnosticDescriptor since all four encode the same underlying rule; fires globally with no suppression namespace; discriminates purely on literal-vs-reference syntax shape, never resolved value or declaring-class identity, carrying forward the SK0028/HealthCheckConstantsGuard generality requirement); WellKnownConstantOwnershipAssertion added to architecture test contracts (WO-042 P-264) — the domain's third non-ConditionList/ICustomRule public helper after PipelineOrderAssertion and LoggingEventIdIntegrityAssertion, extending StringConstantsClassDetector's field-shape + literal-value resolution to walk every TypeDefinition (not only constants-class shapes) and flag any non-owning assembly redeclaring a canonical 01.Core cross-cutting literal value; mechanizes the exact incident class P-261 exemplified (a "CorrelationId" vs "correlation.id" mismatch) the same way SK0013/PresentationLayeringRules/SK0020-21 mechanized the raw-HttpClient/ProblemDetails/logging conventions; EXPECTED TO FAIL / UNVERIFIABLE against real assemblies until 01.Core's WellKnownHeaders/WellKnownBaggageKeys (P-259) ship past design (only D-30 is locked as of this phase; C-43/T-34/DO-16 pending) AND the P-260/P-261/P-262/P-263 consuming-domain retrofits land — design/tests use contrived in-memory Mono.Cecil fixtures only; six new implementation rules added — WO-042 P-264, depends on 01.Core P-259/P-260/P-261/P-262/P-263 (governance-arch-planner)

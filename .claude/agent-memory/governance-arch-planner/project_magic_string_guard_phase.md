@@ -1,0 +1,16 @@
+---
+name: magic-string-guard-phase
+description: SK.00.MagicStringGuard (WO-042 P-264) design decisions — SK0022 four-shape single-analyzer design, WellKnownConstantOwnershipAssertion cross-assembly value-collision check, and the 01.Core P-259/P-260-263 real-assembly dependency
+metadata:
+  type: project
+---
+
+WO-042 P-264 dispatched a Roslyn analyzer + architecture test to close the class of incident P-261 exemplified (a `"CorrelationId"` vs `"correlation.id"` mismatch between a hand-rolled literal and `01.Core`'s registry). Designed 2026-07-14.
+
+**SK0022 `CrossCuttingMagicStringLiteral`** — ONE `DiagnosticAnalyzer` class (`CrossCuttingMagicStringLiteralAnalyzer`) covering FOUR call-site shapes under a SINGLE `DiagnosticDescriptor` (narrower than SK0020/SK0021's "one class, two IDs" — here it's "one class, one ID, four shapes" because all four are the same rule): HTTP header indexer/`.Add`/`.TryAddWithoutValidation` (`HttpHeaders`/`IHeaderDictionary`), `Activity.SetBaggage`/`.SetTag`, `IConfiguration.GetSection`, `ClaimsPrincipal`/`Claim` comparison. Each shape requires `SemanticModel.GetSymbolInfo` `ContainingType` exact-match (same discipline as SK0020) — syntax-only name matching on `SetTag`/`GetSection`/etc. would collide with unrelated types. **Key design point: the discriminator is syntax SHAPE (is the argument a `LiteralExpressionSyntax`?), never resolved value or declaring-class identity.** A domain-local constants class (`SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming`) passes exactly as cleanly as a reference to `01.Core`'s `WellKnownHeaders`/`WellKnownBaggageKeys` — this carries forward the WO-028 P-178 "never hardcode a specific class name" generality requirement. Fires globally, no suppression namespace (unlike SK0001/SK0007/SK0013/SK0020/SK0021) — there's no legitimate exempt namespace for a raw literal at these shapes.
+
+**`WellKnownConstantOwnershipAssertion`** — the domain's THIRD non-`ConditionList`/`ICustomRule` public helper (after `PipelineOrderAssertion` and `LoggingEventIdIntegrityAssertion`). Extends `StringConstantsClassDetector`'s field-shape + literal-value resolution (WO-028 P-178) to walk EVERY `TypeDefinition` in a scanned assembly (not just the `abstract sealed` "constants class" shape), flagging any non-owning assembly that declares a `const`/`static readonly string` field whose VALUE matches a caller-supplied canonical value. Fully caller-supplied contract: `canonicalValues` dict, `owningTypeFullNames` exclusion list, `assembliesToScan` — `00.Governance` never references `SharedKernel.Primitives`.
+
+**Real-assembly status (load-bearing caveat):** as of 2026-07-14, only `01.Core`'s D-30 (design) for `WellKnownHeaders`/`WellKnownBaggageKeys` (P-259) is locked in `01.Core/state-map.md` — C-43/T-34/DO-16 (implementation) have NOT shipped, and P-260/P-261/P-262/P-263 (consuming-domain retrofits) have NOT landed. Both SK0022 and `WellKnownConstantOwnershipAssertion` are designed/tested against CONTRIVED in-memory Mono.Cecil fixtures only — same technique as every other "designed-ahead-of-a-pending-dependency" phase in this domain. Do not attempt real-assembly wiring until 01.Core C-43 ships AND P-260–P-263 land. Recorded as a Cross-Domain Dependency entry in `00.Governance/state-map.md`.
+
+**Next SK ID after this phase: SK0023.**
