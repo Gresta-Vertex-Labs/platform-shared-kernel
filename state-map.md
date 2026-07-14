@@ -74,12 +74,12 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | Tests | `●` | SK.11.Tests (28/28) now complete — new regression tests confirm `CorrelationTracingInterceptor`/`TenantIdInterceptor` (EventId 11100/11101) and `KubernetesServiceEndpointResolver`/`StaticServiceDiscoveryStartupWarning` (EventId 11300-11308) still log correctly post-retrofit; `LoggingEventIdIntegrityAssertion` run against the real `SharedKernel.Communication.Grpc`/`.Internal` assemblies confirms zero collisions; SK0020/SK0021 verified zero-diagnostics via a temporary analyzer reference (added, built, reverted); 60/60 Grpc + 52/52 Internal tests passing. | DO-06 (update `CLAUDE.md`'s Grpc/Internal logging docs) is the only remaining P-255 task, in the Docs phase. |
+| 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | SK.11.Docs (6/6) now complete — all public types across Rest/Grpc/GraphQL/Internal confirmed to carry complete XML doc comments (mechanically verified via `GenerateDocumentationFile`+`TreatWarningsAsErrors` builds, 0 warnings); CLAUDE.md refreshed with a `StandardResilienceHandler` Polly v8 sampling-duration constraint lesson; the P-255 Logging section verified accurate against shipped source with no stale delegate/LogDebug references. | Only the Published phase (NuGet packaging metadata, pack, publish) remains for `11.Communication`. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-041/P-251 fully landed — `BaggageLogRecordProcessor` (generic `Activity.Baggage`→`LogRecord.Attributes` copier), `AddSharedKernelTelemetry`'s `.WithLogging(...)` OTLP log-export registration, `TenantBaggageKeys` + `TenantResolutionMiddleware`'s ambient TenantId baggage set. SK.13.Core 33/33 `●`, SK.13.Tests 28/28 `●`, SK.13.Docs 4/4 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 29/29 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
-| 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | SK.14.Published complete (P-01–P-05) — full NuGet packaging metadata on both packages, `dotnet pack` produces `.nupkg`+`.snupkg` with 0 warnings, consumer-verify harness proves zero DI exceptions for the full WebApi stack and `AddSharedKernelSignalR` with/without `WithRedisBackplane`; 48/48 tests still passing (38 WebApi + 10 SignalR). | — |
-| 15 | [Integration](15.Integration/state-map.md) | Published | `●` | SK.15.Published complete (P-01–P-05) — full NuGet packaging metadata added, `.nupkg`+`.snupkg` pack with zero warnings, and a new `consumer-verify` harness proves both successful `IWebhookDispatcher` resolution and a clear, actionable DI failure when `IWebhookSubscriptionStore` is omitted; 48/48 tests still passing. | — domain complete end to end (Design → Published). |
-| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-040 (P-244/P-245) SK.16.Docs now 15/15 `●` — `Application/` folder's six types fully documented (local-seam-only-scope `<remarks>` blocks naming `06.Persistence`/`12.Security`/`07.Messaging` explicitly, two-type idempotency-store split rationale, `ApplicationPipelineTestHarness`'s promoted-origin/sibling-isolation/D-70 follow-up notes); `dotnet build` 0 errors. | WO-040 fully closed — all 6 phases of `16.Testing` `●` again. |
+| 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-041/P-256 closed — explicit `EventId`s (14000/14001/14100) assigned to all three `[LoggerMessage]` methods, `CorrelationIdMiddleware.BaggageKey` constant regression-pinned, correlation-on-log-record integration test proves compatibility with `13.ServiceDefaults`'s `BaggageLogRecordProcessor` with zero cross-domain reference; both packages re-packed to `1.0.1`, `consumer-verify` re-confirms zero DI exceptions; 42/42 WebApi + 11/11 SignalR tests passing. | — |
+| 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
+| 16 | [Testing](16.Testing/state-map.md) | Core | `●` | WO-041 (P-258) SK.16.Core now 59/59 `●` — implemented `LogRecord`/`InMemoryLogger`/`InMemoryLoggerFactory`/`InMemoryLogger<TCategoryName>`/`LoggerAssertions`/`AddInMemoryLoggerFactory()` in the new `Logging/` folder; `dotnet build` clean for `SharedKernel.Testing` and `SharedKernel.Testing.SelfTests`. | Tests (T-45 — prove the `Logging/` types in `SharedKernel.Testing.SelfTests` via a real `[LoggerMessage]`-attributed call site) and Docs (DO-16) remain outstanding for this same P-258/WO-041 work. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -109,11 +109,11 @@ Format when active:
 | ● Published | 7 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
 | ● Docs | 2 |
-| ● Tests | 3 |
-| ● Core | 0 |
+| ● Tests | 1 |
+| ● Core | 1 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 0 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 4 |
 
@@ -7933,6 +7933,8 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-09] Phase Backlog P-251 → ● Complete — WO-041's 13.ServiceDefaults OTel log export + ambient Correlation/Tenant enrichment phase done (state-map-phase)
 - [2026-07-10] 02 → Phase 37 (●) — promoted from SK.02.LoggingRetrofit (12/12); all `EventId`s in `FusionCache`/`Redis.Core`/`Redis.DistributedLocking`/`Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999), closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; `CacheWarmupHostedService` direct `ILogger` calls and `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing (state-map-phase)
 - [2026-07-10] Phase Backlog P-252 → ● Complete — SK.02.LoggingRetrofit done; final acceptance criterion (00.Governance P-250 zero-suppression verification against this domain) remains pending 00.Governance's own retrofit dispatch cycle (state-map-phase)
+- [2026-07-14] 15 → Published (●) — WO-041/P-257 code-level work landed on top of already-Published SK.15.LoggingRetrofit (5/5); `WebhookDispatcher.LogObserverException` converted to `[LoggerMessage]`-attributed `Log.ObserverException` (nested partial class), `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests passing (state-map-phase)
+- [2026-07-14] Phase Backlog P-257 → ● Complete — SK.15.LoggingRetrofit done; 00.Governance's P-250 (SK0020/SK0021 analyzers, LoggingEventIdIntegrityAssertion) already shipped 2026-07-09, satisfying the analyzer-pass acceptance criterion (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -10060,7 +10062,7 @@ This domain has three separate internal `EventId` collisions today and four inde
 ---
 ### P-255 — Communication: Logging Retrofit to the Platform `[LoggerMessage]` Standard
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 11.Communication
 **Depends on:** P-249, P-250
@@ -10084,7 +10086,7 @@ Every production log statement across `SharedKernel.Communication.Internal` and 
 ---
 ### P-256 — Presentation: Explicit EventId Assignment and Correlation Verification
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 14.Presentation
 **Depends on:** P-249, P-250, P-251
@@ -10098,17 +10100,17 @@ The three existing `[LoggerMessage]`-attributed methods in `SharedKernel.Present
 This domain already follows the correct authoring pattern (`[LoggerMessage]` everywhere) but relies on compiler-assigned `EventId`s, which silently renumber if a method is added, removed, or reordered in the same class — a latent stability hazard for any log-based alerting or dashboard keyed on `EventId`. It also owns the `CorrelationId` contract this whole logging standard depends on for cross-cutting correlation, so it is the right place to close the loop on whether that correlation actually reaches the log output once `13.ServiceDefaults` wires the export path.
 
 #### Acceptance criteria
-- [ ] All three existing `[LoggerMessage]`-attributed methods have an explicit `EventId` inside `14.Presentation`'s reserved range, with `WebApi` and `SignalR` occupying distinct non-overlapping sub-blocks
-- [ ] An integration-level test proves a request's `CorrelationId` is present on the log records emitted for that request once P-251's logging pipeline is active
-- [ ] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
-- [ ] All existing `14.Presentation` test suites continue to pass
-- [ ] `14.Presentation/CLAUDE.md` documents the domain's final EventId sub-block allocation and the correlation verification result
+- [x] All three existing `[LoggerMessage]`-attributed methods have an explicit `EventId` inside `14.Presentation`'s reserved range, with `WebApi` and `SignalR` occupying distinct non-overlapping sub-blocks
+- [x] An integration-level test proves a request's `CorrelationId` is present on the log records emitted for that request once P-251's logging pipeline is active
+- [x] The P-250 analyzer and architecture test both pass against this domain with zero suppressions
+- [x] All existing `14.Presentation` test suites continue to pass
+- [x] `14.Presentation/CLAUDE.md` documents the domain's final EventId sub-block allocation and the correlation verification result
 ---
 
 ---
 ### P-257 — Integration: Logging Retrofit to the Platform `[LoggerMessage]` Standard
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-041
 **Domain:** 15.Integration
 **Depends on:** P-249, P-250
@@ -10160,3 +10162,9 @@ Every domain in this work order is being retrofitted to a mechanically consisten
 - [2026-07-13] Communication → WO-041 Logging Retrofit (◐) — SK.11.Grpc (G-14/G-15, P-255) complete, promoted from SK.11.Grpc; Internal (I-09–I-11), Tests (T-27/T-28), Docs (DO-06) still pending for P-255 (state-map-phase)
 - [2026-07-13] Communication → WO-041 Logging Retrofit (◐) — SK.11.Internal (I-09–I-11, P-255) complete: `KubernetesServiceEndpointResolver`/`StaticServiceDiscoveryStartupWarning` retrofitted to `[LoggerMessage]` (EventId 11300-11308), 39/39 tests passing; SK.11.Internal now 11/11 ●; Tests (T-27/T-28) and Docs (DO-06) still pending for P-255 (state-map-phase)
 - [2026-07-13] Communication → Tests (●) — T-27/T-28 (P-255) complete: regression tests confirm the Grpc/Internal [LoggerMessage] retrofit's EventIds (11100/11101, 11300-11308) still fire correctly; LoggingEventIdIntegrityAssertion passes against the real Grpc/Internal assemblies; SK0020/SK0021 verified zero-diagnostics via a temporary analyzer reference (reverted); 60/60 + 52/52 tests passing; promoted from SK.11.Tests — only DO-06 (Docs) remains for P-255 (state-map-phase)
+- [2026-07-14] Communication → Docs (●) — SK.11.Docs (6/6) complete: DO-01–DO-04 XML doc coverage verified across Rest/Grpc/GraphQL/Internal (0 CS1591 warnings on `GenerateDocumentationFile`+`TreatWarningsAsErrors` builds); DO-05 added a `StandardResilienceHandler` Polly v8 sampling-duration constraint lesson to CLAUDE.md; DO-06 verified already-correct (no changes) — Logging section matches shipped source exactly, no stale delegate/LogDebug references; promoted from SK.11.Docs (state-map-phase)
+- [2026-07-14] Presentation → Published (●) — WO-041/P-256 closed: explicit EventIds assigned to all three [LoggerMessage] methods, CorrelationIdMiddleware.BaggageKey regression-pinned, correlation-on-log-record integration test added, both packages re-packed to 1.0.1; promoted from SK.14.Design/Core/Tests/Docs/Published (all 6 phases now fully ●) (state-map-phase)
+- [2026-07-14] Phase Backlog P-256 → ● Complete — 14.Presentation WO-041 EventId/correlation work done (state-map-phase)
+- [2026-07-14] 16.Testing → Design (◐) — promoted from SK.16.Design (78/78); WO-041 (P-258) `Logging/` folder target-shape design re-confirmed verbatim against CLAUDE.md, no drift; Scaffold (S-19/S-20) next (state-map-phase)
+- [2026-07-14] Testing → Scaffold (●) — promoted from SK.16.Scaffold (state-map-phase)
+- [2026-07-14] Testing → Core (●) — promoted from SK.16.Core (59/59); implemented Logging/ folder (LogRecord, InMemoryLogger, InMemoryLoggerFactory, InMemoryLogger<TCategoryName>, LoggerAssertions, AddInMemoryLoggerFactory); dotnet build clean for SharedKernel.Testing and SelfTests (state-map-phase)
