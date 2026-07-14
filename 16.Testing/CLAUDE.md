@@ -754,7 +754,7 @@ SCOPE LOCK (P-244/WO-040): Every type in Application/ references only SharedKern
     local seams live in those domains. These fakes satisfy the LOCAL seam contracts only.
 ```
 
-### `Logging/` — structured log capture double (Microsoft.Extensions.Logging.Abstractions, cross-cutting) — added P-258/WO-041 — [STATUS: Planned]
+### `Logging/` — structured log capture double (Microsoft.Extensions.Logging.Abstractions, cross-cutting) — added P-258/WO-041
 
 ```text
 LogRecord  (sealed record)

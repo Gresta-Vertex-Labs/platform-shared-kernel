@@ -143,6 +143,15 @@
     -->
     <PackageReference Include="MediatR" Version="12.4.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <!--
+      Structured log capture double (S-19, P-258/WO-041): ILogger/ILoggerFactory/ILogger<T>/
+      LoggerMessageAttribute contracts backing InMemoryLogger/InMemoryLoggerFactory/
+      InMemoryLogger<TCategoryName>/AddInMemoryLoggerFactory() (Logging/). Pinned to 10.0.9 to match
+      this project's existing Microsoft.Extensions.* version convention (Http/DependencyInjection
+      above). First capability folder anchored to a cross-cutting BCL logging contract rather than a
+      numbered domain's own .Abstractions package.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>
