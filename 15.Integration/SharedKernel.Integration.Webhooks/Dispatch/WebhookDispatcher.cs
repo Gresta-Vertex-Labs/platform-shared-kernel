@@ -10,6 +10,7 @@ using SharedKernel.Integration.Webhooks.Options;
 using SharedKernel.Integration.Webhooks.Signing;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Integration.Webhooks.Dispatch;
 
@@ -17,7 +18,7 @@ namespace SharedKernel.Integration.Webhooks.Dispatch;
 /// Default <see cref="IWebhookDispatcher"/> implementation — looks up active subscriptions, signs
 /// each delivery, and sends it through the named, resilience-wrapped <see cref="HttpClient"/>.
 /// </summary>
-public sealed class WebhookDispatcher : IWebhookDispatcher
+public sealed partial class WebhookDispatcher : IWebhookDispatcher
 {
     private readonly IWebhookSubscriptionStore _subscriptionStore;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -205,5 +206,15 @@ public sealed class WebhookDispatcher : IWebhookDispatcher
     }
 
     private void LogObserverException(Exception ex, string observerTypeName) =>
-        _logger.LogWarning(ex, "Webhook delivery observer {ObserverType} threw an exception; delivery outcome is unaffected.", observerTypeName);
+        Log.ObserverException(_logger, ex, observerTypeName);
+
+    /// <summary>Source-generated <see cref="LoggerMessage"/> definitions for <see cref="WebhookDispatcher"/>.</summary>
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Integration + 0,
+            Level = LogLevel.Warning,
+            Message = "Webhook delivery observer {ObserverType} threw an exception; delivery outcome is unaffected.")]
+        public static partial void ObserverException(ILogger logger, Exception ex, string observerType);
+    }
 }

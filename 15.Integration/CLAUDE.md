@@ -161,7 +161,7 @@ WebhookDeliveryExhaustedEvent  (sealed record, implements IIntegrationEvent)
 
 ```text
 WebhookDispatcher — Log  (private static partial class nested inside WebhookDispatcher)
-    ObserverException(ILogger logger, string observerType)   [LoggerMessage, EventId = LoggingEventIdRanges.Integration + 0 (= 15000), Level = Warning]
+    ObserverException(ILogger logger, Exception ex, string observerType)   [LoggerMessage, EventId = LoggingEventIdRanges.Integration + 0 (= 15000), Level = Warning]
     NOTE: Backs the single shared LogObserverException(Exception ex, string observerTypeName) helper called from both
           NotifyAttemptAsync and NotifyCompletedAsync when an IWebhookDeliveryObserver implementation throws. This is
           the only production log statement in SharedKernel.Integration.Webhooks today (P-257, WO-041 logging
