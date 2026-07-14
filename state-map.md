@@ -64,7 +64,7 @@ Format when blocked:
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for the Platform Logging Standard | `●` | All 11 tasks complete — SK0020/SK0021 (`LoggingAuthoringStyleAnalyzer`) ban direct `ILogger` extension-method calls and hand-written `LoggerMessage.Define` delegates; `LoggingEventIdIntegrityAssertion` mechanically enforces global `EventId` uniqueness and per-assembly range membership via a recursive Mono.Cecil `NestedTypes` walk; 125/125 analyzer tests and 133/133 architecture tests pass; design/tests use contrived fixtures only — expected to fail against real assemblies until every WO-041 domain retrofit ships. | This is the final phase key in `00.Governance/state-map.md` — every phase key in this domain is now `●`. Any future governance work requires a new phase to be planned by `governance-arch-planner`. |
-| 01 | [Core](01.Core/state-map.md) | Published | `●` | P-249 (WO-041) complete — `LoggingEventIdRanges` compile-time `const int` registry added to `SharedKernel.Primitives`, reserving one 1000-wide `EventId` block per root folder-map domain (00.Governance=0 through 17.Workflows=17000); 114/114 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only, zero new NuGet dependencies. | — |
+| 01 | [Core](01.Core/state-map.md) | Published | `●` | P-259 (WO-042) complete — `WellKnownHeaders`/`WellKnownBaggageKeys` compile-time `const string` registries added to `SharedKernel.Primitives/Propagation/`, the single authoritative source for the correlation-id/tenant-id header and baggage-key literals platform-wide; 117/117 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only, zero new NuGet dependencies. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | `●` | Phase 37 (WO-041, P-252) complete — all `EventId`s in `FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999) sub-blocks, closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; remaining direct `ILogger` calls and the hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing, zero behavioral change. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
@@ -74,7 +74,7 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | SK.11.Docs (6/6) now complete — all public types across Rest/Grpc/GraphQL/Internal confirmed to carry complete XML doc comments (mechanically verified via `GenerateDocumentationFile`+`TreatWarningsAsErrors` builds, 0 warnings); CLAUDE.md refreshed with a `StandardResilienceHandler` Polly v8 sampling-duration constraint lesson; the P-255 Logging section verified accurate against shipped source with no stale delegate/LogDebug references. | Only the Published phase (NuGet packaging metadata, pack, publish) remains for `11.Communication`. |
+| 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | SK.11.Rest (20/20) re-completed — R-19/R-20 (P-260/WO-042) retrofitted `CorrelationIdDelegatingHandler`/`TenantIdDelegatingHandler` to source their header names from `01.Core`'s `WellKnownHeaders.CorrelationId`/`.TenantId`; 66/66 `SharedKernel.Communication.Rest.Tests` passing. | G-16/G-17 (`.Grpc`) retrofit tasks under WO-042 remain pending, plus T-29/DO-07 and the Published phase (NuGet packaging, pack, publish) for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-041/P-251 fully landed — `BaggageLogRecordProcessor` (generic `Activity.Baggage`→`LogRecord.Attributes` copier), `AddSharedKernelTelemetry`'s `.WithLogging(...)` OTLP log-export registration, `TenantBaggageKeys` + `TenantResolutionMiddleware`'s ambient TenantId baggage set. SK.13.Core 33/33 `●`, SK.13.Tests 28/28 `●`, SK.13.Docs 4/4 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 29/29 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-041/P-256 closed — explicit `EventId`s (14000/14001/14100) assigned to all three `[LoggerMessage]` methods, `CorrelationIdMiddleware.BaggageKey` constant regression-pinned, correlation-on-log-record integration test proves compatibility with `13.ServiceDefaults`'s `BaggageLogRecordProcessor` with zero cross-domain reference; both packages re-packed to `1.0.1`, `consumer-verify` re-confirms zero DI exceptions; 42/42 WebApi + 11/11 SignalR tests passing. | — |
@@ -1883,6 +1883,8 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-07-03] 05.Application → Design (●) — promoted from SK.05.Design (WO-039 round): D-46/D-47/D-48 (P-241) locked as forward-looking plan; P-237, P-238, P-239, P-241, P-242, P-243 remain `◐` Dispatched (each spans through Core/Tests/Docs, not Design alone — P-241 additionally blocked on `00.Governance` P-240, 0/5 tasks) (state-map-phase)
 - [2026-07-03] 05.Application → Scaffold (●) — promoted from SK.05.Scaffold (WO-039 round): S-17 done — test-project-only `SharedKernel.ArchitectureTests` `ProjectReference` added to both nested test projects, zero leakage into production csproj confirmed; P-237, P-238, P-239, P-241, P-242, P-243 remain `◐` Dispatched (each spans through Core/Tests/Docs, not Scaffold alone) (state-map-phase)
 - [2026-07-07] 16.Testing → Core (●) — promoted from SK.16.Core (53/53); implemented WO-040's `Application/` folder (FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore/ResponseStore, AddFakeApplicationBehaviorServices(), ApplicationPipelineTestHarness) (state-map-phase)
+- [2026-07-14] Communication → Design (●) — promoted from SK.11.Design (24/24, D-24 closed WO-042's shared-constant consumption contract; domain remains at Docs overall with WO-042 Rest/Grpc retrofit tasks pending) (state-map-phase)
+- [2026-07-14] Communication → Rest (●) — R-19/R-20 (P-260/WO-042) complete; promoted from SK.11.Rest (20/20); domain remains at Docs overall with WO-042 Grpc/Tests/Docs retrofit tasks (G-16/G-17, T-29, DO-07) still pending (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -10173,3 +10175,142 @@ Verification pass (2026-07-14, testing-phase-implementer): all six local phase t
 - [2026-07-14] Testing → Core (●) — promoted from SK.16.Core (59/59); implemented Logging/ folder (LogRecord, InMemoryLogger, InMemoryLoggerFactory, InMemoryLogger<TCategoryName>, LoggerAssertions, AddInMemoryLoggerFactory); dotnet build clean for SharedKernel.Testing and SelfTests (state-map-phase)
 - [2026-07-14] 16 → Docs (●) — promoted from SK.16.Docs (16/16); DO-16 XML-doc pass added AsyncLocal scope-stack rationale to InMemoryLogger.BeginScope and BCL-anchored-folder rationale to InMemoryLogger's class remarks; WO-041/P-258 fully closed, all 6 phases of 16.Testing `●` again (state-map-phase)
 - [2026-07-14] Phase Backlog P-258 → ● Complete — verification/closeout pass (testing-phase-implementer): all six local `16.Testing` phase tables were already `●` from prior sessions but the `### P-258` header block's `Status` line and acceptance-criteria checkboxes had never been promoted to match; re-verified `Logging/` on-disk implementation (`LogRecord`, `InMemoryLogger`, `InMemoryLoggerFactory`, `InMemoryLogger<TCategoryName>`, `LoggerAssertions`, `AddInMemoryLoggerFactory()`) line-by-line against the CLAUDE.md contract with zero drift found; `dotnet build` clean (0 errors) on both `SharedKernel.Testing.csproj` and `SharedKernel.Testing.SelfTests.csproj` (Release); `dotnet test SharedKernel.Testing.SelfTests.csproj` 320/320 passing, including the 37 `Logging/InMemoryLoggerTests.cs` tests built on a real `[LoggerMessage]`-attributed call site. All five acceptance criteria checked `[x]`; `Status` flipped `◐ Dispatched` → `● Complete` (state-map-phase)
+
+---
+### P-259 — Core: Well-Known Cross-Domain Propagation Constants (Headers + Baggage Keys)
+
+**Status:** `●` Complete
+**Work Order:** WO-042
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+
+A new, dependency-free static constants surface in `01.Core` — `WellKnownHeaders` (HTTP/gRPC-metadata header names: `CorrelationId` = `"X-Correlation-Id"`, `TenantId` = `"X-Tenant-Id"`) and `WellKnownBaggageKeys` (`Activity` baggage / distributed-trace propagation key names: `CorrelationId` = `"correlation.id"`) — the single authoritative source for cross-service propagation identifiers that are today independently (and, in one confirmed case, inconsistently) redeclared as private literals or local `const`s inside `11.Communication`, `13.ServiceDefaults`, and `14.Presentation`. This mirrors the existing `LoggingEventIdRanges` precedent already shipped in `01.Core` (WO-041, P-249): a small, dependency-free, platform-wide registry that every layer is already permitted to reference.
+
+#### Why this is needed
+
+A live, confirmed defect proves the risk of the current pattern: `14.Presentation`'s `CorrelationIdMiddleware` writes `Activity` baggage under the key `"correlation.id"` (its own documented contract), while `13.ServiceDefaults`'s `BaggageLogRecordProcessor` test suite independently hardcodes the literal `"CorrelationId"` for the same concept — a mismatch flagged in `14.Presentation/CLAUDE.md`'s WO-041 changelog (DO-07) but left unfixed because no shared source of truth existed for either domain to reference. The same duplication pattern exists for the tenant/correlation *header* names: `TenantIdDelegatingHandler.HeaderName` (`11.Communication.Rest`), `TenantIdInterceptor.TenantIdKey` (`11.Communication.Grpc`), and `HeaderTenantResolutionStrategy.DefaultHeaderName` (`13.ServiceDefaults.MultiTenancy`) are three independent declarations of the identical `"x-tenant-id"` concept, kept in sync only by manual vigilance. `04.Contracts` was considered and rejected as the shared home: `SharedKernel.Communication.Grpc.csproj` carries a hard, mechanically-enforced rule (P-163, `GrpcNeverReferencesContracts`) forbidding a `04.Contracts` reference, specifically because gRPC uses Protobuf types directly — routing these constants through `04.Contracts` would force reintroducing exactly the coupling that rule was designed to remove. `01.Core` has no such constraint: every consuming domain (`11.Communication`, `13.ServiceDefaults`, `14.Presentation`, `07.Messaging`) already references it unconditionally.
+
+#### Acceptance criteria
+- [ ] `WellKnownHeaders` and `WellKnownBaggageKeys` ship in `01.Core` (package placement — `SharedKernel.Core` or `SharedKernel.Primitives` — decided at implementation time following the existing `LoggingEventIdRanges` precedent) with XML docs stating which domains/types consume each constant
+- [ ] Values match today's de facto standard exactly (`CorrelationId` header `"X-Correlation-Id"`, `TenantId` header `"X-Tenant-Id"`, correlation baggage key `"correlation.id"`) — pure promotion, zero behavioral change
+- [ ] Unit tests pin every constant's literal value so a future edit cannot silently drift it
+- [ ] Zero third-party NuGet dependencies added; AOT-clean
+
+---
+### P-260 — Communication: Consume Shared Propagation Constants, Remove Duplicate Declarations
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-042
+**Domain:** 11.Communication
+**Depends on:** P-259
+
+#### What is needed
+
+`CorrelationIdDelegatingHandler.HeaderName` and `TenantIdDelegatingHandler.HeaderName` (`SharedKernel.Communication.Rest`), and `TenantIdInterceptor.TenantIdKey` plus `CorrelationTracingInterceptor`'s inline correlation-header reference (`SharedKernel.Communication.Grpc`), all source their literal value from `01.Core`'s `WellKnownHeaders` instead of independently-declared `internal const`s. The independently-declared `const`s may remain only as thin, value-forwarding aliases where a package genuinely benefits from a locally-named symbol (e.g. gRPC's lowercase metadata-key convention) — never as a second, independently-typed literal. Test-only literal duplicates (`"x-tenant-id"`, `"X-Correlation-Id"` retyped across four-plus test files in `.Rest.Tests` and `.Grpc.Tests`) are replaced with references to the shared constant.
+
+#### Why this is needed
+
+Closes the exact duplication class this work order targets: the tenant and correlation header names were independently typed out once per package (Rest, Grpc) with no shared source, relying on manual vigilance alone to keep the values in sync — the same failure shape already confirmed to have caused a real mismatch elsewhere (see P-259, P-261).
+
+#### Acceptance criteria
+- [ ] Zero raw string literals for the correlation/tenant header names remain in production code under `SharedKernel.Communication.Rest` and `SharedKernel.Communication.Grpc`
+- [ ] All four affected handler/interceptor types resolve their header name from `01.Core`'s `WellKnownHeaders`
+- [ ] `SharedKernel.Communication.Grpc.csproj` gains **no** new project reference — `01.Core` is already an existing, permitted reference, unlike the rejected `04.Contracts` route (P-163 remains intact and unmodified)
+- [ ] Existing 315+ `11.Communication` tests remain green; test-local literal duplicates replaced with the shared constant reference
+
+---
+### P-261 — ServiceDefaults: Consume Shared Propagation Constants, Fix Confirmed Baggage-Key Mismatch (DO-07)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-042
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-259
+
+#### What is needed
+
+`HeaderTenantResolutionStrategy.DefaultHeaderName` (`SharedKernel.MultiTenancy`) sources its value from `01.Core`'s `WellKnownHeaders.TenantId` instead of its own independently-typed `"X-Tenant-Id"` literal. `BaggageLogRecordProcessor`'s test suite (`BaggageLogRecordProcessorTests`, `AmbientLoggingEnrichmentAcceptanceTests`) is corrected to assert against `WellKnownBaggageKeys.CorrelationId` (`"correlation.id"`) instead of the standalone, incorrect `"CorrelationId"` literal it hardcodes today.
+
+#### Why this is needed
+
+This is not cosmetic cleanup — it is a live, previously-confirmed-but-unfixed bug. `14.Presentation/CLAUDE.md`'s WO-041 changelog (P-256) explicitly records that `13.ServiceDefaults`'s own P-251 test design hardcodes the wrong baggage-key literal, flagging it as DO-07 for `servicedefaults-arch-planner`/`servicedefaults-phase-implementer` to correct, and noting it was out of `14.Presentation`'s jurisdiction to fix directly. Left uncorrected, `BaggageLogRecordProcessor`'s test suite gives false confidence: it currently only proves the processor round-trips whatever key it is told to look for, not that the key it looks for is the one `CorrelationIdMiddleware` actually writes in production.
+
+#### Acceptance criteria
+- [ ] `HeaderTenantResolutionStrategy` and `BaggageLogRecordProcessor`'s test suite consume `WellKnownHeaders`/`WellKnownBaggageKeys` from `01.Core` — zero independently-declared literals remain for these two concepts
+- [ ] A regression test proves `BaggageLogRecordProcessor` reads the same baggage key `CorrelationIdMiddleware` (`14.Presentation`) actually writes, via the shared `01.Core` constant on both sides
+- [ ] Existing `13.ServiceDefaults`/`MultiTenancy` test suite (75+ tests) remains green
+- [ ] DO-07 marked resolved in `14.Presentation/CLAUDE.md`'s changelog cross-reference
+
+---
+### P-262 — Presentation: Consume Shared Propagation Constants
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-042
+**Domain:** 14.Presentation
+**Depends on:** P-259
+
+#### What is needed
+
+`CorrelationIdMiddleware.HeaderName` and `CorrelationIdMiddleware.BaggageKey` source their literal values from `01.Core`'s `WellKnownHeaders.CorrelationId` / `WellKnownBaggageKeys.CorrelationId` rather than independently-owned literals. The public constants may remain as documented forwarding aliases for call-site ergonomics and backward compatibility, but the value itself must originate from the shared `01.Core` source, never be retyped locally. `ItemsKey` (the `HttpContext.Items` storage key) stays presentation-local and untouched — it is consumed only within this domain, not a cross-service wire concept.
+
+#### Why this is needed
+
+`14.Presentation` is the domain whose own audit (P-256) first surfaced the cross-domain mismatch this work order fixes (see P-261). Closing the loop here — making its own constants demonstrably derive from the same shared source `13.ServiceDefaults` now consumes — is what actually proves the mismatch class is closed, not just documented.
+
+#### Acceptance criteria
+- [ ] `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` forward to (or are proven byte-identical via test to) the `01.Core` shared constants
+- [ ] No behavioral change — `HeaderName`/`BaggageKey`/`ItemsKey` values remain exactly as they are today
+- [ ] Existing `14.Presentation` test suite (53+ tests) remains green
+
+---
+### P-263 — Messaging: Named Constant for Log-Scope Correlation Key
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-042
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+
+`MessagingLogScope`'s inline `"CorrelationId"` dictionary-key literal — used to build the `IDisposable` `BeginScope` payload shared by `ConsumerBase`, `BatchConsumerBase`, `RoutingSlipActivityBase`, and related MassTransit consumer types — is promoted to a single package-local named constant instead of being retyped at each call site. This key is a structured-log-scope entry name internal to this domain's own logging contract, not a cross-service wire format, so it stays local to `07.Messaging` rather than being promoted to `01.Core`.
+
+#### Why this is needed
+
+Closes the platform-wide "no bare literal for a semantically significant, documented key name" rule (this work order's core principle) for the one already-well-documented case inside `07.Messaging` — the type's own XML docs already describe `"CorrelationId"` as a guaranteed, identical key name across call sites, which is precisely the kind of documented-but-not-enforced contract this initiative exists to close.
+
+#### Acceptance criteria
+- [ ] `MessagingLogScope` references a single local constant instead of a repeated inline literal
+- [ ] Existing `07.Messaging` test suite remains green, including `RoutingSlipTests`' existing `"CorrelationId"` key assertions
+
+---
+### P-264 — Governance: Roslyn Analyzer + Architecture Test for Magic-String Prohibition
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-042
+**Domain:** 00.Governance
+**Depends on:** P-259
+
+#### What is needed
+
+A new analyzer (next available number, `SK0022`) flagging raw string literals passed directly to the recognized cross-cutting magic-string call-site shapes platform-wide: HTTP header indexer/setter calls (`HttpHeaders`/`IHeaderDictionary` indexers, `.Add`/`.TryAddWithoutValidation`), `Activity.SetBaggage`/`.SetTag`, `IConfiguration.GetSection`, and `ClaimsPrincipal`/`Claim` comparisons against a claim-type string. The rule flags the literal itself, not any particular class name — a reference to any named constant or `static readonly` field passes clean regardless of which class declares it, so domain-local constant holders (mirroring the existing `SecurityClaimTypes`, `WebhookSignatureHeaders`, `HubGroupNaming` precedents) remain fully valid, not just the new `01.Core` cross-domain ones. A companion architecture-test assertion verifies `01.Core`'s new `WellKnownHeaders`/`WellKnownBaggageKeys` (P-259) are the sole declared literal for their respective values platform-wide, guarding against a future package silently reintroducing an independent redeclaration.
+
+#### Why this is needed
+
+Mirrors the existing enforcement precedent for raw `HttpClient` (P-159), inline `ProblemDetails` (P-199), and ad hoc logging (P-250) — a rule stated in prose without mechanical enforcement decays. This is the rule that would have caught the `"CorrelationId"`/`"correlation.id"` mismatch (P-261) at PR review time instead of during an architecture audit.
+
+#### Acceptance criteria
+- [ ] New analyzer ships with unit tests covering true positives (raw literal at each recognized call-site shape) and true negatives (named-constant reference, including a locally-declared package constant)
+- [ ] Architecture test confirms no second, independently-valued declaration of the correlation/tenant header or baggage-key literal exists anywhere in the solution outside `01.Core`'s `WellKnownHeaders`/`WellKnownBaggageKeys`
+- [ ] Analyzer diagnostic message points the developer at the correct home for a new constant per the root `CLAUDE.md` decision guide (domain-local vs. `01.Core`-shared)
+- [ ] Zero false positives against the current (post-P-260/P-261/P-262/P-263) codebase state
+---
+
+- [2026-07-14] Phase(s) P-259 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-07-14] Phase(s) P-263 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-07-14] Phase(s) P-260 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
+- [2026-07-14] Phase(s) P-261 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase); agent flagged that P-259's C-43/T-34/DO-16 implementation is not yet shipped in 01.Core (only D-30 design lock is ●) — C-34/C-35 recorded as blocked pending 01.Core implementation
+- [2026-07-14] Phase(s) P-262 dispatched to presentation-arch-planner for 14.Presentation (dispatch-phase)
+- [2026-07-14] Phase(s) P-264 dispatched to governance-arch-planner for 00.Governance (dispatch-phase); SK0022 CrossCuttingMagicStringLiteral analyzer designed (dispatched last, after P-259, since it verifies the P-259/P-260-263 outcome)
+- [2026-07-14] Core → Published (●) — promoted from SK.01.P259 (state-map-phase)
+- [2026-07-14] Phase Backlog P-259 → ● Complete — SK.01.P259 done, `WellKnownHeaders`/`WellKnownBaggageKeys` shipped in `SharedKernel.Primitives/Propagation/` (state-map-phase)
