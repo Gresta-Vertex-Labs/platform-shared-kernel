@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-07-13)
+## Phase completion status (as of 2026-07-14)
 
 - SK.11.Design: ● (23 tasks, incl. D-23 EventId allocation)
 - SK.11.Scaffold: ● (13 tasks)
@@ -14,12 +14,18 @@ metadata:
 - SK.11.GraphQL: ● (9 tasks, 43/43 tests)
 - SK.11.Internal: ● (11 tasks, 52/52 tests) — includes I-09/I-10/I-11 [LoggerMessage] retrofit (EventId 11300-11308)
 - SK.11.Tests: ● (28 tasks) — T-27/T-28 (WO-041 P-255 regression + real-assembly verification) complete
-- SK.11.Docs: ○ (6 tasks pending) — only DO-06 is P-255-specific; DO-01..DO-05 are original WO-025 backlog
-- SK.11.Published: ○ (6 tasks pending)
+- SK.11.Docs: ● (6 tasks) — DO-01..DO-06 all complete/verified 2026-07-14
+- SK.11.Published: ○ (6 tasks pending) — PB-01..PB-06, only remaining phase in the domain
 
 **Why:** WO-025/WO-026 built the domain; WO-041 (P-255) retrofitted `.Grpc`/`.Internal` onto the platform `[LoggerMessage]` logging standard (root CLAUDE.md).
 
-**How to apply:** When resuming, start from the first non-● phase in sub state-map at `11.Communication/state-map.md`. Next pending: DO-06 (Docs — update CLAUDE.md's already-present Logging section is done; DO-06 itself may already be satisfied by prior sessions' edits — verify before redoing).
+**How to apply:** When resuming, start from the first non-● phase in sub state-map at `11.Communication/state-map.md`. Next pending: Published phase (PB-01..PB-06 — NuGet packaging metadata, pack, manifest verification, publish to internal feed).
+
+## Docs-phase lesson (2026-07-14)
+
+Every `11.Communication` production `.csproj` already sets `<GenerateDocumentationFile>true</GenerateDocumentationFile>` + `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`. This means CS1591 (missing XML doc on a public member) has been a **build-breaking error** since Scaffold — so by the time a Docs phase is reached, XML doc coverage on the public API surface is already guaranteed by every prior phase's own build passing. When picking up a Docs phase task, first run `dotnet build -c Release` on each affected `.csproj`: 0 warnings/0 errors is a fast, mechanical proof that the "add XML doc comments to all public types" tasks are already satisfied, and the real remaining work is usually confined to (a) CLAUDE.md prose updates (deviations, lessons, version pins) and (b) package-level `<Description>` wording — not new `.cs` edits. Don't assume a Docs phase requires touching source files; verify via build first.
+
+**Specific lesson captured (DO-05):** `RestCommunicationBuilder.AddRestClient<TClient>` has always silently enforced Polly v8's `CircuitBreaker.SamplingDuration >= 2 × AttemptTimeout.Timeout` constraint (computes a floor and raises `SamplingDurationSec` to it when needed) — this was implemented since the original Rest phase but never called out in CLAUDE.md's REST client rules until this Docs pass. When auditing a Docs phase for "lessons from X configuration," grep the builder/implementation source for validation constraints or auto-adjustment logic that isn't mirrored in the domain brain — that's exactly the kind of undocumented lesson these tasks are meant to surface.
 
 ## NuGet version pins (confirmed working)
 
