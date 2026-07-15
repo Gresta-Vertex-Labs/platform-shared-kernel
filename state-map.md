@@ -74,9 +74,9 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
-| 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | SK.11.Rest (20/20) re-completed — R-19/R-20 (P-260/WO-042) retrofitted `CorrelationIdDelegatingHandler`/`TenantIdDelegatingHandler` to source their header names from `01.Core`'s `WellKnownHeaders.CorrelationId`/`.TenantId`; 66/66 `SharedKernel.Communication.Rest.Tests` passing. | G-16/G-17 (`.Grpc`) retrofit tasks under WO-042 remain pending, plus T-29/DO-07 and the Published phase (NuGet packaging, pack, publish) for all four packages. |
+| 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | P-260/WO-042 fully closed — T-29 replaced test-local literal duplicates of the correlation/tenant header names with `WellKnownHeaders.CorrelationId`/`.TenantId` references across `.Rest.Tests`/`.Grpc.Tests`; DO-07 verified `CLAUDE.md`'s propagation rules already documented the shared-constant sourcing and gRPC thin-alias exception; 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing; SK.11.Tests (29/29) and SK.11.Docs (7/7) both `●`. | Only the Published phase (NuGet packaging, pack, publish) remains for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
-| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-041/P-251 fully landed — `BaggageLogRecordProcessor` (generic `Activity.Baggage`→`LogRecord.Attributes` copier), `AddSharedKernelTelemetry`'s `.WithLogging(...)` OTLP log-export registration, `TenantBaggageKeys` + `TenantResolutionMiddleware`'s ambient TenantId baggage set. SK.13.Core 33/33 `●`, SK.13.Tests 28/28 `●`, SK.13.Docs 4/4 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 29/29 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
+| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-042/P-261 closed — `HeaderTenantResolutionStrategy.DefaultHeaderName` and `BaggageLogRecordProcessorTests`/`AmbientLoggingEnrichmentAcceptanceTests` now consume `01.Core`'s `WellKnownHeaders.TenantId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-declared literals, fixing the confirmed baggage-key mismatch (DO-07). SK.13.Scaffold 12/12 `●`, SK.13.Core 35/35 `●`, SK.13.Tests 31/31 `●`, SK.13.Docs 5/5 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published); DO-07's `14.Presentation`-side changelog cross-reference tracked separately under `P-262`. |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-041/P-256 closed — explicit `EventId`s (14000/14001/14100) assigned to all three `[LoggerMessage]` methods, `CorrelationIdMiddleware.BaggageKey` constant regression-pinned, correlation-on-log-record integration test proves compatibility with `13.ServiceDefaults`'s `BaggageLogRecordProcessor` with zero cross-domain reference; both packages re-packed to `1.0.1`, `consumer-verify` re-confirms zero DI exceptions; 42/42 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
 | 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-041 (P-258) SK.16.Docs now 16/16 `●` — added `<remarks>` docs to `InMemoryLogger.BeginScope` (`AsyncLocal` await/parallel-collection rationale) and `InMemoryLogger`'s class-level remarks (`Logging/` is the first capability folder anchored to a cross-cutting BCL contract rather than a numbered domain's `.Abstractions` package, and why); confirmed root `CLAUDE.md`'s structured-log-assertion "What Goes Where" row already existed, no edit needed; `dotnet build` clean. | — WO-041/P-258 fully closed; all 6 phases of `16.Testing` `●` again. |
@@ -109,6 +109,7 @@ Format when active:
 | ● Published | 7 |
 | ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
 | ● Docs | 3 |
+| ● Grpc | 0 |
 | ● Tests | 1 |
 | ● Core | 0 |
 | ● Design | 0 |
@@ -1885,6 +1886,10 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [2026-07-07] 16.Testing → Core (●) — promoted from SK.16.Core (53/53); implemented WO-040's `Application/` folder (FakeUnitOfWork, FakeAuthorizationContext, FakeIdempotencyKeyStore/ResponseStore, AddFakeApplicationBehaviorServices(), ApplicationPipelineTestHarness) (state-map-phase)
 - [2026-07-14] Communication → Design (●) — promoted from SK.11.Design (24/24, D-24 closed WO-042's shared-constant consumption contract; domain remains at Docs overall with WO-042 Rest/Grpc retrofit tasks pending) (state-map-phase)
 - [2026-07-14] Communication → Rest (●) — R-19/R-20 (P-260/WO-042) complete; promoted from SK.11.Rest (20/20); domain remains at Docs overall with WO-042 Grpc/Tests/Docs retrofit tasks (G-16/G-17, T-29, DO-07) still pending (state-map-phase)
+- [2026-07-15] Communication → Grpc (●) — G-16/G-17 (P-260/WO-042) complete; promoted from SK.11.Grpc (17/17); domain remains at Docs overall with WO-042 T-29/DO-07 still pending (state-map-phase)
+- [2026-07-15] Communication → Tests (●) — T-29 (P-260/WO-042) complete; promoted from SK.11.Tests (29/29); test-local literal duplicates of correlation/tenant header names replaced with `WellKnownHeaders` references; 66/66 + 60/60 tests passing (state-map-phase)
+- [2026-07-15] Communication → Docs (●) — DO-07 (P-260/WO-042) complete; promoted from SK.11.Docs (7/7); CLAUDE.md propagation rules verified already accurate, no edit needed; every phase key in 11.Communication is now ● except Published (state-map-phase)
+- [2026-07-15] Phase Backlog P-260 → ● Complete — all P-260/WO-042 acceptance criteria met (11.Communication Design/Rest/Grpc/Tests/Docs all ●) (state-map-phase)
 
 ---
 ### P-036 — Domain: Fix Auditable Aggregate Hierarchy — FullAuditable Extends AuditableSoftDeletable
@@ -10201,7 +10206,7 @@ A live, confirmed defect proves the risk of the current pattern: `14.Presentatio
 ---
 ### P-260 — Communication: Consume Shared Propagation Constants, Remove Duplicate Declarations
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-042
 **Domain:** 11.Communication
 **Depends on:** P-259
@@ -10223,7 +10228,7 @@ Closes the exact duplication class this work order targets: the tenant and corre
 ---
 ### P-261 — ServiceDefaults: Consume Shared Propagation Constants, Fix Confirmed Baggage-Key Mismatch (DO-07)
 
-**Status:** `◐` Dispatched
+**Status:** `◐` Dispatched — 13.ServiceDefaults-side work complete; last acceptance criterion tracked separately under `P-262` (14.Presentation domain)
 **Work Order:** WO-042
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-259
@@ -10237,10 +10242,10 @@ Closes the exact duplication class this work order targets: the tenant and corre
 This is not cosmetic cleanup — it is a live, previously-confirmed-but-unfixed bug. `14.Presentation/CLAUDE.md`'s WO-041 changelog (P-256) explicitly records that `13.ServiceDefaults`'s own P-251 test design hardcodes the wrong baggage-key literal, flagging it as DO-07 for `servicedefaults-arch-planner`/`servicedefaults-phase-implementer` to correct, and noting it was out of `14.Presentation`'s jurisdiction to fix directly. Left uncorrected, `BaggageLogRecordProcessor`'s test suite gives false confidence: it currently only proves the processor round-trips whatever key it is told to look for, not that the key it looks for is the one `CorrelationIdMiddleware` actually writes in production.
 
 #### Acceptance criteria
-- [ ] `HeaderTenantResolutionStrategy` and `BaggageLogRecordProcessor`'s test suite consume `WellKnownHeaders`/`WellKnownBaggageKeys` from `01.Core` — zero independently-declared literals remain for these two concepts
-- [ ] A regression test proves `BaggageLogRecordProcessor` reads the same baggage key `CorrelationIdMiddleware` (`14.Presentation`) actually writes, via the shared `01.Core` constant on both sides
-- [ ] Existing `13.ServiceDefaults`/`MultiTenancy` test suite (75+ tests) remains green
-- [ ] DO-07 marked resolved in `14.Presentation/CLAUDE.md`'s changelog cross-reference
+- [x] `HeaderTenantResolutionStrategy` and `BaggageLogRecordProcessor`'s test suite consume `WellKnownHeaders`/`WellKnownBaggageKeys` from `01.Core` — zero independently-declared literals remain for these two concepts
+- [x] A regression test proves `BaggageLogRecordProcessor` reads the same baggage key `CorrelationIdMiddleware` (`14.Presentation`) actually writes, via the shared `01.Core` constant on both sides
+- [x] Existing `13.ServiceDefaults`/`MultiTenancy` test suite (75+ tests) remains green — 48/48 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing (78 total)
+- [ ] DO-07 marked resolved in `14.Presentation/CLAUDE.md`'s changelog cross-reference — out of `13.ServiceDefaults`' jurisdiction to edit; tracked under `P-262` (already dispatched to `14.Presentation`)
 
 ---
 ### P-262 — Presentation: Consume Shared Propagation Constants
@@ -10314,3 +10319,4 @@ Mirrors the existing enforcement precedent for raw `HttpClient` (P-159), inline 
 - [2026-07-14] Phase(s) P-264 dispatched to governance-arch-planner for 00.Governance (dispatch-phase); SK0022 CrossCuttingMagicStringLiteral analyzer designed (dispatched last, after P-259, since it verifies the P-259/P-260-263 outcome)
 - [2026-07-14] Core → Published (●) — promoted from SK.01.P259 (state-map-phase)
 - [2026-07-14] Phase Backlog P-259 → ● Complete — SK.01.P259 done, `WellKnownHeaders`/`WellKnownBaggageKeys` shipped in `SharedKernel.Primitives/Propagation/` (state-map-phase)
+- [2026-07-15] 13 → Published (●) — WO-042/P-261 unblocked (01.Core's SK.01.P259 C-43/T-34/DO-16 confirmed landed) and closed on the 13.ServiceDefaults side: `HeaderTenantResolutionStrategy.DefaultHeaderName` now sources `WellKnownHeaders.TenantId`; `BaggageLogRecordProcessorTests`/`AmbientLoggingEnrichmentAcceptanceTests` now assert `WellKnownBaggageKeys.CorrelationId`, fixing the confirmed DO-07 mismatch; `SharedKernel.MultiTenancy` gained a new `ProjectReference` to `SharedKernel.Primitives`; 48/48 + 30/30 tests passing. All 6 SK.13 phase keys fully `●`. P-261's remaining acceptance criterion (DO-07 closure in `14.Presentation/CLAUDE.md`) is out of this domain's jurisdiction and tracked under P-262 (state-map-phase)
