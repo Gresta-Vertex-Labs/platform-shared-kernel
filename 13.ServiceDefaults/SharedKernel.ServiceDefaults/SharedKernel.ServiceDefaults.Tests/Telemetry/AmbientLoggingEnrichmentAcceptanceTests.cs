@@ -5,6 +5,7 @@ using OpenTelemetry;
 using OpenTelemetry.Logs;
 using SharedKernel.MultiTenancy.Middleware;
 using SharedKernel.MultiTenancy.Resolution;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.ServiceDefaults.Telemetry;
 
 namespace SharedKernel.ServiceDefaults.Tests.Telemetry;
@@ -14,14 +15,13 @@ namespace SharedKernel.ServiceDefaults.Tests.Telemetry;
 /// ambient enrichment from other domains' <see cref="Activity"/> baggage — with zero
 /// <c>ProjectReference</c> from <c>SharedKernel.ServiceDefaults</c> to <c>14.Presentation</c> (whose
 /// correlation-id middleware is simulated here via the same raw BCL
-/// <see cref="Activity.SetBaggage"/> call it uses in production, per WO-031) — and that it composes
-/// without collision with <c>SharedKernel.MultiTenancy</c>'s real
+/// <see cref="Activity.SetBaggage"/> call it uses in production, per WO-031, against the same
+/// <see cref="WellKnownBaggageKeys.CorrelationId"/> shared constant it consumes, per WO-042/P-261) —
+/// and that it composes without collision with <c>SharedKernel.MultiTenancy</c>'s real
 /// <see cref="TenantResolutionMiddleware"/> baggage enrichment.
 /// </summary>
 public sealed class AmbientLoggingEnrichmentAcceptanceTests
 {
-    private const string CorrelationIdBaggageKey = "CorrelationId";
-
     [Fact]
     public async Task CorrelationIdBaggage_SetDirectlyViaBcl_SurfacesOnLogRecordAttributes()
     {
@@ -29,11 +29,11 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
 
         // Simulates 14.Presentation's correlation-id middleware, which owns its own Activity
         // baggage key directly against the BCL (WO-031) — no reference to that package needed.
-        activity.SetBaggage(CorrelationIdBaggageKey, "corr-e2e-001");
+        activity.SetBaggage(WellKnownBaggageKeys.CorrelationId, "corr-e2e-001");
 
         var captured = await EmitAndCaptureAsync(logger => logger.LogInformation("request handled"));
 
-        Assert.Contains(captured, kv => kv.Key == CorrelationIdBaggageKey && Equals(kv.Value, "corr-e2e-001"));
+        Assert.Contains(captured, kv => kv.Key == WellKnownBaggageKeys.CorrelationId && Equals(kv.Value, "corr-e2e-001"));
     }
 
     [Fact]
@@ -59,14 +59,14 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
         await middleware.InvokeAsync(context, tenantProvider);
 
         // Simulates 14.Presentation's independent correlation-id enrichment on the same Activity.
-        activity.SetBaggage(CorrelationIdBaggageKey, "corr-e2e-002");
+        activity.SetBaggage(WellKnownBaggageKeys.CorrelationId, "corr-e2e-002");
 
         var captured = await EmitAndCaptureAsync(logger => logger.LogInformation("request handled"));
 
         Assert.Contains(
             captured,
             kv => kv.Key == TenantBaggageKeys.TenantId && Equals(kv.Value, expectedTenantId.ToString()));
-        Assert.Contains(captured, kv => kv.Key == CorrelationIdBaggageKey && Equals(kv.Value, "corr-e2e-002"));
+        Assert.Contains(captured, kv => kv.Key == WellKnownBaggageKeys.CorrelationId && Equals(kv.Value, "corr-e2e-002"));
     }
 
     private static async Task<IReadOnlyList<KeyValuePair<string, object?>>> EmitAndCaptureAsync(

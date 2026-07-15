@@ -1,10 +1,21 @@
 using Microsoft.AspNetCore.Http;
 using SharedKernel.MultiTenancy.Resolution;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.MultiTenancy.Tests.Resolution;
 
 public sealed class HeaderTenantResolutionStrategyTests
 {
+    [Fact]
+    public void DefaultHeaderName_SourcedFromWellKnownHeaders_StillEqualsXTenantId()
+    {
+        // Regression check for WO-042/P-261: DefaultHeaderName's authoritative source moved to
+        // 01.Core's WellKnownHeaders.TenantId, but the literal value itself must remain unchanged —
+        // this proves a source-of-truth relocation, not a behavior change.
+        Assert.Equal("X-Tenant-Id", HeaderTenantResolutionStrategy.DefaultHeaderName);
+        Assert.Equal(WellKnownHeaders.TenantId, HeaderTenantResolutionStrategy.DefaultHeaderName);
+    }
+
     [Fact]
     public async Task TryResolveAsync_WithParseableHeader_ReturnsGuid()
     {

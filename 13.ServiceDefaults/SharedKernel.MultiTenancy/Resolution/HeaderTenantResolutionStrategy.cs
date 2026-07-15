@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.MultiTenancy.Resolution;
 
@@ -13,8 +14,14 @@ namespace SharedKernel.MultiTenancy.Resolution;
 public sealed class HeaderTenantResolutionStrategy(string headerName = HeaderTenantResolutionStrategy.DefaultHeaderName)
     : ITenantResolutionStrategy
 {
-    /// <summary>The default HTTP request header name probed when no header name is supplied.</summary>
-    public const string DefaultHeaderName = "X-Tenant-Id";
+    /// <summary>
+    /// The default HTTP request header name probed when no header name is supplied — sourced from
+    /// <c>01.Core</c>'s <see cref="WellKnownHeaders.TenantId"/> so this header name cannot drift
+    /// independently from the identical literal used by
+    /// <c>11.Communication.Rest.TenantIdDelegatingHandler</c> and
+    /// <c>11.Communication.Grpc.TenantIdInterceptor</c> (WO-042/P-261).
+    /// </summary>
+    public const string DefaultHeaderName = WellKnownHeaders.TenantId;
 
     /// <inheritdoc/>
     public string StrategyName => TenantResolutionStrategyNames.Header;

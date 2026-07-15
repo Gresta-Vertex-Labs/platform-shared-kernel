@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.ServiceDefaults.Telemetry;
 
 namespace SharedKernel.ServiceDefaults.Tests.Telemetry;
@@ -13,7 +14,7 @@ public sealed class BaggageLogRecordProcessorTests
     {
         using var activity = new Activity("test-activity").Start();
         activity.SetBaggage("TenantId", "11111111-1111-1111-1111-111111111111");
-        activity.SetBaggage("CorrelationId", "corr-abc");
+        activity.SetBaggage(WellKnownBaggageKeys.CorrelationId, "corr-abc");
 
         var captured = EmitAndCapture(logger => logger.LogInformation("hello"));
 
@@ -21,7 +22,7 @@ public sealed class BaggageLogRecordProcessorTests
         var attributes = captured[0];
         Assert.NotNull(attributes);
         Assert.Contains(attributes!, kv => kv.Key == "TenantId" && Equals(kv.Value, "11111111-1111-1111-1111-111111111111"));
-        Assert.Contains(attributes!, kv => kv.Key == "CorrelationId" && Equals(kv.Value, "corr-abc"));
+        Assert.Contains(attributes!, kv => kv.Key == WellKnownBaggageKeys.CorrelationId && Equals(kv.Value, "corr-abc"));
     }
 
     [Fact]
