@@ -5,3 +5,4 @@
 - [Feedback: gRPC namespace patterns](feedback_grpc_namespaces.md) — namespace alias, InterceptorScope location, ServiceConfig namespace
 - [Project: HC v16 GraphQL patterns](project_hc_v16_patterns.md) — HotChocolate v16 API specifics discovered during SK.11.GraphQL implementation
 - [Feedback: logging retrofit test patterns](feedback_logging_retrofit_test_patterns.md) — EventId/Level regression via reflection, real-assembly LoggingEventIdIntegrityAssertion, temp-analyzer SK0020/21 verify-then-revert
+- [Feedback: Grpc.Core.Metadata lowercase casing](feedback_grpc_metadata_casing.md) — Metadata normalizes keys to lowercase internally; affects test assertions reading back stored keys
