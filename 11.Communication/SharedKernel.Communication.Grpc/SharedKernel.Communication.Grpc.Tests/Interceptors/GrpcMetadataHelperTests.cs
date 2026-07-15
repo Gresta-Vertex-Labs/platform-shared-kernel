@@ -1,4 +1,5 @@
 using SharedKernel.Communication.Grpc.Interceptors;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Communication.Grpc.Tests.Interceptors;
 
@@ -17,10 +18,10 @@ public sealed class GrpcMetadataHelperTests
     public void HasMetadataEntry_WhenKeyPresentExactMatch_ReturnsTrue()
     {
         // Arrange
-        var metadata = new Metadata { { "x-correlation-id", "abc" } };
+        var metadata = new Metadata { { WellKnownHeaders.CorrelationId, "abc" } };
 
         // Act
-        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, "x-correlation-id");
+        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, WellKnownHeaders.CorrelationId);
 
         // Assert
         result.Should().BeTrue("exact-match key must be found");
@@ -30,10 +31,10 @@ public sealed class GrpcMetadataHelperTests
     public void HasMetadataEntry_WhenKeyPresentDifferentCase_ReturnsTrue()
     {
         // Arrange — key stored as lowercase; lookup with mixed case
-        var metadata = new Metadata { { "x-correlation-id", "abc" } };
+        var metadata = new Metadata { { WellKnownHeaders.CorrelationId.ToLowerInvariant(), "abc" } };
 
         // Act
-        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, "X-Correlation-Id");
+        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, WellKnownHeaders.CorrelationId);
 
         // Assert
         result.Should().BeTrue("key match must be case-insensitive");
@@ -43,10 +44,10 @@ public sealed class GrpcMetadataHelperTests
     public void HasMetadataEntry_WhenKeyAbsent_ReturnsFalse()
     {
         // Arrange
-        var metadata = new Metadata { { "x-tenant-id", "tenant-1" } };
+        var metadata = new Metadata { { WellKnownHeaders.TenantId, "tenant-1" } };
 
         // Act
-        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, "x-correlation-id");
+        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, WellKnownHeaders.CorrelationId);
 
         // Assert
         result.Should().BeFalse("absent key must not be found");
@@ -59,7 +60,7 @@ public sealed class GrpcMetadataHelperTests
         var metadata = new Metadata();
 
         // Act
-        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, "x-correlation-id");
+        var result = GrpcMetadataHelper.HasMetadataEntry(metadata, WellKnownHeaders.CorrelationId);
 
         // Assert
         result.Should().BeFalse("empty metadata must never match");
@@ -103,11 +104,11 @@ public sealed class GrpcMetadataHelperTests
         var original = new Metadata();
 
         // Act
-        var cloned = GrpcMetadataHelper.CloneAndAdd(original, "x-correlation-id", "test-id");
+        var cloned = GrpcMetadataHelper.CloneAndAdd(original, WellKnownHeaders.CorrelationId, "test-id");
 
         // Assert
         cloned.Should().Contain(e =>
-            string.Equals(e.Key, "x-correlation-id", StringComparison.OrdinalIgnoreCase)
+            string.Equals(e.Key, WellKnownHeaders.CorrelationId, StringComparison.OrdinalIgnoreCase)
             && e.Value == "test-id",
             "the new entry must be present in the cloned Metadata");
     }
@@ -142,11 +143,11 @@ public sealed class GrpcMetadataHelperTests
         var original = new Metadata();
 
         // Act
-        var cloned = GrpcMetadataHelper.CloneAndAdd(original, "x-tenant-id", "tenant-abc");
+        var cloned = GrpcMetadataHelper.CloneAndAdd(original, WellKnownHeaders.TenantId, "tenant-abc");
 
         // Assert
         cloned.Count.Should().Be(1, "clone from empty source must have exactly the new entry");
-        cloned[0].Key.Should().Be("x-tenant-id");
+        cloned[0].Key.Should().Be(WellKnownHeaders.TenantId.ToLowerInvariant(), "Grpc.Core.Metadata normalizes entry keys to lowercase internally");
         cloned[0].Value.Should().Be("tenant-abc");
     }
 }

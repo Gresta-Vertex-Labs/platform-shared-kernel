@@ -2,13 +2,14 @@ using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Rest.Handlers;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Communication.Rest.Tests.Handlers;
 
 public sealed class TenantIdDelegatingHandlerTests
 {
-    private const string TenantHeader = "x-tenant-id";
+    private const string TenantHeader = WellKnownHeaders.TenantId;
 
     private static (HttpClient Client, TenantCaptureHeaderHandler Stub) BuildClientWithContext(
         IHttpContextAccessor accessor)

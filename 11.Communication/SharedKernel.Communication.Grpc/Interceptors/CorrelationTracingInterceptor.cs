@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Grpc.Core;
 using Grpc.Core.Interceptors;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Communication.Grpc.Interceptors;
 
@@ -17,7 +18,11 @@ internal sealed partial class CorrelationTracingInterceptor(ILogger<CorrelationT
 {
     private readonly ILogger<CorrelationTracingInterceptor> _logger = logger;
 
-    internal const string CorrelationIdKey = "x-correlation-id";
+    // Thin value-forwarding alias of 01.Core's WellKnownHeaders.CorrelationId (P-259/P-260) — retained
+    // as a locally-named const because gRPC metadata keys are conventionally lowercase and the local
+    // symbol name reads more naturally at gRPC call sites; Grpc.Core.Metadata normalizes key casing
+    // internally, so no behavioral change results from sourcing the uppercase-hyphenated literal here.
+    internal const string CorrelationIdKey = WellKnownHeaders.CorrelationId;
     internal const string TraceParentKey = "traceparent";
     internal const string TraceStateKey = "tracestate";
 

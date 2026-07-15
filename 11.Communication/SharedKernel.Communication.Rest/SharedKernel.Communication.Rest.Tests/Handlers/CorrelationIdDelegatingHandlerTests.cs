@@ -2,12 +2,13 @@ using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Communication.Rest.Handlers;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Communication.Rest.Tests.Handlers;
 
 public sealed class CorrelationIdDelegatingHandlerTests
 {
-    private const string CorrelationHeader = "x-correlation-id";
+    private const string CorrelationHeader = WellKnownHeaders.CorrelationId;
 
     private static HttpClient BuildClient(HttpMessageHandler stub)
     {

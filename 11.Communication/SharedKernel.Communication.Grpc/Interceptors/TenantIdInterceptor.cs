@@ -3,6 +3,7 @@ using Grpc.Core.Interceptors;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Primitives.Propagation;
 using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Communication.Grpc.Interceptors;
@@ -21,7 +22,11 @@ internal sealed partial class TenantIdInterceptor(
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ILogger<TenantIdInterceptor> _logger = logger;
 
-    internal const string TenantIdKey = "x-tenant-id";
+    // Thin value-forwarding alias of 01.Core's WellKnownHeaders.TenantId (P-259/P-260) — retained as a
+    // locally-named const because gRPC metadata keys are conventionally lowercase and the local symbol
+    // name reads more naturally at gRPC call sites; Grpc.Core.Metadata normalizes key casing internally,
+    // so no behavioral change results from sourcing the uppercase-hyphenated literal here.
+    internal const string TenantIdKey = WellKnownHeaders.TenantId;
 
     /// <inheritdoc />
     public override AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(
