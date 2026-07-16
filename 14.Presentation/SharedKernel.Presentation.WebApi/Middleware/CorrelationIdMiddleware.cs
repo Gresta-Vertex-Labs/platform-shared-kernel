@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Logging;
+using SharedKernel.Primitives.Propagation;
 
 namespace SharedKernel.Presentation.WebApi.Middleware;
 
@@ -10,31 +11,52 @@ namespace SharedKernel.Presentation.WebApi.Middleware;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Reads the <c>"X-Correlation-Id"</c> request header; generates <c>Guid.NewGuid("N")</c> when
+/// Reads the <see cref="HeaderName"/> request header; generates <c>Guid.NewGuid("N")</c> when
 /// absent or whitespace. Stores the resolved value in
 /// <c>HttpContext.Items["CorrelationId"]</c> and calls
-/// <c>Activity.Current?.SetBaggage("correlation.id", value)</c> so OTel spans and
+/// <c>Activity.Current?.SetBaggage(BaggageKey, value)</c> so OTel spans and
 /// <c>11.Communication</c>'s outbound correlation-id delegating handler can propagate the same
 /// identifier end-to-end. Always writes the resolved value back as a response header, including
 /// on early pipeline short-circuits — this requires the middleware to be registered first, before
 /// exception handling.
 /// </para>
 /// <para>
-/// The <c>correlation.id</c> baggage key and the <c>HttpContext.Items["CorrelationId"]</c>
+/// The <see cref="BaggageKey"/> value and the <c>HttpContext.Items["CorrelationId"]</c>
 /// storage key are this domain's own contract (confirmed P-192, WO-031) — not borrowed from
-/// <c>13.ServiceDefaults</c>.
+/// <c>13.ServiceDefaults</c>. <see cref="HeaderName"/> and <see cref="BaggageKey"/> are, as of
+/// WO-042/P-262, documented forwarding aliases over <c>01.Core</c>'s
+/// <see cref="WellKnownHeaders.CorrelationId"/> / <see cref="WellKnownBaggageKeys.CorrelationId"/>
+/// — the constants remain here for call-site ergonomics and backward compatibility, but their
+/// literal value now originates from <c>01.Core</c> rather than being independently retyped in
+/// this domain, closing the drift class flagged by the prior <c>13.ServiceDefaults</c>
+/// baggage-key mismatch (DO-07). <see cref="ItemsKey"/> is presentation-local — a
+/// <see cref="HttpContext.Items"/> storage key with no cross-service wire meaning — and is
+/// explicitly excluded from this sourcing rule.
 /// </para>
 /// </remarks>
 public sealed partial class CorrelationIdMiddleware
 {
-    /// <summary>The request/response header name carrying the correlation identifier.</summary>
-    public const string HeaderName = "X-Correlation-Id";
+    /// <summary>
+    /// The request/response header name carrying the correlation identifier. Forwards
+    /// <c>01.Core</c>'s <see cref="WellKnownHeaders.CorrelationId"/> (WO-042, P-262, D-14) —
+    /// never an independently-owned literal.
+    /// </summary>
+    public const string HeaderName = WellKnownHeaders.CorrelationId;
 
     /// <summary>The <see cref="HttpContext.Items"/> key the resolved correlation identifier is stored under.</summary>
+    /// <remarks>
+    /// Presentation-local — not a cross-service wire concept, so it has no <c>01.Core</c>
+    /// equivalent and is explicitly out of scope for the WO-042/P-262 forwarding-alias sourcing
+    /// rule applied to <see cref="HeaderName"/> and <see cref="BaggageKey"/>.
+    /// </remarks>
     public const string ItemsKey = "CorrelationId";
 
-    /// <summary>The <see cref="Activity"/> baggage key the resolved correlation identifier is propagated under.</summary>
-    public const string BaggageKey = "correlation.id";
+    /// <summary>
+    /// The <see cref="Activity"/> baggage key the resolved correlation identifier is propagated
+    /// under. Forwards <c>01.Core</c>'s <see cref="WellKnownBaggageKeys.CorrelationId"/>
+    /// (WO-042, P-262, D-14) — never an independently-owned literal.
+    /// </summary>
+    public const string BaggageKey = WellKnownBaggageKeys.CorrelationId;
 
     private readonly RequestDelegate _next;
     private readonly ILogger<CorrelationIdMiddleware> _logger;

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Presentation.WebApi.Middleware;
+using SharedKernel.Primitives.Propagation;
 using Xunit;
 
 namespace SharedKernel.Presentation.WebApi.Tests.Middleware;
@@ -64,6 +65,31 @@ public class CorrelationIdMiddlewareTests
         // consumers (13.ServiceDefaults's BaggageLogRecordProcessor test suite, any future
         // consumer) must reference this constant rather than hand-copying a literal.
         CorrelationIdMiddleware.BaggageKey.Should().Be("correlation.id");
+    }
+
+    [Fact]
+    public void HeaderName_ForwardsWellKnownHeadersCorrelationId()
+    {
+        // WO-042, P-262, T-14: proves byte-identical sourcing from 01.Core by direct reference to
+        // the shared constant — not a hand-copied literal on either side of the assertion.
+        CorrelationIdMiddleware.HeaderName.Should().Be(WellKnownHeaders.CorrelationId);
+    }
+
+    [Fact]
+    public void BaggageKey_ForwardsWellKnownBaggageKeysCorrelationId()
+    {
+        // WO-042, P-262, T-14: proves byte-identical sourcing from 01.Core by direct reference to
+        // the shared constant — not a hand-copied literal on either side of the assertion.
+        CorrelationIdMiddleware.BaggageKey.Should().Be(WellKnownBaggageKeys.CorrelationId);
+    }
+
+    [Fact]
+    public void ItemsKey_UnchangedFromPreP262Literal()
+    {
+        // Regression guard (WO-042, P-262, T-14): ItemsKey is presentation-local and explicitly
+        // out of scope for the 01.Core forwarding-alias sourcing rule — its value must remain
+        // exactly what it was before this phase.
+        CorrelationIdMiddleware.ItemsKey.Should().Be("CorrelationId");
     }
 
     [Fact]
