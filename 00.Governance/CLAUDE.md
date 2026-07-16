@@ -751,6 +751,34 @@ SK0022  CrossCuttingMagicStringLiteral
                 contrived fixtures) — see Cross-Domain Dependencies in
                 00.Governance/state-map.md; only D-30 (design) is locked in 01.Core's own
                 state-map as of 2026-07-14, C-43/T-34/DO-16 have not shipped.
+
+SK0023  NonSingletonAmazonS3ClientRegistration
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : An InvocationExpressionSyntax whose simple method name is "AddScoped" or
+                "AddTransient" contains a type argument whose simple name is "IAmazonS3"
+                (exact match, extracted the same way SK0703 extracts its IMessageBus/
+                IEventPublisher type argument: GenericNameSyntax.TypeArgumentList
+                .Arguments[0] as an IdentifierNameSyntax). Covers both the one-argument
+                form AddScoped<IAmazonS3>(factory) and the two-argument form
+                AddTransient<IAmazonS3, AmazonS3Client>(). Syntax-only; no SemanticModel
+                required.
+    Fix       : Register IAmazonS3 via AddSingleton. The client is thread-safe and
+                connection/credential-pooled internally — scoped or transient registration
+                constructs a new client (and thus a new connection pool) per resolution,
+                which is expensive under load and can exhaust ephemeral ports.
+    Suppress  : Per-call-site via #pragma warning disable SK0023 when a test fixture or a
+                genuinely short-lived client is required; document the rationale inline.
+    Note      : No suppression namespace — SK0023 fires globally, mirroring SK0703's/
+                SK0014's "fires globally" convention: IAmazonS3 must be a singleton
+                wherever it is registered, not only inside SharedKernel.Storage.S3/.Obs.
+                Introduced in WO-043 P-271 — the structural inverse of SK0703
+                (MessageBusSingletonRegistration, which flags AddSingleton for a type that
+                must be scoped; SK0023 flags AddScoped/AddTransient for a type that must be
+                singleton). Next sequential ID in the SK0001–SK00N general-purpose block
+                (SK0022 was the prior ID) — a single-purpose, domain-adjacent rule; no new
+                08xx ID block was opened for one rule, following the SK0011/SK0013
+                precedent that a lone domain-specific rule stays in the sequential block.
 ```
 
 ---
@@ -2627,6 +2655,95 @@ wide invariant helper, not ConditionList/ICustomRule; WO-042 P-264)
         "designed-ahead-of-a-pending-dependency" precedent in this domain
         (SK.00.ServiceDefaultsGovernance, SK.00.MetricsOutcomeTagAndMisregistrationGuard,
         SK.00.CryptoDelegationAndUowSeamGuard, SK.00.LoggingStandardEnforcement).
+
+StorageTopologyRules  (static class — 08.Storage package topology enforcement predicates; WO-043 P-271)
+    All factory methods accept Assembly (or params Assembly[]/two named Assembly parameters)
+    and return ConditionList (or ConditionList[]). Mirrors RedisTopologyRules's structure and
+    its documented NotHaveDependencyOn matching contract exactly (namespace StartsWith, no
+    trailing dot, self-collision awareness) but scoped to 08.Storage's two provider packages
+    instead of Redis's five. No Mono.Cecil, no ICustomRule — every check is a pure NetArchTest
+    .Should().NotHaveDependencyOn(...) assembly-dependency-graph predicate.
+
+    .AbstractionsHasNoThirdPartyDependencies(Assembly abstractionsAssembly) → ConditionList
+        Asserts that SharedKernel.Storage.Abstractions has no dependency on any of four
+        forbidden terms: "Amazon" (bare prefix — catches every AWSSDK.S3 namespace, since
+        AWSSDK.S3's root namespace is "Amazon", covering Amazon.S3/Amazon.Runtime/etc. in one
+        term), "SharedKernel.Storage.S3", "SharedKernel.Storage.Obs", and
+        "SharedKernel.Configuration" (the Options-validation package only the two provider
+        packages need — Abstractions itself references only SharedKernel.Primitives). Four
+        iterative .Should().NotHaveDependencyOn(term) calls, the same iterative pattern as
+        DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure and
+        RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies. None of the four
+        terms is a prefix of "SharedKernel.Storage.Abstractions" — no self-collision.
+        Rationale: 08.Storage/CLAUDE.md documents SharedKernel.Storage.Abstractions as having
+        "zero third-party NuGet dependencies — only a SharedKernel.Primitives project
+        reference." This mechanically confirms the abstraction never accidentally couples to
+        the AWS SDK, to either concrete provider package, or to the Options-validation package.
+
+    .ProviderPackagesNeverReferenceEachOther(Assembly s3Assembly, Assembly obsAssembly)
+                                            → ConditionList[]
+        Returns exactly two elements, in order: [0] SharedKernel.Storage.S3 must not depend on
+        "SharedKernel.Storage.Obs"; [1] SharedKernel.Storage.Obs must not depend on
+        "SharedKernel.Storage.S3". TWO NAMED Assembly parameters (not params Assembly[]) —
+        deliberate, mirroring UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct's
+        two-named-parameter convention: the rule's whole purpose is comparing two specific,
+        named packages, so positional params would obscure which assembly is expected to be
+        which. Unlike RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther (which needs
+        a Dictionary<string,string[]> to resolve each of FOUR scanned assemblies' own
+        identifying term before excluding it to avoid self-collision), only two packages exist
+        here and neither identifying namespace ("SharedKernel.Storage.S3",
+        "SharedKernel.Storage.Obs") is a prefix of the other or of its own declaring assembly —
+        no lookup table needed. Caller must assert .GetResult().IsSuccessful on EACH element.
+        Rationale: the root CLAUDE.md documents S3 and Obs as sibling .{Provider} packages (not
+        a .{Provider}.Core/.{Provider}.{Role} split) — 08.Storage/CLAUDE.md's own Provider role
+        note states explicitly that they "must never reference each other," since a future
+        native-OBS-SDK swap inside .Obs must never touch .S3's implementation.
+
+    .OnlyProviderPackagesMayReferenceAmazonS3(params Assembly[] assembliesUnderTest)
+                                            → ConditionList
+        Asserts that no type in the supplied assemblies has a dependency on "Amazon.S3" (the
+        AWSSDK.S3 namespace both providers sit on). Single
+        Types.InAssemblies(assembliesUnderTest).That()...Should().NotHaveDependencyOn(
+        "Amazon.S3") call — the structural sibling of
+        CompositionRootExclusivityRules.OnlyAllowedAssembliesMayReferenceConcreteProviders and
+        CachingAbstractionRules.OnlyAllowedAssembliesMayReferenceConcreteCaching. The caller
+        supplies every production assembly to check and must NEVER include
+        SharedKernel.Storage.S3 or SharedKernel.Storage.Obs themselves — exclusion is achieved
+        entirely by caller choice of which assemblies to pass, the same caller-controlled
+        exclusion convention as PresentationLayeringRules (there is no single internal
+        namespace prefix that safely distinguishes "legitimate AWSSDK.S3 usage" from "leaked
+        AWSSDK.S3 usage" other than which package the type lives in, which NetArchTest can only
+        express by which assemblies are scanned, not by an internal exemption).
+        Rationale: application code must inject IFileStorage/IBlobUriGenerator
+        (SharedKernel.Storage.Abstractions) — never a concrete Amazon.S3.IAmazonS3 type. A
+        direct Amazon.S3.* reference anywhere outside the two provider packages defeats the
+        abstraction split and makes a future provider swap (or a genuine Huawei-native-SDK
+        migration inside .Obs) touch consumer code.
+
+    Permitted exemption list (caller-controlled — carries NO internal namespace guard,
+    consistent with PresentationLayeringRules/CompositionRootExclusivityRules):
+        - SharedKernel.Storage.S3 and SharedKernel.Storage.Obs — the only two assemblies
+          permitted to reference "Amazon.S3"; achieved by the caller never passing either to
+          OnlyProviderPackagesMayReferenceAmazonS3.
+        Any additional exemption must be documented here before it is applied in code.
+
+    Note: introduced in WO-043 P-271, before SharedKernel.Storage.Abstractions,
+    SharedKernel.Storage.S3, and SharedKernel.Storage.Obs exist as buildable assemblies —
+    08.Storage's own state-map shows every phase (Design through Published) at ○/empty as of
+    this phase's authoring (2026-07-16), and P-265/P-266/P-267 are themselves still
+    Design-in-progress/not-started in the root state-map. Architecture test fixtures for this
+    phase MUST use contrived in-memory assemblies compiled via CSharpCompilation +
+    MetadataReference.CreateFromImage — the same technique documented for
+    RedisTopologyRulesTests and CompositionRootExclusivityRulesTests — until P-266/P-267 ship
+    real assemblies. A follow-up confirmation pass against the real
+    SharedKernel.Storage.S3/.Obs assemblies is REQUIRED once those phases land (this phase's
+    own acceptance criterion "all new architecture tests pass against the real built
+    assemblies... not contrived fixtures only" CANNOT be satisfied at design/implementation
+    time — it is a post-P-266/P-267 follow-up gate, the same non-blocking-follow-up pattern
+    already established for CompositionRootExclusivityRules (P-170 dependency),
+    MetricsInstrumentationRules (05.Application dependency), and
+    WellKnownConstantOwnershipAssertion (01.Core dependency)) and must be recorded in a future
+    Changelog entry.
 ```
 
 ---
@@ -2805,6 +2922,11 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `WellKnownConstantOwnershipAssertion` (WO-042 P-264) is the domain's THIRD non-`ConditionList`/`ICustomRule` public helper, after `ApplicationPipelineRules.PipelineOrderAssertion` and `LoggingEventIdIntegrityAssertion` — same rationale: "no other assembly may redeclare `01.Core`'s canonical cross-cutting literal values under a different name" is a cross-assembly, whole-platform invariant with no single-assembly "fire on one contrived violating assembly" shape. It extends `StringConstantsClassDetector`'s field-shape + literal-value resolution technique (WO-028 P-178) to walk every `TypeDefinition` in a scanned assembly, not only the `abstract sealed` "constants class" shape the original caller assumed — a stray `const`/`static readonly string` field on an ordinary class must be caught too.
 - `WellKnownConstantOwnershipAssertion.AssertSoleDeclaration` takes a fully caller-supplied `canonicalValues` dictionary, `owningTypeFullNames` exclusion list, and `assembliesToScan` collection — `00.Governance` never references `SharedKernel.Primitives` (it references nothing). The consuming test project builds `canonicalValues` from the real `SharedKernel.Primitives.CrossCutting.WellKnownHeaders`/`WellKnownBaggageKeys` field values (P-259) once that package ships, matching the same "caller supplies the assembly/values, never hard-code them here" discipline established by `LoggingEventIdIntegrityAssertion` and every `ConditionList` factory method in this file.
 - **SK0022 and `WellKnownConstantOwnershipAssertion` are EXPECTED TO FAIL / UNVERIFIABLE against real assemblies as of this phase's authoring (2026-07-14)** — `01.Core`'s `WellKnownHeaders`/`WellKnownBaggageKeys` (P-259) exist only as a locked design (D-30 in `01.Core/state-map.md`); the C-43/T-34/DO-16 implementation has not shipped, and the P-260/P-261/P-262/P-263 consuming-domain retrofits have not landed. Design/implementation/tests for this phase use CONTRIVED in-memory Mono.Cecil fixtures only, consistent with every "designed-ahead-of-a-pending-dependency" precedent in this domain. Do not attempt a real-assembly wiring pass until `01.Core` C-43 ships AND P-260–P-263 land — see Cross-Domain Dependencies in `00.Governance/state-map.md`.
+- SK0023 `NonSingletonAmazonS3ClientRegistrationAnalyzer` (WO-043 P-271) is the next sequential ID in the SK0001–SK00N general-purpose block (SK0022 was the prior ID) and the platform's first storage-domain diagnostic. It is the structural inverse of SK0703 `MessageBusSingletonRegistrationAnalyzer`: SK0703 flags `AddSingleton<IMessageBus>` because that type must be *scoped*; SK0023 flags `AddScoped<IAmazonS3>`/`AddTransient<IAmazonS3>` because that type must be *singleton*. Type-argument extraction reuses SK0703's exact technique (`GenericNameSyntax.TypeArgumentList.Arguments[0]` as an `IdentifierNameSyntax`, simple-name exact match) — syntax-only, no `SemanticModel`, covering both the one-argument factory form and the two-argument `TService,TImplementation` form.
+- SK0023 fires globally with no suppression namespace, mirroring SK0703's/SK0014's "fires globally" convention — `Amazon.S3.IAmazonS3` must be a singleton wherever it is registered platform-wide, not only inside `SharedKernel.Storage.S3`/`SharedKernel.Storage.Obs`. A single narrow storage-domain rule does not warrant opening a new `08xx` ID block (the multi-rule `02xx`/`03xx`/`07xx` blocks exist for multi-tenancy/encryption/messaging subsystems with several related rules each) — SK0023 stays in the sequential general-purpose block, following the SK0011 (persistence)/SK0013 (communication) precedent that a lone domain-specific rule does not need its own block.
+- `StorageTopologyRules` (WO-043 P-271) introduces zero new SK diagnostic IDs, zero new Mono.Cecil technique, and zero new `ICustomRule` — all three factory methods are pure `NetArchTest` `.Should().NotHaveDependencyOn(...)` checks, mirroring `RedisTopologyRules` exactly but scoped to `08.Storage`'s two provider packages instead of Redis's five. `ProviderPackagesNeverReferenceEachOther` takes two NAMED `Assembly` parameters (not `params Assembly[]`), mirroring `UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct`'s two-named-parameter convention — with only two packages involved and neither identifying namespace a prefix of the other, no `Dictionary<string,string[]>` lookup table (the technique `RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther` needs for four packages) is required.
+- `StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3` carries NO internal namespace exemption — exclusion of `SharedKernel.Storage.S3`/`.Obs` is achieved entirely by the caller never passing either assembly to the factory method, the same caller-controlled-exclusion convention already established by `PresentationLayeringRules` and `CompositionRootExclusivityRules`. Document any future internal exemption here before adding one.
+- **`StorageTopologyRules` is UNVERIFIABLE against real assemblies as of this phase's authoring (2026-07-16)** — `08.Storage`'s own `state-map.md` shows every phase (Design through Published) at `○`/empty, and P-265 itself is only `◐` (Design in progress) in the root `state-map.md`; P-266/P-267 have not started. `SharedKernel.Storage.Abstractions`/`.S3`/`.Obs` do not exist as buildable assemblies yet. Design, implementation, and tests for this phase use CONTRIVED in-memory assemblies via `CSharpCompilation` + `MetadataReference.CreateFromImage` (the `RedisTopologyRulesTests`/`CompositionRootExclusivityRulesTests` technique), consistent with every "designed-ahead-of-a-pending-dependency" precedent in this domain. Do not attempt a real-assembly wiring pass until `08.Storage` P-266/P-267 ship — see Cross-Domain Dependencies in `00.Governance/state-map.md`.
 
 ---
 
@@ -2896,3 +3018,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-08] Phase SK.00.LoggingStandardEnforcement added — SK0020 DirectILoggerExtensionMethodUsage and SK0021 HandWrittenLoggerMessageDefineDelegate added to diagnostic registry (general-purpose sequential block, next after SK0019; the domain's first two-diagnostics-one-analyzer-class shape — LoggingAuthoringStyleAnalyzer — since both encode the same "always [LoggerMessage], never hand-rolled" standard and share the GeneratedCodeAnalysisFlags.None guard plus the SharedKernel.Testing exemption; SK0020 requires SemanticModel.GetSymbolInfo ContainingType resolution to avoid false positives against unrelated logging frameworks, SK0021 is syntax-only); LoggingEventIdIntegrityAssertion added to architecture test contracts (WO-041 P-250) — the domain's second non-ConditionList/ICustomRule public helper after PipelineOrderAssertion, walking Mono.Cecil ModuleDefinition.Types/NestedTypes recursively (deliberately bypassing NetArchTest's Types.InAssembly(...) to avoid the SK0012-documented compiler-generated/nested-type blind spot) to assert global EventId uniqueness and per-assembly range membership against a caller-supplied Assembly→range dictionary sourced from 01.Core's SharedKernel.Primitives.Logging.LoggingEventIdRanges (P-249); mechanizes the root CLAUDE.md's new Logging Conventions section (WO-041 P-249/P-250) the same way SK0013/SK0014/SK0017-19 mechanized the raw-HttpClient/ProblemDetails/marker-interface conventions; EXPECTED TO FAIL against real shipped assemblies until every WO-041 domain retrofit ships (all ten are `○` Pending, including 01.Core's own P-249) — design/tests use contrived in-memory Mono.Cecil fixtures only; six new implementation rules added — WO-041 P-250, depends on 01.Core P-249 (governance-arch-planner)
 - [2026-07-09] SK.00.LoggingStandardEnforcement → ● closeout — LoggingAuthoringStyleAnalyzer (SK0020/SK0021) implemented in SharedKernel.Analyzers/Diagnostics/; LoggingEventIdIntegrityAssertion implemented in SharedKernel.ArchitectureTests/; verified against the pre-written CLAUDE.md spec (diagnostic registry, architecture test contracts, all eleven implementation-rule bullets) — no discrepancy found, no edits required to those sections. One new implementation-rule bullet added below to record a technique divergence discovered during test authoring: SK0020/SK0021 analyzer test fixtures (SharedKernel.Analyzers.Tests) use a self-contained in-compilation stub of the Microsoft.Extensions.Logging surface — CSharpAnalyzerTest's default (older) reference-assembly set conflicts (CS1705 System.Runtime version mismatch) with a net10.0-targeted Microsoft.Extensions.Logging.Abstractions package reference, the same stub technique already used by SK0013's IHttpClientFactory fixture — while LoggingEventIdIntegrityAssertionTests' CompileInMemory fixtures reference the real Microsoft.Extensions.Logging.Abstractions package directly with no such conflict, since those fixtures compile and run in-process against the current runtime rather than through the analyzer-testing framework's isolated reference-assembly sandbox. 14 new analyzer tests (T-177–T-180) — 125/125 SharedKernel.Analyzers.Tests pass; 3 new architecture tests (T-181–T-183, including the load-bearing nested-type case) — 133/133 SharedKernel.ArchitectureTests.Tests pass; 0 build warnings/errors. This is the last `○` phase key — every phase key in 00.Governance/state-map.md is now `●` (governance-phase-implementer, state-map-phase)
 - [2026-07-14] Phase SK.00.MagicStringGuard added — SK0022 CrossCuttingMagicStringLiteral added to diagnostic registry (general-purpose sequential block, next after SK0021; ONE analyzer class covering FOUR call-site shapes — HTTP header indexer/setter, Activity.SetBaggage/.SetTag, IConfiguration.GetSection, ClaimsPrincipal/Claim comparison — under a single DiagnosticDescriptor since all four encode the same underlying rule; fires globally with no suppression namespace; discriminates purely on literal-vs-reference syntax shape, never resolved value or declaring-class identity, carrying forward the SK0028/HealthCheckConstantsGuard generality requirement); WellKnownConstantOwnershipAssertion added to architecture test contracts (WO-042 P-264) — the domain's third non-ConditionList/ICustomRule public helper after PipelineOrderAssertion and LoggingEventIdIntegrityAssertion, extending StringConstantsClassDetector's field-shape + literal-value resolution to walk every TypeDefinition (not only constants-class shapes) and flag any non-owning assembly redeclaring a canonical 01.Core cross-cutting literal value; mechanizes the exact incident class P-261 exemplified (a "CorrelationId" vs "correlation.id" mismatch) the same way SK0013/PresentationLayeringRules/SK0020-21 mechanized the raw-HttpClient/ProblemDetails/logging conventions; EXPECTED TO FAIL / UNVERIFIABLE against real assemblies until 01.Core's WellKnownHeaders/WellKnownBaggageKeys (P-259) ship past design (only D-30 is locked as of this phase; C-43/T-34/DO-16 pending) AND the P-260/P-261/P-262/P-263 consuming-domain retrofits land — design/tests use contrived in-memory Mono.Cecil fixtures only; six new implementation rules added — WO-042 P-264, depends on 01.Core P-259/P-260/P-261/P-262/P-263 (governance-arch-planner)
+- [2026-07-16] Phase SK.00.StorageTopology added — SK0023 NonSingletonAmazonS3ClientRegistration added to diagnostic registry (general-purpose sequential block, next after SK0022; platform's first storage-domain diagnostic; structural inverse of SK0703 — flags AddScoped/AddTransient registration of IAmazonS3 instead of AddSingleton; syntax-only, no SemanticModel; fires globally with no suppression namespace; stays in the sequential block rather than opening a new 08xx block, following the SK0011/SK0013 precedent for a lone domain-specific rule); StorageTopologyRules added to architecture test contracts (WO-043 P-271) — three pure NetArchTest predicates mirroring RedisTopologyRules exactly but scoped to 08.Storage's two provider packages (AbstractionsHasNoThirdPartyDependencies, ProviderPackagesNeverReferenceEachOther using a two-named-Assembly-parameter signature mirroring UnitOfWorkSeamRules, OnlyProviderPackagesMayReferenceAmazonS3 with caller-controlled exclusion mirroring PresentationLayeringRules/CompositionRootExclusivityRules); zero new SK ID block, zero new Mono.Cecil technique, zero new NuGet dependency; UNVERIFIABLE against real assemblies as of this phase's authoring — 08.Storage's own state-map shows every phase empty/○ and P-265 itself is only ◐ (Design) in the root state-map, P-266/P-267 not started — design/tests use contrived in-memory Mono.Cecil fixtures only, consistent with every "designed-ahead-of-a-pending-dependency" precedent in this domain; six new implementation rules added — WO-043 P-271, depends on 08.Storage P-265/P-266/P-267 (governance-arch-planner)
