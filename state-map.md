@@ -33,6 +33,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
+| [08.Storage](08.Storage/state-map.md)                 | Design          | Finalize the IFileStorage/IBlobUriGenerator abstraction contract (add CopyAsync, batch-delete, streaming ListAsync, and a connectivity health probe) before implementing the S3 and Obs providers (P-265) |
 <!--
 Format when active:
 | Domain | Current Phase | Focus (one line) |
@@ -71,13 +72,13 @@ Format when blocked:
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) now fully `●` through Docs (Design/Scaffold/Core/Tests/Docs = 71/19/74/66/24, all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199, 100% XML doc coverage confirmed, README EventId table added, stale "design-only" phrasing swept from `CLAUDE.md`; `SharedKernel.Application.Behaviors.Tests` 130/130. | Published (P-20..P-22 for WO-041, plus P-01..P-19 for WO-035/036/038/039/040) is the only phase left before this domain is fully published. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | Tests | `●` | SK.07.LoggingRetrofit complete (18/18, P-254) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range, new `MessagingLogScope.Create` shared BeginScope helper; verified zero EventId collisions and zero SK0020/SK0021 diagnostics against the real built assembly; 108/108 MassTransit tests green. | — |
-| 08 | [Storage](08.Storage/state-map.md) | — | `○` | — | — |
+| 08 | [Storage](08.Storage/state-map.md) | Design | `◐` | — | Finalize the IFileStorage/IBlobUriGenerator abstraction contract (add CopyAsync, batch-delete, streaming ListAsync, and a connectivity health probe) before implementing the S3 and Obs providers (P-265) |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | P-260/WO-042 fully closed — T-29 replaced test-local literal duplicates of the correlation/tenant header names with `WellKnownHeaders.CorrelationId`/`.TenantId` references across `.Rest.Tests`/`.Grpc.Tests`; DO-07 verified `CLAUDE.md`'s propagation rules already documented the shared-constant sourcing and gRPC thin-alias exception; 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing; SK.11.Tests (29/29) and SK.11.Docs (7/7) both `●`. | Only the Published phase (NuGet packaging, pack, publish) remains for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-042/P-261 closed — `HeaderTenantResolutionStrategy.DefaultHeaderName` and `BaggageLogRecordProcessorTests`/`AmbientLoggingEnrichmentAcceptanceTests` now consume `01.Core`'s `WellKnownHeaders.TenantId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-declared literals, fixing the confirmed baggage-key mismatch (DO-07). SK.13.Scaffold 12/12 `●`, SK.13.Core 35/35 `●`, SK.13.Tests 31/31 `●`, SK.13.Docs 5/5 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published); DO-07's `14.Presentation`-side changelog cross-reference tracked separately under `P-262`. |
-| 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-041/P-256 closed — explicit `EventId`s (14000/14001/14100) assigned to all three `[LoggerMessage]` methods, `CorrelationIdMiddleware.BaggageKey` constant regression-pinned, correlation-on-log-record integration test proves compatibility with `13.ServiceDefaults`'s `BaggageLogRecordProcessor` with zero cross-domain reference; both packages re-packed to `1.0.1`, `consumer-verify` re-confirms zero DI exceptions; 42/42 WebApi + 11/11 SignalR tests passing. | — |
+| 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
 | 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-041 (P-258) SK.16.Docs now 16/16 `●` — added `<remarks>` docs to `InMemoryLogger.BeginScope` (`AsyncLocal` await/parallel-collection rationale) and `InMemoryLogger`'s class-level remarks (`Logging/` is the first capability folder anchored to a cross-cutting BCL contract rather than a numbered domain's `.Abstractions` package, and why); confirmed root `CLAUDE.md`'s structured-log-assertion "What Goes Where" row already existed, no edit needed; `dotnet build` clean. | — WO-041/P-258 fully closed; all 6 phases of `16.Testing` `●` again. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
@@ -114,9 +115,9 @@ Format when active:
 | ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 4 |
+| ○ Not Started | 3 |
 
 ---
 
@@ -10228,7 +10229,7 @@ Closes the exact duplication class this work order targets: the tenant and corre
 ---
 ### P-261 — ServiceDefaults: Consume Shared Propagation Constants, Fix Confirmed Baggage-Key Mismatch (DO-07)
 
-**Status:** `◐` Dispatched — 13.ServiceDefaults-side work complete; last acceptance criterion tracked separately under `P-262` (14.Presentation domain)
+**Status:** `●` Complete — 13.ServiceDefaults-side work fully done (all 6 SK.13 phase keys `●`); final acceptance criterion (DO-07 closure in `14.Presentation/CLAUDE.md`) is out of this domain's jurisdiction and tracked separately under `P-262` (14.Presentation domain)
 **Work Order:** WO-042
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-259
@@ -10250,7 +10251,7 @@ This is not cosmetic cleanup — it is a live, previously-confirmed-but-unfixed 
 ---
 ### P-262 — Presentation: Consume Shared Propagation Constants
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-042
 **Domain:** 14.Presentation
 **Depends on:** P-259
@@ -10264,9 +10265,9 @@ This is not cosmetic cleanup — it is a live, previously-confirmed-but-unfixed 
 `14.Presentation` is the domain whose own audit (P-256) first surfaced the cross-domain mismatch this work order fixes (see P-261). Closing the loop here — making its own constants demonstrably derive from the same shared source `13.ServiceDefaults` now consumes — is what actually proves the mismatch class is closed, not just documented.
 
 #### Acceptance criteria
-- [ ] `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` forward to (or are proven byte-identical via test to) the `01.Core` shared constants
-- [ ] No behavioral change — `HeaderName`/`BaggageKey`/`ItemsKey` values remain exactly as they are today
-- [ ] Existing `14.Presentation` test suite (53+ tests) remains green
+- [x] `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` forward to (or are proven byte-identical via test to) the `01.Core` shared constants
+- [x] No behavioral change — `HeaderName`/`BaggageKey`/`ItemsKey` values remain exactly as they are today
+- [x] Existing `14.Presentation` test suite (53+ tests) remains green
 
 ---
 ### P-263 — Messaging: Named Constant for Log-Scope Correlation Key
@@ -10320,3 +10321,181 @@ Mirrors the existing enforcement precedent for raw `HttpClient` (P-159), inline 
 - [2026-07-14] Core → Published (●) — promoted from SK.01.P259 (state-map-phase)
 - [2026-07-14] Phase Backlog P-259 → ● Complete — SK.01.P259 done, `WellKnownHeaders`/`WellKnownBaggageKeys` shipped in `SharedKernel.Primitives/Propagation/` (state-map-phase)
 - [2026-07-15] 13 → Published (●) — WO-042/P-261 unblocked (01.Core's SK.01.P259 C-43/T-34/DO-16 confirmed landed) and closed on the 13.ServiceDefaults side: `HeaderTenantResolutionStrategy.DefaultHeaderName` now sources `WellKnownHeaders.TenantId`; `BaggageLogRecordProcessorTests`/`AmbientLoggingEnrichmentAcceptanceTests` now assert `WellKnownBaggageKeys.CorrelationId`, fixing the confirmed DO-07 mismatch; `SharedKernel.MultiTenancy` gained a new `ProjectReference` to `SharedKernel.Primitives`; 48/48 + 30/30 tests passing. All 6 SK.13 phase keys fully `●`. P-261's remaining acceptance criterion (DO-07 closure in `14.Presentation/CLAUDE.md`) is out of this domain's jurisdiction and tracked under P-262 (state-map-phase)
+- [2026-07-16] Phase Backlog P-261 → ● Complete — `**Status:**` flipped `◐ Dispatched` → `● Complete`, reconciling the Phase Backlog entry with the Domain Summary Board (row 13, already `●`) and the 2026-07-15 closure log above; 13.ServiceDefaults owns all P-261 criteria except the 4th (DO-07 changelog closure in `14.Presentation/CLAUDE.md`), which remains legitimately tracked under the still-dispatched P-262 (14.Presentation, now unblocked by 01.Core's shipped C-43) (state-map-phase)
+- [2026-07-16] 14 → Published (●) — WO-042/P-262 closed: `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders`/`WellKnownBaggageKeys`, closing the DO-07 mismatch class structurally; re-packed to `1.0.2`; promoted from SK.14.Scaffold/Core/Tests/Docs/Published (all 6 phases now fully ●) (state-map-phase)
+- [2026-07-16] Phase Backlog P-262 → ● Complete — 14.Presentation WO-042 forwarding-alias work done, DO-07 mismatch class structurally closed (state-map-phase)
+
+---
+### P-265 — Storage: Abstractions Contract Finalization (Copy, Batch Delete, Streaming List, Health Probe)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-043
+**Domain:** 08.Storage
+**Depends on:** None
+
+#### What is needed
+
+Before either provider package is implemented, `SharedKernel.Storage.Abstractions`'s `IFileStorage` contract gains four capabilities the current design (Upload/Download/Delete/Exists/GetMetadata/List) does not yet cover: (1) a server-side object copy operation so promoting/duplicating a stored object never round-trips its bytes through application memory; (2) a batch/multi-key delete operation so bulk cleanup (tenant offboarding, retention sweeps) issues one provider call instead of N; (3) conversion of the existing prefix-listing operation from a fully-materialized in-memory list to a constant-memory streaming enumeration, so listing a bucket with millions of keys cannot exhaust managed memory or block behind a single huge provider response; (4) a lightweight connectivity/reachability probe distinct from object-level operations, so a K8s readiness check can prove "storage is reachable" without requiring a well-known object key to exist. All four follow the domain's existing Result-valued, Stream-first, zero-third-party-dependency contract style — no new package, no new NuGet reference in Abstractions.
+
+#### Why this is needed
+
+The domain's own stated philosophy ("Blob bytes never flow through the application/domain layers as in-memory buffers") is only half-honored today — `ListAsync` still returns a fully-buffered `IReadOnlyList<FileMetadata>`, which is the exact anti-pattern the Stream-first design otherwise guards against, just applied to metadata volume instead of object bytes. Copy and batch-delete are standard object-storage primitives every major provider exposes natively (S3 `CopyObject`/`DeleteObjects`); omitting them forces every consumer to hand-roll a slower, memory-heavier download+upload or N-call loop. A connectivity probe is the missing piece that lets `13.ServiceDefaults` build a genuine storage readiness health check (P-270) — today nothing in the contract proves "the bucket is reachable" without side-effecting an actual object operation. Fixing all four now costs nothing (zero packages have shipped yet); fixing them after `.S3`/`.Obs` exist would be a breaking contract change against two providers instead of a clean initial design.
+
+#### Acceptance criteria
+- [ ] `IFileStorage` exposes a server-side copy operation (source bucket/key → destination bucket/key) returning `Result<FileReference>`, never buffering object bytes through managed memory
+- [ ] `IFileStorage` exposes a batch-delete operation accepting multiple keys and returning a per-key outcome, backed by the provider's native multi-object delete where available
+- [ ] The existing list operation streams `FileMetadata` results via constant-memory async enumeration instead of materializing the full result set, mirroring `06.Persistence`'s existing `IAsyncEnumerable` streaming-read precedent (P-149)
+- [ ] `IFileStorage` exposes a connectivity/reachability probe distinct from any object-level operation, returning `Result` without requiring a specific object key to exist
+- [ ] `SharedKernel.Storage.Abstractions` still carries zero third-party NuGet dependencies after the change
+- [ ] `08.Storage/CLAUDE.md`'s interface-contract section is updated to reflect the finalized `IFileStorage` surface
+---
+
+---
+### P-266 — Storage: SharedKernel.Storage.S3 Provider Implementation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-043
+**Domain:** 08.Storage
+**Depends on:** P-265
+
+#### What is needed
+
+Full implementation of `SharedKernel.Storage.S3` against the finalized `IFileStorage`/`IBlobUriGenerator` contracts from P-265 — AWS S3 and MinIO (via `ServiceUrl`+`ForcePathStyle`) support through `AWSSDK.S3`, including the new copy/batch-delete/streaming-list/connectivity-probe operations, options-pattern configuration validated at startup, and DI registration with the provider client registered as a singleton.
+
+#### Why this is needed
+
+This is the platform's primary, most-consumed object-storage provider (real AWS S3 in cloud environments, MinIO in local/on-prem/dev environments through the identical code path) and the reference implementation the `.Obs` sibling package's shape is measured against.
+
+#### Acceptance criteria
+- [ ] All `IFileStorage`/`IBlobUriGenerator` members from P-265 are implemented, including copy/batch-delete/streaming-list/connectivity-probe
+- [ ] Provider status codes/exceptions map onto `StorageErrors` — no unmapped provider exception escapes as a raw throw for expected outcomes (not-found, access-denied)
+- [ ] MinIO is exercised through the same code path as AWS S3 (`ServiceUrl` + `ForcePathStyle`), not a separate implementation
+- [ ] Options validate required credentials/region at startup, never at first upload
+- [ ] Provider client is registered as a singleton; DI registration tests confirm this
+- [ ] Round-trip tests (upload → download → copy → batch-delete → not-found, streaming list, connectivity probe, presigned-URL round-trip) pass against a real Testcontainers MinIO instance (P-268) — never a mocked `IAmazonS3`
+---
+
+---
+### P-267 — Storage: SharedKernel.Storage.Obs Provider Implementation (Huawei Cloud OBS)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-043
+**Domain:** 08.Storage
+**Depends on:** P-265
+
+#### What is needed
+
+Full implementation of `SharedKernel.Storage.Obs` against the same finalized `IFileStorage`/`IBlobUriGenerator` contracts from P-265, targeting Huawei Cloud OBS's S3-compatible endpoint through `AWSSDK.S3` (per the domain brain's already-recorded rationale: the native Huawei SDK is stale, targets .NET Standard 2.0, and is personally-maintained). `.Obs` is an independent sibling package to `.S3` — it never references `.S3`, and its options/DI entry point are entirely separate so the two providers can be configured side by side or swapped independently.
+
+#### Why this is needed
+
+This is the user's explicitly requested second provider. Huawei Cloud OBS is the platform's path for services deployed in OBS-native cloud regions; keeping it S3-API-compatible through `AWSSDK.S3` (rather than adopting the stale native SDK) keeps both providers on the same actively-maintained, AOT-partial-but-encapsulated dependency and the same implementation shape, which minimizes the platform's total maintenance surface for two conceptually-identical capabilities.
+
+#### Acceptance criteria
+- [ ] All `IFileStorage`/`IBlobUriGenerator` members from P-265 are implemented against the OBS S3-compatible endpoint, including copy/batch-delete/streaming-list/connectivity-probe
+- [ ] `SharedKernel.Storage.Obs` has zero project or type reference to `SharedKernel.Storage.S3` — verified by an architecture test (P-271)
+- [ ] Distinct options type and DI entry point from `.S3`, so a service can register both providers side by side (e.g., via keyed DI) without collision
+- [ ] Round-trip tests (upload → download → copy → batch-delete → not-found, streaming list, connectivity probe, presigned-URL round-trip) pass against a real Testcontainers MinIO instance (P-268) standing in for the OBS S3-compatible endpoint — never a mocked `IAmazonS3`
+- [ ] `08.Storage/CLAUDE.md`'s changelog records the shipped `.Obs` package status
+---
+
+---
+### P-268 — Testing: MinIO Testcontainers Fixture for Storage Provider Round-Trip Tests
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-043
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+A shared Testcontainers-based MinIO fixture in `SharedKernel.Testing`, exposing a ready-to-use S3-compatible endpoint (connection details, bucket bootstrap, lifecycle management) that both `SharedKernel.Storage.S3.Tests` and `SharedKernel.Storage.Obs.Tests` consume identically for their real-provider round-trip coverage, rather than each provider package bootstrapping its own ad hoc container setup inline.
+
+#### Why this is needed
+
+`08.Storage/state-map.md` already records this as a pending cross-domain dependency for its Tests phase (`SK.08.Tests` needs a Testcontainers MinIO fixture from `16.Testing`). Two provider packages (`.S3` and `.Obs`) both need real-provider round-trip coverage against the same kind of S3-compatible endpoint; a single shared fixture avoids duplicating Testcontainers bootstrap/teardown code and keeps container lifecycle management centralized in `16.Testing`, matching this domain's existing role as the sole owner of shared test infrastructure.
+
+#### Acceptance criteria
+- [ ] A reusable MinIO container fixture exists in `SharedKernel.Testing`, following the domain's established Testcontainers fixture conventions
+- [ ] The fixture exposes connection configuration shaped to bind directly into `S3StorageOptions`/`ObsStorageOptions` (`ServiceUrl`, credentials, `ForcePathStyle`) with no provider-specific branching required by the consumer
+- [ ] Both `SharedKernel.Storage.S3.Tests` and `SharedKernel.Storage.Obs.Tests` consume the fixture identically
+- [ ] Container lifecycle (start/stop/bucket bootstrap) is managed by the fixture, not duplicated per test project
+---
+
+---
+### P-269 — Testing: In-Memory IFileStorage Test Double
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-043
+**Domain:** 16.Testing
+**Depends on:** P-265
+
+#### What is needed
+
+An in-process, in-memory implementation of `IFileStorage` (and a corresponding `IBlobUriGenerator` double) in `SharedKernel.Testing`, so consuming microservices' own unit tests can exercise upload/download/copy/delete/list/exists/metadata/connectivity-probe logic without a real object-storage backend or a mocking framework — mirroring the platform's existing `InMemoryMessageBus`/`InMemoryEventPublisher`/`InMemoryLogger` precedent.
+
+#### Why this is needed
+
+Testcontainers MinIO (P-268) is the right tool for `08.Storage`'s own provider-behavior verification, but it is the wrong tool for a downstream microservice's fast, isolated unit tests of its own handler/service logic that merely depends on `IFileStorage`. Every other swappable-provider abstraction this platform ships (`IMessageBus`, `IEventPublisher`, and the local-seam interfaces in `05.Application.Behaviors`) already has a first-class in-memory double in `16.Testing` for exactly this reason; `IFileStorage`/`IBlobUriGenerator` are the same shape of dependency and should not be the exception a consuming team has to hand-roll a fake for.
+
+#### Acceptance criteria
+- [ ] An in-memory `IFileStorage` double exists in `SharedKernel.Testing`, backing uploaded content with in-memory storage and supporting the full contract from P-265 (copy, batch-delete, streaming list, connectivity probe always succeeds)
+- [ ] An in-memory `IBlobUriGenerator` double exists, returning deterministic, inspectable URLs suitable for assertions
+- [ ] Assertion helpers allow a consuming test to verify "was this key uploaded/deleted/copied" without inspecting internal storage state directly
+- [ ] The double references only `SharedKernel.Storage.Abstractions`, never a concrete provider package
+- [ ] Registered via a DI extension mirroring `AddInMemoryMessageBus()`/`AddInMemoryEventPublisher()`'s existing naming convention
+---
+
+---
+### P-270 — ServiceDefaults: Storage Readiness Health Check Adapter
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-043
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-265, P-266, P-267
+
+#### What is needed
+
+A health check adapter in `SharedKernel.ServiceDefaults` that wraps `IFileStorage`'s connectivity probe (P-265) so a consuming service can register object-storage readiness alongside its other dependency health checks (database, cache, message broker) with a single call, following the exact division of responsibility already established for `06.Persistence`: the owning domain provides the probe primitive, `13.ServiceDefaults` owns the `IHealthCheck` wiring and `AddHealthChecks()` registration.
+
+#### Why this is needed
+
+A K8s-native service that depends on object storage for correctness (document upload, export generation, attachment handling) should fail its readiness probe when storage is unreachable, exactly as it already does for an unreachable database or cache. Without this, a pod can report Ready while every storage-dependent request is silently failing. This mirrors the already-documented `06.Persistence`/`13.ServiceDefaults` split (root `CLAUDE.md`'s "database-readiness probe" row) applied to the new storage domain.
+
+#### Acceptance criteria
+- [ ] A health check adapter resolves `IFileStorage` and calls its connectivity probe, reporting Healthy/Unhealthy/Degraded per the platform's existing health check conventions
+- [ ] A single DI extension registers the storage health check into `AddHealthChecks()`, following the naming and configuration pattern of the platform's existing dependency-specific health check adapters
+- [ ] `08.Storage` itself ships no `IHealthCheck` implementation — the dependency direction stays `13.ServiceDefaults` → `08.Storage`, never the reverse
+- [ ] Works against both `.S3` and `.Obs` registrations without provider-specific branching in `13.ServiceDefaults`
+---
+
+---
+### P-271 — Governance: Architecture Enforcement for the 08.Storage Topology
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-043
+**Domain:** 00.Governance
+**Depends on:** P-265, P-266, P-267
+
+#### What is needed
+
+A NetArchTest architecture-test suite (mirroring the existing `RedisTopologyRules` precedent, P-145) that mechanically enforces `08.Storage`'s structural rules: `SharedKernel.Storage.Abstractions` carries zero third-party NuGet dependencies and references only `SharedKernel.Primitives`; `SharedKernel.Storage.S3` and `SharedKernel.Storage.Obs` never reference each other; no production type outside the two provider packages references the concrete cloud SDK (`Amazon.S3.*`) directly; the provider client registration is a singleton, never scoped/transient.
+
+#### Why this is needed
+
+This domain's own brain already documents all four rules in prose ("zero third-party NuGet dependencies," "never reference each other," "Provider `IAmazonS3` clients are singletons," stream-first no-buffering), exactly the pattern of prose-only rules this platform has repeatedly found decays without mechanical enforcement (raw-`HttpClient` P-159, inline-`ProblemDetails` P-199, ad hoc-logging P-250, magic-string P-264). A new domain should ship its enforcement suite alongside its first implementation, not retrofitted later after a violation has already shipped.
+
+#### Acceptance criteria
+- [ ] Architecture test confirms `SharedKernel.Storage.Abstractions` has no third-party NuGet package reference
+- [ ] Architecture test confirms `SharedKernel.Storage.S3` and `SharedKernel.Storage.Obs` never reference each other's assembly
+- [ ] Architecture test confirms no type outside the two provider packages references `Amazon.S3.*` types directly
+- [ ] Architecture test/analyzer confirms `IAmazonS3` (or equivalent provider client) is registered with singleton lifetime in both providers' DI extensions
+- [ ] All new architecture tests pass against the real built assemblies from P-266/P-267, not contrived fixtures only
+---
+
+- [2026-07-16] WO-043 phases P-265–P-271 written to Phase Backlog — 08.Storage full build-out (Abstractions contract finalization adding Copy/BatchDelete/streaming-List/connectivity-probe, then `.S3` and `.Obs` provider implementations) plus cross-domain support (16.Testing MinIO Testcontainers fixture + InMemoryFileStorage fake, 13.ServiceDefaults storage readiness health check adapter, 00.Governance topology enforcement mirroring RedisTopologyRules) (arch-lead, user request)
+- [2026-07-16] 08 → Design (◐) — Finalize the IFileStorage/IBlobUriGenerator abstraction contract (add CopyAsync, batch-delete, streaming ListAsync, and a connectivity health probe) before implementing the S3 and Obs providers (P-265) (state-map-phase)
+- [2026-07-16] Phase(s) P-271 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-16] Phase(s) P-265, P-266, P-267 dispatched to storage-arch-planner for 08.Storage (dispatch-phase)
+- [2026-07-16] Phase(s) P-270 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase); planner locked design (AddStorageReadinessCheck) but recorded Core/Tests/Docs as blocked pending 08.Storage Abstractions implementation (P-265 still Dispatched, not shipped)
+- [2026-07-16] Phase(s) P-268, P-269 dispatched to testing-arch-planner for 16.Testing (dispatch-phase); P-268 MinIO fixture fully actionable, P-269 InMemoryFileStorage Core/Tests/Docs marked Blocked (⚑) — SharedKernel.Storage.Abstractions.csproj still has zero compiled .cs files (P-265 not yet implemented)
