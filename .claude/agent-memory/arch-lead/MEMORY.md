@@ -11,3 +11,4 @@
 - [WO-039: Application Deep-Dive Review](project_wo039_application_review.md) — 05.Application P-236-243; fire-and-forget self-blocking bug, incomplete reflection elimination, unwired governance tests, idempotency replay gap
 - [Verify shipped code, not docs](feedback_verify_shipped_code_not_docs.md) — read actual .cs files + test workaround comments before trusting CLAUDE.md prose or checked acceptance boxes on a "Complete" domain
 - [WO-040: Application DX Gap Audit](project_wo040_application_dx_audit.md) — P-244-248 across 16.Testing/05.Application/13.ServiceDefaults/00.Governance; fakes, public pipeline harness, redacted logging, OTel wiring, 3 new analyzers
+- [WO-043: Storage Build-Out](project_wo043_storage_buildout.md) — 08.Storage P-265-271; Abstractions+S3+Obs, Copy/BatchDelete/streaming-List/health-probe contract upgrade, MinIO fixture + InMemoryFileStorage fake, ServiceDefaults health check, Governance topology enforcement

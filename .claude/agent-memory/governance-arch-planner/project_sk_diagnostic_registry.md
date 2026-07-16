@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-SK diagnostic ID registry as of 2026-07-14. Next available sequential ID: **SK0023**.
+SK diagnostic ID registry as of 2026-07-16. Next available sequential ID: **SK0024**.
 
 ## Sequential block (SK0001–SK0019) — general SharedKernel patterns
 
@@ -33,6 +33,7 @@ SK diagnostic ID registry as of 2026-07-14. Next available sequential ID: **SK00
 | SK0020 | DirectILoggerExtensionMethodUsage | Defined (WO-041 P-250) — Warning; call resolves via SemanticModel.GetSymbolInfo to Microsoft.Extensions.Logging.LoggerExtensions.Log*/ILogger.Log; SharedKernel.Testing namespace exemption; shares LoggingAuthoringStyleAnalyzer class with SK0021 (domain's first two-diagnostics-one-class shape); category: Design |
 | SK0021 | HandWrittenLoggerMessageDefineDelegate | Defined (WO-041 P-250) — Warning; syntax-only LoggerMessage.Define*/DefineScope call shape; SharedKernel.Testing namespace exemption; implemented in LoggingAuthoringStyleAnalyzer alongside SK0020; category: Design |
 | SK0022 | CrossCuttingMagicStringLiteral | Defined (WO-042 P-264) — Warning; raw string-literal token at one of four semantic-model-resolved call-site shapes (HTTP header indexer/.Add/.TryAddWithoutValidation, Activity.SetBaggage/.SetTag, IConfiguration.GetSection, ClaimsPrincipal/Claim comparison); fires globally, no suppression namespace; discriminates on literal-vs-reference syntax shape only, never resolved value/declaring-class name; category: Usage; companion architecture-test helper WellKnownConstantOwnershipAssertion depends on 01.Core P-259/P-260-263 for real-assembly verification only (design-only as of 2026-07-14) |
+| SK0023 | NonSingletonAmazonS3ClientRegistration | Defined (WO-043 P-271) — Warning; `AddScoped<IAmazonS3>`/`AddTransient<IAmazonS3,...>`; Roslyn syntax-only analyzer (no SemanticModel), reuses SK0703's type-argument-extraction technique; structural inverse of SK0703 (flags the wrong lifetime for a type that must be singleton, not scoped); fires globally, no suppression namespace; platform's first storage-domain (08.Storage) diagnostic, stays in the sequential block rather than opening an 08xx block for one rule; category: Usage; companion architecture-test class StorageTopologyRules depends on 08.Storage P-265/P-266/P-267 for real-assembly verification only (08.Storage itself pre-implementation as of 2026-07-16) |
 
 ## Multi-tenancy block (SK0201–SK0202) — EF Core tenant-filter guard
 
@@ -65,8 +66,8 @@ SK diagnostic ID registry as of 2026-07-14. Next available sequential ID: **SK00
 
 ## Block conventions
 
-- **SK0001–SK0022**: general SharedKernel coding patterns (mix of Roslyn analyzers and NetArchTest ICustomRules, sequential)
-- **SK0023–SK0199**: reserved for future sequential general-purpose rules; next is SK0023
+- **SK0001–SK0023**: general SharedKernel coding patterns (mix of Roslyn analyzers and NetArchTest ICustomRules, sequential)
+- **SK0024–SK0199**: reserved for future sequential general-purpose rules; next is SK0024
 - **SK0201–SK0299**: EF Core / multi-tenancy domain block; next is SK0203
 - **SK0301–SK0399**: encryption subsystem block; next is SK0305
 - **SK0701–SK0799**: messaging-domain block (domain 07); next is SK0709

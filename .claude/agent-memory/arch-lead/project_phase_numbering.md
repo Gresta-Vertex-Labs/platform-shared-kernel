@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-07-07, the last phase written to `state-map.md` Phase Backlog is **P-248** under **WO-040**.
+As of 2026-07-16, the last phase written to `state-map.md` Phase Backlog is **P-271** under **WO-043**.
 
-Next new phase must be **P-249**. Next new Work Order must be **WO-041**.
+Next new phase must be **P-272**. Next new Work Order must be **WO-044**.
+
+**WO-043 context:** 08.Storage first real build-out, triggered by direct user request ("complete 08.Storage, do the obs package, analyse all the needs, create the best storage packages"). Domain had a fully-designed-but-undispatched brain already sitting in `08.Storage/CLAUDE.md`/`state-map.md` (Abstractions/S3/Obs packages, interfaces, tech stack all documented, Package Board all `○`) — this was NOT written by this WO-043 pass, it pre-existed at session start. P-265–P-271 across 08.Storage (×3: Abstractions contract finalization, S3, Obs), 16.Testing (×2: MinIO Testcontainers fixture, InMemoryFileStorage fake), 13.ServiceDefaults (×1: storage health check), 00.Governance (×1: topology enforcement). Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`) — 16.Testing/13.ServiceDefaults/00.Governance were already past `○` so no `state-map-phase` calls for those, backlog-only. Key upgrade: caught the domain's own pre-drafted `ListAsync` contract violating its own stated Stream-first philosophy (returned a fully-buffered list) and fixed it in P-265 before any provider shipped. `sync-brain` called — root CLAUDE.md had zero "What Goes Where" rows for 08.Storage and a stale Abstractions-table entry (`.S3` only, missing `.Obs`) despite the domain already existing. See [[project_wo043_storage_buildout]] for full detail.
 
 **Correction (2026-07-07):** this memory had drifted stale again exactly as its own "How to apply" note below warns — it previously claimed P-244/WO-039 as the last-written phase, but the real file's last entry was actually **P-243/WO-039** (verified via `grep -n "^### P-" state-map.md | tail` and a direct grep for "P-244" returning zero matches before this session wrote it). WO-040 then genuinely used P-244–P-248. See [[project_wo040_application_dx_audit]] for WO-040's content.
 

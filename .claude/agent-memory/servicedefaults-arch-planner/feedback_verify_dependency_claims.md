@@ -24,3 +24,15 @@ task IDs (`D-30 ●`, `C-43 ○`) as evidence, not just a one-word label.
 
 See [[ambient_logging_enrichment]] for the concrete case this surfaced in (the `WellKnownBaggageKeys`
 retrofit, WO-042/P-261).
+
+**Recurred, worse, on WO-043/P-270 (2026-07-16):** P-270's "Depends on: P-265, P-266, P-267" line
+implied those phases were satisfiable prerequisites. Reading `08.Storage/state-map.md` directly showed
+`SK.08.Design` at 0/15 `○` and `SK.08.Core` at 0/30 `○` — not merely "designed but not implemented"
+(the WO-042 case) but **entirely unstarted**, only a dispatched task breakdown. Distinguish these two
+severities when recording a Cross-Domain Dependencies row: "design ● / implementation ○" (still enables
+locking your own Design task against the other domain's ratified contract, e.g. its `CLAUDE.md` prose)
+versus "design ○ / implementation ○" (nothing ratified yet in that domain's own task tracking — but if
+that domain's `CLAUDE.md` already documents a ratified signature in prose, as `08.Storage/CLAUDE.md` did
+for `IFileStorage.CheckHealthAsync`, that prose is still a reliable enough source to lock your own design
+task against, even while its state-map shows the task itself un-ticked). Either way, Core/Tests/Docs
+implementation tasks that call the not-yet-existing type must be `⚑` Blocked, never optimistically `○`.

@@ -15,6 +15,7 @@ Tag taxonomy established across P-010/P-122/P-170 task design (2026-06-19), all 
 | `AddCacheReadinessCheck` | `"ready"`, `"cache"` | `Degraded` — **never `Unhealthy`** | Yes |
 | `AddRabbitMqMessagingHealthCheck` | `"ready"`, `"messaging"` | `Unhealthy` | Yes |
 | `AddAzureServiceBusMessagingHealthCheck` | `"ready"`, `"messaging"` | `Unhealthy` | Yes |
+| `AddStorageReadinessCheck` (WO-043/P-270, design-locked, blocked on 08.Storage as of 2026-07-16) | `"ready"`, `"storage"` | `Unhealthy` | Yes |
 
 **Key distinction to remember:** `AddRedisHealthCheck` (raw connectivity probe) and `AddCacheReadinessCheck` (functional probe through `ICacheService`) are two different checks with two different calibrations, both opt-in, both tagged `"cache"`. The Redis one reports a hard `Unhealthy` because it's checking the transport directly. The cache-readiness one reports `Degraded` because it goes through `ICacheService.GetAsync`, where FusionCache's L1 fail-safe may legitimately still be serving stale-but-correct data even when L2/Redis is down — pulling the pod from rotation in that case would be the wrong response to a outage FusionCache is specifically designed to absorb.
 

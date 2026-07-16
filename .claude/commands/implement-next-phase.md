@@ -62,6 +62,7 @@ Look up the domain in this registry:
 | 05.Application | `implement-phase-application` |
 | 06.Persistence | `implement-phase-persistence` |
 | 07.Messaging | `implement-phase-messaging` |
+| 08.Storage | `implement-phase-storage` |
 | 11.Communication | `implement-phase-communication` |
 | 12.Security | `implement-phase-security` |
 | 13.ServiceDefaults | `implement-phase-servicedefaults` |

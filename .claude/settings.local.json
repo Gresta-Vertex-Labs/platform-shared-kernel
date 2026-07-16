@@ -1,24 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls \"C:\\\\Users\\\\dincd\\\\.nuget\\\\packages\\\\microsoft.featuremanagement\\\\4.5.0\\\\lib\\\\netstandard2.1\")",
-      "Read(//c/Users/dincd/.nuget/packages/microsoft.featuremanagement/4.5.0/lib/netstandard2.1/**)",
-      "Bash(dotnet build *)",
-      "Bash(dotnet test *)",
-      "Bash(Get-ChildItem -Recurse \"C:\\\\Github\\\\platform-shared-kernel\\\\01.Core\\\\SharedKernel.Primitives\" -Filter \"*.cs\")",
-      "Bash(Select-Object FullName)",
-      "Bash(Test-Path \"C:\\\\Github\\\\platform-shared-kernel\\\\01.Core\\\\README.md\")",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Analyzers\\\\Diagnostics\")",
-      "Bash(Out-Null)",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Analyzers\\\\CodeFixes\")",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.ArchitectureTests\\\\Rules\")",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.ArchitectureTests\\\\Helpers\")",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Benchmarks\\\\Configurations\")",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Benchmarks\\\\Baselines\")",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Linter\\\\content\")",
-      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Linter\\\\content\\\\build\")",
-      "Bash(Write-Host \"Directories created.\")",
-      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Github\\\\platform-shared-kernel\\\\00.Governance\\\\SharedKernel.Analyzers\\\\SharedKernel.Analyzers.Tests\")"
+      "Bash(*)",
+      "PowerShell(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Agent(*)"
     ]
   }
 }
