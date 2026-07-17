@@ -70,6 +70,18 @@ public static class ObsStorageServiceCollectionExtensions
         {
             ServiceURL = options.Endpoint,
             ForcePathStyle = options.ForcePathStyle,
+            // AWSSDK.S3 4.x defaults to WHEN_SUPPORTED, which eagerly attaches the newer CRC32-based
+            // flexible-checksum header to every request/operation that supports one. WHEN_REQUIRED
+            // narrows that to only the operations that strictly need a checksum, the safer, more
+            // broadly-compatible default for OBS's S3-compatible endpoint. NOTE: this does not by
+            // itself guarantee compatibility with every S3-compatible endpoint's DeleteObjects
+            // handling — some older MinIO releases (confirmed: RELEASE.2024-01-16T16-07-38Z, the
+            // version this domain's own test fixture pins, standing in for OBS in CI) still reject
+            // DeleteObjects unconditionally without a classic Content-MD5 header, which AWSSDK.S3 4.x
+            // no longer auto-computes for this operation under any RequestChecksumCalculation setting
+            // available in this SDK version. See SharedKernel.Storage.Obs.Tests' DeleteManyAsync
+            // round-trip test for the full investigation and reproduction evidence.
+            RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
         };
 
         return new AmazonS3Client(credentials, config);

@@ -72,6 +72,13 @@ public sealed class ObsBlobUriGenerator : IBlobUriGenerator
             Key = request.Key,
             Verb = verb,
             Expires = expiresAt.UtcDateTime,
+            // GetPreSignedUrlRequest.Protocol defaults to HTTPS unconditionally — it does NOT derive
+            // from the client's own ServiceURL/UseHttp configuration. Left unset, a plain-HTTP OBS
+            // (or MinIO stand-in) deployment would receive an https:// presigned URL that fails the
+            // TLS handshake against an HTTP-only listener. Deriving it from the client's own config
+            // keeps this transparent to callers and correct for both HTTPS OBS endpoints and HTTP
+            // test endpoints alike.
+            Protocol = _obs.Config.UseHttp ? Protocol.HTTP : Protocol.HTTPS,
         };
 
         var url = _obs.GetPreSignedURL(presignRequest);

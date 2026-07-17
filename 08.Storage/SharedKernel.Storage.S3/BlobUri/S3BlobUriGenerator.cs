@@ -72,6 +72,13 @@ public sealed class S3BlobUriGenerator : IBlobUriGenerator
             Key = request.Key,
             Verb = verb,
             Expires = expiresAt.UtcDateTime,
+            // GetPreSignedUrlRequest.Protocol defaults to HTTPS unconditionally — it does NOT derive
+            // from the client's own ServiceURL/UseHttp configuration. Left unset, a MinIO (or any
+            // plain-HTTP S3-compatible) deployment would receive an https:// presigned URL that fails
+            // the TLS handshake against an HTTP-only listener. Deriving it from the client's own
+            // config keeps this transparent to callers and correct for both real AWS S3 (HTTPS) and
+            // MinIO (HTTP).
+            Protocol = _s3.Config.UseHttp ? Protocol.HTTP : Protocol.HTTPS,
         };
 
         var url = _s3.GetPreSignedURL(presignRequest);

@@ -61,7 +61,23 @@ public static class S3StorageServiceCollectionExtensions
     private static AmazonS3Client CreateClient(S3StorageOptions options)
     {
         var credentials = new BasicAWSCredentials(options.AccessKeyId, options.SecretAccessKey);
-        var config = new AmazonS3Config { ForcePathStyle = options.ForcePathStyle };
+        var config = new AmazonS3Config
+        {
+            ForcePathStyle = options.ForcePathStyle,
+            // AWSSDK.S3 4.x defaults to WHEN_SUPPORTED, which eagerly attaches the newer CRC32-based
+            // flexible-checksum header to every request/operation that supports one. WHEN_REQUIRED
+            // narrows that to only the operations that strictly need a checksum, which is the safer,
+            // more broadly-compatible default for both real AWS S3 and S3-compatible endpoints
+            // (MinIO/OBS) alike. NOTE: this does not by itself guarantee compatibility with every
+            // S3-compatible endpoint's DeleteObjects handling — some older MinIO releases (confirmed:
+            // RELEASE.2024-01-16T16-07-38Z, the version this domain's own test fixture pins) still
+            // reject DeleteObjects unconditionally without a classic Content-MD5 header, which
+            // AWSSDK.S3 4.x no longer auto-computes for this operation under any
+            // RequestChecksumCalculation setting available in this SDK version. See
+            // SharedKernel.Storage.S3.Tests' DeleteManyAsync round-trip test for the full
+            // investigation and reproduction evidence.
+            RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
+        };
 
         if (!string.IsNullOrWhiteSpace(options.ServiceUrl))
         {

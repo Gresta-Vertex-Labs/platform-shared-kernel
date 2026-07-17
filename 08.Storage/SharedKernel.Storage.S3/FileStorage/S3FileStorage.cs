@@ -311,12 +311,15 @@ public sealed class S3FileStorage : IFileStorage
             try
             {
                 var response = await _s3.DeleteObjectsAsync(request, cancellationToken).ConfigureAwait(false);
-                outcomes.AddRange(response.DeletedObjects.Select(deleted => FileDeleteOutcome.Success(deleted.Key)));
+                // Some S3-compatible providers (observed against MinIO) return a null DeletedObjects/
+                // DeleteErrors list rather than an empty one when there is nothing to report on that
+                // side — never assume non-null just because the call itself did not throw.
+                outcomes.AddRange((response.DeletedObjects ?? []).Select(deleted => FileDeleteOutcome.Success(deleted.Key)));
             }
             catch (DeleteObjectsException ex)
             {
-                outcomes.AddRange(ex.Response.DeletedObjects.Select(deleted => FileDeleteOutcome.Success(deleted.Key)));
-                outcomes.AddRange(ex.Response.DeleteErrors.Select(error => MapDeleteError(bucket, error)));
+                outcomes.AddRange((ex.Response.DeletedObjects ?? []).Select(deleted => FileDeleteOutcome.Success(deleted.Key)));
+                outcomes.AddRange((ex.Response.DeleteErrors ?? []).Select(error => MapDeleteError(bucket, error)));
             }
             catch (AmazonS3Exception ex)
             {
