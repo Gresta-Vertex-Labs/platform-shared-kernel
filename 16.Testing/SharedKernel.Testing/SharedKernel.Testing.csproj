@@ -71,6 +71,14 @@
       ProjectReference from 16.Testing to 05.Application.
     -->
     <ProjectReference Include="..\..\05.Application\SharedKernel.Application.Behaviors\SharedKernel.Application.Behaviors.csproj" />
+    <!--
+      Storage in-memory doubles (S-23, P-269/WO-043): InMemoryFileStorage (IFileStorage),
+      InMemoryBlobUriGenerator (IBlobUriGenerator). Mechanically safe to add even while 08.Storage
+      was originally an empty placeholder (a ProjectReference to a content-empty project always
+      builds) — subsequently confirmed 2026-07-17 that SK.08.Core shipped real compiled types with
+      zero drift from this package's Storage/ Interface Contracts target shape.
+    -->
+    <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -85,6 +93,11 @@
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
     <PackageReference Include="Testcontainers.Redis" Version="4.1.0" />
     <PackageReference Include="Testcontainers.RabbitMq" Version="4.1.0" />
+    <!--
+      MinioContainerFixture (S-21, P-268/WO-043): fourth Containers/ fixture, pinned to the same
+      4.1.0 release family as the other three Testcontainers.* modules above.
+    -->
+    <PackageReference Include="Testcontainers.Minio" Version="4.1.0" />
     <!--
       xunit.core (S-09): the Xunit.IAsyncLifetime contract ONLY — container fixtures implement
       IAsyncLifetime directly. No test runner, no Xunit.Assert, no xunit.runner.visualstudio.
@@ -152,6 +165,13 @@
       numbered domain's own .Abstractions package.
     -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <!--
+      Containers/MinioContainerFixture's bucket-bootstrap step only (S-22, P-268/WO-043). Pinned to
+      4.0.101.1 to match 08.Storage/SharedKernel.Storage.S3.csproj and .Obs.csproj exactly (both
+      confirmed on disk). Storage/InMemoryFileStorage and InMemoryBlobUriGenerator never reference
+      AWSSDK.S3 — this package reference is scoped to the one Containers/ fixture file.
+    -->
+    <PackageReference Include="AWSSDK.S3" Version="4.0.101.1" />
   </ItemGroup>
 
   <ItemGroup>
