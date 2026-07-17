@@ -1,0 +1,13 @@
+---
+name: feedback_verify_live_source
+description: Never trust a domain's own CLAUDE.md prose, a cross-domain brief's claims, or a prior session's own draft about another domain's interface shape — always re-read the live .cs source before acting, every time.
+type: feedback
+---
+
+Rule: before implementing or confirming any fake/fixture that satisfies another domain's interface, read that domain's actual `.cs` files under its `Abstractions/`/`Models/`/`Errors/` folders (or equivalent) directly — never rely solely on that domain's own `CLAUDE.md` prose, and never assume a prior session's design draft is still accurate.
+
+**Why this matters, concretely observed twice in the same session (2026-07-17, WO-043 Design-phase confirmation for 16.Testing):**
+1. Both `16.Testing/CLAUDE.md` and `16.Testing/state-map.md` repeatedly stated `IFileStorage` has "ten members." The live interface (`08.Storage/SharedKernel.Storage.Abstractions/Abstractions/IFileStorage.cs`) has exactly nine (Upload/Download/Delete/Exists/GetMetadata/Copy/DeleteMany/List/CheckHealth). `08.Storage`'s own CLAUDE.md changelog had already caught and fixed this same miscount on its own side (2026-07-16 entry) — but the cross-domain propagation of that fix into `16.Testing`'s files never happened until this pass.
+2. `16.Testing/CLAUDE.md` carried an explicit "BUILD-TIME BLOCKER" note claiming `08.Storage/SharedKernel.Storage.Abstractions` was a genuinely empty placeholder with zero `.cs` files. By the time this Design-phase-confirmation session ran, `08.Storage`'s own `SK.08.Core` had shipped in full (30/30, verified via that domain's own `state-map.md`) — the blocker had cleared, but nothing in `16.Testing`'s own files reflected that until this pass re-checked on disk.
+
+**How to apply:** when a phase-launcher brief flags "these claims may be stale, re-verify yourself" — always do the full verification (Glob for the files, Read each one, compare signatures line-by-line) rather than skimming. When no such flag is given, still verify independently before faking a cross-domain interface — a domain's own brain file is a snapshot of what was true when last written, not a live contract. Grep for member counts, property names, and status claims across *all* files in the current domain (CLAUDE.md, state-map.md, and every place a member count or status is restated) — a miscount or stale status tends to be repeated in 3-4 places (Interface Contracts block, Cross-Domain Dependencies table, task text, changelog), and all of them need correcting once found, not just the first one noticed.

@@ -1,11 +1,35 @@
 {
   "permissions": {
     "allow": [
-      "Bash(*)",
-      "PowerShell(*)",
-      "Write(*)",
-      "Edit(*)",
-      "Agent(*)"
-    ]
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep",
+      "Agent",
+      "Bash(dotnet build*)",
+      "Bash(dotnet run*)",
+      "Bash(dotnet test*)",
+      "Bash(dotnet watch*)",
+      "Bash(dotnet restore*)",
+      "Bash(dotnet clean*)",
+      "Bash(dotnet format*)",
+      "Bash(dotnet tool*)",
+      "Bash(dotnet ef*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git checkout*)",
+      "Bash(git branch*)",
+      "Bash(ls*)",
+      "Bash(pwd*)",
+      "Bash(cat*)",
+      "Bash(dotnet test *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }
