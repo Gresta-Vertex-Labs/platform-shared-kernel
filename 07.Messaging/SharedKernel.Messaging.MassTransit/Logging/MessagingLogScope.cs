@@ -17,9 +17,9 @@ namespace SharedKernel.Messaging.MassTransit.Logging;
 /// <c>FaultConsumerAdapter&lt;TMessage,TFaultConsumer&gt;.Consume()</c>, and
 /// <see cref="RoutingSlips.RoutingSlipActivityBase{TArguments, TLog}"/>.Execute()/Compensate() —
 /// the four consumer/activity base types in this package that build a structured log scope.
-/// Guarantees an identical <c>"CorrelationId"</c> key name and identical null-handling across
-/// all four, instead of four independently hand-rolled dictionary literals drifting out of sync
-/// with each other (the exact defect P-254 fixed).
+/// Guarantees an identical <see cref="CorrelationIdKey"/> key name and identical null-handling
+/// across all four, instead of four independently hand-rolled dictionary literals drifting out
+/// of sync with each other (the exact defect P-254 fixed).
 /// </para>
 /// <para>
 /// <c>VersionTranslatingConsumer</c> and <c>TranslatorRegistrationValidator</c> do not use
@@ -29,8 +29,19 @@ namespace SharedKernel.Messaging.MassTransit.Logging;
 internal static class MessagingLogScope
 {
     /// <summary>
+    /// The dictionary key under which the correlation identifier is recorded in the log scope
+    /// returned by <see cref="Create"/>.
+    /// </summary>
+    /// <remarks>
+    /// Package-local: this key names a structured-log-scope entry that is this domain's own
+    /// logging contract, not a cross-service wire format — it is deliberately NOT promoted to
+    /// <c>01.Core</c>'s <c>EventId</c>/logging registry (P-263).
+    /// </remarks>
+    internal const string CorrelationIdKey = "CorrelationId";
+
+    /// <summary>
     /// Creates a new mutable log scope dictionary seeded with a single
-    /// <c>"CorrelationId"</c> entry derived from <paramref name="correlationId"/>.
+    /// <see cref="CorrelationIdKey"/> entry derived from <paramref name="correlationId"/>.
     /// </summary>
     /// <param name="correlationId">
     /// The correlation identifier for the current consume/execute/compensate operation, or
@@ -38,10 +49,10 @@ internal static class MessagingLogScope
     /// </param>
     /// <returns>
     /// A new <see cref="Dictionary{TKey, TValue}"/> containing
-    /// <c>["CorrelationId"] = correlationId?.ToString("D") ?? string.Empty</c>. Callers must add
+    /// <c>[CorrelationIdKey] = correlationId?.ToString("D") ?? string.Empty</c>. Callers must add
     /// their own additional entries before passing the dictionary to
     /// <see cref="Microsoft.Extensions.Logging.ILogger.BeginScope{TState}"/>.
     /// </returns>
     public static Dictionary<string, object?> Create(Guid? correlationId) =>
-        new() { ["CorrelationId"] = correlationId?.ToString("D") ?? string.Empty };
+        new() { [CorrelationIdKey] = correlationId?.ToString("D") ?? string.Empty };
 }
