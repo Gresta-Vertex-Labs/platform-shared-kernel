@@ -69,8 +69,11 @@
   </Folder>
   <Folder Name="/08.Storage/">
     <Project Path="08.Storage/SharedKernel.Storage.Abstractions/SharedKernel.Storage.Abstractions.csproj" />
+    <Project Path="08.Storage/SharedKernel.Storage.Abstractions/SharedKernel.Storage.Abstractions.Tests/SharedKernel.Storage.Abstractions.Tests.csproj" />
     <Project Path="08.Storage/SharedKernel.Storage.S3/SharedKernel.Storage.S3.csproj" />
     <Project Path="08.Storage/SharedKernel.Storage.S3/SharedKernel.Storage.S3.Tests/SharedKernel.Storage.S3.Tests.csproj" />
+    <Project Path="08.Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.csproj" />
+    <Project Path="08.Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.Tests/SharedKernel.Storage.Obs.Tests.csproj" />
   </Folder>
   <Folder Name="/09.Search/">
     <Project Path="09.Search/SharedKernel.Search.Abstractions/SharedKernel.Search.Abstractions.csproj" />
