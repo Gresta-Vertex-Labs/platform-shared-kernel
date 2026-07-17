@@ -84,6 +84,28 @@ public static class StringConstantsClassDetector
     }
 
     /// <summary>
+    /// Resolves every <c>const string</c>/<c>static readonly string</c> field declared DIRECTLY on
+    /// <paramref name="type"/>, regardless of whether the type as a whole matches the "string
+    /// constants class" shape (see <see cref="IsStringConstantsClass"/>) — i.e. a type may carry a
+    /// mix of string and non-string fields, or may not be <c>abstract sealed</c> at all, and this
+    /// method still resolves whatever qualifying string fields it declares.
+    /// </summary>
+    /// <remarks>
+    /// Used by <c>WellKnownConstantOwnershipAssertion</c> (WO-042 P-264) to walk EVERY
+    /// <c>TypeDefinition</c> in a scanned assembly — not only types matching the constants-class
+    /// shape — so a stray <c>const</c>/<c>static readonly string</c> field on an ordinary class is
+    /// caught too.
+    /// </remarks>
+    /// <param name="type">The Mono.Cecil type to inspect.</param>
+    /// <returns>
+    /// The resolved set of (declaring type name, field name, literal value) tuples for
+    /// <paramref name="type"/>'s own qualifying fields. Empty when the type declares no
+    /// <c>const</c>/<c>static readonly string</c> field.
+    /// </returns>
+    public static IReadOnlyList<ResolvedStringConstant> ResolveStringFieldsOnType(TypeDefinition type) =>
+        ResolveFieldValues(type).ToList();
+
+    /// <summary>
     /// Returns <see langword="true"/> when <paramref name="type"/> matches the "string constants
     /// class" shape: <c>static class</c> (abstract + sealed) with at least one field, where every
     /// field is a <c>const string</c> or <c>static readonly string</c>.
