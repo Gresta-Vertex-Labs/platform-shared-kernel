@@ -5,3 +5,4 @@
 - [Core vs Tests phase boundary](feedback_core_tests_phase_boundary.md) — don't write the Tests-phase xUnit suite during a Core-phase dispatch; this domain splits them
 - [Split phase on missing upstream fixture](feedback_split_phase_on_missing_upstream_fixture.md) — verify fixtures on disk, implement every genuinely unblocked task, don't inherit a summary sentence's over-broad "blocked" scope
 - [Re-verify blocker even same-day](feedback_reverify_blocker_even_same_day.md) — don't trust a "verified today" state-map note at face value; re-run the actual on-disk checks yourself
+- [Docs-phase pattern: GenerateDocumentationFile+TreatWarningsAsErrors+NuGet metadata](feedback_docs_phase_pattern.md) — repo-wide convention, apply directly to all production csproj, then rebuild and read the output

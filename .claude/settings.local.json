@@ -52,7 +52,8 @@
       "Read(//c/Users/dincd/.nuget/packages/awssdk.core/4.0.100.5/lib/net8.0/**)",
       "Bash(docker run *)",
       "Bash(docker rm *)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:19010/minio/health/live)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:19010/minio/health/live)",
+      "Bash(docker info *)"
     ],
     "defaultMode": "acceptEdits"
   }
