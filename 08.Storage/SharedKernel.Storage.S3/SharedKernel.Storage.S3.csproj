@@ -3,6 +3,30 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      AWS S3 / MinIO client SDK. Pinned 4.0.101.1 (latest stable on nuget.org at implementation
+      time) — also the version SharedKernel.Storage.Obs pins, since both packages sit on the same
+      S3-compatible SDK surface but never reference each other (sibling-package rule).
+    -->
+    <PackageReference Include="AWSSDK.S3" Version="4.0.101.1" />
+    <!-- [LoggerMessage] source-generated logging (ILogger<T>, LogLevel, LoggerMessage attribute). -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Storage.S3.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Storage.S3.Tests\**" />
+    <None Remove="SharedKernel.Storage.S3.Tests\**" />
+  </ItemGroup>
 
 </Project>

@@ -4,6 +4,37 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Storage.S3.csproj" />
+    <!--
+      Test-only reference: backs the eventual Testcontainers MinIO fixture (P-268,
+      Containers/MinioContainerFixture) that SK.08.Tests' provider round-trip suites need.
+    -->
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="8.4.0" />
+    <!--
+      NSubstitute is used ONLY for the narrow status-code -> StorageErrors error-mapping assertions
+      (S3StatusCodeMappingTests) where inducing a real 403/500 failure against a live backend is hard
+      — per 08.Storage/CLAUDE.md's Test Rules: "Mock it only for narrow error-mapping/unit assertions
+      where a real failure is hard to induce." Behavioral/round-trip coverage never mocks IAmazonS3.
+    -->
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+  </ItemGroup>
 
 </Project>
