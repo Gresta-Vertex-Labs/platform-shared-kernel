@@ -3,6 +3,23 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Zero third-party NuGet dependencies (SK.08 hard rule) — the only reference is
+      SharedKernel.Primitives, for Result<T>/Result/Error. Any Amazon.* / cloud-SDK reference here
+      is a hard violation.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Storage.Abstractions.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Storage.Abstractions.Tests\**" />
+    <None Remove="SharedKernel.Storage.Abstractions.Tests\**" />
+  </ItemGroup>
 
 </Project>
