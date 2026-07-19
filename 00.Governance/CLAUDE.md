@@ -783,6 +783,99 @@ SK0023  NonSingletonAmazonS3ClientRegistration
                 (SK0022 was the prior ID) — a single-purpose, domain-adjacent rule; no new
                 08xx ID block was opened for one rule, following the SK0011/SK0013
                 precedent that a lone domain-specific rule stays in the sequential block.
+
+SK0024  RawSearchFieldNameLiteral
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : A string-literal argument (LiteralExpressionSyntax of kind
+                StringLiteralExpression) supplied at the field-name parameter position of
+                one of eleven recognized SharedKernel.Search.Abstractions call-site shapes,
+                each requiring SemanticModel.GetSymbolInfo to resolve the invoked method to
+                its exact declaring type (syntax-only simple-name matching on "OrderBy"/
+                "Where"/"In"/"Exists" would collide catastrophically with LINQ's own
+                Enumerable/Queryable extension methods of the same names):
+                  IQueryBuilder<TDocument> / SearchQueryBuilder<TDocument> — six methods:
+                    .OrderBy(string field), .OrderByDescending(string field),
+                    .SearchingIn(params string[] fields),
+                    .Faceting(params string[] facetFields),
+                    .WithNumericFacetStats(params string[] facetFields),
+                    .Returning(params string[] fields). For the four params string[]
+                    shapes, EVERY argument expression supplied at that parameter position
+                    is checked individually — covers both SearchingIn("a", "b") and
+                    SearchingIn(new[] { "a", "b" })/collection-expression forms.
+                  SearchFilter static factories — five methods, field always at argument
+                    position 0: .Eq(string field, SearchValue value),
+                    .Ne(string field, SearchValue value),
+                    .In(string field, params SearchValue[] values),
+                    .Between(string field, SearchValue? from, SearchValue? to, bool, bool),
+                    .Exists(string field).
+                The rule flags the LITERAL SYNTAX SHAPE only — mirroring SK0022's
+                declaring-class-agnostic discriminator exactly. A nameof(...) expression
+                compiles to an InvocationExpressionSyntax, not a StringLiteralExpression, so
+                it passes automatically without any resolved-value inspection; a reference
+                to a domain-local field-constants class member passes identically.
+    Fix       : Reference the field name via nameof(TDocument.PropertyName) or a
+                domain-local field-constants class member populated from nameof(...) —
+                never a raw string literal. This mirrors the platform's existing
+                self-supplied-surface pattern (ISearchDocument.DocumentId,
+                ILoggableRequest<TResponse>, ICacheableQuery.CacheKey) applied to refactor
+                safety instead of redaction.
+    Suppress  : Per-call-site via #pragma warning disable SK0024 when a field name is
+                genuinely dynamic (e.g., driven by a runtime-configured facet list read
+                from IConfiguration) and cannot be nameof()-backed; document the rationale
+                inline.
+    Note      : Introduced WO-044 P-278. Motivating hazard (09.Search/CLAUDE.md D-10): a
+                typo'd field name is a REJECTED filter on Meilisearch (visible —
+                SearchErrors.FieldNotFilterable/FieldNotSortable/FieldNotFacetable, checked
+                against the registered SearchIndexDefinition before any I/O) and a SILENT
+                ZERO-RESULT on ElasticSearch whenever the typo happens to also be a
+                syntactically legal but nonexistent field reference at the ES query-DSL
+                level — an asymmetry unique among the platform's magic-string hazards
+                (SK0022's four targets fail identically loud, or simply do not compile, on
+                both sides of whatever boundary they cross). The invisible-failure side is
+                what earns this its own dedicated rule rather than folding into SK0022. The
+                domain's own brain (D-10) states this rule "must land inside WO-044 rather
+                than being deferred" for exactly this reason. Requires SemanticModel — the
+                domain's eighth analyzer requiring semantic resolution, after SK0011,
+                SK0015, SK0017–SK0019, SK0020, and SK0022.
+
+SK0025  ObsoleteElasticsearchClientUsage
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : A SemanticModel.GetSymbolInfo resolution — on any IdentifierNameSyntax,
+                GenericNameSyntax, QualifiedNameSyntax, or UsingDirectiveSyntax name node —
+                whose resolved symbol's ContainingAssembly.Name is exactly "NEST" or
+                "Elasticsearch.Net" (case-sensitive, matching the exact published NuGet
+                package/assembly names). Covers a using Nest; directive, a
+                fully-qualified Nest.ElasticClient reference, and a bare
+                ElasticClient/ConnectionSettings/QueryContainer symbol usage after such a
+                directive, in one check — the ContainingAssembly-based discriminator
+                generalizes to every type either deprecated package exposes without
+                enumerating them individually.
+    Fix       : Use Elastic.Clients.Elasticsearch (pinned 9.4.2 in
+                SharedKernel.Search.ElasticSearch — the platform-sanctioned client)
+                instead. NEST and Elasticsearch.Net are deprecated on nuget.org,
+                feature-frozen since client 8.13, and their support window closed at
+                end-2025.
+    Suppress  : Per-call-site via #pragma warning disable SK0025; no legitimate use case
+                is known — suppression exists only for the mechanical completeness the
+                rest of the registry provides.
+    Note      : Introduced WO-044 P-278, the platform's first EOL-third-party-package
+                prohibition rule. No suppression namespace — fires globally, platform-wide,
+                not scoped to 09.Search or any particular namespace: a consuming
+                microservice adding NEST directly (not only
+                SharedKernel.Search.ElasticSearch itself) is exactly as unsafe. Requires
+                SemanticModel — a syntax-only simple-name check on
+                ElasticClient/ConnectionSettings was rejected because those names are
+                generic enough to plausibly collide with unrelated types in other
+                libraries; the ContainingAssembly.Name check is the precise,
+                collision-free discriminator, consistent with SK0002's/SK0013's/SK0020's
+                "exact declaring type/assembly, not simple name" discipline.
+                Elastic.Clients.Elasticsearch types resolve to a DIFFERENT
+                ContainingAssembly.Name ("Elastic.Clients.Elasticsearch") and therefore
+                never trip this rule — the explicit pass-path case (09.Search/CLAUDE.md's
+                own Technology Stack table already documents this exact prohibition in
+                prose; this rule is its mechanical enforcement).
 ```
 
 ---
@@ -800,7 +893,9 @@ ArchitectureRuleBase  (abstract base class)
           is ConditionList. AssertRule calls .GetResult() on the ConditionList.
 
 SharedKernelLayeringRules  (static class — pre-built predicates)
-    All factory methods take an Assembly parameter and return ConditionList.
+    All factory methods take an Assembly parameter and return ConditionList, EXCEPT
+    SearchReferencesOnlyCoreAndContracts (WO-044 P-278), which returns ConditionList[] —
+    see its own entry below for why.
     .CoreReferencesNothing(Assembly)                → ConditionList
     .CachingReferencesOnlyCore(Assembly)            → ConditionList
     .DomainReferencesOnlyCore(Assembly)             → ConditionList
@@ -809,6 +904,57 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
     .DomainNeverReferencesMessaging(Assembly)       → ConditionList  (hard rule)
     .ApplicationNeverReferencesConcreteInfrastructure(Assembly) → ConditionList  (hard rule)
     .TestingNeverReferencedByProduction(Assembly)   → ConditionList  (hard rule)
+    .SearchReferencesOnlyCoreAndContracts(Assembly) → ConditionList[]  (WO-044 P-278)
+
+    .SearchReferencesOnlyCoreAndContracts(Assembly searchAssembly)  → ConditionList[]
+        Added to this EXISTING class rather than a new dedicated class, mirroring the
+        precedent that a single new layering-BOUNDARY check on an existing numbered domain
+        belongs alongside its siblings (CoreReferencesNothing,
+        ContractsReferencesOnlyCoreAndDomain, etc.), while TOPOLOGY-INTERNAL checks
+        (sibling-package non-reference, third-party-dependency purity) live in the
+        domain's own dedicated *TopologyRules class (SearchTopologyRules, documented
+        below). Asserts that the supplied 09.Search assembly has no dependency on any of
+        FIFTEEN forbidden capability-domain namespace terms — every OTHER numbered
+        domain's package family: "SharedKernel.Caching", "SharedKernel.Domain",
+        "SharedKernel.Application", "SharedKernel.Persistence", "SharedKernel.Messaging",
+        "SharedKernel.Storage", "SharedKernel.AI" (10.Intelligence's package family is
+        named SharedKernel.AI.*, not SharedKernel.Intelligence.* — confirmed against the
+        root CLAUDE.md Abstractions table: "SharedKernel.AI.Abstractions" / ".VectorDb"),
+        "SharedKernel.Communication", "SharedKernel.Security", "SharedKernel.ServiceDefaults",
+        "SharedKernel.MultiTenancy", "SharedKernel.Presentation", "SharedKernel.Integration",
+        "SharedKernel.Testing", "SharedKernel.Workflows". Returns ConditionList[] (fifteen
+        elements, one per forbidden term) — the FIRST method on this class to do so; every
+        prior SharedKernelLayeringRules method returns a single ConditionList. This
+        deliberately follows the newer domain-boundary-rule-class convention
+        (CommunicationLayeringRules.CommunicationPackagesNeverReferencesForbiddenLayers's
+        proven "one ConditionList per forbidden term" shape) rather than attempting a
+        single positive OnlyHaveDependencyOnAny(...) assertion, which would require
+        exhaustively enumerating every legitimate BCL/System.*/Microsoft.CSharp namespace
+        alongside the two permitted SharedKernel terms — brittle and unproven at this
+        scale in this codebase. FALLBACK NOTE: if NetArchTest.eNt >= 1.3.2 is confirmed at
+        implementation time to expose .Should().NotHaveDependencyOnAny(string[]) as a
+        single-ConditionList alternative, that is an acceptable simplification IF it
+        preserves per-term failure-message granularity; otherwise keep the fifteen-element
+        array. Caller must assert .GetResult().IsSuccessful on EACH element. None of the
+        fifteen terms is a prefix of "SharedKernel.Search" — no self-collision. Excludes
+        (by omission, never listed as forbidden) "SharedKernel.Primitives",
+        "SharedKernel.Core", "SharedKernel.Configuration", "SharedKernel.FeatureManagement",
+        "SharedKernel.Cryptography" (01.Core — permitted) and "SharedKernel.Contracts"
+        (04.Contracts — permitted).
+        Rationale: mirrors CommunicationLayeringRules.CommunicationPackagesNeverReferencesForbiddenLayers's
+        four-term shape, scaled to the FULL platform domain roster because 09.Search's own
+        brain states its layering wall even more starkly than 11.Communication's:
+        "09.Search may only reference 01.Core and 04.Contracts. It must never reference
+        03.Domain, 05.Application, 06.Persistence, 07.Messaging, 12.Security, or any other
+        capability domain." The WO-044 phase input's own acceptance criteria name five of
+        these terms explicitly and close with "or any other capability domain beyond
+        01.Core/04.Contracts" — this method is the exhaustive, all-fifteen-domains
+        mechanical form of that closing clause.
+        MAINTENANCE OBLIGATION: per this file's own Implementation Rules ("If a new domain
+        (folder XX) is added, the layering rules must be updated in the same PR"), a
+        future 18.NewDomain addition MUST append its package-family term to this forbidden
+        list in the SAME PR that adds the new domain, or SearchReferencesOnlyCoreAndContracts
+        will silently under-enforce against it.
 
 GuardPurityRules  (static class — guard clause functional-path purity predicates)
     .GuardAgainstMethodsMustNotThrow()      → IArchRule
@@ -2758,6 +2904,76 @@ StorageTopologyRules  (static class — 08.Storage package topology enforcement 
     (the RedisTopologyRulesTests/CompositionRootExclusivityRulesTests technique) remain in place as
     the primary proof, per the phase spec's own instruction that they "remain the primary red/green
     proof" even when real-assembly verification becomes possible.
+
+SearchTopologyRules  (static class — 09.Search package topology enforcement predicates; WO-044 P-278)
+    Both factory methods accept Assembly (or two named Assembly parameters) and return
+    ConditionList (or ConditionList[]). Mirrors StorageTopologyRules's structure and its
+    documented NotHaveDependencyOn matching contract exactly (namespace StartsWith, no
+    trailing dot, self-collision awareness) but scoped to 09.Search's two sibling provider
+    packages instead of 08.Storage's two. No Mono.Cecil, no ICustomRule — every check is a
+    pure NetArchTest .Should().NotHaveDependencyOn(...) assembly-dependency-graph predicate.
+
+    .AbstractionsHasNoThirdPartyDependencies(Assembly abstractionsAssembly) → ConditionList
+        Asserts that SharedKernel.Search.Abstractions has no dependency on any of six
+        forbidden terms: "Meilisearch" (the MeiliSearch SDK's root namespace — CONFIRM
+        EXACT CASING against the real published package at implementation time, per the
+        StorageTopologyRules "Amazon" precedent for a bare-prefix third-party term),
+        "Elastic" (bare prefix — catches Elastic.Clients.Elasticsearch and any other
+        Elastic.* library in one term), "SharedKernel.Search.Meilisearch",
+        "SharedKernel.Search.ElasticSearch", "SharedKernel.Configuration" (the
+        Options-validation package only the two provider packages need — Abstractions
+        itself references only SharedKernel.Primitives and SharedKernel.Contracts), and
+        "Microsoft.Extensions" (09.Search/CLAUDE.md states Abstractions carries "zero
+        PackageReference entries of any kind — not even
+        Microsoft.Extensions.DependencyInjection.Abstractions, because no DI extension
+        lives there"; this sixth term defends that explicit prose rule mechanically, not
+        only the third-party-SDK rule the other five terms cover). Six iterative
+        .Should().NotHaveDependencyOn(term) calls, the same iterative pattern as
+        DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure and
+        RedisTopologyRules/StorageTopologyRules's sibling methods. None of the six terms
+        is a prefix of "SharedKernel.Search.Abstractions" — no self-collision.
+        Rationale: 09.Search/CLAUDE.md documents SharedKernel.Search.Abstractions as having
+        zero third-party NuGet dependencies and referencing only SharedKernel.Primitives
+        (01.Core) and SharedKernel.Contracts (04.Contracts, for the guarded
+        ToPagedList() bridge only) — the strictest dependency posture of any Abstractions
+        package in the platform (stricter than SharedKernel.Caching.Abstractions, which is
+        permitted Microsoft.Extensions.DependencyInjection.Abstractions). This
+        mechanically confirms the abstraction never accidentally couples to either
+        concrete SDK, to either provider package, to the Options-validation package, or to
+        any Microsoft.Extensions.* dependency at all.
+
+    .ProviderPackagesNeverReferenceEachOther(Assembly meilisearchAssembly, Assembly elasticSearchAssembly)
+                                            → ConditionList[]
+        Returns exactly two elements, in order: [0] SharedKernel.Search.Meilisearch must
+        not depend on "SharedKernel.Search.ElasticSearch"; [1] SharedKernel.Search.ElasticSearch
+        must not depend on "SharedKernel.Search.Meilisearch". TWO NAMED Assembly parameters
+        (not params Assembly[]) — mirroring StorageTopologyRules.ProviderPackagesNeverReferenceEachOther's
+        and UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct's two-named-parameter
+        convention: the rule's whole purpose is comparing two specific, named packages, so
+        positional params would obscure which assembly is expected to be which. Only two
+        packages exist here and neither identifying namespace
+        ("SharedKernel.Search.Meilisearch", "SharedKernel.Search.ElasticSearch") is a
+        prefix of the other or of its own declaring assembly — no lookup table needed,
+        unlike RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther's four-package
+        case. Caller must assert .GetResult().IsSuccessful on EACH element.
+        Rationale: 09.Search/CLAUDE.md's own Provider role note states explicitly that
+        SharedKernel.Search.Meilisearch and SharedKernel.Search.ElasticSearch "are sibling
+        .{Provider} packages, not a .{Provider}.Core / .{Provider}.{Role} split, and they
+        must never reference each other" — shared implementation shape (options-validation
+        flow, the SearchFilter walker skeleton, receipt mapping, probe sequencing) is
+        deliberately DUPLICATED rather than factored into a shared
+        SharedKernel.Search.Core, mirroring the 08.Storage .S3/.Obs precedent exactly.
+
+    Note: introduced in WO-044 P-278. Designed against contrived in-memory assemblies only —
+    09.Search/state-map.md shows the entire Design phase (D-01 through D-28, covering
+    P-272/P-273/P-274) at ○ as of this phase's authoring (2026-07-19); only bare .csproj
+    skeletons (TargetFramework/ImplicitUsings/Nullable only, zero references, zero content)
+    exist on disk for all three packages. Real-assembly wiring is a GATING acceptance
+    criterion on this phase per the phase input itself (unlike most prior
+    "designed-ahead-of-a-pending-dependency" precedents in this domain, where real-assembly
+    verification was tracked as a non-blocking follow-up) — see Dependencies in
+    00.Governance/state-map.md's SK.00.SearchTopology phase block for the explicit blocking
+    status.
 ```
 
 ---
@@ -2942,6 +3158,13 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `StorageTopologyRules` (WO-043 P-271) introduces zero new SK diagnostic IDs, zero new Mono.Cecil technique, and zero new `ICustomRule` — all three factory methods are pure `NetArchTest` `.Should().NotHaveDependencyOn(...)` checks, mirroring `RedisTopologyRules` exactly but scoped to `08.Storage`'s two provider packages instead of Redis's five. `ProviderPackagesNeverReferenceEachOther` takes two NAMED `Assembly` parameters (not `params Assembly[]`), mirroring `UnitOfWorkSeamRules.UnitOfWorkInterfacesRemainDistinct`'s two-named-parameter convention — with only two packages involved and neither identifying namespace a prefix of the other, no `Dictionary<string,string[]>` lookup table (the technique `RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther` needs for four packages) is required.
 - `StorageTopologyRules.OnlyProviderPackagesMayReferenceAmazonS3` carries NO internal namespace exemption — exclusion of `SharedKernel.Storage.S3`/`.Obs` is achieved entirely by the caller never passing either assembly to the factory method, the same caller-controlled-exclusion convention already established by `PresentationLayeringRules` and `CompositionRootExclusivityRules`. Document any future internal exemption here before adding one.
 - **`StorageTopologyRules` real-assembly status — CORRECTED at implementation closeout (2026-07-18).** At this phase's authoring (2026-07-16), `08.Storage`'s own `state-map.md` showed every phase at `○`/empty and P-265/P-266/P-267 as not-yet-shipped, so the phase spec instructed CONTRIVED-fixtures-only design. By the time this phase was implemented (2026-07-18), `08.Storage` had independently reached Published — P-265/P-266/P-267 are all `●` Complete, and `SharedKernel.Storage.Abstractions`/`.S3`/`.Obs` exist as real, clean-building assemblies. The contrived in-memory fixtures (`CSharpCompilation` + `MetadataReference.CreateFromImage`, the `RedisTopologyRulesTests`/`CompositionRootExclusivityRulesTests` technique) remain the PRIMARY red/green proof, per the phase spec's own instruction — T-194–T-199 all use contrived fixtures. Real-assembly verification was ADDITIONALLY wired in this same phase (not deferred as a follow-up, since the dependency the phase spec flagged as blocking had already resolved): `SharedKernel.ArchitectureTests.Tests.csproj` gained test-only `ProjectReference`s (`PrivateAssets="all"`) to all three real `08.Storage` assemblies, and three `Real*`-suffixed tests confirm all three `StorageTopologyRules` factory methods pass against the shipped packages with zero discrepancy from the design-time contrived-fixture behavior.
+- SK0024 `RawSearchFieldNameLiteralAnalyzer` and SK0025 `ObsoleteElasticsearchClientUsageAnalyzer` (WO-044 P-278) are the next two sequential IDs in the SK0001–SK00N general-purpose block (SK0023 was the prior ID) and the platform's first `09.Search`-domain diagnostics. Both require `SemanticModel` resolution — SK0024 the domain's eighth semantic-model analyzer (after SK0011, SK0015, SK0017–SK0019, SK0020, SK0022), SK0025 the ninth — because neither rule's discriminator is expressible as a safe syntax-only simple-name check without unacceptable false-positive risk (`OrderBy`/`Where`/`In`/`Exists` collide with LINQ; `ElasticClient`/`ConnectionSettings` are generic enough names to exist in unrelated libraries).
+- SK0024 is the platform's first refactor-safety/`nameof()`-encouragement rule, distinct in INTENT from SK0022's cross-cutting-wire-contract magic-string prohibition even though both share the identical literal-vs-reference syntax-shape discriminator (`LiteralExpressionSyntax` of kind `StringLiteralExpression`, declaring-class-agnostic — a domain-local field-constants class satisfies the rule exactly as well as an inline `nameof(...)`). Do not merge SK0024 into SK0022's four call-site shapes or attempt to generalize SK0022 to cover it — SK0022 fires on genuinely cross-cutting/wire-contract literals (HTTP headers, OTel baggage, config sections, claim types), while SK0024's motivating hazard is the Meilisearch-visible/ElasticSearch-silent asymmetry specific to `09.Search`'s two-provider query surface, a different rationale that this file's own SK0022 entry does not and should not reference.
+- SK0024's eleven recognized call-site shapes (six on `IQueryBuilder<TDocument>`/`SearchQueryBuilder<TDocument>`, five on `SearchFilter`'s static factories) are resolved via `SemanticModel.GetSymbolInfo` against `SharedKernel.Search.Abstractions`'s exact declaring types — CONFIRM the concrete namespace of `IQueryBuilder<TDocument>`/`SearchQueryBuilder<TDocument>` (documented in `09.Search/CLAUDE.md` as living under a `Querying/` folder — the exact namespace segment, e.g. `SharedKernel.Search.Abstractions.Querying` vs. bare `SharedKernel.Search.Abstractions`, is not yet locked as of this phase's authoring since `09.Search`'s own Design phase D-09 is still `○`) at implementation time against the real shipped `09.Search` source, once P-272 lands. For the four `params string[]` shapes (`SearchingIn`, `Faceting`, `WithNumericFacetStats`, `Returning`), the analyzer must walk every argument expression at that parameter position individually — both the multi-argument call form and any array/collection-expression form.
+- `SearchTopologyRules` (WO-044 P-278) mirrors `StorageTopologyRules`'s structure and its documented `NotHaveDependencyOn` matching contract exactly (namespace `StartsWith`, no trailing dot, self-collision awareness) but is scoped to `09.Search`'s two SIBLING provider packages (`SharedKernel.Search.Meilisearch`/`.ElasticSearch`, mirroring `08.Storage`'s `.S3`/`.Obs` sibling-not-`.Core`-split precedent exactly, per `09.Search/CLAUDE.md`'s own explicit rejection of a `SharedKernel.Search.Core`). `.AbstractionsHasNoThirdPartyDependencies` carries a SIXTH forbidden term (`"Microsoft.Extensions"`) beyond `StorageTopologyRules`'s five-term analog, because `09.Search/CLAUDE.md` documents `SharedKernel.Search.Abstractions` as having a stricter dependency posture than `SharedKernel.Storage.Abstractions` — zero `PackageReference` of any kind, not even `Microsoft.Extensions.DependencyInjection.Abstractions` (which `SharedKernel.Caching.Abstractions` IS permitted). No new Mono.Cecil technique and no new `ICustomRule` — pure `NetArchTest` checks, zero new NuGet dependency.
+- `SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts` (WO-044 P-278) is the first method on `SharedKernelLayeringRules` to return `ConditionList[]` instead of a single `ConditionList` — every sibling method on that class (`CoreReferencesNothing`, `ContractsReferencesOnlyCoreAndDomain`, etc.) predates the newer domain-boundary-rule-class convention (`RedisTopologyRules`/`CommunicationLayeringRules`/`StorageTopologyRules`) of returning one `ConditionList` per forbidden term for per-term failure-message granularity; this method deliberately follows that newer convention rather than the older single-`ConditionList` shape of its own siblings, because it is the first `SharedKernelLayeringRules` method checking against more than two or three forbidden terms (fifteen, one per every OTHER numbered domain's package family). Document any future simplification to a single `.NotHaveDependencyOnAny(string[])` call here before applying it — see the method's own entry above for the exact fallback condition.
+- The fifteen-term forbidden list inside `SearchReferencesOnlyCoreAndContracts` is an EXPLICIT enumeration, not a derived/reflective one — per this file's own long-standing Implementation Rule ("Architecture tests in `SharedKernelLayeringRules` must mirror the layering table in the root `CLAUDE.md` exactly. If a new domain (folder XX) is added, the layering rules must be updated in the same PR"), a future `18.NewDomain` addition to the root `CLAUDE.md` Folder Map MUST append its package-family namespace term to this list in the SAME PR that adds the new domain, or this rule will silently under-enforce against the new domain the way it would against any of the fourteen domains already listed if one were accidentally omitted today. `"SharedKernel.AI"` (not `"SharedKernel.Intelligence"`) is the correct term for `10.Intelligence` — confirmed against the root `CLAUDE.md` Abstractions table (`SharedKernel.AI.Abstractions` / `.VectorDb`), a package-family-name-vs-folder-name mismatch worth flagging explicitly since it is the one term in the list that does not match its folder name.
+- Real-assembly status for `SK0024`/`SK0025`/`SearchTopologyRules`/`SearchReferencesOnlyCoreAndContracts` — UNVERIFIABLE at authoring time (2026-07-19), and UNLIKE every prior "designed-ahead-of-a-pending-dependency" precedent in this domain (`SK.00.ServiceDefaultsGovernance`, `SK.00.MetricsOutcomeTagAndMisregistrationGuard`, `SK.00.CryptoDelegationAndUowSeamGuard`, `SK.00.MagicStringGuard`, `SK.00.StorageTopology`), the WO-044 phase input's own acceptance criteria make real-assembly verification a GATING condition on this phase's completion, not a non-blocking follow-up. `09.Search`'s own `state-map.md` shows the entire Design phase (D-01 through D-28, covering P-272/P-273/P-274) at `○` as of this phase's authoring; only bare `.csproj` skeletons exist on disk for all three packages. Design, implementation, and initial tests for this phase use CONTRIVED in-memory assemblies via `CSharpCompilation` + `MetadataReference.CreateFromImage` (the `RedisTopologyRulesTests`/`StorageTopologyRulesTests` technique); the real-assembly re-verification pass against P-272/P-273/P-274's shipped output MUST be completed, and its own acceptance-criterion checkbox explicitly closed, before this phase can be marked fully `●` complete — see Acceptance Criteria and Dependencies in `00.Governance/state-map.md`'s `SK.00.SearchTopology` phase block.
 
 ---
 
@@ -3037,3 +3260,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-16] SK.00.MagicStringGuard → ● closeout — CrossCuttingMagicStringLiteralAnalyzer (SK0022) implemented in SharedKernel.Analyzers/Diagnostics/; WellKnownConstantOwnershipAssertion implemented in SharedKernel.ArchitectureTests/, reusing StringConstantsClassDetector.ResolveStringFieldsOnType (already correctly extended to walk every TypeDefinition, not only constants-class shapes); found this entire phase already substantially implemented on disk from a prior uncommitted session — verified empirically rather than trusting it: 140/140 SharedKernel.Analyzers.Tests pass (125 baseline + 15 new: T-184 four fire-path cases, T-185 two, T-186 one, T-187 three, T-188 five pass-path cases including a fixture-local domain constants class proving declaring-class-agnosticism), 135/135 SharedKernel.ArchitectureTests.Tests pass (133 baseline + T-189/T-190), 0 build warnings/errors both projects; confirmed the acceptance-critical generality requirement holds — grepped the analyzer source for any hardcoded constants-class name, found none; File-Level Plan path discrepancy resolved per the phase input's own instruction — kept the on-disk Diagnostics/SK0022_CrossCuttingMagicStringLiteralAnalyzer.cs convention (matching every SK00NN sibling file) over the spec's guessed Analyzers/ path; added the missing `<!-- phase-key: SK.00.MagicStringGuard -->` marker to 00.Governance/state-map.md (same gap class as SK.00.PresentationArchRules/SK.00.MetricsOutcomeTagAndMisregistrationGuard before it). MAJOR CORRECTION discovered during this verification pass: this file's prior "EXPECTED TO FAIL / UNVERIFIABLE" real-assembly-status language (written 2026-07-14, the same day this phase was authored) was already stale by the time of this closeout — 01.Core P-259 shipped `WellKnownHeaders`/`WellKnownBaggageKeys` that same day, and P-260/P-261/P-262/P-263 (the 11.Communication/13.ServiceDefaults/14.Presentation/07.Messaging consuming-domain retrofits) all landed by 2026-07-16, per the root state-map.md Phase Backlog. Also discovered the shipped types live at `SharedKernel.Primitives.Propagation.WellKnownHeaders`/`WellKnownBaggageKeys` — NOT the `SharedKernel.Primitives.CrossCutting` namespace this phase's design prose, the analyzer's own diagnostic message, and WellKnownConstantOwnershipAssertion's XML doc examples all assumed; corrected the namespace in all three source locations plus this file's diagnostic-registry Note and architecture-test-contract "Real-assembly status" prose, and corrected the "EXPECTED TO FAIL/UNVERIFIABLE" claims to record the now-resolved dependency. Real-assembly wiring itself (pointing WellKnownConstantOwnershipAssertion at the real SharedKernel.Primitives.dll) remains unimplemented — genuinely out of this phase's own stated scope, not a gap in this closeout — and is recorded as a ready-to-dispatch candidate follow-up. This is the last `○` phase key — every phase key in 00.Governance/state-map.md is now `●` except SK.00.StorageTopology (governance-phase-implementer, state-map-phase)
 - [2026-07-16] SK.00.MagicStringGuard → ● closeout — CrossCuttingMagicStringLiteralAnalyzer (SK0022) implemented in SharedKernel.Analyzers/Diagnostics/; WellKnownConstantOwnershipAssertion implemented in SharedKernel.ArchitectureTests/, backed by a new StringConstantsClassDetector.ResolveStringFieldsOnType(TypeDefinition) public entry point (extracted from the existing private field-shape+literal-value resolution logic, now reusable against ANY TypeDefinition, not only the abstract-sealed constants-class shape); verified against the pre-written CLAUDE.md spec (diagnostic registry, architecture test contracts, all ten implementation-rule bullets) — no discrepancy found, no edits required to those sections. One new implementation-rule bullet added above to record an empirically-verified technique divergence discovered during test authoring: three of SK0022's four real BCL call-site types (System.Net.Http.Headers.HttpHeaders/HttpRequestHeaders, System.Security.Claims.Claim/ClaimsPrincipal/ClaimsIdentity) compile correctly as-is inside the CSharpAnalyzerTest sandbox with NO stub needed (mirroring SK0013's HttpClient precedent) — only System.Diagnostics.Activity required special handling: the sandbox's default reference set resolves an old DiagnosticSource 4.0.5.0 contract whose Activity lacks .SetTag/.SetBaggage (confirmed via a live CS1061), and naively adding a newer DiagnosticSource reference via TestState.AdditionalReferences produces a live CS0433 same-assembly-different-version ambiguity rather than fixing it; the working fix is a full reference-set REPLACEMENT via test.ReferenceAssemblies = ReferenceAssemblies.Net.Net80 for just the Activity-shape tests. Only Microsoft.Extensions.Configuration.IConfiguration and Microsoft.AspNetCore.Http.IHeaderDictionary needed the originally-planned in-compilation stub, since both are genuinely absent from the sandbox's default closure. 15 new analyzer tests (T-184–T-188, covering all four call-site shapes' fire/pass paths plus a fixture-local-constants-class pass-path proving declaring-class-agnosticism) — 140/140 SharedKernel.Analyzers.Tests pass; 2 new architecture tests (T-189–T-190) — 135/135 SharedKernel.ArchitectureTests.Tests pass; 0 build warnings/errors on both projects. Real-assembly wiring against 01.Core's actual WellKnownHeaders/WellKnownBaggageKeys remains explicitly deferred per the phase's own non-gating acceptance criterion — tracked in Cross-Domain Dependencies until 01.Core C-43/T-34/DO-16 ship and P-260–P-263 land (governance-phase-implementer, state-map-phase)
 - [2026-07-18] SK.00.StorageTopology → ● closeout — NonSingletonAmazonS3ClientRegistrationAnalyzer (SK0023) implemented in SharedKernel.Analyzers/Diagnostics/; StorageTopologyRules implemented in SharedKernel.ArchitectureTests/Rules/, exactly matching the pre-written CLAUDE.md spec (all three factory-method signatures, forbidden-term lists, two-named-parameter ProviderPackagesNeverReferenceEachOther, caller-controlled-exclusion OnlyProviderPackagesMayReferenceAmazonS3) — no discrepancy found, no edits required to the diagnostic registry or architecture-test-contract sections themselves. **STALE-DEPENDENCY CORRECTION (the main finding of this closeout):** the phase spec (authored 2026-07-16) instructed contrived-fixtures-only design because 08.Storage's own state-map then showed every phase at ○/empty and P-265 was only ◐ (Design). Before implementation began (2026-07-18), 08.Storage had independently reached Published — verified directly on disk, not assumed from prose: `dotnet build --configuration Release` on all three of SharedKernel.Storage.Abstractions/.S3/.Obs succeeds with 0 warnings/0 errors, and the root state-map.md Phase Backlog shows P-265/P-266/P-267 all `●` Complete (closed 2026-07-18, the same day as this implementation session). Corrected the stale Cross-Domain Dependencies table rows (00.Governance/state-map.md, `SK.00.StorageTopology depends on 08.Storage` section) and the "UNVERIFIABLE"/"before ... exist as buildable assemblies" prose in this file's StorageTopologyRules architecture-test-contract Note and Implementation Rules bullet — same precedent SK.00.MagicStringGuard's closeout set for this exact class of dependency-resolved-before-implementation correction. Per the phase input's explicit instruction, real-assembly verification was ADDITIONALLY wired in this same phase rather than deferred as a follow-up: SharedKernel.ArchitectureTests.Tests.csproj gained three test-only ProjectReferences (PrivateAssets="all") to the real 08.Storage assemblies; three Real*-suffixed tests confirm all three StorageTopologyRules factory methods pass against the shipped packages with zero discrepancy from contrived-fixture behavior — no real violation surfaced. The six contrived-fixture fire/pass-path tests (T-194–T-199) remain the primary red/green proof, exactly as the phase spec required; one fixture-authoring pitfall was hit and fixed during T-196's authoring — the initial ProviderPackagesNeverReferenceEachOther fire-path fixtures referenced a `const int` field on the "other" provider's stub type, which the C# compiler const-folds into a bare literal at the call site (no Ldsfld, no assembly reference emitted), so NetArchTest's dependency-namespace scan never observed the cross-reference; switched to constructor-injecting an interface type (a genuine metadata reference) instead, mirroring RedisTopologyRulesTests's own established pattern — the same const-folding class of pitfall already documented for `const string` vs `static readonly string` in the HealthCheckConstantsGuard closeout, now confirmed to apply identically to `const int`. 4 new analyzer tests (T-191–T-193 plus one unrelated-interface pass-path) — 144/144 SharedKernel.Analyzers.Tests pass; 10 new architecture tests (T-194–T-199 plus 3 real-assembly tests) — 145/145 SharedKernel.ArchitectureTests.Tests pass; 0 build warnings/errors across both projects. This is the last `○` phase key — every phase key in 00.Governance/state-map.md is now `●` (governance-phase-implementer, state-map-phase)
+- [2026-07-19] Phase SK.00.SearchTopology added — SK0024 RawSearchFieldNameLiteral and SK0025 ObsoleteElasticsearchClientUsage added to diagnostic registry (general-purpose sequential block, next after SK0023; platform's first 09.Search-domain diagnostics; SK0024 is the domain's eighth semantic-model analyzer and the platform's first refactor-safety/nameof()-encouragement rule, distinct in intent from SK0022 despite sharing its literal-vs-reference discriminator; SK0025 is the ninth semantic-model analyzer and the platform's first EOL-third-party-package-prohibition rule, firing platform-wide on any ContainingAssembly.Name match against NEST/Elasticsearch.Net); SearchTopologyRules added to architecture test contracts (WO-044 P-278) — two pure NetArchTest predicates mirroring StorageTopologyRules (AbstractionsHasNoThirdPartyDependencies with a sixth Microsoft.Extensions forbidden term beyond Storage's five-term analog, ProviderPackagesNeverReferenceEachOther with a two-named-Assembly-parameter signature mirroring StorageTopologyRules/UnitOfWorkSeamRules); SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts added — the first method on that class returning ConditionList[] instead of a single ConditionList, an explicit fifteen-forbidden-term enumeration of every other numbered domain's package family (including the SharedKernel.AI/10.Intelligence package-family-name-vs-folder-name mismatch); zero new Mono.Cecil technique, zero new NuGet dependency; UNVERIFIABLE against real assemblies as of this phase's authoring — 09.Search's entire Design phase (D-01–D-28) is ○ and only bare .csproj skeletons exist on disk for all three packages — but UNLIKE every prior designed-ahead precedent in this domain, real-assembly verification is a GATING acceptance criterion per the phase input itself, not a non-blocking follow-up; seven new implementation rules added; one Cross-Domain Dependencies block added (09.Search P-272/P-273/P-274, explicitly marked gating, not the usual non-blocking-follow-up shape) — WO-044 P-278, depends on 09.Search P-272/P-273/P-274 (governance-arch-planner)
