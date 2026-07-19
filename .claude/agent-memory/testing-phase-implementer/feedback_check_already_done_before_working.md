@@ -1,0 +1,16 @@
+---
+name: feedback_check_already_done_before_working
+description: Always read the actual state-map.md task states first — a phase-command briefing claiming tasks are "○ Pending" can be stale relative to what's already on disk, especially for same-day rapid-fire dispatch-then-implement cycles.
+type: feedback
+---
+
+Rule: before doing any work, read the actual current state of every task ID the phase brief names — don't trust the dispatcher/orchestrator's claim about which tasks are "○ Pending" vs already "●" Complete.
+
+**Concretely observed 2026-07-19 (WO-044 P-275/P-276 Design phase, D-97–D-121):** the phase-command brief asserted all 25 tasks were `○` and specifically flagged D-121 as carrying a stale hard-blocker claim needing re-verification. On reading `16.Testing/state-map.md` directly, all 25 tasks were already `●` — a prior pass earlier the same calendar day had already: written the full Design content, performed the exact D-121 re-verification the brief was asking for, corrected the Blocked section and Cross-Domain Dependencies table, called `state-map-phase` (confirmed via the root `state-map.md` changelog: `16 → Design (●) — promoted from SK.16.Design (121/121)`), and called `sync-brain` (confirmed via `16.Testing/CLAUDE.md`'s own changelog tail, two consecutive entries dated 2026-07-19). Nothing in this domain was actually incomplete.
+
+**How to apply:**
+1. Grep/Read the exact task IDs named in the brief directly from the local `state-map.md` FIRST, before reading anything else the brief describes as needing to change.
+2. If tasks already show `●`, don't take the brief's framing at face value — independently re-verify the substance yourself anyway (re-read the owning domain's live source, re-check member counts/property names/blocked-section claims) rather than just trusting the pre-written text, since the brief's own skepticism instruction ("re-verify X, don't trust it") is still worth honoring even when the file already contains the answer — a stale brief doesn't mean the file's content is correct, only that someone already attempted the work.
+3. Check the root `state-map.md`'s changelog tail (search for the phase key, e.g. `SK.16.Design`) and the domain `CLAUDE.md`'s own changelog tail to confirm `state-map-phase` and `sync-brain` weren't just written locally but actually completed their full protocol (root propagation, brain sync entry).
+4. If genuinely already complete and independently re-verified correct: do NOT re-run `state-map-phase` or `sync-brain` (no new delta to record — a duplicate call would be incorrect, not merely redundant). Do run the build verification anyway (cheap, and confirms nothing regressed since the last pass) and report to the user that the phase was already closed, citing your own independent verification, not just the file's claim.
+5. This is distinct from [[domain_16_testing_conventions]]'s "Design phase can be a pure re-verification pass with zero .cs changes" note — that note is about *what kind of work* Design-phase tasks are; this note is about *whether the work already happened* before you were even invoked. Same-day rapid dispatch-then-implement cycles (arch-lead → dispatch-phase → arch-planner → phase-implementer, all in one calendar day) make this collision more likely, not less.

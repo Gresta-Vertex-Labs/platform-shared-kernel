@@ -12,3 +12,4 @@
 - [Verify shipped code, not docs](feedback_verify_shipped_code_not_docs.md) — read actual .cs files + test workaround comments before trusting CLAUDE.md prose or checked acceptance boxes on a "Complete" domain
 - [WO-040: Application DX Gap Audit](project_wo040_application_dx_audit.md) — P-244-248 across 16.Testing/05.Application/13.ServiceDefaults/00.Governance; fakes, public pipeline harness, redacted logging, OTel wiring, 3 new analyzers
 - [WO-043: Storage Build-Out](project_wo043_storage_buildout.md) — 08.Storage P-265-271; Abstractions+S3+Obs, Copy/BatchDelete/streaming-List/health-probe contract upgrade, MinIO fixture + InMemoryFileStorage fake, ServiceDefaults health check, Governance topology enforcement
+- [WO-044: Search Build-Out](project_wo044_search_buildout.md) — 09.Search P-272-278; unusually complete pre-drafted design accepted verbatim (no upgrade), closed filter AST, fail-closed tenant scope, compile-time provider-exclusive capabilities

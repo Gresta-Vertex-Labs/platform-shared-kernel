@@ -36,3 +36,19 @@ that domain's `CLAUDE.md` already documents a ratified signature in prose, as `0
 for `IFileStorage.CheckHealthAsync`, that prose is still a reliable enough source to lock your own design
 task against, even while its state-map shows the task itself un-ticked). Either way, Core/Tests/Docs
 implementation tasks that call the not-yet-existing type must be `⚑` Blocked, never optimistically `○`.
+
+**Third occurrence, now a confirmed pattern, on WO-044/P-277 (2026-07-19):** P-277's "Depends on: P-272,
+P-273, P-274" line again implied satisfiable prerequisites. Reading `09.Search/state-map.md` directly
+showed `SK.09.Design` at 0/28 `○` and `SK.09.Scaffold`/`SK.09.Core` entirely unstarted — the same
+"design ○ / implementation ○" severity as WO-043's 08.Storage case, not the milder WO-042 case. But
+`09.Search/CLAUDE.md` had *already* ratified the exact `AddSearchReadinessCheck`/`WithSearchTelemetry`
+contract in its own "Cross-domain work this design requires" section (a section other domains'
+`CLAUDE.md` files apparently now proactively write for the express purpose of unblocking a downstream
+domain's Design phase — treat this section, if present, as the first thing to check when a new domain's
+brain is read for a cross-domain dependency). So D-08/D-09 were locked `●` immediately from that prose,
+while C-37/C-38/T-33/DO-07 were recorded `⚑` Blocked. **Standing rule going forward, no longer a special
+case:** always open the target domain's own `state-map.md` for the Design/Core/Scaffold phase-completion
+counts (never trust the phase input's "Depends on" line at face value), and separately check whether that
+domain's `CLAUDE.md` already contains a "Cross-domain work this design requires" (or equivalent
+already-ratified prose) section addressed to this domain specifically — its presence is what makes
+locking a Design task immediately legitimate even when the state-map shows 0% implemented.
