@@ -30,4 +30,7 @@ public static class HealthCheckNames
 
     /// <summary>Registration name for the always-on <see cref="Probes.StartupGateHealthCheck"/>.</summary>
     public const string Startup = "startup";
+
+    /// <summary>Default registration name for object-storage connectivity checks.</summary>
+    public const string Storage = "storage";
 }

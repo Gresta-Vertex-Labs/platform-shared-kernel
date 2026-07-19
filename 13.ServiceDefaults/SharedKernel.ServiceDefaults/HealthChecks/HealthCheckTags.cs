@@ -34,4 +34,7 @@ public static class HealthCheckTags
 
     /// <summary>Dependency-category tag for message broker connectivity checks.</summary>
     public const string Messaging = "messaging";
+
+    /// <summary>Dependency-category tag for object-storage connectivity checks.</summary>
+    public const string Storage = "storage";
 }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
+using SharedKernel.Storage.Abstractions.Abstractions;
 
 namespace SharedKernel.ServiceDefaults.Tests.HealthChecks;
 
@@ -83,6 +84,18 @@ public sealed class HealthCheckNamesTests
         services.AddHealthChecks().AddDapperDatabaseReadinessCheck();
 
         var registration = GetRegistration(services, HealthCheckNames.Database);
+        Assert.NotNull(registration);
+    }
+
+    [Fact]
+    public void AddStorageReadinessCheck_DefaultName_MatchesHealthCheckNamesStorage()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IFileStorage>());
+
+        services.AddHealthChecks().AddStorageReadinessCheck("my-bucket");
+
+        var registration = GetRegistration(services, HealthCheckNames.Storage);
         Assert.NotNull(registration);
     }
 
