@@ -74,6 +74,7 @@
     <Project Path="08.Storage/SharedKernel.Storage.S3/SharedKernel.Storage.S3.Tests/SharedKernel.Storage.S3.Tests.csproj" />
     <Project Path="08.Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.csproj" />
     <Project Path="08.Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.Tests/SharedKernel.Storage.Obs.Tests.csproj" />
+    <Project Path="08.Storage/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/09.Search/">
     <Project Path="09.Search/SharedKernel.Search.Abstractions/SharedKernel.Search.Abstractions.csproj" />

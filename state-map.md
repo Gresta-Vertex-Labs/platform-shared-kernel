@@ -63,7 +63,7 @@ Format when blocked:
 
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
-| 00 | [Governance](00.Governance/state-map.md) | Governance: Roslyn Analyzer + Architecture Test for Magic-String Prohibition | `●` | All 11 tasks complete — SK0022 (`CrossCuttingMagicStringLiteralAnalyzer`) bans raw string literals at four cross-cutting call-site shapes (HTTP header indexer/setter, `Activity.SetBaggage`/`.SetTag`, `IConfiguration.GetSection`, `ClaimsPrincipal`/`Claim` comparison); `WellKnownConstantOwnershipAssertion` mechanically enforces that no non-owning assembly redeclares a canonical `01.Core` cross-cutting literal; 140/140 analyzer tests and 135/135 architecture tests pass; design/tests used contrived fixtures only, but the real-assembly dependency (01.Core P-259 + P-260/P-261/P-262/P-263) was discovered to have already resolved during this closeout — real-assembly wiring remains a candidate follow-up, not yet implemented. | `SK.00.StorageTopology` (WO-043 P-271) is the next and now-final `○` phase key in `00.Governance/state-map.md` — 08.Storage package topology enforcement (SK0023 + `StorageTopologyRules`), still blocked on `08.Storage` P-265/P-266/P-267 shipping. |
+| 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for the 08.Storage Package Topology | `●` | All 15 tasks complete — SK0023 (`NonSingletonAmazonS3ClientRegistrationAnalyzer`) flags `AddScoped`/`AddTransient` DI registration of `IAmazonS3` (structural inverse of SK0703); `StorageTopologyRules` (`AbstractionsHasNoThirdPartyDependencies`, `ProviderPackagesNeverReferenceEachOther`, `OnlyProviderPackagesMayReferenceAmazonS3`) mechanically enforce the `08.Storage` two-provider package topology; 144/144 analyzer tests and 145/145 architecture tests pass; the real-assembly dependency on `08.Storage` P-265/P-266/P-267 resolved before this phase's implementation session (08.Storage reached Published), so real-assembly wiring was additionally implemented (not just contrived fixtures) — all three `StorageTopologyRules` factory methods verified against the real, now-shipped `SharedKernel.Storage.Abstractions`/`.S3`/`.Obs` assemblies with zero discrepancy. | Every phase key in `00.Governance/state-map.md` is now `●` — this is the last `○` phase key; awaiting the next work order dispatch. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-259 (WO-042) complete — `WellKnownHeaders`/`WellKnownBaggageKeys` compile-time `const string` registries added to `SharedKernel.Primitives/Propagation/`, the single authoritative source for the correlation-id/tenant-id header and baggage-key literals platform-wide; 117/117 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only, zero new NuGet dependencies. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | `●` | Phase 37 (WO-041, P-252) complete — all `EventId`s in `FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999) sub-blocks, closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; remaining direct `ILogger` calls and the hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing, zero behavioral change. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
@@ -71,15 +71,15 @@ Format when blocked:
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) now fully `●` through Docs (Design/Scaffold/Core/Tests/Docs = 71/19/74/66/24, all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199, 100% XML doc coverage confirmed, README EventId table added, stale "design-only" phrasing swept from `CLAUDE.md`; `SharedKernel.Application.Behaviors.Tests` 130/130. | Published (P-20..P-22 for WO-041, plus P-01..P-19 for WO-035/036/038/039/040) is the only phase left before this domain is fully published. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | LoggingRetrofit | `●` | SK.07.LoggingRetrofit complete (22/22, P-254/P-263) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range; `MessagingLogScope.CorrelationIdKey` named constant now backs the shared `BeginScope` correlation entry (replacing the bare `"CorrelationId"` literal); verified zero EventId collisions/SK0020-SK0021 diagnostics; 108/108 MassTransit tests green. | — |
-| 08 | [Storage](08.Storage/state-map.md) | Docs | `●` | SK.08.Docs complete (7/7) — enabled `GenerateDocumentationFile`+`TreatWarningsAsErrors`+full NuGet metadata on all three production `.csproj` files (0 warnings/0 errors immediately, Core-phase XML docs were already complete); wrote `README.md` for all three packages including a fully worked keyed-DI (`AddKeyedSingleton`) example for registering `.S3`+`.Obs` side by side; DO-07 drift check found zero drift between shipped code and `08.Storage/CLAUDE.md`. 117 passing + 2 documented skips + 0 failures across 119 tests, unchanged. | Begin Published phase (SK.08.Published, P-01–P-07) — NuGet packaging metadata, pack, publish, and consumer verification for all three packages. |
+| 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
 | 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | P-260/WO-042 fully closed — T-29 replaced test-local literal duplicates of the correlation/tenant header names with `WellKnownHeaders.CorrelationId`/`.TenantId` references across `.Rest.Tests`/`.Grpc.Tests`; DO-07 verified `CLAUDE.md`'s propagation rules already documented the shared-constant sourcing and gRPC thin-alias exception; 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing; SK.11.Tests (29/29) and SK.11.Docs (7/7) both `●`. | Only the Published phase (NuGet packaging, pack, publish) remains for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
-| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-042/P-261 closed — `HeaderTenantResolutionStrategy.DefaultHeaderName` and `BaggageLogRecordProcessorTests`/`AmbientLoggingEnrichmentAcceptanceTests` now consume `01.Core`'s `WellKnownHeaders.TenantId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-declared literals, fixing the confirmed baggage-key mismatch (DO-07). SK.13.Scaffold 12/12 `●`, SK.13.Core 35/35 `●`, SK.13.Tests 31/31 `●`, SK.13.Docs 5/5 `●`; 48/48 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published); DO-07's `14.Presentation`-side changelog cross-reference tracked separately under `P-262`. |
+| 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-043/P-270 closed — `AddStorageReadinessCheck`/`StorageReadinessHealthCheck` wraps `08.Storage`'s `IFileStorage.CheckHealthAsync` (unblocked once `08.Storage` reached `Published`), mapping success → `Healthy`/failure → `Unhealthy`, tagged `"ready"`+new `"storage"`; new `ProjectReference` to `SharedKernel.Storage.Abstractions`. SK.13.Scaffold 13/13 `●`, SK.13.Core 36/36 `●`, SK.13.Tests 32/32 `●`, SK.13.Docs 6/6 `●`; 52/52 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
-| 16 | [Testing](16.Testing/state-map.md) | Core | `●` | WO-043 (P-268/P-269) SK.16.Core now 63/63 `●` — implemented `Containers/MinioContainerFixture.cs` (pinned MinIO image, bucket bootstrap via short-lived `AmazonS3Client`) and the new `Storage/` folder (`InMemoryFileStorage`, `InMemoryBlobUriGenerator`, `AddInMemoryFileStorage()`), all verified against the live `08.Storage` `IFileStorage`/`IBlobUriGenerator`/model/`StorageErrors` source with zero drift. `dotnet build` clean, 0 errors. | SK.16.Tests (T-46/T-47) and SK.16.Docs (DO-17/DO-18) are next for WO-043. |
+| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-043 (P-268/P-269) SK.16.Docs now 18/18 `●` — `MinioContainerFixture.InitializeAsync` XML doc explicitly documents the three-step bucket-bootstrap mechanism (short-lived `AmazonS3Client` from the container's own root credentials, one `PutBucketAsync` call, client never retained) and the AWSSDK.S3 scope-lock; `InMemoryFileStorage`'s remarks gained the "first `Storage/` folder mapped to `08.Storage`" note. All six phases of `16.Testing` (Design/Scaffold/Core/Tests/Docs/Published) are `●` — WO-043 closed in full. | — |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -105,14 +105,15 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
-| ● Published | 7 |
-| ● Governance: Register MediatRDomainEventDispatcher's SK0012 Reflection Exemption | 1 |
+| ● Published | 8 |
 | ● Docs | 3 |
+| ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
+| ● LoggingRetrofit | 1 |
+| ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 1 |
 | ● Grpc | 0 |
-| ● Tests | 1 |
+| ● Tests | 0 |
 | ● Core | 0 |
-| ● Design | 1 |
+| ● Design | 0 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
@@ -10327,7 +10328,7 @@ Mirrors the existing enforcement precedent for raw `HttpClient` (P-159), inline 
 ---
 ### P-265 — Storage: Abstractions Contract Finalization (Copy, Batch Delete, Streaming List, Health Probe)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-043
 **Domain:** 08.Storage
 **Depends on:** None
@@ -10352,7 +10353,7 @@ The domain's own stated philosophy ("Blob bytes never flow through the applicati
 ---
 ### P-266 — Storage: SharedKernel.Storage.S3 Provider Implementation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-043
 **Domain:** 08.Storage
 **Depends on:** P-265
@@ -10377,7 +10378,7 @@ This is the platform's primary, most-consumed object-storage provider (real AWS 
 ---
 ### P-267 — Storage: SharedKernel.Storage.Obs Provider Implementation (Huawei Cloud OBS)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-043
 **Domain:** 08.Storage
 **Depends on:** P-265
@@ -10401,7 +10402,7 @@ This is the user's explicitly requested second provider. Huawei Cloud OBS is the
 ---
 ### P-268 — Testing: MinIO Testcontainers Fixture for Storage Provider Round-Trip Tests
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-043
 **Domain:** 16.Testing
 **Depends on:** None
@@ -10424,7 +10425,7 @@ A shared Testcontainers-based MinIO fixture in `SharedKernel.Testing`, exposing 
 ---
 ### P-269 — Testing: In-Memory IFileStorage Test Double
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-043
 **Domain:** 16.Testing
 **Depends on:** P-265
@@ -10448,7 +10449,7 @@ Testcontainers MinIO (P-268) is the right tool for `08.Storage`'s own provider-b
 ---
 ### P-270 — ServiceDefaults: Storage Readiness Health Check Adapter
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-043
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-265, P-266, P-267
@@ -10471,7 +10472,7 @@ A K8s-native service that depends on object storage for correctness (document up
 ---
 ### P-271 — Governance: Architecture Enforcement for the 08.Storage Topology
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-043
 **Domain:** 00.Governance
 **Depends on:** P-265, P-266, P-267
@@ -10510,3 +10511,16 @@ This domain's own brain already documents all four rules in prose ("zero third-p
 - [2026-07-17] Testing → Core (●) — promoted from SK.16.Core (63/63); implemented `Containers/MinioContainerFixture.cs`, `Storage/InMemoryFileStorage.cs`, `Storage/InMemoryBlobUriGenerator.cs`, `Storage/StorageServiceCollectionExtensions.cs` (`AddInMemoryFileStorage()`), verified against live `08.Storage` source with zero drift; `dotnet build` clean, 0 errors (state-map-phase)
 - [2026-07-17] Storage → Tests (●) — promoted from SK.08.Tests (17/17); real-backend round-trip/streaming/presigned-URL/connectivity-probe suites implemented against `16.Testing`'s now-landed `MinioContainerFixture` for both `.S3`/`.Obs`; fixed two real defects (presigned-URL scheme always HTTPS regardless of endpoint; `DeleteManyAsync` null-list assumption); one confirmed AWSSDK.S3/pinned-MinIO Content-MD5 incompatibility documented via `[Fact(Skip=...)]`; 117 passing + 2 documented skips + 0 failures across 119 tests (state-map-phase)
 - [2026-07-17] Storage → Docs (●) — promoted from SK.08.Docs (7/7); enabled `GenerateDocumentationFile`+`TreatWarningsAsErrors`+full NuGet metadata on all three production `.csproj` files (0 warnings/0 errors, Core-phase XML docs already complete); wrote `README.md` for all three packages (Abstractions/S3/Obs, including a keyed-DI example for side-by-side registration); DO-07 drift check found zero drift against `08.Storage/CLAUDE.md`; 117 passing + 2 documented skips + 0 failures, unchanged (state-map-phase)
+- [2026-07-18] Storage → Published (●) — promoted from SK.08.Published (7/7); fixed a Docs-phase packaging gap (`PackageReadmeFile`/packed `README.md` missing from all three `.csproj`, causing `NU5039`), packed all three clean to `.nupkg`+`.snupkg`; new `08.Storage/consumer-verify` harness proves S3/Obs DI resolution, keyed-DI side-by-side composition, and fail-fast `IHost.StartAsync()` config validation; all six phases now `●` — 08.Storage domain (WO-043) complete end to end (state-map-phase)
+- [2026-07-18] Phase Backlog P-265, P-266, P-267 → ● Complete — 08.Storage domain reached Published; all three WO-043 storage phases (Abstractions contract finalization, `.S3` provider, `.Obs` provider) fully shipped (state-map-phase)
+- [2026-07-18] Testing → Tests (●) — promoted from SK.16.Tests (47/47); proved `MinioContainerFixture` (6 tests) and `InMemoryFileStorage`/`InMemoryBlobUriGenerator`/`AddInMemoryFileStorage()` (18 tests) in `SharedKernel.Testing.SelfTests`; 332/332 passing excluding the Docker-gated `Containers/` namespace (state-map-phase)
+- [2026-07-18] Testing → Docs (●) — promoted from SK.16.Docs (18/18); `MinioContainerFixture.InitializeAsync` XML doc now walks the bucket-bootstrap mechanism explicitly, `InMemoryFileStorage` remarks gained the "first `Storage/` folder mapped to `08.Storage`" note; all six phases of `16.Testing` now `●` — WO-043 complete end to end (state-map-phase)
+- [2026-07-18] Phase Backlog P-268, P-269 → ● Complete — 16.Testing's WO-043 contribution (`MinioContainerFixture`, `InMemoryFileStorage`/`InMemoryBlobUriGenerator`) fully shipped through Design/Scaffold/Core/Tests/Docs, closing the last two open WO-043 backlog entries (state-map-phase)
+- [2026-07-18] 13 → Scaffold (●) — promoted from SK.13.Scaffold (13/13); S-13 landed (`ProjectReference` from `SharedKernel.ServiceDefaults.csproj` to `SharedKernel.Storage.Abstractions.csproj`), unblocked once `08.Storage` reached `Published` (state-map-phase)
+- [2026-07-18] 13 → Core (●) — promoted from SK.13.Core (36/36); C-36 landed (`StorageReadinessHealthCheck` + `AddStorageReadinessCheck`, wrapping `08.Storage`'s `IFileStorage.CheckHealthAsync`; new `HealthCheckTags.Storage`/`HealthCheckNames.Storage`) — maps `Result.IsSuccess` → `Healthy`, failure → `Unhealthy` (never `Degraded`), tagged `"ready"`+`"storage"` (state-map-phase)
+- [2026-07-18] 13 → Tests (●) — promoted from SK.13.Tests (32/32); T-32 landed (`StorageReadinessHealthCheckTests` — Healthy/Unhealthy-never-Degraded via a substituted `IFileStorage`; tag/name registration assertions added to `HealthCheckTagTests`/`HealthCheckNamesTests`); 52/52 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing (state-map-phase)
+- [2026-07-18] 13 → Docs (●) — promoted from SK.13.Docs (6/6); DO-06 landed (XML docs on all new members; `README.md`'s `Program.cs` snippet gained `.AddStorageReadinessCheck("my-bucket")` with the explicit-bucket-parameter rationale) (state-map-phase)
+- [2026-07-18] 13 → Published (●) — WO-043/P-270 additive-internals-only, no new Published task per the WithApplicationTelemetry (WO-040/P-247) precedent; 13.ServiceDefaults domain remains fully complete end to end, now also covering object-storage readiness (state-map-phase)
+- [2026-07-18] Phase Backlog P-270 → ● Complete — 13.ServiceDefaults's Storage Readiness Health Check Adapter shipped once `08.Storage` (P-265/P-266/P-267) reached `Published`, unblocking C-36/T-32/DO-06 in the same session (state-map-phase)
+- [2026-07-18] 00 → Governance: Architecture Enforcement for the 08.Storage Package Topology (●) — promoted from SK.00.StorageTopology (15/15); this is the last `○` phase key in `00.Governance/state-map.md` — every phase key is now `●`; verified empirically (144/144 SharedKernel.Analyzers.Tests, 145/145 SharedKernel.ArchitectureTests.Tests, 08.Storage Abstractions/S3/Obs build clean) rather than trusting the on-disk uncommitted narrative alone (state-map-phase)
+- [2026-07-18] Phase Backlog P-271 → ● Complete — Governance: Architecture Enforcement for the 08.Storage Topology shipped (SK0023 + StorageTopologyRules), real-assembly wiring against the now-Published 08.Storage packages implemented in the same session (state-map-phase)
