@@ -1,8 +1,29 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Zero third-party NuGet dependencies (the seam rule) — the only references are
+      SharedKernel.Primitives (Result<T>/Result/Error) and SharedKernel.Contracts (PagedList<T>, for
+      the guarded SearchResults<T>.ToPagedList() bridge only). No engine SDK, no
+      Microsoft.Extensions.* package (not even DependencyInjection.Abstractions — no DI extension
+      lives here), and no hashing package may ever be added here: System.Security.Cryptography
+      (SHA-256 for SearchIndexDefinition.Fingerprint) and System.Text.Json are in-box on net10.0.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Search.Abstractions.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Search.Abstractions.Tests\**" />
+    <None Remove="SharedKernel.Search.Abstractions.Tests\**" />
+  </ItemGroup>
 
 </Project>
