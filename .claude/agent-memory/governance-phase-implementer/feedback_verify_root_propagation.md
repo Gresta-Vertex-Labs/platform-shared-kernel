@@ -1,0 +1,13 @@
+---
+name: feedback_verify_root_propagation
+description: A sub-map's own changelog claiming "promoted to root state-map.md" is not proof it happened — verify the root file directly every time, for state-map propagation as much as for source code.
+type: feedback
+---
+
+A sub-domain state-map's changelog entry can say "promoted to root `state-map.md` (state-map-phase)" while the root file was never actually touched. This is the same "pre-written/uncommitted-session narrative vs. reality" gap this domain already tracks for source code (see [[ref_servicedefaults_governance_rules]]'s "stale Phase Backlog closure" and the SK.00.MagicStringGuard/SK.00.StorageTopology closeout pattern) — it applies equally to the bookkeeping layer itself, not just the code.
+
+**Confirmed incident:** during the SK.00.StorageTopology closeout (2026-07-18), `00.Governance/state-map.md` already had all 15 tasks at `●`, its own Overall Progress row at `●`, and a changelog line literally ending "...promoted to root `state-map.md` (state-map-phase)". The root `state-map.md` had NOT been touched: row 66 (Domain Summary Board) still described the prior phase (SK.00.MagicStringGuard) as current, and the P-271 Phase Backlog entry was still `◐` Dispatched. A prior uncommitted session wrote the sub-map's own closeout narrative (including the false "promoted" claim) but never actually ran/completed the root-mode half of `state-map-phase`.
+
+**Why:** whichever agent (or interrupted session) wrote the sub-map closeout evidently intended to also update root but either got cut off or hallucinated the propagation step as already-done narrative, mirroring the same failure mode already seen for source-code claims in CLAUDE.md changelogs.
+
+**How to apply:** whenever a phase's sub-map already shows full `●` completion (whether from this session or inherited from a prior uncommitted one), still independently grep/read the root `state-map.md`'s Domain Summary Board row, the specific `### P-NNN` Phase Backlog entry, and `## Overall Progress`/`## Active Work`/`## Blocked` for that domain — never infer root state from the sub-map's own claims, even a changelog line that explicitly says "promoted to root." Run the propagation yourself (state-map-phase in root mode / Step S8) if the root file doesn't independently confirm it. When recalculating `## Overall Progress` (state-map-phase Step R6), also check the existing phase-name-grouping breakdown for drift — it can silently miscount (a stale phase-name row from several closeouts ago, or a domain's current phase entirely missing from the breakdown) while still coincidentally summing to 18; fix genuine drift found while you're already recalculating, don't just patch the one row you touched.

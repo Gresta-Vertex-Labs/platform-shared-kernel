@@ -53,7 +53,21 @@
       "Bash(docker run *)",
       "Bash(docker rm *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:19010/minio/health/live)",
-      "Bash(docker info *)"
+      "Bash(docker info *)",
+      "Bash(ls -la \"/c/Github/platform-shared-kernel/13.ServiceDefaults/consumer-verify/\" 2>/dev/null || ls -la \"c:/Users/dincm/Documents/GitHub/platform-shared-kernel/13.ServiceDefaults/consumer-verify/\")",
+      "Read(//c/Github/platform-shared-kernel/13.ServiceDefaults/**)",
+      "Bash(dotnet run *)",
+      "Bash(dotnet pack *)",
+      "Bash(rm -rf artifacts/nupkg)",
+      "Bash(mkdir -p artifacts/nupkg)",
+      "Bash(xargs ls -la)",
+      "Bash(awk -F'|' '/^\\\\| `SK\\\\.00\\\\./ {gsub\\(/ /,\"\",$3\\); sum+=$3} END {print sum}' 00.Governance/state-map.md)",
+      "Bash(awk -F'|' '/^\\\\| `SK\\\\.00\\\\./ {gsub\\(/ /,\"\",$4\\); sum+=$4} END {print sum}' 00.Governance/state-map.md)",
+      "Bash(awk 'NR>=2851 && NR<=2975' 00.Governance/state-map.md)",
+      "Bash(grep -c 'Status:\\\\*\\\\* `●`' state-map.md)",
+      "Bash(grep -n 'Status:\\\\*\\\\* `○`' state-map.md)",
+      "Bash(grep -n 'Status:\\\\*\\\\* `◐`' state-map.md)",
+      "Bash(grep -v '`●`')"
     ],
     "defaultMode": "acceptEdits"
   }

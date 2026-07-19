@@ -48,3 +48,15 @@ block to all production `.csproj` files, then `dotnet build -c Release` each one
 Core-phase XML docs were genuinely complete, unlike `05.Application` (1 cref fix + 7 `<inheritdoc/>`
 additions needed) and `14.Presentation` (4 cref fixes needed). Don't assume zero-warnings will always be
 the outcome — always actually run the build and read the output before declaring the task done.
+
+**Gap discovered at Published-phase `dotnet pack` time (2026-07-18), not caught by `dotnet build`:** the
+metadata block above is missing one pair that `dotnet build` never surfaces a warning for —
+`<PackageReadmeFile>README.md</PackageReadmeFile>` plus `<None Include="README.md" Pack="true"
+PackagePath="\" />`. Without both lines, `dotnet pack` (not `build`) emits a `NU5039` "missing a readme"
+warning even when the package's `README.md` exists on disk and is content-complete (08.Storage wrote all
+three READMEs during Docs but never wired them into the pack). `01.Core/SharedKernel.Configuration.csproj`
+already had this pair — it should have been copied into the Docs-phase block template above from the
+start. **How to apply:** add `PackageReadmeFile` + the `None Include` line to the metadata block at Docs
+time, alongside everything else — don't wait for Published's `dotnet pack` to catch it. If a future
+session is doing a Published-phase P-01/P-02 task and finds `dotnet pack` prints `NU5039`, this is the
+fix, and it means a prior Docs-phase session (in any domain, not just 08.Storage) skipped it.

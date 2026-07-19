@@ -1,8 +1,10 @@
 ---
 name: project_08storage_status
-description: Current implementation status and locked contract shape for 08.Storage (as of SK.08.Docs closeout, 2026-07-17)
+description: Current implementation status and locked contract shape for 08.Storage (as of SK.08.Published closeout, 2026-07-18 — domain complete end to end)
 type: project
 ---
+
+**08.Storage is fully complete end to end as of 2026-07-18 — all six phases (Design/Scaffold/Core/Tests/Docs/Published) are `●`, promoted to root `state-map.md`.** `SK.08.Published` (P-01–P-07, 7/7) closed this session: fixed a Docs-phase packaging gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` — see [[feedback_docs_phase_pattern]]), packed all three clean to `.nupkg`+`.snupkg`, and added `08.Storage/consumer-verify` (five-surface console harness — see [[feedback_published_phase_consumer_verify]]) proving S3/Obs DI resolution, C-29/DO-06 keyed-DI side-by-side composition against real compiled code, and `IHost.StartAsync()` fail-fast config validation. No production `.cs` changed this session — only NuGet metadata + a new standalone harness project. The Testcontainers-MinIO-backed round-trip suites in `.S3.Tests`/`.Obs.Tests` could not be re-run this session (no Docker daemon in the environment) — a future session with Docker available should re-run `SK.08.Tests` once as a sanity check, though nothing touched this session could plausibly regress it.
 
 **08.Storage's `SK.08.Core` phase (30/30, C-01–C-30) is complete and closed** — promoted to root `state-map.md`.
 
