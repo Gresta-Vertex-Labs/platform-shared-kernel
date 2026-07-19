@@ -76,6 +76,16 @@
          violate the "00.Governance references nothing" layering rule (production references only). -->
     <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Storage.Abstractions/.S3/.Obs assemblies in
+         StorageTopologyRulesTests (WO-043 P-271) — 08.Storage reached Published (P-265/P-266/
+         P-267 all shipped) before this phase's implementation session, so real-assembly
+         verification is wired alongside the contrived-fixture proof rather than deferred. -->
+    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.S3\SharedKernel.Storage.S3.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.Obs\SharedKernel.Storage.Obs.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
