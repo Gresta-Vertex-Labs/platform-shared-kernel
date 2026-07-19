@@ -39,9 +39,8 @@ public sealed class MinioContainerFixture : IAsyncLifetime
 {
     private const string DefaultBucketName = "sharedkernel-test-bucket";
 
-    private readonly MinioContainer _container = new MinioBuilder()
-        .WithImage("minio/minio:RELEASE.2024-01-16T16-07-38Z")
-        .Build();
+    private readonly MinioContainer _container = new MinioBuilder(
+        "minio/minio:RELEASE.2024-01-16T16-07-38Z").Build();
 
     private bool _started;
 

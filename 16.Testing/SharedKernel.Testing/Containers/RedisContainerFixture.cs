@@ -20,9 +20,7 @@ namespace SharedKernel.Testing.Containers;
 /// </remarks>
 public sealed class RedisContainerFixture : IAsyncLifetime
 {
-    private readonly RedisContainer _container = new RedisBuilder()
-        .WithImage("redis:7.4")
-        .Build();
+    private readonly RedisContainer _container = new RedisBuilder("redis:7.4").Build();
 
     private bool _started;
 

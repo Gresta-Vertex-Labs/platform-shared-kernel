@@ -13,9 +13,7 @@ namespace SharedKernel.Testing.Containers;
 /// </remarks>
 public sealed class RabbitMqContainerFixture : IAsyncLifetime
 {
-    private readonly RabbitMqContainer _container = new RabbitMqBuilder()
-        .WithImage("rabbitmq:3.13-management")
-        .Build();
+    private readonly RabbitMqContainer _container = new RabbitMqBuilder("rabbitmq:3.13-management").Build();
 
     private bool _started;
 

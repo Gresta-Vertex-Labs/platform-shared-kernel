@@ -79,6 +79,14 @@
       zero drift from this package's Storage/ Interface Contracts target shape.
     -->
     <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+    <!--
+      Search in-memory doubles (S-28, P-276/WO-044): InMemorySearchIndex<TDocument>
+      (ISearchIndex<TDocument>), InMemorySearchIndexProvisioner (ISearchIndexProvisioner),
+      InMemorySearchProviderDescriptor (ISearchProviderDescriptor). 09.Search's SK.09.Core has
+      shipped real compiled types (confirmed on disk 2026-07-19) — this reference resolves to a
+      fully usable package, not an empty placeholder.
+    -->
+    <ProjectReference Include="..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -88,16 +96,31 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
     <!--
       Testcontainers fixtures (S-09, P-184): PostgreSqlContainerFixture, RedisContainerFixture,
-      RabbitMqContainerFixture.
+      RabbitMqContainerFixture. Bumped 4.1.0 -> 4.13.0 (S-27, D-101/P-275/WO-044) in the same pass
+      that adds Testcontainers.Elasticsearch, so every Testcontainers.* package this project
+      references shares one version — never left to implicit NuGet resolution.
     -->
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
-    <PackageReference Include="Testcontainers.Redis" Version="4.1.0" />
-    <PackageReference Include="Testcontainers.RabbitMq" Version="4.1.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.13.0" />
+    <PackageReference Include="Testcontainers.Redis" Version="4.13.0" />
+    <PackageReference Include="Testcontainers.RabbitMq" Version="4.13.0" />
     <!--
-      MinioContainerFixture (S-21, P-268/WO-043): fourth Containers/ fixture, pinned to the same
-      4.1.0 release family as the other three Testcontainers.* modules above.
+      MinioContainerFixture (S-21, P-268/WO-043): fourth Containers/ fixture. Bumped 4.1.0 -> 4.13.0
+      alongside its three siblings above (S-27, D-101/P-275/WO-044).
     -->
-    <PackageReference Include="Testcontainers.Minio" Version="4.1.0" />
+    <PackageReference Include="Testcontainers.Minio" Version="4.13.0" />
+    <!--
+      Base Testcontainers package (S-25, D-101/P-275/WO-044): a DIRECT PackageReference, not merely
+      transitive — MeilisearchContainerFixture is the first fixture in Containers/ to use the
+      generic ContainerBuilder/IContainer API directly (no Testcontainers.Meilisearch module exists
+      on nuget.org, confirmed 404). Pinned 4.13.0 to match every other Testcontainers.* package here.
+    -->
+    <PackageReference Include="Testcontainers" Version="4.13.0" />
+    <!--
+      ElasticsearchContainerFixture (S-26, D-101/P-275/WO-044): sixth Containers/ fixture, built on
+      the official Testcontainers.Elasticsearch module's ElasticsearchBuilder. Pinned 4.13.0 to
+      match every other Testcontainers.* package here.
+    -->
+    <PackageReference Include="Testcontainers.Elasticsearch" Version="4.13.0" />
     <!--
       xunit.core (S-09): the Xunit.IAsyncLifetime contract ONLY — container fixtures implement
       IAsyncLifetime directly. No test runner, no Xunit.Assert, no xunit.runner.visualstudio.

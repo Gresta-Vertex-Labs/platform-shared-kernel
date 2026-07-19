@@ -14,8 +14,7 @@ namespace SharedKernel.Testing.Containers;
 /// </remarks>
 public sealed class PostgreSqlContainerFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16.4")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16.4")
         .WithDatabase("sharedkernel_test")
         .WithUsername("sharedkernel")
         .WithPassword("sharedkernel")
