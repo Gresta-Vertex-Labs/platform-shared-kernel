@@ -1,0 +1,591 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using Elastic.Clients.Elasticsearch;
+using Elastic.Clients.Elasticsearch.Core.Bulk;
+using Elastic.Clients.Elasticsearch.Core.Search;
+using Elastic.Clients.Elasticsearch.QueryDsl;
+using Microsoft.Extensions.Logging;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Search.Abstractions.Abstractions;
+using SharedKernel.Search.Abstractions.Constants;
+using SharedKernel.Search.Abstractions.Errors;
+using SharedKernel.Search.Abstractions.Exceptions;
+using SharedKernel.Search.Abstractions.Models;
+using SharedKernel.Search.ElasticSearch.Logging;
+using SharedKernel.Search.ElasticSearch.Options;
+using SharedKernel.Search.ElasticSearch.Querying;
+// Elastic.Clients.Elasticsearch declares its own non-generic SearchRequest/Result types; alias ours
+// explicitly so the bare identifiers in this file resolve to the neutral domain contract.
+using SearchRequest = SharedKernel.Search.Abstractions.Models.SearchRequest;
+using Result = SharedKernel.Primitives.Results.Result;
+
+namespace SharedKernel.Search.ElasticSearch.Index;
+
+/// <summary>The ElasticSearch implementation of <see cref="ISearchIndex{TDocument}"/> — scoped.</summary>
+/// <typeparam name="TDocument">The search document type.</typeparam>
+/// <remarks>
+/// Reads and filtered writes target the read alias (<see cref="IndexName"/>); single/bulk writes
+/// target the write alias — the ElasticSearch alias-based cutover model
+/// (<c>IndexCutoverRequest</c>'s own remarks) means the two may point at different concrete indexes
+/// during a rebuild.
+/// </remarks>
+internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
+    where TDocument : class, ISearchDocument
+{
+    private readonly ElasticsearchClient _client;
+    private readonly SearchIndexDefinition _definition;
+    private readonly string _writeAlias;
+    private readonly ElasticSearchOptions _options;
+    private readonly IClock _clock;
+    private readonly ILogger<ElasticSearchIndex<TDocument>> _logger;
+
+    /// <summary>Initializes a new <see cref="ElasticSearchIndex{TDocument}"/>.</summary>
+    public ElasticSearchIndex(
+        ElasticsearchClient client,
+        SearchIndexDefinition definition,
+        string writeAlias,
+        ElasticSearchOptions options,
+        IClock clock,
+        ILogger<ElasticSearchIndex<TDocument>> logger)
+    {
+        _client = client;
+        _definition = definition;
+        _writeAlias = writeAlias;
+        _options = options;
+        _clock = clock;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public string IndexName => _definition.Name;
+
+    /// <inheritdoc />
+    public async Task<Result<SearchWriteReceipt>> IndexAsync(
+        TDocument document, SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
+    {
+        if (!IsValidDocumentId(document.DocumentId))
+        {
+            return Result<SearchWriteReceipt>.Failure(SearchErrors.InvalidDocumentId(document.DocumentId));
+        }
+
+        var refresh = ToRefresh(consistency);
+        var request = new IndexRequest<TDocument>(document, _writeAlias, new Id(document.DocumentId)) { Refresh = refresh };
+        var response = await _client.IndexAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsValidResponse)
+        {
+            _logger.ElasticSearchEngineFault("IndexAsync", _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode);
+            return Result<SearchWriteReceipt>.Failure(SearchErrors.WriteRejected(_definition.Name, response.DebugInformation));
+        }
+
+        _logger.ElasticSearchDocumentsIndexed(_definition.Name, 1, refresh.ToString());
+
+        return Result<SearchWriteReceipt>.Success(new SearchWriteReceipt
+        {
+            IndexName = _definition.Name,
+            ProviderToken = $"{response.Index}:{response.SeqNo}:{response.PrimaryTerm}",
+            AffectedCount = 1,
+            RequestedConsistency = consistency,
+            AcceptedAt = _clock.UtcNow,
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<SearchBulkReceipt>> IndexManyAsync(
+        IReadOnlyCollection<TDocument> documents,
+        SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var document in documents)
+        {
+            if (!IsValidDocumentId(document.DocumentId))
+            {
+                return Result<SearchBulkReceipt>.Failure(SearchErrors.InvalidDocumentId(document.DocumentId));
+            }
+        }
+
+        if (documents.Count == 0)
+        {
+            return Result<SearchBulkReceipt>.Success(EmptyBulkReceipt(consistency));
+        }
+
+        var refresh = ToRefresh(consistency);
+        var failures = new List<SearchItemFailure>();
+        var succeededCount = 0;
+        var stopwatch = Stopwatch.StartNew();
+
+        foreach (var batch in Batch(documents, _options.BulkMaxDocuments, _options.BulkMaxBytes))
+        {
+            var operations = new BulkOperationsCollection(
+                batch.Select(doc => (IBulkOperation)new BulkIndexOperation<TDocument>(doc, _writeAlias) { Id = doc.DocumentId }));
+
+            var request = new BulkRequest(_writeAlias) { Operations = operations, Refresh = refresh };
+            var response = await _client.BulkAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsValidResponse && response.Items.Count == 0)
+            {
+                return Result<SearchBulkReceipt>.Failure(SearchErrors.EngineFault(
+                    SearchWellKnown.ElasticSearchProviderName, "IndexManyAsync", response.DebugInformation));
+            }
+
+            var errorItems = response.ItemsWithErrors.ToList();
+            foreach (var item in errorItems)
+            {
+                failures.Add(new SearchItemFailure
+                {
+                    DocumentId = item.Id ?? string.Empty,
+                    Error = SearchErrors.WriteRejected(_definition.Name, item.Error?.Reason ?? "unknown"),
+                });
+            }
+
+            succeededCount += response.Items.Count - errorItems.Count;
+        }
+
+        _logger.ElasticSearchBulkCompleted(_definition.Name, documents.Count, (long)stopwatch.ElapsedMilliseconds);
+        if (failures.Count > 0)
+        {
+            _logger.ElasticSearchBulkPartialFailure(_definition.Name, failures.Count, documents.Count);
+        }
+
+        return Result<SearchBulkReceipt>.Success(new SearchBulkReceipt
+        {
+            Receipt = new SearchWriteReceipt
+            {
+                IndexName = _definition.Name,
+                ProviderToken = $"{_writeAlias}:bulk:{documents.Count}",
+                AffectedCount = documents.Count,
+                RequestedConsistency = consistency,
+                AcceptedAt = _clock.UtcNow,
+            },
+            SucceededCount = succeededCount,
+            Failures = failures,
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<SearchWriteReceipt>> DeleteAsync(
+        string documentId, SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
+    {
+        if (!IsValidDocumentId(documentId))
+        {
+            return Result<SearchWriteReceipt>.Failure(SearchErrors.InvalidDocumentId(documentId));
+        }
+
+        var refresh = ToRefresh(consistency);
+        var request = new DeleteRequest(_writeAlias, documentId) { Refresh = refresh };
+        var response = await _client.DeleteAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsValidResponse)
+        {
+            _logger.ElasticSearchEngineFault("DeleteAsync", _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode);
+            return Result<SearchWriteReceipt>.Failure(SearchErrors.WriteRejected(_definition.Name, response.DebugInformation));
+        }
+
+        return Result<SearchWriteReceipt>.Success(new SearchWriteReceipt
+        {
+            IndexName = _definition.Name,
+            ProviderToken = $"{response.Index}:{response.SeqNo}:{response.PrimaryTerm}",
+            AffectedCount = 1,
+            RequestedConsistency = consistency,
+            AcceptedAt = _clock.UtcNow,
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<SearchBulkReceipt>> DeleteManyAsync(
+        IReadOnlyCollection<string> documentIds,
+        SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var documentId in documentIds)
+        {
+            if (!IsValidDocumentId(documentId))
+            {
+                return Result<SearchBulkReceipt>.Failure(SearchErrors.InvalidDocumentId(documentId));
+            }
+        }
+
+        if (documentIds.Count == 0)
+        {
+            return Result<SearchBulkReceipt>.Success(EmptyBulkReceipt(consistency));
+        }
+
+        var refresh = ToRefresh(consistency);
+        var operations = new BulkOperationsCollection(
+            documentIds.Select(id => (IBulkOperation)new BulkDeleteOperation(id) { Index = _writeAlias }));
+        var request = new BulkRequest(_writeAlias) { Operations = operations, Refresh = refresh };
+        var response = await _client.BulkAsync(request, cancellationToken).ConfigureAwait(false);
+
+        var errorItems = response.ItemsWithErrors.ToList();
+        var failures = errorItems
+            .Select(item => new SearchItemFailure
+            {
+                DocumentId = item.Id ?? string.Empty,
+                Error = SearchErrors.WriteRejected(_definition.Name, item.Error?.Reason ?? "unknown"),
+            })
+            .ToList();
+
+        _logger.ElasticSearchBulkCompleted(_definition.Name, documentIds.Count, 0);
+        if (failures.Count > 0)
+        {
+            _logger.ElasticSearchBulkPartialFailure(_definition.Name, failures.Count, documentIds.Count);
+        }
+
+        return Result<SearchBulkReceipt>.Success(new SearchBulkReceipt
+        {
+            Receipt = new SearchWriteReceipt
+            {
+                IndexName = _definition.Name,
+                ProviderToken = $"{_writeAlias}:bulk:{documentIds.Count}",
+                AffectedCount = documentIds.Count,
+                RequestedConsistency = consistency,
+                AcceptedAt = _clock.UtcNow,
+            },
+            SucceededCount = documentIds.Count - errorItems.Count,
+            Failures = failures,
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<SearchWriteReceipt>> DeleteByFilterAsync(
+        SearchFilter filter,
+        TenantScope tenantScope,
+        SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default)
+    {
+        var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
+        if (filterResult.IsFailure)
+        {
+            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            return Result<SearchWriteReceipt>.Failure(filterResult.Error);
+        }
+
+        var request = new DeleteByQueryRequest(_writeAlias)
+        {
+            Query = filterResult.Value ?? new Query { MatchAll = new MatchAllQuery() },
+            Refresh = consistency == SearchWriteConsistency.Searchable,
+        };
+
+        var response = await _client.DeleteByQueryAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsValidResponse)
+        {
+            return Result<SearchWriteReceipt>.Failure(SearchErrors.WriteRejected(_definition.Name, response.DebugInformation));
+        }
+
+        return Result<SearchWriteReceipt>.Success(new SearchWriteReceipt
+        {
+            IndexName = _definition.Name,
+            ProviderToken = $"{_writeAlias}:deleteByQuery",
+            AffectedCount = (int)Math.Min(response.Deleted ?? 0, int.MaxValue),
+            RequestedConsistency = consistency,
+            AcceptedAt = _clock.UtcNow,
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> ClearAsync(SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
+    {
+        var request = new DeleteByQueryRequest(_writeAlias)
+        {
+            Query = new Query { MatchAll = new MatchAllQuery() },
+            Refresh = consistency == SearchWriteConsistency.Searchable,
+        };
+
+        var response = await _client.DeleteByQueryAsync(request, cancellationToken).ConfigureAwait(false);
+        return response.IsValidResponse
+            ? Result.Success()
+            : Result.Failure(SearchErrors.WriteRejected(_definition.Name, response.DebugInformation));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> WaitUntilSearchableAsync(
+        SearchWriteReceipt receipt, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        var indexName = receipt.ProviderToken.Split(':') is [var name, ..] && !string.IsNullOrEmpty(name)
+            ? name
+            : _writeAlias;
+
+        var stopwatch = Stopwatch.StartNew();
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var response = await _client.Indices.RefreshAsync(indexName, cancellationToken).ConfigureAwait(false);
+            if (response.IsValidResponse)
+            {
+                return Result.Success();
+            }
+
+            if (stopwatch.Elapsed >= timeout)
+            {
+                _logger.ElasticSearchRefreshWaitTimedOut(_definition.Name, (long)stopwatch.ElapsedMilliseconds);
+                return Result.Failure(SearchErrors.WriteTimeout(_definition.Name, stopwatch.Elapsed));
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<SearchResults<TDocument>>> SearchAsync(
+        SearchRequest request, TenantScope tenantScope, CancellationToken cancellationToken = default)
+    {
+        var validation = ElasticSearchRequestValidator.Validate(_definition, request);
+        if (validation.IsFailure)
+        {
+            _logger.ElasticSearchRequestRejected(_definition.Name, validation.Error.Message);
+            return Result<SearchResults<TDocument>>.Failure(validation.Error);
+        }
+
+        var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, request.Filter, tenantScope);
+        if (filterResult.IsFailure)
+        {
+            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            return Result<SearchResults<TDocument>>.Failure(filterResult.Error);
+        }
+
+        var searchRequest = ElasticSearchRequestTranslator.Translate<TDocument>(
+            _definition.Name, _definition, request, filterResult.Value);
+
+        var response = await _client.SearchAsync<TDocument>(searchRequest, cancellationToken).ConfigureAwait(false);
+
+        var mapped = ElasticSearchResultMapper.Map(
+            response,
+            _definition.MaxFacetValues,
+            request.Facets,
+            request.NumericFacetStats,
+            request.Page,
+            request.PageSize,
+            SearchWellKnown.ElasticSearchProviderName);
+
+        if (mapped.IsSuccess)
+        {
+            _logger.ElasticSearchSearchExecuted(
+                _definition.Name, mapped.Value.Hits.Count, mapped.Value.TotalHits, mapped.Value.Accuracy.ToString(), response.Took);
+        }
+        else
+        {
+            _logger.ElasticSearchEngineFault("SearchAsync", _definition.Name, (int?)response.ApiCallDetails?.HttpStatusCode);
+        }
+
+        return mapped;
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<TDocument>> GetAsync(
+        string documentId, TenantScope tenantScope, CancellationToken cancellationToken = default)
+    {
+        if (_definition.TenantField is not null && string.IsNullOrEmpty(tenantScope.Value))
+        {
+            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            return Result<TDocument>.Failure(SearchErrors.TenantScopeMissing(_definition.Name));
+        }
+
+        var idsQuery = new Query { Ids = new IdsQuery { Values = new[] { documentId } } };
+        var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter: null, tenantScope);
+        if (filterResult.IsFailure)
+        {
+            return Result<TDocument>.Failure(filterResult.Error);
+        }
+
+        var query = filterResult.Value is { } tenantQuery
+            ? new Query { Bool = new BoolQuery { Filter = [idsQuery, tenantQuery] } }
+            : idsQuery;
+
+        var searchRequest = new global::Elastic.Clients.Elasticsearch.SearchRequest<TDocument>(_definition.Name)
+        {
+            Query = query,
+            Size = 1,
+        };
+
+        var response = await _client.SearchAsync<TDocument>(searchRequest, cancellationToken).ConfigureAwait(false);
+        if (!response.IsValidResponse)
+        {
+            return Result<TDocument>.Failure(SearchErrors.EngineFault(
+                SearchWellKnown.ElasticSearchProviderName, "GetAsync", response.DebugInformation));
+        }
+
+        var hit = response.HitsMetadata.Hits.FirstOrDefault();
+        if (hit?.Source is null)
+        {
+            return Result<TDocument>.Failure(SearchErrors.DocumentNotFound(_definition.Name, documentId));
+        }
+
+        return Result<TDocument>.Success(hit.Source);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<long>> CountAsync(
+        SearchFilter? filter, TenantScope tenantScope, CancellationToken cancellationToken = default)
+    {
+        var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
+        if (filterResult.IsFailure)
+        {
+            _logger.ElasticSearchTenantScopeMissing(_definition.Name);
+            return Result<long>.Failure(filterResult.Error);
+        }
+
+        var request = new CountRequest(_definition.Name);
+        if (filterResult.Value is { } query)
+        {
+            request.Query = query;
+        }
+
+        var response = await _client.CountAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsValidResponse)
+        {
+            return Result<long>.Failure(SearchErrors.EngineFault(
+                SearchWellKnown.ElasticSearchProviderName, "CountAsync", response.DebugInformation));
+        }
+
+        return Result<long>.Success(response.Count);
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<TDocument> EnumerateAsync(
+        SearchFilter? filter,
+        TenantScope tenantScope,
+        int batchSize,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var filterResult = ElasticSearchFilterCompiler.CompileWithTenantScope(_definition, filter, tenantScope);
+        if (filterResult.IsFailure)
+        {
+            throw new SearchStreamException(filterResult.Error);
+        }
+
+        var keepAlive = TimeSpan.FromSeconds(_options.PointInTimeKeepAliveSeconds);
+        var pitResponse = await _client
+            .OpenPointInTimeAsync(new OpenPointInTimeRequest(_definition.Name) { KeepAlive = keepAlive }, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!pitResponse.IsValidResponse)
+        {
+            throw new SearchStreamException(SearchErrors.EngineFault(
+                SearchWellKnown.ElasticSearchProviderName, "EnumerateAsync", pitResponse.DebugInformation));
+        }
+
+        var pitId = pitResponse.Id;
+        _logger.ElasticSearchPointInTimeOpened(_definition.Name, _options.PointInTimeKeepAliveSeconds);
+        var batchCount = 0;
+
+        try
+        {
+            ICollection<FieldValue>? searchAfter = null;
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var request = new global::Elastic.Clients.Elasticsearch.SearchRequest<TDocument>
+                {
+                    Size = batchSize,
+                    Query = filterResult.Value ?? new Query { MatchAll = new MatchAllQuery() },
+                    Sort = [new SortOptions { Field = new FieldSort("_doc") }],
+                    Pit = new PointInTimeReference(pitId) { KeepAlive = keepAlive },
+                };
+
+                if (searchAfter is not null)
+                {
+                    request.SearchAfter = searchAfter;
+                }
+
+                var response = await _client.SearchAsync<TDocument>(request, cancellationToken).ConfigureAwait(false);
+                if (!response.IsValidResponse)
+                {
+                    throw new SearchStreamException(SearchErrors.EngineFault(
+                        SearchWellKnown.ElasticSearchProviderName, "EnumerateAsync", response.DebugInformation));
+                }
+
+                batchCount++;
+                var hits = response.HitsMetadata.Hits.ToList();
+                if (hits.Count == 0)
+                {
+                    yield break;
+                }
+
+                foreach (var hit in hits)
+                {
+                    if (hit.Source is { } source)
+                    {
+                        yield return source;
+                    }
+                }
+
+                if (hits.Count < batchSize)
+                {
+                    yield break;
+                }
+
+                // Every hit carries a Sort tuple because the request always sorts (by _doc); the tuple
+                // is what makes search_after pagination possible.
+                searchAfter = hits[^1].Sort!.ToList();
+            }
+        }
+        finally
+        {
+            var closeToken = cancellationToken.IsCancellationRequested ? CancellationToken.None : cancellationToken;
+            var closeResponse = await _client.ClosePointInTimeAsync(new ClosePointInTimeRequest(pitId), closeToken)
+                .ConfigureAwait(false);
+
+            if (closeResponse.IsValidResponse)
+            {
+                _logger.ElasticSearchPointInTimeClosed(_definition.Name, batchCount);
+            }
+            else
+            {
+                _logger.ElasticSearchPointInTimeCloseFailed(_definition.Name);
+            }
+        }
+    }
+
+    private static Refresh ToRefresh(SearchWriteConsistency consistency)
+        // Refresh.True is never emitted — it forces an immediate cluster-wide refresh disturbing
+        // other in-flight requests, with no Meilisearch analogue.
+        => consistency == SearchWriteConsistency.Searchable ? Refresh.WaitFor : Refresh.False;
+
+    private static bool IsValidDocumentId(string documentId)
+        => documentId.Length > 0 && documentId.All(static c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+
+    private SearchBulkReceipt EmptyBulkReceipt(SearchWriteConsistency consistency) => new()
+    {
+        Receipt = new SearchWriteReceipt
+        {
+            IndexName = _definition.Name,
+            ProviderToken = string.Empty,
+            AffectedCount = 0,
+            RequestedConsistency = consistency,
+            AcceptedAt = _clock.UtcNow,
+        },
+        SucceededCount = 0,
+    };
+
+    private static IEnumerable<List<TDocument>> Batch(IReadOnlyCollection<TDocument> documents, int maxDocuments, int maxBytes)
+    {
+        var batch = new List<TDocument>();
+        var batchBytes = 0;
+
+        foreach (var document in documents)
+        {
+            var estimatedSize = EstimateSize(document);
+            if (batch.Count > 0 && (batch.Count >= maxDocuments || batchBytes + estimatedSize > maxBytes))
+            {
+                yield return batch;
+                batch = [];
+                batchBytes = 0;
+            }
+
+            batch.Add(document);
+            batchBytes += estimatedSize;
+        }
+
+        if (batch.Count > 0)
+        {
+            yield return batch;
+        }
+    }
+
+    private static int EstimateSize(TDocument document)
+        => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(document).Length;
+}

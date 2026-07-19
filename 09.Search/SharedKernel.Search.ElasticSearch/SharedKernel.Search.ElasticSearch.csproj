@@ -1,8 +1,62 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+    <!--
+      Root policy: <IsAotCompatible>true</IsAotCompatible> is never added to any 09.Search .csproj —
+      the tag activates trim/AOT analyzers globally and forces AOT compliance on the entire project,
+      which is too coarse-grained. This package simply inherits an already-annotated dependency
+      (Elastic.Clients.Elasticsearch sets IsAotCompatible for net8+ on its own project).
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!--
+      SIBLING-PACKAGE RULE: SharedKernel.Search.ElasticSearch must NEVER reference
+      SharedKernel.Search.Meilisearch, directly or transitively. Shared implementation shape
+      (options-validation flow, the SearchFilter walker skeleton, receipt mapping, probe sequencing)
+      is duplicated deliberately across the two provider packages — see 09.Search/CLAUDE.md's
+      "Provider role note".
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      ElasticSearch engine SDK. Apache-2.0, ships a real net10.0 target. NEST and Elasticsearch.Net
+      are EOL and PROHIBITED (SK0025) — never referenced here or anywhere in the platform.
+    -->
+    <PackageReference Include="Elastic.Clients.Elasticsearch" Version="9.4.2" />
+    <!--
+      Microsoft.Extensions.* set — required for DI extension (DependencyInjection.Abstractions),
+      Options-pattern binding (Options), and [LoggerMessage] source-generated logging
+      (Logging.Abstractions — not pulled in transitively by the ElasticSearch client or by
+      SharedKernel.Configuration).
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Search.ElasticSearch.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Search.ElasticSearch.Tests\**" />
+    <None Remove="SharedKernel.Search.ElasticSearch.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Allows the nested test project to white-box test internal implementation details
+      (ElasticSearchFilterCompiler, ElasticSearchRequestValidator, ElasticSearchProviderDescriptor,
+      ElasticSearchRawClientAccessor) without expanding the public API surface — mirrors the
+      06.Persistence.EfCore / 13.ServiceDefaults / 15.Integration.Webhooks precedent.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.Search.ElasticSearch.Tests" />
+  </ItemGroup>
 
 </Project>
