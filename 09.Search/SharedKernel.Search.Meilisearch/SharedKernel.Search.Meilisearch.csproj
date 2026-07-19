@@ -1,8 +1,56 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!--
+      SIBLING-PACKAGE RULE: SharedKernel.Search.Meilisearch must NEVER reference
+      SharedKernel.Search.ElasticSearch, directly or transitively. Shared implementation shape
+      (options-validation flow, the SearchFilter walker skeleton, receipt mapping, probe sequencing)
+      is duplicated deliberately across the two provider packages — see 09.Search/CLAUDE.md's
+      "Provider role note".
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Meilisearch engine SDK. Official Meilisearch org, MIT, targets netstandard2.0. -->
+    <PackageReference Include="MeiliSearch" Version="0.20.0" />
+    <!--
+      Microsoft.Extensions.* set — required for DI extension (DependencyInjection.Abstractions),
+      Options-pattern binding (Options), [LoggerMessage] source-generated logging
+      (Logging.Abstractions — NOT pulled in transitively by the MeiliSearch SDK or by
+      SharedKernel.Configuration; omitting it fails the build with ILogger/LoggerMessage unresolved),
+      and the named IHttpClientFactory client the MeilisearchClient is built from (Http — never
+      `new HttpClient()`, per P-159/SK0013).
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Search.Meilisearch.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Search.Meilisearch.Tests\**" />
+    <None Remove="SharedKernel.Search.Meilisearch.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Allows the nested test project to white-box test internal implementation details
+      (MeilisearchFilterCompiler, MeilisearchRequestValidator, MeilisearchProviderDescriptor,
+      MeilisearchRawClientAccessor) without expanding the public API surface — mirrors the
+      06.Persistence.EfCore / 13.ServiceDefaults / 15.Integration.Webhooks precedent.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.Search.Meilisearch.Tests" />
+  </ItemGroup>
 
 </Project>
