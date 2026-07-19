@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Not shipped — verification harness only -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Storage.S3\SharedKernel.Storage.S3.csproj" />
+    <ProjectReference Include="..\SharedKernel.Storage.Obs\SharedKernel.Storage.Obs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Generic host — lets this harness exercise the real IHost.StartAsync() eager
+         ValidateOnStart() path (P-06), not just BuildServiceProvider(). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+  </ItemGroup>
+
+</Project>

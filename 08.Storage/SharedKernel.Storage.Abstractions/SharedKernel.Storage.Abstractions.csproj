@@ -14,6 +14,7 @@
     <Description>Object-storage abstraction contracts for Platform.SharedKernel microservices: IFileStorage (upload/download/delete/exists/metadata/copy/batch-delete/streaming-list/health-probe) and IBlobUriGenerator (presigned upload/download URLs), plus the Result-valued StorageErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives. Implemented by SharedKernel.Storage.S3 and SharedKernel.Storage.Obs.</Description>
     <PackageTags>storage;blob;s3;object-storage;presigned-url;shared-kernel</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
     <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
@@ -31,6 +32,10 @@
       is a hard violation.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
