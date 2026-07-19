@@ -23,7 +23,16 @@ namespace SharedKernel.Testing.Storage;
 /// and <c>LastModified</c> is a fixed, non-real instant — never <see cref="DateTimeOffset.UtcNow"/>.
 /// This fake takes no <see cref="SharedKernel.Testing.Clocks"/> dependency: sibling capability
 /// folders must never reference each other, so "never real time" is achieved here via an
-/// independently-declared fixed baseline.
+/// independently-declared fixed baseline (<c>FixedLastModified</c>) rather than reusing
+/// <c>Clocks/FakeClock</c>.
+/// </para>
+/// <para>
+/// <c>Storage/</c> (this namespace, <c>SharedKernel.Testing.Storage</c>) is the first capability
+/// folder in <c>SharedKernel.Testing</c> mapped to <c>08.Storage</c> — it references
+/// <c>SharedKernel.Storage.Abstractions</c> only, never <c>SharedKernel.Storage.S3</c>/<c>.Obs</c>
+/// (the concrete provider packages) nor any sibling capability folder in this package, including
+/// <see cref="SharedKernel.Testing.Containers.MinioContainerFixture"/> — the in-memory fake and the
+/// real-provider container fixture are deliberately independent test paths.
 /// </para>
 /// </remarks>
 public sealed class InMemoryFileStorage : IFileStorage

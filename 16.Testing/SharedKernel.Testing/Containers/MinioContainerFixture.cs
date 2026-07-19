@@ -103,7 +103,27 @@ public sealed class MinioContainerFixture : IAsyncLifetime
     /// </summary>
     public bool ForcePathStyle => true;
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Starts the underlying MinIO container, then bootstraps <see cref="DefaultBucket"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The bootstrap mechanism is: (1) <c>_container.StartAsync()</c> brings the MinIO server up and
+    /// flips <see cref="_started"/> so the connection properties become readable; (2)
+    /// <see cref="CreateClient"/> builds a short-lived <see cref="AmazonS3Client"/> from the container's
+    /// own freshly-started root user credentials (<c>GetAccessKey()</c>/<c>GetSecretKey()</c> — never a
+    /// SharedKernel-invented value) with <c>ForcePathStyle = true</c>, since MinIO requires path-style
+    /// addressing; (3) that client issues a single <c>PutBucketAsync(new PutBucketRequest { BucketName =
+    /// DefaultBucketName })</c> call and is disposed (<see langword="using"/>) before this method
+    /// returns. The client is never retained as a field — its entire lifetime is scoped to this one
+    /// bootstrap call, so no consumer of this fixture can reach an <c>AWSSDK.S3</c> type through it.
+    /// </para>
+    /// <para>
+    /// This is why both S3 and OBS integration test suites receive an already-existing bucket with zero
+    /// provider-specific setup of their own: the bootstrap runs once, here, regardless of which provider
+    /// package a consuming test project targets.
+    /// </para>
+    /// </remarks>
     public async Task InitializeAsync()
     {
         await _container.StartAsync().ConfigureAwait(false);
@@ -116,6 +136,9 @@ public sealed class MinioContainerFixture : IAsyncLifetime
     /// <inheritdoc />
     public async Task DisposeAsync() => await _container.DisposeAsync().ConfigureAwait(false);
 
+    // Short-lived AmazonS3Client used exclusively by InitializeAsync's bucket-bootstrap step — the only
+    // place in this file (and in all of Containers/) an AWSSDK.S3 type is constructed. Never cached,
+    // never exposed — a fresh instance is built per call from the container's current credentials.
     private AmazonS3Client CreateClient() =>
         new(
             new BasicAWSCredentials(_container.GetAccessKey(), _container.GetSecretKey()),
