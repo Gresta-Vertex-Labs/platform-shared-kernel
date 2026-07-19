@@ -72,14 +72,14 @@ Format when blocked:
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | LoggingRetrofit | `●` | SK.07.LoggingRetrofit complete (22/22, P-254/P-263) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range; `MessagingLogScope.CorrelationIdKey` named constant now backs the shared `BeginScope` correlation entry (replacing the bare `"CorrelationId"` literal); verified zero EventId collisions/SK0020-SK0021 diagnostics; 108/108 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
-| 09 | [Search](09.Search/state-map.md) | — | `○` | — | — |
+| 09 | [Search](09.Search/state-map.md) | Core | `●` | All 48 `SK.09.Core` tasks (C-01–C-48) complete — full implementation of `ISearchDocument`/`ISearchIndex`/`ISearchIndexProvisioner`/`ISearchProviderDescriptor`, the closed 8-node `SearchFilter` AST, `SearchQueryBuilder<TDocument>`, and all model records in `.Abstractions` (zero third-party `PackageReference`); concrete Meilisearch and ElasticSearch provider adapters (filter compilers, `ISearchIndex`/`ISearchIndexProvisioner` implementations, provider-exclusive contracts, options, errors, `[LoggerMessage]` logging 9100-9199/9200-9299, DI builders) in `.Meilisearch`/`.ElasticSearch`; both Design-phase-flagged SDK-shape risks (ES 9.4.2 leaf-query object-initializer shape, MeiliSearch 0.20.0's `dynamic Filter`/`ISearchable<T>`) resolved against real compiled assemblies; all three packages build 0 errors. | Begin `SK.09.Tests` — the shared behavioural conformance suite plus provider round-trip/fail-loud coverage; real-backend tasks are blocked pending `16.Testing`'s `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` (confirmed absent on disk). |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | P-260/WO-042 fully closed — T-29 replaced test-local literal duplicates of the correlation/tenant header names with `WellKnownHeaders.CorrelationId`/`.TenantId` references across `.Rest.Tests`/`.Grpc.Tests`; DO-07 verified `CLAUDE.md`'s propagation rules already documented the shared-constant sourcing and gRPC thin-alias exception; 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing; SK.11.Tests (29/29) and SK.11.Docs (7/7) both `●`. | Only the Published phase (NuGet packaging, pack, publish) remains for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-043/P-270 closed — `AddStorageReadinessCheck`/`StorageReadinessHealthCheck` wraps `08.Storage`'s `IFileStorage.CheckHealthAsync` (unblocked once `08.Storage` reached `Published`), mapping success → `Healthy`/failure → `Unhealthy`, tagged `"ready"`+new `"storage"`; new `ProjectReference` to `SharedKernel.Storage.Abstractions`. SK.13.Scaffold 13/13 `●`, SK.13.Core 36/36 `●`, SK.13.Tests 32/32 `●`, SK.13.Docs 6/6 `●`; 52/52 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
-| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-043 (P-268/P-269) SK.16.Docs now 18/18 `●` — `MinioContainerFixture.InitializeAsync` XML doc explicitly documents the three-step bucket-bootstrap mechanism (short-lived `AmazonS3Client` from the container's own root credentials, one `PutBucketAsync` call, client never retained) and the AWSSDK.S3 scope-lock; `InMemoryFileStorage`'s remarks gained the "first `Storage/` folder mapped to `08.Storage`" note. All six phases of `16.Testing` (Design/Scaffold/Core/Tests/Docs/Published) are `●` — WO-043 closed in full. | — |
+| 16 | [Testing](16.Testing/state-map.md) | Core | `●` | WO-044 (P-275/P-276) SK.16.Core now 69/69 `●` — `Containers/MeilisearchContainerFixture`/`ElasticsearchContainerFixture` (both smoke-tested against real Docker end-to-end) and the new `Search/` folder (`InMemorySearchIndex<TDocument>`, `InMemorySearchIndexProvisioner`, `InMemorySearchProviderDescriptor`, `AddInMemorySearchIndex<TDocument>()`/`AddInMemorySearchProvisioning()`) implemented against the real `09.Search` interfaces with zero drift; verified via a 65-assertion functional smoke harness plus the full 344/344 `SharedKernel.Testing.SelfTests` regression suite. | Begin `SK.16.Tests` (T-48–T-51) and `SK.16.Docs` (DO-19–DO-22) to fully close WO-044; note `09.Search`'s own `SK.09.Tests` T-13–T-17/T-21–T-26 are now unblocked for a future `09.Search` session. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -106,18 +106,18 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Published | 8 |
-| ● Docs | 3 |
+| ● Docs | 2 |
 | ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 1 |
 | ● Grpc | 0 |
 | ● Tests | 0 |
-| ● Core | 0 |
+| ● Core | 2 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 3 |
+| ○ Not Started | 2 |
 
 ---
 
@@ -10524,3 +10524,188 @@ This domain's own brain already documents all four rules in prose ("zero third-p
 - [2026-07-18] Phase Backlog P-270 → ● Complete — 13.ServiceDefaults's Storage Readiness Health Check Adapter shipped once `08.Storage` (P-265/P-266/P-267) reached `Published`, unblocking C-36/T-32/DO-06 in the same session (state-map-phase)
 - [2026-07-18] 00 → Governance: Architecture Enforcement for the 08.Storage Package Topology (●) — promoted from SK.00.StorageTopology (15/15); this is the last `○` phase key in `00.Governance/state-map.md` — every phase key is now `●`; verified empirically (144/144 SharedKernel.Analyzers.Tests, 145/145 SharedKernel.ArchitectureTests.Tests, 08.Storage Abstractions/S3/Obs build clean) rather than trusting the on-disk uncommitted narrative alone (state-map-phase)
 - [2026-07-18] Phase Backlog P-271 → ● Complete — Governance: Architecture Enforcement for the 08.Storage Topology shipped (SK0023 + StorageTopologyRules), real-assembly wiring against the now-Published 08.Storage packages implemented in the same session (state-map-phase)
+
+---
+### P-272 — Search: Abstractions Contract Finalization (ISearchDocument, ISearchIndex, Filter AST, Query Builder)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-044
+**Domain:** 09.Search
+**Depends on:** None
+
+#### What is needed
+
+Lock the zero-third-party-dependency `SharedKernel.Search.Abstractions` contract surface before either provider is implemented: a self-supplied `ISearchDocument` key contract; a generic `ISearchIndex<TDocument>` covering write (upsert-only, with an honest two-state write-consistency distinction between "accepted/durable" and "guaranteed searchable" — never a bare fire-and-forget write), read (search/get/count), and corpus-walk (streaming enumerate) operations; a non-generic `ISearchIndexProvisioner` for idempotent additive-only index creation, staging→live cutover, and a readiness-probe primitive; a zero-I/O `ISearchProviderDescriptor` for compile-time-enforced capability checks and pre-flight request validation; a closed 8-node `SearchFilter` predicate AST (Equal/NotEqual/In/Range/Exists/And/Or/Not) over a closed 5-kind scalar-value union; an immutable fluent query builder using string field names (no `IQueryable`, no expression trees); the request/result model records; a mandatory, non-defaultable tenant-scope parameter on every read and filtered write; index field-role declarations with a pinned schema-fingerprint algorithm for drift detection; a canonical error catalog; and one guarded, lossy bridge into `04.Contracts`'s `PagedList<T>`. Every operation is `Result`/`Result<T>`-valued except the two streaming reads, which follow the established `06.Persistence`/`08.Storage` streaming-exception precedent.
+
+#### Why this is needed
+
+The single governing rule that makes this abstraction serve two structurally different search engines honestly is: no type in `.Abstractions` may require an adapter to throw, degrade, approximate, or silently drop a clause to implement it. A search abstraction is uniquely dangerous to get wrong compared to other capability domains, because a leaky abstraction here doesn't just throw at runtime — it returns a plausible, wrong, silent answer (a dropped tenant filter leaks another tenant's data; a clause coerced to a text match returns wrong facet counts). This phase front-loads every one-engine-only capability decision (no relevance score, no boost, no nested/object-array filter, no optimistic concurrency member) into documented, deliberate omissions rather than discovering them as production incidents after a provider swap. Locking the contract before any implementation exists mirrors the `08.Storage` precedent (P-265) of finalizing the abstraction ahead of its providers.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Search.Abstractions` carries zero third-party NuGet package references and references only `SharedKernel.Primitives` (01.Core) and `SharedKernel.Contracts` (04.Contracts, for the guarded PagedList bridge only)
+- [ ] Every write operation requires an explicit, non-defaultable consistency parameter distinguishing "accepted/durable" from "guaranteed searchable" — no operation silently promises immediate searchability
+- [ ] Tenant scope is a mandatory separate parameter (never a filter-tree member) on every read and every filtered/bulk write, with a fail-closed guard driven by the index definition's declared tenant field
+- [ ] The filter-predicate hierarchy is closed by construction so every provider translator is an exhaustive compiler-checked switch with no discard arm
+- [ ] `ISearchProviderDescriptor` exposes zero-I/O pre-flight validation matching the executor's own legality checks, and carries no capability-flags/`HasFlag` surface
+- [ ] `09.Search/CLAUDE.md`'s Interface Contracts section reflects the finalized, ratified surface with no outstanding open design questions
+---
+
+---
+### P-273 — Search: SharedKernel.Search.Meilisearch Provider (BFF/Fast)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-044
+**Domain:** 09.Search
+**Depends on:** P-272
+
+#### What is needed
+
+Full implementation of `SharedKernel.Search.Meilisearch` against the finalized neutral contracts from P-272 — filter compilation to Meilisearch's string filter DSL, request/result translation honoring the offset/limit-vs-page/hitsPerPage accuracy split, honest write-consistency mapped onto Meilisearch's enqueued-task model with explicit (never SDK-default) wait timeouts, idempotent index provisioning via settings updates, staging→live cutover via index swap with an explicit staging-cleanup default, and a multi-layer readiness probe. Additionally declares the Meilisearch-exclusive capabilities that have no honest ElasticSearch equivalent — instant/type-ahead search and engine-enforced per-tenant search tokens — as contracts that live only in this package, never in `.Abstractions`.
+
+#### Why this is needed
+
+This is the platform's BFF/fast search provider. Isolating Meilisearch-only capabilities (typo tolerance, tenant tokens) in this package rather than neutralizing them into `.Abstractions` means a provider swap fails at compile time against a Meilisearch-only composition root, not as a silent runtime capability degradation — the only tenant-isolation and relevance mechanism this platform accepts.
+
+#### Acceptance criteria
+- [ ] All `ISearchIndex<TDocument>`/`ISearchIndexProvisioner`/`ISearchProviderDescriptor` members from P-272 are implemented against the `MeiliSearch` SDK, with every write validated (document-id charset, tenant scope) before any I/O
+- [ ] The filter compiler is an exhaustive switch over all 8 filter nodes with no discard arm and unconditional parenthesization around Or/Not operands
+- [ ] Write-consistency polling always uses explicit, options-sourced timeout/interval values, never the SDK's undocumented defaults
+- [ ] The Meilisearch-exclusive contracts exist only in this package — a call site referencing them against an ElasticSearch-only composition root fails to compile
+- [ ] `SharedKernel.Search.Meilisearch` has zero project or type reference to `SharedKernel.Search.ElasticSearch`
+- [ ] Round-trip and provisioning/cutover/probe tests pass against a real Meilisearch container (once P-275's fixture lands), never a mocked client
+---
+
+---
+### P-274 — Search: SharedKernel.Search.ElasticSearch Provider (Analytics/Heavy)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-044
+**Domain:** 09.Search
+**Depends on:** P-272
+
+#### What is needed
+
+Full implementation of `SharedKernel.Search.ElasticSearch` against the same finalized neutral contracts, targeting a 9.x-compatible cluster via `Elastic.Clients.Elasticsearch` — filter compilation into a boolean/filter-context query, request/result translation, write-consistency mapped onto ElasticSearch refresh semantics (never forcing an immediate cluster-wide refresh), idempotent additive-only index/mapping provisioning, atomic alias-based cutover, and a readiness probe treating cluster-yellow as healthy while asserting index/alias addressability with the service's own credentials. Additionally declares the ElasticSearch-exclusive capabilities with no honest Meilisearch equivalent — structured aggregations and cursor-based deep-pagination streaming — as contracts that live only in this package.
+
+#### Why this is needed
+
+This is the platform's analytics/heavy search provider, and the reference point against which the intersection-only neutral surface was deliberately kept thinner than what ElasticSearch alone can do — the adapter enforces restrictions (a pagination ceiling, undeclared-field rejection) ElasticSearch itself does not have, specifically so a query proven legal on one provider is guaranteed legal on the other. The EOL `NEST`/`Elasticsearch.Net` client packages are excluded from consideration entirely.
+
+#### Acceptance criteria
+- [ ] All `ISearchIndex<TDocument>`/`ISearchIndexProvisioner`/`ISearchProviderDescriptor` members from P-272 are implemented against `Elastic.Clients.Elasticsearch` 9.x, checking response validity on every call rather than assuming success
+- [ ] The filter compiler is an exhaustive switch over all 8 filter nodes with no discard arm, building filter-context clauses conditionally to avoid the client's empty-object serialization pitfall
+- [ ] Cutover issues a single atomic alias-swap request (remove+add together) so the read alias is never undefined
+- [ ] The ElasticSearch-exclusive contracts exist only in this package
+- [ ] A startup guard rejects an incompatible server version rather than failing confusingly at first query
+- [ ] `SharedKernel.Search.ElasticSearch` has zero project or type reference to `SharedKernel.Search.Meilisearch`, and no reference to the EOL `NEST`/`Elasticsearch.Net` packages
+- [ ] Round-trip, provisioning/cutover, aggregation, and cursor-streaming tests pass against a real 9.x ElasticSearch container (once P-275's fixture lands), never a mocked client
+---
+
+---
+### P-275 — Testing: Meilisearch + Elasticsearch Testcontainers Fixtures
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-044
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+Two Testcontainers-based fixtures in `SharedKernel.Testing` — a hand-rolled generic-container fixture for Meilisearch (no official Testcontainers module exists for it) exposing a ready master-key-protected instance with a health-endpoint wait strategy, and an Elasticsearch fixture built on the official Testcontainers module explicitly pinned to a 9.x server image (the module's own default is incompatible with the 9.x client both providers require) with TLS/self-signed-cert handling and an explicit readiness poll. Both provider packages' `.Tests` projects consume these identically via the platform's standard collection-fixture pattern.
+
+#### Why this is needed
+
+`09.Search`'s two providers cannot get real-backend round-trip coverage without real engine instances, and this platform's established rule is that container fixtures live centrally in `16.Testing`, never hand-rolled per `.Tests` project (the `08.Storage`/`MinioContainerFixture` precedent, P-268). This is a genuine greenfield gap, verified on disk: `16.Testing` today ships fixtures for PostgreSQL, Redis, RabbitMQ, and MinIO only — zero search-engine coverage exists or was ever planned.
+
+#### Acceptance criteria
+- [ ] A reusable Meilisearch fixture exists, hand-rolled on the generic container-builder API, using a pinned image tag, a master key, and a health-endpoint wait strategy
+- [ ] A reusable Elasticsearch fixture exists on the official Testcontainers module, explicitly overriding the module's default image to a 9.x server tag compatible with the platform's pinned client version
+- [ ] The Testcontainers package version-alignment question (bump the existing fixtures' shared pin, or pin the Elasticsearch module independently) is resolved explicitly, not left to implicit NuGet resolution
+- [ ] Both `SharedKernel.Search.Meilisearch.Tests` and `SharedKernel.Search.ElasticSearch.Tests` consume their respective fixture identically via the platform's standard collection-fixture pattern
+---
+
+---
+### P-276 — Testing: In-Memory ISearchIndex / ISearchIndexProvisioner / ISearchProviderDescriptor Doubles
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-044
+**Domain:** 16.Testing
+**Depends on:** P-272
+
+#### What is needed
+
+In-process, in-memory implementations of `ISearchIndex<TDocument>`, `ISearchIndexProvisioner`, and `ISearchProviderDescriptor` in `SharedKernel.Testing`, so a consuming microservice's own unit tests can exercise search-dependent handler/service logic without a real Meilisearch or ElasticSearch backend — mirroring the platform's `InMemoryMessageBus`/`InMemoryEventPublisher`/`InMemoryFileStorage` precedent.
+
+#### Why this is needed
+
+Every other swappable-provider abstraction this platform ships already has a first-class in-memory double for fast, isolated consumer-side unit testing; `ISearchIndex<TDocument>` is the same shape of dependency and should not be the exception a consuming team has to hand-roll a fake for.
+
+#### Acceptance criteria
+- [ ] An in-memory `ISearchIndex<TDocument>` double supports the full write/read/corpus-walk contract from P-272, including tenant-scope enforcement and the fail-loud undeclared-field/pagination-ceiling checks
+- [ ] An in-memory `ISearchIndexProvisioner`/`ISearchProviderDescriptor` pair supports idempotent provisioning and cutover semantics closely enough to exercise a consumer's own rebuild-orchestration logic
+- [ ] Assertion helpers let a consuming test verify "was this document indexed/deleted/searchable" without inspecting internal state directly
+- [ ] The doubles reference only `SharedKernel.Search.Abstractions`, never a concrete provider package
+- [ ] Registered via a DI extension mirroring the platform's existing in-memory-double naming convention
+---
+
+---
+### P-277 — ServiceDefaults: Search Readiness Health Check + Telemetry Wiring
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-044
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-272, P-273, P-274
+
+#### What is needed
+
+A health check adapter wrapping the search-index readiness probe so a consuming service can register search-index readiness alongside its other dependency health checks, plus a telemetry-wiring call that subscribes to the search domain's `ActivitySource`/`Meter` by string name only — no `ProjectReference` to `09.Search` is taken, matching how the byte-identical instrumentation names are shared between both sibling provider packages without a common type.
+
+#### Why this is needed
+
+A K8s-native service that depends on search for correctness should fail readiness when its index is unreachable or mis-scoped, exactly as it already does for an unreachable database, cache, or storage backend, mirroring the already-established `06.Persistence`/`08.Storage` health-check split (owning domain ships the probe primitive, `13.ServiceDefaults` owns the `IHealthCheck` wiring). The permanently-nullable pending-write-count signal on the probe result must never be treated as an unhealthy indicator — a write backlog is staleness, not unavailability, and must surface as a metric/alert, never a readiness failure.
+
+#### Acceptance criteria
+- [ ] A health check adapter resolves the provisioner abstraction and an explicit caller-supplied index name, reporting Healthy/Unhealthy per the platform's existing conventions, working unmodified against either provider registration
+- [ ] `09.Search` ships no `IHealthCheck` implementation and neither provider references `Microsoft.Extensions.Diagnostics.HealthChecks` — the dependency direction stays `13.ServiceDefaults` → `09.Search`, never the reverse
+- [ ] The telemetry-wiring call subscribes to the search domain's OTel instrumentation by string name only, with zero `ProjectReference` to `09.Search`
+- [ ] A deep pending-write backlog is never mapped to an Unhealthy readiness result
+---
+
+---
+### P-278 — Governance: Architecture Enforcement for the 09.Search Topology
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-044
+**Domain:** 00.Governance
+**Depends on:** P-272, P-273, P-274
+
+#### What is needed
+
+A NetArchTest architecture-test suite (mirroring the `RedisTopologyRules`/`StorageTopologyRules` precedent) mechanically enforcing `09.Search`'s structural rules — `SharedKernel.Search.Abstractions` has zero third-party NuGet dependency and references only its two permitted `ProjectReference`s; the two provider packages never reference each other; `09.Search` as a whole never references any capability domain beyond `01.Core`/`04.Contracts`; the EOL `NEST`/`Elasticsearch.Net` packages are prohibited platform-wide. Plus a refactor-safety analyzer mechanically encouraging `nameof()`-backed field-constant usage at filter/query-builder call sites, given that a typo'd field-name string is a visible rejection on Meilisearch but a silent zero-result on ElasticSearch.
+
+#### Why this is needed
+
+This domain's own brain documents every one of these rules in prose already — the pattern this platform has repeatedly found decays into a real, shipped violation without mechanical enforcement (raw-`HttpClient` P-159, ad hoc-logging P-250, magic-string P-264, the Storage-topology precedent P-271). The silent-zero-result asymmetry the refactor-safety analyzer targets is uniquely dangerous in a search context: unlike most typo classes, it produces no error at all on one of the two providers.
+
+#### Acceptance criteria
+- [ ] Architecture test confirms `SharedKernel.Search.Abstractions` has no third-party NuGet package reference and only the two permitted `ProjectReference`s
+- [ ] Architecture test confirms the two provider packages never reference each other's assembly
+- [ ] Architecture test confirms no `09.Search` assembly references `03.Domain`, `05.Application`, `06.Persistence`, `07.Messaging`, `12.Security`, or any other capability domain beyond `01.Core`/`04.Contracts`
+- [ ] A new analyzer rule flags any reference to the EOL `NEST`/`Elasticsearch.Net` packages anywhere in the platform
+- [ ] A new refactor-safety analyzer is implemented and its rationale (visible-on-Meilisearch/silent-on-ElasticSearch asymmetry) is documented in its diagnostic message
+- [ ] All new architecture tests pass against the real built assemblies from P-272/P-273/P-274, not contrived fixtures only
+---
+
+- [2026-07-19] WO-044 phases P-272–P-278 written to Phase Backlog — 09.Search full build-out (Abstractions contract finalization, then `.Meilisearch` and `.ElasticSearch` sibling providers) plus cross-domain support (16.Testing Meilisearch/Elasticsearch Testcontainers fixtures + in-memory ISearchIndex/ISearchIndexProvisioner/ISearchProviderDescriptor doubles, 13.ServiceDefaults search readiness health check + telemetry wiring, 00.Governance topology enforcement + field-name refactor-safety analyzer). Domain already carried an exceptionally detailed pre-drafted design (all six phase keys, Design through Published, fully task-broken across `09.Search/CLAUDE.md` and `state-map.md`) that had never been registered at the root level — reviewed and ACCEPTED verbatim as gold-standard (closed filter AST enforcing compile-time exhaustiveness, honest per-engine write-consistency with no silent "accepted" write ever implying searchable, fail-closed tenant isolation as a mandatory out-of-band parameter, compile-time-enforced provider-exclusive capabilities instead of runtime capability flags, zero-`PackageReference` Abstractions) — no upgrade needed (arch-lead, user request)
+- [2026-07-19] 09 → Design (◐) — Finalize the SharedKernel.Search.Abstractions contract before implementing the Meilisearch and ElasticSearch providers (P-272) (state-map-phase)
+- [2026-07-19] Phase(s) P-272, P-273, P-274 dispatched to search-arch-planner for 09.Search (dispatch-phase)
+- [2026-07-19] Phase(s) P-278 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-19] Phase(s) P-277 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-07-19] Phase(s) P-275, P-276 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-07-19] Dispatch-order deviation recorded: P-278 (00.Governance) depends on P-272/P-273/P-274 (09.Search), so strict domain-number-ascending order would have dispatched it before its own dependencies. Dispatch used topological order first, then domain-number ascending within each unblocked tier — 09.Search → 00.Governance → 13.ServiceDefaults → 16.Testing — per the Format Contract's "never dispatches out of dependency order" rule (dispatch-phase)
+- [2026-07-19] 09 → Design (●) — promoted from SK.09.Design (28/28); all D-01–D-28 verified against the already-locked `09.Search/CLAUDE.md` contract, one gap closed (ElasticSearchFilterCompiler's unverified-9.4.2-constructor-shape open Design risk note, previously missing); P-272/P-273/P-274 left `◐` Dispatched — Design is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
+- [2026-07-19] 09 → Scaffold (●) — promoted from SK.09.Scaffold (13/13, state-map-phase)
+- [2026-07-19] 09 → Core (●) — promoted from SK.09.Core (48/48); Abstractions/Meilisearch/ElasticSearch fully implemented, both flagged SDK-shape risks resolved against real assemblies; P-272/P-273/P-274 left `◐` Dispatched — Core is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
+- [2026-07-19] 16 → Scaffold (●) — promoted from SK.16.Scaffold (28/28); S-25–S-28 added `Testcontainers`/`.Elasticsearch` package references and bumped the four existing `Testcontainers.*` pins to `4.13.0`, fixing 4 new obsolete-constructor warnings the bump introduced; P-275/P-276 left `◐` Dispatched — Scaffold is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
+- [2026-07-19] 16 → Design (●) — promoted from SK.16.Design (121/121); D-97–D-121 (P-275/P-276/WO-044) locked `MeilisearchContainerFixture`/`ElasticsearchContainerFixture`/`Search/` in-memory doubles' target shape and re-verified zero drift against 09.Search's now-shipped Abstractions/Meilisearch/ElasticSearch source, clearing D-121's stale HARD BLOCKER and unblocking C-66–C-69/T-50/T-51/DO-21/DO-22 back to `○` — Design is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
+- [2026-07-20] 16 → Core (●) — promoted from SK.16.Core (69/69); C-64–C-69 (P-275/P-276/WO-044) implemented `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` (both smoke-tested against real Docker) and the new `Search/` folder (`InMemorySearchIndex<TDocument>`/`InMemorySearchIndexProvisioner`/`InMemorySearchProviderDescriptor` plus DI extensions) against the real 09.Search interfaces with zero drift; 344/344 SelfTests regression clean — Core is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)

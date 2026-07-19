@@ -78,6 +78,7 @@
   </Folder>
   <Folder Name="/09.Search/">
     <Project Path="09.Search/SharedKernel.Search.Abstractions/SharedKernel.Search.Abstractions.csproj" />
+    <Project Path="09.Search/SharedKernel.Search.Abstractions/SharedKernel.Search.Abstractions.Tests/SharedKernel.Search.Abstractions.Tests.csproj" />
     <Project Path="09.Search/SharedKernel.Search.ElasticSearch/SharedKernel.Search.ElasticSearch.csproj" />
     <Project Path="09.Search/SharedKernel.Search.ElasticSearch/SharedKernel.Search.ElasticSearch.Tests/SharedKernel.Search.ElasticSearch.Tests.csproj" />
     <Project Path="09.Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.csproj" />
