@@ -199,12 +199,19 @@ ISearchIndex<TDocument>   where TDocument : class, ISearchDocument
           maxTotalHits ceiling — which is why "iterate every matching document" is portable here while
           relevance-ordered deep pagination is not. It is for reindex, export, and reconciliation.
 
-    NOTE (EnumerateAsync ORDERING IS UNSPECIFIED — weakened deliberately): the enumeration is stable
-          within a single unmodified corpus, and ordering MUST NOT be relied upon. Document-id-ascending
-          order is UNVERIFIED for Meilisearch's /documents endpoint, which is not documented as
-          id-sorted. A Tests-phase task verifies actual behaviour against a real container; if id
-          ordering is confirmed for both engines the guarantee may be strengthened in a later phase,
-          never assumed before then.
+    NOTE (EnumerateAsync ORDERING IS UNSPECIFIED — weakened deliberately, contract unchanged despite a
+          confirmed finding): the enumeration is stable within a single unmodified corpus, and ordering
+          MUST NOT be relied upon. VERIFIED against real containers (T-26, 2026-07-20): both engines
+          currently yield in INSERTION order, NOT document-id-ascending order — proven by seeding a
+          batch with ids deliberately out of numeric order (e.g. prod-010, prod-003, prod-007, ...) and
+          observing the walk return them in SEED order on both Meilisearch's /documents (offset+limit)
+          and ElasticSearch's search_after+PIT walk. This is recorded as a confirmed CURRENT-BEHAVIOUR
+          finding, not a promoted contractual guarantee — insertion order is an observed implementation
+          detail of each engine's own storage/iteration model, not a documented API promise on either
+          engine, so a future engine version could change it without notice. The contract's "unspecified,
+          do not rely on it" language is therefore deliberately RETAINED rather than strengthened to
+          "insertion order" — consumers needing a stable resumable order should use
+          ICursorSearch<TDocument> (ElasticSearch-only, ordered by search_after) instead.
 ```
 
 #### Index provisioning (`Abstractions/`)
@@ -939,6 +946,18 @@ MeilisearchIndex<TDocument>   (sealed class, implements ISearchIndex<TDocument>)
       `_formatted` sibling object for SearchHit.Highlights. This is load-bearing: any future change to
       MeilisearchIndex's search path must preserve the JsonElement search, not "simplify" it back to a
       typed SearchAsync<TDocument> call, or highlighting silently stops populating.
+    — VERIFIED (Tests-phase, real container, was a genuine Core-phase production bug, now fixed):
+      MeilisearchResultMapper.MapFacets threw NullReferenceException on EVERY search that did not
+      request facets — the SDK returns null (not an empty dictionary) for facetDistribution/facetStats
+      whenever SearchRequest.Facets/.NumericFacetStats are empty, which is almost every ordinary
+      search. Fixed: MapFacets' facetDistribution/facetStats parameters are now nullable, with an
+      early-return producing SearchResults.Empty's Facets shape when either is null or empty.
+    — VERIFIED (Tests-phase, real container, was a genuine Core-phase production bug, now fixed):
+      GetAsync only caught MeilisearchApiError for a missing document, but the SDK's
+      GetDocumentAsync<T> throws HttpRequestException (with StatusCode == NotFound) for THIS specific
+      404 path instead — the same SDK exception-type inconsistency documented on ProbeAsync above.
+      Fixed by adding the missing HttpRequestException catch clause alongside the existing
+      MeilisearchApiError one.
     — EnumerateAsync walks GET /indexes/{uid}/documents (offset+limit), NOT the search endpoint — so it
       is not subject to the maxTotalHits ceiling.
 
@@ -954,6 +973,16 @@ MeilisearchFilterCompiler   (internal sealed class)
       else may ever be assigned to it.
     — TenantScope is prepended as the OUTERMOST AND after compilation, structurally beyond the caller's
       reach.
+    — VERIFIED (Tests-phase, real container, T-26, 2026-07-20 — genuine cross-provider semantic
+      divergence, not a bug): SearchFilter.Any() with ZERO operands compiles to the literal string
+      "()", which Meilisearch's filter parser REJECTS as invalid syntax (raw HTTP: 400,
+      code: invalid_search_filter). The adapter correctly maps this to SearchErrors.EngineFault rather
+      than silently degrading to unfiltered — this is the CORRECT fail-loud behaviour for this engine.
+      ElasticSearch's equivalent (an empty BoolQuery.Should array) is valid syntax and evaluates as
+      MATCH-ALL instead — see ElasticSearchFilterCompiler's own note below. Both are faithful
+      translations of each engine's native semantics; a caller composing SearchFilter.Any() with a
+      potentially-empty operand list must guard against the empty case itself if identical behaviour
+      across a provider swap is required — see the corresponding Test Rules bullet for the full finding.
 
 MeilisearchIndexProvisioner   (sealed class, implements ISearchIndexProvisioner)  — singleton
     — EnsureIndexAsync: CreateIndexAsync(uid, primaryKey) then UpdateSettingsAsync with
@@ -967,13 +996,28 @@ MeilisearchIndexProvisioner   (sealed class, implements ISearchIndexProvisioner)
     — CutoverAsync: SwapIndexesAsync → wait the task → DeleteIndexAsync(staging) when
       DeleteStagingAfterCutover; logs Warning 9113 if the caller opted out, because the staging name now
       holds the old data and silently doubles storage.
+      VERIFIED (Tests-phase, real container, was a genuine Core-phase production bug, now fixed):
+      Meilisearch's SwapIndexesAsync genuinely requires BOTH index names to already exist — confirmed
+      via raw HTTP that swapping against a never-created name fails the task with error.code
+      "index_not_found" — but the documented stage→bulk-load→cutover consumer flow never separately
+      creates the live index, so a first-ever cutover always failed. Fixed: CutoverAsync now checks
+      IndexExistsAsync(request.LiveIndexName) first and, if absent, calls CreateIndexAsync + waits the
+      task to create an empty placeholder live index BEFORE issuing the swap.
     — ProbeAsync: IsHealthyAsync (GET /health — the only route unprotected by the master key) →
-      Reachable; GetIndexAsync(uid) WITH THE SERVICE'S OWN SCOPED KEY → IndexAddressable (Meilisearch
-      keys are per-index, so a mis-scoped key is invisible to /health); a {"q":"","limit":0} search →
-      Searchable; GetTasksAsync(statuses: enqueued) → PendingWriteCount; GetStatsAsync →
-      DocumentCount; the total elapsed probe duration → Latency; GetVersionAsync → EngineVersion;
-      reserved settings entry → SchemaFingerprint. Every one of SearchIndexHealth's eight members is
-      populated by this sequence — none is left at its default.
+      Reachable; Index(uid).GetSettingsAsync() WITH THE SERVICE'S OWN SCOPED KEY → IndexAddressable
+      (Meilisearch keys are per-index, so a mis-scoped key is invisible to /health); a
+      {"q":"","limit":0} search → Searchable; GetTasksAsync(statuses: enqueued) → PendingWriteCount;
+      GetStatsAsync → DocumentCount; the total elapsed probe duration → Latency; GetVersionAsync →
+      EngineVersion; reserved settings entry → SchemaFingerprint. Every one of SearchIndexHealth's
+      eight members is populated by this sequence — none is left at its default.
+      VERIFIED (Tests-phase, real container, was a genuine Core-phase production bug, now fixed): the
+      SDK's GetIndexAsync(uid) NEVER throws for any uid, real or nonexistent — confirmed via a scratch
+      console project that it silently returns a synthetic Index object even for a uid that was never
+      created, while raw curl against the same REST endpoint correctly returns 404. This made
+      IndexExistsAsync/ProbeAsync's IndexAddressable check always report true. Fixed: both now call
+      Index(uid).GetSettingsAsync(ct) instead, which genuinely throws, with a dual catch
+      (MeilisearchApiError via .IsNotFound, and HttpRequestException where StatusCode == NotFound —
+      the SDK is internally inconsistent about which exception type a given 404 path throws).
 
 MeilisearchProviderDescriptor   (sealed class, implements ISearchProviderDescriptor)  — singleton
 
@@ -1156,6 +1200,16 @@ ElasticSearchFilterCompiler   (internal sealed class)
     set) even though `Field` is passed positionally. ALWAYS use the parameterless-ctor-plus-full-
     initializer form for every leaf query type; never the single-argument convenience constructor.
 
+    VERIFIED (Tests-phase, real container, T-26, 2026-07-20 — genuine cross-provider semantic
+    divergence, not a bug): SearchFilter.Any() with ZERO operands compiles to an empty
+    BoolQuery.Should array, which is valid ES query syntax and evaluates as MATCH-ALL (every document
+    in the tenant-scoped set is returned, IsSuccess = true). This is the OPPOSITE of Meilisearch's
+    behaviour for the identical neutral-surface call — see MeilisearchFilterCompiler's own note above,
+    where the same construction is rejected as invalid filter syntax (SearchErrors.EngineFault). Both
+    are faithful, correct translations of each engine's native empty-Or semantics; the divergence is
+    a portability hazard for any caller composing SearchFilter.Any() with a potentially-empty operand
+    list, not an implementation defect on either side.
+
 ElasticSearchIndexProvisioner   (sealed class, implements ISearchIndexProvisioner)  — singleton
     — EnsureIndexAsync creates the index with an explicit TypeMapping derived from SearchFieldKind
       (Text → text, Keyword → keyword, Integer → integer/long, Decimal → double, Boolean → boolean,
@@ -1174,6 +1228,13 @@ ElasticSearchIndexProvisioner   (sealed class, implements ISearchIndexProvisione
       PendingWriteCount is NULL — permanently, see SearchIndexHealth. Every other SearchIndexHealth
       member is populated by this sequence. The result is cached for ProbeCacheSeconds so the probe
       does not become the load.
+      VERIFIED (Tests-phase, real container, was a genuine Core-phase production bug, now fixed):
+      ProbeAsync originally constructed an INDEX-SCOPED `new HealthRequest(indexName)`, which fails
+      outright when the named index/alias does not exist — collapsing Reachable and IndexAddressable
+      into one signal instead of the two the design calls for. Fixed by switching to the parameterless
+      cluster-wide `new HealthRequest()` for the Reachable check, leaving the subsequent size:0 search
+      against the real alias as the sole source of IndexAddressable/Searchable, matching the design's
+      "cluster health is one axis, alias addressability is a separate axis" intent exactly.
 
 ElasticSearchProviderDescriptor   (sealed class, implements ISearchProviderDescriptor)  — singleton
 
@@ -1513,8 +1574,9 @@ A service may register **both** providers, but only against **different `TDocume
 - DI registration tests: `ISearchIndex<TDocument>` / `ISearchIndexProvisioner` / `ISearchProviderDescriptor` resolve; the engine client resolves as a singleton; provider-exclusive contracts resolve **only** from their own provider's builder; raw-client accessors do **not** resolve unless `.AllowRawClientAccess()` was called. Use `ServiceCollection` + `BuildServiceProvider()` — no web host required. Note that the provider DI extensions deliberately do not register `ILogger<T>` themselves (that is the consuming host's responsibility), so a DI-only test must additionally register `services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>))` or the resolve throws `InvalidOperationException` for the unresolved `ILogger<T>` — the exact gotcha `08.Storage` hit.
 - `ISearchProviderDescriptor.Validate` tests run with **zero containers** — that is the point of the method. Every rejection path is asserted here as well as in the container suite, so a consuming service can prove a provider swap is safe in a plain unit test.
 - Each provider's test project carries a lightweight sibling-independence check (no `using SharedKernel.Search.{OtherProvider}` anywhere in its own source/tests). Implement it as a `[CallerFilePath]`-anchored scan of the package folder for `using`-directive **lines** specifically (trimmed-line prefix match, not a whole-file substring search) — a naive `string.Contains` over full file text false-positives on the test's own descriptive XML-doc prose. The authoritative enforcement is `00.Governance`'s `SearchTopologyRules`, outside this domain's own suite.
-- **Two behaviours must be verified against real containers before being relied upon anywhere:** (1) `EnumerateAsync` ordering on both engines — the contract currently promises nothing, and the guarantee may only be strengthened after this task confirms it; (2) facet-count correctness under a shared-index tenant model, i.e. that the tenant filter is applied **before** faceting on both engines. If (2) is false on either engine, tenant facet counts leak cross-tenant cardinality — subtle, silent, and security-relevant.
-- **Container-free Tests-phase tasks are complete** (T-01–T-12, T-18–T-20; 15/26 — 248 tests, 0 failures: 155 Abstractions, 49 Meilisearch, 44 ElasticSearch). The 11 real-backend tasks (T-13–T-17, T-21–T-26) remain `⚑` Blocked — re-verified on disk that `16.Testing` still ships no Meilisearch/Elasticsearch fixture — and must not be worked around with an ad-hoc in-`.Tests`-project container setup.
+- **Two behaviours were verified against real containers by T-26 (2026-07-20) — both CONFIRMED, findings recorded, contract deliberately unchanged for (1):** (1) `EnumerateAsync` ordering on both engines is **insertion order, not id-ascending** — confirmed by seeding a deliberately out-of-id-order batch and observing both engines' walks return it in seed order; the contract's "unspecified, do not rely on it" language is **retained**, not strengthened, since this is an observed implementation detail rather than a documented engine API promise (see the full finding on `ISearchIndex<TDocument>.EnumerateAsync`'s NOTE above); (2) facet-count correctness under a shared-index tenant model — the tenant filter **is** applied before faceting on both engines, confirmed by a tenant-scoped faceted search whose counts exclude the other tenant's documents on both Meilisearch and ElasticSearch. No cross-tenant cardinality leak found.
+- **Genuine cross-provider semantic divergence found and documented, not papered over (T-26, 2026-07-20):** `SearchFilter.Any()` with zero operands compiles to `"()"` in Meilisearch's filter-expression DSL, which the engine's parser rejects as invalid syntax — the adapter correctly surfaces this as `SearchErrors.EngineFault` (`IsSuccess = false`). ElasticSearch's equivalent, an empty `BoolQuery.Should` array, is valid and evaluates as **match-all** (`IsSuccess = true`, unfiltered result set). Both behaviours are correct translations of each engine's own native semantics — this is not a bug on either side, but a caller composing `SearchFilter.Any()` with a potentially-empty operand list must not assume identical behaviour across a provider swap; guard against an empty operand list before calling `.Any()` if portable behaviour is required.
+- **Tests-phase complete — all 26 tasks, 345 tests, 0 failures** (155 `SharedKernel.Search.Abstractions.Tests`, 92 `SharedKernel.Search.Meilisearch.Tests`, 98 `SharedKernel.Search.ElasticSearch.Tests`). The 11 real-backend tasks (T-13–T-17, T-21–T-26) ran against real Docker containers via `16.Testing`'s `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` (P-275) once that blocker cleared, and surfaced **five genuine production defects, all fixed, none deferred:** (1) `MeilisearchIndexProvisioner.IndexExistsAsync`/`ProbeAsync`'s `IndexAddressable` check called `GetIndexAsync`, which the SDK never throws from for any uid, real or fake (confirmed via raw HTTP that the REST layer correctly 404s but the SDK method silently returns a synthetic `Index` object) — fixed by switching both to `_client.Index(uid).GetSettingsAsync(ct)`, which genuinely throws, with a dual catch (`MeilisearchApiError` via `IsNotFound`, and `HttpRequestException` where `StatusCode == NotFound`); (2) `MeilisearchResultMapper.MapFacets` threw `NullReferenceException` on every search that did not request facets, because the SDK returns `null` (not an empty dictionary) for `facetDistribution`/`facetStats` in that case — fixed with nullable parameters plus a null/empty guard; (3) `MeilisearchIndexProvisioner.CutoverAsync` failed on a first-ever cutover because Meilisearch's `SwapIndexesAsync` genuinely requires **both** index names to pre-exist (confirmed via raw HTTP: swapping against a never-created name fails the task with `index_not_found`), while the documented stage→bulk-load→cutover consumer flow never separately creates the live index — fixed by pre-creating an empty placeholder live index via `CreateIndexAsync` before the swap when `IndexExistsAsync(liveIndexName)` reports absent; (4) `MeilisearchIndex.GetAsync` only caught `MeilisearchApiError` for a missing document, but the SDK's `GetDocumentAsync<T>` throws `HttpRequestException` (404) instead for this specific case — fixed by adding the missing catch clause; (5) `ElasticSearchIndexProvisioner.ProbeAsync` constructed an index-scoped `HealthRequest(indexName)`, which fails outright for a non-existent index and collapses `Reachable`/`IndexAddressable` into one signal instead of two — fixed with the parameterless cluster-wide `HealthRequest()`, matching the design's own "yellow cluster is healthy, index-addressability is a separate check" intent. No ad-hoc in-`.Tests`-project container setup was hand-rolled — both fixtures are consumed via `16.Testing` per the platform convention.
 - **`InternalsVisibleTo` white-box-tests each provider's own internal types.** Both `SharedKernel.Search.Meilisearch.csproj` and `SharedKernel.Search.ElasticSearch.csproj` grant `InternalsVisibleTo` to their own nested `.Tests` project — mirroring the `06.Persistence.EfCore`/`13.ServiceDefaults`/`15.Integration.Webhooks` precedent — so `MeilisearchFilterCompiler`/`ElasticSearchFilterCompiler`, the `*RequestValidator` pre-flight validators, and the `*ProviderDescriptor`/`*RawClientAccessor` types stay `internal` (no public API surface expansion) while remaining directly unit-testable.
 - **No-I/O proof technique for pre-flight validation tests (VERIFIED, load-bearing for T-11/T-19 and their real-backend successors):** `MeilisearchClient`/`ElasticsearchClient` ship no interface and cannot be substituted via `NSubstitute`. Instead, construct `MeilisearchIndex<TDocument>`/`ElasticSearchIndex<TDocument>` directly (reachable via `InternalsVisibleTo`) with a `client: null!` reference. `SearchAsync` validates the request via the internal `*RequestValidator` before ever dereferencing `_client`, so a clean rejection (no `NullReferenceException`) is structural proof no I/O was attempted. Pair every such test with one companion case that supplies a *passing* precondition (e.g. a valid `TenantScope` on a tenanted index) and asserts the **opposite** — that a `NullReferenceException` IS thrown once the guard is satisfied — proving the guard itself, not an unrelated short-circuit, is what stopped I/O in the rejection case.
 - **ES SDK leaf-value types need their own reflection pass before writing filter-compiler assertions.** `Elastic.Clients.Elasticsearch.Number` has no public properties (FluentAssertions mis-renders failures as `Number{ }`) and distinguishes a long-backed value from a double-backed value for equality **even at an equal numeric value** (`(Number)10L != (Number)10.0`) — since `ElasticSearchFilterCompiler`'s numeric range path always produces a `double`-backed `Number`, range-bound assertions must compare against `(Number)10.0`, never `(Number)10L`. `FieldValue.String/Long/Double/Boolean` DOES have working value equality via `==`/`Equals`. Verify unfamiliar SDK leaf-value-type equality/property shape by reflecting the real compiled assembly (see the Core-phase SDK-shape-verification technique) before trusting an assertion — do not assume equality "just works" on an SDK type with no visible properties.
@@ -1530,3 +1592,4 @@ A service may register **both** providers, but only against **different `TDocume
 - [2026-07-19] SK.09.Scaffold (S-01–S-13) complete — all six `.csproj` files fleshed out to the locked reference/package shape; the four `Microsoft.Extensions.*` packages pinned to `10.0.9` on both providers (matching `08.Storage`/`11.Communication.Rest`/`16.Testing`'s most recent pins rather than the newer `10.0.10` on nuget.org, deliberately avoiding repo-wide version skew) — Technology Stack row updated from the prior "pinned at Scaffold-phase implementation time" placeholder to the confirmed version; `Elastic.Transport` transitive dependency confirmed at `8.0.1` with no conflict (first reference in the solution graph); `SearchStreamException`'s base-type question resolved and locked — `SharedKernel.Primitives` ships no exception hierarchy at all (only the separate `SharedKernel.Core` package does, which `.Abstractions` does not reference), so it derives directly from `System.Exception` per the contract's own documented fallback, not from any platform base exception. 99 namespace-only stub `.cs` files created (42 Abstractions + 20 Meilisearch + 37 ElasticSearch) with zero logic, matching the Interface Contracts folder headers exactly; net-new `SharedKernel.Search.Abstractions.Tests` created and registered in `Platform.SharedKernel.slnx`. All six projects build 0 errors/0 new warnings. No interface, model, DI-registration, or test-pattern changes — pure project-wiring and two Technology-Stack-table confirmations (search-phase-implementer)
 - [2026-07-19] SK.09.Core (C-01–C-48) complete — full implementation of Abstractions/.Meilisearch/.ElasticSearch, 0 build errors. Both Design-phase open SDK-shape risks resolved against real compiled assemblies and their notes updated in place: ElasticSearchFilterCompiler's leaf-query object-initializer shape (with the `[SetsRequiredMembers]`/CS9035 gotcha on convenience constructors) and MeiliSearch's `dynamic` Filter/`ISearchable<T>` shapes. Five new Core-phase implementation findings documented in place: the Meilisearch `_formatted`-highlight/JsonElement search workaround (MeilisearchIndex note), the schema-fingerprint-via-Settings.Dictionary sentinel-entry mechanism (MeilisearchIndexProvisioner note), the ElasticSearch cursor Token's QueryBase64/RequestResponseSerializer encoding (SearchCursor note), the builder-closure-capture DI singleton lazy-resolution pattern (both providers' AddSharedKernel*Search NOTE), and the mandatory `global::`-qualification convention for ElasticSearch aggregation types to avoid colliding with this domain's own same-named Analytics types (IAnalyticsSearch note). No interface/model/DI-signature changes — documentation-only, capturing verified engine behaviour and implementation patterns for future Core-phase or Tests-phase sessions (search-phase-implementer)
 - [2026-07-19] SK.09.Tests container-free tasks complete (T-01–T-12, T-18–T-20; 15/26, 248 tests green) — re-verified the `16.Testing` container-fixture blocker on disk (still absent), then implemented and passed every genuinely container-free task; T-13–T-17/T-21–T-26 (11 tasks) marked `⚑` Blocked, no ad-hoc container setup hand-rolled. Fixed two genuine Core-phase production defects surfaced by test-writing (not deferred): `SearchValue.ToString()` unconditionally threw `InvalidOperationException` (compiler-synthesized `PrintMembers` calls every kind-checked accessor regardless of `Kind`) — fixed with an explicit override, documented on `SearchValue`; and `MeilisearchIndexProvisioner`/`ElasticSearchIndexProvisioner`/`MeilisearchTenantTokenIssuer` could never resolve via DI in any consuming service because their constructors take a raw `TOptions`, not `IOptions<TOptions>`, while `Build()` registered them via the plain-shorthand `AddSingleton<TInterface, TImplementation>()` — fixed with an explicit unwrapping factory, documented in DI Registration. Added `InternalsVisibleTo` from each provider package to its own `.Tests` project (white-box testing internals, no public surface growth) and established the null-client no-I/O-proof technique for pre-flight validation tests, both documented in Test Rules (search-phase-implementer)
+- [2026-07-20] SK.09.Tests real-backend tasks complete (T-13–T-17, T-21–T-26; 26/26, 345 tests green: 155 Abstractions + 92 Meilisearch + 98 ElasticSearch) — re-verified the `16.Testing` container-fixture blocker on disk and found it cleared (`MeilisearchContainerFixture`/`ElasticsearchContainerFixture` shipped in `16.Testing`'s `SK.16.Core`); implemented both `Containers/{Provider}Collection.cs`+`{Provider}ProviderFactory.cs` pairs, a shared 15-document/2-tenant `TestProductCorpus`, and every real-backend test against real Docker containers (image `getmeili/meilisearch:v1.20.0`; `docker.elastic.co/elasticsearch/elasticsearch:9.4.2`). **Five genuine production defects found and fixed, none deferred** — `MeilisearchIndexProvisioner.IndexExistsAsync`/`ProbeAsync` (SDK's `GetIndexAsync` never throws for any uid, switched to `GetSettingsAsync`), `MeilisearchResultMapper.MapFacets` (null, not empty-dict, facet response when none requested — NRE on almost every ordinary search), `MeilisearchIndexProvisioner.CutoverAsync` (Meilisearch's swap requires both indexes to pre-exist — now pre-creates an empty placeholder live index), `MeilisearchIndex.GetAsync` (missing `HttpRequestException` catch for the SDK's inconsistent 404-exception-type behaviour on this one path), `ElasticSearchIndexProvisioner.ProbeAsync` (index-scoped `HealthRequest` fails for a nonexistent index, collapsing Reachable/IndexAddressable — switched to the parameterless cluster-wide form) — all five documented inline on their respective Interface Contracts blocks above. **T-26 real-evidence findings, both requested by the phase spec:** `EnumerateAsync` is confirmed insertion-order (not id-ascending) on both engines — the "unspecified, do not rely on it" contract language is deliberately RETAINED rather than strengthened, since this is an observed implementation detail, not a documented engine guarantee; tenant-scoped facet counts are confirmed correct on both engines (tenant filter applied before faceting, no cross-tenant cardinality leak). One genuine cross-provider semantic divergence found and documented, not treated as a bug: `SearchFilter.Any()` with zero operands is rejected by Meilisearch (invalid filter syntax) but evaluates as match-all on ElasticSearch (valid empty `BoolQuery.Should`) — both are correct per-engine translations. State-map fully corrected: Blocked section and both Cross-Domain Dependencies rows annotated resolved (retained for history, not silently rewritten), all 26 `SK.09.Tests` tasks `●`, Overall Progress and Package Board recalculated, promoted to root (search-phase-implementer)
