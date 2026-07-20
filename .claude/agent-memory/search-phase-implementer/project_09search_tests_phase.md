@@ -5,12 +5,15 @@ type: project
 ---
 
 SK.09.Tests container-free tasks (T-01–T-12, T-18–T-20; 15/26) completed 2026-07-19 — 248 tests green
-(155 Abstractions, 49 Meilisearch, 44 ElasticSearch). T-13–T-17/T-21–T-26 (11 tasks, real-backend)
-marked `⚑` Blocked — re-verified on disk that `16.Testing/SharedKernel.Testing/Containers/` still holds
-only the four pre-existing fixtures (PostgreSQL/Redis/RabbitMQ/MinIO), zero Meilisearch/Elasticsearch
-`.cs` files anywhere under `16.Testing/`. Do not re-derive this — grep `16.Testing` for
-`*meilisearch*`/`*elasticsearch*` filenames at the start of any future `SK.09.Tests` continuation
-session; if still zero hits, the blocker is unchanged.
+(155 Abstractions, 49 Meilisearch, 44 ElasticSearch). T-13–T-17/T-21–T-26 (11 tasks, real-backend) were
+marked `⚑` Blocked at that time (fixtures absent on disk).
+
+**STALE as of 2026-07-20 — the blocker cleared.** `16.Testing`'s `MeilisearchContainerFixture`/
+`ElasticsearchContainerFixture` landed; T-13–T-17 (Meilisearch real-backend) are now done, 79/79 green,
+with three genuine production bugs found+fixed along the way — see
+[[project_09search_meilisearch_realbackend]] for the full writeup. Always re-verify
+`16.Testing/SharedKernel.Testing/Containers/` on disk yourself before trusting either this paragraph or
+that one — this note itself is exactly the kind of thing that goes stale.
 
 ## Two genuine Core-phase production bugs found via test-writing, fixed (not deferred)
 
