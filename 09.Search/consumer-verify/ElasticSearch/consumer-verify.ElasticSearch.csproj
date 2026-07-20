@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Not shipped — verification harness only -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      DELIBERATELY references ONLY SharedKernel.Search.Abstractions + SharedKernel.Search.ElasticSearch
+      — never SharedKernel.Search.Meilisearch. This compilation closure is the P-06 build-time proof, the
+      mirror image of consumer-verify.Meilisearch: IInstantSearch<> and ITenantSearchTokenIssuer
+      (declared only in SharedKernel.Search.Meilisearch) cannot be named from this project — see
+      Program.cs's header comment for the verified negative-compile evidence (CS0246).
+    -->
+    <ProjectReference Include="..\..\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+    <ProjectReference Include="..\..\SharedKernel.Search.ElasticSearch\SharedKernel.Search.ElasticSearch.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Generic host — lets this harness exercise the real IHost.StartAsync() eager
+         ValidateOnStart() path (P-07), not just BuildServiceProvider(). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+  </ItemGroup>
+
+</Project>
