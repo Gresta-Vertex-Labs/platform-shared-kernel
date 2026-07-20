@@ -1,12 +1,21 @@
 ---
 name: project_wo044_search_testing
-description: WO-044 (P-275 Meilisearch/Elasticsearch container fixtures, P-276 InMemorySearchIndex/Provisioner/ProviderDescriptor doubles) -- Design/Scaffold/Core all CLOSED 2026-07-19/20; Tests/Docs still pending.
+description: WO-044 (P-275 Meilisearch/Elasticsearch container fixtures, P-276 InMemorySearchIndex/Provisioner/ProviderDescriptor doubles) -- Design/Scaffold/Core/Tests all CLOSED 2026-07-19/20; only Docs (DO-19-DO-22) remains.
 type: project
 ---
 
 WO-044 adds two things to `16.Testing`, mirroring the WO-043/`08.Storage` precedent one domain later: `Containers/MeilisearchContainerFixture` + `Containers/ElasticsearchContainerFixture` (P-275, fixtures five and six in `Containers/`) and a new `Search/` capability folder (P-276: `InMemorySearchIndex<TDocument>`, `InMemorySearchIndexProvisioner`, `InMemorySearchProviderDescriptor`, `AddInMemorySearchIndex<TDocument>()`, `AddInMemorySearchProvisioning()`), faking `09.Search/SharedKernel.Search.Abstractions`.
 
-**Status as of 2026-07-20: SK.16.Design (121/121), SK.16.Scaffold (28/28), and SK.16.Core (69/69) are all `●`, promoted to root.** SK.16.Tests (T-48-T-51) and SK.16.Docs (DO-19-DO-22) remain to fully close WO-044.
+**Status as of 2026-07-20: SK.16.Design (121/121), SK.16.Scaffold (28/28), SK.16.Core (69/69), and SK.16.Tests (51/51) are all `●`, promoted to root.** Only SK.16.Docs (DO-19-DO-22) remains to fully close WO-044.
+
+**Tests-phase (T-48-T-51) landed 2026-07-20, same session as this note's update.** Docker was available this session (`docker version` succeeded) so all container-fixture tests actually ran, not just compiled. Key points for whoever picks up DO-19-DO-22 next:
+
+- Real committed test files (never a throwaway harness this time, unlike Core-phase's two smoke harnesses): `Containers/MeilisearchContainerFixtureTests.cs` (3 tests) + `Containers/ElasticsearchContainerFixtureTests.cs` (3 tests), and `Search/SearchTestFixtures.cs` (shared `TestProductDocument : ISearchDocument`) + `Search/InMemorySearchIndexTests.cs` (38 tests) + `Search/InMemorySearchIndexProvisionerTests.cs` (16 tests) + `Search/InMemorySearchProviderDescriptorTests.cs` (12 tests) + `Search/SearchServiceCollectionExtensionsTests.cs` (9 tests) = 85 net-new tests, 429/429 total passing.
+- Elasticsearch fixture full-lifecycle test takes ~30s wall-clock (the documented testcontainers-dotnet#955 cluster-bootstrap poll) — don't be alarmed if it's the slowest test in the suite; that's expected, not a hang.
+- Proved the 9.x-not-8.6.1 image claim mechanically, not just by trusting the pinned tag string: hit the container's root `GET /` endpoint post-start and asserted the JSON `version.number` starts with `"9."` — a real behavioral proof the override took effect, not a restatement of the constant.
+- `Assert.Equal(SearchErrors.XxxFactory(...), result.Error)` (full record-equality against the reconstructed expected `Error`) worked cleanly everywhere except the pagination-ceiling path, where the fake's internal `FakeProviderName = "in-memory-fake"` const isn't part of the public contract — used `Assert.Equal(code, result.Error.Code)` + `Assert.Equal(ErrorType.Validation, result.Error.Type)` there instead rather than guessing the private literal.
+- No drift found writing test assertions against the C-64-C-69 Core-phase code — everything in [[project_wo044_search_testing]]'s Core-phase section above still held exactly.
+- `sync-brain` was used (not a bare status-flip) because two Test Rules bullets in CLAUDE.md explicitly described the T-48-T-51 coverage as "still needs to be written, throwaway harness never committed" — that's a substantive content correction, not just a `[STATUS: Planned]` marker flip.
 
 **Core-phase implementation (C-64-C-69) landed 2026-07-20** -- see [[feedback_greendonut_result_ambiguity]] and [[feedback_testcontainers_413_ctor_break]] for cross-cutting gotchas hit again in this pass. Key decisions:
 
