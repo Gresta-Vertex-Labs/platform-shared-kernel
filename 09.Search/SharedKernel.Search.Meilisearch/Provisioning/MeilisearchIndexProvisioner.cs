@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Results;
@@ -128,12 +130,24 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     /// <inheritdoc />
     public async Task<Result<bool>> IndexExistsAsync(string indexName, CancellationToken cancellationToken = default)
     {
+        // VERIFIED against the real MeiliSearch 0.20.0 SDK (2026-07-20): MeilisearchClient.GetIndexAsync
+        // does NOT throw for a non-existent index — it silently returns a synthetic Index object built
+        // from the requested uid with no network round trip ever performed, which made the previous
+        // GetIndexAsync-based existence check ALWAYS report true regardless of whether the index
+        // actually existed. Index(uid).GetSettingsAsync() DOES perform a real, authenticated request and
+        // correctly throws — as a plain System.Net.Http.HttpRequestException with StatusCode populated,
+        // not the SDK's own MeilisearchApiError — for both a missing index (404) and a mis-scoped key
+        // (403). Both exception shapes are caught here for forward-compatibility across SDK versions.
         try
         {
-            await _client.GetIndexAsync(indexName, cancellationToken).ConfigureAwait(false);
+            await _client.Index(indexName).GetSettingsAsync(cancellationToken).ConfigureAwait(false);
             return Result<bool>.Success(true);
         }
         catch (global::Meilisearch.MeilisearchApiError ex) when (IsNotFound(ex))
+        {
+            return Result<bool>.Success(false);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
             return Result<bool>.Success(false);
         }
@@ -149,6 +163,39 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
     /// <inheritdoc />
     public async Task<Result> CutoverAsync(IndexCutoverRequest request, CancellationToken cancellationToken = default)
     {
+        // VERIFIED against the real MeiliSearch 0.20.0 SDK/engine (2026-07-20): SwapIndexesAsync requires
+        // BOTH index names to already exist — swapping against a live index name that has never been
+        // created fails with a real, engine-side "index_not_found" task error. The documented consumer
+        // rebuild flow (EnsureIndexAsync(staging) -> IndexManyAsync -> CutoverAsync) never separately
+        // creates the live index, so a service's very first-ever cutover would otherwise always fail.
+        // An empty placeholder is therefore created transparently here when the live index is absent —
+        // its own (empty) settings/primaryKey are irrelevant because the swap overwrites them with
+        // staging's, per Meilisearch's own "swaps documents, settings AND task history" semantics.
+        var liveExistsResult = await IndexExistsAsync(request.LiveIndexName, cancellationToken).ConfigureAwait(false);
+        if (liveExistsResult.IsFailure)
+        {
+            return Result.Failure(liveExistsResult.Error);
+        }
+
+        if (!liveExistsResult.Value)
+        {
+            try
+            {
+                var createLiveTask = await _client.CreateIndexAsync(request.LiveIndexName, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+                var createLiveWait = await WaitAsync(createLiveTask.TaskUid, cancellationToken).ConfigureAwait(false);
+                if (createLiveWait.IsFailure)
+                {
+                    return Result.Failure(SearchErrors.CutoverFailed(
+                        request.StagingIndexName, request.LiveIndexName, createLiveWait.Error.Message));
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return Result.Failure(SearchErrors.CutoverFailed(request.StagingIndexName, request.LiveIndexName, ex.Message));
+            }
+        }
+
         try
         {
             var task = await _client
@@ -199,8 +246,11 @@ internal sealed class MeilisearchIndexProvisioner : ISearchIndexProvisioner
         try
         {
             // Meilisearch keys are per-index, so this call — made with this service's own configured
-            // key — is what catches a mis-scoped key that /health cannot see.
-            await _client.GetIndexAsync(indexName, cancellationToken).ConfigureAwait(false);
+            // key — is what catches a mis-scoped key that /health cannot see. Uses
+            // Index(uid).GetSettingsAsync(), never GetIndexAsync — VERIFIED against the real SDK that
+            // GetIndexAsync never throws (see the identical note on IndexExistsAsync above), which would
+            // make this probe report IndexAddressable = true unconditionally.
+            await _client.Index(indexName).GetSettingsAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {

@@ -179,8 +179,17 @@ internal sealed class ElasticSearchIndexProvisioner : ISearchIndexProvisioner
 
         var stopwatch = Stopwatch.StartNew();
 
+        // Deliberately UNSCOPED (the parameterless HealthRequest — overall cluster health), never
+        // HealthRequest(indexName). The index-scoped overload 404s/fails when indexName does not exist
+        // yet, which would collapse Reachable and IndexAddressable into the same signal — exactly the
+        // anti-pattern SearchIndexHealth.IndexAddressable's own contract note warns against ("a green
+        // cluster with a missing or misnamed read alias passes every cluster-health check"). Reachable
+        // must answer "is the cluster itself up" independent of whether THIS index/alias exists;
+        // IndexAddressable (computed separately below) answers the latter question. Confirmed via a
+        // real container: HealthRequest(indexName) against a genuinely nonexistent index name returned
+        // an invalid response, incorrectly reporting Reachable = false for a fully healthy cluster.
         var healthResponse = await _client.Cluster
-            .HealthAsync(new Elastic.Clients.Elasticsearch.Cluster.HealthRequest(indexName)
+            .HealthAsync(new Elastic.Clients.Elasticsearch.Cluster.HealthRequest
             {
                 WaitForStatus = HealthStatus.Yellow,
                 Timeout = TimeSpan.FromSeconds(1),

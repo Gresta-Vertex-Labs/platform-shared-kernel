@@ -343,6 +343,15 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         {
             return Result<TDocument>.Failure(SearchErrors.DocumentNotFound(_definition.Name, documentId));
         }
+        // VERIFIED against the real MeiliSearch 0.20.0 SDK (2026-07-20): Index.GetDocumentAsync<T> throws
+        // a plain System.Net.Http.HttpRequestException (StatusCode = NotFound) for a missing document on
+        // this SDK version's call path, not the SDK's own MeilisearchApiError — the same inconsistency
+        // found on Index.GetSettingsAsync (see MeilisearchIndexProvisioner.IndexExistsAsync). Both
+        // exception shapes are caught for forward-compatibility.
+        catch (global::System.Net.Http.HttpRequestException ex) when (ex.StatusCode == global::System.Net.HttpStatusCode.NotFound)
+        {
+            return Result<TDocument>.Failure(SearchErrors.DocumentNotFound(_definition.Name, documentId));
+        }
 
         if (_definition.TenantField is { } tenantField)
         {

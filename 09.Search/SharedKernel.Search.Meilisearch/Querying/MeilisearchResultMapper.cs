@@ -145,11 +145,15 @@ internal static class MeilisearchResultMapper
     }
 
     private static IReadOnlyDictionary<string, FacetResult> MapFacets(
-        IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> facetDistribution,
-        IReadOnlyDictionary<string, global::Meilisearch.FacetStat> facetStats,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>? facetDistribution,
+        IReadOnlyDictionary<string, global::Meilisearch.FacetStat>? facetStats,
         int maxFacetValues)
     {
-        if (facetDistribution.Count == 0)
+        // VERIFIED against the real MeiliSearch 0.20.0 SDK (2026-07-20): SearchResult<T>.FacetDistribution
+        // and PaginatedSearchResult<T>.FacetDistribution/.FacetStats are genuinely null (not an empty
+        // dictionary) whenever the request did not ask for any facets — every SearchAsync call, not just
+        // faceted ones, so a null check is required unconditionally, not only for the empty-facets case.
+        if (facetDistribution is null || facetDistribution.Count == 0)
         {
             return EmptyFacets;
         }
@@ -158,7 +162,7 @@ internal static class MeilisearchResultMapper
         foreach (var (field, valueCounts) in facetDistribution)
         {
             var values = valueCounts.Select(kv => new FacetValue(kv.Key, kv.Value)).ToArray();
-            FacetNumericStats? stats = facetStats.TryGetValue(field, out var stat)
+            FacetNumericStats? stats = facetStats is not null && facetStats.TryGetValue(field, out var stat)
                 ? new FacetNumericStats(stat.Min, stat.Max)
                 : null;
 
