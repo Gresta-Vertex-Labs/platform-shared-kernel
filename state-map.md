@@ -72,7 +72,7 @@ Format when blocked:
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | LoggingRetrofit | `●` | SK.07.LoggingRetrofit complete (22/22, P-254/P-263) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range; `MessagingLogScope.CorrelationIdKey` named constant now backs the shared `BeginScope` correlation entry (replacing the bare `"CorrelationId"` literal); verified zero EventId collisions/SK0020-SK0021 diagnostics; 108/108 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
-| 09 | [Search](09.Search/state-map.md) | Docs | `●` | All 8 `SK.09.Docs` tasks complete — `GenerateDocumentationFile`+`TreatWarningsAsErrors`+full NuGet metadata block (incl. `PackageReadmeFile`+packed `README.md`) on all three production `.csproj` files, zero CS1591/CS1574; the Core-phase CS8509/CS8524 no-discard-arm collision with `TreatWarningsAsErrors` resolved via a narrowly-scoped, build-log-visible `WarningsNotAsErrors` (never a discard arm, never `NoWarn`), documented in `09.Search/CLAUDE.md`; three `README.md` files written; DO-08 drift check found zero interface/DI-shape drift and corrected two stale Technology-Stack notes. All 345 tests still green. | Begin `SK.09.Published` — NuGet pack and a real `IHost.StartAsync()` consumer-verify harness for all three packages. |
+| 09 | [Search](09.Search/state-map.md) | Published | `●` | SK.09.Published complete (8/8) — all three packages re-verified NuGet-metadata-complete and packed clean (`.nupkg`+`.snupkg`, zero `NU5039`/`NU5128`); a new `09.Search/consumer-verify/` area (three real `IHost.StartAsync()` console harnesses — Meilisearch/, ElasticSearch/, BothProviders/) consumer-verifies DI resolution of every neutral/provider-exclusive contract, singleton lifetimes, raw-client gating, startup-time `OptionsValidationException` naming the missing property, the same-`TDocument` dual-registration hard violation, and — the most load-bearing check — capability segregation confirmed as a genuine, captured `CS0234`/`CS0246` build-time compiler failure in both directions, not asserted in prose. All 345 tests still green. All six phases now `●` for all three `SharedKernel.Search.*` packages — 09.Search domain (WO-044) complete end to end. | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
 | 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | P-260/WO-042 fully closed — T-29 replaced test-local literal duplicates of the correlation/tenant header names with `WellKnownHeaders.CorrelationId`/`.TenantId` references across `.Rest.Tests`/`.Grpc.Tests`; DO-07 verified `CLAUDE.md`'s propagation rules already documented the shared-constant sourcing and gRPC thin-alias exception; 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing; SK.11.Tests (29/29) and SK.11.Docs (7/7) both `●`. | Only the Published phase (NuGet packaging, pack, publish) remains for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
@@ -105,8 +105,8 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Published | 8 |
-| ● Docs | 3 |
+| ● Published | 9 |
+| ● Docs | 2 |
 | ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 1 |
@@ -10528,7 +10528,7 @@ This domain's own brain already documents all four rules in prose ("zero third-p
 ---
 ### P-272 — Search: Abstractions Contract Finalization (ISearchDocument, ISearchIndex, Filter AST, Query Builder)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-044
 **Domain:** 09.Search
 **Depends on:** None
@@ -10553,7 +10553,7 @@ The single governing rule that makes this abstraction serve two structurally dif
 ---
 ### P-273 — Search: SharedKernel.Search.Meilisearch Provider (BFF/Fast)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-044
 **Domain:** 09.Search
 **Depends on:** P-272
@@ -10578,7 +10578,7 @@ This is the platform's BFF/fast search provider. Isolating Meilisearch-only capa
 ---
 ### P-274 — Search: SharedKernel.Search.ElasticSearch Provider (Analytics/Heavy)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-044
 **Domain:** 09.Search
 **Depends on:** P-272
@@ -10711,3 +10711,5 @@ This domain's own brain documents every one of these rules in prose already — 
 - [2026-07-20] 16 → Core (●) — promoted from SK.16.Core (69/69); C-64–C-69 (P-275/P-276/WO-044) implemented `MeilisearchContainerFixture`/`ElasticsearchContainerFixture` (both smoke-tested against real Docker) and the new `Search/` folder (`InMemorySearchIndex<TDocument>`/`InMemorySearchIndexProvisioner`/`InMemorySearchProviderDescriptor` plus DI extensions) against the real 09.Search interfaces with zero drift; 344/344 SelfTests regression clean — Core is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
 - [2026-07-20] 09 → Tests (●) — promoted from SK.09.Tests (26/26); the 11 real-backend tasks (T-13–T-17/T-21–T-26) that were `⚑` Blocked pending 16.Testing's Meilisearch/Elasticsearch fixtures were re-verified unblocked (P-275 shipped in SK.16.Core), implemented, and run against real Docker containers — 345 tests green across all three packages (155 Abstractions + 92 Meilisearch + 98 ElasticSearch); found and fixed 5 genuine production defects (4 Meilisearch: `IndexExistsAsync`/`ProbeAsync` false-negative existence check, `MapFacets` null-facet NRE, first-cutover `index_not_found`, `GetAsync` uncaught 404; 1 ElasticSearch: index-scoped `ProbeAsync` health check); T-26 cross-provider parity suite confirmed `EnumerateAsync` is insertion-order (not id-ascending) and tenant-scoped facet counts are correct on both engines, and documented a genuine cross-provider empty-`Or` semantic divergence (Meilisearch rejects, ElasticSearch match-all) — Tests is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
 - [2026-07-20] 09 → Docs (●) — promoted from SK.09.Docs (8/8); GenerateDocumentationFile/TreatWarningsAsErrors/full NuGet metadata (incl. PackageReadmeFile+packed README.md) on all three production .csproj files, zero CS1591/CS1574; the Core-phase CS8509/CS8524 no-discard-arm collision with TreatWarningsAsErrors resolved via a narrowly-scoped, build-log-visible WarningsNotAsErrors rather than a discard arm; three README.md files written; DO-08 drift check found zero interface/DI-shape drift — Docs is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
+- [2026-07-20] 09 → Published (●) — promoted from SK.09.Published (8/8); all three packages re-verified NuGet-metadata-complete and packed clean (.nupkg+.snupkg, zero NU5039/NU5128); new `09.Search/consumer-verify/` area (three real IHost.StartAsync() console harnesses) consumer-verifies DI resolution, singleton lifetimes, raw-client gating, startup-time OptionsValidationException naming the missing property, the same-TDocument dual-registration hard violation, and capability segregation confirmed as a genuine captured CS0234/CS0246 build-time compiler failure in both directions; 345 tests still green — 09.Search domain (WO-044) complete end to end, all six phases ● (state-map-phase)
+- [2026-07-20] Phase Backlog P-272, P-273, P-274 → ● Complete — 09.Search reached Published (state-map-phase)

@@ -83,6 +83,9 @@
     <Project Path="09.Search/SharedKernel.Search.ElasticSearch/SharedKernel.Search.ElasticSearch.Tests/SharedKernel.Search.ElasticSearch.Tests.csproj" />
     <Project Path="09.Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.csproj" />
     <Project Path="09.Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.Tests/SharedKernel.Search.Meilisearch.Tests.csproj" />
+    <Project Path="09.Search/consumer-verify/Meilisearch/consumer-verify.Meilisearch.csproj" />
+    <Project Path="09.Search/consumer-verify/ElasticSearch/consumer-verify.ElasticSearch.csproj" />
+    <Project Path="09.Search/consumer-verify/BothProviders/consumer-verify.BothProviders.csproj" />
   </Folder>
   <Folder Name="/10.Intelligence/">
     <Project Path="10.Intelligence/SharedKernel.AI.Abstractions/SharedKernel.AI.Abstractions.csproj" />
