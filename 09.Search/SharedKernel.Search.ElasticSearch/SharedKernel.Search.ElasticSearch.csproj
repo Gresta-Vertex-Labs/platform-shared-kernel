@@ -10,6 +10,37 @@
       which is too coarse-grained. This package simply inherits an already-annotated dependency
       (Elastic.Clients.Elasticsearch sets IsAotCompatible for net8+ on its own project).
     -->
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Search.ElasticSearch</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>ElasticSearch (analytics/heavy) implementation of SharedKernel.Search.Abstractions: ElasticSearchIndex&lt;TDocument&gt;, ElasticSearchIndexProvisioner (alias-based cutover), ElasticSearchProviderDescriptor, ElasticSearchFilterCompiler, plus the ElasticSearch-exclusive IAnalyticsSearch&lt;TDocument&gt; (terms/cardinality/stats/date-histogram/range aggregations) and ICursorSearch&lt;TDocument&gt; (PIT + search_after deep pagination). Register via AddSharedKernelElasticSearchSearch(IConfiguration).</Description>
+    <PackageTags>search;full-text-search;elasticsearch;analytics;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      CS8509/CS8524 are DELIBERATELY downgraded back to non-fatal warnings — never fully suppressed
+      (NoWarn) and never masked with a discard (`_ =>`) arm — on the three closed-hierarchy switches
+      this package owns (the SearchFilter translation switch and the SearchValueKind rendering switch
+      in ElasticSearchFilterCompiler, and the AggregationRequest naming switch in
+      ElasticSearchAnalytics&lt;TDocument&gt;.GetName). See 09.Search/CLAUDE.md, "Reconciling switch
+      exhaustiveness with TreatWarningsAsErrors", for the full, empirically-verified reasoning: the C#
+      compiler cannot perform closed-world exhaustiveness analysis over a sealed-subtype hierarchy or a
+      fully-covered enum, so these two diagnostics fire unconditionally regardless of how completely the
+      switch is written, and remain visible in every build log rather than being hidden.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8509;CS8524</WarningsNotAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -40,6 +71,10 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

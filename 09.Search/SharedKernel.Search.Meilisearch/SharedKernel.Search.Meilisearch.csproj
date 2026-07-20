@@ -4,6 +4,37 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Search.Meilisearch</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Meilisearch (BFF/fast) implementation of SharedKernel.Search.Abstractions: MeilisearchIndex&lt;TDocument&gt;, MeilisearchIndexProvisioner, MeilisearchProviderDescriptor, MeilisearchFilterCompiler, plus the Meilisearch-exclusive IInstantSearch&lt;TDocument&gt; (typo-tolerant/prefix instant search) and ITenantSearchTokenIssuer (engine-enforced per-tenant search tokens). Register via AddSharedKernelMeilisearchSearch(IConfiguration).</Description>
+    <PackageTags>search;full-text-search;meilisearch;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      CS8509/CS8524 are DELIBERATELY downgraded back to non-fatal warnings — never fully suppressed
+      (NoWarn) and never masked with a discard (`_ =>`) arm — on the two closed-hierarchy switches this
+      package owns (the SearchFilter translation switch in MeilisearchFilterCompiler.Compile, and the
+      SearchValueKind rendering switch in MeilisearchFilterCompiler.FormatValue). See
+      09.Search/CLAUDE.md, "Reconciling switch exhaustiveness with TreatWarningsAsErrors", for the full,
+      empirically-verified reasoning: the C# compiler cannot perform closed-world exhaustiveness
+      analysis over a sealed-subtype hierarchy or a fully-covered enum, so these two diagnostics fire
+      unconditionally regardless of how completely the switch is written, and remain visible in every
+      build log rather than being hidden.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8509;CS8524</WarningsNotAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +65,10 @@
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
