@@ -24,6 +24,12 @@ namespace SharedKernel.Search.Meilisearch.Querying;
 internal static class MeilisearchFilterCompiler
 {
     /// <summary>Compiles <paramref name="filter"/> alone, with no tenant injection.</summary>
+    /// <remarks>
+    /// This switch intentionally carries no discard (<c>_ =&gt;</c>) arm — see
+    /// <c>09.Search/CLAUDE.md</c>, "Reconciling switch exhaustiveness with <c>TreatWarningsAsErrors</c>",
+    /// for why the resulting CS8509 is downgraded via <c>WarningsNotAsErrors</c> at the project level
+    /// rather than silenced by a catch-all arm here.
+    /// </remarks>
     public static string Compile(SearchFilter filter) => filter switch
     {
         EqualFilter f => $"{f.Field} = {FormatValue(f.Value)}",
@@ -91,6 +97,11 @@ internal static class MeilisearchFilterCompiler
         };
     }
 
+    // This switch intentionally carries no discard (`_ =>`) arm, covering all five declared
+    // SearchValueKind members exhaustively. The C# compiler still emits CS8524 because an enum's
+    // underlying integral representation always permits an unnamed value — see 09.Search/CLAUDE.md,
+    // "Reconciling switch exhaustiveness with TreatWarningsAsErrors", for why that warning is
+    // downgraded via WarningsNotAsErrors at the project level rather than silenced here.
     private static string FormatValue(SearchValue value) => value.Kind switch
     {
         SearchValueKind.String => QuoteAndEscape(value.AsString),

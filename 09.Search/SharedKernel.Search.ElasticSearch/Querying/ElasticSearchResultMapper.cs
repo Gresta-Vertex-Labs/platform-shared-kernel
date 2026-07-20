@@ -13,7 +13,7 @@ internal static class ElasticSearchResultMapper
 {
     private static readonly IReadOnlyDictionary<string, FacetResult> EmptyFacets = new Dictionary<string, FacetResult>();
 
-    /// <summary>Maps <paramref name="response"/>. <see cref="SearchResponse{TDocument}.IsValidResponse"/> is checked first.</summary>
+    /// <summary>Maps <paramref name="response"/>. <c>response.IsValidResponse</c> is checked first.</summary>
     public static Result<SearchResults<TDocument>> Map<TDocument>(
         SearchResponse<TDocument> response,
         int maxFacetValues,

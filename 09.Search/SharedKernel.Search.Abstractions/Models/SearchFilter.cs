@@ -20,6 +20,34 @@ namespace SharedKernel.Search.Abstractions.Models;
 /// <see cref="Between"/>, <see cref="Exists"/>, <see cref="All"/>, <see cref="Any"/>,
 /// <see cref="Negate"/>) are the <em>only</em> sanctioned construction path.
 /// </para>
+/// <para>
+/// <b>What is deliberately absent, and why:</b> no <c>Fuzzy</c>/<c>TypoTolerance</c> node (Meilisearch
+/// applies typo tolerance by default with word-length thresholds; ElasticSearch requires explicit
+/// <c>fuzziness</c> with different edit-distance behaviour and real cost — a no-op on one side, a
+/// query-plan change on the other). No <c>Boost</c>/<c>FunctionScore</c> ("boost title 3x for this
+/// query" is per-query in ElasticSearch and not expressible at all in Meilisearch, where relevance is
+/// index-level settings). No <c>IsNull</c>/<c>IsEmpty</c> (<c>IS EMPTY</c> has no faithful ElasticSearch
+/// equivalent; <c>IS NULL</c> conflates null-value with field-absent against <c>must_not exists</c>).
+/// No <c>GeoRadius</c> (present on both engines but with divergent distance semantics and unit
+/// handling). No <c>Prefix</c>/<c>Wildcard</c>/<c>Regex</c> (analysis-time concerns expressed through
+/// tokenisation, not a filter predicate). No raw-string escape clause.
+/// </para>
+/// <para>
+/// <b>No nested/object-array filter node — rejected as a correctness hazard, not a feature gap:</b>
+/// ElasticSearch's <c>nested</c> mapping preserves intra-element field correlation; Meilisearch
+/// flattens. Filtering <c>size == "M" AND colour == "red"</c> over
+/// <c>variants: [{M, blue}, {L, red}]</c> matches on Meilisearch and does not match on
+/// ElasticSearch-with-nested — a neutral node here would hide a silent wrong-answer divergence between
+/// providers. The mandated portable technique instead is to flatten at document-mapping time into a
+/// precomputed composite filterable field (e.g. <c>variant_size_colour: ["M|blue", "L|red"]</c>) and
+/// filter it with <see cref="In"/> — exact and identical on both engines. See
+/// <c>SharedKernel.Search.Abstractions/README.md</c> for a fully worked example.
+/// </para>
+/// <para>
+/// <b>Free text is not in this tree:</b> nesting a full-text match inside a filtered sub-expression is
+/// expressible in an ElasticSearch bool tree and is not expressible in Meilisearch's filter DSL. Free
+/// text lives on <c>SearchRequest.FreeText</c> and nowhere else.
+/// </para>
 /// </remarks>
 public abstract record SearchFilter
 {

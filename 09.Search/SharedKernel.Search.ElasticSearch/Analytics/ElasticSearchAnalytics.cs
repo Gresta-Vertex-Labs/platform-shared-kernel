@@ -74,6 +74,11 @@ internal sealed class ElasticSearchAnalytics<TDocument> : IAnalyticsSearch<TDocu
         return Result<AggregationResultSet>.Success(resultSet);
     }
 
+    // This switch intentionally carries no discard (`_ =>`) arm, covering all five closed
+    // AggregationRequest subtypes exhaustively. The C# compiler still emits CS8509 because it cannot
+    // perform closed-world exhaustiveness analysis over a sealed-subtype hierarchy of an abstract base
+    // — see 09.Search/CLAUDE.md, "Reconciling switch exhaustiveness with TreatWarningsAsErrors", for why
+    // that warning is downgraded via WarningsNotAsErrors at the project level rather than silenced here.
     private static string GetName(AggregationRequest request) => request switch
     {
         TermsAggregation t => t.Name,

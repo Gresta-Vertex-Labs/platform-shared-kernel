@@ -14,7 +14,7 @@ namespace SharedKernel.Search.Meilisearch.Querying;
 /// The adapter always searches with <c>T = JsonElement</c> so it can read each hit's <c>_formatted</c>
 /// sibling object for highlighting — a strongly-typed <c>TDocument</c> search would silently discard
 /// it, since <c>TDocument</c> declares no <c>_formatted</c> member. Each hit is then deserialized from
-/// its <see cref="JsonElement"/> into <typeparamref name="TDocument"/> directly.
+/// its <see cref="JsonElement"/> into <c>TDocument</c> directly.
 /// </remarks>
 internal static class MeilisearchResultMapper
 {
