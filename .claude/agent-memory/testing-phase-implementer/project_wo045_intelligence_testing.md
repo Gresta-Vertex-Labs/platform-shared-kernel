@@ -1,0 +1,14 @@
+---
+name: project_wo045_intelligence_testing
+description: WO-045 (P-283 Qdrant/Milvus container fixtures, P-284 Intelligence/ in-memory doubles) status in 16.Testing as of 2026-07-21 -- Design and Scaffold closed, Core partially unblocked.
+type: project
+---
+
+WO-045 dispatched 2026-07-21 by testing-arch-planner, targeting `10.Intelligence`'s freshly-ratified (but not yet coded) `SharedKernel.AI.Abstractions` contract.
+
+- **P-283** (`Containers/QdrantContainerFixture`, `Containers/MilvusContainerFixture`) carries **no blocker** -- both are official dedicated Testcontainers modules (`Testcontainers.Qdrant`, `Testcontainers.Milvus`, confirmed on nuget.org at `4.13.0`, matching this package's existing pin exactly, no version-bump ceremony needed unlike the Elasticsearch addition). Container fixtures expose only flat scalar connection properties and take zero `ProjectReference` to the owning domain's abstraction package.
+- **P-284** (`Intelligence/` -- six in-memory fakes: `InMemoryEmbeddingGenerator`, `InMemoryVectorCollection<TRecord>`, `InMemoryVectorCollectionProvisioner`, `InMemoryVectorProviderDescriptor`, `InMemorySemanticKernel`, `InMemoryCompletionProviderDescriptor`) is **hard-blocked** -- this is the THIRD occurrence of this domain's "design-ahead-of-schedule, empty-placeholder-upstream-project" pattern (after P-269/WO-043 `Storage/` and P-276/WO-044 `Search/`). `10.Intelligence/SharedKernel.AI.Abstractions.csproj` has zero `.cs` files even though `10.Intelligence`'s own Design phase (P-279) is fully ratified in its `CLAUDE.md` -- prose ratification is not compiled code.
+
+**As of 2026-07-21 (this session)**: `SK.16.Design` (D-122–D-138, 17/17 ●) and `SK.16.Scaffold` (S-29–S-33, 33/33 ●) are both closed and promoted to root. Scaffold work was pure `SharedKernel.Testing.csproj` reference additions (`Testcontainers.Qdrant`/`.Milvus` 4.13.0 package refs, a `ProjectReference` to the still-empty `SharedKernel.AI.Abstractions`) -- no fake/fixture code written. `SK.16.Core` is next: C-70–C-72 (the two Qdrant/Milvus container fixtures) are fully unblocked and actionable; C-73–C-79 (the six `Intelligence/` fakes plus their DI extension class) remain `⚑` Blocked in `state-map.md` pending `10.Intelligence`'s own `SK.10.Core` (C-01) shipping real compiled types -- re-verify `10.Intelligence/SharedKernel.AI.Abstractions` on disk before ever touching those seven tasks, never trust a stale blocked-marker.
+
+**How to apply**: A future Core-phase session for `16.Testing` can safely implement `QdrantContainerFixture`/`MilvusContainerFixture` (C-70–C-72) right away. Do NOT attempt C-73–C-79 without first re-checking `10.Intelligence/SharedKernel.AI.Abstractions/` for real `.cs` files -- if still empty, the phase spec's `⚑` Blocked marker is still accurate and those tasks must be skipped/reported, not guessed at.

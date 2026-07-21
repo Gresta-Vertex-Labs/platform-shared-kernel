@@ -1,6 +1,6 @@
 ---
 name: feedback_build_tooling_gotchas
-description: Two build/tooling gotchas discovered during WO-044 Core-phase implementation -- PowerShell UTF-8 mojibake on bulk text edits, and TreatWarningsAsErrors is not actually wired into this repo despite root CLAUDE.md's framing.
+description: Build/tooling gotchas discovered across WO-044/WO-045 -- PowerShell UTF-8 mojibake on bulk text edits, TreatWarningsAsErrors not actually wired into this repo, and Edit tool old_string mismatches on long copy-pasted paragraphs (use short unique anchors instead).
 type: feedback
 ---
 
@@ -17,3 +17,11 @@ type: feedback
 **Why this matters**: confirmed directly -- no `Directory.Build.props` exists anywhere in the repo (checked at root and every domain root), and `16.Testing/SharedKernel.Testing.csproj` has no `TreatWarningsAsErrors`/`WarningsAsErrors` property. A `dotnet build` with genuine warnings (e.g. `CS8509` "switch not exhaustive" on the closed-8-node `SearchFilter` switch expression, copied verbatim from `09.Search`'s own real `MeilisearchFilterCompiler`/`ElasticSearchFilterCompiler`) still reports `Build succeeded` with 0 errors. Independently reproduced the SAME `CS8509` on a clean rebuild of `SharedKernel.Search.Meilisearch` itself (`rm -rf obj bin && dotnet build`) -- it's a pre-existing, unaddressed warning in the SHIPPED production code, just hidden by incremental-build caching (a `dotnet build` with no source changes doesn't re-emit warnings for untouched files).
 
 **How to apply**: Do not assume a `CS0618`/`CS8509`-class warning will fail the build just because a prior session's memory note said so for a *different* warning in a *different* pass -- that prior note was about following the design intent (a genuine behavior-risk from an obsoleted constructor), not about TreatWarningsAsErrors actually being enforced. When you hit a warning that seems structurally unavoidable (e.g. Roslyn can't prove exhaustiveness over an abstract-class hierarchy even with every known subtype covered and no discard arm), check whether the REAL production code this fake/type mirrors has the identical warning before treating it as your own defect to fix -- a `rm -rf obj bin && dotnet build` clean rebuild of the reference file is the reliable way to check, since incremental builds hide warnings on unchanged files.
+
+---
+
+**`Edit` tool `old_string` fails to match when copy-pasted verbatim from a `Read` result for a very long, multi-paragraph line (e.g. a single dense changelog paragraph spanning 1000+ characters) -- even though `Grep` confirms the identical substring exists in the file.**
+
+**Why**: `state-map.md`/`CLAUDE.md` files in this repo use CRLF line endings (`^M$` confirmed via `tail | cat -A`), and long single-line paragraphs pasted from a `Read` tool's line-numbered output risk a subtle transcription mismatch (an em-dash variant, a smart quote, or just a copy-paste truncation) that is invisible when eyeballing the text but breaks `Edit`'s exact-match requirement. This happened appending a changelog line to `16.Testing/state-map.md` at WO-045 Scaffold close-out -- `Grep` matched the tail sentence fine, but `Edit` with that same full paragraph as `old_string` failed outright.
+
+**How to apply**: When appending to the end of a long single-line paragraph (changelog entries, dense table cells), never pass the whole paragraph as `old_string`. Use only a short (5-15 word), obviously-unique tail fragment near the insertion point -- it is far less likely to contain a transcription error and the `Edit` tool only needs it to be unique in the file, not exhaustive. Confirm the fragment is unique first with `Grep` (fixed-string, not regex, or escape regex metacharacters) if there is any doubt.
