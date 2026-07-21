@@ -33,6 +33,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
+| [10.Intelligence](10.Intelligence/state-map.md)       | Design          | Finalize the SharedKernel.AI.Abstractions contract and ratify the package-split (Abstractions + Qdrant + Milvus + SemanticKernel) and Microsoft.Extensions.AI.Abstractions-adoption decisions before implementing the three providers (P-279) |
 <!--
 Format when active:
 | Domain | Current Phase | Focus (one line) |
@@ -73,13 +74,13 @@ Format when blocked:
 | 07 | [Messaging](07.Messaging/state-map.md) | LoggingRetrofit | `●` | SK.07.LoggingRetrofit complete (22/22, P-254/P-263) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range; `MessagingLogScope.CorrelationIdKey` named constant now backs the shared `BeginScope` correlation entry (replacing the bare `"CorrelationId"` literal); verified zero EventId collisions/SK0020-SK0021 diagnostics; 108/108 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
 | 09 | [Search](09.Search/state-map.md) | Published | `●` | SK.09.Published complete (8/8) — all three packages re-verified NuGet-metadata-complete and packed clean (`.nupkg`+`.snupkg`, zero `NU5039`/`NU5128`); a new `09.Search/consumer-verify/` area (three real `IHost.StartAsync()` console harnesses — Meilisearch/, ElasticSearch/, BothProviders/) consumer-verifies DI resolution of every neutral/provider-exclusive contract, singleton lifetimes, raw-client gating, startup-time `OptionsValidationException` naming the missing property, the same-`TDocument` dual-registration hard violation, and — the most load-bearing check — capability segregation confirmed as a genuine, captured `CS0234`/`CS0246` build-time compiler failure in both directions, not asserted in prose. All 345 tests still green. All six phases now `●` for all three `SharedKernel.Search.*` packages — 09.Search domain (WO-044) complete end to end. | — |
-| 10 | [Intelligence](10.Intelligence/state-map.md) | — | `○` | — | — |
+| 10 | [Intelligence](10.Intelligence/state-map.md) | Design | `◐` | — | Finalize the SharedKernel.AI.Abstractions contract and ratify the package-split (Abstractions + Qdrant + Milvus + SemanticKernel) and Microsoft.Extensions.AI.Abstractions-adoption decisions before implementing the three providers (P-279) |
 | 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | P-260/WO-042 fully closed — T-29 replaced test-local literal duplicates of the correlation/tenant header names with `WellKnownHeaders.CorrelationId`/`.TenantId` references across `.Rest.Tests`/`.Grpc.Tests`; DO-07 verified `CLAUDE.md`'s propagation rules already documented the shared-constant sourcing and gRPC thin-alias exception; 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing; SK.11.Tests (29/29) and SK.11.Docs (7/7) both `●`. | Only the Published phase (NuGet packaging, pack, publish) remains for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-043/P-270 closed — `AddStorageReadinessCheck`/`StorageReadinessHealthCheck` wraps `08.Storage`'s `IFileStorage.CheckHealthAsync` (unblocked once `08.Storage` reached `Published`), mapping success → `Healthy`/failure → `Unhealthy`, tagged `"ready"`+new `"storage"`; new `ProjectReference` to `SharedKernel.Storage.Abstractions`. SK.13.Scaffold 13/13 `●`, SK.13.Core 36/36 `●`, SK.13.Tests 32/32 `●`, SK.13.Docs 6/6 `●`; 52/52 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
-| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-044 (P-275/P-276) fully closed — `SK.16.Docs` now 22/22 `●` (DO-19–DO-22 verified already documented in the shipped `MeilisearchContainerFixture`/`ElasticsearchContainerFixture`/`InMemorySearchIndex<TDocument>`/`InMemorySearchIndexProvisioner`/`InMemorySearchProviderDescriptor` XML doc comments, landed in the same commit as the Core-phase code); all six phases of `16.Testing` (Design/Scaffold/Core/Tests/Docs/Published) are `●` again. | `09.Search`'s own `SK.09.Tests` T-13–T-17/T-21–T-26 are now unblocked for a future `09.Search` session; awaiting the next work order dispatch for `16.Testing` itself. |
+| 16 | [Testing](16.Testing/state-map.md) | Scaffold | `●` | WO-045 (P-283/P-284) `SK.16.Scaffold` closed (33/33) — added `Testcontainers.Qdrant`/`Testcontainers.Milvus` `PackageReference`s (`4.13.0`, no version-bump ceremony needed elsewhere) and a `ProjectReference` to `10.Intelligence/SharedKernel.AI.Abstractions` (still a genuinely empty placeholder, builds clean regardless) to `SharedKernel.Testing.csproj`; no fake/fixture code written yet. | `SK.16.Core` next — `QdrantContainerFixture`/`MilvusContainerFixture` (C-70–C-72) are fully unblocked; the six `Intelligence/` fakes (C-73–C-79) remain `⚑` Blocked pending `10.Intelligence`'s own `SK.10.Core`. |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -106,7 +107,7 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Published | 9 |
-| ● Docs | 3 |
+| ● Docs | 2 |
 | ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 1 |
@@ -114,10 +115,10 @@ Format when active:
 | ● Tests | 0 |
 | ● Core | 0 |
 | ● Design | 0 |
-| ● Scaffold | 0 |
-| ◐ In Progress | 1 |
+| ● Scaffold | 1 |
+| ◐ In Progress | 2 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 2 |
+| ○ Not Started | 1 |
 
 ---
 
@@ -10715,3 +10716,218 @@ This domain's own brain documents every one of these rules in prose already — 
 - [2026-07-20] Phase Backlog P-272, P-273, P-274 → ● Complete — 09.Search reached Published (state-map-phase)
 - [2026-07-20] 16 → Tests (●) — promoted from SK.16.Tests (51/51); T-48–T-51 (P-275/P-276/WO-044) added `MeilisearchContainerFixtureTests`/`ElasticsearchContainerFixtureTests` (Docker-gated, confirming the 9.4.2 image override) and the full `Search/` self-test suite (85 new tests) proving `InMemorySearchIndex<TDocument>`/`InMemorySearchIndexProvisioner`/`InMemorySearchProviderDescriptor`/both `Add*` DI extensions against the real 09.Search interfaces; full regression 429/429 against a real Docker daemon — Tests is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
 - [2026-07-20] 16 → Docs (●) — promoted from SK.16.Docs (22/22); DO-19–DO-22 (P-275/P-276/WO-044) verified the required XML doc content already present in the shipped `MeilisearchContainerFixture`/`ElasticsearchContainerFixture`/`InMemorySearchIndex<TDocument>`/`InMemorySearchIndexProvisioner`/`InMemorySearchProviderDescriptor` source (landed in the same commit as the Core-phase code) — zero code changes, verification-only pass; `dotnet build SharedKernel.Testing.csproj -c Release` 0 errors; this closes WO-044's `16.Testing` contribution in full — all six phases `●` again. Docs is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
+
+---
+### P-279 — Intelligence: SharedKernel.AI.Abstractions Contract Finalization + Package-Split Ratification
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 10.Intelligence
+**Depends on:** None
+
+#### What is needed
+
+Lock the zero-third-party-dependency `SharedKernel.AI.Abstractions` contract surface before any provider is implemented, and ratify the two open questions the domain's own pre-drafted brain (`10.Intelligence/CLAUDE.md`) deliberately left for architectural adjudication rather than deciding by accident. **Package split**: four packages — `SharedKernel.AI.Abstractions`, `SharedKernel.AI.Qdrant`, `SharedKernel.AI.Milvus` (vector storage/retrieval), and `SharedKernel.AI.SemanticKernel` (LLM orchestration) — sibling providers, matching the `08.Storage` (`.S3`/`.Obs`) and `09.Search` (`.Meilisearch`/`.ElasticSearch`) precedent (Shape C of the brain's own three candidates). **Microsoft.Extensions.AI.Abstractions adoption**: declined for `.Abstractions`. A hand-rolled, zero-`PackageReference` neutral contract is authored instead, preserving the unbroken platform rule that every `.Abstractions` package carries zero third-party dependencies; provider packages remain free to adapt `Microsoft.Extensions.AI` types internally where useful. The finalized contract covers: an embedding-generation surface (single and batched text-to-vector, carrying model identity, dimension, and token usage on the result); a vector-collection surface for provisioning, upsert/delete (single and batch), similarity query against a structured metadata filter, get-by-id, count, and a streaming scroll — every write and query member validating the collection's declared embedding-model identity, vector dimension, and distance metric before any I/O, rejecting on mismatch; an `ISemanticKernel`-shaped orchestration surface for prompt/chat invocation, streaming invocation, and tool/function invocation, explicitly bounded so it does not leak stateful multi-step orchestration into what must remain a stateless capability package; a zero-I/O provider-descriptor surface exposing provider ceilings (max batch size, max vector dimension, context window, max filter depth); a closed filter-predicate AST for metadata queries; a mandatory, non-defaultable tenant-scope parameter on every read and filtered write; and a canonical `Error`-factory catalog restricted to the real six-member `Error` API. This phase also performs the on-disk cleanup the ratification requires: the existing bare `SharedKernel.AI.VectorDb` placeholder is retired in favor of the two new provider projects, and the non-conventional domain-root `SharedKernel.AI.Tests` project is re-homed to nest inside `SharedKernel.AI.Abstractions`, per the platform's Test Project Rules.
+
+#### Why this is needed
+
+This domain's pre-drafted brain is the most rigorous unratified domain brief this platform has produced — it independently re-derives the `09.Search` intersection-only seam rule and correctly surfaces its two highest-leverage open questions instead of settling them implicitly. Both carry platform-wide consequence (every future `.Abstractions` package's dependency posture is precedent-bound by what this domain does here), so they are architectural-authority decisions made now, not deferred into whatever a later Design session happens to pick. This domain's sharpest invariant — an embedding-model-identity mismatch is confidently wrong and undetectable by any engine — makes locking the collection-definition fingerprint before any provider exists non-negotiable, mirroring why `09.Search` and `08.Storage` both finalized their abstraction ahead of their providers.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.AI.Abstractions` carries zero third-party NuGet package references — only `SharedKernel.Primitives` (01.Core) and, if genuinely needed, `SharedKernel.Contracts` (04.Contracts) as `ProjectReference`s
+- [ ] `Microsoft.Extensions.AI.Abstractions` is not referenced anywhere in `SharedKernel.AI.Abstractions`; the adoption-vs-redeclaration decision and its rationale are recorded in `10.Intelligence/CLAUDE.md`
+- [ ] The package set is `SharedKernel.AI.Abstractions` + `SharedKernel.AI.Qdrant` + `SharedKernel.AI.Milvus` + `SharedKernel.AI.SemanticKernel`; the on-disk `SharedKernel.AI.VectorDb` placeholder and the domain-root `SharedKernel.AI.Tests` project no longer exist in their original non-conventional form
+- [ ] Every vector-write and vector-query member validates the incoming vector's model identity, dimension, and distance metric against the collection's declaration and returns a `Result` failure before any I/O on mismatch
+- [ ] Tenant scope is a mandatory, non-defaultable separate parameter on every read and filtered/bulk write, never a filter-tree member
+- [ ] The filter-predicate hierarchy is closed by construction so every provider translator is an exhaustive, compiler-checked switch with no discard arm
+- [ ] Streaming members (scroll, streaming completion) return `IAsyncEnumerable<T>` directly, never wrapped in `Result`
+- [ ] No member's `Error` factory names a non-existent case (`Error.Failure`, `Error.Forbidden`) and no member returns `Error.None`
+- [ ] `10.Intelligence/CLAUDE.md`'s Interface Contracts section reflects the finalized, ratified surface with no outstanding open design questions
+---
+
+---
+### P-280 — Intelligence: SharedKernel.AI.Qdrant Provider (Primary Vector Database)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 10.Intelligence
+**Depends on:** P-279
+
+#### What is needed
+
+Full implementation of `SharedKernel.AI.Qdrant` against the finalized neutral contracts from P-279, via the official `Qdrant.Client` gRPC/protobuf SDK — collection provisioning with the platform's declared model-identity/dimension/distance-metric fingerprint written into Qdrant's own collection config, named-vector support, payload-filter translation carrying tenant scope as the outermost conjunction after the caller's filter (never folded into it), upsert/delete (single and batch), similarity query, get-by-id, count, and a streaming scroll over `IAsyncEnumerable<T>`. Declares Qdrant-exclusive capabilities that have no honest Milvus equivalent (e.g. sparse/hybrid vectors, quantization profiles) as contracts living only in this package, never in `.Abstractions`. Ships a zero-I/O provider-descriptor implementation exposing Qdrant's real ceilings, and a `ProbeAsync`-shaped readiness primitive — no `IHealthCheck`, no reference to `Microsoft.Extensions.Diagnostics.HealthChecks`.
+
+#### Why this is needed
+
+Qdrant is the platform's primary vector database per the root brain's technology stack. Isolating Qdrant-only capabilities in this package rather than neutralizing them into `.Abstractions` means a provider swap to Milvus fails at compile time against a Qdrant-only composition root, not as a silent runtime capability degradation or a confidently-wrong similarity result — the only mechanism this domain's invariants accept.
+
+#### Acceptance criteria
+- [ ] All vector-collection and embedding-adjacent members from P-279 are implemented against `Qdrant.Client`, with every write validated (model identity, dimension, metric, tenant scope) before any I/O
+- [ ] The payload-filter translator is an exhaustive switch over every filter-AST node with no discard arm
+- [ ] Tenant scope is injected as the outermost conjunction after translating the caller's filter, never a member of the request object
+- [ ] Qdrant-exclusive contracts exist only in this package — a call site referencing them against a Milvus-only composition root fails to compile
+- [ ] `SharedKernel.AI.Qdrant` has zero project or type reference to `SharedKernel.AI.Milvus` or `SharedKernel.AI.SemanticKernel`
+- [ ] No `QdrantClient` type is exposed from any public member; a raw-client escape hatch, if offered at all, follows the three-gate pattern (opt-in builder call, startup `Warning`, governance architecture test) with its XML doc stating in capitals that it bypasses tenant scoping
+- [ ] Round-trip, provisioning, filter-translation, and tenant-scope-rejection tests pass against a real Qdrant container (once P-283's fixture lands), never a mocked client
+---
+
+---
+### P-281 — Intelligence: SharedKernel.AI.Milvus Provider (Secondary Vector Database)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 10.Intelligence
+**Depends on:** P-279
+
+#### What is needed
+
+Full implementation of `SharedKernel.AI.Milvus` against the same finalized neutral contracts from P-279, via the official `Milvus.Client` SDK — collection/schema provisioning carrying the same model-identity/dimension/distance-metric fingerprint, filter translation carrying tenant scope as the outermost conjunction, upsert/delete (single and batch), similarity query, get-by-id, count, and a streaming scroll. Declares Milvus-exclusive capabilities with no honest Qdrant equivalent (e.g. partition-key models, consistency-level tuning) as contracts living only in this package. Ships the same provider-descriptor and readiness-probe shape as P-280. Before any code is written, `Milvus.Client`'s maintenance status is verified against its real, current release cadence relative to the Milvus server line — the same EOL/staleness check that removed `NEST` from `09.Search`; if the client fails that check, this phase's implementer proposes and records an alternative rather than pinning a dead package.
+
+#### Why this is needed
+
+Milvus is the platform's secondary vector database per the root brain's technology stack, giving consuming services a genuine choice of engine under the same neutral contract — the same value `09.Search`'s Meilisearch/ElasticSearch split delivers. The domain's own pre-drafted brain flagged `Milvus.Client`'s maintenance status as unverified and historically lagging the server release line; that flag is carried forward as a hard precondition on this phase rather than silently dropped.
+
+#### Acceptance criteria
+- [ ] `Milvus.Client`'s current maintenance status, release cadence, and target-framework/AOT posture are verified and recorded in `10.Intelligence/CLAUDE.md` before implementation proceeds; a stale/archived client blocks this phase until an alternative is proposed
+- [ ] All vector-collection and embedding-adjacent members from P-279 are implemented against `Milvus.Client`, with every write validated (model identity, dimension, metric, tenant scope) before any I/O
+- [ ] The filter translator is an exhaustive switch over every filter-AST node with no discard arm
+- [ ] Tenant scope is injected as the outermost conjunction after translating the caller's filter, never a member of the request object
+- [ ] Milvus-exclusive contracts exist only in this package — a call site referencing them against a Qdrant-only composition root fails to compile
+- [ ] `SharedKernel.AI.Milvus` has zero project or type reference to `SharedKernel.AI.Qdrant` or `SharedKernel.AI.SemanticKernel`
+- [ ] No raw Milvus SDK client type is exposed from any public member, subject to the same three-gate escape-hatch rule as P-280
+- [ ] Round-trip, provisioning, filter-translation, and tenant-scope-rejection tests pass against a real Milvus container (once P-283's fixture lands), never a mocked client
+- [ ] Both vector providers run the same behavioral conformance suite over the same fixed corpus and produce identical result sets
+---
+
+---
+### P-282 — Intelligence: SharedKernel.AI.SemanticKernel Provider (LLM Orchestration)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 10.Intelligence
+**Depends on:** P-279
+
+#### What is needed
+
+Full implementation of `SharedKernel.AI.SemanticKernel` against the LLM-orchestration surface from P-279, wrapping `Microsoft.SemanticKernel` — prompt/chat invocation, streaming invocation (`IAsyncEnumerable<T>`, never `Result`-wrapped), and tool/function invocation, with token usage (prompt/completion/total) surfaced on every non-streaming result and accumulated across a streaming call. Context-window overflow is detected and returned as a `Result` failure carrying the limit and the actual size before dispatch, wherever the provider exposes enough information to detect it. Retries on a completion are explicit, bounded, and never silently applied by default — a completion call re-bills and re-rolls a non-deterministic output. Prompt text, completion text, and any retrieved-and-interpolated chunk text are never log-message parameters; only model ids, token counts, latencies, and outcome codes are logged. Ships the same provider-descriptor and readiness-probe shape as the vector providers (model/endpoint reachability, not collection readiness).
+
+#### Why this is needed
+
+LLM orchestration is explicitly in this domain's charter per the root brain's Folder Map, and it carries hazards no other capability domain in this platform has: non-deterministic output that must never be silently cached or retried, and a dual outbound/inbound content-trust boundary (outbound: caller content leaves the platform to a third-party model endpoint; inbound: retrieved text interpolated into a prompt is untrusted, prompt-injection-class input). `Microsoft.SemanticKernel`'s reflection-heavy function-calling and plugin model is a documented non-AOT-safe dependency, so isolating it in its own provider package — never referenced from `.Abstractions` or from the vector-DB providers — limits the blast radius to this one package's registration and adapter path, exactly the pattern the root brain's AOT guidance sanctions for non-AOT-safe third parties.
+
+#### Acceptance criteria
+- [ ] All orchestration members from P-279 are implemented against `Microsoft.SemanticKernel`, with token usage surfaced on every result and never dropped
+- [ ] Streaming invocation returns `IAsyncEnumerable<T>` directly, never wrapped in `Result`; mid-stream faults surface as an exception from `MoveNextAsync`, with `[EnumeratorCancellation]` applied
+- [ ] A context-window overflow is detected before dispatch wherever detectable and returned as a `Result` failure carrying limit and actual size
+- [ ] No retry is silently applied to a completion call by default; any retry is explicit, bounded, and documented as re-billing/re-rolling
+- [ ] Prompt text, completion text, and interpolated retrieved-chunk text never appear as a log-message parameter; API keys and endpoint credentials are never logged, echoed into an `Error`, or included in a diagnostic tag
+- [ ] `SharedKernel.AI.SemanticKernel` has zero project or type reference to `SharedKernel.AI.Qdrant` or `SharedKernel.AI.Milvus`
+- [ ] No `Kernel` or other raw Semantic Kernel type is exposed from any public member, subject to the same three-gate escape-hatch rule as P-280/P-281
+- [ ] Tests never assert on model-generated wording; the default test suite never calls a live or paid model endpoint — a live-endpoint test, if any, is opt-in and environment-variable-gated, excluded from CI by default
+---
+
+---
+### P-283 — Testing: Qdrant + Milvus Testcontainers Fixtures
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+
+Two Testcontainers-based fixtures in `SharedKernel.Testing` — a Qdrant fixture (an official Testcontainers module if one is verified to exist and fit; hand-rolled on the generic container-builder API otherwise, mirroring the `MeilisearchContainerFixture` precedent) and a Milvus fixture verified against Milvus's real minimal-standalone container startup requirements, both exposing a ready instance with a health-endpoint wait strategy and a pinned image tag (never `:latest`). Both provider packages' `.Tests` projects consume these identically via the platform's standard collection-fixture pattern (`[CollectionDefinition]` + `ICollectionFixture<T>` with a `const string Name`, never a retyped literal at each `[Collection(...)]` site).
+
+#### Why this is needed
+
+`10.Intelligence`'s two vector-DB providers cannot get real-backend round-trip, filter-translation, and tenant-scoping coverage without real engine instances — those behaviors are only observable against the real engine, never a mocked client, per this domain's own Test Rules. This platform's established convention is that container fixtures live centrally in `16.Testing`, never hand-rolled per `.Tests` project (the `MinioContainerFixture`/`MeilisearchContainerFixture` precedent). Verified on disk: `16.Testing` today ships fixtures for PostgreSQL, Redis, RabbitMQ, MinIO, Meilisearch, and Elasticsearch — zero vector-database coverage exists or was ever planned.
+
+#### Acceptance criteria
+- [ ] A reusable Qdrant fixture exists (official Testcontainers module if verified to exist and fit; hand-rolled on the generic container-builder API otherwise), pinned image tag, health-endpoint wait strategy
+- [ ] A reusable Milvus fixture exists on the same basis, using and documenting Milvus's minimal standalone deployment mode
+- [ ] Both new fixtures' package/version choices are resolved explicitly, never left to implicit NuGet resolution, and aligned with the existing `Testcontainers.*` pin shared across the other fixtures where possible
+- [ ] Both `SharedKernel.AI.Qdrant.Tests` and `SharedKernel.AI.Milvus.Tests` consume their respective fixture identically via the platform's standard collection-fixture pattern
+---
+
+---
+### P-284 — Testing: In-Memory Embedding / Vector-Collection / Orchestration Doubles
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 16.Testing
+**Depends on:** P-279
+
+#### What is needed
+
+In-process, in-memory implementations of this domain's neutral embedding-generation, vector-collection, and orchestration contracts in `SharedKernel.Testing`, so a consuming microservice's own unit tests can exercise AI-dependent handler/service logic without a real model endpoint, vector database, or network call — mirroring the platform's `InMemoryMessageBus`/`InMemoryFileStorage`/`InMemorySearchIndex<TDocument>` precedent. The default in-memory embedding double is deterministic — a hash-derived vector of the declared dimension — so vector-collection tests need neither a model nor a network. The in-memory orchestration double returns caller-configured canned responses rather than ever generating text, keeping it usable in default CI without violating this domain's "never assert on model-generated text" rule.
+
+#### Why this is needed
+
+Every other swappable-provider abstraction this platform ships already has a first-class in-memory double for fast, isolated consumer-side unit testing; the embedding, vector-collection, and orchestration contracts are the same shape of dependency and should not be the exception a consuming team has to hand-roll a fake for — and this domain's non-determinism invariant makes a deterministic double especially valuable here.
+
+#### Acceptance criteria
+- [ ] An in-memory embedding-generator double produces a deterministic, hash-derived vector of the caller-declared dimension and carries model-identity/token-usage fields consistently
+- [ ] An in-memory vector-collection double supports the full write/read/scroll contract from P-279, including tenant-scope enforcement and the fail-loud model-identity/dimension/metric-mismatch checks
+- [ ] An in-memory orchestration double returns caller-configured canned responses (including a streaming variant) and never generates text itself
+- [ ] Assertion helpers let a consuming test verify "was this vector upserted/deleted/queried" and "was this prompt sent" without inspecting internal state directly
+- [ ] The doubles reference only `SharedKernel.AI.Abstractions`, never a concrete provider package
+- [ ] Registered via a DI extension mirroring the platform's existing in-memory-double naming convention
+---
+
+---
+### P-285 — ServiceDefaults: Vector-Store / Orchestration Readiness Health Check + Telemetry Wiring
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-279, P-280, P-281, P-282
+
+#### What is needed
+
+A health check adapter wrapping this domain's readiness-probe primitive so a consuming service can register vector-store and/or LLM-orchestration readiness alongside its other dependency health checks, plus a telemetry-wiring call that subscribes to this domain's `ActivitySource`/`Meter` by string name only — no `ProjectReference` to `10.Intelligence`, matching how the byte-identical instrumentation names are shared across sibling provider packages without a common type (the `09.Search`/`08.Storage` precedent).
+
+#### Why this is needed
+
+A K8s-native service that depends on vector retrieval or LLM orchestration for correctness should fail readiness when its vector store is unreachable or mis-scoped, or its model endpoint is unreachable, exactly as it already does for an unreachable database, cache, storage backend, or search index — mirroring the already-established `06.Persistence`/`08.Storage`/`09.Search` health-check split (owning domain ships the probe primitive, `13.ServiceDefaults` owns the `IHealthCheck` wiring).
+
+#### Acceptance criteria
+- [ ] A health check adapter resolves the provider-descriptor/readiness-probe abstraction and an explicit caller-supplied collection or endpoint identifier, reporting Healthy/Unhealthy per the platform's existing conventions, working unmodified against Qdrant, Milvus, or the orchestration provider
+- [ ] `10.Intelligence` ships no `IHealthCheck` implementation and no package in it references `Microsoft.Extensions.Diagnostics.HealthChecks` — the dependency direction stays `13.ServiceDefaults` → `10.Intelligence`, never the reverse
+- [ ] The telemetry-wiring call subscribes to this domain's OTel instrumentation by string name only, with zero `ProjectReference` to `10.Intelligence`
+- [ ] New `HealthCheckNames`/`HealthCheckTags` entries are added for the vector-store and orchestration readiness checks (verified absent today)
+---
+
+---
+### P-286 — Governance: Architecture Enforcement for the 10.Intelligence Package Topology
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-045
+**Domain:** 00.Governance
+**Depends on:** P-279, P-280, P-281, P-282
+
+#### What is needed
+
+A NetArchTest architecture-test suite (mirroring `RedisTopologyRules`/`StorageTopologyRules`/the `09.Search` topology suite) mechanically enforcing `10.Intelligence`'s structural rules: `SharedKernel.AI.Abstractions` has zero third-party NuGet dependency and references only its permitted `ProjectReference`s; the three provider packages (`Qdrant`, `Milvus`, `SemanticKernel`) never reference each other; `10.Intelligence` as a whole never references any capability domain beyond `01.Core`/`04.Contracts`; no `10.Intelligence` package references `Microsoft.Extensions.Diagnostics.HealthChecks`. Plus a `SharedKernelLayeringRules` method asserting the domain-wide reference boundary, and any new analyzer this domain's hard-violations list requires that isn't already covered by an existing rule — specifically a raw-vector-DB/model-SDK-client-injection check and a raw-model-identifier/collection-name string-literal check (extending `SK0022`'s recognized call-site shapes if it doesn't already reach them).
+
+#### Why this is needed
+
+This domain's own brain documents every one of these rules in prose already — the pattern this platform has repeatedly found decays into a real, shipped violation without mechanical enforcement (raw-`HttpClient` P-159, ad hoc-logging P-250, magic-string P-264, the Storage/Search-topology precedents P-271/P-278). The consequence of a leak here is uniquely severe: a dropped tenant filter or a cross-provider client leak in this domain produces a confidently-wrong similarity result or a cross-tenant data leak, not a visible error.
+
+#### Acceptance criteria
+- [ ] Architecture test confirms `SharedKernel.AI.Abstractions` has no third-party NuGet package reference and only its permitted `ProjectReference`s
+- [ ] Architecture test confirms `SharedKernel.AI.Qdrant`, `SharedKernel.AI.Milvus`, and `SharedKernel.AI.SemanticKernel` never reference each other's assembly
+- [ ] Architecture test confirms no `10.Intelligence` assembly references `03.Domain`, `05.Application`, `06.Persistence`, `07.Messaging`, `09.Search`, `12.Security`, or any other capability domain beyond `01.Core`/`04.Contracts`
+- [ ] Architecture test confirms no `10.Intelligence` assembly references `Microsoft.Extensions.Diagnostics.HealthChecks`
+- [ ] Next-sequential analyzer IDs are used, verified against the real highest allocated `SK00xx` ID at implementation time — no new per-domain `10xx` block is opened
+- [ ] All new architecture tests pass against the real built assemblies from P-279/P-280/P-281/P-282, not contrived fixtures only
+---
+
+- [2026-07-21] WO-045 phases P-279–P-286 written to Phase Backlog — 10.Intelligence full build-out (Abstractions contract finalization + package-split ratification, then `.Qdrant`, `.Milvus`, and `.SemanticKernel` sibling providers) plus cross-domain support (16.Testing Qdrant/Milvus Testcontainers fixtures + in-memory embedding/vector-collection/orchestration doubles, 13.ServiceDefaults vector-store/orchestration readiness health check + telemetry wiring, 00.Governance topology enforcement). Domain carried an exceptionally detailed pre-drafted brain (`10.Intelligence/CLAUDE.md`) that deliberately left two architectural-authority questions open rather than deciding them by accident — reviewed and UPGRADED by resolving both explicitly: (1) package split ratified as Shape C (`.Abstractions` + `.Qdrant` + `.Milvus` + `.SemanticKernel` sibling providers, the `08.Storage`/`09.Search` precedent) over Shape A (as-scaffolded single `.VectorDb`, violates the multi-provider split rule on arrival) and Shape B (`.VectorDb.Qdrant`/`.VectorDb.Milvus`, misapplies the `.{Provider}.{Role}` pattern reserved for one technology serving multiple roles); (2) `Microsoft.Extensions.AI.Abstractions` adoption declined for `.Abstractions` to preserve the platform's unbroken zero-`PackageReference`-in-Abstractions precedent — a hand-rolled neutral contract is authored instead. All eight binding Domain Invariants (embedding-model-identity binding, distance-metric-as-contract, mandatory non-defaulted tenant scope, non-determinism as a contract property, first-class token/cost accounting with no silent retries, prompt/completion content as untrusted-sensitive-never-logged, non-`Result`-wrapped streaming, probe-primitive-not-`IHealthCheck`) and the full hard-violations/AOT/test-rules sections carried forward verbatim as binding — no upgrade needed there (arch-lead, user request)
+- [2026-07-21] 10 → Design (◐) — Finalize the SharedKernel.AI.Abstractions contract and ratify the package-split (Abstractions + Qdrant + Milvus + SemanticKernel) and Microsoft.Extensions.AI.Abstractions-adoption decisions before implementing the three providers (P-279) (state-map-phase)
+- [2026-07-21] Phase(s) P-279, P-280, P-281, P-282 dispatched to intelligence-arch-planner for 10.Intelligence (dispatch-phase)
+- [2026-07-21] Phase(s) P-286 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-21] Phase(s) P-285 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-07-21] Phase(s) P-283, P-284 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-07-21] Dispatch-order deviation recorded: P-286 (00.Governance) and P-285 (13.ServiceDefaults) both depend on P-279–P-282 (10.Intelligence), so strict domain-number-ascending order would have dispatched P-286 before its own dependencies. Dispatch used topological order first, then domain-number ascending within each unblocked tier — 10.Intelligence → 00.Governance → 13.ServiceDefaults → 16.Testing — per the Format Contract's "never dispatches out of dependency order" rule, matching the WO-044 precedent (dispatch-phase)
+- [2026-07-21] Cross-domain finding raised during dispatch (13.ServiceDefaults, P-285): `10.Intelligence/CLAUDE.md`'s Domain Invariant #8 asserts `ICompletionProviderDescriptor.ProbeAsync` exists, but that interface's own ratified member-by-member Interface Contracts listing declares only `ProviderName`, `ContextWindowTokens`, `MaxOutputTokens`, and `ValidateContextWindow` — no `ProbeAsync`. 13.ServiceDefaults locked only the outer shape of `AddOrchestrationReadinessCheck` and marked its Design task `⚑` Blocked rather than inventing another domain's missing member; requires resolution on the 10.Intelligence side before P-285's orchestration-readiness work can proceed (dispatch-phase)
+- [2026-07-21] 16 → Scaffold (●) — promoted from SK.16.Scaffold (33/33); added Testcontainers.Qdrant/.Milvus (4.13.0) package references and a ProjectReference to SharedKernel.AI.Abstractions (still an empty placeholder, builds clean) to SharedKernel.Testing.csproj for WO-045; SK.16.Core next (state-map-phase)
