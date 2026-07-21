@@ -2,7 +2,7 @@
 
 ## What This Domain Is
 
-The AI abstraction and provider-wiring layer. Downstream microservices depend on `SharedKernel.AI.Abstractions` to generate embeddings, upsert/delete/search vectors in a vector database, run chat/text completions, and orchestrate multi-step LLM workflows — never on a concrete model SDK or vector-database client. Concrete provider packages wire the vendor client, translate the neutral models onto the provider's own surface, and own all provider-specific configuration. Each provider additionally declares — **inside its own package, never in `.Abstractions`** — the typed contracts for the capabilities only that provider genuinely has, so a provider swap is a **compile error**, not a startup resolution error (the `09.Search` P-273/P-274 precedent).
+The AI abstraction and provider-wiring layer. Downstream microservices depend on `SharedKernel.AI.Abstractions` to generate text embeddings, upsert/delete/query vectors in a vector database against a structured metadata filter, and run chat/completion (including streaming and tool-calling) LLM orchestration — never on a concrete model SDK or vector-database client. Three sibling provider packages — `SharedKernel.AI.Qdrant`, `SharedKernel.AI.Milvus`, `SharedKernel.AI.SemanticKernel` — wire the vendor client, translate the neutral models onto the provider's own surface, and own all provider-specific configuration. Each provider additionally declares — **inside its own package, never in `.Abstractions`** — the typed contracts for the capabilities only that provider genuinely has, so a provider swap is a **compile error**, not a startup resolution error (the `09.Search` P-273/P-274 precedent).
 
 Philosophy: **Provider-swappable. Model-identity-bound. Cost-visible. Fail-loud, never degrade.**
 
@@ -12,91 +12,107 @@ Philosophy: **Provider-swappable. Model-identity-bound. Cost-visible. Fail-loud,
 
 ## Status
 
-> **This domain has not been designed yet.** No Design phase has run, no phase tasks exist in `10.Intelligence/state-map.md`, and no production `.cs` file has been written. Four bare placeholder `.csproj` files exist on disk and are already registered in `Platform.SharedKernel.slnx` under `/10.Intelligence/` (`TargetFramework`/`ImplicitUsings`/`Nullable` only — zero references, zero content).
+> **The `SharedKernel.AI.Abstractions` contract is now RATIFIED (WO-045, P-279, 2026-07-21).** Every interface, model record, filter node, error factory, and DI-shape decision documented below the **Interface Contracts** heading is locked and is not to be renegotiated by a later phase without a new work order. Both open architectural questions the pre-Design brain deliberately left unresolved — the package-split shape and the `Microsoft.Extensions.AI.Abstractions` adoption question — are decided and recorded (see **Packages** and **Technology Stack**).
 >
-> Everything below the **Packages** section that describes a *contract shape* is a **candidate surface, not a ratified one**. The `intelligence-arch-planner` agent owns locking it during `SK.10.Design`, and is free to reshape, split, or decline any of it. The **Domain Invariants**, **Hard Violations**, **AOT**, and **Test Rules** sections are platform-derived and are binding now — they follow from the root brain and from precedents already shipped in `06.Persistence`, `08.Storage`, and `09.Search`, not from a design decision this domain has yet to make.
+> **No production `.cs` file has been written yet.** This phase is Design-only: it locks the contract text in this file and records the implementation work as `○ Not started` task rows in `10.Intelligence/state-map.md` (Scaffold/Core/Tests/Docs/Published, tracked under P-280 Qdrant, P-281 Milvus, P-282 SemanticKernel). On disk today there is still only the original placeholder inventory — `SharedKernel.AI.Abstractions/` (bare `.csproj`), `SharedKernel.AI.VectorDb/` + its nested `.Tests` (bare `.csproj`s, to be **retired** — replaced by `SharedKernel.AI.Qdrant`/`SharedKernel.AI.Milvus` at Scaffold), and the non-conventional domain-root `SharedKernel.AI.Tests` (bare `.csproj`, to be **re-homed** to `SharedKernel.AI.Abstractions/SharedKernel.AI.Abstractions.Tests/` at Scaffold). None of this on-disk restructuring has been performed by this planning session — it is recorded as Scaffold-phase task rows for the `intelligence-phase-implementer` to execute, since this agent never creates, modifies, or deletes test projects or production files.
+>
+> The **Domain Invariants**, **Hard Violations**, **AOT**, and **Test Rules** sections were already binding pre-Design (carried over from the root brain and the `06.Persistence`/`08.Storage`/`09.Search` precedents) and remain binding now, refreshed to reference the ratified member names.
 
 ---
 
 ## Packages
 
-### On disk today (verified 2026-07-21)
+### Package split — RATIFIED: Shape C (sibling providers)
 
-| Path | Registered in `.slnx` | Content |
-| --- | :---: | --- |
-| `SharedKernel.AI.Abstractions/` | yes | bare placeholder `.csproj`, no `.cs` files |
-| `SharedKernel.AI.VectorDb/` | yes | bare placeholder `.csproj`, no `.cs` files |
-| `SharedKernel.AI.VectorDb/SharedKernel.AI.VectorDb.Tests/` | yes | bare placeholder `.csproj` |
-| `SharedKernel.AI.Tests/` | yes | bare placeholder `.csproj` — **non-conventional**: it sits at the domain root, not nested inside the project it tests. The root brain's Test Project Rules require test projects to nest inside their subject's folder. Design must either re-home it as `SharedKernel.AI.Abstractions/SharedKernel.AI.Abstractions.Tests/` or justify the exception explicitly; it must not be left ambiguous |
+Four packages, matching the `08.Storage` (`.S3`/`.Obs`) and `09.Search` (`.Meilisearch`/`.ElasticSearch`) sibling-provider precedent this domain most closely resembles:
+
+| Package | Role |
+| --- | --- |
+| `SharedKernel.AI.Abstractions` | `IEmbeddingGenerator`, `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, `IVectorProviderDescriptor`, `ISemanticKernel`, `ICompletionProviderDescriptor`, the closed 8-node `VectorFilter` AST, `VectorValue`, `TenantScope`, `VectorCollectionDefinition` + builder, the request/result models, `IntelligenceWellKnown`, `IntelligenceErrors`, `IntelligenceStreamException` — the only types application code should ever inject or construct. Ships **no** DI extension, **no** `ActivitySource`, **no** `[LoggerMessage]`, **no** `IHealthCheck` |
+| `SharedKernel.AI.Qdrant` *(primary vector database)* | Concrete Qdrant implementation of `IVectorCollection<TRecord>`, `IVectorCollectionProvisioner`, `IVectorProviderDescriptor`. Additionally **declares** Qdrant-exclusive contracts (sparse/hybrid vectors, quantization profile access, `IQdrantRawClientAccessor`) |
+| `SharedKernel.AI.Milvus` *(secondary vector database)* | Concrete Milvus implementation of the same three neutral contracts. Additionally **declares** Milvus-exclusive contracts (partition-key model, consistency-level tuning, `IMilvusRawClientAccessor`) |
+| `SharedKernel.AI.SemanticKernel` *(LLM orchestration)* | Concrete `Microsoft.SemanticKernel`-backed implementation of `IEmbeddingGenerator`, `ISemanticKernel`, `ICompletionProviderDescriptor`. Additionally **declares** SemanticKernel-exclusive contracts (plugin/planner access, `IKernelRawClientAccessor`) |
+
+**Root-brain edit required (recorded, not performed here):** the root brain's Folder Map row 10 and Abstractions table currently describe `SharedKernel.AI.Abstractions` → `.VectorDb` (a single implementor). This is now stale. `10.Intelligence/state-map.md`'s Cross-Domain Dependencies table carries the exact edit required — Folder Map row 10 text, the Abstractions table row (four implementors, not one), and a new "What Goes Where" row set — as a **downstream `/sync-brain` obligation**. This agent does not perform that edit.
+
+**Why Shape C over Shape B (`.VectorDb.Qdrant`/`.VectorDb.Milvus`):** the `.{Provider}.{Role}` naming pattern (Shape B) is reserved by the root brain's own convention for *one technology serving multiple architectural roles* — the `02.Caching` Redis five-package split (`.Redis.Core`, `.Redis`, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub`) is the exemplar. Qdrant and Milvus are **two different technologies serving the same role** (vector storage/retrieval) — the opposite case, and exactly what `.{Provider}` sibling packages (not `.{Provider}.{Role}`) are for. `SemanticKernel` is a third, architecturally distinct role (orchestration, not storage) and was never a candidate for folding into either vector package.
+
+**Sibling packages never reference each other**, in any direction, at project or type level — `SharedKernel.AI.Qdrant`, `SharedKernel.AI.Milvus`, and `SharedKernel.AI.SemanticKernel` are three independent leaves off `SharedKernel.AI.Abstractions`. No `.Core` is extracted to share implementation shape between them — duplication (options-validation flow, filter-walker skeleton, receipt mapping, probe sequencing) is deliberate, mirroring the `09.Search` precedent exactly.
+
+### `Microsoft.Extensions.AI.Abstractions` adoption — RATIFIED: declined for `.Abstractions`
+
+**Decision:** `SharedKernel.AI.Abstractions` does **not** take a `PackageReference` to `Microsoft.Extensions.AI.Abstractions` (or to any other third-party package). A hand-rolled, zero-`PackageReference` neutral contract is authored instead — `IEmbeddingGenerator`, `ISemanticKernel`, and the vector-collection surface are this domain's own types, not `Microsoft.Extensions.AI`'s `IEmbeddingGenerator<TInput,TEmbedding>` / `IChatClient`.
+
+**Reasoning, recorded so this is never re-litigated by accident:**
+
+1. **Every prior `.Abstractions` package in this repo carries zero third-party `PackageReference` entries** — `SharedKernel.Search.Abstractions`, `SharedKernel.Storage.Abstractions`, `SharedKernel.Caching.Abstractions`, `SharedKernel.Persistence.Abstractions`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Security.Abstractions` all hold this line even where a first-party Microsoft abstraction existed as a candidate. Breaking it here would not just affect this domain — it becomes precedent that every future `.Abstractions` package can point to. That is too large a decision to make as a side effect of one domain's convenience.
+2. **`Microsoft.Extensions.AI.Abstractions` is not vendor-neutral in the way it is often assumed to be.** It targets chat/embedding-model providers (OpenAI-shaped, Azure AI Inference-shaped); it has no vector-database concept at all (no collection, no payload filter, no distance metric, no tenant scope) — so adopting it would only ever cover roughly half this domain's surface (embedding + chat), leaving the vector-storage half hand-rolled regardless. A partial adoption that still requires a hand-rolled neutral surface for the harder half of the domain does not earn back the dependency it costs.
+3. **This domain's sharpest invariant — embedding-model-identity binding — has no representation in `IEmbeddingGenerator<TInput,TEmbedding>`.** The M.E.AI contract does not carry a mandatory, validated model-identity/dimension/metric fingerprint on its own surface; that binding is exactly what `EmbeddingResult`/`VectorCollectionDefinition` exist to enforce in this domain, and retrofitting it onto a borrowed contract would be more awkward than declaring it directly.
+4. **Provider packages remain free to adapt `Microsoft.Extensions.AI` types internally** where doing so genuinely saves work (e.g. `SharedKernel.AI.SemanticKernel` may use `Microsoft.SemanticKernel`'s own M.E.AI-based connectors under the hood) — the decision is scoped to `.Abstractions` only, not a platform-wide rejection of the ecosystem package.
+
+This mirrors and is precedent-consistent with `09.Search`'s rejection of a generic search-abstraction NuGet package for the same reason — the "PackageReference inside `.Abstractions`" line has never been crossed on this platform, and this domain does not cross it either.
+
+### On disk today (verified 2026-07-21, unchanged by this planning session)
+
+| Path | Registered in `.slnx` | Content | Disposition |
+| --- | :---: | --- | --- |
+| `SharedKernel.AI.Abstractions/` | yes | bare placeholder `.csproj`, no `.cs` files | Fleshed out at Scaffold (P-279 follow-through) |
+| `SharedKernel.AI.VectorDb/` | yes | bare placeholder `.csproj`, no `.cs` files | **Retired** — replaced by `SharedKernel.AI.Qdrant/` and `SharedKernel.AI.Milvus/` at Scaffold |
+| `SharedKernel.AI.VectorDb/SharedKernel.AI.VectorDb.Tests/` | yes | bare placeholder `.csproj` | **Retired** alongside its parent |
+| `SharedKernel.AI.Tests/` | yes | bare placeholder `.csproj` — non-conventional domain-root location | **Re-homed** to `SharedKernel.AI.Abstractions/SharedKernel.AI.Abstractions.Tests/` at Scaffold |
 
 The capability token in this domain's package names is **`AI`**, not `Intelligence` — `SharedKernel.AI.*`. This is what the root brain's Abstractions table already records, and renaming it would break that table; a rename is a root-brain change, not a local one.
-
-### Package split — an open Design decision (D-phase)
-
-The root brain's Abstractions table currently lists exactly one implementor: `SharedKernel.AI.Abstractions` → `.VectorDb`. That shape is in tension with the root brain's own naming convention, which states that when a capability has **more than one provider** it is **always** split into `.Abstractions` + `.{Provider}`. This domain is briefed for **two** vector databases (Qdrant and Milvus) plus LLM orchestration, so a single `.VectorDb` package holding both engines is a convention violation on arrival.
-
-Three candidate shapes, for the planner to adjudicate — not pre-decided here:
-
-| Shape | Packages | Trade-off |
-| --- | --- | --- |
-| **A** (as on disk) | `.Abstractions`, `.VectorDb` | Matches the root table verbatim. Violates the multi-provider split rule the moment a second engine lands; forces both engine SDKs onto every consumer |
-| **B** | `.Abstractions`, `.VectorDb.Qdrant`, `.VectorDb.Milvus` | Honours the split rule; reads as the `.{Provider}.{Role}` pattern, which the root brain reserves for *one technology serving multiple roles* (`02.Caching`'s Redis five-package split) — the opposite of this case |
-| **C** | `.Abstractions`, `.Qdrant`, `.Milvus`, plus a separate orchestration package for the LLM surface | Cleanest match to the `08.Storage` (`.S3`/`.Obs`) and `09.Search` (`.Meilisearch`/`.ElasticSearch`) sibling-provider precedent this domain most closely resembles |
-
-Whichever is chosen: **sibling provider packages must never reference each other**, in either direction, at project or type level. Shared implementation shape is duplicated deliberately — extracting a `.Core` that couples two independent engines is the exact violation `09.Search` records and `08.Storage` proved out. Any change to the package set **requires a corresponding root-brain edit** (Folder Map row 10, the Abstractions table, and the relevant "What Goes Where" rows) via `/sync-brain` — the planner must record that obligation, not perform it.
 
 ---
 
 ## Technology Stack
 
-> **Every version below is UNPINNED and UNVERIFIED.** No NuGet package version in this table has been confirmed against nuget.org for this repo, and none should be written into a `.csproj` until a Design or Scaffold task has verified it — latest stable version, target frameworks, license, publisher, transitive graph, and AOT posture — exactly as `09.Search` did for `MeiliSearch` and `Elastic.Clients.Elasticsearch`. Treat this table as a candidate list, not a decision.
-
-| Concern | Candidate technology | Notes for the Design phase |
+| Concern | Technology | Status |
 | --- | --- | --- |
-| AI abstractions | Pure C# 13 interfaces + `sealed record` / `readonly record struct` models | Same zero-dependency bar as `SharedKernel.Search.Abstractions` |
-| Outcome type | `Result<T>` / `Result` / `Error` from `SharedKernel.Primitives` | Expected failures (model not found, rate limited, context-window exceeded, dimension mismatch, collection not found, tenant scope missing) are `Error` values, never thrown exceptions. **Verify every factory against the real `Error` API** — it exposes exactly six (`Unexpected`, `Validation`, `NotFound`, `Conflict`, `Unauthorized`, `BusinessRule`) plus the `None` sentinel. There is **no `Error.Failure`** |
-| Ecosystem abstraction | `Microsoft.Extensions.AI.Abstractions` (`IChatClient`, `IEmbeddingGenerator<TInput,TEmbedding>`) | **The single highest-leverage Design decision in this domain.** Adopting it means the platform inherits a first-party, widely-implemented seam instead of re-declaring one — but it also puts a `PackageReference` inside `.Abstractions`, which every prior `.Abstractions` package in this repo has refused. Re-declaring instead means every consumer converts at the boundary. Decide it explicitly, with the reasoning recorded; do not let it be settled by accident |
-| LLM orchestration | `Microsoft.SemanticKernel` | The root brain names `ISemanticKernel`. Heavy reflection user (`[KernelFunction]` discovery, plugin loading) — a documented non-AOT-safe dependency to be placed behind an abstraction, never referenced from `.Abstractions` |
-| Vector DB (primary) | `Qdrant.Client` (official, gRPC/protobuf) | Collections, named vectors, payload filters, HNSW params, quantization. Payload filtering is what carries tenant scope |
-| Vector DB (secondary) | `Milvus.Client` | **Verify maintenance status before committing.** The official .NET SDK has lagged the Milvus server release line historically; a stale or archived client is the same disqualifier that removed `NEST` from `09.Search`. If it fails the check, say so and propose an alternative rather than pinning a dead package |
-| Configuration | `SharedKernel.Configuration.AddValidatedOptions<TOptions>(IConfigurationSection)` | Exactly one overload exists: `AddOptions` → `Bind` → `ValidateDataAnnotations` → `ValidateOnStart`. It takes an `IConfigurationSection`, no configuring lambda, no custom `IValidateOptions<T>`. Shape every DI extension around that single signature |
-| DI composition | Per-provider `AddSharedKernel{Provider}...()` returning a fluent builder | `SharedKernel.AI.Abstractions` ships **no** DI extension |
-| Logging | `[LoggerMessage]` with explicit `EventId`s in **10000–10999** (`LoggingEventIdRanges.Intelligence`, verified present in `01.Core`) | 100-wide sub-blocks per package in declaration order. Abstractions **10000–10099** is reserved and expected to stay permanently unused (the abstraction package ships no logging), matching `09.Search`'s 9000–9099 |
-| Diagnostics | Each provider declares its **own** `internal static class` holding an `ActivitySource`/`Meter` named from a shared well-known constant | `13.ServiceDefaults` wires them string-name-only, with **no `ProjectReference`** to `10.Intelligence` — the `09.Search` `WithSearchTelemetry()` pattern |
-| Testing containers | `Testcontainers.Qdrant`, `Testcontainers.Milvus` | **Both must be verified to exist on nuget.org** — `09.Search` discovered `Testcontainers.Meilisearch` does not exist at all and had to hand-roll on the generic `ContainerBuilder`. Do not assume. Fixtures belong in `16.Testing/SharedKernel.Testing/Containers/`, never hand-rolled inside a `.Tests` project. Pin the image tag; never `:latest` |
+| AI abstractions | Pure C# 13 interfaces + `sealed record` / `readonly record struct` models | **RATIFIED.** Zero third-party NuGet dependencies — see the M.E.AI adoption decision above |
+| Outcome type | `Result<T>` / `Result` / `Error` from `SharedKernel.Primitives` | **Verified against source.** `Error` is `sealed record (string Code, string Message, ErrorType Type)` exposing exactly six factories (`Unexpected`, `Validation`, `NotFound`, `Conflict`, `Unauthorized`, `BusinessRule`) plus the `None` sentinel. **There is no `Error.Failure`.** Expected failures (model not found, rate limited, context-window exceeded, dimension mismatch, model-identity mismatch, collection not found, tenant scope missing) are `Error` values, never thrown exceptions |
+| Ecosystem abstraction | `Microsoft.Extensions.AI.Abstractions` | **RATIFIED: declined for `.Abstractions`.** See above. Provider packages may adopt it internally |
+| LLM orchestration | `Microsoft.SemanticKernel` | Candidate confirmed by the root brain's `ISemanticKernel` naming. **Version pin still UNVERIFIED** — a Scaffold-phase task for P-282 verifies latest stable, license, publisher, maintenance status, transitive graph, and AOT posture against nuget.org before it is written into any `.csproj`. Heavy reflection user (`[KernelFunction]` discovery, plugin loading) — documented non-AOT-safe dependency, isolated behind `SharedKernel.AI.SemanticKernel`, never referenced from `.Abstractions` |
+| Vector DB (primary) | `Qdrant.Client` (official, gRPC/protobuf) | Candidate confirmed. **Version pin still UNVERIFIED** — a Scaffold-phase task for P-280 verifies it against nuget.org. Collections, named vectors, payload filters, HNSW params, quantization. Payload filtering is what carries tenant scope |
+| Vector DB (secondary) | `Milvus.Client` | Candidate confirmed, **maintenance status still UNVERIFIED — hard precondition on P-281.** The official .NET SDK has lagged the Milvus server release line historically; a stale or archived client is the same disqualifier that removed `NEST` from `09.Search`. P-281 does not proceed past this check until it is verified; if it fails, the implementer proposes and records an alternative rather than pinning a dead package |
+| Configuration | `SharedKernel.Configuration.AddValidatedOptions<TOptions>(IConfigurationSection)` | **Verified against source.** Exactly one overload: `AddOptions` → `Bind` → `ValidateDataAnnotations` → `ValidateOnStart`. Takes an `IConfigurationSection`, no configuring lambda, no custom `IValidateOptions<T>`. Every provider DI extension is shaped around this single signature |
+| DI composition | Per-provider `AddSharedKernel{Provider}...()` returning a fluent builder | **RATIFIED shape**, see DI Registration below. `SharedKernel.AI.Abstractions` ships **no** DI extension |
+| Logging | `[LoggerMessage]` with explicit `EventId`s in **10000–10999** (`LoggingEventIdRanges.Intelligence`, verified `= 10000` in `01.Core`) | **RATIFIED sub-block allocation:** Abstractions **10000–10099** (reserved, permanently unused — no logging in an abstraction package), Qdrant **10100–10199**, Milvus **10200–10299**, SemanticKernel **10300–10399**, in package declaration order matching the Packages table above |
+| Diagnostics | Each provider declares its **own** `internal static class` holding an `ActivitySource`/`Meter` named from `IntelligenceWellKnown.ActivitySourceName` / `.MeterName` (both `"SharedKernel.AI"`) | `13.ServiceDefaults` wires them string-name-only, with **no `ProjectReference`** to `10.Intelligence` — the `09.Search` `WithSearchTelemetry()` pattern |
+| Testing containers | `Testcontainers.Qdrant`, `Testcontainers.Milvus` | **UNVERIFIED — must be checked against nuget.org before use.** `09.Search` discovered `Testcontainers.Meilisearch` does not exist at all and had to hand-roll on the generic `ContainerBuilder`; do not assume either exists. Fixtures belong in `16.Testing/SharedKernel.Testing/Containers/`, never hand-rolled inside a `.Tests` project. Pin the image tag; never `:latest` |
 | Test packages | `xunit` 2.9.3, `xunit.runner.visualstudio` 2.8.2, `Microsoft.NET.Test.Sdk` 17.13.0, `coverlet.collector` 6.0.4, `FluentAssertions` 8.4.0, `NSubstitute` 5.3.0 | The confirmed repo-wide set. Every `.Tests` project also references `16.Testing/SharedKernel.Testing` and carries a `GlobalUsings.cs` with `global using Xunit;` |
-| `Microsoft.Extensions.*` pins | `10.0.9` | The version the four most recently implemented domains pin. Match it deliberately rather than floating to whatever is newest, to avoid repo-wide version skew — the explicit `09.Search` Scaffold decision |
-| XML docs / packaging | `GenerateDocumentationFile` + `TreatWarningsAsErrors` + the full NuGet metadata block | Include `<PackageReadmeFile>README.md</PackageReadmeFile>` **and** `<None Include="README.md" Pack="true" PackagePath="\" />` in the **same** edit at Docs phase — `08.Storage` omitted the pair and paid for it with an `NU5039` at Published |
+| `Microsoft.Extensions.*` pins | `10.0.9` | The version the four most recently implemented domains pin. Match it deliberately at Scaffold time rather than floating to whatever is newest |
+| XML docs / packaging | `GenerateDocumentationFile` + `TreatWarningsAsErrors` + the full NuGet metadata block | Include `<PackageReadmeFile>README.md</PackageReadmeFile>` **and** `<None Include="README.md" Pack="true" PackagePath="\" />` in the **same** Docs-phase edit — `08.Storage` omitted the pair and paid for it with an `NU5039` at Published |
 
 ---
 
 ## Domain Invariants
 
-These are the load-bearing rules that make this domain different from every other capability domain in the repo. They are binding on the Design phase, not up for renegotiation by it.
+These are the load-bearing rules that make this domain different from every other capability domain in the repo. Binding now; the ratified Interface Contracts below implement each one by name.
 
 ### 1. An embedding is meaningless without its model identity
 
-A vector is only comparable against vectors produced by the **same model, at the same dimensionality, with the same normalization**. Mixing two embedding models inside one collection produces similarity scores that are numerically valid, confidently typed, and **completely wrong** — with no error from any engine, ever. This is the domain's sharpest edge and has no analogue in `09.Search`.
+A vector is only comparable against vectors produced by the **same model, at the same dimensionality, with the same normalization**. Mixing two embedding models inside one collection produces similarity scores that are numerically valid, confidently typed, and **completely wrong** — with no error from any engine, ever.
 
-Therefore: the collection/index definition **declares** its embedding model identifier and vector dimension; every write and every query validates the incoming vector against that declaration and returns a `Result` failure **before any I/O** on mismatch. A dimension mismatch is the cheap half — the engine will often reject it too. The **model-identity** mismatch is the dangerous half, because no engine can detect it. Carrying model identity on the definition is what converts an undetectable silent-wrongness class into a fail-loud one.
+Implemented by: `VectorCollectionDefinition.EmbeddingModelId` + `.Dimension`, validated against `IVectorRecord.ModelId` + `.Vector.Length` on every write, and against `VectorQuery.ModelId` + `.Vector.Length` on every query — **before any I/O**, returning `IntelligenceErrors.EmbeddingModelMismatch` / `.DimensionMismatch`. Dimension mismatch is the cheap half (the engine will often reject it too); **model-identity mismatch is the dangerous half**, because no engine can detect it — carrying `ModelId` explicitly on both the record and the query is what converts an undetectable silent-wrongness class into a fail-loud one.
 
-Re-embedding an entire corpus on a model change is a real, expensive operation. The contract must make the need for it **visible** (a fingerprint/definition mismatch surfaced by the readiness probe), and must not pretend to perform it — the same reasoning that kept `IIndexRebuilder` out of `09.Search`.
+Re-embedding an entire corpus on a model change is a real, expensive operation. `IVectorCollectionProvisioner.CutoverAsync` makes the **need** visible (a staging→live swap after a re-embed) without owning the rebuild itself — the same `IIndexRebuilder`-stays-out reasoning `09.Search` applied.
 
 ### 2. Distance metric is part of the contract, not a tuning knob
 
-Cosine, dot-product, and Euclidean are not interchangeable, and picking the one that does not match how the vectors were produced is silently wrong rather than an error. The metric is declared on the collection definition alongside the model identity and dimension, and is part of whatever fingerprint the design adopts.
+Cosine, dot-product, and Euclidean are not interchangeable. `VectorCollectionDefinition.DistanceMetric` is declared once, alongside model identity and dimension, and folded into `Fingerprint`. It is never a per-query parameter.
 
 ### 3. Tenant scope is a mandatory, non-nullable, non-defaulted separate parameter
 
-Identical in shape and severity to `09.Search`'s `TenantScope` rule, and identically justified: a tenant predicate travelling through the same filter structure as business predicates can be dropped by a translation bug; a dropped business clause is a bug, a dropped tenant clause is a **cross-tenant data leak**. The adapter injects it as the outermost conjunction after translating the caller's filter — never a member of the request object, never routed through the caller-supplied filter. Fail closed: a tenant-declaring collection queried with no scope returns an `Error` and performs **no I/O**.
+Identical in shape and severity to `09.Search`'s `TenantScope` rule. `TenantScope` is a required parameter on every `IVectorCollection<TRecord>` read and filtered write — never a member of `VectorQuery` or any request object, never routed through the caller-supplied `VectorFilter`. The adapter injects it as the **outermost conjunction** after translating the caller's filter. Fail closed: a tenant-declaring collection (`VectorCollectionDefinition.TenantField` set) queried or filter-written with `TenantScope.None` returns `IntelligenceErrors.TenantScopeMissing` and performs **no I/O**.
 
 ### 4. Non-determinism is a property of the contract, not a defect to hide
 
-Completion output is non-deterministic across calls even at temperature zero. The contract must never promise reproducibility, must never cache a completion in a way that silently converts a fresh call into a stale one without the caller opting in, and must never be tested by asserting on generated text (see Test Rules). Embedding generation is *more* stable but still model-version-bound — it is not a pure function across a provider's model upgrades.
+Completion output is non-deterministic across calls even at temperature zero. `ISemanticKernel` never promises reproducibility, never caches a completion in a way that silently converts a fresh call into a stale one without the caller opting in, and is never tested by asserting on generated text (see Test Rules). Embedding generation is more stable but still model-version-bound — not a pure function across a provider's model upgrades.
 
 ### 5. Cost and token usage are first-class outputs, never hidden
 
-Every completion and embedding call spends real money and consumes a finite context window. Token usage (prompt/completion/total) rides on the result type, is surfaced as a metric, and is never dropped. A retry policy on a completion **re-bills**; retries must therefore be explicit, bounded, and never silently applied to a non-idempotent call. A context-window overflow is a `Result` failure with the limit and the actual size in the `Error`, detected before dispatch wherever the provider exposes enough information to detect it.
+Every completion and embedding call spends real money and consumes a finite context window. `TokenUsage` rides on `EmbeddingResult`, `EmbeddingBatchResult`, and `CompletionResult` unconditionally, and is accumulated across `CompleteStreamingAsync`'s chunks. `.Abstractions` exposes **no retry-shaped member anywhere** — a retry policy on a completion **re-bills**; if a provider package offers one at all, it is an explicit, bounded, opt-in builder call (e.g. `.WithBoundedRetry(...)`), never automatic. `ICompletionProviderDescriptor.ValidateContextWindow` is the pre-dispatch `Result` failure carrying the limit and the actual size, detected wherever the provider exposes enough information to detect it before dispatch.
 
 ### 6. Prompt and completion content is untrusted, sensitive, and never logged by default
 
@@ -105,33 +121,782 @@ Two independent hazards, both structural:
 - **Outbound**: sending a payload to a hosted model endpoint is an outbound transfer of whatever that payload contains, to a third party, potentially across a data-residency boundary. The package neither classifies nor redacts caller content; it must make the transfer explicit and must never add hidden enrichment to a prompt.
 - **Inbound**: text retrieved from a vector store and interpolated into a prompt is **untrusted input** — the prompt-injection class. This layer provides plumbing, not a sanitizer, and must never claim to be one.
 
-Consequently prompt text, completion text, and raw vectors are **never** log-message parameters. Log identifiers, model ids, token counts, latencies, and outcome codes. This follows the platform's existing self-supplied-loggable-field rule (`ILoggableRequest<TResponse>`, `ICacheableQuery.CacheKey`) — never a reflection walk, never `{@Object}` destructuring.
-
-API keys and endpoint credentials live in options bound through `AddValidatedOptions` and are never logged, never echoed into an `Error` message, and never included in a diagnostic tag.
+Consequently `ChatMessage.Content`, `CompletionChunk.DeltaContent`, retrieved `IVectorRecord.Metadata` values, and `IVectorRecord.Vector` / `VectorQuery.Vector` are **never** log-message parameters. Log identifiers, model ids, token counts, latencies, and outcome codes. API keys and endpoint credentials live in options bound through `AddValidatedOptions` and are never logged, never echoed into an `Error` message, and never included in a diagnostic tag.
 
 ### 7. Streaming reads are not `Result`-wrapped
 
-A streaming completion and a large vector scroll both return `IAsyncEnumerable<T>` **directly**, following the established `06.Persistence` P-149 / `08.Storage` P-265 / `09.Search` precedent. `Result<IAsyncEnumerable<T>>` only reports the failure that happens before the first `MoveNext`, and `IAsyncEnumerable<Result<T>>` is unusable at the call site. Mid-stream faults surface as a domain-specific exception from `MoveNextAsync`. Apply `[EnumeratorCancellation]` to the token parameter.
+`IVectorCollection<TRecord>.ScrollAsync` and `ISemanticKernel.CompleteStreamingAsync` both return `IAsyncEnumerable<T>` **directly**, following the established `06.Persistence` P-149 / `08.Storage` P-265 / `09.Search` precedent. Mid-stream faults surface as `IntelligenceStreamException` from `MoveNextAsync`. Both apply `[EnumeratorCancellation]` to the token parameter.
 
 ### 8. Readiness is a probe primitive; this domain ships no `IHealthCheck`
 
-A `ProbeAsync`-shaped member returning `Result<T>` is the primitive. `10.Intelligence` ships **no** `IHealthCheck` implementation and references `Microsoft.Extensions.Diagnostics.HealthChecks` **nowhere** — the adapter is `13.ServiceDefaults`'s concern, mirroring the `06.Persistence` DB-readiness, `08.Storage` P-270, and `09.Search` P-277 splits exactly. The adapter must resolve only the abstraction and take the collection name as a caller-supplied parameter, so one adapter works unmodified against either provider.
+`IVectorCollectionProvisioner.ProbeAsync` and `ICompletionProviderDescriptor.ProbeAsync` are `ProbeAsync`-shaped members returning `Result<T>`. `10.Intelligence` ships **no** `IHealthCheck` implementation and references `Microsoft.Extensions.Diagnostics.HealthChecks` **nowhere**. The adapter resolves only the abstraction and takes the collection/provider name as a caller-supplied parameter, so one `13.ServiceDefaults` adapter works unmodified against either vector provider.
 
 ---
 
 ## Interface Contracts
 
-> **NOT RATIFIED.** This section is a placeholder shape to orient the Design phase, not a locked contract. `SK.10.Design` replaces it wholesale with the real, member-by-member surface — the way `09.Search/CLAUDE.md` documents `ISearchIndex<TDocument>` — including every deliberate omission and the reason for it. Until then, treat nothing here as authoritative.
+> **RATIFIED (WO-045, P-279).** This is the locked, member-by-member surface of `SharedKernel.AI.Abstractions`. It replaces the prior "NOT RATIFIED" placeholder wholesale. Every deliberate omission is recorded with its reason so a future reviewer cannot re-litigate a settled decision. `CancellationToken cancellationToken = default` is the trailing parameter on every async member, matching `IFileStorage`/`ISearchIndex<TDocument>`.
 
-Candidate surfaces the root brain's Folder Map and Abstractions table imply this domain must cover:
+### Vector record and scalar value (`Models/`)
 
-- **Embedding generation** — `IEmbeddingGenerator`-shaped: text (and batched text) to vectors, carrying model identity, dimension, and token usage on the result.
-- **Vector storage and retrieval** — collection provisioning, upsert/delete (single and batch), similarity query with a structured metadata filter, get-by-id, count, and a large-result scroll. Mandatory tenant scope on every read and filtered write.
-- **LLM orchestration** — `ISemanticKernel`-shaped: prompt/chat invocation, streaming invocation, tool/function invocation, and whatever multi-step composition the design admits without leaking orchestration state into a stateless capability package.
-- **Provider descriptor** — a zero-I/O, singleton pre-flight surface exposing provider ceilings (max batch size, max vector dimension, context window, max filter depth) and validating a request against the registered collection definitions without touching the network. `09.Search`'s `ISearchProviderDescriptor.Validate` is the template, and it is what makes "fail at composition time, not query time" actionable.
-- **Provider-exclusive contracts** — declared **in the provider package that owns them**, never in `.Abstractions`. Qdrant and Milvus do not have the same feature set (sparse/hybrid vectors, quantization modes, partition-key models, consistency levels), and the honest mechanism for that is a compile error on swap, never a runtime capability flag.
+```text
+VectorValueKind   (enum)
+    String = 0, Int64 = 1, Double = 2, Boolean = 3, DateTimeOffset = 4
 
-Each of these must be checked against the seam rule before it lands in `.Abstractions`, and pushed into a provider package or declined if it fails.
+VectorValue   (readonly record struct — a CLOSED scalar union, no `object`, no `dynamic`)
+    .Kind                                                              → VectorValueKind { get; }
+    .AsString / .AsInt64 / .AsDouble / .AsBoolean / .AsDateTimeOffset   (kind-checked accessors)
+    .From(string) / .From(long) / .From(double) / .From(bool) / .From(DateTimeOffset)  → VectorValue
+    .From(Guid value)                                                            → VectorValue
+    — implicit operators from string, int, long, double, bool, DateTimeOffset, Guid
+    — explicit, Kind-aware `public override string ToString()` (never throws — the SearchValue
+      ToString defect precedent from 09.Search is avoided by design from day one, not fixed later)
+
+    NOTE (DELIBERATE STRUCTURAL TWIN OF SearchValue): same five kinds, same accessor shape, same
+          .From(Guid) canonical-"D"-string normalisation. Both Qdrant payload values and Milvus scalar
+          fields are faithfully representable by exactly these five kinds — no engine asymmetry
+          motivates a different union here, and reusing the proven shape avoids inventing a new defect
+          class this domain would otherwise have to discover independently.
+
+    NOTE (TIMESTAMP ENCODING IS A PROVIDER CONCERN): DateTimeOffset values are serialised to whatever
+          each provider's own numeric/string convention requires (Qdrant payload: RFC 3339 string;
+          Milvus: epoch-microseconds INT64, matching its own timestamp convention) — decided and
+          implemented per-provider at Core phase, exactly mirroring 09.Search's per-provider timestamp
+          divergence. The divergence is invisible to the caller and must be matched by whatever wrote
+          the metadata field originally.
+
+IVectorRecord   (the self-supplied surface every TRecord implements — no reflection, no attribute scan,
+                 mirrors ISearchDocument / ILoggableRequest<TResponse> / ICacheableQuery.CacheKey)
+    .Id                                                                          → string { get; }
+    .Vector                                                          → ReadOnlyMemory<float> { get; }
+    .ModelId                                                                     → string { get; }
+    .Metadata                                    → IReadOnlyDictionary<string, VectorValue> { get; }
+
+    NOTE: Every TRecord in this domain is constrained `where TRecord : class, IVectorRecord`.
+          ModelId is the embedding-model identity that produced Vector — carried on the RECORD
+          ITSELF (not inferred from Vector.Length, which cannot distinguish two different models that
+          happen to share a dimension) so the adapter can validate it against
+          VectorCollectionDefinition.EmbeddingModelId before any I/O. This is the direct implementation
+          of Domain Invariant #1's "no engine can detect a model-identity mismatch" problem — the
+          contract detects it instead.
+
+    NOTE (Id STABILITY AND CHARSET): Id must be stable and identical across re-embeds — it is the
+          upsert key on both engines. Charset is the intersection of both engines' point/entity-id
+          constraints; a violating id returns IntelligenceErrors.InvalidRecordId before any I/O on BOTH
+          providers (exact charset confirmed and documented at each provider's Core phase against its
+          real, current API — not guessed at Design time, since Qdrant point IDs accept UUID or
+          unsigned integer natively while Milvus primary keys are INT64 or VARCHAR, and the neutral Id
+          here is always string, so each provider's translator owns the concrete validation).
+
+    NOTE (Metadata IS THE ENTIRE PORTABLE PAYLOAD SURFACE): there is no separate "content" or "text"
+          member — whatever text was embedded to produce Vector, if the caller wants it retrievable, is
+          stored as a Metadata entry like any other field. This keeps IVectorRecord's shape uniform
+          across every use case (RAG chunk, entity embedding, image caption embedding) rather than
+          privileging one.
+```
+
+### Embedding generation (`Abstractions/`)
+
+```text
+TokenUsage   (sealed record — shared between embedding and completion results)
+    .PromptTokens                                                                  → int { get; init; }
+    .CompletionTokens                                                              → int { get; init; }
+    .TotalTokens                                                                   → int { get; init; }
+
+    NOTE: CompletionTokens is always 0 on an embedding result — embedding calls have no completion
+          half. TotalTokens is NOT re-derived by a consumer; the provider reports it directly, since
+          some providers bill on values that are not a pure sum (e.g. cached-prefix pricing).
+
+EmbeddingResult   (sealed record)
+    .Vector                                                          → ReadOnlyMemory<float> { get; init; }
+    .ModelId                                                                       → string { get; init; }
+    .Dimension                                                                        → int { get; init; }
+    .TokenUsage                                                              → TokenUsage { get; init; }
+
+EmbeddingBatchResult   (sealed record)
+    .Embeddings                                     → IReadOnlyList<ReadOnlyMemory<float>> { get; init; }
+    .ModelId                                                                       → string { get; init; }
+    .Dimension                                                                        → int { get; init; }
+    .TokenUsage                                                              → TokenUsage { get; init; }
+
+    NOTE (ORDER-PRESERVING, NO PER-ITEM FAILURE SURFACE — unlike SearchBulkReceipt, deliberately):
+          Embeddings[i] corresponds to the i-th input text. Embedding-provider batch APIs are atomic
+          per request (the whole call embeds every item or the call fails), unlike a search engine's
+          _bulk endpoint which routinely partial-fails. A Result<EmbeddingBatchResult> failure is
+          therefore sufficient; there is no EmbeddingItemFailure type. A provider that genuinely offers
+          native partial-batch failure exposes it as a provider-exclusive contract, never faked here.
+
+IEmbeddingGenerator   (NOT generic — this domain is scoped to text embedding for retrieval/RAG, not
+                       multi-modal embedding; this is the deliberate deviation from
+                       Microsoft.Extensions.AI's IEmbeddingGenerator<TInput,TEmbedding> and is why that
+                       type was not adopted verbatim even informally)
+    .ModelId                                                                       → string { get; }
+    .Dimension                                                                        → int { get; }
+    .EmbedAsync(string text, CancellationToken ct)                    → Task<Result<EmbeddingResult>>
+    .EmbedManyAsync(IReadOnlyList<string> texts, CancellationToken ct) → Task<Result<EmbeddingBatchResult>>
+
+    NOTE: ModelId/Dimension are zero-I/O properties bound at construction (from options), mirroring
+          ISearchIndex.IndexName — cheap enough to read at composition time to validate a
+          VectorCollectionDefinition.EmbeddingModelId/.Dimension pairing before any embedding call is
+          ever made. A mismatch discovered here is exactly the kind of "fail at composition time, not
+          query time" the provider-descriptor Validate members exist to make actionable elsewhere too.
+
+    NOTE (BATCH SIZE IS A PROVIDER-DESCRIPTOR CONCERN, NOT HERE): EmbedManyAsync does not itself cap
+          texts.Count — over-ceiling batches are IVectorProviderDescriptor... actually embedding batch
+          ceilings belong to whichever provider's own descriptor covers it (SemanticKernel package);
+          the adapter validates against its own known ceiling before any I/O and returns
+          IntelligenceErrors.BatchSizeExceeded.
+```
+
+### Vector collection — write surface (`Abstractions/`)
+
+```text
+VectorWriteReceipt   (sealed record)
+    .CollectionName                                                                 → string { get; init; }
+    .ProviderToken                                                                  → string { get; init; }
+    .AffectedCount                                                                     → int { get; init; }
+    .AcceptedAt                                                              → DateTimeOffset { get; init; }
+
+    NOTE: AcceptedAt sourced from IClock (01.Core) in both adapters — never DateTimeOffset.UtcNow
+          (SK0001). ProviderToken is OPAQUE (a Qdrant operation id, or a Milvus insert timestamp used
+          as a guarantee_timestamp) — consumers must NEVER parse it; its only legal use is being handed
+          back to WaitUntilQueryableAsync on the SAME IVectorCollection<TRecord> instance.
+
+VectorItemFailure   (sealed record)
+    .RecordId                                                                       → string { get; init; }
+    .Error                                                                          → Error { get; init; }
+
+VectorBulkReceipt   (sealed record)
+    .Receipt                                                        → VectorWriteReceipt { get; init; }
+    .SucceededCount                                                                    → int { get; init; }
+    .Failures                                          → IReadOnlyList<VectorItemFailure> { get; init; }
+    .HasFailures                                                                       → bool { get; }
+
+IVectorCollection<TRecord>   where TRecord : class, IVectorRecord
+    .CollectionName                                                                 → string { get; }
+
+    — write —
+    .UpsertAsync(TRecord record, TenantScope tenantScope, ct)         → Task<Result<VectorWriteReceipt>>
+    .UpsertManyAsync(IReadOnlyCollection<TRecord> records,
+                     TenantScope tenantScope, ct)                     → Task<Result<VectorBulkReceipt>>
+    .DeleteAsync(string id, TenantScope tenantScope, ct)              → Task<Result<VectorWriteReceipt>>
+    .DeleteManyAsync(IReadOnlyCollection<string> ids,
+                     TenantScope tenantScope, ct)                     → Task<Result<VectorBulkReceipt>>
+    .DeleteByFilterAsync(VectorFilter filter, TenantScope tenantScope, ct)
+                                                                       → Task<Result<VectorWriteReceipt>>
+    .WaitUntilQueryableAsync(VectorWriteReceipt receipt, TimeSpan timeout, ct) → Task<Result>
+
+    NOTE (NO WriteConsistency / CONSISTENCY-LEVEL PARAMETER ON ANY WRITE — the single most important
+          "one more knob" the design explicitly REJECTED): Qdrant's write model (a `wait` boolean —
+          block until searchable, or return immediately) and Milvus's write model (insert returns
+          immediately; visibility is governed by the CONSISTENCY LEVEL OF A SUBSEQUENT QUERY, e.g.
+          Strong/Bounded/Eventually — not a property of the write call at all) are not the same knob
+          wearing different clothes. A shared WriteConsistency enum on the write signature would be
+          honestly implementable on Qdrant and would NOT map onto anything Milvus's write call actually
+          controls — exactly the "consistency level" example this domain's own seam-rule guidance names
+          as a lie about the other engine. Instead: every write returns immediately with a receipt, and
+          WaitUntilQueryableAsync is a SEPARATE, explicit, opt-in deferred barrier (mirroring
+          09.Search's WaitUntilSearchableAsync) — Qdrant polls the point via its own client until
+          visible; Milvus re-issues a bounded read using the receipt's ProviderToken as a
+          guarantee_timestamp until it succeeds or the timeout elapses. Both are honest
+          implementations of the SAME neutral primitive without inventing a fake shared write-time knob.
+
+    NOTE (UPSERT ONLY): UpsertAsync is keyed on IVectorRecord.Id — no Create-vs-Update split, mirroring
+          09.Search's IndexAsync reasoning (an upstream sync pipeline's at-least-once delivery makes
+          the distinction meaningless on both engines).
+
+    NOTE (NO OPTIMISTIC CONCURRENCY): neither Qdrant nor Milvus offers a comparable primitive to EF
+          Core's rowversion or ElasticSearch's if_seq_no. A sync pipeline feeding these methods MUST
+          guarantee ordering upstream by partitioning the change stream on Id — documented, not
+          enforced, mirroring 09.Search's identical decision on IndexAsync.
+
+    NOTE (BULK PARTIAL FAILURE IS NOT COLLAPSED): UpsertManyAsync/DeleteManyAsync return
+          Result<VectorBulkReceipt>, and the Result is SUCCESS even when Failures is non-empty — both
+          engines' batch APIs report per-item failures within an otherwise-successful batch call.
+          Result.Failure is reserved for "the request itself did not execute" (e.g. a
+          model-identity/dimension mismatch caught before any I/O).
+
+    NOTE (DeleteByFilterAsync TAKES TenantScope AS A MANDATORY SEPARATE PARAMETER): never part of the
+          VectorFilter tree — a dropped tenant clause on a bulk delete is cross-tenant data destruction.
+
+    NOTE (WaitUntilQueryableAsync MUST NOT BE USED FOR READ-YOUR-WRITES ON A REQUEST PATH): it is the
+          deferred barrier for background/bulk-import callers wanting one barrier after N writes
+          instead of N barriers. Returns IntelligenceErrors.WriteTimeout on expiry — the write may
+          still land; the error says so explicitly so callers do not retry blindly assuming it did not.
+
+    NOTE (MODEL-IDENTITY/DIMENSION/METRIC VALIDATION IS THE FIRST THING EVERY WRITE DOES): before any
+          I/O, the adapter checks record.ModelId == definition.EmbeddingModelId and
+          record.Vector.Length == definition.Dimension, returning IntelligenceErrors.
+          EmbeddingModelMismatch / .DimensionMismatch on failure. DistanceMetric has no per-record
+          representation to validate — it is a property of the collection alone.
+```
+
+### Vector collection — read surface (`Abstractions/`)
+
+```text
+VectorHit<TRecord>   (sealed record)   where TRecord : class, IVectorRecord
+    .Record                                                                    → TRecord { get; init; }
+    .Score                                                                     → float { get; init; }
+    .Rank                                                                        → int { get; init; }
+
+    NOTE (Score EXISTS — THE ONE DELIBERATE DEVIATION FROM 09.Search's Score BAN, DECIDED, NOT
+          DEFAULTED): 09.Search banned a raw relevance score outright because BM25 and Meilisearch's
+          ranking-rule bucket-sort share no scale. This domain's own phase brief explicitly frames
+          similarity score as "often genuinely load-bearing for a caller" (e.g. "only surface chunks
+          above cosine 0.75") in a way full-text relevance rarely is, so an undocumented omission would
+          just push callers onto a provider-exclusive escape hatch for a mainstream RAG use case. Score
+          is kept, with the loudest possible XML doc warning on the member itself: THE SCALE IS
+          PROVIDER- AND METRIC-SPECIFIC. Cosine similarity is bounded [-1, 1] (or [0, 1] depending on
+          normalisation); dot-product is UNBOUNDED and depends on vector magnitude; Euclidean DISTANCE
+          is smaller-is-better, the OPPOSITE direction of the other two. A threshold tuned against one
+          provider/metric pairing is silently meaningless against another — Score MUST NOT be
+          persisted, compared across a provider swap, or compared across a DistanceMetric change,
+          without re-deriving the threshold empirically against the new pairing. Rank (0-based ordinal
+          within the result page) is the portable substitute for callers who want ordering without
+          touching Score at all, mirroring 09.Search exactly.
+
+VectorQuery   (sealed record — public init members, no builder; matches SearchRequest's plain-record
+              shape rather than adding fluent-builder ceremony this domain's smaller surface does not
+              need)
+    .Vector                                                          → ReadOnlyMemory<float> { get; init; }
+    .ModelId                                                                     → string { get; init; }
+    .Filter                                                              → VectorFilter? { get; init; }   (default null)
+    .Limit                                                                          → int { get; init; }   (default IntelligenceWellKnown.DefaultQueryLimit)
+    .MinScore                                                                    → float? { get; init; }   (default null)
+    .ReturnMetadata                                                                → bool { get; init; }   (default true)
+    .ReturnVector                                                                  → bool { get; init; }   (default false)
+
+    NOTE (Vector AND ModelId ARE BOTH REQUIRED, NON-DEFAULTED): unlike SearchRequest.FreeText (which
+          is optional — a filter-only search is legal), a similarity query with no query vector is not
+          a coherent operation in this domain at all, so both are required init members with no
+          sentinel-default meaning "no vector". ModelId is validated against
+          VectorCollectionDefinition.EmbeddingModelId before any I/O, identically to the write path.
+
+    NOTE (MinScore IS DOCUMENTED AS PROVIDER-AND-METRIC-SPECIFIC, SAME WARNING AS VectorHit.Score):
+          it is applied server-side where the engine supports a score threshold, and validated for
+          directional sanity per DistanceMetric where feasible (Euclidean: smaller-is-better, so a
+          MinScore filters differently than for Cosine) — the concrete enforcement is a Core-phase,
+          per-provider decision, not solved at the neutral layer beyond documenting the hazard.
+
+    NOTE (ReturnVector DEFAULTS FALSE): vectors are large (a 1536-dim float32 vector is 6 KB) and most
+          callers only need Metadata + Score. Opt-in keeps the default response cheap.
+
+    NOTE (NO FREE TEXT MEMBER — THERE IS NO ANALOGUE HERE): unlike SearchRequest.FreeText, there is no
+          "text" concept in a vector query distinct from the Vector itself — whatever text the caller
+          wants matched IS what produced Vector via IEmbeddingGenerator upstream of this call.
+
+VectorQueryResults<TRecord>   (sealed record)   where TRecord : class, IVectorRecord
+    .Hits                                                → IReadOnlyList<VectorHit<TRecord>> { get; init; }
+    .Duration                                                                  → TimeSpan { get; init; }
+    .Empty                                                       → static VectorQueryResults<TRecord> { get; }
+
+IVectorCollection<TRecord>   (read members, continued from the write surface above)
+    .QueryAsync(VectorQuery query, TenantScope tenantScope, ct)
+                                                          → Task<Result<VectorQueryResults<TRecord>>>
+    .GetAsync(string id, TenantScope tenantScope, ct)                     → Task<Result<TRecord>>
+    .CountAsync(VectorFilter? filter, TenantScope tenantScope, ct)        → Task<Result<long>>
+
+    — corpus walk —
+    .ScrollAsync(VectorFilter? filter, TenantScope tenantScope, int batchSize,
+                 [EnumeratorCancellation] ct)                              → IAsyncEnumerable<TRecord>
+
+    NOTE (GetAsync IS TENANT-CHECKED): implemented as a filtered point-lookup, not a raw get, whenever
+          the collection definition declares a TenantField — a caller must not read another tenant's
+          record by guessing an id. A miss returns IntelligenceErrors.RecordNotFound — never null,
+          never a thrown exception.
+
+    NOTE (CountAsync IS EXACT ON BOTH ENGINES): Qdrant's count endpoint and Milvus's query with
+          COUNT(*) both return exact counts — unlike 09.Search there is no engine-side estimate to
+          reconcile, so there is no accuracy qualifier on this member.
+
+    NOTE (ScrollAsync IS NOT Result-WRAPPED — Domain Invariant #7): a transport failure mid-stream
+          surfaces as IntelligenceStreamException from MoveNextAsync. It is a RECORD WALK (Qdrant
+          scroll API / Milvus query iterator), not a ranked similarity search — it takes a VectorFilter
+          but no Vector, and exists for reindex/export/re-embed-source enumeration, exactly mirroring
+          09.Search's EnumerateAsync. Ordering is UNSPECIFIED and must not be relied upon.
+```
+
+### Vector collection provisioning (`Abstractions/`)
+
+```text
+VectorCollectionCutoverRequest   (sealed record)
+    .StagingCollectionName                                                      → string { get; init; }
+    .LiveCollectionName                                                         → string { get; init; }
+    .DeleteStagingAfterCutover                                                  → bool { get; init; }   (default true)
+
+VectorCollectionHealth   (sealed record)
+    .Reachable                                                                     → bool { get; init; }
+    .CollectionAddressable                                                         → bool { get; init; }
+    .Queryable                                                                     → bool { get; init; }
+    .VectorCount                                                                    → long { get; init; }
+    .PendingWriteCount                                                            → long? { get; init; }
+    .EngineVersion                                                               → string { get; init; }
+    .SchemaFingerprint                                                          → string? { get; init; }
+    .Latency                                                                   → TimeSpan { get; init; }
+
+    NOTE (CollectionAddressable IS SEPARATE FROM Reachable): a reachable cluster with a missing or
+          mis-aliased collection, or a mis-scoped API key for THIS collection specifically, passes a
+          cluster-wide health check and returns 100% production failures — the identical
+          SearchIndexHealth precedent from 09.Search, applied here.
+
+    NOTE (PendingWriteCount IS NULLABLE, PERMANENTLY): Qdrant's optimizer-status pending-operations
+          signal and Milvus's segment-flush backlog are not the same shape, and one engine may expose
+          nothing comparable at all depending on version. Nullability models the capability gap
+          honestly rather than reporting a fabricated 0. 13.ServiceDefaults MUST NOT treat a deep
+          backlog as a readiness FAILURE — it means results may be stale, not unavailable.
+
+IVectorCollectionProvisioner   (non-generic — exactly one registration per provider)
+    .EnsureCollectionAsync(VectorCollectionDefinition definition, ct)             → Task<Result>
+    .CollectionExistsAsync(string collectionName, ct)                            → Task<Result<bool>>
+    .DeleteCollectionAsync(string collectionName, ct)                            → Task<Result>
+    .CutoverAsync(VectorCollectionCutoverRequest request, ct)                     → Task<Result>
+    .ProbeAsync(string collectionName, ct)                            → Task<Result<VectorCollectionHealth>>
+
+    NOTE (EnsureCollectionAsync IS IDEMPOTENT AND ADDITIVE-ONLY): creates the collection if absent and
+          applies the field declarations (payload/scalar indexes on Filterable fields). It NEVER
+          rewrites an incompatible existing definition — a definition conflicting with the live
+          collection returns IntelligenceErrors.CollectionDefinitionConflict; the remedy is staging →
+          UpsertManyAsync → CutoverAsync, exactly mirroring 09.Search's EnsureIndexAsync. It also
+          persists Fingerprint so ProbeAsync can detect drift — Qdrant via a reserved sentinel point's
+          payload (Qdrant has no generic collection-level metadata slot), Milvus via a native
+          collection property (Milvus 2.4+ supports arbitrary collection properties directly) — each
+          provider's concrete persistence mechanism is a Core-phase decision for P-280/P-281
+          respectively, not solved at this neutral layer beyond requiring that BOTH detect drift.
+
+    NOTE (CutoverAsync — BOTH ENGINES GENUINELY HAVE ALIASES, UNLIKE 09.Search's ASYMMETRIC CASE):
+          Qdrant and Milvus both support native collection aliases (create/alter alias), so
+          LiveCollectionName is an ALIAS on BOTH providers and the swap is atomic on both — a cleaner,
+          more symmetric case than 09.Search's ES-alias-vs-Meilisearch-swap-endpoint asymmetry.
+          DeleteStagingAfterCutover (default true) still exists because the staging collection's
+          underlying data remains allocated until explicitly deleted on both engines.
+
+    NOTE (WHAT THIS DOES NOT OWN — Domain Invariant #1): the re-embedding/rebuild itself. There is no
+          IIndexRebuilder-shaped type driving a data source, because the source-entity → embedding
+          mapping is business logic belonging to the owning service, and a rebuild source would force
+          a 06.Persistence or 07.Messaging reference this layer may not take. The consumer sequences:
+          EnsureCollectionAsync(staging) → UpsertManyAsync(from its own IAsyncEnumerable, fed through
+          its own IEmbeddingGenerator calls) → CutoverAsync → optional DeleteCollectionAsync.
+
+    NOTE (ProbeAsync IS A PRIMITIVE, NOT A HEALTH CHECK — Domain Invariant #8): 10.Intelligence ships
+          NO IHealthCheck implementation and no provider references
+          Microsoft.Extensions.Diagnostics.HealthChecks. Wiring into AddHealthChecks() is
+          13.ServiceDefaults's concern.
+```
+
+### Vector provider descriptor (`Abstractions/`)
+
+```text
+IVectorProviderDescriptor   (singleton, zero I/O)
+    .ProviderName                                                                 → string { get; }
+    .MaxBatchSize                                                                    → int { get; }
+    .MaxVectorDimension                                                                → int { get; }
+    .MaxFilterDepth                                                                     → int { get; }
+    .RegisteredCollections                                                → IReadOnlyList<string> { get; }
+    .Validate(string collectionName, VectorQuery query)                            → Result
+
+    NOTE: ProviderName is IntelligenceWellKnown.QdrantProviderName /
+          .MilvusProviderName, and is also the value of the "ai.provider" OTel tag.
+
+    NOTE (NO CAPABILITY-FLAGS ENUM, DELIBERATELY — same reasoning as 09.Search's
+          ISearchProviderDescriptor): an `if (caps.HasFlag(...))` branch at an application call site is
+          a platform violation here specifically because degradation in similarity search is
+          CONFIDENTLY WRONG rows, not merely fewer rows. The consumer-facing capability mechanism is
+          the compile error a provider swap produces against provider-package-declared exclusive
+          contracts, never a runtime flag.
+
+    NOTE (Validate IS THE ZERO-I/O, ZERO-CONTAINER PRE-FLIGHT): checks MaxFilterDepth against the
+          query's VectorFilter tree depth, MaxVectorDimension against query.Vector.Length, and
+          structural request invariants — without touching the network, mirroring
+          ISearchProviderDescriptor.Validate exactly. It does NOT check model-identity/dimension
+          against a specific collection's definition (that check needs the definition, which the
+          descriptor does not hold) — that remains IVectorCollection<TRecord>'s own responsibility at
+          call time.
+```
+
+### Filter AST (`Models/`)
+
+```text
+VectorFilter   (abstract record, CLOSED hierarchy — private protected base ctor; the eight sealed
+                subtypes are PUBLIC with INTERNAL constructors and public get-only properties)
+    EqualFilter      { Field: string, Value: VectorValue }
+    NotEqualFilter   { Field: string, Value: VectorValue }
+    InFilter         { Field: string, Values: IReadOnlyList<VectorValue> }
+    RangeFilter      { Field: string, From: VectorValue?, FromInclusive: bool,
+                       To: VectorValue?, ToInclusive: bool }
+    ExistsFilter     { Field: string }
+    AndFilter        { Operands: IReadOnlyList<VectorFilter> }
+    OrFilter         { Operands: IReadOnlyList<VectorFilter> }
+    NotFilter        { Operand: VectorFilter }
+
+    — the ONLY sanctioned construction path, static factories on the base —
+    .Eq(string field, VectorValue value)                                          → VectorFilter
+    .Ne(string field, VectorValue value)                                          → VectorFilter
+    .In(string field, params VectorValue[] values)                                → VectorFilter
+    .Between(string field, VectorValue? from, VectorValue? to,
+             bool fromInclusive = true, bool toInclusive = true)                  → VectorFilter
+    .Exists(string field)                                                        → VectorFilter
+    .All(params VectorFilter[] operands)                                         → VectorFilter
+    .Any(params VectorFilter[] operands)                                         → VectorFilter
+    .Negate(VectorFilter operand)                                                → VectorFilter
+
+    NOTE (DELIBERATE STRUCTURAL TWIN OF 09.Search's SearchFilter — SAME 8 NODES, SAME CLOSED-BY-
+          CONSTRUCTION MECHANISM): private protected base + internal subtype constructors + public
+          types make each provider's translation switch exhaustive and compiler-checked. HARD RULE:
+          neither Qdrant's nor Milvus's translation switch may carry a discard (`_ =>`) arm.
+
+    NOTE (BOTH ENGINES GENUINELY EXPRESS ALL EIGHT NODES, CONFIRMED AT DESIGN TIME BY CHECKING EACH
+          ENGINE'S REAL FILTER GRAMMAR, NOT ASSUMED): Equal/In/Range/And/Or map directly onto both
+          Qdrant's Match/MatchAny/Range + must/should conditions and Milvus's boolean-expression
+          operators. NotEqual and Not are synthesised via must_not-wrapping on Qdrant (no native
+          "not equal" match primitive) and via `!=`/`not` directly on Milvus — both are FAITHFUL
+          translations, not degradations; synthesis via composition is normal compiler work, not the
+          disqualifying pattern. Exists is IsNull-negation on Qdrant (Qdrant's IsEmpty/IsNull
+          conditions) and `IS NOT NULL` on Milvus (which requires the field declared nullable=true at
+          collection-creation time — the Milvus provider's EnsureCollectionAsync sets this
+          automatically for every Filterable field, a Core-phase implementation detail, not a neutral-
+          surface concern).
+
+    NOTE (Between REJECTS String AND Boolean BOUNDS — CONSISTENCY CHOICE, RECORDED AS SUCH): Qdrant's
+          Range condition is numeric/datetime only, with no lexicographic string-range primitive at
+          all — a hard impossibility on that engine, identical to 09.Search's reasoning. Milvus's
+          expression grammar CAN express a lexicographic VARCHAR range; it is deliberately left unused
+          here for platform-wide consistency with the identical rule in 09.Search's SearchFilter,
+          rather than because Milvus cannot do it. A developer who already knows one closed-AST domain
+          in this platform should not be surprised by different Between semantics in the other. Only
+          Int64, Double, and DateTimeOffset are legal range bounds; Between throws ArgumentException
+          for a String or Boolean VectorValue — a programming error caught at first test run.
+
+    NOTE (WHAT IS DELIBERATELY ABSENT, and why): no free-text/full-text node — there is no analogue in
+          a vector-metadata filter; whatever "text search" means here happens through the embedding
+          Vector itself, upstream of this AST entirely. No Fuzzy/TypoTolerance (not a metadata-filter
+          concept on either engine). No Boost/FunctionScore (relevance here IS Score, already a
+          documented hazard on VectorHit — a second, filter-level boost knob would compound it). No
+          GeoRadius (deferred, same reasoning as 09.Search — real-container verification before
+          guessing at semantics). No Prefix/Wildcard/Regex. No nested/object-array filter — same
+          correctness hazard 09.Search identified (element-correlation loss on flattening engines);
+          the mandated portable technique is identical: flatten to a precomputed composite Filterable
+          field at write time and filter it with In(...).
+```
+
+### Tenant scope (`Models/`)
+
+```text
+TenantScope   (readonly record struct)
+    .Value                                                                        → string { get; }
+    .None                                                             → static TenantScope { get; }
+    .Of(string value)                                                            → TenantScope
+
+    NOTE: Structurally identical to 09.Search's TenantScope, deliberately — this is a proven,
+          load-bearing shape and reinventing it differently here would just be gratuitous
+          inconsistency. Cannot be the SAME type (10.Intelligence may not reference 09.Search), so it
+          is declared locally, mirroring the platform's existing tolerance for small, deliberate
+          duplication across layering-walled domains (03.Domain's SearchSort-vs-domain-ordering
+          precedent).
+
+    NOTE (MANDATORY, NON-NULLABLE, NON-DEFAULTED — Domain Invariant #3): a separate method parameter
+          on every IVectorCollection<TRecord> read and every filtered/bulk write, never a member of
+          VectorQuery. Adapters inject it as the OUTERMOST AND clause after translating the caller's
+          VectorFilter.
+
+    NOTE (FAIL CLOSED, DRIVEN BY VectorCollectionDefinition.TenantField): if the registered definition
+          declares a TenantField and the caller passes TenantScope.None, the provider returns
+          IntelligenceErrors.TenantScopeMissing and performs NO I/O — the guard arms itself
+          automatically the moment a collection is genuinely multi-tenant, exactly mirroring
+          09.Search's identical decision.
+```
+
+### Collection definition and fingerprint (`Models/`) — the surface to guard hardest
+
+```text
+VectorDistanceMetric   (enum)
+    Cosine = 0, DotProduct = 1, Euclidean = 2
+
+    NOTE: all three are genuinely, faithfully supported by BOTH Qdrant (Cosine/Dot/Euclid) and Milvus
+          (COSINE/IP/L2) — confirmed at Design time, not assumed. No fourth metric is offered because a
+          fourth candidate has not been confirmed present on both engines; adding one later requires
+          the same two-engine confirmation this enum received.
+
+VectorFieldKind   (enum)
+    String = 0, Int64 = 1, Double = 2, Boolean = 3, DateTimeOffset = 4
+
+    NOTE: intentionally identical in shape to VectorValueKind — a metadata field's declared Kind is
+          exactly which VectorValue accessor a filter against it must use.
+
+VectorFieldDefinition   (sealed record)
+    .Name                                                                          → string { get; init; }
+    .Kind                                                                → VectorFieldKind { get; init; }
+    .Filterable                                                                    → bool { get; init; }   (default false)
+
+    NOTE (ONE BOOLEAN, DELIBERATELY, NOT FOUR LIKE SearchFieldDefinition): there is no Searchable
+          (no full-text concept on vector metadata), no Sortable (similarity query results are always
+          ordered by Score, and ScrollAsync's order is unspecified by design), no Facetable (faceting
+          is a full-text-search concept absent from both vector engines' actual feature sets). A field
+          must be Filterable=true to appear in a VectorFilter against it — this is what drives payload-
+          index creation on Qdrant and scalar-index + nullable=true on Milvus at EnsureCollectionAsync
+          time. THIS TYPE, ALONGSIDE VectorCollectionDefinition BELOW, IS THE SURFACE TO GUARD HARDEST
+          IN REVIEW: a request for a fifth boolean (e.g. "sortable" for some future re-ranking feature)
+          is very likely a claim about one engine that does not hold for the other and must clear the
+          seam rule explicitly before it lands.
+
+VectorCollectionDefinition   (sealed record)
+    .Name                                                                          → string { get; init; }
+    .EmbeddingModelId                                                             → string { get; init; }
+    .Dimension                                                                        → int { get; init; }
+    .DistanceMetric                                                    → VectorDistanceMetric { get; init; }
+    .TenantField                                                                  → string? { get; init; }   (default null)
+    .Fields                                             → IReadOnlyList<VectorFieldDefinition> { get; init; }
+    .Create(string name, string embeddingModelId, int dimension,
+            VectorDistanceMetric metric, IReadOnlyList<VectorFieldDefinition> fields)
+                                                                        → Result<VectorCollectionDefinition>
+    .Fingerprint                                                                     → string { get; }
+
+    NOTE (THIS IS THE DOMAIN'S SHARPEST-EDGE TYPE — Domain Invariants #1 and #2 in one place):
+          EmbeddingModelId + Dimension + DistanceMetric together are what every write and query
+          validates against before any I/O. TenantField placement here (not in provider options)
+          mirrors 09.Search's SearchIndexDefinition.TenantField exactly, for the identical reason — a
+          service may legitimately have one tenanted collection and one global one, and per-collection
+          placement is what lets the fail-closed guard arm itself exactly where it should.
+
+    NOTE (Fingerprint — ALGORITHM PINNED AT DESIGN TIME): SHA-256 over a canonical UTF-8 string,
+          rendered as lowercase hex of the 32 bytes, one line per component with '\n' separators, no
+          default-value elision:
+              Name
+              EmbeddingModelId
+              Dimension               (invariant culture)
+              (int)DistanceMetric     (invariant culture)
+              TenantField ?? ""
+              then, for each field sorted by Name using StringComparer.Ordinal:
+              Name|{(int)Kind}|{Filterable:0|1}
+          Ordinal sorting makes the value independent of declaration order; explicit ints make it
+          independent of enum member renames — identical technique to SearchIndexDefinition.Fingerprint
+          (09.Search), reused deliberately rather than reinvented. Uses System.Security.Cryptography —
+          in-box on net10.0, so .Abstractions keeps its zero-PackageReference guarantee.
+
+VectorCollectionDefinitionBuilder   (sealed class)
+    .EmbeddingModel(string modelId, int dimension)                     → VectorCollectionDefinitionBuilder
+    .DistanceMetric(VectorDistanceMetric metric)                       → VectorCollectionDefinitionBuilder
+    .TenantField(string field)                                        → VectorCollectionDefinitionBuilder
+    .Field(string name, VectorFieldKind kind, bool filterable = false) → VectorCollectionDefinitionBuilder
+    .Build()                                                                    → Result<VectorCollectionDefinition>
+```
+
+### LLM orchestration (`Abstractions/`)
+
+```text
+ChatRole   (enum)
+    System = 0, User = 1, Assistant = 2, Tool = 3
+
+ChatMessage   (sealed record)
+    .Role                                                                     → ChatRole { get; init; }
+    .Content                                                                    → string { get; init; }
+    .Name                                                                     → string? { get; init; }   (default null — tool/function name attribution)
+
+ToolDefinition   (sealed record)
+    .Name                                                                       → string { get; init; }
+    .Description                                                                → string { get; init; }
+    .ParametersJsonSchema                                                       → string { get; init; }
+
+    NOTE (ParametersJsonSchema IS A PLAIN STRING, NOT A REFLECTED Type): the caller supplies a JSON
+          Schema document as text. This keeps .Abstractions reflection-free and AOT-clean — the
+          reflection-heavy work of turning a C# delegate/Type into a schema (which
+          Microsoft.SemanticKernel's [KernelFunction] discovery does internally) stays entirely inside
+          SharedKernel.AI.SemanticKernel, never touching the neutral contract.
+
+ToolCallRequest   (sealed record)
+    .CallId                                                                       → string { get; init; }
+    .Name                                                                         → string { get; init; }
+    .ArgumentsJson                                                                → string { get; init; }
+
+ToolCallResult   (sealed record)
+    .CallId                                                                       → string { get; init; }
+    .ResultJson                                                                   → string { get; init; }
+    .ToMessage()                                                                → ChatMessage   (Role = Tool, Name = CallId, Content = ResultJson — convenience only)
+
+CompletionFinishReason   (enum)
+    Stop = 0, MaxTokensReached = 1, ToolCallsRequested = 2, ContentFiltered = 3
+
+CompletionRequest   (sealed record)
+    .Messages                                                    → IReadOnlyList<ChatMessage> { get; init; }
+    .ModelId                                                                     → string? { get; init; }   (default null → provider default)
+    .Temperature                                                                → float? { get; init; }   (default null → provider default)
+    .MaxOutputTokens                                                              → int? { get; init; }   (default null → provider default)
+    .Tools                                                     → IReadOnlyList<ToolDefinition> { get; init; }   (default [])
+    .StopSequences                                                    → IReadOnlyList<string> { get; init; }   (default [])
+
+CompletionResult   (sealed record)
+    .Message                                                                → ChatMessage { get; init; }
+    .ModelId                                                                       → string { get; init; }
+    .TokenUsage                                                              → TokenUsage { get; init; }
+    .FinishReason                                                    → CompletionFinishReason { get; init; }
+    .ToolCalls                                              → IReadOnlyList<ToolCallRequest> { get; init; }   (default [])
+
+CompletionChunk   (sealed record)
+    .DeltaContent                                                                → string { get; init; }
+    .FinishReason                                                     → CompletionFinishReason? { get; init; }   (null until the final chunk)
+    .TokenUsage                                                                → TokenUsage? { get; init; }   (null until the final chunk)
+
+ISemanticKernel
+    .CompleteAsync(CompletionRequest request, ct)                       → Task<Result<CompletionResult>>
+    .CompleteStreamingAsync(CompletionRequest request,
+                            [EnumeratorCancellation] ct)                → IAsyncEnumerable<CompletionChunk>
+
+    NOTE (TOOL EXECUTION IS NEVER PERFORMED BY THIS CONTRACT — THE STATELESSNESS BOUNDARY THE PHASE
+          BRIEF REQUIRES): there is no InvokeToolAsync member and no agent/planner loop anywhere on
+          ISemanticKernel. When FinishReason == ToolCallsRequested, the CALLER executes each
+          ToolCallRequest against its own business logic, builds a ToolCallResult, appends
+          .ToMessage() to the growing Messages list, and issues a follow-up CompleteAsync call. Tool
+          execution is arbitrary consumer-owned business logic — invoking it from this layer would
+          require exactly the kind of reflection-driven dynamic dispatch (or a domain-logic reference)
+          this package must never take. This is the direct implementation of the phase brief's "bounded
+          so it does not leak stateful multi-step orchestration into what must remain a stateless
+          capability package" requirement, and mirrors 09.Search's "no IIndexRebuilder" reasoning: the
+          contract makes the multi-turn NEED visible (ToolCallsRequested + ToolCalls) without owning
+          the loop.
+
+    NOTE (CompleteStreamingAsync IS NOT Result-WRAPPED — Domain Invariant #7): mid-stream faults
+          surface as IntelligenceStreamException from MoveNextAsync. TokenUsage is null on every chunk
+          except the final one, since most providers report usage only once the stream completes — a
+          consumer wanting live-accumulated usage sums PromptTokens/CompletionTokens itself if the
+          provider streams partial counts (documented per-provider, not guaranteed neutrally).
+
+    NOTE (NO RETRY MEMBER ANYWHERE ON THIS INTERFACE — Domain Invariant #5): a retry re-bills and
+          re-rolls a non-deterministic output. If a provider package offers retry at all, it is an
+          explicit, bounded, opt-in DI builder call (e.g. SharedKernel.AI.SemanticKernel's
+          `.WithBoundedRetry(...)`), never automatic and never reachable through this interface itself.
+
+    NOTE (NO CACHING MEMBER ANYWHERE ON THIS INTERFACE — Domain Invariant #4): CompleteAsync always
+          dispatches a fresh call. A caller wanting a cached completion built a cache themselves at
+          their own layer with their own explicit opt-in — this package must never silently serve a
+          stale completion the caller did not ask for, and 10.Intelligence may not reference
+          02.Caching in any case.
+
+ICompletionProviderDescriptor   (singleton, zero I/O — the orchestration-side sibling of
+                                 IVectorProviderDescriptor; kept as a SEPARATE interface because a
+                                 vector engine's "max batch size, max dimension, filter depth" and an
+                                 LLM's "context window, max output tokens" share no members that both
+                                 would honestly implement — forcing them onto one type would itself be
+                                 a seam-rule violation)
+    .ProviderName                                                                  → string { get; }
+    .ContextWindowTokens                                                            → int { get; }
+    .MaxOutputTokens                                                                 → int { get; }
+    .ValidateContextWindow(int estimatedTokens)                                    → Result
+
+    NOTE (ValidateContextWindow IS THE PRE-DISPATCH GUARD — Domain Invariant #5): a zero-I/O check a
+          caller can invoke ahead of a CompleteAsync call, and which the adapter also invokes
+          internally before dispatch wherever it can cheaply estimate token count. Returns
+          IntelligenceErrors.ContextWindowExceeded(limit, actual) — never a thrown exception, never a
+          silent truncation of the caller's messages.
+
+    NOTE (NO SupportsStreaming OR SIMILAR BOOLEAN): a capability boolean whose only purpose is an
+          `if (descriptor.X)` branch at a call site is the same runtime-capability-flag violation the
+          vector side rejects. CompleteStreamingAsync exists on ISemanticKernel only because it is
+          genuinely, faithfully implementable by every provider this domain ships against.
+```
+
+### Well-known constants (`Constants/`)
+
+```text
+IntelligenceWellKnown   (public static class — SK0022 named-constant holder)
+    DefaultQueryLimit           const int    = 10
+    MaxQueryLimit                const int    = 1000
+    ActivitySourceName            const string = "SharedKernel.AI"
+    MeterName                       const string = "SharedKernel.AI"
+    QdrantProviderName                 const string = "qdrant"
+    MilvusProviderName                    const string = "milvus"
+    SemanticKernelProviderName               const string = "semantickernel"
+    ProviderTagName                             const string = "ai.provider"
+    CollectionTagName                              const string = "ai.collection"
+    ModelTagName                                      const string = "ai.model"
+
+    NOTE: mirrors SearchWellKnown's placement rationale exactly — lives in .Abstractions specifically
+          so all three sibling providers read the BYTE-IDENTICAL ActivitySource/Meter name and OTel tag
+          keys, which is the entire reason 13.ServiceDefaults can wire one string name and cover all
+          three providers with no ProjectReference to 10.Intelligence. The ActivitySource/Meter
+          INSTANCES are created per-provider; only the names live here.
+```
+
+### Errors (`Errors/`)
+
+```text
+IntelligenceErrors   (public static class — canonical Error factory; provider implementations return
+                      these and never construct ad-hoc Error values inline)
+
+    — Error.NotFound —
+    .CollectionNotFound(collectionName)                            "intelligence.collection_not_found"
+    .RecordNotFound(collectionName, recordId)                      "intelligence.record_not_found"
+    .ModelNotFound(modelId)                                        "intelligence.model_not_found"
+
+    — Error.Validation —
+    .InvalidQuery(reason)                                          "intelligence.invalid_query"
+    .InvalidFilter(reason)                                         "intelligence.invalid_filter"
+    .InvalidCollectionDefinition(reason)                    "intelligence.invalid_collection_definition"
+    .InvalidRecordId(recordId)                                     "intelligence.invalid_record_id"
+    .FieldNotFilterable(collectionName, field)                     "intelligence.field_not_filterable"
+    .EmbeddingModelMismatch(collectionName, expected, actual)  "intelligence.embedding_model_mismatch"
+    .DimensionMismatch(collectionName, expected, actual)           "intelligence.dimension_mismatch"
+    .DistanceMetricMismatch(collectionName, expected, actual) "intelligence.distance_metric_mismatch"
+    .BatchSizeExceeded(requested, ceiling, providerName)           "intelligence.batch_size_exceeded"
+    .FilterDepthExceeded(requested, ceiling)                       "intelligence.filter_depth_exceeded"
+    .ContextWindowExceeded(limit, actual)                        "intelligence.context_window_exceeded"
+    .UnsupportedCapability(capability, providerName)            "intelligence.unsupported_capability"
+
+    — Error.Conflict —
+    .CollectionAlreadyExists(collectionName)                 "intelligence.collection_already_exists"
+    .CollectionDefinitionConflict(collectionName, field) "intelligence.collection_definition_conflict"
+    .CutoverFailed(stagingCollectionName, liveCollectionName, reason) "intelligence.cutover_failed"
+    .SchemaFingerprintMismatch(collectionName, expected, actual)
+                                                          "intelligence.schema_fingerprint_mismatch"
+
+    — Error.Unauthorized —
+    .Unauthorized(collectionName, operation)                       "intelligence.unauthorized"
+    .TenantScopeMissing(collectionName)                       "intelligence.tenant_scope_missing"
+
+    — Error.Unexpected —
+    .Unreachable(providerName, endpoint)                           "intelligence.unreachable"
+    .Timeout(operation, elapsed)                                   "intelligence.timeout"
+    .WriteRejected(collectionName, reason)                         "intelligence.write_rejected"
+    .WriteTimeout(collectionName, elapsed)                         "intelligence.write_timeout"
+    .BulkPartiallyFailed(failedCount, totalCount)              "intelligence.bulk_partially_failed"
+    .ProbeFailed(collectionName, reason)                           "intelligence.probe_failed"
+    .EngineVersionUnsupported(actual, supportedRange)     "intelligence.engine_version_unsupported"
+    .EngineFault(providerName, operation, detail)                  "intelligence.engine_fault"
+    .RateLimited(providerName, retryAfter)                         "intelligence.rate_limited"
+    .CompletionFailed(providerName, reason)                        "intelligence.completion_failed"
+
+    NOTE (ONLY THE SIX REAL Error FACTORIES ARE USED): SharedKernel.Primitives' Error exposes exactly
+          Unexpected, Validation, NotFound, Conflict, Unauthorized, and BusinessRule — each
+          (string code, string message) — plus the Error.None sentinel. There is NO Error.Failure, no
+          Error.Forbidden. Every code literal is a private const string on the holder class — never
+          retyped at a call site (SK0022).
+
+    NOTE (Error.BusinessRule IS USED ZERO TIMES): per ErrorType's own XML doc it maps to HTTP 422 and
+          denotes a DOMAIN-RULE violation; nothing in a capability package is a domain rule.
+          EmbeddingModelMismatch/DimensionMismatch/DistanceMetricMismatch/ContextWindowExceeded are
+          Validation — the failing input is the caller's own record/query shape. TenantScopeMissing is
+          Unauthorized — an isolation failure, and 401/403 is the honest boundary status.
+
+    NOTE (Error.None IS NEVER RETURNED from any method in this domain).
+
+    NOTE (RateLimited AND CompletionFailed ARE ORCHESTRATION-SIDE, EngineFault IS THE SHARED LAST-
+          RESORT MAPPING): a rise in EngineFault is the signal a translator has drifted from a
+          provider's current API surface, mirroring 09.Search's identical NOTE.
+```
+
+### Streaming exception (`Exceptions/`)
+
+```text
+IntelligenceStreamException   (sealed exception, derives directly from System.Exception)
+    .Error                                                                       → Error { get; }
+
+    NOTE: thrown from IVectorCollection<TRecord>.ScrollAsync and ISemanticKernel.CompleteStreamingAsync
+          — the only two non-Result surfaces in the domain. Constructed only from a
+          SharedKernel.Primitives Error (plus an optional inner Exception overload), never from a bare
+          string (SK0003/SK0005). Derives directly from System.Exception for the identical reason
+          SearchStreamException does — SharedKernel.Primitives ships no exception base at all, and the
+          only Error-carrying exception hierarchy in the platform lives in SharedKernel.Core, a package
+          this domain's locked reference set (SharedKernel.Primitives + SharedKernel.Contracts, if
+          justified) does not include.
+```
 
 ---
 
@@ -139,40 +904,44 @@ Each of these must be checked against the seam rule before it lands in `.Abstrac
 
 ### The seam rule (the whole design in one line)
 
-**`SharedKernel.AI.Abstractions` contains no type that a candidate provider cannot implement completely and correctly.** If implementing a member would require one adapter to throw, degrade, approximate, or no-op, that member does not belong in `.Abstractions` — it becomes a provider-package-declared exclusive contract, or it is declined. The collection-definition type is the surface to guard hardest: every future "just one more knob" request (index type, quantization profile, consistency level, partition strategy) is a claim about one engine that is usually a lie about the other.
+**`SharedKernel.AI.Abstractions` contains no type that a candidate provider cannot implement completely and correctly.** If implementing a member would require one adapter to throw, degrade, approximate, or no-op, that member does not belong in `.Abstractions` — it becomes a provider-package-declared exclusive contract, or it is declined. `VectorCollectionDefinition` / `VectorFieldDefinition` are the surfaces to guard hardest: every future "just one more knob" request (index type, quantization profile, **consistency level** — already rejected once, see the write-surface NOTE above — partition strategy) is a claim about one engine that is usually a lie about the other.
 
 ### Hard violations (never do these)
 
-- `SharedKernel.AI.Abstractions` taking a `PackageReference` that has not been explicitly adjudicated and recorded in this file. The default is **zero** — `SharedKernel.Primitives` and, if genuinely needed, `SharedKernel.Contracts` as `ProjectReference`s only. A model SDK, a vector-DB client, or a `Microsoft.Extensions.*` package here is a hard violation. (`System.Text.Json`, `System.Security.Cryptography`, and `System.Numerics.Tensors` are in-box on `net10.0` and add no dependency.)
-- Sibling provider packages referencing each other, in either direction, at project or type level.
-- Either provider package exposing a type from the other provider's SDK on its public surface.
+- `SharedKernel.AI.Abstractions` taking a `PackageReference` that has not been explicitly adjudicated and recorded in this file. The default is **zero** — `SharedKernel.Primitives` and, if genuinely needed, `SharedKernel.Contracts` as `ProjectReference`s only. `Microsoft.Extensions.AI.Abstractions` was explicitly adjudicated and **declined** — see Packages. (`System.Text.Json`, `System.Security.Cryptography`, and `System.Numerics.Tensors` are in-box on `net10.0` and add no dependency.)
+- Sibling provider packages (`SharedKernel.AI.Qdrant`, `.Milvus`, `.SemanticKernel`) referencing each other, in either direction, at project or type level.
+- Any provider package exposing a type from another provider's SDK, or from a sibling provider's own SDK, on its public surface.
 - Referencing `03.Domain`, `05.Application`, `06.Persistence`, `07.Messaging`, `09.Search`, `12.Security`, or any capability domain beyond `01.Core` and `04.Contracts` from any `10.Intelligence` package.
 - Declaring a provider-exclusive contract in `.Abstractions` — provider-package placement is what turns a swap into a compile error rather than a startup resolution error.
-- Injecting a raw model SDK or vector-DB client type (`QdrantClient`, `Kernel`, an `OpenAIClient`, …) into application code, or exposing one from an abstraction member. Raw-client access, if offered at all, follows the `09.Search` three-gate pattern: opt-in builder call, startup `Warning`, and a governance architecture test — and its XML doc must state **in capitals** that the hatch bypasses tenant scoping.
-- **Writing or querying a vector whose model identity, dimension, or distance metric does not match the collection's declaration**, or accepting the write and letting the engine sort it out. Reject before any I/O.
-- Making tenant scope optional, nullable, defaulted, or a member of a request object; or routing a tenant predicate through the caller-supplied filter.
+- Injecting a raw model SDK or vector-DB client type (`QdrantClient`, `MilvusClient`, `Kernel`, an `OpenAIClient`, …) into application code, or exposing one from an abstraction member. Raw-client access, if offered at all, follows the `09.Search` three-gate pattern: opt-in builder call, startup `Warning`, and a governance architecture test — and its XML doc must state **in capitals** that the hatch bypasses tenant scoping.
+- **Writing or querying a vector whose model identity, dimension, or distance metric does not match the collection's declaration**, or accepting the write/query and letting the engine sort it out. Reject before any I/O.
+- Making `TenantScope` optional, nullable, defaulted, or a member of `VectorQuery`/any request object; or routing a tenant predicate through the caller-supplied `VectorFilter`.
 - **Silently degrading, dropping, coercing, or post-filtering in memory** any clause the engine cannot express. Every rejection is a `Result` failure returned before any I/O.
-- A runtime capability-flag check (`if (caps.HasFlag(...))`) at an application call site as the mechanism for provider differences. Degradation in retrieval is silent wrongness, not a downgraded UX.
-- Exposing a raw relevance/similarity score in a way that invites cross-provider comparison, thresholding, or persistence, without documenting on the member itself that the scale is provider- **and** metric-specific and not portable. (`09.Search` banned `Score` outright for exactly this reason; whether this domain can, given that a similarity score is often genuinely load-bearing for a caller, is a real Design decision — but an undocumented bare `float` is not an option.)
-- Logging prompt text, completion text, retrieved chunk text, raw vectors, or any credential.
-- Silently retrying a completion. Retries re-bill and re-roll a non-deterministic output; they are explicit, bounded, and never applied to a non-idempotent call by default.
-- Wrapping a streaming member in `Result`.
+- A runtime capability-flag check (`if (caps.HasFlag(...))`) at an application call site as the mechanism for provider differences.
+- Adding a `WriteConsistency`/consistency-level parameter to any write member, or any other collection-definition knob that is honest on one engine and not the other, without first proving both engines genuinely support it (see the write-surface and `VectorFieldDefinition` NOTEs).
+- Exposing `VectorHit.Score` / `VectorQuery.MinScore` without the provider-and-metric-specific documentation already locked on those members.
+- Logging prompt text, completion text, retrieved `Metadata` values, raw vectors, or any credential.
+- Adding a `Retry`-shaped member to `.Abstractions`, or silently retrying a completion in any provider by default. Retries re-bill and re-roll a non-deterministic output; they are explicit, bounded, opt-in, and never applied to a non-idempotent call by default.
+- Adding a caching member or silent cache-serve path to `ISemanticKernel` or any provider's completion path. `10.Intelligence` may not reference `02.Caching` in any case.
+- Adding an `InvokeToolAsync` or agent/planner-loop member to `ISemanticKernel` — tool execution is always consumer-owned.
+- Wrapping a streaming member (`ScrollAsync`, `CompleteStreamingAsync`) in `Result`.
 - Implementing `IHealthCheck`, or referencing `Microsoft.Extensions.Diagnostics.HealthChecks`, anywhere in `10.Intelligence`.
-- Constructing an ad-hoc `Error` inline instead of routing through this domain's static error factories. Naming a non-existent factory (`Error.Failure`, `Error.Forbidden`) or returning `Error.None` are both violations, and `Error.BusinessRule` (HTTP 422, a domain-rule violation) is not used anywhere in a capability package.
+- Constructing an ad-hoc `Error` inline instead of routing through `IntelligenceErrors`. Naming a non-existent factory (`Error.Failure`, `Error.Forbidden`) or returning `Error.None` are both violations, and `Error.BusinessRule` is not used anywhere in this domain.
 - Bare string literals for config section paths (`SK0022` — always a `public const string SectionName` on the options type), model identifiers, collection/field names, or OTel tag keys.
-- Injecting raw `HttpClient` or calling `new HttpClient()` (`P-159`/`SK0013`) — provider clients are built from a named `IHttpClientFactory` client where the SDK permits it.
-- `Activator.CreateInstance`, `Assembly.Load`, `Type.GetProperty`/`GetMethod`, `MakeGenericMethod`/`MakeGenericType`, or `dynamic` in this domain's own code. Note `MakeGenericType` is **invisible to `SK0012`**, which matches `MakeGenericMethod` only — that gap is held by review, not by the analyzer.
+- Injecting raw `HttpClient` or calling `new HttpClient()` (`P-159`/`SK0013`).
+- `Activator.CreateInstance`, `Assembly.Load`, `Type.GetProperty`/`GetMethod`, `MakeGenericMethod`/`MakeGenericType`, or `dynamic` in this domain's own code. Note `MakeGenericType` is **invisible to `SK0012`**, which matches `MakeGenericMethod` only — that gap is held by review, not by the analyzer. (This does not restrict `Microsoft.SemanticKernel`'s own internal reflection use, which is isolated inside `SharedKernel.AI.SemanticKernel` and never surfaced.)
 - Any static mutable state.
-- Registering two providers against the same collection/record type — the second unkeyed registration silently wins and the first becomes unreachable, and the collision extends to any non-generic singleton the providers share (confirmed against real compiled code in `09.Search`).
-- Adding `<IsAotCompatible>true</IsAotCompatible>` to any `10.Intelligence` `.csproj` — per root policy the tag is too coarse-grained.
+- Registering two providers against the same collection/record type (`TRecord`) — the second unkeyed registration silently wins.
+- Adding `<IsAotCompatible>true</IsAotCompatible>` to any `10.Intelligence` `.csproj`.
 
 ### Cross-domain work this design will require
 
 Record these as downstream obligations in the state-map's Cross-Domain Dependencies table; **never plan or perform them inside this domain**.
 
-- **`13.ServiceDefaults`** — a vector-store readiness health check adapter plus `HealthCheckNames`/`HealthCheckTags` constants (verified 2026-07-21: neither holds an intelligence/vector entry today), and a telemetry extension doing string-name-only `AddSource`/`AddMeter` wiring against a `private const string` on the extension class, byte-identical by convention to this domain's own well-known constant — `13.ServiceDefaults` deliberately takes no `ProjectReference` to a capability domain.
-- **`16.Testing`** — container fixtures for whichever vector databases are chosen, in `Containers/` (verified 2026-07-21: it holds six fixtures — PostgreSQL, Redis, RabbitMQ, MinIO, Meilisearch, Elasticsearch — and none for a vector database), plus in-memory doubles for this domain's abstractions in a new folder, mirroring the shipped `Search/`, `Storage/`, and `Messaging/` double sets.
-- **`00.Governance`** — an `IntelligenceTopologyRules` NetArchTest suite modelled on `StorageTopologyRules`/`SearchTopologyRules`, a `SharedKernelLayeringRules` method asserting `10.Intelligence` references only `01.Core` and `04.Contracts`, and any new `SK00xx` analyzer this domain needs (raw-SDK-type injection, raw model-id literal). Take the **next sequential IDs** — `SK0023` is the highest implemented on disk today and `09.Search` has `SK0024`/`SK0025` planned-but-unimplemented, so verify the real highest allocated ID before claiming one, and do **not** open a per-domain `10xx` block (the `SK0023` precedent explicitly declined to open an `08xx` block).
+- **Root brain (`/sync-brain`)** — Folder Map row 10 must change from "`ISemanticKernel`, `IEmbeddingGenerator` abstractions, Qdrant / Milvus vector db, LLM orchestration" (unchanged in substance, names now confirmed) to explicitly note the three-provider split; the Abstractions table row must change from `SharedKernel.AI.Abstractions` → `.VectorDb` to `SharedKernel.AI.Abstractions` → `.Qdrant`, `.Milvus`, `.SemanticKernel` (three implementors, not one); a "What Goes Where" row set should be added for embedding generation, vector collection read/write/provisioning, tenant-scoped vector queries, and LLM orchestration, mirroring the `09.Search` WO-044 row set exactly. This agent records the obligation; it does not edit the root brain.
+- **`13.ServiceDefaults`** — a vector-collection readiness health check adapter plus `HealthCheckNames`/`HealthCheckTags` constants (neither holds an intelligence/vector entry today), and a telemetry extension doing string-name-only `AddSource`/`AddMeter` wiring against `IntelligenceWellKnown`'s constant values by convention (no `ProjectReference` to `10.Intelligence`).
+- **`16.Testing`** — container fixtures for Qdrant and Milvus in `Containers/` (verify `Testcontainers.Qdrant`/`.Milvus` exist on nuget.org before assuming; `09.Search` found `Testcontainers.Meilisearch` does not exist at all), plus in-memory doubles for `IEmbeddingGenerator`, `IVectorCollection<TRecord>`, and `ISemanticKernel` in a new folder mirroring the shipped `Search/`, `Storage/`, and `Messaging/` double sets.
+- **`00.Governance`** — an `IntelligenceTopologyRules` NetArchTest suite modelled on `StorageTopologyRules`/`SearchTopologyRules`, a `SharedKernelLayeringRules` method asserting `10.Intelligence` references only `01.Core` and `04.Contracts`, and any new `SK00xx` analyzer this domain needs. Verify the real highest allocated `SK0xxx` ID before claiming one — do not assume `SK0023` is still current.
 
 ---
 
@@ -180,38 +949,40 @@ Record these as downstream obligations in the state-map's Cross-Domain Dependenc
 
 `SharedKernel.AI.Abstractions` ships **no DI extensions** — it is a pure abstraction library. All registration lives in the provider packages, behind an `AddSharedKernel{Provider}...(IServiceCollection, IConfiguration)` entry point returning a fluent builder terminated by `.Build()`, matching `08.Storage` and `09.Search`.
 
-Rules that already apply, ahead of the concrete shape being designed:
-
-- Engine/model clients are **singletons** (they are thread-safe and pool their own connections); per-collection and per-request services are **scoped**.
-- **A type whose constructor takes a raw `TOptions` (not `IOptions<TOptions>`) must be registered through an explicit factory unwrapping `sp.GetRequiredService<IOptions<TOptions>>().Value`.** `AddValidatedOptions` only ever registers `IOptions<TOptions>`, never the unwrapped type — registering such a type via the plain `AddSingleton<TInterface, TImplementation>()` shorthand fails to resolve in **every** consuming service, not just tests. This was a real, shipped `09.Search` Core-phase defect; do not rediscover it.
-- These extensions do **not** self-register `ILogger<T>` or `IClock` — that is uniformly the consuming host's responsibility platform-wide. A DI-only test must register `services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>))` and a clock itself, or resolution throws.
+- **Vector providers** (`AddSharedKernelQdrant()`, `AddSharedKernelMilvus()`): `.AddCollection<TRecord>(collectionName, configure)` registers one `IVectorCollection<TRecord>` per `TRecord`; `IVectorCollectionProvisioner` and `IVectorProviderDescriptor` register once per provider (non-generic, singleton).
+- **Orchestration provider** (`AddSharedKernelSemanticKernel()`): registers `IEmbeddingGenerator`, `ISemanticKernel`, `ICompletionProviderDescriptor`, all singleton or scoped per the rule below.
+- Engine/model clients are **singletons** (thread-safe, pool their own connections); per-collection and per-request services are **scoped**.
+- **A type whose constructor takes a raw `TOptions` (not `IOptions<TOptions>`) must be registered through an explicit factory unwrapping `sp.GetRequiredService<IOptions<TOptions>>().Value`.** `AddValidatedOptions` only ever registers `IOptions<TOptions>` — this was a real, shipped `09.Search` Core-phase defect; do not rediscover it.
+- These extensions do **not** self-register `ILogger<T>` or `IClock` — uniformly the consuming host's responsibility platform-wide.
 - Misconfiguration fails at `IHost.StartAsync()` via `AddValidatedOptions`' `ValidateOnStart`, naming the missing property — never a silent default, never a first-call failure.
 
 ---
 
 ## AOT Compatibility
 
-- Interfaces and `sealed record` / `readonly record struct` models over BCL primitives are AOT-safe by construction, and the abstraction package should stay that way.
-- Vector payloads are `ReadOnlyMemory<float>` / `float[]`-shaped over BCL types — no boxing, no `object`, no `dynamic`. `System.Numerics.Tensors` is in-box on `net10.0` if vector math is needed.
-- **`Microsoft.SemanticKernel` is expected to be a documented non-AOT-safe dependency** — its function-calling and plugin model is reflection-driven by design. That is exactly the "non-AOT-safe third party placed behind an abstraction" case the root brain's AOT guidance sanctions: encapsulating it limits the blast radius to the registration and adapter path. Verify and record its actual posture at Design time rather than repeating this assumption.
-- `Qdrant.Client` is gRPC/protobuf-based; source-generated protobuf is generally trim-friendly. Verify against the real package rather than assuming.
-- Any JSON serialization on a hot path prefers an STJ source-generated `JsonSerializerContext` over runtime reflection, and any SDK that exposes no serializer seam must have that limitation recorded here (the `MeiliSearch` `internal JsonSerializerOptions` finding is the precedent).
+- Interfaces and `sealed record` / `readonly record struct` models over BCL primitives are AOT-safe by construction, and `SharedKernel.AI.Abstractions` stays that way.
+- `IVectorRecord.Vector` / `VectorQuery.Vector` are `ReadOnlyMemory<float>`-shaped over BCL types — no boxing, no `object`, no `dynamic`. `System.Numerics.Tensors` is in-box on `net10.0` if vector math is ever needed.
+- **`Microsoft.SemanticKernel` is a documented non-AOT-safe dependency** — its function-calling and plugin model is reflection-driven by design. Encapsulating it inside `SharedKernel.AI.SemanticKernel` limits the blast radius to that package's registration and adapter path, exactly the "non-AOT-safe third party placed behind an abstraction" case the root brain's AOT guidance sanctions. `ToolDefinition.ParametersJsonSchema` being a plain string (not a reflected `Type`) on the neutral contract is what keeps that reflection fully contained.
+- `Qdrant.Client` is gRPC/protobuf-based; source-generated protobuf is generally trim-friendly. Verify against the real package at Scaffold rather than assuming.
+- `Milvus.Client`'s AOT posture is unverified pending the P-281 maintenance-status check.
+- Any JSON serialization on a hot path prefers an STJ source-generated `JsonSerializerContext` over runtime reflection; any SDK exposing no serializer seam must have that limitation recorded here (the `MeiliSearch` `internal JsonSerializerOptions` finding is the precedent to check for on both vector clients).
 - No `<IsAotCompatible>true</IsAotCompatible>` on any `.csproj` in this domain, per root policy.
 
 ---
 
 ## Test Rules
 
-- Unit tests for each package live in its own nested `*.Tests` folder. The stray domain-root `SharedKernel.AI.Tests` project must be re-homed or justified (see Packages).
-- **Never assert on model-generated text.** A test that pins a completion's wording is a test that fails on the vendor's next model revision through no fault of this code. Assert on: contract shape, `Result` success/failure and `Error` code, token-usage accounting, streaming chunk assembly and cancellation, retry/timeout behaviour, filter translation, tenant-scope injection, and every rejection path.
-- **Never call a paid or live model endpoint from the default test suite.** A live-model test, if one exists at all, is opt-in, environment-variable-gated, and excluded from CI by default. The default embedding double is deterministic (a hash-derived vector of the declared dimension) so vector tests need neither a model nor a network.
-- **Vector-database behavioural coverage runs against a real container** via `16.Testing`, never a mocked client — filter translation and tenant scoping are only observable against the real engine. Fixtures live in `16.Testing/SharedKernel.Testing/Containers/`; **never hand-roll a competing container setup inside a `.Tests` project**. Consume them per test collection via a `[CollectionDefinition]` + `ICollectionFixture<T>` pair with a `const string Name`, never a retyped literal at each `[Collection(...)]` site.
-- **Fail-loud tests are mandatory**: for every rejection path — dimension mismatch, model-identity mismatch, metric mismatch, filter on an undeclared field, missing tenant scope on a tenant-declaring collection, over-ceiling batch size, context-window overflow — assert both that the correct `Error` is returned **and that no I/O occurred**. A test asserting only the error passes against an implementation that silently degrades and then reports. The `09.Search` no-I/O proof technique applies where the SDK ships no substitutable interface: construct the adapter with a `null!` client, since a clean rejection rather than a `NullReferenceException` is structural proof no call was attempted — and pair it with a companion test that satisfies the guard and asserts the `NullReferenceException` **is** thrown, proving the guard itself is what stopped the I/O.
+- Unit tests for each package live in its own nested `*.Tests` folder. `SharedKernel.AI.Abstractions.Tests` is genuinely absent on disk today and is created fresh at Scaffold (re-homing the stray domain-root `SharedKernel.AI.Tests` into it).
+- **Never assert on model-generated text.** A test that pins a completion's wording fails on the vendor's next model revision through no fault of this code. Assert on: contract shape, `Result` success/failure and `Error` code, token-usage accounting, streaming chunk assembly and cancellation, filter translation, tenant-scope injection, model-identity/dimension/metric mismatch rejection, and context-window-overflow detection.
+- **Never call a paid or live model endpoint from the default test suite.** A live-model test, if one exists at all, is opt-in, environment-variable-gated, and excluded from CI by default. The default `IEmbeddingGenerator` test double is deterministic (a hash-derived vector of the declared dimension) so vector-collection tests need neither a model nor a network.
+- **Vector-database behavioural coverage runs against a real container** via `16.Testing`, never a mocked client — filter translation and tenant scoping are only observable against the real engine. Fixtures live in `16.Testing/SharedKernel.Testing/Containers/`; never hand-roll a competing container setup inside a `.Tests` project.
+- **Fail-loud tests are mandatory**: for every rejection path — dimension mismatch, model-identity mismatch, metric mismatch, filter on an undeclared field, missing tenant scope on a tenant-declaring collection, over-ceiling batch size, context-window overflow — assert both that the correct `Error` is returned **and that no I/O occurred**. Construct the adapter with a `null!` client where the SDK ships no substitutable interface, since a clean rejection rather than a `NullReferenceException` is structural proof no call was attempted, paired with a companion test proving the guard is what stopped the I/O (the `09.Search` no-I/O proof technique).
 - **Sanctioned mocking exception**: provider status-code → `Error` mapping assertions (404/401/403/409/429/5xx) may substitute the client via `NSubstitute`. Behavioural, round-trip, and cross-provider conformance coverage is never mocked.
-- If two vector providers ship, they run **the same behavioural conformance suite** over the same fixed corpus and must produce identical result sets. The interface makes adding a member a compile error on both; only a shared suite makes semantic drift visible.
-- Options-validation and DI-registration tests need no container: valid config registers; a missing required field fails at startup naming the property; provider-exclusive contracts resolve **only** from their own provider's builder; gated accessors do not resolve unless the opt-in was called.
-- Each provider's test project carries a sibling-independence check for `using SharedKernel.AI.{OtherProvider}` — matched against `using`-directive **lines** (trimmed prefix), never a whole-file substring search, which false-positives on the test's own XML-doc prose. Authoritative enforcement is `00.Governance`'s topology rules.
-- `InternalsVisibleTo` from each provider package to its own nested `.Tests` project keeps filter translators, request validators, and descriptors `internal` while remaining directly unit-testable — the `06.Persistence.EfCore` / `13.ServiceDefaults` / `15.Integration.Webhooks` / `09.Search` precedent.
+- **Qdrant and Milvus run the same behavioural conformance suite** over the same fixed corpus and must produce identical result sets (record identity, count, filter matches — not `Score`, which is explicitly non-portable across providers per its own contract note). The interface makes adding a member a compile error on both; only a shared suite makes semantic drift visible.
+- Options-validation and DI-registration tests need no container: valid config registers; a missing required field fails at startup naming the property; provider-exclusive contracts resolve **only** from their own provider's builder; gated raw-client accessors do not resolve unless the opt-in was called.
+- Each provider's test project carries a sibling-independence check for `using SharedKernel.AI.{OtherProvider}` — matched against `using`-directive **lines** (trimmed prefix), never a whole-file substring search. Authoritative enforcement is `00.Governance`'s topology rules.
+- `InternalsVisibleTo` from each provider package to its own nested `.Tests` project keeps filter translators, request validators, and descriptors `internal` while remaining directly unit-testable.
+- `ISemanticKernel` tests assert token-usage accounting, `FinishReason` mapping, tool-call round-tripping (constructing a `ToolCallResult` and confirming `.ToMessage()` shape), streaming chunk assembly/cancellation, and `ContextWindowExceeded` rejection — never on generated wording, per the rule above.
 
 ---
 
@@ -219,4 +990,5 @@ Rules that already apply, ahead of the concrete shape being designed:
 
 > Maintained by the intelligence domain agent. One line per significant change.
 
-- [2026-07-21] Domain brain initialized as a **pre-Design** reference — on-disk package inventory (four bare placeholder `.csproj` files, all registered in `Platform.SharedKernel.slnx`, zero `.cs` content) recorded verbatim including the non-conventional domain-root `SharedKernel.AI.Tests` project; the `.VectorDb` single-package-vs-multi-provider-split tension against the root brain's own naming convention raised as an explicit open Design decision with three candidate shapes and no pre-decision; candidate technology stack listed with **every version explicitly unpinned and unverified** (`Microsoft.Extensions.AI.Abstractions` adoption-vs-redeclaration flagged as the highest-leverage Design call; `Milvus.Client` maintenance status flagged for verification against the `NEST` EOL precedent; `Testcontainers.Qdrant`/`.Milvus` existence flagged for verification against the `Testcontainers.Meilisearch`-does-not-exist finding); eight binding Domain Invariants recorded — embedding model identity binding (the domain's sharpest edge, and undetectable by any engine), distance-metric declaration, mandatory non-defaulted tenant scope, non-determinism as a contract property, first-class token/cost accounting with no silent retries, prompt/completion content as untrusted-sensitive-and-never-logged, non-`Result`-wrapped streaming per the P-149/P-265 precedent, and probe-primitive-not-`IHealthCheck`; hard-violation list, DI rules (including the `IOptions<TOptions>` unwrapping defect `09.Search` shipped and fixed), AOT posture, and test rules (no assertions on generated text; no live paid endpoint in the default suite; real containers for vector-DB behaviour) carried across from the `06.Persistence`/`08.Storage`/`09.Search` precedents. `EventId` range 10000–10999 confirmed present in `01.Core`'s `LoggingEventIdRanges.Intelligence`. Interface Contracts section deliberately left as an explicitly-unratified placeholder — `SK.10.Design` owns locking it (root, user request)
+- [2026-07-21] Domain brain initialized as a **pre-Design** reference — on-disk package inventory recorded verbatim, package-split question and `Microsoft.Extensions.AI.Abstractions` adoption question both raised as open Design decisions, eight binding Domain Invariants recorded, hard-violation list / DI rules / AOT posture / test rules carried across from `06.Persistence`/`08.Storage`/`09.Search` precedents. Interface Contracts left as an explicitly-unratified placeholder (root, user request)
+- [2026-07-21] **WO-045 / P-279 — `SharedKernel.AI.Abstractions` contract RATIFIED.** Both open Design decisions settled and recorded: package split is **Shape C** (`SharedKernel.AI.Abstractions` + sibling `.Qdrant`/`.Milvus`/`.SemanticKernel`, matching the `08.Storage`/`09.Search` sibling-provider precedent — Shape B's `.{Provider}.{Role}` pattern was rejected as reserved for one technology serving multiple roles, not two technologies serving one role); `Microsoft.Extensions.AI.Abstractions` adoption **declined** for `.Abstractions` (zero third-party `PackageReference`, matching every prior `.Abstractions` package in the repo; provider packages remain free to adopt it internally). Full ratified interface surface written: `IVectorRecord`/`VectorValue` (structural twin of `09.Search`'s `ISearchDocument`/`SearchValue`), `IEmbeddingGenerator` (deliberately non-generic, text-only — the one deviation from `Microsoft.Extensions.AI`'s shape), `IVectorCollection<TRecord>` write/read/provisioning surface with the **no `WriteConsistency`/consistency-level knob** decision recorded as the domain's sharpest "one more knob" rejection (`WaitUntilQueryableAsync` is the honest separate-barrier substitute, mirroring `09.Search`'s `WaitUntilSearchableAsync`), `VectorFilter` closed 8-node AST (structural twin of `SearchFilter`, both engines' faithful support for all eight confirmed at Design time rather than assumed), `TenantScope` (mandatory/non-defaulted/outermost-conjunction/fail-closed, identical severity to `09.Search`), `VectorCollectionDefinition`/`VectorFieldDefinition` + SHA-256 `Fingerprint` (the domain's sharpest-edge type, guarded hardest), `IVectorProviderDescriptor` and the deliberately-separate `ICompletionProviderDescriptor` (kept apart because a vector engine's ceilings and an LLM's context window share no honestly-common members), `ISemanticKernel` with the **no tool-execution, no retry, no caching member** boundary decisions recorded (`VectorHit.Score` is the one deliberate deviation from `09.Search`'s Score ban, kept but documented as provider-and-metric-specific per the phase brief's own instruction), full `IntelligenceErrors` catalog verified against the real six-factory `Error` API, `EventId` sub-block allocation locked (10000–10099 Abstractions/reserved, 10100–10199 Qdrant, 10200–10299 Milvus, 10300–10399 SemanticKernel). On-disk cleanup (`SharedKernel.AI.VectorDb` retirement, `SharedKernel.AI.Tests` re-homing) recorded as Scaffold-phase task rows, not performed by this planning session. Root-brain edit (Folder Map row 10, Abstractions table, new "What Goes Where" rows) recorded as a downstream `/sync-brain` obligation, not performed here. P-280 (Qdrant)/P-281 (Milvus)/P-282 (SemanticKernel) implementation work recorded in `state-map.md` as `○ Not started` Scaffold/Core/Tests/Docs/Published tasks (WO-045, arch-lead)
