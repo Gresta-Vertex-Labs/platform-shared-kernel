@@ -876,6 +876,104 @@ SK0025  ObsoleteElasticsearchClientUsage
                 never trip this rule — the explicit pass-path case (09.Search/CLAUDE.md's
                 own Technology Stack table already documents this exact prohibition in
                 prose; this rule is its mechanical enforcement).
+
+SK0026  RawIntelligenceProviderClientConstructorInjection
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : A ConstructorDeclarationSyntax parameter type resolved via
+                SemanticModel.GetSymbolInfo to exactly one of three full type names:
+                "Qdrant.Client.QdrantClient", "Milvus.Client.MilvusClient", or
+                "Microsoft.SemanticKernel.Kernel" — unless the parameter's enclosing
+                type sits inside a namespace (via the established SyntaxNode.Parent
+                ancestor walk, same pattern as SK0001/SK0007/SK0013) starting with
+                that type's OWNING provider package: "SharedKernel.AI.Qdrant" for
+                QdrantClient, "SharedKernel.AI.Milvus" for MilvusClient,
+                "SharedKernel.AI.SemanticKernel" for Kernel. A QdrantClient parameter
+                inside SharedKernel.AI.Milvus still fires — there is no cross-exemption
+                between the three owning packages.
+    Fix       : Inject the neutral SharedKernel.AI.Abstractions contracts instead
+                (IVectorCollection<TRecord>, IEmbeddingGenerator, ISemanticKernel,
+                IVectorCollectionProvisioner, IVectorProviderDescriptor,
+                ICompletionProviderDescriptor). If a raw-client escape hatch is
+                genuinely required, it must follow the three-gate pattern documented
+                in 10.Intelligence/CLAUDE.md (opt-in builder call, startup Warning,
+                governance architecture test) and its XML doc must state IN CAPITALS
+                that it bypasses tenant scoping.
+    Suppress  : Per-constructor via #pragma warning disable SK0026; document the
+                rationale inline.
+    Note      : Introduced WO-045 P-286, the platform's first 10.Intelligence-domain
+                diagnostic alongside SK0027. Requires SemanticModel exact-full-type-name
+                resolution rather than SK0013's syntax-only simple-name check because
+                "Kernel" is a highly collision-prone simple name — many unrelated types
+                (a convolution kernel, an OS-kernel abstraction, a compute-shader
+                kernel) could plausibly share that identifier elsewhere in a consuming
+                service's own dependency graph; QdrantClient/MilvusClient alone would
+                likely be safe as syntax-only checks, but all three are resolved
+                uniformly via the semantic model for implementation consistency. This
+                domain's tenth semantic-model analyzer (after SK0011, SK0015,
+                SK0017–SK0019, SK0020, SK0022, SK0024, SK0025).
+
+SK0027  RawIntelligenceIdentifierLiteral
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : A raw string-literal argument (LiteralExpressionSyntax of kind
+                StringLiteralExpression) supplied at the collection-name/field-name/
+                embedding-model-id parameter position of one of eight recognized
+                SharedKernel.AI.Abstractions call-site shapes, each requiring
+                SemanticModel.GetSymbolInfo to resolve the invoked member to its exact
+                declaring type — the structural twin of SK0024's discriminator:
+                  VectorFilter static factories — five methods, field always at
+                    argument position 0: .Eq(string field, VectorValue value),
+                    .Ne(string field, VectorValue value),
+                    .In(string field, params VectorValue[] values),
+                    .Between(string field, VectorValue? from, VectorValue? to, bool, bool),
+                    .Exists(string field).
+                  IVectorCollectionProvisioner — three methods, collectionName always
+                    at argument position 0: .CollectionExistsAsync(string
+                    collectionName, ct), .DeleteCollectionAsync(string collectionName,
+                    ct), .ProbeAsync(string collectionName, ct).
+                  VectorCollectionDefinition.Create(string name, string
+                    embeddingModelId, int dimension, VectorDistanceMetric metric,
+                    IReadOnlyList<VectorFieldDefinition> fields) — BOTH name (position
+                    0) and embeddingModelId (position 1) checked independently.
+                  VectorCollectionDefinitionBuilder — two methods:
+                    .EmbeddingModel(string modelId, int dimension) (position 0),
+                    .Field(string name, VectorFieldKind kind, bool filterable = false)
+                    (position 0).
+                The rule flags the LITERAL SYNTAX SHAPE only — declaring-class-agnostic,
+                identical discriminator to SK0022/SK0024: nameof(...) and any reference
+                to a domain-local identifier-constants class member pass automatically.
+                VectorCollectionCutoverRequest.StagingCollectionName/.LiveCollectionName
+                are object-initializer PROPERTY assignments, not method-call arguments,
+                and are explicitly OUT OF SCOPE for this rule's call-site-argument-
+                position detection technique.
+    Fix       : Reference the identifier via nameof(...) where applicable, or a
+                domain-local static identifier-constants class member — never a raw
+                string literal repeated at each call site.
+    Suppress  : Per-call-site via #pragma warning disable SK0027 when the identifier is
+                genuinely dynamic (e.g., a runtime-configured collection name read from
+                IConfiguration) and cannot be constant-backed; document the rationale
+                inline.
+    Note      : Introduced WO-045 P-286. Motivating hazard is DIFFERENT FROM and
+                sharper than SK0024's — do not cross-reference the two entries' rationale,
+                the same discipline already established between SK0022 and SK0024. A
+                typo'd collection name is IntelligenceErrors.CollectionNotFound
+                (visible, checked before I/O) on BOTH providers per the ratified
+                contract — symmetric-visible, unlike SK0024's Meilisearch-visible/
+                ElasticSearch-silent asymmetry. The sharper hazard here is
+                embeddingModelId: a VectorCollectionDefinition.Create/
+                VectorCollectionDefinitionBuilder.EmbeddingModel call site and the
+                record/query call sites that must independently supply the SAME
+                embeddingModelId string have no shared compile-time link — a
+                copy-pasted, typo'd literal at both places passes the
+                IVectorRecord.ModelId == VectorCollectionDefinition.EmbeddingModelId
+                guard cleanly, silently embedding/querying the corpus under a phantom
+                model-identity string with zero engine-detectable error on either
+                provider — Domain Invariant #1's exact "no engine can detect a
+                model-identity mismatch" hazard, reproduced by a literal-copy-paste-typo
+                instead of a genuine two-model mixup. This domain's eleventh
+                semantic-model analyzer (after SK0011, SK0015, SK0017–SK0019, SK0020,
+                SK0022, SK0024, SK0025, SK0026).
 ```
 
 ---
@@ -894,8 +992,9 @@ ArchitectureRuleBase  (abstract base class)
 
 SharedKernelLayeringRules  (static class — pre-built predicates)
     All factory methods take an Assembly parameter and return ConditionList, EXCEPT
-    SearchReferencesOnlyCoreAndContracts (WO-044 P-278), which returns ConditionList[] —
-    see its own entry below for why.
+    SearchReferencesOnlyCoreAndContracts (WO-044 P-278) and
+    IntelligenceReferencesOnlyCoreAndContracts (WO-045 P-286), which return
+    ConditionList[] — see their own entries below for why.
     .CoreReferencesNothing(Assembly)                → ConditionList
     .CachingReferencesOnlyCore(Assembly)            → ConditionList
     .DomainReferencesOnlyCore(Assembly)             → ConditionList
@@ -905,6 +1004,7 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
     .ApplicationNeverReferencesConcreteInfrastructure(Assembly) → ConditionList  (hard rule)
     .TestingNeverReferencedByProduction(Assembly)   → ConditionList  (hard rule)
     .SearchReferencesOnlyCoreAndContracts(Assembly) → ConditionList[]  (WO-044 P-278)
+    .IntelligenceReferencesOnlyCoreAndContracts(Assembly) → ConditionList[]  (WO-045 P-286)
 
     .SearchReferencesOnlyCoreAndContracts(Assembly searchAssembly)  → ConditionList[]
         Added to this EXISTING class rather than a new dedicated class, mirroring the
@@ -955,6 +1055,53 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
         future 18.NewDomain addition MUST append its package-family term to this forbidden
         list in the SAME PR that adds the new domain, or SearchReferencesOnlyCoreAndContracts
         will silently under-enforce against it.
+
+    .IntelligenceReferencesOnlyCoreAndContracts(Assembly intelligenceAssembly)  → ConditionList[]
+        Added to this EXISTING class alongside SearchReferencesOnlyCoreAndContracts,
+        following the same precedent that a layering-BOUNDARY check on an existing
+        numbered domain belongs alongside its siblings, while TOPOLOGY-INTERNAL checks
+        (sibling-package non-reference, third-party-dependency purity) live in the
+        domain's own dedicated *TopologyRules class (IntelligenceTopologyRules,
+        documented below). Asserts that the supplied 10.Intelligence assembly has no
+        dependency on any of FIFTEEN forbidden capability-domain namespace terms —
+        every OTHER numbered domain's package family: "SharedKernel.Caching",
+        "SharedKernel.Domain", "SharedKernel.Application", "SharedKernel.Persistence",
+        "SharedKernel.Messaging", "SharedKernel.Storage", "SharedKernel.Search",
+        "SharedKernel.Communication", "SharedKernel.Security",
+        "SharedKernel.ServiceDefaults", "SharedKernel.MultiTenancy",
+        "SharedKernel.Presentation", "SharedKernel.Integration", "SharedKernel.Testing",
+        "SharedKernel.Workflows". SAME FIFTEEN-TERM COUNT as
+        SearchReferencesOnlyCoreAndContracts's own list — the symmetric swap:
+        "SharedKernel.Search" is now forbidden (09.Search is a sibling domain
+        10.Intelligence must never reference) and "SharedKernel.AI" is now EXCLUDED
+        (10.Intelligence is the domain under test, omitted from its own forbidden
+        list — self-exclusion by omission, not an explicit term, the same convention
+        SearchReferencesOnlyCoreAndContracts uses for "SharedKernel.Search"). Returns
+        ConditionList[] (fifteen elements, one per forbidden term), following
+        SearchReferencesOnlyCoreAndContracts's own newer domain-boundary-rule-class
+        convention rather than the older single-ConditionList shape most of this
+        class's other methods use. Caller must assert .GetResult().IsSuccessful on
+        EACH element. None of the fifteen terms is a prefix of "SharedKernel.AI" — no
+        self-collision. Excludes (by omission, never listed as forbidden)
+        "SharedKernel.Primitives", "SharedKernel.Core", "SharedKernel.Configuration",
+        "SharedKernel.FeatureManagement", "SharedKernel.Cryptography" (01.Core —
+        permitted) and "SharedKernel.Contracts" (04.Contracts — permitted).
+        Rationale: mirrors 10.Intelligence/CLAUDE.md's own starkly-worded layering wall
+        verbatim: "10.Intelligence may only reference 01.Core and 04.Contracts. It must
+        never reference 03.Domain, 05.Application, 06.Persistence, 07.Messaging,
+        09.Search, 12.Security, or any other capability domain." The WO-045 phase
+        input's own acceptance criteria name several of these terms explicitly and
+        close with "or any other capability domain beyond 01.Core/04.Contracts" — this
+        method is the exhaustive, all-fifteen-domains mechanical form of that closing
+        clause, the same relationship SearchReferencesOnlyCoreAndContracts has to its
+        own WO-044 phase input.
+        MAINTENANCE OBLIGATION (carried forward from SearchReferencesOnlyCoreAndContracts's
+        own entry): per this file's own Implementation Rules ("If a new domain (folder
+        XX) is added, the layering rules must be updated in the same PR"), a future
+        18.NewDomain addition MUST append its package-family term to BOTH this method's
+        list AND SearchReferencesOnlyCoreAndContracts's list (and every future sibling
+        of this ConditionList[]-per-forbidden-term shape) in the SAME PR that adds the
+        new domain, or each affected rule will silently under-enforce against it.
 
 GuardPurityRules  (static class — guard clause functional-path purity predicates)
     .GuardAgainstMethodsMustNotThrow()      → IArchRule
@@ -2974,6 +3121,100 @@ SearchTopologyRules  (static class — 09.Search package topology enforcement pr
     verification was tracked as a non-blocking follow-up) — see Dependencies in
     00.Governance/state-map.md's SK.00.SearchTopology phase block for the explicit blocking
     status.
+
+IntelligenceTopologyRules  (static class — 10.Intelligence package topology enforcement predicates; WO-045 P-286)
+    All factory methods accept Assembly (or three named/params Assembly parameters) and
+    return ConditionList (or ConditionList[]). Mirrors StorageTopologyRules/
+    SearchTopologyRules's structure and documented NotHaveDependencyOn matching contract
+    exactly (namespace StartsWith, no trailing dot, self-collision awareness) but scoped
+    to 10.Intelligence's THREE sibling provider packages (Qdrant/Milvus/SemanticKernel)
+    instead of two. No Mono.Cecil, no ICustomRule — every check is a pure NetArchTest
+    .Should().NotHaveDependencyOn(...) assembly-dependency-graph predicate.
+
+    .AbstractionsHasNoThirdPartyDependencies(Assembly abstractionsAssembly) → ConditionList
+        Asserts that SharedKernel.AI.Abstractions has no dependency on any of EIGHT
+        forbidden terms: "Qdrant" (Qdrant.Client's root namespace, bare prefix),
+        "Milvus" (Milvus.Client's root namespace, bare prefix), "Microsoft.SemanticKernel"
+        (bare prefix), "SharedKernel.AI.Qdrant", "SharedKernel.AI.Milvus",
+        "SharedKernel.AI.SemanticKernel", "SharedKernel.Configuration" (the
+        Options-validation package only the three provider packages need — Abstractions
+        itself references only SharedKernel.Primitives and, if genuinely needed,
+        SharedKernel.Contracts), and "Microsoft.Extensions" (10.Intelligence/CLAUDE.md's
+        Hard Violations list states .Abstractions takes zero PackageReference beyond
+        SharedKernel.Primitives/.Contracts ProjectReferences and ships no DI extension —
+        the same strictest zero-Microsoft.Extensions-anything posture
+        SearchTopologyRules established for 09.Search). Eight iterative
+        .Should().NotHaveDependencyOn(term) calls. None of the eight terms is a prefix
+        of "SharedKernel.AI.Abstractions" — no self-collision. TWO MORE forbidden terms
+        than StorageTopologyRules's five-term analog and SearchTopologyRules's six-term
+        analog, because 10.Intelligence has THREE sibling providers, not two — three
+        bare-prefix third-party-SDK terms and three "SharedKernel.AI.{Provider}" terms,
+        instead of two of each.
+        Rationale: mirrors 10.Intelligence/CLAUDE.md's own Hard Violations entry
+        verbatim — "SharedKernel.AI.Abstractions taking a PackageReference that has not
+        been explicitly adjudicated and recorded in this file. The default is zero."
+
+    .ProviderPackagesNeverReferenceEachOther(Assembly qdrantAssembly, Assembly milvusAssembly, Assembly semanticKernelAssembly)
+                                            → ConditionList[]
+        THREE named Assembly parameters — the FIRST three-named-parameter shape in this
+        domain (StorageTopologyRules/SearchTopologyRules/UnitOfWorkSeamRules all use
+        exactly two, since Storage and Search each have only two sibling providers;
+        10.Intelligence has three). Returns SIX ConditionLists, in order:
+            [0] Qdrant !-> "SharedKernel.AI.Milvus"
+            [1] Qdrant !-> "SharedKernel.AI.SemanticKernel"
+            [2] Milvus !-> "SharedKernel.AI.Qdrant"
+            [3] Milvus !-> "SharedKernel.AI.SemanticKernel"
+            [4] SemanticKernel !-> "SharedKernel.AI.Qdrant"
+            [5] SemanticKernel !-> "SharedKernel.AI.Milvus"
+        None of the three identifying namespaces ("SharedKernel.AI.Qdrant",
+        "SharedKernel.AI.Milvus", "SharedKernel.AI.SemanticKernel") is a prefix of
+        another or of its own declaring assembly — no Dictionary<string,string[]>
+        lookup table is needed (unlike RedisTopologyRules.CapabilityPackagesNeverReferenceEachOther's
+        four-package case), the same reasoning StorageTopologyRules/SearchTopologyRules
+        already established for two packages, extended here to three. Caller must
+        assert .GetResult().IsSuccessful on EACH of the six elements.
+        Rationale: 10.Intelligence/CLAUDE.md states explicitly: "Sibling packages never
+        reference each other, in any direction, at project or type level" — and each of
+        P-280/P-281/P-282's own acceptance criteria names the exact pair of forbidden
+        sibling references for its own package. This predicate is the exhaustive,
+        all-six-directions mechanical form of those three acceptance criteria taken
+        together.
+
+    .NoHealthChecksDependencyAcrossIntelligencePackages(params Assembly[] intelligenceAssemblies) → ConditionList
+        Asserts that no type in any of the supplied 10.Intelligence assemblies (caller
+        supplies Abstractions plus the three providers) has a dependency on
+        "Microsoft.Extensions.Diagnostics.HealthChecks". Single
+        Types.InAssemblies(intelligenceAssemblies).That()...Should()
+        .NotHaveDependencyOn("Microsoft.Extensions.Diagnostics.HealthChecks") call
+        across all supplied assemblies — deliberately the NARROW full term, not the
+        bare "Microsoft.Extensions" prefix AbstractionsHasNoThirdPartyDependencies
+        uses, because the three PROVIDER packages legitimately need OTHER
+        Microsoft.Extensions.* packages (DependencyInjection, Options, Logging) for
+        their DI wiring — only Abstractions itself carries the
+        zero-Microsoft.Extensions-anything constraint.
+        Rationale: mechanizes Domain Invariant #8 / 10.Intelligence/CLAUDE.md's own Hard
+        Violations entry verbatim: "Implementing IHealthCheck, or referencing
+        Microsoft.Extensions.Diagnostics.HealthChecks, anywhere in 10.Intelligence." —
+        ProbeAsync-shaped members on IVectorCollectionProvisioner/
+        ICompletionProviderDescriptor are the sanctioned readiness primitive; wiring
+        into AddHealthChecks() remains a 13.ServiceDefaults concern, mirroring the
+        06.Persistence/08.Storage/09.Search readiness-probe split precedent.
+
+    Permitted exemption list: none carried internally by any of the three factory
+    methods — exclusion in every case is achieved entirely by which assemblies the
+    caller chooses to pass (the PresentationLayeringRules/CompositionRootExclusivityRules/
+    StorageTopologyRules caller-controlled-exclusion convention), never an internal
+    namespace guard inside a predicate.
+
+    Note: introduced in WO-045 P-286. UNVERIFIABLE against real assemblies as of this
+    phase's authoring (2026-07-21) — 10.Intelligence/CLAUDE.md states "No production
+    .cs file has been written yet"; only the original placeholder .csproj inventory
+    exists on disk, even though the SharedKernel.AI.Abstractions interface CONTRACT
+    itself is already ratified (P-279's Design phase). Real-assembly wiring is a
+    GATING acceptance criterion on this phase per the phase input itself, mirroring
+    SearchTopologyRules's precedent rather than the older non-blocking-follow-up
+    precedent — see Dependencies in 00.Governance/state-map.md's
+    SK.00.IntelligenceTopology phase block for the explicit blocking status.
 ```
 
 ---
@@ -3165,6 +3406,15 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts` (WO-044 P-278) is the first method on `SharedKernelLayeringRules` to return `ConditionList[]` instead of a single `ConditionList` — every sibling method on that class (`CoreReferencesNothing`, `ContractsReferencesOnlyCoreAndDomain`, etc.) predates the newer domain-boundary-rule-class convention (`RedisTopologyRules`/`CommunicationLayeringRules`/`StorageTopologyRules`) of returning one `ConditionList` per forbidden term for per-term failure-message granularity; this method deliberately follows that newer convention rather than the older single-`ConditionList` shape of its own siblings, because it is the first `SharedKernelLayeringRules` method checking against more than two or three forbidden terms (fifteen, one per every OTHER numbered domain's package family). Document any future simplification to a single `.NotHaveDependencyOnAny(string[])` call here before applying it — see the method's own entry above for the exact fallback condition.
 - The fifteen-term forbidden list inside `SearchReferencesOnlyCoreAndContracts` is an EXPLICIT enumeration, not a derived/reflective one — per this file's own long-standing Implementation Rule ("Architecture tests in `SharedKernelLayeringRules` must mirror the layering table in the root `CLAUDE.md` exactly. If a new domain (folder XX) is added, the layering rules must be updated in the same PR"), a future `18.NewDomain` addition to the root `CLAUDE.md` Folder Map MUST append its package-family namespace term to this list in the SAME PR that adds the new domain, or this rule will silently under-enforce against the new domain the way it would against any of the fourteen domains already listed if one were accidentally omitted today. `"SharedKernel.AI"` (not `"SharedKernel.Intelligence"`) is the correct term for `10.Intelligence` — confirmed against the root `CLAUDE.md` Abstractions table (`SharedKernel.AI.Abstractions` / `.VectorDb`), a package-family-name-vs-folder-name mismatch worth flagging explicitly since it is the one term in the list that does not match its folder name.
 - Real-assembly status for `SK0024`/`SK0025`/`SearchTopologyRules`/`SearchReferencesOnlyCoreAndContracts` — UNVERIFIABLE at authoring time (2026-07-19), and UNLIKE every prior "designed-ahead-of-a-pending-dependency" precedent in this domain (`SK.00.ServiceDefaultsGovernance`, `SK.00.MetricsOutcomeTagAndMisregistrationGuard`, `SK.00.CryptoDelegationAndUowSeamGuard`, `SK.00.MagicStringGuard`, `SK.00.StorageTopology`), the WO-044 phase input's own acceptance criteria make real-assembly verification a GATING condition on this phase's completion, not a non-blocking follow-up. `09.Search`'s own `state-map.md` shows the entire Design phase (D-01 through D-28, covering P-272/P-273/P-274) at `○` as of this phase's authoring; only bare `.csproj` skeletons exist on disk for all three packages. Design, implementation, and initial tests for this phase use CONTRIVED in-memory assemblies via `CSharpCompilation` + `MetadataReference.CreateFromImage` (the `RedisTopologyRulesTests`/`StorageTopologyRulesTests` technique); the real-assembly re-verification pass against P-272/P-273/P-274's shipped output MUST be completed, and its own acceptance-criterion checkbox explicitly closed, before this phase can be marked fully `●` complete — see Acceptance Criteria and Dependencies in `00.Governance/state-map.md`'s `SK.00.SearchTopology` phase block.
+- SK0026 `RawIntelligenceProviderClientConstructorInjectionAnalyzer` and SK0027 `RawIntelligenceIdentifierLiteralAnalyzer` (WO-045 P-286) are the next two sequential IDs in the SK0001–SK00N general-purpose block (SK0025 was the prior ID) and the platform's first `10.Intelligence`-domain diagnostics. Both require `SemanticModel` resolution — SK0026 exact-full-type-name resolution (not SK0013's syntax-only simple-name check) because `Microsoft.SemanticKernel.Kernel`'s simple name `"Kernel"` is highly collision-prone; SK0027 for the same reason SK0024 does (its eight call-site method names are common enough to collide with unrelated types without an exact-declaring-type check). SK0026 is this domain's tenth semantic-model analyzer (after SK0011, SK0015, SK0017–SK0019, SK0020, SK0022, SK0024, SK0025); SK0027 is the eleventh.
+- SK0026's namespace exemption is per-client-type, not a single shared prefix — a `QdrantClient` parameter is exempt only inside `SharedKernel.AI.Qdrant`, `MilvusClient` only inside `SharedKernel.AI.Milvus`, `Kernel` only inside `SharedKernel.AI.SemanticKernel`. There is no cross-exemption between the three owning packages; a `QdrantClient` parameter injected inside `SharedKernel.AI.Milvus` still fires SK0026, since that would itself be exactly the sibling-package violation `IntelligenceTopologyRules.ProviderPackagesNeverReferenceEachOther` independently catches at the assembly level — the two rules are complementary, not redundant.
+- SK0027 is structurally parallel to SK0024 (identical literal-vs-reference syntax-shape discriminator, declaring-class-agnostic) but its motivating hazard must never be described as the same as SK0024's or cross-referenced against it — the same discipline already established between SK0022 and SK0024. SK0024's hazard is an engine-VISIBILITY asymmetry; SK0027's hazard is that a `VectorCollectionDefinition.Create`/`.EmbeddingModel` call site and the record/query call sites supplying the same `embeddingModelId` string have no shared compile-time link, so a copy-pasted typo passes the model-identity guard cleanly on BOTH providers — see the SK0027 diagnostic-registry entry for the full rationale.
+- SK0027's eight call-site shapes cover `VectorFilter`'s five static factories (field always position 0, the structural twin of SK0024's five `SearchFilter` shapes), `IVectorCollectionProvisioner`'s three `collectionName`-taking members, and BOTH string parameters of `VectorCollectionDefinition.Create` plus both single-string-parameter members of `VectorCollectionDefinitionBuilder`. `VectorCollectionCutoverRequest.StagingCollectionName`/`.LiveCollectionName` are object-initializer property assignments, not method-call arguments, and are explicitly OUT OF SCOPE for this rule's argument-position detection technique — the same documented method-call-only limitation already carried by SK0024.
+- `IntelligenceTopologyRules` (WO-045 P-286) mirrors `StorageTopologyRules`/`SearchTopologyRules`'s structure and `NotHaveDependencyOn` matching contract exactly but is scoped to THREE sibling provider packages, not two, per `10.Intelligence/CLAUDE.md`'s explicit statement that "no `.Core` is extracted ... duplication ... is deliberate, mirroring the `09.Search` precedent exactly." `.AbstractionsHasNoThirdPartyDependencies` carries an EIGHT-term forbidden list (two more than `SearchTopologyRules`'s six) — three bare-prefix third-party-SDK terms and three `"SharedKernel.AI.{Provider}"` sibling-package terms, instead of two of each, plus `"SharedKernel.Configuration"` and `"Microsoft.Extensions"` carried over unchanged. No new Mono.Cecil technique and no new `ICustomRule` — pure `NetArchTest` checks, zero new NuGet dependency.
+- `IntelligenceTopologyRules.ProviderPackagesNeverReferenceEachOther` is the FIRST three-named-Assembly-parameter shape in this domain — every prior sibling-non-reference predicate uses exactly two named parameters, since every prior sibling-provider domain (08.Storage, 09.Search) has exactly two providers. Returns a SIX-element `ConditionList[]`; no `Dictionary<string,string[]>` lookup table is needed since none of the three identifying namespaces is a prefix of another.
+- `IntelligenceTopologyRules.NoHealthChecksDependencyAcrossIntelligencePackages` deliberately uses the NARROW term `"Microsoft.Extensions.Diagnostics.HealthChecks"`, not the bare `"Microsoft.Extensions"` prefix `.AbstractionsHasNoThirdPartyDependencies` uses — the three provider packages legitimately need other `Microsoft.Extensions.*` packages for DI wiring; only `SharedKernel.AI.Abstractions` carries the zero-`Microsoft.Extensions`-anything posture. This is the first `*TopologyRules` class in this domain to need a rule DISTINCT from its `AbstractionsHasNoThirdPartyDependencies` sibling for a narrower, cross-package term — `StorageTopologyRules`/`SearchTopologyRules` never needed one because neither of those domains' phase inputs named a specific forbidden-dependency rule beyond the Abstractions-purity and sibling-non-reference checks.
+- `SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts` follows `SearchReferencesOnlyCoreAndContracts`'s `ConditionList[]`-per-forbidden-term convention with the SAME fifteen-term count — `"SharedKernel.Search"` swapped IN (09.Search is now forbidden for 10.Intelligence) and `"SharedKernel.AI"` swapped OUT (10.Intelligence is the domain under test, excluded by omission). A future `18.NewDomain` addition MUST append its package-family term to BOTH this method's list AND `SearchReferencesOnlyCoreAndContracts`'s list (and any future sibling of this shape) in the SAME PR that adds the new domain.
+- Real-assembly status for SK0026/SK0027/`IntelligenceTopologyRules`/`IntelligenceReferencesOnlyCoreAndContracts` — UNVERIFIABLE at authoring time (2026-07-21). Unlike most "designed-ahead-of-a-pending-dependency" precedents in this domain, the WO-045 phase input's own acceptance criteria make real-assembly verification a GATING condition on this phase's completion, mirroring `SK.00.SearchTopology`'s precedent. `10.Intelligence/CLAUDE.md` states explicitly: "No production `.cs` file has been written yet" — the `SharedKernel.AI.Abstractions` interface contract is locked (P-279's Design phase, `10.Intelligence/CLAUDE.md`'s own Interface Contracts section), but its Scaffold/Core/Tests/Docs/Published phases, and all of P-280/P-281/P-282, are `○ Not started` per `10.Intelligence/state-map.md`. Design, implementation, and initial tests for this phase use CONTRIVED in-memory assemblies via `CSharpCompilation` + `MetadataReference.CreateFromImage` (the `RedisTopologyRulesTests`/`StorageTopologyRulesTests`/`SearchTopologyRulesTests` technique); the real-assembly re-verification pass MUST be completed, and its own acceptance-criterion checkbox explicitly closed, before this phase can be marked fully `●` complete.
 
 ---
 
@@ -3261,3 +3511,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-16] SK.00.MagicStringGuard → ● closeout — CrossCuttingMagicStringLiteralAnalyzer (SK0022) implemented in SharedKernel.Analyzers/Diagnostics/; WellKnownConstantOwnershipAssertion implemented in SharedKernel.ArchitectureTests/, backed by a new StringConstantsClassDetector.ResolveStringFieldsOnType(TypeDefinition) public entry point (extracted from the existing private field-shape+literal-value resolution logic, now reusable against ANY TypeDefinition, not only the abstract-sealed constants-class shape); verified against the pre-written CLAUDE.md spec (diagnostic registry, architecture test contracts, all ten implementation-rule bullets) — no discrepancy found, no edits required to those sections. One new implementation-rule bullet added above to record an empirically-verified technique divergence discovered during test authoring: three of SK0022's four real BCL call-site types (System.Net.Http.Headers.HttpHeaders/HttpRequestHeaders, System.Security.Claims.Claim/ClaimsPrincipal/ClaimsIdentity) compile correctly as-is inside the CSharpAnalyzerTest sandbox with NO stub needed (mirroring SK0013's HttpClient precedent) — only System.Diagnostics.Activity required special handling: the sandbox's default reference set resolves an old DiagnosticSource 4.0.5.0 contract whose Activity lacks .SetTag/.SetBaggage (confirmed via a live CS1061), and naively adding a newer DiagnosticSource reference via TestState.AdditionalReferences produces a live CS0433 same-assembly-different-version ambiguity rather than fixing it; the working fix is a full reference-set REPLACEMENT via test.ReferenceAssemblies = ReferenceAssemblies.Net.Net80 for just the Activity-shape tests. Only Microsoft.Extensions.Configuration.IConfiguration and Microsoft.AspNetCore.Http.IHeaderDictionary needed the originally-planned in-compilation stub, since both are genuinely absent from the sandbox's default closure. 15 new analyzer tests (T-184–T-188, covering all four call-site shapes' fire/pass paths plus a fixture-local-constants-class pass-path proving declaring-class-agnosticism) — 140/140 SharedKernel.Analyzers.Tests pass; 2 new architecture tests (T-189–T-190) — 135/135 SharedKernel.ArchitectureTests.Tests pass; 0 build warnings/errors on both projects. Real-assembly wiring against 01.Core's actual WellKnownHeaders/WellKnownBaggageKeys remains explicitly deferred per the phase's own non-gating acceptance criterion — tracked in Cross-Domain Dependencies until 01.Core C-43/T-34/DO-16 ship and P-260–P-263 land (governance-phase-implementer, state-map-phase)
 - [2026-07-18] SK.00.StorageTopology → ● closeout — NonSingletonAmazonS3ClientRegistrationAnalyzer (SK0023) implemented in SharedKernel.Analyzers/Diagnostics/; StorageTopologyRules implemented in SharedKernel.ArchitectureTests/Rules/, exactly matching the pre-written CLAUDE.md spec (all three factory-method signatures, forbidden-term lists, two-named-parameter ProviderPackagesNeverReferenceEachOther, caller-controlled-exclusion OnlyProviderPackagesMayReferenceAmazonS3) — no discrepancy found, no edits required to the diagnostic registry or architecture-test-contract sections themselves. **STALE-DEPENDENCY CORRECTION (the main finding of this closeout):** the phase spec (authored 2026-07-16) instructed contrived-fixtures-only design because 08.Storage's own state-map then showed every phase at ○/empty and P-265 was only ◐ (Design). Before implementation began (2026-07-18), 08.Storage had independently reached Published — verified directly on disk, not assumed from prose: `dotnet build --configuration Release` on all three of SharedKernel.Storage.Abstractions/.S3/.Obs succeeds with 0 warnings/0 errors, and the root state-map.md Phase Backlog shows P-265/P-266/P-267 all `●` Complete (closed 2026-07-18, the same day as this implementation session). Corrected the stale Cross-Domain Dependencies table rows (00.Governance/state-map.md, `SK.00.StorageTopology depends on 08.Storage` section) and the "UNVERIFIABLE"/"before ... exist as buildable assemblies" prose in this file's StorageTopologyRules architecture-test-contract Note and Implementation Rules bullet — same precedent SK.00.MagicStringGuard's closeout set for this exact class of dependency-resolved-before-implementation correction. Per the phase input's explicit instruction, real-assembly verification was ADDITIONALLY wired in this same phase rather than deferred as a follow-up: SharedKernel.ArchitectureTests.Tests.csproj gained three test-only ProjectReferences (PrivateAssets="all") to the real 08.Storage assemblies; three Real*-suffixed tests confirm all three StorageTopologyRules factory methods pass against the shipped packages with zero discrepancy from contrived-fixture behavior — no real violation surfaced. The six contrived-fixture fire/pass-path tests (T-194–T-199) remain the primary red/green proof, exactly as the phase spec required; one fixture-authoring pitfall was hit and fixed during T-196's authoring — the initial ProviderPackagesNeverReferenceEachOther fire-path fixtures referenced a `const int` field on the "other" provider's stub type, which the C# compiler const-folds into a bare literal at the call site (no Ldsfld, no assembly reference emitted), so NetArchTest's dependency-namespace scan never observed the cross-reference; switched to constructor-injecting an interface type (a genuine metadata reference) instead, mirroring RedisTopologyRulesTests's own established pattern — the same const-folding class of pitfall already documented for `const string` vs `static readonly string` in the HealthCheckConstantsGuard closeout, now confirmed to apply identically to `const int`. 4 new analyzer tests (T-191–T-193 plus one unrelated-interface pass-path) — 144/144 SharedKernel.Analyzers.Tests pass; 10 new architecture tests (T-194–T-199 plus 3 real-assembly tests) — 145/145 SharedKernel.ArchitectureTests.Tests pass; 0 build warnings/errors across both projects. This is the last `○` phase key — every phase key in 00.Governance/state-map.md is now `●` (governance-phase-implementer, state-map-phase)
 - [2026-07-19] Phase SK.00.SearchTopology added — SK0024 RawSearchFieldNameLiteral and SK0025 ObsoleteElasticsearchClientUsage added to diagnostic registry (general-purpose sequential block, next after SK0023; platform's first 09.Search-domain diagnostics; SK0024 is the domain's eighth semantic-model analyzer and the platform's first refactor-safety/nameof()-encouragement rule, distinct in intent from SK0022 despite sharing its literal-vs-reference discriminator; SK0025 is the ninth semantic-model analyzer and the platform's first EOL-third-party-package-prohibition rule, firing platform-wide on any ContainingAssembly.Name match against NEST/Elasticsearch.Net); SearchTopologyRules added to architecture test contracts (WO-044 P-278) — two pure NetArchTest predicates mirroring StorageTopologyRules (AbstractionsHasNoThirdPartyDependencies with a sixth Microsoft.Extensions forbidden term beyond Storage's five-term analog, ProviderPackagesNeverReferenceEachOther with a two-named-Assembly-parameter signature mirroring StorageTopologyRules/UnitOfWorkSeamRules); SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts added — the first method on that class returning ConditionList[] instead of a single ConditionList, an explicit fifteen-forbidden-term enumeration of every other numbered domain's package family (including the SharedKernel.AI/10.Intelligence package-family-name-vs-folder-name mismatch); zero new Mono.Cecil technique, zero new NuGet dependency; UNVERIFIABLE against real assemblies as of this phase's authoring — 09.Search's entire Design phase (D-01–D-28) is ○ and only bare .csproj skeletons exist on disk for all three packages — but UNLIKE every prior designed-ahead precedent in this domain, real-assembly verification is a GATING acceptance criterion per the phase input itself, not a non-blocking follow-up; seven new implementation rules added; one Cross-Domain Dependencies block added (09.Search P-272/P-273/P-274, explicitly marked gating, not the usual non-blocking-follow-up shape) — WO-044 P-278, depends on 09.Search P-272/P-273/P-274 (governance-arch-planner)
+- [2026-07-21] WO-045: 00.Governance gap-filled for the new 10.Intelligence domain — SK0026 RawIntelligenceProviderClientConstructorInjection and SK0027 RawIntelligenceIdentifierLiteral added to diagnostic registry (general-purpose sequential block, next after SK0025; SK0026 the domain's tenth semantic-model analyzer, requiring exact-full-type-name resolution for QdrantClient/MilvusClient/Kernel because "Kernel" is a highly collision-prone simple name; SK0027 the eleventh, structurally parallel to SK0024 but grounded in the sharper, domain-specific model-identity-mismatch hazard Domain Invariant #1 describes); IntelligenceTopologyRules added to architecture test contracts (WO-045 P-286) — three pure NetArchTest predicates mirroring StorageTopologyRules/SearchTopologyRules, scoped to 10.Intelligence's THREE sibling providers (AbstractionsHasNoThirdPartyDependencies with an eight-term forbidden list, ProviderPackagesNeverReferenceEachOther as the domain's first three-named-Assembly-parameter sibling-non-reference check returning a six-element ConditionList[], and NoHealthChecksDependencyAcrossIntelligencePackages mechanizing Domain Invariant #8's explicit HealthChecks prohibition); SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts added, mirroring SearchReferencesOnlyCoreAndContracts's fifteen-term ConditionList[] shape with SharedKernel.Search swapped in and SharedKernel.AI swapped out; zero new Mono.Cecil technique, zero new NuGet dependency; UNVERIFIABLE against real assemblies as of this phase's authoring — 10.Intelligence/CLAUDE.md states "No production .cs file has been written yet," so real-assembly verification is a GATING acceptance criterion per the phase input itself, mirroring SK.00.SearchTopology's precedent (arch-lead, WO-045, P-286)
