@@ -87,6 +87,19 @@
       fully usable package, not an empty placeholder.
     -->
     <ProjectReference Include="..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+    <!--
+      Intelligence in-memory doubles (S-32, P-284/WO-045): InMemoryEmbeddingGenerator
+      (IEmbeddingGenerator), InMemoryVectorCollection<TRecord> (IVectorCollection<TRecord>),
+      InMemoryVectorCollectionProvisioner (IVectorCollectionProvisioner),
+      InMemoryVectorProviderDescriptor (IVectorProviderDescriptor), InMemorySemanticKernel
+      (ISemanticKernel), InMemoryCompletionProviderDescriptor (ICompletionProviderDescriptor).
+      Mechanically safe to add now even though 10.Intelligence/SharedKernel.AI.Abstractions is
+      currently an empty placeholder (verified on disk, zero .cs files) — a ProjectReference to a
+      content-empty project always builds; it resolves to zero usable types until 10.Intelligence's
+      own SK.10.Core ships real code (C-73–C-79/T-54/DO-25 remain ⚑ Blocked in state-map.md until
+      then).
+    -->
+    <ProjectReference Include="..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -121,6 +134,16 @@
       match every other Testcontainers.* package here.
     -->
     <PackageReference Include="Testcontainers.Elasticsearch" Version="4.13.0" />
+    <!--
+      QdrantContainerFixture / MilvusContainerFixture (S-29/S-30, D-124/P-283/WO-045): seventh and
+      eighth Containers/ fixtures. Both are OFFICIAL dedicated Testcontainers modules (no hand-rolled
+      generic-builder fallback needed, unlike Meilisearch) — confirmed on nuget.org 2026-07-21 at
+      latest stable 4.13.0, matching every other Testcontainers.* package here exactly (S-31: no
+      version-alignment bump required elsewhere in Containers/, in contrast to the Elasticsearch
+      addition at S-25–S-27).
+    -->
+    <PackageReference Include="Testcontainers.Qdrant" Version="4.13.0" />
+    <PackageReference Include="Testcontainers.Milvus" Version="4.13.0" />
     <!--
       xunit.core (S-09): the Xunit.IAsyncLifetime contract ONLY — container fixtures implement
       IAsyncLifetime directly. No test runner, no Xunit.Assert, no xunit.runner.visualstudio.
