@@ -64,6 +64,7 @@ Look up the domain in this registry:
 | 07.Messaging | `implement-phase-messaging` |
 | 08.Storage | `implement-phase-storage` |
 | 09.Search | `implement-phase-search` |
+| 10.Intelligence | `implement-phase-intelligence` |
 | 11.Communication | `implement-phase-communication` |
 | 12.Security | `implement-phase-security` |
 | 13.ServiceDefaults | `implement-phase-servicedefaults` |
