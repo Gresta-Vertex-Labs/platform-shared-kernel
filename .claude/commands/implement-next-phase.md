@@ -71,6 +71,7 @@ Look up the domain in this registry:
 | 14.Presentation | `implement-phase-presentation` |
 | 15.Integration | `implement-phase-integration` |
 | 16.Testing | `implement-phase-testing` |
+| 17.Workflows | `implement-phase-workflow` |
 
 If the domain is **not in the registry**, output:
 ```
