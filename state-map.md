@@ -33,7 +33,6 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
-| [10.Intelligence](10.Intelligence/state-map.md)       | Design          | Finalize the SharedKernel.AI.Abstractions contract and ratify the package-split (Abstractions + Qdrant + Milvus + SemanticKernel) and Microsoft.Extensions.AI.Abstractions-adoption decisions before implementing the three providers (P-279) |
 <!--
 Format when active:
 | Domain | Current Phase | Focus (one line) |
@@ -47,7 +46,9 @@ Format when active:
 
 > Domains at `⚑ Blocked`. State the blocker and which domain/external thing is blocking.
 
-_No blockers._
+| Domain | Blocked Phase | Blocker |
+|--------|--------------|---------|
+| [10.Intelligence](10.Intelligence/state-map.md) | Scaffold | `Milvus.Client` (the only candidate .NET SDK for the `SharedKernel.AI.Milvus` provider) has never shipped a stable release (latest is `2.3.0-preview.1`, last published 2024-03-20, GitHub repo stalled since 2023-09-12) — verified against nuget.org 2026-07-22, mirroring the `09.Search` `NEST`-is-EOL precedent. Blocks only `SharedKernel.AI.Milvus` and its dependents; `.Abstractions`/`.Qdrant`/`.SemanticKernel` are unaffected (see `10.Intelligence/state-map.md`'s own `## Blocked` for full evidence and a proposed alternative). |
 
 <!--
 Format when blocked:
@@ -74,13 +75,13 @@ Format when blocked:
 | 07 | [Messaging](07.Messaging/state-map.md) | LoggingRetrofit | `●` | SK.07.LoggingRetrofit complete (22/22, P-254/P-263) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range; `MessagingLogScope.CorrelationIdKey` named constant now backs the shared `BeginScope` correlation entry (replacing the bare `"CorrelationId"` literal); verified zero EventId collisions/SK0020-SK0021 diagnostics; 108/108 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
 | 09 | [Search](09.Search/state-map.md) | Published | `●` | SK.09.Published complete (8/8) — all three packages re-verified NuGet-metadata-complete and packed clean (`.nupkg`+`.snupkg`, zero `NU5039`/`NU5128`); a new `09.Search/consumer-verify/` area (three real `IHost.StartAsync()` console harnesses — Meilisearch/, ElasticSearch/, BothProviders/) consumer-verifies DI resolution of every neutral/provider-exclusive contract, singleton lifetimes, raw-client gating, startup-time `OptionsValidationException` naming the missing property, the same-`TDocument` dual-registration hard violation, and — the most load-bearing check — capability segregation confirmed as a genuine, captured `CS0234`/`CS0246` build-time compiler failure in both directions, not asserted in prose. All 345 tests still green. All six phases now `●` for all three `SharedKernel.Search.*` packages — 09.Search domain (WO-044) complete end to end. | — |
-| 10 | [Intelligence](10.Intelligence/state-map.md) | Design | `◐` | — | Finalize the SharedKernel.AI.Abstractions contract and ratify the package-split (Abstractions + Qdrant + Milvus + SemanticKernel) and Microsoft.Extensions.AI.Abstractions-adoption decisions before implementing the three providers (P-279) |
+| 10 | [Intelligence](10.Intelligence/state-map.md) | Scaffold | `⚑` | `SK.10.Design` fully `●` (WO-045/P-279) and promoted; `SK.10.Scaffold` 6/7 `●` (VectorDb retired, AI.Tests re-homed, Abstractions/Qdrant/SemanticKernel projects wired, Qdrant.Client 1.18.1 + Microsoft.SemanticKernel 1.78.0 verified/pinned); `SK.10.Core` C-01 `●` — `SharedKernel.AI.Abstractions` fully implemented per the ratified contract, 142/142 tests passing. | `Milvus.Client` failed its maintenance-status verification (never stable, 2+ years stale) — `SharedKernel.AI.Milvus` (S-05) blocked pending a proposed alternative; C-02–C-11 (Qdrant/Milvus/SemanticKernel provider adapters) are next, unblocked except for the Milvus half. |
 | 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | P-260/WO-042 fully closed — T-29 replaced test-local literal duplicates of the correlation/tenant header names with `WellKnownHeaders.CorrelationId`/`.TenantId` references across `.Rest.Tests`/`.Grpc.Tests`; DO-07 verified `CLAUDE.md`'s propagation rules already documented the shared-constant sourcing and gRPC thin-alias exception; 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing; SK.11.Tests (29/29) and SK.11.Docs (7/7) both `●`. | Only the Published phase (NuGet packaging, pack, publish) remains for all four packages. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | WO-043/P-270 closed — `AddStorageReadinessCheck`/`StorageReadinessHealthCheck` wraps `08.Storage`'s `IFileStorage.CheckHealthAsync` (unblocked once `08.Storage` reached `Published`), mapping success → `Healthy`/failure → `Unhealthy`, tagged `"ready"`+new `"storage"`; new `ProjectReference` to `SharedKernel.Storage.Abstractions`. SK.13.Scaffold 13/13 `●`, SK.13.Core 36/36 `●`, SK.13.Tests 32/32 `●`, SK.13.Docs 6/6 `●`; 52/52 SharedKernel.ServiceDefaults.Tests + 30/30 SharedKernel.MultiTenancy.Tests passing. | — domain complete end to end (Design → Published). |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
-| 16 | [Testing](16.Testing/state-map.md) | Scaffold | `●` | WO-045 (P-283/P-284) `SK.16.Scaffold` closed (33/33) — added `Testcontainers.Qdrant`/`Testcontainers.Milvus` `PackageReference`s (`4.13.0`, no version-bump ceremony needed elsewhere) and a `ProjectReference` to `10.Intelligence/SharedKernel.AI.Abstractions` (still a genuinely empty placeholder, builds clean regardless) to `SharedKernel.Testing.csproj`; no fake/fixture code written yet. | `SK.16.Core` next — `QdrantContainerFixture`/`MilvusContainerFixture` (C-70–C-72) are fully unblocked; the six `Intelligence/` fakes (C-73–C-79) remain `⚑` Blocked pending `10.Intelligence`'s own `SK.10.Core`. |
+| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-045 (P-283/P-284) `SK.16.Docs` closed (25/25) — DO-25 verified all four required rationale items (Score/Rank fidelity, direct-dictionary-lookup filter simplification, `InMemorySemanticKernel`'s never-generates-text guarantee, non-coupling SCOPE LOCK note) already present inline in the six `Intelligence/` types' XML docs from the Core-phase pass; zero code changes, verification-only. `dotnet build` clean, 0 errors. This closes WO-045 in full — all six phases of `16.Testing` are `●` again. | — |
 | 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
 
 ---
@@ -112,12 +113,12 @@ Format when active:
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 1 |
 | ● Grpc | 0 |
-| ● Tests | 0 |
+| ● Tests | 1 |
 | ● Core | 0 |
 | ● Design | 0 |
-| ● Scaffold | 1 |
-| ◐ In Progress | 2 |
-| ⚑ Blocked | 0 |
+| ● Scaffold | 0 |
+| ◐ In Progress | 1 |
+| ⚑ Blocked | 1 |
 | ○ Not Started | 1 |
 
 ---
@@ -10720,7 +10721,7 @@ This domain's own brain documents every one of these rules in prose already — 
 ---
 ### P-279 — Intelligence: SharedKernel.AI.Abstractions Contract Finalization + Package-Split Ratification
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-045
 **Domain:** 10.Intelligence
 **Depends on:** None
@@ -10931,3 +10932,9 @@ This domain's own brain documents every one of these rules in prose already — 
 - [2026-07-21] Dispatch-order deviation recorded: P-286 (00.Governance) and P-285 (13.ServiceDefaults) both depend on P-279–P-282 (10.Intelligence), so strict domain-number-ascending order would have dispatched P-286 before its own dependencies. Dispatch used topological order first, then domain-number ascending within each unblocked tier — 10.Intelligence → 00.Governance → 13.ServiceDefaults → 16.Testing — per the Format Contract's "never dispatches out of dependency order" rule, matching the WO-044 precedent (dispatch-phase)
 - [2026-07-21] Cross-domain finding raised during dispatch (13.ServiceDefaults, P-285): `10.Intelligence/CLAUDE.md`'s Domain Invariant #8 asserts `ICompletionProviderDescriptor.ProbeAsync` exists, but that interface's own ratified member-by-member Interface Contracts listing declares only `ProviderName`, `ContextWindowTokens`, `MaxOutputTokens`, and `ValidateContextWindow` — no `ProbeAsync`. 13.ServiceDefaults locked only the outer shape of `AddOrchestrationReadinessCheck` and marked its Design task `⚑` Blocked rather than inventing another domain's missing member; requires resolution on the 10.Intelligence side before P-285's orchestration-readiness work can proceed (dispatch-phase)
 - [2026-07-21] 16 → Scaffold (●) — promoted from SK.16.Scaffold (33/33); added Testcontainers.Qdrant/.Milvus (4.13.0) package references and a ProjectReference to SharedKernel.AI.Abstractions (still an empty placeholder, builds clean) to SharedKernel.Testing.csproj for WO-045; SK.16.Core next (state-map-phase)
+- [2026-07-22] 10.Intelligence → Scaffold (⚑) — SK.10.Design promoted (belated, 16/16 ●); SK.10.Scaffold 6/7 ● (S-05/Milvus ⚑ blocked, Milvus.Client never shipped stable); SK.10.Core C-01 ● — SharedKernel.AI.Abstractions fully implemented, 142/142 tests passing (state-map-phase)
+- [2026-07-22] Phase Backlog P-279 → ● Complete — its own acceptance criteria (zero-PackageReference Abstractions, VectorDb retired, AI.Tests re-homed, ratified contract) are now all satisfied on disk (state-map-phase)
+- [2026-07-22] 16 → Core (●) — promoted from SK.16.Core (79/79); the six Intelligence/ in-memory fakes (InMemoryEmbeddingGenerator, `InMemoryVectorCollection<TRecord>`, InMemoryVectorCollectionProvisioner, InMemoryVectorProviderDescriptor, InMemorySemanticKernel, InMemoryCompletionProviderDescriptor) plus IntelligenceServiceCollectionExtensions implemented against 10.Intelligence's SharedKernel.AI.Abstractions (re-verified on disk — no longer an empty placeholder, 66 real .cs files, zero drift); SK.16.Tests/SK.16.Docs (T-54, DO-25) next, both unblocked (state-map-phase)
+
+- [2026-07-22] 16.Testing → Tests (●) — promoted from SK.16.Tests: T-54 implemented, all six `Intelligence/` in-memory fakes plus `IntelligenceServiceCollectionExtensions` proven (119 tests), 555/555 regression passing (state-map-phase)
+- [2026-07-22] 16 → Docs (●) — promoted from SK.16.Docs (25/25); DO-25 verified all four required rationale items (D-131 Score/Rank fidelity, D-132 direct-dictionary-lookup filter simplification, D-135 never-generates-text guarantee, D-137 non-coupling SCOPE LOCK) already present inline in the six Intelligence/ types' XML docs; zero code changes, verification-only pass; dotnet build clean. This closes WO-045 in full — all six phases of 16.Testing (Design/Scaffold/Core/Tests/Docs/Published) are `●` again. Docs is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
