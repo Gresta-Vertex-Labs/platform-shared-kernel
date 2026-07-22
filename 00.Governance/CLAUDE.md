@@ -974,6 +974,113 @@ SK0027  RawIntelligenceIdentifierLiteral
                 instead of a genuine two-model mixup. This domain's eleventh
                 semantic-model analyzer (after SK0011, SK0015, SK0017–SK0019, SK0020,
                 SK0022, SK0024, SK0025, SK0026).
+
+SK0028  NonDeterministicApiUsageInsideWorkflow
+    Category  : Design
+    Severity  : Warning
+    Trigger   : Requires SemanticModel.GetSymbolInfo exact-type/exact-member resolution
+                throughout — this domain's TWELFTH semantic-model analyzer (after SK0011,
+                SK0015, SK0017–SK0019, SK0020, SK0022, SK0024, SK0025, SK0026, SK0027).
+                Scope is determined by TYPE ATTRIBUTION/INHERITANCE, not namespace — the
+                first analyzer in this domain to scope its trigger this way instead of the
+                established SyntaxNode.Parent namespace-ancestor walk: a
+                ClassDeclarationSyntax (or RecordDeclarationSyntax) whose declared symbol
+                either carries a `[Workflow]` attribute (resolved to
+                Temporalio.Workflows.WorkflowAttribute) or has WorkflowBase
+                (SharedKernel.Workflows.Temporal.Authoring.WorkflowBase) anywhere in its
+                base-type chain is IN SCOPE. A type with ActivityBase
+                (SharedKernel.Workflows.Temporal.Authoring.ActivityBase) anywhere in its
+                base chain, or carrying `[Activity]`, is checked FIRST and is unconditionally
+                OUT OF SCOPE regardless of the workflow-scope check — the narrow SK0001
+                carve-out this rule exists to encode. Within an in-scope type, fires on any
+                of SEVEN forbidden shapes, each resolved to its exact declaring type/member
+                (never a syntax-only simple-name match, to avoid collisions with unrelated
+                same-named APIs a consuming service's own code might declare):
+                  (1) DateTime.UtcNow / DateTime.Now / DateTimeOffset.UtcNow /
+                      DateTimeOffset.Now — the same four-property set
+                      DoesNotCallSystemClockPredicate already matches for domain purity,
+                      resolved here via SemanticModel instead of IL.
+                  (2) System.Guid.NewGuid() — exact static method resolution.
+                  (3) `new Random()` — ObjectCreationExpressionSyntax resolved to
+                      System.Random.
+                  (4) System.Threading.Tasks.Task.Run / .Delay (static methods), and a
+                      ConfigureAwait(false) invocation whose receiver resolves to
+                      System.Threading.Tasks.Task or ValueTask (any generic arity) —
+                      grouped under one shared "escapes the deterministic scheduler" trigger.
+                  (5) Any member access resolved to ContainingType System.Environment or
+                      System.IO.File (covers Environment.*/File.* in one check per type,
+                      mirroring NoDbContextTransactionInApplicationPredicate's
+                      DeclaringType-family matching style).
+                  (6) A constructor parameter whose type resolves to
+                      SharedKernel.Primitives.IClock.
+                  (7) A constructor parameter whose type resolves to the open generic
+                      Microsoft.Extensions.Logging.ILogger<T>.
+    Fix       : Use Workflow.UtcNow / Workflow.NewGuid() / Workflow.Random (Temporalio's own
+                deterministic, replay-safe primitives) for (1)/(2)/(3); use
+                Workflow.DelayAsync / Workflow.WaitConditionAsync and the SDK's own task
+                combinators for (4); move any environment/filesystem access into an activity
+                for (5); never inject IClock or ILogger<T> into a `[Workflow]` type — use
+                Workflow.Logger (bound automatically by WorkflowBase.Logger) for logging and
+                Workflow.UtcNow rather than IClock for time. Dependencies reach workflow code
+                only through activities.
+    Exempt    : Types deriving from ActivityBase or attributed `[Activity]` — a hard, positive
+                exclusion checked FIRST, not merely "does not match the trigger-in scope."
+                Inside an activity every one of these seven APIs is ordinary, correct code
+                (IClock/ILogger<T> injection is in fact MANDATORY there, per SK0001) — see
+                17.Workflows/CLAUDE.md's own "ACTIVITIES ARE ORDINARY CODE" note.
+    Suppress  : Per-call-site via #pragma warning disable SK0028; document the rationale
+                inline — no legitimate case is known inside a genuine `[Workflow]` type. A
+                private helper method shared between a `[Workflow]` type and an `[Activity]`
+                type via a common static utility class neither directly extends is the one
+                plausible false-negative shape (see Note), not a reason to suppress inside
+                the workflow itself.
+    Note      : Introduced WO-046 P-290 — the single highest-value analyzer this domain can
+                ship, because every one of these seven shapes compiles cleanly and fails only
+                on REPLAY, in production, at an arbitrary time later, taking down every
+                in-flight execution of that workflow type simultaneously (surfaced platform-
+                wide as `WorkflowErrors.DeterminismViolation`/`Unexpected`, per
+                17.Workflows/CLAUDE.md). Method-body-local analysis only — a shared helper
+                method called from both workflow and activity code is NOT analyzed for
+                cross-call violations; documented limitation, not a defect, consistent with
+                this domain's established over-approximation-over-data-flow philosophy
+                (HealthCheckTagIntegrityRules, NoInlineResultBranchBeforeHttpResultPredicate,
+                RequestDurationRecordMissingOutcomeTagPredicate). `HttpClient`/general I/O are
+                documented Hard Violations in 17.Workflows/CLAUDE.md too but are deliberately
+                NOT part of this rule's seven-shape trigger set — WO-046's own acceptance
+                criteria scope the rule to exactly these seven; extending detection to
+                `HttpClient`/general I/O is a candidate follow-up, not implemented here.
+
+SK0029  RawTemporalClientConstructorInjection
+    Category  : Usage
+    Severity  : Warning
+    Trigger   : A ConstructorDeclarationSyntax parameter type resolved via
+                SemanticModel.GetSymbolInfo to exactly one of four full type names:
+                "Temporalio.Client.ITemporalClient", "Temporalio.Client.TemporalClient",
+                "Temporalio.Worker.TemporalWorker", or "Temporalio.Client.WorkflowHandle"
+                (any generic arity) — unless the parameter's enclosing type sits inside a
+                namespace (via the established SyntaxNode.Parent ancestor walk, same pattern
+                as SK0001/SK0007/SK0013) starting with "SharedKernel.Workflows.Temporal". A
+                SINGLE shared exemption namespace prefix — structurally closer to SK0013's
+                one-namespace-exemption shape than to SK0026's per-client-type/per-package
+                exemption mapping, because 17.Workflows has exactly one owning package, not
+                three siblings.
+    Fix       : Inject IWorkflowDispatcher (to start/signal/query workflows) or
+                IWorkflowHandle (to interact with an already-started execution) instead —
+                both from SharedKernel.Workflows.Temporal's own abstraction surface. If a
+                genuine Visibility-API/schedule/namespace-administration/Nexus need remains
+                unmet by either, the sanctioned path is the three-gate
+                ITemporalRawClientAccessor escape hatch (composition-root
+                `.AllowRawClientAccess()` opt-in, a startup `Warning` at EventId 17012, and
+                this same phase's `WorkflowTopologyRules` architecture test below) — never a
+                raw constructor-injected Temporalio.* client type.
+    Suppress  : Per-constructor via #pragma warning disable SK0029; document the rationale
+                inline — no legitimate use case outside SharedKernel.Workflows.Temporal
+                itself is known.
+    Note      : Introduced WO-046 P-290, structurally identical to SK0013 (raw HttpClient,
+                P-159) and SK0026 (raw vector-DB/model-SDK client, P-286) — the platform's
+                third instance of the "raw third-party client injected outside its owning
+                abstraction package" prohibition shape. This domain's thirteenth
+                semantic-model analyzer (after SK0028).
 ```
 
 ---
@@ -992,8 +1099,9 @@ ArchitectureRuleBase  (abstract base class)
 
 SharedKernelLayeringRules  (static class — pre-built predicates)
     All factory methods take an Assembly parameter and return ConditionList, EXCEPT
-    SearchReferencesOnlyCoreAndContracts (WO-044 P-278) and
-    IntelligenceReferencesOnlyCoreAndContracts (WO-045 P-286), which return
+    SearchReferencesOnlyCoreAndContracts (WO-044 P-278),
+    IntelligenceReferencesOnlyCoreAndContracts (WO-045 P-286), and
+    WorkflowsReferencesOnlyCoreContractsAndApplication (WO-046 P-290), which return
     ConditionList[] — see their own entries below for why.
     .CoreReferencesNothing(Assembly)                → ConditionList
     .CachingReferencesOnlyCore(Assembly)            → ConditionList
@@ -1005,6 +1113,7 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
     .TestingNeverReferencedByProduction(Assembly)   → ConditionList  (hard rule)
     .SearchReferencesOnlyCoreAndContracts(Assembly) → ConditionList[]  (WO-044 P-278)
     .IntelligenceReferencesOnlyCoreAndContracts(Assembly) → ConditionList[]  (WO-045 P-286)
+    .WorkflowsReferencesOnlyCoreContractsAndApplication(Assembly) → ConditionList[]  (WO-046 P-290)
 
     .SearchReferencesOnlyCoreAndContracts(Assembly searchAssembly)  → ConditionList[]
         Added to this EXISTING class rather than a new dedicated class, mirroring the
@@ -1102,6 +1211,138 @@ SharedKernelLayeringRules  (static class — pre-built predicates)
         list AND SearchReferencesOnlyCoreAndContracts's list (and every future sibling
         of this ConditionList[]-per-forbidden-term shape) in the SAME PR that adds the
         new domain, or each affected rule will silently under-enforce against it.
+
+    .WorkflowsReferencesOnlyCoreContractsAndApplication(Assembly workflowsAssembly)  → ConditionList[]
+        Added to this EXISTING class alongside SearchReferencesOnlyCoreAndContracts and
+        IntelligenceReferencesOnlyCoreAndContracts, following the same precedent that a
+        layering-BOUNDARY check on an existing numbered domain belongs alongside its
+        siblings, while TOPOLOGY-INTERNAL checks (the raw-client-accessor-consumption and
+        HealthChecks-dependency prohibitions specific to 17.Workflows) live in the domain's
+        own dedicated WorkflowTopologyRules class (documented below). Asserts that the
+        supplied 17.Workflows assembly has no dependency on any of FOURTEEN forbidden
+        capability-domain namespace terms: "SharedKernel.Caching", "SharedKernel.Domain",
+        "SharedKernel.Persistence", "SharedKernel.Messaging", "SharedKernel.Storage",
+        "SharedKernel.Search", "SharedKernel.AI", "SharedKernel.Communication",
+        "SharedKernel.Security", "SharedKernel.ServiceDefaults", "SharedKernel.MultiTenancy",
+        "SharedKernel.Presentation", "SharedKernel.Integration", "SharedKernel.Testing".
+        FOURTEEN terms, not the fifteen SearchReferencesOnlyCoreAndContracts/
+        IntelligenceReferencesOnlyCoreAndContracts each use — the FIRST layering-boundary
+        method on this class where the domain under test is permitted THREE upstream
+        domains, not two: 17.Workflows/CLAUDE.md's own layering wall states "Only 01.Core,
+        04.Contracts, and 05.Application are permitted" — so "SharedKernel.Application" is
+        deliberately ABSENT from the forbidden list (unlike Search's and Intelligence's own
+        fifteen-term lists, which both forbid it), alongside the usual self-exclusion
+        ("SharedKernel.Workflows", omitted because 17.Workflows is the domain under test).
+        Returns ConditionList[] (fourteen elements, one per forbidden term), following the
+        same newer domain-boundary-rule-class convention as its two siblings. Caller must
+        assert .GetResult().IsSuccessful on EACH element. None of the fourteen terms is a
+        prefix of "SharedKernel.Workflows" — no self-collision. Excludes (by omission,
+        never listed as forbidden) "SharedKernel.Primitives", "SharedKernel.Core",
+        "SharedKernel.Configuration", "SharedKernel.FeatureManagement",
+        "SharedKernel.Cryptography" (01.Core — permitted), "SharedKernel.Contracts"
+        (04.Contracts — permitted), and "SharedKernel.Application" (05.Application —
+        permitted, the distinguishing exclusion for this method).
+        Rationale: mirrors 17.Workflows/CLAUDE.md's own Hard Violations bullet verbatim:
+        "Referencing 02.Caching, 03.Domain, 06.Persistence, 07.Messaging, 08.Storage,
+        09.Search, 10.Intelligence, 11.Communication, 12.Security, 13.ServiceDefaults,
+        14.Presentation, or 15.Integration from 17.Workflows. Only 01.Core, 04.Contracts,
+        and 05.Application are permitted." This method is the exhaustive, all-fourteen-
+        domains mechanical form of that sentence — the same relationship
+        SearchReferencesOnlyCoreAndContracts and IntelligenceReferencesOnlyCoreAndContracts
+        each have to their own domain's brain.
+        MAINTENANCE OBLIGATION (carried forward): a future 18.NewDomain addition MUST
+        append its package-family term to THIS method's list AND both of its siblings'
+        lists (and any future sibling of this ConditionList[]-per-forbidden-term shape) in
+        the SAME PR that adds the new domain, or each affected rule will silently
+        under-enforce against it.
+
+WorkflowTopologyRules  (static class — 17.Workflows package topology enforcement predicates; WO-046 P-290)
+    Both factory methods accept Assembly (or params Assembly[]) and return ConditionList.
+    Unlike RedisTopologyRules/StorageTopologyRules/SearchTopologyRules/
+    IntelligenceTopologyRules, 17.Workflows has no sibling provider packages — a single
+    package, SharedKernel.Workflows.Temporal, is both the abstraction surface and the
+    Temporal-specific implementation — so this class carries no
+    "AbstractionsHasNoThirdPartyDependencies"/"ProviderPackagesNeverReferenceEachOther" pair.
+    17.Workflows/CLAUDE.md's own cross-domain ask describes this class as "modelled
+    one-for-one on StorageTopologyRules/SearchTopologyRules"; for a single-package domain
+    that means restating the SAME two documented `NotHaveDependencyOn` gotchas (namespace
+    `StartsWith`, no trailing dot; never check a package against its own identifying term)
+    while the actual predicates are narrower, single-package equivalents of those classes'
+    topology-INTERNAL concerns.
+
+    .NoRawClientAccessorConsumptionInRepo(params Assembly[] repoAssemblies)  → ConditionList
+        Asserts that no type in the supplied in-repo assemblies (typically
+        SharedKernel.Workflows.Temporal itself, and any other in-repo SharedKernel.*
+        assembly the caller chooses to include) has a constructor parameter or field
+        whose type is exactly ITemporalRawClientAccessor. Uses
+        NoRawClientAccessorConsumptionPredicate (ICustomRule — see below). Carries NO
+        internal exemption — mirrors GrpcNeverReferencesContracts's "no exemption
+        permitted" precedent. No exemption is needed for the accessor's own DI-registration
+        wiring code either: that code PRODUCES an ITemporalRawClientAccessor instance (via
+        a factory delegate passed to a DI registration call) rather than CONSUMING one as a
+        constructor/field dependency, so it is never a false positive under this
+        constructor/field-only detection technique.
+        Failure message names the offending type and whether the consumption was via a
+        constructor parameter or a field.
+        Rationale: mechanizes gate 3 of 17.Workflows/CLAUDE.md's own three-gate
+        ITemporalRawClientAccessor escape-hatch discipline verbatim: "A 00.Governance
+        architecture test asserts no type inside this repo consumes it." The accessor is
+        the genuine last resort for Visibility API queries, schedules, namespace
+        administration, and Nexus operations that this package deliberately does not
+        model — but it bypasses tenant scoping and workflow-ID composition entirely (stated
+        IN CAPITALS on the accessor's own XML doc per that same brain section), so it must
+        never be a dependency of any type living inside this platform's own mono-repo; only
+        a CONSUMING microservice, having read and accepted that warning, may ever construct-
+        inject it, and even then only after its own composition root calls
+        `.AllowRawClientAccess()` — a check this rule does not attempt to correlate (see
+        Note below).
+        Scope note: "no type inside this repo" is read literally, per 17.Workflows/CLAUDE.md's
+        own wording — this rule asserts an absolute prohibition on the SharedKernel mono-
+        repo's own packages, not a per-consuming-microservice correlation with whether
+        `.AllowRawClientAccess()` was called. A consuming microservice's own use of the
+        accessor (after opting in) is verified by that microservice's own test suite, not
+        by this platform-level rule — the same jurisdiction boundary already established
+        for every other "repo-internal purity" rule in this file (e.g.
+        DomainLayerPurityRules, ContractsPurityRules).
+
+    .NoHealthChecksDependencyInWorkflows(Assembly workflowsAssembly)  → ConditionList
+        Asserts that SharedKernel.Workflows.Temporal has no dependency on
+        "Microsoft.Extensions.Diagnostics.HealthChecks". Single
+        Types.InAssembly(workflowsAssembly).Should()
+        .NotHaveDependencyOn("Microsoft.Extensions.Diagnostics.HealthChecks") call —
+        deliberately the NARROW full term, not a bare "Microsoft.Extensions" prefix,
+        mirroring IntelligenceTopologyRules.NoHealthChecksDependencyAcrossIntelligencePackages's
+        precedent exactly: 17.Workflows legitimately needs OTHER Microsoft.Extensions.*
+        packages (Hosting, DependencyInjection, Logging, Options) for its own DI/hosting
+        wiring — only the HealthChecks-specific term is forbidden.
+        Rationale: mechanizes 17.Workflows/CLAUDE.md's own Hard Violations bullet verbatim:
+        "Implementing IHealthCheck, or referencing
+        Microsoft.Extensions.Diagnostics.HealthChecks, anywhere in 17.Workflows. ProbeAsync
+        returning Result<WorkflowServiceHealth> is the primitive; the adapter is
+        13.ServiceDefaults's responsibility" — mirroring the 06.Persistence/08.Storage/
+        09.Search/10.Intelligence readiness-probe split precedent.
+
+    Note: introduced in WO-046 P-290. Zero new SK diagnostic ID, zero new NuGet dependency
+    — NoHealthChecksDependencyInWorkflows is a pure NetArchTest namespace-dependency check;
+    NoRawClientAccessorConsumptionInRepo reuses the established Mono.Cecil
+    TypeDefinition.Methods (constructor-parameter) and TypeDefinition.Fields inspection
+    pattern already used throughout this file (e.g.
+    NoEncryptionRotationJobInjectionPredicate, NoDbContextTransactionInApplicationPredicate)
+    — the existing Mono.Cecil >= 0.11.5 reference already covers it. Lives in
+    SharedKernel.ArchitectureTests/Rules/WorkflowTopologyRules.cs.
+
+NoRawClientAccessorConsumptionPredicate  (class : ICustomRule — internal predicate)
+    For each type, checks two surfaces for exact type name "ITemporalRawClientAccessor"
+    (simple name; unique within the SDK, matching the discriminator style already used by
+    NoEncryptionRotationJobInjectionPredicate's "IEncryptionRotationJob" exact-name check):
+      (1) TypeDefinition.Methods where IsConstructor is true — for each constructor,
+          checks each ParameterDefinition.ParameterType.Name.
+      (2) TypeDefinition.Fields — checks each FieldDefinition.FieldType.Name.
+    Returns false (rule violated) on the first match across either surface, with failure
+    message naming the offending type and which surface (constructor parameter vs. field)
+    matched. No exemption — see WorkflowTopologyRules.NoRawClientAccessorConsumptionInRepo's
+    own entry for why none is needed. Lives in Predicates/ folder. Used by
+    WorkflowTopologyRules.NoRawClientAccessorConsumptionInRepo.
 
 GuardPurityRules  (static class — guard clause functional-path purity predicates)
     .GuardAgainstMethodsMustNotThrow()      → IArchRule
@@ -3415,6 +3656,14 @@ Consuming projects add `<PackageReference Include="SharedKernel.Linter" PrivateA
 - `IntelligenceTopologyRules.NoHealthChecksDependencyAcrossIntelligencePackages` deliberately uses the NARROW term `"Microsoft.Extensions.Diagnostics.HealthChecks"`, not the bare `"Microsoft.Extensions"` prefix `.AbstractionsHasNoThirdPartyDependencies` uses — the three provider packages legitimately need other `Microsoft.Extensions.*` packages for DI wiring; only `SharedKernel.AI.Abstractions` carries the zero-`Microsoft.Extensions`-anything posture. This is the first `*TopologyRules` class in this domain to need a rule DISTINCT from its `AbstractionsHasNoThirdPartyDependencies` sibling for a narrower, cross-package term — `StorageTopologyRules`/`SearchTopologyRules` never needed one because neither of those domains' phase inputs named a specific forbidden-dependency rule beyond the Abstractions-purity and sibling-non-reference checks.
 - `SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts` follows `SearchReferencesOnlyCoreAndContracts`'s `ConditionList[]`-per-forbidden-term convention with the SAME fifteen-term count — `"SharedKernel.Search"` swapped IN (09.Search is now forbidden for 10.Intelligence) and `"SharedKernel.AI"` swapped OUT (10.Intelligence is the domain under test, excluded by omission). A future `18.NewDomain` addition MUST append its package-family term to BOTH this method's list AND `SearchReferencesOnlyCoreAndContracts`'s list (and any future sibling of this shape) in the SAME PR that adds the new domain.
 - Real-assembly status for SK0026/SK0027/`IntelligenceTopologyRules`/`IntelligenceReferencesOnlyCoreAndContracts` — UNVERIFIABLE at authoring time (2026-07-21). Unlike most "designed-ahead-of-a-pending-dependency" precedents in this domain, the WO-045 phase input's own acceptance criteria make real-assembly verification a GATING condition on this phase's completion, mirroring `SK.00.SearchTopology`'s precedent. `10.Intelligence/CLAUDE.md` states explicitly: "No production `.cs` file has been written yet" — the `SharedKernel.AI.Abstractions` interface contract is locked (P-279's Design phase, `10.Intelligence/CLAUDE.md`'s own Interface Contracts section), but its Scaffold/Core/Tests/Docs/Published phases, and all of P-280/P-281/P-282, are `○ Not started` per `10.Intelligence/state-map.md`. Design, implementation, and initial tests for this phase use CONTRIVED in-memory assemblies via `CSharpCompilation` + `MetadataReference.CreateFromImage` (the `RedisTopologyRulesTests`/`StorageTopologyRulesTests`/`SearchTopologyRulesTests` technique); the real-assembly re-verification pass MUST be completed, and its own acceptance-criterion checkbox explicitly closed, before this phase can be marked fully `●` complete.
+- SK0028 `NonDeterministicApiUsageInsideWorkflowAnalyzer` and SK0029 `RawTemporalClientConstructorInjectionAnalyzer` (WO-046 P-290) are the next two sequential IDs in the SK0001–SK00N general-purpose block (SK0027 was the prior ID) — the platform's first `17.Workflows`-domain diagnostics, and, following the `SK0011`/`SK0013`/`SK0023` precedent that a domain's diagnostics stay in the sequential block rather than opening a new per-domain range, no `17xx` block is opened. SK0028 is this domain's twelfth semantic-model analyzer; SK0029 is the thirteenth.
+- SK0028 is the first analyzer in this domain to scope its trigger by TYPE ATTRIBUTION/INHERITANCE (`[Workflow]` attribute or `WorkflowBase` in the base-type chain) rather than the established namespace-ancestor `SyntaxNode.Parent` walk every prior namespace-scoped SK analyzer uses (SK0001/SK0007/SK0013/SK0016/etc.). The `ActivityBase`/`[Activity]` exclusion is checked FIRST and is a hard, positive exclusion — not merely "outside the trigger-in scope" — because every one of SK0028's seven forbidden shapes is not just tolerated but in some cases MANDATORY inside an activity (`IClock`/`ILogger<T>` injection, per `SK0001`). This is the platform's first analyzer explicitly encoding a per-API-shape INVERSION of another rule's own trigger condition (SK0001 mandates `IClock`; SK0028 bans it, in the one narrow context where mandating it would be wrong).
+- SK0028's seven forbidden shapes are fixed by WO-046's own acceptance criteria: the four-property clock set (reusing `DoesNotCallSystemClockPredicate`'s exact property list), `Guid.NewGuid()`, `new Random()`, the `Task.Run`/`Task.Delay`/`ConfigureAwait(false)` scheduler-escape trio, `Environment.*`/`File.*` member access, and constructor-injected `IClock`/`ILogger<T>`. `HttpClient` and general I/O are documented `17.Workflows/CLAUDE.md` Hard Violations too but are deliberately NOT added to this rule's trigger set — do not silently extend SK0028's shape list without a governance review; a future extension is a candidate follow-up, not an oversight to "complete" here.
+- SK0029 mirrors SK0013's single-shared-namespace-exemption shape (`SharedKernel.Workflows.Temporal` prefix, one term) rather than SK0026's per-client-type/per-owning-package exemption mapping (three terms) — because 17.Workflows has exactly one owning package, not three sibling providers. Do not generalize SK0029's exemption to a per-client-type dictionary unless 17.Workflows itself ever splits into sibling packages.
+- `WorkflowTopologyRules` (WO-046 P-290) is the first `*TopologyRules` class in this domain scoped to a domain with NO sibling provider packages — it therefore has no `AbstractionsHasNoThirdPartyDependencies`/`ProviderPackagesNeverReferenceEachOther` pair (there is nothing to split or compare). Its two methods (`NoRawClientAccessorConsumptionInRepo`, `NoHealthChecksDependencyInWorkflows`) are each single-package analogues of concerns those sibling-domain classes address differently — do not add an `AbstractionsHasNoThirdPartyDependencies`-shaped method to this class unless `SharedKernel.Workflows.Temporal` is ever split into an `.Abstractions` + `.Temporal` pair; until then, third-party-dependency purity for this package is `SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication`'s job (capability-domain terms) plus `NoHealthChecksDependencyInWorkflows` (the one specific third-party-package prohibition 17.Workflows/CLAUDE.md names explicitly) — there is no general "only `Temporalio.*` third-party packages allowed" check, since NetArchTest's dependency scan cannot cheaply distinguish "an intentional `Temporalio.*` reference" from "an intentional `Microsoft.Extensions.Hosting` reference" without an exhaustive allow-list this phase does not attempt.
+- `NoRawClientAccessorConsumptionPredicate` checks constructor-parameter and field TYPE NAMES ONLY (exact simple-name match on `"ITemporalRawClientAccessor"`) — it does not, and structurally cannot, verify whether the consuming microservice's own composition root called `.AllowRawClientAccess()` first. That correlation is out of scope for a platform-level architecture test (it would require inspecting a consuming microservice's `Program.cs`, which is never one of the assemblies this repo builds) — the phrase "no in-repo type consumes it" in `17.Workflows/CLAUDE.md` is read literally: this rule guarantees the SharedKernel mono-repo's OWN packages never depend on the accessor, not that every downstream consumer's opt-in is well-formed.
+- `SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication` is the first layering-boundary method on that class permitting THREE upstream domains (`01.Core`, `04.Contracts`, `05.Application`) rather than two — its forbidden-term list is therefore FOURTEEN terms, not the fifteen `SearchReferencesOnlyCoreAndContracts`/`IntelligenceReferencesOnlyCoreAndContracts` each use, with `"SharedKernel.Application"` the one term deliberately absent that appears in both of those sibling lists. Any future layering-boundary method for a domain permitted more than two upstream references should follow this same reduced-forbidden-list pattern rather than over-including a permitted term by copy-paste from the fifteen-term precedent.
+- Real-assembly status for SK0028/SK0029/`WorkflowTopologyRules`/`WorkflowsReferencesOnlyCoreContractsAndApplication` — UNVERIFIABLE at authoring time (2026-07-22), and, following the `SK.00.SearchTopology`/`SK.00.IntelligenceTopology` precedent (not the older non-blocking-follow-up precedent), real-assembly verification is a GATING condition on this phase's completion. `17.Workflows/state-map.md` shows its entire Design/Scaffold/Core phases at `○` as of this phase's authoring — no production `.cs` file has shipped for `SharedKernel.Workflows.Temporal`. Design, implementation, and initial tests for this phase use CONTRIVED in-memory assemblies via `CSharpCompilation` + `MetadataReference.CreateFromImage` (the `RedisTopologyRulesTests`/`StorageTopologyRulesTests`/`SearchTopologyRulesTests`/`IntelligenceTopologyRulesTests` technique); the real-assembly re-verification pass MUST be completed, and its own acceptance-criterion checkbox explicitly closed, before this phase can be marked fully `●` complete.
 
 ---
 
@@ -3512,3 +3761,4 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-07-18] SK.00.StorageTopology → ● closeout — NonSingletonAmazonS3ClientRegistrationAnalyzer (SK0023) implemented in SharedKernel.Analyzers/Diagnostics/; StorageTopologyRules implemented in SharedKernel.ArchitectureTests/Rules/, exactly matching the pre-written CLAUDE.md spec (all three factory-method signatures, forbidden-term lists, two-named-parameter ProviderPackagesNeverReferenceEachOther, caller-controlled-exclusion OnlyProviderPackagesMayReferenceAmazonS3) — no discrepancy found, no edits required to the diagnostic registry or architecture-test-contract sections themselves. **STALE-DEPENDENCY CORRECTION (the main finding of this closeout):** the phase spec (authored 2026-07-16) instructed contrived-fixtures-only design because 08.Storage's own state-map then showed every phase at ○/empty and P-265 was only ◐ (Design). Before implementation began (2026-07-18), 08.Storage had independently reached Published — verified directly on disk, not assumed from prose: `dotnet build --configuration Release` on all three of SharedKernel.Storage.Abstractions/.S3/.Obs succeeds with 0 warnings/0 errors, and the root state-map.md Phase Backlog shows P-265/P-266/P-267 all `●` Complete (closed 2026-07-18, the same day as this implementation session). Corrected the stale Cross-Domain Dependencies table rows (00.Governance/state-map.md, `SK.00.StorageTopology depends on 08.Storage` section) and the "UNVERIFIABLE"/"before ... exist as buildable assemblies" prose in this file's StorageTopologyRules architecture-test-contract Note and Implementation Rules bullet — same precedent SK.00.MagicStringGuard's closeout set for this exact class of dependency-resolved-before-implementation correction. Per the phase input's explicit instruction, real-assembly verification was ADDITIONALLY wired in this same phase rather than deferred as a follow-up: SharedKernel.ArchitectureTests.Tests.csproj gained three test-only ProjectReferences (PrivateAssets="all") to the real 08.Storage assemblies; three Real*-suffixed tests confirm all three StorageTopologyRules factory methods pass against the shipped packages with zero discrepancy from contrived-fixture behavior — no real violation surfaced. The six contrived-fixture fire/pass-path tests (T-194–T-199) remain the primary red/green proof, exactly as the phase spec required; one fixture-authoring pitfall was hit and fixed during T-196's authoring — the initial ProviderPackagesNeverReferenceEachOther fire-path fixtures referenced a `const int` field on the "other" provider's stub type, which the C# compiler const-folds into a bare literal at the call site (no Ldsfld, no assembly reference emitted), so NetArchTest's dependency-namespace scan never observed the cross-reference; switched to constructor-injecting an interface type (a genuine metadata reference) instead, mirroring RedisTopologyRulesTests's own established pattern — the same const-folding class of pitfall already documented for `const string` vs `static readonly string` in the HealthCheckConstantsGuard closeout, now confirmed to apply identically to `const int`. 4 new analyzer tests (T-191–T-193 plus one unrelated-interface pass-path) — 144/144 SharedKernel.Analyzers.Tests pass; 10 new architecture tests (T-194–T-199 plus 3 real-assembly tests) — 145/145 SharedKernel.ArchitectureTests.Tests pass; 0 build warnings/errors across both projects. This is the last `○` phase key — every phase key in 00.Governance/state-map.md is now `●` (governance-phase-implementer, state-map-phase)
 - [2026-07-19] Phase SK.00.SearchTopology added — SK0024 RawSearchFieldNameLiteral and SK0025 ObsoleteElasticsearchClientUsage added to diagnostic registry (general-purpose sequential block, next after SK0023; platform's first 09.Search-domain diagnostics; SK0024 is the domain's eighth semantic-model analyzer and the platform's first refactor-safety/nameof()-encouragement rule, distinct in intent from SK0022 despite sharing its literal-vs-reference discriminator; SK0025 is the ninth semantic-model analyzer and the platform's first EOL-third-party-package-prohibition rule, firing platform-wide on any ContainingAssembly.Name match against NEST/Elasticsearch.Net); SearchTopologyRules added to architecture test contracts (WO-044 P-278) — two pure NetArchTest predicates mirroring StorageTopologyRules (AbstractionsHasNoThirdPartyDependencies with a sixth Microsoft.Extensions forbidden term beyond Storage's five-term analog, ProviderPackagesNeverReferenceEachOther with a two-named-Assembly-parameter signature mirroring StorageTopologyRules/UnitOfWorkSeamRules); SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts added — the first method on that class returning ConditionList[] instead of a single ConditionList, an explicit fifteen-forbidden-term enumeration of every other numbered domain's package family (including the SharedKernel.AI/10.Intelligence package-family-name-vs-folder-name mismatch); zero new Mono.Cecil technique, zero new NuGet dependency; UNVERIFIABLE against real assemblies as of this phase's authoring — 09.Search's entire Design phase (D-01–D-28) is ○ and only bare .csproj skeletons exist on disk for all three packages — but UNLIKE every prior designed-ahead precedent in this domain, real-assembly verification is a GATING acceptance criterion per the phase input itself, not a non-blocking follow-up; seven new implementation rules added; one Cross-Domain Dependencies block added (09.Search P-272/P-273/P-274, explicitly marked gating, not the usual non-blocking-follow-up shape) — WO-044 P-278, depends on 09.Search P-272/P-273/P-274 (governance-arch-planner)
 - [2026-07-21] WO-045: 00.Governance gap-filled for the new 10.Intelligence domain — SK0026 RawIntelligenceProviderClientConstructorInjection and SK0027 RawIntelligenceIdentifierLiteral added to diagnostic registry (general-purpose sequential block, next after SK0025; SK0026 the domain's tenth semantic-model analyzer, requiring exact-full-type-name resolution for QdrantClient/MilvusClient/Kernel because "Kernel" is a highly collision-prone simple name; SK0027 the eleventh, structurally parallel to SK0024 but grounded in the sharper, domain-specific model-identity-mismatch hazard Domain Invariant #1 describes); IntelligenceTopologyRules added to architecture test contracts (WO-045 P-286) — three pure NetArchTest predicates mirroring StorageTopologyRules/SearchTopologyRules, scoped to 10.Intelligence's THREE sibling providers (AbstractionsHasNoThirdPartyDependencies with an eight-term forbidden list, ProviderPackagesNeverReferenceEachOther as the domain's first three-named-Assembly-parameter sibling-non-reference check returning a six-element ConditionList[], and NoHealthChecksDependencyAcrossIntelligencePackages mechanizing Domain Invariant #8's explicit HealthChecks prohibition); SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts added, mirroring SearchReferencesOnlyCoreAndContracts's fifteen-term ConditionList[] shape with SharedKernel.Search swapped in and SharedKernel.AI swapped out; zero new Mono.Cecil technique, zero new NuGet dependency; UNVERIFIABLE against real assemblies as of this phase's authoring — 10.Intelligence/CLAUDE.md states "No production .cs file has been written yet," so real-assembly verification is a GATING acceptance criterion per the phase input itself, mirroring SK.00.SearchTopology's precedent (arch-lead, WO-045, P-286)
+- [2026-07-22] Phase SK.00.WorkflowTopology added — WO-046 (P-290): SK0028 NonDeterministicApiUsageInsideWorkflow and SK0029 RawTemporalClientConstructorInjection added to diagnostic registry (general-purpose sequential block, next after SK0027; platform's first 17.Workflows-domain diagnostics; SK0028 is the domain's twelfth semantic-model analyzer and the first to scope its trigger by type attribution/inheritance ([Workflow]/WorkflowBase in-scope, ActivityBase/[Activity] positively excluded first) rather than the established namespace-ancestor walk, firing on seven forbidden non-deterministic/side-effecting shapes — the four-property clock set, Guid.NewGuid(), new Random(), the Task.Run/Task.Delay/ConfigureAwait(false) scheduler-escape trio, Environment.*/File.*, and constructor-injected IClock/ILogger<T> — explicitly encoding the narrow SK0001 inversion (IClock banned inside workflows, mandatory inside activities); SK0029 the thirteenth semantic-model analyzer, structurally identical to SK0013/SK0026 but with a single shared exemption namespace since 17.Workflows has one owning package, not siblings); WorkflowTopologyRules added to architecture test contracts (WO-046 P-290) — the first *TopologyRules class scoped to a domain with no sibling provider packages, carrying two methods instead of the Storage/Search/Intelligence Abstractions+Siblings pair: NoRawClientAccessorConsumptionInRepo (via new NoRawClientAccessorConsumptionPredicate, mechanizing 17.Workflows/CLAUDE.md's own three-gate ITemporalRawClientAccessor escape-hatch gate 3, scoped literally to "no in-repo type" — not a per-consuming-microservice AllowRawClientAccess() correlation, which is out of this rule's jurisdiction) and NoHealthChecksDependencyInWorkflows (mirroring IntelligenceTopologyRules's narrow-term precedent); SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication added — the first layering-boundary method on that class permitting THREE upstream domains (01.Core/04.Contracts/05.Application), yielding a FOURTEEN-term forbidden list (not fifteen) with "SharedKernel.Application" the one term deliberately absent versus its Search/Intelligence siblings; zero new Mono.Cecil technique, zero new NuGet dependency; UNVERIFIABLE against real assemblies as of this phase's authoring — 17.Workflows/state-map.md shows its entire Design/Scaffold/Core phases at ○, so real-assembly verification is a GATING acceptance criterion per the phase input itself, mirroring SK.00.SearchTopology's/SK.00.IntelligenceTopology's precedent (arch-lead, WO-046, P-290)
