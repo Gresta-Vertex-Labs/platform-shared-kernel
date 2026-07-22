@@ -1,3 +1,3 @@
 # Intelligence Phase Implementer — Memory Index
 
-_No memories saved yet. Add one line per memory file: `- [Title](file.md) — one-line hook`._
+- [10.Intelligence session-1 findings](session1_scaffold_core.md) — Milvus.Client verification failure, NuGet pins, file layout, test patterns, skill-invocation behavior
