@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!--
+      SIBLING-PACKAGE RULE: SharedKernel.AI.SemanticKernel must NEVER reference SharedKernel.AI.Qdrant
+      or SharedKernel.AI.Milvus, directly or transitively.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.SemanticKernel — official Microsoft LLM orchestration SDK. Verified against nuget.org
+      2026-07-22: latest stable 1.78.0 (published 2026-07-07), MIT, owners "Microsoft"/"SemanticKernel"
+      (official), targets net8.0/net10.0/netstandard2.0 (a real net10.0 target ships), 14.4M total
+      downloads, actively maintained (weekly-cadence release history). Documented non-AOT-safe
+      dependency (reflection-driven [KernelFunction] discovery/plugin model) — isolated behind this
+      package per 10.Intelligence/CLAUDE.md's AOT Compatibility section; never referenced from
+      SharedKernel.AI.Abstractions.
+    -->
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.78.0" />
+    <!--
+      Microsoft.Extensions.* set — required for the DI extension (DependencyInjection.Abstractions),
+      Options-pattern binding (Options), and [LoggerMessage] source-generated logging
+      (Logging.Abstractions). Pinned at 10.0.9 to match the version already pinned by the most recently
+      implemented sibling capability packages (09.Search) — Microsoft.SemanticKernel itself already
+      pulls a recent Microsoft.Extensions.* graph transitively, but these are pinned explicitly rather
+      than left to implicit resolution.
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.AI.SemanticKernel.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.AI.SemanticKernel.Tests\**" />
+    <None Remove="SharedKernel.AI.SemanticKernel.Tests\**" />
+  </ItemGroup>
+
+</Project>

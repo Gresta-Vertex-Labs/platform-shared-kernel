@@ -3,6 +3,26 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Zero third-party NuGet dependencies (the seam rule, WO-045/P-279) — the only reference is
+      SharedKernel.Primitives (Result<T>/Result/Error/IClock/LoggingEventIdRanges). No vector-DB SDK,
+      no model SDK, no Microsoft.Extensions.* package (not even DependencyInjection.Abstractions — no
+      DI extension lives here), and no Microsoft.Extensions.AI.Abstractions (explicitly adjudicated and
+      declined, see 10.Intelligence/CLAUDE.md). System.Text.Json and System.Security.Cryptography
+      (SHA-256 for VectorCollectionDefinition.Fingerprint) are in-box on net10.0.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.AI.Abstractions.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.AI.Abstractions.Tests\**" />
+    <None Remove="SharedKernel.AI.Abstractions.Tests\**" />
+  </ItemGroup>
 
 </Project>

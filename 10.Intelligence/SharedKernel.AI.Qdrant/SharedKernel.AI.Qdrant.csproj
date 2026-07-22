@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!--
+      SIBLING-PACKAGE RULE: SharedKernel.AI.Qdrant must NEVER reference SharedKernel.AI.Milvus or
+      SharedKernel.AI.SemanticKernel, directly or transitively. Shared implementation shape (options-
+      validation flow, the VectorFilter walker skeleton, receipt mapping, probe sequencing) is
+      duplicated deliberately across the three provider packages — see 10.Intelligence/CLAUDE.md's
+      Packages section.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Qdrant.Client — official .NET SDK, gRPC/protobuf-based. Verified against nuget.org 2026-07-22:
+      latest stable 1.18.1 (published 2026-05-11), Apache-2.0, owner "Qdrant.com" (official), targets
+      net6.0/netstandard2.0/net462, 2.2M total downloads, actively maintained (monthly-cadence release
+      history). Consumed by Microsoft.SemanticKernel.Connectors.Qdrant and Aspire hosting integrations.
+    -->
+    <PackageReference Include="Qdrant.Client" Version="1.18.1" />
+    <!--
+      Microsoft.Extensions.* set — required for the DI extension (DependencyInjection.Abstractions),
+      Options-pattern binding (Options), and [LoggerMessage] source-generated logging
+      (Logging.Abstractions — not pulled in transitively by Qdrant.Client or by
+      SharedKernel.Configuration). Pinned at 10.0.9 to match the version already pinned by the most
+      recently implemented sibling capability packages (09.Search).
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.AI.Qdrant.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.AI.Qdrant.Tests\**" />
+    <None Remove="SharedKernel.AI.Qdrant.Tests\**" />
+  </ItemGroup>
+
+</Project>
