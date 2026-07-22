@@ -33,6 +33,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | [04.Contracts](04.Contracts/state-map.md)             | Design          | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
+| [17.Workflows](17.Workflows/state-map.md)             | Design          | Build out SharedKernel.Workflows.Temporal (P-287) per the already-locked domain brain — dispatch surface, authoring bases, worker hosting, propagation/failure-mapping/payload-encryption, and readiness probe, all Temporal-backed with zero .Abstractions split |
 <!--
 Format when active:
 | Domain | Current Phase | Focus (one line) |
@@ -82,7 +83,7 @@ Format when blocked:
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
 | 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | WO-045 (P-283/P-284) `SK.16.Docs` closed (25/25) — DO-25 verified all four required rationale items (Score/Rank fidelity, direct-dictionary-lookup filter simplification, `InMemorySemanticKernel`'s never-generates-text guarantee, non-coupling SCOPE LOCK note) already present inline in the six `Intelligence/` types' XML docs from the Core-phase pass; zero code changes, verification-only. `dotnet build` clean, 0 errors. This closes WO-045 in full — all six phases of `16.Testing` are `●` again. | — |
-| 17 | [Workflows](17.Workflows/state-map.md) | — | `○` | — | — |
+| 17 | [Workflows](17.Workflows/state-map.md) | Design | `◐` | — | Build out SharedKernel.Workflows.Temporal (P-287) per the already-locked domain brain — dispatch surface, authoring bases, worker hosting, propagation/failure-mapping/payload-encryption, and readiness probe, all Temporal-backed with zero .Abstractions split |
 
 ---
 
@@ -117,9 +118,9 @@ Format when active:
 | ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 1 |
+| ◐ In Progress | 2 |
 | ⚑ Blocked | 1 |
-| ○ Not Started | 1 |
+| ○ Not Started | 0 |
 
 ---
 
@@ -10938,3 +10939,109 @@ This domain's own brain documents every one of these rules in prose already — 
 
 - [2026-07-22] 16.Testing → Tests (●) — promoted from SK.16.Tests: T-54 implemented, all six `Intelligence/` in-memory fakes plus `IntelligenceServiceCollectionExtensions` proven (119 tests), 555/555 regression passing (state-map-phase)
 - [2026-07-22] 16 → Docs (●) — promoted from SK.16.Docs (25/25); DO-25 verified all four required rationale items (D-131 Score/Rank fidelity, D-132 direct-dictionary-lookup filter simplification, D-135 never-generates-text guarantee, D-137 non-coupling SCOPE LOCK) already present inline in the six Intelligence/ types' XML docs; zero code changes, verification-only pass; dotnet build clean. This closes WO-045 in full — all six phases of 16.Testing (Design/Scaffold/Core/Tests/Docs/Published) are `●` again. Docs is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
+
+---
+### P-287 — Workflows: SharedKernel.Workflows.Temporal Full Package Build-Out
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-046
+**Domain:** 17.Workflows
+**Depends on:** None
+
+#### What is needed
+
+Implement the entire `SharedKernel.Workflows.Temporal` package per the already-locked domain brain (`17.Workflows/CLAUDE.md`) and its granular sub-state-map (`17.Workflows/state-map.md` — 81 tasks across `SK.17.Design/Scaffold/Core/Tests/Docs/Published`). This is the platform's durable-execution layer, built on Temporal via the official `Temporalio` 1.17.0 .NET SDK family, exposing: a dispatch surface (`IWorkflowDispatcher`/`IWorkflowHandle`/`IWorkflowHandle<TResult>`/`IWorkflowIdFactory`) with mandatory non-defaulted `TenantScope` on every member and no raw caller-supplied workflow id ever accepted; authoring bases (`WorkflowBase` for deterministic-only workflow code, `ActivityBase` for ordinary DI-resolved activity code, `CommandActivity<TCommand>`/`CommandActivity<TCommand,TResult>` as the sole closed-generic bridge into `05.Application`'s MediatR pipeline); a worker-hosting builder (`ITemporalWorkflowsBuilder`) with eager `Build()`-time composition validation and a first-class `.AsClientOnly()` registration shape; a `Result<T>`↔Temporal-failure mapper keyed by `ErrorType`; correlation-id/tenant-id propagation via `01.Core`'s `WellKnownHeaders` carried as Temporal headers; AES-256-GCM payload encryption over `01.Core`'s `ISymmetricEncryptionService` wrapping every workflow input/output/signal payload persisted in Temporal's event history; a readiness-probe primitive (`IWorkflowServiceProbe`, no `IHealthCheck`); and a three-gate raw-client escape hatch (`ITemporalRawClientAccessor`). Single package — the `.Abstractions` + `.{Provider}` split was evaluated and correctly rejected: durable execution's programming model (determinism constraints, replay semantics, `Workflow.Patched` versioning) *is* the abstraction, and no candidate second backend (MassTransit sagas, Elsa, Dapr Workflow, Hangfire) is swap-compatible with Temporal's execution model.
+
+#### Why this is needed
+
+`17.Workflows` is the last domain in the root Folder Map with zero implementation — two bare placeholder `.csproj` files, zero `.cs` files. The platform needs a durable-execution primitive distinct from `07.Messaging`'s saga support, for processes shaped as "do A, wait up to 30 days for B, then do C or compensate" rather than "react to a message and mutate state." Getting the `Result<T>`↔Temporal-failure mapping and the determinism boundary wrong is not a cosmetic defect: a swallowed `Result.Failure` sends a workflow down a happy path with a value that was never produced, and a non-deterministic API compiled into workflow code passes every unit test and fails only on replay in production, weeks later, taking down every in-flight execution at once.
+
+#### Acceptance criteria
+- [ ] `IWorkflowDispatcher`/`IWorkflowHandle`/`IWorkflowHandle<TResult>`/`IWorkflowIdFactory` implemented with `TenantScope` mandatory, non-nullable, non-defaulted on every member; no raw caller-supplied workflow id accepted anywhere
+- [ ] `WorkflowBase`/`ActivityBase` implemented with the determinism boundary enforced (no constructor injection, no `DateTimeOffset.UtcNow`/`Guid.NewGuid()`/`Task.Run`/`ConfigureAwait` inside workflow code; `IClock` mandatory inside activities, banned inside workflows)
+- [ ] `CommandActivity<TCommand>`/`CommandActivity<TCommand,TResult>` implemented as closed generics with zero reflection, bridging into `05.Application`'s `ISender`
+- [ ] `WorkflowFailureMapper` implements the full `Result<T>`↔Temporal-failure table exhaustively (five expected `ErrorType`s `nonRetryable:true`, `Unexpected` `nonRetryable:false`); no shipped activity base can swallow a `Result.Failure` and return normally (asserted by test, not just reviewed)
+- [ ] `WorkflowPropagationInterceptor` carries correlation-id/tenant-id via `01.Core`'s `WellKnownHeaders` (never a retyped literal — `SK0022`)
+- [ ] `EncryptionPayloadCodec` wraps `ISymmetricEncryptionService` (AES-256-GCM) with a verified key-version rotation story
+- [ ] `ITemporalWorkflowsBuilder.Build()` validates composition eagerly (zero workflows+activities, duplicate task queue, non-`[Workflow]` type, missing encryption key) and `.AsClientOnly()` registers no `IHostedService`
+- [ ] `IWorkflowServiceProbe` implemented as a probe primitive — no `IHealthCheck`, no `Microsoft.Extensions.Diagnostics.HealthChecks` reference
+- [ ] Mandatory history-replay determinism tests via `WorkflowReplayer` prove a deliberately non-deterministic variant genuinely fails replay
+- [ ] Every `Temporalio` 1.17.0 API shape (enum names, exception constructor shape, interceptor member shape) verified against the real compiled assembly before Core implementation, not guessed from documentation
+- [ ] Package reaches Published with `dotnet pack` producing zero `NU5039`/`NU5128` warnings and a consumer-verify harness proving both `.AsClientOnly()` and worker-hosting compositions through a real `IHost.StartAsync()`
+---
+### P-288 — Testing: In-Memory IWorkflowDispatcher / IWorkflowHandle Test Doubles
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-046
+**Domain:** 16.Testing
+**Depends on:** P-287
+
+#### What is needed
+
+A `Workflows/` folder in `SharedKernel.Testing` holding `InMemoryWorkflowDispatcher` and `InMemoryWorkflowHandle` — `ConcurrentDictionary`-backed, no mocking framework, no `Task.Delay`/`Thread.Sleep` — with assertion helpers (`ShouldHaveStarted<TWorkflow>()`, `ShouldHaveSignalled(...)`, and equivalents for query/cancel/terminate) letting a consuming service unit-test that it dispatched a workflow without a Temporal server or `WorkflowEnvironment`.
+
+#### Why this is needed
+
+Mirrors the `InMemoryMessageBus`/`InMemoryFileStorage`/`InMemorySearchIndex<TDocument>` precedent — every capability domain with an injectable client-facing interface gets a fast, dependency-free in-memory double in `16.Testing` so consuming services never hand-roll their own stub. Explicitly named as required cross-domain work in `17.Workflows/CLAUDE.md`.
+
+#### Acceptance criteria
+- [ ] `InMemoryWorkflowDispatcher` implements `IWorkflowDispatcher` fully, including `TenantScope`-aware id composition behavior
+- [ ] `InMemoryWorkflowHandle` implements `IWorkflowHandle`/`IWorkflowHandle<TResult>` with distinguishable cancel-vs-terminate outcomes
+- [ ] Assertion helpers cover start/signal/query/cancel/terminate
+- [ ] Zero references to `Temporalio` or any real SDK type
+- [ ] Registered via a DI extension mirroring `AddInMemoryMessageBus()`
+---
+### P-289 — ServiceDefaults: Workflow Readiness Health Check + Telemetry Wiring
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-046
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-287
+
+#### What is needed
+
+`HealthCheckNames.Workflows`/`HealthCheckTags.Workflows` constants; `AddWorkflowReadinessCheck(this IHealthChecksBuilder)` wrapping an internal `WorkflowReadinessHealthCheck` that resolves only `IWorkflowServiceProbe` (never `TemporalOptions`, never any `Temporalio.*` type) — healthy iff `Reachable && NamespaceAddressable`, plus `WorkerPollersActive` on worker-hosting services only, with `TaskQueueBacklog` emitted as a gauge and never a readiness failure. Plus `WithWorkflowTelemetry(this IHostApplicationBuilder)` doing string-name-only `ActivitySource`/`Meter` wiring against a private constant matching `17.Workflows`'s `WorkflowWellKnown.ActivitySourceName`/`.MeterName` (`"SharedKernel.Workflows"`) with **no** `ProjectReference` to `17.Workflows`.
+
+#### Why this is needed
+
+Mirrors the established `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence` readiness-probe split — the owning domain ships a probe primitive, never an `IHealthCheck`; `13.ServiceDefaults` owns the `AddHealthChecks()` wiring. `WorkerPollersActive` is the member a naive probe/adapter omits and is the highest-value signal this check can carry — a worker with dead pollers is reachable, connected, and silently useless.
+
+#### Acceptance criteria
+- [ ] `AddWorkflowReadinessCheck` resolves only `IWorkflowServiceProbe`, no `ProjectReference` to `17.Workflows`'s concrete `Temporalio`-backed types
+- [ ] Health check reports `Unhealthy` when `Reachable` or `NamespaceAddressable` is false, and treats `WorkerPollersActive == false` as unhealthy only for worker-hosting registrations
+- [ ] `TaskQueueBacklog` is surfaced as a diagnostic/gauge value only, never drives `Unhealthy`
+- [ ] `WithWorkflowTelemetry()` wires `ActivitySource`/`Meter` by string name matching `"SharedKernel.Workflows"` with zero `ProjectReference` to `17.Workflows`
+- [ ] Tests pass against the real, now-shipped `SharedKernel.Workflows.Temporal` assembly (P-287 must be Published first)
+---
+### P-290 — Governance: Architecture Enforcement for 17.Workflows (Topology + Determinism Analyzers)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-046
+**Domain:** 00.Governance
+**Depends on:** P-287
+
+#### What is needed
+
+`WorkflowTopologyRules` (NetArchTest) asserting `17.Workflows` references only `01.Core`/`04.Contracts`/`05.Application` and no other capability domain, plus a `SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication(Assembly)` method and an architecture test asserting no in-repo type consumes `ITemporalRawClientAccessor` without `.AllowRawClientAccess()` having been called. Plus two new Roslyn analyzers at the next sequential `SK00xx` ID (no new `17xx` block): (1) a non-deterministic-API-inside-`[Workflow]`-type analyzer flagging `DateTimeOffset.UtcNow`/`DateTime.Now`/`Guid.NewGuid()`/`new Random()`/`Task.Run`/`Task.Delay`/`ConfigureAwait`/`Environment.*`/`File.*`/`HttpClient`/constructor parameters/injected `IClock` or `ILogger<T>` inside any `[Workflow]`-attributed type — explicitly encoding the narrow `SK0001` inversion (`IClock` banned inside workflows, mandatory inside activities); (2) a raw `ITemporalClient`/`TemporalWorker`-injection analyzer structurally identical to the raw-`HttpClient` (`SK0013`/P-159) and raw-vector-client (P-286) precedents.
+
+#### Why this is needed
+
+This domain's own brain already documents every one of these rules in prose — the platform has repeatedly found that documented-but-unenforced rules decay into real, shipped violations (raw-`HttpClient` P-159, ad hoc-logging P-250, magic-string P-264, the Storage/Search/Intelligence topology precedents). The consequence of a leak here is uniquely severe among all of them: a non-deterministic API compiled cleanly into a workflow body passes every unit test and fails only on replay, in production, weeks or months later, taking down every in-flight execution simultaneously.
+
+#### Acceptance criteria
+- [ ] Architecture test confirms `SharedKernel.Workflows.Temporal` references only `01.Core`/`04.Contracts`/`05.Application` `ProjectReference`s (plus `Temporalio.*` `PackageReference`s) and no other capability domain assembly
+- [ ] Architecture test confirms no in-repo type consumes `ITemporalRawClientAccessor`
+- [ ] Non-deterministic-API-inside-workflow analyzer fires on each of: `DateTimeOffset.UtcNow`/`DateTime.Now`, `Guid.NewGuid()`, `new Random()`, `Task.Run`/`Task.Delay`/`ConfigureAwait(false)`, `Environment.*`/`File.*`, constructor-injected `IClock` or `ILogger<T>`, inside any type deriving from `WorkflowBase` or attributed `[Workflow]`
+- [ ] Analyzer does **not** fire on the identical APIs used inside a type deriving from `ActivityBase` (the `SK0001` carve-out applies only to workflows)
+- [ ] Raw `ITemporalClient`/`TemporalWorker`-injection analyzer fires outside `SharedKernel.Workflows.Temporal`, structurally mirroring `SK0013`
+- [ ] Next-sequential analyzer IDs used, verified against the real highest allocated `SK00xx` ID at implementation time — no new `17xx` block opened
+- [ ] All new architecture tests pass against the real built `SharedKernel.Workflows.Temporal` assembly from P-287, not contrived fixtures only
+---
+
+- [2026-07-22] WO-046 phases P-287–P-290 written to Phase Backlog — 17.Workflows full build-out (single-package `SharedKernel.Workflows.Temporal`, no `.Abstractions` split) plus cross-domain support (16.Testing in-memory `IWorkflowDispatcher`/`IWorkflowHandle` doubles, 13.ServiceDefaults workflow readiness health check + telemetry wiring, 00.Governance topology enforcement + two new determinism/raw-client analyzers). Domain carried an exceptionally detailed pre-drafted brain (`17.Workflows/CLAUDE.md`, 81-task sub-state-map already fully planned Design→Published) — reviewed and ACCEPTED verbatim, no upgrade: the single-package shape (rejecting the `.Abstractions` + `.{Provider}` convention because durable execution's programming model *is* the abstraction and no evaluated backend is swap-compatible), the `Result<T>`↔Temporal-failure mapping table, the deliberate `SK0001` inversion (`IClock` banned inside workflows, mandatory inside activities), the mandatory non-defaulted `TenantScope` on every dispatch member, the closed-generic `CommandActivity<TCommand>` bridge into `05.Application`, and the probe-primitive-not-`IHealthCheck` pattern are all consistent with root layering rules (which already grant `17.Workflows` exactly `01.Core`/`04.Contracts`/`05.Application`) and with every precedent this platform has set for the analogous decisions in `08.Storage`/`09.Search`/`10.Intelligence`. Root CLAUDE.md's Folder Map row 17 and "What Goes Where" guide had zero detail for this domain despite the layering rule already being correct — the now-familiar gap shape from WO-043/044/045 (arch-lead, user request)
+- [2026-07-22] 17 → Design (◐) — Build out SharedKernel.Workflows.Temporal (P-287) per the already-locked domain brain — dispatch surface, authoring bases, worker hosting, propagation/failure-mapping/payload-encryption, and readiness probe, all Temporal-backed with zero .Abstractions split (state-map-phase)
+- [2026-07-22] Phase(s) P-287 dispatched to workflow-arch-planner for 17.Workflows (dispatch-phase)
+- [2026-07-22] Phase(s) P-290 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-22] Phase(s) P-289 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-07-22] Phase(s) P-288 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-07-22] ⚑ ESCALATION from P-289 planning: `13.ServiceDefaults.AddWorkflowReadinessCheck` as specified requires a ProjectReference from layer 13 to layer 17 (`SharedKernel.Workflows.Temporal`), which the root Layering Rules table forbids (13 may reference 01–12 only). Every prior probe-wrapping precedent (06/08/09/10) involved an owning domain ≤12; 17.Workflows ships no lower-numbered `.Abstractions` companion because it deliberately rejected that split. Outer shape of `AddWorkflowReadinessCheck` and all of `WithWorkflowTelemetry` are design-locked; the internal probe wiring is `⚑` Blocked pending an arch-lead decision (widen the layering exception, extract a lower-numbered probe package from 17.Workflows, or another root-level resolution) (dispatch-phase)
