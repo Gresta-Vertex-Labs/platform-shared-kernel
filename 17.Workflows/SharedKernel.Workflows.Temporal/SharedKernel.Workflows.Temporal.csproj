@@ -1,8 +1,64 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>  </PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <!--
+      SharedKernel.Application is the SOLE justification for this reference — it exists only so
+      CommandActivity<TCommand>/CommandActivity<TCommand,TResult> can resolve MediatR's ISender and
+      constrain against ICommand/ICommand<TResponse>. If CommandActivity<> is ever dropped, this
+      reference must be dropped with it (17.Workflows/CLAUDE.md, S-02).
+
+      NO SharedKernel.Contracts (04.Contracts) reference: the recommended contract-shaped workflow
+      argument/result shape is a documentation recommendation to CONSUMERS, not something any type
+      shipped by this package needs on its own signature — adding it would be a dead reference of the
+      exact kind 11.Communication.Grpc removed under P-163 (S-02).
+    -->
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Temporalio SDK family — verified against nuget.org 2026-07-23: 1.17.0 is latest stable
+      (published 2026-07-13, MIT, "temporalio" org). All four packages pinned to the SAME version
+      (17.Workflows/CLAUDE.md, D-02/S-05).
+    -->
+    <PackageReference Include="Temporalio" Version="1.17.0" />
+    <PackageReference Include="Temporalio.Extensions.Hosting" Version="1.17.0" />
+    <PackageReference Include="Temporalio.Extensions.OpenTelemetry" Version="1.17.0" />
+    <PackageReference Include="Temporalio.Extensions.DiagnosticSource" Version="1.17.0" />
+    <!--
+      Microsoft.Extensions.* set — pinned to 10.0.9, matching the version already pinned by the most
+      recently implemented sibling capability packages (09.Search, 10.Intelligence), re-verified on
+      disk rather than floated to nuget.org's newest (S-01).
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Workflows.Temporal.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Workflows.Temporal.Tests\**" />
+    <None Remove="SharedKernel.Workflows.Temporal.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Allows the nested test project to white-box test internal implementation details
+      (WorkflowFailureMapper, WorkflowPropagationInterceptor, EncryptionPayloadCodec) without
+      expanding the public API surface — mirrors the 06.Persistence.EfCore / 13.ServiceDefaults /
+      15.Integration.Webhooks / 09.Search precedent (S-04).
+    -->
+    <InternalsVisibleTo Include="SharedKernel.Workflows.Temporal.Tests" />
+  </ItemGroup>
 
 </Project>
