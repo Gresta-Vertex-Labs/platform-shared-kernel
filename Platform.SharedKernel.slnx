@@ -94,6 +94,8 @@
     <Project Path="10.Intelligence/SharedKernel.AI.Qdrant/SharedKernel.AI.Qdrant.Tests/SharedKernel.AI.Qdrant.Tests.csproj" />
     <Project Path="10.Intelligence/SharedKernel.AI.SemanticKernel/SharedKernel.AI.SemanticKernel.csproj" />
     <Project Path="10.Intelligence/SharedKernel.AI.SemanticKernel/SharedKernel.AI.SemanticKernel.Tests/SharedKernel.AI.SemanticKernel.Tests.csproj" />
+    <Project Path="10.Intelligence/consumer-verify/Qdrant/consumer-verify.Qdrant.csproj" />
+    <Project Path="10.Intelligence/consumer-verify/SemanticKernel/consumer-verify.SemanticKernel.csproj" />
   </Folder>
   <Folder Name="/11.Communication/">
     <Project Path="11.Communication/SharedKernel.Communication.GraphQL/SharedKernel.Communication.GraphQL.csproj" />
