@@ -15,3 +15,5 @@
 - [WO-044: Search Build-Out](project_wo044_search_buildout.md) — 09.Search P-272-278; unusually complete pre-drafted design accepted verbatim (no upgrade), closed filter AST, fail-closed tenant scope, compile-time provider-exclusive capabilities
 - [WO-045: Intelligence Build-Out](project_wo045_intelligence_buildout.md) — 10.Intelligence P-279-286; UPGRADE — ratified package split as Shape C (.Abstractions+.Qdrant+.Milvus+.SemanticKernel), declined Microsoft.Extensions.AI.Abstractions in .Abstractions
 - [WO-046: Workflows Build-Out](project_wo046_workflows_buildout.md) — 17.Workflows P-287-290; ACCEPT verbatim, single-package Temporal domain (no .Abstractions split ratified), IClock/SK0001 inverted inside [Workflow] types
+- [WO-047: ServiceDefaults Escalation Resolution](project_wo047_servicedefaults_escalation_resolution.md) — retracted 10.Intelligence's ICompletionProviderDescriptor.ProbeAsync claim; granted narrow 13→17.Workflows probe-only layering exception
+- [dispatch-phase needs an Agent tool](feedback_dispatch_phase_tool_availability.md) — verify the spawn tool actually exists/fired before writing a "dispatched" changelog line

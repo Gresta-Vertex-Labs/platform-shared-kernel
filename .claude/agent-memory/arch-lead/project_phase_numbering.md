@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-07-22, the last phase written to `state-map.md` Phase Backlog is **P-290** under **WO-046**.
+As of 2026-07-24, the last phase written to `state-map.md` Phase Backlog is **P-291** under **WO-047**.
 
-Next new phase must be **P-291**. Next new Work Order must be **WO-047**.
+Next new phase must be **P-292**. Next new Work Order must be **WO-048**.
+
+**WO-047 context:** not a new-capability work order — pure conflict resolution. See [[project_wo047_servicedefaults_escalation_resolution]] for full detail. P-291 (10.Intelligence) is a documentation-only correction, `○` Pending, not yet dispatchable this session (no Agent-spawning tool available — see [[feedback_dispatch_phase_tool_availability]]). P-285 and P-289 (both pre-existing `◐ Dispatched` phases from WO-045/WO-046) were amended in place with RESOLUTION blocks and corrected acceptance criteria, a deliberate exception to the usual append-only Phase Backlog discipline since these are still-open phases being corrected by arch-lead authority, not history being erased.
 
 **WO-046 context:** 17.Workflows first build-out. See [[project_wo046_workflows_buildout]] for full detail. Domain was `○ Not Started` so `state-map-phase` was called (now `◐ Design`) — 16.Testing/13.ServiceDefaults/00.Governance were already past `○` so no `state-map-phase` calls for those, backlog-only. `sync-brain` called — Folder Map row 17 expanded from a bare one-liner, seven new "What Goes Where" rows added.
 
