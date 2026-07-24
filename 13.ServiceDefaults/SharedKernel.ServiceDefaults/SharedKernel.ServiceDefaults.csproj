@@ -44,6 +44,7 @@
     <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
     <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+    <ProjectReference Include="..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
 
@@ -96,6 +97,18 @@ public sealed class HealthCheckNamesTests
         services.AddHealthChecks().AddStorageReadinessCheck("my-bucket");
 
         var registration = GetRegistration(services, HealthCheckNames.Storage);
+        Assert.NotNull(registration);
+    }
+
+    [Fact]
+    public void AddSearchReadinessCheck_DefaultName_MatchesHealthCheckNamesSearch()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ISearchIndexProvisioner>());
+
+        services.AddHealthChecks().AddSearchReadinessCheck("products");
+
+        var registration = GetRegistration(services, HealthCheckNames.Search);
         Assert.NotNull(registration);
     }
 

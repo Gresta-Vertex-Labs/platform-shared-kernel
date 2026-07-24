@@ -37,4 +37,7 @@ public static class HealthCheckTags
 
     /// <summary>Dependency-category tag for object-storage connectivity checks.</summary>
     public const string Storage = "storage";
+
+    /// <summary>Dependency-category tag for search-index connectivity checks.</summary>
+    public const string Search = "search";
 }

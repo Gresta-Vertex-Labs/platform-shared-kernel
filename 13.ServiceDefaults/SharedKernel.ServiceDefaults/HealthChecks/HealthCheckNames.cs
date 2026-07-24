@@ -33,4 +33,7 @@ public static class HealthCheckNames
 
     /// <summary>Default registration name for object-storage connectivity checks.</summary>
     public const string Storage = "storage";
+
+    /// <summary>Default registration name for search-index connectivity checks.</summary>
+    public const string Search = "search";
 }

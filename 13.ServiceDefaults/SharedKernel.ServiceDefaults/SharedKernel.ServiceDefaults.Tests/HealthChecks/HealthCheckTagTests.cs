@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
 
@@ -130,6 +131,22 @@ public sealed class HealthCheckTagTests
 
         Assert.Contains(HealthCheckTags.Ready, registration.Tags);
         Assert.Contains(HealthCheckTags.Storage, registration.Tags);
+        Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
+    }
+
+    [Fact]
+    public void AddSearchReadinessCheck_RegistersWithReadySearchTags_NeverLive()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ISearchIndexProvisioner>());
+
+        services.AddHealthChecks().AddSearchReadinessCheck("products");
+
+        var registrations = GetRegistrations(services);
+        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.Search);
+
+        Assert.Contains(HealthCheckTags.Ready, registration.Tags);
+        Assert.Contains(HealthCheckTags.Search, registration.Tags);
         Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
     }
 
