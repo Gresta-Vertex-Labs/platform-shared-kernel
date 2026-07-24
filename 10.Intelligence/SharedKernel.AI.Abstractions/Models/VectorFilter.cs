@@ -23,8 +23,11 @@ namespace SharedKernel.AI.Abstractions.Models;
 /// genuinely, faithfully express all eight nodes — Equal/In/Range/And/Or map directly onto both
 /// engines' native filter primitives; NotEqual/Not are synthesised via <c>must_not</c>-wrapping on
 /// Qdrant (no native "not equal" match primitive) and directly via Milvus's boolean-expression
-/// operators; Exists is <c>IsNull</c>-negation on Qdrant and <c>IS NOT NULL</c> on Milvus (requiring
-/// the field declared nullable at collection-creation time).
+/// operators; Exists is <c>IsEmpty</c>-negation on Qdrant (verified against a real server —
+/// <c>IsNull</c>-negation was the original assumption but is WRONG: Qdrant's <c>IsNullCondition</c>
+/// matches only a payload key that is genuinely present with a JSON <see langword="null"/> value, never
+/// an absent key, which makes its negation vacuously true for every record) and <c>IS NOT NULL</c> on
+/// Milvus (requiring the field declared nullable at collection-creation time).
 /// </para>
 /// <para>
 /// <b><see cref="Between"/> rejects <see cref="VectorValueKind.String"/> and

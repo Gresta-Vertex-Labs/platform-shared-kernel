@@ -5,8 +5,8 @@ namespace SharedKernel.AI.Abstractions.Models;
 /// </summary>
 /// <remarks>
 /// Intentionally identical in shape to <see cref="VectorValueKind"/> — a metadata field's declared
-/// <see cref="Kind"/>-typed role is exactly which <see cref="VectorValue"/> accessor a filter against
-/// it must use, where <c>Kind</c> here refers to <see cref="VectorFieldDefinition.Kind"/>.
+/// <see cref="VectorFieldDefinition.Kind"/>-typed role is exactly which <see cref="VectorValue"/>
+/// accessor a filter against it must use.
 /// </remarks>
 public enum VectorFieldKind
 {

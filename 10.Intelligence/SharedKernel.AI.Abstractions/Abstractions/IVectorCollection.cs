@@ -162,6 +162,9 @@ public interface IVectorCollection<TRecord>
     /// in batches of <paramref name="batchSize"/>. For reindex/export/re-embed-source enumeration — not
     /// a ranked similarity search. Ordering is unspecified.
     /// </summary>
+    /// <param name="filter">The structured metadata filter, or <see langword="null"/> to walk the whole collection.</param>
+    /// <param name="tenantScope">The mandatory tenant scope for this walk.</param>
+    /// <param name="batchSize">The number of records fetched per underlying page.</param>
     /// <param name="cancellationToken">
     /// Token used to stop paging mid-enumeration. Implementations apply
     /// <see cref="EnumeratorCancellationAttribute"/> to this parameter on their concrete

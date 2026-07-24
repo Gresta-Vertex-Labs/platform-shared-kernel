@@ -4,6 +4,25 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.AI.Abstractions</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>AI / vector-retrieval abstraction contracts for Platform.SharedKernel microservices: IEmbeddingGenerator (text-to-vector, batched, token-usage-accounted), IVectorCollection&lt;TRecord&gt; (upsert/delete/query/get/count/scroll with mandatory model-identity/dimension/tenant-scope validation before any I/O), IVectorCollectionProvisioner (ensure/exists/delete/cutover/probe), IVectorProviderDescriptor and ICompletionProviderDescriptor (ceilings + zero-I/O pre-flight validation), ISemanticKernel (stateless chat/completion orchestration — no tool execution, no retry, no caching), the closed 8-node VectorFilter AST over the closed five-kind VectorValue scalar union, and the Result-valued IntelligenceErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives. Implemented by SharedKernel.AI.Qdrant, SharedKernel.AI.Milvus, and SharedKernel.AI.SemanticKernel.</Description>
+    <PackageTags>ai;vector-database;embeddings;rag;llm;qdrant;milvus;semantic-kernel;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +35,10 @@
       (SHA-256 for VectorCollectionDefinition.Fingerprint) are in-box on net10.0.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

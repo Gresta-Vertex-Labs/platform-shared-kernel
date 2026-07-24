@@ -46,6 +46,7 @@ public interface ISemanticKernel
     /// Executes a streaming completion call, yielding incremental <see cref="CompletionChunk"/>
     /// values.
     /// </summary>
+    /// <param name="request">The completion request to dispatch.</param>
     /// <param name="cancellationToken">
     /// Token used to stop generation mid-stream. Implementations apply
     /// <see cref="EnumeratorCancellationAttribute"/> to this parameter on their concrete

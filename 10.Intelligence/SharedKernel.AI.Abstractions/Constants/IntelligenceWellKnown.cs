@@ -1,3 +1,5 @@
+using SharedKernel.AI.Abstractions.Abstractions;
+
 namespace SharedKernel.AI.Abstractions.Constants;
 
 /// <summary>
@@ -15,10 +17,10 @@ namespace SharedKernel.AI.Abstractions.Constants;
 /// </remarks>
 public static class IntelligenceWellKnown
 {
-    /// <summary>The default result limit for a <see cref="Models.VectorQuery"/> when unspecified.</summary>
+    /// <summary>The default result limit for a <see cref="VectorQuery"/> when unspecified.</summary>
     public const int DefaultQueryLimit = 10;
 
-    /// <summary>The maximum result limit a <see cref="Models.VectorQuery"/> may request.</summary>
+    /// <summary>The maximum result limit a <see cref="VectorQuery"/> may request.</summary>
     public const int MaxQueryLimit = 1000;
 
     /// <summary>

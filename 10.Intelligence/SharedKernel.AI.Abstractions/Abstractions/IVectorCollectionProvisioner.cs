@@ -15,8 +15,11 @@ namespace SharedKernel.AI.Abstractions.Abstractions;
 /// collection returns <c>IntelligenceErrors.CollectionDefinitionConflict</c>; the remedy is
 /// staging → <c>UpsertManyAsync</c> → <see cref="CutoverAsync"/>. It also persists
 /// <see cref="VectorCollectionDefinition.Fingerprint"/> so <see cref="ProbeAsync"/> can detect drift —
-/// Qdrant via a reserved sentinel point's payload, Milvus via a native collection property — each
-/// provider's concrete persistence mechanism is a Core-phase decision for that provider.
+/// Qdrant via its own genuine collection-level <c>metadata</c> map (requires a Qdrant server at
+/// v1.16.0 or later — verified empirically against a real server, superseding the earlier assumption
+/// that Qdrant has no collection-level metadata slot and would need a reserved sentinel point), Milvus
+/// via a native collection property — each provider's concrete persistence mechanism is a Core-phase
+/// decision for that provider.
 /// </para>
 /// <para>
 /// <b><see cref="CutoverAsync"/>:</b> both Qdrant and Milvus genuinely have native collection aliases,
