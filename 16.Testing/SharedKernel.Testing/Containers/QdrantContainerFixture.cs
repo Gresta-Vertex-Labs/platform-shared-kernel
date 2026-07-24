@@ -19,8 +19,27 @@ namespace SharedKernel.Testing.Containers;
 /// needed. Constructed directly via the <c>ctor(string image)</c> overload (never the obsolete
 /// parameterless <c>QdrantBuilder()</c> + <c>.WithImage(...)</c> pattern, which emits CS0618 as of
 /// the pinned <c>4.13.0</c> <c>Testcontainers.Qdrant</c> package version), pinned to
-/// <c>qdrant/qdrant:v1.13.4</c> — confirmed to exist via <c>docker manifest inspect</c> against the
-/// real registry at Core-phase implementation time (2026-07-22).
+/// <c>qdrant/qdrant:v1.16.0</c>.
+/// </para>
+/// <para>
+/// <b>CORRECTED at <c>10.Intelligence</c> Tests-phase implementation time (2026-07-24):</b> the
+/// original <c>v1.13.4</c> pin (confirmed only to exist via <c>docker manifest inspect</c>, never
+/// smoke-tested against real collection-metadata round-trip behaviour) predates Qdrant server's
+/// collection-level metadata feature entirely — verified empirically via a throwaway probe: a
+/// <c>CreateCollectionAsync(..., metadata: ...)</c> call against a live <c>v1.13.4</c> server
+/// silently drops the metadata (<c>GetCollectionInfoAsync().Config.Metadata</c> comes back with
+/// <c>Count == 0</c>, no error, no warning), even though <c>Qdrant.Client</c> 1.18.1's own proto
+/// genuinely carries the field client-side. Confirmed via Qdrant's own GitHub release notes:
+/// collection metadata ("Add custom key-value metadata to collections", qdrant/qdrant#7123) shipped
+/// in server <c>v1.16.0</c> (2024-11-17). Re-verified the same probe against a live <c>v1.16.0</c>
+/// server: the round-trip works (<c>Config.Metadata.Count == 1</c>, value intact). This is the
+/// production dependency <c>SharedKernel.AI.Qdrant</c>'s <c>QdrantCollectionProvisioner</c> takes for
+/// persisting <c>VectorCollectionDefinition.Fingerprint</c> (schema-drift detection) — a server
+/// predating <c>v1.16.0</c> makes that detection silently inert (every fingerprint reads back
+/// <see langword="null"/>, so drift is never caught, mirroring a confirmed-then-fixed test failure in
+/// <c>SharedKernel.AI.Qdrant.Tests</c>'s own conformance suite). <c>docker manifest inspect
+/// qdrant/qdrant:v1.16.0</c> confirmed to resolve against the real registry before this pin was
+/// adopted.
 /// </para>
 /// <para>
 /// <see cref="GrpcEndpoint"/> is the PRIMARY endpoint since <c>Qdrant.Client</c>, the official .NET
@@ -50,7 +69,7 @@ namespace SharedKernel.Testing.Containers;
 /// </remarks>
 public sealed class QdrantContainerFixture : IAsyncLifetime
 {
-    private const string ImageName = "qdrant/qdrant:v1.13.4";
+    private const string ImageName = "qdrant/qdrant:v1.16.0";
 
     private readonly QdrantContainer _container = new QdrantBuilder(ImageName).Build();
 
