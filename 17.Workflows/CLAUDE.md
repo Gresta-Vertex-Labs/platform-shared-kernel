@@ -204,6 +204,30 @@ WorkflowBase   (abstract, the base every [Workflow] type in a consuming service 
           SDK; keeping it a plain contract type (04.Contracts DTOs are the recommended shape) keeps
           it interoperable. Result<T> is a C#-side outcome type, not a wire contract.
 
+    NOTE (VERIFIED TESTS-PHASE FINDING, GENUINE GAP FIXED — a compensation activity dispatched from a
+          catch block needs its OWN, non-ambient cancellation token): confirmed empirically that both
+          `Temporalio.Workflows.ActivityOptions.CancellationToken` and `DelayOptions.CancellationToken`
+          default to the AMBIENT `Workflow.CancellationToken` when left unset — including for a call
+          issued AFTER that token has already been cancelled. A compensation activity dispatched from
+          `catch (CanceledFailureException)` using the plain `ExecuteAsync<TActivity,TArgs,TResult>`
+          overload (no override) was therefore itself immediately cancelled before it could run,
+          silently defeating `IWorkflowHandle.CancelAsync`'s documented "runs the compensation path"
+          guarantee. Fixed additively: `ActivityDispatchOptions.CancellationToken` (nullable) now flows
+          into the constructed `ActivityOptions.CancellationToken`; pass
+          `new ActivityDispatchOptions { CancellationToken = CancellationToken.None }` for any activity
+          call that must survive the workflow's own cancellation.
+
+    NOTE (VERIFIED TESTS-PHASE FINDING — `Workflow.DelayAsync`'s cancellation exception is Temporal's
+          own type, not the BCL one): a cancelled `Workflow.CancellationToken` observed by
+          `Workflow.DelayAsync` surfaces as `Temporalio.Exceptions.CanceledFailureException` — which
+          does NOT derive from `System.OperationCanceledException` (confirmed via the type hierarchy:
+          `CanceledFailureException` → `FailureException` → `TemporalException` → `Exception`). A
+          workflow author writing `catch (OperationCanceledException)` to run compensation logic on
+          cancellation will never enter that catch block; the correct catch clause is
+          `catch (Exception ex) when (ex is OperationCanceledException or
+          Temporalio.Exceptions.CanceledFailureException)` (the BCL type is included defensively, since
+          other cancellable SDK operations may still surface it).
+
 ActivityBase   (abstract, DI-resolved, scoped by default)
     .Logger                                                             → ILogger<T>  (ordinary DI)
     .Clock                                                              → IClock  (ordinary DI — CORRECT here)
@@ -232,9 +256,25 @@ CommandActivity<TCommand, TResult>     where TCommand : ICommand<TResult>
           sealed, per-command generic base that resolves ISender, sends the command through the full
           MediatR pipeline (validation, authorization, transaction, logging, metrics — all of it), and
           maps the resulting Result/Result<T> through WorkflowFailureMapper. A consuming service
-          writes `sealed class ApproveOrderActivity : CommandActivity<ApproveOrderCommand>` and is
-          done. This is a CLOSED GENERIC per command — no reflection, no MakeGenericType, no
+          writes `sealed class ApproveOrderActivity : CommandActivity<ApproveOrderCommand>` plus one
+          explicitly-named `[Activity]` override (see the next NOTE — this is not literally zero
+          extra code). This is a CLOSED GENERIC per command — no reflection, no MakeGenericType, no
           polymorphic payload deserialisation, and therefore SK0012-clean and AOT-honest.
+
+    NOTE (VERIFIED CORE-PHASE FINDING — activity name collision, and why CommandActivity<TCommand>'s
+          own ExecuteAsync carries NO [Activity] attribute): reflected against the real Temporalio
+          1.17.0 assembly via ActivityDefinition.CreateAll — Temporal derives an [Activity]-attributed
+          method's registered name from the METHOD'S OWN NAME (stripping an "Async" suffix) when no
+          explicit name is supplied, NEVER from the declaring or concrete TYPE name. Two sibling
+          classes that both inherit an unchanged, identically-attributed base method register under
+          the IDENTICAL Temporal activity name — confirmed empirically (two classes inheriting
+          `[Activity] Task<int> ExecuteAsync(int)` both registered as "Execute"). A worker hosting more
+          than one CommandActivity<> subtype — the overwhelmingly common case — would collide. The fix:
+          CommandActivity<TCommand>.ExecuteAsync is a plain (non-attributed) virtual method; the
+          concrete sealed activity supplies its own explicitly-named override:
+          `[Activity(nameof(ApproveOrderActivity))] public override Task ExecuteAsync(...) =>
+          base.ExecuteAsync(...);` — five lines, matching the "one five-line class per command" cost
+          already stated below, now for a concrete, verified reason rather than an estimate.
 
     NOTE (WHAT WAS REJECTED, AND WHY, SO IT IS NOT PROPOSED AGAIN): a single non-generic
           "DispatchCommandActivity" taking a serialised command envelope and reconstructing the
@@ -274,6 +314,18 @@ ITemporalWorkflowsBuilder   (returned by AddSharedKernelTemporalWorkflows)
           EVERYTHING looks healthy: the pod is up, the client connects, the workflow starts, and it
           simply never progresses.
 
+    NOTE (VERIFIED TESTS-PHASE FINDING, GENUINE CORE-PHASE GAP FIXED — the non-[Workflow]-type case was
+          NOT actually eager until T-08 caught it): `Temporalio.Extensions.Hosting`'s
+          `ITemporalWorkerServiceOptionsBuilder.AddWorkflow(Type)` does NOT validate the `[Workflow]`
+          attribute at registration time — confirmed empirically that calling it with a plain,
+          unattributed type does not throw, deferring the failure to actual worker startup instead
+          (unlike the core SDK's own `WorkflowDefinition.Create(Type)`/`TemporalWorkerOptions.
+          AddWorkflow(Type)`, which DO throw `ArgumentException` immediately). `TemporalWorkflowsBuilder.
+          BuildWorkerHosting()` now calls `Temporalio.Workflows.WorkflowDefinition.Create(workflowType)`
+          itself as an eager pre-check before delegating to the hosting builder's `AddWorkflow`,
+          restoring the "Build() validates composition eagerly, never silently" guarantee this domain's
+          whole design exists to provide.
+
 WorkerTuningOptions   (sealed record, all members with platform defaults)
     .MaxConcurrentWorkflowTasks / .MaxConcurrentActivities /
     .MaxConcurrentLocalActivities / .MaxCachedWorkflows / .GracefulShutdownTimeout
@@ -300,6 +352,38 @@ WorkflowPropagationInterceptor   (internal sealed; IClientInterceptor + IWorkerI
           Headers travel with the execution automatically, including into child workflows and
           activities, and are invisible to the workflow's own contract.
 
+    NOTE (VERIFIED CORE-PHASE ARCHITECTURE — two distinct AsyncLocal ambient-context bridges, and why
+          each is needed): reflected against the real assembly — `Temporalio.Workflows.WorkflowInfo`
+          exposes `.Headers` directly (an `IReadOnlyDictionary<string, Payload>`), so `WorkflowBase`
+          reads `Workflow.Info.Headers` deterministically with NO ambient state needed. But
+          `Temporalio.Activities.ActivityInfo` has NO `Headers` member at all — only the WORKER-SIDE
+          interceptor's `ExecuteActivityInput.Headers` carries them — so an internal
+          `ActivityPropagationContext` (AsyncLocal-backed) bridges the interceptor's decoded
+          TenantScope/CorrelationId into `ActivityBase.TenantScope`. Symmetrically, on the CLIENT side,
+          none of `ITemporalClient`'s dispatch methods nor the SDK's `StartWorkflowInput`/
+          `SignalWorkflowInput`/`QueryWorkflowInput` carry a TenantScope parameter — so a second,
+          distinct `DispatchPropagationContext` (also AsyncLocal-backed) carries the TenantScope for
+          the in-flight client call, set immediately before each underlying Temporal call by
+          `WorkflowDispatcher`/`WorkflowHandleAdapter` and read by this interceptor's client half when
+          writing headers. Both are per-logical-call-context state (isolated per async flow, exactly
+          like `IHttpContextAccessor`) — the sanctioned, narrow exception to the "no static mutable
+          state" rule, never shared across concurrent calls.
+
+    NOTE (VERIFIED TESTS-PHASE FINDING, GENUINE CORE-PHASE GAP FIXED — headers do NOT auto-propagate
+          from a workflow's OWN inbound headers to the activities/child workflows IT schedules):
+          confirmed empirically that `ScheduleActivityInput.Headers`/`StartChildWorkflowInput.Headers`
+          (both `Temporalio.Worker.Interceptors`) start EMPTY unless something explicitly populates
+          them — the SDK does not carry a workflow's own start-time headers forward to its own
+          outbound calls by default. `WorkflowInboundInterceptor.Init(WorkflowOutboundInterceptor
+          outbound)` is the hook: `WorkflowPropagationInterceptor` now also returns a
+          `PropagatingWorkflowOutboundInterceptor` from `Init`, which overrides
+          `ScheduleActivityAsync<TResult>`/`StartChildWorkflowAsync<TWorkflow,TResult>` to merge
+          `Workflow.Info.Headers` onto each call's own `Headers` dictionary (an explicitly-set header
+          on that specific call still wins). Without this, an activity or child workflow invoked from
+          inside a workflow silently observed `TenantScope.None` even though the workflow itself was
+          correctly scoped — caught only because T-15's real-`WorkflowEnvironment` propagation test
+          asserts the ACTIVITY's own observed tenant scope, not just the workflow's.
+
 WorkflowFailureMapper   (internal static)
     .ToFailure(Error error)                                             → ApplicationFailureException
     .ToFailure(Result result)                                           → ApplicationFailureException
@@ -312,6 +396,18 @@ WorkflowFailureMapper   (internal static)
           members, preserving the original errorType string as the Error.Code wherever the failure
           originated from this same mapper — so a code set in an activity survives the round trip and
           is branchable at the dispatch site.
+
+    NOTE (VERIFIED CORE-PHASE ENHANCEMENT — the original ErrorType round-trips too, not only Code):
+          ToFailure(Error) stashes `(int)error.Type` as the ApplicationFailureException's first
+          structured `details` element (verified ctor shape:
+          `(message, errorType = null, nonRetryable = false, details = null, nextRetryDelay = null,
+          category = Unspecified)` — every parameter but message is optional). ToError's inverse reads
+          it back defensively via `IFailureDetails.ElementAt<int>(0)` inside a narrowly-scoped try/catch
+          — this is NOT a "swallowed Result.Failure" violation, since it decodes optional round-trip
+          metadata Temporal itself never produces for a failure this mapper did not originate, falling
+          back to a NonRetryable-derived ErrorType when absent or undecodable. Both Code AND Type now
+          survive the round trip for any failure raised by this mapper — stronger than the original
+          Code-only guarantee.
 
 EncryptionPayloadCodec   (internal sealed; Temporalio IPayloadCodec)
     .EncodeAsync(IReadOnlyCollection<Payload>)                          → Task<IReadOnlyCollection<Payload>>
@@ -332,6 +428,21 @@ EncryptionPayloadCodec   (internal sealed; Temporalio IPayloadCodec)
           encrypted under it has aged past retention — which for workflows can be MONTHS longer than
           for database rows, because a workflow started under key v1 will still replay under key v1
           on its final day.
+
+    NOTE (VERIFIED CORE-PHASE MECHANISM — S-08 resolved): ISymmetricEncryptionService.Encrypt(byte[])
+          → EncryptedPayload(KeyId, Nonce, Ciphertext, Tag); .Decrypt(EncryptedPayload) → Result<byte[]>
+          (never throws CryptographicException directly, resolves the key internally via
+          IEncryptionKeyProvider keyed on EncryptedPayload.KeyId). The key version travels NATIVELY as
+          EncryptedPayload.KeyId — no separate versioning scheme was needed. The codec serialises the
+          ENTIRE original Temporal Payload proto (metadata + data) as the AES-256-GCM plaintext, wraps
+          the ciphertext plus KeyId/Nonce/Tag into a NEW Payload's own metadata under a private
+          encoding-marker key, and reconstructs the original Payload byte-for-byte on decode via
+          `Payload.Parser.ParseFrom` — preserving whatever encoding metadata the underlying
+          IPayloadConverter originally set. A payload not carrying this codec's own marker is passed
+          through unchanged on decode (the standard Temporal codec-chain convention letting multiple
+          codecs coexist) — never a violation, since it only applies to payloads this codec never
+          encoded; a payload that DOES carry the marker but fails to decrypt throws rather than
+          passing ciphertext through as plaintext.
 ```
 
 #### Probe, options, well-known constants, errors (`Health/`, `Configuration/`, `Constants/`, `Errors/`)
@@ -475,7 +586,9 @@ services
 
 `.AsClientOnly()` registers no `IHostedService`. Calling `.AddWorkflow<T>()`, `.AddActivities<T>()`, or `.WithWorker(...)` alongside it is a composition error caught at `Build()`.
 
-**Expected gotchas, carried forward from sibling domains rather than rediscovered:** this package does **not** self-register `IClock` or `ILogger<T>` — both are the consuming host's responsibility, the uniform platform convention confirmed across `08.Storage`/`09.Search`. Any type in this package whose constructor takes a raw `TemporalOptions` (rather than `IOptions<TemporalOptions>`) must be registered through an explicit factory lambda unwrapping `sp.GetRequiredService<IOptions<TemporalOptions>>().Value` — `AddValidatedOptions` only ever registers the `IOptions<T>` wrapper, and the plain `AddSingleton<TInterface, TImplementation>()` shorthand therefore fails to resolve in **every** consuming service, not just tests. That was a real, shipped `09.Search` defect found at Tests phase; it is written here so this domain does not repeat it.
+**Expected gotchas, carried forward from sibling domains rather than rediscovered:** this package does **not** self-register `IClock` or `ILogger<T>` — both are the consuming host's responsibility, the uniform platform convention confirmed across `08.Storage`/`09.Search`. Any type in this package whose constructor takes a raw `TemporalOptions` (rather than `IOptions<TemporalOptions>`) must be registered through an explicit factory lambda unwrapping `sp.GetRequiredService<IOptions<TemporalOptions>>().Value` — `AddValidatedOptions` only ever registers the `IOptions<T>` wrapper, and the plain `AddSingleton<TInterface, TImplementation>()` shorthand therefore fails to resolve in **every** consuming service, not just tests. That was a real, shipped `09.Search` defect found at Tests phase; it is written here so this domain does not repeat it. **Verified at Core phase: this package never made the mistake in the first place** — every type here (`WorkflowServiceProbe`, etc.) takes `IOptions<TemporalOptions>` directly, so no factory-lambda workaround was ever needed.
+
+**Verified Core-phase hosting-composition pattern:** `TemporalWorkflowsBuilder` reads `TargetHost`/`Namespace`/`EncryptionKeyName` directly off the raw `IConfigurationSection` (synchronously, no `IServiceProvider` needed) for eager `Build()`-time validation, then wires the real client via `Temporalio.Extensions.Hosting`'s `AddTemporalClient(services, targetHost, ns) → OptionsBuilder<TemporalClientConnectOptions>`, using the BCL's `OptionsBuilder<T>.Configure<TDep>`/`.Configure<TDep1,TDep2>(...)` overloads to inject `ISymmetricEncryptionService`/`ILogger<EncryptionPayloadCodec>` into the payload-codec wiring — the clean, DI-aware way to configure Temporalio options against resolved dependencies. `AddHostedTemporalWorker(services, taskQueue, buildId)` reuses the client registered by the prior `AddTemporalClient` call; **this overload is marked `[Obsolete]` in 1.17.0** in favor of one taking `WorkerDeploymentOptions` (Temporal's worker-versioning/deployment feature — a genuinely separate SDK concept this domain's locked contract does not model) — the obsolete overload is used deliberately, with the warning narrowly suppressed at its one call site via a documented `#pragma warning disable/restore CS0618`, rather than adopting an unplanned new concept. A worker-hosting composition additionally registers a small internal `TemporalWorkflowsCompositionLogger : IHostedService` purely to log the "worker built" summary at `StartAsync` (since `Build()` itself has no `ILogger` available) — **this hosted service is never registered on the `.AsClientOnly()` path**, preserving the hard "`AsClientOnly()` registers no `IHostedService`" rule.
 
 ---
 
@@ -486,7 +599,7 @@ services
 - `CommandActivity<TCommand>` / `CommandActivity<TCommand, TResult>` are **closed generics instantiated once per command at compile time** — no `MakeGenericType`, no polymorphic payload deserialisation, no reflection. This is the specific reason the reflection-based "dispatch any command" design was rejected.
 - `WorkflowErrors` and `WorkflowFailureMapper` are static factories returning `Error` / `ApplicationFailureException` values — AOT-safe.
 - `EncryptionPayloadCodec` wraps `01.Core`'s `ISymmetricEncryptionService`, which is pure `System.Security.Cryptography` — in-box on `net10.0`, AOT-safe.
-- **`Temporalio` 1.17.0 is a documented non-AOT-safe dependency, and its shape differs from every other third party in this repo.** It carries a **native Rust core** shipped as per-RID native assets and loaded by P/Invoke, and its default `DataConverter` uses **reflection-based `System.Text.Json`** for every workflow argument, activity argument, and return value. Two practical consequences that must be stated and not discovered: a consuming service must publish with an explicit **RID** (`linux-x64`, `linux-arm64`, `linux-musl-x64/arm64`, `osx-arm64/x64`, `win-x64/arm64`) or the native core is not resolved at runtime; and a trimmed or AOT consumer must supply a source-generated `JsonSerializerContext` through the data converter or payload serialisation fails at runtime, not at build time. This is exactly the "non-AOT-safe third party placed behind an abstraction" case the root brain's AOT guidance sanctions — encapsulating it behind `IWorkflowDispatcher` and the authoring bases limits the blast radius to the registration and worker-hosting path. **VERIFY the exact `JsonSerializerContext` seam name and the RID list against the real 1.17.0 assembly at Scaffold phase** rather than trusting this paragraph — the `09.Search` precedent of reflecting the real compiled SDK before writing against it applies here with more force, not less.
+- **`Temporalio` 1.17.0 is a documented non-AOT-safe dependency, and its shape differs from every other third party in this repo.** It carries a **native Rust core** shipped as per-RID native assets and loaded by P/Invoke, and its default `DataConverter` uses **reflection-based `System.Text.Json`** for every workflow argument, activity argument, and return value. Two practical consequences that must be stated and not discovered: a consuming service must publish with an explicit **RID** or the native core is not resolved at runtime; and a trimmed or AOT consumer must supply a source-generated `JsonSerializerContext` through the data converter or payload serialisation fails at runtime, not at build time. This is exactly the "non-AOT-safe third party placed behind an abstraction" case the root brain's AOT guidance sanctions — encapsulating it behind `IWorkflowDispatcher` and the authoring bases limits the blast radius to the registration and worker-hosting path. **RID list CONFIRMED at Scaffold phase (S-07) against the extracted NuGet package's `runtimes/` folder on the implementation machine**: `linux-arm64`, `linux-musl-arm64`, `linux-musl-x64`, `linux-x64`, `osx-arm64`, `osx-x64`, `win-arm64`, `win-x64` — exactly 8 RIDs, no more, no fewer. The `JsonSerializerContext` seam itself was not exercised this session (this package's own code never serialises workflow/activity payloads directly — that is the consuming service's concern when it opts into trimming/AOT) and remains a documented risk for a trimmed consumer, not a gap in this package.
 - No `Activator.CreateInstance`, no `Assembly.Load`, no `MakeGenericMethod`/`MakeGenericType`, no `Type.GetProperty`/`GetMethod`, no `dynamic` in this domain's own code. Workflow and activity registration is explicit and generic, never an assembly scan.
 - No `<IsAotCompatible>true</IsAotCompatible>` tag on the `17.Workflows` `.csproj`, per root policy.
 
@@ -496,6 +609,7 @@ services
 
 - Unit tests live in the nested `SharedKernel.Workflows.Temporal.Tests` folder. **Standard test package set:** `xunit` 2.9.3, `xunit.runner.visualstudio` 2.8.2, `Microsoft.NET.Test.Sdk` 17.13.0, `coverlet.collector` 6.0.4, `FluentAssertions` 8.4.0, `NSubstitute` 5.3.0, plus a `ProjectReference` to `16.Testing/SharedKernel.Testing` and a `GlobalUsings.cs` containing `global using Xunit;` — `ImplicitUsings` does not auto-import xUnit attributes.
 - **`WorkflowEnvironment` replaces the container fixture — there is no Testcontainers dependency in this domain.** `WorkflowEnvironment.StartTimeSkippingAsync()` is the default for workflow behaviour tests: a 30-day `Workflow.DelayAsync` completes in milliseconds, which makes long-running timeout, retry, and escalation paths genuinely testable rather than aspirationally documented. `WorkflowEnvironment.StartLocalAsync()` is used only where a test needs real server behaviour that time-skipping does not model. Verify at Scaffold phase that the dev-server binary download succeeds and is cached on the CI runner; a network-restricted runner is this domain's only realistic Tests-phase blocker, and it must be checked before the phase starts, not discovered inside it.
+- **VERIFIED TESTS-PHASE FINDING — genuine auto-time-skipping requires the exact `ITemporalClient` `WorkflowEnvironment.Client` vends; a separately-connected client to the same server does not participate in it.** Confirmed empirically (a standalone repro and this domain's own test suite): starting/awaiting a workflow through a client built via `Temporalio.Extensions.Hosting.AddTemporalClient(targetHost, ns)` — i.e. exactly what `AddSharedKernelTemporalWorkflows`/`IWorkflowDispatcher` construct, even when pointed at the identical target host and namespace as an active `WorkflowEnvironment` — never auto-skips a real `Workflow.DelayAsync`; the call hangs indefinitely waiting for simulated time that never advances. Time-dependent tests (a natural timer actually elapsing, not a cancel/terminate/signal-driven completion) must start/await through `fixture.Environment.Client` directly; the WORKER processing those executions can still be the one built by the production `AddSharedKernelTemporalWorkflows` composition, since task-queue routing does not care which client started an execution. Tests that only need cancellation/termination/signal-driven completions (no natural timer elapsing) are unaffected and may use the full `IWorkflowDispatcher` pipeline normally.
 - **History-replay determinism tests are mandatory, not optional, and are the single highest-value test in this domain.** For every shipped workflow-shaped sample and every base-type behaviour, capture the execution history as JSON and replay it with `WorkflowReplayer`. This is the only mechanism that catches a determinism regression *before* it reaches production, where it manifests as every in-flight execution failing at once. A workflow change that passes its behaviour tests and fails its replay test is a change that would have taken down live executions.
 - `ActivityEnvironment` unit-tests activities in isolation — including heartbeating, cancellation, and the `Result`→failure mapping — with no server and no workflow.
 - **Fail-loud tests are mandatory.** For every rejection path — `TenantScope.None` on a tenant-scoped dispatch, a workflow id colliding with a running execution, `.AddWorkflow<T>()` on a `.AsClientOnly()` builder, a worker registered with no workflows and no activities, `.WithPayloadEncryption()` with no configured key, a non-`[Workflow]` type passed to `.AddWorkflow<T>()` — assert both that the correct `Error` (or `Build()`-time exception) results **and that no I/O occurred**. A test asserting only the error would pass against an implementation that connects first and validates second.
@@ -516,3 +630,5 @@ services
 
 - [2026-07-22] Domain brain initialized — single-package shape (`SharedKernel.Workflows.Temporal`) ratified with the `.Abstractions` split explicitly considered and rejected (durable execution's programming model *is* the abstraction; no second provider is swap-compatible) plus the one extractable seam (`IWorkflowDispatcher`) and its trigger condition recorded; technology stack pinned to the `Temporalio` 1.17.0 family (core + Extensions.Hosting/OpenTelemetry/DiagnosticSource, all 1.17.0, MIT, published 2026-07-13) with Temporal chosen over MassTransit sagas/Elsa/Dapr/Hangfire and the consuming-service decision rule stated; the determinism rule established as the domain's single governing invariant, including the deliberate inversion of the platform's own `SK0001` (`IClock` is *banned* inside a `[Workflow]`, mandatory inside an activity) and the `[LoggerMessage]`-on-`Workflow.Logger` reconciliation; the `Result<T>`↔Temporal-failure mapping table locked by `ErrorType` (expected errors non-retryable, `Unexpected` retryable, swallowed failures a hard violation); mandatory non-defaulted `TenantScope` on every dispatch member feeding a structural `IWorkflowIdFactory`; workflow id ratified as the platform's durable idempotency primitive alongside `05.Application`'s in-process `IIdempotentRequest`; `Workflow.Patched` mandated as the only sanctioned change mechanism for deployed workflows; payload encryption via `01.Core`'s `ISymmetricEncryptionService` with the Web-UI-opacity cost and the longer-than-database key-retention window stated; `ProbeAsync` as a probe primitive with no `IHealthCheck` (13.ServiceDefaults's concern, `WorkerPollersActive` identified as the member a naive probe omits); `WorkflowErrors` restricted to the six real `SharedKernel.Primitives` `Error` factories with `BusinessRule` deliberately unused; EventId sub-block 17000–17099 from the existing `LoggingEventIdRanges.Workflows`; three-way-gated raw-client escape hatch; `WorkflowEnvironment`/`WorkflowReplayer`-based testing with **no** Testcontainers or `16.Testing` container dependency (so this domain carries no `SK.09.Tests`-style inbound blocker) and mandatory history-replay determinism tests; plus AOT notes covering the native Rust core's RID requirement and the reflection-based default data converter. Contract locked as the Scaffold-phase basis — no implementation exists yet, only two bare placeholder `.csproj` files (root, user request; pending root dispatch as WO-046)
 - [2026-07-22] WO-046 formally dispatched as **P-287** (arch-lead) — the full-package-build-out work order's acceptance criteria were checked against this brain's existing Interface Contracts/Implementation Rules line by line (dispatch surface with mandatory `TenantScope`, determinism boundary on `WorkflowBase`/`ActivityBase`, closed-generic `CommandActivity<>`, the exhaustive `ErrorType`→failure-mapping table with the swallow-a-`Result.Failure` prohibition, header-based propagation, AES-256-GCM payload encryption, eager `Build()` validation, the `ProbeAsync` primitive, and the mandatory pre-Core SDK-shape verification); no rule or contract changed as a result — this entry records the brain as **confirmed against its dispatch**, not re-derived. No implementation exists yet; Scaffold (S-01–S-10) remains the next phase to execute (workflow-arch-planner)
+- [2026-07-23] SK.17.Design/Scaffold/Core all reached `●` (52/81 tasks) — full `SharedKernel.Workflows.Temporal` implementation, verified against the real compiled `Temporalio` 1.17.0 assembly rather than guessed at. Corrections recorded in place: `WorkflowIdReusePolicy`/`WorkflowIdConflictPolicy` live at `Temporalio.Api.Enums.V1`, not `Temporalio.Client`; the workflow-facing activity options type is `Temporalio.Workflows.ActivityOptions`, not `Temporalio.Activities.ActivityOptions`; `ApplicationFailureException`'s ctor has every parameter but `message` defaulted; native RID list confirmed as exactly 8 (`linux-arm64`/`linux-musl-arm64`/`linux-musl-x64`/`linux-x64`/`osx-arm64`/`osx-x64`/`win-arm64`/`win-x64`); `AddHostedTemporalWorker(taskQueue, buildId)` is `[Obsolete]` in 1.17.0 (worker-deployment-versioning superseded it — deliberately not adopted, out of this contract's scope). Two genuine architectural findings now documented in place: (1) a verified activity-name collision — Temporal names an `[Activity]`-attributed method by its own method name, not its declaring/concrete type, so `CommandActivity<TCommand>.ExecuteAsync` carries no `[Activity]` attribute itself and the concrete sealed subclass must supply its own explicitly-named override (the "one five-line class per command" cost is now literal, not estimated); (2) `ActivityInfo` carries no `Headers` member (unlike `WorkflowInfo`), so a new `ActivityPropagationContext`/`DispatchPropagationContext` pair of `AsyncLocal`-backed ambient bridges was introduced — the sanctioned, narrow exception to the "no static mutable state" rule, documented alongside `WorkflowPropagationInterceptor`. `ISymmetricEncryptionService`'s exact shape (S-08) resolved and the codec's whole-`Payload`-as-plaintext encoding mechanism documented. `WorkflowFailureMapper`'s round trip strengthened beyond the original design to also preserve the original `ErrorType` (not just `Error.Code`) via a structured failure detail. `[LoggerMessage]` EventIds 17000–17012 allocated, gap-free. This unblocks `16.Testing`'s `SK.16.Core` C-80–C-84. `SK.17.Tests` (T-01–T-16) remains the next phase, deliberately deferred per the Core/Tests split (workflow-phase-implementer)
+- [2026-07-23] **SK.17.Tests (T-01–T-16) reached `●` — 68/81 tasks done, 158/158 tests passing (134 pure-unit + 24 real-`WorkflowEnvironment`), confirmed stable across three consecutive clean runs.** Three genuine production defects were found by testing and fixed in the shipped package (not routed around in test code): (1) `Temporalio.Extensions.Hosting`'s `ITemporalWorkerServiceOptionsBuilder.AddWorkflow(Type)` does not eagerly validate the `[Workflow]` attribute the way the core SDK's `WorkflowDefinition.Create(Type)` does — `TemporalWorkflowsBuilder.BuildWorkerHosting()` now calls `WorkflowDefinition.Create` itself first, restoring genuinely-eager `Build()` validation for the non-`[Workflow]`-type case (T-08). (2) `WorkflowPropagationInterceptor` read a workflow's own inbound headers correctly but never forwarded them to activities/child workflows that workflow itself schedules — `ScheduleActivityInput.Headers`/`StartChildWorkflowInput.Headers` start empty by default; fixed by adding a `PropagatingWorkflowOutboundInterceptor` wired via `WorkflowInboundInterceptor.Init(WorkflowOutboundInterceptor)` that merges `Workflow.Info.Headers` onto every outbound call (T-15). (3) `ActivityDispatchOptions` had no way to give an activity a cancellation token independent of the ambient `Workflow.CancellationToken` — both `ActivityOptions.CancellationToken` and `DelayOptions.CancellationToken` default to that ambient token even for a call issued after it was already cancelled, so a compensation activity dispatched from a cancellation catch block was itself immediately cancelled; fixed by adding `ActivityDispatchOptions.CancellationToken` (T-11). A related behavioral finding, not a defect: `Workflow.DelayAsync` cancellation surfaces as `Temporalio.Exceptions.CanceledFailureException`, which does **not** derive from `System.OperationCanceledException` — a workflow author's compensation `catch` clause must name the Temporal type explicitly. A fourth finding is test-infrastructure-only: genuine auto-time-skipping is coordinated through the specific `ITemporalClient` instance `WorkflowEnvironment.Client` vends; a separately-connected client to the same server (i.e. `IWorkflowDispatcher`'s own client) does not participate and a workflow waiting on a real timer never progresses through it — `TimeSkippingTests` now starts/awaits directly through `fixture.Environment.Client` while the worker remains the production-built one. `SK.17.Docs` is the next phase (workflow-phase-implementer)
