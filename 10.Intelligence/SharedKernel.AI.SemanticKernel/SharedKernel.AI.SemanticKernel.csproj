@@ -4,6 +4,25 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.AI.SemanticKernel</PackageId>
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>LLM orchestration provider for Platform.SharedKernel's SharedKernel.AI.Abstractions — implements IEmbeddingGenerator and ISemanticKernel on top of Microsoft.SemanticKernel/OpenAI connectors, with unconditional token-usage accounting, pre-dispatch context-window validation, and a stateless orchestration boundary: no tool execution, no automatic retry, no completion caching. Any retry is an explicit, bounded, opt-in .WithBoundedRetry(...) builder call, never reachable through ISemanticKernel itself. Additionally declares SemanticKernel-exclusive contracts (plugin/planner access, a triple-gated raw-client escape hatch) unreachable from a Qdrant- or Milvus-only composition root.</Description>
+    <PackageTags>ai;llm;semantic-kernel;openai;embeddings;rag;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,8 +47,22 @@
     -->
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.78.0" />
     <!--
+      Microsoft.SemanticKernel.Connectors.OpenAI, OpenAI, and System.ClientModel are all already
+      transitive via Microsoft.SemanticKernel 1.78.0 -> Microsoft.SemanticKernel.Connectors.AzureOpenAI
+      1.78.0 -> Microsoft.SemanticKernel.Connectors.OpenAI 1.78.0 -> OpenAI 2.10.0 -> System.ClientModel
+      1.10.0 (confirmed via nuspec inspection at Core-phase implementation time). Pinned here explicitly
+      at those exact resolved versions since this package's own code references
+      Microsoft.SemanticKernel.Connectors.OpenAI.* (OpenAIChatCompletionService/OpenAIPromptExecutionSettings/
+      ToolCallBehavior/OpenAIFunction), OpenAI.* (OpenAIClient/EmbeddingClient/ChatFinishReason/ChatTokenUsage),
+      and System.ClientModel.* (ApiKeyCredential/HttpClientPipelineTransport/ClientResultException) directly.
+    -->
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.78.0" />
+    <PackageReference Include="OpenAI" Version="2.10.0" />
+    <PackageReference Include="System.ClientModel" Version="1.10.0" />
+    <!--
       Microsoft.Extensions.* set — required for the DI extension (DependencyInjection.Abstractions),
-      Options-pattern binding (Options), and [LoggerMessage] source-generated logging
+      Options-pattern binding (Options), named HttpClient construction (Http, for
+      IHttpClientFactory — P-159/SK0013), and [LoggerMessage] source-generated logging
       (Logging.Abstractions). Pinned at 10.0.9 to match the version already pinned by the most recently
       implemented sibling capability packages (09.Search) — Microsoft.SemanticKernel itself already
       pulls a recent Microsoft.Extensions.* graph transitively, but these are pinned explicitly rather
@@ -38,6 +71,11 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,6 +83,11 @@
     <Compile Remove="SharedKernel.AI.SemanticKernel.Tests\**" />
     <EmbeddedResource Remove="SharedKernel.AI.SemanticKernel.Tests\**" />
     <None Remove="SharedKernel.AI.SemanticKernel.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- White-box unit testing of internal types (adapters, error mapper, tool mapper) — no public surface growth. -->
+    <InternalsVisibleTo Include="SharedKernel.AI.SemanticKernel.Tests" />
   </ItemGroup>
 
 </Project>
