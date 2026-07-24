@@ -8,3 +8,5 @@ SK0002 | Usage | Warning | DirectMicrosoftFeatureManagerUsage
 SK0003 | Design | Warning | RawExceptionThrow
 SK0004 | Design | Warning | NullErrorReturn
 SK0005 | Design | Warning | StringOnlyExceptionConstructor
+SK0024 | Usage | Warning | RawSearchFieldNameLiteral
+SK0025 | Usage | Warning | ObsoleteElasticsearchClientUsage

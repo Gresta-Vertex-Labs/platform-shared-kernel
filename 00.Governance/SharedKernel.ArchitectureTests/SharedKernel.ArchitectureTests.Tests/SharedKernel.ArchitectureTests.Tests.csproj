@@ -86,6 +86,18 @@
                       PrivateAssets="all" />
     <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.Obs\SharedKernel.Storage.Obs.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Search.Abstractions/.Meilisearch/.ElasticSearch
+         assemblies in SearchTopologyRulesTests (WO-044 P-278) — 09.Search reached Published
+         (139/139 tasks, P-272/P-273/P-274 all shipped) before this phase's implementation
+         session, so real-assembly verification is wired alongside the contrived-fixture proof
+         rather than deferred, mirroring the StorageTopologyRulesTests precedent — this phase's
+         own acceptance criteria treat real-assembly verification as GATING, not optional. -->
+    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.Meilisearch\SharedKernel.Search.Meilisearch.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.ElasticSearch\SharedKernel.Search.ElasticSearch.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

@@ -79,6 +79,140 @@ public class LayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
+    // T-212 — Fire path: contrived 09.Search-shaped fixture references a stubbed forbidden-domain
+    // type
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-212: When a contrived "SharedKernel.Search"-shaped assembly references a type in a
+    /// namespace simulating a forbidden capability domain (here, <c>SharedKernel.Persistence</c>),
+    /// <see cref="SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts"/> must fail on
+    /// the corresponding array element only.
+    /// </summary>
+    [Fact]
+    public void SearchReferencesOnlyCoreAndContracts_ViolatingAssembly_CorrespondingElementFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Persistence
+            {
+                public interface IRepository { }
+            }
+
+            namespace SharedKernel.Search
+            {
+                public class LeakySearchIndex
+                {
+                    private readonly SharedKernel.Persistence.IRepository _repository;
+                    public LeakySearchIndex(SharedKernel.Persistence.IRepository repository)
+                    {
+                        _repository = repository;
+                    }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("ViolationSearch", violationSource);
+
+        var conditionLists = SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts(violationAssembly);
+
+        conditionLists.Should().HaveCount(15);
+
+        var persistenceElementIndex = Array.IndexOf(ForbiddenTermsMirror, "SharedKernel.Persistence");
+        persistenceElementIndex.Should().BeGreaterThanOrEqualTo(0);
+
+        for (var i = 0; i < conditionLists.Length; i++)
+        {
+            var result = conditionLists[i].GetResult();
+            if (i == persistenceElementIndex)
+            {
+                result.IsSuccessful.Should().BeFalse(
+                    because: "LeakySearchIndex references SharedKernel.Persistence.IRepository directly");
+            }
+            else
+            {
+                result.IsSuccessful.Should().BeTrue(
+                    because: "LeakySearchIndex has no dependency on any other forbidden capability domain");
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-213 — Pass path: contrived 09.Search-shaped fixture references only stubbed
+    // SharedKernel.Primitives/SharedKernel.Contracts types
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-213: A contrived "SharedKernel.Search"-shaped assembly referencing only stubbed
+    /// <c>SharedKernel.Primitives</c>/<c>SharedKernel.Contracts</c> types must pass every array
+    /// element of <see cref="SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts"/>.
+    /// </summary>
+    [Fact]
+    public void SearchReferencesOnlyCoreAndContracts_CleanAssembly_AllElementsPass()
+    {
+        const string cleanSource = """
+            namespace SharedKernel.Primitives
+            {
+                public class Result { }
+            }
+
+            namespace SharedKernel.Contracts
+            {
+                public class PagedList { }
+            }
+
+            namespace SharedKernel.Search
+            {
+                public class CleanSearchIndex
+                {
+                    public SharedKernel.Primitives.Result DoWork() => new SharedKernel.Primitives.Result();
+                    public SharedKernel.Contracts.PagedList ToPagedList() => new SharedKernel.Contracts.PagedList();
+                }
+            }
+            """;
+
+        var cleanAssembly = CompileInMemory("CleanSearch", cleanSource);
+
+        var conditionLists = SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts(cleanAssembly);
+
+        conditionLists.Should().HaveCount(15);
+        foreach (var conditionList in conditionLists)
+        {
+            conditionList.GetResult().IsSuccessful.Should().BeTrue(
+                because: "CleanSearchIndex depends only on SharedKernel.Primitives and SharedKernel.Contracts");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Fixtures
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Mirrors the fifteen-term forbidden list private to
+    /// <see cref="SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts"/> — kept here,
+    /// not reflected out of the production type, purely so T-212 can locate the array index that
+    /// corresponds to <c>"SharedKernel.Persistence"</c> without hard-coding a fragile literal
+    /// index.
+    /// </summary>
+    private static readonly string[] ForbiddenTermsMirror =
+    [
+        "SharedKernel.Caching",
+        "SharedKernel.Domain",
+        "SharedKernel.Application",
+        "SharedKernel.Persistence",
+        "SharedKernel.Messaging",
+        "SharedKernel.Storage",
+        "SharedKernel.AI",
+        "SharedKernel.Communication",
+        "SharedKernel.Security",
+        "SharedKernel.ServiceDefaults",
+        "SharedKernel.MultiTenancy",
+        "SharedKernel.Presentation",
+        "SharedKernel.Integration",
+        "SharedKernel.Testing",
+        "SharedKernel.Workflows",
+    ];
+
+    // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
 
