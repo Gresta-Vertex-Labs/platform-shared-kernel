@@ -100,6 +100,18 @@
       then).
     -->
     <ProjectReference Include="..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
+    <!--
+      Workflow dispatch in-memory doubles (S-34, P-288/WO-046): InMemoryWorkflowDispatcher
+      (IWorkflowDispatcher), InMemoryWorkflowHandle (IWorkflowHandle), InMemoryWorkflowHandle<TResult>
+      (IWorkflowHandle<TResult>). Mechanically safe to add now even though
+      17.Workflows/SharedKernel.Workflows.Temporal is currently an empty placeholder (verified on
+      disk, zero .cs files) — a ProjectReference to a content-empty project always builds; it
+      resolves to zero usable types until 17.Workflows's own SK.17.Core ships real code (C-80–C-84/
+      T-55/DO-26 remain ⚑ Blocked in state-map.md until then). 17.Workflows ships no .Abstractions
+      split to narrow this reference against — a deliberate single-package decision that domain's own
+      brain ratifies explicitly.
+    -->
+    <ProjectReference Include="..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" />
   </ItemGroup>
 
   <ItemGroup>
