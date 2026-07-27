@@ -2,7 +2,7 @@
 
 ## What This Domain Is
 
-The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships six independent packages covering: functional primitives (`Result<T>`, `Error`), system abstractions (`IClock`, SmartEnums, base exceptions, BCL extensions), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction, dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random generation), the platform-wide `LoggingEventIdRanges` registry — a compile-time constant reserving each folder-map domain's `EventId` numbering block for the `[LoggerMessage]` logging convention enforced repo-wide — and `WellKnownHeaders`/`WellKnownBaggageKeys`, the platform-wide registry of cross-service propagation identifier literals (HTTP/gRPC header names and `Activity` baggage keys) that every domain touching correlation-id or tenant-id propagation must reference instead of redeclaring locally.
+The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships seven independent packages covering: functional primitives (`Result<T>`, `Error`), exception-boundary and multi-result-aggregation railway extensions (`ResultTry`, `ResultCombine`), system abstractions (`IClock` — internally `TimeProvider`-backed since P-295 — SmartEnums, base exceptions, BCL extensions), a time-ordered identifier generator (`IIdGenerator`, UUIDv7-backed), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction (including weighted-variant/gradual-rollout evaluation), dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random generation, and non-secret content fingerprinting via `IContentHasher`), a dependency-free payload compression primitive (`SharedKernel.Compression`, Brotli-default/GZip-keyed), the platform-wide `LoggingEventIdRanges` registry — a compile-time constant reserving each folder-map domain's `EventId` numbering block for the `[LoggerMessage]` logging convention enforced repo-wide — and the `WellKnownHeaders` / `WellKnownBaggageKeys` / `WellKnownTagKeys` registries, the platform-wide source of cross-service propagation identifier literals (HTTP/gRPC header names, `Activity` baggage keys, and `Activity` tag/attribute keys) that every domain touching correlation-id, tenant-id, or error-classification propagation must reference instead of redeclaring locally.
 
 Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Railway-oriented.**
 
@@ -14,14 +14,15 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 
 | Package | Role | References |
 |---------|------|-----------|
-| `SharedKernel.Primitives` | `Result<T>`, `Error`, `ErrorType`, `IClock`, `SmartEnum<TEnum,TValue>`, `LoggingEventIdRanges`, `WellKnownHeaders`, `WellKnownBaggageKeys` | nothing |
-| `SharedKernel.Core` | Base exceptions, BCL extension methods, `Result<T>` railway extensions | `SharedKernel.Primitives` |
+| `SharedKernel.Primitives` | `Result<T>`, `Error`, `ErrorType`, `IClock`, `IIdGenerator`, `SmartEnum<TEnum,TValue>`, `LoggingEventIdRanges`, `WellKnownHeaders`, `WellKnownBaggageKeys`, `WellKnownTagKeys` | nothing |
+| `SharedKernel.Core` | Base exceptions, BCL extension methods, `Result<T>` railway extensions (`Map`/`MapError`/`Bind`/`Match`/`Tap`/`ResultTry`/`ResultCombine`) | `SharedKernel.Primitives` |
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) | `SharedKernel.Primitives`, `SharedKernel.Core` |
 | `SharedKernel.Configuration` | Options-pattern validation, `AddValidatedOptions` DI extension | `SharedKernel.Primitives` |
-| `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
-| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
+| `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction (boolean + weighted-variant evaluation) + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
+| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation, non-secret content fingerprinting (`IContentHasher`) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
+| `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 
-All six target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
+All seven target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
 ---
 
@@ -34,7 +35,10 @@ All six target `net10.0`. Test sub-folders live inside each project folder (neve
 | Guard clauses | Pure C# 13 — no NuGet dependencies; compiled/cached `System.Text.RegularExpressions.Regex` for format/email guards |
 | Options validation | `Microsoft.Extensions.Options.DataAnnotations` |
 | Feature flags | `Microsoft.FeatureManagement` (abstracted behind `IFeatureManager`) |
-| Cryptographic primitives | Pure BCL `System.Security.Cryptography` only — `Rfc2898DeriveBytes` (PBKDF2), `AesGcm`, `RSA`, `ECDsa`, `HMACSHA256`, `RandomNumberGenerator`, `CryptographicOperations.FixedTimeEquals`. Zero third-party NuGet dependencies. |
+| Cryptographic primitives | Pure BCL `System.Security.Cryptography` only — `Rfc2898DeriveBytes` (PBKDF2), `AesGcm`, `RSA`, `ECDsa`, `HMACSHA256`, `SHA256`, `RandomNumberGenerator`, `CryptographicOperations.FixedTimeEquals`. Zero third-party NuGet dependencies. |
+| Payload compression | Pure BCL `System.IO.Compression` only — `BrotliStream` (default), `GZipStream` (keyed alternate). Zero third-party NuGet dependencies. |
+| Identifier generation | Pure BCL — `Guid.CreateVersion7()` (RFC 9562 UUID v7). Zero third-party NuGet dependencies. |
+| Time abstraction | Pure BCL — `System.TimeProvider` (shipped since .NET 8) backs `SystemClock` internally; `IClock` remains the only source of time exposed to domain/application code. |
 
 ---
 
@@ -117,6 +121,7 @@ ErrorCodes  (static class — well-known string constants, organized as nested s
     ErrorCodes.Conflict.Default
     ErrorCodes.Unauthorized.Default
     ErrorCodes.Domain.RuleViolated                         → "domain.rule.violated"  (canonical code for BusinessRuleViolationException)
+    ErrorCodes.Unexpected.Default                          → "unexpected.exception"  (default code used by ResultTry when the caller supplies no custom Error mapping)
     — consuming packages may define additional local constants; no enum versioning problem
 
 ValidationResult  (sealed record — multi-error aggregate, distinct from Result<T>)
@@ -137,7 +142,36 @@ IClock
     Today                                                  → DateOnly
 
 SystemClock  (sealed class, implements IClock)
-    — wraps DateTimeOffset.UtcNow; no mutable state
+    SystemClock()                                          — defaults to TimeProvider.System
+    SystemClock(TimeProvider timeProvider)                 — caller-supplied TimeProvider (e.g. a FakeTimeProvider in tests)
+    — internally sources UtcNow from an injected System.TimeProvider (P-295, WO-049) instead of calling
+      DateTimeOffset.UtcNow directly; Today derives from the same TimeProvider-sourced instant
+      (DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime)); no mutable state beyond the held
+      TimeProvider reference
+    — IClock's own public surface (UtcNow, Today) is unchanged by this — TimeProvider is an internal
+      implementation detail of SystemClock, never an alternative time source exposed to 03.Domain/05.Application
+      call sites; SK0001 (DirectDateTimeUsageAnalyzer) behavior is unchanged
+
+IIdGenerator
+    NewId()                                                → Guid
+    — purpose: a time-ordered, database-index-friendly alternative to Guid.NewGuid() (UUID v4) for any
+      call site generating a new primary-key-shaped identifier (notably 03.Domain's IAggregateFactory
+      implementations); opt-in — no existing identifier call site is forced to adopt it
+
+UuidV7IdGenerator  (sealed class, implements IIdGenerator)
+    — backed by Guid.CreateVersion7() (RFC 9562 UUID version 7); no mutable state; stateless/thread-safe
+    — values generated in sequence sort as non-decreasing under the default Guid comparer (CompareTo/`<`),
+      restoring B-tree insert locality on a Postgres/SQL Server clustered/primary-key index that a fully-random
+      Guid.NewGuid() (UUID v4) does not provide, while retaining no-central-coordinator distributed generation
+    — ships with no DI extension method (mirrors SystemClock/IClock): a consuming service registers it via a
+      plain `services.AddSingleton<IIdGenerator, UuidV7IdGenerator>()` call at its own composition root — see
+      DI Registration below. This is a deliberate reading of "DI registration extension" that preserves
+      SharedKernel.Primitives' zero-NuGet-dependency and no-package-owned-DI-extension rules (Primitives never
+      references Microsoft.Extensions.DependencyInjection.Abstractions)
+    — cross-reference only, not a contract change: 03.Domain/CLAUDE.md's IAggregateFactory guidance may note
+      this option exists for services wanting index-friendly identifiers; that edit is 03.Domain's own
+      jurisdiction (domain-arch-planner), not tracked here — mirrors the "consuming domain retrofit is each
+      consuming domain's own responsibility" precedent already established for WellKnownHeaders/WellKnownBaggageKeys
 
 SmartEnum<TEnum, TValue>  (abstract base, TEnum : SmartEnum<TEnum,TValue>)
     .FromValue(TValue value)                               → TEnum   (throws if not found)
@@ -192,6 +226,23 @@ WellKnownBaggageKeys  (static class — compile-time constant registry, zero ref
       propagation key names; reconciles `14.Presentation.CorrelationIdMiddleware` (writer) with
       `13.ServiceDefaults.BaggageLogRecordProcessor` (reader) — a confirmed live mismatch existed
       between these two before this registry (P-259, WO-042)
+
+WellKnownTagKeys  (static class — compile-time constant registry, zero reflection)
+    .TenantId                                              → string  (= "tenant.id")
+    .CorrelationId                                          → string  (= "correlation.id")
+    .ErrorType                                              → string  (= "error.type")
+    .ErrorCode                                              → string  (= "error.code")
+    — the single authoritative source for `System.Diagnostics.Activity.SetTag(...)` span-attribute key
+      names; distinct call-site shape from `WellKnownBaggageKeys` (`Activity.SetBaggage`/`AddBaggage`) even
+      where the literal value is identical (e.g. `CorrelationId` = "correlation.id" in both) — 00.Governance's
+      SK0022 analyzer regulates `SetTag` and `SetBaggage` as separate recognized call-site shapes. Dotted
+      lowercase values chosen to match OpenTelemetry semantic-convention style and stay consistent with the
+      pre-existing baggage-key literal. Introduced pre-emptively (P-294, WO-049): SK0022 already recognizes
+      `Activity.SetTag(...)` as a regulated shape with no registry to point at yet — every domain that starts
+      emitting span tags (05.Application, 07.Messaging, 11.Communication, 13.ServiceDefaults, 14.Presentation,
+      17.Workflows) is a candidate for the same class of drift WellKnownBaggageKeys was created to fix after
+      the fact. No existing domain's shipped `Activity.SetTag` call sites are changed by this phase — retrofit
+      is each consuming domain's own follow-up, exactly as documented for the other two registries
 ```
 
 ### `SharedKernel.Core` — public surface
@@ -219,6 +270,36 @@ Async railway overloads (this Task<Result<T>> extensions)
     .Map / .MapError / .Bind / .Match / .Tap              → Task<Result<...>> / Task<TOut>
     — sync-lambda and async-lambda (Func<T, Task<TOut>>) overloads both provided
     — outer extension body avoids async/await where only work is awaiting the input (no needless state machine)
+
+ResultTry  (static class — exception-boundary entry point, P-292/WO-049)
+    .Try<T>(Func<T> operation)                             → Result<T>
+    .Try<T>(Func<T> operation, Func<Exception, Error> onException)          → Result<T>   (custom mapping overload)
+    .TryAsync<T>(Func<Task<T>> operation)                  → Task<Result<T>>
+    .TryAsync<T>(Func<Task<T>> operation, Func<Exception, Error> onException) → Task<Result<T>>
+    — invokes the delegate; on normal completion returns Result<T>.Success(value); on any thrown exception
+      (never rethrown) returns Result<T>.Failure(Error.Unexpected(ErrorCodes.Unexpected.Default, "{ExceptionType}: {ExceptionMessage}"))
+      unless a custom onException mapper is supplied
+    — an AggregateException is flattened (.Flatten().InnerExceptions) before message construction, so a
+      caught Task.Wait()/.Result-style aggregate surfaces every inner exception's type+message, not just the
+      generic outer AggregateException message
+    — the sanctioned seam for the one legitimate place Result-oriented code still touches a throwing
+      third-party SDK call or a BCL method with no Result-returning equivalent; every call site otherwise
+      hand-rolling try/catch-to-Result should route through this instead
+    — TryAsync is a genuine async/await method (the one exception to the "avoid async/await when only
+      awaiting the input" railway rule below): catching an exception thrown during an awaited operation
+      requires the try/catch to wrap the await itself, which is impossible without an async state machine
+
+ResultCombine  (static class — multi-result aggregation, P-292/WO-049)
+    .Combine(params Result[] results)                      → ValidationResult
+    .Combine(IEnumerable<Result> results)                  → ValidationResult
+    .Combine<T>(params Result<T>[] results)                → ValidationResult<IReadOnlyList<T>>
+    .Combine<T>(IEnumerable<Result<T>> results)             → ValidationResult<IReadOnlyList<T>>
+    — evaluates every input Result/Result<T> (no short-circuit on first failure); if all succeed, returns
+      ValidationResult.Success() / ValidationResult<IReadOnlyList<T>>.Success(collectedValuesInInputOrder);
+      if one or more fail, returns ValidationResult.Failure(allFailingErrors) /
+      ValidationResult<IReadOnlyList<T>>.Failure(allFailingErrors) carrying every failing Error, not just the first
+    — complements ValidationResult's existing multi-error shape: gives callers a way to *produce* that shape
+      from several independent Result-returning checks instead of manually appending to a List<Error>
 
 BCL extension methods  (all static, no reflection)
     string         : .ToSnakeCase(), .ToCamelCase(), .ToPascalCase(), .IsNullOrWhiteSpace()
@@ -305,14 +386,35 @@ GuardDescriptions  (internal static class — not public API)
 IFeatureManager
     IsEnabledAsync(string feature, CancellationToken ct)                              → bool
     IsEnabledAsync<TContext>(string feature, TContext ctx, CancellationToken ct)      → bool
+    GetVariantAsync(string feature, CancellationToken ct)                             → FeatureVariant
+    GetVariantAsync<TContext>(string feature, TContext ctx, CancellationToken ct)     → FeatureVariant
+    — variant methods added P-298/WO-049; bridge Microsoft.FeatureManagement's IVariantFeatureManager
+      the same way IsEnabledAsync already bridges its plain boolean evaluation, without leaking any
+      Microsoft.FeatureManagement type into this interface's public surface
+    — the existing boolean IsEnabledAsync members and their behavior are completely unchanged (additive-only)
+
+FeatureVariant  (sealed record — P-298/WO-049)
+    .Name                                                  → string           (caller-defined variant identifier, e.g. "ControlGroup" / "VariantB")
+    .Configuration                                         → string?          (raw configuration payload for this variant, if any; caller deserializes to its own strongly-typed shape)
+    — a feature with no configured variants (or an unresolvable context) falls back to a deterministic,
+      documented default variant rather than throwing
 
 FeatureDefinition  (sealed record)
     .Name                                                  → string
     .DefaultValue                                          → bool
     .Description                                           → string?
 
+FeatureVariantDefinition  (sealed record — P-298/WO-049)
+    .Name                                                  → string           (variant identifier, e.g. "VariantB")
+    .Weight                                                → int              (allocation weight, e.g. percentage points; relative to sibling variants for the same feature)
+    .Configuration                                         → string?          (configuration payload surfaced to callers via FeatureVariant.Configuration on assignment)
+    — sibling record to FeatureDefinition for the definitions API; models one weighted allocation branch of
+      a gradual-rollout/A-B-experiment feature, not a replacement for FeatureDefinition's boolean shape
+
 AddSharedKernelFeatureManagement(IConfiguration config)
-    → registers IFeatureManager backed by Microsoft.FeatureManagement
+    → registers IFeatureManager backed by Microsoft.FeatureManagement; the variant path (GetVariantAsync)
+      requires no additional configuration beyond what Microsoft.FeatureManagement's own variant/allocation
+      configuration schema already needs
 ```
 
 ### `SharedKernel.Cryptography` — public surface
@@ -397,14 +499,36 @@ CryptoRandomGenerator  (sealed class, implements ISecureRandomGenerator)
     — backed by System.Security.Cryptography.RandomNumberGenerator; System.Random and Guid.NewGuid()
       are never acceptable substitutes for this interface
 
+IContentHasher  (P-296/WO-049)
+    ComputeHash(byte[] content)                                 → byte[]                  (raw digest bytes)
+    ComputeHash(Stream content)                                 → byte[]                  (streaming — never materializes the full content in memory)
+    ComputeHashAsync(Stream content, CancellationToken ct = default) → ValueTask<byte[]>   (async streaming variant for large blob uploads)
+    — fast, non-salted, non-iterated cryptographic digest for NON-SECRET content-fingerprinting use cases
+      only: object-storage ETags/checksums, content-addressable deduplication keys, cache-key derivation
+      from a payload body. Deliberately the architectural opposite of IOneWayHasher: IOneWayHasher is
+      deliberately slow (600,000 PBKDF2 iterations) to resist brute-force attacks on secrets — exactly the
+      wrong tool for hashing a 50MB upload to compute its ETag. NEVER use IContentHasher for passwords, API
+      keys, recovery codes, or any other secret — use IOneWayHasher for those. The two contracts must never
+      be conflated or merged into one.
+
+ContentHasherExtensions  (static class — convenience encodings built on IContentHasher)
+    ComputeHashHex(this IContentHasher hasher, byte[] content)      → string    (lowercase hex-encoded digest)
+    ComputeHashBase64(this IContentHasher hasher, byte[] content)   → string    (Base64-encoded digest)
+
+Sha256ContentHasher  (sealed class, implements IContentHasher)
+    — backed by System.Security.Cryptography.SHA256.HashData(byte[])/.HashData(Stream)/.HashDataAsync(Stream,...)
+      one-shot static BCL APIs (streaming-safe internally, no manual IncrementalHash bookkeeping needed);
+      algorithm-swappable by construction — a future second digest implementation could register a second
+      IContentHasher without changing this contract; only SHA-256 ships in this phase
+
 CryptographyOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
     .Pbkdf2Iterations                                           → int                     (default 600_000)
     .DefaultSigningKeyId                                        → string?
 
 AddSharedKernelCryptography(IConfiguration configuration)
     → registers CryptographyOptions (validated, ValidateOnStart), IOneWayHasher, ISymmetricEncryptionService,
-      IAsymmetricSignatureService, IHmacSigner, and ISecureRandomGenerator as singletons (all are stateless
-      and thread-safe)
+      IAsymmetricSignatureService, IHmacSigner, ISecureRandomGenerator, and (as of P-296/WO-049)
+      IContentHasher as singletons (all are stateless and thread-safe)
     — IAsymmetricSignatureService has two concrete implementations sharing one interface: RsaSignatureService
       is registered as the unkeyed default; both RsaSignatureService and EcdsaSignatureService are additionally
       registered as .NET 8+ keyed singletons via CryptographyServiceCollectionExtensions.RsaSignatureServiceKey
@@ -413,6 +537,45 @@ AddSharedKernelCryptography(IConfiguration configuration)
     — does NOT register IEncryptionKeyProvider, IAsymmetricKeyProvider, or any signing key material — the
       consuming service supplies its own IEncryptionKeyProvider and IAsymmetricKeyProvider (Key Vault,
       environment config, certificate store, etc.); this package never ships default key material
+```
+
+### `SharedKernel.Compression` — public surface (P-297/WO-049)
+
+```
+IPayloadCompressor
+    Compress(byte[] data)                                       → byte[]
+    Compress(Stream input, Stream output)                       → void                    (writes compressed bytes of input to output; both streams caller-owned)
+    CompressAsync(Stream input, Stream output, CancellationToken ct = default) → Task
+    Decompress(byte[] compressed)                                → Result<byte[]>          (Error.Unexpected on corrupt/truncated input — never throws InvalidDataException directly)
+    Decompress(Stream input, Stream output)                      → Result                  (non-generic — the decompressed payload already landed in the caller's output stream, no typed value to carry)
+    DecompressAsync(Stream input, Stream output, CancellationToken ct = default) → Task<Result>
+    — generic, cross-cutting compress/decompress of an arbitrary byte payload or stream — the direct sibling
+      of ISymmetricEncryptionService's "general-purpose encrypt/decrypt of arbitrary payloads" role: same
+      shape, same zero-dependency BCL-only constraint, orthogonal concern
+    — compression and encryption are frequently combined; the correct order is always compress-THEN-encrypt,
+      never the reverse — compressing already-encrypted/high-entropy ciphertext wastes CPU for no size
+      benefit, since ciphertext has no redundancy left to compress. This package never compresses a payload
+      that has already passed through ISymmetricEncryptionService.Encrypt
+
+BrotliPayloadCompressor  (sealed class, implements IPayloadCompressor)
+    — backed by System.IO.Compression.BrotliStream; the default, best-ratio choice for the JSON/text-shaped
+      payloads this platform mostly moves; registered as both the unkeyed default AND the "Brotli"-keyed
+      singleton
+
+GZipPayloadCompressor  (sealed class, implements IPayloadCompressor)
+    — backed by System.IO.Compression.GZipStream; a keyed alternate for interop with systems that
+      specifically require gzip; registered only as the "GZip"-keyed singleton (mirrors EcdsaSignatureService's
+      keyed-only registration in SharedKernel.Cryptography — no unkeyed registration)
+
+CompressionOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
+    .Level                                                       → System.IO.Compression.CompressionLevel  (default: CompressionLevel.Optimal)
+
+AddSharedKernelCompression(IConfiguration configuration)
+    → registers CompressionOptions (validated, ValidateOnStart); registers BrotliPayloadCompressor as both
+      the unkeyed IPayloadCompressor default and the CompressionServiceCollectionExtensions.BrotliPayloadCompressorKey
+      ("Brotli") keyed singleton; registers GZipPayloadCompressor as the GZipPayloadCompressorKey ("GZip")
+      keyed singleton only. Resolve GZip explicitly via
+      provider.GetRequiredKeyedService<IPayloadCompressor>(GZipPayloadCompressorKey).
 ```
 
 ---
@@ -436,19 +599,27 @@ AddSharedKernelCryptography(IConfiguration configuration)
 - `ValidationResult` / `ValidationResult<T>` are **distinct** from `Result<T>` — use `ValidationResult` for compound multi-error input validation; use `Result<T>` for single-error operation outcomes. Never conflate the two.
 - `ErrorCodes` uses a **nested static class string-constant** approach — not enums. Consuming packages may add local constants without forking the SharedKernel.
 - `IClock` is the only permitted source of time in all packages — `DateTime.UtcNow` or `DateTimeOffset.UtcNow` direct usage anywhere in this domain is a hard violation.
+- `SystemClock`'s internal `TimeProvider` adapter (P-295/WO-049) is an implementation detail, never a second public time source — `IClock`'s own surface (`UtcNow`, `Today`) does not change, and no `03.Domain`/`05.Application` call site is ever given license to inject or call `TimeProvider` directly instead of `IClock`. SK0001's "IClock is the only permitted time source" rule is unaffected by this internal change.
+- `SystemClock` must default to `TimeProvider.System` when no `TimeProvider` is supplied — a consuming service that wants one shared, coordinated time source across `IClock`-consuming code and `TimeProvider`-consuming infrastructure (e.g. Polly v8 resilience pipelines) supplies its own `TimeProvider` to `SystemClock`'s constructor.
+- `IIdGenerator`/`UuidV7IdGenerator` (P-293/WO-049) must never replace `Guid.NewGuid()` at any existing call site automatically — it is a purely opt-in alternative. `UuidV7IdGenerator` must be backed by `Guid.CreateVersion7()` only — never a hand-rolled UUIDv7 byte-layout implementation.
 - `SmartEnum` value lookup (`FromValue`, `FromName`) must **not** use reflection in the hot path — use a static compile-time list built at type initialization.
 - `LoggingEventIdRanges` is the single canonical source of domain-level `EventId` base values platform-wide — every package anywhere in the repo that authors `[LoggerMessage]` methods must derive its `EventId` values from this registry (domain base + local offset), never an ad hoc numeric literal disconnected from the domain's reserved block.
 - `LoggingEventIdRanges` fields are `const int` only — never `static readonly`, never enum-backed, never computed at runtime. `[LoggerMessage(EventId = ...)]` requires a compile-time constant expression (e.g. `EventId = LoggingEventIdRanges.Application + 42`), so anything short of a `const` breaks every consumer at compile time.
 - Adding a new folder-map domain (00–17 today) means adding exactly one new `const int` field to `LoggingEventIdRanges` — never renumbering or reassigning an existing domain's base value; doing so would silently invalidate every already-shipped `EventId` in that domain.
 - `LoggingEventIdRanges` only reserves the domain-level 1000-wide block. It does not (and must not attempt to) enforce or assign the 100-wide per-package sub-blocks inside a multi-package domain — that allocation is each domain's own documentation responsibility (see `13.ServiceDefaults`/`00.Governance` for the mechanical collision-detection layer).
-- `WellKnownHeaders` and `WellKnownBaggageKeys` fields are `public const string` only — never `static readonly`, never computed at runtime, mirroring the `LoggingEventIdRanges` const-only rule (headers are used in attribute-free contexts here, but the same "no ambiguity, no runtime mutation" rationale applies).
-- `WellKnownHeaders` / `WellKnownBaggageKeys` values must always match today's de facto platform standard exactly — this registry is a pure promotion of existing literals, never an opportunity to silently change an already-shipped header or baggage key name. Changing a value here is a breaking, cross-domain change requiring explicit work orders in every consuming domain, not a routine edit.
-- Every consuming domain that redeclares a cross-service propagation identifier (correlation id, tenant id, or any future one) as a private literal or local `const` must be retrofitted to reference `WellKnownHeaders` / `WellKnownBaggageKeys` instead — never leave a second, parallel literal alive once the shared constant exists. That retrofit is each consuming domain's own responsibility, not `01.Core`'s.
+- `WellKnownHeaders`, `WellKnownBaggageKeys`, and `WellKnownTagKeys` fields are `public const string` only — never `static readonly`, never computed at runtime, mirroring the `LoggingEventIdRanges` const-only rule (headers are used in attribute-free contexts here, but the same "no ambiguity, no runtime mutation" rationale applies).
+- `WellKnownHeaders` / `WellKnownBaggageKeys` / `WellKnownTagKeys` values must always match today's de facto platform standard exactly — this registry is a pure promotion of existing literals, never an opportunity to silently change an already-shipped header, baggage, or tag key name. Changing a value here is a breaking, cross-domain change requiring explicit work orders in every consuming domain, not a routine edit. (`WellKnownTagKeys` is a partial exception at introduction time — P-294/WO-049 introduces it pre-emptively, before any domain has shipped a conflicting tag-key literal, so there is no existing de facto value to preserve; once a domain adopts a `WellKnownTagKeys` constant, this rule applies to it in full.)
+- Every consuming domain that redeclares a cross-service propagation identifier (correlation id, tenant id, error classification, or any future one) as a private literal or local `const` must be retrofitted to reference `WellKnownHeaders` / `WellKnownBaggageKeys` / `WellKnownTagKeys` instead — never leave a second, parallel literal alive once the shared constant exists. That retrofit is each consuming domain's own responsibility, not `01.Core`'s.
 - `04.Contracts` must never become the home for cross-service propagation constants — `SharedKernel.Communication.Grpc` carries a hard governance rule (P-163, `GrpcNeverReferencesContracts`) forbidding a `04.Contracts` reference; routing these constants through `04.Contracts` would force reintroducing exactly the coupling that rule removes. `01.Core` is the only architecturally legal home.
 - Base exceptions always carry an `Error` payload; string-only constructors are not allowed.
-- Async railway extension methods must **not** use `async`/`await` on the outer extension body where the only async work is awaiting the input — avoid unnecessary state machine allocation.
+- Async railway extension methods must **not** use `async`/`await` on the outer extension body where the only async work is awaiting the input — avoid unnecessary state machine allocation. `ResultTry.TryAsync` is the one documented exception: it must use a genuine `async`/`await` body because catching an exception thrown during an awaited delegate requires the `try`/`catch` to wrap the `await` itself.
+- `ResultTry.Try`/`TryAsync` must never rethrow — every exception the supplied delegate throws is caught and converted to `Result<T>.Failure(...)`. An `AggregateException` must be `.Flatten()`-ed before building the `Error.Message` so every inner exception is represented, not just the outer aggregate's generic message.
+- `ResultTry` must never add an `Exception` reference to `Error`'s equality-participating members — only the exception's type name and message (as plain strings) may flow into `Error.Message`.
+- `ResultCombine.Combine` must evaluate **every** input `Result`/`Result<T>` — it must never short-circuit on the first failure. On any failure it returns a `ValidationResult`/`ValidationResult<IReadOnlyList<T>>` carrying **every** failing `Error`, not just the first.
+- `ResultTry` and `ResultCombine` are additive static classes in `SharedKernel.Core` — they must never require a change to `Result<T>`, `Result`, `ValidationResult`, `ValidationResult<T>`, `IHasSuccessFlag`, `IResultOfT<T>`, or `IFailureFactory<TSelf>`.
 - `AddValidatedOptions` must call `.ValidateOnStart()` — misconfigured apps must fail at startup, not at first access.
-- `IFeatureManager` is the only permitted feature-flag interface in consuming services — never inject `Microsoft.FeatureManagement.IFeatureManager` directly.
+- `IFeatureManager` is the only permitted feature-flag interface in consuming services — never inject `Microsoft.FeatureManagement.IFeatureManager` directly. This includes the variant/allocation path (P-298/WO-049): `GetVariantAsync` must never leak a `Microsoft.FeatureManagement` type (e.g. `Variant`, `VariantAssignmentReason`) through `IFeatureManager`'s public surface — always the neutral `FeatureVariant` record.
+- `IFeatureManager`'s variant surface (`GetVariantAsync`) is additive-only — the existing boolean `IsEnabledAsync` members and their behavior must never change as a side effect of adding variant support.
 - Guard extensions return `Error?` — **null means the guard passed**, non-null means violation. Never use `Error.None` as the "passed" sentinel in guard returns; use actual `null` so callers can distinguish cleanly.
 - `Guard.Throw.*` methods are thin wrappers: call the matching `Against.*` extension, throw `DomainException(error)` if the result is non-null, otherwise return. No independent logic.
 - `IGuardClause` is a public marker interface with no members — `DefaultGuardClause` (the implementation) is `private sealed` to the `Guard` class. Callers must never reference `DefaultGuardClause` directly.
@@ -460,12 +631,17 @@ AddSharedKernelCryptography(IConfiguration configuration)
 - Never use `System.Random` or `Guid.NewGuid()` for any security-sensitive value (tokens, keys, nonces, salts) — always go through `ISecureRandomGenerator`, which is backed by `RandomNumberGenerator`.
 - Never compare HMACs, signatures, or any secret-derived byte sequence with `==`, `Equals`, or `SequenceEqual` — always `CryptographicOperations.FixedTimeEquals` to avoid timing attacks.
 - `IOneWayHasher` output must be self-describing (embed algorithm identity, iteration count, and salt in the stored string) so `CryptographyOptions.Pbkdf2Iterations` can be raised later without invalidating existing hashes. Never store salt and hash in separate columns requiring a schema migration to rotate.
-- No one-way secret hashing via raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IOneWayHasher`. This applies to passwords *and* any other one-way secret (API keys, recovery codes, security-question answers) — `IOneWayHasher` is the single sanctioned path for all of them, never a parallel hand-rolled KDF call per secret type.
+- No one-way *secret* hashing via raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IOneWayHasher`. This applies to passwords *and* any other one-way secret (API keys, recovery codes, security-question answers) — `IOneWayHasher` is the single sanctioned path for all of them, never a parallel hand-rolled KDF call per secret type. This rule governs **secret** hashing only (WO-049 clarification) — for non-secret content fingerprints (object-storage ETags/checksums, content-addressable dedup keys, cache-key derivation from a payload body), `IContentHasher` is the sanctioned path instead; see the next rule. `IOneWayHasher` and `IContentHasher` must never be conflated or merged into one contract — they serve deliberately opposite performance/security profiles (slow+salted+iterated vs. fast+single-pass).
+- `IContentHasher` (P-296/WO-049) must never be used for passwords, API keys, recovery codes, or any other secret — it is a fast, non-salted, non-iterated digest for non-secret content fingerprinting only. Reaching for raw `SHA256.HashData(...)` directly anywhere else in the platform, instead of going through `IContentHasher`, is the same class of hand-rolled-cryptography violation this domain already prohibits for secrets.
 - `IOneWayHasher` must never be renamed back to a domain-specific name (e.g., `IPasswordHasher`) and must never grow domain-specific parameter names (e.g., `password`) — it is a `01.Core` primitive shared across every one-way-secret use case, not an auth-domain type. (WO-034 corrected exactly this leak.)
 - `ISymmetricEncryptionService` must use an AEAD cipher (AES-GCM) — never an unauthenticated mode (CBC/ECB without a separate MAC).
 - `ISymmetricEncryptionService.Decrypt` must return `Result<byte[]>`, never throw `CryptographicException` directly — a tampered payload or unrecognized key is an expected failure mode for this contract, not a bug.
 - Symmetric/asymmetric key material is never hardcoded, embedded in source, or read directly from `IConfiguration` inside `SharedKernel.Cryptography` itself — it is always resolved through `IEncryptionKeyProvider` (encryption) or a caller-supplied `keyId` (signing), both implemented by the consuming service.
 - `SharedKernel.Cryptography` must remain usable by non-web/worker services with zero ASP.NET Core, JWT, or OIDC dependencies. `12.Security.Oidc` may depend on `SharedKernel.Cryptography` for token-signing primitives; the dependency never runs in the other direction.
+- `SharedKernel.Compression` (P-297/WO-049) has **zero third-party NuGet dependencies** — pure BCL `System.IO.Compression` only; references only `SharedKernel.Primitives` (for `Result<T>`/`Error`) and `SharedKernel.Configuration` (for `AddValidatedOptions`), mirroring `SharedKernel.Cryptography`'s exact reference shape.
+- `IPayloadCompressor.Decompress` must return `Result<byte[]>` / `Result` (stream overload), never throw `InvalidDataException`/`CryptographicException`-style exceptions directly — a corrupt or truncated compressed payload is an expected failure mode for this contract, mirroring `ISymmetricEncryptionService.Decrypt`'s existing failure-handling shape.
+- Compression must always happen **before** encryption when both are applied to the same payload, never the reverse — compressing already-encrypted/high-entropy ciphertext wastes CPU for no size benefit. This ordering rule must be stated in `IPayloadCompressor`'s XML docs, not just this brain.
+- `SharedKernel.Compression` ships no `.Abstractions`/`.{Provider}` sibling-package split — a single package with a keyed-DI algorithm choice (`BrotliPayloadCompressor` unkeyed default + "Brotli"/"GZip"-keyed singletons), mirroring `SharedKernel.Cryptography`'s `IAsymmetricSignatureService` RSA/ECDSA keyed-singleton precedent rather than sibling `.Brotli`/`.GZip` packages — the algorithm set is small, closed, and purely-BCL, exactly the condition under which that precedent applies.
 - No static mutable state anywhere in this domain.
 
 ---
@@ -473,23 +649,39 @@ AddSharedKernelCryptography(IConfiguration configuration)
 ## DI Registration (expected shape)
 
 ```csharp
-// IClock — needed by any service that reads time
+// IClock — needed by any service that reads time. Defaults to TimeProvider.System internally (P-295).
 services.AddSingleton<IClock, SystemClock>();
+
+// IClock with a caller-supplied TimeProvider — for services that want one shared, coordinated time
+// source across IClock-consuming domain code and TimeProvider-consuming infrastructure (e.g. Polly v8).
+services.AddSingleton<TimeProvider>(myTimeProvider);
+services.AddSingleton<IClock>(sp => new SystemClock(sp.GetRequiredService<TimeProvider>()));
+
+// IIdGenerator — opt-in, time-ordered (UUIDv7) identifier generation. No package-owned DI extension
+// (SharedKernel.Primitives ships none — see Implementation Rules); plain registration, same shape as IClock.
+services.AddSingleton<IIdGenerator, UuidV7IdGenerator>();
 
 // Validated Options — per-options call, section comes from IConfiguration
 services.AddValidatedOptions<MyServiceOptions>(configuration.GetSection("MyService"));
 
-// Feature Management
+// Feature Management — IsEnabledAsync (boolean) and GetVariantAsync (weighted variant/gradual rollout,
+// P-298) both resolve through the same IFeatureManager registration.
 services.AddSharedKernelFeatureManagement(configuration);
 
 // Cryptography — registers IOneWayHasher, ISymmetricEncryptionService, IAsymmetricSignatureService,
-// IHmacSigner, ISecureRandomGenerator. The consuming service must separately register its own
-// IEncryptionKeyProvider (and any signing key material) — this package ships no key material.
+// IHmacSigner, ISecureRandomGenerator, and IContentHasher (P-296). The consuming service must separately
+// register its own IEncryptionKeyProvider (and any signing key material) — this package ships no key material.
 services.AddSharedKernelCryptography(configuration);
 services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
+
+// Compression (P-297) — registers BrotliPayloadCompressor as both the unkeyed IPayloadCompressor default
+// and the "Brotli"-keyed singleton, plus GZipPayloadCompressor as the "GZip"-keyed singleton only.
+services.AddSharedKernelCompression(configuration);
+var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
+    CompressionServiceCollectionExtensions.GZipPayloadCompressorKey);
 ```
 
-`SharedKernel.Primitives`, `SharedKernel.Core`, and `SharedKernel.Guards` ship **no DI extensions** — they are pure libraries.
+`SharedKernel.Primitives`, `SharedKernel.Core`, and `SharedKernel.Guards` ship **no DI extensions** — they are pure libraries. This includes `IIdGenerator` and `SystemClock`'s `TimeProvider` overload: both are registered with a plain `services.AddSingleton<...>()` call at the consumer's own composition root, never a package-owned `AddX()` method — preserving `SharedKernel.Primitives`' zero-NuGet-dependency rule (it never references `Microsoft.Extensions.DependencyInjection.Abstractions`).
 
 ---
 
@@ -503,29 +695,34 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 - `ErrorCodes` is a static class of string constants — no runtime lookup, fully AOT-safe.
 - `SmartEnum` base uses a static `IReadOnlyList<TEnum>` built at type-initialization — no reflection in value lookup.
 - `LoggingEventIdRanges` is a static class of compile-time `const int` values — no reflection, no runtime computation, fully AOT-safe, and directly usable as a `[LoggerMessage(EventId = ...)]` attribute argument (which itself requires a compile-time constant expression).
-- `WellKnownHeaders` and `WellKnownBaggageKeys` are static classes of compile-time `const string` values — no reflection, no runtime computation, fully AOT-safe; directly usable as header-name literals in `HttpRequestMessage.Headers`, gRPC `Metadata` entries, or `Activity.AddBaggage(key, value)` calls without any allocation beyond the string constant itself.
+- `WellKnownHeaders`, `WellKnownBaggageKeys`, and `WellKnownTagKeys` are static classes of compile-time `const string` values — no reflection, no runtime computation, fully AOT-safe; directly usable as header-name literals in `HttpRequestMessage.Headers`, gRPC `Metadata` entries, `Activity.AddBaggage(key, value)`, or `Activity.SetTag(key, value)` calls without any allocation beyond the string constant itself.
+- `IIdGenerator`/`UuidV7IdGenerator` calls `Guid.CreateVersion7()` directly — a static BCL method, no reflection, fully AOT-safe.
+- `SystemClock`'s `TimeProvider`-backed internals (P-295) call `TimeProvider.GetUtcNow()` directly — no reflection, fully AOT-safe; `TimeProvider` itself has shipped in the BCL since .NET 8 and requires no NuGet reference.
+- `ResultTry` and `ResultCombine` are static classes — AOT-safe by default. `ResultTry.TryAsync`'s `async`/`await` body is ordinary compiler-generated async state-machine code, not a reflection-based construct, and remains fully AOT-safe.
 - All railway extension methods are static — AOT-safe by default. Async overloads use `Task` continuation patterns to avoid AOT-hostile constructs.
 - `Microsoft.Extensions.Options` is AOT-compatible as of .NET 8+ — verify on each upgrade.
-- `Microsoft.FeatureManagement` — verify AOT status on each major upgrade; the `IFeatureManager` wrapper allows a swap if needed.
+- `Microsoft.FeatureManagement` — verify AOT status on each major upgrade, including the variant/allocation API surface `GetVariantAsync` (P-298) bridges; the `IFeatureManager` wrapper allows a swap if needed. Flag (do not block on) any AOT gap found in the variant API specifically.
 - All BCL extension methods are static — AOT-safe by default.
 - `IGuardClause` and all guard extension methods are static — AOT-safe. `DefaultGuardClause` is sealed, no virtual dispatch.
 - `EqualityComparer<T>.Default` used in `Default<T>` guard is AOT-safe — it uses static dispatch via generic specialization in .NET 10.
 - `InvalidFormat` / `Email` use `Regex` constructed with `RegexOptions.Compiled` in a static field — the compiled delegate is created once at type-initialization, which is AOT-compatible. `ConcurrentDictionary` is used only for pattern-keyed caching of caller-supplied patterns in `InvalidFormat`; the email regex is a fixed static field.
 - `OutOfRange<T>` uses the `IComparable<T>` constraint — static generic dispatch, no boxing for value types, AOT-safe.
-- `Pbkdf2OneWayHasher`, `AesGcmEncryptionService`, `RsaSignatureService`, `EcdsaSignatureService`, `HmacSha256Signer`, and `CryptoRandomGenerator` are sealed classes calling directly into BCL `System.Security.Cryptography` types (`Rfc2898DeriveBytes`, `AesGcm`, `RSA`, `ECDsa`, `HMACSHA256`, `RandomNumberGenerator`) — no reflection, fully AOT-safe.
+- `Pbkdf2OneWayHasher`, `AesGcmEncryptionService`, `RsaSignatureService`, `EcdsaSignatureService`, `HmacSha256Signer`, `CryptoRandomGenerator`, and `Sha256ContentHasher` (P-296) are sealed classes calling directly into BCL `System.Security.Cryptography` types (`Rfc2898DeriveBytes`, `AesGcm`, `RSA`, `ECDsa`, `HMACSHA256`, `RandomNumberGenerator`, `SHA256`) — no reflection, fully AOT-safe.
 - `CryptographyOptions` binds via `Microsoft.Extensions.Options`, the same AOT-compatible (.NET 8+) path used by `SharedKernel.Configuration`.
+- `BrotliPayloadCompressor` and `GZipPayloadCompressor` (P-297) are sealed classes calling directly into BCL `System.IO.Compression` types (`BrotliStream`, `GZipStream`) — no reflection, fully AOT-safe. `CompressionOptions` binds via the same `Microsoft.Extensions.Options` AOT-compatible path.
 
 ---
 
 ## Test Rules
 
 - Unit tests for each package live in the nested `.Tests/` folder inside that package's folder.
-- `SharedKernel.Primitives.Tests/` — Result, Error, IClock, SmartEnum, IHasSuccessFlag, IResultOfT\<T\>, IFailureFactory\<TSelf\> (generic-constraint dispatch producing a correct failure `Result<T>` for at least two distinct closed shapes, e.g. `Result<int>`/`Result<string>`, plus confirmation that `Result` (non-generic) is not assignable to `IFailureFactory<Result>`), `LoggingEventIdRanges` (all 18 domain base constants are pairwise unique, each is a multiple of 1000, and each equals exactly `{domain-folder-number} * 1000` matching the root CLAUDE.md folder map 00 through 17), `WellKnownHeaders`/`WellKnownBaggageKeys` (every constant's literal value is pinned exactly — `CorrelationId` header = `"X-Correlation-Id"`, `TenantId` header = `"X-Tenant-Id"`, `CorrelationId` baggage key = `"correlation.id"` — so a future edit cannot silently drift a cross-service propagation identifier)
-- `SharedKernel.Core.Tests/` — exceptions, railway extensions, BCL extensions
+- `SharedKernel.Primitives.Tests/` — Result, Error, IClock, SmartEnum, IHasSuccessFlag, IResultOfT\<T\>, IFailureFactory\<TSelf\> (generic-constraint dispatch producing a correct failure `Result<T>` for at least two distinct closed shapes, e.g. `Result<int>`/`Result<string>`, plus confirmation that `Result` (non-generic) is not assignable to `IFailureFactory<Result>`), `LoggingEventIdRanges` (all 18 domain base constants are pairwise unique, each is a multiple of 1000, and each equals exactly `{domain-folder-number} * 1000` matching the root CLAUDE.md folder map 00 through 17), `WellKnownHeaders`/`WellKnownBaggageKeys`/`WellKnownTagKeys` (every constant's literal value is pinned exactly — `CorrelationId` header = `"X-Correlation-Id"`, `TenantId` header = `"X-Tenant-Id"`, `CorrelationId` baggage key = `"correlation.id"`, and every `WellKnownTagKeys` field — so a future edit cannot silently drift a cross-service propagation identifier), `IIdGenerator`/`UuidV7IdGenerator` (uniqueness across a large generation batch; values generated in sequence compare as non-decreasing under the default `Guid` comparer), `SystemClock`'s `TimeProvider`-backed internals (parameterless `SystemClock()` reflects real time; `SystemClock(fakeTimeProvider)` reflects the injected provider's current instant, including after the fake advances time; `Today` derives correctly from the same instant)
+- `SharedKernel.Core.Tests/` — exceptions, railway extensions, BCL extensions, `ResultTry`/`ResultTry.TryAsync` (delegate success path, thrown-exception-to-`Error.Unexpected` translation including a nested/flattened `AggregateException` case, custom exception-mapper overload, never-rethrows guarantee), `ResultCombine` (all-success non-generic and generic variants, single-failure and all-failure variants verifying every collected `Error` surfaces — not just the first — for both the non-generic `Result` and generic `Result<T>` overloads)
 - `SharedKernel.Guards.Tests/` — guard functional path (Against.*), guard throw path (Throw.*), boundary theories
 - `SharedKernel.Configuration.Tests/` — ValidatedOptions eager validation
-- `SharedKernel.FeatureManagement.Tests/` — IFeatureManager enable/disable, context variant
-- `SharedKernel.Cryptography.Tests/` — `IOneWayHasher` hash/verify roundtrip and rehash-needed detection across iteration-count changes, covering at least one password-shaped secret and one non-password-shaped secret (e.g., an API key string) to prove the contract is genuinely secret-agnostic; `ISymmetricEncryptionService` encrypt/decrypt roundtrip, tamper detection (flipped ciphertext/tag byte must fail `Decrypt`), and unknown/retired `KeyId` handling; `IAsymmetricSignatureService` sign/verify roundtrip for both RSA and ECDSA with wrong-key and tampered-data failure cases; `IHmacSigner` sign/verify roundtrip and tamper detection; `ISecureRandomGenerator` output length and non-repetition across calls; DI registration sanity for `AddSharedKernelCryptography`
+- `SharedKernel.FeatureManagement.Tests/` — IFeatureManager enable/disable, context variant, `GetVariantAsync` deterministic variant assignment given a fixed context/seed, predictable fallback for an unconfigured feature, and a regression check that the existing boolean `IsEnabledAsync` surface is unchanged
+- `SharedKernel.Cryptography.Tests/` — `IOneWayHasher` hash/verify roundtrip and rehash-needed detection across iteration-count changes, covering at least one password-shaped secret and one non-password-shaped secret (e.g., an API key string) to prove the contract is genuinely secret-agnostic; `ISymmetricEncryptionService` encrypt/decrypt roundtrip, tamper detection (flipped ciphertext/tag byte must fail `Decrypt`), and unknown/retired `KeyId` handling; `IAsymmetricSignatureService` sign/verify roundtrip for both RSA and ECDSA with wrong-key and tampered-data failure cases; `IHmacSigner` sign/verify roundtrip and tamper detection; `ISecureRandomGenerator` output length and non-repetition across calls; `IContentHasher` deterministic digest for identical input, differing digest for a single-byte change, streaming (`Stream`/async) vs. in-memory (`byte[]`) overloads producing identical output, and hex/Base64 encoding correctness via `ContentHasherExtensions`; DI registration sanity for `AddSharedKernelCryptography` (now covering six registered services)
+- `SharedKernel.Compression.Tests/` — roundtrip for both `BrotliPayloadCompressor` and `GZipPayloadCompressor` (byte[] and stream overloads), tamper/truncation of compressed input surfaces as a `Result`/`Result<byte[]>` failure and never an unhandled exception, streaming vs. in-memory overloads produce equivalent decompressed output, DI registration sanity for `AddSharedKernelCompression` (unkeyed Brotli default + both keyed singletons resolve)
 - Railway-extension chains must be covered: map → bind → match over both success and failure paths.
 - `SmartEnum` must cover: FromValue hit, FromValue miss (throws), TryFromValue, List completeness.
 - Validated options test must assert that a misconfigured `TOptions` throws at `IHost.StartAsync()`.
@@ -555,3 +752,11 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 - [2026-07-09] P-249 closed (WO-041) — `LoggingEventIdRanges` implemented in `SharedKernel.Primitives/Logging/LoggingEventIdRanges.cs` exactly matching the locked design (all 18 domain `const int` fields + `DomainRangeWidth`/`PackageSubBlockWidth`); `LoggingEventIdRangesTests` added (pairwise uniqueness, multiple-of-1000, folder-number-to-value theory across all 18 domains); `01.Core/README.md` gained a "LoggingEventIdRanges — EventId Registry" usage section. Pure execution against an already-locked contract — no interface, type, or DI-shape changes. 114/114 `SharedKernel.Primitives.Tests` passing; `SK.01.P249` now fully `●` (core-phase-implementer)
 - [2026-07-14] P-259 applied (WO-042) — locked design for `WellKnownHeaders` (`CorrelationId`="X-Correlation-Id", `TenantId`="X-Tenant-Id") and `WellKnownBaggageKeys` (`CorrelationId`="correlation.id") in `SharedKernel.Primitives`: dependency-free `const string` registries mirroring the `LoggingEventIdRanges` precedent, promoting today's de facto propagation-identifier literals into a single authoritative source. Motivation: a confirmed live mismatch between `14.Presentation.CorrelationIdMiddleware` (writes baggage key `"correlation.id"`) and `13.ServiceDefaults.BaggageLogRecordProcessor`'s test suite (hardcodes `"CorrelationId"`) — flagged in WO-041 (DO-07) but left unfixed for lack of a shared source of truth — plus three independent redeclarations of the `"x-tenant-id"` header across `11.Communication.Rest.TenantIdDelegatingHandler`, `11.Communication.Grpc.TenantIdInterceptor`, and `13.ServiceDefaults.MultiTenancy.HeaderTenantResolutionStrategy`. `04.Contracts` was considered and rejected: `SharedKernel.Communication.Grpc` carries a hard governance rule (P-163) forbidding a `04.Contracts` reference, so `01.Core` is the only architecturally legal shared home. Pure promotion — zero behavioral change, zero new NuGet dependencies. Additive only; no existing `Result<T>`/`Error`/`IClock`/`SmartEnum`/guard/options/feature-flag/cryptography/`LoggingEventIdRanges` member or DI shape changes. 4 tasks added to `01.Core/state-map.md` under `SK.01.P259` (D-30 design locked now; C-43/T-34/DO-16 pending implementation) (core-arch-planner, WO-042)
 - [2026-07-14] P-259 closed (WO-042) — `WellKnownHeaders`/`WellKnownBaggageKeys` implemented in `SharedKernel.Primitives/Propagation/WellKnownHeaders.cs` and `WellKnownBaggageKeys.cs` exactly matching the locked design; `WellKnownPropagationConstantsTests` added pinning all 3 literal values; `01.Core/README.md` gained a "Well-Known Propagation Constants" usage section. Pure execution against an already-locked contract — no interface, type, or DI-shape changes. 117/117 `SharedKernel.Primitives.Tests` passing; `SK.01.P259` now fully `●` (core-phase-implementer)
+- [2026-07-27] P-292 processed (WO-049) — locked design for `ResultTry` (`Try`/`TryAsync` exception-boundary entry points, `SharedKernel.Core`) and `ResultCombine` (`Combine` multi-result aggregation into `ValidationResult`/`ValidationResult<IReadOnlyList<T>>`, `SharedKernel.Core`), plus a small additive `ErrorCodes.Unexpected.Default` constant (`SharedKernel.Primitives`). Both are new static classes — pure additive, zero change to `Result<T>`/`Result`/`ValidationResult`/`IHasSuccessFlag`/`IResultOfT<T>`/`IFailureFactory<TSelf>`. `ResultTry.TryAsync` is documented as the one sanctioned exception to the "avoid async/await when only awaiting the input" railway rule, since exception interception requires wrapping the `await` itself; `AggregateException` is flattened before message construction. `ResultCombine.Combine` never short-circuits — every input is evaluated and every failing `Error` surfaces, not just the first. 9 tasks added (D-31→D-33, C-44→C-46, T-35/T-36, DO-17) (core-arch-planner, WO-049)
+- [2026-07-27] P-293 processed (WO-049) — locked design for `IIdGenerator`/`UuidV7IdGenerator` (`SharedKernel.Primitives`), a `Guid.CreateVersion7()`-backed, opt-in alternative to `Guid.NewGuid()` for Postgres-index-friendly, time-ordered identifiers. Ships with **no package-owned DI extension** — deliberately resolved via a plain `services.AddSingleton<IIdGenerator, UuidV7IdGenerator>()` call at the consumer's own composition root, mirroring `IClock`'s existing registration story, to preserve `SharedKernel.Primitives`' zero-NuGet-dependency and no-DI-extension rules (adding a package-owned `AddX()` method would require a `Microsoft.Extensions.DependencyInjection.Abstractions` reference this package must never take). Cross-referencing `03.Domain`'s `IAggregateFactory` guidance is explicitly out of `01.Core`'s jurisdiction — flagged for a `domain-arch-planner` follow-up, not tracked here. 4 tasks added (D-34, C-47, T-37, DO-18) (core-arch-planner, WO-049)
+- [2026-07-27] P-294 processed (WO-049) — locked design for `WellKnownTagKeys` (`TenantId`="tenant.id", `CorrelationId`="correlation.id", `ErrorType`="error.type", `ErrorCode`="error.code"), a third dependency-free `const string` registry in `SharedKernel.Primitives/Propagation/` alongside `WellKnownHeaders`/`WellKnownBaggageKeys`, covering `Activity.SetTag(...)` call sites that 00.Governance's SK0022 analyzer already regulates with no registry yet to point at. Introduced pre-emptively — no existing domain's shipped `Activity.SetTag` call sites are touched by this phase; retrofit is each consuming domain's own follow-up, exactly as documented for the other two registries. Root `CLAUDE.md`'s Magic String convention section update is out of `01.Core`'s jurisdiction (arch-lead/`sync-brain`, mirroring how the root WO-042 section was itself added at the root level, not by this agent). 4 tasks added (D-35, C-48, T-38, DO-19) (core-arch-planner, WO-049)
+- [2026-07-27] P-295 processed (WO-049) — locked design for `SystemClock`'s internal `TimeProvider`-backed rewrite: `UtcNow`/`Today` now source from an injected `System.TimeProvider` (defaulting to `TimeProvider.System`) instead of calling `DateTimeOffset.UtcNow` directly; a new `SystemClock(TimeProvider)` constructor overload lets a consuming service share one coordinated time source across `IClock`-consuming domain code and `TimeProvider`-consuming infrastructure (e.g. Polly v8 resilience pipelines in `11.Communication`). `IClock`'s own public surface (`UtcNow`, `Today`) is completely unchanged, and SK0001 (`DirectDateTimeUsageAnalyzer`)'s "IClock is the only permitted time source" enforcement is unaffected — this is an internal `SystemClock` implementation detail, not a relaxation of that rule. Zero new NuGet dependency (`TimeProvider` has shipped in the BCL since .NET 8). No package-owned DI extension, consistent with the `IIdGenerator` precedent set this same session. `16.Testing`'s `FakeClock` gaining a matching `TimeProvider`-exposing update is flagged as a `testing-arch-planner` follow-up, out of `01.Core`'s jurisdiction. 4 tasks added (D-36, C-49, T-39, DO-20) (core-arch-planner, WO-049)
+- [2026-07-27] P-296 processed (WO-049) — locked design for `IContentHasher`/`Sha256ContentHasher`/`ContentHasherExtensions` (`SharedKernel.Cryptography`), a fast, non-salted, non-iterated `SHA256.HashData`-backed digest contract for non-secret content-fingerprinting use cases (object-storage ETags/checksums, dedup keys, cache-key derivation) — the deliberate architectural opposite of the deliberately-slow `IOneWayHasher`. `AddSharedKernelCryptography` now registers six singletons instead of five. Amended the pre-existing "no raw SHA256/MD5 hashing" hard rule to clarify it governs **secret** hashing only and to cross-reference `IContentHasher` as the sanctioned non-secret path — the two contracts must never be conflated. 4 tasks added (D-37, C-50, T-40, DO-21) (core-arch-planner, WO-049)
+- [2026-07-27] P-297 processed (WO-049) — locked design for a **seventh `01.Core` package**, `SharedKernel.Compression`: `IPayloadCompressor` (`Compress`/`Decompress`, byte[] and stream overloads, `Decompress` returns `Result<byte[]>`/`Result` rather than throwing on corrupt/truncated input — mirroring `ISymmetricEncryptionService.Decrypt`'s failure shape), `BrotliPayloadCompressor` (unkeyed default + "Brotli"-keyed singleton) and `GZipPayloadCompressor` ("GZip"-keyed singleton only), `CompressionOptions`, and `AddSharedKernelCompression`. No `.Abstractions`/`.{Provider}` sibling-package split — a single package with a keyed-DI algorithm choice, mirroring `SharedKernel.Cryptography`'s RSA/ECDSA keyed-singleton precedent exactly. References only `SharedKernel.Primitives` + `SharedKernel.Configuration`, zero third-party NuGet dependencies. XML docs must state the compress-then-encrypt ordering rule explicitly. Full package lifecycle tracked (Design/Scaffold/Core/Tests/Docs/Published) since this is a brand-new package, mirroring the WO-033 Cryptography precedent. Packages table, Technology Stack table, and Package Board updated to seven packages. 11 tasks added (D-38→D-40, S-19, C-51/C-52, T-41, DO-22, P-13→P-15) (core-arch-planner, WO-049)
+- [2026-07-27] P-298 processed (WO-049) — locked design for weighted feature-flag variant/experimentation support on `IFeatureManager` (`SharedKernel.FeatureManagement`): `GetVariantAsync`/`GetVariantAsync<TContext>` returning a neutral `FeatureVariant` record (Name + optional Configuration payload), bridging `Microsoft.FeatureManagement`'s `IVariantFeatureManager` the same way the existing boolean path bridges plain evaluation, without leaking any `Microsoft.FeatureManagement` type through the public surface; `FeatureVariantDefinition` sibling record (Name/Weight/Configuration) added for the definitions API. Purely additive — existing boolean `IsEnabledAsync` surface and behavior unchanged. `AddSharedKernelFeatureManagement` wiring requires no additional configuration beyond `Microsoft.FeatureManagement`'s own variant/allocation schema. Any AOT gap found in the variant API surface is to be flagged, not treated as a blocker. 5 tasks added (D-41, C-53/C-54, T-42, DO-23) (core-arch-planner, WO-049)
+- [2026-07-27] P-292 closed (WO-049) — `ResultTry`/`ResultCombine` implemented in `SharedKernel.Core/Extensions/ResultTry.cs` and `ResultCombine.cs`; `ErrorCodes.Unexpected.Default` changed from `"unexpected.default"` to `"unexpected.exception"` in `SharedKernel.Primitives`, exactly matching the design already locked above — verified no shipped `.cs` file elsewhere in the repo referenced the old literal, so no downstream break. Pure execution against an already-locked contract — no interface, type, or DI-shape changes; this brain's existing `ResultTry`/`ResultCombine`/`ErrorCodes.Unexpected.Default` descriptions, AOT notes, and test-rule entries needed zero correction. 118/118 `SharedKernel.Primitives.Tests` + 95/95 `SharedKernel.Core.Tests` passing; `SK.01.P292` now fully `●` (core-phase-implementer)

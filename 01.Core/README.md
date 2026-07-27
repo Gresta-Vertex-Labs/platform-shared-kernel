@@ -404,6 +404,67 @@ public async Task<IResult> PlaceOrderAsync(PlaceOrderCommand command, Cancellati
 
 ---
 
+### Result Exception Boundary and Multi-Result Aggregation
+
+Two everyday patterns that otherwise push developers toward hand-rolled code: wrapping a throwing third-party/BCL call as a `Result<T>`, and combining several independent `Result`/`Result<T>` checks into one aggregate outcome.
+
+#### ResultTry — Wrapping a Throwing Call
+
+`ResultTry.Try` / `ResultTry.TryAsync` invoke a delegate and convert any thrown exception into `Result<T>.Failure(...)` instead of letting it propagate. Use this as the sanctioned seam for the one legitimate place Result-oriented code still touches a throwing third-party SDK call or a BCL method with no `Result`-returning equivalent — never hand-roll `try`/`catch`-to-`Result` translation at the call site.
+
+```csharp
+// Default mapping: Error.Unexpected(ErrorCodes.Unexpected.Default, "{ExceptionType}: {ExceptionMessage}")
+Result<Customer> result = ResultTry.Try(() => thirdPartySdk.GetCustomer(customerId));
+
+// Custom mapping — translate a known SDK exception into a more specific Error
+Result<Customer> result = ResultTry.Try(
+    () => thirdPartySdk.GetCustomer(customerId),
+    ex => ex is SdkNotFoundException
+        ? Error.NotFound("customer.not_found", $"Customer {customerId} was not found.")
+        : Error.Unexpected(ErrorCodes.Unexpected.Default, ex.Message));
+
+// TryAsync — the one documented exception to this domain's async-avoidance railway rule:
+// catching an exception thrown during an awaited operation requires the try/catch to wrap
+// the await itself, which needs a genuine async state machine.
+Result<Invoice> result = await ResultTry.TryAsync(() => paymentGateway.ChargeAsync(order, ct));
+```
+
+An `AggregateException` (e.g., caught from a `Task.Wait()`/`.Result`-style call) is flattened via `AggregateException.Flatten()` before the default message is built, so every inner exception's type and message is represented — not just the generic outer aggregate message. `ResultTry` never rethrows.
+
+#### ResultCombine — Aggregating Independent Checks
+
+`ResultCombine.Combine` folds a batch of independent `Result`/`Result<T>` outcomes into a single `ValidationResult` / `ValidationResult<IReadOnlyList<T>>`. Every input is evaluated — there is no short-circuit on the first failure — so a failed aggregate always carries every failing `Error`, not just the first.
+
+```csharp
+// Non-generic: several independent field checks, each returning a plain Result
+ValidationResult validation = ResultCombine.Combine(
+    Guard.Against.NullOrWhiteSpace(command.Email, nameof(command.Email)) is { } e1
+        ? Result.Failure(e1) : Result.Success(),
+    Guard.Against.OutOfRange(command.Age, 0, 150, nameof(command.Age)) is { } e2
+        ? Result.Failure(e2) : Result.Success());
+
+if (validation.IsValid)
+{
+    // proceed
+}
+else
+{
+    foreach (var error in validation.Errors)
+        logger.LogWarning("Validation failed: {Code} — {Message}", error.Code, error.Message);
+}
+
+// Generic: batch-validate/parse several independent Result<T>-returning steps and collect
+// every success value, in input order, when all succeed
+ValidationResult<IReadOnlyList<LineItem>> lineItems = ResultCombine.Combine(
+    request.Lines.Select(line => ParseLineItem(line)));   // IEnumerable<Result<LineItem>>
+
+Order order = lineItems.IsValid
+    ? Order.Create(lineItems.Value)
+    : throw new ValidationException(lineItems.Errors);
+```
+
+---
+
 ### Base Exceptions
 
 The exception hierarchy bridges `Result<T>` (railway world) with callers that consume exceptions. Every exception carries a structured `Error` payload. String-only constructors are not provided.

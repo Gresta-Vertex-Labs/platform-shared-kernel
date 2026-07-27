@@ -55,4 +55,9 @@ public sealed class ErrorCodesTests
     [Fact]
     public void Domain_RuleViolated_HasCorrectValue()
         => Assert.Equal("domain.rule.violated", ErrorCodes.Domain.RuleViolated);
+
+    // P-292: pins the value ResultTry's default (no-custom-mapper) exception-to-Error mapping relies on.
+    [Fact]
+    public void Unexpected_Default_HasCorrectValue()
+        => Assert.Equal("unexpected.exception", ErrorCodes.Unexpected.Default);
 }

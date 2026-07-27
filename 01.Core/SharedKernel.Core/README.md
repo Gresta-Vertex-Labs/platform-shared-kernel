@@ -5,14 +5,28 @@ Core building blocks for the Platform.SharedKernel ecosystem: exception hierarch
 ## Included Types
 
 **Base Exception Hierarchy** — all carry an `Error` payload (no string-only constructors):
+
 - `SharedKernelException` — base
 - `DomainException`, `ValidationException`, `NotFoundException`, `ConflictException`, `UnauthorizedException`
 
 **Result&lt;T&gt; Railway Extensions** — static, AOT-safe:
+
 - `.Map<TOut>`, `.MapError`, `.Bind<TOut>`, `.Match<TOut>`, `.Tap`
 - Async overloads: `Task<Result<T>>` variants with both sync and async lambdas
 
+**ResultTry** — exception-boundary wrapping:
+
+- `Try<T>` / `TryAsync<T>`, each with a default and a custom-mapper overload
+- Converts any thrown exception (including a flattened `AggregateException`) into `Result<T>.Failure(...)`; never rethrows
+
+**ResultCombine** — multi-result aggregation:
+
+- `Combine(params Result[])` / `Combine(IEnumerable<Result>)` → `ValidationResult`
+- `Combine<T>(params Result<T>[])` / `Combine<T>(IEnumerable<Result<T>>)` → `ValidationResult<IReadOnlyList<T>>`
+- Evaluates every input — no short-circuit — so a failed aggregate carries every failing `Error`
+
 **BCL Extension Methods**:
+
 - `string`: `.ToSnakeCase()`, `.ToCamelCase()`, `.ToPascalCase()`, `.IsNullOrWhiteSpace()`
 - `IEnumerable<T>`: `.ToBatches(int)`, `.IsNullOrEmpty()`, `.WhereNotNull()`
 - `DateTimeOffset`: `.ToUnixMilliseconds()`, `.StartOfDay()`, `.EndOfDay()`

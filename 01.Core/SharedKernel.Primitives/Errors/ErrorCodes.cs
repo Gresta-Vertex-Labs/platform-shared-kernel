@@ -64,8 +64,14 @@ public static class ErrorCodes
     /// <summary>Codes for unexpected / unclassified failures.</summary>
     public static class Unexpected
     {
-        /// <summary>An unclassified or unexpected failure occurred.</summary>
-        public const string Default = "unexpected.default";
+        /// <summary>
+        /// The default code used by <c>SharedKernel.Core</c>'s <c>ResultTry</c> exception-boundary
+        /// helpers (<c>Try</c>/<c>TryAsync</c>) when the caller supplies no custom exception-to-
+        /// <see cref="Error"/> mapper. Also suitable as the general-purpose "an unclassified or
+        /// unexpected failure occurred" code for any other <see cref="Error.Unexpected(string, string)"/>
+        /// call site that has no more specific code of its own.
+        /// </summary>
+        public const string Default = "unexpected.exception";
     }
 
     /// <summary>
