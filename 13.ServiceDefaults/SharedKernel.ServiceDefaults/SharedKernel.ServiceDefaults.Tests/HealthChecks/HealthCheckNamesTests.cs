@@ -1,10 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
+using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Workflows.Temporal.Health;
 
 namespace SharedKernel.ServiceDefaults.Tests.HealthChecks;
 
@@ -109,6 +111,30 @@ public sealed class HealthCheckNamesTests
         services.AddHealthChecks().AddSearchReadinessCheck("products");
 
         var registration = GetRegistration(services, HealthCheckNames.Search);
+        Assert.NotNull(registration);
+    }
+
+    [Fact]
+    public void AddVectorStoreReadinessCheck_DefaultName_MatchesHealthCheckNamesVectorStore()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IVectorCollectionProvisioner>());
+
+        services.AddHealthChecks().AddVectorStoreReadinessCheck("documents");
+
+        var registration = GetRegistration(services, HealthCheckNames.VectorStore);
+        Assert.NotNull(registration);
+    }
+
+    [Fact]
+    public void AddWorkflowReadinessCheck_DefaultName_MatchesHealthCheckNamesWorkflows()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IWorkflowServiceProbe>());
+
+        services.AddHealthChecks().AddWorkflowReadinessCheck();
+
+        var registration = GetRegistration(services, HealthCheckNames.Workflows);
         Assert.NotNull(registration);
     }
 

@@ -36,4 +36,10 @@ public static class HealthCheckNames
 
     /// <summary>Default registration name for search-index connectivity checks.</summary>
     public const string Search = "search";
+
+    /// <summary>Default registration name for vector-store connectivity checks.</summary>
+    public const string VectorStore = "vector-store";
+
+    /// <summary>Default registration name for workflow-service connectivity checks.</summary>
+    public const string Workflows = "workflows";
 }

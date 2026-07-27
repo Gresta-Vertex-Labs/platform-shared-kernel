@@ -40,4 +40,10 @@ public static class HealthCheckTags
 
     /// <summary>Dependency-category tag for search-index connectivity checks.</summary>
     public const string Search = "search";
+
+    /// <summary>Dependency-category tag for vector-store connectivity checks.</summary>
+    public const string VectorStore = "vector-store";
+
+    /// <summary>Dependency-category tag for workflow-service connectivity checks.</summary>
+    public const string Workflows = "workflows";
 }

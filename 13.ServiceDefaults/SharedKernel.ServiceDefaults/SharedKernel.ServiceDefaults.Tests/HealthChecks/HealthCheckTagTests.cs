@@ -1,10 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
+using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Workflows.Temporal.Health;
 
 namespace SharedKernel.ServiceDefaults.Tests.HealthChecks;
 
@@ -147,6 +149,38 @@ public sealed class HealthCheckTagTests
 
         Assert.Contains(HealthCheckTags.Ready, registration.Tags);
         Assert.Contains(HealthCheckTags.Search, registration.Tags);
+        Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
+    }
+
+    [Fact]
+    public void AddVectorStoreReadinessCheck_RegistersWithReadyVectorStoreTags_NeverLive()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IVectorCollectionProvisioner>());
+
+        services.AddHealthChecks().AddVectorStoreReadinessCheck("documents");
+
+        var registrations = GetRegistrations(services);
+        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.VectorStore);
+
+        Assert.Contains(HealthCheckTags.Ready, registration.Tags);
+        Assert.Contains(HealthCheckTags.VectorStore, registration.Tags);
+        Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
+    }
+
+    [Fact]
+    public void AddWorkflowReadinessCheck_RegistersWithReadyWorkflowsTags_NeverLive()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IWorkflowServiceProbe>());
+
+        services.AddHealthChecks().AddWorkflowReadinessCheck();
+
+        var registrations = GetRegistrations(services);
+        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.Workflows);
+
+        Assert.Contains(HealthCheckTags.Ready, registration.Tags);
+        Assert.Contains(HealthCheckTags.Workflows, registration.Tags);
         Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
     }
 

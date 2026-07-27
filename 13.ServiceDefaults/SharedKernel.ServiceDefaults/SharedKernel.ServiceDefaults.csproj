@@ -45,6 +45,16 @@
     <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" />
     <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
     <ProjectReference Include="..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
+    <ProjectReference Include="..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
+    <!--
+      WO-047 layering exception: this is the ONLY 17.Workflows reference permitted anywhere in
+      13.ServiceDefaults, and it exists solely so AddWorkflowReadinessCheck (Core phase, C-42) can
+      resolve IWorkflowServiceProbe/WorkflowServiceHealth. No other SharedKernel.Workflows.Temporal
+      type (TemporalOptions, ITemporalClient, WorkflowBase/ActivityBase, IWorkflowDispatcher,
+      ITemporalRawClientAccessor, ...) may be referenced through this ProjectReference — see root
+      CLAUDE.md's Layering Rules -> Hard rules for the ratified grant.
+    -->
+    <ProjectReference Include="..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" />
   </ItemGroup>
 
   <ItemGroup>
