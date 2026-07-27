@@ -139,5 +139,6 @@
   <Folder Name="/17.Workflows/">
     <Project Path="17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.csproj" />
     <Project Path="17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.Tests/SharedKernel.Workflows.Temporal.Tests.csproj" />
+    <Project Path="17.Workflows/consumer-verify/consumer-verify.csproj" />
   </Folder>
 </Solution>
