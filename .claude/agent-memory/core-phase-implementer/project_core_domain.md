@@ -9,7 +9,7 @@ The 01.Core domain shipped six packages as fully `Published` as of 2026-06-26 (P
 
 - P-292 `ResultTry`/`ResultCombine` (SharedKernel.Core) — **implemented**
 - P-293 `IIdGenerator`/`UuidV7IdGenerator` (SharedKernel.Primitives) — **implemented**
-- P-294 `WellKnownTagKeys` (SharedKernel.Primitives) — pending
+- P-294 `WellKnownTagKeys` (SharedKernel.Primitives) — **implemented**
 - P-295 `SystemClock` `TimeProvider`-backed rewrite (SharedKernel.Primitives) — pending
 - P-296 `IContentHasher` (SharedKernel.Cryptography) — pending
 - P-297 new seventh package `SharedKernel.Compression` (`IPayloadCompressor`) — pending
