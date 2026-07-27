@@ -129,10 +129,13 @@ internal sealed class WorkflowPropagationInterceptor : IClientInterceptor, IWork
         private static IDictionary<string, Payload> MergeWithWorkflowHeaders(IDictionary<string, Payload>? existing)
         {
             var headers = existing is { } e ? new Dictionary<string, Payload>(e) : new Dictionary<string, Payload>();
-            foreach (KeyValuePair<string, Payload> pair in Workflow.Info.Headers)
+            if (Workflow.Info.Headers is { } workflowHeaders)
             {
-                // An explicitly-set header on this specific call always wins over the inherited one.
-                headers.TryAdd(pair.Key, pair.Value);
+                foreach (KeyValuePair<string, Payload> pair in workflowHeaders)
+                {
+                    // An explicitly-set header on this specific call always wins over the inherited one.
+                    headers.TryAdd(pair.Key, pair.Value);
+                }
             }
 
             return headers;

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Not shipped — verification harness only -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Generic host — lets this harness exercise the real IHost.StartAsync() eager
+         ValidateOnStart() path (P-06), not just BuildServiceProvider(). Temporalio/
+         Temporalio.Extensions.Hosting/Temporalio.Testing all flow transitively through the
+         ProjectReference above, exactly as SharedKernel.Workflows.Temporal.Tests already relies on. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+  </ItemGroup>
+
+</Project>
