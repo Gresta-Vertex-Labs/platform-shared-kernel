@@ -28,10 +28,11 @@ public static class CryptographyServiceCollectionExtensions
 
     /// <summary>
     /// Registers <see cref="CryptographyOptions"/> (validated, eagerly checked at startup via
-    /// <c>ValidateOnStart()</c>) and the five stateless, thread-safe cryptographic services —
+    /// <c>ValidateOnStart()</c>) and the six stateless, thread-safe cryptographic services —
     /// <see cref="IOneWayHasher"/>, <see cref="ISymmetricEncryptionService"/>,
     /// <see cref="IAsymmetricSignatureService"/> (both RSA and ECDSA variants, see remarks),
-    /// <see cref="IHmacSigner"/>, and <see cref="ISecureRandomGenerator"/> — as singletons.
+    /// <see cref="IHmacSigner"/>, <see cref="ISecureRandomGenerator"/>, and
+    /// <see cref="IContentHasher"/> — as singletons.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configuration">
@@ -70,6 +71,7 @@ public static class CryptographyServiceCollectionExtensions
         services.AddSingleton<ISymmetricEncryptionService, AesGcmEncryptionService>();
         services.AddSingleton<IHmacSigner, HmacSha256Signer>();
         services.AddSingleton<ISecureRandomGenerator, CryptoRandomGenerator>();
+        services.AddSingleton<IContentHasher, Sha256ContentHasher>();
 
         services.AddSingleton<IAsymmetricSignatureService, RsaSignatureService>();
         services.AddKeyedSingleton<IAsymmetricSignatureService, RsaSignatureService>(RsaSignatureServiceKey);

@@ -1018,6 +1018,34 @@ public sealed class ApiKeyService(IOneWayHasher hasher)
 
 Never hash passwords, API keys, recovery codes, or any other one-way secret with raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IOneWayHasher`.
 
+### IContentHasher — Non-Secret Content Fingerprinting
+
+`IContentHasher` is the deliberate architectural opposite of `IOneWayHasher` above: a fast, non-salted, non-iterated SHA-256 digest for **non-secret** content-fingerprinting — object-storage ETags/checksums, content-addressable deduplication keys, and cache-key derivation from a payload body. `IOneWayHasher` is intentionally slow (600,000 PBKDF2 iterations) to resist brute-force attacks on secrets — exactly the wrong tool, both performance-wise and semantically, for hashing a 50MB upload to compute its ETag.
+
+**Never use `IContentHasher` for passwords, API keys, recovery codes, or any other secret — use `IOneWayHasher` for those.** The two contracts must never be conflated.
+
+```csharp
+public sealed class BlobUploadExample(IContentHasher contentHasher)
+{
+    // Small in-memory payload — byte[] overload.
+    public string ComputeETag(byte[] fileBytes) =>
+        contentHasher.ComputeHashHex(fileBytes); // lowercase hex, ready to use as an ETag
+
+    // Large upload — streaming overload never materializes the full content in memory.
+    public async Task<string> ComputeChecksumAsync(Stream uploadStream, CancellationToken ct)
+    {
+        byte[] digest = await contentHasher.ComputeHashAsync(uploadStream, ct);
+        return Convert.ToHexStringLower(digest);
+    }
+
+    // Content-addressable dedup key derived from a payload body.
+    public string DeriveCacheKey(byte[] payload) =>
+        $"payload:{contentHasher.ComputeHashBase64(payload)}";
+}
+```
+
+`ComputeHash(byte[])`/`ComputeHash(Stream)`/`ComputeHashAsync(Stream, CancellationToken)` all return the raw digest bytes; `ContentHasherExtensions.ComputeHashHex`/`ComputeHashBase64` add convenience string encoding on top without introducing a second hashing strategy.
+
 ### Symmetric Encryption (AES-256-GCM)
 
 `ISymmetricEncryptionService` is for general-purpose encryption of arbitrary payloads outside an EF Core column — before publishing to a queue, writing to blob storage, or returning from an API. It is distinct from `06.Persistence`'s `EncryptedValueConverter`, which remains the dedicated path for transparent EF Core column-level encryption.

@@ -90,6 +90,37 @@ public sealed class CryptographyServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddSharedKernelCryptography_RegistersContentHasher()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+        services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.IsType<Sha256ContentHasher>(provider.GetRequiredService<IContentHasher>());
+    }
+
+    [Fact]
+    public void AddSharedKernelCryptography_RegistersAllSixServices()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+        services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetRequiredService<IOneWayHasher>());
+        Assert.NotNull(provider.GetRequiredService<ISymmetricEncryptionService>());
+        Assert.NotNull(provider.GetRequiredService<IAsymmetricSignatureService>());
+        Assert.NotNull(provider.GetRequiredService<IHmacSigner>());
+        Assert.NotNull(provider.GetRequiredService<ISecureRandomGenerator>());
+        Assert.NotNull(provider.GetRequiredService<IContentHasher>());
+    }
+
+    [Fact]
     public void AddSharedKernelCryptography_DoesNotRegisterEncryptionKeyProvider()
     {
         var services = new ServiceCollection();
