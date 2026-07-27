@@ -4,7 +4,7 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Six indepe
 
 | Package | Purpose |
 |---------|---------|
-| `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock`, `SmartEnum`, `ValidationResult` |
+| `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock`, `IIdGenerator`, `SmartEnum`, `ValidationResult` |
 | `SharedKernel.Core` | Base exceptions, railway extensions, BCL helpers |
 | `SharedKernel.Configuration` | `AddValidatedOptions` startup-validation pattern |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
@@ -142,6 +142,37 @@ public sealed class FakeClock(DateTimeOffset fixedTime) : IClock
 // Test setup:
 var clock = new FakeClock(new DateTimeOffset(2026, 1, 15, 12, 0, 0, TimeSpan.Zero));
 var service = new OrderService(clock);
+```
+
+---
+
+### IIdGenerator — Time-Ordered Identifiers
+
+`IIdGenerator` is an opt-in alternative to calling `Guid.NewGuid()` directly when generating a new primary-key-shaped identifier. A fully-random UUID v4 (what `Guid.NewGuid()` produces) is a well-documented Postgres/SQL Server clustered/primary-key index anti-pattern: random insert points across the B-tree cause page splits and fragmentation as a table grows. The default implementation, `UuidV7IdGenerator`, generates RFC 9562 UUID version 7 values instead — a 48-bit millisecond timestamp in the high bits followed by random bits, so values generated close together in time sort close together, restoring sequential-insert locality while still requiring no central coordinator.
+
+This is purely additive — no existing `Guid.NewGuid()` call site is forced to change.
+
+```csharp
+// Register in DI (production) — this package ships no AddIdGenerator() extension;
+// register the plain interface/implementation pair at your own composition root:
+services.AddSingleton<IIdGenerator, UuidV7IdGenerator>();
+
+// Inject and use — e.g., as the identifier source inside an IAggregateFactory implementation
+public sealed class OrderFactory(IIdGenerator idGenerator) : IAggregateFactory<Order>
+{
+    public Order Create(Guid customerId) => new(idGenerator.NewId(), customerId);
+}
+```
+
+Ordering guarantee: two values whose embedded millisecond timestamps differ always compare as non-decreasing under the default `Guid` comparer (`CompareTo`/`<`). Two values generated within the *same* millisecond carry no ordering guarantee relative to each other — the remaining bits are cryptographically random, not a monotonic counter — but that is still exactly what restores index locality in practice: real production inserts are spread across many milliseconds, and same-millisecond ties still land immediately adjacent to each other in the index regardless of the random tie-break.
+
+```csharp
+// In tests — IIdGenerator is a one-method interface; a fixed-sequence fake is trivial:
+public sealed class FakeIdGenerator(params Guid[] ids) : IIdGenerator
+{
+    private int _index;
+    public Guid NewId() => ids[_index++];
+}
 ```
 
 ---
