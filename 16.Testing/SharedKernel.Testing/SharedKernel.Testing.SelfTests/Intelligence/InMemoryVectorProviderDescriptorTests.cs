@@ -21,7 +21,6 @@ public sealed class InMemoryVectorProviderDescriptorTests
 
         Assert.Equal("in-memory-fake", descriptor.ProviderName);
         Assert.NotEqual(IntelligenceWellKnown.QdrantProviderName, descriptor.ProviderName);
-        Assert.NotEqual(IntelligenceWellKnown.MilvusProviderName, descriptor.ProviderName);
     }
 
     [Fact]

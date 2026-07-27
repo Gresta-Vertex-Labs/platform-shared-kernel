@@ -34,10 +34,9 @@ public sealed class InMemoryVectorProviderDescriptor : IVectorProviderDescriptor
     /// Initializes a new <see cref="InMemoryVectorProviderDescriptor"/>.
     /// </summary>
     /// <param name="providerName">
-    /// The provider name to report. Defaults to <c>"in-memory-fake"</c> -- deliberately neither
-    /// <c>IntelligenceWellKnown.QdrantProviderName</c> nor <c>.MilvusProviderName</c>, so a
-    /// consumer's own provider-name branching/logging code cannot mistake this fake for a real
-    /// engine.
+    /// The provider name to report. Defaults to <c>"in-memory-fake"</c> -- deliberately not
+    /// <c>IntelligenceWellKnown.QdrantProviderName</c>, so a consumer's own provider-name
+    /// branching/logging code cannot mistake this fake for a real engine.
     /// </param>
     public InMemoryVectorProviderDescriptor(string providerName = "in-memory-fake")
     {
