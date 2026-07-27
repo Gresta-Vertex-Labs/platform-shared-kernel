@@ -258,4 +258,191 @@ public static class SharedKernelLayeringRules
 
         return results;
     }
+
+    /// <summary>
+    /// The fifteen forbidden capability-domain namespace terms for
+    /// <see cref="IntelligenceReferencesOnlyCoreAndContracts"/> — every OTHER numbered domain's
+    /// package family. <c>"SharedKernel.AI"</c> is deliberately excluded (self-exclusion by
+    /// omission — 10.Intelligence is the domain under test); <c>"SharedKernel.Search"</c> is
+    /// included (09.Search is a sibling domain 10.Intelligence must never reference) — the
+    /// symmetric swap versus <see cref="SearchForbiddenTerms"/>. <c>"SharedKernel.Primitives"</c>,
+    /// <c>"SharedKernel.Core"</c>, <c>"SharedKernel.Configuration"</c>,
+    /// <c>"SharedKernel.FeatureManagement"</c>, <c>"SharedKernel.Cryptography"</c> (01.Core) and
+    /// <c>"SharedKernel.Contracts"</c> (04.Contracts) are permitted and therefore also excluded.
+    /// </summary>
+    private static readonly string[] IntelligenceForbiddenTerms =
+    [
+        "SharedKernel.Caching",
+        "SharedKernel.Domain",
+        "SharedKernel.Application",
+        "SharedKernel.Persistence",
+        "SharedKernel.Messaging",
+        "SharedKernel.Storage",
+        SearchNamespace,
+        "SharedKernel.Communication",
+        "SharedKernel.Security",
+        "SharedKernel.ServiceDefaults",
+        "SharedKernel.MultiTenancy",
+        "SharedKernel.Presentation",
+        "SharedKernel.Integration",
+        TestingNamespace,
+        "SharedKernel.Workflows",
+    ];
+
+    /// <summary>
+    /// 10.Intelligence — may only reference 01.Core and 04.Contracts. Asserts that the supplied
+    /// <c>10.Intelligence</c> assembly has no dependency on any of fifteen forbidden capability-domain
+    /// namespace terms — every OTHER numbered domain's package family.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Added to this class alongside <see cref="SearchReferencesOnlyCoreAndContracts"/>, following
+    /// the same precedent that a layering-BOUNDARY check on an existing numbered domain belongs
+    /// alongside its siblings, while TOPOLOGY-INTERNAL checks (sibling-package non-reference,
+    /// third-party-dependency purity) live in the domain's own dedicated <c>*TopologyRules</c> class
+    /// (<see cref="IntelligenceTopologyRules"/>). Follows <see cref="SearchReferencesOnlyCoreAndContracts"/>'s
+    /// <see cref="ConditionList"/><c>[]</c>-per-forbidden-term convention exactly, with the SAME
+    /// fifteen-term count — the forbidden list swaps <c>"SharedKernel.Search"</c> IN (09.Search is
+    /// now a forbidden reference for 10.Intelligence) and <c>"SharedKernel.AI"</c> OUT
+    /// (10.Intelligence is now the domain under test, excluded from its own forbidden list by
+    /// omission, not by an explicit self-exclusion term). Every other term is unchanged from
+    /// <see cref="SearchReferencesOnlyCoreAndContracts"/>'s own list. Caller must assert
+    /// <c>.GetResult().IsSuccessful</c> on EACH element.
+    /// </para>
+    /// <para>
+    /// <strong>Rationale:</strong> mirrors <c>10.Intelligence/CLAUDE.md</c>'s own layering wall
+    /// verbatim: "10.Intelligence may only reference 01.Core and 04.Contracts. It must never
+    /// reference 03.Domain, 05.Application, 06.Persistence, 07.Messaging, 09.Search, 12.Security, or
+    /// any other capability domain."
+    /// </para>
+    /// <para>
+    /// <strong>Maintenance obligation:</strong> per this file's own Implementation Rules ("If a new
+    /// domain (folder XX) is added, the layering rules must be updated in the same PR"), a future
+    /// <c>18.NewDomain</c> addition MUST append its package-family term to BOTH this method's list
+    /// AND <see cref="SearchReferencesOnlyCoreAndContracts"/>'s list (and any future sibling of this
+    /// shape) in the SAME PR that adds the new domain, or each affected rule will silently
+    /// under-enforce against it.
+    /// </para>
+    /// </remarks>
+    /// <param name="intelligenceAssembly">
+    /// The <c>10.Intelligence</c> assembly under test — supply via
+    /// <c>typeof(SomeTypeInIntelligence).Assembly</c>.
+    /// </param>
+    /// <returns>
+    /// A fifteen-element array of <see cref="ConditionList"/>, one per forbidden term. The caller
+    /// must assert <c>.GetResult().IsSuccessful</c> on EACH element.
+    /// </returns>
+    public static ConditionList[] IntelligenceReferencesOnlyCoreAndContracts(Assembly intelligenceAssembly)
+    {
+        var results = new ConditionList[IntelligenceForbiddenTerms.Length];
+
+        for (var i = 0; i < IntelligenceForbiddenTerms.Length; i++)
+        {
+            results[i] = Types
+                .InAssembly(intelligenceAssembly)
+                .That()
+                .HaveNameStartingWith(string.Empty)
+                .Should()
+                .NotHaveDependencyOn(IntelligenceForbiddenTerms[i]);
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// The fourteen forbidden capability-domain namespace terms for
+    /// <see cref="WorkflowsReferencesOnlyCoreContractsAndApplication"/> — every OTHER numbered
+    /// domain's package family EXCEPT <c>"SharedKernel.Application"</c>, which is deliberately
+    /// ABSENT because <c>17.Workflows</c> is permitted THREE upstream domains (01.Core, 04.Contracts,
+    /// and 05.Application), not two. <c>"SharedKernel.Workflows"</c> is excluded by omission
+    /// (self-exclusion — 17.Workflows is the domain under test). <c>"SharedKernel.Primitives"</c>,
+    /// <c>"SharedKernel.Core"</c>, <c>"SharedKernel.Configuration"</c>,
+    /// <c>"SharedKernel.FeatureManagement"</c>, <c>"SharedKernel.Cryptography"</c> (01.Core),
+    /// <c>"SharedKernel.Contracts"</c> (04.Contracts), and <c>"SharedKernel.Application"</c>
+    /// (05.Application) are permitted and therefore also excluded.
+    /// </summary>
+    private static readonly string[] WorkflowsForbiddenTerms =
+    [
+        "SharedKernel.Caching",
+        "SharedKernel.Domain",
+        "SharedKernel.Persistence",
+        "SharedKernel.Messaging",
+        "SharedKernel.Storage",
+        SearchNamespace,
+        "SharedKernel.AI",
+        "SharedKernel.Communication",
+        "SharedKernel.Security",
+        "SharedKernel.ServiceDefaults",
+        "SharedKernel.MultiTenancy",
+        "SharedKernel.Presentation",
+        "SharedKernel.Integration",
+        TestingNamespace,
+    ];
+
+    /// <summary>
+    /// 17.Workflows — may only reference 01.Core, 04.Contracts, and 05.Application. Asserts that the
+    /// supplied <c>17.Workflows</c> assembly has no dependency on any of fourteen forbidden
+    /// capability-domain namespace terms.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Added to this class alongside <see cref="SearchReferencesOnlyCoreAndContracts"/> and
+    /// <see cref="IntelligenceReferencesOnlyCoreAndContracts"/>, following the same precedent that a
+    /// layering-BOUNDARY check on an existing numbered domain belongs alongside its siblings, while
+    /// TOPOLOGY-INTERNAL checks (the raw-client-accessor-consumption and HealthChecks-dependency
+    /// prohibitions specific to <c>17.Workflows</c>) live in the domain's own dedicated
+    /// <see cref="WorkflowTopologyRules"/> class. The FIRST layering-boundary method on this class
+    /// where the domain under test is permitted THREE upstream domains, not two —
+    /// <c>17.Workflows/CLAUDE.md</c>'s own layering wall states "Only 01.Core, 04.Contracts, and
+    /// 05.Application are permitted" — so <c>"SharedKernel.Application"</c> is deliberately ABSENT
+    /// from the forbidden list (unlike Search's and Intelligence's own fifteen-term lists, which both
+    /// forbid it), alongside the usual self-exclusion (<c>"SharedKernel.Workflows"</c>, omitted
+    /// because 17.Workflows is the domain under test). Returns <see cref="ConditionList"/><c>[]</c>
+    /// (fourteen elements, one per forbidden term), following the same newer
+    /// domain-boundary-rule-class convention as its two siblings. Caller must assert
+    /// <c>.GetResult().IsSuccessful</c> on EACH element. None of the fourteen terms is a prefix of
+    /// <c>"SharedKernel.Workflows"</c> — no self-collision.
+    /// </para>
+    /// <para>
+    /// <strong>Rationale:</strong> mirrors <c>17.Workflows/CLAUDE.md</c>'s own Hard Violations bullet
+    /// verbatim: "Referencing 02.Caching, 03.Domain, 06.Persistence, 07.Messaging, 08.Storage,
+    /// 09.Search, 10.Intelligence, 11.Communication, 12.Security, 13.ServiceDefaults,
+    /// 14.Presentation, or 15.Integration from 17.Workflows. Only 01.Core, 04.Contracts, and
+    /// 05.Application are permitted." This method is the exhaustive, all-fourteen-domains mechanical
+    /// form of that sentence — the same relationship <see cref="SearchReferencesOnlyCoreAndContracts"/>
+    /// and <see cref="IntelligenceReferencesOnlyCoreAndContracts"/> each have to their own domain's
+    /// brain.
+    /// </para>
+    /// <para>
+    /// <strong>Maintenance obligation</strong> (carried forward): a future <c>18.NewDomain</c>
+    /// addition MUST append its package-family term to THIS method's list AND both of its siblings'
+    /// lists (and any future sibling of this <see cref="ConditionList"/><c>[]</c>-per-forbidden-term
+    /// shape) in the SAME PR that adds the new domain, or each affected rule will silently
+    /// under-enforce against it.
+    /// </para>
+    /// </remarks>
+    /// <param name="workflowsAssembly">
+    /// The <c>17.Workflows</c> assembly under test — supply via
+    /// <c>typeof(SomeTypeInWorkflows).Assembly</c>.
+    /// </param>
+    /// <returns>
+    /// A fourteen-element array of <see cref="ConditionList"/>, one per forbidden term. The caller
+    /// must assert <c>.GetResult().IsSuccessful</c> on EACH element.
+    /// </returns>
+    public static ConditionList[] WorkflowsReferencesOnlyCoreContractsAndApplication(Assembly workflowsAssembly)
+    {
+        var results = new ConditionList[WorkflowsForbiddenTerms.Length];
+
+        for (var i = 0; i < WorkflowsForbiddenTerms.Length; i++)
+        {
+            results[i] = Types
+                .InAssembly(workflowsAssembly)
+                .That()
+                .HaveNameStartingWith(string.Empty)
+                .Should()
+                .NotHaveDependencyOn(WorkflowsForbiddenTerms[i]);
+        }
+
+        return results;
+    }
 }

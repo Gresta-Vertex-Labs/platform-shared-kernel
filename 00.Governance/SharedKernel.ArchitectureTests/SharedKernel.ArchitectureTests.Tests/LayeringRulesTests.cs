@@ -183,6 +183,164 @@ public class LayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
+    // T-231 — Fire path: contrived 10.Intelligence-shaped fixture references a stubbed
+    // forbidden-domain type
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-231: When a contrived "SharedKernel.AI"-shaped assembly references a type in a namespace
+    /// simulating a forbidden capability domain (here, <c>SharedKernel.Persistence</c>),
+    /// <see cref="SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts"/> must fail
+    /// on the corresponding array element only.
+    /// </summary>
+    [Fact]
+    public void IntelligenceReferencesOnlyCoreAndContracts_ViolatingAssembly_CorrespondingElementFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Persistence
+            {
+                public interface IRepository { }
+            }
+
+            namespace SharedKernel.AI
+            {
+                public class LeakyVectorCollection
+                {
+                    private readonly SharedKernel.Persistence.IRepository _repository;
+                    public LeakyVectorCollection(SharedKernel.Persistence.IRepository repository)
+                    {
+                        _repository = repository;
+                    }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("ViolationIntelligence", violationSource);
+
+        var conditionLists = SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts(violationAssembly);
+
+        conditionLists.Should().HaveCount(15);
+
+        var persistenceElementIndex = Array.IndexOf(IntelligenceForbiddenTermsMirror, "SharedKernel.Persistence");
+        persistenceElementIndex.Should().BeGreaterThanOrEqualTo(0);
+
+        for (var i = 0; i < conditionLists.Length; i++)
+        {
+            var result = conditionLists[i].GetResult();
+            if (i == persistenceElementIndex)
+            {
+                result.IsSuccessful.Should().BeFalse(
+                    because: "LeakyVectorCollection references SharedKernel.Persistence.IRepository directly");
+            }
+            else
+            {
+                result.IsSuccessful.Should().BeTrue(
+                    because: "LeakyVectorCollection has no dependency on any other forbidden capability domain");
+            }
+        }
+    }
+
+    /// <summary>
+    /// T-231 (Search variant): a contrived "SharedKernel.AI"-shaped assembly referencing a type
+    /// simulating <c>SharedKernel.Search</c> (a sibling domain 10.Intelligence must never
+    /// reference) must fail on the corresponding array element only — proves the symmetric swap
+    /// versus <see cref="SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts"/>'s own
+    /// list (which forbids <c>"SharedKernel.AI"</c> instead).
+    /// </summary>
+    [Fact]
+    public void IntelligenceReferencesOnlyCoreAndContracts_SearchDependency_CorrespondingElementFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Search
+            {
+                public interface ISearchIndex { }
+            }
+
+            namespace SharedKernel.AI
+            {
+                public class LeakyVectorCollection
+                {
+                    private readonly SharedKernel.Search.ISearchIndex _searchIndex;
+                    public LeakyVectorCollection(SharedKernel.Search.ISearchIndex searchIndex)
+                    {
+                        _searchIndex = searchIndex;
+                    }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("ViolationIntelligenceSearch", violationSource);
+
+        var conditionLists = SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts(violationAssembly);
+
+        conditionLists.Should().HaveCount(15);
+
+        var searchElementIndex = Array.IndexOf(IntelligenceForbiddenTermsMirror, "SharedKernel.Search");
+        searchElementIndex.Should().BeGreaterThanOrEqualTo(0);
+
+        for (var i = 0; i < conditionLists.Length; i++)
+        {
+            var result = conditionLists[i].GetResult();
+            if (i == searchElementIndex)
+            {
+                result.IsSuccessful.Should().BeFalse(
+                    because: "LeakyVectorCollection references SharedKernel.Search.ISearchIndex directly");
+            }
+            else
+            {
+                result.IsSuccessful.Should().BeTrue(
+                    because: "LeakyVectorCollection has no dependency on any other forbidden capability domain");
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-232 — Pass path: contrived 10.Intelligence-shaped fixture references only stubbed
+    // SharedKernel.Primitives/SharedKernel.Contracts types
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-232: A contrived "SharedKernel.AI"-shaped assembly referencing only stubbed
+    /// <c>SharedKernel.Primitives</c>/<c>SharedKernel.Contracts</c> types must pass every array
+    /// element of <see cref="SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts"/>.
+    /// </summary>
+    [Fact]
+    public void IntelligenceReferencesOnlyCoreAndContracts_CleanAssembly_AllElementsPass()
+    {
+        const string cleanSource = """
+            namespace SharedKernel.Primitives
+            {
+                public class Result { }
+            }
+
+            namespace SharedKernel.Contracts
+            {
+                public class PagedList { }
+            }
+
+            namespace SharedKernel.AI
+            {
+                public class CleanVectorCollection
+                {
+                    public SharedKernel.Primitives.Result DoWork() => new SharedKernel.Primitives.Result();
+                    public SharedKernel.Contracts.PagedList ToPagedList() => new SharedKernel.Contracts.PagedList();
+                }
+            }
+            """;
+
+        var cleanAssembly = CompileInMemory("CleanIntelligence", cleanSource);
+
+        var conditionLists = SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts(cleanAssembly);
+
+        conditionLists.Should().HaveCount(15);
+        foreach (var conditionList in conditionLists)
+        {
+            conditionList.GetResult().IsSuccessful.Should().BeTrue(
+                because: "CleanVectorCollection depends only on SharedKernel.Primitives and SharedKernel.Contracts");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // Fixtures
     // ---------------------------------------------------------------------------
 
@@ -210,6 +368,183 @@ public class LayeringRulesTests
         "SharedKernel.Integration",
         "SharedKernel.Testing",
         "SharedKernel.Workflows",
+    ];
+
+    /// <summary>
+    /// Mirrors the fifteen-term forbidden list private to
+    /// <see cref="SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts"/> — the
+    /// symmetric swap of <see cref="ForbiddenTermsMirror"/>: <c>"SharedKernel.Search"</c> replaces
+    /// <c>"SharedKernel.AI"</c>. Kept here, not reflected out of the production type, purely so
+    /// T-231 can locate the array indices it needs without hard-coding fragile literal indices.
+    /// </summary>
+    private static readonly string[] IntelligenceForbiddenTermsMirror =
+    [
+        "SharedKernel.Caching",
+        "SharedKernel.Domain",
+        "SharedKernel.Application",
+        "SharedKernel.Persistence",
+        "SharedKernel.Messaging",
+        "SharedKernel.Storage",
+        "SharedKernel.Search",
+        "SharedKernel.Communication",
+        "SharedKernel.Security",
+        "SharedKernel.ServiceDefaults",
+        "SharedKernel.MultiTenancy",
+        "SharedKernel.Presentation",
+        "SharedKernel.Integration",
+        "SharedKernel.Testing",
+        "SharedKernel.Workflows",
+    ];
+
+    // ---------------------------------------------------------------------------
+    // T-251 — Fire path: contrived 17.Workflows-shaped fixture references a stubbed forbidden-domain
+    // type
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-251: When a contrived "SharedKernel.Workflows"-shaped assembly references a type in a
+    /// namespace simulating a forbidden capability domain (here, <c>SharedKernel.Persistence</c>),
+    /// <see cref="SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication"/> must
+    /// fail on the corresponding array element only.
+    /// </summary>
+    [Fact]
+    public void WorkflowsReferencesOnlyCoreContractsAndApplication_ViolatingAssembly_CorrespondingElementFails()
+    {
+        const string violationSource = """
+            namespace SharedKernel.Persistence
+            {
+                public interface IRepository { }
+            }
+
+            namespace SharedKernel.Workflows
+            {
+                public class LeakyWorkflowActivity
+                {
+                    private readonly SharedKernel.Persistence.IRepository _repository;
+                    public LeakyWorkflowActivity(SharedKernel.Persistence.IRepository repository)
+                    {
+                        _repository = repository;
+                    }
+                }
+            }
+            """;
+
+        var violationAssembly = CompileInMemory("ViolationWorkflows", violationSource);
+
+        var conditionLists = SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication(violationAssembly);
+
+        conditionLists.Should().HaveCount(14);
+
+        var persistenceElementIndex = Array.IndexOf(WorkflowsForbiddenTermsMirror, "SharedKernel.Persistence");
+        persistenceElementIndex.Should().BeGreaterThanOrEqualTo(0);
+
+        for (var i = 0; i < conditionLists.Length; i++)
+        {
+            var result = conditionLists[i].GetResult();
+            if (i == persistenceElementIndex)
+            {
+                result.IsSuccessful.Should().BeFalse(
+                    because: "LeakyWorkflowActivity references SharedKernel.Persistence.IRepository directly");
+            }
+            else
+            {
+                result.IsSuccessful.Should().BeTrue(
+                    because: "LeakyWorkflowActivity has no dependency on any other forbidden capability domain");
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-252 — Pass path: contrived 17.Workflows-shaped fixture references SharedKernel.Application —
+    // proving it is PERMITTED, not forbidden — alongside SharedKernel.Primitives/SharedKernel.Contracts
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-252: A contrived "SharedKernel.Workflows"-shaped assembly referencing stubbed
+    /// <c>SharedKernel.Primitives</c>/<c>SharedKernel.Contracts</c>/<c>SharedKernel.Application</c>
+    /// types must pass every array element of
+    /// <see cref="SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication"/> —
+    /// proving <c>SharedKernel.Application</c> is PERMITTED, the distinguishing exclusion versus
+    /// <see cref="SharedKernelLayeringRules.SearchReferencesOnlyCoreAndContracts"/>'s and
+    /// <see cref="SharedKernelLayeringRules.IntelligenceReferencesOnlyCoreAndContracts"/>'s own
+    /// fifteen-term lists, both of which forbid it.
+    /// </summary>
+    [Fact]
+    public void WorkflowsReferencesOnlyCoreContractsAndApplication_CleanAssemblyWithApplicationDependency_AllElementsPass()
+    {
+        const string cleanSource = """
+            namespace SharedKernel.Primitives
+            {
+                public class Result { }
+            }
+
+            namespace SharedKernel.Contracts
+            {
+                public class PagedList { }
+            }
+
+            namespace SharedKernel.Application
+            {
+                public interface ISender { }
+            }
+
+            namespace SharedKernel.Workflows
+            {
+                public class ApproveOrderActivity
+                {
+                    private readonly SharedKernel.Application.ISender _sender;
+                    public ApproveOrderActivity(SharedKernel.Application.ISender sender)
+                    {
+                        _sender = sender;
+                    }
+
+                    public SharedKernel.Primitives.Result DoWork() => new SharedKernel.Primitives.Result();
+                    public SharedKernel.Contracts.PagedList ToPagedList() => new SharedKernel.Contracts.PagedList();
+                }
+            }
+            """;
+
+        var cleanAssembly = CompileInMemory("CleanWorkflows", cleanSource);
+
+        var conditionLists = SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication(cleanAssembly);
+
+        conditionLists.Should().HaveCount(14);
+        foreach (var conditionList in conditionLists)
+        {
+            conditionList.GetResult().IsSuccessful.Should().BeTrue(
+                because: "ApproveOrderActivity depends only on SharedKernel.Primitives, SharedKernel.Contracts, and the PERMITTED SharedKernel.Application — never any of the fourteen forbidden capability domains");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Fixtures
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Mirrors the fourteen-term forbidden list private to
+    /// <see cref="SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication"/> —
+    /// kept here, not reflected out of the production type, purely so T-251 can locate the array
+    /// index that corresponds to <c>"SharedKernel.Persistence"</c> without hard-coding a fragile
+    /// literal index. Deliberately OMITS <c>"SharedKernel.Application"</c> — the distinguishing
+    /// exclusion versus <see cref="ForbiddenTermsMirror"/>/<see cref="IntelligenceForbiddenTermsMirror"/>,
+    /// both of which include it.
+    /// </summary>
+    private static readonly string[] WorkflowsForbiddenTermsMirror =
+    [
+        "SharedKernel.Caching",
+        "SharedKernel.Domain",
+        "SharedKernel.Persistence",
+        "SharedKernel.Messaging",
+        "SharedKernel.Storage",
+        "SharedKernel.Search",
+        "SharedKernel.AI",
+        "SharedKernel.Communication",
+        "SharedKernel.Security",
+        "SharedKernel.ServiceDefaults",
+        "SharedKernel.MultiTenancy",
+        "SharedKernel.Presentation",
+        "SharedKernel.Integration",
+        "SharedKernel.Testing",
     ];
 
     // ---------------------------------------------------------------------------

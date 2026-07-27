@@ -98,6 +98,29 @@
                       PrivateAssets="all" />
     <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.ElasticSearch\SharedKernel.Search.ElasticSearch.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.AI.Abstractions/.Qdrant/.SemanticKernel
+         assemblies in IntelligenceTopologyRulesTests (WO-045 P-286) — 10.Intelligence reached
+         Published (all six phases ●, WO-048 Milvus retraction) before this phase's implementation
+         session, so real-assembly verification is wired alongside the contrived-fixture proof
+         rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests
+         precedent — this phase's own acceptance criteria treat real-assembly verification as
+         GATING, not optional. There is no SharedKernel.AI.Milvus project reference — that package
+         was permanently retracted before ever being built (WO-048). -->
+    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.Qdrant\SharedKernel.AI.Qdrant.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.SemanticKernel\SharedKernel.AI.SemanticKernel.csproj"
+                      PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Workflows.Temporal assembly in
+         WorkflowTopologyRulesTests (WO-046 P-290, SK.00.WorkflowTopology) — 17.Workflows reached
+         Published (all six phases ●, 158/158 tests passing) before this phase's implementation
+         session, so real-assembly verification is wired alongside the contrived-fixture proof
+         rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests/
+         IntelligenceTopologyRulesTests precedent — this phase's own acceptance criteria treat
+         real-assembly verification as GATING, not optional. -->
+    <ProjectReference Include="..\..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
