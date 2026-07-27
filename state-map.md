@@ -67,7 +67,7 @@ Format when blocked:
 | # | Domain | Current Phase | State | Summary: Done | Summary: Next |
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Architecture Enforcement for the 17.Workflows Package Topology (Topology + Determinism Analyzers) | `●` | SK0028 (`NonDeterministicApiUsageInsideWorkflowAnalyzer`) bans seven non-deterministic/side-effecting shapes (`DateTime`/`DateTimeOffset.UtcNow`/`.Now`, `Guid.NewGuid()`, `new Random()`, `Task.Run`/`.Delay`/`ConfigureAwait(false)`, `Environment.*`/`File.*`, constructor-injected `IClock`/`ILogger<T>`) inside any `[Workflow]`-attributed or `WorkflowBase`-derived type, with `ActivityBase`/`[Activity]` checked first as a hard positive exclusion (the narrow `SK0001` inversion — `IClock` banned in workflows, mandatory in activities); SK0029 (`RawTemporalClientConstructorInjectionAnalyzer`) bans raw `ITemporalClient`/`TemporalClient`/`TemporalWorker`/`WorkflowHandle` constructor injection outside `SharedKernel.Workflows.Temporal`; `WorkflowTopologyRules` (`NoRawClientAccessorConsumptionInRepo`, `NoHealthChecksDependencyInWorkflows`) and `SharedKernelLayeringRules.WorkflowsReferencesOnlyCoreContractsAndApplication` (fourteen-term forbidden list, `SharedKernel.Application` deliberately permitted) mechanically enforce the `17.Workflows` package topology and its `01.Core`/`04.Contracts`/`05.Application`-only layering wall — the first `*TopologyRules` class in this domain with no sibling-provider pair. 215/215 analyzer tests (+30) and 179/179 architecture tests (+9) pass; real-assembly verification (this phase's own GATING acceptance criterion) is done — `17.Workflows` reached Published before this session, so both `WorkflowTopologyRules` factory methods are verified against the real, shipped `SharedKernel.Workflows.Temporal` assembly with zero discrepancy. | Every phase key in `00.Governance/state-map.md` is now `●` — no open governance phase keys remain. |
-| 01 | [Core](01.Core/state-map.md) | Published | `●` | P-259 (WO-042) complete — `WellKnownHeaders`/`WellKnownBaggageKeys` compile-time `const string` registries added to `SharedKernel.Primitives/Propagation/`, the single authoritative source for the correlation-id/tenant-id header and baggage-key literals platform-wide; 117/117 `SharedKernel.Primitives.Tests` passing; AOT-clean, additive-only, zero new NuGet dependencies. | — |
+| 01 | [Core](01.Core/state-map.md) | Published | `●` | P-292 (WO-049) complete — `ResultTry` (`Try`/`TryAsync`, default + custom-mapper overloads, `AggregateException`-flattening) and `ResultCombine` (`Combine`, no short-circuit, every failing `Error` surfaced) added to `SharedKernel.Core/Extensions/`; `ErrorCodes.Unexpected.Default` changed to `"unexpected.exception"` in `SharedKernel.Primitives` (no other shipped `.cs` file referenced the old literal); 118/118 `SharedKernel.Primitives.Tests` + 95/95 `SharedKernel.Core.Tests` passing. | P-293–P-298 (remaining WO-049 phases: `IIdGenerator`, `WellKnownTagKeys`, `TimeProvider`-backed `SystemClock`, `IContentHasher`, `SharedKernel.Compression`, feature-flag variants) remain `○` Pending in the Phase Backlog, not yet dispatched. |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | `●` | Phase 37 (WO-041, P-252) complete — all `EventId`s in `FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999) sub-blocks, closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; remaining direct `ILogger` calls and the hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing, zero behavioral change. | — |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
@@ -11125,3 +11125,232 @@ This is the root cause of the escalation `13.ServiceDefaults` raised during P-28
 - [2026-07-27] Phase Backlog P-287 → ● Complete — SK.17.Published done, 17.Workflows (WO-046) complete end to end (state-map-phase)
 - [2026-07-27] Governance → Governance: Architecture Enforcement for the 17.Workflows Package Topology (Topology + Determinism Analyzers) (●) — promoted from SK.00.WorkflowTopology (state-map-phase)
 - [2026-07-27] Phase Backlog P-290 → ● Complete — SK.00.WorkflowTopology done, 00.Governance/state-map.md now has zero open phase keys (state-map-phase)
+
+---
+### P-292 — Core: Result<T> Exception-Boundary and Error-Aggregation Railway Extensions
+
+**Status:** `●` Complete
+**Work Order:** WO-049
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Two additive extensions to `SharedKernel.Core`'s existing `Result<T>` railway-extension surface (`Map`/`MapError`/`Bind`/`Match`/`Tap`):
+
+1. **Exception-boundary wrapping** — a static `Result<T>.Try`-shaped entry point (sync and async/`Task<Result<T>>` overloads) that invokes a caller-supplied delegate, returns `Result<T>.Success(value)` on normal completion, and converts any thrown exception into `Result<T>.Failure(Error.Unexpected(...))` rather than letting it propagate. This is the sanctioned seam for the one legitimate place `Result<T>`-oriented code still touches exception-throwing APIs — a third-party SDK call, a BCL method with no Result-returning equivalent — without every call site hand-rolling its own try/catch-to-Result translation.
+2. **Multi-result aggregation** — a `Result.Combine(...)`-shaped static method (params array and `IEnumerable<Result>` overloads, plus a generic variant collecting successful values) that evaluates a batch of independent `Result`/`Result<T>` outcomes and folds them into either a single aggregate success or a `ValidationResult` carrying every collected `Error` (not just the first). This complements `ValidationResult`'s existing multi-error shape by giving callers a way to *produce* that shape from several independent Result-returning checks instead of manually appending to a list.
+
+Both are pure additive static extension methods — no change to `Result<T>`, `Result`, `IHasSuccessFlag`, `IResultOfT<T>`, or `IFailureFactory<TSelf>`.
+
+#### Why this is needed
+Every domain in the platform standardizes on `Result<T>` for operation outcomes, but two everyday patterns still push developers back toward hand-rolled code: wrapping a throwing third-party call, and combining several independent validation checks into one aggregate outcome. Both are solved once, centrally, in every mature Result/Railway-oriented library (e.g. try/catch-to-Result wrapping and `Result.Combine`) and their absence here is a real, repeated tax on every consuming service that adopts the pattern. Adding them closes the gap between "we ship a Result type" and "we ship a genuinely ergonomic Result-oriented programming model" — the difference between adequate and gold-standard developer experience.
+
+#### Acceptance criteria
+- [x] `Result<T>.Try`/`TryAsync`-shaped helpers exist for sync and async delegates, converting thrown exceptions to `Error.Unexpected` without ever re-throwing
+- [x] The exception's message/type is preserved in the resulting `Error.Message` in a way useful for diagnostics, without adding an `Exception` reference to `Error`'s equality-participating members
+- [x] `Result.Combine`-shaped static methods exist for both non-generic `Result` and a generic value-collecting variant; a single failure among the inputs yields a `ValidationResult` carrying every failing `Error`, not just the first
+- [x] All new members are static extension/factory methods — no change to any existing `Result<T>`/`Result`/`ValidationResult` member or interface
+- [x] Async overloads avoid unnecessary `async`/`await` state-machine allocation where only the input is being awaited, matching the existing railway-extension rule — `TryAsync` is the one documented exception, per the phase's own design
+- [x] Full unit coverage in `SharedKernel.Core.Tests`: exception-to-Error translation (including nested/aggregate exceptions), all-success combine, single-failure combine, all-failure combine (verifying every error surfaces)
+- [x] XML docs on every new public member
+---
+
+---
+### P-293 — Core: Sequential Identifier Generation Primitive
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A small `SharedKernel.Primitives` abstraction — an `IIdGenerator`-shaped contract with a default BCL-backed implementation that produces time-ordered, database-index-friendly unique identifiers using .NET's `Guid.CreateVersion7()` (RFC 9562 UUID version 7), instead of the fully-random `Guid.NewGuid()` (UUID v4) that aggregate factories and other identifier call sites use today. Zero third-party dependency — pure BCL. Registered as an optional singleton via a small DI extension; consuming code (notably `03.Domain`'s `IAggregateFactory` implementations, and any other call site generating a new primary-key-shaped identifier) may inject it in place of a direct `Guid.NewGuid()` call.
+
+#### Why this is needed
+The platform is Postgres-first (per `06.Persistence`'s SnakeCase/JSONB/pgvector defaults) and every aggregate's identifier is, today, a fully-random v4 GUID. Random GUIDs as clustered/primary-key index values are a well-documented Postgres and SQL Server performance anti-pattern — every insert lands at a random point in the B-tree, causing page splits and index fragmentation at scale. UUID v7 embeds a millisecond timestamp in its high bits, so values generated close together sort close together, restoring the sequential-insert locality a `bigint IDENTITY` column would have while keeping the distributed-generation, no-central-coordinator properties that make GUIDs attractive for a multi-service, multi-tenant platform in the first place. This is a widely-recognized 2024+ .NET/Postgres gold-standard practice and a low-risk, purely-additive, opt-in primitive — no existing identifier generation call site is forced to change.
+
+#### Acceptance criteria
+- [ ] `IIdGenerator`-shaped contract exists in `SharedKernel.Primitives` with a method producing a new time-ordered `Guid`
+- [ ] Default implementation is backed by `Guid.CreateVersion7()`, zero third-party NuGet dependency
+- [ ] A DI registration extension exists for consuming services that want it (opt-in — nothing in `01.Core` calls this automatically)
+- [ ] `03.Domain/CLAUDE.md`'s `IAggregateFactory` guidance is cross-referenced (not changed) to note this option exists for services that want index-friendly identifiers; no change to `IAggregateFactory`'s own shipped contract
+- [ ] Unit tests confirm monotonic-ish ordering (values generated in sequence compare as non-decreasing under `Guid` byte-order comparison) and uniqueness across a large generation batch
+- [ ] AOT-clean, no reflection, sealed default implementation
+- [ ] XML docs explaining the Postgres index-locality rationale, so consuming teams understand *why* this exists alongside plain `Guid.NewGuid()`
+---
+
+---
+### P-294 — Core: WellKnownTagKeys OTel Semantic Attribute Registry
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A third compile-time `const string` registry in `SharedKernel.Primitives/Propagation/`, alongside the existing `WellKnownHeaders` and `WellKnownBaggageKeys`: `WellKnownTagKeys`, covering the `System.Diagnostics.Activity.SetTag(...)` attribute-key names that are expected to appear identically across every domain that emits OpenTelemetry spans — starting with `tenant.id`, `correlation.id`, and `error.type`/`error.code` (matching `01.Core`'s own `ErrorType`/`Error.Code` vocabulary), extensible as new cross-domain tag conventions emerge.
+
+#### Why this is needed
+`00.Governance`'s `SK0022` analyzer (the magic-string/named-constants rule) already recognizes `Activity.SetTag(...)` as a regulated call-site shape — the enforcement machinery exists — but no shared tag-key registry exists for it to point at, unlike header names and baggage keys, which got `WellKnownHeaders`/`WellKnownBaggageKeys` in WO-042 (P-259) precisely because independently-redeclared literals had already caused a confirmed live mismatch (the `"CorrelationId"`/`"correlation.id"` baggage-key defect). Tag keys are exposed to exactly the same class of drift — every domain emitting spans (`05.Application`, `07.Messaging`, `11.Communication`, `13.ServiceDefaults`, `14.Presentation`, `17.Workflows`) currently either re-declares its own tag-key literals or has none yet, meaning the *next* domain to add span tagging is the next candidate for a silent naming mismatch. Filling this gap now, while the registry is still small, is far cheaper than doing it reactively after a second confirmed defect.
+
+#### Acceptance criteria
+- [ ] `WellKnownTagKeys` added to `SharedKernel.Primitives/Propagation/`, `public const string` fields only, mirroring `WellKnownHeaders`/`WellKnownBaggageKeys`'s existing shape and doc-comment style exactly
+- [ ] Initial fields: `TenantId`, `CorrelationId`, `ErrorType`, `ErrorCode` — values chosen to match OpenTelemetry semantic-convention dotted-lowercase style consistent with the existing `"correlation.id"` baggage key
+- [ ] Unit tests pin every literal value exactly, mirroring `WellKnownPropagationConstantsTests`'s existing pattern
+- [ ] No existing domain's shipped `Activity.SetTag` call sites are changed by this phase — retrofitting consumers to reference the new registry is each consuming domain's own follow-up responsibility, exactly as documented for `WellKnownHeaders`/`WellKnownBaggageKeys`
+- [ ] AOT-clean, zero reflection, zero new NuGet dependency
+- [ ] `01.Core/CLAUDE.md` and root `CLAUDE.md`'s Magic String convention section both updated to list `WellKnownTagKeys` alongside the other two registries
+---
+
+---
+### P-295 — Core: TimeProvider-Backed IClock Interop
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`SystemClock`'s internal implementation is changed to source its `UtcNow` value from an injected `System.TimeProvider` (defaulting to `TimeProvider.System`) instead of calling `DateTimeOffset.UtcNow` directly, and the DI registration for `IClock` gains an overload that accepts a caller-supplied `TimeProvider`. `IClock`'s public contract (`UtcNow`, `Today`) does not change, and no code outside `SharedKernel.Primitives`'s own `SystemClock` implementation is given license to call `TimeProvider` directly.
+
+#### Why this is needed
+`IClock` remains — and must remain — the only permitted source of time for domain and application logic (`SK0001`, unchanged by this phase). But `TimeProvider` is the BCL's own modern time-abstraction primitive, and it is what a growing set of the platform's own infrastructure already speaks: Polly v8 resilience pipelines (`11.Communication`), `System.Threading.RateLimiting`, and `Task.Delay`/`CancellationTokenSource` all accept or prefer a `TimeProvider` for deterministic testing. Today, a service that fakes `IClock` for its domain tests and separately needs to fake time for a Polly retry-delay test in the same test run has two independent, un-synchronized time sources — a well-known integration-test pain point. Making `SystemClock` a thin `TimeProvider` adapter means a single `FakeTimeProvider` (or `16.Testing`'s existing `FakeClock`, updated to also expose the `TimeProvider` it is driving) can deterministically control both `IClock`-consuming domain logic and `TimeProvider`-consuming infrastructure in the same test, with zero change to the hard rule that domain/application code only ever sees `IClock`.
+
+#### Acceptance criteria
+- [ ] `SystemClock` sources `UtcNow` via an injected `TimeProvider` (`TimeProvider.System` by default), not `DateTimeOffset.UtcNow` directly
+- [ ] A DI overload lets a consuming service supply its own `TimeProvider` alongside `IClock` registration, for services that want one shared, coordinated time source across both worlds
+- [ ] `IClock`'s public interface (`UtcNow`, `Today`) is unchanged; no new member added to the interface
+- [ ] `SK0001` (`DirectDateTimeUsageAnalyzer`) behavior is unchanged — this phase is an internal `SystemClock` implementation detail, not a relaxation of "IClock is the only permitted time source in domain/application code"; `TimeProvider` is never exposed as an alternative for 03.Domain/05.Application call sites
+- [ ] `16.Testing`'s `FakeClock` is evaluated for a matching update (exposing the `TimeProvider` it drives) so a single fake coordinates both — tracked as part of this phase's cross-check, not a separate dependency, since `16.Testing` may reference any layer
+- [ ] Unit tests confirm `SystemClock.UtcNow` reflects the injected `TimeProvider`'s current time, including via a `TimeProvider`-based fake advancing time
+- [ ] AOT-clean; `TimeProvider` usage is pure BCL (`System.TimeProvider` has shipped in the BCL since .NET 8) — zero new NuGet dependency
+---
+
+---
+### P-296 — Core: Non-Secret Content Hashing (IContentHasher) in SharedKernel.Cryptography
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A new contract in `SharedKernel.Cryptography`, `IContentHasher`, distinct from the existing `IOneWayHasher`: a fast, non-salted, non-iterated cryptographic hash (SHA-256, with the digest algorithm swappable) over an arbitrary byte payload or stream, for content-fingerprinting use cases — object-storage ETags/checksums, content-addressable deduplication keys, cache-key derivation from a payload body — that are architecturally distinct from secret verification. Returns a hex or Base64-encoded digest string and/or raw bytes; includes a streaming overload for large payloads (blob uploads) that never materializes the full content in memory just to hash it.
+
+#### Why this is needed
+`IOneWayHasher` is deliberately slow (600,000 PBKDF2 iterations) because it exists to resist brute-force attacks on secrets — exactly the wrong tool for hashing a 50MB file upload to compute its ETag, which needs a fast, single-pass, non-secret digest instead. Today there is no sanctioned path for that: a consuming service either reaches for `IOneWayHasher` (wildly wrong performance profile and semantically wrong — content fingerprints are not secrets) or hand-rolls `SHA256.HashData(...)` directly, which is exactly the "hand-rolled cryptography" pattern the platform's own rule set prohibits for secrets but has never actually addressed for the equally common non-secret case. `08.Storage`'s checksum/ETag needs and any future content-dedup work in `09.Search`/`10.Intelligence` are the concrete, named consumers this closes a real gap for.
+
+#### Acceptance criteria
+- [ ] `IContentHasher` added to `SharedKernel.Cryptography`, clearly XML-doc-distinguished from `IOneWayHasher` ("use this for non-secret content fingerprints; never for passwords, API keys, or other secrets — use `IOneWayHasher` for those")
+- [ ] Default implementation backed by `System.Security.Cryptography.SHA256`, streaming-capable (accepts `Stream`, not only `byte[]`), zero third-party NuGet dependency
+- [ ] Registered by `AddSharedKernelCryptography` alongside the existing five services, same singleton/stateless lifetime pattern
+- [ ] `01.Core/CLAUDE.md`'s existing hard rule "No one-way secret hashing via raw SHA256/MD5... only through IOneWayHasher" is amended to clarify it governs *secret* hashing only, and now cross-references `IContentHasher` as the sanctioned path for non-secret content fingerprints — the two contracts must never be conflated or merged into one
+- [ ] Unit tests: deterministic digest for identical input, differing digest for a single-byte change, streaming vs. in-memory overloads produce identical output
+- [ ] AOT-clean, no reflection, sealed implementation
+---
+
+---
+### P-297 — Core: New SharedKernel.Compression Package
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A seventh `01.Core` package, `SharedKernel.Compression`, mirroring `SharedKernel.Cryptography`'s established shape: a single package (no `.Abstractions`/`.{Provider}` split — matching the precedent that a purely-BCL, zero-third-party-dependency capability with a small, closed set of algorithm choices stays in one package, same reasoning already applied to Cryptography's RSA/ECDSA split via keyed DI rather than sibling packages) exposing an `IPayloadCompressor` contract for generic compress/decompress of an arbitrary byte payload or stream, backed by `System.IO.Compression.BrotliStream` (default — best ratio for the JSON/text-shaped payloads this platform mostly moves) and `GZipStream` (keyed alternate, for interop with systems that specifically require gzip). `Decompress` returns `Result<byte[]>`/`Result<Stream>` rather than throwing on a corrupt/truncated stream, mirroring `ISymmetricEncryptionService.Decrypt`'s existing failure-handling shape.
+
+#### Why this is needed
+This is the direct answer to "do we need more packages like Cryptography": yes, exactly one more, for exactly the same reason Cryptography exists — a generic, cross-cutting payload transform that every infrastructure-facing domain needs (`07.Messaging` shrinking large message bodies before publish, `08.Storage` compressing before upload, `11.Communication` compressing large request/response bodies, `10.Intelligence`/`09.Search` compressing large document payloads before indexing) and that none of them should each reinvent. It is the direct sibling of the already-established "general-purpose encrypt/decrypt of arbitrary payloads... distinct from EF Core column-level encryption" pattern — same shape, same rationale, same zero-dependency BCL-only constraint, orthogonal concern (compression and encryption are frequently combined in the correct order — compress-then-encrypt, never the reverse — and this phase's XML docs must say so explicitly, since compressing already-encrypted/high-entropy ciphertext wastes CPU for no size benefit).
+
+#### Acceptance criteria
+- [ ] New project `SharedKernel.Compression` scaffolded (csproj, nested `.Tests` project, `.slnx` registration) under `01.Core`, target `net10.0`
+- [ ] `IPayloadCompressor` contract with `Compress`/`Decompress` (byte[] and streaming overloads); `Decompress` returns `Result<T>` on corrupt/truncated input, never throws directly
+- [ ] `BrotliPayloadCompressor` (unkeyed default) and `GZipPayloadCompressor` (keyed alternate, mirroring the `RsaSignatureServiceKey`/`EcdsaSignatureServiceKey` keyed-singleton pattern already established for `IAsymmetricSignatureService`) — zero third-party NuGet dependency, pure `System.IO.Compression`
+- [ ] `AddSharedKernelCompression()` DI extension registering both as singletons (stateless, thread-safe)
+- [ ] XML docs explicitly state the compress-then-encrypt ordering rule and warn against compressing already-encrypted or already-compressed payloads
+- [ ] Full unit coverage: roundtrip for both algorithms, tamper/truncation detection surfaces as a `Result` failure not an unhandled exception, streaming vs. in-memory overloads produce equivalent output
+- [ ] NuGet metadata, README, and XML doc coverage match the existing six packages' bar before this package is considered `Published`
+- [ ] AOT-clean, no reflection
+- [ ] `01.Core/CLAUDE.md` Packages table gains a seventh row; root `CLAUDE.md` Folder Map row 01 and "What Goes Where" gain an entry for generic payload compression
+---
+
+---
+### P-298 — Core: Feature Flag Variant / Experimentation Support
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Extend `SharedKernel.FeatureManagement`'s abstraction to cover feature *variants* — not just on/off flags but named, weighted allocations (e.g., "20% of tenants see variant B") — bridging `Microsoft.FeatureManagement`'s existing variant/allocation support the same way `IFeatureManager` already bridges its plain boolean evaluation. A variant-aware method returns a caller-defined variant identifier (and optionally a strongly-typed configuration payload for that variant) for a given feature and evaluation context, so a consuming service can run a genuine gradual rollout or A/B experiment without depending on `Microsoft.FeatureManagement`'s concrete types directly.
+
+#### Why this is needed
+"Hundreds of services across multiple teams" is exactly the scale where boolean feature flags stop being enough — teams need percentage-based gradual rollouts and A/B experimentation, and `Microsoft.FeatureManagement` (the library this domain already wraps) has shipped first-class variant/allocation support for several major versions now. Today's `IFeatureManager` abstraction only exposes the boolean path, so any service wanting variant-based rollout today has to punch through the abstraction and depend on `Microsoft.FeatureManagement` directly — precisely the escape hatch `01.Core/CLAUDE.md`'s existing hard rule ("`IFeatureManager` is the only permitted feature-flag interface... never inject `Microsoft.FeatureManagement.IFeatureManager` directly") already forbids, but currently cannot avoid for this one legitimate use case.
+
+#### Acceptance criteria
+- [ ] `IFeatureManager` (or a sibling contract, decided at design time) exposes a variant-evaluation method returning a caller-identifiable variant name for a given feature and optional context, without leaking `Microsoft.FeatureManagement` types into the public surface
+- [ ] `FeatureDefinition` or a new sibling record models a variant's name and allocation weight for the definitions API
+- [ ] `AddSharedKernelFeatureManagement` wiring covers the variant path with no additional required configuration beyond what `Microsoft.FeatureManagement` itself needs
+- [ ] Existing boolean `IsEnabledAsync` surface and behavior is completely unchanged — this is additive
+- [ ] Unit tests cover deterministic variant assignment given a fixed context/seed, and that unconfigured features fall back predictably
+- [ ] XML docs and README example showing a gradual-rollout scenario (e.g., percentage-based enablement across tenants)
+- [ ] AOT compatibility verified against the `Microsoft.FeatureManagement` version pulled in — flagged, not blocked, if the variant API has gaps
+---
+
+---
+### P-299 — Governance: Result/Result<T> Discard-Detection Analyzer
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 00.Governance
+**Depends on:** None
+
+#### What is needed
+A new Roslyn analyzer in `00.Governance/SharedKernel.Analyzers` that flags an expression-statement whose static type implements `IHasSuccessFlag` (i.e., is a `Result` or `Result<T>` from `SharedKernel.Primitives`) when that value is not consumed — not assigned, not returned, not passed as an argument, not the target of a member access, not awaited. This is the `Result<T>` analogue of the compiler's own unawaited-`Task` warning (CS4014): a `Result`/`Result<T>`-returning call made purely for its side effects, with its outcome silently thrown away, is exactly as dangerous as a fire-and-forgotten `Task` — a failure the caller never learns about.
+
+#### Why this is needed
+`Result<T>` is the platform's single sanctioned error-handling primitive, used by every domain from `03.Domain` through `17.Workflows`. Its entire value proposition — "callers must explicitly branch on outcome instead of exceptions silently unwinding the stack" — is completely defeated the moment a caller invokes a `Result`-returning method as a bare statement and never inspects `.IsSuccess`/`.IsFailure`. Nothing today catches this: it compiles cleanly, produces no warning, and the failure path is simply gone. This is the single highest-leverage gold-standard governance gap in the entire platform relative to its cost — the `IHasSuccessFlag` marker interface added in P-230 specifically to enable exactly this kind of reflection-free, interface-based static analysis already exists and is unused for this purpose.
+
+#### Acceptance criteria
+- [ ] New `SK00xx` analyzer (next available number in sequence) flags a bare expression-statement whose type implements `IHasSuccessFlag`
+- [ ] Analyzer correctly does NOT flag the value when it is assigned to a variable/field, returned, passed as an argument, the receiver of a member-access/method chain, or awaited (for a `Task<Result<T>>`-returning async method called with `await` as a bare statement — the `Result<T>` itself is still discarded in that specific case and SHOULD be flagged; document this edge case explicitly with a test)
+- [ ] A discard assignment (`_ = SomeMethodReturningResult();`) is treated as an explicit, intentional discard and does NOT fire — mirroring how `_` already signals deliberate intent elsewhere in C#
+- [ ] Diagnostic message clearly explains the risk ("this Result's outcome is never checked — a failure will pass silently") and suggests the fix (assign, branch, or explicitly discard with `_ =`)
+- [ ] Analyzer test project includes both a violating fixture and a passing fixture for every consumption shape listed above
+- [ ] Architecture-level real-assembly verification (this domain's established "GATING, not deferred" precedent) runs the analyzer against existing shipped code across at least a few consuming domains to confirm zero false positives before this phase is considered complete
+- [ ] `00.Governance/CLAUDE.md` documents the rule with a violating/compliant example pair, matching the existing SK0001-SK0029 documentation convention
+---
+
+---
+### P-300 — Testing: In-Process Fakes for 01.Core's Cryptography and FeatureManagement Abstractions
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-049
+**Domain:** 16.Testing
+**Depends on:** P-296, P-298
+
+#### What is needed
+`16.Testing/SharedKernel.Testing` gains fast, deterministic, in-process test doubles for every `01.Core`-shipped DI-registered abstraction that currently has none: `IOneWayHasher`, `ISymmetricEncryptionService` (+ a trivial in-memory `IEncryptionKeyProvider`), `IAsymmetricSignatureService` (+ a trivial in-memory `IAsymmetricKeyProvider`), `IHmacSigner`, `ISecureRandomGenerator`, `IContentHasher` (once P-296 ships), and `IFeatureManager` (including the variant path once P-298 ships) — each a fast, deterministic substitute explicitly documented as test-only and never production-safe (in particular, the fake `IOneWayHasher` must skip PBKDF2's 600,000-iteration cost while still round-tripping hash/verify correctly, and the fake `ISecureRandomGenerator` must remain non-deterministic enough to catch accidental hardcoded-token bugs, or expose a seeded mode if determinism is explicitly requested). A single `AddFakeCryptography()`-shaped DI extension registers the full set, mirroring the existing `AddFakeDomainServices()`/`AddInMemoryMessageBus()` precedent.
+
+#### Why this is needed
+`01.Core` is the only capability domain in the entire platform with zero `16.Testing` coverage for its own DI-registered contracts today — every other domain from `02.Caching` through `17.Workflows` has an in-process fake for its abstractions (`InMemoryMessageBus`, `InMemoryFileStorage`, `InMemoryWorkflowDispatcher`, and so on), a pattern this platform has applied with total consistency. The gap is especially costly here because `IOneWayHasher`'s production implementation is *deliberately* slow (600,000 PBKDF2 iterations) — exactly the kind of dependency that makes a consuming service's integration test suite (seeding dozens or hundreds of test users) unnecessarily slow with no fake alternative today, forcing teams to either accept slow tests or hand-roll their own throwaway fake per service, exactly the duplication `16.Testing` exists to eliminate.
+
+#### Acceptance criteria
+- [ ] Fakes exist for `IOneWayHasher`, `ISymmetricEncryptionService`, `IEncryptionKeyProvider`, `IAsymmetricSignatureService`, `IAsymmetricKeyProvider`, `IHmacSigner`, `ISecureRandomGenerator`, `IContentHasher`, `IFeatureManager`
+- [ ] Every fake's XML doc and type name make its test-only, non-production-safe nature unmistakable (mirroring `FakeClock`'s existing precedent)
+- [ ] Fake `IOneWayHasher` round-trips hash/verify correctly (including rehash-needed simulation) without PBKDF2's real iteration cost
+- [ ] Fake `IFeatureManager` supports both deterministic on/off overrides per feature name and, once P-298 ships, deterministic variant assignment for tests
+- [ ] `AddFakeCryptography()` (or equivalently-scoped extension(s)) registers the full set in one call, consistent with the `AddFakeDomainServices()`/`AddInMemoryMessageBus()` naming and registration precedent
+- [ ] References only `SharedKernel.Cryptography`/`SharedKernel.FeatureManagement` (and `SharedKernel.Primitives` transitively) — never a mocking framework, matching `16.Testing/CLAUDE.md`'s existing hard rule
+- [ ] Each fake has its own unit test in `SharedKernel.Testing.SelfTests`, matching the existing per-fake self-test convention
+- [ ] Root `CLAUDE.md` "What Goes Where" gains an entry for in-process `01.Core` cryptography/feature-flag test doubles, mirroring the existing entries for every other domain's fakes
+---
+
+- [2026-07-27] WO-049 phases P-292–P-300 written to Phase Backlog — 01.Core gold-standard architecture review, triggered by direct user request to analyze `01.Core` for refactors, missing features, and whether more packages (like `SharedKernel.Primitives`/`SharedKernel.Cryptography` before it) are needed. Verified all findings against shipped `.cs` files, not domain-brain prose (per established methodology): confirmed zero `TimeProvider`/`IIdGenerator`/`IContentHasher`/compression/`IVariantFeatureManager` usage anywhere in the repo, confirmed no Result-discard analyzer exists among `00.Governance`'s 29 shipped analyzers, and confirmed `16.Testing` has no `Cryptography`/`FeatureManagement` subfolder despite covering every other domain's abstractions. Seven phases target `01.Core` itself: `Result<T>` exception-boundary (`Try`) and error-aggregation (`Combine`) railway extensions (P-292); a `Guid.CreateVersion7()`-backed `IIdGenerator` sequential-identifier primitive addressing random-GUID index fragmentation on the platform's Postgres-first persistence layer (P-293); a third well-known-constants registry, `WellKnownTagKeys`, closing the OTel `Activity.SetTag` gap `SK0022` already recognizes but `WellKnownHeaders`/`WellKnownBaggageKeys` never filled (P-294); a `TimeProvider`-backed `SystemClock` so `IClock`-driven domain tests and `TimeProvider`-driven infrastructure (Polly, rate limiting) can share one deterministic time source without relaxing the `SK0001` `IClock`-only rule (P-295); a non-secret `IContentHasher` in `SharedKernel.Cryptography`, distinct from the deliberately-slow `IOneWayHasher`, for ETags/checksums/dedup keys (P-296); a new seventh `01.Core` package, `SharedKernel.Compression` (`IPayloadCompressor`, Brotli default/GZip keyed alternate), mirroring `SharedKernel.Cryptography`'s exact shape and answering the user's "do we need more packages like Cryptography" question directly (P-297); and feature-flag variant/experimentation support bridging `Microsoft.FeatureManagement`'s allocation API for genuine A/B rollout at platform scale (P-298). Two cross-domain phases close pre-existing gaps this review surfaced: a `00.Governance` analyzer flagging silently-discarded `Result`/`Result<T>` outcomes — the single highest-leverage gap found, since `IHasSuccessFlag` (P-230) already exists to enable exactly this check and nothing uses it yet (P-299); and `16.Testing` fakes for every `01.Core`-shipped DI-registered abstraction (`IOneWayHasher`, `ISymmetricEncryptionService`, `IHmacSigner`, `ISecureRandomGenerator`, `IFeatureManager`, `IContentHasher`) — `01.Core` was confirmed to be the only domain in the platform with zero `16.Testing` coverage for its own contracts (P-300). Explicitly declined in the same review: an `Option<T>`/`Maybe<T>` monad (no concrete driving use case; risks two competing "no value" idioms alongside `Result<T>` and C# nullable reference types), FluentValidation inside `SharedKernel.Configuration` (would force a FluentValidation transitive dependency onto every consumer of the most foundational package in the platform for a need `IValidateOptions<T>` already covers), and an `Error.Code` namespace-format enforcement analyzer (no confirmed cross-service log-query incident driving it, unlike every other analyzer this platform has shipped reactively against a real defect). All nine phases are additive-only — no existing `01.Core` public contract changes shape or behavior. Domain Summary Board rows 01/00/16 all already `●` Published, so no `state-map-phase` calls — backlog-only, ready for a future `/dispatch-phase` pass (arch-lead, user request)
+- [2026-07-27] Phase(s) P-299 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-07-27] Phase(s) P-292, P-293, P-294, P-295, P-296, P-297, P-298 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-07-27] Phase(s) P-300 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-07-27] Core → Published (●) — promoted from SK.01.P292 (state-map-phase)
+- [2026-07-27] Phase Backlog P-292 → ● Complete — SK.01.P292 done, `ResultTry`/`ResultCombine` shipped in `SharedKernel.Core/Extensions/`, `ErrorCodes.Unexpected.Default` updated in `SharedKernel.Primitives` (state-map-phase)
