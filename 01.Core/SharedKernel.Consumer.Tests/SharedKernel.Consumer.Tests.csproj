@@ -13,6 +13,7 @@
     to confirm the published dependency graph is correct.
     Primitives → Core → Configuration → FeatureManagement chain verified here.
     Cryptography → Primitives + Configuration transitive chain also verified here.
+    Compression → Primitives + Configuration transitive chain also verified here.
   -->
   <ItemGroup>
     <PackageReference Include="SharedKernel.Primitives"        Version="1.0.0" />
@@ -21,6 +22,7 @@
     <PackageReference Include="SharedKernel.FeatureManagement" Version="1.0.0" />
     <PackageReference Include="SharedKernel.Guards"            Version="1.0.0" />
     <PackageReference Include="SharedKernel.Cryptography"      Version="2.0.0" />
+    <PackageReference Include="SharedKernel.Compression"       Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

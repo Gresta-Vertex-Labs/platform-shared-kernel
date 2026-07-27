@@ -8,6 +8,8 @@
     <Project Path="00.Governance/SharedKernel.Linter/SharedKernel.Linter.csproj" />
   </Folder>
   <Folder Name="/01.Core/">
+    <Project Path="01.Core/SharedKernel.Compression/SharedKernel.Compression.csproj" />
+    <Project Path="01.Core/SharedKernel.Compression/SharedKernel.Compression.Tests/SharedKernel.Compression.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Configuration/SharedKernel.Configuration.csproj" />
     <Project Path="01.Core/SharedKernel.Configuration/SharedKernel.Configuration.Tests/SharedKernel.Configuration.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Core/SharedKernel.Core.csproj" />

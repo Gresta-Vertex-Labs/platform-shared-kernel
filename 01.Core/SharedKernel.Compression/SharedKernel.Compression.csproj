@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Compression</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Dependency-free generic payload compression for the SharedKernel: IPayloadCompressor over System.IO.Compression (BrotliStream default, GZipStream keyed alternate). Decompress returns Result&lt;byte[]&gt;/Result rather than throwing on corrupt/truncated input, mirroring ISymmetricEncryptionService.Decrypt's failure shape. Pure BCL System.IO.Compression only — zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Configuration. Always compress-then-encrypt, never the reverse.</Description>
+    <PackageTags>shared-kernel;compression;brotli;gzip;aot</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Compression.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Compression.Tests\**" />
+    <None Remove="SharedKernel.Compression.Tests\**" />
+  </ItemGroup>
+
+</Project>

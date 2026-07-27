@@ -1,6 +1,6 @@
 # 01.Core
 
-Foundational building blocks for the Platform.SharedKernel ecosystem. Six independently publishable NuGet packages with zero infrastructure dependencies.
+Foundational building blocks for the Platform.SharedKernel ecosystem. Seven independently publishable NuGet packages with zero infrastructure dependencies.
 
 | Package | Purpose |
 |---------|---------|
@@ -10,6 +10,7 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Six indepe
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) |
 | `SharedKernel.Cryptography` | Password hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation |
+| `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate |
 
 All packages target `net10.0` and are AOT-compatible.
 
@@ -1153,6 +1154,85 @@ public sealed class TokenIssuanceExample(ISecureRandomGenerator randomGenerator)
 }
 ```
 
+## SharedKernel.Compression — Generic Payload Compression
+
+`SharedKernel.Compression` provides generic compress/decompress of an arbitrary byte payload or stream via `IPayloadCompressor`. It is the direct sibling of `SharedKernel.Cryptography`'s `ISymmetricEncryptionService` — same shape, same zero-third-party-NuGet-dependency constraint (pure BCL `System.IO.Compression`), orthogonal concern. There is no `.Abstractions`/`.{Provider}` package split — a single package with a keyed-DI algorithm choice, mirroring `SharedKernel.Cryptography`'s RSA/ECDSA keyed-singleton precedent.
+
+**Ordering rule: always compress, then encrypt — never the reverse.** Compressing already-encrypted/high-entropy ciphertext wastes CPU for no size benefit, since ciphertext has no redundancy left to compress. Never call `Compress` on a payload that has already passed through `ISymmetricEncryptionService.Encrypt`, and never call `Compress` a second time on an already-compressed payload — double-compression wastes CPU and typically *increases* output size.
+
+### Registration
+
+```csharp
+// Program.cs
+builder.Services.AddSharedKernelCompression(builder.Configuration);
+```
+
+Optional configuration (`SharedKernel:Compression` section, defaults to `CompressionLevel.Optimal`):
+
+```json
+{
+  "SharedKernel": {
+    "Compression": {
+      "Level": "Optimal"
+    }
+  }
+}
+```
+
+`AddSharedKernelCompression` registers `BrotliPayloadCompressor` as both the unkeyed `IPayloadCompressor` default and the `"Brotli"`-keyed singleton, and `GZipPayloadCompressor` only as the `"GZip"`-keyed singleton (mirroring `EcdsaSignatureService`'s keyed-only registration in `SharedKernel.Cryptography` — there is no unkeyed GZip registration).
+
+### Brotli (default) — byte[] and stream usage
+
+```csharp
+public sealed class QueuePublishExample(IPayloadCompressor compressor)
+{
+    // byte[] overload — small in-memory payloads.
+    public byte[] PrepareForQueue(byte[] jsonPayload) =>
+        compressor.Compress(jsonPayload); // Brotli — best ratio for JSON/text-shaped payloads
+
+    public Result<byte[]> RestoreFromQueue(byte[] received) =>
+        compressor.Decompress(received); // Result<byte[]> — never throws on corrupt/truncated input
+
+    // Stream overload — large payloads, never materializes the full content in memory.
+    public async Task CompressUploadAsync(Stream sourceFile, Stream destination, CancellationToken ct) =>
+        await compressor.CompressAsync(sourceFile, destination, ct);
+}
+```
+
+Handling corrupt/truncated input via the railway pattern:
+
+```csharp
+Result<byte[]> decompressed = compressor.Decompress(received);
+
+decompressed.Match(
+    onSuccess: bytes => ProcessPayload(bytes),
+    onFailure: error => logger.LogWarning(
+        "Decompression failed: {Code} — {Message}", error.Code, error.Message));
+// error.Code == CompressionErrorCodes.DecompressionFailed
+```
+
+### GZip — explicit keyed resolution
+
+Use `GZipPayloadCompressor` only when interoperating with a system that specifically requires the gzip format. It is never the unkeyed default — resolve it explicitly by key:
+
+```csharp
+public sealed class LegacyInteropExample(
+    [FromKeyedServices(CompressionServiceCollectionExtensions.GZipPayloadCompressorKey)]
+        IPayloadCompressor gzipCompressor)
+{
+    public byte[] CompressForLegacySystem(byte[] payload) => gzipCompressor.Compress(payload);
+}
+
+// Resolving explicitly from IServiceProvider:
+IPayloadCompressor brotli = provider.GetRequiredService<IPayloadCompressor>(); // unkeyed default = Brotli
+IPayloadCompressor gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
+    CompressionServiceCollectionExtensions.GZipPayloadCompressorKey);
+```
+
+### A note on truncation detection
+
+`Decompress` never lets an unhandled exception escape — bit-level corruption and unrecognized/garbage input are always caught and mapped to a failed `Result`/`Result<byte[]>` for both algorithms. However, a compressed stream that is missing only its *trailing* bytes (a genuinely truncated upload or transfer that stopped early) is not always detected as an error by the underlying BCL implementations: neither `BrotliStream` nor `GZipStream` validates that the full originally-compressed length was reproduced, and `GZipStream` additionally does not validate its own trailing CRC32/ISIZE footer on read. `BrotliStream` in particular has no fixed magic-number header the way gzip does, so it can decode a truncated stream's remaining bytes without raising any error at all. This is a genuine, confirmed platform (BCL) characteristic, not a defect in this package. Services that must guarantee detection of a truncated transfer end-to-end should pair compression with a separate integrity check — e.g., `SharedKernel.Cryptography`'s `IContentHasher` over the original payload, or a known expected length — rather than relying solely on the compression format's own error signaling.
+
 ---
 
 ## Dependency Graph
@@ -1167,8 +1247,10 @@ SharedKernel.Primitives              (no dependencies)
        +──► SharedKernel.Configuration  (Options pattern + startup validation)
        |       |
        |       +──► SharedKernel.Cryptography  (one-way hashing, AES-GCM, RSA/ECDSA, HMAC, secure random)
+       |       |
+       |       +──► SharedKernel.Compression   (IPayloadCompressor: Brotli default, GZip keyed alternate)
        |
        +──► SharedKernel.FeatureManagement  (IFeatureManager + Microsoft.FeatureManagement adapter)
 ```
 
-All six packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed.
+All seven packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed.

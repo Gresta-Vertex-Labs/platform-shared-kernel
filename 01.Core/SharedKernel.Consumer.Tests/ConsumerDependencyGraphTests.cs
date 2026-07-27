@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SharedKernel.Compression;
+using SharedKernel.Compression.Extensions;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Cryptography.Extensions;
@@ -547,6 +549,88 @@ public sealed class ConsumerDependencyGraphTests
             .Build();
 
         services.AddSharedKernelCryptography(configuration);
+        return services.BuildServiceProvider();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Compression — verifies the package resolves from the local
+    // feed and that its transitive dependencies (Primitives + Configuration)
+    // resolve without conflict, end-to-end through DI registration.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Compression_AddSharedKernelCompression_AllServicesResolve_ResolvedFromPackage()
+    {
+        IHost host = Host.CreateDefaultBuilder()
+            .ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(new Dictionary<string, string?>()))
+            .ConfigureServices((ctx, services) => services.AddSharedKernelCompression(ctx.Configuration))
+            .Build();
+
+        await host.StartAsync();
+
+        Assert.IsType<BrotliPayloadCompressor>(host.Services.GetRequiredService<IPayloadCompressor>());
+        Assert.IsType<BrotliPayloadCompressor>(
+            host.Services.GetRequiredKeyedService<IPayloadCompressor>(
+                CompressionServiceCollectionExtensions.BrotliPayloadCompressorKey));
+        Assert.IsType<GZipPayloadCompressor>(
+            host.Services.GetRequiredKeyedService<IPayloadCompressor>(
+                CompressionServiceCollectionExtensions.GZipPayloadCompressorKey));
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public void Compression_BrotliPayloadCompressor_CompressDecompressRoundtrip_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCompressionServiceProvider();
+        IPayloadCompressor compressor = provider.GetRequiredService<IPayloadCompressor>();
+
+        byte[] original = "consumer-verification-payload"u8.ToArray();
+        byte[] compressed = compressor.Compress(original);
+        Result<byte[]> decompressed = compressor.Decompress(compressed);
+
+        Assert.True(decompressed.IsSuccess);
+        Assert.Equal(original, decompressed.Value);
+    }
+
+    [Fact]
+    public void Compression_GZipPayloadCompressor_CompressDecompressRoundtrip_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCompressionServiceProvider();
+        IPayloadCompressor compressor = provider.GetRequiredKeyedService<IPayloadCompressor>(
+            CompressionServiceCollectionExtensions.GZipPayloadCompressorKey);
+
+        byte[] original = "consumer-verification-payload"u8.ToArray();
+        byte[] compressed = compressor.Compress(original);
+        Result<byte[]> decompressed = compressor.Decompress(compressed);
+
+        Assert.True(decompressed.IsSuccess);
+        Assert.Equal(original, decompressed.Value);
+    }
+
+    [Fact]
+    public void Compression_Decompress_CorruptPayload_ReturnsFailureResult_ResolvedFromPackage()
+    {
+        using ServiceProvider provider = BuildCompressionServiceProvider();
+        IPayloadCompressor compressor = provider.GetRequiredService<IPayloadCompressor>();
+
+        byte[] compressed = compressor.Compress(
+            "consumer-verification-payload-with-enough-length-to-corrupt-mid-stream"u8.ToArray());
+        compressed[compressed.Length / 2] ^= 0xFF;
+
+        Result<byte[]> decompressed = compressor.Decompress(compressed);
+
+        Assert.True(decompressed.IsFailure);
+    }
+
+    private static ServiceProvider BuildCompressionServiceProvider()
+    {
+        IServiceCollection services = new ServiceCollection();
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        services.AddSharedKernelCompression(configuration);
         return services.BuildServiceProvider();
     }
 }
