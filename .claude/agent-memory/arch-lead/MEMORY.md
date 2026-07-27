@@ -17,3 +17,4 @@
 - [WO-046: Workflows Build-Out](project_wo046_workflows_buildout.md) — 17.Workflows P-287-290; ACCEPT verbatim, single-package Temporal domain (no .Abstractions split ratified), IClock/SK0001 inverted inside [Workflow] types
 - [WO-047: ServiceDefaults Escalation Resolution](project_wo047_servicedefaults_escalation_resolution.md) — retracted 10.Intelligence's ICompletionProviderDescriptor.ProbeAsync claim; granted narrow 13→17.Workflows probe-only layering exception
 - [dispatch-phase needs an Agent tool](feedback_dispatch_phase_tool_availability.md) — verify the spawn tool actually exists/fired before writing a "dispatched" changelog line
+- [WO-048: Milvus Retraction](project_wo048_milvus_retraction.md) — SharedKernel.AI.Milvus retired (Milvus.Client abandoned); new `⊘` Retracted Phase Backlog status; Blocked table/Board row 10 deliberately left for parallel intelligence-arch-planner refactor to settle first

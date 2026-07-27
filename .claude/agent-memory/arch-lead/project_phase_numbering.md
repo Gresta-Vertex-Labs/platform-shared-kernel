@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-07-24, the last phase written to `state-map.md` Phase Backlog is **P-291** under **WO-047**.
+As of 2026-07-27, the last NEW phase written to `state-map.md` Phase Backlog is still **P-291** (under WO-047) — WO-048 retracted/amended existing phases (P-281, P-285, P-286) and minted no new phase IDs.
 
-Next new phase must be **P-292**. Next new Work Order must be **WO-048**.
+Next new phase must be **P-292**. Next new Work Order must be **WO-049**.
+
+**WO-048 context:** not a new-capability work order — pure retraction. User decided `SharedKernel.AI.Milvus` is permanently retired (`Milvus.Client` never shipped stable, abandoned upstream). Introduced a new Phase Backlog status value, `⊘` Retracted, distinct from `○`/`◐`/`●` — the first time a dispatched-but-never-implementable phase needed to be withdrawn rather than completed. P-281 → `⊘` Retracted; P-285/P-286 had `P-281` removed from `Depends on` and Milvus trimmed from acceptance criteria (amended in place, same "still-open phase corrected by arch-lead authority" exception WO-047 used for P-285/P-289). Ran in parallel with `intelligence-arch-planner`'s own refactor of `10.Intelligence/CLAUDE.md`/`state-map.md` — strictly out of this agent's jurisdiction, root files only. Deliberately did NOT touch the root `## Blocked` table or Domain Summary Board row 10 (both still describe 10.Intelligence as Milvus-blocked) — those need the parallel session's corrected task counts first; flagged as a follow-up root sync. See [[project_wo048_milvus_retraction]] for full detail.
 
 **WO-047 context:** not a new-capability work order — pure conflict resolution. See [[project_wo047_servicedefaults_escalation_resolution]] for full detail. P-291 (10.Intelligence) is a documentation-only correction, `○` Pending, not yet dispatchable this session (no Agent-spawning tool available — see [[feedback_dispatch_phase_tool_availability]]). P-285 and P-289 (both pre-existing `◐ Dispatched` phases from WO-045/WO-046) were amended in place with RESOLUTION blocks and corrected acceptance criteria, a deliberate exception to the usual append-only Phase Backlog discipline since these are still-open phases being corrected by arch-lead authority, not history being erased.
 

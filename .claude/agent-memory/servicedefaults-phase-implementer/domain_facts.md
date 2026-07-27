@@ -39,6 +39,40 @@ added zero new tests (pure documentation pass). These numbers will drift once Pu
 feature phases land — always re-run `dotnet test` rather than trusting this count once it's more than a
 session or two old.
 
+**Test counts as of 2026-07-27, end of session (SK.13.Core/Tests/Docs all closed `●` — C-39/C-41/C-42/C-43 +
+T-34/T-36–38 + DO-08/09 implemented):** 86 `SharedKernel.ServiceDefaults.Tests` passing (+23 from the prior
+63), 30 `SharedKernel.MultiTenancy.Tests` passing (unchanged). All six `SK.13.*` phase keys are now `●`/`—`
+(only C-40/T-35, the permanently-retracted `AddOrchestrationReadinessCheck`, are `—`) — the domain is fully
+closed out again, this time with VectorStore and Workflow readiness checks/telemetry genuinely implemented
+(not just design-locked). `SharedKernel.ServiceDefaults.csproj` carries `ProjectReference`s to all of:
+`SharedKernel.Primitives`, `SharedKernel.Caching.Abstractions`, `SharedKernel.Persistence.Abstractions`,
+`SharedKernel.Persistence.EfCore`, `SharedKernel.Messaging.Abstractions`, `SharedKernel.Messaging.MassTransit`,
+`SharedKernel.Storage.Abstractions`, `SharedKernel.Search.Abstractions`, `SharedKernel.AI.Abstractions`
+(10.Intelligence), and `SharedKernel.Workflows.Temporal` (17.Workflows — WO-047-scoped, guarded by an inline
+`.csproj` comment restating the `IWorkflowServiceProbe`/`WorkflowServiceHealth`-only boundary).
+`VectorStoreReadinessHealthCheck`/`WorkflowReadinessHealthCheck` and
+`IntelligenceTelemetryExtensions`/`WorkflowTelemetryExtensions` were implemented as straight mirrors of the
+already-shipped `SearchReadinessHealthCheck`/`SearchTelemetryExtensions` pattern — zero design deviation
+needed once the upstream contracts were confirmed shipped. **Lesson for next time a phase's CLAUDE.md prose
+needs a post-implementation pass:** grep for "design-locked", "blocked", "Core implementation pending" across
+the whole file, not just the sections the phase spec calls out — this session found and fixed two already-
+stale `AddSearchReadinessCheck`/`WithSearchTelemetry` mentions in AOT Compatibility/Test Rules that a PRIOR
+session's WO-044 closeout had missed (they still said "design-locked, blocked" despite that check having
+shipped back on 2026-07-24). A single targeted grep after finishing the "current" edits catches this class of
+leftover drift cheaply.
+
+**Root state-map-phase quirk specific to this domain — read before calling `/state-map-phase` for a
+sub-phase promotion:** the root `state-map.md` Domain Summary Board's "Current Phase" column for domain 13
+already sits at `Published`/`●` (reached long ago, multiple times — this domain cycles reopen→Published as
+each new WO adds then closes VectorStore/Workflow-shaped tasks). When a sub-map phase key (e.g.
+`SK.13.Scaffold`) completes in isolation while other phase keys (Core/Tests/Docs) still have pending tasks,
+do **not** mechanically overwrite root's Current Phase/State to the smaller phase name (e.g. "Scaffold") —
+that would read as a regression since the domain's packages are genuinely already published. Established
+precedent (root changelog, 2026-07-24 SK.13.Design entry, and repeated 2026-07-27 for SK.13.Scaffold): leave
+Current Phase/State at `Published`/`●` unchanged, and only refresh the Summary: Done/Summary: Next cells to
+narrow down what's actually still pending. Still append the root changelog line and still run Step S8a's
+Phase Backlog check (usually N/A here — standard lifecycle phase names have no `Root Backlog ID`).
+
 **Health check tag taxonomy (load-bearing, never violate):** `"live"` = process-alive only, zero
 dependency coupling. `"ready"` = may depend on DB/cache/broker; gates load-balancer rotation, never
 restarts the pod. Every dependency-specific check carries `"ready"` plus a dependency tag (`"db"`,
