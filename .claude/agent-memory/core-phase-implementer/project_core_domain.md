@@ -12,10 +12,12 @@ The 01.Core domain shipped six packages as fully `Published` as of 2026-06-26 (P
 - P-294 `WellKnownTagKeys` (SharedKernel.Primitives) — **implemented**
 - P-295 `SystemClock` `TimeProvider`-backed rewrite (SharedKernel.Primitives) — **implemented**
 - P-296 `IContentHasher` (SharedKernel.Cryptography) — **implemented**
-- P-297 new seventh package `SharedKernel.Compression` (`IPayloadCompressor`) — pending
+- P-297 new seventh package `SharedKernel.Compression` (`IPayloadCompressor`) — **implemented** (see `feedback_verify_design_claims_before_shipping.md` for the Brotli/GZip BCL-behavior corrections found while implementing it)
 - P-298 feature-flag variants/`GetVariantAsync` (SharedKernel.FeatureManagement) — pending
 - P-299 Result-discard analyzer — targets `00.Governance`, not `01.Core`
 - P-300 Cryptography/FeatureManagement fakes — targets `16.Testing`, not `01.Core`
+
+All seven packages (Primitives, Core, Guards, Configuration, FeatureManagement, Cryptography, Compression) are now `Published`. P-298 is the only remaining WO-049 phase against `01.Core` itself.
 
 Each of P-292–P-298 was **design-locked in a single core-arch-planner pass** (D-31→D-41 all `●` in `01.Core/state-map.md` from the start) — the Design task was already done before any phase-implementer session touches it. What remains per phase is Scaffold (only P-297, since it's a new package)/Core/Tests/Docs. Each phase is self-contained (own `SK.01.P29X` phase key, own task-ID range) and does not depend on the others completing first.
 
