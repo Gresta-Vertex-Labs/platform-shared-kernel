@@ -284,9 +284,9 @@ A domain composed of multiple packages (e.g. `02.Caching`'s Redis role-split) su
 
 ---
 
-### Well-Known Propagation Constants — WellKnownHeaders / WellKnownBaggageKeys
+### Well-Known Propagation Constants — WellKnownHeaders / WellKnownBaggageKeys / WellKnownTagKeys
 
-`WellKnownHeaders` and `WellKnownBaggageKeys` are compile-time `const string` registries reserving the platform's cross-service propagation identifier literals — HTTP/gRPC-metadata header names and `System.Diagnostics.Activity` baggage keys. Every domain that reads or writes a correlation-id or tenant-id header, or an `Activity` baggage entry for the same concepts, must reference these constants instead of redeclaring the literal locally.
+`WellKnownHeaders`, `WellKnownBaggageKeys`, and `WellKnownTagKeys` are compile-time `const string` registries reserving the platform's cross-service propagation identifier literals — HTTP/gRPC-metadata header names, `System.Diagnostics.Activity` baggage keys, and `Activity` tag/attribute keys. Every domain that reads or writes a correlation-id or tenant-id header, an `Activity` baggage entry, or an `Activity` span tag for the same concepts, must reference these constants instead of redeclaring the literal locally.
 
 ```csharp
 using SharedKernel.Primitives.Propagation;
@@ -308,9 +308,20 @@ internal sealed class TenantIdDelegatingHandler(ITenantProvider tenantProvider) 
 // and 13.ServiceDefaults's log-record processor reads the identical key back out — both
 // sides reference WellKnownBaggageKeys.CorrelationId so they can never drift apart again:
 Activity.Current?.AddBaggage(WellKnownBaggageKeys.CorrelationId, correlationId);
+
+// A span emitted anywhere in the request pipeline tags itself with the shared tenant/error
+// attribute keys instead of a local literal — Activity.SetTag is a distinct call-site shape
+// from Activity.AddBaggage above, even where a literal value (CorrelationId) coincides:
+using Activity? activity = ActivitySource.StartActivity("ProcessOrder");
+activity?.SetTag(WellKnownTagKeys.TenantId, tenantProvider.TenantId.ToString());
+if (result.IsFailure)
+{
+    activity?.SetTag(WellKnownTagKeys.ErrorType, result.Error.Type.ToString());
+    activity?.SetTag(WellKnownTagKeys.ErrorCode, result.Error.Code);
+}
 ```
 
-`WellKnownHeaders.CorrelationId` = `"X-Correlation-Id"`, `WellKnownHeaders.TenantId` = `"X-Tenant-Id"`, `WellKnownBaggageKeys.CorrelationId` = `"correlation.id"`. These values are a pure promotion of today's de facto platform standard — changing one is a breaking, cross-domain change, never a routine edit.
+`WellKnownHeaders.CorrelationId` = `"X-Correlation-Id"`, `WellKnownHeaders.TenantId` = `"X-Tenant-Id"`, `WellKnownBaggageKeys.CorrelationId` = `"correlation.id"`, `WellKnownTagKeys.TenantId` = `"tenant.id"`, `WellKnownTagKeys.CorrelationId` = `"correlation.id"`, `WellKnownTagKeys.ErrorType` = `"error.type"`, `WellKnownTagKeys.ErrorCode` = `"error.code"`. These values are a pure promotion of today's de facto platform standard — changing one is a breaking, cross-domain change, never a routine edit. `WellKnownTagKeys` is introduced pre-emptively (P-294/WO-049): no domain has adopted it yet, so retrofitting an existing `Activity.SetTag(...)` call site to reference it is that consuming domain's own future responsibility.
 
 ---
 
