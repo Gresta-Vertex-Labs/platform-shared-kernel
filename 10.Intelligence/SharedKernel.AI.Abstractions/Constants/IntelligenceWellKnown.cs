@@ -38,9 +38,6 @@ public static class IntelligenceWellKnown
     /// <summary>The provider-name value for Qdrant.</summary>
     public const string QdrantProviderName = "qdrant";
 
-    /// <summary>The provider-name value for Milvus.</summary>
-    public const string MilvusProviderName = "milvus";
-
     /// <summary>The provider-name value for the Semantic Kernel orchestration provider.</summary>
     public const string SemanticKernelProviderName = "semantickernel";
 
