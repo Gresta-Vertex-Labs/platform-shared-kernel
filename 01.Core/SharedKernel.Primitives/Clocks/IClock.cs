@@ -14,6 +14,13 @@ namespace SharedKernel.Primitives.Clocks;
 /// <para>
 /// In tests, substitute a fake implementation that returns a fixed time.
 /// </para>
+/// <para>
+/// <see cref="SystemClock"/> internally sources <see cref="UtcNow"/> from an injected
+/// <see cref="System.TimeProvider"/> instead of calling <see cref="DateTimeOffset.UtcNow"/>
+/// directly (P-295). This is purely an internal implementation detail — this interface's own
+/// contract (<see cref="UtcNow"/>, <see cref="Today"/>) is unaffected, and no call site outside
+/// <see cref="SystemClock"/> itself should reference <see cref="System.TimeProvider"/> directly.
+/// </para>
 /// </remarks>
 public interface IClock
 {

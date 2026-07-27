@@ -146,6 +146,33 @@ var service = new OrderService(clock);
 
 ---
 
+### SystemClock — TimeProvider Interop
+
+`SystemClock` (the production `IClock` implementation) internally sources `UtcNow` from an injected `System.TimeProvider` (shipped in the BCL since .NET 8) instead of calling `DateTimeOffset.UtcNow` directly. `IClock`'s own public contract — `UtcNow`, `Today` — is completely unchanged by this: `TimeProvider` is purely an internal implementation detail of `SystemClock`, never an alternative time source that domain/application call sites should reference directly.
+
+```csharp
+// Default — backed by TimeProvider.System (the real system clock). Behaviorally identical to
+// before this internal change; AddClock() still just registers this.
+services.AddClock(); // wires new SystemClock() as singleton IClock
+
+// Equivalent explicit form, if you construct it yourself:
+services.AddSingleton<IClock>(new SystemClock(TimeProvider.System));
+```
+
+A host that already has its own shared, custom `TimeProvider` registered — for coordinated simulation, deterministic replay, or a single time source shared with other `TimeProvider`-aware libraries in the process — can wire `SystemClock` to reuse that same instance instead of `TimeProvider.System`:
+
+```csharp
+// Register your shared custom TimeProvider once, at the composition root...
+services.AddSingleton<TimeProvider>(mySimulationTimeProvider);
+
+// ...then resolve it into SystemClock's constructor:
+services.AddSingleton<IClock>(sp => new SystemClock(sp.GetRequiredService<TimeProvider>()));
+```
+
+This package ships no dedicated DI extension for the `TimeProvider`-accepting constructor — the plain `AddSingleton` calls above are the sanctioned pattern, consistent with `IIdGenerator`'s own no-extension precedent above. `SK0001` (the analyzer flagging direct `DateTime.UtcNow`/`DateTimeOffset.UtcNow` usage) is unaffected: it still only needs to recognize `IClock` at call sites, never `TimeProvider`.
+
+---
+
 ### IIdGenerator — Time-Ordered Identifiers
 
 `IIdGenerator` is an opt-in alternative to calling `Guid.NewGuid()` directly when generating a new primary-key-shaped identifier. A fully-random UUID v4 (what `Guid.NewGuid()` produces) is a well-documented Postgres/SQL Server clustered/primary-key index anti-pattern: random insert points across the B-tree cause page splits and fragmentation as a table grows. The default implementation, `UuidV7IdGenerator`, generates RFC 9562 UUID version 7 values instead — a 48-bit millisecond timestamp in the high bits followed by random bits, so values generated close together in time sort close together, restoring sequential-insert locality while still requiring no central coordinator.
