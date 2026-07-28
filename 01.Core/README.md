@@ -775,6 +775,100 @@ features.IsEnabledAsync(Features.NewCheckoutFlow, Arg.Any<CancellationToken>())
 var service = new CheckoutService(features);
 ```
 
+### Feature Variants — Gradual Rollout
+
+Added in P-298/WO-049. `GetVariantAsync`/`GetVariantAsync<TContext>` bridge `Microsoft.FeatureManagement`'s variant/allocation support — weighted, named variants of a feature, not just on/off — the same way `IsEnabledAsync` bridges plain boolean evaluation. Both members return a neutral `FeatureVariant` (`.Name`, `.Configuration`); no `Microsoft.FeatureManagement` type ever appears on `IFeatureManager`'s surface. This is purely additive — the boolean `IsEnabledAsync` members above are completely unaffected.
+
+#### Configuration — the Microsoft Feature Management schema
+
+Plain boolean flags stay in the `FeatureManagement` section shown above. Weighted variants require `Microsoft.FeatureManagement`'s own [Microsoft Feature Management schema](https://github.com/microsoft/FeatureManagement/blob/main/Schema/FeatureManagement.v2.0.0.schema.json) — a `feature_management:feature_flags` array, distinct from and *in addition to* the `FeatureManagement` dictionary. Both schemas coexist in the same configuration and are resolved by the same `AddSharedKernelFeatureManagement(configuration)` call — no extra registration is needed, provided `configuration` is the application's **root** configuration (never a value already scoped to `configuration.GetSection("FeatureManagement")`; a pre-scoped section makes the `feature_management:feature_flags` schema unreachable, since it lives under an entirely different, unscoped root key):
+
+```json
+{
+  "FeatureManagement": {
+    "NewCheckoutFlow": true
+  },
+  "feature_management": {
+    "feature_flags": [
+      {
+        "id": "PricingExperiment",
+        "enabled": true,
+        "variants": [
+          { "name": "ControlGroup", "configuration_value": "control-config" },
+          { "name": "DiscountedPrice", "configuration_value": "discounted-config" }
+        ],
+        "allocation": {
+          "default_when_enabled": "ControlGroup",
+          "percentile": [ { "variant": "DiscountedPrice", "from": 0, "to": 25 } ]
+        }
+      }
+    ]
+  }
+}
+```
+
+The example above assigns roughly 25% of evaluated tenants to `DiscountedPrice` and the rest to `ControlGroup` — a classic percentage-based gradual rollout / A-B experiment.
+
+#### Percentage-Based Enablement Across Tenants
+
+```csharp
+public sealed class PricingService(IFeatureManager features)
+{
+    public async Task<decimal> GetPriceAsync(string tenantId, decimal basePrice, CancellationToken ct)
+    {
+        // The context (here, a stable tenant id) determines which percentile bucket the caller
+        // falls into. Repeated calls with the same tenantId always resolve to the same variant.
+        var variant = await features.GetVariantAsync("PricingExperiment", tenantId, ct);
+
+        return variant.Name switch
+        {
+            "DiscountedPrice" => basePrice * 0.9m,
+            _ => basePrice, // "ControlGroup", or FeatureVariant.Unassigned if unconfigured — same price
+        };
+    }
+}
+```
+
+`GetVariantAsync`'s no-context overload evaluates only the feature's `default_when_enabled`/`default_when_disabled` allocation (no percentile/user/group targeting is possible without a context):
+
+```csharp
+var variant = await features.GetVariantAsync("PricingExperiment", ct);
+```
+
+#### Deterministic Fallback — Never Throws
+
+An unconfigured feature, an unknown feature name, or a context that resolves to no allocation branch never throws — `GetVariantAsync` returns the documented sentinel `FeatureVariant.Unassigned` (`Name == "Unassigned"`, `Configuration == null`) instead:
+
+```csharp
+var variant = await features.GetVariantAsync("SomeFeatureThatDoesNotExist", ct);
+// variant == FeatureVariant.Unassigned — safe to branch on, never an exception
+```
+
+#### Declaring Variants — FeatureVariantDefinition
+
+`FeatureVariantDefinition` is the variant-allocation sibling of `FeatureDefinition` — a typed, discoverable declaration of a feature's variants and their relative weights. Like `FeatureDefinition`, it documents intent; it does not itself drive evaluation (the configured allocation in `appsettings.json`/App Configuration remains authoritative):
+
+```csharp
+public static class PricingExperimentVariants
+{
+    public static readonly FeatureVariantDefinition ControlGroup = new("ControlGroup", Weight: 75);
+    public static readonly FeatureVariantDefinition DiscountedPrice = new("DiscountedPrice", Weight: 25, Configuration: "10-percent-off");
+}
+```
+
+#### Context Determinism for Non-String Contexts
+
+`GetVariantAsync<TContext>`'s targeting identity is derived from `context?.ToString()`. A `string` context (a tenant id, a user id) is the most direct and predictable choice. A custom `TContext` works too, provided its `ToString()` override returns the stable identity you want to target on — without an override, every instance of that type collapses to the same targeting bucket (still deterministic, just not usefully distributed):
+
+```csharp
+public sealed record TenantContext(string TenantId)
+{
+    public override string ToString() => TenantId; // required for meaningful per-tenant distribution
+}
+```
+
+> **Caveat (non-blocking, flagged per this domain's AOT posture):** `Microsoft.FeatureManagement` 4.5.0 does not ship a full AOT-trimming manifest for *any* of its API surface (see the `SharedKernel.FeatureManagement.csproj` comment) — the variant/allocation API (`IVariantFeatureManager`) inherits this same pre-existing status, not a worse one. No new AOT gap was introduced by this phase; verify on each `Microsoft.FeatureManagement` upgrade as already documented for the boolean path.
+
 ---
 
 ## SharedKernel.Guards — Guard Clauses

@@ -398,16 +398,27 @@ IFeatureManager
     IsEnabledAsync<TContext>(string feature, TContext ctx, CancellationToken ct)      → bool
     GetVariantAsync(string feature, CancellationToken ct)                             → FeatureVariant
     GetVariantAsync<TContext>(string feature, TContext ctx, CancellationToken ct)     → FeatureVariant
-    — variant methods added P-298/WO-049; bridge Microsoft.FeatureManagement's IVariantFeatureManager
+    — variant methods implemented P-298/WO-049; bridge Microsoft.FeatureManagement's IVariantFeatureManager
       the same way IsEnabledAsync already bridges its plain boolean evaluation, without leaking any
       Microsoft.FeatureManagement type into this interface's public surface
     — the existing boolean IsEnabledAsync members and their behavior are completely unchanged (additive-only)
+    — GetVariantAsync<TContext> has NO generic per-TContext contextual-filter equivalent to
+      IsEnabledAsync<TContext> — confirmed via reflection against the real Microsoft.FeatureManagement 4.5.0
+      assembly: IVariantFeatureManager's only context-aware variant overload is fixed to a concrete
+      Microsoft.FeatureManagement.FeatureFilters.ITargetingContext (UserId + Groups), with no generic
+      counterpart. MicrosoftFeatureManagerAdapter bridges this by deriving the targeting UserId from
+      context?.ToString() — repeated calls with an equal context value are deterministic by construction,
+      but a TContext without a meaningful ToString() override collapses every instance of that type to the
+      same targeting bucket. A string context (a tenant id, a user id) is the most direct, predictable choice.
 
 FeatureVariant  (sealed record — P-298/WO-049)
     .Name                                                  → string           (caller-defined variant identifier, e.g. "ControlGroup" / "VariantB")
     .Configuration                                         → string?          (raw configuration payload for this variant, if any; caller deserializes to its own strongly-typed shape)
-    — a feature with no configured variants (or an unresolvable context) falls back to a deterministic,
-      documented default variant rather than throwing
+    .Unassigned                                            → FeatureVariant   (static sentinel — Name = "Unassigned", Configuration = null)
+    — a feature with no configured variants, an unresolvable allocation, or an unknown feature name falls
+      back to the FeatureVariant.Unassigned sentinel rather than throwing — mirrors Error.None's
+      "never use null for the empty case" convention; named after Microsoft.FeatureManagement's own
+      VariantAssignmentReason.None semantics ("variant allocation did not happen; no variant is assigned")
 
 FeatureDefinition  (sealed record)
     .Name                                                  → string
@@ -422,9 +433,19 @@ FeatureVariantDefinition  (sealed record — P-298/WO-049)
       a gradual-rollout/A-B-experiment feature, not a replacement for FeatureDefinition's boolean shape
 
 AddSharedKernelFeatureManagement(IConfiguration config)
-    → registers IFeatureManager backed by Microsoft.FeatureManagement; the variant path (GetVariantAsync)
-      requires no additional configuration beyond what Microsoft.FeatureManagement's own variant/allocation
-      configuration schema already needs
+    → registers IFeatureManager backed by Microsoft.FeatureManagement.IVariantFeatureManager (a superset of
+      the older Microsoft.FeatureManagement.IFeatureManager, confirmed via reflection to carry both the
+      boolean IsEnabledAsync members and the variant GetVariantAsync members — one injected dependency
+      covers the whole adapter); the variant path (GetVariantAsync) requires no additional configuration
+      beyond what Microsoft.FeatureManagement's own variant/allocation configuration schema already needs
+    — `config` MUST be the application's ROOT IConfiguration — confirmed empirically (P-298/WO-049):
+      Microsoft.FeatureManagement's ConfigurationFeatureDefinitionProvider resolves the legacy .NET-schema
+      flag dictionary ("FeatureManagement": {...}) and the Microsoft Feature Management variant/allocation
+      schema ("feature_management": { "feature_flags": [...] }, an entirely different, unscoped, snake_case
+      root key) independently, both relative to whatever IConfiguration instance it is given. Passing a
+      value already scoped to the "FeatureManagement" section (e.g. via config.GetSection("FeatureManagement"))
+      silently makes the variant schema unreachable — plain boolean flags still resolve either way, which is
+      exactly why an earlier version of this method's implementation carried this defect undetected
 ```
 
 ### `SharedKernel.Cryptography` — public surface
@@ -645,7 +666,8 @@ AddSharedKernelCompression(IConfiguration configuration)
 - `ResultTry` and `ResultCombine` are additive static classes in `SharedKernel.Core` — they must never require a change to `Result<T>`, `Result`, `ValidationResult`, `ValidationResult<T>`, `IHasSuccessFlag`, `IResultOfT<T>`, or `IFailureFactory<TSelf>`.
 - `AddValidatedOptions` must call `.ValidateOnStart()` — misconfigured apps must fail at startup, not at first access.
 - `IFeatureManager` is the only permitted feature-flag interface in consuming services — never inject `Microsoft.FeatureManagement.IFeatureManager` directly. This includes the variant/allocation path (P-298/WO-049): `GetVariantAsync` must never leak a `Microsoft.FeatureManagement` type (e.g. `Variant`, `VariantAssignmentReason`) through `IFeatureManager`'s public surface — always the neutral `FeatureVariant` record.
-- `IFeatureManager`'s variant surface (`GetVariantAsync`) is additive-only — the existing boolean `IsEnabledAsync` members and their behavior must never change as a side effect of adding variant support.
+- `IFeatureManager`'s variant surface (`GetVariantAsync`) is additive-only — the existing boolean `IsEnabledAsync` members and their behavior must never change as a side effect of adding variant support. `MicrosoftFeatureManagerAdapter` deliberately keeps discarding the caller-supplied `ct` on both `IsEnabledAsync` overloads even though the `IVariantFeatureManager` interface it is now built on technically accepts one where the previously-injected `IFeatureManager` did not — forwarding it would be an observable behavior change this rule forbids.
+- `AddSharedKernelFeatureManagement(configuration)` must always pass its `configuration` parameter through to `Microsoft.FeatureManagement`'s own `AddFeatureManagement(...)` call **unmodified** — never `configuration.GetSection("FeatureManagement")` or any other pre-scoped subsection. Confirmed empirically (P-298/WO-049): pre-scoping silently makes the Microsoft Feature Management variant/allocation schema (`feature_management:feature_flags`) unreachable with no error or warning, because it lives under a different, unscoped root key that a pre-scoped `IConfiguration` can no longer see.
 - Guard extensions return `Error?` — **null means the guard passed**, non-null means violation. Never use `Error.None` as the "passed" sentinel in guard returns; use actual `null` so callers can distinguish cleanly.
 - `Guard.Throw.*` methods are thin wrappers: call the matching `Against.*` extension, throw `DomainException(error)` if the result is non-null, otherwise return. No independent logic.
 - `IGuardClause` is a public marker interface with no members — `DefaultGuardClause` (the implementation) is `private sealed` to the `Guard` class. Callers must never reference `DefaultGuardClause` directly.
@@ -693,7 +715,9 @@ services.AddSingleton<IIdGenerator, UuidV7IdGenerator>();
 services.AddValidatedOptions<MyServiceOptions>(configuration.GetSection("MyService"));
 
 // Feature Management — IsEnabledAsync (boolean) and GetVariantAsync (weighted variant/gradual rollout,
-// P-298) both resolve through the same IFeatureManager registration.
+// P-298) both resolve through the same IFeatureManager registration. `configuration` MUST be the app's
+// root IConfiguration, never pre-scoped to "FeatureManagement" — a pre-scoped section silently hides the
+// Microsoft Feature Management variant/allocation schema ("feature_management:feature_flags").
 services.AddSharedKernelFeatureManagement(configuration);
 
 // Cryptography — registers IOneWayHasher, ISymmetricEncryptionService, IAsymmetricSignatureService,
@@ -729,7 +753,7 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 - `ResultTry` and `ResultCombine` are static classes — AOT-safe by default. `ResultTry.TryAsync`'s `async`/`await` body is ordinary compiler-generated async state-machine code, not a reflection-based construct, and remains fully AOT-safe.
 - All railway extension methods are static — AOT-safe by default. Async overloads use `Task` continuation patterns to avoid AOT-hostile constructs.
 - `Microsoft.Extensions.Options` is AOT-compatible as of .NET 8+ — verify on each upgrade.
-- `Microsoft.FeatureManagement` — verify AOT status on each major upgrade, including the variant/allocation API surface `GetVariantAsync` (P-298) bridges; the `IFeatureManager` wrapper allows a swap if needed. Flag (do not block on) any AOT gap found in the variant API specifically.
+- `Microsoft.FeatureManagement` — verify AOT status on each major upgrade, including the variant/allocation API surface `GetVariantAsync` (P-298) bridges; the `IFeatureManager` wrapper allows a swap if needed. Flag (do not block on) any AOT gap found in the variant API specifically. P-298 implementation confirmed no new gap: `IVariantFeatureManager` inherits the same pre-existing "no full AOT-trimming manifest" status as the rest of `Microsoft.FeatureManagement` 4.5.0, not a worse one.
 - All BCL extension methods are static — AOT-safe by default.
 - `IGuardClause` and all guard extension methods are static — AOT-safe. `DefaultGuardClause` is sealed, no virtual dispatch.
 - `EqualityComparer<T>.Default` used in `Default<T>` guard is AOT-safe — it uses static dispatch via generic specialization in .NET 10.
@@ -748,7 +772,7 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 - `SharedKernel.Core.Tests/` — exceptions, railway extensions, BCL extensions, `ResultTry`/`ResultTry.TryAsync` (delegate success path, thrown-exception-to-`Error.Unexpected` translation including a nested/flattened `AggregateException` case, custom exception-mapper overload, never-rethrows guarantee), `ResultCombine` (all-success non-generic and generic variants, single-failure and all-failure variants verifying every collected `Error` surfaces — not just the first — for both the non-generic `Result` and generic `Result<T>` overloads)
 - `SharedKernel.Guards.Tests/` — guard functional path (Against.*), guard throw path (Throw.*), boundary theories
 - `SharedKernel.Configuration.Tests/` — ValidatedOptions eager validation
-- `SharedKernel.FeatureManagement.Tests/` — IFeatureManager enable/disable, context variant, `GetVariantAsync` deterministic variant assignment given a fixed context/seed, predictable fallback for an unconfigured feature, and a regression check that the existing boolean `IsEnabledAsync` surface is unchanged
+- `SharedKernel.FeatureManagement.Tests/` — IFeatureManager enable/disable, context variant, `GetVariantAsync` deterministic variant assignment given a fixed context/seed, predictable fallback for an unconfigured feature (`FeatureVariant.Unassigned`), a regression check that the existing boolean `IsEnabledAsync` surface is unchanged, and a reflection-based test asserting `IFeatureManager`'s public surface never exposes a `Microsoft.FeatureManagement` type
 - `SharedKernel.Cryptography.Tests/` — `IOneWayHasher` hash/verify roundtrip and rehash-needed detection across iteration-count changes, covering at least one password-shaped secret and one non-password-shaped secret (e.g., an API key string) to prove the contract is genuinely secret-agnostic; `ISymmetricEncryptionService` encrypt/decrypt roundtrip, tamper detection (flipped ciphertext/tag byte must fail `Decrypt`), and unknown/retired `KeyId` handling; `IAsymmetricSignatureService` sign/verify roundtrip for both RSA and ECDSA with wrong-key and tampered-data failure cases; `IHmacSigner` sign/verify roundtrip and tamper detection; `ISecureRandomGenerator` output length and non-repetition across calls; `IContentHasher` deterministic digest for identical input, differing digest for a single-byte change, streaming (`Stream`/async) vs. in-memory (`byte[]`) overloads producing identical output, and hex/Base64 encoding correctness via `ContentHasherExtensions`; DI registration sanity for `AddSharedKernelCryptography` (now covering six registered services)
 - `SharedKernel.Compression.Tests/` — roundtrip for both `BrotliPayloadCompressor` and `GZipPayloadCompressor` (byte[] and stream overloads, sync and async); bit-level corruption and unrecognized/garbage input must surface as a `Result`/`Result<byte[]>` failure and never an unhandled exception for both algorithms — this is reliably true and must be asserted as a shared contract test; truncation detection is **not** reliably true for both algorithms (see Implementation Rules) and must be asserted per-algorithm instead — gzip: prefix-truncation surfaces as failure via its magic number; Brotli: assert only that no exception propagates, never that `IsFailure` is `true`; streaming vs. in-memory overloads produce equivalent decompressed output; DI registration sanity for `AddSharedKernelCompression` (unkeyed Brotli default + both keyed singletons resolve, invalid `CompressionOptions.Level` throws at `IHost.StartAsync()`)
 - Railway-extension chains must be covered: map → bind → match over both success and failure paths.
@@ -792,3 +816,4 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 - [2026-07-27] P-294 closed (WO-049) — `WellKnownTagKeys` implemented in `SharedKernel.Primitives/Propagation/WellKnownTagKeys.cs` exactly matching the D-35 locked design above (no interface/type/DI-shape correction needed — the pre-written Interface Contracts entry already matched shipped reality). `WellKnownPropagationConstantsTests` extended with 4 new pinning tests (one per constant). `01.Core/README.md`'s "Well-Known Propagation Constants" section extended with a `WellKnownTagKeys` usage example and its heading/summary widened to name all three registries. 129/129 `SharedKernel.Primitives.Tests` passing, 0 regressions; `SK.01.P294` now fully `●` (core-phase-implementer)
 - [2026-07-27] P-296 closed (WO-049) — `IContentHasher`/`Sha256ContentHasher`/`ContentHasherExtensions` implemented in `SharedKernel.Cryptography/Hashing/` exactly matching the D-37 locked design above (no interface/type/DI-shape correction needed — the pre-written Interface Contracts entry already matched shipped reality). `AddSharedKernelCryptography` now registers `IContentHasher` as its sixth singleton. `Sha256ContentHasherTests` added (determinism, single-byte-change divergence, `byte[]`/`Stream`/async-`Stream` parity, null-argument guards, cancellation, hex/Base64 encoding correctness, and a known-answer test against the well-known empty-input SHA-256 digest); two new DI sanity tests added to `CryptographyServiceCollectionExtensionsTests`. `01.Core/README.md` gained an "IContentHasher — Non-Secret Content Fingerprinting" section placed directly after "One-Way Hashing" for contrast with `IOneWayHasher`. 73/73 `SharedKernel.Cryptography.Tests` passing, 0 build warnings; `SK.01.P296` now fully `●` (core-phase-implementer)
 - [2026-07-27] P-297 closed (WO-049) — seventh package `SharedKernel.Compression` shipped in full: `IPayloadCompressor`/`BrotliPayloadCompressor`/`GZipPayloadCompressor`/`CompressionOptions`/`AddSharedKernelCompression` implemented exactly per the locked D-38→D-40 design, with two empirically-verified corrections to that design's assumed BCL behavior (both now reflected in the Interface Contracts and Implementation Rules sections above): (1) `BrotliStream`'s decoder throws `InvalidOperationException`, not `InvalidDataException`, for corrupt input — both compressors now catch `InvalidDataException or InvalidOperationException`; (2) neither `BrotliStream` nor `GZipStream` reliably detects suffix-only truncation as an error (confirmed BCL characteristic — `GZipStream` never validates its trailing CRC32/ISIZE footer on read, `BrotliStream` has no magic-number header at all), so `SharedKernel.Compression.Tests` asserts truncation-detection per-algorithm rather than as one shared contract test. 46/46 `SharedKernel.Compression.Tests` + 46/46 `SharedKernel.Consumer.Tests` passing, 0 build warnings under `GenerateDocumentationFile`; packed to `./nupkgs` at `1.0.0`. `01.Core/README.md` gained a "SharedKernel.Compression" usage section including a "note on truncation detection". `SK.01.P297` now fully `●` (11/11) (core-phase-implementer)
+- [2026-07-28] P-298 closed (WO-049) — `FeatureVariant` (with the named `Unassigned` deterministic-fallback sentinel), `FeatureVariantDefinition`, and `IFeatureManager.GetVariantAsync`/`GetVariantAsync<TContext>` implemented in `SharedKernel.FeatureManagement` exactly per the locked D-41 design, via a `MicrosoftFeatureManagerAdapter` rewrite onto `Microsoft.FeatureManagement.IVariantFeatureManager` — confirmed by reflection against the real `4.5.0` assembly to be a strict superset of the previously-injected `Microsoft.FeatureManagement.IFeatureManager`, carrying both the boolean and variant members, so one injected dependency now serves the whole adapter with no additional DI registration needed (Microsoft's own `AddFeatureManagement(...)` already registers its concrete `FeatureManager` against both interfaces). Found and fixed a real, previously-shipped defect during implementation, confirmed via a throwaway console harness against the real package rather than assumed from prose: `AddSharedKernelFeatureManagement` was passing `configuration.GetSection("FeatureManagement")` into `Microsoft.FeatureManagement`'s own `AddFeatureManagement`, which silently made the variant/allocation configuration schema (`feature_management:feature_flags`, a *different*, unscoped, snake_case root key per Microsoft's own schema) completely unreachable — plain boolean flags resolved fine regardless, which is exactly why this went unnoticed. Fixed by passing the root `IConfiguration` instead; zero consumer-visible signature change, fully backward compatible. Also confirmed empirically: `GetVariantAsync<TContext>` has no generic per-`TContext` contextual-filter equivalent in `Microsoft.FeatureManagement` — the variant API is fixed to a concrete `ITargetingContext` (UserId+Groups); `MicrosoftFeatureManagerAdapter` bridges this via `context?.ToString()`, documented explicitly. The two pre-existing `IsEnabledAsync` members deliberately keep discarding `ct` exactly as before, even though the newly-injected interface now technically accepts one, to guarantee byte-for-byte-unchanged behavior per this phase's hard rule. Interface Contracts, Implementation Rules, DI Registration, AOT Compatibility, and Test Rules sections all updated with these findings. 29/29 `SharedKernel.FeatureManagement.Tests` passing (9 pre-existing + 20 new); `SK.01.P298` now fully `●` (5/5) — every WO-049 phase inside `01.Core`'s own jurisdiction (P-292→P-298) is complete (core-phase-implementer)
