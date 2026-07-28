@@ -25,6 +25,15 @@ namespace SharedKernel.Application.Behaviors.FireAndForget;
 /// loop continues consuming subsequent commands.
 /// </para>
 /// <para>
+/// A handler that returns <see cref="SharedKernel.Primitives.Results.Result.Failure(SharedKernel.Primitives.Errors.Error)"/> — a deliberate business-rule failure,
+/// not a thrown exception — is likewise discarded per the fire-and-forget contract, but is
+/// additionally logged at <c>Warning</c> level (EventId 5112) so the outcome remains observable
+/// instead of vanishing silently. This is distinct from the <c>Error</c>-level handler-fault log
+/// above: a thrown exception is an unexpected fault the handler never anticipated, while a
+/// <c>Result.Failure</c> is an expected, foreseeable outcome the handler evaluated and returned
+/// normally.
+/// </para>
+/// <para>
 /// <b>Trusted dispatch marker (WO-039, P-238):</b> the internal <c>ISender.Send</c> call is wrapped
 /// in <see cref="FireAndForgetDispatchContext.EnterTrustedDispatch"/>'s disposable scope so
 /// <see cref="FireAndForgetGuardBehavior{TRequest,TResponse}"/> permits this dispatch through
@@ -54,7 +63,11 @@ public sealed partial class FireAndForgetBackgroundConsumer(
                 // guarantees the marker is reset on scope exit even if Send throws.
                 using (FireAndForgetDispatchContext.EnterTrustedDispatch())
                 {
-                    await sender.Send(command, stoppingToken).ConfigureAwait(false);
+                    var result = await sender.Send(command, stoppingToken).ConfigureAwait(false);
+                    if (result.IsFailure)
+                    {
+                        LogCommandFailed(logger, command.GetType().FullName ?? command.GetType().Name, result.Error.Code);
+                    }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -76,4 +89,11 @@ public sealed partial class FireAndForgetBackgroundConsumer(
         Level = LogLevel.Error,
         Message = "Fire-and-forget command {CommandType} faulted and its result was discarded.")]
     private static partial void LogCommandFaulted(ILogger logger, Exception exception, string commandType);
+
+    /// <summary>Handler-failure log (EventId 5112, Warning) — the dispatched command's handler returned a <c>Result.Failure</c> outcome; the result is discarded (fire-and-forget contract), the background loop continues.</summary>
+    [LoggerMessage(
+        EventId = ApplicationBehaviorsLoggingEventIds.LogCommandFailed,
+        Level = LogLevel.Warning,
+        Message = "Fire-and-forget command {CommandType} completed with a failure result ({ErrorCode}) and the result was discarded.")]
+    private static partial void LogCommandFailed(ILogger logger, string commandType, string errorCode);
 }

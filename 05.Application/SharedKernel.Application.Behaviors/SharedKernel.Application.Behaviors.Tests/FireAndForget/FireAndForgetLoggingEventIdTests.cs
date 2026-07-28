@@ -14,7 +14,9 @@ namespace SharedKernel.Application.Behaviors.Tests.FireAndForget;
 /// Verifies (WO-041, T-62) that <see cref="ChannelFireAndForgetDispatcher"/>'s full-channel drop
 /// log carries <c>EventId</c> 5110 and <see cref="FireAndForgetBackgroundConsumer"/>'s
 /// handler-fault log carries <c>EventId</c> 5111, after the P-253 <c>[LoggerMessage]</c>
-/// authoring-mechanism retrofit.
+/// authoring-mechanism retrofit. Also verifies (WO-049, P-299 candidate follow-up / SK0030 fix)
+/// that <see cref="FireAndForgetBackgroundConsumer"/>'s handler-<c>Result.Failure</c> log carries
+/// <c>EventId</c> 5112, and that a successful handler never logs it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -60,6 +62,7 @@ public sealed class FireAndForgetLoggingEventIdTests
 
     private sealed record TrackableCommand(string Id) : IFireAndForgetCommand;
     private sealed record ThrowingCommand(string Id) : IFireAndForgetCommand;
+    private sealed record FailingCommand(string Id) : IFireAndForgetCommand;
 
     private sealed class TrackableCommandHandler(SemaphoreSlim gate) : IRequestHandler<TrackableCommand, Result>
     {
@@ -76,6 +79,16 @@ public sealed class FireAndForgetLoggingEventIdTests
         {
             gate.Release();
             throw new InvalidOperationException($"Handler for {request.Id} exploded.");
+        }
+    }
+
+    private sealed class FailingCommandHandler(SemaphoreSlim gate) : IRequestHandler<FailingCommand, Result>
+    {
+        public Task<Result> Handle(FailingCommand request, CancellationToken ct)
+        {
+            gate.Release();
+            return Task.FromResult(
+                Result.Failure(SharedKernel.Primitives.Errors.Error.BusinessRule("test.deliberate-failure", $"Handler for {request.Id} deliberately failed.")));
         }
     }
 
@@ -157,5 +170,93 @@ public sealed class FireAndForgetLoggingEventIdTests
         SharedRecordingSink.Records.Should().Contain(
             r => r.Category == "FireAndForgetBackgroundConsumer" && r.Level == LogLevel.Error && r.EventId.Id == 5111,
             "the handler-fault log must carry EventId 5111");
+    }
+
+    /// <summary>
+    /// Verifies the SK0030 real-source-audit fix (00.Governance WO-049 P-299 candidate follow-up):
+    /// a fire-and-forget command whose handler returns <c>Result.Failure</c> — a deliberate
+    /// business-rule outcome, not a thrown exception — is no longer silently discarded with zero
+    /// telemetry. It must now produce a <c>Warning</c> log at EventId 5112.
+    /// </summary>
+    [Fact]
+    public async Task FireAndForgetBackgroundConsumer_HandlerReturnsFailure_LogsWarningWithEventId5112()
+    {
+        var failureGate = new SemaphoreSlim(0, 1);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(RecordingLogger<>));
+        services.AddScoped<IRequestHandler<FailingCommand, Result>>(_ => new FailingCommandHandler(failureGate));
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<FireAndForgetLoggingEventIdTests>());
+
+        services.AddSharedKernelApplicationBehaviors()
+            .AddFireAndForgetDispatch()
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+        var dispatcher = provider.GetRequiredService<IFireAndForgetDispatcher>();
+        var consumer = provider.GetRequiredService<IEnumerable<IHostedService>>()
+            .OfType<FireAndForgetBackgroundConsumer>()
+            .Single();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await consumer.StartAsync(cts.Token);
+
+        var recordCountBefore = SharedRecordingSink.Records.Count;
+
+        await dispatcher.EnqueueAsync(new FailingCommand("f1"), cts.Token);
+        var processed = await failureGate.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
+        processed.Should().BeTrue("consumer must have processed the failing command");
+
+        // Give the consumer's post-Send branch a moment to record the log after the gate release.
+        await Task.Delay(100, CancellationToken.None);
+
+        await consumer.StopAsync(CancellationToken.None);
+
+        SharedRecordingSink.Records.Skip(recordCountBefore).Should().Contain(
+            r => r.Category == "FireAndForgetBackgroundConsumer" && r.Level == LogLevel.Warning && r.EventId.Id == 5112,
+            "a handler returning Result.Failure must log a warning with EventId 5112");
+    }
+
+    /// <summary>
+    /// Regression: a fire-and-forget command whose handler returns <c>Result.Success</c> must
+    /// produce no EventId 5112 warning — the new failure-observability log is additive and must
+    /// never fire for a genuinely successful outcome.
+    /// </summary>
+    [Fact]
+    public async Task FireAndForgetBackgroundConsumer_HandlerReturnsSuccess_DoesNotLogEventId5112()
+    {
+        var successGate = new SemaphoreSlim(0, 1);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(RecordingLogger<>));
+        services.AddScoped<IRequestHandler<TrackableCommand, Result>>(_ => new TrackableCommandHandler(successGate));
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<FireAndForgetLoggingEventIdTests>());
+
+        services.AddSharedKernelApplicationBehaviors()
+            .AddFireAndForgetDispatch()
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+        var dispatcher = provider.GetRequiredService<IFireAndForgetDispatcher>();
+        var consumer = provider.GetRequiredService<IEnumerable<IHostedService>>()
+            .OfType<FireAndForgetBackgroundConsumer>()
+            .Single();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await consumer.StartAsync(cts.Token);
+
+        var recordCountBefore = SharedRecordingSink.Records.Count;
+
+        await dispatcher.EnqueueAsync(new TrackableCommand("s1"), cts.Token);
+        var processed = await successGate.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
+        processed.Should().BeTrue("consumer must have processed the successful command");
+
+        await Task.Delay(100, CancellationToken.None);
+
+        await consumer.StopAsync(CancellationToken.None);
+
+        SharedRecordingSink.Records.Skip(recordCountBefore).Should().NotContain(
+            r => r.Category == "FireAndForgetBackgroundConsumer" && r.EventId.Id == 5112,
+            "a successful handler must never log the Result.Failure warning");
     }
 }

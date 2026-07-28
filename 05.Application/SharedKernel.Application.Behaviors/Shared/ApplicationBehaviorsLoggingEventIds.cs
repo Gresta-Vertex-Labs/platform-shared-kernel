@@ -24,7 +24,7 @@ namespace SharedKernel.Application.Behaviors.Shared;
 /// Every field is <see langword="const int"/> — <c>[LoggerMessage(EventId = ...)]</c> requires a
 /// compile-time constant expression, so anything short of <see langword="const"/> (e.g.
 /// <see langword="static readonly"/>) would fail to compile at every call site. Unused headroom
-/// within each sub-range (<c>5104</c>-<c>5109</c>, <c>5112</c>-<c>5119</c>, <c>5124</c>-<c>5129</c>)
+/// within each sub-range (<c>5104</c>-<c>5109</c>, <c>5113</c>-<c>5119</c>, <c>5124</c>-<c>5129</c>)
 /// is reserved for future log statements in the same file without renumbering anything already
 /// shipped.
 /// </para>
@@ -52,6 +52,14 @@ internal static class ApplicationBehaviorsLoggingEventIds
 
     /// <summary><see cref="FireAndForget.FireAndForgetBackgroundConsumer"/>'s handler-fault log (Error).</summary>
     internal const int LogCommandFaulted = LoggingEventIdRanges.Application + 111;
+
+    /// <summary>
+    /// <see cref="FireAndForget.FireAndForgetBackgroundConsumer"/>'s handler-failure log (Warning) —
+    /// the dispatched command's handler returned <c>Result.Failure</c> (a deliberate business-rule
+    /// outcome, not a thrown exception). Added to close the SK0030 real-source-audit finding that this
+    /// outcome previously produced zero telemetry (WO-049, P-299 candidate follow-up).
+    /// </summary>
+    internal const int LogCommandFailed = LoggingEventIdRanges.Application + 112;
 
     // ---- Streaming/StreamLoggingBehavior.cs (5120-5129) ----
 
