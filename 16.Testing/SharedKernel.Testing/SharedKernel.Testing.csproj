@@ -112,6 +112,25 @@
       brain ratifies explicitly.
     -->
     <ProjectReference Include="..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" />
+    <!--
+      Cryptography fakes (S-37, P-300/WO-049): FakeOneWayHasher, FakeSecureRandomGenerator,
+      FakeEncryptionKeyProvider, FakeAsymmetricKeyProvider, FakeSymmetricEncryptionService,
+      FakeAsymmetricSignatureService, FakeHmacSigner (all Cryptography/). Unlike every prior
+      design-ahead-of-schedule Scaffold reference in this domain's history, SharedKernel.Cryptography
+      is already fully Published (WO-034) — this reference resolves to real, compiled types
+      immediately for seven of the eight planned Cryptography/ fakes. Only FakeContentHasher
+      (needs IContentHasher, 01.Core's own SK.01.P296) remains blocked — that gap is a missing
+      standalone interface, not an empty project, so it does not affect this reference at all.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <!--
+      FeatureManagement fake (S-38, P-300/WO-049): FakeFeatureManager (FeatureManagement/). The
+      reference itself resolves to real, compiled types today, but FakeFeatureManager cannot be
+      written against it until IFeatureManager.GetVariantAsync/GetVariantAsync&lt;TContext&gt; ship
+      (01.Core's own SK.01.P298) — a missing interface member blocks the whole type, not merely a
+      call site.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj" />
   </ItemGroup>
 
   <ItemGroup>
