@@ -59,14 +59,23 @@
 | `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | All tasks in Phase: RedisHashExtraction are `●` | P-143 |
 | `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | All tasks in Phase: RedisPubSubExtraction are `●` | P-144 |
 | `SK.02.LoggingRetrofit` | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | All tasks in Phase: LoggingRetrofit are `●` | P-252 |
+| `SK.02.NuGetPackagingParity` | Phase 38 (NuGet Packaging & Consumer-Verify Parity for the 7-Package Topology) | All tasks in Phase: NuGetPackagingParity are `●` | P-301 |
+| `SK.02.CrossInstanceTagInvalidation` | Phase 39 (Cross-Instance Tag-Based Cache Invalidation over the L2 Redis Backplane) | All tasks in Phase: CrossInstanceTagInvalidation are `●` | P-302 |
+| `SK.02.BatchOperationsParallelization` | Phase 40 (Parallelize Batch Cache Operations Under the L2 Redis Backplane) | All tasks in Phase: BatchOperationsParallelization are `●` | P-303 |
+| `SK.02.OtelTracingSpans` | Phase 41 (Distributed Tracing ActivitySource Spans for Cache Read/Write Operations) | All tasks in Phase: OtelTracingSpans are `●` | P-304 |
 
 ---
 
 ## Active Work
 
-_Nothing in progress — all domains at ○ Not Started._
+_All 37 prior phases (WO-006 + WO-007 + WO-023 + WO-041) are complete. Four new phases (38–41, WO-050) are freshly planned below — all tasks at `○` Not Started, none yet dispatched to `caching-phase-implementer`._
 
-_All 37 phases (WO-006 + WO-007 + WO-023 + WO-041) are now complete._
+| Task | Phase Key | Package | State |
+|------|-----------|---------|:-----:|
+| NP-01→NP-12 | SK.02.NuGetPackagingParity | All 7 packages + consumer-verify | ○ |
+| CTI-01→CTI-10 | SK.02.CrossInstanceTagInvalidation | SharedKernel.Caching.Redis, .FusionCache | ○ |
+| BP-01→BP-10 | SK.02.BatchOperationsParallelization | SharedKernel.Caching.FusionCache, .Redis | ○ |
+| OT-01→OT-09 | SK.02.OtelTracingSpans | SharedKernel.Caching.FusionCache | ○ |
 
 <!--
 Format when active — replace placeholder with table:
@@ -92,15 +101,18 @@ Format when blocked — replace placeholder with table:
 
 ## Package Board
 
+> **Correction (this pass):** the five rows below previously read "Phase 37 (◐ pending)" — stale since Phase 37 (LoggingRetrofit) completed on 2026-07-10 (see Overall Progress: 12/12 `●`) and was never propagated back to this table. Corrected here while adding the four new WO-050 phases (38–41) below.
+
 | Package | Current Phase | State | Notes |
 |---------|--------------|:-----:|-------|
-| `SharedKernel.Caching.Abstractions` | Phase 31 (complete) | `●` | All 31 phases of WO-006/WO-007 complete; no contract changes planned in WO-023 |
-| `SharedKernel.Caching.FusionCache` | Phase 37 (◐ pending) | `◐` | All 31 phases of WO-006/WO-007 complete. Phase 37 (P-252): `CacheWarmupHostedService`'s 8 direct `ILogger` calls and `FusionCacheService`'s existing `EventId` 1001-1005 (colliding with `01.Core`'s reserved block) need retrofit to `LoggingEventIdRanges.Caching`-based `EventId`s |
-| `SharedKernel.Caching.Redis` | Phase 33 (complete) | `●` | `AddRedisL2` now sources `IConnectionMultiplexer` and the optional circuit breaker `ResiliencePipeline` from `.Redis.Core` (Ph.32) via `AddRedisConnection`/`AddRedisCircuitBreaker`; `RedisL2Options.CircuitBreaker` retyped to `RedisCircuitBreakerOptions` (Core); 154 tests passing. Carries no logging call sites — unaffected by Phase 37 |
-| `SharedKernel.Caching.Redis.Core` | Phase 37 (◐ pending) | `◐` | Phase 32 complete — `AddRedisConnection`/`AddRedisCircuitBreaker`, `RedisConnectionHealthTracker`, `RedisConnectionOptions`, `RedisCircuitBreakerOptions`; 33 tests passing; dependency root for `.Redis`/`.DistributedLocking`/`.HashStore`/`.PubSub`. Phase 37 (P-252): `RedisConnectionHealthTracker`'s `EventId` 4001/4002 collide with `.Redis.PubSub`'s `CacheInvalidationReceiver` and need retrofit |
-| `SharedKernel.Caching.Redis.DistributedLocking` | Phase 37 (◐ pending) | `◐` | Phase 34 complete — `RedLockDistributedLockService`, `RedLockRenewableLock` + `KeepAliveAsync`, `RedisLockOptions`, `AddRedisDistributedLocking`; sources `IConnectionMultiplexer` via `AddRedisConnection` from `.Redis.Core`; 41 tests passing. Phase 37 (P-252): 13 `EventId`s across both files need retrofit into this package's own sub-block |
-| `SharedKernel.Caching.Redis.HashStore` | Phase 35 (complete) | `●` | New package — extracted from `SharedKernel.Caching.Redis`: `IRedisHashService`, `ITypedHashStore<T>`. Carries no logging call sites — unaffected by Phase 37 |
-| `SharedKernel.Caching.Redis.PubSub` | Phase 37 (◐ pending) | `◐` | Phase 36 complete — `IRedisChannelService`, `ICacheInvalidationBus`, receiver. Phase 37 (P-252): `RedisChannelService`'s `EventId` 3001-3005 collide with `03.Domain`'s reserved block, `CacheInvalidationReceiver`'s `EventId` 4001-4005 collide with `.Redis.Core`, and `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define` delegate needs conversion to the attribute pattern |
+| `SharedKernel.Caching.Abstractions` | Phase 38 (○ pending) | `◐` | All 31 phases of WO-006/WO-007 complete; no contract changes in WO-023 or Phase 37 (no logging call sites possible — zero infra deps). Phase 38 (P-301): minimal NuGet metadata today — needs full parity block + `PackageReadmeFile`/`README.md` |
+| `SharedKernel.Caching.FusionCache` | Phase 38/39/40/41 (○ pending) | `◐` | All 31 phases of WO-006/WO-007 complete; Phase 37 (P-252) logging retrofit complete. Phase 38 (P-301): README already exists, only consumer-verify/pack-clean concerns. Phase 39 (P-302): may need a cache-builder-wiring fix if cross-instance tag propagation reveals a gap. Phase 40 (P-303): `GetManyAsync`/`SetManyAsync` sequential-loop → bounded-concurrent fix. Phase 41 (P-304): new `ActivitySource` alongside the existing Phase 31 `Meter` |
+| `SharedKernel.Caching.Redis` | Phase 39/40 (○ pending) | `◐` | Phase 33 complete — `AddRedisL2` sources `IConnectionMultiplexer`/circuit breaker from `.Redis.Core`; 154 tests passing; no logging call sites, unaffected by Phase 37. README already exists (Phase 38 unaffected here). Phase 39 (P-302): new cross-instance tag-invalidation test, possible backplane-wiring fix. Phase 40 (P-303): retires dead `IRedisL2BatchService`/`RedisL2BatchService` |
+| `SharedKernel.Caching.Redis.Core` | Phase 38 (○ pending) | `◐` | Phase 32 complete — `AddRedisConnection`/`AddRedisCircuitBreaker`, `RedisConnectionHealthTracker`; 33 tests passing; dependency root for `.Redis`/`.DistributedLocking`/`.HashStore`/`.PubSub`. Phase 37 (P-252) logging retrofit complete (`EventId` 4001/4002 collision resolved). Phase 38 (P-301): metadata already complete, needs `PackageReadmeFile`/`README.md` |
+| `SharedKernel.Caching.Redis.DistributedLocking` | Phase 38 (○ pending) | `◐` | Phase 34 complete; Phase 37 (P-252) logging retrofit complete (13 `EventId`s renumbered into this package's own sub-block). Phase 38 (P-301): metadata already complete, needs `PackageReadmeFile`/`README.md` |
+| `SharedKernel.Caching.Redis.HashStore` | Phase 38 (○ pending) | `◐` | Phase 35 complete — `IRedisHashService`, `ITypedHashStore<T>`; no logging call sites, unaffected by Phase 37. Phase 38 (P-301): metadata already complete, needs `PackageReadmeFile`/`README.md` |
+| `SharedKernel.Caching.Redis.PubSub` | Phase 38 (○ pending) | `◐` | Phase 36 complete; Phase 37 (P-252) logging retrofit complete (`RedisChannelService`/`CacheInvalidationReceiver` renumbered, `RedisCacheInvalidationBus` converted to `[LoggerMessage]`). Phase 38 (P-301): metadata already complete, needs `PackageReadmeFile`/`README.md` |
+| `consumer-verify` (tooling, not shipped) | Phase 38 (○ pending) | `○` | Currently broken — imports retired namespaces and references the retired `SharedKernel.Caching`/`SharedKernel.Caching.Redis` v1.0.0 `PackageId`s (Phase 14 rename); does not compile. Phase 38 (P-301): full rebuild against the current 7-package topology via real `IHost.StartAsync()` |
 
 ---
 
@@ -2487,6 +2499,328 @@ Close the two confirmed, live cross-domain/intra-domain `EventId` collisions thi
 
 ---
 
+## Phase: NuGetPackagingParity <!-- phase-key: SK.02.NuGetPackagingParity -->
+
+> Bring all 7 shipped packages' NuGet packaging metadata up to the bar already established by `08.Storage`/`09.Search` (full `PackageId`/`Version`/`Authors`/`Company`/`Product`/`Description`/`PackageTags`/`PackageLicenseExpression`/`PackageReadmeFile`/`RepositoryType`/`RepositoryUrl`/`PackageProjectUrl`/`Copyright`/`GenerateDocumentationFile`/`IncludeSymbols`/`SymbolPackageFormat`), author the five missing `README.md` files, and rebuild `02.Caching/consumer-verify` from scratch against the current post-WO-023 seven-package topology.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| NP-01 | Bring `SharedKernel.Caching.Abstractions.csproj`'s NuGet metadata block up to full parity (add `Company`, `Product`, `PackageLicenseExpression=MIT`, `PackageReadmeFile`, `RepositoryType=git`, `RepositoryUrl`, `PackageProjectUrl`, `Copyright`, `GenerateDocumentationFile=true`, `IncludeSymbols=true`, `SymbolPackageFormat=snupkg`); also fix the pre-existing mangled em-dash character encoding (`â€”`) in its two inline comments while the file is open for this edit | SharedKernel.Caching.Abstractions | ○ |
+| NP-02 | Author `SharedKernel.Caching.Abstractions/README.md` (purpose, install snippet, minimal `ICacheService`/`CachePolicy` usage sample) and wire `<PackageReadmeFile>README.md</PackageReadmeFile>` + `<None Include="README.md" Pack="true" PackagePath="\" />` | SharedKernel.Caching.Abstractions | ○ |
+| NP-03 | Author `SharedKernel.Caching.Redis.Core/README.md` and wire `PackageReadmeFile` + `None Include` (metadata block otherwise already complete — Phase 32) | SharedKernel.Caching.Redis.Core | ○ |
+| NP-04 | Author `SharedKernel.Caching.Redis.DistributedLocking/README.md` and wire `PackageReadmeFile` + `None Include` (metadata block otherwise already complete — Phase 34) | SharedKernel.Caching.Redis.DistributedLocking | ○ |
+| NP-05 | Author `SharedKernel.Caching.Redis.HashStore/README.md` and wire `PackageReadmeFile` + `None Include` (metadata block otherwise already complete — Phase 35) | SharedKernel.Caching.Redis.HashStore | ○ |
+| NP-06 | Author `SharedKernel.Caching.Redis.PubSub/README.md` and wire `PackageReadmeFile` + `None Include` (metadata block otherwise already complete — Phase 36) | SharedKernel.Caching.Redis.PubSub | ○ |
+| NP-07 | Run `dotnet pack` for all 7 packages into the local `nupkgs` feed; confirm zero `NU5039` (missing readme file) / `NU5128` (missing dependency-group assets) warnings across all 7 `.nupkg` outputs | All 7 packages | ○ |
+| NP-08 | Rebuild `consumer-verify/SharedKernel.Caching.ConsumerVerify.csproj`: replace the two stale `PackageReference`s (`SharedKernel.Caching` / `SharedKernel.Caching.Redis`, both retired at the Phase 14 rename) with all 7 current `PackageId`s at their current packed versions; add `Microsoft.Extensions.Hosting` (real `IHost`) and `Testcontainers.Redis` (ephemeral Redis for the four Redis-backed surfaces) | consumer-verify | ○ |
+| NP-09 | Rewrite `consumer-verify/Program.cs` from scratch against current namespaces: five `Surface_*` functions (L1-only, L1+L2, locking-only, hash-store-only, pub/sub-only), each composing DI, calling real `IHost.StartAsync()` (never `BuildServiceProvider()` alone), and resolving/exercising the relevant contract — mirroring `08.Storage/consumer-verify/Program.cs`'s `Surface_*`/`Verify()` structure | consumer-verify | ○ |
+| NP-10 | Run the rebuilt `consumer-verify` end-to-end against the freshly packed local feed; confirm all 5 surfaces pass and the process exits 0 | consumer-verify | ○ |
+| NP-11 | Amend the `## Phase: Published <!-- phase-key: SK.02.Published -->` section's introductory text with a forward pointer noting Phase 38 as its 7-package successor for packaging concerns (P-01→P-04 originally covered only the pre-split `SharedKernel.Caching`/`SharedKernel.Caching.Redis` two-package shape) | — | ○ |
+| NP-12 | Update `02.Caching/CLAUDE.md`: document the completed metadata bar for all 7 packages, the 5 new READMEs, and the rebuilt `consumer-verify` harness's 5-surface composition matrix | — | ○ |
+
+---
+
+### Ph38 (P-301) — Goal
+
+Close a proof-of-distribution gap this domain has carried since the WO-023 package split: five of the seven shipped packages (`Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub`) have never individually had their NuGet packaging metadata brought to the platform's own established bar, and `02.Caching/consumer-verify` — the one artifact meant to prove "does this actually resolve and compose for a real downstream consumer" — has silently rotted since the Phase 14 rename and the entire WO-023 split: it still imports namespaces (`SharedKernel.Caching.Extensions`, `SharedKernel.Caching.Policies`, `SharedKernel.Caching.Redis.Abstractions`, `SharedKernel.Caching.Redis.Extensions`) that no longer exist anywhere in the source tree, and references a retired `SharedKernel.Caching`/`SharedKernel.Caching.Redis` v1.0.0 `PackageId` pair that no longer resolves against the current 7-package topology. This phase brings every package's metadata to parity, ships the five missing `README.md` files, and rebuilds `consumer-verify` from zero against the current source tree so it once again proves real distribution correctness rather than silently failing to compile.
+
+### Ph38 (P-301) — Scope
+
+- **Package(s) affected:** all 7 shipped packages (metadata/readme only — no production code, no public API changes) + `consumer-verify` (full rewrite, not a shipped package)
+- **New files:**
+  - `SharedKernel.Caching.Abstractions/README.md`
+  - `SharedKernel.Caching.Redis.Core/README.md`
+  - `SharedKernel.Caching.Redis.DistributedLocking/README.md`
+  - `SharedKernel.Caching.Redis.HashStore/README.md`
+  - `SharedKernel.Caching.Redis.PubSub/README.md`
+- **Modified files:**
+  - `SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj` — full metadata parity + encoding fix
+  - `SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.csproj` — `PackageReadmeFile` + `None Include`
+  - `SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.csproj` — same
+  - `SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.csproj` — same
+  - `SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.csproj` — same
+  - `consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj` — full rewrite of `PackageReference`s
+  - `consumer-verify/SharedKernel.Caching.ConsumerVerify/Program.cs` — full rewrite
+  - `02.Caching/state-map.md`'s `## Phase: Published` section — forward-pointer note
+  - `02.Caching/CLAUDE.md` — packaging + consumer-verify documentation refresh
+- **Deleted files:** None (the two stale `PackageReference` lines are replaced in place, not left as an orphaned file)
+
+### Ph38 (P-301) — Implementation Rules
+
+1. The metadata bar to match, verbatim, is the set already shipped on `SharedKernel.Caching.Redis.Core`/`.DistributedLocking`/`.HashStore`/`.PubSub` (Phases 32-36) **plus** `PackageReadmeFile`, and the `08.Storage`/`09.Search` precedent for the `<None Include="README.md" Pack="true" PackagePath="\" />` item: `PackageId`, `Version`, `Authors`, `Company`, `Product`, `Description`, `PackageTags`, `PackageLicenseExpression=MIT`, `PackageReadmeFile=README.md`, `RepositoryType=git`, `RepositoryUrl`, `PackageProjectUrl`, `Copyright`, `GenerateDocumentationFile=true`, `IncludeSymbols=true`, `SymbolPackageFormat=snupkg`.
+2. `TreatWarningsAsErrors` (present on some `08.Storage` csproj files but not on any `02.Caching` csproj today) is explicitly **out of scope** for this phase — adding it risks surfacing unrelated pre-existing warnings across 7 packages as new build failures, which is a `00.Governance`/build-hygiene concern, not a packaging-metadata concern. Do not add it as a side effect of this phase.
+3. Each new `README.md` mirrors the shape of the two that already exist (`SharedKernel.Caching.FusionCache/README.md`, `SharedKernel.Caching.Redis/README.md`): a one-paragraph purpose statement, a `dotnet add package` / `PackageReference` install snippet, a minimal DI-registration + usage code sample matching that package's documented consumption pattern from this file's "DI Registration" section, and nothing else — these are not full API references (XML doc + `GenerateDocumentationFile` already cover that).
+4. `consumer-verify` keeps its existing `PackageReference`-against-a-local-nupkg-feed design (`nuget.config`'s `local-shared-kernel` source, unchanged) rather than switching to `ProjectReference` (the pattern `08.Storage/consumer-verify` uses) — a `ProjectReference` would trivially compile regardless of any packaging defect and would not prove what this phase exists to prove: that the packed `.nupkg` output actually resolves and composes for a real downstream consumer. This is a deliberate divergence from the `08.Storage` precedent, not an oversight.
+5. `consumer-verify` takes a direct `Testcontainers.Redis` `PackageReference` (not a reference to `16.Testing`) — a real downstream microservice consuming these packages would also reach for `Testcontainers.Redis` directly for this kind of harness, not for this platform's internal `16.Testing` package. One ephemeral Redis container is started once and shared across the four Redis-backed surfaces (L1+L2, locking-only, hash-store-only, pub/sub-only), then disposed at the end of the run.
+6. All five composition scenarios call real `IHost.StartAsync()` (via `Host.CreateApplicationBuilder()` → `builder.Build()` → `await host.StartAsync()`), never `new ServiceCollection().BuildServiceProvider()` alone — mirrors `08.Storage/consumer-verify`'s pattern and this phase's own acceptance criterion.
+7. The pub/sub-only surface resolves `IRedisChannelService` + `ICacheInvalidationBus` only (the publish side) — it must **not** call `AddCacheInvalidationReceiver()`, whose Phase 19 startup guard requires `ICacheService` to already be registered. A pub/sub-only consumer that has not taken FusionCache at all is exactly the scenario this package split (Phase 36) was designed to support; requiring `ICacheService` here would silently reintroduce the coupling the split eliminated.
+8. Each surface must be independently reproducible: a failure in one surface's `IHost.StartAsync()` must not prevent the harness from reporting which of the 5 surfaces failed — mirror `08.Storage/consumer-verify`'s `Verify(bool, string)` fail-fast-with-label helper and per-surface `Console.WriteLine("Surface N PASS: ...")` pattern.
+9. NP-07 (`dotnet pack`) must run — and NP-10 (`consumer-verify` execution) must be re-run — **after** NP-01→NP-06 land, since `consumer-verify` resolves whatever is currently packed in the local feed. Sequencing within this phase matters even though the tasks are listed in file-edit order.
+
+### Ph38 (P-301) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Caching.Abstractions.csproj` | SharedKernel.Caching.Abstractions | Modify | Full metadata parity + `PackageReadmeFile` + encoding fix |
+| `SharedKernel.Caching.Abstractions/README.md` | SharedKernel.Caching.Abstractions | Create | Package readme |
+| `SharedKernel.Caching.Redis.Core.csproj` | SharedKernel.Caching.Redis.Core | Modify | `PackageReadmeFile` + `None Include` |
+| `SharedKernel.Caching.Redis.Core/README.md` | SharedKernel.Caching.Redis.Core | Create | Package readme |
+| `SharedKernel.Caching.Redis.DistributedLocking.csproj` | SharedKernel.Caching.Redis.DistributedLocking | Modify | `PackageReadmeFile` + `None Include` |
+| `SharedKernel.Caching.Redis.DistributedLocking/README.md` | SharedKernel.Caching.Redis.DistributedLocking | Create | Package readme |
+| `SharedKernel.Caching.Redis.HashStore.csproj` | SharedKernel.Caching.Redis.HashStore | Modify | `PackageReadmeFile` + `None Include` |
+| `SharedKernel.Caching.Redis.HashStore/README.md` | SharedKernel.Caching.Redis.HashStore | Create | Package readme |
+| `SharedKernel.Caching.Redis.PubSub.csproj` | SharedKernel.Caching.Redis.PubSub | Modify | `PackageReadmeFile` + `None Include` |
+| `SharedKernel.Caching.Redis.PubSub/README.md` | SharedKernel.Caching.Redis.PubSub | Create | Package readme |
+| `SharedKernel.Caching.ConsumerVerify.csproj` | consumer-verify | Modify | 7 current `PackageReference`s + `Microsoft.Extensions.Hosting` + `Testcontainers.Redis` |
+| `Program.cs` | consumer-verify | Modify | Full rewrite — 5 surfaces via real `IHost.StartAsync()` |
+| `02.Caching/state-map.md` (`## Phase: Published`) | — | Modify | Forward-pointer note to Phase 38 |
+| `02.Caching/CLAUDE.md` | — | Modify | Packaging + consumer-verify documentation |
+
+### Ph38 (P-301) — Acceptance Criteria
+
+- [ ] All 7 packages carry the full metadata bar (see Implementation Rule 1) — verified by diffing each `.csproj`'s `<PropertyGroup>` against the shared checklist
+- [ ] `SharedKernel.Caching.Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub` each ship a `PackageReadmeFile` backed by a real authored `README.md`
+- [ ] `dotnet pack` succeeds clean (zero `NU5039`/`NU5128` warnings) for all 7 packages
+- [ ] `02.Caching/consumer-verify` compiles against current namespaces/`PackageId`s and runs successfully via real `IHost.StartAsync()` calls
+- [ ] The rebuilt harness proves, as 5 separate composition scenarios, L1-only, L1+L2, locking-only, hash-store-only, and pub/sub-only DI resolution
+- [ ] `02.Caching/state-map.md`'s `SK.02.Published` phase carries a forward-pointer to Phase 38 as its 7-package packaging successor
+
+### Ph38 (P-301) — Dependencies
+
+- Requires `01.Core` P-249/`LoggingEventIdRanges` shipped: **No** — this phase touches only packaging metadata, READMEs, and `consumer-verify`; it has zero interaction with the logging retrofit.
+- Requires Phase 37 (LoggingRetrofit) complete: **Yes, transitively satisfied already** — `consumer-verify` will pack whatever the 7 packages currently contain, which already includes the Phase 37 `SharedKernel.Primitives` `<ProjectReference>` in 4 of the 7 packages; no new action needed, noted only so the packed artifact's dependency graph is understood.
+- Depends on no other `02.Caching` phase — independently dispatchable.
+- Unblocks: gives this domain, for the first time since the WO-023 split, a consumer-verify harness that would actually catch a future namespace/`PackageId` drift before it reaches a downstream microservice.
+
+### Ph38 (P-301) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: 2.13.1 (unchanged)
+- FusionCache: 2.6.0 (unchanged)
+- RedLock.net: 2.3.2 (unchanged)
+- `Microsoft.Extensions.Hosting` (consumer-verify only, new): pin to the same floor `08.Storage/consumer-verify` uses (10.0.9)
+- `Testcontainers.Redis` (consumer-verify only, new): pin to whatever version `16.Testing`'s existing Redis Testcontainers fixture already uses, for consistency across the repo's Testcontainers usage
+- .NET: `net10.0`
+
+---
+
+## Phase: CrossInstanceTagInvalidation <!-- phase-key: SK.02.CrossInstanceTagInvalidation -->
+
+> Prove — and, if necessary, correct — that `RemoveByTagAsync` propagates across independently-constructed `ICacheService`/FusionCache instances sharing one Redis L2 backplane, the exact topology of two pods of the same microservice in production.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| CTI-01 | Design the two-instance test topology: shared Testcontainers Redis, two fully independent `ServiceProvider`/`IHost` instances (own `IConnectionMultiplexer`, own L1 `MemoryCache`, own `IFusionCache`) with identical `CachingCoreOptions.ServiceName`, new file `Integration/CrossInstanceTagInvalidationTests.cs` | SharedKernel.Caching.Redis (Tests) | ○ |
+| CTI-02 | Implement the test: seed a tagged entry via instance A, read-through on instance B (populating B's L1), tag-invalidate via instance A's `RemoveByTagAsync`, bounded-poll (timeout ~5s) asserting instance B observes a fresh value (not the stale L1-cached one) via `GetOrSetAsync` with a distinguishable new factory return value | SharedKernel.Caching.Redis (Tests) | ○ |
+| CTI-03 | Run the test against the current, unmodified implementation; record the actual pass/fail outcome — do not assume either outcome before running it | SharedKernel.Caching.Redis (Tests) | ○ |
+| CTI-04 | **If failing:** diagnose root cause (backplane channel/prefix mismatch, a FusionCache tagging option `AddRedisL2`/`AddSharedKernelCaching` is not currently setting, `SkipBackplaneNotifications` default, etc.) via FusionCache source/release notes and direct Redis Pub/Sub traffic inspection against the Testcontainers instance | SharedKernel.Caching.Redis, .FusionCache | ○ |
+| CTI-05 | **If failing:** implement the minimal correcting wiring change in `AddRedisL2` (`.Redis`) and/or `AddSharedKernelCaching`/`FusionCacheService` (`.FusionCache`); never work around the gap inside the test itself (e.g., manually broadcasting via `ICacheInvalidationBus` to simulate what `RemoveByTagAsync` should already do). Re-run CTI-02 until it passes | SharedKernel.Caching.Redis, .FusionCache | ○ |
+| CTI-06 | **If passing as-is:** identify and record which existing mechanism carries the guarantee (e.g., FusionCache's own backplane-notification-driven tag-generation bump) so a future maintainer does not have to re-derive it from FusionCache's source | — | ○ |
+| CTI-07 | Confirm existing single-instance `RemoveByTagAsync` tests (`.FusionCache.Tests`, lineage from Phases 6/7/22) are unchanged and still passing | SharedKernel.Caching.FusionCache (Tests) | ○ |
+| CTI-08 | Document the chosen bounded-wait timeout and justify it against CI runner variance (mirrors the Phase 23 renewal-timing test tolerance precedent) | — | ○ |
+| CTI-09 | Update `02.Caching/CLAUDE.md`'s `ICacheInvalidationBus`/tag-invalidation implementation rules to state the cross-instance guarantee explicitly, once proven, and name the carrying mechanism from CTI-06 or the fix from CTI-05 | — | ○ |
+| CTI-10 | Update the Test Rules section of `02.Caching/CLAUDE.md` to list the new cross-instance test coverage | — | ○ |
+
+---
+
+### Ph39 (P-302) — Goal
+
+Prove — with a genuine two-instance integration test, not merely re-verified within the single `ServiceProvider` every existing Redis-backed test in this suite constructs — that `RemoveByTagAsync` propagates across independently-constructed `ICacheService`/FusionCache instances sharing one Redis L2 backplane, the exact topology of two pods of the same microservice in production. `RemoveByTagAsync` (`FusionCacheService.cs`, `.FusionCache`) is currently a bare one-line passthrough to `IFusionCache.RemoveByTagAsync` with zero domain-authored test proving the cross-instance guarantee holds; if the new test surfaces a real gap in `.Redis`'s backplane wiring (`AddRedisL2`) or `.FusionCache`'s cache-builder wiring (`AddSharedKernelCaching`), that gap is fixed as part of this phase, not merely documented as a known limitation.
+
+### Ph39 (P-302) — Scope
+
+- **Package(s) affected:** `SharedKernel.Caching.Redis` (new test; possible backplane-wiring fix in `AddRedisL2`), `SharedKernel.Caching.FusionCache` (possible cache-builder-wiring fix in `AddSharedKernelCaching`/`FusionCacheService`) — fix scope is conditional on what CTI-03 finds
+- **New files:** `SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/Integration/CrossInstanceTagInvalidationTests.cs`
+- **Modified files (conditional on CTI-03's finding):** `SharedKernel.Caching.Redis`'s `AddRedisL2` wiring and/or `SharedKernel.Caching.FusionCache`'s `AddSharedKernelCaching` wiring; `02.Caching/CLAUDE.md` (unconditional — the cross-instance guarantee statement is added regardless of outcome)
+- **Deleted files:** None
+
+### Ph39 (P-302) — Implementation Rules
+
+1. The test builds **two fully independent DI containers** (`ServiceCollection`/`ServiceProvider` pairs, or two `IHost`s), not two scopes of one container — each must produce its own `IConnectionMultiplexer` (via its own `AddRedisConnection` call), its own L1 `MemoryCache`, and its own `IFusionCache` instance, all pointed at the **same** Testcontainers Redis connection string and the **same** `CachingCoreOptions.ServiceName` (representing two pods of one microservice — a differing `ServiceName` between the two instances would be an unrealistic topology and could mask a genuine channel-prefix mismatch bug as a false negative).
+2. The propagation proof must be black-box and must not couple to FusionCache's internal tagging mechanism (its internal "tag generation" implementation detail is not a contract this domain owns and could change on a FusionCache upgrade). The recommended pattern: seed instance A, read-through on instance B (populating B's L1), tag-invalidate via instance A, then poll instance B with a **new, distinguishable factory return value** via `GetOrSetAsync` until either (a) the new value is observed (proving B's L1 entry was invalidated and the read fell through to a fresh L2/factory value) or (b) a bounded timeout elapses (test failure).
+3. The bounded wait must be a polling loop with a timeout (recommended 5s, matching this domain's existing timing-sensitive test tolerance precedent — e.g. Phase 23's renewal-timing tests) — never a fixed `Task.Delay` guess and never an unbounded wait.
+4. If CTI-03 finds the guarantee already holds with the current `AddRedisL2`/`AddSharedKernelCaching` wiring, CTI-06 must record **which** existing mechanism carries it (e.g., FusionCache's own backplane-notification-driven tag-generation bump, or L2's shared distributed-cache read on the next access) in `02.Caching/CLAUDE.md`, so a future maintainer does not have to re-derive it from FusionCache's source.
+5. If CTI-03 finds a genuine gap, the fix must be the minimal wiring change — e.g., an explicit backplane/tagging option `AddRedisL2` is not currently setting — never a workaround inside the new test (such as manually broadcasting an invalidation via `ICacheInvalidationBus` to simulate what `RemoveByTagAsync` should already do on its own; that would prove the wrong thing).
+6. This phase must not change `ICacheService`'s public contract (`RemoveByTagAsync`'s signature and "bare passthrough" implementation shape are unaffected unless CTI-05 determines FusionCache requires an additional builder-level option — never a new parameter on the method itself).
+7. Existing single-instance `RemoveByTagAsync` tests (in `.FusionCache.Tests`, lineage from Phases 6/7/22) must be re-run unchanged and must continue to pass — this phase adds coverage, it does not replace or narrow existing coverage.
+
+### Ph39 (P-302) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Integration/CrossInstanceTagInvalidationTests.cs` | SharedKernel.Caching.Redis (Tests) | Create | Two-instance shared-backplane tag-invalidation proof |
+| `AddRedisL2` wiring | SharedKernel.Caching.Redis | Modify (conditional) | Only if CTI-03 finds a real backplane-wiring gap |
+| `AddSharedKernelCaching` wiring | SharedKernel.Caching.FusionCache | Modify (conditional) | Only if CTI-03 finds a real cache-builder-wiring gap |
+| `02.Caching/CLAUDE.md` | — | Modify | Cross-instance tag-invalidation guarantee documented, once proven |
+
+### Ph39 (P-302) — Acceptance Criteria
+
+- [ ] A new integration test builds two independently-constructed FusionCache instances against the same Redis container/backplane
+- [ ] Tag invalidation issued on instance A is proven to evict the tagged entry from instance B's L1 cache within a bounded wait
+- [ ] Any implementation gap the test surfaces is fixed, not merely documented as a known limitation
+- [ ] Existing single-instance `RemoveByTagAsync` tests are retained unchanged
+- [ ] `02.Caching/CLAUDE.md`'s tag-invalidation rule is updated to state the cross-instance guarantee explicitly, once proven
+
+### Ph39 (P-302) — Dependencies
+
+- Depends on no other `02.Caching` phase — independently dispatchable. Does not require Phase 38 (packaging) or Phase 40/41 (batch/tracing) to land first or after.
+- Unblocks: gives the domain's most-relied-upon multi-pod coherence guarantee (tag-based invalidation) its first genuine cross-process proof.
+
+### Ph39 (P-302) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: 2.13.1 (unchanged)
+- FusionCache: 2.6.0 (unchanged) — `ZiggyCreatures.FusionCache.Backplane.StackExchangeRedis` 2.6.0 is the package whose tag-propagation behavior this phase is proving
+- .NET: `net10.0`
+
+---
+
+## Phase: BatchOperationsParallelization <!-- phase-key: SK.02.BatchOperationsParallelization -->
+
+> Replace `FusionCacheService.GetManyAsync`/`SetManyAsync`'s sequential one-`await`-per-key loop with a bounded-concurrency execution model, and retire the confirmed-dead Phase 22 `IRedisL2BatchService` pipeline helper that was never actually wired into either method.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| BP-01 | Rewrite `FusionCacheService.GetManyAsync<T>` to bounded `Parallel.ForEachAsync` (`MaxDegreeOfParallelism = 16`, fixed constant) accumulating into a `ConcurrentDictionary<string, T?>`, materialized to `IReadOnlyDictionary<string, T?>` at the end | SharedKernel.Caching.FusionCache | ○ |
+| BP-02 | Rewrite `FusionCacheService.SetManyAsync<T>` to the same bounded-concurrent pattern over `entries` | SharedKernel.Caching.FusionCache | ○ |
+| BP-03 | Delete `SharedKernel.Caching.Redis/Batch/IRedisL2BatchService.cs` and `Batch/RedisL2BatchService.cs` (confirmed dead code — zero DI registration, zero production caller since Phase 22; architecturally unreachable from `.FusionCache` under the sibling-package non-reference rule regardless) and remove the now-empty `Batch/` folder | SharedKernel.Caching.Redis | ○ |
+| BP-04 | Remove the `IRedisL2BatchService`-specific test block ("BA-08: IRedisL2BatchService pipeline round-trip verification") from `BatchOperationsIntegrationTests.cs`; retain all existing `GetManyAsync`/`SetManyAsync` functional-correctness tests unchanged | SharedKernel.Caching.Redis (Tests) | ○ |
+| BP-05 | Add a stampede-protection-under-concurrency regression test: concurrent `GetOrSetAsync` calls on one key, interleaved with an unrelated `GetManyAsync`/`SetManyAsync` batch call, still invoke the factory exactly once — proves the parallelization change introduces no shared-state interference with FusionCache's own per-key locking | SharedKernel.Caching.FusionCache (Tests) | ○ |
+| BP-06 | Add a `ConcurrentDictionary`-safety test: a `GetManyAsync` call over a large key set (e.g., 200 keys) run under bounded concurrency loses or duplicates no key in the returned dictionary | SharedKernel.Caching.Redis (Tests) | ○ |
+| BP-07 | Add the wall-clock comparison test: `GetManyAsync` over N keys (e.g., 50) against a real Testcontainers Redis completes measurably faster than N sequential `GetAsync` calls for the same keys, with CI-tolerant margin | SharedKernel.Caching.Redis (Tests) | ○ |
+| BP-08 | Confirm `GetManyAsync`'s empty-input short-circuit and `SetManyAsync`'s single-`CachePolicy`-for-all-entries contract (both Phase 22 rules) still hold via explicit regression tests, not incidental behavior | SharedKernel.Caching.Redis (Tests), .FusionCache (Tests) | ○ |
+| BP-09 | Update `02.Caching/CLAUDE.md`'s Phase 22 "Batch operations rules" subsection to describe the bounded-concurrent (not sequential) execution model, document `MaxDegreeOfParallelism = 16`, record `IRedisL2BatchService`'s retirement with rationale, and document the accepted partial-in-flight-on-failure trade-off | — | ○ |
+| BP-10 | Update the Test Rules section of `02.Caching/CLAUDE.md` to reflect the new/removed test coverage | — | ○ |
+
+---
+
+### Ph40 (P-303) — Goal
+
+Replace `FusionCacheService.GetManyAsync`/`SetManyAsync`'s sequential one-`await`-per-key loop with a bounded-concurrency execution model, so a batch call over N keys no longer costs N fully serialized L2 round-trips when Redis L2 is active — the exact round-trip amortization these two methods exist to provide. Investigation (confirmed via grep before this phase was authored) found the Phase 22 `IRedisL2BatchService`/`RedisL2BatchService` pipeline helper in `SharedKernel.Caching.Redis` was never registered in DI and never called by any production code — it is unreachable dead code, and would remain architecturally unreachable from `FusionCacheService` (which lives in the sibling `SharedKernel.Caching.FusionCache` package) even if wired up, because `.FusionCache` and `.Redis` are strict sibling packages that must never reference each other (Phase 17 layering rule) and the type is `internal` besides. This phase retires that dead code and replaces the sequential loop with a bounded `Parallel.ForEachAsync` fan-out entirely inside `FusionCacheService`, correcting Phase 22's original (never-fulfilled) design premise.
+
+### Ph40 (P-303) — Scope
+
+- **Package(s) affected:** `SharedKernel.Caching.FusionCache` (the parallelization fix), `SharedKernel.Caching.Redis` (dead-code retirement + test file trim)
+- **New files:** None
+- **Modified files:**
+  - `SharedKernel.Caching.FusionCache/Implementations/FusionCacheService.cs` — `GetManyAsync`/`SetManyAsync` rewritten
+  - `SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/BatchOperationsIntegrationTests.cs` — `IRedisL2BatchService`-specific test block removed; new concurrency-safety + wall-clock tests added
+  - `02.Caching/CLAUDE.md` — Phase 22 batch-operations rule corrected
+- **Deleted files:**
+  - `SharedKernel.Caching.Redis/Batch/IRedisL2BatchService.cs`
+  - `SharedKernel.Caching.Redis/Batch/RedisL2BatchService.cs`
+
+### Ph40 (P-303) — Implementation Rules
+
+1. `GetManyAsync<T>` and `SetManyAsync<T>` replace their `foreach (var key in keys) { await ... }` loop with `System.Threading.Tasks.Parallel.ForEachAsync` (BCL, `net10.0`, AOT-safe — no new NuGet dependency), bounded by `ParallelOptions.MaxDegreeOfParallelism = 16` (a fixed internal constant, not exposed as a new `CachingOptions` knob — this phase deliberately does not grow the public API surface; if telemetry ever shows 16 is wrong, that is a future phase's decision).
+2. `GetManyAsync`'s result accumulator must switch from a plain `Dictionary<string, T?>` to `System.Collections.Concurrent.ConcurrentDictionary<string, T?>` (materialized to the return type at the end) — this is a **correctness** requirement, not a style preference: a plain `Dictionary` is not thread-safe for concurrent writes from multiple `Parallel.ForEachAsync` bodies, and the current sequential code is only safe because it is single-threaded today.
+3. `IRedisL2BatchService`/`RedisL2BatchService` are deleted outright, not deprecated-and-kept — they have zero DI registration and zero production call site since their Phase 22 introduction (confirmed by a full-domain grep before this phase was authored), and are architecturally unreachable from `FusionCacheService` under the sibling-package non-reference rule regardless of any future wiring attempt. Keeping dead, unreachable infrastructure code around after this phase corrects the record would be worse than deleting it.
+4. `SetManyAsync`'s existing "a single `CachePolicy` applies to all entries in the batch" contract (Phase 22) is unchanged.
+5. `SetManyAsync`'s failure semantics change in one documented, accepted way: the pre-existing sequential loop guaranteed that a failure on key K meant keys after K in iteration order were never attempted; the new bounded-concurrent version means up to `MaxDegreeOfParallelism` keys beyond the failing one may already be in flight (and may complete) by the time the failure surfaces to the caller. This is an accepted trade-off of parallelization, not a regression to silently work around — document it explicitly in the CLAUDE.md rule update.
+6. `GetManyAsync`'s existing empty-input short-circuit (Phase 22: "An empty input enumerable returns an empty dictionary") must continue to hold — `Parallel.ForEachAsync` over an empty source already satisfies this with no special-casing required, but a regression test must confirm it explicitly rather than relying on incidental behavior.
+7. Per-key stampede protection (FusionCache's own internal per-key locking inside `GetOrSetAsync`, unrelated to `GetManyAsync`/`SetManyAsync` which never invoke factories) must be unaffected by this change — a regression test runs the existing single-key stampede scenario (parallel `GetOrSetAsync` calls on one key, factory invoked exactly once) concurrently interleaved with an unrelated `GetManyAsync`/`SetManyAsync` batch call, proving the parallelization change introduces no shared mutable state that could interfere with FusionCache's own locking.
+8. Logging calls inside the loop bodies (`Log.CacheMiss` per missed key in `GetManyAsync`, `Log.CacheSet` per key in `SetManyAsync`) are unaffected — `[LoggerMessage]`-source-generated methods are safe for concurrent invocation from multiple tasks; no change needed beyond confirming this via the regression run.
+
+### Ph40 (P-303) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Implementations/FusionCacheService.cs` | SharedKernel.Caching.FusionCache | Modify | `GetManyAsync`/`SetManyAsync` → bounded `Parallel.ForEachAsync` over `ConcurrentDictionary` |
+| `Batch/IRedisL2BatchService.cs` | SharedKernel.Caching.Redis | Delete | Confirmed dead, architecturally unreachable code |
+| `Batch/RedisL2BatchService.cs` | SharedKernel.Caching.Redis | Delete | Confirmed dead, architecturally unreachable code |
+| `SharedKernel.Caching.Redis.Tests/BatchOperationsIntegrationTests.cs` | SharedKernel.Caching.Redis (Tests) | Modify | Remove `IRedisL2BatchService`-specific test block; add concurrency-safety + wall-clock tests |
+| `02.Caching/CLAUDE.md` | — | Modify | Phase 22 batch-operations rule corrected to the concurrent execution model |
+
+### Ph40 (P-303) — Acceptance Criteria
+
+- [ ] `GetManyAsync`/`SetManyAsync` no longer serialize per-key L2 round-trips one at a time when Redis L2 is active
+- [ ] A bounded concurrency default is chosen and documented (`MaxDegreeOfParallelism = 16`, fixed constant, not unbounded fan-out)
+- [ ] Per-key stampede protection is verified unchanged by a regression test
+- [ ] A new test demonstrates reduced wall-clock time for a multi-key batch call against a real Redis container, relative to the pre-change sequential baseline
+- [ ] `02.Caching/CLAUDE.md`'s Phase 22 batch-operations rule is corrected to describe the concurrent (not purely sequential) execution model
+
+### Ph40 (P-303) — Dependencies
+
+- Depends on no other `02.Caching` phase — independently dispatchable.
+- Unblocks: nothing further planned in this domain today; closes out the last known gap in the Phase 22 batch-operations design.
+
+### Ph40 (P-303) — Redis / FusionCache Version Pins
+
+- StackExchange.Redis: 2.13.1 (unchanged)
+- FusionCache: 2.6.0 (unchanged)
+- No new NuGet dependency — `Parallel.ForEachAsync`/`ConcurrentDictionary` are BCL
+- .NET: `net10.0`
+
+---
+
+## Phase: OtelTracingSpans <!-- phase-key: SK.02.OtelTracingSpans -->
+
+> Add a `SharedKernel.Caching` `ActivitySource`, companion to the existing Phase 31 `Meter` of the same name, so `GetOrSetAsync`/`GetAsync`/`SetAsync` each produce a distributed-trace span.
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| OT-01 | Add `private static readonly ActivitySource _activitySource = new("SharedKernel.Caching", "1.0")` to `FusionCacheService`, alongside the existing `_meter` field, with an XML doc `<remarks>` update covering both | SharedKernel.Caching.FusionCache | ○ |
+| OT-02 | Wrap `GetAsync<T>`'s body (after argument validation) in a `cache.get` span (`ActivityKind.Client`), tagged `cache.key_prefix` + `cache.outcome` (`"hit"`/`"miss"`, derived from the existing `result.HasValue` check) | SharedKernel.Caching.FusionCache | ○ |
+| OT-03 | Wrap `SetAsync<T>`'s body in a `cache.set` span (`ActivityKind.Client`), tagged `cache.key_prefix` only (no hit/miss concept for a write); on the existing `catch` block also call `activity?.SetStatus(ActivityStatusCode.Error, ex.Message)` before rethrowing | SharedKernel.Caching.FusionCache | ○ |
+| OT-04 | Wrap `GetOrSetAsync<T>`'s body in a `cache.get_or_set` span (`ActivityKind.Client`), tagged `cache.key_prefix` + `cache.outcome` (`"miss"` when the factory ran, tracked via a local flag set inside the existing factory lambda alongside `Log.FactoryInvoked`; `"hit"` otherwise); same `SetStatus(Error, ...)` on the existing exception path | SharedKernel.Caching.FusionCache | ○ |
+| OT-05 | Add `OtelTracingTests.cs` — `ActivityListener`-based tests covering a `GetAsync` hit, a `GetAsync` miss, a `SetAsync`, a `GetOrSetAsync` hit, and a `GetOrSetAsync` miss, each asserting span name, `ActivityKind.Client`, and correct tag values (mirrors `OtelMetricsTests.cs`'s existing `MeterListener` structure) | SharedKernel.Caching.FusionCache (Tests) | ○ |
+| OT-06 | Confirm zero new NuGet dependency — `System.Diagnostics.ActivitySource`/`ActivityKind`/`ActivityStatusCode` are BCL, and `FusionCacheService.cs` already has `using System.Diagnostics;` (currently used for `Stopwatch`) | — | ○ |
+| OT-07 | Regression-run the full `SharedKernel.Caching.FusionCache.Tests` suite confirming zero behavioral change to the existing Phase 31 OTel metrics, Phase 37 logging, or functional cache semantics — spans are additive only | SharedKernel.Caching.FusionCache (Tests) | ○ |
+| OT-08 | Update `02.Caching/CLAUDE.md`'s OTel section: add the `ActivitySource`, span names, tags, and `ActivityKind.Client` convention alongside the existing Phase 31 `Meter` documentation | — | ○ |
+| OT-09 | Note (documentation only, not actioned here) that `13.ServiceDefaults`'s `WithCachingTelemetry` may now register this `ActivitySource` for trace export, bringing it to parity with the platform's other `WithXTelemetry` wiring — out of this domain's jurisdiction | — | ○ |
+
+---
+
+### Ph41 (P-304) — Goal
+
+Add a `SharedKernel.Caching` `ActivitySource`, companion to the existing Phase 31 `Meter` of the same name, so `FusionCacheService.GetOrSetAsync`/`GetAsync`/`SetAsync` each produce a distributed-trace span — closing this domain's status as the only sibling in the `13.ServiceDefaults` `WithXTelemetry` family (`WithMessagingTelemetry`, `WithApplicationTelemetry`, `WithSearchTelemetry`, `WithIntelligenceTelemetry`, `WithWorkflowTelemetry`) that wires metrics alone. A developer following a slow request through a distributed trace today sees every layer except the cache — frequently the highest-cardinality call site in a request — even though aggregate counters for it already exist.
+
+### Ph41 (P-304) — Scope
+
+- **Package(s) affected:** `SharedKernel.Caching.FusionCache` only
+- **New files:** `SharedKernel.Caching.FusionCache/SharedKernel.Caching.FusionCache.Tests/OtelTracingTests.cs`
+- **Modified files:** `SharedKernel.Caching.FusionCache/Implementations/FusionCacheService.cs`, `02.Caching/CLAUDE.md`
+- **Deleted files:** None
+
+### Ph41 (P-304) — Implementation Rules
+
+1. `private static readonly ActivitySource _activitySource = new("SharedKernel.Caching", "1.0");` — same instrumentation-scope name and version as the existing `_meter` field, deliberately: OTel convention treats the trace and metric surfaces of one component as one instrumentation scope, and this mirrors how `CacheInvalidationReceiver`'s existing `"cache.invalidation.receive"` span (Phase 36/26) already establishes dot-separated lowercase span naming for this domain.
+2. Span names: `cache.get`, `cache.set`, `cache.get_or_set` — `ActivityKind.Client` (a cache is an outbound dependency call, consistent with how HTTP/gRPC client spans are kinded elsewhere on the platform).
+3. Spans start **after** argument validation (`ArgumentException.ThrowIfNullOrWhiteSpace`/`ArgumentNullException.ThrowIfNull`) — a pure input-validation throw is a caller bug, not a cache operation, and this mirrors the existing rule that `_cacheErrors` is not incremented for validation failures either.
+4. `StartActivity(...)` returns `null` when no listener is attached (no sampling, no exporter configured) — every tag-setting call site must use the `activity?.SetTag(...)` null-conditional form. No `Enabled`-style guard is added around span creation, mirroring the Phase 31 Meter rule: "the BCL handles the no-listener fast path internally."
+5. `cache.key_prefix` tag reuses the existing `ExtractKeyPrefix(key)` helper — `{service}:{entity}`, never the full key with `{id}` — identical high-cardinality guard to the Phase 31 metrics tag.
+6. `cache.get`/`cache.get_or_set` spans additionally carry `cache.outcome` (`"hit"` / `"miss"`) — for `GetAsync`, derived from the same `result.HasValue` check already used for the miss-logging branch; for `GetOrSetAsync`, derived from a local flag set `true` inside the existing factory lambda (alongside the existing `Log.FactoryInvoked` call) — `"miss"` when the factory ran, `"hit"` when it did not. `cache.set` carries `cache.key_prefix` only — a write has no hit/miss concept.
+7. On an exception inside `SetAsync`/`GetOrSetAsync`'s existing `catch` blocks (which already increment `_cacheErrors`), also call `activity?.SetStatus(ActivityStatusCode.Error, ex.Message)` before rethrowing — standard OTel exception-recording convention, additive to the existing metric/log behavior.
+8. This phase introduces zero new NuGet dependency — `ActivitySource`/`Activity`/`ActivityKind`/`ActivityStatusCode` are all `System.Diagnostics` BCL types, and `FusionCacheService.cs` already has `using System.Diagnostics;` (currently used for `Stopwatch`).
+9. The new test file mirrors `OtelMetricsTests.cs`'s existing structure exactly, substituting `ActivityListener` for `MeterListener` — covering at minimum: a `GetAsync` hit, a `GetAsync` miss, a `SetAsync`, a `GetOrSetAsync` hit, and a `GetOrSetAsync` miss, each asserting the span name, `ActivityKind.Client`, and correct tag values.
+
+### Ph41 (P-304) — File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `Implementations/FusionCacheService.cs` | SharedKernel.Caching.FusionCache | Modify | `_activitySource` field + spans on `GetAsync`/`SetAsync`/`GetOrSetAsync` |
+| `OtelTracingTests.cs` | SharedKernel.Caching.FusionCache (Tests) | Create | `ActivityListener`-based span/tag assertions, hit + miss |
+| `02.Caching/CLAUDE.md` | — | Modify | OTel section documents the new `ActivitySource` alongside the existing `Meter` |
+
+### Ph41 (P-304) — Acceptance Criteria
+
+- [ ] A `SharedKernel.Caching` `ActivitySource` is added alongside the existing Phase 31 `Meter`, both static readonly fields, AOT-safe
+- [ ] `GetOrSetAsync`/`GetAsync`/`SetAsync` create a span with hit/miss outcome and low-cardinality `cache.key_prefix` tag — never the full cache key
+- [ ] No new NuGet dependency is introduced
+- [ ] A test verifies the span is created with correct tags for both a hit and a miss, using an `ActivityListener`
+- [ ] `02.Caching/CLAUDE.md`'s OTel section is updated to document the new `ActivitySource` alongside the existing `Meter`
+
+### Ph41 (P-304) — Dependencies
+
+- Depends on no other `02.Caching` phase — independently dispatchable. Purely additive to Phase 31's existing `Meter` field; does not touch Phase 40's batch methods or Phase 39's `RemoveByTagAsync`.
+- Unblocks: brings `WithCachingTelemetry` (`13.ServiceDefaults`, out of this domain's jurisdiction) to parity with the platform's other `WithXTelemetry` wiring, should that domain choose to pick up the new `ActivitySource` in its own OTel registration — noted for `13.ServiceDefaults`, not actioned here.
+
+### Ph41 (P-304) — Redis / FusionCache Version Pins
+
+- FusionCache: 2.6.0 (unchanged)
+- No new NuGet dependency — `System.Diagnostics.ActivitySource` is BCL
+- .NET: `net10.0`
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies._
@@ -2540,6 +2874,10 @@ Format when active:
 | `SK.02.RedisHashExtraction` | Phase 35 (Redis Hash Store Package Extraction) | 9 | 9 | `●` |
 | `SK.02.RedisPubSubExtraction` | Phase 36 (Redis Pub/Sub and Invalidation Package Extraction) | 9 | 9 | `●` |
 | `SK.02.LoggingRetrofit` | Phase 37 (Logging Retrofit to Platform `[LoggerMessage]` Standard) | 12 | 12 | `●` |
+| `SK.02.NuGetPackagingParity` | Phase 38 (NuGet Packaging & Consumer-Verify Parity) | 12 | 0 | `○` |
+| `SK.02.CrossInstanceTagInvalidation` | Phase 39 (Cross-Instance Tag-Based Cache Invalidation) | 10 | 0 | `○` |
+| `SK.02.BatchOperationsParallelization` | Phase 40 (Parallelize Batch Cache Operations) | 10 | 0 | `○` |
+| `SK.02.OtelTracingSpans` | Phase 41 (Distributed Tracing ActivitySource Spans) | 9 | 0 | `○` |
 
 ---
 
@@ -2590,3 +2928,4 @@ Format when active:
 - [2026-06-12] RPS-01→RPS-09 → ● in SK.02.RedisPubSubExtraction — SharedKernel.Caching.Redis.PubSub package created; RedisChannelService/RedisCacheInvalidationBus/CacheInvalidationReceiver/AddRedisChannelService/AddRedisCacheInvalidationBus/AddCacheInvalidationReceiver extracted from SharedKernel.Caching.Redis (pure namespace rename, Phase 26 reconnect logic relocated intact); SharedKernel.Caching.Redis slimmed to L2-only end state (Hosting.Abstractions + Polly.Core PackageReferences removed); 02.Caching/CLAUDE.md updated; 28 Redis + 41 Redis.DistributedLocking + 30 Redis.HashStore + 33 Redis.Core + 41 Redis.PubSub tests passing — WO-023 (Phases 32-36) fully complete (state-map-phase)
 - [2026-07-09] Phase 37 planned (WO-041, P-252) — logging retrofit to the platform `[LoggerMessage]` standard: audited all four logging-bearing packages (`FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` — confirmed `Redis` L2 and `Redis.HashStore` carry zero logging call sites) and found `CacheWarmupHostedService` uses 8 direct `ILogger` calls, `RedisCacheInvalidationBus` uses a hand-written `LoggerMessage.Define<string>` delegate, `FusionCacheService` squats on `01.Core`'s reserved `EventId` block (1001-1005), `RedisChannelService` squats on `03.Domain`'s reserved block (3001-3005), and `RedisConnectionHealthTracker`/`CacheInvalidationReceiver` collide with each other at 4001/4002 (the collision that motivated `01.Core` P-249). Designed this domain's authoritative 100-wide sub-block allocation inside `LoggingEventIdRanges.Caching` (2000-2999) in package declaration order — `FusionCache`=+0..99, `Redis.Core`=+100..199, `Redis` (L2, reserved)=+200..299, `Redis.DistributedLocking`=+300..399, `Redis.HashStore` (reserved)=+400..499, `Redis.PubSub`=+500..599 — superseding `01.Core/CLAUDE.md`'s illustrative worked example (which omitted `FusionCache` entirely). 12 tasks (LR-01→LR-12) added; execution is blocked until `01.Core` ships `LoggingEventIdRanges` (P-249's C-42, currently `○` Pending) since all four packages need a new `<ProjectReference>` to `SharedKernel.Primitives` (caching-arch-planner, WO-041)
 - [2026-07-10] LR-01→LR-12 → ● in SK.02.LoggingRetrofit — blocker confirmed cleared (`01.Core` P-249 shipped `LoggingEventIdRanges`); added `<ProjectReference>` to `SharedKernel.Primitives` in all four packages; `CacheWarmupHostedService` (made `partial`) and `FusionCacheService` converted/renumbered to `+0..+7`/`+10..+14`; `RedisConnectionHealthTracker` renumbered `4001/4002`→`+100/+101`; `RedLockDistributedLockService`/`RedLockRenewableLock` renumbered `2001-2007/2010-2015`→`+300..+306`/`+307..+312`; `RedisChannelService`/`CacheInvalidationReceiver` renumbered `3001-3005/4001-4005`→`+500..+504`/`+505..+509`; `RedisCacheInvalidationBus`'s hand-written `LoggerMessage.Define<string>` delegate converted to `[LoggerMessage]` on a new nested `Log` class (made `partial`) at `+510`; zero message-text/level/property changes — EventId + authoring mechanism only; all six test suites regression-run standalone (pre-existing unrelated `NU1605` restore errors from `SharedKernel.Testing`'s dependency floor block solution-wide builds, confirmed via `git stash`; worked around per-project with `-p:NoWarn=NU1605` for verification only): FusionCache 209/209, Redis.Core 33/33, Redis.DistributedLocking 41/41, Redis.PubSub 41/41, Redis L2 28/28, Redis.HashStore 30/30 (state-map-phase)
+- [2026-07-29] Phases 38–41 planned (WO-050) — Caching gold-standard follow-up dispatched from four root backlog items (P-301–P-304), none dependent on each other. Ph38 (P-301, NuGetPackagingParity, 12 tasks NP-01→NP-12): confirmed via direct csproj inspection that `Abstractions` carries only minimal metadata (no `PackageReadmeFile`/license/repo/copyright block, plus a mangled em-dash encoding defect) while `.Redis.Core`/`.DistributedLocking`/`.HashStore`/`.PubSub` (Phases 32-36) already carry the full `08.Storage`-style metadata block but zero `README.md`/`PackageReadmeFile` of the six that could have one, only `.FusionCache` and `.Redis` (L2) ship a README today; also confirmed `consumer-verify` is dead — it imports four retired namespaces and references the retired `SharedKernel.Caching`/`SharedKernel.Caching.Redis` v1.0.0 `PackageId`s from before the Phase 14 rename, and uses `BuildServiceProvider()` only, never `IHost.StartAsync()`. Full rebuild designed: 5 new READMEs, full metadata parity, and a 5-surface (L1-only/L1+L2/locking-only/hash-store-only/pub-sub-only) `IHost.StartAsync()`-based harness, deliberately keeping `PackageReference`-against-local-nupkg-feed (not `08.Storage`'s `ProjectReference` pattern) since proving the packed artifact resolves is this phase's whole point. Ph39 (P-302, CrossInstanceTagInvalidation, 10 tasks CTI-01→CTI-10): designed a genuine two-independent-DI-container test (own `IConnectionMultiplexer`/L1/`IFusionCache` each, same `ServiceName`, shared Testcontainers Redis) to prove `RemoveByTagAsync` propagates cross-pod — explicitly left open whether the current `AddRedisL2`/`AddSharedKernelCaching` wiring already satisfies this (record the carrying mechanism) or needs a real fix (minimal wiring correction, never a test workaround); outcome to be determined at implementation time. Ph40 (P-303, BatchOperationsParallelization, 10 tasks BP-01→BP-10): grep-confirmed `IRedisL2BatchService`/`RedisL2BatchService` (Phase 22) have zero DI registration and zero production caller — dead code, and architecturally unreachable from `FusionCacheService` regardless under the `.FusionCache`/`.Redis` sibling-package non-reference rule (Phase 17) plus its own `internal` visibility; designed retirement (delete both files) paired with a bounded `Parallel.ForEachAsync` (`MaxDegreeOfParallelism = 16`) rewrite of `GetManyAsync`/`SetManyAsync` over a `ConcurrentDictionary` accumulator (plain `Dictionary` is unsafe for concurrent writes — a real correctness fix, not style), plus stampede-protection-under-concurrency, key-set-integrity, and wall-clock-vs-sequential-baseline regression tests. Ph41 (P-304, OtelTracingSpans, 9 tasks OT-01→OT-09): designed a new `ActivitySource("SharedKernel.Caching", "1.0")` (same instrumentation-scope name/version as the existing Phase 31 `Meter`) producing `cache.get`/`cache.set`/`cache.get_or_set` spans (`ActivityKind.Client`) tagged `cache.key_prefix` (reusing `ExtractKeyPrefix`) and, for the two read paths, `cache.outcome` (`hit`/`miss`) — zero new NuGet dependency (`System.Diagnostics` already imported for `Stopwatch`), test file mirrors `OtelMetricsTests.cs`'s `MeterListener` structure with `ActivityListener` instead. Package Board's five "Phase 37 (◐ pending)" rows corrected in the same pass — stale since Phase 37's 2026-07-10 completion and never propagated back to that table (caching-arch-planner, WO-050)
