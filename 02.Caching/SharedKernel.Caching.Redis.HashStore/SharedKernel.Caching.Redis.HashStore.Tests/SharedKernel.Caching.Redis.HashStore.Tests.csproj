@@ -16,7 +16,7 @@
     </PackageReference>
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <!-- Testcontainers Redis for integration tests -->
-    <PackageReference Include="Testcontainers.Redis" Version="4.4.0" />
+    <PackageReference Include="Testcontainers.Redis" Version="4.13.0" />
     <!-- DI host for integration-style DI registration tests -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <!-- Logging null provider for tests -->
