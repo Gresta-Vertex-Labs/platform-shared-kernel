@@ -60,16 +60,31 @@ public static class CachingServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers a new <see cref="FakeCacheWarmupStrategy"/> as <see cref="ICacheWarmupStrategy"/>
-    /// via <see cref="ServiceCollectionDescriptorExtensions.TryAddEnumerable(IServiceCollection, ServiceDescriptor)"/>.
+    /// Registers a new <see cref="FakeCacheWarmupStrategy"/> as <see cref="ICacheWarmupStrategy"/>,
+    /// singleton.
     /// </summary>
     /// <remarks>
-    /// Mirrors the real <c>AddCacheWarmup&lt;TStrategy&gt;()</c>'s own
-    /// <c>TryAddEnumerable</c> multi-strategy registration shape exactly, so a test registering
-    /// several named strategies observes the identical "multiple independently-registered
-    /// strategies" composition production would. Call once per named strategy needed, passing the
-    /// same <paramref name="executionLog"/> queue instance across calls to observe cross-strategy
-    /// ordering.
+    /// <para>
+    /// Deliberately uses plain <see cref="IServiceCollection.Add(ServiceDescriptor)"/> (via
+    /// <c>AddSingleton</c>), never
+    /// <see cref="ServiceCollectionDescriptorExtensions.TryAddEnumerable(IServiceCollection, ServiceDescriptor)"/>
+    /// — this is a corrected deviation from an earlier design draft that specified
+    /// <c>TryAddEnumerable</c> to "mirror" the real <c>AddCacheWarmup&lt;TStrategy&gt;()</c>. That
+    /// mirroring does not actually hold: the real extension is parameterized by a distinct generic
+    /// <c>TStrategy</c> per call, so <c>TryAddEnumerable</c>'s de-duplication-by-implementation-type
+    /// genuinely prevents registering the same concrete strategy type twice. This fake extension is
+    /// parameterized by a runtime <paramref name="name"/> string instead — every call constructs the
+    /// same concrete <see cref="FakeCacheWarmupStrategy"/> type regardless of the name/order/queue
+    /// arguments, so <c>TryAddEnumerable</c> would treat every call after the first as an
+    /// indistinguishable duplicate and silently drop it (confirmed at Tests-phase implementation
+    /// time: a second/third call never appeared in the resolved <see cref="IEnumerable{T}"/> of
+    /// <see cref="ICacheWarmupStrategy"/>). Plain <c>AddSingleton</c> has no such de-duplication and
+    /// correctly registers one independent strategy instance per call.
+    /// </para>
+    /// <para>
+    /// Call once per named strategy needed, passing the same <paramref name="executionLog"/> queue
+    /// instance across calls to observe cross-strategy ordering.
+    /// </para>
     /// </remarks>
     /// <param name="services">The service collection to register against.</param>
     /// <param name="name">The fixed, human-readable strategy name.</param>
@@ -88,9 +103,7 @@ public static class CachingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<ICacheWarmupStrategy>(
-                _ => new FakeCacheWarmupStrategy(name, order, executionLog)));
+        services.AddSingleton<ICacheWarmupStrategy>(_ => new FakeCacheWarmupStrategy(name, order, executionLog));
 
         return services;
     }
