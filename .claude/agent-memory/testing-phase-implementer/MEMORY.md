@@ -13,3 +13,4 @@
 - [Container-test reflection + docker-ps-diff technique](feedback_container_reflection_and_docker_diff_technique.md) — reach an unexposed Testcontainers mgmt port via private-field reflection; never sequentially read a child process's stdout+stderr (pipe deadlock) — use Task.WhenAll
 - [WO-046 Workflows/ testing status](project_wo046_workflows_testing.md) — Design/Scaffold/Core/Docs ● 2026-07-23; only SK.16.Tests (T-55) remains; GetHandle/WorkflowLifecycleStatus corrections vs. pre-verification draft
 - [WO-049/P-300 Cryptography+FeatureManagement status](project_wo049_p300_core_status.md) — CLOSED 2026-07-29, all six 16.Testing phases ● again; FeatureVariant.Unassigned drift fixed; Dispose-proof technique
+- [WO-050/P-306 Caching/ Redis fakes status](project_wo050_p306_core_status.md) — SK.16.Core CLOSED 2026-07-29 (100/100); FakeRedisChannelService is the first genuine cross-call fan-out fake; Tests/Docs (T-60–T-64/DO-30/DO-31) remain
