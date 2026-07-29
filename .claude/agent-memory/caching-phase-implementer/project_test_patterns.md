@@ -9,7 +9,10 @@ metadata:
 
 ## Testcontainers Redis image
 - Always use `redis:7-alpine` via `RedisBuilder().WithImage("redis:7-alpine").Build()`
-- Testcontainers.Redis package version: 4.4.0
+- Testcontainers.Redis package version: **4.13.0** (bumped from a stale 4.4.0 in Phase 39/WO-050 —
+  see [[project_wo050_gold_standard]] for the `MissingMethodException` regression this caused
+  across all four Redis-container `.Tests` projects and why 4.13.0 is now mandatory, matching
+  `16.Testing`'s own floor)
 - Tests use `IAsyncLifetime` pattern with `InitializeAsync` / `DisposeAsync`
 
 ## TestCachingBuilder helper
