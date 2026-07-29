@@ -18,6 +18,12 @@ namespace SharedKernel.Testing.Caching;
 /// this package permits only two documented static-mutable-state exceptions, and this is not a
 /// third.
 /// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> This type must never be wired into a production DI
+/// container — <c>16.Testing</c> packages are never referenced by production code (root
+/// <c>CLAUDE.md</c> hard rule). It performs no real warmup work of any kind; it exists solely to
+/// prove a consuming host's own warmup-orchestration ordering/failure-isolation contract.
+/// </para>
 /// </remarks>
 public sealed class FakeCacheWarmupStrategy : ICacheWarmupStrategy
 {

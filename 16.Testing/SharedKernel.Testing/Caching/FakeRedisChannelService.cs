@@ -22,6 +22,18 @@ namespace SharedKernel.Testing.Caching;
 /// <c>ConnectionRestored</c>/<c>ConnectionFailed</c> tracking. Set it directly to simulate what a
 /// health-check consumer would observe.
 /// </para>
+/// <para>
+/// This fake also deliberately does <b>not</b> replicate the production <c>RedisChannelService</c>'s
+/// own reconnect/replay machinery — subscribing to <c>IConnectionMultiplexer.ConnectionRestored</c>/
+/// <c>ConnectionFailed</c> and resubscribing every channel after a reconnect. There is no real
+/// connection to lose, so there is nothing to replay.
+/// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> This type must never be wired into a production DI
+/// container — <c>16.Testing</c> packages are never referenced by production code (root
+/// <c>CLAUDE.md</c> hard rule). Its unbounded <see cref="PublishedMessages"/> list and its total lack
+/// of reconnect/replay behavior make it unsuitable for anything but a short-lived test process.
+/// </para>
 /// </remarks>
 public sealed class FakeRedisChannelService : IRedisChannelService
 {

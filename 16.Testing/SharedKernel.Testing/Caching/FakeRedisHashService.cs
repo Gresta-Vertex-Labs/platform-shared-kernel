@@ -24,6 +24,13 @@ namespace SharedKernel.Testing.Caching;
 /// field populated via <see cref="SetFieldAsync{T}"/> for <c>T != long</c>), standing in for the
 /// <c>WRONGTYPE</c> error the real Redis command would raise in the equivalent case.
 /// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> This type must never be wired into a production DI
+/// container — <c>16.Testing</c> packages are never referenced by production code (root
+/// <c>CLAUDE.md</c> hard rule). Its silent, unenforced <see cref="JsonTypeInfo{T}"/> divergence from
+/// real Redis wire behavior — the parameter is accepted but never (de)serialized against anything —
+/// would silently hide a serialization bug a real <c>RedisHashService</c> would surface immediately.
+/// </para>
 /// </remarks>
 public sealed class FakeRedisHashService : IRedisHashService
 {

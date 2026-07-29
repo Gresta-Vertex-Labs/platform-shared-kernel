@@ -21,6 +21,14 @@ namespace SharedKernel.Testing.Caching;
 /// Register one <see cref="FakeTypedHashStore{T}"/> per DTO type, exactly like the real
 /// <c>AddTypedHashStore&lt;T&gt;(JsonTypeInfo&lt;T&gt;)</c> convention.
 /// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> This type must never be wired into a production DI
+/// container — <c>16.Testing</c> packages are never referenced by production code (root
+/// <c>CLAUDE.md</c> hard rule). Unlike <see cref="FakeRedisHashService"/>, it never accepts a
+/// <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}"/> parameter at all — its
+/// backing store still holds boxed values directly rather than serialized wire bytes, so it never
+/// exercises the AOT-safe serialization path <see cref="ITypedHashStore{T}"/> exists to wrap.
+/// </para>
 /// </remarks>
 /// <typeparam name="T">The DTO type stored in the fake hash.</typeparam>
 public sealed class FakeTypedHashStore<T> : ITypedHashStore<T>
