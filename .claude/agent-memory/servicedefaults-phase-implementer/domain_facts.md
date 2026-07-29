@@ -61,6 +61,18 @@ session's WO-044 closeout had missed (they still said "design-locked, blocked" d
 shipped back on 2026-07-24). A single targeted grep after finishing the "current" edits catches this class of
 leftover drift cheaply.
 
+**Test counts as of 2026-07-29, end of session (SK.13.Core/Tests/Docs closed `●` a third time — C-44/T-39/DO-10,
+`WithCachingTelemetry`'s tracing addition, WO-050/P-305):** 88 `SharedKernel.ServiceDefaults.Tests` passing
+(+2 from the prior 86), 30 `SharedKernel.MultiTenancy.Tests` passing (unchanged). All six `With*Telemetry`
+siblings (`WithMessagingTelemetry`/`WithCachingTelemetry`/`WithApplicationTelemetry`/`WithSearchTelemetry`/
+`WithIntelligenceTelemetry`/`WithWorkflowTelemetry`) now uniformly wire both a tracing source and a meter —
+`WithCachingTelemetry` was the last one still metrics-only (a historical artifact of shipping first, at
+P-010/WO-003, before the "wire both" convention existed). See [[otel_wiring_pattern]] for the new
+`BaseProcessor<Activity>`-based genuine span-capture test technique this session introduced to this domain's
+`Telemetry/` test suite. No root `CLAUDE.md` sync was needed — this was a pure "implement an already-locked
+contract once the upstream blocker cleared" pass, identical in kind to the WO-043/WO-044/WO-045/WO-046
+precedents, which also never touched root `CLAUDE.md`.
+
 **Root state-map-phase quirk specific to this domain — read before calling `/state-map-phase` for a
 sub-phase promotion:** the root `state-map.md` Domain Summary Board's "Current Phase" column for domain 13
 already sits at `Published`/`●` (reached long ago, multiple times — this domain cycles reopen→Published as
