@@ -22,6 +22,13 @@ namespace SharedKernel.Testing.Cryptography;
 /// <b>SEEDED MODE IS NOT CRYPTOGRAPHICALLY SECURE.</b> It must never be used outside deterministic
 /// test assertions (e.g. snapshot-testing a generated token value).
 /// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> Even in non-seeded mode, where output is byte-for-byte
+/// production-equivalent, this type must never be wired into a production DI container —
+/// <c>16.Testing</c> packages are never referenced by production code (root <c>CLAUDE.md</c> hard
+/// rule). Its optional seeded mode exists purely to make a test's own random output reproducible, not
+/// to replace <c>CryptoRandomGenerator</c>.
+/// </para>
 /// </remarks>
 public sealed class FakeSecureRandomGenerator : ISecureRandomGenerator
 {

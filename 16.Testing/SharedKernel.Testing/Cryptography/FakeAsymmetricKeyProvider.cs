@@ -8,12 +8,19 @@ namespace SharedKernel.Testing.Cryptography;
 /// RSA/ECDSA key pairs per key id.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Promoted from <c>SharedKernel.Cryptography.Tests</c>' internal <c>InMemoryAsymmetricKeyProvider</c>
 /// test double into this package's public, shared surface (zero behavioral drift; hardened here for
 /// thread safety since fakes in this package may be shared across parallel xUnit collections). Every
 /// call to <see cref="GetRsaKey"/>/<see cref="GetEcdsaKey"/> returns a FRESH handle cloned via
 /// <c>ExportParameters(true)</c>/<c>RSA.Create(...)</c>/<c>ECDsa.Create(...)</c> so the caller's
 /// <c>using</c>/<see cref="Dispose"/> never invalidates the cached original key pair.
+/// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> RSA/ECDSA key pairs are generated in-process and held
+/// only in memory with zero persistence or HSM/Key Vault-backed hardening — wiring this into a
+/// production DI container would silently discard every key pair on process restart.
+/// </para>
 /// </remarks>
 public sealed class FakeAsymmetricKeyProvider : IAsymmetricKeyProvider, IDisposable
 {

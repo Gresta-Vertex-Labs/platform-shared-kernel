@@ -21,6 +21,12 @@ namespace SharedKernel.Testing.Cryptography;
 /// keyed DI slots that <c>AddSharedKernelCryptography()</c> establishes — a test resolving either
 /// keyed service gets a working fake with zero call-site change from production.
 /// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> Signatures are HMAC-derived pseudo-signatures, not real
+/// RSA/ECDSA — a signature produced by this fake never verifies against a real
+/// <c>RsaSignatureService</c>/<c>EcdsaSignatureService</c>, and wiring this into a production DI
+/// container would silently replace asymmetric non-repudiation with a shared-derivation HMAC scheme.
+/// </para>
 /// </remarks>
 public sealed class FakeAsymmetricSignatureService : IAsymmetricSignatureService
 {

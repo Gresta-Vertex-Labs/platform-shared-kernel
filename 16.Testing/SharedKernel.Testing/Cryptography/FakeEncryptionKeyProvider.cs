@@ -9,11 +9,19 @@ namespace SharedKernel.Testing.Cryptography;
 /// one designated as current.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Promoted from <c>SharedKernel.Cryptography.Tests</c>' internal <c>InMemoryEncryptionKeyProvider</c>
 /// test double into this package's public, shared surface (zero behavioral drift; hardened here for
 /// thread safety since fakes in this package may be shared across parallel xUnit collections).
 /// Multi-key-version support lets a test exercise a key-rotation "decrypt an older payload" scenario
 /// exactly like a real Key Vault-backed provider would.
+/// </para>
+/// <para>
+/// <b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b> Key material lives only in an in-process
+/// <see cref="ConcurrentDictionary{TKey,TValue}"/> with zero persistence, rotation policy, or
+/// Key Vault/HSM-backed hardening — wiring this into a production DI container would silently
+/// discard every key on process restart.
+/// </para>
 /// </remarks>
 public sealed class FakeEncryptionKeyProvider : IEncryptionKeyProvider
 {
