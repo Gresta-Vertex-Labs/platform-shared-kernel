@@ -7952,6 +7952,9 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-14] Phase Backlog P-257 → ● Complete — SK.15.LoggingRetrofit done; 00.Governance's P-250 (SK0020/SK0021 analyzers, LoggingEventIdIntegrityAssertion) already shipped 2026-07-09, satisfying the analyzer-pass acceptance criterion (state-map-phase)
 - [2026-07-14] 16 → Tests (●) — promoted from SK.16.Tests (45/45); `Logging/InMemoryLoggerTests.cs` added to `SharedKernel.Testing.SelfTests` (37 tests) proving `LogRecord`/`InMemoryLogger`/`InMemoryLogger<TCategoryName>`/`InMemoryLoggerFactory`/`LoggerAssertions`/`AddInMemoryLoggerFactory()` via a real `[LoggerMessage]`-attributed call site; 320/320 SelfTests passing (state-map-phase)
 - [2026-07-23] 16.Testing → Tests (◐) — promoted from `SK.16.Core` (84/84, ●) and `SK.16.Docs` (26/26, ●); implemented the `Workflows/` folder in full against the now-real `SharedKernel.Workflows.Temporal` (`17.Workflows`'s own `SK.17.Core` reached `●` on 2026-07-23) — `InMemoryWorkflowExecution`, `InMemoryWorkflowDispatcher`, `InMemoryWorkflowHandle`, `InMemoryWorkflowHandle<TResult>`, `WorkflowServiceCollectionExtensions.AddInMemoryWorkflowDispatcher()`; two corrections made against the pre-verification design draft (`IWorkflowDispatcher.GetHandle` throws `ArgumentException` rather than returning a `Result`-wrapped type; `WorkflowLifecycleStatus` is `public`, not `internal`, since it is the return type of a public property); `dotnet build SharedKernel.Testing.csproj -c Release` succeeds 0 errors, 7 pre-existing warnings only. No consuming-domain regression check applies — no `SharedKernel.Workflows.Temporal.Tests` suite exists on disk yet. `SK.16.Tests` is now `◐` (54/55) — T-55 (`SharedKernel.Testing.SelfTests/Workflows/` proof) is the only remaining task anywhere in `16.Testing`; no `⚑` Blocked entries remain in the domain (state-map-phase)
+- [2026-07-29] Phase(s) P-301, P-302, P-303, P-304 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
+- [2026-07-29] Phase(s) P-305 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-07-29] Phase(s) P-306 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -11375,3 +11378,129 @@ A new Roslyn analyzer in `00.Governance/SharedKernel.Analyzers` that flags an ex
 - [2026-07-28] 16 → Tests (●) — promoted from SK.16.Tests (59/59); implemented and proved all 4 T-56–T-59 tasks (93 new tests: 79 across 9 `Cryptography/` test files + 14 across 2 `FeatureManagement/` test files) in `SharedKernel.Testing.SelfTests`, covering all 8 `Cryptography/` fakes + `AddFakeCryptography()` and `FakeFeatureManager` + `AddFakeFeatureManagement()`. One `CLAUDE.md` drift corrected: `FakeFeatureManager.GetVariantAsync`'s unconfigured-feature fallback is the REAL `FeatureVariant.Unassigned` sentinel, not the fake-only `.Name = "Default"` shape the original Design-phase draft specified. `dotnet test SharedKernel.Testing.SelfTests.csproj -c Release` (real Docker daemon) passes 733/733 (640 pre-existing + 93 net new), zero regressions. `SK.16.Docs` (DO-27–DO-29) next (state-map-phase)
 - [2026-07-28] 16 → Docs (●) — promoted from SK.16.Docs (29/29); DO-27 added an explicit, capitalized `<b>TEST-ONLY — NEVER PRODUCTION-SAFE.</b>` `<remarks>` statement to the five `Cryptography/` fakes lacking one (`FakeSecureRandomGenerator`, `FakeEncryptionKeyProvider`, `FakeAsymmetricKeyProvider`, `FakeAsymmetricSignatureService`, `FakeHmacSigner`); `FakeOneWayHasher`/`FakeSymmetricEncryptionService` already carried one. DO-28/DO-29 verified already-present XML doc coverage on `FakeContentHasher`/`AddFakeCryptography()`'s `IContentHasher` line and `FakeFeatureManager`/`AddFakeFeatureManagement()`'s "not a weighted-random allocator" note — zero code change. `dotnet build SharedKernel.Testing.csproj -c Release` succeeds, 0 errors, 9 pre-existing warnings, none introduced. All six phases of `16.Testing` are `●` again (state-map-phase)
 - [2026-07-28] Phase Backlog P-300 → ● Complete — WO-049's `16.Testing` contribution (Design/Scaffold/Core/Tests/Docs for `Cryptography/`/`FeatureManagement/` fakes) fully shipped end to end (state-map-phase)
+
+---
+### P-301 — Caching: NuGet Packaging & Consumer-Verify Parity for the 7-Package Topology
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-050
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+Bring all 7 shipped packages' NuGet packaging up to the bar already established elsewhere in the platform (`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows`): complete `PackageId`/`Version`/`Description`/`PackageTags`/license/repository/copyright metadata, plus a genuine `PackageReadmeFile` backed by an authored `README.md` for the packages that ship without one today — `SharedKernel.Caching.Abstractions` (minimal metadata, no readme) and the four Redis extraction packages that carry full metadata but no readme at all (`.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub`). Separately, retire and rebuild `02.Caching/consumer-verify` from scratch against the domain's current, post-WO-023 seven-package shape — it currently imports namespaces that no longer exist anywhere in the source tree and references a retired `SharedKernel.Caching` v1.0.0 `PackageId` (retired at the Phase 14 rename), so it does not compile against current code. The rebuilt harness must exercise, through a real `IHost.StartAsync()` (never `BuildServiceProvider()` alone), at minimum: L1-only, L1+L2, locking-only, hash-store-only, and pub/sub-only composition — each matching one of the domain's own documented consumption patterns.
+
+#### Why this is needed
+This domain has shipped 37 phases and is one of the most heavily consumed capabilities in the platform, but its own proof of correct distribution — the one artifact meant to catch "does this actually resolve and compose for a real consumer" — silently rotted across the Phase-14 rename and the entire WO-023 package split, and nothing since caught it. A domain cannot be called gold standard while five of its seven packages have never been individually pack-verified and the one integration harness that would have caught it does not even compile.
+
+#### Acceptance criteria
+- [ ] All 7 packages carry complete NuGet metadata matching the bar set by `08.Storage`/`09.Search`
+- [ ] `SharedKernel.Caching.Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, and `.Redis.PubSub` each ship a `PackageReadmeFile` backed by a real authored `README.md`
+- [ ] `dotnet pack` succeeds clean (zero `NU5039`/`NU5128` warnings) for all 7 packages
+- [ ] `02.Caching/consumer-verify` is rebuilt against current namespaces/PackageIds and compiles and runs successfully via a real `IHost.StartAsync()`
+- [ ] The rebuilt harness proves, as separate composition scenarios, at minimum: L1-only, L1+L2, locking-only, hash-store-only, and pub/sub-only DI resolution
+- [ ] `02.Caching/state-map.md`'s `SK.02.Published` phase (or its successor) is re-run/expanded to cover all 7 packages, not just the original two it was written against
+---
+### P-302 — Caching: Prove and Correct Cross-Instance Tag-Based Cache Invalidation over the L2 Redis Backplane
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-050
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+A genuine multi-instance integration test that constructs two independent `ICacheService`/FusionCache instances sharing one Redis L2 backplane (mirroring how two pods of the same microservice run in production), tags entries via one instance, calls `RemoveByTagAsync` on that instance, and asserts the tagged entries are evicted from the *other* instance's L1 cache as a result of L2/backplane propagation — not merely re-verified within the single instance that issued the call. If the test reveals that cross-instance tag propagation requires backplane wiring, a message-format detail, or a FusionCache configuration flag not currently set, correct the implementation so the guarantee genuinely holds before declaring the test passing.
+
+#### Why this is needed
+Tag-based invalidation ("evict everything tagged product-catalog after a price update") is one of this cache layer's most relied-upon multi-pod coherence guarantees, and `RemoveByTagAsync` is currently a bare passthrough to FusionCache's own tagging with zero domain-authored test proving it survives a real multi-instance topology — the only Redis-backed test in the suite constructs a single shared `ServiceProvider`, which cannot distinguish "works across pods" from "works within one process." A capability this central to fleet-wide cache correctness must be proven, not assumed, before this domain can be called gold standard.
+
+#### Acceptance criteria
+- [ ] A new integration test builds two independently-constructed FusionCache instances against the same Redis container/backplane
+- [ ] Tag invalidation issued on instance A is proven to evict the tagged entry from instance B's L1 cache within a bounded wait
+- [ ] Any implementation gap the test surfaces is fixed, not merely documented as a known limitation
+- [ ] Existing single-instance `RemoveByTagAsync` tests are retained unchanged
+- [ ] `02.Caching/CLAUDE.md`'s tag-invalidation rule is updated to state the cross-instance guarantee explicitly, once proven
+---
+### P-303 — Caching: Parallelize Batch Cache Operations (GetManyAsync / SetManyAsync) Under the L2 Redis Backplane
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-050
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+`FusionCacheService.GetManyAsync`/`SetManyAsync` currently issue one `await`-ed single-key call per requested key in a plain sequential loop — when an L2 Redis backplane is active, a batch of N keys costs N fully serialized network round-trips, defeating the round-trip-reduction purpose a batch API exists for. Rework these two methods so that, when L2 is active, per-key operations execute concurrently (bounded by a sensible default degree of parallelism, never unbounded fan-out) rather than one at a time. Investigate whether the existing internal `IRedisL2BatchService` pipeline helper (added in Phase 22 for exactly this purpose) should be the mechanism, and either wire it in correctly or replace the sequential loop with a bounded concurrent pattern. Per-key stampede protection must remain intact for each individual key.
+
+#### Why this is needed
+Batch cache APIs exist specifically to amortize network round-trip cost across many keys — a "batch" that is secretly N sequential awaits provides zero latency benefit over a consumer looping the single-key API itself, and actively misleads any microservice adopting `GetManyAsync`/`SetManyAsync` expecting the round-trip reduction the method name promises. At the scale this platform targets, this is a real, measurable p99 latency gap in the most latency-sensitive infrastructure layer in the stack.
+
+#### Acceptance criteria
+- [ ] `GetManyAsync`/`SetManyAsync` no longer serialize per-key L2 round-trips one at a time when Redis L2 is active
+- [ ] A bounded concurrency default is chosen and documented (not unbounded fan-out for an arbitrarily large key set)
+- [ ] Per-key stampede protection is verified unchanged by a regression test
+- [ ] A new test demonstrates reduced wall-clock time for a multi-key batch call against a real Redis container, relative to the pre-change sequential baseline
+- [ ] `02.Caching/CLAUDE.md`'s Phase 22 batch-operations rule is corrected to describe the concurrent (not purely sequential) execution model
+---
+### P-304 — Caching: Distributed Tracing (ActivitySource Spans) for Cache Read/Write Operations
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-050
+**Domain:** 02.Caching
+**Depends on:** None
+
+#### What is needed
+A `SharedKernel.Caching` `ActivitySource` (companion to the existing `SharedKernel.Caching` `Meter` from Phase 31) producing a span around `FusionCacheService.GetOrSetAsync`/`GetAsync`/`SetAsync`, tagged with hit/miss outcome and the same low-cardinality `cache.key_prefix` (`{service}:{entity}`, never the full key) already used by the Phase 31 metrics.
+
+#### Why this is needed
+Every other capability domain that received `13.ServiceDefaults` `WithXTelemetry` wiring after Caching (`WithMessagingTelemetry`, `WithApplicationTelemetry`, `WithSearchTelemetry`, `WithIntelligenceTelemetry`, `WithWorkflowTelemetry`) registers both an `ActivitySource` (distributed trace spans) and a `Meter` (aggregate metrics) — `WithCachingTelemetry` is the only sibling in that family that wires metrics alone. A developer following a slow request through a distributed trace today sees spans for the HTTP handler, the MediatR pipeline, the outbound publish, and the database call, but the cache layer — frequently the highest-cardinality call site in a request — is invisible as a child span, despite aggregate counters already existing for it. This is a completeness gap relative to the platform's own established observability pattern, not a new capability being invented.
+
+#### Acceptance criteria
+- [ ] A `SharedKernel.Caching` `ActivitySource` is added alongside the existing Phase 31 `Meter`, both static readonly fields, AOT-safe
+- [ ] `GetOrSetAsync`/`GetAsync`/`SetAsync` create a span with hit/miss outcome and low-cardinality `cache.key_prefix` tag — never the full cache key
+- [ ] No new NuGet dependency is introduced (`System.Diagnostics.Activity`/`ActivitySource` is BCL, mirroring the Phase 31 `System.Diagnostics.Metrics` precedent)
+- [ ] A test verifies the span is created with correct tags for both a hit and a miss, using an `ActivityListener`
+- [ ] `02.Caching/CLAUDE.md`'s OTel section is updated to document the new `ActivitySource` alongside the existing `Meter`
+---
+### P-305 — ServiceDefaults: Wire the New Caching ActivitySource into WithCachingTelemetry
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-050
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-304
+
+#### What is needed
+Extend the existing `WithCachingTelemetry(this IHostApplicationBuilder)` extension so that, in addition to its current `WithMetrics(m => m.AddMeter("SharedKernel.Caching"))` wiring, it also registers the new `02.Caching` `ActivitySource` (from P-304) via `WithTracing(t => t.AddSource("SharedKernel.Caching"))` — bringing it in line with the now-established `WithMessagingTelemetry`/`WithApplicationTelemetry`/`WithSearchTelemetry`/`WithIntelligenceTelemetry`/`WithWorkflowTelemetry` sibling pattern, all of which wire both a tracing source and a meter by name.
+
+#### Why this is needed
+`WithCachingTelemetry` was implemented first (P-010, WO-003), before this platform established the "wire both tracing and metrics by name" convention for its `WithXTelemetry` family — it has quietly drifted out of sync with every sibling added since. Once `02.Caching` ships an `ActivitySource` (P-304), leaving it unwired here would mean the span never reaches the host's `TracerProvider`, silently defeating the point of adding it.
+
+#### Acceptance criteria
+- [ ] `WithCachingTelemetry` calls `WithTracing(t => t.AddSource(CachingInstrumentationName))` in addition to its existing metrics wiring
+- [ ] Remains idempotent — calling `WithCachingTelemetry()` more than once registers no duplicate `ActivitySource`/meter instruments, matching the existing rule for this method family
+- [ ] A test confirms a span emitted by `02.Caching`'s new `ActivitySource` is exported once `WithCachingTelemetry()` has been called on the host
+- [ ] `13.ServiceDefaults/CLAUDE.md`'s `WithCachingTelemetry` contract entry is updated to match its siblings' "wires both tracing and metrics" description
+---
+### P-306 — Testing: In-Memory Fakes for IRedisChannelService / IRedisHashService / ITypedHashStore<T> / ICacheWarmupStrategy
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-050
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+`16.Testing/SharedKernel.Testing` gains in-process, deterministic test doubles for the four `SharedKernel.Caching.Abstractions` contracts that currently have none: `IRedisChannelService` (pub/sub publish/subscribe/unsubscribe, tracked in-memory per channel), `IRedisHashService` (in-memory hash-field storage keyed by `(key, field)`), `ITypedHashStore<T>` (typed wrapper over the same in-memory store), and `ICacheWarmupStrategy` (a simple recordable/assertable fake strategy for testing `CacheWarmupHostedService` ordering and failure-isolation consumer-side). Each mirrors the existing `FakeCacheService`/`FakeDistributedLockService`/`FakeRenewableLock`/`FakeCacheInvalidationBus`/`FakeTenantCacheKeyProvider` precedent already shipped for this domain's other five `02.Caching` abstractions.
+
+#### Why this is needed
+`02.Caching` ships nine distinct DI-registered abstractions; five already have `16.Testing` fakes, but a consuming-service developer who wants to unit-test code that calls `IRedisChannelService.PublishAsync`, reads/writes via `IRedisHashService`/`ITypedHashStore<T>` (e.g., a session store), or registers a custom `ICacheWarmupStrategy` has no fast in-memory double today and must reach for Testcontainers just to exercise their own business logic in a unit test — directly undermining the developer-friendliness this platform's shared-fakes convention exists to guarantee, and inconsistent with the coverage already given to this same domain's other abstractions.
+
+#### Acceptance criteria
+- [ ] Fakes exist for `IRedisChannelService`, `IRedisHashService`, `ITypedHashStore<T>`, `ICacheWarmupStrategy`
+- [ ] Each fake's XML doc and type name make its test-only, non-production-safe nature unmistakable, matching the existing `Fake*` precedent in this domain
+- [ ] Fake `IRedisChannelService` supports publish/subscribe/unsubscribe round-trip assertions in a single process (no real Redis)
+- [ ] Fake `IRedisHashService`/`ITypedHashStore<T>` round-trip set/get/get-all/delete/increment semantics identically to the real Redis-backed implementation's documented contract
+- [ ] A registration extension (e.g. `AddFakeCachingServices()` extended, or a new sibling call) registers the new fakes consistently with the existing pattern
+- [ ] Each fake has its own unit test in `SharedKernel.Testing.SelfTests`, matching the existing per-fake self-test convention
+- [ ] References only `SharedKernel.Caching.Abstractions` — never a mocking framework
+---
+
+- [2026-07-29] WO-050 phases P-301–P-306 written to Phase Backlog — 02.Caching gold-standard architecture review, triggered by direct user request to analyze whether this domain (37 phases, 7 packages, the platform's most heavily consumed capability) is in "final" gold-standard shape, developer-friendly, and current. Verified findings against shipped `.cs`/`.csproj` files via a dedicated research pass, not domain-brain prose: confirmed `02.Caching/consumer-verify` imports namespaces retired at the Phase-14 rename and references a dead `SharedKernel.Caching` v1.0.0 `PackageId`, so it no longer compiles — silently unproven for the 23 phases since; confirmed 5 of 7 packages (`.Abstractions`, `.Redis.Core`, `.DistributedLocking`, `.HashStore`, `.PubSub`) ship without a `README.md`/`PackageReadmeFile`; confirmed the only Redis-backed `RemoveByTagAsync` test uses a single shared `ServiceProvider`, proving same-instance tag removal only, never cross-pod L2-propagated invalidation; confirmed `GetManyAsync`/`SetManyAsync` are genuinely sequential `foreach`-with-`await` loops (no `Task.WhenAll`/pipelining) despite an existing internal `IRedisL2BatchService` built in Phase 22 seemingly for this purpose; confirmed `WithCachingTelemetry` is the only sibling in the platform's `WithXTelemetry` family that wires a `Meter` but no `ActivitySource`, unlike every domain added after it (Messaging/Application/Search/Intelligence/Workflows). Four phases target `02.Caching` itself: NuGet packaging + consumer-verify rebuild across the true 7-package topology (P-301); a genuine multi-instance test proving (and if necessary fixing) cross-pod tag invalidation over the L2 backplane (P-302); parallelizing batch cache operations to actually deliver the round-trip reduction a batch API implies (P-303); and adding `ActivitySource` distributed-tracing spans to close the observability-completeness gap (P-304). Two cross-domain phases follow: `13.ServiceDefaults` wiring the new tracing source into `WithCachingTelemetry` (P-305, depends on P-304); and `16.Testing` fakes for the four `02.Caching` abstractions still lacking one — `IRedisChannelService`/`IRedisHashService`/`ITypedHashStore<T>`/`ICacheWarmupStrategy` (P-306). Two items were evaluated and explicitly declined rather than written as phases: adopting .NET's built-in `Microsoft.Extensions.Caching.Hybrid` (`HybridCache`) in place of or alongside FusionCache — FusionCache 2.6.0 remains actively maintained (confirmed current as of March 2026) with a materially richer feature set (fail-safe, adaptive/eager refresh, tagging, multi-named-cache) than `HybridCache` offers, and this platform's own `ICacheService` abstraction already gives the provider-decoupling `HybridCache` would add, so swapping would be lateral risk for no benefit; and replacing `RedLock.net` (last released 2.3.2, April 2022 — over four years stale as of this review) — unlike `SharedKernel.AI.Milvus`'s WO-048 retraction, this package has a stable, fully shipped, 41-test-covered production integration with no blocking defect, and the Redlock algorithm's surface is small and stable enough that staleness alone does not justify replacing working, tested code; recorded here as a monitored risk rather than forced churn. Domain Summary Board rows 02/13/16 are all already `●` Published, so no `state-map-phase` calls — backlog-only, ready for a future `/dispatch-phase` pass (arch-lead, user request)
