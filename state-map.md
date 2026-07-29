@@ -82,7 +82,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Core/Tests/Docs all fully closed (2026-07-29) — `WithCachingTelemetry()`'s tracing addition (C-44/T-39/DO-10, WO-050/P-305) implemented per D-15's locked design: now wires both `WithTracing(AddSource)`/`WithMetrics(AddMeter)` for `"SharedKernel.Caching"`, bringing it to parity with all five sibling `With*Telemetry` methods; blocker (`02.Caching`'s Phase 41/P-304) re-verified cleared directly against `02.Caching/state-map.md` and compiled `FusionCacheService.cs` before implementing. All six `SK.13.*` phase keys now `●`/`—` — domain fully complete end to end again. 88/88 SharedKernel.ServiceDefaults.Tests (+2) + 30/30 SharedKernel.MultiTenancy.Tests passing, 0 regressions. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
-| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | P-300/WO-049 (`Cryptography/`/`FeatureManagement/` fakes for `01.Core`'s `SharedKernel.Cryptography`/`SharedKernel.FeatureManagement`) fully closed — `SK.16.Docs` now `●` (29/29): DO-27 added an explicit, capitalized TEST-ONLY/never-production-safe `<remarks>` statement to the five `Cryptography/` fakes that lacked one (`FakeSecureRandomGenerator`, `FakeEncryptionKeyProvider`, `FakeAsymmetricKeyProvider`, `FakeAsymmetricSignatureService`, `FakeHmacSigner`); DO-28/DO-29 verified already-present XML doc coverage on `FakeContentHasher`/`AddFakeCryptography()` and `FakeFeatureManager`/`AddFakeFeatureManagement()`. All six phases of `16.Testing` (Design/Scaffold/Core/Tests/Docs/Published) are `●` — WO-049's `16.Testing` contribution complete end to end. | — |
+| 16 | [Testing](16.Testing/state-map.md) | Design | `●` | P-306/WO-050 (`Caching/FakeRedisChannelService`/`FakeRedisHashService`/`FakeTypedHashStore<T>`/`FakeCacheWarmupStrategy` for `02.Caching`'s last four un-faked `SharedKernel.Caching.Abstractions` contracts) Design phase closed — `SK.16.Design` now `●` (164/164): all five D-160–D-164 target shapes re-verified directly against the live `02.Caching/SharedKernel.Caching.Abstractions` source (`IRedisChannelService`/`IRedisHashService`/`ITypedHashStore`/`ICacheWarmupStrategy`/`ConnectionHealthState`) plus `CacheWarmupHostedService`'s ordering/failure-isolation loop and the two real DI extensions (`AddTypedHashStore<T>`/`AddCacheWarmup<TStrategy>`), zero drift found, no `16.Testing/CLAUDE.md` correction needed. Carries zero cross-domain blocker — `SharedKernel.Caching.Abstractions` was already referenced and fully shipped. | Scaffold (S-42) then Core (C-96–C-100) implement the four fakes and three DI extensions — a future session's work. |
 | 17 | [Workflows](17.Workflows/state-map.md) | Published | `●` | SK.17.Published complete (7/7) — all six phase keys (Design/Scaffold/Core/Tests/Docs/Published) now `●`, 81/81 tasks done. Docs-phase NuGet metadata re-verified genuinely complete (no `08.Storage`-style `PackageReadmeFile` gap); `dotnet pack` clean, zero `NU5039`/`NU5128`. New `17.Workflows/consumer-verify` harness (four surfaces, real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()`, never `BuildServiceProvider()`) proves `.AsClientOnly()` resolves the dispatch surface with zero DI exceptions and no `IHostedService`; a worker-hosting composition against a real `WorkflowEnvironment` registers the hosted worker service and completes a full start→activity→result round trip; and config misconfiguration fails loudly via a genuine two-tier mechanism — an entirely-absent key throws `InvalidOperationException` synchronously at `.Build()` (before any `IHost` exists), a present-but-invalid value throws `OptionsValidationException` at `IHost.StartAsync()` naming the property. 158/158 tests still passing. Root Phase Backlog **P-287 (WO-046) closed**. | — |
 
 ---
@@ -109,7 +109,7 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Published | 11 |
-| ● Docs | 3 |
+| ● Docs | 2 |
 | ● Phase 41 (Distributed Tracing ActivitySource Spans for Cache Read/Write Operations) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 0 |
@@ -120,7 +120,7 @@ Format when active:
 | ● Grpc | 0 |
 | ● Tests | 0 |
 | ● Core | 0 |
-| ● Design | 0 |
+| ● Design | 1 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
@@ -11514,3 +11514,4 @@ Extend the existing `WithCachingTelemetry(this IHostApplicationBuilder)` extensi
 - [2026-07-29] Phase Backlog P-304 → ● Complete — SK.02.OtelTracingSpans done (state-map-phase)
 - [2026-07-29] 13 → Published (●) — promoted from SK.13.Core/SK.13.Tests/SK.13.Docs (44/44, 39/39, 10/10); C-44/T-39/DO-10 (WithCachingTelemetry tracing addition) implemented once 02.Caching's P-304 blocker cleared (state-map-phase)
 - [2026-07-29] Phase Backlog P-305 → ● Complete — WithCachingTelemetry tracing addition (WO-050) done, ServiceDefaults With*Telemetry family now uniform across all six siblings (state-map-phase)
+- [2026-07-29] 16 → Design (●) — promoted from SK.16.Design (164/164); P-306/WO-050 target shapes (`Caching/` fakes for `IRedisChannelService`/`IRedisHashService`/`ITypedHashStore<T>`/`ICacheWarmupStrategy`) re-verified zero drift, Scaffold next (state-map-phase)
