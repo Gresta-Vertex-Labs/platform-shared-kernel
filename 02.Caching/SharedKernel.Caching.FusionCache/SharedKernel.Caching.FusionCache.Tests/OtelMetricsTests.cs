@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
@@ -14,7 +15,18 @@ namespace SharedKernel.Caching.FusionCache.Tests;
 ///
 /// Each test sets up a <see cref="MeterListener"/> scoped to that test to
 /// capture only the delta generated during the test — this avoids cross-test
-/// contamination even though the instruments are static.
+/// contamination even though the instruments are static. The accumulator
+/// dictionaries are <see cref="ConcurrentDictionary{TKey, TValue}"/>, updated via
+/// <see cref="ConcurrentDictionary{TKey, TValue}.AddOrUpdate(TKey, TKey, Func{TKey, TValue, TValue})"/>
+/// rather than plain <see cref="Dictionary{TKey, TValue}"/> — a
+/// <see cref="MeterListener"/>'s measurement callback can be invoked concurrently
+/// from multiple threads whenever another test class (or, since Phase 41, this
+/// suite's own <c>OtelTracingTests</c>) is concurrently recording measurements
+/// against the same static meter under xUnit's default cross-class test
+/// parallelism. A plain <see cref="Dictionary{TKey, TValue}"/> corrupted under
+/// this exact concurrent-write race, intermittently throwing
+/// <see cref="InvalidOperationException"/> from unrelated test classes, before
+/// this fix.
 /// </summary>
 public sealed class OtelMetricsTests : IDisposable
 {
@@ -37,11 +49,11 @@ public sealed class OtelMetricsTests : IDisposable
     // -------------------------------------------------------------------------
 
     private static MeterListener BuildListener(
-        out Dictionary<string, long> counters,
-        out Dictionary<string, double> histograms)
+        out ConcurrentDictionary<string, long> counters,
+        out ConcurrentDictionary<string, double> histograms)
     {
-        var c = new Dictionary<string, long>(StringComparer.Ordinal);
-        var h = new Dictionary<string, double>(StringComparer.Ordinal);
+        var c = new ConcurrentDictionary<string, long>(StringComparer.Ordinal);
+        var h = new ConcurrentDictionary<string, double>(StringComparer.Ordinal);
         counters = c;
         histograms = h;
 
@@ -54,12 +66,12 @@ public sealed class OtelMetricsTests : IDisposable
 
         listener.SetMeasurementEventCallback<long>((instrument, measurement, _, _) =>
         {
-            c[instrument.Name] = c.GetValueOrDefault(instrument.Name) + measurement;
+            c.AddOrUpdate(instrument.Name, measurement, (_, existing) => existing + measurement);
         });
 
         listener.SetMeasurementEventCallback<double>((instrument, measurement, _, _) =>
         {
-            h[instrument.Name] = h.GetValueOrDefault(instrument.Name) + measurement;
+            h.AddOrUpdate(instrument.Name, measurement, (_, existing) => existing + measurement);
         });
 
         listener.Start();

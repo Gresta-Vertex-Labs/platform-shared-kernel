@@ -15,9 +15,12 @@ namespace SharedKernel.Caching.FusionCache.Implementations;
 /// </summary>
 /// <remarks>
 /// Emits <see cref="System.Diagnostics.Metrics"/> instruments under the meter
-/// <c>SharedKernel.Caching</c> (version <c>1.0</c>). Consumers attach a
-/// <see cref="MeterListener"/> or configure an OTel metrics exporter to receive
-/// these metrics.
+/// <c>SharedKernel.Caching</c> (version <c>1.0</c>), and distributed-trace spans
+/// (Phase 41) under the identically-named/versioned <see cref="ActivitySource"/> —
+/// deliberately the same instrumentation-scope name and version as the meter, since
+/// OTel treats the trace and metric surfaces of one component as one instrumentation
+/// scope. Consumers attach a <see cref="MeterListener"/>/<see cref="ActivityListener"/>
+/// or configure an OTel metrics/tracing exporter to receive these signals.
 /// </remarks>
 internal sealed partial class FusionCacheService : ICacheService
 {
@@ -77,6 +80,21 @@ internal sealed partial class FusionCacheService : ICacheService
         _meter.CreateCounter<long>(
             "cache.evictions",
             description: "Number of L1 memory evictions. Tag cache.eviction_reason = EvictionReason name.");
+
+    // ---------------------------------------------------------------------------
+    // OTel Tracing — Phase 41 (P-304). Static readonly, AOT-safe, shared across
+    // all instances. Same instrumentation-scope name/version as _meter above —
+    // deliberately, since OTel treats the trace and metric surfaces of one
+    // component as one instrumentation scope. BCL guarantees negligible overhead
+    // when no listener is attached (StartActivity returns null).
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// The activity source for all SharedKernel.Caching distributed-trace spans.
+    /// Consumers attach an <see cref="ActivityListener"/> or configure an OTel
+    /// tracing exporter to receive these spans.
+    /// </summary>
+    private static readonly ActivitySource _activitySource = new("SharedKernel.Caching", "1.0");
 
     // ---------------------------------------------------------------------------
 
@@ -145,6 +163,10 @@ internal sealed partial class FusionCacheService : ICacheService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
+        using var activity = _activitySource.StartActivity("cache.get", ActivityKind.Client);
+        var keyPrefix = ExtractKeyPrefix(key);
+        activity?.SetTag("cache.key_prefix", keyPrefix);
+
         var result = await _cache.TryGetAsync<T>(key, token: ct).ConfigureAwait(false);
 
         if (!result.HasValue)
@@ -153,8 +175,10 @@ internal sealed partial class FusionCacheService : ICacheService
             // TryGetAsync does not fire FusionCache's Memory.Miss event, so we
             // instrument the miss path directly here for GetAsync callers.
             _cacheMisses.Add(1,
-                new KeyValuePair<string, object?>("cache.key_prefix", ExtractKeyPrefix(key)));
+                new KeyValuePair<string, object?>("cache.key_prefix", keyPrefix));
         }
+
+        activity?.SetTag("cache.outcome", result.HasValue ? "hit" : "miss");
 
         return result.HasValue ? result.Value : default;
     }
@@ -164,6 +188,9 @@ internal sealed partial class FusionCacheService : ICacheService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(policy);
+
+        using var activity = _activitySource.StartActivity("cache.set", ActivityKind.Client);
+        activity?.SetTag("cache.key_prefix", ExtractKeyPrefix(key));
 
         var entryOptions = BuildEntryOptions(policy);
         IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
@@ -176,6 +203,7 @@ internal sealed partial class FusionCacheService : ICacheService
         {
             _cacheErrors.Add(1,
                 new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
 
@@ -193,17 +221,26 @@ internal sealed partial class FusionCacheService : ICacheService
         ArgumentNullException.ThrowIfNull(factory);
         ArgumentNullException.ThrowIfNull(policy);
 
+        using var activity = _activitySource.StartActivity("cache.get_or_set", ActivityKind.Client);
+        var keyPrefix = ExtractKeyPrefix(key);
+        activity?.SetTag("cache.key_prefix", keyPrefix);
+
         var entryOptions = BuildEntryOptions(policy);
         IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
+
+        // Tracks whether the factory ran (a miss) or FusionCache satisfied the
+        // request from L1/L2 without invoking it (a hit) — set from inside the
+        // factory lambda below, alongside the existing Log.FactoryInvoked call.
+        var factoryInvoked = false;
 
         // Adapt ValueTask<T> factory to FusionCache's Task<T> factory via async/await.
         // The state machine allocation occurs only on actual cache misses — not on every call.
         // Stopwatch measures factory elapsed time for the cache.factory.duration histogram.
-        var keyPrefix = ExtractKeyPrefix(key);
         var result = await _cache.GetOrSetAsync<T>(
             key,
             async token =>
             {
+                factoryInvoked = true;
                 Log.FactoryInvoked(_logger, key);
                 var sw = Stopwatch.StartNew();
                 try
@@ -220,6 +257,7 @@ internal sealed partial class FusionCacheService : ICacheService
                     sw.Stop();
                     _cacheErrors.Add(1,
                         new KeyValuePair<string, object?>("cache.error_type", ex.GetType().Name));
+                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                     throw;
                 }
             },
@@ -227,6 +265,8 @@ internal sealed partial class FusionCacheService : ICacheService
             entryOptions,
             tags,
             token: ct).ConfigureAwait(false);
+
+        activity?.SetTag("cache.outcome", factoryInvoked ? "miss" : "hit");
 
         return result;
     }
