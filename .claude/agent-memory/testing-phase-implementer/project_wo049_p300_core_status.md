@@ -1,8 +1,10 @@
 ---
 name: project_wo049_p300_core_status
-description: WO-049/P-300 (16.Testing Cryptography/FeatureManagement fakes) status as of 2026-07-28 — Core AND Tests both closed, only Docs (DO-27–DO-29) remains.
+description: WO-049/P-300 (16.Testing Cryptography/FeatureManagement fakes) — CLOSED 2026-07-29, all six 16.Testing phases ● again, root Phase Backlog P-300 also flipped.
 type: project
 ---
+
+**CLOSED 2026-07-29.** `SK.16.Docs` (DO-27–DO-29) finished the same session that picked it up — see `domain_16_testing_conventions.md` for the "found already done, uncommitted" discovery worth reading before starting the next phase. `dotnet build SharedKernel.Testing.csproj -c Release`: 0 errors, 7 pre-existing warnings (2 `NU1903`, 5 `CS8509`), none introduced. Committed as `77b6855` "docs(testing): document cryptography and feature-mgmt fakes (p-300)". All 385/385 tasks across Design/Scaffold/Core/Tests/Docs/Published are `●`. Root `state-map.md` Domain Summary Board row 16 now reads `Docs`/`●`; Phase Backlog P-300 → `●` Complete.
 
 **WO-049/P-300 `SK.16.Core` (C-85–C-95) CLOSED 2026-07-28** — all 11 tasks implemented in one pass: 8 `Cryptography/` fakes (`FakeOneWayHasher`, `FakeSecureRandomGenerator`, `FakeEncryptionKeyProvider`, `FakeAsymmetricKeyProvider`, `FakeSymmetricEncryptionService`, `FakeAsymmetricSignatureService`, `FakeHmacSigner`, `FakeContentHasher`) + `FakeCryptographyServiceCollectionExtensions.AddFakeCryptography()`, plus `FeatureManagement/FakeFeatureManager` + `FakeFeatureManagementServiceCollectionExtensions.AddFakeFeatureManagement()`. 11 new `.cs` files, all `sealed`. `dotnet build SharedKernel.Testing.csproj -c Release` clean — 0 errors, 4-9 pre-existing warnings depending on incremental-build state (2 `NU1903`, 2 `CS1574` in `01.Core/SharedKernel.Core`, 5 `CS8509` in `Intelligence/`/`Search/` on a clean rebuild), none introduced.
 
