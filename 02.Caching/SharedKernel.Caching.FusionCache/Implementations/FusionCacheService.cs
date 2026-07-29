@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,20 @@ namespace SharedKernel.Caching.FusionCache.Implementations;
 /// </remarks>
 internal sealed partial class FusionCacheService : ICacheService
 {
+    // ---------------------------------------------------------------------------
+    // Batch operation concurrency — Phase 40 (P-303).
+    //
+    // GetManyAsync/SetManyAsync fan out per-key L2 round-trips via
+    // Parallel.ForEachAsync instead of a strictly sequential await-per-key loop,
+    // so a batch over N keys no longer costs N fully serialized L2 round-trips
+    // when Redis L2 is active. Fixed, not exposed as a CachingOptions knob —
+    // this phase deliberately does not grow the public API surface; a future
+    // phase can promote this to a configurable option if telemetry ever shows
+    // 16 is wrong for a given workload.
+    // ---------------------------------------------------------------------------
+
+    private const int MaxBatchConcurrency = 16;
+
     // ---------------------------------------------------------------------------
     // OTel Metrics — static readonly, AOT-safe, shared across all instances.
     // BCL guarantees negligible overhead when no listener is attached.
@@ -218,29 +233,54 @@ internal sealed partial class FusionCacheService : ICacheService
 
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Phase 40 (P-303): fans out per-key L2 round-trips via
+    /// <see cref="Parallel.ForEachAsync{TSource}(IEnumerable{TSource}, ParallelOptions, Func{TSource, CancellationToken, ValueTask})"/>,
+    /// bounded by <see cref="MaxBatchConcurrency"/> concurrent in-flight requests,
+    /// accumulating into a <see cref="ConcurrentDictionary{TKey, TValue}"/> — a plain
+    /// <see cref="Dictionary{TKey, TValue}"/> is not thread-safe for concurrent writes
+    /// from multiple parallel bodies. The empty-input short-circuit (Phase 22) still
+    /// holds: <c>Parallel.ForEachAsync</c> over an empty source completes immediately
+    /// with no iterations, returning an empty dictionary with no special-casing needed.
+    /// </remarks>
     public async ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
         IEnumerable<string> keys,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(keys);
 
-        var result = new Dictionary<string, T?>();
+        var result = new ConcurrentDictionary<string, T?>();
 
-        foreach (var key in keys)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        await Parallel.ForEachAsync(
+            keys,
+            new ParallelOptions { MaxDegreeOfParallelism = MaxBatchConcurrency, CancellationToken = ct },
+            async (key, token) =>
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
-            var entry = await _cache.TryGetAsync<T>(key, token: ct).ConfigureAwait(false);
-            result[key] = entry.HasValue ? entry.Value : default;
+                var entry = await _cache.TryGetAsync<T>(key, token: token).ConfigureAwait(false);
+                result[key] = entry.HasValue ? entry.Value : default;
 
-            if (!entry.HasValue)
-                Log.CacheMiss(_logger, key);
-        }
+                if (!entry.HasValue)
+                    Log.CacheMiss(_logger, key);
+            }).ConfigureAwait(false);
 
         return result;
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Phase 40 (P-303): fans out per-key L2 writes via
+    /// <see cref="Parallel.ForEachAsync{TSource}(IEnumerable{TSource}, ParallelOptions, Func{TSource, CancellationToken, ValueTask})"/>,
+    /// bounded by <see cref="MaxBatchConcurrency"/> concurrent in-flight writes. The
+    /// single <see cref="CachePolicy"/>-applies-to-all-entries contract (Phase 22) is
+    /// unchanged — the FusionCache entry options and tags derived from the policy are
+    /// computed once before the fan-out begins, not per entry. Accepted trade-off:
+    /// unlike the prior strictly-sequential loop, a failure on one entry no longer
+    /// guarantees entries after it were never attempted — up to
+    /// <see cref="MaxBatchConcurrency"/> entries beyond the failing one may already be
+    /// in flight (and may complete) by the time the failure surfaces to the caller.
+    /// </remarks>
     public async ValueTask SetManyAsync<T>(
         IReadOnlyDictionary<string, T> entries,
         CachePolicy policy,
@@ -252,13 +292,16 @@ internal sealed partial class FusionCacheService : ICacheService
         var entryOptions = BuildEntryOptions(policy);
         IEnumerable<string>? tags = policy.Tags.Length > 0 ? policy.Tags : null;
 
-        foreach (var (key, value) in entries)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        await Parallel.ForEachAsync(
+            entries,
+            new ParallelOptions { MaxDegreeOfParallelism = MaxBatchConcurrency, CancellationToken = ct },
+            async (entry, token) =>
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(entry.Key);
 
-            await _cache.SetAsync(key, value, entryOptions, tags, token: ct).ConfigureAwait(false);
-            Log.CacheSet(_logger, key);
-        }
+                await _cache.SetAsync(entry.Key, entry.Value, entryOptions, tags, token: token).ConfigureAwait(false);
+                Log.CacheSet(_logger, entry.Key);
+            }).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

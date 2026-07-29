@@ -201,4 +201,101 @@ public sealed class BatchOperationsTests : IDisposable
         Assert.Null(after[$"batch:tagged:1-{suffix}"]);
         Assert.Null(after[$"batch:tagged:2-{suffix}"]);
     }
+
+    // -------------------------------------------------------------------------
+    // BP-05: stampede protection under concurrency — Phase 40 rewrote
+    // GetManyAsync/SetManyAsync to run concurrently via Parallel.ForEachAsync
+    // over a ConcurrentDictionary accumulator. This proves that change
+    // introduces no shared mutable state that could interfere with
+    // FusionCache's own per-key stampede-protection lock inside GetOrSetAsync.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetOrSetAsync_StampedeProtection_UnaffectedByInterleavedBatchOperations()
+    {
+        var stampedeKey = "test:stampede-interleaved-" + Guid.NewGuid();
+        var factoryCalls = 0;
+
+        // Fire 20 concurrent requests for the same uncached key...
+        const int concurrency = 20;
+        var stampedeTasks = Enumerable.Range(0, concurrency).Select(_ =>
+            _cache.GetOrSetAsync(
+                stampedeKey,
+                async ct =>
+                {
+                    Interlocked.Increment(ref factoryCalls);
+                    await Task.Delay(50, ct); // simulate work
+                    return "stampede-interleaved-value";
+                },
+                CachePolicy.Default).AsTask());
+
+        // ...interleaved with an unrelated batch call over more keys than
+        // MaxDegreeOfParallelism (16), so its own internal Parallel.ForEachAsync
+        // fan-out overlaps in wall-clock time with the stampede burst above.
+        var suffix = Guid.NewGuid().ToString();
+        var batchEntries = Enumerable.Range(0, 20)
+            .ToDictionary(i => $"batch:interleaved:{i}-{suffix}", i => i);
+        var setManyTask = _cache.SetManyAsync(batchEntries, CachePolicy.Default, CancellationToken.None).AsTask();
+        var getManyTask = _cache.GetManyAsync<int?>(batchEntries.Keys, CancellationToken.None).AsTask();
+
+        var results = await Task.WhenAll(stampedeTasks);
+        await setManyTask;
+        await getManyTask;
+
+        // All stampede results must be the same value.
+        Assert.All(results, r => Assert.Equal("stampede-interleaved-value", r));
+
+        // The factory must have been invoked exactly once thanks to FusionCache
+        // stampede protection — unaffected by the concurrently-running batch calls.
+        Assert.Equal(1, factoryCalls);
+    }
+
+    // -------------------------------------------------------------------------
+    // BP-08: explicit regression coverage for Phase 22 contracts, re-affirmed
+    // unchanged after Phase 40's bounded-concurrency rewrite.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetManyAsync_EmptyKeyList_UnderBoundedConcurrency_StillShortCircuitsToEmptyDictionary()
+    {
+        // Phase 22 contract: an empty input enumerable returns an empty dictionary.
+        // Phase 40 rewrote the loop body to Parallel.ForEachAsync over an empty
+        // source, which completes immediately with zero scheduled iterations —
+        // confirm this explicitly rather than relying on incidental behavior.
+        var result = await _cache.GetManyAsync<string>(Array.Empty<string>(), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task SetManyAsync_UnderBoundedConcurrency_SinglePolicyStillAppliesToEveryEntry()
+    {
+        // Phase 22 contract: a single CachePolicy applies to all entries in the batch.
+        // Confirm every entry — not just a subset — still receives the same policy's
+        // tag under Phase 40's concurrent execution model, so RemoveByTagAsync evicts
+        // the entire batch, not a partial set.
+        const string tag = "batch-tag-single-policy-regression";
+        var policy = CachePolicy.Default.WithTags(tag);
+        var suffix = Guid.NewGuid().ToString();
+
+        var entries = new Dictionary<string, int>
+        {
+            [$"batch:single-policy:1-{suffix}"] = 1,
+            [$"batch:single-policy:2-{suffix}"] = 2,
+            [$"batch:single-policy:3-{suffix}"] = 3
+        };
+
+        await _cache.SetManyAsync(entries, policy, CancellationToken.None);
+
+        var before = await _cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        foreach (var (key, value) in entries)
+            Assert.Equal(value, before[key]);
+
+        await _cache.RemoveByTagAsync(tag);
+
+        var after = await _cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        foreach (var key in entries.Keys)
+            Assert.Null(after[key]);
+    }
 }

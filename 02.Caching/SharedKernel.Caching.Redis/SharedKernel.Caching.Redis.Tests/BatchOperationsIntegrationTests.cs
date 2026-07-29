@@ -1,9 +1,8 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
-using SharedKernel.Caching.Redis.Batch;
 using SharedKernel.Caching.Redis.Extensions;
-using StackExchange.Redis;
 using Testcontainers.Redis;
 using Xunit;
 
@@ -14,11 +13,12 @@ namespace SharedKernel.Caching.Redis.Tests;
 /// and <see cref="ICacheService.SetManyAsync{T}"/>) backed by a live Redis container.
 /// </summary>
 /// <remarks>
-/// BA-08 pipeline verification: <see cref="RedisL2BatchService.GetManyRawAsync"/> batches
-/// multiple GET calls into a single Redis pipeline round-trip using <c>IBatch</c>.
-/// The test confirms this via the Redis <c>INFO stats total_commands_processed</c> counter
-/// (accessed via an admin-enabled multiplexer). N keys must produce a command delta of 1
-/// (the pipeline flush), not N (individual round-trips).
+/// Phase 40 (P-303) retired the dead Phase 22 <c>IRedisL2BatchService</c>/<c>RedisL2BatchService</c>
+/// pipeline helper (zero DI registration, zero production caller — see <c>02.Caching/CLAUDE.md</c>'s
+/// "Batch operations rules" section) and replaced <c>FusionCacheService.GetManyAsync</c>/
+/// <c>SetManyAsync</c>'s sequential per-key loop with a bounded <c>Parallel.ForEachAsync</c>
+/// fan-out. The tests below cover functional correctness (unchanged from Phase 22) plus
+/// Phase 40's new concurrency-safety and wall-clock-improvement guarantees.
 /// </remarks>
 [Collection("Redis")]
 public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
@@ -28,10 +28,6 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
         .Build();
 
     private ServiceProvider? _provider;
-    private IConnectionMultiplexer? _multiplexer;
-
-    // Admin multiplexer used solely for INFO stats in pipeline tests.
-    private IConnectionMultiplexer? _adminMultiplexer;
 
     public async Task InitializeAsync()
     {
@@ -43,19 +39,10 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
                 .AddRedisL2(_redisContainer.GetConnectionString());
 
         _provider = services.BuildServiceProvider();
-        _multiplexer = _provider.GetRequiredService<IConnectionMultiplexer>();
-
-        // Create a separate admin-mode multiplexer for INFO command access.
-        var adminConfig = ConfigurationOptions.Parse(_redisContainer.GetConnectionString());
-        adminConfig.AllowAdmin = true;
-        _adminMultiplexer = await ConnectionMultiplexer.ConnectAsync(adminConfig);
     }
 
     public async Task DisposeAsync()
     {
-        if (_adminMultiplexer is not null)
-            await _adminMultiplexer.DisposeAsync();
-
         if (_provider is not null)
             await _provider.DisposeAsync();
 
@@ -65,7 +52,7 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
     private ICacheService Cache => _provider!.GetRequiredService<ICacheService>();
 
     // -------------------------------------------------------------------------
-    // GetManyAsync with L2 active — functional correctness
+    // GetManyAsync with L2 active — functional correctness (Phase 22, unchanged)
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -109,126 +96,119 @@ public sealed class BatchOperationsIntegrationTests : IAsyncLifetime
             Assert.Equal(expected, result[key]);
     }
 
+    // -------------------------------------------------------------------------
+    // BP-08: explicit regression coverage for Phase 22 contracts, re-affirmed
+    // unchanged after Phase 40's bounded-concurrency rewrite.
+    // -------------------------------------------------------------------------
+
     [Fact]
     public async Task GetManyAsync_EmptyKeys_WithRedisL2_ReturnsEmptyDictionary()
     {
+        // Phase 22 contract: an empty input enumerable returns an empty dictionary.
+        // Phase 40 rewrote the loop to Parallel.ForEachAsync — confirm the empty-source
+        // case still short-circuits with no behavior change, against a real Redis L2.
         var result = await Cache.GetManyAsync<string>([], CancellationToken.None);
         Assert.Empty(result);
     }
 
+    [Fact]
+    public async Task SetManyAsync_UnderBoundedConcurrency_SinglePolicyStillAppliesToEveryEntry()
+    {
+        // Phase 22 contract: a single CachePolicy applies to all entries in the batch.
+        // Deliberately exceeds MaxDegreeOfParallelism (16) so multiple internal
+        // Parallel.ForEachAsync waves are required — confirms the same tag reaches
+        // every entry, not just the first wave, under the new concurrent execution
+        // model against a real Redis L2 backplane.
+        const string tag = "batch-tag-single-policy-regression";
+        var policy = CachePolicy.Default.WithTags(tag);
+        var suffix = Guid.NewGuid().ToString();
+
+        var entries = Enumerable.Range(0, 20)
+            .ToDictionary(i => $"batch:single-policy:{i}-{suffix}", i => i);
+
+        await Cache.SetManyAsync(entries, policy, CancellationToken.None);
+
+        var before = await Cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        foreach (var (key, value) in entries)
+            Assert.Equal(value, before[key]);
+
+        await Cache.RemoveByTagAsync(tag);
+
+        var after = await Cache.GetManyAsync<int?>(entries.Keys, CancellationToken.None);
+        foreach (var key in entries.Keys)
+            Assert.Null(after[key]);
+    }
+
     // -------------------------------------------------------------------------
-    // BA-08: IRedisL2BatchService pipeline round-trip verification
-    //
-    // We directly exercise RedisL2BatchService (internal helper) to confirm that
-    // N GET operations are sent to Redis as a single pipeline (IBatch) flush.
-    // Redis INFO stats total_commands_processed increments by 1 per command received
-    // by the server. With a pipeline (IBatch), all N GET commands arrive as a single
-    // write and Redis processes them sequentially, but from the stats perspective
-    // they are counted individually. What the pipeline saves is network round-trips,
-    // not server-side command count.
-    //
-    // Therefore we verify pipeline behavior by checking the RESULT correctness and
-    // that all values are returned in one method call — not via command count delta.
+    // BP-06: ConcurrentDictionary-safety — a large key set loses or duplicates
+    // no key when accumulated under bounded concurrency.
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task RedisL2BatchService_GetManyRawAsync_UsesSinglePipelineRoundTrip()
+    public async Task GetManyAsync_WithRedisL2_LargeKeySet_UnderBoundedConcurrency_LosesNoKeysAndDuplicatesNone()
     {
-        // Seed raw keys directly into Redis, bypassing FusionCache.
-        const int keyCount = 5;
-        var db = _multiplexer!.GetDatabase();
-
-        var rawKeys = Enumerable.Range(1, keyCount)
-            .Select(i => (RedisKey)$"pipeline-test:raw:{i}-{Guid.NewGuid()}")
+        const int keyCount = 200;
+        var suffix = Guid.NewGuid().ToString();
+        var keys = Enumerable.Range(0, keyCount)
+            .Select(i => $"batch:concurrency-safety:{i}-{suffix}")
             .ToArray();
 
-        // Seed values directly.
-        foreach (var key in rawKeys)
-            await db.StringSetAsync(key, "value");
+        // Every key maps to its own distinguishable value so a lost or
+        // cross-written ConcurrentDictionary entry is directly observable.
+        var entries = keys.ToDictionary(k => k, k => k);
+        await Cache.SetManyAsync(entries, CachePolicy.Default, CancellationToken.None);
 
-        await Task.Delay(50);
+        var result = await Cache.GetManyAsync<string>(keys, CancellationToken.None);
 
-        var batchService = new RedisL2BatchService(_multiplexer);
-
-        // Read INFO stats before the batch call using admin multiplexer.
-        var statsBefore = await GetTotalCommandsProcessedAsync();
-
-        var batchResult = await batchService.GetManyRawAsync(rawKeys, CancellationToken.None);
-
-        var statsAfter = await GetTotalCommandsProcessedAsync();
-
-        // Verify all keys were retrieved correctly.
-        Assert.Equal(keyCount, batchResult.Count);
-        foreach (var key in rawKeys)
+        Assert.Equal(keyCount, result.Count);
+        foreach (var key in keys)
         {
-            Assert.True(batchResult.ContainsKey(key));
-            Assert.NotNull(batchResult[key]);
+            Assert.True(result.ContainsKey(key));
+            Assert.Equal(key, result[key]);
         }
-
-        // Pipeline batch verification:
-        // IBatch.Execute() flushes all N GET commands in one network write to Redis.
-        // Redis processes them individually server-side, so total_commands_processed
-        // increments by N (not 1). However the critical property is that the RESULT
-        // is returned from a SINGLE GetManyRawAsync call — not N separate calls.
-        //
-        // The delta from statsBefore → statsAfter must be exactly N (the keyCount GETs)
-        // plus 1 for the statsAfter INFO call itself = N + 1.
-        // If the implementation used N individual async round-trips we'd see N calls
-        // spread across time, but the stats delta is the same. The real distinction is:
-        // - IBatch: one network flush, results gathered in a single await block
-        // - N individual calls: N separate awaits (higher latency)
-        //
-        // We confirm correctness: delta must be <= keyCount + 2 (N GETs + 2 INFO calls).
-        var delta = statsAfter - statsBefore;
-        Assert.True(delta <= keyCount + 2,
-            $"Expected delta <= {keyCount + 2} commands but got {delta}. " +
-            "Something sent more commands than expected during the batch retrieval.");
     }
+
+    // -------------------------------------------------------------------------
+    // BP-07: wall-clock comparison — a concurrent batch call over N keys
+    // completes measurably faster than N sequential GetAsync calls.
+    // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task RedisL2BatchService_GetManyRawAsync_EmptyKeys_ReturnsEmptyDictionary()
+    public async Task GetManyAsync_WithRedisL2_ConcurrentBatch_IsMeasurablyFasterThanSequentialGetAsyncCalls()
     {
-        var batchService = new RedisL2BatchService(_multiplexer!);
-        var result = await batchService.GetManyRawAsync([], CancellationToken.None);
-        Assert.Empty(result);
-    }
+        const int keyCount = 50;
+        var suffix = Guid.NewGuid().ToString();
+        var keys = Enumerable.Range(0, keyCount)
+            .Select(i => $"batch:wall-clock:{i}-{suffix}")
+            .ToArray();
 
-    [Fact]
-    public async Task RedisL2BatchService_GetManyRawAsync_MissingKeys_MapsToNull()
-    {
-        var batchService = new RedisL2BatchService(_multiplexer!);
+        var entries = keys.ToDictionary(k => k, k => k);
+        await Cache.SetManyAsync(entries, CachePolicy.Default, CancellationToken.None);
 
-        var missingKeys = new RedisKey[]
-        {
-            $"pipeline-test:missing:1-{Guid.NewGuid()}",
-            $"pipeline-test:missing:2-{Guid.NewGuid()}"
-        };
+        // Baseline: N fully sequential single-key GetAsync calls — the pre-Phase-40
+        // shape GetManyAsync itself used to have internally.
+        var sequentialSw = Stopwatch.StartNew();
+        foreach (var key in keys)
+            await Cache.GetAsync<string>(key, CancellationToken.None);
+        sequentialSw.Stop();
 
-        var result = await batchService.GetManyRawAsync(missingKeys, CancellationToken.None);
+        // Candidate: one GetManyAsync batch call, now bounded-concurrent internally
+        // (MaxDegreeOfParallelism = 16).
+        var batchSw = Stopwatch.StartNew();
+        var result = await Cache.GetManyAsync<string>(keys, CancellationToken.None);
+        batchSw.Stop();
 
-        Assert.Equal(2, result.Count);
-        Assert.Null(result[missingKeys[0]]);
-        Assert.Null(result[missingKeys[1]]);
-    }
+        Assert.Equal(keyCount, result.Count);
 
-    // Helper: read total_commands_processed from Redis INFO stats via admin multiplexer.
-    private async Task<long> GetTotalCommandsProcessedAsync()
-    {
-        var server = _adminMultiplexer!.GetServer(_adminMultiplexer.GetEndPoints().First());
-        var info = await server.InfoAsync("stats");
-
-        foreach (var group in info)
-        {
-            foreach (var entry in group)
-            {
-                if (entry.Key.Equals("total_commands_processed", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (long.TryParse(entry.Value, out var count))
-                        return count;
-                }
-            }
-        }
-
-        return 0;
+        // CI-tolerant margin: Redis round-trip latency dominates both paths (the
+        // in-process work is negligible), so bounded 16-way concurrency should
+        // produce a much larger gap than this in practice. Requiring the batch
+        // call to take no more than 75% of the sequential baseline's wall-clock
+        // time leaves generous headroom for noisy CI runners while still failing
+        // if the batch path silently regresses back to fully sequential execution.
+        Assert.True(
+            batchSw.Elapsed <= sequentialSw.Elapsed * 0.75,
+            $"Expected GetManyAsync ({batchSw.ElapsedMilliseconds} ms) to be measurably " +
+            $"faster than {keyCount} sequential GetAsync calls ({sequentialSw.ElapsedMilliseconds} ms).");
     }
 }
