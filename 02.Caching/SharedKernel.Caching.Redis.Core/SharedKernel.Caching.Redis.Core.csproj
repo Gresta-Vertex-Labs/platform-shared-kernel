@@ -14,6 +14,7 @@
     <Description>Foundational Redis connection layer for SharedKernel.Caching: IConnectionMultiplexer registration (AddRedisConnection), ConnectionHealthState tracking (RedisConnectionHealthTracker), and an opt-in Polly v8 ResiliencePipeline factory (AddRedisCircuitBreaker). Dependency root for SharedKernel.Caching.Redis, .DistributedLocking, .HashStore, and .PubSub. AOT-compatible.</Description>
     <PackageTags>shared-kernel;caching;redis;connection;resilience;circuit-breaker;aot</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
     <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
@@ -34,6 +35,10 @@
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
     <!-- LoggingEventIdRanges.Caching — this domain's reserved EventId block base (Phase 37, WO-041) -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
