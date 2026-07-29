@@ -68,7 +68,7 @@ Format when blocked:
 |---|--------|---------------|:-----:|---------------|---------------|
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Roslyn Analyzer for Result/Result\<T\> Discard-Detection | `●` | SK0030 (`ResultOutcomeDiscardedAnalyzer`, next sequential ID after SK0029) flags a bare expression-statement invocation/`await` whose resolved type implements `IHasSuccessFlag` (i.e. is `Result`/`Result<T>`) — the platform's `Result<T>` analogue of CS4014's unawaited-`Task` warning. Registers on exactly `InvocationExpressionSyntax`/`AwaitExpressionSyntax` and never inspects `AssignmentExpressionSyntax`, so real re-assignment and explicit `_ = ...` discard both pass for free; only the outermost expression's resolved type is ever checked, so a fluent chain whose own outer call still returns `Result<T>` correctly still fires. No `SharedKernel.ArchitectureTests` counterpart by design. The phase's own GATING real-source audit (across `05.Application.Behaviors`/`06.Persistence.EfCore`/`07.Messaging.MassTransit`/`17.Workflows.Temporal`, all four already Published) found ONE genuine, previously-invisible bare-statement `Result` discard — `FireAndForgetBackgroundConsumer.cs:57` — reproduced as a permanent fire-path regression test and escalated as a candidate follow-up for `05.Application` rather than silently narrowing the rule. 233/233 analyzer tests (+18) pass, 179/179 architecture tests unchanged, 0 build warnings/errors. | Every phase key in `00.Governance/state-map.md` is now `●` — no open governance phase keys remain. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-298 (WO-049) complete — `SharedKernel.FeatureManagement` gained weighted feature-flag variants (`FeatureVariant`/`FeatureVariantDefinition`/`IFeatureManager.GetVariantAsync`), and a real pre-existing defect was found and fixed along the way: `AddSharedKernelFeatureManagement` was passing a pre-scoped `"FeatureManagement"` configuration section into `Microsoft.FeatureManagement`, which silently made its variant/allocation schema (`feature_management:feature_flags`, an unscoped sibling key) unreachable — now passes the root configuration instead, with zero consumer-visible signature change. 29/29 `SharedKernel.FeatureManagement.Tests` passing. Every WO-049 phase inside `01.Core`'s own jurisdiction (P-292→P-298) is now complete. | — |
-| 02 | [Caching](02.Caching/state-map.md) | Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | `●` | Phase 37 (WO-041, P-252) complete — all `EventId`s in `FusionCache`, `Redis.Core`, `Redis.DistributedLocking`, `Redis.PubSub` renumbered into `LoggingEventIdRanges.Caching` (2000-2999) sub-blocks, closing the live `Redis.Core`/`Redis.PubSub` 4001/4002 collision and the `01.Core`/`03.Domain` block squats; remaining direct `ILogger` calls and the hand-written `LoggerMessage.Define` delegate converted to `[LoggerMessage]`; 209 FusionCache + 33 Redis.Core + 41 Redis.DistributedLocking + 41 Redis.PubSub + 28 Redis L2 + 30 Redis.HashStore tests passing, zero behavioral change. | — |
+| 02 | [Caching](02.Caching/state-map.md) | Phase 38 (NuGet Packaging & Consumer-Verify Parity for the 7-Package Topology) | `●` | Phase 38 (WO-050, P-301) complete — all 7 packages brought to full NuGet metadata parity plus a real `README.md`/`PackageReadmeFile` for the 5 that lacked one (`Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, `.Redis.PubSub`); all 7 pack clean (zero `NU5039`/`NU5128`); `02.Caching/consumer-verify` — dead since the Phase 14 rename/WO-023 split — rebuilt from scratch against the current 7-package topology and now proves 5 real `IHost.StartAsync()` composition scenarios (L1-only, L1+L2, locking-only, hash-store-only, pub/sub-only) against a real Testcontainers Redis, passing end-to-end. | Phase 39 (P-302, CrossInstanceTagInvalidation) is next in the WO-050 follow-up series. |
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published complete (10/10) — SharedKernel.Domain 1.6.0 packed and verified (manifest deps: SharedKernel.Core + SharedKernel.Primitives only); StronglyTypedIdJsonConverterFactory/Converter confirmed exported via consumer-verify (19/19 tests); 246 domain tests green; all 6 phases of 03.Domain now complete. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) now fully `●` through Docs (Design/Scaffold/Core/Tests/Docs = 71/19/75/68/24, all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199, 100% XML doc coverage confirmed, README EventId table added, stale "design-only" phrasing swept from `CLAUDE.md`; `SharedKernel.Application.Behaviors.Tests` 132/132. The `05.Application` candidate follow-up flagged by `00.Governance`'s P-299 (SK0030 `ResultOutcomeDiscardedAnalyzer` real-source audit — a discarded `Result.Failure` in `FireAndForgetBackgroundConsumer.cs:57`) is now fixed: the outcome is logged at `Warning` (EventId 5112) before being discarded, closing the silent-failure telemetry gap. | Published (P-20..P-22 for WO-041, plus P-01..P-19 for WO-035/036/038/039/040) is the only phase left before this domain is fully published. |
@@ -110,7 +110,7 @@ Format when active:
 |-------|---------|
 | ● Published | 11 |
 | ● Docs | 3 |
-| ● Phase 37 (Logging Retrofit to the Platform `[LoggerMessage]` Standard) | 1 |
+| ● Phase 38 (NuGet Packaging & Consumer-Verify Parity for the 7-Package Topology) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 0 |
 | ● Governance: Architecture Enforcement for the 09.Search Topology | 0 |
@@ -7955,6 +7955,8 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-29] Phase(s) P-301, P-302, P-303, P-304 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
 - [2026-07-29] Phase(s) P-305 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
 - [2026-07-29] Phase(s) P-306 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-07-29] Caching → Phase 38 (●) — promoted from SK.02.NuGetPackagingParity (state-map-phase)
+- [2026-07-29] Phase Backlog P-301 → ● Complete — SK.02.NuGetPackagingParity done (state-map-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
@@ -11382,7 +11384,7 @@ A new Roslyn analyzer in `00.Governance/SharedKernel.Analyzers` that flags an ex
 ---
 ### P-301 — Caching: NuGet Packaging & Consumer-Verify Parity for the 7-Package Topology
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-050
 **Domain:** 02.Caching
 **Depends on:** None
@@ -11394,12 +11396,12 @@ Bring all 7 shipped packages' NuGet packaging up to the bar already established 
 This domain has shipped 37 phases and is one of the most heavily consumed capabilities in the platform, but its own proof of correct distribution — the one artifact meant to catch "does this actually resolve and compose for a real consumer" — silently rotted across the Phase-14 rename and the entire WO-023 package split, and nothing since caught it. A domain cannot be called gold standard while five of its seven packages have never been individually pack-verified and the one integration harness that would have caught it does not even compile.
 
 #### Acceptance criteria
-- [ ] All 7 packages carry complete NuGet metadata matching the bar set by `08.Storage`/`09.Search`
-- [ ] `SharedKernel.Caching.Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, and `.Redis.PubSub` each ship a `PackageReadmeFile` backed by a real authored `README.md`
-- [ ] `dotnet pack` succeeds clean (zero `NU5039`/`NU5128` warnings) for all 7 packages
-- [ ] `02.Caching/consumer-verify` is rebuilt against current namespaces/PackageIds and compiles and runs successfully via a real `IHost.StartAsync()`
-- [ ] The rebuilt harness proves, as separate composition scenarios, at minimum: L1-only, L1+L2, locking-only, hash-store-only, and pub/sub-only DI resolution
-- [ ] `02.Caching/state-map.md`'s `SK.02.Published` phase (or its successor) is re-run/expanded to cover all 7 packages, not just the original two it was written against
+- [x] All 7 packages carry complete NuGet metadata matching the bar set by `08.Storage`/`09.Search`
+- [x] `SharedKernel.Caching.Abstractions`, `.Redis.Core`, `.Redis.DistributedLocking`, `.Redis.HashStore`, and `.Redis.PubSub` each ship a `PackageReadmeFile` backed by a real authored `README.md`
+- [x] `dotnet pack` succeeds clean (zero `NU5039`/`NU5128` warnings) for all 7 packages
+- [x] `02.Caching/consumer-verify` is rebuilt against current namespaces/PackageIds and compiles and runs successfully via a real `IHost.StartAsync()`
+- [x] The rebuilt harness proves, as separate composition scenarios, at minimum: L1-only, L1+L2, locking-only, hash-store-only, and pub/sub-only DI resolution
+- [x] `02.Caching/state-map.md`'s `SK.02.Published` phase (or its successor) is re-run/expanded to cover all 7 packages, not just the original two it was written against
 ---
 ### P-302 — Caching: Prove and Correct Cross-Instance Tag-Based Cache Invalidation over the L2 Redis Backplane
 
