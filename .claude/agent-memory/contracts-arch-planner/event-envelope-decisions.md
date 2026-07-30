@@ -25,3 +25,13 @@ The publisher does not compute version numbers. Defaults to 1 when `DomainEventV
 **Why:** Transport concerns (correlation, causation, version routing) must not pollute the domain event model. The envelope cleanly separates domain data from transport metadata.
 
 **How to apply:** When designing any new envelope variant or reviewing event types, keep domain event types free of transport fields.
+
+## AggregateId doc-drift defect (WO-051 / P-314, found 2026-07-29)
+
+`EventEnvelope<TEvent>.Payload`'s shipped XML doc (`Events/EventEnvelope.cs`) claimed `where TEvent : IDomainEvent` guarantees `Payload` exposes `Id`, `OccurredOn`, **and `AggregateId`**. This was always false — `03.Domain/SharedKernel.Domain/Events/IDomainEvent.cs` has only ever declared `Id` and `OccurredOn`. `AggregateId` did not exist anywhere on the domain-event surface until `03.Domain` designed `IHasAggregateId<TId>` (WO-051/P-309, `SharedKernel.Domain.Abstractions`, `where TId : notnull`, single member `TId AggregateId { get; }`) as a deliberately opt-in marker — a concrete event may implement it in addition to `DomainEvent<TPayload>`, but nothing requires it.
+
+Corrected contract: the bare `IDomainEvent` constraint on `EventEnvelope<TEvent>` guarantees only `Id`/`OccurredOn`. `AggregateId` is available on `Payload` only when the concrete `TEvent` also implements `IHasAggregateId<TId>` — callers must pattern-match (`Payload is IHasAggregateId<TId> h`), never assume the member is there.
+
+**Why this matters beyond the one-line fix:** `IHasAggregateId<TId>`'s own 03.Domain design notes say it was added specifically to close "a gap `04.Contracts`'s `EventEnvelope<TEvent>` XML doc already assumed was filled" — i.e., the domain team designed the real feature *because* the contracts doc had already (wrongly) promised it existed. Good instinct to record for future doc reviews: a wrong doc claim about a not-yet-built capability can end up steering the design of the real thing, for better or worse here.
+
+**How to apply:** Any future XML doc claim in `04.Contracts` about what an `03.Domain` interface constraint "guarantees" must be checked against that interface's actual shipped source file, never asserted from memory or from what would be architecturally convenient.

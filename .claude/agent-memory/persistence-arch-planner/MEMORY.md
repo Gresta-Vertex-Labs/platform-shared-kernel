@@ -27,3 +27,4 @@
 - [StreamAsync forced AsNoTracking exception](project_streaming_asnotracking_exception.md) — The one place spec.AsNoTracking is NOT honored; Skip/Take = row-window before streaming (P-149)
 - [DatabaseReadinessResult/CheckReadinessAsync — no IHealthCheck](project_database_readiness.md) — BCL-only, never-throwing probes; IHealthCheck adapter belongs to 13.ServiceDefaults (P-150)
 - [IDataSeeder + MigrationAndSeedHostedService](project_data_seeder_migration_hosted_service.md) — Opt-in hosted service, PostgreSQL advisory lock via existing IDbConnectionFactory, no 02.Caching ref (P-151)
+- [WO-051 batch 1 patterns](project_wo051_batch1_patterns.md) — provider-neutral/PostgreSQL-specific split (xmin, retry); method-level generic evaluator methods; ActivitySource "SharedKernel.{Domain}"/"1.0" naming; retry-safe transaction shape (P-315-P-320)

@@ -1,6 +1,6 @@
 ---
 name: phase-sequencing
-description: Work order and phase sequencing for 04.Contracts — WO-011, WO-012, WO-026
+description: Work order and phase sequencing for 04.Contracts — WO-011, WO-012, WO-026, WO-051
 metadata:
   type: project
 ---
@@ -30,3 +30,5 @@ metadata:
 **Why P-166 is separate from WO-012:** ResultEnvelopeExtensions was not part of the original 1.0.0 design. It was identified in WO-026 as a platform-standard bridge that eliminates per-site inline boilerplate across typed clients, controllers, and gRPC handlers.
 
 **How to apply:** When dispatching C-07 (Core), verify the exact `Result` factory method names (`Success`/`Failure` vs `Ok`/`Fail`) against the current SharedKernel.Primitives source before writing any code — the names must match exactly.
+
+**WO-051 covers P-314** — a documentation-only correction to `EventEnvelope<TEvent>.Payload`'s XML doc, added as DO-08 in the Docs phase (no Design/Scaffold/Core/Tests/Published tasks — a pure doc fix doesn't warrant a full six-phase cycle; see [[event-envelope-decisions]] for the factual detail). It has a real cross-domain dependency: `03.Domain`'s `IHasAggregateId<TId>` marker interface (WO-051/P-309, tracked as C-41 in `03.Domain/state-map.md`, still `○` pending as of 2026-07-29). DO-08 must be sequenced to run *after* P-309 ships, because the corrected doc's `<see cref="IHasAggregateId{TId}"/>` needs a real compiled type to resolve against. This is the first time a 04.Contracts phase had a hard doc-content dependency on an unshipped 03.Domain phase — check root `state-map.md`/`03.Domain/state-map.md` for P-309's status before dispatching DO-08 to `contracts-phase-implementer`.
