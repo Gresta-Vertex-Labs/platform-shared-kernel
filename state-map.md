@@ -69,7 +69,7 @@ Format when blocked:
 | 00 | [Governance](00.Governance/state-map.md) | Governance: Roslyn Analyzer for Result/Result\<T\> Discard-Detection | `●` | SK0030 (`ResultOutcomeDiscardedAnalyzer`, next sequential ID after SK0029) flags a bare expression-statement invocation/`await` whose resolved type implements `IHasSuccessFlag` (i.e. is `Result`/`Result<T>`) — the platform's `Result<T>` analogue of CS4014's unawaited-`Task` warning. Registers on exactly `InvocationExpressionSyntax`/`AwaitExpressionSyntax` and never inspects `AssignmentExpressionSyntax`, so real re-assignment and explicit `_ = ...` discard both pass for free; only the outermost expression's resolved type is ever checked, so a fluent chain whose own outer call still returns `Result<T>` correctly still fires. No `SharedKernel.ArchitectureTests` counterpart by design. The phase's own GATING real-source audit (across `05.Application.Behaviors`/`06.Persistence.EfCore`/`07.Messaging.MassTransit`/`17.Workflows.Temporal`, all four already Published) found ONE genuine, previously-invisible bare-statement `Result` discard — `FireAndForgetBackgroundConsumer.cs:57` — reproduced as a permanent fire-path regression test and escalated as a candidate follow-up for `05.Application` rather than silently narrowing the rule. 233/233 analyzer tests (+18) pass, 179/179 architecture tests unchanged, 0 build warnings/errors. | Every phase key in `00.Governance/state-map.md` is now `●` — no open governance phase keys remain. |
 | 01 | [Core](01.Core/state-map.md) | Published | `●` | P-298 (WO-049) complete — `SharedKernel.FeatureManagement` gained weighted feature-flag variants (`FeatureVariant`/`FeatureVariantDefinition`/`IFeatureManager.GetVariantAsync`), and a real pre-existing defect was found and fixed along the way: `AddSharedKernelFeatureManagement` was passing a pre-scoped `"FeatureManagement"` configuration section into `Microsoft.FeatureManagement`, which silently made its variant/allocation schema (`feature_management:feature_flags`, an unscoped sibling key) unreachable — now passes the root configuration instead, with zero consumer-visible signature change. 29/29 `SharedKernel.FeatureManagement.Tests` passing. Every WO-049 phase inside `01.Core`'s own jurisdiction (P-292→P-298) is now complete. | — |
 | 02 | [Caching](02.Caching/state-map.md) | Phase 41 (Distributed Tracing ActivitySource Spans for Cache Read/Write Operations) | `●` | Phase 41 (WO-050, P-304) complete — added a companion `ActivitySource("SharedKernel.Caching", "1.0")` alongside the existing Phase 31 `Meter` (same instrumentation-scope name/version, deliberately); `GetAsync`/`SetAsync`/`GetOrSetAsync` now produce `cache.get`/`cache.set`/`cache.get_or_set` spans (`ActivityKind.Client`) tagged `cache.key_prefix` and, for the two read paths, `cache.outcome` (hit/miss, derived from `result.HasValue`/a factory-invoked flag); `activity?.SetStatus(ActivityStatusCode.Error, ex.Message)` added to the existing `SetAsync`/`GetOrSetAsync` catch blocks; zero new NuGet dependency. New `ActivityListener`-based `OtelTracingTests.cs` added (existence-style assertions, tolerant of xUnit's cross-class test parallelism, mirroring `OtelMetricsTests.cs`'s own `>= 1` tolerance); full regression green (FusionCache 218/218, re-run 3× to rule out parallel-test flakiness). This closes the last of the four WO-050 gold-standard follow-up phases (38–41). | All four WO-050 follow-up phases (38–41) are now complete — no further `02.Caching` work is queued. |
-| 03 | [Domain](03.Domain/state-map.md) | Docs | `●` | SK.03.Docs (WO-051, DO-30..DO-36) closed — independently re-verified all seven remaining Docs tasks (composite spec `Includes`/`StringIncludes` union propagation, `KeysetSpecification<T,TKey>`, `AsSplitQuery`, `IHasAggregateId<TId>`, `ValueObject.TryCreate<T>`/`CheckRule`, `SharedKernel.Guards` adoption + `DomainEventVersionHelper` caching + `IEquatable<T>`, `IPolicy<T>.Explain`, `Specification<T>.Create(criteria)`) against the shipped `.cs` source with zero discrepancies — CLAUDE.md content was already accurate from the WO-051 arch-planner pass, so no content edits were needed beyond a changelog line; 317/317 tests green. | Published phase (P-11, re-pack to 1.7.0) is the only phase remaining for the WO-051 v1.7.0 cycle. |
+| 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published (WO-051, P-11) closed — `SharedKernel.Domain` re-packed and re-verified at `1.7.0`: `.nuspec` manifest confirmed to list exactly `SharedKernel.Primitives`/`SharedKernel.Core`/`SharedKernel.Guards` as dependencies (zero external NuGet); `consumer-verify` extended with 10 new PackageReference-resolved tests covering every WO-051 addition (`KeysetSpecification<T,TKey>`, `AsSplitQuery`, `IHasAggregateId<TId>`, `ValueObject.TryCreate<T>`, `IPolicy<T>.Explain` DIM, `Specification<T>.Create(criteria)`) plus the P-307 composite `Includes`/`StringIncludes` union-propagation regression check — 28/28 consumer tests green, 317/317 domain tests green. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●` — WO-051 v1.7.0 cycle complete end to end. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Design | `◐` | — | Add ResultEnvelopeExtensions static class with ToEnvelope/ToResult bridge methods between Result<T> and Envelope<T> in SharedKernel.Contracts.Mapping namespace |
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) now fully `●` through Docs (Design/Scaffold/Core/Tests/Docs = 71/19/75/68/24, all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199, 100% XML doc coverage confirmed, README EventId table added, stale "design-only" phrasing swept from `CLAUDE.md`; `SharedKernel.Application.Behaviors.Tests` 132/132. The `05.Application` candidate follow-up flagged by `00.Governance`'s P-299 (SK0030 `ResultOutcomeDiscardedAnalyzer` real-source audit — a discarded `Result.Failure` in `FireAndForgetBackgroundConsumer.cs:57`) is now fixed: the outcome is logged at `Warning` (EventId 5112) before being discarded, closing the silent-failure telemetry gap. | Published (P-20..P-22 for WO-041, plus P-01..P-19 for WO-035/036/038/039/040) is the only phase left before this domain is fully published. |
 | 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | All 4 packages packed and verified — PostgreSQL and Dapper NuGet metadata confirmed; 203 tests green across all four test projects; complete domain done. | — |
@@ -108,8 +108,8 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Published | 10 |
-| ● Docs | 4 |
+| ● Published | 11 |
+| ● Docs | 3 |
 | ● Phase 41 (Distributed Tracing ActivitySource Spans for Cache Read/Write Operations) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 0 |
@@ -11523,7 +11523,7 @@ Extend the existing `WithCachingTelemetry(this IHostApplicationBuilder)` extensi
 ---
 ### P-307 — Domain: Fix Composite Specification And/Or/Not Include & StringInclude Propagation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 03.Domain
 **Depends on:** None
@@ -11543,7 +11543,7 @@ A consuming service composing `new OrdersWithLineItemsSpec().And(new ActiveOrder
 ---
 ### P-308 — Domain: Specification System Query-Shape Extensions (Keyset/Cursor Pagination + AsSplitQuery Flag)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 03.Domain
 **Depends on:** None
@@ -11568,7 +11568,7 @@ Two additive extensions to the specification contract:
 ---
 ### P-309 — Domain: IHasAggregateId<TId> Domain Event Correlation Marker
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 03.Domain
 **Depends on:** None
@@ -11588,7 +11588,7 @@ An opt-in marker interface, mirroring `IHasTenant`'s existing zero-ceremony shap
 ---
 ### P-310 — Domain: ValueObject Result<T> Creation Helper (TryCreate/CheckRule Parity with AggregateRoot)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 03.Domain
 **Depends on:** None
@@ -11609,7 +11609,7 @@ Today, every value object's `static Result<T> Create(...)` factory method — th
 ---
 ### P-311 — Domain: Constructor Guard-Clause Adoption & Reflection-Caching Hardening
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 03.Domain
 **Depends on:** None
@@ -11637,7 +11637,7 @@ Three small, independent, low-risk hardening fixes bundled into one phase becaus
 ---
 ### P-312 — Domain: IPolicy<T> Non-Compliance Reason/Explanation Surface
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 03.Domain
 **Depends on:** None
@@ -11657,7 +11657,7 @@ Every other error-carrying contract in this platform — `Result<T>`, `Error`, `
 ---
 ### P-313 — Domain: Ad Hoc Specification<T>.Create(criteria) Factory for One-Off Filters
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 03.Domain
 **Depends on:** None
@@ -11966,3 +11966,5 @@ This review found a confirmed, live instance of `EF.Property<T>` usage (`Tenante
 - [2026-07-30] Domain → Core (●) — promoted from SK.03.Core; C-38..C-46 (WO-051/P-307..P-313) delivered the Include/StringInclude union fix, `KeysetSpecification<T,TKey>`/`AsSplitQuery`, `IHasAggregateId<TId>`, `ValueObject.TryCreate`/`CheckRule`, Guards adoption, `IPolicy<T>.Explain`, `Specification<T>.Create`; all 46 Core tasks now ●; 316/316 tests green, 0 warnings (state-map-phase)
 - [2026-07-30] Domain → Tests (●) — promoted from SK.03.Tests; T-31..T-39 (WO-051/P-307..P-313) verified against test coverage already written during the Core-phase session; one genuine gap found and fixed (SingleValueObject<TValue> subclass never exercised inherited CheckRule, only TryCreate); all 39 Tests tasks now ●; 317/317 tests green (+1) (state-map-phase)
 - [2026-07-30] Domain → Docs (●) — promoted from SK.03.Docs; DO-30..DO-36 (WO-051/P-307..P-313) independently re-verified against shipped `.cs` source (composite spec Include/StringInclude union propagation, KeysetSpecification<T,TKey>, AsSplitQuery, IHasAggregateId<TId>, ValueObject.TryCreate/CheckRule, Guards adoption + DomainEventVersionHelper caching + IEquatable<T>, IPolicy<T>.Explain, Specification<T>.Create) with zero discrepancies against CLAUDE.md's existing WO-051 content; no content edits needed beyond a changelog line; all 36 Docs tasks now ●; 317/317 tests green (state-map-phase)
+- [2026-07-30] 03.Domain → Published (●) — promoted from SK.03.Published; P-11 (WO-051) re-packed/re-published `SharedKernel.Domain` at 1.7.0, manifest deps confirmed as exactly Primitives+Core+Guards, consumer-verify extended to 28/28 covering all new WO-051 surface plus the P-307 Include/StringInclude regression check; all 6 phases (Design/Scaffold/Core/Tests/Docs/Published) now ● — WO-051 v1.7.0 cycle complete (state-map-phase)
+- [2026-07-30] Phase Backlog entries P-307, P-308, P-309, P-310, P-311, P-312, P-313 → ● Complete — 03.Domain reached Published (state-map-phase)
