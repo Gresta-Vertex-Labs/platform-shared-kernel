@@ -6,9 +6,22 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Domain</PackageId>
-    <Version>1.6.0</Version>
-    <PackageVersion>1.6.0</PackageVersion>
-    <PackageReleaseNotes>1.6.0 (WO-024 / P-152):
+    <Version>1.7.0</Version>
+    <PackageVersion>1.7.0</PackageVersion>
+    <PackageReleaseNotes>1.7.0 (WO-051 / P-307..P-313):
+- Fixed a silent eager-loading data-loss defect (P-307): AndSpecification&lt;T&gt;, OrSpecification&lt;T&gt;, and NotSpecification&lt;T&gt; now union both Includes and StringIncludes from their operand(s) — previously AndSpecification dropped expression Includes entirely and OrSpecification/NotSpecification dropped both Includes and StringIncludes.
+- KeysetSpecification&lt;T, TKey&gt; added (P-308): cursor/seek-pagination sibling to PagedSpecification&lt;T&gt;, extends ReadOnlySpecification&lt;T&gt;; constrained `where TKey : struct, IComparable&lt;TKey&gt;` (a `struct` constraint is required for AfterKey's TKey? to compile to a real Nullable&lt;TKey&gt; instead of erasing to plain TKey); mandatory Id tiebreaker via ApplyThenBy; guards on take/partial-cursor.
+- ISpecification&lt;T&gt;.AsSplitQuery flag added (P-308): default false; Specification&lt;T&gt;.ApplySplitQuery() builder; composite specs propagate true when either operand has it set (mirrors AsNoTracking/IncludeDeleted).
+- IHasAggregateId&lt;TId&gt; opt-in marker interface added (P-309): single TId AggregateId member, mirroring IHasTenant exactly; a concrete domain event may additionally implement it to declare which aggregate raised it.
+- ValueObject.TryCreate&lt;T&gt;/CheckRule added (P-310): identical shape and exception-mapping semantics to AggregateRoot&lt;TId&gt;'s existing helpers of the same name; SingleValueObject&lt;TValue&gt; inherits both for free.
+- SharedKernel.Guards adopted as a third 01.Core ProjectReference (P-311): AggregateRoot&lt;TId&gt;'s clock constructor parameter is now guarded via Guard.Throw.Null — a single guard site that also protects all three tenanted aggregate bases via constructor chaining; StronglyTypedId&lt;TValue&gt;.Value and SingleValueObject&lt;TValue&gt;.Value are guarded against null for reference-type TValue instantiations (no-op for value types).
+- DomainEventVersionHelper.GetVersion(Type) now caches its reflection lookup in a ConcurrentDictionary&lt;Type, int&gt; (P-311) — the GetCustomAttribute call happens at most once per distinct Type for the process lifetime.
+- Entity&lt;TId&gt; and ValueObject now implement IEquatable&lt;T&gt; (P-311): Equals(T? other) delegates to the existing Equals(object?) override — avoids boxing/virtual dispatch for generic-collection consumers (List&lt;T&gt;.Contains, Dictionary keys, LINQ Distinct/Except).
+- IPolicy&lt;T&gt;.Explain added as a C# default interface member (P-312): zero-breaking-change — any existing IPolicy&lt;T&gt; implementor that only ever declared IsCompliant continues to compile unmodified; AndPolicy&lt;T&gt;/OrPolicy&lt;T&gt;/NotPolicy&lt;T&gt; override it to aggregate/synthesize a meaningful explanation.
+- Specification&lt;T&gt;.Create(Expression&lt;Func&lt;T, bool&gt;&gt; criteria) added (P-313): ad hoc, criteria-only factory for genuinely one-off/throwaway filters, extending the AllSpecification&lt;T&gt;/EmptySpecification&lt;T&gt; sealed-wrapper precedent; does not relax the constructor-only builder rule for named, reusable specifications.
+- Zero new NuGet dependencies — SharedKernel.Guards is a dependency-free 01.Core ProjectReference, same class as the two existing SharedKernel.Primitives/SharedKernel.Core references.
+
+1.6.0 (WO-024 / P-152):
 - StronglyTypedIdJsonConverterFactory and StronglyTypedIdJsonConverter&lt;TStronglyTypedId, TValue&gt; added (C-37): generic System.Text.Json converter factory for StronglyTypedId&lt;TValue&gt; types.
 - Supported TValue shapes: Guid, int, long, string. CanConvert walks Type.BaseType to detect a closed StronglyTypedId&lt;TValue&gt; for these four shapes.
 - Wire format is the bare TValue primitive (a JSON string for Guid/string, a JSON number for int/long) — never an object wrapper such as { "value": ... }.

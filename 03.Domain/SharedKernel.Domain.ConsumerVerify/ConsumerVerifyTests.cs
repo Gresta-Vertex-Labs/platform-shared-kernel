@@ -277,6 +277,115 @@ public sealed class ConsumerVerifyTests
         Assert.False(factory.CanConvert(typeof(string)));
         Assert.True(factory.CanConvert(typeof(OrderId)));
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // WO-051 (P-307..P-313) — new public surface
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CompositeSpecification_UnionsIncludesAndStringIncludes_ResolvedFromPackage()
+    {
+        // P-307 regression: AndSpecification/OrSpecification/NotSpecification must union
+        // Includes and StringIncludes from their operand(s), not drop them.
+        var withInclude = new WithIncludeSpec();
+        var withStringInclude = new WithStringIncludeSpec();
+
+        var andCombined = withInclude.And(withStringInclude);
+        Assert.Single(andCombined.Includes);
+        Assert.Single(andCombined.StringIncludes);
+
+        var orCombined = withInclude.Or(withStringInclude);
+        Assert.Single(orCombined.Includes);
+        Assert.Single(orCombined.StringIncludes);
+
+        var notCombined = withInclude.Not();
+        Assert.Single(notCombined.Includes);
+    }
+
+    [Fact]
+    public void KeysetSpecification_FirstPage_OrdersByKeyThenId_ResolvedFromPackage()
+    {
+        var spec = new OrderKeysetSpec(afterKey: null, afterId: null, take: 10);
+
+        Assert.Null(spec.AfterKey);
+        Assert.Null(spec.AfterId);
+        Assert.False(spec.Descending);
+        Assert.Equal(0, spec.Skip);
+        Assert.Equal(10, spec.Take);
+    }
+
+    [Fact]
+    public void KeysetSpecification_PartialCursor_ThrowsArgumentException_ResolvedFromPackage()
+    {
+        Assert.Throws<ArgumentException>(() => new OrderKeysetSpec(afterKey: 5, afterId: null, take: 10));
+    }
+
+    [Fact]
+    public void ISpecification_AsSplitQuery_DefaultsFalse_AndComposesLikeAsNoTracking_ResolvedFromPackage()
+    {
+        var plain = new ActiveOrderSpec();
+        Assert.False(plain.AsSplitQuery);
+
+        var splitSpec = new SplitQueryOrderSpec();
+        var combined = plain.And(splitSpec);
+        Assert.True(combined.AsSplitQuery);
+    }
+
+    [Fact]
+    public void IHasAggregateId_ConcreteEvent_ExposesAggregateId_ResolvedFromPackage()
+    {
+        var orderId = Guid.NewGuid();
+        IDomainEvent evt = new OrderShippedEvent(orderId) { OccurredOn = DateTimeOffset.UtcNow };
+
+        Assert.True(evt is IHasAggregateId<Guid>);
+        Assert.Equal(orderId, ((IHasAggregateId<Guid>)evt).AggregateId);
+    }
+
+    [Fact]
+    public void ValueObject_TryCreate_SuccessPath_ResolvedFromPackage()
+    {
+        var result = Quantity.Create(5);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(5, result.Value.Amount);
+    }
+
+    [Fact]
+    public void ValueObject_TryCreate_ValidationFailure_ReturnsFailureResult_ResolvedFromPackage()
+    {
+        var result = Quantity.Create(-1);
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public void IPolicy_Explain_DefaultInterfaceMember_ResolvedFromPackage()
+    {
+        // A policy that only implements IsCompliant still compiles and returns the DIM default.
+        IPolicy<string> policy = new MinimalPolicy();
+
+        Assert.Equal(string.Empty, policy.Explain("compliant"));
+        Assert.Contains("MinimalPolicy", policy.Explain("noncompliant"));
+    }
+
+    [Fact]
+    public void Specification_Create_AdHocFactory_ComposesWithNamedSpecification_ResolvedFromPackage()
+    {
+        var adHoc = Specification<OrderDto>.Create(o => o.Id > 1);
+        var combined = adHoc.And(new ActiveOrderSpec());
+
+        var orders = new[]
+        {
+            new OrderDto(1, true),
+            new OrderDto(2, true),
+            new OrderDto(3, false),
+        };
+
+        var result = orders.AsQueryable().Where(combined.Criteria!).ToList();
+
+        Assert.Single(result);
+        Assert.Equal(2, result[0].Id);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -366,4 +475,66 @@ internal sealed class VerifiedCustomerPolicy : IPolicy<string>
 {
     public bool IsCompliant(string subject) =>
         subject.Contains("verified", StringComparison.OrdinalIgnoreCase);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// WO-051 (P-307..P-313) test-local helpers
+// ──────────────────────────────────────────────────────────────────────────
+
+// P-307 — composite spec Includes/StringIncludes union propagation
+internal sealed class WithIncludeSpec : Specification<OrderDto>
+{
+    public WithIncludeSpec() => AddInclude(o => (object)o.IsActive);
+}
+
+internal sealed class WithStringIncludeSpec : Specification<OrderDto>
+{
+    public WithStringIncludeSpec() => AddStringInclude("SomeNavigation");
+}
+
+// P-308a — KeysetSpecification<T, TKey>
+internal sealed class OrderKeysetSpec : KeysetSpecification<OrderDto, int>
+{
+    public OrderKeysetSpec(int? afterKey, object? afterId, int take)
+        : base(o => o.Id, o => o.Id, afterKey, afterId, descending: false, take)
+    {
+    }
+}
+
+// P-308b — ISpecification<T>.AsSplitQuery
+internal sealed class SplitQueryOrderSpec : Specification<OrderDto>
+{
+    public SplitQueryOrderSpec() => ApplySplitQuery();
+}
+
+// P-309 — IHasAggregateId<TId>
+internal sealed record OrderShippedEvent(Guid AggregateId) : DomainEvent, IHasAggregateId<Guid>;
+
+// P-310 — ValueObject.TryCreate<T>/CheckRule
+// Primary-constructor field initializer, not constructor-body assignment: Amount must be visible
+// to Validate() while the base ValueObject() constructor is still running.
+internal sealed class Quantity(int amount) : ValueObject
+{
+    public int Amount { get; } = amount;
+
+    public static SharedKernel.Primitives.Results.Result<Quantity> Create(int amount) =>
+        TryCreate(() => new Quantity(amount));
+
+    protected override IEnumerable<object?> GetEqualityComponents()
+    {
+        yield return Amount;
+    }
+
+    protected override IEnumerable<SharedKernel.Primitives.Errors.Error>? Validate()
+    {
+        if (Amount < 0)
+            yield return SharedKernel.Primitives.Errors.Error.Validation(
+                "Quantity.Negative", "Amount must be non-negative.");
+    }
+}
+
+// P-312 — IPolicy<T>.Explain default interface member (zero-breaking-change proof)
+internal sealed class MinimalPolicy : IPolicy<string>
+{
+    public bool IsCompliant(string subject) => subject == "compliant";
 }
