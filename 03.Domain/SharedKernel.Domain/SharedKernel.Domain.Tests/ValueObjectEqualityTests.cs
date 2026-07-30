@@ -206,4 +206,47 @@ public class ValueObjectEqualityTests
         var act = () => new Money(50m, "GBP");
         act.Should().NotThrow();
     }
+
+    // --- T-37: P-311b/WO-051 — IEquatable<ValueObject> ---
+
+    [Fact]
+    public void ValueObject_Implements_IEquatableOfValueObject()
+    {
+        var money = new Money(100m, "USD");
+        money.Should().BeAssignableTo<IEquatable<ValueObject>>();
+    }
+
+    [Fact]
+    public void TypedEquals_SameComponents_MatchesObjectEquals()
+    {
+        var a = new Money(100m, "USD");
+        var b = new Money(100m, "USD");
+
+        ((IEquatable<ValueObject>)a).Equals(b).Should().Be(a.Equals((object?)b));
+        ((IEquatable<ValueObject>)a).Equals(b).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TypedEquals_DifferentComponents_MatchesObjectEquals()
+    {
+        var a = new Money(100m, "USD");
+        var b = new Money(200m, "USD");
+
+        ((IEquatable<ValueObject>)a).Equals(b).Should().Be(a.Equals((object?)b));
+        ((IEquatable<ValueObject>)a).Equals(b).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TypedEquals_Null_MatchesObjectEquals()
+    {
+        var a = new Money(100m, "USD");
+        IEquatable<ValueObject> equatable = a;
+        ValueObject? nullOther = null;
+
+        var typedResult = equatable.Equals(nullOther);
+        var objectResult = a.Equals((object?)null);
+
+        typedResult.Should().Be(objectResult);
+        typedResult.Should().BeFalse();
+    }
 }

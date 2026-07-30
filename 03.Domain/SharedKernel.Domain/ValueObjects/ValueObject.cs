@@ -1,6 +1,9 @@
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Domain.BusinessRules;
+using SharedKernel.Domain.Exceptions;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
 
 namespace SharedKernel.Domain.ValueObjects;
 
@@ -76,10 +79,7 @@ namespace SharedKernel.Domain.ValueObjects;
 ///     }
 ///
 ///     public static Result&lt;Money&gt; Create(decimal amount, string currency)
-///     {
-///         try { return Result&lt;Money&gt;.Success(new Money(amount, currency)); }
-///         catch (ValidationException ex) { return Result&lt;Money&gt;.Failure(ex.Errors[0]); }
-///     }
+///         =&gt; TryCreate(() =&gt; new Money(amount, currency));
 ///
 ///     protected override IEnumerable&lt;object?&gt; GetEqualityComponents()
 ///     {
@@ -97,7 +97,7 @@ namespace SharedKernel.Domain.ValueObjects;
 /// }
 /// </code>
 /// </example>
-public abstract class ValueObject : IValueObject
+public abstract class ValueObject : IValueObject, IEquatable<ValueObject>
 {
     /// <summary>
     /// Initialises the value object and validates it.
@@ -141,10 +141,80 @@ public abstract class ValueObject : IValueObject
         GetEqualityComponents().Aggregate(0, (hash, component) =>
             HashCode.Combine(hash, component?.GetHashCode() ?? 0));
 
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="other"/> is structurally equal to this
+    /// value object.
+    /// </summary>
+    /// <remarks>
+    /// WO-051/P-311 — <see cref="IEquatable{T}"/> implementation delegating to
+    /// <see cref="Equals(object?)"/>. Purely a boxing/virtual-dispatch-avoidance addition for
+    /// generic-collection consumers (<see cref="List{T}.Contains"/>, dictionary keys, LINQ
+    /// <c>Distinct</c>/<c>Except</c>) — not a behavior change.
+    /// </remarks>
+    public bool Equals(ValueObject? other) => Equals((object?)other);
+
     /// <summary>Returns <see langword="true"/> when both value objects are structurally equal.</summary>
     public static bool operator ==(ValueObject? left, ValueObject? right) =>
         left is null ? right is null : left.Equals(right);
 
     /// <summary>Returns <see langword="true"/> when the value objects are not structurally equal.</summary>
     public static bool operator !=(ValueObject? left, ValueObject? right) => !(left == right);
+
+    /// <summary>
+    /// Evaluates <paramref name="rule"/> and throws <see cref="BusinessRuleViolationException"/>
+    /// if the rule is broken.
+    /// </summary>
+    /// <param name="rule">The business rule to enforce.</param>
+    /// <exception cref="BusinessRuleViolationException">Thrown when <paramref name="rule"/> is broken.</exception>
+    /// <remarks>
+    /// Identical semantics to <c>AggregateRoot&lt;TId&gt;.CheckRule</c> — provided here so value
+    /// object constructors and factory methods can enforce business rules without depending on
+    /// the aggregate hierarchy.
+    /// </remarks>
+    protected static void CheckRule(IBusinessRule rule)
+    {
+        if (rule.IsBroken())
+            throw new BusinessRuleViolationException(rule);
+    }
+
+    /// <summary>
+    /// Executes the <paramref name="factory"/> and wraps the result in a railway-friendly
+    /// <see cref="Result{T}"/>. Exceptions raised during construction are converted to
+    /// <see cref="Result{T}.Failure"/> rather than propagating.
+    /// </summary>
+    /// <typeparam name="T">The type of the value object produced by the factory.</typeparam>
+    /// <param name="factory">The construction delegate. Typically a lambda that calls <c>new SomeValueObject(...)</c>.</param>
+    /// <returns>
+    /// <see cref="Result{T}.Success"/> when the factory completes without throwing.
+    /// <see cref="Result{T}.Failure"/> with <c>ErrorType.BusinessRule</c> when a
+    /// <see cref="BusinessRuleViolationException"/> is thrown.
+    /// <see cref="Result{T}.Failure"/> with the first validation error when a
+    /// <see cref="ValidationException"/> is thrown.
+    /// </returns>
+    /// <remarks>
+    /// Identical semantics to <c>AggregateRoot&lt;TId&gt;.TryCreate&lt;T&gt;</c> — achieves full
+    /// parity between the two base types. Lives on <see cref="ValueObject"/> itself so
+    /// <see cref="SingleValueObject{TValue}"/> inherits this helper with zero additional code.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// public static Result&lt;Money&gt; Create(decimal amount, string currency)
+    ///     =&gt; TryCreate(() =&gt; new Money(amount, currency));
+    /// </code>
+    /// </example>
+    protected static Result<T> TryCreate<T>(Func<T> factory)
+    {
+        try
+        {
+            return Result<T>.Success(factory());
+        }
+        catch (BusinessRuleViolationException ex)
+        {
+            return Result<T>.Failure(ex.Error);
+        }
+        catch (ValidationException ex)
+        {
+            return Result<T>.Failure(ex.Errors[0]);
+        }
+    }
 }
