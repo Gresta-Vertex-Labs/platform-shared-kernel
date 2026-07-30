@@ -1,3 +1,4 @@
+using System.Reflection;
 using FluentAssertions;
 using SharedKernel.Domain.Events;
 
@@ -88,5 +89,45 @@ public class DomainEventVersionTests
             .Single();
 
         usage.Inherited.Should().BeFalse();
+    }
+
+    // --- T-37: P-311b/WO-051 — GetVersion(Type) reflection caching ---
+
+    [DomainEventVersion(2)]
+    private sealed record CachingProbeEvent : DomainEvent
+    {
+        public string Data { get; init; } = string.Empty;
+    }
+
+    [Fact]
+    public void GetVersion_RepeatedCallsSameType_CachesReflectionLookup()
+    {
+        var cacheField = typeof(DomainEventVersionHelper)
+            .GetField("_versionCache", BindingFlags.NonPublic | BindingFlags.Static);
+        var cache = (System.Collections.IDictionary)cacheField!.GetValue(null)!;
+
+        cache.Remove(typeof(CachingProbeEvent));
+        cache.Contains(typeof(CachingProbeEvent)).Should().BeFalse("cache must start empty for this type");
+
+        var first = DomainEventVersionHelper.GetVersion(typeof(CachingProbeEvent));
+        cache.Contains(typeof(CachingProbeEvent)).Should().BeTrue("first call must populate the cache");
+
+        var second = DomainEventVersionHelper.GetVersion(typeof(CachingProbeEvent));
+
+        first.Should().Be(2);
+        second.Should().Be(2);
+        cache[typeof(CachingProbeEvent)].Should().Be(2, "cached value must match the declared version");
+    }
+
+    [Fact]
+    public void GetVersion_DifferentTypes_CacheEachIndependently()
+    {
+        var v1 = DomainEventVersionHelper.GetVersion(typeof(UnversionedEvent));
+        var v2 = DomainEventVersionHelper.GetVersion(typeof(EventV2));
+        var v3 = DomainEventVersionHelper.GetVersion(typeof(EventV3));
+
+        v1.Should().Be(1);
+        v2.Should().Be(2);
+        v3.Should().Be(3);
     }
 }
