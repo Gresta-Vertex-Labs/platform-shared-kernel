@@ -73,6 +73,27 @@ public interface ISpecification<T>
     bool AsNoTracking { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the consuming repository should split a query with multiple
+    /// collection <see cref="Includes"/> into separate queries (EF Core's <c>AsSplitQuery()</c>)
+    /// instead of a single Cartesian-joined query.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default is <see langword="false"/> — a single-query plan is never wrong, only
+    /// potentially less efficient. Set this to <see langword="true"/> when a specification declares
+    /// two or more collection <see cref="Includes"/>: a single joined query produces a Cartesian
+    /// product across the included collections, which duplicates rows in the result set. Splitting
+    /// into separate queries avoids this duplication.
+    /// </para>
+    /// <para>
+    /// Composite specifications propagate <see langword="true"/> if either operand (or the single
+    /// operand, for <c>NotSpecification&lt;T&gt;</c>) carries <see langword="true"/> — identical
+    /// more-permissive-wins semantics to <see cref="AsNoTracking"/> and <see cref="IncludeDeleted"/>.
+    /// </para>
+    /// </remarks>
+    bool AsSplitQuery { get; }
+
+    /// <summary>
     /// Gets a value indicating whether the consuming repository should bypass the global soft-delete
     /// query filter so that soft-deleted records are included in results.
     /// </summary>

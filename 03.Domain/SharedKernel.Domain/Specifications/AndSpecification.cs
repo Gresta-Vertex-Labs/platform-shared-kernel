@@ -36,8 +36,18 @@ public sealed class AndSpecification<T> : Specification<T>
         if (left.AsNoTracking || right.AsNoTracking)
             ApplyNoTracking();
 
+        if (left.AsSplitQuery || right.AsSplitQuery)
+            ApplySplitQuery();
+
         if (left.IncludeDeleted || right.IncludeDeleted)
             IncludeSoftDeleted();
+
+        // WO-051/P-307: union expression-based Includes from both operands — previously dropped entirely.
+        foreach (var include in left.Includes)
+            AddInclude(include);
+
+        foreach (var include in right.Includes)
+            AddInclude(include);
 
         foreach (var path in left.StringIncludes)
             AddStringInclude(path);

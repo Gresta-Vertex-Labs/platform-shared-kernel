@@ -24,7 +24,18 @@ public sealed class NotSpecification<T> : Specification<T>
         if (spec.AsNoTracking)
             ApplyNoTracking();
 
+        if (spec.AsSplitQuery)
+            ApplySplitQuery();
+
         if (spec.IncludeDeleted)
             IncludeSoftDeleted();
+
+        // WO-051/P-307: union expression-based Includes and string-based StringIncludes from the
+        // negated operand — previously dropped entirely by this composite.
+        foreach (var include in spec.Includes)
+            AddInclude(include);
+
+        foreach (var path in spec.StringIncludes)
+            AddStringInclude(path);
     }
 }

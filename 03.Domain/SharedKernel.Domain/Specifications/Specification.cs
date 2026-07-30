@@ -30,6 +30,7 @@ public abstract class Specification<T> : ISpecification<T>
     private readonly List<(Expression<Func<T, object>> KeySelector, bool Descending)> _thenBys = [];
     private readonly List<string> _stringIncludes = [];
     private bool _asNoTracking;
+    private bool _asSplitQuery;
     private bool _includeDeleted;
     private Func<T, bool>? _compiledCriteria;
 
@@ -60,6 +61,9 @@ public abstract class Specification<T> : ISpecification<T>
 
     /// <inheritdoc/>
     public bool AsNoTracking => _asNoTracking;
+
+    /// <inheritdoc/>
+    public bool AsSplitQuery => _asSplitQuery;
 
     /// <inheritdoc/>
     public bool IncludeDeleted => _includeDeleted;
@@ -109,6 +113,17 @@ public abstract class Specification<T> : ISpecification<T>
     /// change-tracking (e.g., <c>AsNoTracking()</c>) when applying this specification.
     /// </summary>
     protected void ApplyNoTracking() => _asNoTracking = true;
+
+    /// <summary>
+    /// Marks this specification as requiring EF Core's split-query execution (<c>AsSplitQuery()</c>)
+    /// instead of a single Cartesian-joined query.
+    /// </summary>
+    /// <remarks>
+    /// Call this when the specification declares two or more collection <see cref="AddInclude"/>
+    /// entries, to avoid duplicated rows in the result set from the Cartesian product a single
+    /// joined query would otherwise produce.
+    /// </remarks>
+    protected void ApplySplitQuery() => _asSplitQuery = true;
 
     /// <summary>
     /// Marks this specification as soft-delete-inclusive — the consuming repository must bypass the
@@ -165,4 +180,32 @@ public abstract class Specification<T> : ISpecification<T>
         _compiledCriteria ??= Criteria.Compile();
         return _compiledCriteria(entity);
     }
+
+    /// <summary>
+    /// Creates an ad hoc, criteria-only specification for a genuinely one-off/throwaway filter.
+    /// </summary>
+    /// <param name="criteria">The filter predicate.</param>
+    /// <returns>
+    /// A <see cref="Specification{T}"/> wrapping <paramref name="criteria"/> with no includes,
+    /// ordering, or paging; <c>AsNoTracking</c>/<c>IncludeDeleted</c>/<c>AsSplitQuery</c> all
+    /// default <see langword="false"/>.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// WO-051/P-313 — a third sealed-wrapper sentinel alongside <see cref="AllSpecification{T}"/>/
+    /// <see cref="EmptySpecification{T}"/>, backed internally by
+    /// <see cref="CriteriaSpecification{T}"/>. Returns <see cref="Specification{T}"/> (not
+    /// <see cref="ISpecification{T}"/>) so the result composes via the existing
+    /// <see cref="SpecificationExtensions.And{T}"/>/<see cref="SpecificationExtensions.Or{T}"/>/
+    /// <see cref="SpecificationExtensions.Not{T}"/> extension methods.
+    /// </para>
+    /// <para>
+    /// <strong>Does not relax the constructor-only/no-fluent-chaining builder rule</strong> for
+    /// named, reusable specifications — a reusable business concept must still be its own
+    /// dedicated <see cref="Specification{T}"/> subclass. Use <see cref="Create"/> only for a
+    /// genuinely single-use filter.
+    /// </para>
+    /// </remarks>
+    public static Specification<T> Create(Expression<Func<T, bool>> criteria) =>
+        new CriteriaSpecification<T>(criteria);
 }

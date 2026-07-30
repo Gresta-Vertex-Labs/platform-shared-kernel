@@ -312,4 +312,147 @@ public class SpecificationCompositionTests
         not1.AsNoTracking.Should().BeTrue();
         not2.AsNoTracking.Should().BeFalse();
     }
+
+    // --- T-31: P-307/WO-051 — Includes/StringIncludes composite propagation ---
+
+    private sealed class ProductWithIncludeSpec : Specification<Product>
+    {
+        public ProductWithIncludeSpec()
+        {
+            AddCriteria(p => p.IsActive);
+            AddInclude(p => p.Name);
+            AddStringInclude("Category.Parent");
+        }
+    }
+
+    private sealed class ProductNoIncludeSpec : Specification<Product>
+    {
+        public ProductNoIncludeSpec() => AddCriteria(p => p.Price > 0);
+    }
+
+    [Fact]
+    public void AndSpecification_Includes_UnionedFromBothOperands()
+    {
+        var withInclude = new ProductWithIncludeSpec();
+        var without = new ProductNoIncludeSpec();
+
+        var spec = withInclude.And(without);
+
+        spec.Includes.Should().HaveCount(1);
+        spec.StringIncludes.Should().ContainSingle(p => p == "Category.Parent");
+    }
+
+    [Fact]
+    public void AndSpecification_Includes_UnionedRegardlessOfOperandOrder()
+    {
+        var withInclude = new ProductWithIncludeSpec();
+        var without = new ProductNoIncludeSpec();
+
+        var spec = without.And(withInclude);
+
+        spec.Includes.Should().HaveCount(1);
+        spec.StringIncludes.Should().ContainSingle(p => p == "Category.Parent");
+    }
+
+    [Fact]
+    public void OrSpecification_Includes_UnionedFromBothOperands()
+    {
+        var withInclude = new ProductWithIncludeSpec();
+        var without = new ProductNoIncludeSpec();
+
+        var spec = withInclude.Or(without);
+
+        spec.Includes.Should().HaveCount(1);
+        spec.StringIncludes.Should().ContainSingle(p => p == "Category.Parent");
+    }
+
+    [Fact]
+    public void NotSpecification_Includes_UnionedFromOperand()
+    {
+        var withInclude = new ProductWithIncludeSpec();
+
+        var spec = withInclude.Not();
+
+        spec.Includes.Should().HaveCount(1);
+        spec.StringIncludes.Should().ContainSingle(p => p == "Category.Parent");
+    }
+
+    [Fact]
+    public void NotSpecification_NoIncludeOperand_ProducesNoIncludes()
+    {
+        var without = new ProductNoIncludeSpec();
+
+        var spec = without.Not();
+
+        spec.Includes.Should().BeEmpty();
+        spec.StringIncludes.Should().BeEmpty();
+    }
+
+    // --- T-39: P-313/WO-051 — Specification<T>.Create(criteria) ad hoc factory ---
+
+    [Fact]
+    public void Create_MatchesEquivalentNamedSpecification_IsSatisfiedByBehavior()
+    {
+        var adHoc = Specification<Product>.Create(p => p.IsActive);
+        var named = new ActiveProductSpec();
+
+        var active = new Product("Widget", 10m, true);
+        var inactive = new Product("Gizmo", 100m, false);
+
+        adHoc.IsSatisfiedBy(active).Should().Be(named.IsSatisfiedBy(active));
+        adHoc.IsSatisfiedBy(inactive).Should().Be(named.IsSatisfiedBy(inactive));
+    }
+
+    [Fact]
+    public void Create_ComposesWithAnotherAdHocSpec_ViaAnd()
+    {
+        var spec = Specification<Product>.Create(p => p.IsActive)
+            .And(Specification<Product>.Create(p => p.Price <= 20m));
+
+        var result = Apply(spec, Products);
+
+        result.Should().ContainSingle(p => p.Name == "Widget");
+    }
+
+    [Fact]
+    public void Create_ComposesWithNamedSpecification_ViaOr()
+    {
+        var spec = Specification<Product>.Create(p => p.Name == "Doohickey")
+            .Or(new ActiveProductSpec());
+
+        var result = Apply(spec, Products);
+
+        result.Should().Contain(p => p.Name == "Widget");
+        result.Should().Contain(p => p.Name == "Gadget");
+        result.Should().Contain(p => p.Name == "Doohickey");
+    }
+
+    [Fact]
+    public void Create_ComposesViaNot()
+    {
+        var spec = Specification<Product>.Create(p => p.IsActive).Not();
+
+        var result = Apply(spec, Products);
+
+        result.Should().HaveCount(2);
+        result.Should().AllSatisfy(p => p.IsActive.Should().BeFalse());
+    }
+
+    [Fact]
+    public void Create_NonCriteriaMembers_DefaultToEmptyBaseline()
+    {
+        var spec = Specification<Product>.Create(p => p.IsActive);
+
+        spec.Includes.Should().BeEmpty();
+        spec.StringIncludes.Should().BeEmpty();
+        spec.OrderBy.Should().BeNull();
+        spec.OrderByDescending.Should().BeNull();
+        spec.ThenBys.Should().BeEmpty();
+        spec.Skip.Should().BeNull();
+        spec.Take.Should().BeNull();
+        spec.IsDistinct.Should().BeFalse();
+        spec.AsNoTracking.Should().BeFalse();
+        spec.IncludeDeleted.Should().BeFalse();
+        spec.AsSplitQuery.Should().BeFalse();
+    }
 }
