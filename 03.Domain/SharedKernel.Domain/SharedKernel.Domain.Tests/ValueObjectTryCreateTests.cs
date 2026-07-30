@@ -73,9 +73,21 @@ public class ValueObjectTryCreateTests
         protected override IEnumerable<Error>? Validate() => null;
     }
 
+    private sealed class MultipleOfFiveRule : IBusinessRule
+    {
+        private readonly int _value;
+        public MultipleOfFiveRule(int value) => _value = value;
+        public string Message => "Percentage must be a multiple of five.";
+        public bool IsBroken() => _value % 5 != 0;
+    }
+
+    // Exercises both inherited ValueObject helpers directly: Validate() (constructor-order-safe,
+    // via the field-initializer Value) enforces the range invariant, then the constructor body
+    // calls the inherited CheckRule for a business-rule invariant, and the static factory calls
+    // the inherited TryCreate — proving SingleValueObject<TValue> gets both with zero additional code.
     private sealed class PercentageValueObject : SingleValueObject<int>
     {
-        private PercentageValueObject(int value) : base(value) { }
+        private PercentageValueObject(int value) : base(value) => CheckRule(new MultipleOfFiveRule(value));
 
         public static Result<PercentageValueObject> Create(int value) =>
             TryCreate(() => new PercentageValueObject(value));
@@ -166,5 +178,16 @@ public class ValueObjectTryCreateTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Type.Should().Be(ErrorType.Validation);
+    }
+
+    [Fact]
+    public void SingleValueObject_TryCreate_BusinessRuleViolation_ReturnsFailure()
+    {
+        // 53 is within the valid 0-100 range (Validate() passes) but is not a multiple of five,
+        // so the inherited CheckRule call in the constructor body throws BusinessRuleViolationException.
+        var result = PercentageValueObject.Create(53);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.BusinessRule);
     }
 }
