@@ -11519,3 +11519,444 @@ Extend the existing `WithCachingTelemetry(this IHostApplicationBuilder)` extensi
 - [2026-07-29] 16 → Core (●) — promoted from SK.16.Core (100/100); C-96–C-100 implemented `FakeRedisChannelService`/`FakeRedisHashService`/`FakeTypedHashStore<T>`/`FakeCacheWarmupStrategy` plus the extended `AddFakeCachingServices()`/`AddFakeTypedHashStore<T>()`/`AddFakeCacheWarmupStrategy()` DI extensions against the live `02.Caching` source, zero drift; `dotnet build` clean 0 errors; Tests (T-60–T-64)/Docs (DO-30/DO-31) next (state-map-phase)
 - [2026-07-29] 16 → Tests (●) — promoted from SK.16.Tests (64/64); T-60–T-64 proved all four `Caching/` fakes plus their DI extensions (61 new tests, 794/794 total); found and fixed a genuine `TryAddEnumerable`-vs-`AddSingleton` defect in the shipped `AddFakeCacheWarmupStrategy()` along the way; Docs (DO-30/DO-31) next (state-map-phase)
 - [2026-07-29] 16 → Docs (●) — promoted from SK.16.Docs (31/31); DO-30/DO-31 added explicit TEST-ONLY/never-production-safe remarks to all four `Caching/` fakes, verified DI extensions already fully documented; 16.Testing domain complete end to end again — WO-050/P-306 closed (state-map-phase)
+
+---
+### P-307 — Domain: Fix Composite Specification And/Or/Not Include & StringInclude Propagation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+When two specifications are combined via `.And()`, `.Or()`, or `.Not()`, the resulting composite specification must preserve both operands' eager-loading configuration — both expression-based `Includes` and string-based `StringIncludes` — exactly as it already preserves `AsNoTracking` and `IncludeDeleted` (union/more-restrictive-wins semantics already implemented for those two flags). Today `AndSpecification<T>` propagates `StringIncludes` but not expression `Includes`; `OrSpecification<T>` and `NotSpecification<T>` propagate neither. The composed specification's `Includes`/`StringIncludes` must be the union of the operand(s)' entries (duplicates are naturally tolerated — the persistence-layer evaluator already treats duplicate `.Include()` calls as idempotent), never a silent empty set.
+
+#### Why this is needed
+A consuming service composing `new OrdersWithLineItemsSpec().And(new ActiveOrdersSpec())` today gets a spec whose criteria correctly filters to active orders, but whose navigation-loading configuration silently vanishes — `LineItems` never gets eager-loaded, with no compiler error, no runtime exception, just a quietly empty or lazily-failing collection downstream. This is a correctness defect in the platform's most fundamental composition mechanism, undetected by any existing test (the only `AddInclude` usage in the test suite composes nothing). Left unfixed, every future consumer who composes two specifications where either side declares an `Include` inherits this silent data-loss bug.
+
+#### Acceptance criteria
+- [ ] `AndSpecification<T>`, `OrSpecification<T>`, and `NotSpecification<T>` all propagate the union of both operands' expression-based `Includes`
+- [ ] `AndSpecification<T>`, `OrSpecification<T>`, and `NotSpecification<T>` all propagate the union of both operands' `StringIncludes` (already correct on `AndSpecification<T>`; must be added to `OrSpecification<T>`/`NotSpecification<T>`)
+- [ ] A regression test composes two specifications where only one operand declares an `Include`/`AddStringInclude`, for each of `And`/`Or`/`Not`, and asserts the composed spec's `Includes`/`StringIncludes` contains the expected entries
+- [ ] Existing `AsNoTracking`/`IncludeDeleted` propagation tests continue to pass unmodified
+- [ ] `03.Domain/CLAUDE.md`'s composite specification entries are corrected to document `Includes`/`StringIncludes` propagation alongside the existing `AsNoTracking`/`IncludeDeleted` propagation rules
+---
+### P-308 — Domain: Specification System Query-Shape Extensions (Keyset/Cursor Pagination + AsSplitQuery Flag)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+Two additive extensions to the specification contract:
+
+(1) A keyset/cursor pagination shape, parallel to the existing offset-based `PagedSpecification<T>`, that lets a specification express "give me the next page after this seek position" instead of "skip N rows." This requires a deterministic ordering contract (a stable sort key, with the aggregate's own `Id` as a mandatory tiebreaker) and a seek predicate derived from the caller-supplied cursor value(s), translated by the persistence evaluator into a `WHERE (SortKey, Id) > (@cursor, @cursorId)`-shaped predicate rather than `OFFSET`.
+
+(2) An `AsSplitQuery` boolean flag on `ISpecification<T>`, mirroring the existing `AsNoTracking`/`IncludeDeleted` flags exactly (default `false`, a builder method to set it `true`, composite propagation following the same more-permissive-wins rule), signaling that the persistence evaluator should split a query with multiple collection `Includes` into separate SQL queries instead of one Cartesian-joined query.
+
+#### Why this is needed
+(1) Offset pagination (`Skip`/`Take`) costs the database an O(n) scan-and-discard for every row before the requested page on a large, actively-written PostgreSQL table — a well-documented performance cliff at "hundreds of services" scale. The specification system today has no vocabulary for a cursor/seek alternative at all; every consumer wanting keyset paging would have to bypass `ISpecification<T>` entirely. (2) A specification with two or more collection `Include`s (e.g., an `Order` with both `LineItems` and `Payments` eagerly loaded) produces a single SQL query joining both collections, returning a Cartesian product EF Core must de-duplicate client-side — a classic, well-known EF Core performance and correctness pitfall that `.AsSplitQuery()` exists specifically to solve, and the specification system currently has no way to opt into it.
+
+#### Acceptance criteria
+- [ ] A keyset/cursor specification shape exists, requiring the concrete specification to declare a deterministic sort order (including the aggregate `Id` as a tiebreaker) and to expose the seek predicate/cursor value(s) needed to translate to a `WHERE (...) > (...)` clause
+- [ ] The keyset shape composes cleanly with existing `Criteria`/`Includes` — it constrains ordering and paging only, not filtering
+- [ ] `bool AsSplitQuery { get; }` added to `ISpecification<T>`, default `false`; `Specification<T>` gains a builder method to set it; `AndSpecification<T>`/`OrSpecification<T>`/`NotSpecification<T>` propagate `true` when either operand has it set, matching the `AsNoTracking`/`IncludeDeleted` propagation pattern exactly
+- [ ] Unit tests cover: keyset cursor/sort-key shape correctness in isolation (no database required, mirroring how existing specification tests validate expression trees against in-memory collections); `AsSplitQuery` default/builder/composite-propagation behavior mirroring the existing `AsNoTracking` test suite
+- [ ] `03.Domain/CLAUDE.md`'s specification system section documents both additions, including the mandatory-tiebreaker rule for keyset ordering and the `AsSplitQuery` propagation rule
+- [ ] Zero breaking change to any existing `ISpecification<T>` consumer — both additions are opt-in with safe defaults
+---
+### P-309 — Domain: IHasAggregateId<TId> Domain Event Correlation Marker
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+An opt-in marker interface, mirroring `IHasTenant`'s existing zero-ceremony shape exactly, that lets a concrete domain event declare which aggregate raised it: `IHasAggregateId<TId> { TId AggregateId { get; } }`. This is purely opt-in — `IDomainEvent` itself remains unchanged (still exactly `Id` + `OccurredOn`) — but gives infrastructure code (audit trails, outbox/messaging translation, projections, logging) a single, uniform way to read "which aggregate did this come from" via a type check, instead of every concrete event inventing its own inconsistently-named property (`OrderId`, `AggregateId`, `SourceId`, etc.) with no shared contract.
+
+#### Why this is needed
+`04.Contracts`'s `EventEnvelope<TEvent>` XML documentation already claims (incorrectly, today) that any `TEvent : IDomainEvent` exposes an `AggregateId` — proving that downstream infrastructure code already assumes this concept exists and needs it, even though nothing in `03.Domain` currently formalizes it. Without a shared marker, every consuming service's outbox/audit/projection code that wants to correlate an event back to its source aggregate must either reflect over ad hoc property names or maintain a per-event-type mapping — exactly the kind of repeated boilerplate this shared kernel exists to eliminate, and exactly the pattern `IHasTenant` already solved for tenant scoping.
+
+#### Acceptance criteria
+- [ ] `IHasAggregateId<TId>` marker interface added to `Abstractions/`, `TId : notnull`, single member `TId AggregateId { get; }`
+- [ ] Zero change to `IDomainEvent`, `DomainEvent`, or `DomainEvent<TPayload>` — this is purely an optional interface a concrete event may additionally implement, not a new required member
+- [ ] XML doc includes a usage example showing a concrete event implementing both `DomainEvent<TPayload>` and `IHasAggregateId<TId>`
+- [ ] A test confirms a concrete event implementing the marker is correctly detected via `is IHasAggregateId<TId>` / pattern matching, and that an event NOT implementing it is unaffected
+- [ ] `03.Domain/CLAUDE.md`'s Interface Contracts section documents the new marker alongside `IHasTenant`, cross-referencing the parallel design intent
+---
+### P-310 — Domain: ValueObject Result<T> Creation Helper (TryCreate/CheckRule Parity with AggregateRoot)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+`ValueObject` gains a protected static helper — the same shape and contract as `AggregateRoot<TId>.TryCreate<T>` — that wraps a value-object factory delegate, catches `ValidationException` (raised by the base constructor's `Validate()` hook) and, for consistency with the aggregate-side helper, `BusinessRuleViolationException`, converting either into `Result<T>.Failure(...)`, and returns `Result<T>.Success(...)` on success. `ValueObject` (and therefore `SingleValueObject<TValue>`, which extends it) also gains a `CheckRule` helper identical in shape to the one already on `AggregateRoot<TId>` and `DomainService`, so a value object's own factory method can express additional business-rule invariants beyond what the `Validate()` → `IEnumerable<Error>?` shape naturally covers, without hand-rolling its own try/catch.
+
+#### Why this is needed
+Today, every value object's `static Result<T> Create(...)` factory method — the exact pattern this package's own `ValueObject.cs` XML doc recommends as the safe construction pattern — must hand-roll the identical try/catch boilerplate that `AggregateRoot<TId>.TryCreate<T>` already centralizes for aggregates. This is a direct, avoidable asymmetry: aggregates get a one-line railway-friendly factory helper; value objects, which follow the exact same construction-then-catch pattern, do not. At "hundreds of services" scale, this means hundreds of independently-authored, subtly-inconsistent try/catch blocks for what should be one shared, tested helper — precisely the kind of repeated boilerplate a shared kernel exists to eliminate, and directly serves this review's developer-friendliness goal.
+
+#### Acceptance criteria
+- [ ] `ValueObject` gains `protected static Result<T> TryCreate<T>(Func<T> factory)` with identical exception-to-`Result`-mapping semantics as `AggregateRoot<TId>.TryCreate<T>` (catches `BusinessRuleViolationException` → `Result.Failure(ex.Error)`; catches `ValidationException` → `Result.Failure(ex.Errors.First())`; success → `Result.Success(factory())`)
+- [ ] `ValueObject` gains `protected static void CheckRule(IBusinessRule rule)`, identical in behavior to `AggregateRoot<TId>.CheckRule`/`DomainService.CheckRule`
+- [ ] `SingleValueObject<TValue>` inherits both helpers with no additional code (verified by a test exercising both helpers from a concrete `SingleValueObject<TValue>` subclass)
+- [ ] `ValueObject.cs`'s own XML `<example>` factory-method pattern is updated to use the new `TryCreate<T>` helper instead of the hand-rolled try/catch it currently documents
+- [ ] Unit tests mirror the existing `TryCreateTests.cs` coverage for the aggregate-side helper: success path, `ValidationException` path, `BusinessRuleViolationException` path
+- [ ] `03.Domain/CLAUDE.md`'s ValueObject section documents both new helpers and cross-references the `AggregateRoot<TId>.TryCreate<T>` parity
+---
+### P-311 — Domain: Constructor Guard-Clause Adoption & Reflection-Caching Hardening
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+Three small, independent, low-risk hardening fixes bundled into one phase because each touches existing surface area rather than adding new capability:
+
+(1) Add a `ProjectReference` from `SharedKernel.Domain` to `01.Core`'s existing `SharedKernel.Guards` package (zero new NuGet dependency — Guards is itself a dependency-free `01.Core` project, and `03.Domain` already references two other `01.Core` projects), and use it to guard the constructor parameters that can currently be bypassed at runtime despite a compile-time `notnull` constraint: `AggregateRoot<TId>`'s and `TenantedAggregateRoot<TId>`'s (and its two siblings') `clock` parameter, and `StronglyTypedId<TValue>`'s / `SingleValueObject<TValue>`'s `value` parameter. `Entity<TId>`'s `id` parameter must explicitly remain unguarded — `default(TId)` is the deliberate, documented "transient" sentinel, not an error case.
+
+(2) Cache `DomainEventVersionHelper.GetVersion(Type)`'s reflection lookup (`GetCustomAttribute<DomainEventVersionAttribute>`) in a `ConcurrentDictionary<Type,int>`, since this helper is documented for use by infrastructure (messaging/outbox) on a potential per-message hot path, unlike the already-correctly-cached `StronglyTypedIdJsonConverterFactory`/`Converter` machinery it sits alongside.
+
+(3) Add explicit `IEquatable<Entity<TId>>` / `IEquatable<ValueObject>` declarations to `Entity<TId>` and `ValueObject`, backed by a typed `Equals(T? other)` delegating to the existing `Equals(object?)` override — both types already implement equality correctly, this only avoids boxing/virtual-dispatch overhead in generic collections (`List<T>.Contains`, `Dictionary` keys, LINQ `Distinct`/`Except`) and matches the idiomatic .NET pattern this package's own records (`StronglyTypedId<TValue>`, `DomainEvent`) already exhibit for free.
+
+#### Why this is needed
+(1) Today, `new SomeAggregate(id, clock: null!)` compiles and fails with a `NullReferenceException` deep inside `Now`/`RaiseDomainEvent` — far from the actual bad call site — instead of a clean, immediately-actionable guard exception at the constructor boundary; the exact problem `01.Core`'s Guard system exists to solve, already available and unused here. (2) An uncached reflection call on a per-message dispatch path is a real, avoidable throughput cost at scale, and this package already demonstrates the correct cached pattern elsewhere — this is closing an inconsistency, not inventing a new technique. (3) A zero-risk, idiomatic correctness/style improvement with a real (if small) allocation benefit in hot collection paths.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Domain.csproj` gains a `ProjectReference` to `SharedKernel.Guards`; manifest `.nupkg` dependency list still shows zero external NuGet packages
+- [ ] `clock` parameters across `AggregateRoot<TId>`, `TenantedAggregateRoot<TId>`, `TenantedAuditableAggregateRoot<TId>`, `TenantedFullAuditableAggregateRoot<TId>` are guarded against null via the Guards system; a test confirms passing `null!` throws the Guards system's standard exception, not a downstream `NullReferenceException`
+- [ ] `value` parameters on `StronglyTypedId<TValue>` and `SingleValueObject<TValue>` are guarded against null where `TValue` is a reference type; a test confirms the guard fires
+- [ ] `Entity<TId>`'s `id` parameter remains explicitly unguarded, with an XML doc `<remarks>` note stating why (transient-entity sentinel), so a future contributor doesn't "fix" this by mistake
+- [ ] `DomainEventVersionHelper.GetVersion(Type)` caches its result per `Type` in a `ConcurrentDictionary`; a test confirms the attribute is read via reflection at most once per distinct type across repeated calls
+- [ ] `Entity<TId>` implements `IEquatable<Entity<TId>>` and `ValueObject` implements `IEquatable<ValueObject>`; existing equality tests continue to pass unmodified
+- [ ] `03.Domain/CLAUDE.md` implementation rules updated to note the Guards adoption and the reflection-caching pattern
+---
+### P-312 — Domain: IPolicy<T> Non-Compliance Reason/Explanation Surface
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+`IPolicy<T>` gains a way to explain a non-compliant result, bringing it into parity with `IBusinessRule` (which already carries both `IsBroken()` and `Message`). The existing `bool IsCompliant(T subject)` fast-path member is unchanged and remains the primary entry point; a second, additive member (or a composable `PolicyResult`-shaped return path used by a new evaluation method alongside the existing boolean one) lets a policy implementation describe *why* a subject failed compliance. `AndPolicy<T>`/`OrPolicy<T>`/`NotPolicy<T>` must aggregate/propagate this explanation consistently with how `AndBusinessRule` already aggregates broken sub-rule messages with a "; " delimiter.
+
+#### Why this is needed
+Every other error-carrying contract in this platform — `Result<T>`, `Error`, `ValidationException`, `BusinessRuleViolationException` — is explanation-rich by design; `IPolicy<T>` is the one bare-boolean exception in the whole domain layer. A caller whose policy check fails today (`if (!policy.IsCompliant(order)) ...`) has zero information about *why* without independently re-deriving it, which means every consuming service that wants to log or surface a meaningful message must reverse-engineer the policy's internal logic externally — exactly the kind of repeated, error-prone work a shared, explanation-rich contract should prevent.
+
+#### Acceptance criteria
+- [ ] `IPolicy<T>` gains an additive, non-breaking way to retrieve a non-compliance explanation for a given subject (existing `IsCompliant(T subject) → bool` member and its call sites are unaffected)
+- [ ] `AndPolicy<T>`, `OrPolicy<T>`, `NotPolicy<T>` correctly aggregate/propagate the explanation consistent with their respective compliance logic (e.g., `AndPolicy<T>` aggregates every non-compliant sub-policy's explanation, mirroring `AndBusinessRule.Message`'s "; "-joined aggregation)
+- [ ] A concrete test policy demonstrates both the boolean fast path and the explanation path returning consistent, correct results
+- [ ] Zero breaking change — any existing `IPolicy<T>` implementation that only ever implemented the boolean member continues to compile and behave identically for a sensible default explanation shape
+- [ ] `03.Domain/CLAUDE.md`'s Policy system section documents the new explanation surface and its composite aggregation rules, cross-referencing the parallel `IBusinessRule`/`AndBusinessRule.Message` design
+---
+### P-313 — Domain: Ad Hoc Specification<T>.Create(criteria) Factory for One-Off Filters
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+A sealed, immutable factory path — `Specification<T>.Create(Expression<Func<T,bool>> criteria)` or equivalent — that produces a criteria-only specification instance without requiring a dedicated named subclass, for genuinely one-off/throwaway filters. This extends the exact precedent already established by `AllSpecification<T>`/`EmptySpecification<T>` (small, sealed, single-purpose specification wrappers) rather than introducing a new pattern, and does not weaken the existing hard rule that specification builder methods (`AddCriteria`, `AddInclude`, etc.) remain constructor-only/no-fluent-chaining for named, reusable specifications — this factory is exclusively for the ad hoc, no-further-configuration case.
+
+#### Why this is needed
+Today, even a genuinely trivial, single-use filter (e.g., a one-off `e => e.Status == Status.Draft` check needed in exactly one call site) requires declaring a whole dedicated named `Specification<T>` subclass — correct and valuable for reusable, named business concepts, but real ceremony for a throwaway predicate. Well-known OSS Specification-pattern kernels in the .NET ecosystem support both a named-class path and an ad hoc inline path; this platform currently only offers the former. Closing this gap directly serves this review's developer-friendliness mandate without touching the deliberate constructor-only builder-method rule for the named-specification path.
+
+#### Acceptance criteria
+- [ ] A sealed factory produces a working `ISpecification<T>` from a bare `Expression<Func<T,bool>>` criteria, with sensible defaults for every other member (no includes, no ordering, no paging, `AsNoTracking`/`IncludeDeleted`/`AsSplitQuery` all default `false`)
+- [ ] The produced specification composes correctly with `.And()`/`.Or()`/`.Not()` against both other ad hoc specifications and named `Specification<T>` subclasses
+- [ ] XML doc is explicit that this path is for genuinely one-off filters, and that a reusable, named business concept should still be a dedicated `Specification<T>` subclass — this does not relax the existing constructor-only builder rule
+- [ ] A test confirms `IsSatisfiedBy` and specification-evaluator translation both work correctly against an ad hoc specification identically to a named one
+- [ ] `03.Domain/CLAUDE.md`'s specification system section documents the new factory alongside `AllSpecification<T>`/`EmptySpecification<T>`, framing it as the same "small sealed wrapper" pattern applied to the general case
+---
+### P-314 — Contracts: Correct EventEnvelope XML Doc AggregateId Claim
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 04.Contracts
+**Depends on:** P-309
+
+#### What is needed
+`EventEnvelope<TEvent>`'s XML documentation currently states that the constraint `where TEvent : IDomainEvent` guarantees `Payload` exposes `Id`, `OccurredOn`, and `AggregateId` — this is factually wrong today (`IDomainEvent` has never exposed `AggregateId`) and remains only partially true even once `03.Domain`'s new `IHasAggregateId<TId>` marker ships (P-309), since that marker is opt-in, not part of `IDomainEvent` itself. Correct the doc to accurately state that `AggregateId` is available only when the concrete event additionally implements `IHasAggregateId<TId>`, and is not guaranteed by the bare `IDomainEvent` constraint.
+
+#### Why this is needed
+A live, shipped documentation defect that actively misleads a reader of `04.Contracts`'s own public surface into believing a member exists that doesn't — exactly the kind of drift this review process exists to catch before it causes a real integration bug. Fixing it in the same work order that introduces the real `IHasAggregateId<TId>` marker means the corrected documentation can point readers to the actual, now-real mechanism instead of just removing the false claim.
+
+#### Acceptance criteria
+- [ ] `EventEnvelope<TEvent>`'s XML doc no longer claims `Id`/`OccurredOn`/`AggregateId` are all guaranteed by `where TEvent : IDomainEvent`
+- [ ] The corrected doc accurately states `Id`/`OccurredOn` are guaranteed by `IDomainEvent`, and `AggregateId` is available only when the concrete event additionally implements `03.Domain`'s `IHasAggregateId<TId>` (P-309), with a short usage note
+- [ ] No functional/code change to `EventEnvelope<TEvent>` itself — this is a documentation-only correction
+- [ ] `04.Contracts/CLAUDE.md` (if it separately restates this claim anywhere) is corrected in the same pass
+---
+### P-315 — Persistence: PostgreSQL Concurrency-Token Correctness (xmin)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+`IHasConcurrency.RowVersion` (a `byte[]`-typed domain interface member) must be genuinely, provably enforced as an optimistic-concurrency token against PostgreSQL — the platform's only supported database. Today, `EntityTypeConfigurationBase`'s concurrency-token configuration unconditionally calls `.IsRowVersion()` with no provider branching, despite its own XML doc claiming a `ConcurrencyTokenConvention` exists that applies `.UseXminAsConcurrencyToken()` for Npgsql — that type does not exist anywhere in the codebase outside the doc comment and a design-phase task description. Determine and implement the actually-correct EF Core 10 / Npgsql mechanism for a real, working PostgreSQL concurrency token (whether that is a genuine `xmin`-backed shadow property, a real trigger/computed-column-backed `byte[]` token, or a corrected, provider-aware convention matching what the original design intended), and prove it with a real PostgreSQL Testcontainers integration test that provokes and observes an actual `DbUpdateConcurrencyException` on a genuine concurrent-write conflict.
+
+#### Why this is needed
+This is the platform's optimistic-concurrency-control mechanism for its one supported database, and it has never been proven to work. The two closest-related existing tests are non-functional: one asserts only `interceptor.Should().NotBeNull()`, the other ends in a bare `true.Should().BeTrue()` — neither exercises a real conflict. The only real-PostgreSQL Testcontainers suite in the package (`PostgreSQLIntegrationTests`) has zero `IHasConcurrency` coverage. If `xmin`'s `uint`/`xid` server-side value genuinely cannot round-trip through a `byte[]`-typed shadow property the way `.IsRowVersion()` assumes, every `FullAuditableAggregateRoot<TId>`/`FullAuditableEntity<TId>` consumer on this platform may have silently non-functional concurrency protection today — a data-integrity risk (lost updates under concurrent writes) severe enough to be this review's single highest-priority finding.
+
+#### Acceptance criteria
+- [ ] `EntityTypeConfigurationBase`'s concurrency-token configuration is verified (and corrected if wrong) to produce a token that PostgreSQL genuinely, automatically changes on every row UPDATE
+- [ ] Either the previously-only-documented `ConcurrencyTokenConvention` is actually implemented as provider-aware, or `EntityTypeConfigurationBase`'s own doc comment is corrected to match whatever mechanism is genuinely shipped — the code and its documentation must agree
+- [ ] A real PostgreSQL Testcontainers integration test: two concurrent contexts load the same row, both modify it, the first `SaveChangesAsync` succeeds, the second genuinely throws `DbUpdateConcurrencyException` (caught and rethrown by `ConcurrencyInterceptor` as the documented typed `ConcurrencyException`) — not a unit-level assertion, a real database round trip proving the conflict
+- [ ] `ConcurrencyInterceptorTests.cs`'s two non-functional assertions (`interceptor.Should().NotBeNull()` and the bare `true.Should().BeTrue()`) are replaced with real behavioral assertions
+- [ ] `06.Persistence/CLAUDE.md` is corrected to accurately describe the real PostgreSQL concurrency-token mechanism, replacing any reference to the non-existent `ConcurrencyTokenConvention` type
+- [ ] `06.Persistence/state-map.md`'s D-05 design task entry (which currently describes the never-implemented provider-branching convention) is reconciled with the actually-shipped mechanism
+---
+### P-316 — Persistence: TenantedRepository EF.Property→Expression.Property Migration
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+`TenantedRepository<TAggregate,TId>`'s `GetByIdForTenantAsync` and `GetByIdForTenantIncludingDeletedAsync` currently build their primary-key predicate using `EF.Property<TId>(e, "Id")` — the exact pattern this same package's own `EfReadRepository.GetByIdsAsync` was previously migrated away from (documented in `06.Persistence/CLAUDE.md` and `state-map.md`'s DO-23/P-105 entries) because it can silently fall back to client-side evaluation for strongly-typed IDs with a registered `ValueConverter`, defeating server-side filtering. Migrate both `TenantedRepository` methods to the same `Expression.Property`-based (or equivalent typed-expression) pattern already used correctly elsewhere in the package (e.g. `EfRepository.ExistsAsync`).
+
+#### Why this is needed
+This is a confirmed, live inconsistency against the platform's own already-established and documented fix for exactly this failure mode — a sibling class in the same package never received the migration its own changelog describes as complete. Any tenanted aggregate keyed by a `StronglyTypedId<Guid>` (a common, encouraged pattern in this platform) calling `GetByIdForTenantAsync`/`GetByIdForTenantIncludingDeletedAsync` risks the same silent full-table client-side scan the original P-105 fix was written to eliminate elsewhere.
+
+#### Acceptance criteria
+- [ ] `TenantedRepository.GetByIdForTenantAsync` and `GetByIdForTenantIncludingDeletedAsync` use the same `Expression`-based (not `EF.Property<T>`) predicate-construction pattern as `EfRepository.ExistsAsync`
+- [ ] A test using a strongly-typed-ID-keyed tenanted aggregate confirms the generated query is server-side (no client-side-evaluation warning/log entry), mirroring the existing `GetByIdsAsyncStronglyTypedIdTests.cs` verification approach for the original P-105 fix
+- [ ] Existing `TenantedRepositoryFilterSemanticsTests.cs` tenant-isolation assertions (tenant A vs. B) continue to pass unmodified
+- [ ] `06.Persistence/CLAUDE.md`'s `TenantedRepository` entry is confirmed to no longer reference or imply `EF.Property` usage
+---
+### P-317 — Persistence: Keyset/Cursor Pagination Support in SpecificationEvaluator + EfReadRepository
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** P-308
+
+#### What is needed
+`SpecificationEvaluator<T>` (and its interface, `ISpecificationEvaluator<T>`) gains the translation logic for the keyset/cursor specification shape defined in `03.Domain` (P-308) — turning a seek predicate + deterministic sort order into a genuine `WHERE (SortKey, Id) > (@cursor, @cursorId) ORDER BY SortKey, Id LIMIT n` query shape, never an `OFFSET`. `EfReadRepository<TAggregate,TId>` gains the corresponding read method(s) so a caller can page through a large result set by cursor exactly as naturally as it already does by page number via `ListPagedAsync`.
+
+#### Why this is needed
+Completes the keyset pagination capability `03.Domain` defines the contract for — without this phase, the new specification shape has no provider translation and cannot actually be used against PostgreSQL. This directly targets the O(n)-scan-and-discard cost of deep offset pagination on large, actively-written tables, a real and well-documented performance cliff at "hundreds of services" scale.
+
+#### Acceptance criteria
+- [ ] `SpecificationEvaluator<T>`/`ISpecificationEvaluator<T>` translate the keyset specification shape into a genuine seek-predicate SQL query, never `OFFSET`
+- [ ] `EfReadRepository<TAggregate,TId>` exposes a keyset-paginated read method returning enough information for the caller to request the next page (e.g., the last row's cursor value alongside the page of results)
+- [ ] A real PostgreSQL (or SQLite, matching the package's existing EfCore-test convention) integration test proves correct forward paging through a multi-page result set with no skipped or duplicated rows across page boundaries, including under concurrent inserts between page fetches (the specific correctness property offset paging lacks and keyset paging provides)
+- [ ] `ListPagedAsync`/`PagedSpecification<T>` (offset-based) remain fully unchanged and available — this is additive, not a replacement
+- [ ] `06.Persistence/CLAUDE.md` documents the new keyset read path alongside the existing offset-paged one, with guidance on when to prefer each
+---
+### P-318 — Persistence: Split-Query (AsSplitQuery) Support in SpecificationEvaluator
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** P-308
+
+#### What is needed
+`SpecificationEvaluator<T>`/`ISpecificationEvaluator<T>` apply EF Core's `.AsSplitQuery()` to the generated query whenever the specification's `AsSplitQuery` flag (added in `03.Domain`, P-308) is `true`, inserted at the correct point in the canonical evaluation pipeline (after `Includes`/`StringIncludes`, consistent with where EF Core expects the call relative to navigation configuration).
+
+#### Why this is needed
+Closes the Cartesian-explosion risk `03.Domain`'s new flag defines the contract for. A specification with two or more collection `Include`s produces one Cartesian-joined SQL query today with no way to opt out — this phase makes the opt-out real and provider-correct.
+
+#### Acceptance criteria
+- [ ] `SpecificationEvaluator<T>.GetQuery`/`GetProjectedQuery` call `.AsSplitQuery()` exactly when `spec.AsSplitQuery == true`, and never otherwise (default behavior for existing specifications is byte-for-byte unchanged)
+- [ ] A test with two collection `Include`s and `AsSplitQuery = true` proves multiple SQL statements are issued (via EF Core's logging/interceptor diagnostics) instead of one joined statement, and that the materialized result is correct and free of the duplicate-row artifacts a single joined query with multiple collection includes would otherwise produce
+- [ ] The canonical specification-evaluator ordering table in `06.Persistence/CLAUDE.md` is updated to show exactly where `AsSplitQuery` is applied in the pipeline
+---
+### P-319 — Persistence: Query Observability — Automatic TagWith + Read-Path ActivitySource Tracing
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+Two additive observability mechanisms: (1) `SpecificationEvaluator<T>` automatically tags every generated query with `.TagWith(...)` derived from the originating specification's type name — zero configuration, zero new API surface, applied to every existing and future specification automatically. (2) A `SharedKernel.Persistence` `ActivitySource`, mirroring the pattern `02.Caching` shipped in its own WO-050 gold-standard pass (P-304), producing a span around repository read/write operations (at minimum `EfRepository`'s `AddAsync`/`UpdateAsync`/`DeleteAsync` and `EfReadRepository`'s specification-driven reads), tagged with the aggregate type name and outcome, never raw parameter values.
+
+#### Why this is needed
+Today there is no way to trace a slow or unexpected query in `pg_stat_statements`/production logs back to the C# specification or repository call that produced it — a real, everyday production-debugging gap. `06.Persistence` is also the only foundational infrastructure domain in the platform with zero `ActivitySource`/OpenTelemetry tracing wiring at all (confirmed absent platform-wide by grep), unlike every domain that shipped after `02.Caching`'s own equivalent gap was just closed in WO-050 — this closes the identical class of completeness gap for the persistence layer, which sits on the hot path of essentially every request in every consuming service.
+
+#### Acceptance criteria
+- [ ] Every query the evaluator produces carries a `.TagWith(...)` comment derived automatically from the specification's type name — no per-specification configuration required
+- [ ] A new `SharedKernel.Persistence` `ActivitySource` (static readonly, AOT-safe, no new NuGet dependency — `System.Diagnostics.ActivitySource` is BCL) produces spans for repository read/write operations tagged with aggregate type name and success/failure outcome
+- [ ] No raw SQL parameter values, entity property values, or tenant/user identifiers ever appear in a span tag or `TagWith` comment — low-cardinality, non-sensitive metadata only, mirroring the `cache.key_prefix`-never-full-key precedent from `02.Caching`'s P-304
+- [ ] A test using an `ActivityListener` confirms spans are produced with the expected tags for both a successful and a failing repository operation
+- [ ] `06.Persistence/CLAUDE.md` documents both additions in a new OTel/observability section
+---
+### P-320 — Persistence: Transient-Fault Resiliency (Npgsql EnableRetryOnFailure)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+An opt-in EF Core execution-strategy retry policy for transient PostgreSQL faults (dropped connections, transient network errors — common in K8s/cloud environments), wired through `SharedKernel.Persistence.PostgreSQL`'s `UsePostgreSQL()` configuration point, exposed as an opt-in on `EfCorePersistenceBuilder` (e.g. `.WithTransientFaultRetry(...)`) rather than an always-on default. Because EF Core's retrying execution strategies require the entire transactional operation — including transaction start — to run inside `IExecutionStrategy.ExecuteAsync(...)`, this phase must also correct `EfTransactionalUnitOfWork.BeginTransactionAsync`/`EfPersistenceTransaction` so that when retry is enabled, an explicit transaction is genuinely retry-safe rather than silently incompatible with it.
+
+#### Why this is needed
+The platform leans heavily on Polly v8 resilience elsewhere (`11.Communication`'s typed HTTP clients) but has zero transient-fault handling for its own database layer today — confirmed by an exhaustive grep of the whole domain for `EnableRetryOnFailure`/`ExecutionStrategy`. A transient network blip to PostgreSQL — routine in a Kubernetes environment — currently surfaces as an unhandled failure to every caller instead of a transparent retry, for every one of the "hundreds of services" this kernel serves.
+
+#### Acceptance criteria
+- [ ] An opt-in retry policy for transient Npgsql faults is available via `EfCorePersistenceBuilder`, disabled by default (zero behavior change for existing consumers who don't opt in)
+- [ ] `ITransactionalUnitOfWork.BeginTransactionAsync`/`EfTransactionalUnitOfWork`/`EfPersistenceTransaction` are verified (and corrected if necessary) to remain correct and retry-safe when the opt-in retry policy is enabled — explicit transactions must not silently break or double-execute under retry
+- [ ] A test using a fault-injecting/interceptor-simulated transient failure proves a transparent retry occurs when the policy is enabled, and that a genuinely non-transient failure still propagates
+- [ ] XML doc and `06.Persistence/CLAUDE.md` explicitly document the interaction with explicit transactions and any constraint this places on code running inside `ITransactionalUnitOfWork` scope
+- [ ] `EfCorePersistenceBuilder`'s DI registration examples gain a retry-enabled sample
+---
+### P-321 — Persistence: DapperReadService Multi-Mapping, QueryMultipleAsync, and Protected Connection Factory Escape Hatch
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+`DapperReadService` gains three additive capabilities that are core, everyday Dapper strengths currently entirely unreachable through this base class: (1) a multi-mapping query method wrapping Dapper's `Query<TFirst,TSecond,TReturn>`-with-`splitOn` shape, for join-projection queries; (2) a `QueryMultipleAsync`-wrapping method for reading multiple result sets from one round trip (grid-reader pattern); (3) the underlying `IDbConnectionFactory` exposed as `protected` (not `private`) so a subclass needing a Dapper capability this base class doesn't wrap can still reuse the same connection-per-call lifecycle instead of duplicating it via a second, independently-injected `IDbConnectionFactory`.
+
+#### Why this is needed
+Today, any consuming service needing a join-mapping query or a multi-result-set round trip — routine, everyday read-side query shapes — must either bypass `DapperReadService` entirely (reinjecting `IDbConnectionFactory` independently and duplicating its connection lifecycle) or avoid Dapper's actual strengths altogether. A read-side micro-ORM base that can't reach two of Dapper's headline capabilities undermines the reason to use `DapperReadService` at all for anything beyond the simplest single-table queries.
+
+#### Acceptance criteria
+- [ ] `DapperReadService` gains a multi-mapping query method supporting Dapper's `splitOn`-based join projection
+- [ ] `DapperReadService` gains a `QueryMultipleAsync`-wrapping method for multiple result sets in one round trip
+- [ ] The connection factory field is `protected`, not `private`, documented as the supported extension seam for capabilities this base class doesn't itself wrap
+- [ ] All new methods remain parameterized-query-only (no string interpolation in SQL), consistent with the package's existing hard rule
+- [ ] Integration tests against a real PostgreSQL Testcontainer cover both new methods with a genuine multi-table join and a genuine multi-result-set query
+- [ ] `06.Persistence/CLAUDE.md`'s `DapperReadService` entry documents the expanded surface
+---
+### P-322 — Persistence: DbContext Pooling (AddDbContextPool) with Safe Scoped-Dependency Redesign
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+An opt-in `AddDbContextPool<TContext>`-backed registration path on `EfCorePersistenceBuilder`, offered as an alternative to the current always-`AddDbContext` (scoped-per-request) registration, for services wanting the reduced allocation/GC overhead of a pooled `DbContext` at high request throughput. This is explicitly gated behind a prerequisite redesign, not a flag flip: `SharedKernelDbContext` and `TenantedDbContext` currently capture `IUserContext`/`ITenantProvider`/the three platform interceptors via constructor field injection — under pooling, a `DbContext`'s constructor runs once per pooled instance, not once per lease, so a naive pooling addition would freeze a pooled instance's captured `ITenantProvider` to whichever request first created it and leak it into every unrelated later request that rents that same instance — a cross-tenant data-leak risk, and for `IUserContext`, an audit-misattribution risk. This phase must re-resolve these per-lease (e.g. via `DbContext.OnConfiguring`'s access to the current scope, or an equivalent re-resolution mechanism EF Core's pooling model supports) before pooling is exposed as usable at all.
+
+#### Why this is needed
+At "hundreds of services" scale, the default scoped-per-request `DbContext` allocation cost is a real, measurable overhead that `AddDbContextPool` exists specifically to reduce — a legitimate gold-standard capability gap. But this is the one finding in this review where doing it naively would be actively dangerous rather than merely incomplete: Microsoft's own EF Core documentation specifically warns against constructor-captured scoped services in pooled contexts, and this package's `TenantedDbContext` builds its global tenant query filter directly from the exact captured reference that would go stale under naive pooling. This phase exists to deliver the throughput benefit without silently reintroducing the cross-tenant leak the platform's multi-tenancy design otherwise carefully prevents.
+
+#### Acceptance criteria
+- [ ] `SharedKernelDbContext`/`TenantedDbContext` no longer rely on constructor-captured `IUserContext`/`ITenantProvider`/interceptor references remaining valid for the lifetime of a pooled instance — verified via a test that rents the same pooled context across two simulated requests with two different tenants/users and asserts each observes its own request's correct tenant filter and audit identity, never the other's
+- [ ] `EfCorePersistenceBuilder` gains an opt-in pooled-registration path; the existing `AddDbContext`-based default remains unchanged for consumers who don't opt in
+- [ ] A startup guard prevents combining pooling with any configuration this phase determines is genuinely incompatible with it (if any), failing fast with an actionable message rather than a silent correctness hazard
+- [ ] A load-oriented test/benchmark demonstrates the intended allocation/throughput benefit of pooling over the default registration
+- [ ] `06.Persistence/CLAUDE.md` documents the pooling option with an explicit, prominent warning about the scoped-capture hazard this phase closes, so a future contributor never reintroduces it
+---
+### P-323 — Persistence: Runtime Performance Hardening Bundle
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+Two small, independent, low-risk runtime efficiency fixes to already-shipped code: (1) `EncryptionOptionsKeyProvider.GetCurrentKey()`/`GetKey(string)` currently re-run `Convert.FromBase64String(...)` on every single call — cache the decoded key bytes per version (e.g. in a `ConcurrentDictionary<string,byte[]>`), invalidated whenever the underlying `IOptionsMonitor<EncryptionOptions>` change token fires, so the common no-rotation-in-flight case decodes each key once rather than on every encrypted-column read/write across every row. (2) `EfReadRepository.GetByIdsAsync` accepts an unbounded `IEnumerable<TId>` with no size guardrail or chunking helper — add a defensive, documented behavior for very large input sizes (tens of thousands of IDs), and correct the existing "performance degrades above 1000 IDs" documentation, which was written assuming SQL-Server-style per-parameter `IN(...)` expansion; Npgsql's EF Core provider instead translates `Contains` to a single `= ANY(@array)` parameter, so the actual scaling characteristics and the right guardrail threshold differ from what's currently documented.
+
+#### Why this is needed
+Both are small, contained, zero-risk-to-fix inefficiencies in already-shipped, frequently-exercised code paths (every encrypted-column row read/write; any read-side lookup by a batch of IDs) — the kind of hardening that compounds meaningfully at "hundreds of services" scale even though neither is a correctness bug on its own.
+
+#### Acceptance criteria
+- [ ] `EncryptionOptionsKeyProvider` decodes each key version's Base64 value at most once per underlying options value, not once per call; a test proves the cache is invalidated correctly when `IOptionsMonitor<EncryptionOptions>` produces a new value (e.g. after a rotation adds a new key version)
+- [ ] `GetByIdsAsync`'s documented performance guidance is corrected to accurately describe Npgsql's `= ANY(@array)` translation instead of the SQL-Server-flavored "1000 IDs" framing, with a concrete, re-derived guardrail recommendation
+- [ ] A defensive guard or chunking helper exists for pathologically large ID batches, documented clearly as opt-in guidance rather than a silent behavior change
+- [ ] Existing encryption round-trip and `GetByIdsAsync` tests continue to pass unmodified
+- [ ] `06.Persistence/CLAUDE.md` corrected in both places
+---
+### P-324 — Persistence: NuGet Packaging & Documentation Parity Across All Four Packages
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+Bring all four `06.Persistence` packages' NuGet packaging and documentation up to the bar already established by `08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows`'s own gold-standard packaging passes: each package gets a genuine, complete `README.md` (the domain-root `06.Persistence/README.md` exists today but is empty) wired via `PackageReadmeFile` in its `.csproj` (currently wired in none of the four). In the same pass, correct three confirmed documentation-drift defects found during this review: `06.Persistence/CLAUDE.md`'s `SharedKernelDbContext` constructor signature (documented as 2 parameters; the shipped constructor takes 9 — `options`, three platform interceptors, `additionalInterceptors`, and four encryption-related parameters) must be corrected to match the real signature; the minor "reflection-free" wording inconsistency between `EfCorePersistenceExtensions.cs`'s comment and `EncryptedEntityBatchProcessorRegistry.cs`'s own (correct) self-description must be reconciled; and the `06.Persistence/state-map.md` Package Board's stale "Current Phase: Core" rows for `.Abstractions`/`.EfCore` (both actually fully Published, identical in completeness to `.PostgreSQL`/`.Dapper`) must be refreshed.
+
+#### Why this is needed
+This is the exact class of gap `08.Storage`'s own WO-043 Published-phase review found and fixed (a `.csproj` never wiring `PackageReadmeFile` despite complete README content existing) — except one level worse here, since no README content exists at all for any of the four `06.Persistence` packages. A misleading 2-vs-9-parameter constructor signature in the domain's own brain is a real, active hazard for any future contributor extending `SharedKernelDbContext` based on the documented (wrong) shape.
+
+#### Acceptance criteria
+- [ ] All four packages (`Abstractions`, `EfCore`, `PostgreSQL`, `Dapper`) ship a real, complete `README.md` covering at minimum a quick-start DI registration example and the package's core surface, matching the bar set by sibling domains' own README passes
+- [ ] All four `.csproj` files wire `PackageReadmeFile` correctly; `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings for all four
+- [ ] `06.Persistence/CLAUDE.md`'s `SharedKernelDbContext` constructor entry is corrected to list all real parameters in their real order
+- [ ] The "reflection-free" wording inconsistency between `EfCorePersistenceExtensions.cs` and `EncryptedEntityBatchProcessorRegistry.cs` is reconciled to consistently describe the documented, justified, startup-time-only exception
+- [ ] `06.Persistence/state-map.md`'s Package Board rows for `.Abstractions`/`.EfCore` are refreshed to accurately reflect their real, fully-Published completion state
+---
+### P-325 — Persistence: Async ADO.NET Calls in Readiness Probe & Advisory Lock
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+`IDbConnectionFactory.CheckReadinessAsync`'s and `MigrationAndSeedHostedService`'s advisory-lock acquire/release currently call synchronous `IDbCommand.ExecuteScalar()`/`ExecuteNonQuery()` inside otherwise-`async` methods, blocking a thread-pool thread for the duration of each database round trip. Every concrete `IDbConnectionFactory` implementation this platform ships (`NpgsqlConnectionFactory`) already returns a connection that is, at runtime, a genuine `System.Data.Common.DbConnection`/`DbCommand` — so both call sites can safely cast to the concrete ADO.NET base types and call their true async members (`ExecuteScalarAsync`/`ExecuteNonQueryAsync`) without any change to the public `IDbConnectionFactory` interface, and therefore with zero breaking change to any existing implementer or caller.
+
+#### Why this is needed
+At "hundreds of services" scale, Kubernetes readiness probes fire frequently across every running pod — a synchronous, thread-blocking database call inside a method already named and typed as `async` is a real, avoidable scalability anti-pattern on a very hot infrastructure path, not a cosmetic style issue. The advisory-lock hosted-service path has the same defect on the less-frequent but still real startup/migration path.
+
+#### Acceptance criteria
+- [ ] `CheckReadinessAsync`'s `ExecuteScalar()` call is replaced with a genuine async call (via a safe cast to the concrete ADO.NET type or an equivalent non-breaking mechanism)
+- [ ] `MigrationAndSeedHostedService`'s advisory-lock acquire/release `ExecuteNonQuery()` calls are replaced the same way
+- [ ] `IDbConnectionFactory`'s public interface signature is unchanged — this is verified to be a non-breaking, purely internal fix
+- [ ] A test confirms both fixed call sites no longer synchronously block during their async operation (e.g. via a thread-pool-starvation-style test, or at minimum confirming the async overload is genuinely invoked)
+- [ ] Existing readiness-probe and migration/seeding tests continue to pass unmodified
+---
+### P-326 — ServiceDefaults: Add WithPersistenceTelemetry
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-319
+
+#### What is needed
+A new `WithPersistenceTelemetry(this IHostApplicationBuilder)` extension in `13.ServiceDefaults`, following the exact established shape of its six existing siblings (`WithApplicationTelemetry`, `WithCachingTelemetry`, `WithIntelligenceTelemetry`, `WithMessagingTelemetry`, `WithSearchTelemetry`, `WithWorkflowTelemetry`) — wiring `WithTracing(t => t.AddSource(...))` for the new `SharedKernel.Persistence` `ActivitySource` (06.Persistence, P-319), and `WithMetrics(m => m.AddMeter(...))` too if `06.Persistence` also ships a `Meter` in that same pass. Idempotent under repeated calls, matching the family's existing convention exactly.
+
+#### Why this is needed
+`06.Persistence` is confirmed, by direct inspection of `13.ServiceDefaults/Telemetry/`, to be the only foundational infrastructure domain with **no** `WithXTelemetry` entry point at all today — not merely an incomplete one. Every one of the six existing entries post-dates a domain that shipped observability instrumentation; `06.Persistence` never got one because it never had an `ActivitySource`/`Meter` to wire until P-319. Once P-319 ships, leaving it unwired here means its spans never reach the host's `TracerProvider` — silently defeating the entire point of adding them, exactly as `02.Caching`'s P-304/P-305 pair from WO-050 already established as the correct pattern for this exact situation.
+
+#### Acceptance criteria
+- [ ] `WithPersistenceTelemetry(this IHostApplicationBuilder)` exists, matching the file/namespace/registration shape of its six siblings exactly
+- [ ] Wires `WithTracing(t => t.AddSource("SharedKernel.Persistence"))` (or the actual instrumentation name P-319 ships) for the new `06.Persistence` `ActivitySource`
+- [ ] Idempotent — calling it more than once registers no duplicate instruments, matching the existing rule for this method family
+- [ ] A test confirms a span emitted by `06.Persistence`'s new `ActivitySource` is exported once `WithPersistenceTelemetry()` has been called on the host, mirroring the existing telemetry-extension test family's own verification pattern
+- [ ] `13.ServiceDefaults/CLAUDE.md`'s `WithXTelemetry` family table gains the new entry
+---
+### P-327 — Governance: Prohibit Raw EF.Property<T> Usage Outside Documented Exceptions
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-051
+**Domain:** 00.Governance
+**Depends on:** P-316
+
+#### What is needed
+A NetArchTest (or Roslyn analyzer) rule in `00.Governance/SharedKernel.ArchitectureTests` that flags any use of `EF.Property<T>(...)` inside `06.Persistence.EfCore` production code, outside a short, explicitly documented exception list (if any genuinely necessary use remains after P-316's fix). This mirrors the platform's existing pattern of mechanically enforcing a previously-manual "don't reintroduce this exact bug class" rule (e.g. the raw-`HttpClient` prohibition, the ad hoc-logging prohibition).
+
+#### Why this is needed
+This review found a confirmed, live instance of `EF.Property<T>` usage (`TenantedRepository`, P-316) that silently reintroduces the exact "client-side evaluation with strongly-typed IDs" failure mode the platform had already identified and fixed once before (P-105, `EfReadRepository.GetByIdsAsync`) — proving the lesson from the first fix did not automatically prevent a second occurrence elsewhere in the same package. Without mechanical enforcement, nothing stops a third occurrence in a future repository addition.
+
+#### Acceptance criteria
+- [ ] A new architecture-test/analyzer rule fails the build if `EF.Property<T>(...)` appears in `SharedKernel.Persistence.EfCore` production code without an explicit, narrow documented exception
+- [ ] The rule is verified to fire against a fixture reproducing the exact pattern P-316 fixed, and to pass against the corrected `Expression.Property`-based pattern
+- [ ] Runs cleanly against the real, corrected `06.Persistence.EfCore` assembly (post-P-316) with zero violations
+- [ ] `00.Governance/CLAUDE.md` documents the rule with the P-316 defect as its motivating example, mirroring the documentation style of the platform's other "prevent this exact regression" rules
+---
+
+- [2026-07-29] WO-051 phases P-307–P-327 written to Phase Backlog — 03.Domain and 06.Persistence gold-standard architecture review, triggered by direct user request ("analyse 03.Domain, then 06.Persistence — which has relation with them — for bad practice needing refactor, and gold-standard improvements, in a developer-friendly way; create as many phases as warranted"). Both domains were re-verified against shipped `.cs` files by two independent research passes rather than trusted from their own CLAUDE.md prose (both domains report "Published"/all-green in the state-map) — the same discipline WO-049/WO-050 established, and it again found real, previously-invisible drift. **03.Domain** (7 phases, P-307–P-313): confirmed a genuine silent-data-loss bug — `OrSpecification<T>`/`NotSpecification<T>` drop expression-based `Includes` entirely when composing two specifications via `.And()`/`.Or()`/`.Not()`, and `AndSpecification<T>` drops them too (P-307, highest priority in this domain); confirmed zero specification-level support for keyset/cursor pagination or EF Core split-query opt-out, both closed via new additive `ISpecification<T>` extensions (P-308); confirmed `04.Contracts`'s `EventEnvelope<TEvent>` XML doc already (wrongly) assumes an `AggregateId` exists on `IDomainEvent` today, motivating a real opt-in `IHasAggregateId<TId>` marker mirroring `IHasTenant`'s existing shape (P-309, paired with a `04.Contracts` doc fix, P-314); confirmed `ValueObject`/`SingleValueObject<TValue>` has no `Result<T>`-returning creation helper despite `AggregateRoot<TId>.TryCreate<T>` already centralizing the identical pattern for aggregates (P-310); confirmed `01.Core/SharedKernel.Guards` exists, predates `03.Domain`, and is unused — bundled with an uncached `DomainEventVersionHelper.GetVersion` reflection hot-path and a cheap `IEquatable<T>` hardening into one phase (P-311); accepted two of the research agent's own independent findings as real asymmetries — `IPolicy<T>`'s bare-boolean-only surface versus `IBusinessRule`'s explanation-rich one (P-312), and the lack of an ad hoc/inline specification path alongside the existing named-subclass-only rule, extending the `AllSpecification<T>`/`EmptySpecification<T>` sealed-wrapper precedent (P-313). **06.Persistence** (11 phases, P-315–P-325): confirmed this review's single highest-priority finding — the platform's PostgreSQL optimistic-concurrency mechanism (`IHasConcurrency.RowVersion`, a `byte[]` mapped via an unconditional `.IsRowVersion()`) has never been proven to work against Npgsql's `xmin`-based reality, the `ConcurrencyTokenConvention` type its own doc comment names does not exist anywhere in the codebase, and the two nearest tests are non-functional (a bare `interceptor.Should().NotBeNull()` and a bare `true.Should().BeTrue()`) — a real lost-update data-integrity risk on the platform's only supported database (P-315); confirmed `TenantedRepository` was never migrated to the `Expression.Property` pattern `EfReadRepository.GetByIdsAsync` adopted for the identical reason (silent client-side evaluation with strongly-typed IDs) — live proof the first fix didn't prevent a second occurrence, closed both by a direct fix (P-316) and a new governance rule preventing a third (P-327); the keyset-pagination and split-query gaps 03.Domain's contract now defines get their provider-side translation (P-317/P-318, both depending on P-308); confirmed zero SQL query tagging and zero `ActivitySource`/OpenTelemetry wiring anywhere in the domain — closed via automatic `TagWith` plus a new `ActivitySource` (P-319), paired with a `13.ServiceDefaults` phase (P-326) after directly confirming `06.Persistence` is the only foundational infrastructure domain with no `WithXTelemetry` entry point at all (grepped `13.ServiceDefaults/Telemetry/`: six siblings exist, Persistence has none); confirmed zero transient-fault handling for the platform's own database layer despite heavy Polly v8 use elsewhere, closed as an opt-in `EnableRetryOnFailure` path with explicit `ExecutionStrategy`/explicit-transaction compatibility work (P-320); confirmed `DapperReadService` cannot reach Dapper's own multi-mapping or grid-reader capabilities, forcing any join/multi-result-set consumer to bypass it entirely (P-321); accepted `AddDbContextPool` as a real throughput gap but scoped it as risk-gated — the research agent independently identified that naive pooling would be actively unsafe given `SharedKernelDbContext`/`TenantedDbContext`'s constructor-captured `IUserContext`/`ITenantProvider`, a genuine cross-tenant-leak hazard under pooling that must be redesigned before pooling is exposed at all, not merely documented as a caveat (P-322); bundled two small, independent, zero-risk runtime-efficiency fixes — uncached per-row Base64 key decoding in `EncryptionOptionsKeyProvider`, and a corrected (Npgsql `= ANY(@array)`, not SQL-Server-style per-parameter `IN`) `GetByIdsAsync` large-input guardrail — into one hardening phase (P-323); closed a `08.Storage`-WO-043-class packaging gap one level worse (zero README content across all four packages, not merely an unwired one), bundled with three confirmed documentation-drift corrections including a `SharedKernelDbContext` constructor doc claiming 2 parameters against a real 9 (P-324); and, after reconsidering the research agent's own suggestion to widen `IDbConnectionFactory`'s return type (a breaking interface change), scoped a narrower, non-breaking alternative — casting to the concrete `DbConnection`/`DbCommand` types every shipped implementation already returns at runtime — to unblock the two confirmed thread-pool-blocking synchronous ADO.NET calls on the readiness-probe and advisory-lock hot paths (P-325). **Explicitly declined, not written as a phase:** Npgsql binary-`COPY`-protocol bulk insert — `AddRangeAsync`'s existing EF Core batched `INSERT` is adequate for the platform's typical write volumes, and COPY's bypass of the entire interceptor/audit/domain-event pipeline is real complexity without a concrete consumer need today; revisit only if a specific service surfaces a genuine bulk-ETL requirement. Both domains' Domain Summary Board rows were already `●`/`◐`-non-`○` (03=●, 04=◐ Design already in progress, 06=●, 13=●, 00=●), so no `state-map-phase` calls were made — this is a backlog-only pass, ready for a future `/dispatch-phase` (arch-lead, user request, WO-051, P-307–P-327)
+- [2026-07-29] Phase(s) P-307, P-308, P-309, P-310, P-311, P-312, P-313 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-07-29] Phase(s) P-314 dispatched to contracts-arch-planner for 04.Contracts (dispatch-phase)
+- [2026-07-30] Phase(s) P-315, P-316, P-317, P-318, P-319, P-320 dispatched to persistence-arch-planner for 06.Persistence (batch 1 of 2; an earlier single-call dispatch of all 11 persistence phases terminated on a session limit with zero partial writes, so the domain was re-dispatched in two batches) (dispatch-phase)
+- [2026-07-30] Phase(s) P-321, P-322, P-323, P-324, P-325 dispatched to persistence-arch-planner for 06.Persistence (batch 2 of 2) (dispatch-phase)
+- [2026-07-30] Phase(s) P-326 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-07-30] Phase(s) P-327 dispatched to governance-arch-planner for 00.Governance (dispatched last rather than first-by-domain-number, so its P-316/06.Persistence dependency was planned before it — strict domain-number order would have inverted that dependency) (dispatch-phase)
