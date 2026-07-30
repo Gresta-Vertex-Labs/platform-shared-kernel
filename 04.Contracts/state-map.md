@@ -36,7 +36,7 @@
 
 ## Active Work
 
-_P-166 (WO-026): ResultEnvelopeExtensions mapping class — all phases pending._
+_P-314 (WO-051): `EventEnvelope<TEvent>` XML doc correction — Docs phase, DO-08 pending. Depends on 03.Domain's P-309 (`IHasAggregateId<TId>`) shipping first._
 
 <!--
 Format when active — replace placeholder with table:
@@ -75,6 +75,7 @@ Format when blocked — replace placeholder with table:
 | `SK.04.Scaffold` | `01.Core` | `SharedKernel.Primitives` ProjectReference (`Result<T>`, `Error`) | Available |
 | `SK.04.Scaffold` | `03.Domain` | `SharedKernel.Domain` ProjectReference (`IDomainEvent`, `DomainEventVersionHelper`) | Available (P-053 complete) |
 | `SK.04.Core` | `03.Domain` | `DomainEventVersionHelper.GetVersion(Type)` for `EventEnvelope<TEvent>.EventVersion` | Available (P-053 complete) |
+| `SK.04.Docs` | `03.Domain` | `IHasAggregateId<TId>` marker interface (WO-051/P-309) — referenced only as an explanatory `<see cref>` in `EventEnvelope<TEvent>.Payload`'s XML doc; not added to the public-API consumed-type list (mirrors the existing `DomainEventVersionAttribute`/`DomainEventVersionHelper` doc-only cross-reference precedent) | Pending (P-309 not yet implemented in 03.Domain) |
 
 ---
 
@@ -153,6 +154,7 @@ Format when blocked — replace placeholder with table:
 | DO-05 | XML doc on `ContractsJsonContext` — `<summary>` and `<remarks>` instructing consumers to not reference this context directly; instruct on creating own `partial JsonSerializerContext` with `[JsonSerializable(typeof(EventEnvelope<YourEvent>))]` and merging via `JsonSerializerOptions.TypeInfoResolverChain` | SharedKernel.Contracts | `●` |
 | DO-06 | Author `README.md` at `04.Contracts/SharedKernel.Contracts/README.md` with five sections: (1) purpose and what belongs / does not belong; (2) quick-start code examples for all five surfaces; (3) `Result<T>` vs `Envelope<T>` boundary rule; (4) STJ usage pattern for consuming services; (5) `EventEnvelope<TEvent>` composition pattern as used by `07.Messaging` | SharedKernel.Contracts | `●` |
 | DO-07 | (WO-026/P-166) XML doc on all four `ResultEnvelopeExtensions` methods — each method must have: `<summary>` stating direction of mapping (e.g. "Maps a Result&lt;T&gt; to an Envelope&lt;T&gt; for serialization at a service boundary"); `<remarks>` with a two-line usage example showing the call site pattern (typed client method, controller action, or gRPC server handler); `<seealso cref="Envelope{T}"/>` / `<seealso cref="Result{T}"/>` cross-references; update `README.md` section 3 (`Result<T>` vs `Envelope<T>` boundary rule) to include a subsection showing how `result.ToEnvelope()` and `envelope.ToResult()` replace inline mapping boilerplate at typed client call sites and controller actions | SharedKernel.Contracts | `●` |
+| DO-08 | (WO-051/P-314) Correct `EventEnvelope<TEvent>.Payload`'s XML doc `<remarks>` in `Events/EventEnvelope.cs` — remove the false claim that `where TEvent : IDomainEvent` guarantees `Payload` exposes `Id`, `OccurredOn`, **and `AggregateId`** (`IDomainEvent` has never declared an `AggregateId` member — verified against the shipped `03.Domain/SharedKernel.Domain/Events/IDomainEvent.cs`, which exposes only `Id`/`OccurredOn`); replace with an accurate statement that the bare constraint guarantees only `Id`/`OccurredOn`, and that `AggregateId` is available **only** when the concrete `TEvent` additionally implements `03.Domain`'s `IHasAggregateId<TId>` opt-in marker (`SharedKernel.Domain.Abstractions.IHasAggregateId<TId>`, WO-051/P-309 — `where TId : notnull`, single member `TId AggregateId { get; }`); add a short usage note recommending `Payload is IHasAggregateId<TId> hasAggregateId` pattern-matching rather than assuming the member exists unconditionally; may cross-reference via `<see cref="IHasAggregateId{TId}"/>` once P-309 has shipped (mirrors the existing doc-only `DomainEventVersionAttribute`/`DomainEventVersionHelper` cross-reference precedent — does not add `IHasAggregateId<TId>` to `04.Contracts`'s consumed/re-exported public-API type list); documentation-only — no change to `EventEnvelope<TEvent>`'s shape, constructor, or `Wrap` factory; **sequence after** 03.Domain's P-309 ships so the `<see cref>` resolves against a real compiled type | SharedKernel.Contracts | `○` |
 
 ---
 
@@ -180,7 +182,7 @@ Format when blocked — replace placeholder with table:
 | `SK.04.Scaffold` | Scaffold | 5 | 5 | 0 | `●` |
 | `SK.04.Core` | Core | 7 | 7 | 0 | `●` |
 | `SK.04.Tests` | Tests | 7 | 7 | 0 | `●` |
-| `SK.04.Docs` | Docs | 7 | 7 | 0 | `●` |
+| `SK.04.Docs` | Docs | 8 | 7 | 1 | `◐` |
 | `SK.04.Published` | Published | 5 | 5 | 0 | `●` |
 
 ---
@@ -199,3 +201,4 @@ Format when blocked — replace placeholder with table:
 - [2026-05-30] P-01–P-04 → ● in SK.04.Published — csproj metadata hardened; nupkg produced with XML docs; consumer-verify console harness exercises all 5 surfaces with source-generated STJ; 62 tests green; ContractsSerializerDefaults added for consumer resolver chain access (state-map-phase)
 - [2026-06-18] WO-026/P-166: 6 tasks added (D-07, S-05, C-07, T-07, DO-07, P-05) for ResultEnvelopeExtensions static class in SharedKernel.Contracts.Mapping — four pure extension methods bridging Result<T>/Result ↔ Envelope<T>/Envelope; namespace SharedKernel.Contracts.Mapping; Mapping/ subfolder; version bump to 1.1.0 on completion; all phases set to ◐ (contracts-arch-planner)
 - [2026-06-18] D-07, S-05, C-07, T-07, DO-07, P-05 → ● — ResultEnvelopeExtensions implemented; 72 tests green; SharedKernel.Contracts 1.1.0.nupkg produced; consumer-verify passing 6 surfaces; all phases now ● (P-166/WO-026)
+- [2026-07-29] WO-051/P-314: DO-08 added to SK.04.Docs — `EventEnvelope<TEvent>.Payload`'s shipped XML doc was found to falsely claim `where TEvent : IDomainEvent` guarantees `AggregateId` (verified against the real `IDomainEvent` source: only `Id`/`OccurredOn` are declared); corrected wording specified, pointing to `03.Domain`'s new opt-in `IHasAggregateId<TId>` marker (WO-051/P-309) as the actual, real (not hypothetical) source of that member; documentation-only, no shape/behavior change; Cross-Domain Dependencies gained a `SK.04.Docs` row on `03.Domain`'s P-309; SK.04.Docs set to ◐ (8 total, 7 done, 1 pending) pending sequencing after P-309 ships (contracts-arch-planner)
