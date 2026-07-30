@@ -5,3 +5,4 @@
 - [Root state-map-phase bounce](project_root_state_map_phase_bounce.md) — root Domain Summary Board tracks latest-promoted phase key only; Current Phase legitimately moves backward (Published→Design) when a new WO batches tasks across all 6 phases at once
 - [ValueObject construction order](project_valueobject_construction_order.md) — field-initializer capture is visible in base Validate(); ctor-body assignment is NOT (still default) — confirmed via real failing test
 - [Generic nullable erasure gotcha](project_generic_nullable_erasure.md) — TKey? erases to plain TKey for value-type closures unless TKey has `struct` constraint; found in KeysetSpecification<T,TKey>
+- [Tests Phase Pre-Satisfied by Core-Phase Session](project_tests_phase_pre_satisfied.md) — grep test files for `T-NN`/`P-NNN` doc-comment tags before writing new tests; Core-phase sessions often pre-write them
