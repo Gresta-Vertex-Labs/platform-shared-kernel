@@ -23,4 +23,15 @@ public sealed class OrPolicy<T> : IPolicy<T>
     /// <inheritdoc/>
     /// <remarks>Returns <see langword="true"/> when at least one sub-policy is compliant.</remarks>
     public bool IsCompliant(T subject) => _left.IsCompliant(subject) || _right.IsCompliant(subject);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// WO-051/P-312 — non-empty only when compliance fails, which for a logical OR means
+    /// <em>both</em> sub-policies failed; in that case both explanations are aggregated with
+    /// <c>"; "</c>.
+    /// </remarks>
+    public string Explain(T subject) =>
+        IsCompliant(subject)
+            ? string.Empty
+            : string.Join("; ", _left.Explain(subject), _right.Explain(subject));
 }

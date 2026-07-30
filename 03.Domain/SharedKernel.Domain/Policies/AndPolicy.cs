@@ -23,4 +23,17 @@ public sealed class AndPolicy<T> : IPolicy<T>
     /// <inheritdoc/>
     /// <remarks>Returns <see langword="true"/> only when both sub-policies are compliant.</remarks>
     public bool IsCompliant(T subject) => _left.IsCompliant(subject) && _right.IsCompliant(subject);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// WO-051/P-312 — aggregates every non-compliant sub-policy's <see cref="IPolicy{T}.Explain"/>
+    /// with <c>"; "</c>, mirroring
+    /// <see cref="SharedKernel.Domain.BusinessRules.AndBusinessRule.Message"/>'s
+    /// <c>string.Join("; ", ...)</c> pattern exactly. Returns an empty string when both sub-policies
+    /// are compliant.
+    /// </remarks>
+    public string Explain(T subject) =>
+        string.Join(
+            "; ",
+            new[] { _left, _right }.Where(p => !p.IsCompliant(subject)).Select(p => p.Explain(subject)));
 }

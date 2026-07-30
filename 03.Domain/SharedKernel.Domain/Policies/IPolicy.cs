@@ -22,4 +22,22 @@ public interface IPolicy<T>
     /// </summary>
     /// <param name="subject">The domain object to evaluate.</param>
     bool IsCompliant(T subject);
+
+    /// <summary>
+    /// Returns a human-readable explanation of why <paramref name="subject"/> is not compliant with
+    /// this policy, or an empty string when it is compliant.
+    /// </summary>
+    /// <param name="subject">The domain object to evaluate.</param>
+    /// <remarks>
+    /// <para>
+    /// WO-051/P-312 — a C# default interface member (DIM). This is what makes the addition
+    /// zero-breaking-change: any pre-existing <see cref="IPolicy{T}"/> implementation that only
+    /// ever declared <see cref="IsCompliant"/> continues to compile unmodified and receives this
+    /// default explanation. Override <see cref="Explain"/> when a specific message is wanted —
+    /// mirrors <see cref="SharedKernel.Domain.BusinessRules.IBusinessRule"/>'s
+    /// <c>Message</c>/<c>IsBroken</c> pair.
+    /// </para>
+    /// </remarks>
+    string Explain(T subject) =>
+        IsCompliant(subject) ? string.Empty : $"Policy '{GetType().Name}' is not satisfied.";
 }
