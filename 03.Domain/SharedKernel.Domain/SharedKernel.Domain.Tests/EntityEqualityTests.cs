@@ -188,4 +188,48 @@ public class EntityEqualityTests
         var t = new IntEntity();
         t.IsTransient().Should().BeTrue();
     }
+
+    // --- T-37: P-311b/WO-051 — IEquatable<Entity<TId>> ---
+
+    [Fact]
+    public void Entity_Implements_IEquatableOfEntity()
+    {
+        var order = new Order(Guid.NewGuid());
+        order.Should().BeAssignableTo<IEquatable<Entity<Guid>>>();
+    }
+
+    [Fact]
+    public void TypedEquals_SameId_MatchesObjectEquals()
+    {
+        var id = Guid.NewGuid();
+        var a = new Order(id);
+        var b = new Order(id);
+
+        ((IEquatable<Entity<Guid>>)a).Equals(b).Should().Be(a.Equals((object?)b));
+        ((IEquatable<Entity<Guid>>)a).Equals(b).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TypedEquals_DifferentId_MatchesObjectEquals()
+    {
+        var a = new Order(Guid.NewGuid());
+        var b = new Order(Guid.NewGuid());
+
+        ((IEquatable<Entity<Guid>>)a).Equals(b).Should().Be(a.Equals((object?)b));
+        ((IEquatable<Entity<Guid>>)a).Equals(b).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TypedEquals_Null_MatchesObjectEquals()
+    {
+        var a = new Order(Guid.NewGuid());
+        IEquatable<Entity<Guid>> equatable = a;
+        Entity<Guid>? nullOther = null;
+
+        var typedResult = equatable.Equals(nullOther);
+        var objectResult = a.Equals((object?)null);
+
+        typedResult.Should().Be(objectResult);
+        typedResult.Should().BeFalse();
+    }
 }

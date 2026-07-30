@@ -1,4 +1,6 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.StronglyTypedIds;
 
@@ -31,9 +33,36 @@ namespace SharedKernel.Domain.StronglyTypedIds;
 public abstract record StronglyTypedId<TValue>(TValue Value) : IStronglyTypedId<TValue>
     where TValue : notnull
 {
+    /// <summary>Gets the underlying primitive value of this identifier.</summary>
+    /// <remarks>
+    /// WO-051/P-311 — the positional parameter is redeclared as an explicit property with a
+    /// guarded initializer (<see cref="GuardValue"/>) so a reference-type <typeparamref name="TValue"/>
+    /// instantiated with <see langword="null"/> (e.g. <c>new SomeId(null!)</c>) throws
+    /// <see cref="DomainException"/> at construction rather than surfacing a
+    /// <see cref="NullReferenceException"/> later at first use. This is a no-op for value-type
+    /// <typeparamref name="TValue"/> instantiations (e.g. <see cref="Guid"/>, <see cref="int"/>),
+    /// since <c>value is null</c> is always <see langword="false"/> for those.
+    /// </remarks>
+    public TValue Value { get; } = GuardValue(Value);
+
     /// <summary>Returns the string representation of the underlying <see cref="Value"/>.</summary>
     public sealed override string ToString() => Value.ToString()!;
 
     /// <summary>Implicitly converts a <see cref="StronglyTypedId{TValue}"/> to its underlying <typeparamref name="TValue"/>.</summary>
     public static implicit operator TValue(StronglyTypedId<TValue> id) => id.Value;
+
+    /// <summary>
+    /// Throws <see cref="DomainException"/> when <paramref name="value"/> is <see langword="null"/>
+    /// and <typeparamref name="TValue"/> is a reference type; a no-op for value-type instantiations,
+    /// since <c>Guard.Throw.Null&lt;T&gt;</c>'s <c>where T : class</c> constraint cannot apply to an
+    /// unconstrained <typeparamref name="TValue"/>.
+    /// </summary>
+    private static TValue GuardValue(TValue value)
+    {
+        if (value is null)
+            throw new DomainException(
+                Error.Validation("StronglyTypedId.Value.Null", "Value must not be null."));
+
+        return value;
+    }
 }

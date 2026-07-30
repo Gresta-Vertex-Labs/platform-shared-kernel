@@ -1,3 +1,4 @@
+using SharedKernel.Core.Exceptions;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Domain.ValueObjects;
@@ -48,13 +49,29 @@ namespace SharedKernel.Domain.ValueObjects;
 /// </example>
 public abstract class SingleValueObject<TValue>(TValue value) : ValueObject where TValue : notnull
 {
-    // Field initializer: captured from the primary constructor parameter.
-    // Field initializers execute before base() is called, so Value is set
-    // before ValueObject() invokes Validate(). This is the construction-order fix.
-    private readonly TValue _value = value;
+    // Field initializer: captured from the primary constructor parameter, guarded against null
+    // for reference-type TValue instantiations (WO-051/P-311; a no-op for value types since
+    // `value is null` is always false for those). Field initializers execute before base() is
+    // called, so Value is set before ValueObject() invokes Validate() — the construction-order fix.
+    private readonly TValue _value = GuardValue(value);
 
     /// <summary>Gets the wrapped value.</summary>
     public TValue Value => _value;
+
+    /// <summary>
+    /// Throws <see cref="DomainException"/> when <paramref name="value"/> is <see langword="null"/>
+    /// and <typeparamref name="TValue"/> is a reference type; a no-op for value-type instantiations,
+    /// since <c>Guard.Throw.Null&lt;T&gt;</c>'s <c>where T : class</c> constraint cannot apply to an
+    /// unconstrained <typeparamref name="TValue"/>.
+    /// </summary>
+    private static TValue GuardValue(TValue value)
+    {
+        if (value is null)
+            throw new DomainException(
+                Error.Validation("SingleValueObject.Value.Null", "Value must not be null."));
+
+        return value;
+    }
 
     /// <inheritdoc/>
     protected sealed override IEnumerable<object?> GetEqualityComponents()

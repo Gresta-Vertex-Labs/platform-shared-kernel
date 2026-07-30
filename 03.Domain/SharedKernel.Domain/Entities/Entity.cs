@@ -31,7 +31,7 @@ namespace SharedKernel.Domain.Entities;
 /// }
 /// </code>
 /// </example>
-public abstract class Entity<TId> : IEntity<TId> where TId : notnull
+public abstract class Entity<TId> : IEntity<TId>, IEquatable<Entity<TId>> where TId : notnull
 {
     /// <summary>Gets the identity key of this entity.</summary>
     public TId Id { get; private init; } = default!;
@@ -40,6 +40,14 @@ public abstract class Entity<TId> : IEntity<TId> where TId : notnull
     /// Initialises a new entity with the specified <paramref name="id"/>.
     /// </summary>
     /// <param name="id">The identity key. Must not be the default value for <typeparamref name="TId"/>.</param>
+    /// <remarks>
+    /// WO-051/P-311 — <paramref name="id"/> is deliberately <strong>unguarded</strong>.
+    /// <c>default(TId)</c> is the intentional "transient entity" sentinel consumed by
+    /// <see cref="IsTransient"/> — it is not an error condition. Do not add a null/default guard
+    /// here; doing so would break every legitimate transient-entity construction path (e.g., an
+    /// aggregate factory that assigns its identity only after a successful <c>Result&lt;T&gt;</c>-returning
+    /// call, or ORM materialisation before the primary key is known).
+    /// </remarks>
     protected Entity(TId id) => Id = id;
 
     /// <summary>
@@ -69,6 +77,17 @@ public abstract class Entity<TId> : IEntity<TId> where TId : notnull
         IsTransient()
             ? RuntimeHelpers.GetHashCode(this)
             : HashCode.Combine(GetType(), Id);
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="other"/> is equal to this entity by identity.
+    /// </summary>
+    /// <remarks>
+    /// WO-051/P-311 — <see cref="IEquatable{T}"/> implementation delegating to
+    /// <see cref="Equals(object?)"/>. Purely a boxing/virtual-dispatch-avoidance addition for
+    /// generic-collection consumers (<see cref="List{T}.Contains"/>, dictionary keys, LINQ
+    /// <c>Distinct</c>/<c>Except</c>) — not a behavior change.
+    /// </remarks>
+    public bool Equals(Entity<TId>? other) => Equals((object?)other);
 
     /// <summary>Returns <see langword="true"/> when both entities are equal by identity.</summary>
     public static bool operator ==(Entity<TId>? left, Entity<TId>? right) =>

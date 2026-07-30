@@ -4,6 +4,7 @@ using SharedKernel.Domain.BusinessRules;
 using SharedKernel.Domain.Entities;
 using SharedKernel.Domain.Events;
 using SharedKernel.Domain.Exceptions;
+using SharedKernel.Guards;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 
@@ -54,7 +55,20 @@ public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot<TId>, IHa
     /// </summary>
     /// <param name="id">The aggregate's identity key.</param>
     /// <param name="clock">The clock used to timestamp domain events raised by this aggregate.</param>
-    protected AggregateRoot(TId id, IClock clock) : base(id) => _clock = clock;
+    /// <exception cref="DomainException">
+    /// Thrown when <paramref name="clock"/> is <see langword="null"/> (WO-051/P-311 — guarded via
+    /// <see cref="Guard.Throw"/> so the failure surfaces at the constructor boundary instead of a
+    /// downstream <see cref="NullReferenceException"/> from <see cref="Now"/> or
+    /// <see cref="RaiseDomainEvent(Func{DateTimeOffset, IDomainEvent})"/>). This single guard site
+    /// protects <see cref="TenantedAggregateRoot{TId}"/>, <see cref="TenantedAuditableAggregateRoot{TId}"/>,
+    /// and <see cref="TenantedFullAuditableAggregateRoot{TId}"/> too, since each chains through
+    /// <c>base(id, clock)</c> to this same constructor.
+    /// </exception>
+    protected AggregateRoot(TId id, IClock clock) : base(id)
+    {
+        Guard.Throw.Null(clock, nameof(clock));
+        _clock = clock;
+    }
 
     /// <summary>
     /// Protected parameterless constructor for ORM materialisation paths (e.g., EF Core proxies).
