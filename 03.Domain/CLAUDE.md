@@ -12,9 +12,9 @@ Philosophy: **Pure domain model. No side effects. No I/O. AOT-preferred. Railway
 
 | Package                 | Role                                                                                                                                                                                             | References                                      |
 |-------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------|
-| `SharedKernel.Domain`   | All DDD building blocks: identity contracts, aggregate/entity bases, value object base, domain event contract, business rules, policies, specifications, auditable bases, strongly-typed ID base | `SharedKernel.Primitives`, `SharedKernel.Core`  |
+| `SharedKernel.Domain`   | All DDD building blocks: identity contracts, aggregate/entity bases, value object base, domain event contract, business rules, policies, specifications, auditable bases, strongly-typed ID base | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Guards` (WO-051) |
 
-Both references are project references within the `01.Core` capability domain. `SharedKernel.Domain` has **zero external NuGet dependencies**.
+All three references are project references within the `01.Core` capability domain. `SharedKernel.Domain` has **zero external NuGet dependencies**.
 
 All packages target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
@@ -117,6 +117,11 @@ DomainEventVersionHelper  (static class)
     .GetVersion(Type domainEventType)                      → int
         Returns the Version from DomainEventVersionAttribute if present on domainEventType.
         Returns 1 as default when the attribute is absent.
+        WO-051/P-311 — result is cached per Type in a private ConcurrentDictionary<Type, int>; the
+        reflection call (GetCustomAttribute) happens at most once per distinct Type for the process
+        lifetime. Unlike StronglyTypedIdJsonConverterFactory (already cached by JsonSerializerOptions),
+        this helper is called directly by infrastructure (messaging/outbox) on a potential per-message
+        hot path with no caller-side cache of its own.
     NOTE: Versioning workflow — declare [DomainEventVersion(2)] when a domain event schema changes
           in a backward-incompatible way. Consumers read the version via GetVersion() to route to the
           correct deserializer. Version 1 is implicit and requires no attribute.
@@ -143,16 +148,30 @@ IHasConcurrency
 
 IHasTenant
     .TenantId                                               → Guid
+
+IHasAggregateId<TId>  where TId : notnull   (WO-051/P-309)
+    .AggregateId                                           → TId
+    NOTE: Opt-in marker — zero-ceremony shape deliberately mirroring IHasTenant exactly. IDomainEvent,
+          DomainEvent, and DomainEvent<TPayload> are completely unchanged; a concrete event may
+          additionally implement this interface to declare which aggregate raised it. Gives
+          infrastructure code (audit trails, outbox/messaging translation, projections, logging) a
+          single `is IHasAggregateId<TId>` type check instead of per-event ad hoc property-name
+          conventions (OrderId, SourceId, etc.). Closes a gap 04.Contracts's EventEnvelope<TEvent>
+          XML doc already assumed was filled.
+    Example:
+        public sealed record OrderPlacedEvent(OrderId AggregateId)
+            : DomainEvent<OrderPlacedPayload>, IHasAggregateId<OrderId>;
 ```
 
 #### Entity base (`Entities/`)
 
 ```text
-Entity<TId>  (abstract class, implements IEntity<TId>)
+Entity<TId>  (abstract class, implements IEntity<TId>, IEquatable<Entity<TId>>)
     .Id                                                     → TId  (private init)
     .IsTransient()                                          → bool  (true when Id == default(TId))
-    .Equals(object? obj)                                    → bool  (identity: GetType() + EqualityComparer<TId>.Default)
-    .GetHashCode()                                          → int   (RuntimeHelpers.GetHashCode for transient instances)
+    .Equals(object? obj)                                    → bool  (identity: GetType() + EqualityComparer<TId>.Default; sealed override)
+    .Equals(Entity<TId>? other)                             → bool  (WO-051/P-311 — IEquatable<T>; delegates to Equals(object?); avoids boxing in generic collections)
+    .GetHashCode()                                          → int   (RuntimeHelpers.GetHashCode for transient instances; sealed override)
     operator == / operator !=
 ```
 
@@ -160,6 +179,13 @@ Entity<TId>  (abstract class, implements IEntity<TId>)
 
 ```text
 AggregateRoot<TId>  (abstract class, extends Entity<TId>, implements IAggregateRoot<TId>, IHasVersion)
+    constructor: protected AggregateRoot(TId id, IClock clock)
+        WO-051/P-311 — clock is guarded via Guard.Throw.Null(clock, nameof(clock)) (SharedKernel.Guards);
+        passing null throws DomainException at the constructor boundary instead of a downstream
+        NullReferenceException from Now/RaiseDomainEvent. TenantedAggregateRoot<TId>,
+        TenantedAuditableAggregateRoot<TId>, and TenantedFullAuditableAggregateRoot<TId> all chain
+        through base(id, clock) to this same constructor, so this one guard site protects all four
+        aggregate bases — no per-subclass duplication.
     .DomainEvents                                           → IReadOnlyCollection<IDomainEvent>  (via IHasDomainEvents)
     .ClearDomainEvents()                                    → void  (via IHasDomainEvents — infrastructure dispatch only)
     .Version                                               → int  (private set; starts at 0; increments on every RaiseDomainEvent call)
@@ -237,13 +263,19 @@ FullAuditableEntity<TId>  extends Entity<TId>, implements IHasAudit + ISoftDelet
 
 ```text
 StronglyTypedId<TValue>  (abstract record, implements IStronglyTypedId<TValue>)  where TValue : notnull
-    .Value                                                  → TValue  (required positional)
+    .Value                                                  → TValue  (required positional; WO-051/P-311 — guarded against null when TValue is a reference type, see below)
     .ToString()                                             → string  (= Value.ToString()!)
     implicit operator TValue
     NOTE: STJ serialization is supported via StronglyTypedIdJsonConverterFactory (see StronglyTypedIds/Serialization/
           below) — opt-in, not auto-registered. Concrete IDs must follow the documented shape:
               public sealed record OrderId(Guid Value) : StronglyTypedId<Guid>(Value);
           i.e. a public primary constructor (TValue Value) on a non-abstract closed type.
+    NOTE: WO-051/P-311 — Value is null-guarded via a TValue-safe check (Guard.Throw.Null<T>'s
+          `where T : class` constraint cannot apply to unconstrained TValue): the redeclared Value
+          property's initializer calls a private static helper that throws DomainException when
+          value is null and TValue is a reference type, and is a no-op for value-type instantiations
+          (e.g. Guid, int). Guarded via the same positional-record validation technique already
+          proven safe by SingleValueObject<TValue>'s construction-order fix.
 ```
 
 #### Strongly-typed ID STJ serialization (`StronglyTypedIds/Serialization/`)
@@ -277,17 +309,26 @@ USAGE (opt-in — consuming services register explicitly):
 #### ValueObject base (`ValueObjects/`)
 
 ```text
-ValueObject  (abstract class, implements IValueObject)
+ValueObject  (abstract class, implements IValueObject, IEquatable<ValueObject>)
     protected abstract .GetEqualityComponents()             → IEnumerable<object?>
     protected abstract .Validate()                          → IEnumerable<Error>?  (null = valid; non-null throws ValidationException)
     .Equals(object? obj)                                    → bool  (all components equal)
+    .Equals(ValueObject? other)                             → bool  (WO-051/P-311 — IEquatable<T>; delegates to Equals(object?); avoids boxing in generic collections)
     .GetHashCode()                                          → int
+    protected static .CheckRule(IBusinessRule rule)         → void  (WO-051/P-310 — identical semantics to AggregateRoot<TId>.CheckRule; throws BusinessRuleViolationException if broken)
+    protected static .TryCreate<T>(Func<T> factory)        → Result<T>  (WO-051/P-310 — identical semantics to AggregateRoot<TId>.TryCreate<T>)
+        Catches BusinessRuleViolationException → Result.Failure(ex.Error)
+        Catches ValidationException → Result.Failure(ex.Errors[0])
+        On success → Result.Success(factory())
+        Lives on ValueObject itself, so SingleValueObject<TValue> inherits both helpers with zero
+        additional code. Use in static Create(...) factory methods, mirroring AggregateRoot<TId>'s
+        own recommended pattern — achieves full parity between the two base types.
     HAZARD: The base constructor calls Validate() immediately. If Validate() reads members assigned in the
             subclass constructor body (not as field initializers), those members will have default values
             (null / 0 / false) when Validate() runs. See Implementation Rules for safe patterns.
 
 SingleValueObject<TValue>  (abstract class, extends ValueObject)
-    .Value                                                  → TValue  (get-only; assigned before Validate() runs via field-initializer design)
+    .Value                                                  → TValue  (get-only; assigned before Validate() runs via field-initializer design; WO-051/P-311 — null-guarded for reference-type TValue via the same field-initializer guard technique)
     .GetEqualityComponents()                                → IEnumerable<object?>  (sealed; returns [Value])
     .ToString()                                             → string  (sealed; returns Value?.ToString() ?? string.Empty)
     implicit operator TValue
@@ -345,10 +386,21 @@ DomainService  (abstract class, implements IDomainService)
 ```text
 IPolicy<T>
     .IsCompliant(T subject)                                → bool
+    .Explain(T subject)                                    → string   (default interface member, WO-051/P-312)
+        Default body: IsCompliant(subject) ? string.Empty : $"Policy '{GetType().Name}' is not satisfied.".
+        A C# DIM — added with zero breaking change: any pre-existing IPolicy<T> implementor that only
+        ever declared IsCompliant continues to compile unmodified and gets the default explanation.
+        Overridable when a specific message is wanted. Mirrors IBusinessRule's Message/IsBroken pair.
 
 AndPolicy<T>  (sealed)   — compliant only when both sub-policies are compliant
+                          Explain: aggregates every non-compliant sub-policy's Explain(subject) with "; "
+                          (mirrors AndBusinessRule.Message's string.Join("; ", ...) pattern exactly)
 OrPolicy<T>   (sealed)   — compliant when at least one sub-policy is compliant
+                          Explain: non-empty only when BOTH sub-policies are non-compliant (OR requires
+                          just one to pass) — aggregates both explanations with "; "
 NotPolicy<T>  (sealed)   — inverts compliance
+                          Explain: when non-compliant (i.e. the inner policy unexpectedly WAS compliant),
+                          returns a fixed generic message — there is no sub-policy failure to delegate to
 
 PolicyExtensions
     .And<T>(this IPolicy<T>, IPolicy<T>)                  → AndPolicy<T>
@@ -368,6 +420,16 @@ ISpecification<T>
     .Skip                                                  → int?
     .Take                                                  → int?
     .IsDistinct                                            → bool
+    .StringIncludes                                        → IReadOnlyList<string>
+        String-based navigation-include paths for deep eager loading (e.g. "Orders.Items.Product").
+        Applied after expression-based Includes (evaluator step 2b) and before ordering. Corrects a
+        prior gap in this brain — StringIncludes/AddStringInclude shipped in an earlier phase but was
+        never documented here until WO-051/P-307.
+    .AsSplitQuery                                          → bool
+        When true, the consuming repository must call EF Core's AsSplitQuery() instead of a single
+        Cartesian-joined query. Default false. Set true when a specification declares two or more
+        collection Includes to avoid duplicate-row Cartesian-product results. Composite specifications
+        propagate true when either operand has it set (more-permissive wins — mirrors AsNoTracking).
     .AsNoTracking                                          → bool
         When true, the consuming repository must apply AsNoTracking() to the underlying query.
         Default is false — safe for specifications used before write operations.
@@ -390,7 +452,9 @@ Specification<T>  (abstract class, implements ISpecification<T>)
     protected .ApplyThenBy(Expression<Func<T, object>>, bool descending) → void
     protected .ApplyPaging(int skip, int take)             → void
     protected .ApplyDistinct()                             → void
+    protected .AddStringInclude(string path)               → void  (throws ArgumentException on null/whitespace; deep navigation paths, e.g. "Orders.Items.Product")
     protected .ApplyNoTracking()                           → void  (sets AsNoTracking = true)
+    protected .ApplySplitQuery()                           → void  (sets AsSplitQuery = true — call when a spec declares 2+ collection Includes)
     protected .IncludeSoftDeleted()                        → void  (sets IncludeDeleted = true)
         Call this in a concrete specification's constructor when the spec is an admin/audit/export/recovery
         specification that must see soft-deleted records. Never call it from non-admin specifications.
@@ -436,15 +500,53 @@ EmptySpecification<T>  (sealed concrete class)  — identity element for OR comp
     NOTE: Or(empty, spec) effectively returns spec — EmptySpecification is the OR identity element.
     NOTE: Or(all, spec) has null criteria (matches everything) — null short-circuits OR composition.
 
+Specification<T>.Create(Expression<Func<T, bool>> criteria)  → Specification<T>   (WO-051/P-313)
+    Ad hoc, criteria-only factory for genuinely one-off/throwaway filters — a third sealed-wrapper
+    sentinel alongside AllSpecification<T>/EmptySpecification<T>, backed internally by
+    `internal sealed class CriteriaSpecification<T> : Specification<T>` (constructor calls
+    AddCriteria(criteria) only — no includes, no ordering, no paging; AsNoTracking/IncludeDeleted/
+    AsSplitQuery all default false). Composes normally via .And()/.Or()/.Not() against both other
+    ad hoc specs and named Specification<T> subclasses.
+    NOTE: Does NOT relax the constructor-only/no-fluent-chaining builder rule for named, reusable
+    specifications — a reusable business concept must still be its own dedicated Specification<T>
+    subclass. Use Create(...) only for a genuinely single-use filter.
+
+KeysetSpecification<T, TKey>  (abstract class, extends ReadOnlySpecification<T>)  where TKey : IComparable<TKey>   (WO-051/P-308)
+    constructor: protected KeysetSpecification(
+        Expression<Func<T, TKey>> keySelector, Expression<Func<T, object>> idSelector,
+        TKey? afterKey, object? afterId, bool descending, int take)
+    .AfterKey                                              → TKey?    (null = first page, no seek predicate)
+    .AfterId                                               → object?  (the Id tiebreaker cursor value; null on first page)
+    .Descending                                            → bool
+    Cursor/seek-pagination sibling to PagedSpecification<T>. Applies OrderBy/OrderByDescending on
+    keySelector per `descending`, then unconditionally ApplyThenBy(idSelector, descending: false) as
+    a MANDATORY deterministic tiebreaker — a keyset page boundary is unsound without a unique
+    tiebreaker when many rows share the same TKey value. Calls ApplyPaging(0, take) — Skip is fixed
+    at 0; the persistence evaluator must ignore Skip and instead translate AfterKey/AfterId into a
+    `WHERE (SortKey, Id) > (@cursor, @cursorId)`-shaped seek predicate, composed with any Criteria
+    via AND. Concrete subclasses still call AddCriteria(...) in their own constructor for filtering —
+    this shape governs ordering/paging only, composing cleanly with existing Criteria/Includes.
+    Guards: take < 1 → ArgumentOutOfRangeException; exactly one of afterKey/afterId supplied (a
+    partial cursor) → ArgumentException — a cursor is atomic, both-or-neither.
+
 AndSpecification<T>  — combines two specs via ExpressionVisitor ParameterReplacer (logical AND)
+                      Includes = union of left.Includes + right.Includes (WO-051/P-307)
+                      StringIncludes = union of left.StringIncludes + right.StringIncludes
                       AsNoTracking = true if either operand has AsNoTracking = true
+                      AsSplitQuery = true if either operand has AsSplitQuery = true (WO-051/P-308)
                       IncludeDeleted = true if either operand has IncludeDeleted = true (more-permissive wins)
 OrSpecification<T>   — combines via logical OR
+                      Includes = union of left.Includes + right.Includes (WO-051/P-307)
+                      StringIncludes = union of left.StringIncludes + right.StringIncludes
                       AsNoTracking = true if either operand has AsNoTracking = true
+                      AsSplitQuery = true if either operand has AsSplitQuery = true (WO-051/P-308)
                       IncludeDeleted = true if either operand has IncludeDeleted = true (more-permissive wins)
                       Null-criteria handling: if either operand has null criteria, combined Criteria is null
 NotSpecification<T>  — negates via Expression.Not
+                      Includes = union from the operand (WO-051/P-307)
+                      StringIncludes = union from the operand
                       AsNoTracking = true if the operand has AsNoTracking = true
+                      AsSplitQuery = true if the operand has AsSplitQuery = true (WO-051/P-308)
                       IncludeDeleted = true if the operand has IncludeDeleted = true
 
 SpecificationExtensions
@@ -493,6 +595,17 @@ SpecificationExtensions
 - **`ISpecification<T>.IncludeDeleted` bypasses ALL EF Core global query filters** — the repository implementation calls `IgnoreQueryFilters()` when `IncludeDeleted = true`. Because EF Core's `IgnoreQueryFilters()` cannot target a single filter, it bypasses every global query filter on the entity type, including any tenant isolation filter registered in a `TenantedDbContext`. For tenant-scoped soft-delete queries, always pair `IncludeSoftDeleted()` with an explicit `AddCriteria(e => e.TenantId == tenantId)` call so the tenant boundary is re-enforced at the query level.
 - `IncludeDeleted = false` is the safe default — it does not change existing query behaviour. Call `IncludeSoftDeleted()` only in constructors of admin/audit/export/recovery specifications. Never set it in read-model or user-facing query specifications.
 - Composite specifications (`AndSpecification<T>`, `OrSpecification<T>`, `NotSpecification<T>`) propagate `IncludeDeleted = true` when any operand has it set (more-permissive wins). This mirrors the `AsNoTracking` propagation rule.
+- **Composite specifications must union `Includes` and `StringIncludes`** (WO-051/P-307) — `AndSpecification<T>`, `OrSpecification<T>`, and `NotSpecification<T>` all append every operand's expression-based `Includes` and string-based `StringIncludes` into the composite. Before this fix, `AndSpecification<T>` unioned only `StringIncludes` and dropped `Includes`; `OrSpecification<T>`/`NotSpecification<T>` dropped both — a silent eager-loading data-loss defect in the platform's most fundamental composition mechanism. Duplicate entries are tolerated (the persistence-layer evaluator treats duplicate `.Include()` calls as idempotent) — no dedupe logic is required.
+- **`KeysetSpecification<T, TKey>`'s Id tiebreaker is mandatory, never optional** (WO-051/P-308) — a keyset/cursor page boundary is unsound without a unique deterministic sort order. The constructor always calls `ApplyThenBy(idSelector, descending: false)` regardless of caller input; there is no way to construct a `KeysetSpecification<T, TKey>` without it.
+- **`AsSplitQuery` composite propagation mirrors `AsNoTracking`/`IncludeDeleted` exactly** (WO-051/P-308) — more-permissive wins; default `false` is always safe (a single-query plan is never wrong, only potentially less efficient with multiple collection includes).
+- **`IHasAggregateId<TId>` is purely opt-in** (WO-051/P-309) — `IDomainEvent`/`DomainEvent`/`DomainEvent<TPayload>` carry no new required member. A concrete event either implements it or doesn't; infrastructure code detects it via `is IHasAggregateId<TId>` pattern matching, never a reflection-based property-name convention.
+- **`ValueObject.TryCreate<T>`/`CheckRule` achieve full parity with `AggregateRoot<TId>`'s helpers of the same name and shape** (WO-051/P-310) — both base types now offer the identical railway-friendly construction helper. `SingleValueObject<TValue>` inherits both for free since it extends `ValueObject`.
+- **Guard-clause adoption via `SharedKernel.Guards`** (WO-051/P-311) — `AggregateRoot<TId>`'s `clock` constructor parameter is guarded via `Guard.Throw.Null(clock, nameof(clock))`; this single guard site protects all three tenanted aggregate bases too, since each chains through `base(id, clock)` to this same constructor. `StronglyTypedId<TValue>.Value` and `SingleValueObject<TValue>.Value` are guarded against null for reference-type `TValue` instantiations only (a `TValue`-safe null check, since `Guard.Throw.Null<T>`'s `where T : class` constraint cannot apply to an unconstrained `TValue`) — a no-op for value-type instantiations.
+- **`Entity<TId>.id` remains deliberately unguarded** (WO-051/P-311) — `default(TId)` is the intentional "transient entity" sentinel (see `IsTransient()`), not an error condition. Do not add a null/default guard to `Entity<TId>`'s constructor; doing so would break every legitimate transient-entity construction path.
+- **`DomainEventVersionHelper.GetVersion(Type)` caches its reflection lookup** (WO-051/P-311) — a `ConcurrentDictionary<Type, int>` ensures the `GetCustomAttribute` call happens at most once per distinct `Type`, since this helper (unlike `StronglyTypedIdJsonConverterFactory`, which STJ itself caches) is called directly by infrastructure on a potential per-message hot path.
+- **`Entity<TId>` and `ValueObject` implement `IEquatable<T>`** (WO-051/P-311) — `Equals(T? other)` delegates to the existing `Equals(object?)` override; this is a boxing/virtual-dispatch-avoidance addition for generic-collection consumers (`List<T>.Contains`, `Dictionary` keys, LINQ `Distinct`/`Except`), not a behavior change. `Entity<TId>`'s `Equals(object?)`/`GetHashCode()` remain `sealed override`.
+- **`IPolicy<T>.Explain` is a default interface member, not a required override** (WO-051/P-312) — this is the mechanism that makes the addition zero-breaking-change: any pre-existing `IPolicy<T>` implementor that only ever declared `IsCompliant` continues to compile unmodified. Composite policies (`AndPolicy<T>`, `OrPolicy<T>`, `NotPolicy<T>`) override `Explain` to aggregate/synthesize a meaningful message rather than relying on the generic DIM default.
+- **`Specification<T>.Create(criteria)` is for one-off filters only** (WO-051/P-313) — it does not relax the existing constructor-only/no-fluent-chaining builder-method rule for named, reusable specifications. A domain concept that will be referenced from more than one call site must still be its own dedicated `Specification<T>` subclass.
 
 ---
 
@@ -539,6 +652,14 @@ Reasons for rejection:
 - `ISpecification<T>.IncludeDeleted` is a `bool` property — BCL primitive, no reflection, AOT-safe. `Specification<T>.IncludeSoftDeleted()` is a simple field write — AOT-safe.
 - No `Activator.CreateInstance`, no `Assembly.Load`, no reflection in hot paths.
 - `StronglyTypedIdJsonConverterFactory.CreateConverter` uses `Activator.CreateInstance` on a closed generic converter type, and `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>` compiles a `Func<TValue, TStronglyTypedId>` activator once per closed type via `Expression.New` over the concrete `(TValue Value)` primary constructor. Both occur once per closed type — `CreateConverter` is called once per type by STJ and the result is cached by `JsonSerializerOptions`; the compiled `Expression` delegate is cached for the converter's lifetime. This is the same class of startup-time, type-inspection-only reflection as `DomainEventVersionHelper.GetVersion(Type)` — acceptable per the repo's pragmatic AOT guidance, not used in per-element hot paths. Native AOT trimming of `Expression.Compile()` requires the `System.Linq.Expressions` interpreter fallback or the `RequiresDynamicCode`/`RequiresUnreferencedCode` annotations on the converter's `CreateConverter`/factory methods if a consuming service publishes with `PublishAot=true`; this is documented as a consumer-facing caveat, not a hard blocker.
+- `KeysetSpecification<T, TKey>` (WO-051/P-308) is an abstract class built entirely on `Expression<Func<T,...>>` trees composed through the same `ApplyOrderBy`/`ApplyThenBy`/`ApplyPaging` builder methods every other specification already uses — no reflection, AOT-safe by the same reasoning as `PagedSpecification<T>`.
+- `ISpecification<T>.AsSplitQuery` (WO-051/P-308) is a `bool` property — BCL primitive, no reflection, AOT-safe. `Specification<T>.ApplySplitQuery()` is a simple field write — AOT-safe.
+- `IHasAggregateId<TId>` (WO-051/P-309) is a marker interface with a single generic property — no reflection, AOT-safe.
+- `ValueObject.TryCreate<T>`/`CheckRule` (WO-051/P-310) use try/catch on known exception types with no reflection — AOT-safe, identical reasoning to `AggregateRoot<TId>.TryCreate<T>`.
+- `SharedKernel.Guards`' `Guard.Throw.Null<T>` (WO-051/P-311) is already a proven AOT-safe pattern in `01.Core` (static dispatch, `EqualityComparer<T>.Default`-based checks, no reflection) — its adoption here introduces no new AOT concern. `Entity<TId>.Equals(Entity<TId>? other)` and `ValueObject.Equals(ValueObject? other)` (`IEquatable<T>` additions) are ordinary instance methods delegating to the existing `Equals(object?)` override — no reflection, AOT-safe.
+- `DomainEventVersionHelper.GetVersion(Type)`'s `ConcurrentDictionary<Type, int>` cache (WO-051/P-311) adds no new AOT concern — `ConcurrentDictionary<TKey,TValue>` is a standard BCL generic collection; the underlying `GetCustomAttribute<T>()` reflection call remains the same class of startup/first-use-time, type-inspection-only reflection already accepted for this helper.
+- `IPolicy<T>.Explain` (WO-051/P-312) is a C# default interface member — default interface methods are resolved at compile/JIT time via the interface's vtable slot, not via reflection; fully AOT-safe, no `[RequiresUnreferencedCode]` needed.
+- `Specification<T>.Create(criteria)` and the internal `CriteriaSpecification<T>` (WO-051/P-313) are a plain static factory method and a sealed class wrapping an `Expression<Func<T,bool>>` via the existing `AddCriteria` builder — no reflection, AOT-safe, identical reasoning to `AllSpecification<T>`/`EmptySpecification<T>`.
 
 ---
 
@@ -573,6 +694,15 @@ Reasons for rejection:
 - `ISpecification<T>.IncludeDeleted`: default `false`; `IncludeSoftDeleted()` sets `true`; `AndSpecification<T>` / `OrSpecification<T>` propagate `true` when either operand is `true`; remain `false` when both operands are `false`; `NotSpecification<T>` propagates `true` when operand is `true`; all existing specification tests continue to pass (additive change only).
 - `IDomainEventDispatcher` `ContractShapeTests`: (a) interface exists in assembly `SharedKernel.Domain` under namespace `SharedKernel.Domain`; (b) has exactly one method `DispatchAsync`; (c) method signature is `Task DispatchAsync(IReadOnlyList<IDomainEvent>, CancellationToken)` verified via reflection; (d) interface is `public`; (e) `IDomainEvent` parameter type resolves to the existing interface from the same package (no external type references introduced).
 - `StronglyTypedIdJsonConverterFactory` / `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>`: round-trip serialize/deserialize for concrete test ID records over each supported `TValue` (`Guid`, `int`, `long`, `string`) preserves equality; serialized JSON for each is the bare primitive token, not `{"value": ...}`; `CanConvert` returns `false` for unrelated types (plain `string`, a non-`StronglyTypedId` `ValueObject` subclass); a strongly-typed ID property inside a containing DTO record round-trips correctly when the factory is registered; without the factory registered, default STJ record serialization produces the object-wrapper shape (documents the opt-in contract).
+- `AndSpecification<T>`/`OrSpecification<T>`/`NotSpecification<T>` `Includes`/`StringIncludes` propagation (WO-051/P-307): compose two specs where only one operand declares an `Include`/`AddStringInclude`, for each of `And`/`Or`/`Not`; composed spec's `Includes`/`StringIncludes` contains the expected entries; existing `AsNoTracking`/`IncludeDeleted` propagation tests continue to pass unmodified.
+- `KeysetSpecification<T, TKey>` (WO-051/P-308): first-page cursor (`afterKey`/`afterId` both null) produces no seek-predicate contribution; `OrderBy`/`ThenBys` reflect the key selector + mandatory Id tiebreaker in the correct order; `take < 1` throws `ArgumentOutOfRangeException`; a partial cursor (only one of `afterKey`/`afterId` supplied) throws `ArgumentException`; `AfterKey`/`AfterId`/`Descending`/`Take` readable and correct post-construction — all evaluated in isolation against expression trees, no database required.
+- `ISpecification<T>.AsSplitQuery` (WO-051/P-308): default `false`; `ApplySplitQuery()` sets `true`; `AndSpecification<T>`/`OrSpecification<T>`/`NotSpecification<T>` propagate `true` when either/the operand has it set; both-`false` operands propagate `false` — mirrors the existing `AsNoTracking` test suite exactly.
+- `IHasAggregateId<TId>` (WO-051/P-309): a concrete event implementing both `DomainEvent<TPayload>` and `IHasAggregateId<TId>` is detected via `is IHasAggregateId<TId>` pattern matching and exposes the expected `AggregateId`; an event not implementing the marker is unaffected (pattern-match returns `false`, no exception).
+- `ValueObject.TryCreate<T>`/`CheckRule` (WO-051/P-310): mirrors the existing aggregate-side `TryCreateTests.cs` coverage — success path; `BusinessRuleViolationException` → `Result.Failure` with `ErrorType.BusinessRule`; `ValidationException` → `Result.Failure`; a `SingleValueObject<TValue>` subclass exercises both inherited helpers directly.
+- Guard-clause adoption (WO-051/P-311): `new SomeAggregate(id, clock: null!)` (and the three tenanted variants, via the shared base-constructor chain) throws the Guards system's `DomainException`, never a downstream `NullReferenceException`; a reference-type `TValue` passed as `null!` to `StronglyTypedId<TValue>`/`SingleValueObject<TValue>` throws the same guard exception; a value-type `TValue` construction path is unaffected.
+- `DomainEventVersionHelper` caching (WO-051/P-311): reflection (`GetCustomAttribute`) invoked at most once per distinct `Type` across repeated `GetVersion(Type)` calls. `Entity<TId>`/`ValueObject` `IEquatable<T>` (WO-051/P-311): `entity is IEquatable<Entity<TId>>` / `valueObject is IEquatable<ValueObject>` both `true`; typed `Equals(T? other)` matches `Equals(object?)` for equal/unequal/`null` inputs; all existing equality tests continue to pass unmodified.
+- `IPolicy<T>.Explain` (WO-051/P-312): a concrete test policy demonstrates both `IsCompliant` and `Explain` returning consistent results; a policy implementing only `IsCompliant` still compiles and returns the default DIM explanation (zero-breaking-change proof); `AndPolicy<T>.Explain` aggregates non-compliant sub-policy explanations with `"; "`; `OrPolicy<T>.Explain` (both non-compliant) aggregates both; `NotPolicy<T>.Explain` (inner unexpectedly compliant) returns the fixed generic message.
+- `Specification<T>.Create(criteria)` (WO-051/P-313): `IsSatisfiedBy` and expression-tree behavior identical to an equivalent named `Specification<T>` subclass; composes correctly via `.And()`/`.Or()`/`.Not()` against both another ad hoc spec and a named subclass; every non-criteria member defaults to its empty/false baseline.
 
 ---
 
@@ -593,3 +723,4 @@ Reasons for rejection:
 - [2026-06-12] P-152/WO-024 — `StronglyTypedIdJsonConverterFactory` + `StronglyTypedIdJsonConverter<TStronglyTypedId, TValue>` added to public surface (new StronglyTypedIds/Serialization/ section); supports Guid/int/long/string, bare-primitive wire format, opt-in registration via `options.Converters.Add(...)`; `StronglyTypedId<TValue>` "ships none" note replaced; implementation rules added (supported TValue shapes, concrete-type constructor shape requirement, opt-in-only); AOT note added (cached `Expression.New` activator, same class as `DomainEventVersionHelper` precedent, PublishAot caveat documented); test rule added (round-trip, wire-format, CanConvert negative cases); version bump to 1.6.0 planned (domain-arch-planner)
 - [2026-06-15] SK.03.Docs complete (DO-29) — `StronglyTypedId<TValue>` source XML `<remarks>` updated to describe `StronglyTypedIdJsonConverterFactory` opt-in; `SharedKernel.Domain.csproj` bumped to 1.6.0 with WO-024 release notes; CLAUDE.md content already current from prior pass; 246 tests green (domain-phase-implementer)
 - [2026-06-15] SK.03.Published complete (P-10) — SharedKernel.Domain 1.6.0 packed and verified; manifest deps: Primitives + Core only; consumer-verify confirms StronglyTypedIdJsonConverterFactory/Converter exported (19/19); all 6 phases of 03.Domain now ● complete; no new architectural signals (domain-phase-implementer)
+- [2026-07-29] WO-051 (P-307..P-313) — CLAUDE.md refreshed for a seven-phase gap-fill batch targeting `SharedKernel.Domain` v1.7.0: (1) corrected a pre-existing documentation gap discovered during grounding research against shipped source — `StringIncludes`/`ISpecification<T>` and `AddStringInclude`/`Specification<T>` were already shipped but never documented in this brain; both now appear in the Specification system section; (2) `AndSpecification<T>`/`OrSpecification<T>`/`NotSpecification<T>` now documented to union `Includes`/`StringIncludes`, fixing a confirmed silent eager-loading data-loss defect (P-307); (3) added `KeysetSpecification<T, TKey>` cursor/seek-pagination base (mandatory Id tiebreaker) and `ISpecification<T>.AsSplitQuery` flag with `AsNoTracking`-identical propagation (P-308); (4) added `IHasAggregateId<TId>` opt-in marker mirroring `IHasTenant` (P-309); (5) added `ValueObject.TryCreate<T>`/`CheckRule`, achieving full parity with `AggregateRoot<TId>`'s existing helpers (P-310); (6) added `SharedKernel.Guards` as a third `01.Core` `ProjectReference` (Packages table updated), guarded `AggregateRoot<TId>`'s `clock` parameter (one guard site protects all four aggregate bases via constructor chaining), guarded `StronglyTypedId<TValue>`/`SingleValueObject<TValue>`'s `Value` for reference-type `TValue`, documented `Entity<TId>.id`'s deliberate unguarded transient-sentinel exception, cached `DomainEventVersionHelper.GetVersion`'s reflection lookup via `ConcurrentDictionary<Type,int>`, and added `IEquatable<Entity<TId>>`/`IEquatable<ValueObject>` (P-311); (7) added `IPolicy<T>.Explain` as a zero-breaking-change C# default interface member with composite aggregation mirroring `AndBusinessRule.Message` (P-312); (8) added `Specification<T>.Create(criteria)` ad hoc factory extending the `AllSpecification<T>`/`EmptySpecification<T>` sealed-wrapper precedent (P-313). Implementation Rules, AOT Compatibility, and Test Rules sections all extended accordingly; 41 new tasks recorded in state-map.md across all 6 phases (domain-arch-planner, WO-051)
