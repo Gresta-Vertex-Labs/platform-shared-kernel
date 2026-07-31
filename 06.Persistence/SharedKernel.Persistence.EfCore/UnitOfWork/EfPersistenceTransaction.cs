@@ -13,28 +13,33 @@ namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 /// <see cref="IDbContextTransaction"/> and release database resources.
 /// </para>
 /// <para>
-/// Domain event dispatch fires after <see cref="CommitAsync"/> in
-/// <see cref="EfTransactionalUnitOfWork"/>, consistent with <c>EfUnitOfWork</c> semantics.
+/// Domain event dispatch fires after <see cref="CommitAsync"/> completes successfully, consistent
+/// with <c>EfUnitOfWork.SaveChangesAsync</c> semantics — dispatch is delegated back to the owning
+/// <see cref="EfTransactionalUnitOfWork"/>'s <c>DispatchAndClearEventsAsync</c>.
 /// </para>
 /// </remarks>
 internal sealed class EfPersistenceTransaction : IPersistenceTransaction
 {
     private readonly IDbContextTransaction _transaction;
+    private readonly EfTransactionalUnitOfWork _owner;
 
-    internal EfPersistenceTransaction(IDbContextTransaction transaction)
+    internal EfPersistenceTransaction(IDbContextTransaction transaction, EfTransactionalUnitOfWork owner)
     {
         _transaction = transaction;
+        _owner = owner;
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// Delegates to the underlying <see cref="IDbContextTransaction.CommitAsync"/>.
-    /// Domain event dispatch is NOT performed here — use
-    /// <see cref="EfTransactionalUnitOfWork"/> (via <c>ITransactionalUnitOfWork</c>) to obtain a
-    /// transaction handle that dispatches events after commit.
+    /// Commits the underlying <see cref="IDbContextTransaction"/>, then dispatches and clears any
+    /// domain events collected during the transaction — consistent with
+    /// <c>EfUnitOfWork.SaveChangesAsync</c>'s post-commit dispatch semantics.
     /// </remarks>
-    public Task CommitAsync(CancellationToken ct = default)
-        => _transaction.CommitAsync(ct);
+    public async Task CommitAsync(CancellationToken ct = default)
+    {
+        await _transaction.CommitAsync(ct);
+        await _owner.DispatchAndClearEventsAsync(ct);
+    }
 
     /// <inheritdoc />
     /// <remarks>

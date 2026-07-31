@@ -104,14 +104,14 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
         }
 
         var efTransaction = await _dbContext.Database.BeginTransactionAsync(ct);
-        return new EfTransactionalPersistenceTransaction(efTransaction, this);
+        return new EfPersistenceTransaction(efTransaction, this);
     }
 
     /// <inheritdoc />
     /// <remarks>
     /// WO-051/P-320 — wraps <c>DbContext.Database.CreateExecutionStrategy().ExecuteAsync(...)</c>,
     /// reusing the same begin/commit machinery as <see cref="BeginTransactionAsync"/>/
-    /// <see cref="EfTransactionalPersistenceTransaction.CommitAsync"/> (including the P-105
+    /// <see cref="EfPersistenceTransaction.CommitAsync"/> (including the P-105
     /// deferred-domain-event-dispatch-until-commit rule). The whole delegate — including a fresh
     /// <c>BeginTransactionAsync</c> — re-runs on each retry attempt; a failed attempt's transaction
     /// rolls back via <c>IDbContextTransaction</c>'s dispose-without-commit semantics before the
@@ -173,43 +173,4 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
         foreach (var aggregate in aggregatesWithEvents)
             aggregate.ClearDomainEvents();
     }
-}
-
-/// <summary>
-/// Wraps an <see cref="EfPersistenceTransaction"/> and fires domain event dispatch after
-/// <see cref="CommitAsync"/> completes successfully.
-/// </summary>
-internal sealed class EfTransactionalPersistenceTransaction : IPersistenceTransaction
-{
-    private readonly Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction _transaction;
-    private readonly EfTransactionalUnitOfWork _uow;
-
-    internal EfTransactionalPersistenceTransaction(
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
-        EfTransactionalUnitOfWork uow)
-    {
-        _transaction = transaction;
-        _uow = uow;
-    }
-
-    /// <inheritdoc />
-    public async Task CommitAsync(CancellationToken ct = default)
-    {
-        await _transaction.CommitAsync(ct);
-        // Dispatch domain events post-commit, consistent with EfUnitOfWork semantics.
-        await _uow.DispatchAndClearEventsAsync(ct);
-    }
-
-    /// <inheritdoc />
-    /// <remarks>
-    /// Domain events are <strong>not</strong> dispatched on rollback. The change-tracker still
-    /// holds any staged events; callers must discard the unit-of-work scope after a rollback to
-    /// prevent stale events from being dispatched on a subsequent save.
-    /// </remarks>
-    public Task RollbackAsync(CancellationToken ct = default)
-        => _transaction.RollbackAsync(ct);
-
-    /// <inheritdoc />
-    public ValueTask DisposeAsync()
-        => _transaction.DisposeAsync();
 }
