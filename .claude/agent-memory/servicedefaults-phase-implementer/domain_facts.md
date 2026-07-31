@@ -138,3 +138,28 @@ resolves it). Composing `AddSharedKernelMultiTenancy()` requires registering a f
 in the harness first, or `DatabaseTenantResolutionStrategy`'s constructor-injection throws a DI resolution
 exception at `app.Services.CreateScope()` time — this is expected/correct behavior (any real consumer using
 the Database strategy must register a real factory too), not a bug to work around in the package itself.
+
+**Test counts as of 2026-07-30, end of session (SK.13.Core/Tests/Docs closed `●` a fourth time — C-45/T-40/DO-11,
+`WithPersistenceTelemetry`, WO-051/P-326):** 91 `SharedKernel.ServiceDefaults.Tests` passing (+3 from the prior
+88), 30 `SharedKernel.MultiTenancy.Tests` passing (unchanged). `WithPersistenceTelemetry` is the **first**
+genuinely tracing-only member of the `With*Telemetry` family (all six prior siblings wire both a tracing
+source and a meter) — `06.Persistence`'s P-319 phase ships only `PersistenceActivitySource`
+(`internal static class`, `ActivitySource("SharedKernel.Persistence", "1.0")`) plus `PersistenceTagKeys`, no
+companion `Meter`, so this method makes only a `WithTracing(t => t.AddSource(...))` call, no
+`WithMetrics(...)` — do not add one unless `06.Persistence` ships a meter in a future phase. Verified the
+blocker-clearing evidence directly: `06.Persistence/state-map.md`'s C-110 confirmed `●` and the real
+`internal static class PersistenceActivitySource { public static readonly ActivitySource Source = new("SharedKernel.Persistence", "1.0"); }`
+read from `06.Persistence/SharedKernel.Persistence.EfCore/Diagnostics/PersistenceActivitySource.cs` on disk —
+matches [[crossdomain_blocking_pattern]]'s established re-verify discipline exactly. Sanity-checked the new
+span-capture test genuinely discriminates by temporarily replacing the `AddSource(...)` call with a no-op
+lambda, re-running just that test (it failed with an empty captured collection), then restoring — same
+technique [[otel_wiring_pattern]] documents for `WithCachingTelemetry`'s T-39 precedent. Root `CLAUDE.md`
+*was* touched this time (unlike the WO-043/044/045/046/050 precedents) — one "What Goes Where" row
+("Persistence-layer OpenTelemetry trace/metric wiring at host composition") had a stale
+"design-locked, queued P-326/WO-051" qualifier that needed removing now that the method shipped; this is the
+same qualifier-cleanup pattern `core-phase-implementer` uses for its own WO-049 rows (P-292/P-293/etc.), just
+applied here for the first time by this agent. When calling the `sync-brain` skill for a root-level edit like
+this, do **not** include a `domain:` field in the args — the skill's own mode detection routes to Sub-domain
+mode whenever `domain:` is present, and there is no way to force Root mode through that field; if a root edit
+is genuinely needed, just make it directly (Read → Grep the target line → Edit → append changelog) rather than
+relying on the skill's dispatch to reach Root mode.
