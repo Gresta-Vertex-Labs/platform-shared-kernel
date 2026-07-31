@@ -4,6 +4,7 @@ using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Persistence.EfCore.Context;
 
@@ -105,7 +106,49 @@ public abstract class SharedKernelDbContext : DbContext
         _encryptionVersionOverride = encryptionVersionOverride ?? EncryptionVersionOverride.NoOp;
         _symmetricEncryptionService = symmetricEncryptionService;
         _encryptionKeyProvider = encryptionKeyProvider;
+
+        // WO-051/P-322: initialised from AuditInterceptor's own constructor-captured IUserContext —
+        // deliberately NOT a new constructor parameter on this class (auditInterceptor is already
+        // passed in above). Under the default, non-pooled registration this is the correct value for
+        // this instance's entire lifetime. Under .WithDbContextPooling(), RefreshUserContext(...) is
+        // called once per lease to replace it with the CURRENT scope's real IUserContext.
+        CurrentUserContext = auditInterceptor.UserContext;
     }
+
+    /// <summary>
+    /// Gets the <see cref="IUserContext"/> that <see cref="AuditInterceptor"/> and
+    /// <see cref="SoftDeleteInterceptor"/> resolve audit fields from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Under the default (non-pooled) registration this is set once at construction — from
+    /// <see cref="AuditInterceptor.UserContext"/> — and never changes for this instance's lifetime,
+    /// which is already correct because a fresh <see cref="SharedKernelDbContext"/> instance is
+    /// constructed per DI scope.
+    /// </para>
+    /// <para>
+    /// <strong>Pooling (WO-051/P-322):</strong> under
+    /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>, a pooled instance's constructor runs
+    /// ONCE per pooled slot, not once per lease. <see cref="AuditInterceptor"/>/
+    /// <see cref="SoftDeleteInterceptor"/> read this property LIVE off
+    /// <c>eventData.Context</c> inside <c>SavingChanges</c>/<c>SavingChangesAsync</c> — always the
+    /// CURRENT executing instance — instead of their own constructor-captured field, so calling
+    /// <see cref="RefreshUserContext"/> once per lease keeps audit attribution correct across
+    /// unrelated requests reusing the same pooled instance.
+    /// </para>
+    /// </remarks>
+    public IUserContext CurrentUserContext { get; private set; }
+
+    /// <summary>
+    /// Replaces <see cref="CurrentUserContext"/> with <paramref name="userContext"/>.
+    /// </summary>
+    /// <param name="userContext">The current scope's real <see cref="IUserContext"/>.</param>
+    /// <remarks>
+    /// Called once per lease by the factory delegate <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>
+    /// registers. Non-pooled consumers never need to call this — the constructor-set value is already
+    /// correct for a non-pooled instance's lifetime.
+    /// </remarks>
+    public void RefreshUserContext(IUserContext userContext) => CurrentUserContext = userContext;
 
     /// <summary>
     /// Gets the scoped <see cref="IEncryptionVersionOverride"/> instance injected into this context,
@@ -122,26 +165,46 @@ public abstract class SharedKernelDbContext : DbContext
     internal IEncryptionVersionOverride CurrentEncryptionVersionOverride => _encryptionVersionOverride;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <strong>Pooling guard (WO-051/P-322):</strong> when <c>optionsBuilder.Options.IsFrozen</c> is
+    /// <see langword="true"/> — which EF Core sets for every instance constructed via
+    /// <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>'s
+    /// <c>AddPooledDbContextFactory&lt;TContext&gt;</c> registration, confirmed empirically to be
+    /// <see langword="true"/> even on the very FIRST pool-miss construction — any attempt to mutate
+    /// <paramref name="optionsBuilder"/> here throws <see cref="InvalidOperationException"/>
+    /// ("'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is
+    /// enabled.") the first time the context's internal services are built (e.g., on
+    /// <c>SaveChangesAsync</c> or <c>EnsureCreatedAsync</c>), not immediately at the mutation call
+    /// site itself. <see cref="EfCorePersistenceBuilder{TContext}.WithDbContextPooling"/>'s pooled
+    /// registration therefore pre-adds the identical platform-three-plus-additional interceptor set
+    /// (and the <see cref="IEncryptionVersionOverride"/> extension) directly into the pool's own
+    /// <c>optionsAction</c> — BEFORE freezing — so this method correctly does nothing extra for a
+    /// pooled context; for a non-pooled context (<c>Options.IsFrozen == false</c>), this method
+    /// performs the wiring exactly as before.
+    /// </remarks>
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        // Platform interceptors always fire first — consumer interceptors are appended after.
-        var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
+        if (!optionsBuilder.Options.IsFrozen)
         {
-            _auditInterceptor,
-            _softDeleteInterceptor,
-            _concurrencyInterceptor
-        };
-        interceptors.AddRange(_additionalInterceptors);
+            // Platform interceptors always fire first — consumer interceptors are appended after.
+            var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
+            {
+                _auditInterceptor,
+                _softDeleteInterceptor,
+                _concurrencyInterceptor
+            };
+            interceptors.AddRange(_additionalInterceptors);
 
-        optionsBuilder.AddInterceptors(interceptors);
+            optionsBuilder.AddInterceptors(interceptors);
 
-        // EF Core's default model cache is keyed by context type and is shared process-wide across
-        // all DbContext instances of this type — including instances from different IServiceProvider
-        // containers. Incorporate this context's IEncryptionVersionOverride instance into the cache
-        // key so EncryptionModelConvention's converters are always bound to the override singleton
-        // actually injected into THIS container. See EncryptionAwareModelCacheKeyFactory for the
-        // full rationale.
-        optionsBuilder.WithEncryptionVersionOverride(_encryptionVersionOverride);
+            // EF Core's default model cache is keyed by context type and is shared process-wide across
+            // all DbContext instances of this type — including instances from different IServiceProvider
+            // containers. Incorporate this context's IEncryptionVersionOverride instance into the cache
+            // key so EncryptionModelConvention's converters are always bound to the override singleton
+            // actually injected into THIS container. See EncryptionAwareModelCacheKeyFactory for the
+            // full rationale.
+            optionsBuilder.WithEncryptionVersionOverride(_encryptionVersionOverride);
+        }
 
         base.OnConfiguring(optionsBuilder);
     }
@@ -160,6 +223,49 @@ public abstract class SharedKernelDbContext : DbContext
     {
         modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly);
         base.OnModelCreating(modelBuilder);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <strong>Concurrency-conflict translation (CORRECTED, WO-051/P-315):</strong> wraps the base
+    /// save call so <see cref="ConcurrencyInterceptor.TryTranslate"/> can convert a
+    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/> affecting an
+    /// <see cref="SharedKernel.Domain.Abstractions.IHasConcurrency"/> entity into a
+    /// <see cref="SharedKernel.Core.Exceptions.ConflictException"/>. This is the actual enforcement
+    /// point for that translation — EF Core 10 does not allow
+    /// <c>ISaveChangesInterceptor.SaveChangesFailed</c>/<c>SaveChangesFailedAsync</c> to replace the
+    /// exception propagating from <c>SaveChanges</c> (confirmed empirically; see
+    /// <see cref="ConcurrencyInterceptor"/>'s class remarks for the full story). The exception
+    /// filter (<c>when (... is { } conflict)</c>) means a non-matching exception is never caught
+    /// here at all — it propagates with its original stack trace fully intact, identical to
+    /// today's behavior for every exception this translation does not apply to.
+    /// </remarks>
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        try
+        {
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+        catch (DbUpdateConcurrencyException ex) when (ConcurrencyInterceptor.TryTranslate(ex) is { } conflict)
+        {
+            throw conflict;
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>See <see cref="SaveChanges(bool)"/> for the concurrency-conflict translation this override performs.</remarks>
+    public override async Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex) when (ConcurrencyInterceptor.TryTranslate(ex) is { } conflict)
+        {
+            throw conflict;
+        }
     }
 
     /// <inheritdoc />

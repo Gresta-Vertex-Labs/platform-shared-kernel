@@ -205,6 +205,7 @@ public sealed class DomainPrimitiveConventionTests
     {
         var options = new DbContextOptionsBuilder<ValueObjectConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
@@ -222,6 +223,7 @@ public sealed class DomainPrimitiveConventionTests
     {
         var options = new DbContextOptionsBuilder<SimpleConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
@@ -239,6 +241,7 @@ public sealed class DomainPrimitiveConventionTests
     {
         var options = new DbContextOptionsBuilder<FullAuditConventionDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);

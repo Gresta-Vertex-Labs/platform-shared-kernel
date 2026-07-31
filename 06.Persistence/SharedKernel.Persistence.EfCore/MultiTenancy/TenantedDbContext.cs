@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Context;
@@ -15,8 +16,7 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// <remarks>
 /// <para>
 /// <strong>Filter semantics:</strong> the global filter is <c>e.TenantId == tenantProvider.TenantId</c>.
-/// The <see cref="ITenantProvider"/> reference is captured at construction time; the
-/// <em>value</em> of <see cref="ITenantProvider.TenantId"/> is resolved at query-execution
+/// The <em>value</em> of <see cref="ITenantProvider.TenantId"/> is resolved at query-execution
 /// time, not at startup. This means rotating the current tenant (e.g., across HTTP requests in
 /// a scoped context) works correctly without rebuilding the context.
 /// </para>
@@ -28,11 +28,30 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// no real tenant provider is registered.
 /// </para>
 /// <para>
-/// <strong>Filter implementation:</strong> the global filter lambda is built using expression trees
-/// (<c>Expression.Parameter</c>, <c>Expression.Property</c>, <c>Expression.Equal</c>,
-/// <c>Expression.Lambda</c>) via the non-generic <c>modelBuilder.Entity(clrType).HasQueryFilter</c>
-/// overload. No <c>GetMethod</c>, <c>MakeGenericMethod</c>, or <c>Invoke</c> calls are used —
-/// the implementation is fully AOT-safe.
+/// <strong>Filter implementation (CORRECTED, WO-051/P-322):</strong> the global filter lambda is
+/// built using expression trees (<c>Expression.Parameter</c>, <c>Expression.Property</c>,
+/// <c>Expression.Constant</c>, <c>Expression.Equal</c>, <c>Expression.Lambda</c>) via the
+/// non-generic <c>modelBuilder.Entity(clrType).HasQueryFilter</c> overload. The filter binds
+/// through <c>Expression.Constant(this, GetType())</c> → <see cref="TenantProvider"/> →
+/// <c>TenantId</c> — a captured "this DbContext instance" constant, NOT a specific captured
+/// <see cref="ITenantProvider"/> object. EF Core's query-filter compilation specially rebinds this
+/// exact shape to whichever instance is EXECUTING the query, not the instance whose
+/// <see cref="OnModelCreating"/> built the (process-wide-cached) model — the same idiom
+/// Microsoft's own multi-tenancy sample uses. This closes a confirmed pre-existing defect
+/// (independent of pooling): the previous design baked
+/// <c>Expression.Constant(specificProviderObject, typeof(ITenantProvider))</c> into the compiled
+/// filter, permanently freezing every subsequent query — for the process's entire lifetime — to
+/// whichever <see cref="ITenantProvider"/> instance constructed the very first
+/// <see cref="TenantedDbContext"/> of this concrete type, because EF Core's default model cache is
+/// keyed only by context type and is shared process-wide. Because <see cref="TenantProvider"/> is
+/// read off <c>this</c> live on every query, it is also what makes
+/// <see cref="RefreshRequestContext"/> effective under <c>.WithDbContextPooling()</c>. The
+/// <c>PropertyInfo</c> lookup for <see cref="TenantProvider"/> (a protected property declared on
+/// this very class) is a one-time, model-build-time-only reflection call — not a per-query hot
+/// path — mirroring the platform's existing documented startup-time reflection exceptions
+/// (<c>ValueObjectOwnershipBuilder</c>, <c>EncryptedEntityBatchProcessorRegistry</c>). No
+/// <c>GetMethod</c>/<c>MakeGenericMethod</c>/<c>Invoke</c> dispatch pattern is used anywhere in
+/// this class.
 /// </para>
 /// <para>
 /// Multi-tenant services must extend this class instead of <see cref="SharedKernelDbContext"/>.
@@ -46,8 +65,20 @@ namespace SharedKernel.Persistence.EfCore.MultiTenancy;
 /// </remarks>
 public abstract class TenantedDbContext : SharedKernelDbContext
 {
+    // WO-051/P-322: one-time, model-build-time-only reflection lookup for the TenantProvider
+    // property declared below — never invoked in a query hot path. See this class's own remarks
+    // for why a PropertyInfo-based Expression.Property is required here (TenantProvider is
+    // protected, so the string-name overload of Expression.Property, which only finds PUBLIC
+    // members via Type.GetProperty(string), cannot locate it).
+    private static readonly PropertyInfo TenantProviderPropertyInfo =
+        typeof(TenantedDbContext).GetProperty(nameof(TenantProvider), BindingFlags.NonPublic | BindingFlags.Instance)!;
+
     /// <summary>Provides access to the current tenant provider for subclass model configuration.</summary>
-    protected ITenantProvider TenantProvider { get; }
+    /// <remarks>
+    /// Settable only via <see cref="RefreshRequestContext"/> (WO-051/P-322) — see that method and
+    /// this class's own remarks for the pooling-safety and pre-existing-staleness-defect rationale.
+    /// </remarks>
+    protected ITenantProvider TenantProvider { get; private set; }
 
     /// <summary>
     /// Initialises a new <see cref="TenantedDbContext"/>.
@@ -67,6 +98,24 @@ public abstract class TenantedDbContext : SharedKernelDbContext
         ITenantProvider tenantProvider)
         : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor)
     {
+        TenantProvider = tenantProvider;
+    }
+
+    /// <summary>
+    /// Replaces both <see cref="SharedKernelDbContext.CurrentUserContext"/> (via the base class) and
+    /// <see cref="TenantProvider"/> with the supplied instances.
+    /// </summary>
+    /// <param name="userContext">The current scope's real <see cref="IUserContext"/>.</param>
+    /// <param name="tenantProvider">The current scope's real <see cref="ITenantProvider"/>.</param>
+    /// <remarks>
+    /// Called once per lease by the factory delegate <c>EfCorePersistenceBuilder.WithDbContextPooling()</c>
+    /// registers, for <see cref="TenantedDbContext"/>-derived contexts. Non-pooled consumers never
+    /// need to call this — the constructor-set value is already correct for a non-pooled instance's
+    /// lifetime (a fresh instance is constructed per DI scope).
+    /// </remarks>
+    public void RefreshRequestContext(IUserContext userContext, ITenantProvider tenantProvider)
+    {
+        RefreshUserContext(userContext);
         TenantProvider = tenantProvider;
     }
 
@@ -108,8 +157,10 @@ public abstract class TenantedDbContext : SharedKernelDbContext
         }
     }
 
-    // Builds a runtime-captured lambda: e => e.TenantId == TenantProvider.TenantId
-    // using expression trees — no GetMethod/MakeGenericMethod/Invoke.
+    // Builds a lambda: e => e.TenantId == this.TenantProvider.TenantId
+    // using expression trees, where "this" is a captured DbContext-instance constant that EF Core
+    // rebinds to whichever instance is executing the query (WO-051/P-322 — see this class's own
+    // remarks for the full rationale and the pre-existing defect this corrects).
     private void ApplyTenantFilterExpression(ModelBuilder modelBuilder, Type clrType)
     {
         // Parameter: e
@@ -118,17 +169,22 @@ public abstract class TenantedDbContext : SharedKernelDbContext
         // e.TenantId
         var tenantIdProperty = Expression.Property(param, nameof(IHasTenant.TenantId));
 
-        // () => TenantProvider.TenantId  — captured at model-build time; value read at query time
-        // We need a live closure over TenantProvider so that the filter sees the per-request value.
-        // Capture via a local variable that Expression.Constant holds as an object.
-        var provider = TenantProvider;
-        var providerConst = Expression.Constant(provider, typeof(ITenantProvider));
-        var tenantIdAccess = Expression.Property(providerConst, nameof(ITenantProvider.TenantId));
+        // this  — a captured "this DbContext instance" constant. EF Core's query-filter compilation
+        // recognizes a ConstantExpression whose Value is the DbContext instance the model was built
+        // from and rebinds it, per query execution, to the CURRENT executing instance — never a
+        // frozen reference to whichever instance first built the (process-wide-cached) model.
+        var thisConst = Expression.Constant(this, GetType());
 
-        // e.TenantId == provider.TenantId
+        // this.TenantProvider
+        var tenantProviderAccess = Expression.Property(thisConst, TenantProviderPropertyInfo);
+
+        // this.TenantProvider.TenantId
+        var tenantIdAccess = Expression.Property(tenantProviderAccess, nameof(ITenantProvider.TenantId));
+
+        // e.TenantId == this.TenantProvider.TenantId
         var equalExpr = Expression.Equal(tenantIdProperty, tenantIdAccess);
 
-        // e => e.TenantId == provider.TenantId
+        // e => e.TenantId == this.TenantProvider.TenantId
         var lambda = Expression.Lambda(equalExpr, param);
 
         // Apply via non-generic overload — no reflection on entity type needed

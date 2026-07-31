@@ -21,7 +21,7 @@ public sealed class EfCorePersistenceBuilderTests
         var act = () =>
             services
                 .AddSharedKernelEfCore<TestDbContext>(options =>
-                    options.UseSqlite("DataSource=:memory:"))
+                    options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
                 .WithMultiTenancy()
                 .Build();
 
@@ -41,7 +41,7 @@ public sealed class EfCorePersistenceBuilderTests
         var act = () =>
             services
                 .AddSharedKernelEfCore<TenantedTestDbContext>(options =>
-                    options.UseSqlite("DataSource=:memory:"))
+                    options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
                 .WithMultiTenancy()
                 .Build();
 
@@ -58,7 +58,7 @@ public sealed class EfCorePersistenceBuilderTests
         // Act
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
 
         var provider = services.BuildServiceProvider();
@@ -87,7 +87,7 @@ public sealed class EfCorePersistenceBuilderTests
         // Act
         services
             .AddSharedKernelEfCore<TenantedTestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithMultiTenancy()
             .Build();
 
@@ -113,7 +113,7 @@ public sealed class EfCorePersistenceBuilderTests
         // Act
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
 
         var provider = services.BuildServiceProvider();

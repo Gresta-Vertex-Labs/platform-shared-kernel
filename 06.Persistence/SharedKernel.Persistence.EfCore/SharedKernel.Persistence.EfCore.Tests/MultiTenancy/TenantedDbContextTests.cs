@@ -71,7 +71,9 @@ public sealed class TenantedDbContextTests
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
         var optionsQuery = new DbContextOptionsBuilder<TenantedTestDbContext>()
-            .UseSqlite(connStr).EnableServiceProviderCaching(false).Options;
+            .UseSqlite(connStr).EnableServiceProviderCaching(false)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
+            .Options;
 
         var userCtx = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
         var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);

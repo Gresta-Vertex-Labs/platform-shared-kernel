@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
@@ -74,6 +75,18 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         _serviceOptions = serviceOptions;
     }
 
+    /// <summary>
+    /// Gets the <see cref="IUserContext"/> captured at construction time.
+    /// </summary>
+    /// <remarks>
+    /// WO-051/P-322 — exposed solely so <see cref="SharedKernelDbContext"/>'s constructor can
+    /// initialise <see cref="SharedKernelDbContext.CurrentUserContext"/> from this instance without
+    /// requiring a new, separately-injected <c>IUserContext</c> constructor parameter on
+    /// <see cref="SharedKernelDbContext"/> itself. This interceptor no longer reads this field
+    /// directly inside <see cref="ApplyAudit"/> — see that method's remarks for why.
+    /// </remarks>
+    internal IUserContext UserContext => _userContext;
+
     /// <inheritdoc />
     public override InterceptionResult<int> SavingChanges(
         DbContextEventData eventData,
@@ -94,11 +107,22 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
     }
 
     // Applies audit fields to Added and Modified entries via EF ChangeTracker.
+    //
+    // WO-051/P-322: resolves the current IUserContext LIVE off
+    // ((SharedKernelDbContext)context).CurrentUserContext instead of this interceptor's own
+    // constructor-captured _userContext field. Under the default (non-pooled) registration this
+    // produces an identical value to before, since SharedKernelDbContext.CurrentUserContext is
+    // itself initialised from this same interceptor's captured IUserContext at construction time.
+    // Under .WithDbContextPooling(), CurrentUserContext is refreshed per lease via
+    // RefreshUserContext(...) — reading it here (rather than this interceptor's own frozen field,
+    // which is never updated on lease) is what prevents a pooled instance from misattributing audit
+    // fields to whichever request first constructed it.
     private void ApplyAudit(DbContext? context)
     {
         if (context is null) return;
 
-        var userId = ResolveUserId();
+        var userContext = ((SharedKernelDbContext)context).CurrentUserContext;
+        var userId = ResolveUserId(userContext);
         var now = _clock.UtcNow;
 
         foreach (var entry in context.ChangeTracker.Entries())
@@ -117,9 +141,9 @@ public sealed class AuditInterceptor : SaveChangesInterceptor
         }
     }
 
-    // Resolves the audit string from the current IUserContext per P-091/WO-019 rules.
-    private string ResolveUserId()
-        => _userContext.IsAuthenticated && _userContext.UserId != Guid.Empty
-            ? _userContext.UserId.ToString("D")
+    // Resolves the audit string from the given IUserContext per P-091/WO-019 rules.
+    private string ResolveUserId(IUserContext userContext)
+        => userContext.IsAuthenticated && userContext.UserId != Guid.Empty
+            ? userContext.UserId.ToString("D")
             : _serviceOptions.Value.ServiceName;
 }

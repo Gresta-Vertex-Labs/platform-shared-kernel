@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
@@ -75,6 +76,18 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
         _serviceOptions = serviceOptions;
     }
 
+    /// <summary>
+    /// Gets the <see cref="IUserContext"/> captured at construction time.
+    /// </summary>
+    /// <remarks>
+    /// WO-051/P-322 — retained for symmetry with <see cref="AuditInterceptor.UserContext"/>, though
+    /// unlike that type, <see cref="SharedKernelDbContext.CurrentUserContext"/> is initialised from
+    /// <see cref="AuditInterceptor"/> alone (both interceptors are always constructed with the same
+    /// scoped <see cref="IUserContext"/>, so either would produce an identical initial value). This
+    /// interceptor no longer reads this field directly inside <see cref="ApplySoftDelete"/>.
+    /// </remarks>
+    internal IUserContext UserContext => _userContext;
+
     /// <inheritdoc />
     public override InterceptionResult<int> SavingChanges(
         DbContextEventData eventData,
@@ -95,11 +108,16 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
     }
 
     // Converts Deleted state to Modified for ISoftDeletable entities.
+    //
+    // WO-051/P-322: resolves the current IUserContext LIVE off
+    // ((SharedKernelDbContext)context).CurrentUserContext — see AuditInterceptor.ApplyAudit's
+    // remarks for the full pooling-safety rationale; identical reasoning applies here.
     private void ApplySoftDelete(DbContext? context)
     {
         if (context is null) return;
 
-        var userId = ResolveUserId();
+        var userContext = ((SharedKernelDbContext)context).CurrentUserContext;
+        var userId = ResolveUserId(userContext);
         var now = _clock.UtcNow;
 
         foreach (var entry in context.ChangeTracker.Entries<ISoftDeletable>()
@@ -112,9 +130,9 @@ public sealed class SoftDeleteInterceptor : SaveChangesInterceptor
         }
     }
 
-    // Resolves the audit string from the current IUserContext per P-091/WO-019 rules.
-    private string ResolveUserId()
-        => _userContext.IsAuthenticated && _userContext.UserId != Guid.Empty
-            ? _userContext.UserId.ToString("D")
+    // Resolves the audit string from the given IUserContext per P-091/WO-019 rules.
+    private string ResolveUserId(IUserContext userContext)
+        => userContext.IsAuthenticated && userContext.UserId != Guid.Empty
+            ? userContext.UserId.ToString("D")
             : _serviceOptions.Value.ServiceName;
 }

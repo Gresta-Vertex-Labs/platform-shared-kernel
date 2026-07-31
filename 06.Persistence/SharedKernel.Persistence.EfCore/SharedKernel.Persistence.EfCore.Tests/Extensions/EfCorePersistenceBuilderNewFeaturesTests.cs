@@ -28,7 +28,7 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         // Act
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithDbContextFactory()
             .Build();
 
@@ -47,7 +47,7 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         // Act
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
 
         // Assert — IDbContextFactory<TestDbContext> descriptor is NOT present
@@ -63,7 +63,7 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithDbContextFactory()
             .Build();
 
@@ -90,7 +90,7 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
 
         services
             .AddSharedKernelEfCore<TestDbContext>(options =>
-                options.UseSqlite("DataSource=:memory:"))
+                options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .AddInterceptor<TrackingInterceptor>()
             .Build();
 
@@ -128,7 +128,7 @@ public sealed class EfCorePersistenceBuilderNewFeaturesTests
         var act = () =>
             services
                 .AddSharedKernelEfCore<TestDbContext>(options =>
-                    options.UseSqlite("DataSource=:memory:"))
+                    options.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
                 .WithCompiledModel(compiledModel)
                 .Build();
 

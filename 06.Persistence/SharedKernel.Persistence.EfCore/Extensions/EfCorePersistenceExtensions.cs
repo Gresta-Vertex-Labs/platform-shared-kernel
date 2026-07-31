@@ -98,7 +98,10 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _registerFactory;
     private bool _registerEncryption;
     private bool _migrationsOnStartup;
+    private bool _dbContextPoolingEnabled;
+    private int _poolSize = 1024;
     private IModel? _compiledModel;
+    private TransientFaultRetryOptions? _transientFaultRetryOptions;
     private readonly List<Type> _additionalInterceptorTypes = [];
     private readonly List<Func<IServiceProvider, TContext, CancellationToken, Task>> _seedSteps = [];
 
@@ -240,6 +243,11 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // EncryptionRotationService<TContext> for the duration of each batch's SaveChangesAsync.
         _services.AddSingleton<IEncryptionVersionOverride, EncryptionVersionOverride>();
 
+        // WO-051/P-323: singleton decode-once-per-config-value cache backing
+        // EncryptionOptionsKeyProvider — deliberately NOT scoped, since decoded key bytes vary only
+        // with the config VALUE, not per request.
+        _services.AddSingleton<EncryptionKeyByteCache>();
+
         // P-227: Register EncryptionOptionsKeyProvider as scoped IEncryptionKeyProvider.
         // Scoped lifetime matches IEncryptionVersionOverride's existing scoped lifetime.
         // This is the IEncryptionKeyProvider that backs EncryptedValueConverter's ISymmetricEncryptionService
@@ -290,6 +298,75 @@ public sealed class EfCorePersistenceBuilder<TContext>
     }
 
     /// <summary>
+    /// Registers a <see cref="TransientFaultRetryOptions"/> singleton for discoverability/observability.
+    /// </summary>
+    /// <param name="maxRetryCount">The maximum number of retry attempts. Defaults to 6.</param>
+    /// <param name="maxRetryDelay">
+    /// The maximum delay between retry attempts. Defaults to <see langword="null"/> (provider default,
+    /// typically 30 seconds).
+    /// </param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// WO-051/P-320 — CANNOT itself configure Npgsql (this package never references Npgsql). This is
+    /// a documented, REQUIRED two-call opt-in PAIR with
+    /// <c>UsePostgreSQL(connectionString, maxRetryCount, maxRetryDelay)</c> (the PostgreSQL package):
+    /// calling only this method without also passing matching values to <c>UsePostgreSQL(...)</c>
+    /// registers the options singleton but enables NO actual retry behavior.
+    /// </para>
+    /// <para>
+    /// The retry-SAFETY correction for explicit transactions
+    /// (<c>EfTransactionalUnitOfWork.BeginTransactionAsync</c>'s guard +
+    /// <c>ExecuteInTransactionAsync</c>) is UNCONDITIONAL and does NOT depend on this method having
+    /// been called — it queries live EF Core execution-strategy state, so it correctly protects a
+    /// consumer who enabled retry solely via <c>UsePostgreSQL(...)</c>.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithTransientFaultRetry(
+        int maxRetryCount = 6,
+        TimeSpan? maxRetryDelay = null)
+    {
+        _transientFaultRetryOptions = new TransientFaultRetryOptions(maxRetryCount, maxRetryDelay);
+        return this;
+    }
+
+    /// <summary>
+    /// Opts in to a pooled <c>IDbContextFactory&lt;TContext&gt;</c> registration
+    /// (<c>AddPooledDbContextFactory</c>) instead of the default always-scoped <c>AddDbContext</c>
+    /// registration, for services wanting the reduced per-request allocation/GC overhead of a
+    /// pooled <see cref="DbContext"/> at high request throughput.
+    /// </summary>
+    /// <param name="poolSize">The maximum number of pooled context instances. Defaults to 1024.</param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// WO-051/P-322 — see the "DbContext Pooling" section of <c>06.Persistence/CLAUDE.md</c> for the
+    /// full pooling-safety story. In short: <see cref="SharedKernelDbContext"/>/
+    /// <see cref="TenantedDbContext"/> now expose <c>RefreshUserContext</c>/<c>RefreshRequestContext</c>
+    /// specifically so this method can layer a scoped factory delegate over
+    /// <c>IDbContextFactory&lt;TContext&gt;.CreateDbContext()</c> that refreshes the leased instance's
+    /// user/tenant context to the CURRENT scope's real values on every resolution — regardless of
+    /// what (possibly stale, possibly meaningless) values were baked in whenever that pooled slot's
+    /// constructor last ran. Existing consumer code that injects <typeparamref name="TContext"/>
+    /// directly is completely unaffected — pooling and the per-lease refresh are transparent.
+    /// </para>
+    /// <para>
+    /// Cannot be combined with <see cref="WithDbContextFactory"/> (both would register a conflicting
+    /// <c>IDbContextFactory&lt;TContext&gt;</c>) or with <see cref="WithEncryption"/> (its
+    /// <c>IEncryptionVersionOverride</c> rotation-scoped seam has the identical constructor-capture
+    /// staleness hazard this method's redesign fixes for user/tenant context, and has not yet been
+    /// proven safe under pooling) — both combinations throw an actionable
+    /// <see cref="InvalidOperationException"/> at <see cref="Build"/> time.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithDbContextPooling(int poolSize = 1024)
+    {
+        _dbContextPoolingEnabled = true;
+        _poolSize = poolSize;
+        return this;
+    }
+
+    /// <summary>
     /// Registers a startup data seeder for <typeparamref name="TContext"/>.
     /// </summary>
     /// <typeparam name="TSeeder">
@@ -332,6 +409,30 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 $"or remove the '.WithMultiTenancy()' call from the DI registration.");
         }
 
+        // WO-051/P-322: .WithDbContextPooling() guards — both combinations are unsupported today.
+        if (_dbContextPoolingEnabled && _registerFactory)
+        {
+            throw new InvalidOperationException(
+                "'.WithDbContextPooling()' cannot be combined with '.WithDbContextFactory()' — both " +
+                "would register a conflicting IDbContextFactory<TContext> (pooled vs. non-pooled). " +
+                "Remove one of the two calls.");
+        }
+
+        if (_dbContextPoolingEnabled && _registerEncryption)
+        {
+            throw new InvalidOperationException(
+                "'.WithDbContextPooling()' cannot be combined with '.WithEncryption()' — " +
+                "IEncryptionVersionOverride's rotation-scoped seam has the identical constructor-" +
+                "capture staleness hazard this method's redesign fixes for user/tenant context, and " +
+                "has not yet been proven safe under pooling. Remove one of the two calls.");
+        }
+
+        // WO-051/P-320: register the discoverability singleton when WithTransientFaultRetry() was called.
+        if (_transientFaultRetryOptions is not null)
+        {
+            _services.AddSingleton(_transientFaultRetryOptions);
+        }
+
         // Register PersistenceServiceOptions default if not already configured by WithServiceName().
         // This ensures AuditInterceptor and SoftDeleteInterceptor can always resolve it.
         if (!_services.Any(sd => sd.ServiceType == typeof(IOptions<PersistenceServiceOptions>))
@@ -365,8 +466,79 @@ public sealed class EfCorePersistenceBuilder<TContext>
             : _configureDb;
 
         // Register DbContext using the caller-supplied options action.
-        // Interceptors are wired via SharedKernelDbContext.OnConfiguring.
-        _services.AddDbContext<TContext>(effectiveConfigureDb);
+        // Interceptors are wired via SharedKernelDbContext.OnConfiguring for the non-pooled path.
+        if (_dbContextPoolingEnabled)
+        {
+            // WO-051/P-322: AddPooledDbContextFactory<TContext> registers IDbContextFactory<TContext>
+            // as a singleton backed by an ObjectPool<TContext>. EF Core FREEZES the DbContextOptions
+            // built here BEFORE any TContext instance is ever constructed from the pool — confirmed
+            // empirically that SharedKernelDbContext.OnConfiguring's own interceptor-wiring attempt
+            // throws "'OnConfiguring' cannot be used to modify DbContextOptions when DbContext
+            // pooling is enabled" the moment the context's internal services are first built (e.g.
+            // on EnsureCreatedAsync/SaveChangesAsync), because SharedKernelDbContext.OnConfiguring
+            // guards its own mutation on `!optionsBuilder.Options.IsFrozen` (see that method's own
+            // remarks) and therefore correctly does nothing further here. The platform three
+            // interceptors (plus any additional consumer-supplied ones) MUST therefore be added here
+            // instead, via the (IServiceProvider, DbContextOptionsBuilder) overload, BEFORE freezing.
+            // Their own constructor-injected IUserContext is a throwaway NoOpUserContext — harmless,
+            // because AuditInterceptor/SoftDeleteInterceptor read
+            // ((SharedKernelDbContext)eventData.Context).CurrentUserContext LIVE at save time (see
+            // those interceptors' own WO-051/P-322 remarks), never their own captured field, so one
+            // shared interceptor instance safely serves the ENTIRE pool for its lifetime. IClock and
+            // PersistenceServiceOptions ARE resolved for real from sp (the root provider — both are
+            // effectively singleton-shared already under this domain's own conventions), so custom
+            // registrations of either are honored.
+            _services.AddPooledDbContextFactory<TContext>((sp, options) =>
+            {
+                effectiveConfigureDb(options);
+
+                var clock = sp.GetRequiredService<IClock>();
+                var serviceOptions = sp.GetRequiredService<IOptions<PersistenceServiceOptions>>();
+                var placeholderUserContext = new NoOpUserContext();
+
+                var interceptors = new List<Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor>
+                {
+                    new AuditInterceptor(placeholderUserContext, clock, serviceOptions),
+                    new SoftDeleteInterceptor(placeholderUserContext, clock, serviceOptions),
+                    new ConcurrencyInterceptor(),
+                };
+                foreach (var interceptorType in _additionalInterceptorTypes)
+                {
+                    interceptors.Add((Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor)ActivatorUtilities
+                        .CreateInstance(sp, interceptorType));
+                }
+
+                options.AddInterceptors(interceptors);
+            }, _poolSize);
+
+            // The scoped TContext factory delegate below is what existing consumer code injecting
+            // TContext directly transparently rides on — it leases a (possibly reused, possibly
+            // freshly-constructed) pooled instance, then refreshes its user/tenant context to THIS
+            // scope's real values before returning it, so a reused pooled instance never
+            // misattributes audit/tenant data to a prior, unrelated request.
+            _services.AddScoped<TContext>(sp =>
+            {
+                var factory = sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<TContext>>();
+                var context = factory.CreateDbContext();
+                var userContext = sp.GetRequiredService<IUserContext>();
+
+                if (context is TenantedDbContext tenantedContext)
+                {
+                    var tenantProvider = sp.GetRequiredService<ITenantProvider>();
+                    tenantedContext.RefreshRequestContext(userContext, tenantProvider);
+                }
+                else
+                {
+                    context.RefreshUserContext(userContext);
+                }
+
+                return context;
+            });
+        }
+        else
+        {
+            _services.AddDbContext<TContext>(effectiveConfigureDb);
+        }
 
         // Register TContext also as the base SharedKernelDbContext so EfUnitOfWork resolves it.
         _services.AddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
@@ -448,8 +620,13 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 _registerFactory = true;
             }
 
-            // Singleton registry of reflection-free batch processors, one per encrypted entity
-            // type, populated lazily on first use from the model.
+            // Singleton registry of batch processors, one per encrypted entity type, populated
+            // lazily on first use from the model. WO-051/P-324: reworded from "reflection-free" —
+            // EncryptedEntityBatchProcessorRegistry<TContext>'s own XML doc is the accurate framing:
+            // this is a documented, justified, model-build-time-only exception to the SK0xxx
+            // MakeGenericMethod/Invoke reflection-elimination rule (population uses
+            // Activator.CreateInstance/MakeGenericType ONCE per entity type at startup), not a
+            // claim that zero reflection ever occurs.
             _services.AddSingleton<EncryptedEntityBatchProcessorRegistry<TContext>>();
         }
 
