@@ -5,16 +5,19 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-07-31, WO-051 Docs phase closed)
+## Phase completion status (as of 2026-07-31, WO-051 FULLY CLOSED — all 6 phases ● end to end)
 - SK.06.Design: complete (84/84 tasks) — D-65..D-84 (WO-051 batches 1+2) done 2026-07-30
 - SK.06.Core: complete (128/128 tasks) — C-98..C-128 verified/closed 2026-07-31
 - SK.06.Tests: complete (97/97 tasks) — T-61..T-97 verified/closed 2026-07-31
-- SK.06.Docs: complete (52/52 tasks) — DO-39..DO-52 verified/closed 2026-07-31 (see below)
-- SK.06.Published: STILL PENDING (4/8 as of 2026-07-31) — P-05..P-08 (WO-051/P-324: wire
-  `PackageReadmeFile`/`<None Include="README.md" Pack="true" PackagePath="\" />` into all four
-  `.csproj` files so `dotnet pack` picks up the already-written READMEs; P-01..P-04 were already
-  ● since WO-013). A FUTURE session must continue there — this is the LAST open phase for WO-051.
-  Do not assume "Published" in root state-map means every sub-phase task is done — this domain
+- SK.06.Docs: complete (52/52 tasks) — DO-39..DO-52 verified/closed 2026-07-31
+- SK.06.Published: complete (8/8) — P-05..P-08 closed 2026-07-31 (see entry below). 06.Persistence
+  now has ZERO pending phases/tasks anywhere in its own state-map. Root Domain Summary Board row 06
+  promoted to Published/●.
+- Root Phase Backlog: ALL WO-051 06.Persistence entries (P-315..P-325, 11 total including P-324)
+  closed to ● Complete 2026-07-31 — see "WO-051 backlog sweep" entry below. Only P-326
+  (13.ServiceDefaults) and P-327 (00.Governance) remain open — different domains, not this
+  agent's jurisdiction, but now unblocked since their dependencies (P-319, P-316) are shipped.
+- Do not assume "Published" in root state-map means every sub-phase task is done — this domain
   repeatedly gets NEW WO's adding tasks to already-"complete" phase-key sections after
   reaching Published once (WO-013), and the root Domain Summary Board's "Current Phase"
   column just reflects whichever phase-key was MOST RECENTLY closed, not a monotonic
@@ -22,6 +25,47 @@ metadata:
   tasks completes, even after the domain previously showed "Published".
 - ALWAYS re-read 06.Persistence/state-map.md's own Overall Progress table before assuming a
   phase is done — don't trust the root's one-line domain summary alone.
+
+## P-05..P-08 (2026-07-31): code already done, only state-map lagged — 4th+ instance of the pattern
+All four `.csproj` files already had `<PackageReadmeFile>README.md</PackageReadmeFile>` AND
+`<None Include="README.md" Pack="true" PackagePath="\" />` wired in from a prior unclosed session,
+and all four `README.md` files already existed, fully written. Verified (not trusted) via real
+`dotnet pack --configuration Release -o <scratch-dir>` runs for all four projects — all four
+produced clean `.nupkg`+`.snupkg` with ZERO `NU5039`/`NU5128` warnings (only pre-existing unrelated
+CS1574/CS1734 XML-doc-cref warnings appeared). Additionally confirmed via `unzip -l <nupkg>` that
+README.md is physically present at the package root in all four generated packages — don't just
+trust that pack succeeded silently, actually inspect package contents when a task's acceptance
+criterion is "X is in the package." No source files needed changing this session — zero git diff.
+Always `rm -rf` any scratch pack-output directory created inside the repo tree afterward (or better,
+pack to the harness scratchpad dir, not a repo-local folder) so `git status` stays clean.
+
+## CRITICAL: root Phase Backlog entries can lag their sub-map phase-key completion by many sessions
+When a domain's WO-specific phases (e.g. WO-051's P-315..P-325 for 06.Persistence) get folded
+directly into the six standard lifecycle phase-keys (Design/Scaffold/Core/Tests/Docs/Published)
+rather than getting their own dedicated phase-key in the sub state-map, the `state-map-phase`
+skill's S8a step (which closes individual root Phase Backlog P-NNN entries) never fires for them —
+S8a only fires for phase keys whose "Maps to Root Phase" is itself a P-NNN token or has a
+"Root Backlog ID" column, and explicitly SKIPS when the phase is one of the six standard lifecycle
+names (Case 3). The ONLY point these get swept closed is S8b, which fires exactly once, the moment
+the domain's Published phase-key completes. This means dozens of individually-dispatched root
+Phase Backlog entries can sit at "◐ Dispatched" for many sessions after their actual work shipped —
+found 11 such entries here (P-315 through P-325) still showing "◐ Dispatched" despite every one of
+them having fully shipped, tested, documented code with explicit `WO-051/P-3xx` annotations in both
+production source comments AND `06.Persistence/CLAUDE.md` prose. **Do not blindly apply S8b's
+literal instruction ("close every entry whose Domain matches") without verification** — a domain's
+Phase Backlog can legitimately contain genuinely-unfinished, unrelated future work for the same
+domain (this was NOT the case here, but could be). The correct process: read each backlog entry's
+full acceptance criteria, then grep the ACTUAL shipped `.cs`/test files for the concrete artifacts
+each criterion names (class names, test file names, doc annotations) — never trust README.md prose
+alone as proof (README prose can also be aspirational/stale, though in this case it lined up).
+Evidence that clinched it here: production code comments literally embedding `(WO-051/P-320)`,
+`(CORRECTED, WO-051/P-325)`, `(WO-051/P-316)` etc. directly at the fix site — when a codebase
+uses this self-annotating convention, grep for `WO-0NN/P-NNN` directly; it's the fastest, most
+reliable verification signal available. Only close backlog entries for the SAME domain the
+completing phase belongs to — cross-domain follow-on entries in the same WO (here: P-326 for
+13.ServiceDefaults, P-327 for 00.Governance) must be left untouched even though their dependency
+phase IDs are now satisfied — they belong to a different domain's jurisdiction and a different
+agent's session.
 
 ## Fourth confirmed instance: Docs-phase "○ Pending" task rows whose content already exists (2026-07-31)
 Closing DO-39..DO-52 (14 rows, all `○`): 12 of 14 were ALREADY fully correct — both the XML docs
