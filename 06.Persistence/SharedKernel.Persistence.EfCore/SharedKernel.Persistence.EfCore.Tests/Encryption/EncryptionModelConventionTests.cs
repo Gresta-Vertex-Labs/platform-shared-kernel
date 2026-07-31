@@ -61,7 +61,7 @@ public sealed class EncryptionModelConventionTests
         IEncryptionVersionOverride? versionOverride = null)
     {
         var monitor = MakeMonitor(opts);
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
         var encryptionService = new AesGcmEncryptionService(keyProvider);
         return new EncryptedTestDbContext(dbOptions, audit, softDelete, concurrency, monitor, encryptionService, keyProvider, versionOverride);
     }

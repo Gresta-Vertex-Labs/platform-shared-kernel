@@ -60,7 +60,7 @@ public sealed class EncryptionDelegationTests
         IEncryptionVersionOverride? versionOverride = null)
     {
         var monitor = MakeMonitor(opts);
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
         var encService = new AesGcmEncryptionService(keyProvider);
         return new EncryptedValueConverter(monitor, encService, keyProvider, versionOverride);
     }
@@ -152,7 +152,7 @@ public sealed class EncryptionDelegationTests
         var opts = EnabledOptions("v1", 0x11);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride(); // OverrideVersion = null
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
         var key = keyProvider.GetCurrentKey();
 
@@ -168,7 +168,7 @@ public sealed class EncryptionDelegationTests
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride { OverrideVersion = "v2" };
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
         var key = keyProvider.GetCurrentKey();
 
@@ -184,7 +184,7 @@ public sealed class EncryptionDelegationTests
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride { OverrideVersion = "v2" };
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
         _ = keyProvider.GetCurrentKey(); // resolve override
 
@@ -198,7 +198,7 @@ public sealed class EncryptionDelegationTests
         var v2Bytes = new byte[32]; Array.Fill(v2Bytes, (byte)0x22);
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
 
         var key = keyProvider.GetKey("v2");
 
@@ -212,7 +212,7 @@ public sealed class EncryptionDelegationTests
     {
         var opts = EnabledOptions("v1");
         var monitor = MakeMonitor(opts);
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
 
         var key = keyProvider.GetKey("v99-not-registered");
 
@@ -226,7 +226,7 @@ public sealed class EncryptionDelegationTests
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride { OverrideVersion = "v2" };
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
         var key = keyProvider.GetKey("v1"); // explicit lookup, ignores override
 
@@ -245,7 +245,7 @@ public sealed class EncryptionDelegationTests
         opts.Keys["v2"] = Convert.ToBase64String(v2);
 
         var mutableMonitor = new MutableOptionsMonitor(opts);
-        var keyProvider = new EncryptionOptionsKeyProvider(mutableMonitor, EncryptionVersionOverride.NoOp);
+        var keyProvider = new EncryptionOptionsKeyProvider(mutableMonitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(mutableMonitor));
 
         var key1 = keyProvider.GetCurrentKey();
         key1.Id.Should().Be("v1");
@@ -340,7 +340,7 @@ public sealed class EncryptionDelegationTests
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var override_ = new EncryptionVersionOverride { OverrideVersion = "v2" };
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, override_);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, override_, new EncryptionKeyByteCache(monitor));
         var encService = new AesGcmEncryptionService(keyProvider);
         var converter = new EncryptedValueConverter(monitor, encService, keyProvider, override_);
         var toProvider = converter.ConvertToProviderExpression.Compile();

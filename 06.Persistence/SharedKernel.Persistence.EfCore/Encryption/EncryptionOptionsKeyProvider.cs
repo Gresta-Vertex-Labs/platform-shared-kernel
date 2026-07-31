@@ -41,30 +41,38 @@ internal sealed class EncryptionOptionsKeyProvider : IEncryptionKeyProvider
 {
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
     private readonly IEncryptionVersionOverride _versionOverride;
+    private readonly EncryptionKeyByteCache _keyByteCache;
 
     /// <summary>
     /// Initialises a new <see cref="EncryptionOptionsKeyProvider"/>.
     /// </summary>
     /// <param name="optionsMonitor">Live options monitor for hot-reload support.</param>
     /// <param name="versionOverride">Rotation-scoped version override seam.</param>
+    /// <param name="keyByteCache">
+    /// Singleton decode-once-per-config-value cache for key bytes (WO-051/P-323).
+    /// </param>
     public EncryptionOptionsKeyProvider(
         IOptionsMonitor<EncryptionOptions> optionsMonitor,
-        IEncryptionVersionOverride versionOverride)
+        IEncryptionVersionOverride versionOverride,
+        EncryptionKeyByteCache keyByteCache)
     {
         _optionsMonitor = optionsMonitor;
         _versionOverride = versionOverride;
+        _keyByteCache = keyByteCache;
     }
 
     /// <inheritdoc />
     /// <remarks>
     /// Resolves the target version as <c>versionOverride.OverrideVersion ?? CurrentVersion</c>,
-    /// then Base64-decodes the matching key material from <see cref="EncryptionOptions.Keys"/>.
+    /// then resolves the decoded key bytes via <see cref="EncryptionKeyByteCache.GetOrDecode"/>
+    /// (WO-051/P-323 — previously called <see cref="Convert.FromBase64String(string)"/> directly on
+    /// every call).
     /// </remarks>
     public CryptographicKey GetCurrentKey()
     {
         var options = _optionsMonitor.CurrentValue;
         var version = _versionOverride.OverrideVersion ?? options.CurrentVersion;
-        var keyBytes = Convert.FromBase64String(options.Keys[version]);
+        var keyBytes = _keyByteCache.GetOrDecode(version, options.Keys[version]);
         return new CryptographicKey(version, keyBytes);
     }
 
@@ -79,7 +87,7 @@ internal sealed class EncryptionOptionsKeyProvider : IEncryptionKeyProvider
         var options = _optionsMonitor.CurrentValue;
         if (options.Keys.TryGetValue(keyId, out var base64Key))
         {
-            var keyBytes = Convert.FromBase64String(base64Key);
+            var keyBytes = _keyByteCache.GetOrDecode(keyId, base64Key);
             return new CryptographicKey(keyId, keyBytes);
         }
         return null;

@@ -19,7 +19,7 @@ public sealed class EncryptionOptionsValidatorTests
     {
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithEncryption(configure)
             .Build();
 

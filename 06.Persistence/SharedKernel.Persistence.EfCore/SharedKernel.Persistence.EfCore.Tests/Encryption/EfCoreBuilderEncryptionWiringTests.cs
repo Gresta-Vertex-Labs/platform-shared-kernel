@@ -26,7 +26,7 @@ public sealed class EfCoreBuilderEncryptionWiringTests
     {
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
 
         var provider = services.BuildServiceProvider();
@@ -49,7 +49,7 @@ public sealed class EfCoreBuilderEncryptionWiringTests
     {
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithEncryption(enc =>
             {
                 enc.Enabled = true;
@@ -76,7 +76,7 @@ public sealed class EfCoreBuilderEncryptionWiringTests
     {
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithEncryption(enc =>
             {
                 enc.Enabled = true;
@@ -101,7 +101,7 @@ public sealed class EfCoreBuilderEncryptionWiringTests
     {
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithEncryption(enc =>
             {
                 enc.Enabled = true;
@@ -127,7 +127,7 @@ public sealed class EfCoreBuilderEncryptionWiringTests
         const string serviceName = "test-service";
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithServiceName(serviceName)
             .Build();
 
@@ -143,7 +143,7 @@ public sealed class EfCoreBuilderEncryptionWiringTests
     {
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
 
         var provider = services.BuildServiceProvider();

@@ -83,7 +83,7 @@ public sealed class EncryptionModelConventionExtendedTests
         if (monitor is not null)
         {
             // P-227: Wire up real crypto delegation when options are provided.
-            keyProvider = new EncryptionOptionsKeyProvider(monitor, override_);
+            keyProvider = new EncryptionOptionsKeyProvider(monitor, override_, new EncryptionKeyByteCache(monitor));
             encryptionService = new AesGcmEncryptionService(keyProvider);
         }
 

@@ -47,7 +47,7 @@ public sealed class EncryptedValueConverterTests
         IEncryptionVersionOverride? versionOverride = null)
     {
         var monitor = MakeMonitor(options);
-        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
         var encryptionService = new AesGcmEncryptionService(keyProvider);
         return new EncryptedValueConverter(monitor, encryptionService, keyProvider, versionOverride);
     }

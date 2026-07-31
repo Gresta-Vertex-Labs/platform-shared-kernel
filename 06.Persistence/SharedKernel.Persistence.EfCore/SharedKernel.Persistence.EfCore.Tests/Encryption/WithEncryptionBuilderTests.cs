@@ -23,7 +23,7 @@ public sealed class WithEncryptionBuilderTests
 
         // Act
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithEncryption(enc =>
             {
                 enc.Enabled = true;
@@ -49,7 +49,7 @@ public sealed class WithEncryptionBuilderTests
 
         // Act — no .WithEncryption() call
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
 
         var provider = services.BuildServiceProvider();
@@ -71,7 +71,7 @@ public sealed class WithEncryptionBuilderTests
 
         // Act
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithServiceName("my-service")
             .Build();
 
@@ -90,7 +90,7 @@ public sealed class WithEncryptionBuilderTests
 
         // Act — no .WithServiceName() call
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
 
         var provider = services.BuildServiceProvider();
@@ -110,7 +110,7 @@ public sealed class WithEncryptionBuilderTests
         // Act — both called in chain
         var act = () =>
             services
-                .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+                .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
                 .WithEncryption(enc =>
                 {
                     enc.Enabled = true;

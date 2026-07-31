@@ -21,7 +21,7 @@ public sealed class PersistenceServiceOptionsValidatorTests
         // Arrange — no WithServiceName call; defaults to "system"
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build();
         var provider = services.BuildServiceProvider();
 
@@ -38,7 +38,7 @@ public sealed class PersistenceServiceOptionsValidatorTests
         // Arrange
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithServiceName("payment-service")
             .Build();
         var provider = services.BuildServiceProvider();
@@ -57,7 +57,7 @@ public sealed class PersistenceServiceOptionsValidatorTests
         var serviceName = new string('x', 256);
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:"))
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithServiceName(serviceName)
             .Build();
         var provider = services.BuildServiceProvider();
