@@ -1644,6 +1644,116 @@ Domain unit tests are the most valuable, fastest tests in a microservice. They r
 - [ ] `FakeClock` is AOT-safe (but `SpecificationAssert` may use `.Compile()` — document this as test-only, never for production use)
 ---
 
+---
+### P-328 — Eliminate Envelope/Envelope Namespace-Type Collision
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-052
+**Domain:** 04.Contracts
+**Depends on:** None
+
+#### What is needed
+Rename the `Envelope`/`Envelope<T>` types' containing namespace and folder from `SharedKernel.Contracts.Envelope` to `SharedKernel.Contracts.Envelopes` (plural), matching the sibling `Events/` folder's naming convention. No change to the type names themselves (`Envelope`, `Envelope<T>` stay exactly as-is), their public members, factory methods, implicit operators, or STJ serialization behavior — this is a namespace-only move. Update `ContractsJsonContext`'s `[JsonSerializable]` registrations, the package README's Envelope examples, and the domain CLAUDE.md's now-obsolete "Namespace/type name collision" implementation rule to reflect the fix. Bump the package's semantic version to reflect a breaking namespace change and call out the rename explicitly in release notes.
+
+#### Why this is needed
+A namespace whose fully-qualified name is identical to a type it contains (`SharedKernel.Contracts.Envelope` containing `Envelope`) is a well-known C# ambiguity footgun. The domain's own CLAUDE.md has documented this as a mandatory workaround since inception — "Consuming code must use a using alias (`using EnvelopeNs = SharedKernel.Contracts.Envelope;`) or fully-qualified names to avoid the ambiguity" — and that workaround is already duplicated verbatim across the package's own test suite plus two external consumers (`11.Communication.Rest`, `16.Testing`), with more certain to follow as adoption grows, since `Envelope<T>` is the platform's single most widely-used cross-service response wrapper. Every sibling folder in this package (`Events/`, `Pagination/`, `Mapping/`, `Serialization/`) avoids this exact collision; `Envelope/` is the sole outlier. Fixing it now, while the package is still early (v1.1.0, only two known external consumers), is materially cheaper than fixing it after wide downstream adoption.
+
+#### Acceptance criteria
+- [ ] `Envelope`/`Envelope<T>` compile in namespace `SharedKernel.Contracts.Envelopes`; the `SharedKernel.Contracts.Envelope` namespace no longer exists anywhere in the package
+- [ ] Folder `Envelope/` renamed to `Envelopes/`
+- [ ] `ContractsJsonContext`'s `[JsonSerializable]` entries and any other internal reference updated to the new namespace
+- [ ] Domain CLAUDE.md's "Namespace/type name collision" implementation rule removed (no longer applicable) and replaced with a changelog entry recording the fix
+- [ ] Package README's Envelope examples updated to the new namespace; the `using EnvelopeNs = ...` alias workaround removed from all in-repo documentation
+- [ ] `dotnet build`/`dotnet test` green with zero regressions; `consumer-verify` updated and passing
+- [ ] Package version bumped to reflect the breaking change, with release notes calling out the namespace rename explicitly
+---
+
+---
+### P-329 — Adopt Renamed SharedKernel.Contracts.Envelopes Namespace (11.Communication)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-052
+**Domain:** 11.Communication
+**Depends on:** P-328
+
+#### What is needed
+Update `SharedKernel.Communication.Rest/Extensions/HttpResponseMessageExtensions.cs` (and any other in-package reference) to consume `Envelope`/`Envelope<T>` from the new `SharedKernel.Contracts.Envelopes` namespace instead of the retired `SharedKernel.Contracts.Envelope`. A `using` statement update only — no behavioral change.
+
+#### Why this is needed
+`HttpResponseMessageExtensions.ReadEnvelopeAsync<T>` is the platform's canonical boundary-mapping bridge between typed REST clients and `Envelope<T>`; it must track the corrected namespace from P-328 so consumers of `11.Communication.Rest` are never exposed to the retired namespace or a stale package reference.
+
+#### Acceptance criteria
+- [ ] All `using SharedKernel.Contracts.Envelope;` references in `11.Communication` replaced with `using SharedKernel.Contracts.Envelopes;`
+- [ ] `dotnet build`/`dotnet test` green with zero regressions across `.Rest`/`.Rest.Tests`
+- [ ] `SharedKernel.Contracts` package/project reference bumped to the version published by P-328
+---
+
+---
+### P-330 — Adopt Renamed SharedKernel.Contracts.Envelopes Namespace (16.Testing)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-052
+**Domain:** 16.Testing
+**Depends on:** P-328
+
+#### What is needed
+Update `16.Testing/SharedKernel.Testing/Contracts/EnvelopeAssertions.cs` and its self-test suite (`EnvelopeAssertionsTests.cs`) to reference `SharedKernel.Contracts.Envelopes` instead of the retired `SharedKernel.Contracts.Envelope`. The existing `EnvelopeNs` alias may be retained purely as a readability convenience if desired (it is no longer a correctness requirement) or dropped in favor of a direct `using SharedKernel.Contracts.Envelopes;`.
+
+#### Why this is needed
+`EnvelopeAssertions` is the shared assertion-helper surface every `.Tests` project across the platform uses to assert `Envelope`/`Envelope<T>` outcomes; it must track the corrected namespace so it stops modeling the now-retired collision workaround as a pattern for downstream consumers to copy.
+
+#### Acceptance criteria
+- [ ] `EnvelopeAssertions.cs` and `EnvelopeAssertionsTests.cs` compile against `SharedKernel.Contracts.Envelopes`
+- [ ] `dotnet test` green with zero regressions across `SharedKernel.Testing`/`SharedKernel.Testing.SelfTests`
+- [ ] `SharedKernel.Contracts` project reference updated to the version published by P-328
+---
+
+---
+### P-331 — Optional Tenant Propagation on EventEnvelope<TEvent>
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-052
+**Domain:** 04.Contracts
+**Depends on:** None
+
+#### What is needed
+Add a nullable tenant-identity slot to `EventEnvelope<TEvent>` — mirroring the existing nullable `CorrelationId`/`CausationId` pattern exactly, including an additional optional parameter on the `EventEnvelope.Wrap<TEvent>` static factory that defaults to `null` — so the platform's single cross-service domain-event wire format can carry which tenant an event belongs to without requiring a consumer to first deserialize `Payload` and hope the concrete event type happens to implement a tenant marker. Purely additive: existing `Wrap` call sites with no tenant argument continue to compile and behave identically (the new slot is `null`).
+
+#### Why this is needed
+Every capability domain downstream of `04.Contracts` that gained real production experience with multi-tenancy (`09.Search`, `10.Intelligence`, `17.Workflows`) independently converged on the same hard rule — tenant scope must be explicit, mandatory-when-relevant, non-defaulted routing metadata, never something inferred from payload contents. `EventEnvelope<TEvent>` is the one platform-wide wire format that predates this pattern and currently has zero tenant awareness: a message-bus consumer, dead-letter-queue inspector, or audit/replay tool reading a raw envelope cannot answer "which tenant does this event belong to" without deserializing the full domain-event payload and checking whether it happens to opt into a tenant marker — which today doesn't even exist for domain events (`IHasTenant` is defined only for aggregate/entity bases in `03.Domain`, never for `IDomainEvent`). `07.Messaging`'s existing `IMessageHeaderPropagator` already carries tenant context as a transport-level header, but that is a transient, broker-adapter-specific mechanism — it does not survive into a durably-stored outbox row, a dead-letter queue payload, or any protocol other than the one adapter that propagated it. Making the wire-format envelope itself self-describing for tenant is the correct, precedented fix, and closes the gap without requiring any change to `IDomainEvent` itself.
+
+#### Acceptance criteria
+- [ ] `EventEnvelope<TEvent>` exposes a nullable tenant-identity property (type `Guid?`, matching `03.Domain`'s `IHasTenant.TenantId` shape) with the same "null is valid for non-tenanted/root events" semantics already documented for `CorrelationId`
+- [ ] `EventEnvelope.Wrap<TEvent>` gains a corresponding optional parameter defaulting to `null`; all existing call sites remain source- and binary-compatible
+- [ ] XML docs follow the domain's own hard-won accuracy discipline (WO-051/P-314) — the doc states precisely what guarantee the new property does and does not carry, and never overclaims a guarantee `IDomainEvent` itself does not provide
+- [ ] `ContractsJsonContext` and the package's STJ round-trip tests cover the new property, including the null case
+- [ ] Package README's `EventEnvelope<TEvent>` composition-pattern section updated with a short note on when/how a publisher should populate the new parameter
+- [ ] `dotnet build`/`dotnet test`/`consumer-verify` green with zero regressions; package version bumped (additive, non-breaking)
+---
+
+---
+### P-332 — Cross-Service Cursor-Paginated Response Contract
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-052
+**Domain:** 04.Contracts
+**Depends on:** None
+
+#### What is needed
+A new sealed record DTO — the cursor/keyset-pagination counterpart to the existing offset-based `PagedList<T>` — carrying a page of items alongside an opaque forward cursor and a has-more-results flag (no `TotalCount`/`Page`/`PageSize`, which are meaningless for a keyset-paginated result set). Construction is factory-only (mirroring `PagedList<T>.Create`'s guarded, non-public-constructor pattern), and the type is a pure DTO with zero behavior beyond its stored state, keeping full parity with this package's "Pure DTOs. No Logic." philosophy and `00.Governance`'s `ContractsPurityRules` enforcement.
+
+#### Why this is needed
+`03.Domain` shipped `KeysetSpecification<T, TKey>` in v1.7.0 (P-308/WO-051) specifically for large, actively-written result sets where offset (`Skip`/`Take`) pagination degrades — and `06.Persistence`'s EF Core translation of that specification into a real seek query is already design-locked and queued (P-317/WO-051). When that translation ships, `05.Application`/`14.Presentation` will need a cross-service wire shape to return a keyset-paginated page to a caller, exactly the role `PagedList<T>` already fills for offset pagination — without one, every consuming service would improvise its own ad hoc `{ Items, NextCursor }` shape, fragmenting the platform's response conventions in exactly the way `PagedList<T>` and `PagedResponseType<T>` (`11.Communication.GraphQL`) were introduced to prevent. Building the DTO now, ahead of `06.Persistence`'s translation, mirrors the accepted "Design-ahead-of-Core" pattern already used repeatedly and successfully elsewhere in this platform (e.g. `16.Testing`'s `Storage/`/`Search/`/`Intelligence/`/`Workflows/` folders) — the DTO itself has no technical dependency on the persistence-side translation and can ship immediately; only its first real producer waits on P-317/318.
+
+#### Acceptance criteria
+- [ ] New sealed record DTO exposes `Items` (`IReadOnlyList<T>`), an opaque forward-cursor property, and a boolean has-more-results flag; `Create`-only construction with the same null/guard-clause discipline as `PagedList<T>.Create`
+- [ ] No `TotalCount`/`Page`/`PageSize` members — keyset pagination structurally cannot support random-access page numbers or a reliable total count without defeating its own performance purpose, and the type must not pretend otherwise
+- [ ] `ContractsJsonContext` gains the new type's open-generic `[JsonSerializable]` registration pattern (mirroring `PagedList<object>`'s existing entry) plus STJ round-trip test coverage
+- [ ] `00.Governance`'s `ContractsPurityRules` (no non-trivial methods, no domain-type leakage) pass against the new type with zero exemption needed
+- [ ] Package README gains a Quick-Start section for the new type, cross-referencing `PagedList<T>` and stating explicitly when to use one over the other
+- [ ] `dotnet build`/`dotnet test`/`consumer-verify` green; package version bumped (additive, non-breaking)
+---
+
 ## Changelog
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} ({domain(s) affected}) — {trigger}`.
@@ -7964,6 +8074,9 @@ This audit found two generations of the same mistake in one domain: `HealthCheck
 - [2026-07-29] Phase Backlog P-302 → ● Complete — SK.02.CrossInstanceTagInvalidation done (state-map-phase)
 - [2026-07-29] Caching → Phase 40 (●) — promoted from SK.02.BatchOperationsParallelization (state-map-phase)
 - [2026-07-29] Phase Backlog P-303 → ● Complete — SK.02.BatchOperationsParallelization done (state-map-phase)
+- [2026-07-31] Phase(s) P-328, P-331, P-332 dispatched to contracts-arch-planner for 04.Contracts (dispatch-phase)
+- [2026-07-31] Phase(s) P-329 dispatched to communication-arch-planner for 11.Communication (dispatch-phase)
+- [2026-07-31] Phase(s) P-330 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
 
 ---
 ## WO-029 — 16.Testing Consolidation Pass
