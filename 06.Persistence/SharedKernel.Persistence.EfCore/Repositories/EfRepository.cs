@@ -38,6 +38,18 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// which marks all columns as modified (same as before). The helper
 /// <see cref="MarkAsModifiedIfDetached"/> is virtual so subclasses may override the strategy.
 /// </para>
+/// <para>
+/// <strong>Observability (WO-051/P-319):</strong> every public write operation on this class —
+/// <see cref="GetBySpecAsync"/>, <see cref="AddAsync"/>, <see cref="UpdateAsync"/>,
+/// <see cref="DeleteAsync"/>, and their range counterparts — is wrapped in a distributed-tracing
+/// span via <see cref="SharedKernel.Persistence.EfCore.Diagnostics.RepositoryTracing"/>, emitted on
+/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceActivitySource"/>
+/// (<c>"SharedKernel.Persistence"</c>/<c>"1.0"</c>) and tagged with
+/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceTagKeys"/>. Bulk mutations
+/// (<see cref="ExecuteUpdateAsync"/>/<see cref="ExecuteDeleteAsync"/>) are the sole exceptions — they
+/// are not traced through this helper, consistent with their documented bypass of every other
+/// per-entity platform concern (interceptors, domain events).
+/// </para>
 /// </remarks>
 public abstract class EfRepository<TAggregate, TId>
     : IRepository<TAggregate, TId>, IBulkMutationRepository<TAggregate, TId>

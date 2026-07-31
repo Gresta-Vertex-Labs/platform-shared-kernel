@@ -42,6 +42,19 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     where T : class
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// <strong>Split-query application point (WO-051/P-318):</strong> step 2c calls
+    /// <c>.AsSplitQuery()</c> immediately after <c>StringIncludes</c> and before ordering, but only
+    /// when <c>spec.</c><see cref="ISpecification{T}.AsSplitQuery"/> is <see langword="true"/>. See
+    /// <see cref="ISpecification{T}.AsSplitQuery"/>'s own remarks (declared in
+    /// <c>SharedKernel.Domain</c>) for the full Cartesian-product rationale: a single joined query
+    /// against a specification with two or more collection <c>Includes</c> duplicates rows across the
+    /// included collections, and splitting into separate queries avoids that duplication. Default
+    /// <see langword="false"/> — behavior for every existing specification that never opts in is
+    /// byte-for-byte unchanged.
+    /// </para>
+    /// </remarks>
     public IQueryable<T> GetQuery(IQueryable<T> inputQuery, ISpecification<T> spec)
     {
         var query = inputQuery.TagWith(spec.GetType().Name);
@@ -90,7 +103,16 @@ public sealed class SpecificationEvaluator<T> : ISpecificationEvaluator<T>
     /// An <see cref="IQueryable{TResult}"/> with Select applied after all aggregate pipeline steps.
     /// </returns>
     /// <remarks>
+    /// <para>
     /// Selector is applied at step 8 — after Skip/Take — to preserve the paging-last invariant.
+    /// </para>
+    /// <para>
+    /// <strong>Split-query application point (WO-051/P-318):</strong> because this method delegates
+    /// to <see cref="GetQuery"/> for steps 0–7, <c>spec.</c><see cref="ISpecification{T}.AsSplitQuery"/>
+    /// is honored identically for a projected query — see <see cref="GetQuery"/>'s own remarks, and
+    /// <see cref="ISpecification{T}.AsSplitQuery"/>'s remarks in <c>SharedKernel.Domain</c>, for the
+    /// Cartesian-product rationale.
+    /// </para>
     /// </remarks>
     public IQueryable<TResult> GetProjectedQuery<TResult>(
         IQueryable<T> inputQuery,

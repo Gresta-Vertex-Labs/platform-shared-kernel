@@ -1293,17 +1293,27 @@ PersistenceTagKeys  (internal static class, EfCore)  — colocated per the platf
           ("error.type") rather than duplicating a domain-local key.
 
 Traced operations (span name "{typeof(TAggregate).Name}.{OperationName}", ActivityKind.Client):
-    EfRepository:      AddAsync, UpdateAsync, DeleteAsync, AddRangeAsync, UpdateRangeAsync, DeleteRangeAsync
+    EfRepository:      GetBySpecAsync (write-side tracked fetch), AddAsync, UpdateAsync, DeleteAsync,
+                       AddRangeAsync, UpdateRangeAsync, DeleteRangeAsync
+                       (CORRECTED — GetBySpecAsync was omitted from this list in earlier drafts of this
+                       section despite being traced in the shipped source since the method's own
+                       introduction; DO-44/WO-051 doc-verification pass)
     EfReadRepository:  GetBySpecAsync, ListAsync, CountAsync, AnyAsync, GetByIdsAsync, ListPagedAsync,
                        ListProjectedAsync, GetBySpecProjectedAsync, ListPagedProjectedAsync,
                        StreamAsync/StreamProjectedAsync<TResult> (span wraps the FULL enumeration —
                        start before the first yield, end after the last), ListKeysetAsync<TKey>
+    NOT traced: EfRepository.ExecuteUpdateAsync/ExecuteDeleteAsync (IBulkMutationRepository) and
+    EfReadRepository.GetByIdsChunkedAsync — the bulk-mutation pair bypasses RepositoryTracing
+    consistent with their documented bypass of every other per-entity platform concern (interceptors,
+    domain events); GetByIdsChunkedAsync produces its OWN traced spans indirectly, one per underlying
+    GetByIdsAsync call it issues, rather than a single span of its own.
     Tagging: AggregateType/Operation set at span start; Outcome set to "success" or "failure" at
     completion (+ WellKnownTagKeys.ErrorType and ActivityStatusCode.Error on failure). NEVER a raw SQL
     parameter value, entity property value, or tenant/user identifier in any tag — mirrors the
-    cache.key_prefix-never-full-key precedent from 02.Caching's own P-304. A private shared tracing
-    helper (e.g. ExecuteTracedAsync<TResult>(string operationName, Func<Task<TResult>> operation)) avoids
-    duplicating the start/tag/try-catch/finish boilerplate across every repository method.
+    cache.key_prefix-never-full-key precedent from 02.Caching's own P-304. The shared tracing helper
+    (RepositoryTracing.ExecuteTracedAsync/ExecuteTracedStreamAsync, internal to
+    SharedKernel.Persistence.EfCore.Diagnostics) avoids duplicating the start/tag/try-catch/finish
+    boilerplate across every repository method.
 ```
 
 ---

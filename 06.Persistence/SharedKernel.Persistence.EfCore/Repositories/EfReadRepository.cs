@@ -33,6 +33,18 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// <strong>Breaking change (P-080):</strong> <c>GetByIdAsync</c> has been removed.
 /// Use <c>GetBySpecAsync(new ByIdSpecification&lt;TAggregate, TId&gt;(id), ct)</c> instead.
 /// </para>
+/// <para>
+/// <strong>Observability (WO-051/P-319):</strong> every public method on this class except
+/// <see cref="GetByIdsChunkedAsync"/> is wrapped in a distributed-tracing span via
+/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.RepositoryTracing"/>, emitted on
+/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceActivitySource"/>
+/// (<c>"SharedKernel.Persistence"</c>/<c>"1.0"</c>) and tagged with
+/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceTagKeys"/>.
+/// <see cref="StreamAsync"/>/<see cref="StreamProjectedAsync{TResult}"/> spans wrap the FULL
+/// enumeration — started before the first yield, ended after the last.
+/// <see cref="GetByIdsChunkedAsync"/> produces its own traced spans only indirectly, one per
+/// underlying <see cref="GetByIdsAsync"/> call it issues, rather than a single span of its own.
+/// </para>
 /// </remarks>
 public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggregate, TId>
     where TAggregate : class, IAggregateRoot<TId>
