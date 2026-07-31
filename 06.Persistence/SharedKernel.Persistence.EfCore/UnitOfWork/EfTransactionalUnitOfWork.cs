@@ -79,10 +79,75 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
     /// <c>CommitAsync</c> on the returned transaction handle (not automatically on
     /// <see cref="SaveChangesAsync"/> — within an explicit transaction, save is a staging step).
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown UNCONDITIONALLY (WO-051/P-320) when
+    /// <c>DbContext.Database.CreateExecutionStrategy().RetriesOnFailure</c> is <see langword="true"/>
+    /// — regardless of whether <c>EfCorePersistenceBuilder.WithTransientFaultRetry()</c> was ever
+    /// called, since this queries live EF Core execution-strategy state directly (it correctly fires
+    /// even when retry was enabled solely via <c>UsePostgreSQL(..., maxRetryCount)</c>). EF Core's
+    /// retrying execution strategies require the ENTIRE transactional unit (begin through commit) to
+    /// run inside one <c>IExecutionStrategy.ExecuteAsync(...)</c> delegate; this handle-based
+    /// begin/commit shape hands control back to arbitrary caller code in between, which is
+    /// structurally incompatible with that contract. Use <see cref="ExecuteInTransactionAsync(Func{CancellationToken,Task},CancellationToken)"/>
+    /// instead.
+    /// </exception>
     public async Task<IPersistenceTransaction> BeginTransactionAsync(CancellationToken ct = default)
     {
+        if (_dbContext.Database.CreateExecutionStrategy().RetriesOnFailure)
+        {
+            throw new InvalidOperationException(
+                $"'{nameof(BeginTransactionAsync)}' cannot be used when a retrying execution " +
+                "strategy is configured (e.g. UsePostgreSQL(..., maxRetryCount: ...)). EF Core's " +
+                "retrying execution strategies require the entire transactional unit (begin through " +
+                $"commit) to run inside one IExecutionStrategy.ExecuteAsync(...) delegate — use " +
+                $"'{nameof(ExecuteInTransactionAsync)}' instead.");
+        }
+
         var efTransaction = await _dbContext.Database.BeginTransactionAsync(ct);
         return new EfTransactionalPersistenceTransaction(efTransaction, this);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// WO-051/P-320 — wraps <c>DbContext.Database.CreateExecutionStrategy().ExecuteAsync(...)</c>,
+    /// reusing the same begin/commit machinery as <see cref="BeginTransactionAsync"/>/
+    /// <see cref="EfTransactionalPersistenceTransaction.CommitAsync"/> (including the P-105
+    /// deferred-domain-event-dispatch-until-commit rule). The whole delegate — including a fresh
+    /// <c>BeginTransactionAsync</c> — re-runs on each retry attempt; a failed attempt's transaction
+    /// rolls back via <c>IDbContextTransaction</c>'s dispose-without-commit semantics before the
+    /// next attempt begins, so no partial/duplicate commit occurs.
+    /// </remarks>
+    public Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken ct = default)
+    {
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return strategy.ExecuteAsync(ct, async token =>
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(token);
+            await operation(token);
+            await transaction.CommitAsync(token);
+            await DispatchAndClearEventsAsync(token);
+        });
+    }
+
+    /// <inheritdoc />
+    /// <remarks>See the non-generic overload's remarks for the full explanation (WO-051/P-320).</remarks>
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken ct = default)
+    {
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+
+        return strategy.ExecuteAsync(ct, async token =>
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(token);
+            var result = await operation(token);
+            await transaction.CommitAsync(token);
+            await DispatchAndClearEventsAsync(token);
+            return result;
+        });
     }
 
     /// <summary>

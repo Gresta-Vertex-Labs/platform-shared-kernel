@@ -40,4 +40,50 @@ public interface ITransactionalUnitOfWork : IUnitOfWork
     /// semantics.
     /// </remarks>
     Task<IPersistenceTransaction> BeginTransactionAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Executes <paramref name="operation"/> inside an explicit database transaction, using the
+    /// provider's retrying execution strategy when one is configured.
+    /// </summary>
+    /// <param name="operation">
+    /// The unit of work to execute inside the transaction. May run MORE THAN ONCE when a retrying
+    /// execution strategy is configured — it must be safe to re-run.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <remarks>
+    /// <para>
+    /// WO-051/P-320 — the retry-SAFE alternative to <see cref="BeginTransactionAsync"/>'s
+    /// handle-based flow. EF Core's retrying execution strategies require the ENTIRE transactional
+    /// unit (begin through commit) to run inside one <c>IExecutionStrategy.ExecuteAsync(...)</c>
+    /// delegate — the <see cref="BeginTransactionAsync"/> → caller-held
+    /// <see cref="IPersistenceTransaction"/> → <c>CommitAsync</c> shape hands control back to
+    /// arbitrary caller code in between, which is structurally incompatible with that contract when
+    /// retry is enabled. Use this method instead of <see cref="BeginTransactionAsync"/> for any
+    /// service that has enabled Npgsql transient-fault retry
+    /// (<c>UsePostgreSQL(..., maxRetryCount)</c>).
+    /// </para>
+    /// <para>
+    /// BCL-only signature (<see cref="Func{T,TResult}"/>/<see cref="Task"/>/
+    /// <see cref="CancellationToken"/>) — zero ORM types, lives in Abstractions.
+    /// </para>
+    /// </remarks>
+    Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Executes <paramref name="operation"/> inside an explicit database transaction and returns its
+    /// result, using the provider's retrying execution strategy when one is configured.
+    /// </summary>
+    /// <typeparam name="TResult">The operation's result type.</typeparam>
+    /// <param name="operation">
+    /// The unit of work to execute inside the transaction. May run MORE THAN ONCE when a retrying
+    /// execution strategy is configured — it must be safe to re-run.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The value returned by <paramref name="operation"/>.</returns>
+    /// <remarks>See the non-generic overload's remarks for the full explanation (WO-051/P-320).</remarks>
+    Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken ct = default);
 }

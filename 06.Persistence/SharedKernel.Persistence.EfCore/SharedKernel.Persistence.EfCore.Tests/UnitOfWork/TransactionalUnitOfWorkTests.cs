@@ -143,4 +143,108 @@ public sealed class TransactionalUnitOfWorkTests
         typeof(IUnitOfWork).IsAssignableFrom(type).Should().BeTrue();
         typeof(ITransactionalUnitOfWork).IsAssignableFrom(type).Should().BeTrue();
     }
+
+    // -----------------------------------------------------------------------
+    // WO-051/P-320 — ExecuteInTransactionAsync (retry-safe alternative)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void ITransactionalUnitOfWork_Declares_ExecuteInTransactionAsync_NonGeneric()
+    {
+        var method = typeof(ITransactionalUnitOfWork).GetMethod("ExecuteInTransactionAsync", [typeof(Func<CancellationToken, Task>), typeof(CancellationToken)]);
+        method.Should().NotBeNull("ITransactionalUnitOfWork must declare the non-generic ExecuteInTransactionAsync overload");
+    }
+
+    [Fact]
+    public void ITransactionalUnitOfWork_Declares_ExecuteInTransactionAsync_Generic()
+    {
+        var method = typeof(ITransactionalUnitOfWork).GetMethods()
+            .FirstOrDefault(m => m.Name == "ExecuteInTransactionAsync" && m.IsGenericMethodDefinition);
+        method.Should().NotBeNull("ITransactionalUnitOfWork must declare the generic ExecuteInTransactionAsync<TResult> overload");
+    }
+
+    [Fact]
+    public async Task ExecuteInTransactionAsync_NonGeneric_CommitsAndPersistsEntity()
+    {
+        // Arrange
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var uow = new EfTransactionalUnitOfWork(ctx);
+        var id = TestId.New();
+
+        // Act
+        await uow.ExecuteInTransactionAsync(async token =>
+        {
+            await ctx.TestAggregates.AddAsync(new TestAggregate(id, "ExecTxCommit", new SystemClock()), token);
+            await uow.SaveChangesAsync(token);
+        });
+
+        // Assert
+        ctx.ChangeTracker.Clear();
+        var found = await ctx.TestAggregates.FindAsync(id);
+        found.Should().NotBeNull("entity must be persisted after ExecuteInTransactionAsync completes");
+        found!.Name.Should().Be("ExecTxCommit");
+    }
+
+    [Fact]
+    public async Task ExecuteInTransactionAsync_Generic_CommitsAndReturnsResult()
+    {
+        // Arrange
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var uow = new EfTransactionalUnitOfWork(ctx);
+        var id = TestId.New();
+
+        // Act
+        var savedCount = await uow.ExecuteInTransactionAsync(async token =>
+        {
+            await ctx.TestAggregates.AddAsync(new TestAggregate(id, "ExecTxGeneric", new SystemClock()), token);
+            return await uow.SaveChangesAsync(token);
+        });
+
+        // Assert
+        savedCount.Should().Be(1);
+        ctx.ChangeTracker.Clear();
+        var found = await ctx.TestAggregates.FindAsync(id);
+        found.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExecuteInTransactionAsync_OperationThrows_RollsBackAndDoesNotPersist()
+    {
+        // Arrange
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var uow = new EfTransactionalUnitOfWork(ctx);
+        var id = TestId.New();
+
+        // Act
+        Func<Task> act = () => uow.ExecuteInTransactionAsync(async token =>
+        {
+            await ctx.TestAggregates.AddAsync(new TestAggregate(id, "ExecTxRollback", new SystemClock()), token);
+            await uow.SaveChangesAsync(token);
+            throw new InvalidOperationException("simulated failure after save, before commit");
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        // Assert — the transaction was never committed (delegate threw before CommitAsync), so
+        // disposing the uncommitted IDbContextTransaction rolls back implicitly.
+        ctx.ChangeTracker.Clear();
+        var found = await ctx.TestAggregates.FindAsync(id);
+        found.Should().BeNull("entity must NOT be persisted when the operation delegate throws before commit");
+    }
+
+    [Fact]
+    public async Task BeginTransactionAsync_NoRetryStrategyConfigured_DoesNotThrow()
+    {
+        // Arrange — SQLite's default execution strategy never retries, so the WO-051/P-320 guard
+        // must not fire for the platform's default (non-retry) configuration.
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var uow = new EfTransactionalUnitOfWork(ctx);
+
+        Func<Task> act = async () =>
+        {
+            await using var tx = await uow.BeginTransactionAsync();
+        };
+
+        await act.Should().NotThrowAsync();
+    }
 }
