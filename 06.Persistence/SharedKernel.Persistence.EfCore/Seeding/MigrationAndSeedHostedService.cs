@@ -95,7 +95,13 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
                 using var lockCommand = lockConnection.CreateCommand();
                 lockCommand.CommandText = "SELECT pg_advisory_lock(hashtext(@lockKey))";
                 AddParameter(lockCommand, "lockKey", lockKey);
-                lockCommand.ExecuteNonQuery();
+
+                // GENUINE ASYNC (CORRECTED, WO-051/P-325): the acquire call legitimately honors the
+                // caller-supplied token — abandoning an acquire that's being cancelled is fine.
+                if (lockCommand is System.Data.Common.DbCommand dbLockCommand)
+                    await dbLockCommand.ExecuteNonQueryAsync(cancellationToken);
+                else
+                    lockCommand.ExecuteNonQuery();
             }
 
             if (_runMigrations)
@@ -123,7 +129,17 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
                     using var unlockCommand = lockConnection.CreateCommand();
                     unlockCommand.CommandText = "SELECT pg_advisory_unlock(hashtext(@lockKey))";
                     AddParameter(unlockCommand, "lockKey", lockKey);
-                    unlockCommand.ExecuteNonQuery();
+
+                    // GENUINE ASYNC (CORRECTED, WO-051/P-325): the release call MUST use
+                    // CancellationToken.None, never the StartAsync-supplied token — the original
+                    // synchronous ExecuteNonQuery() ignored cancellation entirely and always ran to
+                    // completion. Awaiting ExecuteNonQueryAsync with a possibly-already-cancelled
+                    // token here would risk throwing OperationCanceledException and SKIPPING the
+                    // unlock — a genuine correctness regression this fix must not introduce.
+                    if (unlockCommand is System.Data.Common.DbCommand dbUnlockCommand)
+                        await dbUnlockCommand.ExecuteNonQueryAsync(CancellationToken.None);
+                    else
+                        unlockCommand.ExecuteNonQuery();
                 }
                 finally
                 {

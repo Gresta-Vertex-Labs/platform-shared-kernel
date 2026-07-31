@@ -1,3 +1,6 @@
+using System.Data;
+using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -5,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Configurations;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Conversions;
@@ -30,7 +34,7 @@ public sealed class MigrationAndSeedHostedServiceTests
         var services = new ServiceCollection();
         var builder = services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
-                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared"))
+                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .AddSeeder<TSeeder>();
 
         if (withMigrations)
@@ -78,7 +82,7 @@ public sealed class MigrationAndSeedHostedServiceTests
         services.AddSingleton(callLog);
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
-                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared"))
+                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .AddSeeder<TrackingSeeder>()
             .Build();
 
@@ -110,7 +114,7 @@ public sealed class MigrationAndSeedHostedServiceTests
         services.AddSingleton(callLog);
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
-                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared"))
+                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .AddSeeder<FirstTrackingSeeder>()
             .AddSeeder<SecondTrackingSeeder>()
             .Build();
@@ -145,7 +149,8 @@ public sealed class MigrationAndSeedHostedServiceTests
 
         var services = new ServiceCollection();
         services
-            .AddSharedKernelEfCore<SeedTestDbContext>(opts => opts.UseSqlite(connection))
+            .AddSharedKernelEfCore<SeedTestDbContext>(opts => opts.UseSqlite(connection)
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .AddSeeder<IdempotentSeedTestSeeder>()
             .Build();
 
@@ -177,7 +182,7 @@ public sealed class MigrationAndSeedHostedServiceTests
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
-                opts.UseSqlite("DataSource=:memory:"))
+                opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .Build(); // no .WithMigrationsOnStartup() or .AddSeeder<T>()
 
         var hostedServiceDescriptor = services.Any(sd =>
@@ -194,7 +199,7 @@ public sealed class MigrationAndSeedHostedServiceTests
         var services = new ServiceCollection();
         services
             .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
-                opts.UseSqlite("DataSource=:memory:"))
+                opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
             .WithMigrationsOnStartup()
             .Build();
 
@@ -203,6 +208,188 @@ public sealed class MigrationAndSeedHostedServiceTests
 
         hostedServiceDescriptor.Should().BeTrue(
             "WithMigrationsOnStartup() alone must register the hosted service");
+    }
+
+    // -------------------------------------------------------------------------
+    // WO-051/P-325 — genuine-async advisory-lock acquire/release proof
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task StartAsync_AdvisoryLock_UsesGenuineAsyncExecuteNonQuery_NotSynchronous()
+    {
+        // Arrange — AsyncOnlyLockCommand's synchronous ExecuteNonQuery() throws, so this test
+        // fails loudly if the fix ever regresses to the synchronous call.
+        var factory = new AsyncOnlyLockConnectionFactory();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDbConnectionFactory>(factory);
+        services
+            .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
+                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .AddSeeder<SeedTestSeeder>()
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+        await using var ctx = provider.GetRequiredService<SeedTestDbContext>();
+        await ctx.Database.EnsureCreatedAsync();
+
+        var hostedService = provider.GetServices<IHostedService>()
+            .OfType<MigrationAndSeedHostedService<SeedTestDbContext>>()
+            .Single();
+
+        // Act
+        await hostedService.StartAsync(CancellationToken.None);
+
+        // Assert — one command for acquire, one for release; both invoked asynchronously.
+        factory.LastConnection.Should().NotBeNull();
+        factory.LastConnection!.Commands.Should().HaveCount(2);
+        factory.LastConnection.Commands.SelectMany(c => c.NonQueryAsyncCalls).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task StartAsync_AdvisoryLockRelease_AlwaysUsesCancellationTokenNone()
+    {
+        // Arrange
+        var factory = new AsyncOnlyLockConnectionFactory();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDbConnectionFactory>(factory);
+        services
+            .AddSharedKernelEfCore<SeedTestDbContext>(opts =>
+                opts.UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .AddSeeder<SeedTestSeeder>()
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+        await using var ctx = provider.GetRequiredService<SeedTestDbContext>();
+        await ctx.Database.EnsureCreatedAsync();
+
+        var hostedService = provider.GetServices<IHostedService>()
+            .OfType<MigrationAndSeedHostedService<SeedTestDbContext>>()
+            .Single();
+
+        // A real, non-cancelled token distinct from CancellationToken.None (different underlying source).
+        using var callerCts = new CancellationTokenSource();
+        var callerToken = callerCts.Token;
+
+        // Act
+        await hostedService.StartAsync(callerToken);
+
+        // Assert — the ACQUIRE call legitimately honors the caller's token; the RELEASE call
+        // (inside the finally block) must ALWAYS use CancellationToken.None, never the caller's
+        // token, so the unlock is never skipped due to a cancelled/cancelling caller token.
+        factory.LastConnection!.Commands.Should().HaveCount(2);
+        factory.LastConnection.Commands[0].NonQueryAsyncCalls.Single().Should().Be(callerToken);
+        factory.LastConnection.Commands[1].NonQueryAsyncCalls.Single().Should().Be(CancellationToken.None);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WO-051/P-325 — genuine System.Data.Common.DbConnection/DbCommand fakes proving the advisory-lock
+// acquire/release calls are genuinely asynchronous (synchronous overrides throw).
+// ---------------------------------------------------------------------------
+
+file sealed class AsyncOnlyLockParameter : DbParameter
+{
+    [AllowNull]
+    public override string ParameterName { get; set; } = string.Empty;
+    [AllowNull]
+    public override string SourceColumn { get; set; } = string.Empty;
+    public override DbType DbType { get; set; }
+    public override ParameterDirection Direction { get; set; } = ParameterDirection.Input;
+    public override bool IsNullable { get; set; }
+    public override object? Value { get; set; }
+    public override bool SourceColumnNullMapping { get; set; }
+    public override int Size { get; set; }
+    public override void ResetDbType() { }
+}
+
+file sealed class AsyncOnlyLockParameterCollection : DbParameterCollection
+{
+    private readonly List<object> _items = [];
+    public override int Count => _items.Count;
+    public override object SyncRoot { get; } = new();
+    public override int Add(object value) { _items.Add(value); return _items.Count - 1; }
+    public override void AddRange(Array values) => _items.AddRange(values.Cast<object>());
+    public override void Clear() => _items.Clear();
+    public override bool Contains(object value) => _items.Contains(value);
+    public override bool Contains(string value) => false;
+    public override void CopyTo(Array array, int index) => _items.ToArray().CopyTo(array, index);
+    public override System.Collections.IEnumerator GetEnumerator() => _items.GetEnumerator();
+    public override int IndexOf(object value) => _items.IndexOf(value);
+    public override int IndexOf(string parameterName) => -1;
+    public override void Insert(int index, object value) => _items.Insert(index, value);
+    public override void Remove(object value) => _items.Remove(value);
+    public override void RemoveAt(int index) => _items.RemoveAt(index);
+    public override void RemoveAt(string parameterName) { }
+    protected override DbParameter GetParameter(int index) => (DbParameter)_items[index];
+    protected override DbParameter GetParameter(string parameterName) => throw new NotSupportedException();
+    protected override void SetParameter(int index, DbParameter value) => _items[index] = value;
+    protected override void SetParameter(string parameterName, DbParameter value) => throw new NotSupportedException();
+}
+
+file sealed class AsyncOnlyLockCommand : DbCommand
+{
+    public List<CancellationToken> NonQueryAsyncCalls { get; } = [];
+
+    [AllowNull]
+    public override string CommandText { get; set; } = string.Empty;
+    public override int CommandTimeout { get; set; }
+    public override CommandType CommandType { get; set; }
+    public override bool DesignTimeVisible { get; set; }
+    public override UpdateRowSource UpdatedRowSource { get; set; }
+    protected override DbConnection? DbConnection { get; set; }
+    protected override DbParameterCollection DbParameterCollection { get; } = new AsyncOnlyLockParameterCollection();
+    protected override DbTransaction? DbTransaction { get; set; }
+
+    public override void Cancel() { }
+    protected override DbParameter CreateDbParameter() => new AsyncOnlyLockParameter();
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => throw new NotSupportedException();
+
+    public override int ExecuteNonQuery() =>
+        throw new InvalidOperationException("Synchronous ExecuteNonQuery must not be called — the async overload must be used.");
+
+    public override object ExecuteScalar() => throw new NotSupportedException();
+    public override void Prepare() { }
+
+    public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
+    {
+        NonQueryAsyncCalls.Add(cancellationToken);
+        return Task.FromResult(1);
+    }
+}
+
+file sealed class AsyncOnlyLockConnection : DbConnection
+{
+    public List<AsyncOnlyLockCommand> Commands { get; } = [];
+
+    [AllowNull]
+    public override string ConnectionString { get; set; } = string.Empty;
+    public override string Database => "fake-async-lock";
+    public override string DataSource => "fake";
+    public override string ServerVersion => "1.0";
+    public override ConnectionState State { get; } = ConnectionState.Open;
+
+    public override void ChangeDatabase(string databaseName) { }
+    public override void Close() { }
+    public override void Open() { }
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
+
+    protected override DbCommand CreateDbCommand()
+    {
+        var command = new AsyncOnlyLockCommand();
+        Commands.Add(command);
+        return command;
+    }
+}
+
+file sealed class AsyncOnlyLockConnectionFactory : IDbConnectionFactory
+{
+    public AsyncOnlyLockConnection? LastConnection { get; private set; }
+
+    public Task<IDbConnection> CreateConnectionAsync(CancellationToken ct = default)
+    {
+        var connection = new AsyncOnlyLockConnection();
+        LastConnection = connection;
+        return Task.FromResult<IDbConnection>(connection);
     }
 }
 
