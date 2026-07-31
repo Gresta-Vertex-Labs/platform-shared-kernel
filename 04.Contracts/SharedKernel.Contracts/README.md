@@ -8,8 +8,9 @@ Cross-service DTO layer for the Platform.SharedKernel mono-repo. This package is
 
 ### What belongs here
 
-- **`PagedList<T>`** — paged result DTO for cross-service list queries
-- **`Envelope` / `Envelope<T>`** — transport envelopes for void and typed operation results at service boundaries
+- **`PagedList<T>`** — paged result DTO for cross-service list queries (offset pagination — needs a total count)
+- **`CursorPagedList<T>`** — cursor/keyset-paginated result DTO, the counterpart to `PagedList<T>` for large or actively-written result sets (WO-052/P-332)
+- **`Envelope` / `Envelope<T>`** (namespace `SharedKernel.Contracts.Envelopes`) — transport envelopes for void and typed operation results at service boundaries
 - **`IIntegrationEvent`** — marker interface for integration event payloads
 - **`EventEnvelope<TEvent>`** — messaging transport wrapper carrying routing and tracing metadata alongside a domain event
 - **`ContractsJsonContext`** — STJ source-generated context base for AOT-safe serialization
@@ -46,9 +47,45 @@ Console.WriteLine(page.HasNextPage);     // true
 Console.WriteLine(page.HasPreviousPage); // false
 ```
 
-### Envelope (void operation)
+### CursorPagedList\<T\> (cursor/keyset pagination)
 
 ```csharp
+// Creating a cursor-paginated result (Create is the only valid construction path)
+var page = CursorPagedList<OrderDto>.Create(
+    items: orders,
+    nextCursor: "eyJpZCI6MTIzfQ==",  // opaque — never parse, decode, or construct this yourself
+    hasMore: true);
+
+Console.WriteLine(page.HasMore);       // true
+Console.WriteLine(page.NextCursor);    // "eyJpZCI6MTIzfQ=="
+
+// Terminal page — no further results:
+var lastPage = CursorPagedList<OrderDto>.Create(items: remaining, nextCursor: null, hasMore: false);
+```
+
+**When to use `CursorPagedList<T>` instead of `PagedList<T>`:**
+
+| Use `PagedList<T>` when… | Use `CursorPagedList<T>` when… |
+| ------------------------- | ------------------------------- |
+| The result set is small or bounded (admin lists, config lookups) | The result set is large or actively written to (event feeds, audit logs, activity streams) |
+| The UI needs random-access page numbers ("jump to page 7") | The UI is infinite-scroll / "load more" only |
+| A stable total count is cheap and meaningful | A `COUNT(*)` would be expensive, or the count changes faster than a user can read it |
+
+`CursorPagedList<T>` deliberately carries no `TotalCount`/`Page`/`PageSize` — keyset pagination structurally
+cannot support random-access page numbers or a reliable total count without reintroducing the
+`COUNT(*)`/`OFFSET` cost it exists to avoid. It is the wire-contract counterpart to `03.Domain`'s
+`KeysetSpecification<T, TKey>` (doc-only cross-reference — no compile dependency); `06.Persistence`'s EF
+Core translation of that specification into a real seek query is design-locked and queued (P-317/WO-051).
+
+### Envelope (void operation)
+
+> Namespace: `SharedKernel.Contracts.Envelopes` — a plain `using SharedKernel.Contracts.Envelopes;`
+> import is all that is needed; no alias is required (the historical namespace/type-name collision,
+> when this type lived in `SharedKernel.Contracts.Envelope`, was eliminated by the WO-052/P-328 rename).
+
+```csharp
+using SharedKernel.Contracts.Envelopes;
+
 // At the communication boundary — after an application-layer Result is resolved:
 Envelope ok = Envelope.Ok();
 Envelope fail = Envelope.Fail(Error.Create("order.notFound", "Order not found."));
@@ -257,6 +294,27 @@ var envelope = EventEnvelope.Wrap(
     correlationId: Activity.Current?.TraceId.ToString(),
     causationId:   _currentCommandId);
 ```
+
+**Populating `TenantId`** (optional, `Guid?`, added WO-052/P-331): when the publishing service is
+tenant-aware, bridge the ambient tenant identity into the envelope so a message-bus consumer,
+dead-letter-queue inspector, or audit/replay tool can answer "which tenant does this event belong to"
+without deserializing `Payload`:
+
+```csharp
+// Inside the event publisher, when the service is multi-tenant:
+var envelope = EventEnvelope.Wrap(
+    domainEvent:   evt,
+    sourceService: _options.SourceService,
+    correlationId: Activity.Current?.TraceId.ToString(),
+    causationId:   _currentCommandId,
+    tenantId:      _tenantContext.TenantId); // bridged from the ambient tenant context
+```
+
+`TenantId` defaults to `null` and is never inferred from `Payload` — populate it only when the
+publisher actually has a tenant to report. The intended integration point is bridging `07.Messaging`'s
+`IMessageHeaderPropagator` tenant header into this field at composition-root/publish time: that header
+is a transient, broker-adapter-specific transport value, while `EventEnvelope<TEvent>.TenantId` is the
+durable, wire-format-level analogue that survives into an outbox row and any downstream protocol.
 
 Consumers deserialize the envelope, read `EventType` for routing, and deserialize `Payload` into
 the concrete integration event type using the source-generated context:
