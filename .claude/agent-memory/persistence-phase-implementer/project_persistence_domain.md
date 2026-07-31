@@ -5,18 +5,68 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-07-30, WO-051 Design phase closed)
+## Phase completion status (as of 2026-07-31, WO-051 Core phase closed)
 - SK.06.Design: complete (84/84 tasks) — D-65..D-84 (WO-051 batches 1+2) done 2026-07-30
-- SK.06.Core / Tests / Docs / Published: WO-051 added MORE tasks to these phases that are
-  STILL PENDING (Core 97/128, Tests 60/97, Docs 38/52, Published 4/8 as of 2026-07-30) — a
-  FUTURE session must continue there. Do not assume "Published" in root state-map means
-  every sub-phase task is done — this domain repeatedly gets NEW WO's adding tasks to
-  already-"complete" phase-key sections after reaching Published once (WO-013), and the
-  root Domain Summary Board's "Current Phase" column just reflects whichever phase-key was
-  MOST RECENTLY closed, not a monotonic milestone — it can and does go back to "Design" when
-  a new batch of design tasks completes, even after the domain previously showed "Published".
+- SK.06.Core: complete (128/128 tasks) — C-98..C-128 verified/closed 2026-07-31 (see below)
+- SK.06.Tests / Docs / Published: WO-051 added MORE tasks to these phases that are STILL
+  PENDING (Tests 60/97, Docs 38/52, Published 4/8 as of 2026-07-31) — a FUTURE session must
+  continue there. Do not assume "Published" in root state-map means every sub-phase task is
+  done — this domain repeatedly gets NEW WO's adding tasks to already-"complete" phase-key
+  sections after reaching Published once (WO-013), and the root Domain Summary Board's
+  "Current Phase" column just reflects whichever phase-key was MOST RECENTLY closed, not a
+  monotonic milestone — it can and does go back to "Design"/"Core" when a new batch of tasks
+  completes, even after the domain previously showed "Published".
 - ALWAYS re-read 06.Persistence/state-map.md's own Overall Progress table before assuming a
   phase is done — don't trust the root's one-line domain summary alone.
+
+## CRITICAL: a "Core phase pending" state-map does not mean the code is unwritten (found 2026-07-31)
+A prior session had fully implemented ALL of C-98..C-128 (WO-051 batches 1+2) — every file,
+every design nuance, matching `06.Persistence/CLAUDE.md`'s target-state docs exactly — and
+had even run the full test suite (376/376 green, recorded in a CLAUDE.md changelog entry
+dated 2026-07-30) — but NEVER called `state-map-phase` to flip the Core task rows, so
+`state-map.md` still showed `Core 97/128`. Lesson: when a phase's task list looks
+"suspiciously already implemented," `git log --oneline -- 06.Persistence/` FIRST — commit
+messages here are unusually descriptive (e.g. "feat(persistence): xmin concurrency token
+convention for postgresql") and will immediately reveal whether the work already landed.
+Don't assume; read every file the phase's tasks reference and diff against the CLAUDE.md
+spec before writing anything new. In this case the actual work was: verify all 31 files,
+run the 4 test projects (Abstractions 49, EfCore 294, PostgreSQL 18 Testcontainers, Dapper
+15 Testcontainers = 376 total), fix one real defect found along the way (below), then just
+close the state-map loop. Zero new production code was needed for C-98..C-128 itself.
+
+## Genuine defect found during Core-phase verification: EfPersistenceTransaction duplication
+`EfCorePersistenceEfCore/UnitOfWork/EfTransactionalUnitOfWork.cs`'s P-320
+`BeginTransactionAsync`/`ExecuteInTransactionAsync` work had drifted into constructing a
+SECOND, undocumented class `EfTransactionalPersistenceTransaction` (defined inline at the
+bottom of that same file, with post-commit dispatch) instead of extending the already-shipped,
+CLAUDE.md-documented `EfPersistenceTransaction` adapter
+(`SharedKernel.Persistence.EfCore/UnitOfWork/EfPersistenceTransaction.cs`) — which was left in
+place as dead, non-dispatching code with a doc comment saying "dispatch is NOT performed here."
+`06.Persistence/CLAUDE.md`'s own prose already named `EfPersistenceTransaction` as the return
+type of `BeginTransactionAsync` and referenced `EfPersistenceTransaction.CommitAsync` by name —
+so the shipped code had silently diverged from its own correct, pre-existing documentation.
+Fix: consolidate into the single `EfPersistenceTransaction` class (constructor takes the owning
+`EfTransactionalUnitOfWork`, `CommitAsync` calls its `DispatchAndClearEventsAsync`), delete the
+duplicate, update the one call site and one stale `<see cref>`. No CLAUDE.md content changed —
+the doc was already right; only the code needed to catch up. **General lesson**: when a phase's
+implementation is unusually large/multi-part (transient-fault retry + explicit transactions +
+dispatch-deferral, in this case), grep for every class name CLAUDE.md documents and confirm each
+is actually the one constructed at every call site — don't just confirm the documented class
+*exists* somewhere in the file tree.
+
+## Bash/perl pitfall: DO NOT use perl -i -pe line-anchored regex on this repo's state-map.md files
+Attempted `perl -i -pe 's/^(\| C-(9[89]|...)\|.*)\| \`○\` \|\s*$/$1| \`●\` |/'` to bulk-flip 31
+task rows from `○` to `●` in one shot. Result: **31 originally-separate lines got silently
+merged into a single physical line** (file line count dropped from 587 to 556, confirmed via
+`wc -l` before/after) — root cause never fully diagnosed (file is plain LF-terminated UTF-8
+per `file` command, so it isn't a CRLF issue), but the corruption was real and would have gone
+unnoticed without an explicit before/after `wc -l` check. **Always verify line count is
+unchanged (`wc -l` before and after) whenever using any `sed`/`perl -i` regex substitution on
+these state-map files** — or better, just use the `Edit` tool with the full row text as
+`old_string` (verbose but zero ambiguity, guaranteed to only touch the intended line since the
+match is an exact, non-regex string). Restored from a manual `cp` backup in the scratchpad dir
+and redid all 31 flips via 31 individual `Edit` calls instead — safe, verified via `wc -l`
+staying at 587 throughout.
 
 ## CRITICAL: EF Core DbContext pooling + OnConfiguring interceptor wiring (discovered WO-051/P-322)
 `DbContextOptions.IsFrozen` is a PUBLIC property (confirmed via direct probe against the real
