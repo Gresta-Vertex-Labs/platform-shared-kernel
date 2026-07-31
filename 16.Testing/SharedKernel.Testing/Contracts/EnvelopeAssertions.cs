@@ -1,11 +1,11 @@
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Primitives.Errors;
-using EnvelopeNs = SharedKernel.Contracts.Envelope;
 
 namespace SharedKernel.Testing.Contracts;
 
 /// <summary>
-/// Plain-exception assertion helpers over <see cref="EnvelopeNs.Envelope"/> /
-/// <see cref="EnvelopeNs.Envelope{T}"/>.
+/// Plain-exception assertion helpers over <see cref="Envelope"/> /
+/// <see cref="Envelope{T}"/>.
 /// </summary>
 /// <remarks>Zero dependency on any test-framework assertion library.</remarks>
 public static class EnvelopeAssertions
@@ -13,7 +13,7 @@ public static class EnvelopeAssertions
     /// <summary>Asserts that <paramref name="envelope"/> represents success.</summary>
     /// <param name="envelope">The envelope to evaluate.</param>
     /// <exception cref="InvalidOperationException"><paramref name="envelope"/> is a failure.</exception>
-    public static void ShouldBeSuccess(this EnvelopeNs.Envelope envelope)
+    public static void ShouldBeSuccess(this Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
@@ -28,7 +28,7 @@ public static class EnvelopeAssertions
     /// <summary>Asserts that <paramref name="envelope"/> represents failure.</summary>
     /// <param name="envelope">The envelope to evaluate.</param>
     /// <exception cref="InvalidOperationException"><paramref name="envelope"/> is a success.</exception>
-    public static void ShouldBeFailure(this EnvelopeNs.Envelope envelope)
+    public static void ShouldBeFailure(this Envelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
@@ -43,7 +43,7 @@ public static class EnvelopeAssertions
     /// <param name="envelope">The envelope to evaluate.</param>
     /// <returns><paramref name="envelope"/>'s value.</returns>
     /// <exception cref="InvalidOperationException"><paramref name="envelope"/> is a failure.</exception>
-    public static T ShouldBeSuccess<T>(this EnvelopeNs.Envelope<T> envelope)
+    public static T ShouldBeSuccess<T>(this Envelope<T> envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
@@ -68,7 +68,7 @@ public static class EnvelopeAssertions
     /// <paramref name="envelope"/> is a success, or <paramref name="expectedType"/> was supplied
     /// and does not match the actual error type.
     /// </exception>
-    public static void ShouldBeFailure<T>(this EnvelopeNs.Envelope<T> envelope, ErrorType? expectedType = null)
+    public static void ShouldBeFailure<T>(this Envelope<T> envelope, ErrorType? expectedType = null)
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
@@ -92,7 +92,7 @@ public static class EnvelopeAssertions
     /// <paramref name="envelope"/> is a success, or its error code does not match
     /// <paramref name="expectedCode"/>.
     /// </exception>
-    public static void ShouldHaveError<T>(this EnvelopeNs.Envelope<T> envelope, string expectedCode)
+    public static void ShouldHaveError<T>(this Envelope<T> envelope, string expectedCode)
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedCode);
