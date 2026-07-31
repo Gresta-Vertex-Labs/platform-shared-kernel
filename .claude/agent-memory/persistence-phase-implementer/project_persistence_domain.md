@@ -5,19 +5,78 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-07-31, WO-051 Core phase closed)
+## Phase completion status (as of 2026-07-31, WO-051 Tests phase closed)
 - SK.06.Design: complete (84/84 tasks) — D-65..D-84 (WO-051 batches 1+2) done 2026-07-30
-- SK.06.Core: complete (128/128 tasks) — C-98..C-128 verified/closed 2026-07-31 (see below)
-- SK.06.Tests / Docs / Published: WO-051 added MORE tasks to these phases that are STILL
-  PENDING (Tests 60/97, Docs 38/52, Published 4/8 as of 2026-07-31) — a FUTURE session must
-  continue there. Do not assume "Published" in root state-map means every sub-phase task is
-  done — this domain repeatedly gets NEW WO's adding tasks to already-"complete" phase-key
-  sections after reaching Published once (WO-013), and the root Domain Summary Board's
-  "Current Phase" column just reflects whichever phase-key was MOST RECENTLY closed, not a
-  monotonic milestone — it can and does go back to "Design"/"Core" when a new batch of tasks
+- SK.06.Core: complete (128/128 tasks) — C-98..C-128 verified/closed 2026-07-31
+- SK.06.Tests: complete (97/97 tasks) — T-61..T-97 verified/closed 2026-07-31 (see below)
+- SK.06.Docs / Published: WO-051 added MORE tasks to these phases that are STILL PENDING
+  (Docs 38/52, Published 4/8 as of 2026-07-31) — a FUTURE session must continue there. Do not
+  assume "Published" in root state-map means every sub-phase task is done — this domain
+  repeatedly gets NEW WO's adding tasks to already-"complete" phase-key sections after
+  reaching Published once (WO-013), and the root Domain Summary Board's "Current Phase"
+  column just reflects whichever phase-key was MOST RECENTLY closed, not a monotonic
+  milestone — it can and does go back to "Design"/"Core"/"Tests" when a new batch of tasks
   completes, even after the domain previously showed "Published".
 - ALWAYS re-read 06.Persistence/state-map.md's own Overall Progress table before assuming a
   phase is done — don't trust the root's one-line domain summary alone.
+
+## Recurring pattern: "○ Pending" state-map task rows whose test code already exists (found AGAIN 2026-07-31, Tests phase)
+Third confirmed instance of this pattern (see the Core-phase entry below for the first). When
+closing SK.06.Tests's T-61..T-97 (37 rows, all `○`), 24 of them ALREADY had matching,
+production-quality test files/methods on disk — written in a prior unclosed session, never
+state-map-flipped. Before writing ANY new test for a `○` task, grep/Read the actual test
+project directories first (file names/namespaces are usually self-describing, e.g.
+`ConcurrencyIntegrationTests.cs`, `KeysetPaginationTests.cs`, `TransientFaultRetryIntegrationTests.cs`
+already existed and covered T-61/T-63/T-65/T-67/T-69/T-73/T-75/T-76/T-80/T-81/T-83..T-91/T-95/T-96
+verbatim). Only 9 of the 37 tasks were genuine gaps (T-62, T-64, T-66/T-68 additions, T-70,
+T-72/T-74, T-77/T-78, T-79/T-82, T-92, T-93); 4 more (T-71/T-89/T-94/T-97) were pure
+regression-proof tasks closed by the full green test run alone. Always run the FULL existing
+test suite before writing anything — build the picture of what's covered from real file
+contents, not from state-map `○` symbols alone.
+
+## CRITICAL test-writing gotcha: SQLite AND Npgsql route store-generated-value writes through ExecuteReader, not ExecuteNonQuery (found 2026-07-31, T-79/T-93)
+Any INSERT/UPDATE needing a `RETURNING` clause to read back a DB-generated value — e.g. any
+`IHasConcurrency`/`xmin`-bound `RowVersion` entity (PostgreSQL), and empirically EVERY plain
+SQLite INSERT in this codebase's fixtures — is executed via
+`DbCommandInterceptor.ReaderExecuting(Async)`, never `NonQueryExecuting(Async)`. Two concrete
+failures this caused this session, both silent (no compile error, no exception — just wrong
+numbers or a fault that never fires):
+1. **Command-COUNTING tests** (proving `AsSplitQuery` issues N statements, or
+   `GetByIdsChunkedAsync` issues `ceil(N/chunkSize)` round trips) that seed fixture rows
+   earlier in the SAME `DbCommandInterceptor`'s lifetime get their `ReaderCommandCount`
+   inflated by every seed-phase INSERT (observed: expected 1, got 5; expected 3, got 10 — the
+   delta was always exactly N, the seeded row count). Fix: snapshot a baseline count
+   IMMEDIATELY AFTER seeding completes, assert only the DELTA the operation under test
+   produces — never an absolute count when seeding happened earlier in the same interceptor's
+   life.
+2. **Fault-injection tests** (simulating a transient `TimeoutException` for retry-strategy
+   proofs) that only override `NonQueryExecuting(Async)` can silently never fire — the target
+   entity's INSERT went through the reader path instead, so `AttemptCount` stayed 0 the whole
+   run yet the operation still succeeded (looks like a passing test, but proves nothing about
+   retry behavior). Fix: override BOTH `NonQueryExecuting(Async)` AND `ReaderExecuting(Async)`
+   in any interceptor that counts or fault-injects command executions, sharing one
+   counter/trigger — never assume ExecuteNonQuery is used for writes in this domain.
+
+## Test technique: PostgreSQL model-metadata assertions don't need a live Testcontainer
+Accessing `DbContext.Model` triggers EF Core's full in-memory model build/finalization
+(including every `IModelFinalizingConvention` pass, e.g. `XminConcurrencyTokenConvention`)
+WITHOUT ever opening a database connection — only executing an actual query needs real
+connectivity. `new DbContextOptionsBuilder<T>().UsePostgreSQL(anySyntacticallyValidConnStr)`
+then `ctx.Model.FindEntityType(...).FindProperty(...)` is a fast, Testcontainer-free way to
+assert `ColumnName`/`ColumnType`/`ValueGenerated` on a PostgreSQL-specific mapping (used for
+`XminConcurrencyTokenConventionTests.cs`, reusing the `ConcurrencyTestDbContext`/
+`ConcurrentPgAggregate` fixtures already defined in the Testcontainers-based
+`ConcurrencyIntegrationTests.cs` in a different namespace — both are `public`, no duplication
+needed).
+
+## Test technique: decode-once/cache-hit proofs need no counting seam in production code
+Reference-equality on a returned value is sufficient proof of exactly-once work when the
+underlying operation always allocates a fresh object — `Convert.FromBase64String` always
+returns a NEW `byte[]`, so a cache (e.g. `EncryptionKeyByteCache`) returning the SAME instance
+across repeated calls for the same key is direct evidence the expensive decode ran only once.
+No spy, wrapper, or counting seam needed. This domain's `InternalsVisibleTo` grant from
+`SharedKernel.Persistence.EfCore` to its own `.Tests` project already makes internal classes
+like `EncryptionKeyByteCache`/`EncryptionOptionsKeyProvider` directly constructible in tests.
 
 ## CRITICAL: a "Core phase pending" state-map does not mean the code is unwritten (found 2026-07-31)
 A prior session had fully implemented ALL of C-98..C-128 (WO-051 batches 1+2) — every file,
