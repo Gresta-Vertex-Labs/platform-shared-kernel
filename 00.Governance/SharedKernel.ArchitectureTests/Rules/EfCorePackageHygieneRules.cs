@@ -36,6 +36,11 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     that <c>ITransactionalUnitOfWork</c> (P-099) is the sole transaction entry point in the
 ///     application layer; direct <c>IDbContextTransaction</c> coupling is prohibited.
 ///   </description></item>
+///   <item><description>
+///     Rule 4 — <see cref="NoDirectEfPropertyUsageInEfCoreAssembly"/> (WO-051 P-327): prevents
+///     re-introduction of a direct, client-side-evaluated <c>EF.Property&lt;T&gt;</c> call —
+///     the same defect class fixed at P-105 and again at P-316 (<c>TenantedRepository</c>).
+///   </description></item>
 /// </list>
 /// <para>
 /// Reference this class with <c>PrivateAssets="all"</c> so it never becomes a transitive
@@ -194,4 +199,61 @@ public static class EfCorePackageHygieneRules
             .HaveNameStartingWith(string.Empty)
             .Should()
             .MeetCustomRule(new NoDbContextTransactionInApplicationPredicate());
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that no method body in the supplied
+    /// assembly contains a direct <c>Call</c>/<c>Callvirt</c> IL instruction targeting
+    /// <c>Microsoft.EntityFrameworkCore.EF.Property&lt;TProperty&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This rule must be called with the <c>SharedKernel.Persistence.EfCore</c> assembly.
+    /// <c>EF.Property&lt;TProperty&gt;(object entity, string propertyName)</c> called directly
+    /// in ordinary executable code forces client-side evaluation of the surrounding query — the
+    /// exact defect class fixed once already at P-105 (<c>EfReadRepository.GetByIdsAsync</c>)
+    /// and again at P-316 (<c>TenantedRepository</c>'s two <c>GetByIdForTenantAsync*</c>
+    /// methods).
+    /// </para>
+    /// <para>
+    /// See <see cref="NoDirectEfPropertyUsagePredicate"/> for the full structural
+    /// self-exemption rationale — the platform's one legitimate <c>EF.Property&lt;T&gt;</c>
+    /// pattern (inside a <c>HasQueryFilter(Expression&lt;Func&lt;TEntity,bool&gt;&gt; filter)</c>
+    /// global query filter) is excluded automatically because the C# compiler never emits a
+    /// <c>Call</c>/<c>Callvirt</c> opcode against <c>EF.Property</c> when the call is lowered
+    /// into an expression tree. This rule carries NO exemption mechanism — no namespace guard,
+    /// no allow-list registry — mirroring <see cref="NoSpecificationEvaluatorDowncastInEfCoreAssembly"/>'s
+    /// own zero-exemption precedent exactly.
+    /// </para>
+    /// <para>
+    /// <strong>Offending pattern:</strong>
+    /// <code>
+    /// return dbSet.AsEnumerable()
+    ///     .FirstOrDefault(e => EF.Property&lt;TId&gt;(e, "Id").Equals(id));  // client-side evaluation
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <strong>Compliant pattern (P-316-corrected shape):</strong>
+    /// <code>
+    /// var param = Expression.Parameter(typeof(T), "e");
+    /// var idProperty = Expression.Property(param, "Id");
+    /// var idConstant = Expression.Constant(id, typeof(TId));
+    /// var equals = Expression.Equal(idProperty, idConstant);
+    /// return Expression.Lambda&lt;Func&lt;T, bool&gt;&gt;(equals, param);
+    /// </code>
+    /// </para>
+    /// </remarks>
+    /// <param name="assembly">
+    /// The assembly to evaluate — typically <c>SharedKernel.Persistence.EfCore</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> asserting no method body directly calls
+    /// <c>EF.Property&lt;T&gt;</c>.
+    /// </returns>
+    public static ConditionList NoDirectEfPropertyUsageInEfCoreAssembly(Assembly assembly) =>
+        Types
+            .InAssembly(assembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .MeetCustomRule(new NoDirectEfPropertyUsagePredicate());
 }

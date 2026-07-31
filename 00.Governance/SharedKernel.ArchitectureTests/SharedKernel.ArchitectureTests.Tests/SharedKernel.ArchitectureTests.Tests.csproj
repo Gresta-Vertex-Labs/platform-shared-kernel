@@ -121,6 +121,17 @@
          real-assembly verification as GATING, not optional. -->
     <ProjectReference Include="..\..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Persistence.EfCore assembly in
+         EfCorePackageHygieneRulesTests (WO-051 P-327, SK.00.EfPropertyUsageGuard) — 06.Persistence's
+         P-316 fix (TenantedRepository's two GetByIdForTenantAsync* methods migrated off
+         EF.Property<TId> to the Expression.Property pattern) is confirmed shipped on disk (state-map
+         C-101 is ● Complete; TenantedRepository.cs's own BuildIdEqualsPredicate helper carries no
+         EF.Property call), so real-assembly verification is wired alongside the contrived-fixture
+         proof rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests/
+         IntelligenceTopologyRulesTests/WorkflowTopologyRulesTests precedent — this phase's own
+         acceptance criteria treat real-assembly verification as GATING, not optional. -->
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
