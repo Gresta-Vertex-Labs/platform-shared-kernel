@@ -5,20 +5,58 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-07-31, WO-051 Tests phase closed)
+## Phase completion status (as of 2026-07-31, WO-051 Docs phase closed)
 - SK.06.Design: complete (84/84 tasks) — D-65..D-84 (WO-051 batches 1+2) done 2026-07-30
 - SK.06.Core: complete (128/128 tasks) — C-98..C-128 verified/closed 2026-07-31
-- SK.06.Tests: complete (97/97 tasks) — T-61..T-97 verified/closed 2026-07-31 (see below)
-- SK.06.Docs / Published: WO-051 added MORE tasks to these phases that are STILL PENDING
-  (Docs 38/52, Published 4/8 as of 2026-07-31) — a FUTURE session must continue there. Do not
-  assume "Published" in root state-map means every sub-phase task is done — this domain
+- SK.06.Tests: complete (97/97 tasks) — T-61..T-97 verified/closed 2026-07-31
+- SK.06.Docs: complete (52/52 tasks) — DO-39..DO-52 verified/closed 2026-07-31 (see below)
+- SK.06.Published: STILL PENDING (4/8 as of 2026-07-31) — P-05..P-08 (WO-051/P-324: wire
+  `PackageReadmeFile`/`<None Include="README.md" Pack="true" PackagePath="\" />` into all four
+  `.csproj` files so `dotnet pack` picks up the already-written READMEs; P-01..P-04 were already
+  ● since WO-013). A FUTURE session must continue there — this is the LAST open phase for WO-051.
+  Do not assume "Published" in root state-map means every sub-phase task is done — this domain
   repeatedly gets NEW WO's adding tasks to already-"complete" phase-key sections after
   reaching Published once (WO-013), and the root Domain Summary Board's "Current Phase"
   column just reflects whichever phase-key was MOST RECENTLY closed, not a monotonic
-  milestone — it can and does go back to "Design"/"Core"/"Tests" when a new batch of tasks
-  completes, even after the domain previously showed "Published".
+  milestone — it can and does go back to "Design"/"Core"/"Tests"/"Docs" when a new batch of
+  tasks completes, even after the domain previously showed "Published".
 - ALWAYS re-read 06.Persistence/state-map.md's own Overall Progress table before assuming a
   phase is done — don't trust the root's one-line domain summary alone.
+
+## Fourth confirmed instance: Docs-phase "○ Pending" task rows whose content already exists (2026-07-31)
+Closing DO-39..DO-52 (14 rows, all `○`): 12 of 14 were ALREADY fully correct — both the XML docs
+on the real `.cs` source AND the corresponding `06.Persistence/CLAUDE.md` prose sections — from a
+prior unclosed session (the arch-planner's WO-051 design pass had already written CLAUDE.md to
+target-state, and a prior implementer session had already written matching XML docs but never
+flipped the state-map). Only 2 of 14 tasks had genuine gaps, both subtle "cross-reference/table
+completeness" gaps rather than missing content outright:
+- DO-43: `SpecificationEvaluator.GetQuery`/`GetProjectedQuery` had no `<remarks>` on the METHOD
+  itself cross-referencing `03.Domain`'s `ISpecification<T>.AsSplitQuery` Cartesian-product
+  rationale — only the CLASS-level summary listed "AsSplitQuery" as a numbered pipeline step, with
+  no explanation of why. Read `03.Domain/SharedKernel.Domain/Specifications/ISpecification.cs`'s own
+  `AsSplitQuery` XML doc directly to get the exact rationale text before writing the cross-reference
+  — never paraphrase a cross-domain rationale from memory.
+- DO-44: `06.Persistence/CLAUDE.md`'s Observability "Traced operations" table listed `EfRepository`'s
+  traced methods as only `AddAsync/UpdateAsync/DeleteAsync/*RangeAsync` — but the REAL source
+  (`EfRepository.cs`) also traces `GetBySpecAsync` (the write-side tracked-fetch method) via the same
+  `RepositoryTracing.ExecuteTracedAsync` wrapper; this had been omitted from the table since the
+  method's own introduction. Also undocumented: `ExecuteUpdateAsync`/`ExecuteDeleteAsync`
+  (`IBulkMutationRepository`) and `GetByIdsChunkedAsync` are NOT directly traced (bulk mutations
+  bypass tracing consistent with their documented bypass of interceptors/domain events;
+  `GetByIdsChunkedAsync` only produces indirect spans via its underlying `GetByIdsAsync` calls).
+  **Lesson: when a "traced operations" or "covered surface" table exists in CLAUDE.md, always grep
+  the actual source for the tracing/coverage call site (`RepositoryTracing.ExecuteTracedAsync` in
+  this case) across EVERY method in the class, not just the ones the table already lists — tables
+  like this drift silently when a method is added/traced without updating the enumeration.**
+
+All four package `README.md` files (DO-50) already existed, fully written, matching the
+`08.Storage`/`17.Workflows` quality bar (quick-start DI example + surface overview + link back to
+CLAUDE.md) — no changes needed. Verified via `dotnet build` (0 errors, all warnings pre-existing/
+unrelated) and `dotnet test .../SharedKernel.Persistence.EfCore.Tests/` (314/314) since only EfCore
+source was touched (SpecificationEvaluator.cs, EfRepository.cs, EfReadRepository.cs — doc-only
+edits). PostgreSQL/Dapper/Abstractions Testcontainers suites were not re-run since nothing there
+changed this session — this is the correct call per the phase-implementer's own "run only test
+projects with new/modified tests" rule, not a shortcut.
 
 ## Recurring pattern: "○ Pending" state-map task rows whose test code already exists (found AGAIN 2026-07-31, Tests phase)
 Third confirmed instance of this pattern (see the Core-phase entry below for the first). When
