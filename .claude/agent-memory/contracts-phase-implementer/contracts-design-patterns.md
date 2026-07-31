@@ -10,10 +10,10 @@ The constructor must be `internal` (not `private`) with `[JsonConstructor]` for 
 
 **Why:** STJ source generator cannot access private constructors even when marked [JsonConstructor].
 
-## Envelope namespace/type collision — RESOLVED by WO-052/P-328 (target v2.0.0)
+## Envelope namespace/type collision — RESOLVED and SHIPPED (WO-052/P-328, SharedKernel.Contracts 2.0.0)
 Historical: the `Envelope` type used to live in namespace `SharedKernel.Contracts.Envelope`, requiring a using-alias workaround (`using EnvelopeNs = SharedKernel.Contracts.Envelope;`) to avoid ambiguity with the type name itself.
-As of WO-052 (design finalized 2026-07-31, SK.04.Design fully ● complete), the fix is: rename namespace to `SharedKernel.Contracts.Envelopes` (plural) and folder `Envelope/` → `Envelopes/`. Type members/factories/implicit operators are byte-identical — namespace-only move. No alias workaround needed or should be used against the new namespace.
-As of the same design pass, code has NOT yet been moved (verified 2026-07-31: `Envelope/Envelope.cs` and `Envelope/EnvelopeT.cs` still exist under the old namespace). The rename lands in Scaffold (S-06: `git mv Envelope/ Envelopes/`) and Core (C-08: namespace edit + update `ResultEnvelopeExtensions`' `using`, `ContractsJsonContext` entries, README, test `TestJsonContext`). Target package version on release: `2.0.0` (major/breaking — first breaking change in this package's history).
+Shipped fix (2026-07-31, all six SK.04 phases ● complete): namespace renamed to `SharedKernel.Contracts.Envelopes` (plural), folder `Envelope/` → `Envelopes/`. Type members/factories/implicit operators are byte-identical — namespace-only move. No alias workaround needed or should be used against the new namespace — grep the whole repo before assuming one still exists anywhere.
+`SharedKernel.Contracts` is now packed and published at `2.0.0` (breaking — first breaking release in this package's history). Known external consumers at the time of the rename: `16.Testing` (fixed same-session, C-101), `11.Communication.Rest` (P-329, separately dispatched, NOT yet fixed as of 2026-07-31 — its own domain's job), `04.Contracts/consumer-verify` (fixed as part of this same Published-phase closeout, P-06).
 
 ## EventEnvelope.Wrap — non-generic static class
 `Wrap<TEvent>` lives on a non-generic static class `EventEnvelope` (not on `EventEnvelope<TEvent>` itself). This allows generic type inference — callers write `EventEnvelope.Wrap(domainEvent, ...)` rather than `EventEnvelope<OrderPlacedEvent>.Wrap(...)`.
