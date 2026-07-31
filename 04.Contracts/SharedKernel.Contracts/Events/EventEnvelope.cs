@@ -151,9 +151,19 @@ public sealed record EventEnvelope<TEvent> where TEvent : IDomainEvent
     /// type to access the business data.
     /// </para>
     /// <para>
-    /// The constraint <c>where TEvent : IDomainEvent</c> guarantees that <see cref="Payload"/>
-    /// exposes at minimum <c>Id</c>, <c>OccurredOn</c>, and <c>AggregateId</c> — sufficient for
-    /// routing and tracing without casting to a concrete type.
+    /// The bare constraint <c>where TEvent : IDomainEvent</c> guarantees that <see cref="Payload"/>
+    /// exposes only <c>Id</c> and <c>OccurredOn</c> — <c>IDomainEvent</c> has never declared an
+    /// <c>AggregateId</c> member. A correlating aggregate identifier is available on
+    /// <see cref="Payload"/> only when the concrete <typeparamref name="TEvent"/> additionally
+    /// implements <c>03.Domain</c>'s opt-in
+    /// <see cref="SharedKernel.Domain.Abstractions.IHasAggregateId{TId}"/> marker. Do not assume the
+    /// member exists unconditionally — type-check instead:
+    /// <code>
+    /// if (envelope.Payload is IHasAggregateId&lt;OrderId&gt; correlated)
+    /// {
+    ///     var aggregateId = correlated.AggregateId;
+    /// }
+    /// </code>
     /// </para>
     /// </remarks>
     public required TEvent Payload { get; init; }
