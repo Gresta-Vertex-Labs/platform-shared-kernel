@@ -74,7 +74,7 @@ Format when blocked:
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published (WO-051, P-11) closed — `SharedKernel.Domain` re-packed and re-verified at `1.7.0`: `.nuspec` manifest confirmed to list exactly `SharedKernel.Primitives`/`SharedKernel.Core`/`SharedKernel.Guards` as dependencies (zero external NuGet); `consumer-verify` extended with 10 new PackageReference-resolved tests covering every WO-051 addition (`KeysetSpecification<T,TKey>`, `AsSplitQuery`, `IHasAggregateId<TId>`, `ValueObject.TryCreate<T>`, `IPolicy<T>.Explain` DIM, `Specification<T>.Create(criteria)`) plus the P-307 composite `Includes`/`StringIncludes` union-propagation regression check — 28/28 consumer tests green, 317/317 domain tests green. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●` — WO-051 v1.7.0 cycle complete end to end. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | WO-051/P-314 closed — `EventEnvelope<TEvent>.Payload`'s XML doc `<remarks>` corrected in `Events/EventEnvelope.cs`: the false claim that the bare `where TEvent : IDomainEvent` constraint guarantees `AggregateId` (it only ever guaranteed `Id`/`OccurredOn`) was replaced with an accurate statement pointing to `03.Domain`'s opt-in `IHasAggregateId<TId>` marker (v1.7.0, P-309, verified shipped before the `<see cref>` was added) plus a pattern-matching usage note; documentation-only, `SharedKernel.Contracts.csproj` re-verified to build clean (0 errors). All six phases (Design/Scaffold/Core/Tests/Docs/Published) are `●` — this row was stale since WO-026 (P-166) shipped in June and is corrected here to match. | — |
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) now fully `●` through Docs (Design/Scaffold/Core/Tests/Docs = 71/19/75/68/24, all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199, 100% XML doc coverage confirmed, README EventId table added, stale "design-only" phrasing swept from `CLAUDE.md`; `SharedKernel.Application.Behaviors.Tests` 132/132. The `05.Application` candidate follow-up flagged by `00.Governance`'s P-299 (SK0030 `ResultOutcomeDiscardedAnalyzer` real-source audit — a discarded `Result.Failure` in `FireAndForgetBackgroundConsumer.cs:57`) is now fixed: the outcome is logged at `Warning` (EventId 5112) before being discarded, closing the silent-failure telemetry gap. | Published (P-20..P-22 for WO-041, plus P-01..P-19 for WO-035/036/038/039/040) is the only phase left before this domain is fully published. |
-| 06 | [Persistence](06.Persistence/state-map.md) | Docs | `●` | SK.06.Docs closed (52/52, WO-051) — the 14 remaining Docs tasks (DO-39..DO-52) verified file-by-file against real `.cs` source rather than assumed from CLAUDE.md prose; the large majority were already fully correct from a prior unclosed session, including all four package `README.md` files (DO-50). Two genuine gaps found and fixed: `SpecificationEvaluator.GetQuery`/`GetProjectedQuery` gained explicit `AsSplitQuery` Cartesian-product cross-reference docs (DO-43), and the Observability "Traced operations" table was corrected to include `EfRepository.GetBySpecAsync` and document the untraced bulk-mutation/`GetByIdsChunkedAsync` exceptions (DO-44). `SharedKernel.Persistence.EfCore.Tests` 314/314 green. | WO-051's Published phase (4/8, `P-05`..`P-08` — wiring `PackageReadmeFile` into all four `.csproj` files) is the only phase left from this work order — next session continues there. |
+| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | SK.06.Published closed (8/8) — P-05..P-08 verified: all four `.csproj` files already had `PackageReadmeFile`/the README `<None Include>` item wired from a prior unclosed session (WO-051/P-324); `dotnet pack` re-run this session for all four packages produced clean `.nupkg`+`.snupkg` with zero `NU5039`/`NU5128` warnings, README.md confirmed physically present in each package root via `unzip -l`. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●`. In the same pass, direct source verification (not README-trusting) confirmed all nine other WO-051 phases (P-315..P-325, excluding the two cross-domain follow-ons) were already genuinely shipped in code/tests with explicit `WO-051/P-3xx` annotations — their root Phase Backlog entries had simply never been individually closed; all closed below. | — |
 | 07 | [Messaging](07.Messaging/state-map.md) | LoggingRetrofit | `●` | SK.07.LoggingRetrofit complete (22/22, P-254/P-263) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range; `MessagingLogScope.CorrelationIdKey` named constant now backs the shared `BeginScope` correlation entry (replacing the bare `"CorrelationId"` literal); verified zero EventId collisions/SK0020-SK0021 diagnostics; 108/108 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
 | 09 | [Search](09.Search/state-map.md) | Published | `●` | SK.09.Published complete (8/8) — all three packages re-verified NuGet-metadata-complete and packed clean (`.nupkg`+`.snupkg`, zero `NU5039`/`NU5128`); a new `09.Search/consumer-verify/` area (three real `IHost.StartAsync()` console harnesses — Meilisearch/, ElasticSearch/, BothProviders/) consumer-verifies DI resolution of every neutral/provider-exclusive contract, singleton lifetimes, raw-client gating, startup-time `OptionsValidationException` naming the missing property, the same-`TDocument` dual-registration hard violation, and — the most load-bearing check — capability segregation confirmed as a genuine, captured `CS0234`/`CS0246` build-time compiler failure in both directions, not asserted in prose. All 345 tests still green. All six phases now `●` for all three `SharedKernel.Search.*` packages — 09.Search domain (WO-044) complete end to end. | — |
@@ -110,8 +110,8 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Published | 11 |
-| ● Docs | 4 |
+| ● Published | 12 |
+| ● Docs | 3 |
 | ● Phase 41 (Distributed Tracing ActivitySource Spans for Cache Read/Write Operations) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 0 |
@@ -11698,7 +11698,7 @@ A live, shipped documentation defect that actively misleads a reader of `04.Cont
 ---
 ### P-315 — Persistence: PostgreSQL Concurrency-Token Correctness (xmin)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11719,7 +11719,7 @@ This is the platform's optimistic-concurrency-control mechanism for its one supp
 ---
 ### P-316 — Persistence: TenantedRepository EF.Property→Expression.Property Migration
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11738,7 +11738,7 @@ This is a confirmed, live inconsistency against the platform's own already-estab
 ---
 ### P-317 — Persistence: Keyset/Cursor Pagination Support in SpecificationEvaluator + EfReadRepository
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** P-308
@@ -11758,7 +11758,7 @@ Completes the keyset pagination capability `03.Domain` defines the contract for 
 ---
 ### P-318 — Persistence: Split-Query (AsSplitQuery) Support in SpecificationEvaluator
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** P-308
@@ -11776,7 +11776,7 @@ Closes the Cartesian-explosion risk `03.Domain`'s new flag defines the contract 
 ---
 ### P-319 — Persistence: Query Observability — Automatic TagWith + Read-Path ActivitySource Tracing
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11796,7 +11796,7 @@ Today there is no way to trace a slow or unexpected query in `pg_stat_statements
 ---
 ### P-320 — Persistence: Transient-Fault Resiliency (Npgsql EnableRetryOnFailure)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11816,7 +11816,7 @@ The platform leans heavily on Polly v8 resilience elsewhere (`11.Communication`'
 ---
 ### P-321 — Persistence: DapperReadService Multi-Mapping, QueryMultipleAsync, and Protected Connection Factory Escape Hatch
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11837,7 +11837,7 @@ Today, any consuming service needing a join-mapping query or a multi-result-set 
 ---
 ### P-322 — Persistence: DbContext Pooling (AddDbContextPool) with Safe Scoped-Dependency Redesign
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11857,7 +11857,7 @@ At "hundreds of services" scale, the default scoped-per-request `DbContext` allo
 ---
 ### P-323 — Persistence: Runtime Performance Hardening Bundle
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11877,7 +11877,7 @@ Both are small, contained, zero-risk-to-fix inefficiencies in already-shipped, f
 ---
 ### P-324 — Persistence: NuGet Packaging & Documentation Parity Across All Four Packages
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11897,7 +11897,7 @@ This is the exact class of gap `08.Storage`'s own WO-043 Published-phase review 
 ---
 ### P-325 — Persistence: Async ADO.NET Calls in Readiness Probe & Advisory Lock
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-051
 **Domain:** 06.Persistence
 **Depends on:** None
@@ -11977,3 +11977,5 @@ This review found a confirmed, live instance of `EF.Property<T>` usage (`Tenante
 - [2026-07-31] 06.Persistence → Core (●) — promoted from SK.06.Core (128/128, WO-051 batches 1+2); all 31 remaining Core tasks (C-98..C-128) verified file-by-file against CLAUDE.md's target-state design — code already existed on disk from a prior unclosed session; one genuine drifted-duplicate-class defect found and fixed in `EfTransactionalUnitOfWork`/`EfPersistenceTransaction`; 376/376 tests green across all four `06.Persistence` test projects (Abstractions 49, EfCore 294, PostgreSQL 18, Dapper 15 — the latter two via Testcontainers/real PostgreSQL) (state-map-phase)
 - [2026-07-31] 06.Persistence → Tests (●) — promoted from SK.06.Tests (97/97, WO-051); 24 of the 37 remaining tasks were already implemented in prior unclosed sessions, nine genuine gaps closed this session (xmin converter/convention unit tests, keyset second-page/concurrent-insert correctness, keyset `ContractShapeTests`, `AsSplitQuery` multi-statement proofs, tracing failure-path/sensitive-value tests, PostgreSQL transient-fault-injection + retry-under-failure tests, encryption key-cache decode-once proofs, `GetByIdsChunkedAsync` round-trip tests), four are regression proofs; discovered mid-session that both SQLite and Npgsql route RETURNING-based INSERT/UPDATE commands through `ExecuteReader` rather than `ExecuteNonQuery`, requiring baseline-delta command counting and dual-path fault injection in the new tests; 416/416 tests green across all four `06.Persistence` test projects (Abstractions 54, EfCore 314, PostgreSQL 33, Dapper 15) (state-map-phase)
 - [2026-07-31] 06.Persistence → Docs (●) — promoted from SK.06.Docs (52/52, WO-051); all 14 remaining Docs tasks (DO-39..DO-52) verified file-by-file against real `.cs` source, not assumed from CLAUDE.md prose; the large majority (DO-39..DO-42, DO-45..DO-52) were already fully correct from a prior unclosed session, including all four package `README.md` files (DO-50); two genuine gaps found and fixed — `SpecificationEvaluator.GetQuery`/`GetProjectedQuery` gained explicit `<remarks>` cross-referencing `03.Domain`'s `AsSplitQuery` Cartesian-product rationale (DO-43), and the Observability "Traced operations" table in `06.Persistence/CLAUDE.md` was corrected to include `EfRepository.GetBySpecAsync` (write-side, traced since its own introduction but previously omitted from the table) and to document that bulk-mutation methods and `GetByIdsChunkedAsync` are NOT directly traced (DO-44); `SharedKernel.Persistence.EfCore.Tests` 314/314 green (only EfCore source touched this session). Overall Progress: Docs bucket 3 → 4, Tests bucket 1 → 0 (state-map-phase)
+- [2026-07-31] 06.Persistence → Published (●) — promoted from SK.06.Published (8/8, WO-051/P-324); P-05..P-08 verified — `PackageReadmeFile` wiring already present in all four `.csproj` files from a prior unclosed session; `dotnet pack` re-run this session for all four packages, clean with zero `NU5039`/`NU5128` warnings, README.md confirmed present in each `.nupkg` root via `unzip -l`. All six `SK.06.*` phases now `●` — 06.Persistence domain complete end to end (state-map-phase)
+- [2026-07-31] Phase Backlog entries for 06.Persistence closed → ● Complete — P-315, P-316, P-317, P-318, P-319, P-320, P-321, P-322, P-323, P-324, P-325 individually source-verified (not assumed) against shipped `.cs`/test files, each carrying an explicit `WO-051/P-3xx` code or doc-comment annotation confirming the fix landed during the Design/Core/Tests/Docs phases without its Phase Backlog entry ever being flipped; P-326 (13.ServiceDefaults) and P-327 (00.Governance) intentionally left untouched — different domains, out of this session's jurisdiction, now unblocked since their dependencies (P-319, P-316) are confirmed shipped (state-map-phase)
