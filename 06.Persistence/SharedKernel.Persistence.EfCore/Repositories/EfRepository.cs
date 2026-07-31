@@ -6,6 +6,7 @@ using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Specifications;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
@@ -71,13 +72,14 @@ public abstract class EfRepository<TAggregate, TId>
     /// callers should leave it unset to receive a tracked entity for subsequent mutations without
     /// requiring an explicit <c>.Update()</c> call. Never returns <see cref="IQueryable{TAggregate}"/>.
     /// </remarks>
-    public virtual async Task<TAggregate?> GetBySpecAsync(
+    public virtual Task<TAggregate?> GetBySpecAsync(
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
-    {
-        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-        return await query.FirstOrDefaultAsync(ct);
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(GetBySpecAsync), async () =>
+        {
+            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            return await query.FirstOrDefaultAsync(ct);
+        });
 
     /// <inheritdoc />
     public virtual async Task<TAggregate?> GetByIdAsync(TId id, CancellationToken ct = default)
@@ -100,8 +102,9 @@ public abstract class EfRepository<TAggregate, TId>
     }
 
     /// <inheritdoc />
-    public virtual async Task AddAsync(TAggregate aggregate, CancellationToken ct = default)
-        => await DbContext.Set<TAggregate>().AddAsync(aggregate, ct);
+    public virtual Task AddAsync(TAggregate aggregate, CancellationToken ct = default)
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(AddAsync), async () =>
+            await DbContext.Set<TAggregate>().AddAsync(aggregate, ct));
 
     /// <inheritdoc />
     /// <remarks>
@@ -109,15 +112,17 @@ public abstract class EfRepository<TAggregate, TId>
     /// Rows are staged in the change tracker and not written to the database until
     /// <c>IUnitOfWork.SaveChangesAsync</c> is called.
     /// </remarks>
-    public virtual async Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
-        => await DbContext.Set<TAggregate>().AddRangeAsync(aggregates, ct);
+    public virtual Task AddRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(AddRangeAsync), async () =>
+            await DbContext.Set<TAggregate>().AddRangeAsync(aggregates, ct));
 
     /// <inheritdoc />
     public virtual Task UpdateAsync(TAggregate aggregate, CancellationToken ct = default)
-    {
-        MarkAsModifiedIfDetached(aggregate);
-        return Task.CompletedTask;
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(UpdateAsync), () =>
+        {
+            MarkAsModifiedIfDetached(aggregate);
+            return Task.CompletedTask;
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -128,20 +133,22 @@ public abstract class EfRepository<TAggregate, TId>
     /// Mutations are staged and not persisted until <c>IUnitOfWork.SaveChangesAsync</c> is called.
     /// </remarks>
     public virtual Task UpdateRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
-    {
-        // UpdateRange is synchronous in EF Core; apply per-entity detached-state check.
-        foreach (var aggregate in aggregates)
-            MarkAsModifiedIfDetached(aggregate);
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(UpdateRangeAsync), () =>
+        {
+            // UpdateRange is synchronous in EF Core; apply per-entity detached-state check.
+            foreach (var aggregate in aggregates)
+                MarkAsModifiedIfDetached(aggregate);
 
-        return Task.CompletedTask;
-    }
+            return Task.CompletedTask;
+        });
 
     /// <inheritdoc />
     public virtual Task DeleteAsync(TAggregate aggregate, CancellationToken ct = default)
-    {
-        DbContext.Set<TAggregate>().Remove(aggregate);
-        return Task.CompletedTask;
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(DeleteAsync), () =>
+        {
+            DbContext.Set<TAggregate>().Remove(aggregate);
+            return Task.CompletedTask;
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -152,10 +159,11 @@ public abstract class EfRepository<TAggregate, TId>
     /// <c>IUnitOfWork.SaveChangesAsync</c> is called.
     /// </remarks>
     public virtual Task DeleteRangeAsync(IEnumerable<TAggregate> aggregates, CancellationToken ct = default)
-    {
-        DbContext.Set<TAggregate>().RemoveRange(aggregates);
-        return Task.CompletedTask;
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(DeleteRangeAsync), () =>
+        {
+            DbContext.Set<TAggregate>().RemoveRange(aggregates);
+            return Task.CompletedTask;
+        });
 
     /// <inheritdoc />
     /// <remarks>
