@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Repositories;
@@ -100,8 +101,7 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
             query = query.Where(e => !EF.Property<bool>(e, nameof(ISoftDeletable.IsDeleted)));
         }
 
-        return await query.FirstOrDefaultAsync(
-            e => EF.Property<TId>(e, "Id")!.Equals(id), ct);
+        return await query.FirstOrDefaultAsync(BuildIdEqualsPredicate(id), ct);
     }
 
     /// <summary>
@@ -147,6 +147,19 @@ public abstract class TenantedRepository<TAggregate, TId> : EfRepository<TAggreg
         return await DbContext.Set<TAggregate>()
             .IgnoreQueryFilters()
             .Where(e => e.TenantId == tenantId)
-            .FirstOrDefaultAsync(e => EF.Property<TId>(e, "Id")!.Equals(id), ct);
+            .FirstOrDefaultAsync(BuildIdEqualsPredicate(id), ct);
+    }
+
+    // Builds e => e.Id.Equals(id) via expression trees — the same pattern already shipped in
+    // EfRepository.ExistsAsync (D-29/P-099) — rather than EF.Property<TId>(e, "Id"), which can
+    // silently fall back to client-side evaluation for strongly-typed IDs backed by a registered
+    // ValueConverter, defeating server-side filtering (WO-051/P-316).
+    private static Expression<Func<TAggregate, bool>> BuildIdEqualsPredicate(TId id)
+    {
+        var param = Expression.Parameter(typeof(TAggregate), "e");
+        var idProperty = Expression.Property(param, "Id");
+        var idConstant = Expression.Constant(id, typeof(TId));
+        var equals = Expression.Equal(idProperty, idConstant);
+        return Expression.Lambda<Func<TAggregate, bool>>(equals, param);
     }
 }
