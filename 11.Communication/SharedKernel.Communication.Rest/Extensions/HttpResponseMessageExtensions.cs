@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using SharedKernel.Communication.Rest.ProblemDetails;
-using SharedKernel.Contracts.Envelope;
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
