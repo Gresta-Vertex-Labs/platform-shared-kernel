@@ -163,4 +163,106 @@ public sealed class RepositoryTracingTests
         // Assert — TagWith renders as a leading SQL comment containing the spec's CLR type name.
         sql.Should().Contain(nameof(NameFilterSpec));
     }
+
+    // -------------------------------------------------------------------------
+    // WO-051/P-319 (T-77) — failure-path span tagging. Disposing the underlying DbContext before
+    // invoking a traced read forces a genuine ObjectDisposedException INSIDE the traced operation
+    // delegate (Set<TAggregate>() throws once the context is disposed) — proving RepositoryTracing
+    // catches it, tags Outcome=="failure"/ErrorType, sets ActivityStatusCode.Error, and rethrows
+    // rather than swallowing it.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CountAsync_WhenOperationThrows_EmitsActivity_WithFailureOutcome_AndRethrows()
+    {
+        // Arrange
+        var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new TestAggregateReadRepository(ctx);
+        ctx.Dispose(); // forces a genuine exception the next time the context is touched
+
+        using var rootActivity = new Activity("Test.Root").Start();
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "SharedKernel.Persistence",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentId == rootActivity.Id)
+                    lock (activities)
+                        activities.Add(activity);
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var spec = new AllSpecification<TestAggregate>();
+
+        // Act
+        Func<Task> act = () => repo.CountAsync(spec);
+
+        // Assert — the exception is genuinely rethrown, never swallowed.
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+
+        var traced = activities.Should().ContainSingle(a => a.OperationName == "TestAggregate.CountAsync").Subject;
+        traced.Tags.Should().Contain(t => t.Key == "persistence.outcome" && t.Value == "failure");
+        traced.Tags.Should().Contain(t => t.Key == "error.type" && t.Value == "ObjectDisposedException");
+        traced.Status.Should().Be(ActivityStatusCode.Error);
+    }
+
+    // -------------------------------------------------------------------------
+    // WO-051/P-319 (T-78) — negative assertion: no span tag value ever equals a raw SQL parameter,
+    // entity property value, or tenant/user identifier from the fixture, across a representative
+    // sample of traced operations.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TracedOperations_NeverIncludeRawEntityPropertyOrParameterValues_InSpanTags()
+    {
+        // Arrange — distinctive "sensitive" values that must never leak into a span tag, mirroring
+        // the cache.key_prefix-never-full-key precedent from 02.Caching's P-304.
+        const string sensitiveName = "Sensitive-Secret-Value-9f3a";
+        var sensitiveId = TestId.New();
+
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        ctx.TestAggregates.Add(new TestAggregate(sensitiveId, sensitiveName, new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var writeRepo = new TestAggregateRepository(ctx);
+        var readRepo = new TestAggregateReadRepository(ctx);
+
+        using var rootActivity = new Activity("Test.Root").Start();
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "SharedKernel.Persistence",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentId == rootActivity.Id)
+                    lock (activities)
+                        activities.Add(activity);
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // Act — a representative sample of traced operations touching the sensitive fixture values.
+        var nameSpec = new NameFilterSpec(sensitiveName);
+        await readRepo.ListAsync(nameSpec);
+        await readRepo.CountAsync(nameSpec);
+        await readRepo.GetByIdsAsync([sensitiveId]);
+        await writeRepo.AddAsync(new TestAggregate(TestId.New(), "AnotherEntity", new SystemClock()));
+
+        // Assert — no tag VALUE anywhere ever equals the raw entity property, ID, or SQL parameter
+        // value from the fixture. Only low-cardinality metadata (type name, operation name, outcome,
+        // error type) is ever set as a tag.
+        activities.Should().NotBeEmpty();
+        var allTagValues = activities.SelectMany(a => a.Tags).Select(t => t.Value).ToList();
+
+        allTagValues.Should().NotContain(sensitiveName);
+        allTagValues.Should().NotContain(sensitiveId.Value.ToString());
+        allTagValues.Should().NotContain(sensitiveId.ToString());
+    }
 }

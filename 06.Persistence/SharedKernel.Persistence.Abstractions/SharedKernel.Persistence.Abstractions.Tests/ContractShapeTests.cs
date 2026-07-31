@@ -433,4 +433,54 @@ public sealed class ContractShapeTests
         efReference.Should().BeFalse(
             "DatabaseReadinessResult and its extensions must have zero ORM NuGet dependencies");
     }
+
+    // ---------------------------------------------------------------------------
+    // Keyset (cursor) pagination contract — IReadRepository.ListKeysetAsync<TKey>,
+    // ISpecificationEvaluator<T>.GetKeysetQuery<TKey>, KeysetPage<TAggregate,TKey> (WO-051/P-317)
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void IReadRepository_Has_ListKeysetAsync()
+    {
+        var method = typeof(IReadRepository<,>).GetMethod("ListKeysetAsync");
+        method.Should().NotBeNull("IReadRepository must expose ListKeysetAsync<TKey> (WO-051/P-317)");
+        method!.IsGenericMethodDefinition.Should().BeTrue(
+            "ListKeysetAsync must be generic over TKey — a method-level generic parameter beyond TAggregate/TId");
+    }
+
+    [Fact]
+    public void ISpecificationEvaluator_Has_GetKeysetQuery()
+    {
+        var method = typeof(ISpecificationEvaluator<>).GetMethod("GetKeysetQuery");
+        method.Should().NotBeNull("ISpecificationEvaluator<T> must expose GetKeysetQuery<TKey> (WO-051/P-317)");
+        method!.IsGenericMethodDefinition.Should().BeTrue(
+            "GetKeysetQuery must be a method-level generic over TKey, avoiding any TKey-erasure reflection");
+    }
+
+    [Fact]
+    public void KeysetPage_IsSealedRecord_WithExpectedProperties()
+    {
+        var type = typeof(KeysetPage<,>);
+
+        type.IsSealed.Should().BeTrue("KeysetPage<TAggregate, TKey> must be a sealed record");
+        type.Namespace.Should().Be("SharedKernel.Persistence.Abstractions.Specifications");
+
+        var properties = type.GetProperties().Select(p => p.Name).ToList();
+        properties.Should().Contain(["Items", "NextAfterKey", "NextAfterId", "HasMore"]);
+        properties.Should().HaveCount(4, "KeysetPage must declare exactly the four documented properties");
+    }
+
+    [Fact]
+    public void KeysetPage_HasMore_Property_IsBool()
+    {
+        var type = typeof(KeysetPage<,>);
+        type.GetProperty("HasMore")!.PropertyType.Should().Be(typeof(bool));
+    }
+
+    [Fact]
+    public void KeysetPage_NextAfterId_Property_IsObject()
+    {
+        var type = typeof(KeysetPage<,>);
+        type.GetProperty("NextAfterId")!.PropertyType.Should().Be(typeof(object));
+    }
 }

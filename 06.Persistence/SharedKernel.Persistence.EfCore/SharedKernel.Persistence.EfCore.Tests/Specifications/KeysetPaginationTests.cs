@@ -92,6 +92,74 @@ public sealed class KeysetPaginationTests
     }
 
     [Fact]
+    public async Task GetKeysetQuery_SecondPage_DirectEvaluatorCall_ContinuesSequence_NoGapOrOverlap()
+    {
+        // Arrange — exercises SpecificationEvaluator.GetKeysetQuery<TKey> directly (not via
+        // ListKeysetAsync/the repository) for both the first AND second page, per T-66's own wording.
+        var (ctx, _) = CreateAndSeedSequentialContext(5);
+        using var _disposeCtx = ctx;
+
+        var firstPageSpec = new KeysetBySequenceSpec(afterKey: null, afterId: null, take: 2);
+        var firstPageQuery = _evaluator.GetKeysetQuery(ctx.KeysetAggregates, firstPageSpec);
+        var firstPageRows = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(firstPageQuery);
+        var lastOfFirstPage = firstPageRows.Take(2).Last();
+
+        // Act — second page, cursor anchored to the last row actually returned on page 1.
+        var secondPageSpec = new KeysetBySequenceSpec(
+            afterKey: lastOfFirstPage.SequenceNumber, afterId: lastOfFirstPage.Id, take: 2);
+        var secondPageQuery = _evaluator.GetKeysetQuery(ctx.KeysetAggregates, secondPageSpec);
+        var secondPageRows = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(secondPageQuery);
+
+        // Assert — continues immediately after Item1 with no gap/overlap (evaluator fetches Take+1).
+        secondPageRows.Select(a => a.Name).Should().ContainInOrder("Item2", "Item3", "Item4");
+    }
+
+    [Fact]
+    public async Task ListKeysetAsync_ConcurrentInsertsBetweenPageFetches_NoDuplicatesOrSkips()
+    {
+        // Arrange — seed rows with deliberately spaced sequence numbers so an inserted row can land
+        // strictly BETWEEN two already-seeded values without violating uniqueness.
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var clock = new SystemClock();
+
+        var seq10 = new KeysetTestAggregate(TestId.New(), "Seq10", 10, clock);
+        var seq20 = new KeysetTestAggregate(TestId.New(), "Seq20", 20, clock);
+        var seq30 = new KeysetTestAggregate(TestId.New(), "Seq30", 30, clock);
+        var seq40 = new KeysetTestAggregate(TestId.New(), "Seq40", 40, clock);
+        ctx.KeysetAggregates.AddRange(seq10, seq20, seq30, seq40);
+        ctx.SaveChanges();
+        ctx.ChangeTracker.Clear();
+
+        var repo = new KeysetTestReadRepository(ctx);
+
+        // Act — fetch page 1 (take 2): Seq10, Seq20.
+        var page1 = await repo.ListKeysetAsync(new KeysetBySequenceSpec(afterKey: null, afterId: null, take: 2));
+        page1.Items.Select(i => i.Name).Should().ContainInOrder("Seq10", "Seq20");
+
+        // Simulate a write racing between page fetches: a new row with a sequence number that would
+        // have shifted an OFFSET-based page 2 boundary (it lands BEFORE the cursor, between the two
+        // already-returned rows) — the exact scenario OFFSET pagination cannot handle correctly.
+        var seq15 = new KeysetTestAggregate(TestId.New(), "Seq15", 15, clock);
+        ctx.KeysetAggregates.Add(seq15);
+        ctx.SaveChanges();
+        ctx.ChangeTracker.Clear();
+
+        // Act — fetch page 2 using the CURSOR returned by page 1 (anchored to Seq20's key/id, not a
+        // numeric offset that the intervening insert would have invalidated).
+        var page2 = await repo.ListKeysetAsync(
+            new KeysetBySequenceSpec(afterKey: page1.NextAfterKey, afterId: page1.NextAfterId, take: 2));
+
+        // Assert — page 2 continues strictly after the cursor: Seq30, Seq40. The newly-inserted
+        // Seq15 (which sorts BEFORE the cursor) never reappears, and nothing from page 1 is
+        // duplicated — the correctness property offset pagination lacks under concurrent writes.
+        page2.Items.Select(i => i.Name).Should().ContainInOrder("Seq30", "Seq40");
+        page2.Items.Should().NotContain(i => i.Name == "Seq15",
+            "a row inserted BEFORE the cursor must never reappear in a later keyset page");
+        page2.Items.Should().NotContain(i => i.Name == "Seq10" || i.Name == "Seq20",
+            "keyset pagination must never duplicate rows already returned in an earlier page");
+    }
+
+    [Fact]
     public async Task ListKeysetAsync_LastPage_NextAfterKeyAndIdAreNull()
     {
         // Arrange
