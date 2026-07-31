@@ -5,10 +5,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>SharedKernel.Persistence.EfCore</PackageId>
-    <Description>EF Core 10 implementation of SharedKernel persistence abstractions: repositories, unit of work, interceptors (Audit, SoftDelete, Concurrency), specification evaluator, TenantedDbContext, and EfCorePersistenceBuilder.</Description>
+    <Description>EF Core 10 implementation of SharedKernel persistence abstractions: repositories, unit of work, interceptors (Audit, SoftDelete, Concurrency), specification evaluator, TenantedDbContext, field-level encryption, DbContext pooling, and EfCorePersistenceBuilder.</Description>
     <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
     <Authors>Gresta-Vertex-Labs</Authors>
-    <RepositoryUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</RepositoryUrl>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <PackageTags>persistence;efcore;entity-framework;repository;unit-of-work;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -58,6 +70,10 @@
          SharedKernelDbContext.CurrentEncryptionVersionOverride) for diagnostics
          and white-box testing without expanding the public API surface. -->
     <InternalsVisibleTo Include="SharedKernel.Persistence.EfCore.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

@@ -5,10 +5,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>SharedKernel.Persistence.Dapper</PackageId>
-    <Description>Dapper micro-ORM read-side helpers for SharedKernel: StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService base, and AddSharedKernelDapper DI extension.</Description>
+    <Description>Dapper micro-ORM read-side helpers for SharedKernel: StronglyTypedIdTypeHandler, SmartEnumTypeHandler, DapperTypeHandlers, DapperReadService base (single/multi-mapping queries, QueryMultipleAsync), and AddSharedKernelDapper DI extension.</Description>
     <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
     <Authors>Gresta-Vertex-Labs</Authors>
-    <RepositoryUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</RepositoryUrl>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <PackageTags>persistence;dapper;micro-orm;read-model;shared-kernel</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +39,10 @@
     <Compile Remove="SharedKernel.Persistence.Dapper.Tests\**" />
     <EmbeddedResource Remove="SharedKernel.Persistence.Dapper.Tests\**" />
     <None Remove="SharedKernel.Persistence.Dapper.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
