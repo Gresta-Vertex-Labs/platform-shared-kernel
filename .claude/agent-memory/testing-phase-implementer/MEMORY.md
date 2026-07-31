@@ -2,7 +2,7 @@
 
 - [16.Testing domain conventions](domain_16_testing_conventions.md) — folder isolation, SelfTests routing rule, blocked-vs-pending distinction, Docs-phase-is-usually-a-diff pattern, Phase Backlog auto-close precedent
 - [Cross-domain source verification discipline](feedback_verify_live_source.md) — always re-read the owning domain's actual .cs files, never trust CLAUDE.md prose or even a prior session's own draft
-- [Check-already-done before working](feedback_check_already_done_before_working.md) — a phase brief's "○ Pending" claim can be stale; read state-map.md's actual task states first, especially on same-day rapid dispatch-then-implement cycles
+- [Check-already-done before working](feedback_check_already_done_before_working.md) — a phase brief's "○/⚑" claim can be stale even mid-phase; git log the exact target file(s), not just state-map.md, before trusting "don't implement X, it's not done yet"
 - [WO-043 P-268/P-269 status](project_wo043_storage_testing.md) — CLOSED 2026-07-18, all six 16.Testing phases ● again, root Phase Backlog P-268/P-269 also flipped
 - [WO-044 P-275/P-276 status](project_wo044_search_testing.md) — Design/Scaffold/Core/Tests all CLOSED 2026-07-20 (85 new SelfTests, 429/429 passing); only Docs (DO-19-DO-22) remains
 - [Testcontainers 4.13.0 ctor break](feedback_testcontainers_413_ctor_break.md) — a "just bump the pin" task can be a real breaking change (obsolete parameterless builder ctors); always rebuild, read warnings, verify with real Docker if available
@@ -15,3 +15,4 @@
 - [WO-049/P-300 Cryptography+FeatureManagement status](project_wo049_p300_core_status.md) — CLOSED 2026-07-29, all six 16.Testing phases ● again; FeatureVariant.Unassigned drift fixed; Dispose-proof technique
 - [WO-050/P-306 Caching/ Redis fakes status](project_wo050_p306_core_status.md) — SK.16.Core AND SK.16.Tests both CLOSED 2026-07-29 (100/100, 64/64); FakeRedisChannelService is the first genuine cross-call fan-out fake; only Docs (DO-30/DO-31) remains
 - [TryAddEnumerable + factory pitfall](feedback_tryaddenumerable_factory_pitfall.md) — single-type-param factory descriptor crashes on first call; two-type-param fixes crash but still silently drops every call after the first for the same concrete type — always write the multi-call resolution test before trusting a "mirrors TryAddEnumerable" design claim
+- [WO-052/P-330 status](project_wo052_p330_testing_status.md) — CLOSED 2026-07-31; EnvelopeAssertions namespace-rename adoption was found already committed (77e87c4) same-day, state-map hadn't caught up; all six 16.Testing phases ● again
