@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SharedKernel.Contracts.Envelope;
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Contracts.Mapping;
 using SharedKernel.Contracts.Pagination;
@@ -53,7 +53,21 @@ Verify(envelope.EventVersion == 1, "EventEnvelope.EventVersion default=1");
 Verify(envelope.SourceService == "orders-service", "EventEnvelope.SourceService");
 Verify(envelope.CorrelationId == "trace-abc", "EventEnvelope.CorrelationId");
 Verify(envelope.CausationId is null, "EventEnvelope.CausationId=null when not provided");
-Console.WriteLine("Surface 4 PASS: EventEnvelope.Wrap");
+Verify(envelope.TenantId is null, "EventEnvelope.TenantId=null when not provided (WO-052/P-331)");
+Console.WriteLine("Surface 4 PASS: EventEnvelope.Wrap (without tenantId)");
+
+// (WO-052/P-331) EventEnvelope.Wrap with the new optional tenantId argument.
+var tenantId = Guid.NewGuid();
+var tenantedDomainEvent = new OrderCreatedDomainEvent { OccurredOn = DateTimeOffset.UtcNow, OrderId = Guid.NewGuid() };
+var tenantedEnvelope = EventEnvelope.Wrap(
+    tenantedDomainEvent,
+    sourceService: "orders-service",
+    correlationId: "trace-def",
+    tenantId: tenantId);
+
+Verify(tenantedEnvelope.TenantId == tenantId, "EventEnvelope.TenantId set when provided (WO-052/P-331)");
+Verify(tenantedEnvelope.EventId == tenantedDomainEvent.Id, "EventEnvelope.EventId=domainEvent.Id (tenanted)");
+Console.WriteLine("Surface 4 PASS: EventEnvelope.Wrap (with tenantId)");
 
 // ── Surface 5: STJ source-generated serialization (no reflection fallback) ───
 //
@@ -78,16 +92,49 @@ var envBack = JsonSerializer.Deserialize<Envelope<string>>(envJson, options)!;
 Verify(envBack.IsSuccess, "STJ round-trip Envelope<string>.IsSuccess");
 Verify(envBack.Value == "hello", "STJ round-trip Envelope<string>.Value");
 
-// Round-trip EventEnvelope<OrderCreatedDomainEvent>
+// Round-trip EventEnvelope<OrderCreatedDomainEvent> (no TenantId)
 var evtJson = JsonSerializer.Serialize(envelope, ConsumerVerifyJsonContext.Default.EventEnvelopeOrderCreatedDomainEvent);
 var evtBack = JsonSerializer.Deserialize(evtJson, ConsumerVerifyJsonContext.Default.EventEnvelopeOrderCreatedDomainEvent)!;
 Verify(evtBack.EventType == "OrderCreatedDomainEvent", "STJ round-trip EventEnvelope.EventType");
 Verify(evtBack.SourceService == "orders-service", "STJ round-trip EventEnvelope.SourceService");
 Verify(evtBack.Payload.OrderId == domainEvent.OrderId, "STJ round-trip EventEnvelope.Payload.OrderId");
+Verify(evtBack.TenantId is null, "STJ round-trip EventEnvelope.TenantId=null (WO-052/P-331)");
+
+// Round-trip EventEnvelope<OrderCreatedDomainEvent> (with TenantId) — WO-052/P-331
+var tenantedEvtJson = JsonSerializer.Serialize(tenantedEnvelope, ConsumerVerifyJsonContext.Default.EventEnvelopeOrderCreatedDomainEvent);
+var tenantedEvtBack = JsonSerializer.Deserialize(tenantedEvtJson, ConsumerVerifyJsonContext.Default.EventEnvelopeOrderCreatedDomainEvent)!;
+Verify(tenantedEvtBack.TenantId == tenantId, "STJ round-trip EventEnvelope.TenantId preserved (WO-052/P-331)");
 
 Console.WriteLine("Surface 5 PASS: STJ source-generated serialization (zero reflection fallback)");
 Console.WriteLine();
-// ── Surface 6: ResultEnvelopeExtensions ─────────────────────────────────────
+
+// ── Surface 6: CursorPagedList<string> (WO-052/P-332) ────────────────────────
+var cursorItems = new List<string> { "delta", "epsilon" };
+var cursorPaged = CursorPagedList<string>.Create(cursorItems, nextCursor: "opaque-cursor-1", hasMore: true);
+Verify(cursorPaged.Items.Count == 2, "CursorPagedList.Items.Count");
+Verify(cursorPaged.NextCursor == "opaque-cursor-1", "CursorPagedList.NextCursor");
+Verify(cursorPaged.HasMore, "CursorPagedList.HasMore=true");
+
+var terminalCursorPaged = CursorPagedList<string>.Create(cursorItems, nextCursor: null, hasMore: false);
+Verify(terminalCursorPaged.NextCursor is null, "CursorPagedList.NextCursor=null on terminal page");
+Verify(!terminalCursorPaged.HasMore, "CursorPagedList.HasMore=false on terminal page");
+
+// Round-trip CursorPagedList<string> through the consumer's merged TypeInfoResolverChain
+var cursorJson = JsonSerializer.Serialize(cursorPaged, ConsumerVerifyJsonContext.Default.CursorPagedListString);
+var cursorBack = JsonSerializer.Deserialize(cursorJson, ConsumerVerifyJsonContext.Default.CursorPagedListString)!;
+Verify(cursorBack.Items.Count == 2, "STJ round-trip CursorPagedList<string>.Items.Count");
+Verify(cursorBack.Items[0] == "delta", "STJ round-trip CursorPagedList<string>.Items[0]");
+Verify(cursorBack.NextCursor == "opaque-cursor-1", "STJ round-trip CursorPagedList<string>.NextCursor");
+Verify(cursorBack.HasMore, "STJ round-trip CursorPagedList<string>.HasMore");
+
+var terminalCursorJson = JsonSerializer.Serialize(terminalCursorPaged, ConsumerVerifyJsonContext.Default.CursorPagedListString);
+var terminalCursorBack = JsonSerializer.Deserialize(terminalCursorJson, ConsumerVerifyJsonContext.Default.CursorPagedListString)!;
+Verify(terminalCursorBack.NextCursor is null, "STJ round-trip CursorPagedList<string>.NextCursor=null preserved");
+Verify(!terminalCursorBack.HasMore, "STJ round-trip CursorPagedList<string>.HasMore=false preserved");
+
+Console.WriteLine("Surface 6 PASS: CursorPagedList<string> (zero reflection fallback)");
+Console.WriteLine();
+// ── Surface 7: ResultEnvelopeExtensions ─────────────────────────────────────
 var successResult = Result<string>.Success("mapped-value");
 var mappedEnvelope = successResult.ToEnvelope();
 Verify(mappedEnvelope.IsSuccess, "Result<T>.Success.ToEnvelope.IsSuccess");
@@ -122,7 +169,7 @@ var voidFailBack = voidFailEnvelope.ToResult();
 Verify(!voidFailBack.IsSuccess, "Envelope.Fail.ToResult.IsSuccess=false");
 Verify(voidFailBack.Error!.Code == "CV-003", "Envelope.Fail.ToResult.Error.Code");
 
-Console.WriteLine("Surface 6 PASS: ResultEnvelopeExtensions (ToEnvelope/ToResult)");
+Console.WriteLine("Surface 7 PASS: ResultEnvelopeExtensions (ToEnvelope/ToResult)");
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
 
@@ -157,6 +204,7 @@ public sealed record OrderCreatedIntegrationEvent(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(PagedList<string>))]
+[JsonSerializable(typeof(CursorPagedList<string>))]
 [JsonSerializable(typeof(Envelope<string>))]
 [JsonSerializable(typeof(EventEnvelope<OrderCreatedDomainEvent>))]
 [JsonSerializable(typeof(OrderCreatedDomainEvent))]
