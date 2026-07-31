@@ -515,10 +515,10 @@ Format when blocked — replace placeholder with table:
 | P-02 | Finalize NuGet packaging metadata for `SharedKernel.Persistence.EfCore` — verify `PackageId`, `Description`, `Version`, `Authors`, `RepositoryUrl`; run `dotnet pack`; verify package dependencies list `Microsoft.EntityFrameworkCore` but not `Npgsql` | WO-013 | `SharedKernel.Persistence.EfCore` | `●` |
 | P-03 | Finalize NuGet packaging metadata for `SharedKernel.Persistence.PostgreSQL` (P-108) — verify `PackageId`, `Description`, `Version`, `Authors`, `RepositoryUrl`; run `dotnet pack`; verify package dependencies list `Npgsql.EntityFrameworkCore.PostgreSQL` and `SharedKernel.Persistence.EfCore`; verify no Dapper dependency in the package graph | WO-018 (P-108) | `SharedKernel.Persistence.PostgreSQL` | `●` |
 | P-04 | Finalize NuGet packaging metadata for `SharedKernel.Persistence.Dapper` (P-109) — verify `PackageId`, `Description`, `Version`, `Authors`, `RepositoryUrl`; run `dotnet pack`; verify package dependencies list `Dapper`, `SharedKernel.Persistence.Abstractions`, and `SharedKernel.Persistence.PostgreSQL`; verify `SharedKernel.Persistence.EfCore` is NOT in the dependency graph | WO-018 (P-109) | `SharedKernel.Persistence.Dapper` | `●` |
-| P-05 | Wire `PackageReadmeFile`/`<None Include="README.md" Pack="true" PackagePath="\" />` into `SharedKernel.Persistence.Abstractions.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.Abstractions` | `○` |
-| P-06 | Wire `PackageReadmeFile` into `SharedKernel.Persistence.EfCore.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.EfCore` | `○` |
-| P-07 | Wire `PackageReadmeFile` into `SharedKernel.Persistence.PostgreSQL.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.PostgreSQL` | `○` |
-| P-08 | Wire `PackageReadmeFile` into `SharedKernel.Persistence.Dapper.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.Dapper` | `○` |
+| P-05 | Wire `PackageReadmeFile`/`<None Include="README.md" Pack="true" PackagePath="\" />` into `SharedKernel.Persistence.Abstractions.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.Abstractions` | `●` |
+| P-06 | Wire `PackageReadmeFile` into `SharedKernel.Persistence.EfCore.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.EfCore` | `●` |
+| P-07 | Wire `PackageReadmeFile` into `SharedKernel.Persistence.PostgreSQL.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.PostgreSQL` | `●` |
+| P-08 | Wire `PackageReadmeFile` into `SharedKernel.Persistence.Dapper.csproj` per DO-50 (P-324); `dotnet pack` succeeds clean with zero `NU5039`/`NU5128` warnings | WO-051 (P-324) | `SharedKernel.Persistence.Dapper` | `●` |
 
 ---
 
@@ -533,7 +533,7 @@ Format when blocked — replace placeholder with table:
 | `SK.06.Core` | Core | 128 | 128 | 0 | `●` |
 | `SK.06.Tests` | Tests | 97 | 97 | 0 | `●` |
 | `SK.06.Docs` | Docs | 52 | 52 | 0 | `●` |
-| `SK.06.Published` | Published | 8 | 4 | 4 | `○` |
+| `SK.06.Published` | Published | 8 | 8 | 0 | `●` |
 
 ---
 
@@ -541,6 +541,7 @@ Format when blocked — replace placeholder with table:
 
 > One line per session. Format: `[YYYY-MM-DD] {what changed} — {trigger}`.
 
+- [2026-07-31] P-05..P-08 → ● in SK.06.Published — verified `PackageReadmeFile` wiring already present in all four .csproj (WO-051/P-324); `dotnet pack` clean, zero NU5039/NU5128 across all four packages; SK.06.Published now 8/8 ● — 06.Persistence has zero pending phases (state-map-phase)
 - [2026-06-01] Sub state-map initialized — phase key registry, 6 phases scaffolded at ○, no tasks yet
 - [2026-06-01] Added 56 tasks across all 6 phases — WO-008 (P-033) design+test tasks D-01..D-06, T-10; WO-013 (P-065..P-070, P-073, P-074) design D-07..D-14, scaffold S-01..S-05, core C-01..C-21, tests T-01..T-09, docs DO-01..DO-04, published P-01..P-02; outbox types removed from Abstractions and EfCore scope (MassTransit EF outbox is 07.Messaging boundary)
 - [2026-06-01] SK.06.Design complete — all 14 design tasks D-01..D-14 marked ●; all interface shapes, interceptor contracts, evaluator pipeline, DI builder signatures, and multi-tenancy patterns confirmed against CLAUDE.md
