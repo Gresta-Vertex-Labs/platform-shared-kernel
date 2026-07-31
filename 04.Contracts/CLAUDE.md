@@ -12,7 +12,7 @@ Philosophy: **Pure DTOs. No Logic. AOT-Safe. STJ-First.**
 
 | Package | Role | References |
 |---------|------|-----------|
-| `SharedKernel.Contracts` | All cross-service DTOs: `PagedList<T>`, `Envelope<T>`, `IIntegrationEvent`, `EventEnvelope<TEvent>`, STJ serialization context base | `SharedKernel.Primitives`, `SharedKernel.Domain` |
+| `SharedKernel.Contracts` | All cross-service DTOs: `PagedList<T>`, `CursorPagedList<T>`, `Envelope<T>`, `IIntegrationEvent`, `EventEnvelope<TEvent>`, STJ serialization context base | `SharedKernel.Primitives`, `SharedKernel.Domain` |
 
 `SharedKernel.Contracts` has **zero external NuGet dependencies** beyond `System.Text.Json` (in-box with `net10.0`). It references `SharedKernel.Primitives` from `01.Core` and `SharedKernel.Domain` from `03.Domain`. The `03.Domain` reference is strictly limited to `IDomainEvent` (constraint on `EventEnvelope<TEvent>`) and `DomainEventVersionHelper.GetVersion(Type)` (populating `EventVersion`). No domain types appear in the public surface of any contracts type.
 
@@ -54,9 +54,32 @@ PagedList<T>  (sealed record)
           The primary record constructor is internal (not private) and annotated with [JsonConstructor]
           to enable STJ source-generated deserialization — this does NOT make direct construction valid;
           Create is still the only externally intended construction path.
+
+CursorPagedList<T>  (sealed record)  (WO-052/P-332)
+    .Items                                                  → IReadOnlyList<T>
+    .NextCursor                                              → string?  (opaque forward cursor; null when there is no further page)
+    .HasMore                                                → bool  (true when at least one more page is available beyond NextCursor)
+    .Create(IReadOnlyList<T> items, string? nextCursor, bool hasMore) → CursorPagedList<T>
+    NOTE: The cursor/keyset-pagination counterpart to PagedList<T>. Deliberately carries no TotalCount,
+          Page, or PageSize — keyset pagination structurally cannot support random-access page numbers or
+          a reliable total count without defeating its own performance purpose (the reason to reach for
+          keyset pagination is to avoid the COUNT(*)/OFFSET cost that grows with table size). Use
+          PagedList<T> for small/random-access/UI-paged result sets that need a total count. Use
+          CursorPagedList<T> for large, actively-written, or infinite-scroll result sets where a stable
+          total count is expensive or meaningless.
+          Doc-only cross-reference (no compile dependency): the specification-side counterpart is
+          03.Domain's KeysetSpecification<T, TKey> (shipped SharedKernel.Domain v1.7.0, P-308/WO-051).
+          06.Persistence's EF Core translation of that specification into a real seek query remains
+          design-locked and queued (P-317/WO-051) — this DTO ships ahead of that translation, mirroring
+          the platform's accepted "design-ahead-of-Core" pattern (e.g. 16.Testing's provider-folder
+          precedent).
+          Construction is Create-only, mirroring PagedList<T>.Create's guarded, non-public-constructor
+          pattern. The primary record constructor is internal and annotated with [JsonConstructor] for
+          STJ source-generated deserialization only — not a valid external construction path.
+          Create rejects: items == null, with ArgumentNullException.
 ```
 
-#### Response Envelope (`Envelope/`)
+#### Response Envelope (`Envelopes/`)
 
 ```
 Envelope  (sealed record — void operations, no typed value payload)
@@ -101,13 +124,15 @@ EventEnvelope<TEvent>  (sealed record)  where TEvent : IDomainEvent
     .EventVersion                                           → int  (from DomainEventVersionHelper.GetVersion(typeof(TEvent)); defaults to 1 if DomainEventVersionAttribute absent)
     .CorrelationId                                          → string?  (set from ambient OTel ActivityContext or caller-provided; null if unavailable)
     .CausationId                                            → string?  (ID of the command or event that caused this event; null for root events)
+    .TenantId                                               → Guid?  (WO-052/P-331 — optional tenant-identity routing metadata; null for non-tenanted/root events)
     .SourceService                                          → string  (name of the service that raised this event; set at composition root)
     .Payload                                                → TEvent  (the wrapped domain event; required init)
     static EventEnvelope.Wrap<TEvent>(
         TEvent domainEvent,
         string sourceService,
         string? correlationId = null,
-        string? causationId = null)                         → EventEnvelope<TEvent>
+        string? causationId = null,
+        Guid? tenantId = null)                              → EventEnvelope<TEvent>
     NOTE: Wrap lives on the non-generic static class EventEnvelope (not on EventEnvelope<TEvent>).
           This avoids the need for callers to specify the type argument explicitly; it is inferred.
     NOTE: EventEnvelope<TEvent> is the messaging transport wrapper. It carries routing metadata alongside
@@ -117,6 +142,19 @@ EventEnvelope<TEvent>  (sealed record)  where TEvent : IDomainEvent
           EventId is NOT a new envelope-level identity — it is copied from the domain event (TEvent.Id).
           EventVersion is populated by Wrap via DomainEventVersionHelper; the publisher does not compute it manually.
           CorrelationId and CausationId are nullable — null is valid for root events with no ambient trace context.
+    NOTE: (WO-052/P-331) TenantId is envelope-level wire-format routing metadata, added so a message-bus
+          consumer, dead-letter-queue inspector, or audit/replay tool can answer "which tenant does this
+          event belong to" without deserializing Payload. It carries NO guarantee derived from TEvent or
+          IDomainEvent — IDomainEvent declares no tenant member, and TenantId is populated only when the
+          publisher explicitly supplies one to Wrap; null is otherwise the default and is valid. This is
+          distinct from 07.Messaging's IMessageHeaderPropagator, which is a transient, broker-adapter-
+          specific transport header that never survives into a durably-stored outbox row or any protocol
+          other than the one adapter that propagated it — TenantId on EventEnvelope<TEvent> is the
+          durable, wire-format-level analogue. A publisher bridging IMessageHeaderPropagator's tenant
+          header into this field at composition-root/publish time is the intended integration pattern,
+          not automatic behavior of this package. Do not conflate with 03.Domain's IHasTenant.TenantId —
+          there is no compile-time relationship between the two; this property exists so 04.Contracts
+          stays decoupled from any per-event tenant marker interface.
     NOTE: The bare `where TEvent : IDomainEvent` constraint guarantees Payload exposes ONLY Id and
           OccurredOn — IDomainEvent has never declared an AggregateId member. AggregateId is available
           on Payload only when the concrete TEvent additionally implements 03.Domain's opt-in
@@ -159,7 +197,7 @@ ResultEnvelopeExtensions  (static class — namespace SharedKernel.Contracts.Map
 ContractsJsonContext  (JsonSerializerContext, internal partial)
     — base STJ source-generated context covering all types in this package
     — decorated with [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
-    — covers: PagedList<object>, Envelope, Envelope<object>, IIntegrationEvent, EventEnvelope<DomainEvent>
+    — covers: PagedList<object>, CursorPagedList<object>, Envelope, Envelope<object>, IIntegrationEvent, EventEnvelope<DomainEvent>
     — internal — consuming services do not reference this context directly
     — consuming services extend via [JsonSerializable(typeof(MyIntegrationEvent))] in their own partial JsonSerializerContext
       and merge via JsonSerializerOptions.TypeInfoResolverChain
@@ -173,7 +211,7 @@ ContractsJsonContext  (JsonSerializerContext, internal partial)
 ## Implementation Rules
 
 - `SharedKernel.Contracts` references `SharedKernel.Primitives` (from `01.Core`) and `SharedKernel.Domain` (from `03.Domain`). No other project or NuGet references are permitted.
-- **Namespace/type name collision:** The `Envelope` type lives in namespace `SharedKernel.Contracts.Envelope` — same name as its namespace. Consuming code must use a using alias (`using EnvelopeNs = SharedKernel.Contracts.Envelope;`) or fully-qualified names to avoid the ambiguity.
+- **`Envelope`/`Envelope<T>` live in namespace `SharedKernel.Contracts.Envelopes`** (plural), folder `Envelopes/` (WO-052/P-328). This namespace previously collided with its own contained type name (`SharedKernel.Contracts.Envelope` containing `Envelope`) — a well-known C# ambiguity footgun that required a using-alias workaround at every consuming call site. The rename eliminates the ambiguity outright; no using-alias workaround is needed or should be used against this namespace going forward.
 - **`InternalsVisibleTo`:** `AssemblyInfo.cs` declares `[assembly: InternalsVisibleTo("SharedKernel.Contracts.Tests")]` so `ContractsJsonContext.Default` is accessible in tests without making the context public.
 - The `03.Domain` reference is used exclusively for `IDomainEvent` (generic constraint on `EventEnvelope<TEvent>`) and `DomainEventVersionHelper.GetVersion(Type)` (computing `EventVersion` in `Wrap`). No other types from `03.Domain` are consumed or re-exported.
 - **No domain logic** — types in this package must be pure DTOs. No methods other than factory methods and computed properties that derive from stored state (e.g., `TotalPages`, `HasNextPage`). No validation rules, no invariants, no business methods.
@@ -190,8 +228,10 @@ ContractsJsonContext  (JsonSerializerContext, internal partial)
 - **STJ source-generated context** — all serialization in this package must be AOT-safe. The `ContractsJsonContext` partial class provides the base context. No `JsonSerializer.Serialize(obj)` calls using reflection-based overloads in this package.
 - `PagedList<T>.Page` is **1-based** — page 1 is the first page. This is consistent with `PagedSpecification<T>` in `03.Domain`.
 - `PagedList<T>.Create` must guard `pageSize >= 1` — PageSize of 0 causes divide-by-zero in `TotalPages` and must be rejected with `ArgumentOutOfRangeException`.
+- **`CursorPagedList<T>` is a sealed record** (WO-052/P-332) — `Create`-only construction, same null-guard discipline as `PagedList<T>.Create` (`items == null` throws `ArgumentNullException`). It deliberately carries no `TotalCount`/`Page`/`PageSize` — never add these to a keyset-pagination DTO; doing so re-introduces the total-count/offset cost the type exists to avoid. Use `PagedList<T>` when a total count and random-access page numbers are needed; use `CursorPagedList<T>` for large, actively-written, or infinite-scroll result sets.
+- **`EventEnvelope<TEvent>.TenantId` is `Guid?`** (WO-052/P-331) — optional envelope-level routing metadata, populated only when the publisher supplies it to `Wrap`; defaults to `null`. It is never inferred from `Payload` and carries no guarantee from `IDomainEvent` (which declares no tenant member). Do not conflate this with `03.Domain`'s `IHasTenant.TenantId` — there is no compile-time relationship between the two; this property exists precisely so `04.Contracts` stays decoupled from any per-event tenant marker interface.
 - **`ResultEnvelopeExtensions` is a pure static class** — all four methods (`ToEnvelope<T>`, `ToEnvelope`, `ToResult<T>`, `ToResult`) must be free of side effects, logging, and allocations beyond the output type. They are the platform-standard bridge for enforcing the `Result<T>` / `Envelope<T>` boundary rule. No logic or branching beyond the `IsSuccess` check is permitted in these methods.
-- **`ResultEnvelopeExtensions` namespace** is `SharedKernel.Contracts.Mapping` — distinct from `SharedKernel.Contracts.Envelope` (which has the type/namespace collision). The `Mapping/` subfolder holds a single file: `ResultEnvelopeExtensions.cs`.
+- **`ResultEnvelopeExtensions` namespace** is `SharedKernel.Contracts.Mapping` — distinct from `SharedKernel.Contracts.Envelopes` (WO-052/P-328 renamed this from `SharedKernel.Contracts.Envelope`; the historical collision this bullet used to reference no longer exists). The `Mapping/` subfolder holds a single file: `ResultEnvelopeExtensions.cs`.
 - No static mutable state anywhere in this domain.
 - No persistence concerns (`DbContext`, EF annotations) — those live in `06.Persistence`.
 - No messaging concerns (`IMessageBus`, consumer registration) — those live in `07.Messaging`.
@@ -226,6 +266,8 @@ options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
 - `ContractsJsonContext` is a `[JsonSourceGenerationOptions]`-decorated internal partial `JsonSerializerContext` — fully AOT-safe; no reflection-based serialization in this package.
 - `typeof(TEvent).Name` in `EventEnvelope<TEvent>.EventType` uses `Type.Name` — trimmer-safe; `Type.Name` is preserved by the trimmer.
 - `DomainEventVersionHelper.GetVersion(typeof(TEvent))` uses `Type` passed explicitly — this is trimmer-safe as `typeof(TEvent)` is a static token known at compile time.
+- `EventEnvelope<TEvent>.TenantId` (WO-052/P-331) is a plain `Guid?` — no reflection, no trimmer concerns; identical AOT profile to `CorrelationId`/`CausationId`.
+- `CursorPagedList<T>` (WO-052/P-332) is a sealed record — no reflection, AOT-safe; identical construction/serialization profile to `PagedList<T>`.
 - No `Activator.CreateInstance`, no `Assembly.Load`, no reflection in hot paths.
 
 ---
@@ -236,7 +278,8 @@ options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
 - `PagedList<T>`: `TotalPages` computation (typical inputs, zero TotalCount), `HasNextPage`/`HasPreviousPage` boundary conditions (first page, last page, middle page, single page, empty list), `Create` factory guard clauses (`[Theory]` with boundary data sets), record structural equality, STJ round-trip using source-generated context.
 - `Envelope` / `Envelope<T>`: success path sets `IsSuccess = true` and correct value; failure path sets `IsSuccess = false` and correct `Error`; implicit operators; `Fail(Error.None)` is not permitted (guard test); `Ok(null)` is not permitted on `Envelope<T>` (guard test); STJ round-trip.
 - `IIntegrationEvent`: concrete `sealed record` implementation assignability; property accessibility from interface reference.
-- `EventEnvelope<TEvent>`: `Wrap` factory sets all fields correctly; `EventId` is copied from `TEvent.Id`; `CorrelationId` is null when not provided; `CausationId` is null when not provided; `EventVersion` defaults to 1 when attribute absent; `EventVersion` uses declared version when attribute present; `EventType` equals `typeof(TEvent).Name`; record equality; STJ round-trip using source-generated context.
+- `EventEnvelope<TEvent>`: `Wrap` factory sets all fields correctly; `EventId` is copied from `TEvent.Id`; `CorrelationId` is null when not provided; `CausationId` is null when not provided; `TenantId` is null when not provided (WO-052/P-331) and correctly set when provided; `EventVersion` defaults to 1 when attribute absent; `EventVersion` uses declared version when attribute present; `EventType` equals `typeof(TEvent).Name`; record equality (including `TenantId` in the structural comparison); STJ round-trip using source-generated context, covering both the null-`TenantId` and populated-`TenantId` cases.
+- `CursorPagedList<T>` (WO-052/P-332): `Create` factory guard clause (`items == null` throws `ArgumentNullException`); `HasMore = true` with a populated `NextCursor`; `HasMore = false` with `NextCursor = null` (terminal page); empty `Items` with `HasMore = false`; record structural equality; STJ round-trip for `CursorPagedList<string>` using source-generated context.
 - All STJ round-trip tests must use source-generated contexts — no reflection-based `JsonSerializer.Serialize(obj)` overloads in tests.
 - STJ round-trip tests must define a **test-level `partial JsonSerializerContext`** (e.g. `TestJsonContext`) that registers the concrete type arguments used in tests (e.g. `PagedList<string>`, `Envelope<string>`, `EventEnvelope<TestOrderCreatedEvent>`). Merge it with `ContractsJsonContext.Default` via `JsonSerializerOptions.TypeInfoResolverChain`. Set `PropertyNamingPolicy = JsonNamingPolicy.CamelCase` directly on the `JsonSerializerOptions` instance — the `[JsonSourceGenerationOptions]` attribute on a context does not auto-apply naming policy to the options object used in the serializer call.
 - All guard-clause tests use `[Theory]` with boundary data sets.
@@ -253,3 +296,7 @@ options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
 - [2026-05-30] SK.04.Design complete — PagedList internal+[JsonConstructor] pattern; Envelope namespace/type collision rule; EventEnvelope non-generic static Wrap class; InternalsVisibleTo for test context; STJ test-level context + CamelCase options pattern (contracts-phase-implementer)
 - [2026-06-18] WO-026/P-166: ResultEnvelopeExtensions static class added to Interface Contracts (Mapping/ section); Implementation Rules updated with purity contract and namespace rules; Test Rules updated with round-trip and double-round-trip requirements; CLAUDE.md reflects 1.1.0 surface (contracts-arch-planner)
 - [2026-07-29] WO-051/P-314: found and corrected a live doc-accuracy defect — `EventEnvelope<TEvent>.Payload`'s shipped XML doc claimed `where TEvent : IDomainEvent` guarantees `Id`, `OccurredOn`, AND `AggregateId`; verified against the real `IDomainEvent` source that only `Id`/`OccurredOn` were ever declared. Interface Contracts' `EventEnvelope<TEvent>` block gained a NOTE stating the accurate contract and pointing to `03.Domain`'s new opt-in `IHasAggregateId<TId>` marker (WO-051/P-309) as the real source of `AggregateId`; Implementation Rules gained a standing rule requiring `IDomainEvent`-related doc claims to be checked against the shipped interface, not assumed. DO-08 added to `state-map.md`'s Docs phase (the actual `.cs` XML doc edit is implementer work, out of this planning agent's jurisdiction); sequenced to run after P-309 ships so the `IHasAggregateId<TId>` cross-reference resolves (contracts-arch-planner)
+- [2026-07-31] WO-052/P-328: designed the fix for the long-documented `Envelope`/`Envelope` namespace-type collision — `Envelope`/`Envelope<T>` move from namespace `SharedKernel.Contracts.Envelope` to `SharedKernel.Contracts.Envelopes` (folder `Envelope/` → `Envelopes/`), matching the sibling `Events/`/`Pagination/`/`Mapping/`/`Serialization/` folders' naming convention; zero change to type members, factory methods, or implicit operators — namespace-only move. Implementation Rules' "Namespace/type name collision" workaround bullet removed outright and replaced with a bullet documenting the fix; `ResultEnvelopeExtensions` namespace bullet updated to reference the new namespace. Target package version on release: `2.0.0` (breaking source change — consumers must update `using` statements/remove the old alias workaround). 6 tasks added across Design/Scaffold/Core/Tests/Docs/Published (D-08, S-06, C-08, T-08, DO-09, P-06) (contracts-arch-planner)
+- [2026-07-31] WO-052/P-331: designed an optional nullable `TenantId` (`Guid?`) addition to `EventEnvelope<TEvent>`, positioned after `CausationId`; `Wrap` gains a trailing optional `Guid? tenantId = null` parameter — purely additive, source- and binary-compatible with every existing call site (no Scaffold task needed; `EventEnvelope<TEvent>` already exists in `Events/EventEnvelope.cs`). XML doc discipline follows the WO-051/P-314 precedent: the property's doc states precisely what is and is not guaranteed — populated only when the publisher supplies it, never inferred from `Payload`, no guarantee from `IDomainEvent` (which declares no tenant member), and explicitly distinct from `07.Messaging`'s transient `IMessageHeaderPropagator` header and from `03.Domain`'s `IHasTenant.TenantId`. 5 tasks added (D-09, C-09, T-09, DO-10, P-07) (contracts-arch-planner)
+- [2026-07-31] WO-052/P-332: designed a new `CursorPagedList<T>` sealed record — the cursor/keyset-pagination counterpart to `PagedList<T>`, placed in `Pagination/` alongside it — carrying `Items`/`NextCursor`/`HasMore`, deliberately no `TotalCount`/`Page`/`PageSize`; `Create`-only construction mirroring `PagedList<T>.Create`'s guard discipline. Ships ahead of `06.Persistence`'s queued EF Core keyset-specification translation (P-317/WO-051), with a doc-only cross-reference to `03.Domain`'s already-shipped `KeysetSpecification<T, TKey>` (P-308/WO-051) — no new compile dependency, no `03.Domain` reference change. 6 tasks added (D-10, S-07, C-10, T-10, DO-11, P-08) (contracts-arch-planner)
+- [2026-07-31] WO-052 sequencing note: all three phases (P-328/P-331/P-332) have `Depends on: None` and no ordering constraint between them; they are expected to ship together in a single `SharedKernel.Contracts` release. Target version `2.0.0` — P-328's breaking namespace rename dominates SemVer for the release even though P-331/P-332 are individually additive; do not double-bump to `2.1.0` in the same pass (contracts-arch-planner)
