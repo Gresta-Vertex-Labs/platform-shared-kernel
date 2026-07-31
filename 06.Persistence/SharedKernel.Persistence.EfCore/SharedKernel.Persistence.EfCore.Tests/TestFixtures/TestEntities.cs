@@ -60,6 +60,49 @@ public sealed class AuditableTestAggregate : AuditableSoftDeletableAggregateRoot
 public sealed record TestDomainEvent : DomainEvent;
 
 // ---------------------------------------------------------------------------
+// Full-auditable, concurrency-token-bearing aggregate (WO-051/P-315 —
+// ConcurrencyInterceptor's provider-neutral SQLite proof; see ConcurrencyInterceptorTests)
+// ---------------------------------------------------------------------------
+
+public sealed class ConcurrentTestAggregate : FullAuditableAggregateRoot<TestId>
+{
+    public string Name { get; private set; } = string.Empty;
+
+    public ConcurrentTestAggregate(TestId id, string name, IClock clock) : base(id, clock)
+    {
+        Name = name;
+    }
+
+    protected ConcurrentTestAggregate() { } // ORM path
+
+    protected override void OnDelete() { }
+
+    /// <summary>Test-only mutator so a real UPDATE statement (beyond RowVersion) is issued.</summary>
+    public void Rename(string name) => Name = name;
+}
+
+// ---------------------------------------------------------------------------
+// Keyset pagination aggregate (WO-051/P-317) — a directly-controllable long sort key,
+// avoiding SQLite's lack of ORDER BY support for DateTimeOffset (a provider-specific test
+// limitation, not a defect in the keyset seek-predicate algorithm itself).
+// ---------------------------------------------------------------------------
+
+public sealed class KeysetTestAggregate : AggregateRoot<TestId>
+{
+    public string Name { get; private set; } = string.Empty;
+    public long SequenceNumber { get; private set; }
+
+    public KeysetTestAggregate(TestId id, string name, long sequenceNumber, IClock clock)
+        : base(id, clock)
+    {
+        Name = name;
+        SequenceNumber = sequenceNumber;
+    }
+
+    protected KeysetTestAggregate() { } // ORM path
+}
+
+// ---------------------------------------------------------------------------
 // Non-soft-deletable aggregate (pass-through test)
 // ---------------------------------------------------------------------------
 

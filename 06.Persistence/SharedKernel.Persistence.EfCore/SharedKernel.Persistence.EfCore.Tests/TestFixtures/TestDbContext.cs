@@ -24,6 +24,8 @@ public sealed class TestDbContext : SharedKernelDbContext
     public DbSet<TestAggregate> TestAggregates => Set<TestAggregate>();
     public DbSet<AuditableTestAggregate> AuditableAggregates => Set<AuditableTestAggregate>();
     public DbSet<HardDeleteAggregate> HardDeleteAggregates => Set<HardDeleteAggregate>();
+    public DbSet<ConcurrentTestAggregate> ConcurrentAggregates => Set<ConcurrentTestAggregate>();
+    public DbSet<KeysetTestAggregate> KeysetAggregates => Set<KeysetTestAggregate>();
 
     public TestDbContext(
         DbContextOptions<TestDbContext> options,
@@ -48,6 +50,8 @@ public sealed class TestDbContext : SharedKernelDbContext
         modelBuilder.ApplyConfiguration(new TestAggregateConfig());
         modelBuilder.ApplyConfiguration(new AuditableTestAggregateConfig());
         modelBuilder.ApplyConfiguration(new HardDeleteAggregateConfig());
+        modelBuilder.ApplyConfiguration(new ConcurrentTestAggregateConfig());
+        modelBuilder.ApplyConfiguration(new KeysetTestAggregateConfig());
     }
 }
 
@@ -79,6 +83,25 @@ public sealed class HardDeleteAggregateConfig : EntityTypeConfigurationBase<Hard
     {
         base.Configure(builder);
         builder.Property(e => e.Title).HasMaxLength(200).IsRequired();
+    }
+}
+
+public sealed class ConcurrentTestAggregateConfig : EntityTypeConfigurationBase<ConcurrentTestAggregate, TestId>
+{
+    public override void Configure(EntityTypeBuilder<ConcurrentTestAggregate> builder)
+    {
+        base.Configure(builder);
+        builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
+    }
+}
+
+public sealed class KeysetTestAggregateConfig : EntityTypeConfigurationBase<KeysetTestAggregate, TestId>
+{
+    public override void Configure(EntityTypeBuilder<KeysetTestAggregate> builder)
+    {
+        base.Configure(builder);
+        builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
+        builder.Property(e => e.SequenceNumber).IsRequired();
     }
 }
 

@@ -7,58 +7,94 @@ using SharedKernel.Primitives.Errors;
 namespace SharedKernel.Persistence.EfCore.Interceptors;
 
 /// <summary>
-/// EF Core save-changes interceptor that converts <see cref="DbUpdateConcurrencyException"/>
-/// into a typed <see cref="ConflictException"/> for entities implementing
-/// <see cref="IHasConcurrency"/>.
+/// EF Core save-changes interceptor holding the rule that translates
+/// <see cref="DbUpdateConcurrencyException"/> into a typed <see cref="ConflictException"/> for
+/// entities implementing <see cref="IHasConcurrency"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// On <see cref="SaveChangesFailedAsync"/> / <see cref="SaveChangesFailed"/>: when a
-/// <see cref="DbUpdateConcurrencyException"/> is thrown and at least one of the conflicting
-/// entries implements <see cref="IHasConcurrency"/>, this interceptor rethrows the exception
-/// as a <see cref="ConflictException"/> carrying <see cref="Error.Conflict(string, string)"/>.
+/// <strong>CORRECTED, WO-051/P-315 (D-66) — genuine defect found and fixed:</strong> this
+/// interceptor originally performed the translation directly inside its
+/// <see cref="SaveChangesFailed"/>/<see cref="SaveChangesFailedAsync"/> overrides, on the
+/// assumption that an exception thrown from those hooks would replace the exception propagating
+/// out of <c>DbContext.SaveChanges</c>/<c>SaveChangesAsync</c>. A real <see cref="IHasConcurrency"/>
+/// SQLite test fixture (added by this same phase — see
+/// <c>ConcurrencyInterceptorTests</c>) proved that assumption FALSE against EF Core 10.0.5, using
+/// the platform's real three-interceptor (Audit/SoftDelete/Concurrency) registration shape:
+/// <strong>any exception thrown from <c>SaveChangesFailed</c>/<c>SaveChangesFailedAsync</c> is
+/// swallowed by EF Core's own interceptor dispatcher</strong> — confirmed by throwing an
+/// unconditional, unrelated exception from these hooks and observing the ORIGINAL
+/// <see cref="DbUpdateConcurrencyException"/> still propagate to the caller unchanged. These two
+/// hooks are diagnostic/notification-only in EF Core 10, unlike <c>SavingChanges</c>/
+/// <c>SavingChangesAsync</c>, which DO support suppression via <c>InterceptionResult&lt;int&gt;</c>.
+/// </para>
+/// <para>
+/// <strong>The fix:</strong> the translation RULE stays here as <see cref="TryTranslate"/> (single
+/// source of truth for "which exception, which entries, which <see cref="Error"/>"), but the
+/// actual ENFORCEMENT point moved to
+/// <see cref="SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.SaveChanges(bool)"/> and
+/// <see cref="SharedKernel.Persistence.EfCore.Context.SharedKernelDbContext.SaveChangesAsync(bool, CancellationToken)"/>,
+/// which wrap the base call in a try/catch and call <see cref="TryTranslate"/> directly — the only
+/// mechanism EF Core 10 actually honors for replacing a propagating <c>SaveChanges</c> exception.
+/// <see cref="SaveChangesFailed"/>/<see cref="SaveChangesFailedAsync"/> are retained as harmless
+/// base-delegating overrides for interceptor-pipeline symmetry (this class remains one of the
+/// platform's three registered interceptors) — they perform no translation of their own.
 /// </para>
 /// <para>
 /// <strong>No retry logic.</strong> Conflict resolution is the application layer's
-/// responsibility — the interceptor surfaces the conflict and stops. Callers that require
-/// retry behaviour must implement it in a MediatR pipeline behavior or equivalent.
+/// responsibility — <see cref="TryTranslate"/> surfaces the conflict and stops. Callers that
+/// require retry behaviour must implement it in a MediatR pipeline behavior or equivalent.
 /// </para>
 /// <para>
-/// Non-concurrency exceptions and <see cref="DbUpdateConcurrencyException"/> instances that
-/// do not involve <see cref="IHasConcurrency"/> entries propagate unchanged.
+/// Non-concurrency exceptions and <see cref="DbUpdateConcurrencyException"/> instances that do not
+/// involve <see cref="IHasConcurrency"/> entries are left untranslated by <see cref="TryTranslate"/>
+/// (returns <see langword="null"/>) and propagate unchanged.
 /// </para>
 /// </remarks>
 public sealed class ConcurrencyInterceptor : SaveChangesInterceptor
 {
     /// <inheritdoc />
-    public override void SaveChangesFailed(DbContextErrorEventData eventData)
-    {
-        HandleFailure(eventData);
+    /// <remarks>
+    /// No-op beyond the base implementation — see the class remarks for why this hook cannot
+    /// replace the propagating exception in EF Core 10.
+    /// </remarks>
+    public override void SaveChangesFailed(DbContextErrorEventData eventData) =>
         base.SaveChangesFailed(eventData);
-    }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// No-op beyond the base implementation — see the class remarks for why this hook cannot
+    /// replace the propagating exception in EF Core 10.
+    /// </remarks>
     public override Task SaveChangesFailedAsync(
         DbContextErrorEventData eventData,
-        CancellationToken cancellationToken = default)
-    {
-        HandleFailure(eventData);
-        return base.SaveChangesFailedAsync(eventData, cancellationToken);
-    }
+        CancellationToken cancellationToken = default) =>
+        base.SaveChangesFailedAsync(eventData, cancellationToken);
 
-    // Rethrows as ConflictException when DbUpdateConcurrencyException affects IHasConcurrency entities.
-    private static void HandleFailure(DbContextErrorEventData eventData)
+    /// <summary>
+    /// Translates <paramref name="exception"/> into a <see cref="ConflictException"/> when it is a
+    /// <see cref="DbUpdateConcurrencyException"/> affecting at least one <see cref="IHasConcurrency"/>
+    /// entry.
+    /// </summary>
+    /// <param name="exception">The exception observed at the <c>SaveChanges</c> call boundary.</param>
+    /// <returns>
+    /// A <see cref="ConflictException"/> carrying <see cref="Error.Conflict(string, string)"/> and
+    /// wrapping <paramref name="exception"/> as its inner exception when translation applies;
+    /// otherwise <see langword="null"/> — the caller must let <paramref name="exception"/>
+    /// propagate unchanged in that case.
+    /// </returns>
+    internal static ConflictException? TryTranslate(Exception exception)
     {
-        if (eventData.Exception is not DbUpdateConcurrencyException concurrencyEx)
-            return;
+        if (exception is not DbUpdateConcurrencyException concurrencyEx)
+            return null;
 
         var affectsHasConcurrency = concurrencyEx.Entries
             .Any(e => e.Entity is IHasConcurrency);
 
         if (!affectsHasConcurrency)
-            return;
+            return null;
 
-        throw new ConflictException(
+        return new ConflictException(
             Error.Conflict(
                 "persistence.concurrency_conflict",
                 "A concurrency conflict occurred. The entity was modified by another process. Reload and retry."),

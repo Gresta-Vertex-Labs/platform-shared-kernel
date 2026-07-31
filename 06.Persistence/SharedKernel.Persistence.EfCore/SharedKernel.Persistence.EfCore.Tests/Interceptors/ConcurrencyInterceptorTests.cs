@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using NSubstitute;
 using SharedKernel.Core.Exceptions;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
 using SharedKernel.Primitives.Clocks;
@@ -11,20 +12,41 @@ namespace SharedKernel.Persistence.EfCore.Tests.Interceptors;
 
 public sealed class ConcurrencyInterceptorTests
 {
+    // WO-051/P-315 (D-66): replaces the previous non-functional
+    // `interceptor.Should().NotBeNull()` placeholder assertion with a real, provider-neutral proof.
+    // SQLite has no auto-generated concurrency token equivalent to PostgreSQL's `xmin` (that
+    // provider-specific proof lives in SharedKernel.Persistence.PostgreSQL.Tests against a real
+    // Testcontainer), so this test deterministically forces a conflict by tampering with the
+    // tracked entity's OriginalValues for the IHasConcurrency.RowVersion property so the UPDATE's
+    // WHERE clause never matches the actual row — proving ConcurrencyInterceptor's rethrow
+    // behavior without depending on any provider-specific auto-update mechanism.
     [Fact]
-    public void SaveChangesFailed_DbUpdateConcurrencyException_WithHasConcurrencyEntry_ThrowsConflictException()
+    public async Task SaveChanges_ConcurrencyConflict_MismatchedRowVersionOriginalValue_ThrowsConflictException()
     {
         // Arrange
-        var interceptor = new ConcurrencyInterceptor();
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
 
-        // We need to create a DbUpdateConcurrencyException with at least one IHasConcurrency entry.
-        // EntityEntry cannot be created independently outside a DbContext without significant EF internals.
-        // We test the interceptor via a real SQLite round-trip with a full-audit aggregate.
+        var id = TestId.New();
+        var aggregate = new ConcurrentTestAggregate(id, "Original", new SystemClock());
+        ctx.ConcurrentAggregates.Add(aggregate);
+        await ctx.SaveChangesAsync();
 
-        // The approach: call SaveChangesFailed directly with a mocked event data.
-        // Since EntityEntry cannot be easily mocked without EF internals, we verify the
-        // interceptor does NOT wrap non-IHasConcurrency entries (which is testable).
-        interceptor.Should().NotBeNull(); // Ensure interceptor is created
+        ctx.ChangeTracker.Clear();
+        var tracked = await ctx.ConcurrentAggregates.FirstAsync(e => e.Id == id);
+        tracked.Rename("Modified");
+
+        // Deterministically force a mismatch: the UPDATE's WHERE clause will compare this
+        // (fabricated) original value against the row's real current RowVersion, which can never
+        // match — zero affected rows, triggering DbUpdateConcurrencyException.
+        ctx.Entry(tracked).Property(nameof(IHasConcurrency.RowVersion)).OriginalValue =
+            new byte[] { 1, 2, 3, 4 };
+
+        // Act
+        Func<Task> act = () => ctx.SaveChangesAsync();
+
+        // Assert
+        var exception = await act.Should().ThrowAsync<ConflictException>();
+        exception.Which.Error.Type.Should().Be(SharedKernel.Primitives.Errors.ErrorType.Conflict);
     }
 
     [Fact]
@@ -50,42 +72,8 @@ public sealed class ConcurrencyInterceptorTests
         exception.Which.Should().NotBeOfType<ConflictException>();
     }
 
-    [Fact]
-    public async Task SaveChanges_ConcurrencyConflict_OnHasConcurrencyEntity_ThrowsConflictException()
-    {
-        // Arrange — use a shared SQLite file so two contexts see the same data
-        var dbName = $"concurrency-{Guid.NewGuid():N}";
-        var connStr = $"DataSource=file:{dbName}?mode=memory&cache=shared";
-
-        var options1 = new DbContextOptionsBuilder<TestDbContext>()
-            .UseSqlite(connStr)
-            .Options;
-        var options2 = new DbContextOptionsBuilder<TestDbContext>()
-            .UseSqlite(connStr)
-            .Options;
-
-        var userContext = TestDbContextFactory.CreateAuthenticatedUserContext(Guid.NewGuid());
-        var clock = TestDbContextFactory.CreateClock(DateTimeOffset.UtcNow);
-        var svcOpts = TestDbContextFactory.DefaultServiceOptions();
-        var audit1 = new AuditInterceptor(userContext, clock, svcOpts);
-        var softDel1 = new SoftDeleteInterceptor(userContext, clock, svcOpts);
-        var conc1 = new ConcurrencyInterceptor();
-        var audit2 = new AuditInterceptor(userContext, clock, svcOpts);
-        var softDel2 = new SoftDeleteInterceptor(userContext, clock, svcOpts);
-        var conc2 = new ConcurrencyInterceptor();
-
-        await using var ctx1 = new TestDbContext(options1, audit1, softDel1, conc1);
-        await using var ctx2 = new TestDbContext(options2, audit2, softDel2, conc2);
-        ctx1.Database.EnsureCreated();
-
-        // Seed an auditable aggregate (which implements IHasConcurrency? No — AuditableTestAggregate extends AuditableSoftDeletableAggregateRoot which doesn't have IHasConcurrency)
-        // For a proper test we need the FullAuditableTestAggregate that has IHasConcurrency.
-        // Since our test entities don't have it, we verify the positive path differently:
-        // The interceptor should NOT throw ConflictException for non-IHasConcurrency entries.
-
-        // This test verifies the interceptor only wraps IHasConcurrency entries.
-        // A non-IHasConcurrency entity's DbUpdateConcurrencyException passes through unchanged.
-        // (Full IHasConcurrency integration test would require pgvector / xmin — PostgreSQL-only.)
-        true.Should().BeTrue();
-    }
+    // WO-051/P-315 (D-66): the real PostgreSQL xmin concurrency-conflict proof (two DbContext
+    // instances, genuine xmin auto-update, DbUpdateConcurrencyException surfacing from an actual
+    // provider mismatch) lives in SharedKernel.Persistence.PostgreSQL.Tests against a real
+    // Testcontainer — xmin is an Npgsql-only mechanism, so it cannot be proven here.
 }

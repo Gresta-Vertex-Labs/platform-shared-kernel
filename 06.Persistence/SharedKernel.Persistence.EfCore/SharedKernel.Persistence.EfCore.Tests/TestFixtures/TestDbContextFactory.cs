@@ -40,6 +40,7 @@ internal static class TestDbContextFactory
     {
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
         var audit = new AuditInterceptor(userContext, clock, serviceOptions);
@@ -58,6 +59,7 @@ internal static class TestDbContextFactory
     {
         var options = new DbContextOptionsBuilder<TenantedTestDbContext>()
             .UseSqlite($"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared")
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
         userContext ??= CreateAuthenticatedUserContext(Guid.NewGuid());
@@ -85,6 +87,7 @@ internal static class TestDbContextFactory
 
         var options = new DbContextOptionsBuilder<SoftDeletableTenantedDbContext>()
             .UseSqlite(connection)
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
         userContext ??= CreateAuthenticatedUserContext(Guid.NewGuid());

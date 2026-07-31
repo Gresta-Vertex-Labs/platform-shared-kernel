@@ -25,10 +25,20 @@ namespace SharedKernel.Persistence.EfCore.Configurations;
 /// <c>ModelConfigurationBuilder</c> to register the converter globally instead.
 /// </para>
 /// <para>
-/// <strong>Concurrency token:</strong> <c>.IsRowVersion()</c> is applied for
-/// <see cref="IHasConcurrency"/> entities. The provider-specific concurrency convention
-/// (<c>ConcurrencyTokenConvention</c>) will override this with the optimal strategy for the
-/// active database provider (e.g., <c>xmin</c> for PostgreSQL).
+/// <strong>Concurrency token (CORRECTED, WO-051/P-315):</strong> <c>.IsConcurrencyToken()</c> is
+/// applied for <see cref="IHasConcurrency"/> entities — a provider-neutral EF Core concept (the
+/// property is included in the UPDATE <c>WHERE</c> clause) with zero assumption about server-side
+/// auto-generation. The previously-documented <c>.IsRowVersion()</c> call (and the never-built
+/// <c>ConcurrencyTokenConvention</c> this doc used to reference) is retired: a provider-branching
+/// convention living in <c>SharedKernel.Persistence.EfCore</c> is architecturally impossible,
+/// since <c>.UseXminAsConcurrencyToken()</c> is an <c>Npgsql.EntityFrameworkCore.PostgreSQL</c>
+/// extension method and this package must never reference Npgsql. <c>.IsRowVersion()</c> was also
+/// provably non-functional against a plain PostgreSQL <c>bytea</c> column — nothing in Postgres
+/// auto-populates an arbitrary <c>bytea</c> on <c>UPDATE</c> the way SQL Server's native
+/// <c>rowversion</c> type does, so the token value never changed and concurrent writes never
+/// conflicted. The genuinely-working PostgreSQL mechanism (binding the property to the real
+/// <c>xmin</c> system column) lives entirely in <c>SharedKernel.Persistence.PostgreSQL</c>'s
+/// <c>XminConcurrencyTokenConvention</c>, which reconfigures the property this method marks.
 /// </para>
 /// <para>
 /// <strong>Soft-delete filter:</strong> <c>e =&gt; !e.IsDeleted</c> is applied as a global
@@ -79,13 +89,17 @@ public abstract class EntityTypeConfigurationBase<TEntity, TId> : IEntityTypeCon
         builder.HasKey("Id");
     }
 
-    // Applies .IsRowVersion() for IHasConcurrency entities.
+    // Marks RowVersion as a provider-neutral concurrency token for IHasConcurrency entities
+    // (WO-051/P-315 — see the ConfigureConcurrencyToken remarks above for why .IsRowVersion()
+    // was retired). SharedKernel.Persistence.PostgreSQL's XminConcurrencyTokenConvention
+    // reconfigures this property to bind to the real xmin system column when UsePostgreSQL()
+    // is in effect.
     private static void ConfigureConcurrencyToken(EntityTypeBuilder<TEntity> builder)
     {
         if (typeof(IHasConcurrency).IsAssignableFrom(typeof(TEntity)))
         {
             builder.Property(nameof(IHasConcurrency.RowVersion))
-                   .IsRowVersion();
+                   .IsConcurrencyToken();
         }
     }
 
