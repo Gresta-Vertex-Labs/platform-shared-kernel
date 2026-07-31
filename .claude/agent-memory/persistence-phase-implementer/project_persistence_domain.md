@@ -5,15 +5,88 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-06-16)
-- SK.06.Design: complete (58/58 tasks)
-- SK.06.Scaffold: complete (12/12 tasks)
-- SK.06.Core: complete (92/92 tasks) — C-82..C-92 (WO-024) done 2026-06-16
-- SK.06.Tests: complete (54/54 tasks) — T-40..T-54 (WO-019+WO-024) done 2026-06-16
-- SK.06.Docs: complete (36/36 tasks) — DO-29..DO-36 (WO-019+WO-024) done 2026-06-16
-- SK.06.Published: complete (4/4) — root state-map already shows domain 06 at Published/●
-- ALL SUB-MAP PHASES NOW COMPLETE. Root state-map row for 06.Persistence is at Published(●).
-  No further work remains in this domain unless a new phase is added.
+## Phase completion status (as of 2026-07-30, WO-051 Design phase closed)
+- SK.06.Design: complete (84/84 tasks) — D-65..D-84 (WO-051 batches 1+2) done 2026-07-30
+- SK.06.Core / Tests / Docs / Published: WO-051 added MORE tasks to these phases that are
+  STILL PENDING (Core 97/128, Tests 60/97, Docs 38/52, Published 4/8 as of 2026-07-30) — a
+  FUTURE session must continue there. Do not assume "Published" in root state-map means
+  every sub-phase task is done — this domain repeatedly gets NEW WO's adding tasks to
+  already-"complete" phase-key sections after reaching Published once (WO-013), and the
+  root Domain Summary Board's "Current Phase" column just reflects whichever phase-key was
+  MOST RECENTLY closed, not a monotonic milestone — it can and does go back to "Design" when
+  a new batch of design tasks completes, even after the domain previously showed "Published".
+- ALWAYS re-read 06.Persistence/state-map.md's own Overall Progress table before assuming a
+  phase is done — don't trust the root's one-line domain summary alone.
+
+## CRITICAL: EF Core DbContext pooling + OnConfiguring interceptor wiring (discovered WO-051/P-322)
+`DbContextOptions.IsFrozen` is a PUBLIC property (confirmed via direct probe against the real
+package, not assumed). `AddPooledDbContextFactory<TContext>(...)` FREEZES the options built by its
+own `optionsAction` BEFORE any pooled `TContext` instance is ever constructed — `Options.IsFrozen`
+is `true` inside `OnConfiguring` for EVERY pooled instance, including the very first. If
+`OnConfiguring` tries to mutate the builder anyway (e.g. `AddInterceptors(...)`, which this
+platform's `SharedKernelDbContext.OnConfiguring` unconditionally did before this fix), it does NOT
+throw immediately at the mutation call site — it silently "succeeds" and only throws LATER, the
+first time the context's internal services are actually built (`SaveChangesAsync`,
+`EnsureCreatedAsync`, etc.), with `InvalidOperationException: 'OnConfiguring' cannot be used to
+modify DbContextOptions when DbContext pooling is enabled`. This was caught ONLY by writing a real
+end-to-end DI test (`AddSharedKernelEfCore<T>(...).WithDbContextPooling().Build()` +
+`BuildServiceProvider()` + `CreateScope()` + `EnsureCreatedAsync()`), never by unit-testing the
+builder's registration list alone.
+**Fix pattern (reusable for any future domain adding pooled-DbContext support):**
+1. Guard the base class's `OnConfiguring` mutation: `if (!optionsBuilder.Options.IsFrozen) { ...
+   existing AddInterceptors/other mutation logic... }` — a no-op under pooling is correct here.
+2. Pre-wire whatever `OnConfiguring` would have added, INSIDE the pool's own `optionsAction`,
+   BEFORE the freeze — use the `AddPooledDbContextFactory<TContext>((sp, options) => {...},
+   poolSize)` two-arg overload (NOT the simple `Action<DbContextOptionsBuilder>` overload) to get
+   `IServiceProvider sp` access for resolving singleton dependencies (e.g. `IClock`,
+   `IOptions<T>`) needed to construct the interceptors. A throwaway placeholder value is fine for
+   any per-request-scoped constructor parameter (e.g. `IUserContext`) PROVIDED the interceptor
+   itself has ALREADY been redesigned to read live per-request state off the current `DbContext`
+   instance (`eventData.Context`) rather than its own captured field — otherwise the placeholder
+   value would be baked in for the pool's entire lifetime, which is the exact hazard pooling
+   support is supposed to fix in the first place.
+3. `sp` inside this `optionsAction` is NOT a real per-request scope (EF Core resolves pool-miss
+   construction dependencies from its own internal scope) — resolving genuinely scoped consumer
+   services from it (e.g. a `.AddInterceptor<T>()` custom interceptor needing its own scoped
+   dependency) will throw a normal "cannot resolve scoped service from root provider" DI error.
+   Documented as an accepted, out-of-scope edge case rather than solved — only the platform's own
+   three interceptors are guaranteed pool-safe by this pattern.
+
+## Test-suite-wide EF Core gotcha: ManyServiceProvidersCreatedWarning (recurring, not "fixed once")
+EF Core's internal `ServiceProviderCache` throws `InvalidOperationException` (wrapping
+`ManyServiceProvidersCreatedWarning`) once more than ~20 DISTINCT internal service providers have
+been built across the ENTIRE TEST PROCESS (not per test class) — and the exception surfaces on
+whichever DbContext construction happens to be the Nth (>20) in that PARTICULAR run's execution
+order, which varies between runs because xUnit parallelizes test classes. This makes it look like a
+RANDOM, unrelated test is flaky, when the real cause is often a DIFFERENT file that never called
+`.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))` on its own
+`DbContextOptionsBuilder`. **Every single `DbContextOptionsBuilder`/`options.UseSqlite(...)` call
+site across the WHOLE test project needs this suppression — not just newly-added ones.** Adding new
+distinct DbContextOptions configurations (even fully-suppressed ones) still consumes cache slots and
+can push the total over the threshold, causing a PRE-EXISTING, previously-dormant, unsuppressed call
+site elsewhere in the suite to start failing intermittently. When this happens: `grep -rl
+"UseSqlite(" *.Tests/ --include="*.cs"` then check each file for `ConfigureWarnings` — any file
+missing it is a latent time bomb. Found and fixed 10 such files in `SharedKernel.Persistence.EfCore.Tests`
+during WO-051 (including the most-reused fixture, `TestDbContextFactory.cs` — fixing that ALONE
+would not have been sufficient, since structurally-different configurations across OTHER files each
+contribute their own distinct cache entries).
+
+## Cross-test ActivitySource contamination for exact-count assertions (discovered WO-051/P-319)
+A shared static `ActivitySource` + xUnit's default cross-CLASS parallelism means an `ActivityListener`
+filtering only on `OperationName` can observe a concurrently-running SIBLING test class's span if
+both drive the same traced operation (e.g. two different test files both calling
+`EfReadRepository.StreamAsync` on the same aggregate type). `02.Caching`'s own precedent
+(`OtelTracingTests`/`OtelMetricsTests`) solves this with existence-style (`>= 1`) tolerance, which
+works when the assertion is "a span with these characteristics exists." It does NOT work when the
+assertion must be an EXACT count (e.g. proving `StreamAsync` produces exactly ONE span for a full
+enumeration, not one per item — the actual invariant under test). Fix: start a local root `Activity`
+via the plain `System.Diagnostics.Activity` API — `using var rootActivity = new
+Activity("Test.Root").Start();` (no `ActivitySource`/listener registration needed for this alone to
+work — `Activity.Start()` sets `Activity.Current` by itself) — BEFORE registering the
+`ActivityListener`. Since `ActivitySource.StartActivity(name, kind)` with no explicit parent
+defaults to `Activity.Current`, every span the code-under-test produces becomes a direct child of
+`rootActivity`. Filter observed activities to `activity.ParentId == rootActivity.Id` to isolate
+"spans this test's own call produced" from "spans any concurrently-running sibling test produced."
 
 ## EF Core 10.0.5 API gotchas (verified by compiling against real package, 2026-06-15)
 These corrected two designs originally written by persistence-arch-planner (WO-024) that referenced
@@ -91,7 +164,10 @@ global using Xunit;
 - No outbox types anywhere in 06.Persistence — MassTransit's UseEntityFrameworkOutbox owns that at 07.Messaging
 - SharedKernelDbContext registers exactly 3 interceptors: AuditInterceptor, SoftDeleteInterceptor, ConcurrencyInterceptor
 - ICurrentTenantService is defined in SharedKernel.Persistence.EfCore (not Abstractions)
-- IUserContext is NOT referenced via project reference — injected via DI; no reference to 12.Security packages
+- CORRECTED (was stale): `SharedKernel.Persistence.EfCore` DOES take a direct `ProjectReference` to
+  `SharedKernel.Security.Abstractions` (P-078, a deliberate, documented layering exception — it's a
+  zero-dependency interface library) for `IUserContext`/`ITenantProvider`. No OTHER `12.Security.*`
+  package may ever be referenced from this domain.
 - EfCorePersistenceBuilder is the sole DI entry point for EfCore wiring
 - Paging (Skip/Take) is ALWAYS the last operation in SpecificationEvaluator pipeline
 - AuditInterceptor and SoftDeleteInterceptor must use ChangeTracker.Entry(entity).CurrentValues[name] — never direct property setters
