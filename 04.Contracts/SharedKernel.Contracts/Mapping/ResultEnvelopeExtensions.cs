@@ -1,12 +1,12 @@
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Primitives.Results;
-using EnvelopeNs = SharedKernel.Contracts.Envelope;
 
 namespace SharedKernel.Contracts.Mapping;
 
 /// <summary>
 /// Pure extension methods that bridge <see cref="Result{T}"/> / <see cref="Result"/>
 /// (intra-service railway types from <c>SharedKernel.Primitives</c>) and
-/// <see cref="EnvelopeNs.Envelope{T}"/> / <see cref="EnvelopeNs.Envelope"/>
+/// <see cref="Envelope{T}"/> / <see cref="Envelope"/>
 /// (cross-service serialization types from <c>SharedKernel.Contracts</c>).
 /// </summary>
 /// <remarks>
@@ -19,14 +19,14 @@ namespace SharedKernel.Contracts.Mapping;
 public static class ResultEnvelopeExtensions
 {
     /// <summary>
-    /// Maps a <see cref="Result{T}"/> to an <see cref="EnvelopeNs.Envelope{T}"/> for serialization
+    /// Maps a <see cref="Result{T}"/> to an <see cref="Envelope{T}"/> for serialization
     /// at a service boundary.
     /// </summary>
     /// <typeparam name="T">The type of the success value.</typeparam>
     /// <param name="result">The intra-service result to map.</param>
     /// <returns>
-    /// <see cref="EnvelopeNs.Envelope{T}.Ok(T)"/> when <paramref name="result"/> is successful;
-    /// <see cref="EnvelopeNs.Envelope{T}.Fail(SharedKernel.Primitives.Errors.Error)"/> otherwise.
+    /// <see cref="Envelope{T}.Ok(T)"/> when <paramref name="result"/> is successful;
+    /// <see cref="Envelope{T}.Fail(SharedKernel.Primitives.Errors.Error)"/> otherwise.
     /// </returns>
     /// <remarks>
     /// Typical usage at a minimal-API or controller action boundary:
@@ -37,21 +37,21 @@ public static class ResultEnvelopeExtensions
     ///     : Results.UnprocessableEntity(result.ToEnvelope());
     /// </code>
     /// </remarks>
-    /// <seealso cref="EnvelopeNs.Envelope{T}"/>
+    /// <seealso cref="Envelope{T}"/>
     /// <seealso cref="Result{T}"/>
-    public static EnvelopeNs.Envelope<T> ToEnvelope<T>(this Result<T> result)
+    public static Envelope<T> ToEnvelope<T>(this Result<T> result)
         => result.IsSuccess
-            ? EnvelopeNs.Envelope<T>.Ok(result.Value!)
-            : EnvelopeNs.Envelope<T>.Fail(result.Error!);
+            ? Envelope<T>.Ok(result.Value!)
+            : Envelope<T>.Fail(result.Error!);
 
     /// <summary>
-    /// Maps a <see cref="Result"/> (void operation) to an <see cref="EnvelopeNs.Envelope"/>
+    /// Maps a <see cref="Result"/> (void operation) to an <see cref="Envelope"/>
     /// for serialization at a service boundary.
     /// </summary>
     /// <param name="result">The intra-service void result to map.</param>
     /// <returns>
-    /// <see cref="EnvelopeNs.Envelope.Ok()"/> when <paramref name="result"/> is successful;
-    /// <see cref="EnvelopeNs.Envelope.Fail(SharedKernel.Primitives.Errors.Error)"/> otherwise.
+    /// <see cref="Envelope.Ok()"/> when <paramref name="result"/> is successful;
+    /// <see cref="Envelope.Fail(SharedKernel.Primitives.Errors.Error)"/> otherwise.
     /// </returns>
     /// <remarks>
     /// Typical usage at a minimal-API endpoint for a command (void) result:
@@ -62,15 +62,15 @@ public static class ResultEnvelopeExtensions
     ///     : Results.UnprocessableEntity(result.ToEnvelope());
     /// </code>
     /// </remarks>
-    /// <seealso cref="EnvelopeNs.Envelope"/>
+    /// <seealso cref="Envelope"/>
     /// <seealso cref="Result"/>
-    public static EnvelopeNs.Envelope ToEnvelope(this Result result)
+    public static Envelope ToEnvelope(this Result result)
         => result.IsSuccess
-            ? EnvelopeNs.Envelope.Ok()
-            : EnvelopeNs.Envelope.Fail(result.Error!);
+            ? Envelope.Ok()
+            : Envelope.Fail(result.Error!);
 
     /// <summary>
-    /// Maps an <see cref="EnvelopeNs.Envelope{T}"/> received at a service boundary back to a
+    /// Maps an <see cref="Envelope{T}"/> received at a service boundary back to a
     /// <see cref="Result{T}"/> for railway-oriented processing inside the calling service.
     /// </summary>
     /// <typeparam name="T">The type of the success value.</typeparam>
@@ -87,15 +87,15 @@ public static class ResultEnvelopeExtensions
     /// // continue with railway-oriented flow
     /// </code>
     /// </remarks>
-    /// <seealso cref="EnvelopeNs.Envelope{T}"/>
+    /// <seealso cref="Envelope{T}"/>
     /// <seealso cref="Result{T}"/>
-    public static Result<T> ToResult<T>(this EnvelopeNs.Envelope<T> envelope)
+    public static Result<T> ToResult<T>(this Envelope<T> envelope)
         => envelope.IsSuccess
             ? Result<T>.Success(envelope.Value!)
             : Result<T>.Failure(envelope.Error!);
 
     /// <summary>
-    /// Maps an <see cref="EnvelopeNs.Envelope"/> (void operation) received at a service boundary
+    /// Maps an <see cref="Envelope"/> (void operation) received at a service boundary
     /// back to a <see cref="Result"/> for railway-oriented processing inside the calling service.
     /// </summary>
     /// <param name="envelope">The deserialized cross-service void envelope to map.</param>
@@ -111,9 +111,9 @@ public static class ResultEnvelopeExtensions
     /// // continue with railway-oriented flow
     /// </code>
     /// </remarks>
-    /// <seealso cref="EnvelopeNs.Envelope"/>
+    /// <seealso cref="Envelope"/>
     /// <seealso cref="Result"/>
-    public static Result ToResult(this EnvelopeNs.Envelope envelope)
+    public static Result ToResult(this Envelope envelope)
         => envelope.IsSuccess
             ? Result.Success()
             : Result.Failure(envelope.Error!);

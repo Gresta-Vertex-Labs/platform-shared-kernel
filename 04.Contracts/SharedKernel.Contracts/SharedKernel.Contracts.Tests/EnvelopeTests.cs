@@ -1,10 +1,18 @@
 using System.Text.Json;
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Contracts.Serialization;
 using SharedKernel.Primitives.Errors;
-using EnvelopeNs = SharedKernel.Contracts.Envelope;
 
 namespace SharedKernel.Contracts.Tests;
 
+/// <summary>
+/// Regression coverage for WO-052/P-328: <see cref="Envelope"/>/<see cref="Envelope{T}"/> now live in
+/// namespace <c>SharedKernel.Contracts.Envelopes</c> (plural). A plain
+/// <c>using SharedKernel.Contracts.Envelopes;</c> followed by an unqualified <see cref="Envelope"/>
+/// reference — exactly as used throughout this file — must compile with no using-alias workaround.
+/// This entire test class is itself the regression proof: it previously required
+/// <c>using EnvelopeNs = SharedKernel.Contracts.Envelope;</c> to avoid the namespace/type-name collision.
+/// </summary>
 public sealed class EnvelopeTests
 {
     private static readonly Error SampleError = Error.Validation("test.error", "Something failed");
@@ -14,7 +22,7 @@ public sealed class EnvelopeTests
     [Fact]
     public void Ok_SetsIsSuccessTrue_AndNullError()
     {
-        var envelope = EnvelopeNs.Envelope.Ok();
+        var envelope = Envelope.Ok();
 
         envelope.IsSuccess.Should().BeTrue();
         envelope.Error.Should().BeNull();
@@ -23,7 +31,7 @@ public sealed class EnvelopeTests
     [Fact]
     public void Fail_SetsIsSuccessFalse_AndError()
     {
-        var envelope = EnvelopeNs.Envelope.Fail(SampleError);
+        var envelope = Envelope.Fail(SampleError);
 
         envelope.IsSuccess.Should().BeFalse();
         envelope.Error.Should().Be(SampleError);
@@ -32,7 +40,7 @@ public sealed class EnvelopeTests
     [Fact]
     public void Fail_WithErrorNone_ThrowsArgumentException()
     {
-        var act = () => EnvelopeNs.Envelope.Fail(Error.None);
+        var act = () => Envelope.Fail(Error.None);
         act.Should().Throw<ArgumentException>()
             .WithParameterName("error");
     }
@@ -40,7 +48,7 @@ public sealed class EnvelopeTests
     [Fact]
     public void ImplicitOperator_FromError_ProducesFailedEnvelope()
     {
-        EnvelopeNs.Envelope envelope = SampleError;
+        Envelope envelope = SampleError;
 
         envelope.IsSuccess.Should().BeFalse();
         envelope.Error.Should().Be(SampleError);
@@ -49,8 +57,8 @@ public sealed class EnvelopeTests
     [Fact]
     public void TwoFailEnvelopes_WithSameError_AreEqual()
     {
-        var a = EnvelopeNs.Envelope.Fail(SampleError);
-        var b = EnvelopeNs.Envelope.Fail(SampleError);
+        var a = Envelope.Fail(SampleError);
+        var b = Envelope.Fail(SampleError);
 
         a.Should().Be(b);
     }
@@ -58,8 +66,8 @@ public sealed class EnvelopeTests
     [Fact]
     public void OkEnvelope_NotEqualToFailEnvelope()
     {
-        var ok = EnvelopeNs.Envelope.Ok();
-        var fail = EnvelopeNs.Envelope.Fail(SampleError);
+        var ok = Envelope.Ok();
+        var fail = Envelope.Fail(SampleError);
 
         ok.Should().NotBe(fail);
     }
@@ -67,8 +75,8 @@ public sealed class EnvelopeTests
     [Fact]
     public void Envelope_SerjDeserj_RoundTrips()
     {
-        var ok = EnvelopeNs.Envelope.Ok();
-        var fail = EnvelopeNs.Envelope.Fail(SampleError);
+        var ok = Envelope.Ok();
+        var fail = Envelope.Fail(SampleError);
 
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         options.TypeInfoResolverChain.Add(TestJsonContext.Default);
@@ -91,7 +99,7 @@ public sealed class EnvelopeTTests
     [Fact]
     public void Ok_SetsIsSuccessTrue_ValueSet_NullError()
     {
-        var envelope = EnvelopeNs.Envelope<string>.Ok("hello");
+        var envelope = Envelope<string>.Ok("hello");
 
         envelope.IsSuccess.Should().BeTrue();
         envelope.Value.Should().Be("hello");
@@ -101,7 +109,7 @@ public sealed class EnvelopeTTests
     [Fact]
     public void Fail_SetsIsSuccessFalse_ValueDefault_ErrorSet()
     {
-        var envelope = EnvelopeNs.Envelope<string>.Fail(SampleError);
+        var envelope = Envelope<string>.Fail(SampleError);
 
         envelope.IsSuccess.Should().BeFalse();
         envelope.Value.Should().BeNull();
@@ -111,7 +119,7 @@ public sealed class EnvelopeTTests
     [Fact]
     public void Ok_WithNullValue_ThrowsArgumentNullException()
     {
-        var act = () => EnvelopeNs.Envelope<string>.Ok(null!);
+        var act = () => Envelope<string>.Ok(null!);
         act.Should().Throw<ArgumentNullException>()
             .WithParameterName("value");
     }
@@ -119,7 +127,7 @@ public sealed class EnvelopeTTests
     [Fact]
     public void Fail_WithErrorNone_ThrowsArgumentException()
     {
-        var act = () => EnvelopeNs.Envelope<string>.Fail(Error.None);
+        var act = () => Envelope<string>.Fail(Error.None);
         act.Should().Throw<ArgumentException>()
             .WithParameterName("error");
     }
@@ -127,7 +135,7 @@ public sealed class EnvelopeTTests
     [Fact]
     public void ImplicitOperator_FromValue_ProducesSuccessfulEnvelope()
     {
-        EnvelopeNs.Envelope<string> envelope = "world";
+        Envelope<string> envelope = "world";
 
         envelope.IsSuccess.Should().BeTrue();
         envelope.Value.Should().Be("world");
@@ -136,7 +144,7 @@ public sealed class EnvelopeTTests
     [Fact]
     public void ImplicitOperator_FromError_ProducesFailedEnvelope()
     {
-        EnvelopeNs.Envelope<string> envelope = SampleError;
+        Envelope<string> envelope = SampleError;
 
         envelope.IsSuccess.Should().BeFalse();
         envelope.Error.Should().Be(SampleError);
@@ -146,8 +154,8 @@ public sealed class EnvelopeTTests
     [Fact]
     public void TwoOkEnvelopes_WithSameValue_AreEqual()
     {
-        var a = EnvelopeNs.Envelope<string>.Ok("test");
-        var b = EnvelopeNs.Envelope<string>.Ok("test");
+        var a = Envelope<string>.Ok("test");
+        var b = Envelope<string>.Ok("test");
 
         a.Should().Be(b);
     }
@@ -155,8 +163,8 @@ public sealed class EnvelopeTTests
     [Fact]
     public void TwoFailEnvelopes_WithSameError_AreEqual()
     {
-        var a = EnvelopeNs.Envelope<string>.Fail(SampleError);
-        var b = EnvelopeNs.Envelope<string>.Fail(SampleError);
+        var a = Envelope<string>.Fail(SampleError);
+        var b = Envelope<string>.Fail(SampleError);
 
         a.Should().Be(b);
     }
@@ -164,8 +172,8 @@ public sealed class EnvelopeTTests
     [Fact]
     public void EnvelopeT_SerjDeserj_RoundTrips()
     {
-        var ok = EnvelopeNs.Envelope<string>.Ok("round-trip");
-        var fail = EnvelopeNs.Envelope<string>.Fail(SampleError);
+        var ok = Envelope<string>.Ok("round-trip");
+        var fail = Envelope<string>.Fail(SampleError);
 
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         options.TypeInfoResolverChain.Add(TestJsonContext.Default);

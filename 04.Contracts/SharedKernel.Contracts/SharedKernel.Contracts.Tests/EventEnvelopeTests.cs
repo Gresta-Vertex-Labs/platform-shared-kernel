@@ -156,6 +156,98 @@ public sealed class EventEnvelopeTests
             .WithParameterName("sourceService");
     }
 
+    // ─── TenantId (WO-052/P-331) ──────────────────────────────────────────────
+
+    [Fact]
+    public void Wrap_TenantId_IsNullByDefault()
+    {
+        var domainEvent = CreateOrderEvent();
+        var envelope = EventEnvelope.Wrap(domainEvent, SourceService);
+
+        envelope.TenantId.Should().BeNull();
+    }
+
+    [Fact]
+    public void Wrap_PopulatesTenantId_WhenProvided()
+    {
+        var tenantId = Guid.NewGuid();
+        var domainEvent = CreateOrderEvent();
+        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, tenantId: tenantId);
+
+        envelope.TenantId.Should().Be(tenantId);
+    }
+
+    [Fact]
+    public void Wrap_WithoutTenantIdArgument_StillCompiles_AndDefaultsToNull()
+    {
+        // Regression: existing call sites with no tenantId argument must remain source-compatible
+        // after the trailing optional parameter was added (WO-052/P-331).
+        var domainEvent = CreateOrderEvent();
+        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId);
+
+        envelope.TenantId.Should().BeNull();
+    }
+
+    [Fact]
+    public void TwoEnvelopes_WithDifferentTenantId_AreNotEqual()
+    {
+        var domainEvent = CreateOrderEvent();
+        var a = EventEnvelope.Wrap(domainEvent, SourceService, tenantId: Guid.NewGuid());
+        var b = EventEnvelope.Wrap(domainEvent, SourceService, tenantId: Guid.NewGuid());
+
+        a.Should().NotBe(b);
+    }
+
+    [Fact]
+    public void TwoEnvelopes_WithSameTenantId_AreEqual()
+    {
+        var tenantId = Guid.NewGuid();
+        var domainEvent = CreateOrderEvent();
+        var a = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId, tenantId);
+        var b = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId, tenantId);
+
+        a.Should().Be(b);
+    }
+
+    [Fact]
+    public void Wrap_TenantId_SerjDeserj_RoundTrips_WhenNull()
+    {
+        var domainEvent = CreateOrderEvent();
+        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId);
+
+        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        options.TypeInfoResolverChain.Add(TestJsonContext.Default);
+        options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
+
+        var json = JsonSerializer.Serialize(envelope, options);
+
+        // The test-level JsonSerializerOptions only sets PropertyNamingPolicy (matching the
+        // established pattern) — DefaultIgnoreCondition is not applied here, so a null TenantId
+        // round-trips as a literal JSON null rather than being omitted.
+        json.Should().Contain("\"tenantId\":null");
+
+        var deserialized = JsonSerializer.Deserialize<EventEnvelope<TestOrderCreatedEvent>>(json, options);
+        deserialized.Should().NotBeNull();
+        deserialized!.TenantId.Should().BeNull();
+    }
+
+    [Fact]
+    public void Wrap_TenantId_SerjDeserj_RoundTrips_WhenPopulated()
+    {
+        var tenantId = Guid.NewGuid();
+        var domainEvent = CreateOrderEvent();
+        var envelope = EventEnvelope.Wrap(domainEvent, SourceService, CorrelationId, CausationId, tenantId);
+
+        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        options.TypeInfoResolverChain.Add(TestJsonContext.Default);
+        options.TypeInfoResolverChain.Add(ContractsJsonContext.Default);
+
+        var json = JsonSerializer.Serialize(envelope, options);
+
+        json.Should().Contain("\"tenantId\":");
+        json.Should().Contain(tenantId.ToString());
+    }
+
     // ─── EventId is not a new envelope identity ───────────────────────────────
 
     [Fact]

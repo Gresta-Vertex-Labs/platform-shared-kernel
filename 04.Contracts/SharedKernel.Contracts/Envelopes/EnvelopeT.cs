@@ -1,6 +1,6 @@
 using SharedKernel.Primitives.Errors;
 
-namespace SharedKernel.Contracts.Envelope;
+namespace SharedKernel.Contracts.Envelopes;
 
 /// <summary>
 /// Cross-service transport envelope for operations that return a typed value payload.

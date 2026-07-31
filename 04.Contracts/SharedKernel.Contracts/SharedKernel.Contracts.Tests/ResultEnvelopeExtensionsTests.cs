@@ -1,7 +1,7 @@
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Contracts.Mapping;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
-using EnvelopeNs = SharedKernel.Contracts.Envelope;
 
 namespace SharedKernel.Contracts.Tests;
 
@@ -19,7 +19,7 @@ public sealed class ResultEnvelopeExtensionsTests
     {
         var result = Result<string>.Success("hello");
 
-        EnvelopeNs.Envelope<string> envelope = result.ToEnvelope();
+        Envelope<string> envelope = result.ToEnvelope();
 
         envelope.IsSuccess.Should().BeTrue();
         envelope.Value.Should().Be("hello");
@@ -31,7 +31,7 @@ public sealed class ResultEnvelopeExtensionsTests
     {
         var result = Result<string>.Failure(SampleError);
 
-        EnvelopeNs.Envelope<string> envelope = result.ToEnvelope();
+        Envelope<string> envelope = result.ToEnvelope();
 
         envelope.IsSuccess.Should().BeFalse();
         envelope.Value.Should().BeNull();
@@ -43,7 +43,7 @@ public sealed class ResultEnvelopeExtensionsTests
     [Fact]
     public void ToResultT_WhenEnvelopeIsSuccess_ReturnsSuccessResultWithValue()
     {
-        var envelope = EnvelopeNs.Envelope<string>.Ok("world");
+        var envelope = Envelope<string>.Ok("world");
 
         Result<string> result = envelope.ToResult();
 
@@ -54,7 +54,7 @@ public sealed class ResultEnvelopeExtensionsTests
     [Fact]
     public void ToResultT_WhenEnvelopeIsFailure_ReturnsFailureResultWithError()
     {
-        var envelope = EnvelopeNs.Envelope<string>.Fail(SampleError);
+        var envelope = Envelope<string>.Fail(SampleError);
 
         Result<string> result = envelope.ToResult();
 
@@ -93,7 +93,7 @@ public sealed class ResultEnvelopeExtensionsTests
     {
         var result = Result.Success();
 
-        EnvelopeNs.Envelope envelope = result.ToEnvelope();
+        Envelope envelope = result.ToEnvelope();
 
         envelope.IsSuccess.Should().BeTrue();
         envelope.Error.Should().BeNull();
@@ -104,7 +104,7 @@ public sealed class ResultEnvelopeExtensionsTests
     {
         var result = Result.Failure(SampleError);
 
-        EnvelopeNs.Envelope envelope = result.ToEnvelope();
+        Envelope envelope = result.ToEnvelope();
 
         envelope.IsSuccess.Should().BeFalse();
         envelope.Error.Should().Be(SampleError);
@@ -115,7 +115,7 @@ public sealed class ResultEnvelopeExtensionsTests
     [Fact]
     public void ToResult_WhenEnvelopeIsSuccess_ReturnsSuccessResult()
     {
-        var envelope = EnvelopeNs.Envelope.Ok();
+        var envelope = Envelope.Ok();
 
         Result result = envelope.ToResult();
 
@@ -125,7 +125,7 @@ public sealed class ResultEnvelopeExtensionsTests
     [Fact]
     public void ToResult_WhenEnvelopeIsFailure_ReturnsFailureResultWithError()
     {
-        var envelope = EnvelopeNs.Envelope.Fail(SampleError);
+        var envelope = Envelope.Fail(SampleError);
 
         Result result = envelope.ToResult();
 

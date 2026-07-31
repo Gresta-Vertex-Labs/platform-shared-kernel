@@ -9,8 +9,9 @@ namespace SharedKernel.Contracts.Serialization;
 /// <para>
 /// Consuming services add <see cref="TypeInfoResolver"/> to their
 /// <c>JsonSerializerOptions.TypeInfoResolverChain</c> to enable AOT-safe deserialization of all
-/// contracts types (<see cref="Pagination.PagedList{T}"/>, <see cref="Envelope.Envelope"/>,
-/// <see cref="Envelope.Envelope{T}"/>, <see cref="Events.EventEnvelope{TEvent}"/>).
+/// contracts types (<see cref="Pagination.PagedList{T}"/>, <see cref="Pagination.CursorPagedList{T}"/>,
+/// <see cref="Envelopes.Envelope"/>, <see cref="Envelopes.Envelope{T}"/>,
+/// <see cref="Events.EventEnvelope{TEvent}"/>).
 /// </para>
 /// <para>
 /// Example:

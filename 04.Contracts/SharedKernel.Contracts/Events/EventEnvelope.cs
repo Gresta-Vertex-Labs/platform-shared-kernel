@@ -127,6 +127,37 @@ public sealed record EventEnvelope<TEvent> where TEvent : IDomainEvent
     public string? CausationId { get; init; }
 
     /// <summary>
+    /// Gets the tenant identifier this event belongs to, when the publisher is tenant-aware.
+    /// <c>null</c> is valid and expected for non-tenanted or root events.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// (WO-052/P-331) This is envelope-level wire-format routing metadata, added so a message-bus
+    /// consumer, dead-letter-queue inspector, or audit/replay tool can answer "which tenant does this
+    /// event belong to" without deserializing <see cref="Payload"/>. It is populated only when the
+    /// publisher explicitly supplies a value to <see cref="EventEnvelope.Wrap{TEvent}"/>; <c>null</c>
+    /// is otherwise the default and is valid.
+    /// </para>
+    /// <para>
+    /// <see cref="TenantId"/> carries no guarantee derived from <typeparamref name="TEvent"/> or
+    /// <see cref="IDomainEvent"/> — <see cref="IDomainEvent"/> declares no tenant member, so this
+    /// value is never inferred from <see cref="Payload"/>. It is distinct from <c>07.Messaging</c>'s
+    /// <c>IMessageHeaderPropagator</c>, which is a transient, broker-adapter-specific transport header
+    /// that never survives into a durably-stored outbox row or any protocol other than the one adapter
+    /// that propagated it — <see cref="TenantId"/> is the durable, wire-format-level analogue. A
+    /// publisher bridging <c>IMessageHeaderPropagator</c>'s tenant header into this field at
+    /// composition-root/publish time is the intended integration pattern, not automatic behavior of
+    /// this package.
+    /// </para>
+    /// <para>
+    /// Do not conflate this with <c>03.Domain</c>'s <c>IHasTenant.TenantId</c> — there is no
+    /// compile-time relationship between the two; this property exists so <c>04.Contracts</c> stays
+    /// decoupled from any per-event tenant marker interface.
+    /// </para>
+    /// </remarks>
+    public Guid? TenantId { get; init; }
+
+    /// <summary>
     /// Gets the name of the service that raised this event.
     /// Set at the composition root of the publishing service.
     /// </summary>
@@ -191,6 +222,11 @@ public static class EventEnvelope
     /// The identifier of the command or event that caused this domain event.
     /// Pass <c>null</c> for root events.
     /// </param>
+    /// <param name="tenantId">
+    /// (WO-052/P-331) The tenant this event belongs to, when the publisher is tenant-aware.
+    /// Pass <c>null</c> (the default) for non-tenanted or root events. Never inferred from
+    /// <paramref name="domainEvent"/> — the caller must supply it explicitly.
+    /// </param>
     /// <returns>A new <see cref="EventEnvelope{TEvent}"/> with all fields populated.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="domainEvent"/> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException">
@@ -200,7 +236,8 @@ public static class EventEnvelope
         TEvent domainEvent,
         string sourceService,
         string? correlationId = null,
-        string? causationId = null)
+        string? causationId = null,
+        Guid? tenantId = null)
         where TEvent : IDomainEvent
     {
         ArgumentNullException.ThrowIfNull(domainEvent);
@@ -216,6 +253,7 @@ public static class EventEnvelope
             EventVersion = DomainEventVersionHelper.GetVersion(typeof(TEvent)),
             CorrelationId = correlationId,
             CausationId = causationId,
+            TenantId = tenantId,
             SourceService = sourceService,
             Payload = domainEvent,
         };

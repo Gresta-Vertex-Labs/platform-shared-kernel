@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SharedKernel.Contracts.Envelope;
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Domain.Events;
@@ -42,7 +42,8 @@ namespace SharedKernel.Contracts.Serialization;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(PagedList<object>))]
-[JsonSerializable(typeof(Envelope.Envelope))]
+[JsonSerializable(typeof(CursorPagedList<object>))]
+[JsonSerializable(typeof(Envelope))]
 [JsonSerializable(typeof(Envelope<object>))]
 [JsonSerializable(typeof(Error))]
 [JsonSerializable(typeof(IIntegrationEvent))]

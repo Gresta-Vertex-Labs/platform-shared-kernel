@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using SharedKernel.Contracts.Envelope;
+using SharedKernel.Contracts.Envelopes;
 using SharedKernel.Contracts.Events;
 using SharedKernel.Contracts.Pagination;
 using SharedKernel.Primitives.Errors;
@@ -12,7 +12,8 @@ namespace SharedKernel.Contracts.Tests;
 /// works without reflection fallback.
 /// </summary>
 [System.Text.Json.Serialization.JsonSerializable(typeof(PagedList<string>))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(Envelope.Envelope))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(CursorPagedList<string>))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(Envelope))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Envelope<string>))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Error))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EventEnvelope<TestOrderCreatedEvent>))]
