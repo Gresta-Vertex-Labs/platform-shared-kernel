@@ -8,6 +8,7 @@ using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -61,40 +62,44 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     }
 
     /// <inheritdoc />
-    public virtual async Task<TAggregate?> GetBySpecAsync(
+    public virtual Task<TAggregate?> GetBySpecAsync(
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
-    {
-        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-        return await query.FirstOrDefaultAsync(ct);
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(GetBySpecAsync), async () =>
+        {
+            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            return await query.FirstOrDefaultAsync(ct);
+        });
 
     /// <inheritdoc />
-    public virtual async Task<IReadOnlyList<TAggregate>> ListAsync(
+    public virtual Task<IReadOnlyList<TAggregate>> ListAsync(
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
-    {
-        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-        return await query.ToListAsync(ct);
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, IReadOnlyList<TAggregate>>(nameof(ListAsync), async () =>
+        {
+            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            return await query.ToListAsync(ct);
+        });
 
     /// <inheritdoc />
-    public virtual async Task<int> CountAsync(
+    public virtual Task<int> CountAsync(
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
-    {
-        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-        return await query.CountAsync(ct);
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, int>(nameof(CountAsync), async () =>
+        {
+            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            return await query.CountAsync(ct);
+        });
 
     /// <inheritdoc />
-    public virtual async Task<bool> AnyAsync(
+    public virtual Task<bool> AnyAsync(
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
-    {
-        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-        return await query.AnyAsync(ct);
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, bool>(nameof(AnyAsync), async () =>
+        {
+            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            return await query.AnyAsync(ct);
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -105,31 +110,63 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// because it could silently fall back to client-side evaluation when <typeparamref name="TId"/>
     /// is a strongly-typed ID with a registered converter (P-105 Fix 2).
     /// </remarks>
-    public virtual async Task<IReadOnlyList<TAggregate>> GetByIdsAsync(
+    public virtual Task<IReadOnlyList<TAggregate>> GetByIdsAsync(
         IEnumerable<TId> ids,
         CancellationToken ct = default)
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, IReadOnlyList<TAggregate>>(
+            nameof(GetByIdsAsync), async () =>
+        {
+            var idList = ids as List<TId> ?? ids.ToList();
+
+            // Build expression tree: e => idList.Contains(e.Id)
+            // This ensures the registered ValueConverter is applied at the property level by the
+            // LINQ provider, generating a server-side WHERE Id IN (...) clause.
+            var param = Expression.Parameter(typeof(TAggregate), "e");
+            var idProperty = Expression.Property(param, "Id");
+            var idListConstant = Expression.Constant(idList);
+
+            // Enumerable.Contains<TId>(IEnumerable<TId>, TId)
+            var containsMethod = typeof(Enumerable)
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .First(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2)
+                .MakeGenericMethod(typeof(TId));
+
+            var containsCall = Expression.Call(containsMethod, idListConstant, idProperty);
+            var predicate = Expression.Lambda<Func<TAggregate, bool>>(containsCall, param);
+
+            return await DbContext.Set<TAggregate>()
+                .Where(predicate)
+                .ToListAsync(ct);
+        });
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// WO-051/P-323 — issues <c>ceil(N / chunkSize)</c> sequential <see cref="GetByIdsAsync"/>-shaped
+    /// round trips and concatenates the results. A purely additive, opt-in sibling — does not alter
+    /// <see cref="GetByIdsAsync"/>'s own single-query behavior in any way.
+    /// </remarks>
+    public virtual async Task<IReadOnlyList<TAggregate>> GetByIdsChunkedAsync(
+        IEnumerable<TId> ids,
+        int chunkSize,
+        CancellationToken ct = default)
     {
-        var idList = ids as List<TId> ?? ids.ToList();
+        if (chunkSize < 1)
+            throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize,
+                "Chunk size must be greater than or equal to 1.");
 
-        // Build expression tree: e => idList.Contains(e.Id)
-        // This ensures the registered ValueConverter is applied at the property level by the
-        // LINQ provider, generating a server-side WHERE Id IN (...) clause.
-        var param = Expression.Parameter(typeof(TAggregate), "e");
-        var idProperty = Expression.Property(param, "Id");
-        var idListConstant = Expression.Constant(idList);
+        var idList = ids as IReadOnlyList<TId> ?? ids.ToList();
+        if (idList.Count == 0)
+            return [];
 
-        // Enumerable.Contains<TId>(IEnumerable<TId>, TId)
-        var containsMethod = typeof(Enumerable)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .First(m => m.Name == nameof(Enumerable.Contains) && m.GetParameters().Length == 2)
-            .MakeGenericMethod(typeof(TId));
+        var results = new List<TAggregate>(idList.Count);
 
-        var containsCall = Expression.Call(containsMethod, idListConstant, idProperty);
-        var predicate = Expression.Lambda<Func<TAggregate, bool>>(containsCall, param);
+        for (var offset = 0; offset < idList.Count; offset += chunkSize)
+        {
+            var chunk = idList.Skip(offset).Take(chunkSize);
+            results.AddRange(await GetByIdsAsync(chunk, ct));
+        }
 
-        return await DbContext.Set<TAggregate>()
-            .Where(predicate)
-            .ToListAsync(ct);
+        return results;
     }
 
     /// <inheritdoc />
@@ -148,24 +185,25 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// Both queries share the same connection and transaction scope.
     /// <c>PagedList&lt;T&gt;</c> is defined in <c>SharedKernel.Contracts</c> (04.Contracts).
     /// </remarks>
-    public virtual async Task<PagedList<TAggregate>> ListPagedAsync(
+    public virtual Task<PagedList<TAggregate>> ListPagedAsync(
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
-    {
-        // Count query: apply spec without Skip/Take to get the true total.
-        var countQuery = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-        // Strip paging from count — we need the full-filter count.
-        var totalCount = await StripPaging(countQuery, spec).CountAsync(ct);
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, PagedList<TAggregate>>(nameof(ListPagedAsync), async () =>
+        {
+            // Count query: apply spec without Skip/Take to get the true total.
+            var countQuery = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            // Strip paging from count — we need the full-filter count.
+            var totalCount = await StripPaging(countQuery, spec).CountAsync(ct);
 
-        // Data query: full spec including Skip/Take.
-        var dataQuery = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
-        var items = await dataQuery.ToListAsync(ct);
+            // Data query: full spec including Skip/Take.
+            var dataQuery = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            var items = await dataQuery.ToListAsync(ct);
 
-        // Extract page metadata from spec (PagedSpecification carries these).
-        var (page, pageSize) = ExtractPageInfo(spec);
+            // Extract page metadata from spec (PagedSpecification carries these).
+            var (page, pageSize) = ExtractPageInfo(spec);
 
-        return PagedList<TAggregate>.Create(items, page, pageSize, totalCount);
-    }
+            return PagedList<TAggregate>.Create(items, page, pageSize, totalCount);
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -174,13 +212,15 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// <c>.Select(spec.Selector)</c> as the final step. Any <see cref="ISpecificationEvaluator{T}"/>
     /// implementation works — no downcast to the concrete type is performed (P-097).
     /// </remarks>
-    public virtual async Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(
+    public virtual Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default)
-    {
-        var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
-        return await projected.ToListAsync(ct);
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, IReadOnlyList<TResult>>(
+            nameof(ListProjectedAsync), async () =>
+        {
+            var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
+            return await projected.ToListAsync(ct);
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -190,13 +230,15 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// paging-last invariant. Any <see cref="ISpecificationEvaluator{T}"/> implementation works —
     /// no downcast performed (P-097).
     /// </remarks>
-    public virtual async Task<TResult?> GetBySpecProjectedAsync<TResult>(
+    public virtual Task<TResult?> GetBySpecProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default)
-    {
-        var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
-        return await projected.FirstOrDefaultAsync(ct);
-    }
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, TResult?>(
+            nameof(GetBySpecProjectedAsync), async () =>
+        {
+            var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
+            return await projected.FirstOrDefaultAsync(ct);
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -216,21 +258,23 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// Both queries share the same connection and transaction scope.
     /// <c>PagedList&lt;T&gt;</c> is defined in <c>SharedKernel.Contracts</c> (04.Contracts).
     /// </remarks>
-    public virtual async Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
+    public virtual Task<PagedList<TResult>> ListPagedProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default)
-    {
-        // Count query: apply spec without projection and without Skip/Take.
-        var countSpec = new NoPagingWrapper<TAggregate>(spec);
-        var totalCount = await _evaluator.GetQuery(DbContext.Set<TAggregate>(), countSpec).CountAsync(ct);
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, PagedList<TResult>>(
+            nameof(ListPagedProjectedAsync), async () =>
+        {
+            // Count query: apply spec without projection and without Skip/Take.
+            var countSpec = new NoPagingWrapper<TAggregate>(spec);
+            var totalCount = await _evaluator.GetQuery(DbContext.Set<TAggregate>(), countSpec).CountAsync(ct);
 
-        // Data query: full spec including projection and Skip/Take.
-        var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
-        var items = await projected.ToListAsync(ct);
+            // Data query: full spec including projection and Skip/Take.
+            var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
+            var items = await projected.ToListAsync(ct);
 
-        var (page, pageSize) = ExtractPageInfo(spec);
-        return PagedList<TResult>.Create(items, page, pageSize, totalCount);
-    }
+            var (page, pageSize) = ExtractPageInfo(spec);
+            return PagedList<TResult>.Create(items, page, pageSize, totalCount);
+        });
 
     /// <inheritdoc />
     /// <remarks>
@@ -242,14 +286,13 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// <see cref="ISpecification{T}.Take"/>, if set, are applied as a normal row-window by the
     /// evaluator before the query is converted to <see cref="IAsyncEnumerable{T}"/>.
     /// </remarks>
-    public virtual async IAsyncEnumerable<TAggregate> StreamAsync(
+    public virtual IAsyncEnumerable<TAggregate> StreamAsync(
         ISpecification<TAggregate> spec,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        CancellationToken ct = default)
     {
         var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec).AsNoTracking();
-
-        await foreach (var item in query.AsAsyncEnumerable().WithCancellation(ct))
-            yield return item;
+        return RepositoryTracing.ExecuteTracedStreamAsync<TAggregate, TAggregate>(
+            nameof(StreamAsync), query.AsAsyncEnumerable(), ct);
     }
 
     /// <inheritdoc />
@@ -259,15 +302,56 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// <see cref="StreamAsync"/> for rationale. Any <see cref="ISpecificationEvaluator{T}"/>
     /// implementation works — no downcast to the concrete type is performed.
     /// </remarks>
-    public virtual async IAsyncEnumerable<TResult> StreamProjectedAsync<TResult>(
+    public virtual IAsyncEnumerable<TResult> StreamProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        CancellationToken ct = default)
     {
         var query = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>().AsNoTracking(), spec);
-
-        await foreach (var item in query.AsAsyncEnumerable().WithCancellation(ct))
-            yield return item;
+        return RepositoryTracing.ExecuteTracedStreamAsync<TAggregate, TResult>(
+            nameof(StreamProjectedAsync), query.AsAsyncEnumerable(), ct);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// WO-051/P-317 — calls <see cref="ISpecificationEvaluator{T}.GetKeysetQuery{TKey}"/> (which
+    /// fetches <c>spec.Take + 1</c> rows — see that method's step-7 deviation), computes
+    /// <c>HasMore</c> from whether the extra probe row was returned, trims to the declared page
+    /// size, then computes <c>NextAfterKey</c>/<c>NextAfterId</c> from the LAST row of the trimmed
+    /// page by compiling <c>spec.OrderBy</c>/<c>spec.OrderByDescending</c> and
+    /// <c>spec.ThenBys[0].KeySelector</c> to <see cref="Func{TAggregate, TResult}"/> delegates
+    /// (<c>.Compile()</c>, once per call — the same accepted expression-compilation cost class as
+    /// <c>Specification&lt;T&gt;.IsSatisfiedBy</c>) and invoking them against the last item, casting
+    /// the boxed key result to <typeparamref name="TKey"/> (safe — <typeparamref name="TKey"/> is
+    /// statically known at this call site, zero reflection).
+    /// </remarks>
+    public virtual Task<KeysetPage<TAggregate, TKey>> ListKeysetAsync<TKey>(
+        KeysetSpecification<TAggregate, TKey> spec,
+        CancellationToken ct = default)
+        where TKey : struct, IComparable<TKey>
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, KeysetPage<TAggregate, TKey>>(
+            nameof(ListKeysetAsync), async () =>
+        {
+            var query = _evaluator.GetKeysetQuery(DbContext.Set<TAggregate>(), spec);
+            var rows = await query.ToListAsync(ct);
+
+            var hasMore = rows.Count > spec.Take!.Value;
+            var page = hasMore ? rows.Take(spec.Take.Value).ToList() : rows;
+
+            TKey? nextAfterKey = null;
+            object? nextAfterId = null;
+
+            if (hasMore && page.Count > 0)
+            {
+                var last = page[^1];
+                var keySelector = (spec.Descending ? spec.OrderByDescending! : spec.OrderBy!).Compile();
+                var idSelector = spec.ThenBys[0].KeySelector.Compile();
+
+                nextAfterKey = (TKey)keySelector(last);
+                nextAfterId = idSelector(last);
+            }
+
+            return new KeysetPage<TAggregate, TKey>(page, nextAfterKey, nextAfterId, hasMore);
+        });
 
     // Strips Skip/Take from the already-evaluated query for count purposes.
     // We re-apply criteria/includes/ordering without paging by applying GetQuery on a fresh set
@@ -318,6 +402,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         public int? Take => null;
         public bool IsDistinct => _inner.IsDistinct;
         public bool AsNoTracking => _inner.AsNoTracking;
+        public bool AsSplitQuery => _inner.AsSplitQuery;
         public bool IncludeDeleted => _inner.IncludeDeleted;
         public IReadOnlyList<string> StringIncludes => _inner.StringIncludes;
     }

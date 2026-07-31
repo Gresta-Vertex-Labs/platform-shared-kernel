@@ -79,10 +79,53 @@ public interface IReadRepository<TAggregate, TId>
     /// Result order is not guaranteed. Missing IDs produce no entry. An empty input produces an empty result.
     /// </returns>
     /// <remarks>
-    /// Translates to an SQL <c>IN (...)</c> clause. Performance degrades above 1000 IDs —
-    /// chunk at the application layer for large collections.
+    /// <para>
+    /// <strong>CORRECTED (WO-051/P-323):</strong> against PostgreSQL, this translates to a SINGLE
+    /// array-typed parameter (<c>WHERE "Id" = ANY(@ids)</c>) — not a SQL-Server-style per-value
+    /// <c>IN (v1, v2, v3, ...)</c> expansion. The prior "performance degrades above 1000 IDs"
+    /// guidance was written assuming that SQL-Server shape (which does have a real ~2100-parameter
+    /// ceiling); Npgsql's <c>= ANY(@array)</c> translation has no such per-value parameter-count
+    /// limit. The real practical constraint is the serialized array parameter's payload size and the
+    /// materialized result set's memory footprint, not parameter count. Result order is not
+    /// guaranteed; missing IDs produce no entry; an empty input produces an empty result.
+    /// </para>
+    /// <para>
+    /// See <see cref="GetByIdsChunkedAsync"/> for an opt-in sibling that issues bounded, sequential
+    /// round trips instead of one — useful when a caller deliberately wants bounded per-query
+    /// memory/payload despite <c>= ANY(@array)</c> not strictly requiring it. A re-derived guardrail:
+    /// consider <see cref="GetByIdsChunkedAsync"/> above roughly 50,000 IDs to bound peak memory;
+    /// below that, this single-query method remains efficient.
+    /// </para>
     /// </remarks>
     Task<IReadOnlyList<TAggregate>> GetByIdsAsync(IEnumerable<TId> ids, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all aggregates whose identity is in the provided collection, issued as
+    /// <c>ceil(N / chunkSize)</c> sequential <see cref="GetByIdsAsync"/>-equivalent round trips
+    /// instead of one.
+    /// </summary>
+    /// <param name="ids">The identities to look up. May be empty.</param>
+    /// <param name="chunkSize">
+    /// The maximum number of identities per round trip. Must be at least 1.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// A read-only list containing only those aggregates whose ID was found in the store, across
+    /// all chunks. Result order is not guaranteed. Missing IDs produce no entry.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// WO-051/P-323 — a purely additive, OPT-IN sibling: <see cref="GetByIdsAsync"/>'s own
+    /// single-query <c>= ANY(@array)</c> behavior is completely unchanged by this method's
+    /// existence. Choose this method deliberately when bounded per-query memory/payload is wanted
+    /// over the single round trip <see cref="GetByIdsAsync"/> issues — see that method's remarks for
+    /// the corrected guidance on when chunking is actually warranted (roughly above 50,000 IDs).
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<TAggregate>> GetByIdsChunkedAsync(
+        IEnumerable<TId> ids,
+        int chunkSize,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Returns a paged result containing aggregates that satisfy the specification together with
@@ -231,4 +274,33 @@ public interface IReadRepository<TAggregate, TId>
     IAsyncEnumerable<TResult> StreamProjectedAsync<TResult>(
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a single cursor/seek-paginated page of aggregates satisfying
+    /// <paramref name="spec"/>, together with the cursor values needed to fetch the next page.
+    /// </summary>
+    /// <typeparam name="TKey">The comparable sort-key type used for cursor/seek pagination.</typeparam>
+    /// <param name="spec">
+    /// The keyset specification supplying filter criteria, ordering, cursor position, and page size.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A <see cref="KeysetPage{TAggregate, TKey}"/> for the requested page.</returns>
+    /// <remarks>
+    /// <para>
+    /// WO-051/P-317 — the deep-pagination sibling of <see cref="ListPagedAsync"/>, for large or
+    /// actively-written result sets where offset pagination's <c>O(n)</c> scan-and-discard cost is a
+    /// real, measured problem, or for infinite-scroll/"load more" UI patterns.
+    /// </para>
+    /// <para>
+    /// <strong>Hard constraint:</strong> passing a <c>KeysetSpecification&lt;TAggregate,TKey&gt;</c>
+    /// to <see cref="ListAsync"/>, <see cref="GetBySpecAsync"/>, <see cref="CountAsync"/>, or
+    /// <see cref="AnyAsync"/> instead compiles and runs, but silently ignores
+    /// <c>AfterKey</c>/<c>AfterId</c> and always returns the first page — this method is the ONLY
+    /// entry point that honors the cursor.
+    /// </para>
+    /// </remarks>
+    Task<KeysetPage<TAggregate, TKey>> ListKeysetAsync<TKey>(
+        SharedKernel.Domain.Specifications.KeysetSpecification<TAggregate, TKey> spec,
+        CancellationToken ct = default)
+        where TKey : struct, IComparable<TKey>;
 }

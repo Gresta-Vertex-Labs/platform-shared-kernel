@@ -1,0 +1,180 @@
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using SharedKernel.Domain.Aggregates;
+using SharedKernel.Domain.Specifications;
+using SharedKernel.Domain.StronglyTypedIds;
+using SharedKernel.Persistence.EfCore.Configurations;
+using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Conversions;
+using SharedKernel.Persistence.EfCore.Interceptors;
+using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Persistence.EfCore.Repositories;
+using SharedKernel.Persistence.EfCore.Specifications;
+using SharedKernel.Persistence.PostgreSQL.Extensions;
+using SharedKernel.Primitives.Clocks;
+using SharedKernel.Security.Abstractions.Abstractions;
+using Testcontainers.PostgreSql;
+
+namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
+
+// ---------------------------------------------------------------------------
+// WO-051/P-317 — proves keyset (cursor/seek) pagination with a DateTimeOffset sort key — the
+// documented, canonical KeysetSpecification<T,TKey> shape (see its own <example>) — genuinely
+// works against real PostgreSQL. SQLite's EF Core provider cannot ORDER BY a DateTimeOffset column
+// at all (a provider limitation, proven separately in SharedKernel.Persistence.EfCore.Tests using a
+// `long` sort key instead), so this is the only place the platform's actual intended usage shape is
+// exercised end to end.
+// ---------------------------------------------------------------------------
+
+public sealed record KeysetPgId(Guid Value) : StronglyTypedId<Guid>(Value)
+{
+    public static KeysetPgId New() => new(Guid.NewGuid());
+}
+
+public sealed class KeysetPgAggregate : AggregateRoot<KeysetPgId>
+{
+    public string Name { get; private set; } = string.Empty;
+    public DateTimeOffset CreatedOn { get; private set; }
+
+    public KeysetPgAggregate(KeysetPgId id, string name, DateTimeOffset createdOn, IClock clock)
+        : base(id, clock)
+    {
+        Name = name;
+        CreatedOn = createdOn;
+    }
+
+    protected KeysetPgAggregate() { } // ORM path
+}
+
+public sealed class KeysetPgAggregateConfig : EntityTypeConfigurationBase<KeysetPgAggregate, KeysetPgId>
+{
+    public override void Configure(EntityTypeBuilder<KeysetPgAggregate> builder)
+    {
+        base.Configure(builder);
+        builder.Property(e => e.Name).HasMaxLength(200).IsRequired();
+        builder.Property(e => e.CreatedOn).IsRequired();
+    }
+}
+
+public sealed class KeysetPgDbContext : SharedKernelDbContext
+{
+    public DbSet<KeysetPgAggregate> Aggregates => Set<KeysetPgAggregate>();
+
+    public KeysetPgDbContext(
+        DbContextOptions<KeysetPgDbContext> options,
+        AuditInterceptor auditInterceptor,
+        SoftDeleteInterceptor softDeleteInterceptor,
+        ConcurrencyInterceptor concurrencyInterceptor)
+        : base(options, auditInterceptor, softDeleteInterceptor, concurrencyInterceptor)
+    {
+    }
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.ConfigureStronglyTypedId<KeysetPgId, Guid>();
+        base.ConfigureConventions(configurationBuilder);
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfiguration(new KeysetPgAggregateConfig());
+    }
+}
+
+internal sealed class KeysetPgReadRepository(KeysetPgDbContext ctx)
+    : EfReadRepository<KeysetPgAggregate, KeysetPgId>(ctx, new SpecificationEvaluator<KeysetPgAggregate>())
+{
+}
+
+internal sealed class KeysetPgByCreatedOnSpec : KeysetSpecification<KeysetPgAggregate, DateTimeOffset>
+{
+    public KeysetPgByCreatedOnSpec(DateTimeOffset? afterKey, object? afterId, int take)
+        : base(a => a.CreatedOn, a => a.Id, afterKey, afterId, descending: false, take)
+    {
+    }
+}
+
+[Collection("PostgreSQL")]
+public sealed class KeysetPaginationIntegrationTests : IAsyncLifetime
+{
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
+        .WithImage("postgres:16-alpine")
+        .Build();
+
+    private string ConnectionString => _container.GetConnectionString();
+
+    public Task InitializeAsync() => _container.StartAsync();
+
+    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+
+    private static KeysetPgDbContext CreateContext(string connectionString)
+    {
+        var builder = new DbContextOptionsBuilder<KeysetPgDbContext>();
+        builder.UsePostgreSQL(connectionString);
+        var options = builder.Options;
+
+        var userContext = Substitute.For<IUserContext>();
+        userContext.IsAuthenticated.Returns(true);
+        userContext.UserId.Returns(Guid.NewGuid());
+
+        var clock = Substitute.For<IClock>();
+        clock.UtcNow.Returns(DateTimeOffset.UtcNow);
+
+        var serviceOptions = Options.Create(new PersistenceServiceOptions());
+
+        var audit = new AuditInterceptor(userContext, clock, serviceOptions);
+        var softDelete = new SoftDeleteInterceptor(userContext, clock, serviceOptions);
+        var concurrency = new ConcurrencyInterceptor();
+
+        return new KeysetPgDbContext(options, audit, softDelete, concurrency);
+    }
+
+    [Fact]
+    public async Task ListKeysetAsync_WithDateTimeOffsetSortKey_WalksAllPagesInOrder_AgainstRealPostgres()
+    {
+        // Arrange
+        var baseTime = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        await using (var setupCtx = CreateContext(ConnectionString))
+        {
+            await setupCtx.Database.EnsureCreatedAsync();
+
+            for (var i = 0; i < 5; i++)
+            {
+                setupCtx.Aggregates.Add(new KeysetPgAggregate(
+                    KeysetPgId.New(), $"Item{i}", baseTime.AddMinutes(i), new SystemClock()));
+                await setupCtx.SaveChangesAsync();
+            }
+        }
+
+        await using var ctx = CreateContext(ConnectionString);
+        var repo = new KeysetPgReadRepository(ctx);
+
+        var allItems = new List<string>();
+        DateTimeOffset? afterKey = null;
+        object? afterId = null;
+        bool hasMore;
+        var pageCount = 0;
+
+        // Act — walk every page via the returned cursor, using a genuine DateTimeOffset sort key
+        // against real PostgreSQL (not SQLite, which cannot ORDER BY DateTimeOffset at all).
+        do
+        {
+            var spec = new KeysetPgByCreatedOnSpec(afterKey, afterId, take: 2);
+            var page = await repo.ListKeysetAsync(spec);
+
+            allItems.AddRange(page.Items.Select(i => i.Name));
+            afterKey = page.NextAfterKey;
+            afterId = page.NextAfterId;
+            hasMore = page.HasMore;
+            pageCount++;
+        } while (hasMore && pageCount < 10);
+
+        // Assert
+        allItems.Should().ContainInOrder("Item0", "Item1", "Item2", "Item3", "Item4");
+        pageCount.Should().Be(3);
+    }
+}

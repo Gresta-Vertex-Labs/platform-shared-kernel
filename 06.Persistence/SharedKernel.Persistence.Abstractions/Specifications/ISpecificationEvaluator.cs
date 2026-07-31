@@ -93,4 +93,58 @@ public interface ISpecificationEvaluator<T>
     IQueryable<TResult> GetProjectedQuery<TResult>(
         IQueryable<T> inputQuery,
         IProjectionSpecification<T, TResult> spec);
+
+    /// <summary>
+    /// Applies a <see cref="KeysetSpecification{T, TKey}"/>'s cursor/seek-pagination rules to
+    /// <paramref name="inputQuery"/> — the deep-pagination sibling of <see cref="GetQuery"/>.
+    /// </summary>
+    /// <typeparam name="TKey">The comparable sort-key type used for cursor/seek pagination.</typeparam>
+    /// <param name="inputQuery">
+    /// The base <see cref="IQueryable{T}"/> produced by the repository (e.g.,
+    /// <c>DbContext.Set&lt;T&gt;()</c>).
+    /// </param>
+    /// <param name="spec">The keyset specification supplying the cursor, ordering, and page size.</param>
+    /// <returns>
+    /// A new <see cref="IQueryable{T}"/> with the seek predicate, ordering, and paging composed in.
+    /// The returned query has not been executed.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <strong>Correction to <c>KeysetSpecification&lt;T, TKey&gt;</c>'s own generic constraint
+    /// (WO-051/C-39, mirrored here):</strong> this method requires <c>where TKey : struct,
+    /// IComparable&lt;TKey&gt;</c>, not <c>IComparable&lt;TKey&gt;</c> alone — the compiler requires
+    /// this method's own <typeparamref name="TKey"/> constraint to be at least as strong as
+    /// <c>KeysetSpecification&lt;T, TKey&gt;</c>'s constraint (which itself needed the <c>struct</c>
+    /// addition after <c>TKey?</c> was found to erase to plain <c>TKey</c> without it).
+    /// </para>
+    /// <para>
+    /// Applies the same aggregate pipeline as <see cref="GetQuery"/> (criteria, includes, string
+    /// includes, split-query, distinct, no-tracking) with two documented deviations:
+    /// <list type="number">
+    ///   <item><description>
+    ///   A new seek-predicate step, positioned between criteria and includes, translating
+    ///   <c>spec.AfterKey</c>/<c>spec.AfterId</c> into a
+    ///   <c>(SortKey &gt; @cursor) OR (SortKey == @cursor AND Id &gt; @cursorId)</c>-shaped predicate
+    ///   (flipped to <c>&lt;</c> when <c>spec.Descending</c>) — skipped entirely on the first page
+    ///   (both <see langword="null"/>).
+    ///   </description></item>
+    ///   <item><description>
+    ///   Paging never applies <c>Skip</c> (always <c>0</c> for a keyset spec — that is exactly what
+    ///   this mechanism avoids); applies <c>Take(spec.Take!.Value + 1)</c> — one row beyond the
+    ///   declared page size — so the caller (<c>EfReadRepository.ListKeysetAsync&lt;TKey&gt;</c>)
+    ///   can compute <c>HasMore</c> without a second round-trip.
+    ///   </description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <strong>Hard constraint:</strong> passing a <c>KeysetSpecification&lt;T, TKey&gt;</c> to
+    /// <see cref="GetQuery"/> instead compiles and runs, but silently ignores <c>AfterKey</c>/
+    /// <c>AfterId</c> and always returns the first page — this method is the only entry point that
+    /// honors the cursor.
+    /// </para>
+    /// </remarks>
+    IQueryable<T> GetKeysetQuery<TKey>(
+        IQueryable<T> inputQuery,
+        SharedKernel.Domain.Specifications.KeysetSpecification<T, TKey> spec)
+        where TKey : struct, IComparable<TKey>;
 }

@@ -43,6 +43,19 @@ internal sealed class StubSpecificationEvaluator<T> : ISpecificationEvaluator<T>
             : inputQuery;
         return filtered.Select(spec.Selector);
     }
+
+    public bool GetKeysetQueryCalled { get; private set; }
+
+    public IQueryable<T> GetKeysetQuery<TKey>(IQueryable<T> inputQuery, KeysetSpecification<T, TKey> spec)
+        where TKey : struct, IComparable<TKey>
+    {
+        GetKeysetQueryCalled = true;
+        // Minimal valid implementation for tests — criteria + Take(Take+1) only.
+        var filtered = spec.Criteria is not null
+            ? inputQuery.Where(spec.Criteria)
+            : inputQuery;
+        return filtered.Take(spec.Take!.Value + 1);
+    }
 }
 
 /// <summary>
