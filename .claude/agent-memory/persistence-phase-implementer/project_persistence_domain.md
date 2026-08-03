@@ -5,6 +5,60 @@ metadata:
   type: project
 ---
 
+## SK.06.Scaffold fully closed 2026-08-03 (18/18) — S-17 + T-106..T-109 done same session
+S-17 (WO-053/P-336) was left `◐` by a prior session pending T-106..T-108 (a separate Tests-phase
+gate). The next Scaffold-phase dispatch explicitly authorized doing that migration work now to
+close S-17 properly, rather than waiting for a formal Tests-phase dispatch — did the full
+migration, then flipped T-106..T-109 too (with an annotation, since their own task text's "all
+four classes switch" premise was wrong — see below). Two genuine, non-obvious technical findings
+surfaced only by actually running the tests, not foreseeable from the design phase alone:
+
+1. **`Database.EnsureCreatedAsync()` is coarse-grained — checks "does this DB have ANY tables,"
+   not "does it have THIS model's tables."** Sharing one literal database (e.g. 16.Testing's
+   `PostgreSqlContainerFixture`'s fixed `sharedkernel_test`) across multiple xUnit test classes
+   with DIFFERENT `DbContext` models means only the FIRST model's `EnsureCreatedAsync()` call
+   actually creates its schema — every subsequent, differently-shaped model's call silently
+   no-ops (`HasTables() == true` already) and its tables are NEVER created → "relation does not
+   exist" at query time. **Fix:** each class targets its own uniquely-named database within the
+   ONE shared container via `new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+   { Database = "some_unique_name" }.ConnectionString` — `EnsureCreatedAsync()` can create a
+   brand-new named database from scratch (Npgsql's create-database path connects to the built-in
+   "postgres" administrative database every vanilla PostgreSQL image always provisions). This
+   preserves genuine per-class schema isolation while still eliminating redundant container
+   starts (the actual point of Testcontainers fixture consolidation is fewer containers, not one
+   shared database). Applied: `sk_persistence_concurrency`/`sk_persistence_keyset`/
+   `sk_persistence_transient_retry` in `SharedKernel.Persistence.PostgreSQL.Tests`.
+
+2. **`DROP TABLE` order becomes load-bearing once a database persists across xUnit test METHODS**
+   (not just across classes). A class's own `IAsyncLifetime.InitializeAsync` schema-setup script
+   that drops a parent table before its FK-dependent children only "worked" because each `[Fact]`
+   previously got a brand-new container (a fresh class instance = fresh container = no pre-existing
+   tables to conflict with). Once the container/database persists across test methods via
+   `IClassFixture<PostgreSqlContainerFixture>` (one container shared across every `[Fact]` in the
+   class, while a FRESH test-class instance — and therefore a fresh `InitializeAsync()` call —
+   still runs per test method), the SECOND test method's script fails with Npgsql
+   `PostgresException` `2BP01` ("cannot drop table ... because other objects depend on it").
+   **Fix:** always drop child (FK-holding) tables before parent tables in any schema-setup script
+   that may run more than once against a persistent database. Found/fixed in
+   `DapperReadServiceIntegrationTests.cs` (`dapper_payment`/`dapper_order` before `dapper_customer`).
+
+3. **A real, PERMANENT constraint, not a temporary gap:** `PostgreSQLIntegrationTests` cannot join
+   the shared `16.Testing` fixture — its pgvector round-trip test needs the `pgvector/pgvector:pg16`
+   image (the extension binary is absent from a vanilla PostgreSQL image), and the shared fixture
+   is pinned to plain `postgres:16.4`. It keeps its own dedicated container permanently. This means
+   `SharedKernel.Persistence.PostgreSQL.Tests.csproj` genuinely still needs its direct
+   `Testcontainers.PostgreSql` `PackageReference` (only `SharedKernel.Persistence.Dapper.Tests.csproj`'s
+   reference was removable, since its one Postgres-touching class fully migrated). When a design
+   doc says "all N classes migrate uniformly," verify per-class technical constraints before
+   assuming that's achievable — it wasn't, here.
+
+`xUnit` mechanics worth remembering: `IClassFixture<T>` instantiates the fixture ONCE per test
+CLASS (shared across every `[Fact]` method in it) but xUnit still constructs a NEW instance of the
+TEST CLASS itself per test method — so a class's own `IAsyncLifetime.InitializeAsync`/`DisposeAsync`
+(for schema setup, not container lifecycle) still runs once per test method even after migrating
+the container to a class fixture. This is why finding #2 above was previously invisible: before
+migration, "once per test method" coincided with "once per fresh container," masking the ordering bug.
+
 ## Phase completion status (as of 2026-07-31, WO-051 FULLY CLOSED — all 6 phases ● end to end)
 - SK.06.Design: complete (84/84 tasks) — D-65..D-84 (WO-051 batches 1+2) done 2026-07-30
 - SK.06.Core: complete (128/128 tasks) — C-98..C-128 verified/closed 2026-07-31
