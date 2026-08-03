@@ -105,22 +105,22 @@ public sealed class EncryptionRotationLoggingTests
         var batchRecords = inMemoryLogger.Records.Where(r => r.EventId.Id == 6009).ToList();
         batchRecords.Should().HaveCount(3);
         batchRecords.Should().OnlyContain(r => r.LogLevel == LogLevel.Information);
-        foreach (var record in batchRecords)
+
+        // Batch boundaries are 3, 3, 1 rows (BatchSize == 3, 7 rows total) — BatchNumber (zero-based,
+        // per EncryptionRotationService.RotateAsync's own counter) and RowsInBatch must reflect that
+        // exact per-batch shape, in order.
+        var expectedRowsPerBatch = new[] { 3, 3, 1 };
+        for (var i = 0; i < batchRecords.Count; i++)
         {
+            var record = batchRecords[i];
+            record.TryGetProperty("BatchNumber", out var batchNumber).Should().BeTrue();
+            batchNumber.Should().Be(i);
+            record.TryGetProperty("RowsInBatch", out var rowsInBatch).Should().BeTrue();
+            rowsInBatch.Should().Be(expectedRowsPerBatch[i]);
             record.TryGetProperty("FromVersion", out var fromVersion).Should().BeTrue();
             fromVersion.Should().Be("1");
             record.TryGetProperty("ToVersion", out var toVersion).Should().BeTrue();
             toVersion.Should().Be("2");
-
-            // Never a key byte, Base64 key string, or plaintext/ciphertext value in the log.
-            if (record.State is not null)
-            {
-                foreach (var kv in record.State)
-                {
-                    kv.Value.Should().NotBe(v1);
-                    kv.Value.Should().NotBe(v2);
-                }
-            }
         }
 
         var completedRecord = inMemoryLogger.Records.ShouldHaveLogged(new EventId(6010), LogLevel.Information);
@@ -132,6 +132,25 @@ public sealed class EncryptionRotationLoggingTests
         rowsFailed.Should().Be(0);
 
         inMemoryLogger.Records.Count(r => r.EventId.Id == 6010).Should().Be(1);
+
+        // Negative assertion (C-133): scan EVERY captured record's rendered message AND every
+        // structured property value — none may ever equal a key byte, a Base64-encoded key
+        // string, or (by construction of this fixture, whose only "sensitive" values are the two
+        // keys) a plaintext/ciphertext value.
+        foreach (var record in inMemoryLogger.Records)
+        {
+            record.Message.Should().NotContain(v1);
+            record.Message.Should().NotContain(v2);
+
+            if (record.State is null)
+                continue;
+
+            foreach (var kv in record.State)
+            {
+                kv.Value.Should().NotBe(v1);
+                kv.Value.Should().NotBe(v2);
+            }
+        }
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using SharedKernel.Domain.Abstractions;
 using SharedKernel.Domain.Specifications;
 using SharedKernel.Persistence.EfCore.Repositories;
 using SharedKernel.Persistence.EfCore.Tests.TestFixtures;
@@ -184,6 +185,74 @@ public sealed class BulkMutationRepositoryTests
 
         var updated = await ctx.AuditableAggregates.IgnoreQueryFilters().FirstAsync(e => e.Id == id);
         updated.Name.Should().Be("Rotated");
+    }
+
+    // -------------------------------------------------------------------------
+    // T-112 (WO-053/P-337, DO-59) — bulk restore is a USAGE PATTERN of the already-shipped
+    // ExecuteUpdateAsync, not a new production method. This proves the documented pattern
+    // (06.Persistence/CLAUDE.md's "Soft-Delete Restore" section) genuinely works: a bulk
+    // soft-delete followed by a bulk restore, both via ExecuteUpdateAsync, bypassing
+    // SaveChangesAsync/the three platform interceptors/domain events exactly like every other
+    // IBulkMutationRepository.ExecuteUpdateAsync call.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ExecuteUpdateAsync_BulkRestorePattern_ReversesBulkSoftDelete_BypassingInterceptors()
+    {
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new BulkAuditableRepository(ctx);
+
+        var id1 = TestId.New();
+        var id2 = TestId.New();
+        ctx.AuditableAggregates.AddRange(
+            new AuditableTestAggregate(id1, "BulkRestoreMe", new SystemClock()),
+            new AuditableTestAggregate(id2, "BulkRestoreMe", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var originalModifiedOn = (await ctx.AuditableAggregates
+            .IgnoreQueryFilters()
+            .Select(e => new { e.Id, e.ModifiedOn })
+            .FirstAsync(e => e.Id == id1)).ModifiedOn;
+
+        // Bulk soft-delete via ExecuteUpdateAsync directly (mirrors the documented bulk
+        // soft-delete example — no repository-level "bulk delete" helper exists; the setter
+        // delegate itself IS the documented pattern).
+        var deletedCount = await repo.ExecuteUpdateAsync(
+            new AuditableNameEqualsSpec("BulkRestoreMe"),
+            setters => setters
+                .SetProperty(e => ((ISoftDeletable)e).IsDeleted, true)
+                .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)DateTimeOffset.UtcNow)
+                .SetProperty(e => ((ISoftDeletable)e).DeletedBy, "bulk-tester"));
+        deletedCount.Should().Be(2);
+
+        // Invisible through the normal global soft-delete filter.
+        var visibleAfterDelete = await ctx.AuditableAggregates.Where(e => e.Name == "BulkRestoreMe").ToListAsync();
+        visibleAfterDelete.Should().BeEmpty();
+
+        // Act — bulk RESTORE via a second ExecuteUpdateAsync call. IncludeDeleted = true so the
+        // soft-deleted rows are matched (mirrors 06.Persistence/CLAUDE.md's documented example).
+        var restoredCount = await repo.ExecuteUpdateAsync(
+            new AuditableNameEqualsSpec("BulkRestoreMe", includeDeleted: true),
+            setters => setters
+                .SetProperty(e => ((ISoftDeletable)e).IsDeleted, false)
+                .SetProperty(e => ((ISoftDeletable)e).DeletedOn, (DateTimeOffset?)null)
+                .SetProperty(e => ((ISoftDeletable)e).DeletedBy, (string?)null));
+
+        // Assert — every targeted row is genuinely restored and visible again through the global
+        // filter with no IncludeDeleted flag needed.
+        restoredCount.Should().Be(2);
+
+        var visibleAfterRestore = await ctx.AuditableAggregates.Where(e => e.Name == "BulkRestoreMe").ToListAsync();
+        visibleAfterRestore.Should().HaveCount(2);
+        visibleAfterRestore.Should().OnlyContain(e => !e.IsDeleted && e.DeletedOn == null && e.DeletedBy == null);
+
+        // Bypasses SaveChangesAsync/the three platform interceptors/domain events — ModifiedOn is
+        // untouched by either bulk call, exactly like every other IBulkMutationRepository call.
+        var finalModifiedOn = (await ctx.AuditableAggregates
+            .Select(e => new { e.Id, e.ModifiedOn })
+            .FirstAsync(e => e.Id == id1)).ModifiedOn;
+        finalModifiedOn.Should().Be(originalModifiedOn, "bulk mutations must bypass AuditInterceptor entirely");
     }
 }
 

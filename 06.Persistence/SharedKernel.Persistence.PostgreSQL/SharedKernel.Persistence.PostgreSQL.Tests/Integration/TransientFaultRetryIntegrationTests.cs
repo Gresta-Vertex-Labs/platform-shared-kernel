@@ -2,10 +2,15 @@ using System.Data.Common;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NSubstitute;
+using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Extensions;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
@@ -13,6 +18,7 @@ using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
 using SharedKernel.Testing.Containers;
+using SharedKernel.Testing.Logging;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
@@ -279,5 +285,172 @@ public sealed class TransientFaultRetryIntegrationTests
             "the failed first attempt must fully roll back — no duplicate/partial commit after a successful retry");
         faultInjector.AttemptCount.Should().BeGreaterThanOrEqualTo(2,
             "at least one failed attempt plus one successful attempt must have been made");
+    }
+
+    // -------------------------------------------------------------------------
+    // T-100 (WO-053/P-333) — TransientRetryAttempt (6007) / TransientRetryExhausted (6008)
+    // structured-logging proofs against a REAL PostgreSQL Testcontainer, reusing this class's own
+    // T-79 injected-transient-fault technique. The internal PersistenceRetryDiagnosticListener has
+    // no InternalsVisibleTo grant to this project — it is exercised purely through its public
+    // IHostedService/ILogger<T> DI surface, resolving its captured records via 16.Testing's
+    // InMemoryLoggerFactory category-string lookup (the type's own full CLR name), never by
+    // naming the internal type directly.
+    // -------------------------------------------------------------------------
+
+    private const string RetryDiagnosticListenerCategory =
+        "SharedKernel.Persistence.EfCore.Diagnostics.PersistenceRetryDiagnosticListener";
+
+    [Fact]
+    public async Task SaveChangesAsync_WithTransientFaultRetryLogging_GenuineTransientFault_LogsWarningPerRetryAttempt()
+    {
+        // Arrange — schema first, via a context with no fault interceptor attached.
+        await using (var setupCtx = CreateRetryEnabledContext(ConnectionString))
+        {
+            await setupCtx.Database.EnsureCreatedAsync();
+        }
+
+        var faultInjector = new TransientFaultInjectionInterceptor(failuresBeforeSuccess: 2);
+
+        var services = new ServiceCollection();
+        services.AddInMemoryLoggerFactory();
+        services
+            .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts =>
+                opts.UsePostgreSQL(ConnectionString, maxRetryCount: 3).AddInterceptors(faultInjector))
+            .WithTransientFaultRetry(maxRetryCount: 3)
+            .Build();
+
+        await using var provider = services.BuildServiceProvider();
+        var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        foreach (var hostedService in hostedServices)
+            await hostedService.StartAsync(CancellationToken.None);
+
+        try
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var ctx = scope.ServiceProvider.GetRequiredService<ConcurrencyTestDbContext>();
+
+            ctx.Aggregates.Add(new ConcurrentPgAggregate(ConcurrentPgId.New(), "LoggedRetrySuccess", new SystemClock()));
+
+            // Act — succeeds on the 3rd attempt (2 injected failures, 2 retries observed).
+            await ctx.SaveChangesAsync();
+
+            // Assert
+            var records = loggerFactory.GetLogger(RetryDiagnosticListenerCategory).Records;
+            records.ShouldHaveLoggedCount(new EventId(6007), 2);
+            records.ShouldHaveLoggedWithProperty(new EventId(6007), "AttemptNumber", 1);
+            records.ShouldHaveLoggedWithProperty(new EventId(6007), "AttemptNumber", 2);
+        }
+        finally
+        {
+            foreach (var hostedService in hostedServices)
+                await hostedService.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_WithTransientFaultRetryLogging_NoFaultInjected_NeverLogsTransientRetryAttempt()
+    {
+        // Arrange
+        await using (var setupCtx = CreateRetryEnabledContext(ConnectionString))
+        {
+            await setupCtx.Database.EnsureCreatedAsync();
+        }
+
+        var services = new ServiceCollection();
+        services.AddInMemoryLoggerFactory();
+        services
+            .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts =>
+                opts.UsePostgreSQL(ConnectionString, maxRetryCount: 3))
+            .WithTransientFaultRetry(maxRetryCount: 3)
+            .Build();
+
+        await using var provider = services.BuildServiceProvider();
+        var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        foreach (var hostedService in hostedServices)
+            await hostedService.StartAsync(CancellationToken.None);
+
+        try
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var ctx = scope.ServiceProvider.GetRequiredService<ConcurrencyTestDbContext>();
+
+            ctx.Aggregates.Add(new ConcurrentPgAggregate(ConcurrentPgId.New(), "NoRetryNeeded", new SystemClock()));
+
+            // Act — no fault; succeeds on the very first attempt.
+            await ctx.SaveChangesAsync();
+
+            // Assert — silent when zero retries occur.
+            loggerFactory.GetLogger(RetryDiagnosticListenerCategory).Records.ShouldNotHaveLogged(new EventId(6007));
+        }
+        finally
+        {
+            foreach (var hostedService in hostedServices)
+                await hostedService.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_WithTransientFaultRetryLogging_RetryExhausted_Logs6007PerAttemptAnd6008Once_DistinctEventIds_BeforeExceptionPropagates()
+    {
+        // Arrange
+        await using (var setupCtx = CreateRetryEnabledContext(ConnectionString))
+        {
+            await setupCtx.Database.EnsureCreatedAsync();
+        }
+
+        // Always fails — genuine retry-limit exhaustion after the configured maxRetryCount (3).
+        var faultInjector = new TransientFaultInjectionInterceptor(failuresBeforeSuccess: int.MaxValue);
+
+        var services = new ServiceCollection();
+        services.AddInMemoryLoggerFactory();
+        services
+            .AddSharedKernelEfCore<ConcurrencyTestDbContext>(opts =>
+                opts.UsePostgreSQL(ConnectionString, maxRetryCount: 3).AddInterceptors(faultInjector))
+            .WithTransientFaultRetry(maxRetryCount: 3)
+            .Build();
+
+        await using var provider = services.BuildServiceProvider();
+        var loggerFactory = (InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>();
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        foreach (var hostedService in hostedServices)
+            await hostedService.StartAsync(CancellationToken.None);
+
+        try
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var ctx = scope.ServiceProvider.GetRequiredService<ConcurrencyTestDbContext>();
+            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            ctx.Aggregates.Add(new ConcurrentPgAggregate(ConcurrentPgId.New(), "AlwaysFails", new SystemClock()));
+
+            // Act
+            Func<Task> act = () => uow.SaveChangesAsync();
+
+            // Assert
+            await act.Should().ThrowAsync<Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException>();
+
+            var retryListenerRecords = loggerFactory.GetLogger(RetryDiagnosticListenerCategory).Records;
+            retryListenerRecords.Count(r => r.EventId.Id == 6007).Should().Be(3); // one per retry (maxRetryCount == 3)
+
+            var unitOfWorkRecords = loggerFactory.GetLogger(typeof(EfUnitOfWork).FullName!).Records;
+            unitOfWorkRecords.ShouldHaveLoggedCount(new EventId(6008), 1);
+            var record = unitOfWorkRecords.ShouldHaveLogged(new EventId(6008), LogLevel.Warning);
+            record.TryGetProperty("AttemptCount", out var attemptCount).Should().BeTrue();
+            attemptCount.Should().Be(4); // MaxRetryCount (3) + 1
+
+            // Distinct EventIds, on distinct loggers, for the SAME operation.
+            unitOfWorkRecords.ShouldNotHaveLogged(new EventId(6007));
+            retryListenerRecords.ShouldNotHaveLogged(new EventId(6008));
+        }
+        finally
+        {
+            foreach (var hostedService in hostedServices)
+                await hostedService.StopAsync(CancellationToken.None);
+        }
     }
 }

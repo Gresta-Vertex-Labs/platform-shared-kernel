@@ -133,4 +133,90 @@ public sealed class VectorOrderingExpressionsTests
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    // -------------------------------------------------------------------------
+    // T-121 (WO-053/P-339, C-145) — zero-reflection-at-runtime behavioral proof. True static-
+    // analysis enforcement of the reflection-elimination rule remains 00.Governance's
+    // jurisdiction (SK0xxx MakeGenericMethod/Invoke rule) — this is the practical, behavioral
+    // proxy available at this layer: repeated calls across multiple TAggregate/metric
+    // combinations behave correctly and with stable performance characteristics consistent with
+    // the compile-time-resolved MethodInfo (a statically-typed delegate-cast, WO-053's own
+    // "((Func<Vector,Vector,double>)VectorDbFunctionsExtensions.CosineDistance).Method" technique)
+    // rather than a per-call Type.GetMethod/MakeGenericMethod runtime lookup.
+    // -------------------------------------------------------------------------
+
+    private sealed class AnotherVectorTestEntity
+    {
+        public int Id { get; set; }
+        public PgVector Embedding { get; set; } = new(new float[2]);
+    }
+
+    [Fact]
+    public void ByDistance_RepeatedCallsAcrossMultipleAggregateTypesAndMetrics_BehaveCorrectly()
+    {
+        var queryVector3D = new PgVector(new float[] { 1f, 2f, 3f });
+        var queryVector2D = new PgVector(new float[] { 0.1f, 0.2f });
+
+        for (var i = 0; i < 500; i++)
+        {
+            var cosineExpr = VectorOrderingExpressions.ByDistance<VectorTestEntity>(
+                e => e.Embedding, queryVector3D, VectorDistanceMetric.Cosine);
+            var l2Expr = VectorOrderingExpressions.ByDistance<VectorTestEntity>(
+                e => e.Embedding, queryVector3D, VectorDistanceMetric.L2);
+            var otherEntityExpr = VectorOrderingExpressions.ByDistance<AnotherVectorTestEntity>(
+                e => e.Embedding, queryVector2D, i % 2 == 0 ? VectorDistanceMetric.Cosine : VectorDistanceMetric.L2);
+
+            // Cheap, allocation-light correctness spot-checks every iteration (no FluentAssertions
+            // inside the hot loop, to keep this a fair timing proxy in the next test).
+            if (cosineExpr.Parameters.Count != 1 || l2Expr.Parameters.Count != 1 || otherEntityExpr.Parameters.Count != 1)
+                throw new InvalidOperationException("ByDistance's expression shape regressed mid-loop.");
+
+            var cosineCall = (MethodCallExpression)((UnaryExpression)cosineExpr.Body).Operand;
+            var l2Call = (MethodCallExpression)((UnaryExpression)l2Expr.Body).Operand;
+            if (cosineCall.Method.Name != "CosineDistance" || l2Call.Method.Name != "L2Distance")
+                throw new InvalidOperationException("ByDistance's method-resolution regressed mid-loop.");
+        }
+    }
+
+    [Fact]
+    public void ByDistance_RepeatedCalls_StablePerformance_NoPerCallReflectionGrowthAcrossDifferentAggregateTypes()
+    {
+        const int iterations = 2000;
+        var queryVector3D = new PgVector(new float[] { 1f, 2f, 3f });
+        var queryVector2D = new PgVector(new float[] { 0.1f, 0.2f });
+
+        // Warm up the JIT before measuring, so both timed batches reflect steady-state cost only.
+        for (var i = 0; i < 200; i++)
+        {
+            _ = VectorOrderingExpressions.ByDistance<VectorTestEntity>(e => e.Embedding, queryVector3D, VectorDistanceMetric.Cosine);
+            _ = VectorOrderingExpressions.ByDistance<AnotherVectorTestEntity>(e => e.Embedding, queryVector2D, VectorDistanceMetric.L2);
+        }
+
+        var firstBatch = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < iterations; i++)
+        {
+            _ = VectorOrderingExpressions.ByDistance<VectorTestEntity>(
+                e => e.Embedding, queryVector3D, i % 2 == 0 ? VectorDistanceMetric.Cosine : VectorDistanceMetric.L2);
+        }
+        firstBatch.Stop();
+
+        // A DIFFERENT closed-generic TAggregate — the case a per-call Type.GetMethod/
+        // MakeGenericMethod runtime lookup (rather than a compile-time-resolved MethodInfo) would
+        // most plausibly penalize via a cache miss.
+        var secondBatch = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < iterations; i++)
+        {
+            _ = VectorOrderingExpressions.ByDistance<AnotherVectorTestEntity>(
+                e => e.Embedding, queryVector2D, i % 2 == 0 ? VectorDistanceMetric.Cosine : VectorDistanceMetric.L2);
+        }
+        secondBatch.Stop();
+
+        // Generous tolerance (a practical behavioral proxy, not a strict CI-timing assertion prone
+        // to flakiness): the second batch must not be dramatically slower than the first, and both
+        // must complete well within a wide ceiling — consistent with zero per-call reflection cost.
+        firstBatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        secondBatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        secondBatch.Elapsed.Should().BeLessThan(
+            TimeSpan.FromMilliseconds(Math.Max(500, firstBatch.Elapsed.TotalMilliseconds * 5)));
+    }
 }

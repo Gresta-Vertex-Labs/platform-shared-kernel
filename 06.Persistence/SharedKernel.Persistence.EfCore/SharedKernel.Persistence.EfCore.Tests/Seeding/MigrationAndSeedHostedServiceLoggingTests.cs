@@ -142,6 +142,11 @@ public sealed class MigrationAndSeedHostedServiceLoggingTests
                                                                             // new logging does not disturb the
                                                                             // existing finally-block release ordering.
         records.ShouldHaveLogged(new EventId(6004), LogLevel.Warning);
+
+        // Each fires exactly once per StartAsync call — never duplicated across the
+        // acquire/seed-failure/release sequence.
+        records.ShouldHaveLoggedCount(new EventId(6005), 1);
+        records.ShouldHaveLoggedCount(new EventId(6006), 1);
     }
 }
 

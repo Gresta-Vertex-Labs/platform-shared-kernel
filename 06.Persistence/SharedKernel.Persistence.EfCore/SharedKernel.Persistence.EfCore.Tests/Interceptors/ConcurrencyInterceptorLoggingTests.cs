@@ -61,6 +61,10 @@ public sealed class ConcurrencyInterceptorLoggingTests
         var record = inMemoryLogger.Records.ShouldHaveLogged(new EventId(6000), LogLevel.Warning);
         record.TryGetProperty("EntityType", out var entityType).Should().BeTrue();
         entityType.Should().Be(nameof(ConcurrentTestAggregate));
+
+        // Exactly once — TryTranslate logs immediately before returning the translated
+        // ConflictException, never duplicated across the single SaveChangesAsync call.
+        inMemoryLogger.Records.ShouldHaveLoggedCount(new EventId(6000), 1);
     }
 
     [Fact]

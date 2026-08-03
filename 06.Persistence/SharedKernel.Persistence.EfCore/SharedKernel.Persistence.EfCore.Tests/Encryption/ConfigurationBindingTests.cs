@@ -206,4 +206,138 @@ public sealed class ConfigurationBindingTests
         // Assert — ValidateOnStart-style eager validation rejects the incomplete shape.
         act.Should().Throw<OptionsValidationException>();
     }
+
+    // -------------------------------------------------------------------------
+    // T-104 (WO-053/P-334, D-92) — composition precedence: a later code-override call wins over
+    // an earlier configuration-binding call, per normal IOptions<T> layering semantics. Reversing
+    // the call order reverses precedence — this is documented IOptions<T> behavior, not a fixed
+    // rule this domain enforces.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void WithEncryption_ConfigurationThenCodeOverride_LaterCodeCallWins()
+    {
+        // Arrange — configuration binds CurrentVersion = "v1"; a SEPARATE, later .WithEncryption(...)
+        // call (the Action<T>-only overload) overrides CurrentVersion to "v2".
+        var v1Key = new byte[32];
+        var v2Key = new byte[32];
+        Array.Fill(v2Key, (byte)0x9);
+
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["SharedKernel:Encryption:Enabled"] = "true",
+            ["SharedKernel:Encryption:CurrentVersion"] = "v1",
+            ["SharedKernel:Encryption:Keys:v1"] = Convert.ToBase64String(v1Key),
+        });
+
+        var services = new ServiceCollection();
+
+        // Act
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts =>
+                opts.UseSqlite("DataSource=:memory:")
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(configuration)
+            .WithEncryption(configure: enc =>
+            {
+                enc.CurrentVersion = "v2";
+                enc.Keys["v2"] = Convert.ToBase64String(v2Key);
+            })
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+
+        // Assert — the LATER call (code-only override) wins.
+        var options = provider.GetRequiredService<IOptions<EncryptionOptions>>();
+        options.Value.CurrentVersion.Should().Be("v2");
+        options.Value.Keys.Should().ContainKey("v1");
+        options.Value.Keys.Should().ContainKey("v2");
+    }
+
+    // -------------------------------------------------------------------------
+    // T-105 (WO-053/P-334, C-136/C-137) — startup validation still fires (and fires exactly once)
+    // for a config-bound invalid shape, identically to the pre-existing Action<T>-based path.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void WithEncryption_IConfigurationOverload_CurrentVersionNotInKeys_ThrowsSameValidationExceptionAsCodeOverload()
+    {
+        // Arrange — configuration-bound path: CurrentVersion references a key absent from Keys.
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["SharedKernel:Encryption:Enabled"] = "true",
+            ["SharedKernel:Encryption:CurrentVersion"] = "v2",
+            ["SharedKernel:Encryption:Keys:v1"] = Convert.ToBase64String(new byte[32]),
+        });
+
+        var configServices = new ServiceCollection();
+        configServices
+            .AddSharedKernelEfCore<TestDbContext>(opts =>
+                opts.UseSqlite("DataSource=:memory:")
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(configuration)
+            .Build();
+        var configProvider = configServices.BuildServiceProvider();
+
+        // The IDENTICAL invalid shape, bound purely via the pre-existing Action<T>-only overload.
+        var codeServices = new ServiceCollection();
+        codeServices
+            .AddSharedKernelEfCore<TestDbContext>(opts =>
+                opts.UseSqlite("DataSource=:memory:")
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(enc =>
+            {
+                enc.Enabled = true;
+                enc.CurrentVersion = "v2";
+                enc.Keys["v1"] = Convert.ToBase64String(new byte[32]);
+            })
+            .Build();
+        var codeProvider = codeServices.BuildServiceProvider();
+
+        // Act
+        Action configAct = () => _ = configProvider.GetRequiredService<IOptions<EncryptionOptions>>().Value;
+        Action codeAct = () => _ = codeProvider.GetRequiredService<IOptions<EncryptionOptions>>().Value;
+
+        // Assert — both throw the SAME eager startup-validation exception type for the identical
+        // invalid shape (CurrentVersion not present in Keys).
+        var configException = configAct.Should().Throw<OptionsValidationException>().Which;
+        var codeException = codeAct.Should().Throw<OptionsValidationException>().Which;
+        configException.Failures.Should().NotBeEmpty();
+        codeException.Failures.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void WithEncryption_ConfigurationThenCodeOverride_RegistersValidatorExactlyOnce_NeverDuplicated()
+    {
+        // Arrange — chain BOTH the configuration-binding overload and a code-override call in the
+        // same builder; the eager validation registration performed by
+        // EnsureEncryptionInfrastructureRegistered() must be idempotent across both calls.
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["SharedKernel:Encryption:Enabled"] = "true",
+            ["SharedKernel:Encryption:CurrentVersion"] = "v1",
+            ["SharedKernel:Encryption:Keys:v1"] = Convert.ToBase64String(new byte[32]),
+        });
+
+        var services = new ServiceCollection();
+
+        // Act
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts =>
+                opts.UseSqlite("DataSource=:memory:")
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(configuration)
+            .WithEncryption(configure: enc => enc.Keys["v2"] = Convert.ToBase64String(new byte[32]))
+            .Build();
+
+        // Assert — exactly one IValidateOptions<EncryptionOptions> registration exists, never one
+        // per .WithEncryption(...) call chained onto the same builder.
+        services.Count(d => d.ServiceType == typeof(IValidateOptions<EncryptionOptions>)).Should().Be(1);
+
+        // And resolving the (valid, in this case) options succeeds without throwing — validation
+        // ran, found nothing wrong, and did not fire twice/produce duplicated failures.
+        var provider = services.BuildServiceProvider();
+        Action act = () => _ = provider.GetRequiredService<IOptions<EncryptionOptions>>().Value;
+        act.Should().NotThrow();
+    }
 }

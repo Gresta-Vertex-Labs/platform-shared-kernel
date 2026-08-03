@@ -128,6 +128,37 @@ public sealed class ReadReplicaRoutingTests
     }
 
     [Fact]
+    public void WithReadReplica_SameScope_ReplicaContextInstanceIsCachedOncePerScope_NeverReconstructed()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts =>
+                opts.UseSqlite("DataSource=:memory:")
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithReadReplica(opts =>
+                opts.UseSqlite("DataSource=:memory:")
+                    .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var accessor = scope.ServiceProvider.GetRequiredService<IReadReplicaContextAccessor<SharedKernelDbContext>>();
+        var primaryContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+
+        // Act — call GetEffectiveContext twice within the SAME DI scope, against the SAME accessor
+        // instance (accessor is itself scoped, so a second GetRequiredService call within this
+        // scope resolves the identical accessor).
+        var replicaFirstCall = accessor.GetEffectiveContext(primaryContext);
+        var replicaSecondCall = accessor.GetEffectiveContext(primaryContext);
+
+        // Assert — the SAME replica TContext instance is returned both times: constructed lazily
+        // on first access, then cached for the remainder of the scope, never reconstructed per call.
+        ReferenceEquals(replicaFirstCall, replicaSecondCall).Should().BeTrue();
+    }
+
+    [Fact]
     public void WithoutWithReadReplica_AccessorIsUnregistered()
     {
         // Arrange
