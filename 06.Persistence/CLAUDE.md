@@ -14,9 +14,9 @@ Philosophy: **Abstraction-first. Provider-swappable. Specification-driven. Inter
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Persistence.Abstractions` | `IRepository<T,TId>`, `IReadRepository<T,TId>` (gains `GetByIdsChunkedAsync`, WO-051/P-323), `IUnitOfWork`, `ITransactionalUnitOfWork` (gains `ExecuteInTransactionAsync`, WO-051/P-320), `IDbConnectionFactory`, `ISpecificationEvaluator<T>` (gains `GetKeysetQuery<TKey>`, WO-051/P-317), `ByIdSpecification<T,TId>`, `KeysetPage<TAggregate,TKey>` (WO-051/P-317) — pure interface library; no outbox types | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` (added P-080 — required for `PagedList<T>` in `IReadRepository.ListPagedAsync`) |
-| `SharedKernel.Persistence.EfCore` | EF Core implementation: `EfRepository<T,TId>`, `EfReadRepository<T,TId>` (gains `ListKeysetAsync<TKey>`, WO-051/P-317; gains `GetByIdsChunkedAsync`, WO-051/P-323), `EfUnitOfWork` (implements both `SharedKernel.Persistence.Abstractions.IUnitOfWork` and, opt-in, `SharedKernel.Application.Behaviors.IUnitOfWork`), `SharedKernelDbContext` (gains `CurrentUserContext`/`RefreshUserContext`, WO-051/P-322), `SpecificationEvaluator<T>` (auto-`TagWith`, `AsSplitQuery`, keyset seek predicate — WO-051/P-317-319), interceptors (Audit, SoftDelete, Concurrency — no OutboxInterceptor), `TenantedDbContext` (gains `RefreshRequestContext` + pooling-safe/model-cache-safe filter rebuild, WO-051/P-322), `EfCorePersistenceBuilder` (gains `.WithTransientFaultRetry()`, WO-051/P-320; gains `.WithDbContextPooling()`, WO-051/P-322), `PersistenceActivitySource`/`PersistenceTagKeys` (WO-051/P-319), `EncryptionKeyByteCache` (internal, WO-051/P-323) | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Cryptography` (01.Core, added P-227 — `EncryptedValueConverter` delegates AES-256-GCM to `ISymmetricEncryptionService`), `SharedKernel.Application.Behaviors` (05.Application, added P-228 — `EfUnitOfWork` dual-interface bridge), `Microsoft.EntityFrameworkCore` 10.0.5, `Microsoft.EntityFrameworkCore.Relational` 10.0.5, `Microsoft.Extensions.DependencyInjection.Abstractions` 10.0.5 (must match EFCore transitive — NU1605 fires if pinned lower) |
-| `SharedKernel.Persistence.PostgreSQL` | PostgreSQL-specific conventions: `SnakeCaseNamingConvention`, `XminConcurrencyTokenConvention`/`XminRowVersionValueConverter` (WO-051/P-315 — the genuine, working `IHasConcurrency` mechanism), `UsePostgreSQL()` DI extension (gains opt-in `EnableRetryOnFailure` parameters, WO-051/P-320), JSONB column support (`HasJsonbColumn`, `JsonbColumnAttribute`), pgvector support (`HasVectorColumn`, `VectorColumnAttribute`), `NpgsqlConnectionFactory`, `AddSharedKernelPostgreSQL()` DI extension | `SharedKernel.Persistence.EfCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x, `Pgvector.EntityFrameworkCore` |
+| `SharedKernel.Persistence.Abstractions` | `IRepository<T,TId>`, `IReadRepository<T,TId>` (gains `GetByIdsChunkedAsync`, WO-051/P-323), `IUnitOfWork`, `ITransactionalUnitOfWork` (gains `ExecuteInTransactionAsync`, WO-051/P-320), `IDbConnectionFactory`, `ISpecificationEvaluator<T>` (gains `GetKeysetQuery<TKey>`, WO-051/P-317), `ByIdSpecification<T,TId>`, `KeysetPage<TAggregate,TKey>` (WO-051/P-317), `IRestorableRepository<TAggregate,TId>` (WO-053/P-337 — single-entity soft-delete restore) — pure interface library; no outbox types | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` (added P-080 — required for `PagedList<T>` in `IReadRepository.ListPagedAsync`) |
+| `SharedKernel.Persistence.EfCore` | EF Core implementation: `EfRepository<T,TId>` (gains `RestoreAsync`, WO-053/P-337), `EfReadRepository<T,TId>` (gains `ListKeysetAsync<TKey>`, WO-051/P-317; gains `GetByIdsChunkedAsync`, WO-051/P-323; gains an optional `IReadReplicaContextAccessor<TContext>?` constructor parameter, WO-053/P-338), `EfUnitOfWork` (implements both `SharedKernel.Persistence.Abstractions.IUnitOfWork` and, opt-in, `SharedKernel.Application.Behaviors.IUnitOfWork`), `SharedKernelDbContext` (gains `CurrentUserContext`/`RefreshUserContext`, WO-051/P-322), `SpecificationEvaluator<T>` (auto-`TagWith`, `AsSplitQuery`, keyset seek predicate — WO-051/P-317-319), interceptors (Audit, SoftDelete, Concurrency — no OutboxInterceptor; `ConcurrencyInterceptor` gains a Warning `[LoggerMessage]` log, WO-053/P-333), `TenantedDbContext` (gains `RefreshRequestContext` + pooling-safe/model-cache-safe filter rebuild, WO-051/P-322), `EfCorePersistenceBuilder` (gains `.WithTransientFaultRetry()`, WO-051/P-320; gains `.WithDbContextPooling()`, WO-051/P-322; gains `.WithEncryption(IConfiguration,...)`/`.WithServiceName(IConfiguration)` config-binding overloads, WO-053/P-334; gains `.WithCommandTimeout(int)`, WO-053/P-337; gains `.WithReadReplica(Action<DbContextOptionsBuilder>)`, WO-053/P-338), `IReadReplicaContextAccessor<TContext>` (internal, WO-053/P-338), `PersistenceActivitySource`/`PersistenceTagKeys` (WO-051/P-319), `EncryptionKeyByteCache` (internal, WO-051/P-323), `PersistenceLogEvents`-style `[LoggerMessage]` partial methods across `ConcurrencyInterceptor`/`MigrationAndSeedHostedService`/the transient-retry diagnostic bridge/`EncryptionRotationService` (EventIds `6000-6099`, WO-053/P-333), `EncryptionOptions.SectionName`/`PersistenceServiceOptions.SectionName` (WO-053/P-334) | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Cryptography` (01.Core, added P-227 — `EncryptedValueConverter` delegates AES-256-GCM to `ISymmetricEncryptionService`), `SharedKernel.Application.Behaviors` (05.Application, added P-228 — `EfUnitOfWork` dual-interface bridge), `Microsoft.EntityFrameworkCore` 10.0.5, `Microsoft.EntityFrameworkCore.Relational` 10.0.5, `Microsoft.Extensions.DependencyInjection.Abstractions` 10.0.5 (must match EFCore transitive — NU1605 fires if pinned lower), `Microsoft.Extensions.Logging.Abstractions` (added WO-053/P-333 — `[LoggerMessage]` source generator), `Microsoft.Extensions.Options.ConfigurationExtensions` (added WO-053/P-334 — `OptionsBuilder<T>.Bind(IConfiguration)`), `Microsoft.Extensions.DependencyInjection` — the concrete package, not merely `.Abstractions` (added WO-053/P-338 — `ActivatorUtilities.CreateInstance<T>` for the read-replica context) |
+| `SharedKernel.Persistence.PostgreSQL` | PostgreSQL-specific conventions: `SnakeCaseNamingConvention`, `XminConcurrencyTokenConvention`/`XminRowVersionValueConverter` (WO-051/P-315 — the genuine, working `IHasConcurrency` mechanism), `UsePostgreSQL()` DI extension (gains opt-in `EnableRetryOnFailure` parameters, WO-051/P-320), JSONB column support (`HasJsonbColumn`, `JsonbColumnAttribute`), pgvector support (`HasVectorColumn`, `VectorColumnAttribute`; gains query-side `VectorDistanceMetric`/`VectorOrderingExpressions.ByDistance<TAggregate>(...)` nearest-neighbor ordering helper, WO-053/P-339), `NpgsqlConnectionFactory`, `AddSharedKernelPostgreSQL()` DI extension | `SharedKernel.Persistence.EfCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x, `Pgvector.EntityFrameworkCore` |
 | `SharedKernel.Persistence.Dapper` | Dapper micro-ORM read-side: `StronglyTypedIdTypeHandler<TStronglyTypedId,TValue>`, `SmartEnumTypeHandler<TEnum,TValue>`, `DapperTypeHandlers` (idempotent `Register()`), `DapperReadService` base (gains multi-mapping `QueryAsync`/`QueryMultipleAsync`/protected `ConnectionFactory`, WO-051/P-321), `AddSharedKernelDapper()` DI extension | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.PostgreSQL` (for `NpgsqlConnectionFactory`), `Dapper` |
 
 All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`).
@@ -127,6 +127,20 @@ IReadRepository<TAggregate, TId>
           KeysetSpecification<T,TKey> to ListAsync/GetBySpecAsync/CountAsync/AnyAsync instead of
           ListKeysetAsync<TKey> compiles and runs but silently ignores AfterKey/AfterId and always
           returns the first page — ListKeysetAsync<TKey> is the ONLY entry point that honors the cursor.
+
+IRestorableRepository<TAggregate, TId>  (WO-053/P-337)
+    where TAggregate : IAggregateRoot<TId>
+    where TId : notnull
+    .RestoreAsync(TAggregate aggregate, CancellationToken ct)                             → Task
+    NOTE: Write-side only, reverses a prior soft delete. Same class constraint as IRepository<TAggregate,TId>
+          itself — deliberately NOT narrowed to ISoftDeletable at the interface level (a generic
+          implementing class cannot conditionally satisfy a narrower constraint for only some closed-generic
+          instantiations). The EfCore implementation enforces the real ISoftDeletable-or-not distinction via
+          a runtime guard — mirroring the BulkSpecificationGuard/UnsupportedSpecificationException precedent
+          (compile-time-loose interface + runtime-enforced narrower constraint) rather than a parallel
+          TenantedRepository-style base-class hierarchy. Only STAGES the change — does not call
+          SaveChangesAsync — a subsequent IUnitOfWork.SaveChangesAsync() persists it, going through the same
+          interceptor/audit/domain-event pipeline a normal update would. See "Soft-Delete Restore" below.
 ```
 
 #### Unit of Work (`UnitOfWork/`)
@@ -338,6 +352,21 @@ EfRepository<TAggregate, TId>  (abstract class, implements IRepository<TAggregat
           UpdateAsync checks DbContext.Entry(aggregate).State: if Detached calls .Update(); otherwise
           EF change detection handles dirty tracking automatically (avoids full-column UPDATE statements).
           UpdateRangeAsync applies the same detached-state check per entity. UpdateRange itself is synchronous.
+    .RestoreAsync(TAggregate aggregate, CancellationToken ct)                              → Task   (WO-053/P-337)
+    NOTE (RestoreAsync): implements IRestorableRepository<TAggregate,TId> UNCONDITIONALLY on every
+          EfRepository<TAggregate,TId> instantiation — mirroring how IBulkMutationRepository is already
+          implemented unconditionally regardless of whether TAggregate happens to be soft-deletable. If
+          `aggregate is not ISoftDeletable`, throws InvalidOperationException naming the aggregate's CLR
+          type — RestoreAsync has no meaning for a non-soft-deletable aggregate. Otherwise reuses
+          MarkAsModifiedIfDetached (above) so the entry ends up Modified, then writes
+          `context.Entry(aggregate).CurrentValues[nameof(ISoftDeletable.IsDeleted)] = false`,
+          `[nameof(ISoftDeletable.DeletedOn)] = null`, `[nameof(ISoftDeletable.DeletedBy)] = null` — the
+          SAME ChangeTracker.Entry(entity).CurrentValues[propertyName]-only mutation rule that governs
+          AuditInterceptor/SoftDeleteInterceptor, extended here to repository-level restore code for the
+          identical reason. Restoring an aggregate already not deleted is an idempotent no-op success.
+          Only STAGES the mutation — a subsequent IUnitOfWork.SaveChangesAsync() persists it; because the
+          entry is a normal Modified row at that point, AuditInterceptor sets ModifiedBy/ModifiedOn
+          automatically with ZERO changes needed to either platform interceptor.
 
 IBulkMutationRepository<TAggregate, TId>  (interface, SharedKernel.Persistence.EfCore — NOT Abstractions)
     .ExecuteUpdateAsync(ISpecification<TAggregate> spec,
@@ -673,19 +702,35 @@ Field-level transparent encryption for `string` EF Core properties. Zero domain-
 
 ```text
 EncryptionOptions  (options POCO, section "SharedKernel:Encryption")
+    .SectionName      (public const string = "SharedKernel:Encryption")                    (WO-053/P-334)
     .Enabled          (bool, default false)   — master on/off switch; false = plaintext pass-through
     .CurrentVersion   (string)                — version tag for new encryptions, e.g. "v1"; must exist in Keys
     .Keys             (Dictionary<string,string>) — version → Base64-encoded 32-byte AES key
     NOTE: Startup validation fires when Enabled == true:
           (a) CurrentVersion non-null/non-empty; (b) CurrentVersion key exists in Keys;
           (c) every key value decodes to exactly 32 bytes.
-          Register via EfCorePersistenceBuilder.WithEncryption(action).
+          Register via EfCorePersistenceBuilder.WithEncryption(action) — the ORIGINAL code-based path,
+          unchanged and fully supported — OR the genuinely real EfCorePersistenceBuilder.WithEncryption(
+          IConfiguration configuration, Action<EncryptionOptions>? configure = null) config-binding
+          overload (WO-053/P-334, closing a confirmed doc/code mismatch: this type's own doc long claimed
+          a bound section that no code ever actually read). The config overload binds via
+          configuration.GetSection(SectionName) — never a bare literal — then, when configure is supplied,
+          layers it on top via the SAME .Configure(configure) registration the code-only overload already
+          performs; normal IOptions<T> later-registration-wins semantics apply. The eager startup
+          validation above is registered exactly once regardless of how many .WithEncryption(...) overloads
+          are chained in the same builder.
 
 PersistenceServiceOptions  (options POCO, section "SharedKernel:Persistence")
+    .SectionName      (public const string = "SharedKernel:Persistence")                   (WO-053/P-334)
     .ServiceName      (string, default "system") — unauthenticated audit fallback written to CreatedBy/ModifiedBy/DeletedBy
     NOTE: Replaces the hardcoded "system" literal in AuditInterceptor.ResolveUserId().
-          Register via EfCorePersistenceBuilder.WithServiceName(string).
-          Startup validation: ServiceName must be non-null, non-empty, ≤ 256 characters.
+          Register via EfCorePersistenceBuilder.WithServiceName(string) — the ORIGINAL direct-value path,
+          unchanged and fully supported — OR the genuinely real EfCorePersistenceBuilder.WithServiceName(
+          IConfiguration configuration) config-binding overload (WO-053/P-334), which binds via
+          configuration.GetSection(SectionName). Composes with the string overload under the identical
+          later-call-wins semantics as EncryptionOptions above.
+          Startup validation: ServiceName must be non-null, non-empty, ≤ 256 characters — unchanged, and
+          now fires against a config-bound value exactly as it already fires against a code-supplied one.
 
 EncryptedValueConverter  (sealed class, extends ValueConverter<string, string>)
     constructor: EncryptedValueConverter(IOptionsMonitor<EncryptionOptions> optionsMonitor,
@@ -911,6 +956,58 @@ This correction must be reflected in C-82/C-83 (Core phase) and T-47 (Tests phas
       AddSharedKernelCryptography() itself (this domain does not call it).
     — Sets flag: .Build() registers IEncryptionRotationJob → EncryptionRotationService (scoped).
     — Optional. Omitting leaves all existing behavior unchanged (Enabled == false by default).
+
+.WithEncryption(IConfiguration configuration, Action<EncryptionOptions>? configure = null)   (WO-053/P-334)
+    — Genuine config-binding overload, closing a confirmed doc/code mismatch (EncryptionOptions' own XML
+      doc long claimed a bound section that no code ever read).
+    — Binds via services.AddOptions<EncryptionOptions>().Bind(configuration.GetSection(
+      EncryptionOptions.SectionName)) — never a bare GetSection("...") literal.
+    — When configure is supplied, chains the SAME .Configure(configure) registration the code-only
+      overload performs — normal IOptions<T> later-registration-wins semantics apply.
+    — The eager startup validation registration is idempotent across repeated .WithEncryption(...) calls
+      in the same builder chain (never duplicated).
+    — Optional. The pre-existing Action<T>-only overload is completely unchanged and remains fully
+      supported; both may be composed.
+
+.WithServiceName(IConfiguration configuration)   (WO-053/P-334)
+    — Genuine config-binding overload, closing the same class of doc/code mismatch as above.
+    — Binds via services.AddOptions<PersistenceServiceOptions>().Bind(configuration.GetSection(
+      PersistenceServiceOptions.SectionName)).
+    — Composes with the pre-existing WithServiceName(string) overload (completely unchanged) under
+      the identical later-call-wins semantics.
+    — Existing startup validation (non-null/non-empty/≤256 chars) fires against the bound value exactly
+      as it already fires against a code-supplied one.
+
+.WithCommandTimeout(int commandTimeoutSeconds)   (WO-053/P-337)
+    — Wraps the caller-supplied configureDb action to also call
+      optionsBuilder.CommandTimeout(commandTimeoutSeconds) — the same wrapping pattern
+      .WithCompiledModel(IModel) already uses for .UseModel(compiledModel).
+    — DbContextOptionsBuilder.CommandTimeout(int?) is a Microsoft.EntityFrameworkCore.Relational
+      extension — PROVIDER-NEUTRAL, already reachable from this package's existing
+      Microsoft.EntityFrameworkCore.Relational reference. Deliberately NOT placed on
+      UsePostgreSQL(...) (SharedKernel.Persistence.PostgreSQL) — unlike EnableRetryOnFailure (P-320),
+      CommandTimeout has no Npgsql-only dependency to justify that placement.
+    — No companion DI-registered options POCO — nothing else in this domain needs to query the
+      configured timeout value at runtime the way EfTransactionalUnitOfWork queries
+      Database.CreateExecutionStrategy().RetriesOnFailure.
+    — Optional. Omitting preserves today's provider-default command timeout exactly.
+
+.WithReadReplica(Action<DbContextOptionsBuilder> configureReplicaDb)   (WO-053/P-338)
+    — Registers a KEYED singleton DbContextOptions<TContext> built from a fresh, independent
+      DbContextOptionsBuilder<TContext>().Options after applying configureReplicaDb — the caller's own
+      lambda supplies the Npgsql-specific replica connection string (e.g. optionsBuilder =>
+      optionsBuilder.UseNpgsql(replicaConnectionString)), mirroring AddSharedKernelEfCore<TContext>'s
+      own Action<DbContextOptionsBuilder> configureDb pattern exactly — EfCorePersistenceBuilder itself
+      never references Npgsql.
+    — Registers a SCOPED IReadReplicaContextAccessor<TContext> (see "Read-Replica Routing" below) whose
+      implementation lazily constructs the replica TContext instance (once per DI scope, cached
+      thereafter) via ActivatorUtilities.CreateInstance<TContext>(serviceProvider, replicaOptions),
+      deliberately REUSING the same scope-ambient, DI-resolved AuditInterceptor/SoftDeleteInterceptor/
+      ConcurrencyInterceptor instances (and their live CurrentUserContext, WO-051/P-322) the primary
+      TContext for this scope already resolved — audit-field consistency between primary and replica
+      reads is automatic.
+    — Optional. Omitting leaves IReadReplicaContextAccessor<TContext> unregistered entirely — every
+      IReadRepository operation continues to target the single primary connection, provably unchanged.
 
 .WithApplicationTransactionBehavior()
     — Opt-in (P-228). Registers the same scoped EfUnitOfWork instance against
@@ -1294,10 +1391,13 @@ PersistenceTagKeys  (internal static class, EfCore)  — colocated per the platf
 
 Traced operations (span name "{typeof(TAggregate).Name}.{OperationName}", ActivityKind.Client):
     EfRepository:      GetBySpecAsync (write-side tracked fetch), AddAsync, UpdateAsync, DeleteAsync,
-                       AddRangeAsync, UpdateRangeAsync, DeleteRangeAsync
+                       AddRangeAsync, UpdateRangeAsync, DeleteRangeAsync, GetByIdAsync, ExistsAsync
                        (CORRECTED — GetBySpecAsync was omitted from this list in earlier drafts of this
                        section despite being traced in the shipped source since the method's own
-                       introduction; DO-44/WO-051 doc-verification pass)
+                       introduction; DO-44/WO-051 doc-verification pass. GetByIdAsync/ExistsAsync were
+                       genuinely NOT traced until WO-053/P-333 closed the gap — the two most frequently
+                       called EfRepository members were, until then, the only ones without a span, now
+                       wrapped in the same RepositoryTracing.ExecuteTracedAsync helper as every sibling)
     EfReadRepository:  GetBySpecAsync, ListAsync, CountAsync, AnyAsync, GetByIdsAsync, ListPagedAsync,
                        ListProjectedAsync, GetBySpecProjectedAsync, ListPagedProjectedAsync,
                        StreamAsync/StreamProjectedAsync<TResult> (span wraps the FULL enumeration —
@@ -1314,6 +1414,128 @@ Traced operations (span name "{typeof(TAggregate).Name}.{OperationName}", Activi
     (RepositoryTracing.ExecuteTracedAsync/ExecuteTracedStreamAsync, internal to
     SharedKernel.Persistence.EfCore.Diagnostics) avoids duplicating the start/tag/try-catch/finish
     boilerplate across every repository method.
+```
+
+#### Structured Logging (WO-053/P-333)
+
+`SharedKernel.Persistence.EfCore` claims the `6000-6099` sub-block of `01.Core`'s `LoggingEventIdRanges`-reserved `6000-6999` for `06.Persistence`. `SharedKernel.Persistence.Abstractions` — a pure interface library with no DI-resolved `ILogger` consumer — reserves no sub-block at all; a future package that starts logging (`.PostgreSQL`, `.Dapper`) claims the next unclaimed 100-wide slot (`6100-6199`, then `6200-6299`) at that time, never renumbering `6000-6099` retroactively. Every event below is a `[LoggerMessage]`-attributed partial method with an explicit `EventId` — never a direct `ILogger.LogX(...)` call.
+
+```text
+EventId  Name                              Level        Emitted by
+6000     ConcurrencyConflictDetected       Warning      ConcurrencyInterceptor.TryTranslate (called from SharedKernelDbContext.SaveChanges/SaveChangesAsync, before the translated ConflictException is thrown)
+6001     MigrationAndSeedStarted           Information  MigrationAndSeedHostedService.StartAsync (entry)
+6002     SeederApplied                     Information  MigrationAndSeedHostedService (per successfully-applied seeder)
+6003     MigrationAndSeedCompleted         Information  MigrationAndSeedHostedService (overall completion)
+6004     MigrationAndSeedFailed            Warning      MigrationAndSeedHostedService (any caught failure, before rethrow)
+6005     AdvisoryLockAcquired              Information  MigrationAndSeedHostedService (step 1 of StartAsync)
+6006     AdvisoryLockReleased              Information  MigrationAndSeedHostedService (step 4, the finally block)
+6007     TransientRetryAttempt             Warning      internal PersistenceRetryDiagnosticListener (one per retry)
+6008     TransientRetryExhausted           Warning      EfUnitOfWork / EfTransactionalUnitOfWork (final failure after retries)
+6009     EncryptionRotationBatchProcessed  Information  EncryptionRotationService (per batch boundary)
+6010     EncryptionRotationCompleted       Information  EncryptionRotationService.RotateAsync (overall completion)
+
+NOTE: ConcurrencyConflictDetected (6000) logs ONLY the conflicting entry's CLR type name
+      (entry.Entity.GetType().Name via a {EntityType} named property) — never the row payload.
+      CORRECTED (Design-confirmation pass, WO-053): the original draft of this design assumed the
+      log call and the ConflictException construction both happen inside
+      ConcurrencyInterceptor.SaveChangesFailed/SaveChangesFailedAsync. Verified against the real
+      shipped source (WO-051/P-315, ConcurrencyInterceptor.cs's own class remarks): those two hooks
+      are permanent, documented no-op overrides — EF Core 10 does not allow
+      ISaveChangesInterceptor.SaveChangesFailed/SaveChangesFailedAsync to replace the exception
+      propagating from SaveChanges/SaveChangesAsync (confirmed empirically by that phase). The real
+      translation happens in ConcurrencyInterceptor.TryTranslate (today an internal STATIC method)
+      called from SharedKernelDbContext.SaveChanges(bool)/SaveChangesAsync(bool, CancellationToken)'s
+      own catch-filter (`catch (DbUpdateConcurrencyException ex) when (ConcurrencyInterceptor
+      .TryTranslate(ex) is { } conflict) { throw conflict; }`), and the thrown type is
+      SharedKernel.Core.Exceptions.ConflictException, not a bespoke "ConcurrencyException" (no such
+      type exists in this domain). To log from the interceptor INSTANCE (needed so the injected
+      ILogger<ConcurrencyInterceptor> is reachable), TryTranslate must become a non-static instance
+      method, and SharedKernelDbContext.SaveChanges/SaveChangesAsync must call it via the context's
+      existing `_concurrencyInterceptor` field (already held, already passed to the constructor —
+      zero new plumbing) instead of the static `ConcurrencyInterceptor.TryTranslate(ex)` call. The
+      log statement belongs inside TryTranslate, immediately before it returns the translated
+      ConflictException — i.e., still "before rethrowing," just one call frame further out than the
+      original draft assumed. Both call sites (SaveChanges and SaveChangesAsync) automatically pick
+      up the logging once TryTranslate itself logs — no per-call-site duplication needed.
+      TransientRetryAttempt (6007) is registered ONLY when EfCorePersistenceBuilder.WithTransientFaultRetry()
+      is called — an internal DiagnosticListener subscription against EF Core's own provider-neutral
+      Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ExecutionStrategyRetrying / ExecutionStrategyEventData
+      (defined in the core Microsoft.EntityFrameworkCore assembly, never Npgsql's) — preserving the
+      "EfCore never references Npgsql" hard rule. TransientRetryExhausted (6008) has no EF Core diagnostic
+      event of its own to hook — it is emitted by wrapping the outermost Database.CreateExecutionStrategy()
+      call inside EfUnitOfWork.SaveChangesAsync and EfTransactionalUnitOfWork.SaveChangesAsync/
+      ExecuteInTransactionAsync (the platform's ONLY two save boundaries), catching the final propagating
+      exception when RetriesOnFailure == true, logging, then rethrowing unchanged — full coverage falls
+      out naturally since every save funnels through one of these two classes.
+      EncryptionRotationBatchProcessed/Completed (6009/6010) NEVER log a key byte, a Base64-encoded key
+      string, or any column plaintext/ciphertext value — only counts (RowsInBatch/RowsProcessed/
+      RowsRotated/RowsFailed) and already-non-secret version-tag strings (e.g. "v1"/"v2").
+      Message templates use PascalCase named placeholders ({EntityType}, {ContextType}, {SeederType},
+      {AttemptNumber}, {AttemptCount}, {FromVersion}, {ToVersion}, {BatchNumber}, {RowsInBatch},
+      {RowsProcessed}, {RowsRotated}, {RowsFailed}) — never positional, never string-interpolated.
+      CorrelationId/TraceId/TenantId are never passed as explicit template parameters — they flow
+      ambiently through the OpenTelemetry logging pipeline per the platform's Logging Conventions.
+```
+
+#### Soft-Delete Restore (WO-053/P-337)
+
+Reverses `SoftDeleteInterceptor`'s delete — additive to the existing automatic delete path, which had no equally-easy reverse path before this phase.
+
+```text
+Single-entity restore:  IRestorableRepository<TAggregate,TId>.RestoreAsync(aggregate, ct)
+    Implemented unconditionally by EfRepository<TAggregate,TId> (see the EfCore Repositories section
+    above). Runtime-guards against a non-ISoftDeletable TAggregate; otherwise flips IsDeleted/DeletedOn/
+    DeletedBy via ChangeTracker.CurrentValues and marks the entry Modified. Only STAGES the change — a
+    subsequent IUnitOfWork.SaveChangesAsync() persists it, going through the SAME interceptor/audit/
+    domain-event pipeline a normal update would (AuditInterceptor sets ModifiedBy/ModifiedOn as a
+    byproduct of the entry being an ordinary Modified row — zero interceptor changes were needed).
+
+Bulk restore:  a USAGE PATTERN of the ALREADY-SHIPPED IBulkMutationRepository.ExecuteUpdateAsync — NOT
+    a new method. Mirrors the existing bulk soft-delete example exactly, in reverse:
+
+        var restoredCount = await orderRepository.ExecuteUpdateAsync(
+            new WithDeletedOrdersSpecification(),   // IncludeDeleted = true so soft-deleted rows are matched
+            setters => setters
+                .SetProperty(o => ((ISoftDeletable)o).IsDeleted, false)
+                .SetProperty(o => ((ISoftDeletable)o).DeletedOn, (DateTimeOffset?)null)
+                .SetProperty(o => ((ISoftDeletable)o).DeletedBy, (string?)null),
+            ct);
+
+    Carries the SAME "bypasses SaveChangesAsync, the three platform interceptors, and domain event
+    dispatch" documented bypass every other IBulkMutationRepository call already carries — bulk restore
+    is not audited and does not fire domain events, exactly like bulk soft-delete does not.
+```
+
+#### Read-Replica Routing (WO-053/P-338)
+
+Opt-in routing of `IReadRepository<TAggregate,TId>` operations to a separate PostgreSQL connection, distinct from the primary connection `IRepository<TAggregate,TId>` writes always use. Additive — default (no replica configured) behavior is provably unchanged.
+
+```text
+IReadReplicaContextAccessor<TContext>  (internal, SharedKernel.Persistence.EfCore — a wiring detail,
+                                        not a consumer-facing abstraction)
+    .GetEffectiveContext(TContext primaryContext)               → TContext
+    NOTE: Returns primaryContext UNCONDITIONALLY whenever primaryContext.Database.CurrentTransaction !=
+          null — an explicit EF Core transaction is currently open on the primary, so reads must never
+          diverge from it. Otherwise returns the lazily-constructed, scope-cached replica TContext
+          instance registered by EfCorePersistenceBuilder.WithReadReplica(...). When
+          .WithReadReplica(...) was never called, this accessor is simply never registered in DI.
+
+EfReadRepository<TAggregate,TId>  (extension per WO-053/P-338)
+    constructor gains: IReadReplicaContextAccessor<TContext>? replicaAccessor = null   (optional, nullable)
+    NOTE: Purely additive — every existing EfReadRepository subclass continues to compile and behave
+          identically without passing anything new. Every read method's DbContext.Set<TAggregate>()/
+          _evaluator.GetQuery(...) call site is redirected through a private computed property
+          `EffectiveContext => replicaAccessor?.GetEffectiveContext(DbContext) ?? DbContext` — resolved
+          AFRESH on every call, never cached, since transaction state can change between two read calls
+          issued against the SAME injected repository instance. EfRepository/IRepository (the write side)
+          are completely untouched by this feature — writes always target the primary connection
+          unconditionally, with no accessor parameter of any kind.
+
+READ-AFTER-WRITE CONSISTENCY IS THE CALLER'S RESPONSIBILITY ONCE REPLICA ROUTING IS ENABLED. A command
+handler that writes then immediately reads via IReadRepository in the same logical operation MAY
+OBSERVE STALE DATA under replication lag. A read issued inside an active transaction (BeginTransactionAsync/
+ExecuteInTransactionAsync) is NEVER routed to the replica, even when replica routing is otherwise enabled
+— reads inside an explicit transaction always see the primary.
 ```
 
 ---
@@ -1384,6 +1606,82 @@ VectorEntityTypeBuilderExtension  (static extension on EntityTypeBuilder<T>)
     .HasVectorColumn<TProperty>(propertyExpression, int dimensions) → EntityTypeBuilder<T>
     NOTE: Requires pgvector extension enabled in PostgreSQL. Call EnsureVectorExtension()
           in the migration or startup to create it if absent.
+
+VectorDistanceMetric  (enum, `Vector/`)                                                     (WO-053/P-339)
+    Cosine | L2
+    NOTE: CORRECTED (Design-confirmation pass, WO-053): the original draft claimed this enum "mirrors
+          the exactly-two distance functions Pgvector.EntityFrameworkCore's own VectorExtensions
+          exposes." Verified against the real shipped package (reflection against
+          Pgvector.EntityFrameworkCore 0.3.0's actual assembly): there is no type named
+          VectorExtensions at all — the distance/similarity functions live on
+          Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions (see VectorOrderingExpressions
+          below) — and that class exposes SIX members, not two: CosineDistance, L2Distance,
+          L1Distance, HammingDistance, JaccardDistance, MaxInnerProduct. This enum is a DELIBERATE
+          scope narrowing to the two most common similarity metrics (cosine and Euclidean/L2) — the
+          root CLAUDE.md's own WO-053/P-339 changelog entry independently confirms this scope ("a
+          cosine/L2 distance-ordering helper"), so Cosine|L2 remains the correct, ratified shape. Only
+          the ORIGINAL JUSTIFICATION ("mirrors the exactly-two... exposes") was factually wrong; the
+          corrected rationale is: a deliberately narrower set than the full six-function
+          VectorDbFunctionsExtensions surface. A future phase may extend this enum (L1/Hamming/
+          Jaccard/MaxInnerProduct) if a concrete consumer need emerges — not attempted here.
+
+VectorOrderingExpressions  (static class, `Vector/`)                                        (WO-053/P-339)
+    .ByDistance<TAggregate>(Expression<Func<TAggregate,Vector>> vectorSelector, Vector queryVector,
+        VectorDistanceMetric metric)                                → Expression<Func<TAggregate,object>>
+    NOTE: The first query-side pgvector ergonomics this domain ships — HasVectorColumn/VectorColumnAttribute
+          above map a column only (a direct HasColumnType("vector(N)") string, not even routed through
+          Pgvector.EntityFrameworkCore's own helper types); this helper is the platform's first assist for
+          the one thing a consumer actually wants to do with a vector column — find the nearest rows to a
+          query vector. Builds the SAME boxed-to-object key-selector expression shape ISpecification<T>.
+          OrderBy/OrderByDescending already store (matching the KeysetSpecification<T,TKey> boxing
+          precedent), wrapping vectorSelector's member access in an Expression.Call invoking
+          Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions.CosineDistance/L2Distance (chosen by
+          metric) against Expression.Constant(queryVector).
+          CORRECTED (Design-confirmation pass, WO-053): the original draft named the containing type
+          "VectorExtensions" and implied a `(Vector, Vector)` signature. Verified against the real
+          shipped Pgvector.EntityFrameworkCore 0.3.0 assembly via direct reflection: no
+          "VectorExtensions" type exists at all. The real, sealed, static type is
+          Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions, and every one of its six distance/
+          similarity members (CosineDistance/L2Distance/L1Distance/HammingDistance/JaccardDistance/
+          MaxInnerProduct) is declared as `public static double MethodName(this object a, object b)` —
+          `object` parameters, not `Vector` parameters (these are EF-Core query-translation
+          placeholder methods, meaningfully invoked only inside a LINQ expression tree that
+          VectorDbFunctionsTranslatorPlugin rewrites to the real `<=>`/`<->` SQL operator server-side;
+          calling them directly, client-side, is not a supported code path).
+          The MethodInfo for each distance function is STILL captured via a STATICALLY-TYPED delegate
+          cast with ZERO reflection — ((Func<Vector,Vector,double>)VectorDbFunctionsExtensions.
+          CosineDistance).Method — resolved entirely by the C# COMPILER, never Type.GetMethod/
+          MakeGenericMethod at runtime. This works DESPITE the real method's `object,object` signature
+          because Pgvector.Vector is a reference type (a class, not a struct) — confirmed via
+          reflection — and C#'s method-group-to-delegate conversion permits contravariant reference-type
+          parameter widening (a method accepting `object` satisfies a `Func<Vector,Vector,double>`
+          delegate site); this was independently compiled and confirmed to produce the expected
+          MethodInfo, not merely assumed from the C# language spec. The captured MethodInfo's own
+          .GetParameters() report `object`/`object`, not `Vector`/`Vector` — Expression.Call's argument
+          type-checking accepts the Vector-typed vectorSelector/queryVector expressions directly against
+          those `object` parameters via the identical implicit reference-conversion rule, so no
+          Expression.Convert/boxing node is needed in the built expression tree.
+          Deliberately does NOT call AddOrderBy/ApplyOrderBy itself and introduces NO new Specification<T>
+          base class — the returned expression is passed by the CONSUMER's own Specification<TAggregate>
+          subclass into ITS OWN protected AddOrderBy call from within that subclass's constructor, exactly
+          how KeysetSpecification<T,TKey>/PagedSpecification<T> already populate protected members from
+          their own constructors. Composes automatically with the consumer's own Criteria/Includes/Take —
+          ZERO SpecificationEvaluator<T> pipeline changes, since nothing about the evaluator's existing
+          OrderBy→...→Take handling changes.
+          Scoped to Vector-typed properties only — a documented limitation, not a defect. A float[]-typed
+          vector column (the OTHER type HasVectorColumn supports) is out of scope for this helper.
+
+    Usage:
+        public sealed class NearestProductsSpecification : Specification<Product>
+        {
+            public NearestProductsSpecification(Vector queryEmbedding, int topK)
+            {
+                AddCriteria(p => p.IsActive);
+                AddOrderBy(VectorOrderingExpressions.ByDistance<Product>(
+                    p => p.Embedding, queryEmbedding, VectorDistanceMetric.Cosine));
+                ApplyPaging(skip: 0, take: topK);
+            }
+        }
 ```
 
 #### PostgreSQL DI registration (`Extensions/`)
@@ -1542,6 +1840,15 @@ DapperReadService  (abstract class)
 - String interpolation in the `sql` argument passed to `DapperReadService.QueryAsync<TFirst,TSecond,TReturn>`, `QueryAsync<TFirst,TSecond,TThird,TReturn>`, or `QueryMultipleAsync<TResult>` — the parameterized-queries-only rule applies identically to every `DapperReadService` method, new or existing (WO-051/P-321).
 - Disposing the connection inside `DapperReadService.QueryMultipleAsync<TResult>` before `readFunc` completes reading the `SqlMapper.GridReader` — a `GridReader` streams sequential result sets over one open connection; closing the connection early corrupts or fails any subsequent `.ReadAsync<T>()` call inside `readFunc` (WO-051/P-321).
 - Using `MigrationAndSeedHostedService`'s original `CancellationToken` for the advisory-lock RELEASE call inside the `finally` block — the release must unconditionally use `CancellationToken.None`; using the original (possibly-cancelled) token risks throwing `OperationCanceledException` and skipping the unlock, leaving the advisory lock held (WO-051/P-325).
+- Calling a direct `ILogger.LogX(...)` extension method or hand-writing a `LoggerMessage.Define` delegate anywhere in this domain — every production log statement uses the `[LoggerMessage]` source-generated partial-method pattern with an explicit `EventId` inside this domain's reserved `6000-6099` sub-block (WO-053/P-333).
+- Logging a key byte, a Base64-encoded encryption key string, or any column plaintext/ciphertext value from `EncryptionRotationService`'s batch-progress logs, or from any log statement anywhere in this domain — only counts and already-non-secret version-tag strings (e.g. `"v1"`) are permitted (WO-053/P-333).
+- Passing a bare `configuration.GetSection("SharedKernel:Encryption")`/`"SharedKernel:Persistence"` string literal at any call site instead of `EncryptionOptions.SectionName`/`PersistenceServiceOptions.SectionName` — enforced platform-wide by `SK0022` (WO-053/P-334).
+- Calling `IRestorableRepository<TAggregate,TId>.RestoreAsync` and expecting `IUnitOfWork.SaveChangesAsync` to be called automatically — like every other `EfRepository` write method, it only STAGES the mutation; a caller must still call `SaveChangesAsync` explicitly (WO-053/P-337).
+- Calling `RestoreAsync` against a `TAggregate` that does not implement `ISoftDeletable` and expecting it to silently succeed — `EfRepository<TAggregate,TId>.RestoreAsync` throws `InvalidOperationException` naming the aggregate type, since restore has no meaning for a non-soft-deletable aggregate (WO-053/P-337).
+- Placing command-timeout configuration on `UsePostgreSQL(...)` (`SharedKernel.Persistence.PostgreSQL`) — `DbContextOptionsBuilder.CommandTimeout(int?)` is a provider-neutral `Microsoft.EntityFrameworkCore.Relational` extension, already reachable from `EfCorePersistenceBuilder` (`SharedKernel.Persistence.EfCore`) without any Npgsql-specific call; use `.WithCommandTimeout(int)` there instead (WO-053/P-337).
+- Routing an `IReadRepository<TAggregate,TId>` read to the configured replica connection while an EF Core transaction is active on the primary (`Database.CurrentTransaction != null`) — `IReadReplicaContextAccessor<TContext>.GetEffectiveContext` unconditionally returns the primary context in that case; bypassing or short-circuiting this check reintroduces a read-your-own-write consistency hazard the design specifically closes (WO-053/P-338).
+- Caching or reusing the result of `IReadReplicaContextAccessor<TContext>.GetEffectiveContext` across multiple calls on the same `EfReadRepository` instance — it must be resolved fresh on every call, since transaction state can legitimately change between two read calls issued against the same injected repository (WO-053/P-338).
+- Using `Type.GetMethod`/`MakeGenericMethod` to resolve `Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions.CosineDistance`/`.L2Distance`'s `MethodInfo` inside `VectorOrderingExpressions.ByDistance` — use the statically-typed delegate-cast `.Method` property (`((Func<Vector,Vector,double>)VectorDbFunctionsExtensions.CosineDistance).Method`), resolved entirely by the compiler via reference-type delegate contravariance against the real `(object,object)`-parameter method — never `Type.GetMethod`/`MakeGenericMethod` at runtime (WO-053/P-339).
 
 ### Specification evaluator ordering (canonical)
 
@@ -1813,6 +2120,69 @@ public sealed class OrderSummaryReadService : DapperReadService
 // GetByIdsChunkedAsync (WO-051/P-323) — opt-in, does not change GetByIdsAsync's own behavior
 var orders = await orderReadRepository.GetByIdsChunkedAsync(veryLargeIdBatch, chunkSize: 10_000, ct);
 // For batches under roughly 50,000 IDs, prefer GetByIdsAsync directly — a single = ANY(@array) query.
+
+// Encryption/service-name configuration-section binding (WO-053/P-334) — additive alongside the
+// existing code-based Action<T>/direct-value paths; both may be composed under normal IOptions<T>
+// later-registration-wins semantics
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithEncryption(configuration)                 // binds from configuration.GetSection(EncryptionOptions.SectionName)
+    .WithServiceName(configuration)                // binds from configuration.GetSection(PersistenceServiceOptions.SectionName)
+    .Build();
+// appsettings.json:
+//   "SharedKernel": { "Encryption": { "Enabled": true, "CurrentVersion": "v1", "Keys": { "v1": "<base64>" } },
+//                     "Persistence": { "ServiceName": "order-service" } }
+
+// Soft-delete restore (WO-053/P-337) — single entity, stages only; caller still calls SaveChangesAsync
+var order = await orderRepository.GetBySpecAsync(new ByIdSpecification<Order, OrderId>(orderId), ct);
+if (order is not null)
+{
+    await orderRepository.RestoreAsync(order, ct);
+    await unitOfWork.SaveChangesAsync(ct);   // AuditInterceptor sets ModifiedBy/ModifiedOn as a normal Modified row
+}
+
+// Bulk restore (WO-053/P-337) — a pattern over the existing ExecuteUpdateAsync, not a new method;
+// bypasses SaveChangesAsync/interceptors/domain events exactly like bulk soft-delete does
+var restoredCount = await orderRepository.ExecuteUpdateAsync(
+    new WithDeletedOrdersSpecification(),
+    setters => setters
+        .SetProperty(o => ((ISoftDeletable)o).IsDeleted, false)
+        .SetProperty(o => ((ISoftDeletable)o).DeletedOn, (DateTimeOffset?)null)
+        .SetProperty(o => ((ISoftDeletable)o).DeletedBy, (string?)null),
+    ct);
+
+// Command timeout (WO-053/P-337) — opt-in; omitting preserves today's provider-default timeout exactly
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithCommandTimeout(commandTimeoutSeconds: 30)
+    .Build();
+
+// Read-replica routing (WO-053/P-338) — opt-in; omitting leaves every read/write on the single
+// primary connection, provably unchanged. Reads inside an active transaction are NEVER routed to
+// the replica, even when this is configured.
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(primaryConnectionString))
+    .WithReadReplica(options => options.UseNpgsql(replicaConnectionString))
+    .Build();
+// READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE ENABLED — a handler that
+// writes then immediately reads via IReadRepository in the same logical operation may observe
+// stale data under replication lag.
+
+// pgvector nearest-neighbor query (WO-053/P-339) — composes normally with Criteria/paging
+public sealed class NearestProductsSpecification : Specification<Product>
+{
+    public NearestProductsSpecification(Vector queryEmbedding, int topK)
+    {
+        AddCriteria(p => p.IsActive);
+        AddOrderBy(VectorOrderingExpressions.ByDistance<Product>(
+            p => p.Embedding, queryEmbedding, VectorDistanceMetric.Cosine));
+        ApplyPaging(skip: 0, take: topK);
+    }
+}
+var nearest = await productReadRepository.ListAsync(new NearestProductsSpecification(queryVector, topK: 10), ct);
 ```
 
 `SharedKernel.Persistence.Abstractions` ships **no DI extensions** — it is a pure interface library.
@@ -1862,6 +2232,11 @@ var orders = await orderReadRepository.GetByIdsChunkedAsync(veryLargeIdBatch, ch
 - `SharedKernelDbContext.RefreshUserContext`/`TenantedDbContext.RefreshRequestContext` (WO-051/P-322) are ordinary property setters — AOT-safe. `EfCorePersistenceBuilder.WithDbContextPooling(...)` calls `AddPooledDbContextFactory<TContext>` — a public, AOT-compatible EF Core 8+ API (same compatibility class as `AddDbContextFactory<TContext>`, already used by `.WithDbContextFactory()`) — plus an ordinary `services.AddScoped<TContext>(factory delegate)` registration, no reflection. The rebuilt `TenantedDbContext` tenant filter still uses only `Expression.Parameter`/`Constant`/`Property`/`Equal`/`Lambda` — the same AOT-safe expression-tree construction already established, with `Expression.Constant(this, GetType())` replacing `Expression.Constant(provider, typeof(ITenantProvider))`; `GetType()` is a virtual property read on `this`, not reflection over arbitrary members.
 - `EncryptionKeyByteCache` (WO-051/P-323) is a `ConcurrentDictionary<string,byte[]>` behind a plain `GetOrDecode` method plus an `IOptionsMonitor<T>.OnChange` delegate subscription — pure BCL, zero reflection, AOT-safe. `GetByIdsChunkedAsync` (WO-051/P-323) is ordinary `IEnumerable<TId>` chunking (`Skip`/`Take` over the caller's sequence) plus repeated calls to the already-AOT-safe `GetByIdsAsync` — no new reflection surface.
 - The `System.Data.Common.DbCommand` safe-cast async pattern (WO-051/P-325, `CheckReadinessAsync` and `MigrationAndSeedHostedService`'s advisory-lock calls) is a plain `is DbCommand` runtime type check followed by a virtual method call (`ExecuteScalarAsync`/`ExecuteNonQueryAsync`) — no reflection, AOT-safe.
+- The new `[LoggerMessage]` partial methods across `ConcurrencyInterceptor`/`MigrationAndSeedHostedService`/`EncryptionRotationService` (WO-053/P-333) are source-generated at compile time — zero runtime reflection, the same AOT-safe pattern the root `CLAUDE.md`'s platform-wide Logging Conventions mandate everywhere. The internal `PersistenceRetryDiagnosticListener`'s `System.Diagnostics.DiagnosticListener` subscription reads `Microsoft.EntityFrameworkCore.Diagnostics.ExecutionStrategyEventData`'s public properties (`ExceptionsEncountered.Count`) via ordinary typed property access — no reflection.
+- `EncryptionOptions`/`PersistenceServiceOptions`'s new `.WithEncryption(IConfiguration,...)`/`.WithServiceName(IConfiguration)` overloads (WO-053/P-334) call `OptionsBuilder<T>.Bind(IConfiguration)` — a public, AOT-compatible `Microsoft.Extensions.Options.ConfigurationExtensions` API (uses reflection internally for property binding, the same accepted class of Options-pattern binding cost every `IConfiguration`-bound POCO on the platform already carries; not a new AOT concern this domain introduces).
+- `EfRepository<TAggregate,TId>.RestoreAsync` (WO-053/P-337) uses only the already-AOT-safe `ChangeTracker.Entry(entity).CurrentValues[propertyName]` shadow-property-style access (identical reasoning already established for `AuditInterceptor`/`SoftDeleteInterceptor`) plus a plain `is ISoftDeletable` runtime type check — no reflection. `EfCorePersistenceBuilder.WithCommandTimeout` (WO-053/P-337) is a plain method call on `DbContextOptionsBuilder` — AOT-safe.
+- `EfCorePersistenceBuilder.WithReadReplica`/`IReadReplicaContextAccessor<TContext>` (WO-053/P-338) use `ActivatorUtilities.CreateInstance<TContext>(serviceProvider, replicaOptions)` — a `Microsoft.Extensions.DependencyInjection` API that DOES use reflection internally to match `TContext`'s constructor against DI-resolvable services, the same well-established ASP.NET Core "construct via DI with one overridden argument" idiom used platform-wide for typed-client/handler construction; invoked ONCE per DI scope (lazy, cached thereafter), never per-call — a startup/first-access-time cost, not a hot-path one, the same class of accepted exception already documented for `ValueObjectOwnershipBuilder`/`EncryptedEntityBatchProcessorRegistry`.
+- `VectorOrderingExpressions.ByDistance<TAggregate>` (WO-053/P-339) builds an `Expression<Func<TAggregate,object>>` via `Expression.Call` referencing `Pgvector.EntityFrameworkCore.VectorExtensions.CosineDistance`/`.L2Distance`'s `MethodInfo` through a statically-typed delegate cast (`((Func<Vector,Vector,double>)VectorExtensions.CosineDistance).Method`) — resolved entirely by the C# compiler at compile time, zero `Type.GetMethod`/`MakeGenericMethod` at runtime. Expression trees on `IQueryable` are AOT-safe, the same reasoning already established for every other specification ordering expression on this platform.
 
 ---
 
@@ -1937,6 +2312,13 @@ var orders = await orderReadRepository.GetByIdsChunkedAsync(veryLargeIdBatch, ch
 - `EncryptionOptionsKeyProvider`/`EncryptionKeyByteCache` caching tests (WO-051/P-323): repeated `GetCurrentKey()`/`GetKey(version)` calls for the same version decode the underlying Base64 value exactly once; a simulated `IOptionsMonitor<EncryptionOptions>` reload (e.g. rotation adding a key) clears the cache and the next call reflects the updated `Keys` correctly; existing P-227 precedence tests continue to pass unmodified.
 - `GetByIdsChunkedAsync` tests (WO-051/P-323): `chunkSize < N` issues exactly `ceil(N/chunkSize)` round trips (query-count assertion) and returns the full, correct, duplicate-free set; `chunkSize >= N` issues exactly one round trip; empty input → empty list, zero round trips; every existing `GetByIdsAsync` test continues to pass completely unmodified (proving this phase changed only documentation, not `GetByIdsAsync`'s own behavior).
 - Genuine-async readiness/advisory-lock tests (WO-051/P-325): a fake `DbConnection`/`DbCommand` pair whose SYNCHRONOUS `ExecuteScalar()`/`ExecuteNonQuery()` overrides THROW (failing the test loudly if the sync path is ever hit) and whose async overrides record invocation — `CheckReadinessAsync` and `MigrationAndSeedHostedService`'s acquire/release both complete successfully against this fake, proving the async overload is genuinely invoked, not merely present; a separate test pre-cancels the token before `StartAsync` reaches the `finally` block and asserts the release call still completes (proving `CancellationToken.None`, not the caller's token, is used on the release path); every existing `DatabaseReadinessResult`/`IDataSeeder`/`MigrationAndSeedHostedService` test continues to pass completely unmodified.
+- **`SharedKernel.Persistence.PostgreSQL.Tests` and `SharedKernel.Persistence.Dapper.Tests` consolidate onto `16.Testing`'s `PostgreSqlContainerFixture` exclusively (WO-053/P-336)** — this domain's own Postgres integration tests now run against the SAME shared, canonical fixture every downstream consuming service is expected to standardize on, rather than a locally-drifted copy (dogfooding the platform's own recommendation). `PostgreSQL.Tests` shares ONE container instance across its four Postgres-touching classes via `[CollectionDefinition("PostgreSQL")] : ICollectionFixture<PostgreSqlContainerFixture>` — completing the sharing those classes' pre-existing `[Collection("PostgreSQL")]` tags always implied but never wired up; `Dapper.Tests`' single Postgres-touching class uses `IClassFixture<PostgreSqlContainerFixture>` (no collection needed, it is the only consumer in that assembly). Neither test project's own `.csproj` needed a new `ProjectReference` — both already referenced `SharedKernel.Testing`.
+- Structured logging tests (WO-053/P-333): `16.Testing`'s in-memory `ILogger`/`ILoggerFactory` test double is the assertion mechanism for every new `[LoggerMessage]` call site in this domain — never a hand-rolled `ILogger` mock, never an assertion on a rendered message string; assert by `EventId` and structured property value.
+- Configuration-binding tests (WO-053/P-334): an in-memory `Microsoft.Extensions.Configuration.ConfigurationBuilder` source (never a real `appsettings.json` file on disk) is sufficient to prove `.WithEncryption(IConfiguration,...)`/`.WithServiceName(IConfiguration)` bind correctly and that startup validation still fires against an invalid bound shape.
+- Soft-delete restore tests (WO-053/P-337): SQLite is sufficient for the single-entity `RestoreAsync` path and its `ISoftDeletable` runtime guard (no PostgreSQL-specific behavior involved); bulk restore is proven the same way bulk soft-delete already is — a criteria-only spec plus an explicit `setPropertyCalls` delegate, no new production surface to test beyond the documented pattern itself.
+- Command-timeout tests (WO-053/P-337) require a REAL PostgreSQL Testcontainer and a genuinely slow query (`pg_sleep(...)`) — SQLite has no meaningful command-timeout behavior to prove against.
+- Read-replica routing tests (WO-053/P-338) require TWO independent PostgreSQL Testcontainers seeded with deliberately DIFFERENT marker rows, standing in for primary/replica — proving routing occurred means proving WHICH container's data was observed, not merely that a call succeeded.
+- pgvector nearest-neighbor tests (WO-053/P-339) require a real PostgreSQL Testcontainer with the pgvector extension enabled and rows seeded at manually-computed KNOWN distances from a fixed query vector — asserting "some order" is not sufficient; the expected order must be independently computed and compared exactly, and captured SQL command text must confirm a server-side `<=>`/`<->` operator, never client-side evaluation.
 
 ---
 
@@ -1962,3 +2344,5 @@ var orders = await orderReadRepository.GetByIdsChunkedAsync(veryLargeIdBatch, ch
 - [2026-07-30] WO-051 Design phase (D-65..D-84, 84/84) implemented end to end across all four packages; state-map's stale Cross-Domain Dependencies row for 03.Domain's `KeysetSpecification<T,TKey>`/`AsSplitQuery` corrected to "Available" (confirmed shipped in `SharedKernel.Domain` v1.7.0). Two genuine implementation corrections found only via real testing, not foreseeable from design alone: `EfCorePersistenceBuilder.WithDbContextPooling()` must pre-wire the platform three interceptors into the pool's own `(sp, options)` optionsAction and `SharedKernelDbContext.OnConfiguring` needs an `Options.IsFrozen` guard, because EF Core freezes pooled `DbContextOptions` before `OnConfiguring`'s own interceptor-wiring mutation runs; a cross-test `ActivitySource` isolation pattern (parent-`Activity`-correlation via `new Activity("Test.Root").Start()`) was added to Test Rules for exact-count tracing assertions, distinct from `02.Caching`'s existence-style tolerance. 376/376 tests green across Abstractions/EfCore/PostgreSQL/Dapper (persistence-phase-implementer)
 - [2026-07-31] SK.06.Core closed (128/128) — verified all 31 remaining WO-051 Core tasks (C-98..C-128) file-by-file against this file's own already-accurate target-state docs; the implementation code had existed on disk since the prior session's unclosed pass but state-map.md/tests were never re-confirmed. One genuine drifted defect found and fixed: `EfTransactionalUnitOfWork.BeginTransactionAsync`/`ExecuteInTransactionAsync` had come to construct an undocumented second class `EfTransactionalPersistenceTransaction` instead of extending the documented `EfPersistenceTransaction` adapter with post-commit dispatch, leaving the original `EfPersistenceTransaction` as dead, non-dispatching code — consolidated back to the single `EfPersistenceTransaction` class this file already described, no doc-content change needed since the prose was already correct. 376/376 tests green (Abstractions 49, EfCore 294, PostgreSQL 18, Dapper 15). WO-051's Tests/Docs/Published phases still carry pending tasks (persistence-phase-implementer)
 - [2026-07-31] SK.06.Tests closed (97/97, T-61..T-97) — 24 tasks already implemented in prior unclosed sessions verified file-by-file; nine genuine coverage gaps closed with new tests (xmin converter/convention, keyset second-page/concurrent-insert proofs, keyset `ContractShapeTests`, `AsSplitQuery` multi-statement proofs for `GetQuery`/`GetProjectedQuery`, tracing failure-path/sensitive-value tests, PostgreSQL transient-fault-injection + retry-under-failure tests, encryption key-cache decode-once proofs, `GetByIdsChunkedAsync` round-trip tests); three new Test Rules bullets added documenting the `ExecuteReader`-for-writes gotcha (SQLite and Npgsql both route store-generated-value INSERT/UPDATE through the reader path, not `ExecuteNonQuery`), the Testcontainer-free model-metadata-assertion technique, and the reference-equality decode-once-proof technique. 416/416 tests green (Abstractions 54, EfCore 314, PostgreSQL 33, Dapper 15). WO-051's Docs (38/52)/Published (4/8) phases still carry pending tasks (persistence-phase-implementer)
+- [2026-08-03] WO-053 (P-333, P-334, P-336, P-337, P-338, P-339) planned — CLAUDE.md refreshed to target-state for six independent gold-standard-completeness phases, none yet implemented (76 new `○` tasks in state-map.md: D-85..D-103, S-15..S-18, C-129..C-145, T-98..T-121, DO-53..DO-64; no new Published tasks). **P-333** — closes this domain's outstanding WO-041 `[LoggerMessage]` retrofit: zero production log output existed anywhere in `06.Persistence` despite `01.Core`'s registry reserving `6000-6999` for it. `SharedKernel.Persistence.EfCore` claims sub-block `6000-6099` (Abstractions reserves none — it never logs); eleven new `[LoggerMessage]` events span `ConcurrencyInterceptor` (conflict detection), `MigrationAndSeedHostedService` (lifecycle + advisory lock), a new internal `PersistenceRetryDiagnosticListener` bridging EF Core's own provider-neutral `CoreEventId.ExecutionStrategyRetrying` diagnostic event (never Npgsql-specific — preserves the EfCore-never-references-Npgsql hard rule), and `EncryptionRotationService` (batch progress, with an explicit no-key-material/no-plaintext logging guarantee). Also closes a small, thematically adjacent tracing gap: `EfRepository.GetByIdAsync`/`.ExistsAsync` were the only two public members never wrapped in `RepositoryTracing`. **P-334** — a confirmed doc/code mismatch: `EncryptionOptions`/`PersistenceServiceOptions` each claimed a bound configuration section that no code ever read. New `SectionName` constants plus genuine `IConfiguration`-accepting overloads on `.WithEncryption()`/`.WithServiceName()` (via `Microsoft.Extensions.Options.ConfigurationExtensions`), composing with the pre-existing `Action<T>`/direct-value paths under ordinary `IOptions<T>` later-registration-wins semantics — neither existing path changes. **P-336** — verified the drift was materially worse than initially framed: not one drifted fixture but SIX independent ad hoc PostgreSQL Testcontainer setups (four inline `IAsyncLifetime` test classes plus one dead, never-instantiated `Fixtures/PostgreSqlContainerFixture.cs` in `PostgreSQL.Tests`, plus one more inlined in `Dapper.Tests`), all pinned to the OBSOLETE `postgres:16-alpine`/`new XBuilder().WithImage(...)` construction shape `16.Testing` itself already moved off of at its own Testcontainers 4.13.0 bump. Consolidates onto `16.Testing`'s canonical `PostgreSqlContainerFixture` via a new `[CollectionDefinition("PostgreSQL")]` completing the sharing four pre-existing `[Collection("PostgreSQL")]` tags always implied but never wired up. **P-337** — a bundle of two independent, low-risk completions (mirroring the WO-051/P-323 bundling precedent): single-entity soft-delete restore ships as a new `IRestorableRepository<TAggregate,TId>` (Abstractions, ORM-agnostic — unlike `IBulkMutationRepository`) implemented unconditionally by `EfRepository<TAggregate,TId>` with a runtime `ISoftDeletable` guard mirroring the shipped `BulkSpecificationGuard` precedent; bulk restore needs zero new production code, closed purely as a documented `ExecuteUpdateAsync` usage pattern. Command timeout is placed on `EfCorePersistenceBuilder.WithCommandTimeout(int)`, not `UsePostgreSQL(...)` — `DbContextOptionsBuilder.CommandTimeout(int?)` is a provider-NEUTRAL `Microsoft.EntityFrameworkCore.Relational` extension, unlike the genuinely Npgsql-only `EnableRetryOnFailure` (P-320). **P-338** — the most architecturally involved phase in this batch: opt-in `IReadRepository` routing to a second, lazily-constructed `TContext` instance built via `ActivatorUtilities.CreateInstance<TContext>` against a keyed replica `DbContextOptions<TContext>`, deliberately reusing the SAME scope-ambient DI-resolved interceptor instances (and their live `CurrentUserContext`, WO-051/P-322) the primary context already resolved, so audit consistency is automatic with zero extra plumbing. `EfReadRepository` gains one optional, nullable, defaulting-to-`null` constructor parameter — every existing subclass is unaffected. The "never route inside an active transaction" hard rule is enforced by checking live `Database.CurrentTransaction` state, mirroring `EfTransactionalUnitOfWork`'s own existing retry-guard pattern. **P-339** — `HasVectorColumn`/`VectorColumnAttribute` were confirmed to do nothing beyond raw column-type mapping; zero query-side pgvector help existed. New `VectorOrderingExpressions.ByDistance<TAggregate>(...)` returns a boxed `Expression<Func<TAggregate,object>>` (never calling `AddOrderBy` itself — no protected-member-access problem, no new `Specification<T>` base class) for the CONSUMER's own spec subclass to wire into its own protected `AddOrderBy` call, exactly how `KeysetSpecification<T,TKey>` already populates protected members; the `MethodInfo` for `Pgvector.EntityFrameworkCore.VectorExtensions.CosineDistance`/`.L2Distance` is captured via a statically-typed delegate-cast `.Method` property, resolved by the compiler, zero runtime `GetMethod`/`MakeGenericMethod`. Fourteen new hard violations, six new AOT notes, roughly a dozen new DI Registration examples, and eight new Test Rules bullets added across all six phases; three new CLAUDE.md narrative sections added ("Structured Logging," "Soft-Delete Restore," "Read-Replica Routing") alongside an expansion of the existing pgvector support section. No Layering Rules, Package Naming, or new-package/new-third-party-technology changes anywhere in this dispatch (persistence-arch-planner, user request, WO-053, P-333/P-334/P-336/P-337/P-338/P-339)
+- [2026-08-03] SK.06.Design closed for WO-053 (D-85..D-103, 19/19) — reconciled the six-phase target-state design above against real shipped source rather than trusting the planning pass's prose; the design descriptions for the fourteen tasks that reference PRE-EXISTING code (D-87..D-90, D-92..D-98, D-100..D-101) were verified accurate with zero drift (`MigrationAndSeedHostedService`'s four-step `StartAsync` sequence, `EncryptionRotationService`'s per-batch `OnBatchCompleted` hook, `RepositoryTracing.ExecuteTracedAsync`'s existing shape, `EncryptionOptions`/`PersistenceServiceOptions`' own doc claims, `EfCorePersistenceBuilder.WithEncryption`/`.WithServiceName`/`.WithCompiledModel`'s existing wrapping pattern, `IRepository<TAggregate,TId>`'s constraint shape, `EfRepository.MarkAsModifiedIfDetached`, `ISpecification<T>.OrderBy`'s boxed-to-object shape — all read directly, not assumed) and D-95's Testcontainers-consolidation claims (the dead `Fixtures/PostgreSqlContainerFixture.cs`, all four inline-container `PostgreSQL.Tests` classes, the Dapper inline container, `16.Testing`'s canonical fixture shape, both `.csproj` references) were independently confirmed byte-for-byte. **Two genuine drift findings, both corrected in place above:** (1) **D-86** — the original design assumed `ConcurrencyInterceptor`'s Warning log belongs inside `SaveChangesFailed`/`SaveChangesFailedAsync`, immediately before "constructing/throwing the translated `ConcurrencyException`." The real shipped source (WO-051/P-315) makes both of those hooks permanent, documented no-ops — EF Core 10 does not allow them to replace the exception propagating from `SaveChanges`/`SaveChangesAsync` — and the actual translation happens in `ConcurrencyInterceptor.TryTranslate` (today `internal static`), called from `SharedKernelDbContext.SaveChanges(bool)`/`SaveChangesAsync(bool, CancellationToken)`'s own catch-filter, throwing `SharedKernel.Core.Exceptions.ConflictException` — no `ConcurrencyException` type exists in this domain. Corrected design: `TryTranslate` becomes a non-static instance method (reachable via `SharedKernelDbContext`'s existing `_concurrencyInterceptor` field — zero new plumbing), logging immediately before it returns the translated `ConflictException`; both `SaveChanges` and `SaveChangesAsync` pick up the logging automatically. (2) **D-102/D-103** — the original design claimed `Pgvector.EntityFrameworkCore`'s `VectorExtensions` class exposes exactly two distance functions (`CosineDistance`/`L2Distance`) with a `(Vector, Vector)` signature. Verified via direct reflection against the real shipped `Pgvector.EntityFrameworkCore` 0.3.0 assembly: no type named `VectorExtensions` exists at all — the real, sealed static type is `Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions`, exposing SIX members (`CosineDistance`/`L2Distance`/`L1Distance`/`HammingDistance`/`JaccardDistance`/`MaxInnerProduct`), each declared `static double MethodName(this object a, object b)` — `object` parameters, EF-Core query-translation placeholder methods, not directly invocable client-side. `VectorDistanceMetric`'s `Cosine|L2`-only scope remains correct (independently confirmed by the root `CLAUDE.md`'s own WO-053/P-339 entry, "a cosine/L2 distance-ordering helper") — only the justification ("mirrors the exactly-two... exposes") was wrong; corrected to "a deliberate narrowing of the real six-function surface." The statically-typed delegate-cast technique (`((Func<Vector,Vector,double>)VectorDbFunctionsExtensions.CosineDistance).Method`) was independently compiled and confirmed to still work with ZERO reflection despite the real `object,object` signature, because `Pgvector.Vector` is a reference type (a class) and C# permits contravariant reference-type parameter widening in a method-group-to-delegate conversion — verified, not merely asserted from the language spec. Both corrections are now reflected in the "Structured Logging" and pgvector query-ergonomics sections above; no further design-level changes were needed for the remaining 17 tasks. `06.Persistence`'s own root Phase Backlog entries (P-333/P-334/P-336/P-337/P-338/P-339) remain `◐ Dispatched` — this closes only the local `SK.06.Design` phase-key; Core-phase implementation (C-129..C-145) is a future session's work (persistence-phase-implementer)
