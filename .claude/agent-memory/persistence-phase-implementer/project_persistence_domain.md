@@ -5,6 +5,85 @@ metadata:
   type: project
 ---
 
+## SK.06.Tests fully closed 2026-08-04 (121/121) — WO-053 T-98..T-105/T-110..T-121, closing out the Tests-phase gap left by the Core-phase session below
+Verified each of the 20 `○` tasks file-by-file against the 92 tests the prior Core-phase session had
+already written, per the standing "code may already exist, verify before writing" pattern. 10/20 were
+already fully/functionally satisfied (T-102/103/110/111/115 exactly; T-98/99/101 functionally covered
+but strengthened in place with the exact-count/`RowsInBatch`/`BatchNumber`/full-negative-scan
+assertions the task text specifically demanded, since `LoggerAssertions.ShouldHaveLogged` alone never
+proves "exactly once" — only `ShouldHaveLoggedCount` does). 10/20 were genuine gaps requiring new
+tests/files: T-100, T-104/105, T-112, T-113, T-114/116, T-117, T-118/119/120, T-121.
+
+**GATING genuine production defect found and fixed while writing T-118/T-119 (`VectorOrderingExpressions.ByDistance`, `SharedKernel.Persistence.PostgreSQL`) — the single most important finding of this session.**
+This WO-053 Core-phase feature had NEVER been executed against a real database before this session
+(the Core-phase's own tests were pure expression-tree-shape assertions, zero Testcontainer). Passing
+`queryVector` as `Expression.Constant(queryVector, typeof(Vector))` throws a genuine
+`Npgsql.PostgresException` ("42601: syntax error at or near '['") the moment the query actually runs —
+confirmed via `query.ToQueryString()` diagnostic: the generated SQL was
+`ORDER BY p.embedding <=> [1,0,0]` — the vector rendered via `Vector.ToString()`, completely UNQUOTED,
+no cast. Root cause: EF Core's query pipeline treats an already-bare `ConstantExpression` as an
+already-evaluated INLINE SQL literal; `Pgvector.EntityFrameworkCore`'s distance-function SQL
+translator does not attach a `vector` `RelationalTypeMapping` to an inline constant the way it does for
+a genuine ADO.NET parameter (confirmed working for INSERT/UPDATE, which route through the parameter
+path). **The fix, and the reusable technique for any future hand-built `Expression` tree in this
+codebase that needs a runtime value to become a genuine SQL query parameter rather than an inline
+literal:** wrap the value in a private single-property holder class and access it via
+`Expression.Property(Expression.Constant(holder), nameof(holder.Value))` — this exact shape
+(`MemberExpression` over a `ConstantExpression` holding a small instance) is what the C# compiler
+itself emits for a captured local variable inside an ordinary LINQ lambda closure, and EF Core's own
+parameter-extraction visitor (`ParameterExtractingExpressionVisitor`) specifically recognizes and
+promotes THAT shape to a real ADO.NET parameter — a bare `Expression.Constant(value, type)` built
+directly (not via this closure-mimicking wrapper) does NOT get this treatment, no matter how correctly
+its `Type` is set. Confirmed via the generated SQL changing from `<=> [1,0,0]` to `<=> @Value`. Zero
+change to the method's public signature or its zero-reflection `MethodInfo`-capture technique.
+
+**Second, independent genuine defect — this one in TEST SETUP, not production code, but equally
+non-obvious and worth remembering for ANY future pgvector/Npgsql test in this domain:**
+`CREATE EXTENSION IF NOT EXISTS vector` must run on a THROWAWAY connection/data source BEFORE the
+EF-Core-managed Npgsql connection pool for the SAME database opens its own first connection. Npgsql
+resolves the `vector` type's OID once per data-source/pool lifetime, at first connection open. Issuing
+the `CREATE EXTENSION` command AS that pool's own first command (e.g. via
+`ctx.Database.ExecuteSqlRawAsync(...)` on a context whose options already point at the target
+database) opens that connection before the extension exists, permanently poisoning the pool's cached
+type mapping for its ENTIRE remaining lifetime — every subsequent `Pgvector.Vector`-typed parameter
+write then throws `System.NotSupportedException: Cannot resolve 'vector' to a fully qualified datatype
+name`, even though the extension now genuinely exists in the database. `PostgreSQLIntegrationTests`
+(the existing T-38 raw-ADO.NET pgvector test) never hit this because it never uses a `Vector`-typed
+ADO.NET parameter at all — it casts a string literal via `'[1,2,3]'::vector` instead. Fix: run
+`CREATE EXTENSION` on a separate `new NpgsqlDataSourceBuilder(connectionString).Build()` connection
+FIRST, then construct the EF Core `DbContextOptions`/`DbContext`.
+
+**New reusable test technique — proving an `internal` `[LoggerMessage]` emitter's behavior from a
+SIBLING package's test project with NO `InternalsVisibleTo` grant (T-100):** `PersistenceRetryDiagnosticListener`
+is `internal` to `SharedKernel.Persistence.EfCore`, which only grants `InternalsVisibleTo` to
+`SharedKernel.Persistence.EfCore.Tests` — but T-100 needs a REAL PostgreSQL Testcontainer, which only
+lives in `SharedKernel.Persistence.PostgreSQL.Tests`. You cannot write
+`new InMemoryLogger<PersistenceRetryDiagnosticListener>()` there (compile error — inaccessible type).
+Solution requiring NO `InternalsVisibleTo` widening and NO reference to the internal type at all:
+register `16.Testing`'s `services.AddInMemoryLoggerFactory()` (wires `ILoggerFactory` →
+`InMemoryLoggerFactory` PLUS the open-generic BCL `Logger<>` → `ILogger<>` mapping — the exact
+mechanism `AddLogging()` uses internally) into the SAME `ServiceCollection` as
+`AddSharedKernelEfCore<TContext>(...).WithTransientFaultRetry().Build()`; resolve the listener purely
+through ITS PUBLIC `IHostedService` SURFACE (`provider.GetServices<IHostedService>()`, calling
+`StartAsync`/`StopAsync` manually since no full generic `IHost` is built) — the concrete type name is
+never needed; read its captured log records back via
+`((InMemoryLoggerFactory)provider.GetRequiredService<ILoggerFactory>()).GetLogger(categoryName)`,
+where `categoryName` is the internal type's OWN `.FullName` written as a plain STRING LITERAL
+(`"SharedKernel.Persistence.EfCore.Diagnostics.PersistenceRetryDiagnosticListener"`) — a logging
+category name is public, observable information (it appears in real production log output), so naming
+it as a string carries none of the C# accessibility restriction that naming the `Type` directly would.
+For a PUBLIC type needing the identical proof in the same test (e.g. `EfUnitOfWork`'s `6008`
+exhaustion log), just use `typeof(EfUnitOfWork).FullName!` directly — no need for the string-literal
+workaround there. Apply this pattern to any FUTURE cross-package internal-`[LoggerMessage]`-emitter
+test in this domain.
+
+**Full suites green:** `SharedKernel.Persistence.EfCore.Tests` 358/358 (was 353), `SharedKernel.Persistence.PostgreSQL.Tests`
+53/53 (was 41, +12 new: 3 retry-logging, 2 command-timeout, 2 read-replica two-container, 1
+reference-equality, 3 vector-correctness/composability, 1 vector-behavioral-proxy — plus several
+existing methods gained assertions without new `[Fact]`s). Both suites run against a real Docker
+daemon. This closes every task in `SK.06.Tests` — only `SK.06.Docs` (52/64, `◐`) remains open in this
+domain's own state-map.
+
 ## SK.06.Core fully closed 2026-08-03 (145/145) — WO-053 C-129..C-145, same session as Scaffold close
 Implemented and tested all 17 remaining Core tasks in one session, immediately after the Scaffold
 close documented below. Production code for most tasks had ALREADY been written by a prior
