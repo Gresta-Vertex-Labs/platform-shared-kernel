@@ -20,12 +20,19 @@ namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 /// and AddSharedKernelPostgreSQL smoke.
 /// All tests require a real PostgreSQL Testcontainer.
 /// </summary>
-[Collection("PostgreSQL")]
+/// <remarks>
+/// WO-053/P-336: deliberately does NOT join the shared <c>[Collection("PostgreSQL")]</c>/
+/// <see cref="PostgreSqlTestCollection"/> fixture the other three PostgreSQL.Tests integration
+/// classes were migrated onto — this class's pgvector round-trip test requires the
+/// <c>pgvector/pgvector:pg16</c> image, which the shared fixture's plain <c>postgres:16.4</c> image
+/// does not provide (the pgvector extension binary/shared library is absent from a vanilla
+/// PostgreSQL image, so <c>CREATE EXTENSION vector</c> cannot succeed against it). Continues to
+/// manage its own dedicated, pgvector-enabled container.
+/// </remarks>
 public sealed class PostgreSQLIntegrationTests : IAsyncLifetime
 {
     // Use pgvector image so vector extension is available for T-38(3)
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("pgvector/pgvector:pg16")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("pgvector/pgvector:pg16")
         .Build();
 
     private string ConnectionString => _container.GetConnectionString();

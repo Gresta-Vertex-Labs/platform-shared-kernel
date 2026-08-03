@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using NSubstitute;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Interceptors;
@@ -11,7 +12,7 @@ using SharedKernel.Persistence.EfCore.UnitOfWork;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
-using Testcontainers.PostgreSql;
+using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
@@ -81,18 +82,30 @@ file sealed class TransientFaultInjectionInterceptor(int failuresBeforeSuccess) 
     }
 }
 
+/// <remarks>
+/// WO-053/P-336: shares the <see cref="PostgreSqlContainerFixture"/> registered by
+/// <see cref="PostgreSqlTestCollection"/> instead of starting its own dedicated container per test
+/// method — see <see cref="ConcurrencyIntegrationTests"/>'s identical remark for why a
+/// uniquely-named database is targeted rather than the fixture's shared default database (this class
+/// reuses <see cref="ConcurrencyTestDbContext"/>/<see cref="ConcurrentPgAggregate"/> from that same
+/// file, but deliberately targets its OWN database rather than sharing
+/// <see cref="ConcurrencyIntegrationTests"/>'s, preserving the same degree of isolation the two
+/// classes had when each ran against a fully independent container).
+/// </remarks>
 [Collection("PostgreSQL")]
-public sealed class TransientFaultRetryIntegrationTests : IAsyncLifetime
+public sealed class TransientFaultRetryIntegrationTests
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
-        .Build();
+    private const string DatabaseName = "sk_persistence_transient_retry";
 
-    private string ConnectionString => _container.GetConnectionString();
+    private readonly PostgreSqlContainerFixture _fixture;
 
-    public Task InitializeAsync() => _container.StartAsync();
+    public TransientFaultRetryIntegrationTests(PostgreSqlContainerFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+    private string ConnectionString =>
+        new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
     private static ConcurrencyTestDbContext CreateRetryEnabledContext(
         string connectionString, params DbCommandInterceptor[] interceptors)

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using NSubstitute;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Aggregates;
@@ -15,7 +16,7 @@ using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Security.Abstractions.Abstractions;
-using Testcontainers.PostgreSql;
+using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
@@ -88,18 +89,29 @@ public sealed class ConcurrencyTestDbContext : SharedKernelDbContext
 /// <c>xmin</c> system column, auto-wired by <c>UsePostgreSQL()</c> — end to end against a real
 /// PostgreSQL Testcontainer.
 /// </summary>
+/// <remarks>
+/// WO-053/P-336: shares the <see cref="PostgreSqlContainerFixture"/> registered by
+/// <see cref="PostgreSqlTestCollection"/> with the other <c>[Collection("PostgreSQL")]</c> classes in
+/// this assembly instead of starting its own dedicated container. Targets its own uniquely-named
+/// database (rather than the fixture's shared default database) because EF Core's
+/// <c>Database.EnsureCreatedAsync()</c> is coarse-grained — it checks whether the target database has
+/// ANY tables, not specifically this model's tables — so two different <c>DbContext</c> models
+/// sharing one database would silently skip creating whichever model's schema ran second.
+/// </remarks>
 [Collection("PostgreSQL")]
-public sealed class ConcurrencyIntegrationTests : IAsyncLifetime
+public sealed class ConcurrencyIntegrationTests
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
-        .Build();
+    private const string DatabaseName = "sk_persistence_concurrency";
 
-    private string ConnectionString => _container.GetConnectionString();
+    private readonly PostgreSqlContainerFixture _fixture;
 
-    public Task InitializeAsync() => _container.StartAsync();
+    public ConcurrencyIntegrationTests(PostgreSqlContainerFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+    private string ConnectionString =>
+        new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
     private static ConcurrencyTestDbContext CreateContext(string connectionString)
     {

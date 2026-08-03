@@ -3,7 +3,7 @@ using FluentAssertions;
 using Npgsql;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.Dapper.ReadModels;
-using Testcontainers.PostgreSql;
+using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.Dapper.Tests.Integration;
 
@@ -45,18 +45,35 @@ public sealed record OrderDashboardDto(int OrderCount, decimal TotalRevenue);
 /// <summary>
 /// T-39(1-4): DapperReadService integration tests against a real PostgreSQL Testcontainer.
 /// </summary>
-public sealed class DapperReadServiceIntegrationTests : IAsyncLifetime
+/// <remarks>
+/// WO-053/P-336: shares <see cref="PostgreSqlContainerFixture"/> (16.Testing's canonical PostgreSQL
+/// Testcontainers fixture) via <see cref="IClassFixture{TFixture}"/> instead of starting its own
+/// dedicated container per test method. No <c>[CollectionDefinition]</c> is needed — this is the only
+/// PostgreSQL-touching test class in this assembly (<c>TypeHandlerTests</c> needs no container), so a
+/// class fixture (one container instance shared across every test method in this class) is
+/// sufficient. Retains its own <see cref="IAsyncLifetime.InitializeAsync"/> purely for schema setup
+/// (drop/recreate the test tables) against <see cref="PostgreSqlContainerFixture.ConnectionString"/>
+/// — the fixture itself owns the container's start/stop lifecycle.
+/// </remarks>
+public sealed class DapperReadServiceIntegrationTests : IClassFixture<PostgreSqlContainerFixture>, IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
-        .Build();
+    private readonly PostgreSqlContainerFixture _fixture;
 
-    private string ConnectionString => _container.GetConnectionString();
+    public DapperReadServiceIntegrationTests(PostgreSqlContainerFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    private string ConnectionString => _fixture.ConnectionString;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        // Create a simple test table
+        // Runs once per test METHOD (a fresh class instance is constructed per xUnit [Fact]), but
+        // against the SAME persistent database now that the container is shared via IClassFixture —
+        // unlike before this class had its own dedicated container, so drop order is load-bearing:
+        // child tables (dapper_order/dapper_payment) must drop before the parent (dapper_customer)
+        // or the second test method's run fails with PostgresException 2BP01 ("cannot drop table ...
+        // because other objects depend on it").
         await using var conn = new NpgsqlConnection(ConnectionString);
         await conn.OpenAsync();
         await conn.ExecuteAsync("""
@@ -68,9 +85,9 @@ public sealed class DapperReadServiceIntegrationTests : IAsyncLifetime
             );
             INSERT INTO dapper_test (name, value) VALUES ('Alpha', 1), ('Beta', 2), ('Gamma', 3);
 
-            DROP TABLE IF EXISTS dapper_customer;
-            DROP TABLE IF EXISTS dapper_order;
             DROP TABLE IF EXISTS dapper_payment;
+            DROP TABLE IF EXISTS dapper_order;
+            DROP TABLE IF EXISTS dapper_customer;
             CREATE TABLE dapper_customer (
                 id      SERIAL PRIMARY KEY,
                 name    TEXT NOT NULL
@@ -91,7 +108,7 @@ public sealed class DapperReadServiceIntegrationTests : IAsyncLifetime
             """);
     }
 
-    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+    public Task DisposeAsync() => Task.CompletedTask;
 
     // -----------------------------------------------------------------------
     // Concrete test service

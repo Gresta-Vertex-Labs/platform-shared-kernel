@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using NSubstitute;
 using SharedKernel.Domain.Aggregates;
 using SharedKernel.Domain.Specifications;
@@ -16,7 +17,7 @@ using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
-using Testcontainers.PostgreSql;
+using SharedKernel.Testing.Containers;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;
 
@@ -97,18 +98,26 @@ internal sealed class KeysetPgByCreatedOnSpec : KeysetSpecification<KeysetPgAggr
     }
 }
 
+/// <remarks>
+/// WO-053/P-336: shares the <see cref="PostgreSqlContainerFixture"/> registered by
+/// <see cref="PostgreSqlTestCollection"/> instead of starting its own dedicated container — see
+/// <see cref="ConcurrencyIntegrationTests"/>'s identical remark for why a uniquely-named database is
+/// targeted rather than the fixture's shared default database.
+/// </remarks>
 [Collection("PostgreSQL")]
-public sealed class KeysetPaginationIntegrationTests : IAsyncLifetime
+public sealed class KeysetPaginationIntegrationTests
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:16-alpine")
-        .Build();
+    private const string DatabaseName = "sk_persistence_keyset";
 
-    private string ConnectionString => _container.GetConnectionString();
+    private readonly PostgreSqlContainerFixture _fixture;
 
-    public Task InitializeAsync() => _container.StartAsync();
+    public KeysetPaginationIntegrationTests(PostgreSqlContainerFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+    private string ConnectionString =>
+        new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = DatabaseName }.ConnectionString;
 
     private static KeysetPgDbContext CreateContext(string connectionString)
     {
