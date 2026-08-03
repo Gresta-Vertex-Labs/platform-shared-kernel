@@ -265,4 +265,124 @@ public sealed class RepositoryTracingTests
         allTagValues.Should().NotContain(sensitiveId.Value.ToString());
         allTagValues.Should().NotContain(sensitiveId.ToString());
     }
+
+    // -------------------------------------------------------------------------
+    // WO-053/P-333 (C-134) — EfRepository.GetByIdAsync/.ExistsAsync were, until this phase, the only
+    // two EfRepository public members never wrapped in RepositoryTracing.ExecuteTracedAsync.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetByIdAsync_EmitsActivity_WithSuccessOutcome()
+    {
+        // Arrange
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var id = TestId.New();
+        ctx.TestAggregates.Add(new TestAggregate(id, "TracedGetById", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var repo = new TestAggregateRepository(ctx);
+
+        using var rootActivity = new Activity("Test.Root").Start();
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "SharedKernel.Persistence",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentId == rootActivity.Id)
+                    lock (activities)
+                        activities.Add(activity);
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // Act
+        var result = await repo.GetByIdAsync(id);
+
+        // Assert
+        result.Should().NotBeNull();
+        var traced = activities.Should().ContainSingle(a => a.OperationName == "TestAggregate.GetByIdAsync").Subject;
+        traced.Tags.Should().Contain(t => t.Key == "persistence.aggregate_type" && t.Value == "TestAggregate");
+        traced.Tags.Should().Contain(t => t.Key == "persistence.operation" && t.Value == "GetByIdAsync");
+        traced.Tags.Should().Contain(t => t.Key == "persistence.outcome" && t.Value == "success");
+        traced.Status.Should().Be(ActivityStatusCode.Unset);
+    }
+
+    [Fact]
+    public async Task ExistsAsync_EmitsActivity_WithSuccessOutcome()
+    {
+        // Arrange
+        using var ctx = TestDbContextFactory.CreateTestDbContext();
+        var id = TestId.New();
+        ctx.TestAggregates.Add(new TestAggregate(id, "TracedExists", new SystemClock()));
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var repo = new TestAggregateRepository(ctx);
+
+        using var rootActivity = new Activity("Test.Root").Start();
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "SharedKernel.Persistence",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentId == rootActivity.Id)
+                    lock (activities)
+                        activities.Add(activity);
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // Act
+        var exists = await repo.ExistsAsync(id);
+
+        // Assert
+        exists.Should().BeTrue();
+        var traced = activities.Should().ContainSingle(a => a.OperationName == "TestAggregate.ExistsAsync").Subject;
+        traced.Tags.Should().Contain(t => t.Key == "persistence.operation" && t.Value == "ExistsAsync");
+        traced.Tags.Should().Contain(t => t.Key == "persistence.outcome" && t.Value == "success");
+        traced.Status.Should().Be(ActivityStatusCode.Unset);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_WhenOperationThrows_EmitsActivity_WithFailureOutcome_AndRethrows()
+    {
+        // Arrange
+        var ctx = TestDbContextFactory.CreateTestDbContext();
+        var repo = new TestAggregateRepository(ctx);
+        ctx.Dispose(); // forces a genuine exception the next time the context is touched
+
+        using var rootActivity = new Activity("Test.Root").Start();
+
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "SharedKernel.Persistence",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.ParentId == rootActivity.Id)
+                    lock (activities)
+                        activities.Add(activity);
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // Act
+        Func<Task> act = () => repo.GetByIdAsync(TestId.New());
+
+        // Assert
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+
+        var traced = activities.Should().ContainSingle(a => a.OperationName == "TestAggregate.GetByIdAsync").Subject;
+        traced.Tags.Should().Contain(t => t.Key == "persistence.outcome" && t.Value == "failure");
+        traced.Tags.Should().Contain(t => t.Key == "error.type" && t.Value == "ObjectDisposedException");
+        traced.Status.Should().Be(ActivityStatusCode.Error);
+    }
 }
