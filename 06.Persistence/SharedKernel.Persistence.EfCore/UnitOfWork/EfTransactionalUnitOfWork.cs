@@ -1,8 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Domain;
 using SharedKernel.Domain.Abstractions;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.Options;
 
 namespace SharedKernel.Persistence.EfCore.UnitOfWork;
 
@@ -29,6 +34,8 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
 {
     private readonly SharedKernelDbContext _dbContext;
     private readonly IDomainEventDispatcher? _dispatcher;
+    private readonly ILogger<EfTransactionalUnitOfWork> _logger;
+    private readonly TransientFaultRetryOptions? _retryOptions;
 
     /// <summary>
     /// Initialises a new <see cref="EfTransactionalUnitOfWork"/>.
@@ -38,12 +45,27 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
     /// Optional dispatcher for domain events raised during the save cycle.
     /// When <see langword="null"/>, events are cleared but not dispatched.
     /// </param>
+    /// <param name="logger">
+    /// Optional logger for the <c>TransientRetryExhausted</c> Warning (EventId <c>6008</c>,
+    /// WO-053/P-333) — see <see cref="EfUnitOfWork"/>'s remarks for the full rationale, which
+    /// applies identically here. Resolved by DI when registered; falls back to
+    /// <see cref="NullLogger{T}"/> otherwise.
+    /// </param>
+    /// <param name="retryOptions">
+    /// Optional discoverability options registered by
+    /// <c>EfCorePersistenceBuilder.WithTransientFaultRetry(...)</c>, consulted only to compute the
+    /// logged <c>AttemptCount</c> value — see <see cref="EfUnitOfWork"/>'s equivalent parameter.
+    /// </param>
     public EfTransactionalUnitOfWork(
         SharedKernelDbContext dbContext,
-        IDomainEventDispatcher? dispatcher = null)
+        IDomainEventDispatcher? dispatcher = null,
+        ILogger<EfTransactionalUnitOfWork>? logger = null,
+        TransientFaultRetryOptions? retryOptions = null)
     {
         _dbContext = dbContext;
         _dispatcher = dispatcher;
+        _logger = logger ?? NullLogger<EfTransactionalUnitOfWork>.Instance;
+        _retryOptions = retryOptions;
     }
 
     /// <inheritdoc />
@@ -61,7 +83,7 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
     /// </remarks>
     public async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
-        var result = await _dbContext.SaveChangesAsync(ct);
+        var result = await ExecuteWithRetryLoggingAsync(() => _dbContext.SaveChangesAsync(ct));
 
         // Dispatch only when no explicit transaction is active.
         // When CurrentTransaction is non-null, dispatch is deferred to EfPersistenceTransaction.CommitAsync.
@@ -123,13 +145,13 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
     {
         var strategy = _dbContext.Database.CreateExecutionStrategy();
 
-        return strategy.ExecuteAsync(ct, async token =>
+        return ExecuteWithRetryLoggingAsync(() => strategy.ExecuteAsync(ct, async token =>
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(token);
             await operation(token);
             await transaction.CommitAsync(token);
             await DispatchAndClearEventsAsync(token);
-        });
+        }));
     }
 
     /// <inheritdoc />
@@ -140,14 +162,43 @@ public sealed class EfTransactionalUnitOfWork : ITransactionalUnitOfWork
     {
         var strategy = _dbContext.Database.CreateExecutionStrategy();
 
-        return strategy.ExecuteAsync(ct, async token =>
+        return ExecuteWithRetryLoggingAsync(() => strategy.ExecuteAsync(ct, async token =>
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(token);
             var result = await operation(token);
             await transaction.CommitAsync(token);
             await DispatchAndClearEventsAsync(token);
             return result;
-        });
+        }));
+    }
+
+    // WO-053/P-333: shared retry-exhaustion logging helper — see EfUnitOfWork's class remarks for
+    // the full rationale on why RetryLimitExceededException specifically (never a broad
+    // `catch (Exception) when RetriesOnFailure`) is the correct signal.
+    private async Task<TResult> ExecuteWithRetryLoggingAsync<TResult>(Func<Task<TResult>> operation)
+    {
+        try
+        {
+            return await operation();
+        }
+        catch (RetryLimitExceededException ex)
+        {
+            PersistenceLog.TransientRetryExhausted(_logger, ex, (_retryOptions?.MaxRetryCount ?? 0) + 1);
+            throw;
+        }
+    }
+
+    private async Task ExecuteWithRetryLoggingAsync(Func<Task> operation)
+    {
+        try
+        {
+            await operation();
+        }
+        catch (RetryLimitExceededException ex)
+        {
+            PersistenceLog.TransientRetryExhausted(_logger, ex, (_retryOptions?.MaxRetryCount ?? 0) + 1);
+            throw;
+        }
     }
 
     /// <summary>

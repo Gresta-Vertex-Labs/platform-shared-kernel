@@ -9,6 +9,7 @@ using SharedKernel.Persistence.Abstractions.Repositories;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
+using SharedKernel.Persistence.EfCore.ReadReplica;
 
 namespace SharedKernel.Persistence.EfCore.Repositories;
 
@@ -54,6 +55,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     protected SharedKernelDbContext DbContext { get; }
 
     private readonly ISpecificationEvaluator<TAggregate> _evaluator;
+    private readonly IReadReplicaContextAccessor<SharedKernelDbContext>? _replicaAccessor;
 
     /// <summary>
     /// Initialises a new <see cref="EfReadRepository{TAggregate, TId}"/>.
@@ -65,13 +67,35 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// implementation works — no downcast to the concrete <c>SpecificationEvaluator&lt;T&gt;</c>
     /// type is performed (P-097).
     /// </param>
+    /// <param name="replicaAccessor">
+    /// Optional read-replica routing accessor (WO-053/P-338). Resolved by DI only when
+    /// <c>EfCorePersistenceBuilder{TContext}.WithReadReplica(...)</c> was called — otherwise
+    /// <see langword="null"/>, in which case every read method targets <see cref="DbContext"/>
+    /// directly, exactly as before this parameter existed. Purely additive — every existing
+    /// <see cref="EfReadRepository{TAggregate, TId}"/> subclass continues to compile and behave
+    /// identically without passing anything new.
+    /// </param>
     protected EfReadRepository(
         SharedKernelDbContext dbContext,
-        ISpecificationEvaluator<TAggregate> evaluator)
+        ISpecificationEvaluator<TAggregate> evaluator,
+        IReadReplicaContextAccessor<SharedKernelDbContext>? replicaAccessor = null)
     {
         DbContext = dbContext;
         _evaluator = evaluator;
+        _replicaAccessor = replicaAccessor;
     }
+
+    /// <summary>
+    /// The context every read method executes against — <see cref="DbContext"/> itself, or a
+    /// read-replica context when read-replica routing is enabled and no transaction is active.
+    /// </summary>
+    /// <remarks>
+    /// Resolved AFRESH on every access, never cached at the property-read call site — transaction
+    /// state can legitimately change between two read calls issued against the same injected
+    /// repository instance (WO-053/P-338).
+    /// </remarks>
+    private SharedKernelDbContext EffectiveContext =>
+        _replicaAccessor?.GetEffectiveContext(DbContext) ?? DbContext;
 
     /// <inheritdoc />
     public virtual Task<TAggregate?> GetBySpecAsync(
@@ -79,7 +103,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         CancellationToken ct = default)
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(GetBySpecAsync), async () =>
         {
-            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            var query = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             return await query.FirstOrDefaultAsync(ct);
         });
 
@@ -89,7 +113,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         CancellationToken ct = default)
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, IReadOnlyList<TAggregate>>(nameof(ListAsync), async () =>
         {
-            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            var query = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             return await query.ToListAsync(ct);
         });
 
@@ -99,7 +123,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         CancellationToken ct = default)
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, int>(nameof(CountAsync), async () =>
         {
-            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            var query = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             return await query.CountAsync(ct);
         });
 
@@ -109,7 +133,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         CancellationToken ct = default)
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, bool>(nameof(AnyAsync), async () =>
         {
-            var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            var query = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             return await query.AnyAsync(ct);
         });
 
@@ -146,7 +170,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
             var containsCall = Expression.Call(containsMethod, idListConstant, idProperty);
             var predicate = Expression.Lambda<Func<TAggregate, bool>>(containsCall, param);
 
-            return await DbContext.Set<TAggregate>()
+            return await EffectiveContext.Set<TAggregate>()
                 .Where(predicate)
                 .ToListAsync(ct);
         });
@@ -203,12 +227,12 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, PagedList<TAggregate>>(nameof(ListPagedAsync), async () =>
         {
             // Count query: apply spec without Skip/Take to get the true total.
-            var countQuery = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            var countQuery = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             // Strip paging from count — we need the full-filter count.
             var totalCount = await StripPaging(countQuery, spec).CountAsync(ct);
 
             // Data query: full spec including Skip/Take.
-            var dataQuery = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec);
+            var dataQuery = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec);
             var items = await dataQuery.ToListAsync(ct);
 
             // Extract page metadata from spec (PagedSpecification carries these).
@@ -230,7 +254,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, IReadOnlyList<TResult>>(
             nameof(ListProjectedAsync), async () =>
         {
-            var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
+            var projected = _evaluator.GetProjectedQuery(EffectiveContext.Set<TAggregate>(), spec);
             return await projected.ToListAsync(ct);
         });
 
@@ -248,7 +272,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, TResult?>(
             nameof(GetBySpecProjectedAsync), async () =>
         {
-            var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
+            var projected = _evaluator.GetProjectedQuery(EffectiveContext.Set<TAggregate>(), spec);
             return await projected.FirstOrDefaultAsync(ct);
         });
 
@@ -278,10 +302,10 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         {
             // Count query: apply spec without projection and without Skip/Take.
             var countSpec = new NoPagingWrapper<TAggregate>(spec);
-            var totalCount = await _evaluator.GetQuery(DbContext.Set<TAggregate>(), countSpec).CountAsync(ct);
+            var totalCount = await _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), countSpec).CountAsync(ct);
 
             // Data query: full spec including projection and Skip/Take.
-            var projected = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>(), spec);
+            var projected = _evaluator.GetProjectedQuery(EffectiveContext.Set<TAggregate>(), spec);
             var items = await projected.ToListAsync(ct);
 
             var (page, pageSize) = ExtractPageInfo(spec);
@@ -302,7 +326,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         ISpecification<TAggregate> spec,
         CancellationToken ct = default)
     {
-        var query = _evaluator.GetQuery(DbContext.Set<TAggregate>(), spec).AsNoTracking();
+        var query = _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), spec).AsNoTracking();
         return RepositoryTracing.ExecuteTracedStreamAsync<TAggregate, TAggregate>(
             nameof(StreamAsync), query.AsAsyncEnumerable(), ct);
     }
@@ -318,7 +342,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         IProjectionSpecification<TAggregate, TResult> spec,
         CancellationToken ct = default)
     {
-        var query = _evaluator.GetProjectedQuery(DbContext.Set<TAggregate>().AsNoTracking(), spec);
+        var query = _evaluator.GetProjectedQuery(EffectiveContext.Set<TAggregate>().AsNoTracking(), spec);
         return RepositoryTracing.ExecuteTracedStreamAsync<TAggregate, TResult>(
             nameof(StreamProjectedAsync), query.AsAsyncEnumerable(), ct);
     }
@@ -343,7 +367,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         => RepositoryTracing.ExecuteTracedAsync<TAggregate, KeysetPage<TAggregate, TKey>>(
             nameof(ListKeysetAsync), async () =>
         {
-            var query = _evaluator.GetKeysetQuery(DbContext.Set<TAggregate>(), spec);
+            var query = _evaluator.GetKeysetQuery(EffectiveContext.Set<TAggregate>(), spec);
             var rows = await query.ToListAsync(ct);
 
             var hasMore = rows.Count > spec.Take!.Value;
@@ -380,7 +404,7 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
         // Re-build the query without the paging step by applying spec criteria/includes/ordering
         // from scratch. We use a NoPagingWrapper to provide all spec properties except Skip/Take.
         var countSpec = new NoPagingWrapper<TAggregate>(spec);
-        return _evaluator.GetQuery(DbContext.Set<TAggregate>(), countSpec);
+        return _evaluator.GetQuery(EffectiveContext.Set<TAggregate>(), countSpec);
     }
 
     // Extracts page and pageSize from a spec that implements PagedSpecification<T>.

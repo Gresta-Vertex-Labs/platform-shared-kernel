@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Options;
 
@@ -44,6 +47,7 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
     private readonly IDbContextFactory<TContext> _contextFactory;
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
     private readonly EncryptedEntityBatchProcessorRegistry<TContext> _registry;
+    private readonly ILogger<EncryptionRotationService<TContext>> _logger;
 
     /// <summary>
     /// Number of rows loaded and processed per batch. Default is <c>500</c>.
@@ -60,14 +64,23 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
     /// Registry of <see cref="IEncryptedEntityBatchProcessor"/> instances, one per encrypted
     /// entity CLR type, used to load batches without reflection.
     /// </param>
+    /// <param name="logger">
+    /// Optional logger for the <c>EncryptionRotationBatchProcessed</c>/<c>EncryptionRotationCompleted</c>
+    /// Information logs (EventIds <c>6009</c>-<c>6010</c>, WO-053/P-333). Resolved by DI when
+    /// registered; falls back to <see cref="NullLogger{T}"/> otherwise. Never logs a key byte, a
+    /// Base64-encoded key string, or any column plaintext/ciphertext value — only counts and
+    /// already-non-secret version-tag strings.
+    /// </param>
     protected EncryptionRotationService(
         IDbContextFactory<TContext> contextFactory,
         IOptionsMonitor<EncryptionOptions> optionsMonitor,
-        EncryptedEntityBatchProcessorRegistry<TContext> registry)
+        EncryptedEntityBatchProcessorRegistry<TContext> registry,
+        ILogger<EncryptionRotationService<TContext>>? logger = null)
     {
         _contextFactory = contextFactory;
         _optionsMonitor = optionsMonitor;
         _registry = registry;
+        _logger = logger ?? NullLogger<EncryptionRotationService<TContext>>.Instance;
     }
 
     /// <inheritdoc />
@@ -199,6 +212,7 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
                     batchContext.ChangeTracker.AutoDetectChangesEnabled = previousAutoDetect;
                 }
 
+                PersistenceLog.EncryptionRotationBatchProcessed(_logger, batchNumber, batch.Count, fromVersion, toVersion);
                 OnBatchCompleted(batchNumber, batch.Count);
                 batchNumber++;
                 skip += batch.Count;
@@ -210,6 +224,8 @@ public abstract class EncryptionRotationService<TContext> : IEncryptionRotationJ
                 }
             }
         }
+
+        PersistenceLog.EncryptionRotationCompleted(_logger, fromVersion, toVersion, totalProcessed, totalRotated, totalFailed);
 
         return new EncryptionRotationResult(totalProcessed, totalRotated, totalFailed, errors);
     }

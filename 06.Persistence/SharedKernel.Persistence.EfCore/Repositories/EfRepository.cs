@@ -39,10 +39,12 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// <see cref="MarkAsModifiedIfDetached"/> is virtual so subclasses may override the strategy.
 /// </para>
 /// <para>
-/// <strong>Observability (WO-051/P-319):</strong> every public write operation on this class —
-/// <see cref="GetBySpecAsync"/>, <see cref="AddAsync"/>, <see cref="UpdateAsync"/>,
-/// <see cref="DeleteAsync"/>, and their range counterparts — is wrapped in a distributed-tracing
-/// span via <see cref="SharedKernel.Persistence.EfCore.Diagnostics.RepositoryTracing"/>, emitted on
+/// <strong>Observability (WO-051/P-319, extended WO-053/P-333):</strong> every public write
+/// operation on this class — <see cref="GetBySpecAsync"/>, <see cref="GetByIdAsync"/>,
+/// <see cref="ExistsAsync"/>, <see cref="AddAsync"/>, <see cref="UpdateAsync"/>,
+/// <see cref="DeleteAsync"/>, <see cref="RestoreAsync"/>, and their range counterparts — is
+/// wrapped in a distributed-tracing span via
+/// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.RepositoryTracing"/>, emitted on
 /// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceActivitySource"/>
 /// (<c>"SharedKernel.Persistence"</c>/<c>"1.0"</c>) and tagged with
 /// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.PersistenceTagKeys"/>. Bulk mutations
@@ -52,7 +54,7 @@ namespace SharedKernel.Persistence.EfCore.Repositories;
 /// </para>
 /// </remarks>
 public abstract class EfRepository<TAggregate, TId>
-    : IRepository<TAggregate, TId>, IBulkMutationRepository<TAggregate, TId>
+    : IRepository<TAggregate, TId>, IBulkMutationRepository<TAggregate, TId>, IRestorableRepository<TAggregate, TId>
     where TAggregate : class, IAggregateRoot<TId>
     where TId : notnull
 {
@@ -94,24 +96,74 @@ public abstract class EfRepository<TAggregate, TId>
         });
 
     /// <inheritdoc />
-    public virtual async Task<TAggregate?> GetByIdAsync(TId id, CancellationToken ct = default)
-        => await DbContext.Set<TAggregate>().FindAsync([id], ct);
+    /// <remarks>
+    /// Wrapped in a distributed-tracing span (WO-053/P-333) — previously the only two
+    /// <see cref="EfRepository{TAggregate, TId}"/> members not traced via
+    /// <see cref="SharedKernel.Persistence.EfCore.Diagnostics.RepositoryTracing"/>.
+    /// </remarks>
+    public virtual Task<TAggregate?> GetByIdAsync(TId id, CancellationToken ct = default)
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, TAggregate?>(nameof(GetByIdAsync), async () =>
+            await DbContext.Set<TAggregate>().FindAsync([id], ct));
 
     /// <inheritdoc />
     /// <remarks>
     /// Uses an expression-tree predicate (same pattern as <c>ByIdSpecification&lt;TAggregate, TId&gt;</c>)
     /// rather than <c>EF.Property&lt;TId&gt;(e, "Id")</c> — the shadow-property accessor is fragile
     /// on concrete CLR properties. The expression tree is AOT-safe on <see cref="IQueryable{T}"/>.
+    /// Wrapped in a distributed-tracing span (WO-053/P-333) — see <see cref="GetByIdAsync"/>'s remarks.
     /// </remarks>
-    public virtual async Task<bool> ExistsAsync(TId id, CancellationToken ct = default)
-    {
-        var param = Expression.Parameter(typeof(TAggregate), "e");
-        var idProperty = Expression.Property(param, "Id");
-        var idConstant = Expression.Constant(id, typeof(TId));
-        var equals = Expression.Equal(idProperty, idConstant);
-        var predicate = Expression.Lambda<Func<TAggregate, bool>>(equals, param);
-        return await DbContext.Set<TAggregate>().AnyAsync(predicate, ct);
-    }
+    public virtual Task<bool> ExistsAsync(TId id, CancellationToken ct = default)
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate, bool>(nameof(ExistsAsync), async () =>
+        {
+            var param = Expression.Parameter(typeof(TAggregate), "e");
+            var idProperty = Expression.Property(param, "Id");
+            var idConstant = Expression.Constant(id, typeof(TId));
+            var equals = Expression.Equal(idProperty, idConstant);
+            var predicate = Expression.Lambda<Func<TAggregate, bool>>(equals, param);
+            return await DbContext.Set<TAggregate>().AnyAsync(predicate, ct);
+        });
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// WO-053/P-337 — throws <see cref="InvalidOperationException"/> naming
+    /// <typeparamref name="TAggregate"/> when it does not implement
+    /// <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/> — restore has no meaning for a
+    /// non-soft-deletable aggregate. Otherwise reuses <see cref="MarkAsModifiedIfDetached"/> so the
+    /// entry ends up <see cref="EntityState.Modified"/>, then writes
+    /// <c>IsDeleted</c>/<c>DeletedOn</c>/<c>DeletedBy</c> via
+    /// <c>ChangeTracker.Entry(entity).CurrentValues[propertyName]</c> — the same mutation rule that
+    /// governs <c>AuditInterceptor</c>/<c>SoftDeleteInterceptor</c>.
+    /// </para>
+    /// <para>
+    /// Only STAGES the mutation — a subsequent <c>IUnitOfWork.SaveChangesAsync()</c> persists it.
+    /// Restoring an aggregate already not deleted is an idempotent no-op success.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <typeparamref name="TAggregate"/> does not implement
+    /// <see cref="SharedKernel.Domain.Abstractions.ISoftDeletable"/>.
+    /// </exception>
+    public virtual Task RestoreAsync(TAggregate aggregate, CancellationToken ct = default)
+        => RepositoryTracing.ExecuteTracedAsync<TAggregate>(nameof(RestoreAsync), () =>
+        {
+            if (aggregate is not ISoftDeletable)
+            {
+                throw new InvalidOperationException(
+                    $"'{typeof(TAggregate).Name}' does not implement " +
+                    $"'{nameof(ISoftDeletable)}' — '{nameof(RestoreAsync)}' has no meaning for a " +
+                    "non-soft-deletable aggregate.");
+            }
+
+            MarkAsModifiedIfDetached(aggregate);
+
+            var entry = DbContext.Entry(aggregate);
+            entry.CurrentValues[nameof(ISoftDeletable.IsDeleted)] = false;
+            entry.CurrentValues[nameof(ISoftDeletable.DeletedOn)] = null;
+            entry.CurrentValues[nameof(ISoftDeletable.DeletedBy)] = null;
+
+            return Task.CompletedTask;
+        });
 
     /// <inheritdoc />
     public virtual Task AddAsync(TAggregate aggregate, CancellationToken ct = default)

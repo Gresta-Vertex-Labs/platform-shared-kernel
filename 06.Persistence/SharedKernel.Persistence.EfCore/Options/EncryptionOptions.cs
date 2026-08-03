@@ -24,6 +24,15 @@ namespace SharedKernel.Persistence.EfCore.Options;
 public sealed class EncryptionOptions
 {
     /// <summary>
+    /// The configuration section path this type binds from —
+    /// <c>"SharedKernel:Encryption"</c>. Used by
+    /// <c>EfCorePersistenceBuilder.WithEncryption(IConfiguration, ...)</c>
+    /// (WO-053/P-334) instead of a bare <c>GetSection("SharedKernel:Encryption")</c> literal at
+    /// each call site.
+    /// </summary>
+    public const string SectionName = "SharedKernel:Encryption";
+
+    /// <summary>
     /// Master on/off switch. Default is <see langword="false"/> (plaintext pass-through).
     /// </summary>
     public bool Enabled { get; set; } = false;

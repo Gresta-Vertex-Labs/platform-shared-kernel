@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Persistence.Abstractions.Connections;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 
 namespace SharedKernel.Persistence.EfCore.Seeding;
 
@@ -56,7 +59,8 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly bool _runMigrations;
-    private readonly IReadOnlyList<Func<IServiceProvider, TContext, CancellationToken, Task>> _seedSteps;
+    private readonly IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps;
+    private readonly ILogger<MigrationAndSeedHostedService<TContext>> _logger;
 
     /// <summary>
     /// Initialises a new <see cref="MigrationAndSeedHostedService{TContext}"/>.
@@ -64,28 +68,39 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
     /// <param name="serviceProvider">The root service provider, used to create per-step DI scopes.</param>
     /// <param name="runMigrations">Whether to call <c>Database.MigrateAsync</c> on startup.</param>
     /// <param name="seedSteps">
-    /// Closed-generic delegates, one per registered <see cref="IDataSeeder{TContext}"/>, each
-    /// resolving its seeder from the supplied scope's <see cref="IServiceProvider"/> and calling
-    /// <see cref="IDataSeeder{TContext}.SeedAsync"/> with the supplied context — built at
-    /// <c>.AddSeeder&lt;TSeeder&gt;()</c> call time so no reflection is needed here.
+    /// One entry per registered <see cref="IDataSeeder{TContext}"/> — the seeder's own type name
+    /// (captured at <c>.AddSeeder&lt;TSeeder&gt;()</c> call time, for the <c>SeederApplied</c> log,
+    /// WO-053/P-333) paired with a closed-generic delegate resolving its seeder from the supplied
+    /// scope's <see cref="IServiceProvider"/> and calling <see cref="IDataSeeder{TContext}.SeedAsync"/>
+    /// with the supplied context — no reflection is needed here.
+    /// </param>
+    /// <param name="logger">
+    /// Optional logger for the lifecycle Information/Warning logs (EventIds <c>6001</c>-<c>6006</c>,
+    /// WO-053/P-333). Resolved by DI when registered; falls back to <see cref="NullLogger{T}"/>
+    /// otherwise.
     /// </param>
     public MigrationAndSeedHostedService(
         IServiceProvider serviceProvider,
         bool runMigrations,
-        IReadOnlyList<Func<IServiceProvider, TContext, CancellationToken, Task>> seedSteps)
+        IReadOnlyList<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> seedSteps,
+        ILogger<MigrationAndSeedHostedService<TContext>>? logger = null)
     {
         _serviceProvider = serviceProvider;
         _runMigrations = runMigrations;
         _seedSteps = seedSteps;
+        _logger = logger ?? NullLogger<MigrationAndSeedHostedService<TContext>>.Instance;
     }
 
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        var contextTypeName = typeof(TContext).Name;
         var lockKey = typeof(TContext).FullName ?? typeof(TContext).Name;
         var connectionFactory = _serviceProvider.GetService<IDbConnectionFactory>();
 
         System.Data.IDbConnection? lockConnection = null;
+
+        PersistenceLog.MigrationAndSeedStarted(_logger, contextTypeName);
 
         try
         {
@@ -102,6 +117,8 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
                     await dbLockCommand.ExecuteNonQueryAsync(cancellationToken);
                 else
                     lockCommand.ExecuteNonQuery();
+
+                PersistenceLog.AdvisoryLockAcquired(_logger, contextTypeName);
             }
 
             if (_runMigrations)
@@ -111,14 +128,23 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
                 await migrationContext.Database.MigrateAsync(cancellationToken);
             }
 
-            foreach (var seedStep in _seedSteps)
+            foreach (var (seederTypeName, invoke) in _seedSteps)
             {
                 await using var scope = _serviceProvider.CreateAsyncScope();
                 var contextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
                 await using var seedContext = await contextFactory.CreateDbContextAsync(cancellationToken);
 
-                await seedStep(scope.ServiceProvider, seedContext, cancellationToken);
+                await invoke(scope.ServiceProvider, seedContext, cancellationToken);
+
+                PersistenceLog.SeederApplied(_logger, seederTypeName, contextTypeName);
             }
+
+            PersistenceLog.MigrationAndSeedCompleted(_logger, contextTypeName);
+        }
+        catch (Exception ex)
+        {
+            PersistenceLog.MigrationAndSeedFailed(_logger, ex, contextTypeName);
+            throw;
         }
         finally
         {
@@ -140,6 +166,8 @@ internal sealed class MigrationAndSeedHostedService<TContext> : IHostedService
                         await dbUnlockCommand.ExecuteNonQueryAsync(CancellationToken.None);
                     else
                         unlockCommand.ExecuteNonQuery();
+
+                    PersistenceLog.AdvisoryLockReleased(_logger, contextTypeName);
                 }
                 finally
                 {

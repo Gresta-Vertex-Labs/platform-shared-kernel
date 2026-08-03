@@ -246,7 +246,7 @@ public abstract class SharedKernelDbContext : DbContext
         {
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
-        catch (DbUpdateConcurrencyException ex) when (ConcurrencyInterceptor.TryTranslate(ex) is { } conflict)
+        catch (DbUpdateConcurrencyException ex) when (_concurrencyInterceptor.TryTranslate(ex) is { } conflict)
         {
             throw conflict;
         }
@@ -262,7 +262,7 @@ public abstract class SharedKernelDbContext : DbContext
         {
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
-        catch (DbUpdateConcurrencyException ex) when (ConcurrencyInterceptor.TryTranslate(ex) is { } conflict)
+        catch (DbUpdateConcurrencyException ex) when (_concurrencyInterceptor.TryTranslate(ex) is { } conflict)
         {
             throw conflict;
         }

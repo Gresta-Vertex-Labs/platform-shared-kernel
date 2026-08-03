@@ -19,6 +19,14 @@ namespace SharedKernel.Persistence.EfCore.Options;
 public sealed class PersistenceServiceOptions
 {
     /// <summary>
+    /// The configuration section path this type binds from —
+    /// <c>"SharedKernel:Persistence"</c>. Used by
+    /// <c>EfCorePersistenceBuilder.WithServiceName(IConfiguration)</c> (WO-053/P-334) instead of a
+    /// bare <c>GetSection("SharedKernel:Persistence")</c> literal at each call site.
+    /// </summary>
+    public const string SectionName = "SharedKernel:Persistence";
+
+    /// <summary>
     /// The service identity string written to audit columns (<c>CreatedBy</c>, <c>ModifiedBy</c>,
     /// <c>DeletedBy</c>) when the current request is unauthenticated or when running in a
     /// background context. Defaults to <c>"system"</c>.

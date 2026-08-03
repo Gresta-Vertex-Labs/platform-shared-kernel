@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Persistence.EfCore.Interceptors;
@@ -50,9 +53,35 @@ namespace SharedKernel.Persistence.EfCore.Interceptors;
 /// involve <see cref="IHasConcurrency"/> entries are left untranslated by <see cref="TryTranslate"/>
 /// (returns <see langword="null"/>) and propagate unchanged.
 /// </para>
+/// <para>
+/// <strong>Structured logging (WO-053/P-333):</strong> <see cref="TryTranslate"/> is a
+/// non-static instance method specifically so it can log via this interceptor's own injected
+/// <see cref="ILogger{TCategoryName}"/> — a <c>ConcurrencyConflictDetected</c> Warning
+/// (EventId <c>6000</c>) is emitted immediately before the translated
+/// <see cref="ConflictException"/> is returned, naming only the conflicting entry's CLR type —
+/// never the row payload. <see cref="Context.SharedKernelDbContext"/>'s catch-filter calls this
+/// method via its own held <c>_concurrencyInterceptor</c> field (already constructor-injected, no
+/// new plumbing), so both <c>SaveChanges</c> and <c>SaveChangesAsync</c> pick up the logging
+/// automatically.
+/// </para>
 /// </remarks>
 public sealed class ConcurrencyInterceptor : SaveChangesInterceptor
 {
+    private readonly ILogger<ConcurrencyInterceptor> _logger;
+
+    /// <summary>
+    /// Initialises a new <see cref="ConcurrencyInterceptor"/>.
+    /// </summary>
+    /// <param name="logger">
+    /// Optional logger for the <c>ConcurrencyConflictDetected</c> Warning (EventId <c>6000</c>).
+    /// Resolved by DI when registered; falls back to <see cref="NullLogger{T}"/> otherwise so every
+    /// existing <c>new ConcurrencyInterceptor()</c> call site remains source-compatible.
+    /// </param>
+    public ConcurrencyInterceptor(ILogger<ConcurrencyInterceptor>? logger = null)
+    {
+        _logger = logger ?? NullLogger<ConcurrencyInterceptor>.Instance;
+    }
+
     /// <inheritdoc />
     /// <remarks>
     /// No-op beyond the base implementation — see the class remarks for why this hook cannot
@@ -83,16 +112,18 @@ public sealed class ConcurrencyInterceptor : SaveChangesInterceptor
     /// otherwise <see langword="null"/> — the caller must let <paramref name="exception"/>
     /// propagate unchanged in that case.
     /// </returns>
-    internal static ConflictException? TryTranslate(Exception exception)
+    internal ConflictException? TryTranslate(Exception exception)
     {
         if (exception is not DbUpdateConcurrencyException concurrencyEx)
             return null;
 
-        var affectsHasConcurrency = concurrencyEx.Entries
-            .Any(e => e.Entity is IHasConcurrency);
+        var conflictingEntry = concurrencyEx.Entries
+            .FirstOrDefault(e => e.Entity is IHasConcurrency);
 
-        if (!affectsHasConcurrency)
+        if (conflictingEntry is null)
             return null;
+
+        PersistenceLog.ConcurrencyConflictDetected(_logger, conflictingEntry.Entity.GetType().Name);
 
         return new ConflictException(
             Error.Conflict(

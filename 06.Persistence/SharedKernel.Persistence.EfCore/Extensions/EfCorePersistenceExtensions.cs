@@ -1,19 +1,24 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
 using SharedKernel.Persistence.EfCore.Context;
+using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.MultiTenancy;
 using SharedKernel.Persistence.EfCore.Options;
+using SharedKernel.Persistence.EfCore.ReadReplica;
 using SharedKernel.Persistence.EfCore.Seeding;
 using SharedKernel.Persistence.EfCore.Specifications;
 using SharedKernel.Persistence.EfCore.UnitOfWork;
@@ -97,13 +102,16 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _applicationTransactionBehaviorEnabled;
     private bool _registerFactory;
     private bool _registerEncryption;
+    private bool _serviceNameValidationRegistered;
     private bool _migrationsOnStartup;
     private bool _dbContextPoolingEnabled;
     private int _poolSize = 1024;
     private IModel? _compiledModel;
     private TransientFaultRetryOptions? _transientFaultRetryOptions;
+    private int? _commandTimeoutSeconds;
+    private Action<DbContextOptionsBuilder>? _readReplicaConfigureDb;
     private readonly List<Type> _additionalInterceptorTypes = [];
-    private readonly List<Func<IServiceProvider, TContext, CancellationToken, Task>> _seedSteps = [];
+    private readonly List<(string SeederTypeName, Func<IServiceProvider, TContext, CancellationToken, Task> Invoke)> _seedSteps = [];
 
     internal EfCorePersistenceBuilder(
         IServiceCollection services,
@@ -170,6 +178,78 @@ public sealed class EfCorePersistenceBuilder<TContext>
     }
 
     /// <summary>
+    /// Configures a command timeout applied to every command issued by <typeparamref name="TContext"/>.
+    /// </summary>
+    /// <param name="commandTimeoutSeconds">The command timeout, in seconds.</param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// WO-053/P-337 — wraps the caller-supplied <c>configureDb</c> action, the same wrapping
+    /// pattern <see cref="WithCompiledModel"/> already uses for <c>.UseModel(compiledModel)</c>.
+    /// <strong>CORRECTED against the originally-planned design</strong>: plain
+    /// <see cref="DbContextOptionsBuilder"/> has no provider-neutral <c>CommandTimeout(...)</c>
+    /// method of its own — confirmed by direct compilation against the real EF Core 10.0.5
+    /// package; that member exists only as an instance method on the provider-specific
+    /// <c>RelationalDbContextOptionsBuilder&lt;TBuilder,TExtension&gt;</c> returned from
+    /// <c>UseNpgsql(...)</c>'s own configuration callback, unreachable here without an Npgsql
+    /// reference. The genuinely provider-neutral mechanism — verified end-to-end against a real
+    /// constructed <see cref="DbContext"/>, confirming <c>Database.GetCommandTimeout()</c> reflects
+    /// it — locates the already-registered
+    /// <see cref="Microsoft.EntityFrameworkCore.Infrastructure.RelationalOptionsExtension"/> (the
+    /// base type every provider's own options extension derives from) via a covariant
+    /// <c>.OfType&lt;T&gt;()</c> scan of <c>Options.Extensions</c> (unlike
+    /// <c>DbContextOptions.FindExtension&lt;T&gt;()</c>, which requires an exact type match and
+    /// returns <see langword="null"/> for a base type), calls its immutable-with
+    /// <c>WithCommandTimeout(...)</c>, and re-registers the updated extension via
+    /// <c>AddOrUpdateExtension</c>. Never references any Npgsql type by name — deliberately NOT
+    /// placed on <c>UsePostgreSQL(...)</c> (<c>SharedKernel.Persistence.PostgreSQL</c>), unlike the
+    /// genuinely Npgsql-only <c>EnableRetryOnFailure</c> (P-320).
+    /// </para>
+    /// <para>Optional. Omitting this call preserves today's provider-default command timeout exactly.</para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithCommandTimeout(int commandTimeoutSeconds)
+    {
+        _commandTimeoutSeconds = commandTimeoutSeconds;
+        return this;
+    }
+
+    /// <summary>
+    /// Opts in to routing <see cref="Repositories.IReadRepository{TAggregate,TId}"/> reads to a
+    /// separate PostgreSQL read-replica connection, distinct from the primary connection writes
+    /// always use.
+    /// </summary>
+    /// <param name="configureReplicaDb">
+    /// Action that configures the replica <see cref="DbContextOptionsBuilder"/> (e.g., sets the
+    /// replica connection string via <c>options.UseNpgsql(replicaConnectionString)</c>). Mirrors
+    /// <see cref="EfCorePersistenceExtensions.AddSharedKernelEfCore{TContext}"/>'s own
+    /// <c>configureDb</c> parameter shape — this builder itself never references Npgsql.
+    /// </param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// WO-053/P-338 — see the "Read-Replica Routing" section of <c>06.Persistence/CLAUDE.md</c> for
+    /// the full design. Registers a keyed singleton <c>DbContextOptions&lt;TContext&gt;</c> for the
+    /// replica plus a scoped <see cref="ReadReplica.IReadReplicaContextAccessor{TContext}"/> that
+    /// lazily constructs the replica <typeparamref name="TContext"/> instance (once per DI scope,
+    /// cached thereafter) via <c>ActivatorUtilities.CreateInstance&lt;TContext&gt;</c>, reusing the
+    /// same scope-ambient, DI-resolved interceptor instances the primary context already resolved.
+    /// </para>
+    /// <para>
+    /// READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE ENABLED — a handler
+    /// that writes then immediately reads via <c>IReadRepository</c> in the same logical operation
+    /// MAY OBSERVE STALE DATA under replication lag. A read issued inside an active transaction is
+    /// NEVER routed to the replica, even when this is configured.
+    /// </para>
+    /// <para>Optional. Omitting this call leaves every read/write on the single primary connection.</para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithReadReplica(Action<DbContextOptionsBuilder> configureReplicaDb)
+    {
+        ArgumentNullException.ThrowIfNull(configureReplicaDb);
+        _readReplicaConfigureDb = configureReplicaDb;
+        return this;
+    }
+
+    /// <summary>
     /// Opts in to explicit transaction support by registering
     /// <see cref="ITransactionalUnitOfWork"/> → <see cref="EfTransactionalUnitOfWork"/> (scoped).
     /// </summary>
@@ -225,14 +305,65 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithEncryption(Action<EncryptionOptions>? configure = null)
     {
-        _registerEncryption = true;
+        EnsureEncryptionInfrastructureRegistered();
 
-        var optionsBuilder = _services.AddOptions<EncryptionOptions>();
         if (configure is not null)
         {
-            optionsBuilder.Configure(configure);
+            _services.AddOptions<EncryptionOptions>().Configure(configure);
         }
 
+        return this;
+    }
+
+    /// <summary>
+    /// Opts in to field-level AES-256-GCM transparent encryption, binding
+    /// <see cref="EncryptionOptions"/> from <paramref name="configuration"/>'s
+    /// <see cref="EncryptionOptions.SectionName"/> section.
+    /// </summary>
+    /// <param name="configuration">The application's <see cref="IConfiguration"/>.</param>
+    /// <param name="configure">
+    /// Optional additional code-based configuration, layered on top of the bound values under
+    /// normal <c>IOptions&lt;T&gt;</c> later-registration-wins semantics.
+    /// </param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// WO-053/P-334 — binds via <c>configuration.GetSection(EncryptionOptions.SectionName)</c>,
+    /// never a bare <c>"SharedKernel:Encryption"</c> literal. Composes with the pre-existing
+    /// <see cref="WithEncryption(Action{EncryptionOptions}?)"/> overload — both may be chained; the
+    /// eager startup validation registered by <see cref="EnsureEncryptionInfrastructureRegistered"/>
+    /// is idempotent across repeated <c>.WithEncryption(...)</c> calls in the same builder chain.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithEncryption(
+        IConfiguration configuration,
+        Action<EncryptionOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        EnsureEncryptionInfrastructureRegistered();
+
+        _services.AddOptions<EncryptionOptions>()
+            .Bind(configuration.GetSection(EncryptionOptions.SectionName));
+
+        if (configure is not null)
+        {
+            _services.AddOptions<EncryptionOptions>().Configure(configure);
+        }
+
+        return this;
+    }
+
+    // Registers the encryption infrastructure exactly once regardless of how many .WithEncryption(...)
+    // overloads are chained — idempotent-validation-registration guard (WO-053/P-334).
+    private void EnsureEncryptionInfrastructureRegistered()
+    {
+        if (_registerEncryption)
+            return;
+
+        _registerEncryption = true;
+
+        _services.AddOptions<EncryptionOptions>();
         _services.AddSingleton<IValidateOptions<EncryptionOptions>, EncryptionOptionsValidator>();
         _services.AddOptions<EncryptionOptions>().ValidateOnStart();
 
@@ -253,8 +384,6 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // This is the IEncryptionKeyProvider that backs EncryptedValueConverter's ISymmetricEncryptionService
         // for the persistence layer specifically.
         _services.AddScoped<IEncryptionKeyProvider, EncryptionOptionsKeyProvider>();
-
-        return this;
     }
 
     /// <summary>
@@ -270,13 +399,50 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// </remarks>
     public EfCorePersistenceBuilder<TContext> WithServiceName(string serviceName)
     {
+        EnsureServiceNameInfrastructureRegistered();
+
         _services.AddOptions<PersistenceServiceOptions>()
             .Configure(o => o.ServiceName = serviceName);
 
-        _services.AddSingleton<IValidateOptions<PersistenceServiceOptions>, PersistenceServiceOptionsValidator>();
-        _services.AddOptions<PersistenceServiceOptions>().ValidateOnStart();
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the unauthenticated audit fallback string, binding
+    /// <see cref="PersistenceServiceOptions"/> from <paramref name="configuration"/>'s
+    /// <see cref="PersistenceServiceOptions.SectionName"/> section.
+    /// </summary>
+    /// <param name="configuration">The application's <see cref="IConfiguration"/>.</param>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// WO-053/P-334 — binds via <c>configuration.GetSection(PersistenceServiceOptions.SectionName)</c>,
+    /// never a bare <c>"SharedKernel:Persistence"</c> literal. Composes with the pre-existing
+    /// <see cref="WithServiceName(string)"/> overload under normal <c>IOptions&lt;T&gt;</c>
+    /// later-registration-wins semantics.
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithServiceName(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        EnsureServiceNameInfrastructureRegistered();
+
+        _services.AddOptions<PersistenceServiceOptions>()
+            .Bind(configuration.GetSection(PersistenceServiceOptions.SectionName));
 
         return this;
+    }
+
+    // Idempotent-validation-registration guard mirroring EnsureEncryptionInfrastructureRegistered
+    // (WO-053/P-334).
+    private void EnsureServiceNameInfrastructureRegistered()
+    {
+        if (_serviceNameValidationRegistered)
+            return;
+
+        _serviceNameValidationRegistered = true;
+
+        _services.AddSingleton<IValidateOptions<PersistenceServiceOptions>, PersistenceServiceOptionsValidator>();
+        _services.AddOptions<PersistenceServiceOptions>().ValidateOnStart();
     }
 
     /// <summary>
@@ -352,7 +518,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     /// </para>
     /// <para>
     /// Cannot be combined with <see cref="WithDbContextFactory"/> (both would register a conflicting
-    /// <c>IDbContextFactory&lt;TContext&gt;</c>) or with <see cref="WithEncryption"/> (its
+    /// <c>IDbContextFactory&lt;TContext&gt;</c>) or with <see cref="WithEncryption(Action{EncryptionOptions}?)"/> (its
     /// <c>IEncryptionVersionOverride</c> rotation-scoped seam has the identical constructor-capture
     /// staleness hazard this method's redesign fixes for user/tenant context, and has not yet been
     /// proven safe under pooling) — both combinations throw an actionable
@@ -385,8 +551,9 @@ public sealed class EfCorePersistenceBuilder<TContext>
         where TSeeder : class, IDataSeeder<TContext>
     {
         _services.AddScoped<TSeeder>();
-        _seedSteps.Add(static (sp, context, ct) =>
-            sp.GetRequiredService<TSeeder>().SeedAsync(context, ct));
+        _seedSteps.Add((
+            typeof(TSeeder).Name,
+            static (sp, context, ct) => sp.GetRequiredService<TSeeder>().SeedAsync(context, ct)));
         return this;
     }
 
@@ -431,6 +598,12 @@ public sealed class EfCorePersistenceBuilder<TContext>
         if (_transientFaultRetryOptions is not null)
         {
             _services.AddSingleton(_transientFaultRetryOptions);
+
+            // WO-053/P-333: the retry-attempt diagnostic listener subscribes to EF Core's own
+            // provider-neutral CoreEventId.ExecutionStrategyRetrying diagnostic event. Registered
+            // as a hosted service so its DiagnosticListener.AllListeners subscription is active for
+            // the app's lifetime — never registered when WithTransientFaultRetry() was not called.
+            _services.AddHostedService<PersistenceRetryDiagnosticListener>();
         }
 
         // Register PersistenceServiceOptions default if not already configured by WithServiceName().
@@ -456,14 +629,40 @@ public sealed class EfCorePersistenceBuilder<TContext>
                         $"Type '{interceptorType.Name}' does not implement ISaveChangesInterceptor."));
         }
 
-        // Build effective configureDb action — wrap with compiled model if supplied.
-        Action<DbContextOptionsBuilder> effectiveConfigureDb = _compiledModel is not null
-            ? options =>
-            {
-                _configureDb(options);
+        // Build effective configureDb action — wrap with compiled model and/or command timeout if supplied.
+        Action<DbContextOptionsBuilder> effectiveConfigureDb = options =>
+        {
+            _configureDb(options);
+
+            if (_compiledModel is not null)
                 options.UseModel(_compiledModel);
+
+            if (_commandTimeoutSeconds is not null)
+            {
+                // WO-053/P-337: DbContextOptionsBuilder has no provider-neutral CommandTimeout(...)
+                // method of its own — CONFIRMED via direct compilation against the real EF Core 10.0.5
+                // package (that method exists only as an INSTANCE member on the provider-specific
+                // RelationalDbContextOptionsBuilder<TBuilder,TExtension> returned from
+                // UseNpgsql(...)'s own configuration callback, unreachable here without an Npgsql
+                // reference). The genuinely provider-neutral mechanism — verified end-to-end against a
+                // real constructed DbContext, confirming Database.GetCommandTimeout() reflects it — is
+                // to locate the already-registered RelationalOptionsExtension (the base type every
+                // provider's own options extension derives from) via a covariant .OfType<T>() scan of
+                // Options.Extensions (DbContextOptions.FindExtension<T>() requires an EXACT type match
+                // and returns null for a base type), call its immutable-with WithCommandTimeout(...),
+                // and re-register the updated extension via AddOrUpdateExtension. Never references any
+                // Npgsql type by name.
+                var relationalExtension = options.Options.Extensions
+                    .OfType<RelationalOptionsExtension>()
+                    .FirstOrDefault();
+
+                if (relationalExtension is not null)
+                {
+                    var updatedExtension = relationalExtension.WithCommandTimeout(_commandTimeoutSeconds);
+                    ((IDbContextOptionsBuilderInfrastructure)options).AddOrUpdateExtension(updatedExtension);
+                }
             }
-            : _configureDb;
+        };
 
         // Register DbContext using the caller-supplied options action.
         // Interceptors are wired via SharedKernelDbContext.OnConfiguring for the non-pooled path.
@@ -500,7 +699,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 {
                     new AuditInterceptor(placeholderUserContext, clock, serviceOptions),
                     new SoftDeleteInterceptor(placeholderUserContext, clock, serviceOptions),
-                    new ConcurrencyInterceptor(),
+                    new ConcurrencyInterceptor(sp.GetService<ILogger<ConcurrencyInterceptor>>()),
                 };
                 foreach (var interceptorType in _additionalInterceptorTypes)
                 {
@@ -542,6 +741,26 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
         // Register TContext also as the base SharedKernelDbContext so EfUnitOfWork resolves it.
         _services.AddScoped<SharedKernelDbContext>(sp => sp.GetRequiredService<TContext>());
+
+        // WO-053/P-338: read-replica routing — opt-in via .WithReadReplica(...). Registers the
+        // replica's DbContextOptions<TContext> as a keyed singleton, then a scoped
+        // IReadReplicaContextAccessor<SharedKernelDbContext> that lazily constructs the replica
+        // TContext instance (once per DI scope) via ActivatorUtilities.CreateInstance<TContext>,
+        // reusing the current scope's own DI-resolved interceptor instances. Omitted entirely when
+        // .WithReadReplica(...) was never called — every EfReadRepository read then targets the
+        // single primary connection, provably unchanged.
+        if (_readReplicaConfigureDb is not null)
+        {
+            var replicaOptionsBuilder = new DbContextOptionsBuilder<TContext>();
+            _readReplicaConfigureDb(replicaOptionsBuilder);
+            var replicaOptions = replicaOptionsBuilder.Options;
+
+            _services.AddKeyedSingleton(ReadReplicaKeys.ReplicaOptions, replicaOptions);
+            _services.AddScoped<IReadReplicaContextAccessor<SharedKernelDbContext>>(sp =>
+                new ReadReplicaContextAccessor<TContext>(
+                    sp,
+                    sp.GetRequiredKeyedService<DbContextOptions<TContext>>(ReadReplicaKeys.ReplicaOptions)));
+        }
 
         if (_transactionalUnitOfWorkEnabled)
         {
@@ -646,7 +865,11 @@ public sealed class EfCorePersistenceBuilder<TContext>
             var seedSteps = _seedSteps.ToArray();
 
             _services.AddHostedService<MigrationAndSeedHostedService<TContext>>(sp =>
-                new MigrationAndSeedHostedService<TContext>(sp, migrationsOnStartup, seedSteps));
+                new MigrationAndSeedHostedService<TContext>(
+                    sp,
+                    migrationsOnStartup,
+                    seedSteps,
+                    sp.GetService<ILogger<MigrationAndSeedHostedService<TContext>>>()));
         }
 
         return _services;
