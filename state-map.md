@@ -74,7 +74,7 @@ Format when blocked:
 | 03 | [Domain](03.Domain/state-map.md) | Published | `●` | SK.03.Published (WO-051, P-11) closed — `SharedKernel.Domain` re-packed and re-verified at `1.7.0`: `.nuspec` manifest confirmed to list exactly `SharedKernel.Primitives`/`SharedKernel.Core`/`SharedKernel.Guards` as dependencies (zero external NuGet); `consumer-verify` extended with 10 new PackageReference-resolved tests covering every WO-051 addition (`KeysetSpecification<T,TKey>`, `AsSplitQuery`, `IHasAggregateId<TId>`, `ValueObject.TryCreate<T>`, `IPolicy<T>.Explain` DIM, `Specification<T>.Create(criteria)`) plus the P-307 composite `Includes`/`StringIncludes` union-propagation regression check — 28/28 consumer tests green, 317/317 domain tests green. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●` — WO-051 v1.7.0 cycle complete end to end. | — |
 | 04 | [Contracts](04.Contracts/state-map.md) | Published | `●` | WO-052's SK.04.Published (8/8) now `●` — `SharedKernel.Contracts` re-packed and shipped at `2.0.0` (breaking `Envelope`→`Envelopes` namespace rename + additive `EventEnvelope<TEvent>.TenantId` + `CursorPagedList<T>`), release notes call out the breaking change explicitly; `consumer-verify` fixed its stale `using SharedKernel.Contracts.Envelope;` and extended to 7 surfaces (TenantId with/without, `CursorPagedList<string>` STJ round-trip via the merged `TypeInfoResolverChain`) — all pass; 87/87 tests green, zero regressions. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●` — WO-052 v2.0.0 cycle complete end to end. Empirically verified (throwaway harness against the real compiled assembly, not assumed) that `CursorPagedList<T>` needs zero exemption from `00.Governance`'s `ContractsPurityRules` domain-type/`Result`-type public-surface rules — identical to its sibling `PagedList<T>`; separately found (out of this domain's jurisdiction, not fixed here) that `ContractsAssembliesHaveNoNonTrivialMethods` fails against the real assembly for every factory-method-bearing type in the package, including ones shipped since 1.0.0 — a pre-existing `00.Governance` predicate gap (never previously run against a real assembly) that `CursorPagedList<T>` merely inherits, not a regression this phase introduced; recorded as a candidate follow-up for `00.Governance`. | — |
 | 05 | [Application](05.Application/state-map.md) | Docs | `●` | WO-041 (P-253, `[LoggerMessage]` logging-authoring retrofit) now fully `●` through Docs (Design/Scaffold/Core/Tests/Docs = 71/19/75/68/24, all `●`) — `LoggingBehavior<,>`/`FireAndForgetBackgroundConsumer`/`ChannelFireAndForgetDispatcher`/`StreamLoggingBehavior<,>` converted to `[LoggerMessage]`-attributed partial methods with `EventId`s 5100-5199, 100% XML doc coverage confirmed, README EventId table added, stale "design-only" phrasing swept from `CLAUDE.md`; `SharedKernel.Application.Behaviors.Tests` 132/132. The `05.Application` candidate follow-up flagged by `00.Governance`'s P-299 (SK0030 `ResultOutcomeDiscardedAnalyzer` real-source audit — a discarded `Result.Failure` in `FireAndForgetBackgroundConsumer.cs:57`) is now fixed: the outcome is logged at `Warning` (EventId 5112) before being discarded, closing the silent-failure telemetry gap. | Published (P-20..P-22 for WO-041, plus P-01..P-19 for WO-035/036/038/039/040) is the only phase left before this domain is fully published. |
-| 06 | [Persistence](06.Persistence/state-map.md) | Published | `●` | SK.06.Published closed (8/8) — P-05..P-08 verified: all four `.csproj` files already had `PackageReadmeFile`/the README `<None Include>` item wired from a prior unclosed session (WO-051/P-324); `dotnet pack` re-run this session for all four packages produced clean `.nupkg`+`.snupkg` with zero `NU5039`/`NU5128` warnings, README.md confirmed physically present in each package root via `unzip -l`. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●`. In the same pass, direct source verification (not README-trusting) confirmed all nine other WO-051 phases (P-315..P-325, excluding the two cross-domain follow-ons) were already genuinely shipped in code/tests with explicit `WO-051/P-3xx` annotations — their root Phase Backlog entries had simply never been individually closed; all closed below. | — |
+| 06 | [Persistence](06.Persistence/state-map.md) | Design | `●` | SK.06.Design reopened and closed again (WO-053, D-85..D-103, 103/103) — the six-phase WO-053 design (P-333 structured logging, P-334 config-binding overloads, P-336 Testcontainers fixture consolidation, P-337 soft-delete restore + command timeout, P-338 read-replica routing, P-339 pgvector nearest-neighbor ordering) reconciled against real shipped source rather than trusted from the planning pass's prose. Two genuine drifts found and corrected in `06.Persistence/CLAUDE.md`: `ConcurrencyInterceptor`'s Warning log was designed against `SaveChangesFailed`/`SaveChangesFailedAsync`, which are permanent documented no-ops per the already-shipped WO-051/P-315 fix — the real translation/logging point is `ConcurrencyInterceptor.TryTranslate` called from `SharedKernelDbContext.SaveChanges`/`SaveChangesAsync`, throwing `ConflictException` (no `ConcurrencyException` type exists); and the pgvector distance-function helper was designed against a nonexistent `Pgvector.EntityFrameworkCore.VectorExtensions` type — the real, reflection-confirmed type is `VectorDbFunctionsExtensions`, exposing six `(object,object)`-signature members, not two `(Vector,Vector)` ones (the `Cosine`/`L2`-only scope itself remains correct — only its stated justification was wrong). SK.06.Core (C-129..C-145)/Tests/Docs remain pending. | Implement SK.06.Core (C-129..C-145) — the actual `[LoggerMessage]`/config-binding/restore/read-replica/pgvector-ordering production code. |
 | 07 | [Messaging](07.Messaging/state-map.md) | LoggingRetrofit | `●` | SK.07.LoggingRetrofit complete (22/22, P-254/P-263) — `[LoggerMessage]` retrofit of `ConsumerBase`/`BatchConsumerBase`/`FaultConsumerAdapter`/`RoutingSlipActivityBase`/`VersionTranslatingConsumer`/`TranslatorRegistrationValidator` with EventIds 7001-7009 in the reserved 7000-7999 range; `MessagingLogScope.CorrelationIdKey` named constant now backs the shared `BeginScope` correlation entry (replacing the bare `"CorrelationId"` literal); verified zero EventId collisions/SK0020-SK0021 diagnostics; 108/108 MassTransit tests green. | — |
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
 | 09 | [Search](09.Search/state-map.md) | Published | `●` | SK.09.Published complete (8/8) — all three packages re-verified NuGet-metadata-complete and packed clean (`.nupkg`+`.snupkg`, zero `NU5039`/`NU5128`); a new `09.Search/consumer-verify/` area (three real `IHost.StartAsync()` console harnesses — Meilisearch/, ElasticSearch/, BothProviders/) consumer-verifies DI resolution of every neutral/provider-exclusive contract, singleton lifetimes, raw-client gating, startup-time `OptionsValidationException` naming the missing property, the same-`TDocument` dual-registration hard violation, and — the most load-bearing check — capability segregation confirmed as a genuine, captured `CS0234`/`CS0246` build-time compiler failure in both directions, not asserted in prose. All 345 tests still green. All six phases now `●` for all three `SharedKernel.Search.*` packages — 09.Search domain (WO-044) complete end to end. | — |
@@ -110,7 +110,7 @@ Format when active:
 
 | Phase | Domains |
 |-------|---------|
-| ● Published | 12 |
+| ● Published | 11 |
 | ● Docs | 2 |
 | ● Phase 41 (Distributed Tracing ActivitySource Spans for Cache Read/Write Operations) | 1 |
 | ● LoggingRetrofit | 1 |
@@ -123,7 +123,7 @@ Format when active:
 | ● Grpc | 0 |
 | ● Tests | 1 |
 | ● Core | 0 |
-| ● Design | 0 |
+| ● Design | 1 |
 | ● Scaffold | 0 |
 | ◐ In Progress | 0 |
 | ⚑ Blocked | 0 |
@@ -1755,6 +1755,171 @@ A new sealed record DTO — the cursor/keyset-pagination counterpart to the exis
 - [ ] `00.Governance`'s `ContractsPurityRules` (no non-trivial methods, no domain-type leakage) pass against the new type with zero exemption needed
 - [ ] Package README gains a Quick-Start section for the new type, cross-referencing `PagedList<T>` and stating explicitly when to use one over the other
 - [ ] `dotnet build`/`dotnet test`/`consumer-verify` green; package version bumped (additive, non-breaking)
+---
+
+---
+### P-333 — Persistence: Observability Completeness (Structured Logging Retrofit + Repository Tracing Gap)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-053
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+Close the platform's WO-041 `[LoggerMessage]` structured-logging mandate for `06.Persistence`, which today emits zero production log output across all four packages despite `01.Core`'s `LoggingEventIdRanges` registry already reserving the domain's `6000-6999` block. Add `[LoggerMessage]`-attributed, explicit-`EventId` log statements (sub-block `6000-6099`, first package in declaration order) at the highest-value currently-silent operational points: the `ConcurrencyInterceptor`'s `DbUpdateConcurrencyException`→`ConflictException` translation (log the conflicting entity's CLR type name at minimum — never the row payload); the migration/seeder hosted service's start, per-seeder-applied, overall-completion, and failure lifecycle, plus its advisory-lock acquire/release; the opt-in transient-fault retry path (`EnableRetryOnFailure`/`ExecuteInTransactionAsync`) logging when a retry actually fires and the attempt number, distinctly from final exhaustion; and the encryption key-rotation job's batch progress (batch boundary, rows processed, completion) without ever logging key material or plaintext/ciphertext values. Pair this with a smaller, thematically-related gap in the same pass: `EfRepository<TAggregate,TId>.GetByIdAsync` and `.ExistsAsync` are the only two public members on that class not wrapped in the existing `RepositoryTracing` helper every sibling read/write method already uses — bring both into the same tracing coverage.
+
+#### Why this is needed
+This is the one platform-mandated cross-cutting convention (WO-041's `[LoggerMessage]`/`EventId`-range logging standard) that `06.Persistence` visibly skipped while shipping eleven other WO-051 fixes three days ago in the same review pass — every other foundational domain that has undergone a gold-standard pass since WO-041 (`05.Application`, `07.Messaging`, `15.Integration`) already completed its retrofit. The four chosen spots are precisely the moments an operator debugging a live incident needs visibility into — why a write failed, whether a migration/seed step actually ran on a given pod, whether the database is genuinely flaky right now, and how far a live key rotation has progressed — and today all four fail completely silently, forcing whoever is on call to read source code to understand what happened. The tracing gap is smaller but real: `GetByIdAsync`/`ExistsAsync` are among the most frequently called repository members in any real service, so their absence from the trace is disproportionately impactful relative to its near-trivial fix.
+
+#### Acceptance criteria
+- [ ] All new production log statements use the `[LoggerMessage]` source-generated partial-method pattern with an explicit `EventId` inside `06.Persistence`'s reserved `6000-6099` sub-block; zero direct `ILogger.LogX(...)` calls introduced
+- [ ] `ConcurrencyInterceptor`'s exception-translation path logs at `Warning` with the conflicting entity's CLR type name before throwing `ConflictException`
+- [ ] Migration/seeder hosted-service lifecycle (start, per-seeder applied, overall completion, failure) and its advisory-lock acquire/release are logged at `Information`/`Warning` as appropriate
+- [ ] A retry firing on the `EnableRetryOnFailure`/`ExecuteInTransactionAsync` path logs at `Warning` with the attempt number; final exhaustion after all retries logs distinctly from an individual retry
+- [ ] Encryption key-rotation batch progress is logged at `Information` (batch boundary, rows processed, completion) without ever logging key material or decrypted/encrypted payload values
+- [ ] `EfRepository<TAggregate,TId>.GetByIdAsync` and `.ExistsAsync` are wrapped in the same `RepositoryTracing` helper every sibling method already uses, producing a span identical in shape to `GetBySpecAsync`'s
+- [ ] Message templates use PascalCase named placeholders; CorrelationId/TraceId/TenantId are never passed as explicit template parameters (ambient propagation only, per the platform's Logging Conventions)
+- [ ] `06.Persistence/CLAUDE.md`'s Observability section and traced-operations table are updated to reflect both the new EventIds and the closed tracing gap
+- [ ] `dotnet build`/`dotnet test` green with zero regressions across all four `06.Persistence` test projects; new tests assert the new log/trace output fires under the right conditions
+---
+
+---
+### P-334 — Persistence: Real Named Configuration-Section Binding for EncryptionOptions and PersistenceServiceOptions
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-053
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+`EncryptionOptions`'s and `PersistenceServiceOptions`'s own XML documentation each claim the type is "bound to" a specific configuration section (`SharedKernel:Encryption` and `SharedKernel:Persistence` respectively) — but neither `EfCorePersistenceBuilder.WithEncryption()` nor `.WithServiceName()` ever calls `IConfiguration.GetSection(...)`; both accept only a code-based `Action<T>` configure delegate today. Add a genuine, opt-in `IConfiguration`-based binding path for both options types, anchored by a `public const string SectionName` colocated on each Options type (per the platform's Magic String / Named Constants convention), so a consumer who wants `appsettings.json`-driven configuration — the overwhelmingly common case for anything encryption-key-version or service-identity related — has a real, discoverable path to do so. The existing code-based `Action<T>` delegate path remains fully supported and unchanged; configuration-section binding is an additional, non-exclusive option.
+
+#### Why this is needed
+This is a confirmed, live doc/code mismatch: the XML doc over-promises a capability that silently does not exist, and today's only way to even learn the intended section name is to read the doc comment and hand-type it — there is no compile-time-anchored constant a consumer's own composition root can reference. Both options types govern genuinely operational, per-environment concerns (which AES key version is active, what string appears in the audit-fallback field) that ops teams expect to set per-environment without a code change. Forcing every consumer back to a hand-written `Action<T>` delegate for something this ordinary is a real developer-experience gap relative to how Options-pattern types behave elsewhere on this platform, and it is exactly the class of gap the Magic String convention exists to prevent from recurring.
+
+#### Acceptance criteria
+- [ ] `EncryptionOptions` and `PersistenceServiceOptions` each expose a `public const string SectionName`
+- [ ] A new opt-in path binds each type from `IConfiguration` using its own `SectionName` constant — never a bare `GetSection("...")` string literal at the call site
+- [ ] The existing `Action<T>` delegate configuration path is unchanged and remains fully supported; both paths may be composed, matching normal `IOptions<T>` layering semantics
+- [ ] XML doc on both types is corrected to describe the real, now-true binding behavior — no remaining doc claim unbacked by actual code
+- [ ] `00.Governance`'s SK0022 analyzer passes against the new binding call sites (named constant used, not a literal)
+- [ ] New tests prove configuration-section binding actually populates the options correctly from a representative configuration source, and that startup-time validation (if any) still fires correctly when the section is present-but-invalid
+- [ ] `dotnet build`/`dotnet test` green with zero regressions; package README's configuration examples updated to show the new binding path alongside the existing code-based one
+---
+
+---
+### P-335 — Testing: Persistence Abstractions Test Doubles (FakeDbConnectionFactory + In-Memory Repository/UnitOfWork Fakes)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-053
+**Domain:** 16.Testing
+**Depends on:** None
+
+#### What is needed
+`16.Testing/SharedKernel.Testing` currently provides no test double for any of `SharedKernel.Persistence.Abstractions`'s core contracts — `IRepository<TAggregate,TId>`, `IReadRepository<TAggregate,TId>`, `IUnitOfWork`, `ITransactionalUnitOfWork`, and `IDbConnectionFactory`. `IDbConnectionFactory`'s fake specifically has been documented in `16.Testing/CLAUDE.md` as "Planned" since WO-008 (2026-06-22) and never built despite roughly a dozen subsequent `16.Testing` work orders landing other fakes in the same period — a stale, un-kept commitment that must either be delivered now or explicitly retracted. Deliver: a controllable `IDbConnectionFactory` fake wrapping a caller-supplied connection-producing delegate (no real database, no mocking-framework dependency, matching every other `16.Testing` fake's existing shape); an in-memory, dictionary-backed double implementing `IRepository<TAggregate,TId>`/`IReadRepository<TAggregate,TId>` that evaluates `ISpecification<T>` criteria/ordering/paging in-memory (never a real database); and a paired no-op-commit `IUnitOfWork`/`ITransactionalUnitOfWork` fake — for consuming services that want a genuinely fast, zero-infrastructure unit test of application-layer code against the repository abstraction without spinning up EF Core's InMemory provider or a real PostgreSQL Testcontainers instance.
+
+#### Why this is needed
+Every other capability domain with a swappable-provider abstraction already has this exact category of `16.Testing` fake — `InMemoryMessageBus`, `InMemoryEventPublisher`, `InMemoryFileStorage`, `InMemorySearchIndex<TDocument>`, the AI/Workflows in-memory doubles — but `06.Persistence`, arguably the domain whose abstractions are exercised by the largest share of a typical microservice's own unit tests (nearly every command/query handler takes a repository dependency), has none. Today, a consuming service's unit tests for a handler depending on `IRepository<T,TId>` must either hand-roll a mock with a mocking framework (against `16.Testing`'s framework-free-fakes philosophy) or stand up a real database — there is no fast, zero-infrastructure middle path. The multi-work-order "Planned"-without-delivery status of `FakeDbConnectionFactory` is itself a documentation-hygiene defect this phase closes.
+
+#### Acceptance criteria
+- [ ] `FakeDbConnectionFactory` implements `IDbConnectionFactory`, wraps a caller-supplied connection-producing delegate, requires no mocking framework and no real database
+- [ ] An in-memory `IRepository<TAggregate,TId>`/`IReadRepository<TAggregate,TId>` double evaluates `ISpecification<T>` criteria/ordering/paging in-memory against a seeded collection, with results equivalent in shape to what `EfReadRepository<T,TId>` would produce for the same specification against an equivalent dataset
+- [ ] A paired `IUnitOfWork`/`ITransactionalUnitOfWork` fake tracks a call count/commit state observable by tests, with no real transaction semantics
+- [ ] All new fakes reference only `SharedKernel.Persistence.Abstractions` — never `.EfCore`/`.PostgreSQL`/`.Dapper` — mirroring the platform's existing "fake references only the abstraction, never a concrete provider" rule
+- [ ] `16.Testing/CLAUDE.md`'s `Persistence/` section's stale "Planned" status for `FakeDbConnectionFactory` is corrected to reflect shipped status
+- [ ] Each new fake has its own unit test suite in `SharedKernel.Testing.SelfTests`
+- [ ] `dotnet build`/`dotnet test` green with zero regressions
+---
+
+---
+### P-336 — Persistence: Consolidate Test Projects onto the Shared 16.Testing PostgreSQL Container Fixture
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-053
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+`16.Testing/SharedKernel.Testing/Containers/PostgreSqlContainerFixture.cs` already exists as the platform's designated, shared, reusable PostgreSQL Testcontainers fixture. `06.Persistence.PostgreSQL.Tests` currently rolls its own separate, independently-configured copy (different base image tag, missing the shared fixture's connection-string-read-before-init guard, different database name), and `06.Persistence.Dapper.Tests` inlines a third, ad hoc `PostgreSqlContainer` field directly inside a test class rather than using either fixture. Migrate both test projects onto the canonical `16.Testing` fixture, deleting the two drifted, independently-maintained copies.
+
+#### Why this is needed
+Three independently-configured PostgreSQL container setups for the same underlying purpose, inside the very domain whose own test suite is supposed to be the platform's proof-of-correctness reference, is exactly the drift a shared-fixture package exists to prevent — it means `06.Persistence`'s own Postgres integration tests run against a different container image/configuration than the shared fixture every downstream consuming service is expected to standardize on, so a version- or configuration-specific behavior difference could pass in one and fail in the other without anyone noticing. `06.Persistence` not eating its own dogfood on this point undermines the credibility of recommending the shared fixture to every other domain.
+
+#### Acceptance criteria
+- [ ] `06.Persistence.PostgreSQL.Tests` references and uses `16.Testing`'s `PostgreSqlContainerFixture` exclusively; its own independent copy is deleted
+- [ ] `06.Persistence.Dapper.Tests`'s inline ad hoc `PostgreSqlContainer` field is replaced with the same shared fixture
+- [ ] No behavior/assertion change to any existing test beyond the fixture swap — all pre-existing tests continue to pass unmodified in intent
+- [ ] `dotnet test` green with zero regressions across both affected test projects
+- [ ] `06.Persistence/CLAUDE.md` and `16.Testing/CLAUDE.md` (if either separately documents per-package container setup) updated to reflect the consolidation
+---
+
+---
+### P-337 — Persistence: Repository & Connection Ergonomics Bundle (Soft-Delete Restore + Global Command Timeout)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-053
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+Two small, independent, additive developer-experience completions, bundled because both are low-risk, self-contained polish items with no dependency on each other — mirroring the platform's own precedent (WO-051/P-323) for bundling this class of fix. First: `ISoftDeletable`/`SoftDeleteInterceptor` already gives every soft-deletable entity an automatic, symmetric delete path — there is no equally-easy way to reverse it. Add a restore/undelete capability, both for a single tracked entity (going through the normal interceptor/audit/domain-event pipeline) and as a bulk operation building on the existing `ExecuteUpdateAsync` bulk-mutation surface, mirroring the documented pattern bulk soft-delete already uses via an explicit `setPropertyCalls` delegate. Second: neither `EfCorePersistenceBuilder` nor the PostgreSQL DI extension exposes any command/query timeout configuration — a consumer wanting anything other than the provider's default must reach past this domain's builder into raw Npgsql connection-string syntax or `NpgsqlDataSourceBuilder` directly. Add an explicit, opt-in timeout configuration knob on the builder.
+
+#### Why this is needed
+Both gaps are asymmetries relative to capability this domain already has fully built on one side: soft-delete has a complete, automatic delete path but zero reverse path, forcing any consumer needing "undo a soft delete" (a routine support/ops request in almost every real system with soft delete) to hand-write a tracked update or bypass the interceptor pipeline entirely via a raw `ExecuteUpdateAsync` call they compose themselves. Command timeout is one of the most basic pieces of database configuration any production service eventually needs (a long-running report query, a bulk job) and today it is entirely unreachable through this domain's own builder surface, despite the builder already being the documented, canonical configuration entry point for everything else (retry, pooling, encryption, transactional UoW).
+
+#### Acceptance criteria
+- [ ] A single-entity restore capability reverses `SoftDeleteInterceptor`'s delete, restoring `IsDeleted`/`DeletedOn`/`DeletedBy`-shaped state to its pre-delete value, going through the same interceptor/audit/domain-event pipeline a normal update would (unlike bulk `ExecuteUpdateAsync`, which is documented as bypassing all three)
+- [ ] A bulk restore path exists via the existing `ExecuteUpdateAsync` surface with an explicit `setPropertyCalls` delegate shape mirroring the already-documented bulk soft-delete pattern, carrying the same explicit "bypasses interceptors/audit/domain events" documentation the existing bulk mutation methods already carry
+- [ ] `EfCorePersistenceBuilder` (or the PostgreSQL DI extension, whichever is the more natural fit given how connection options are already configured there) exposes an explicit, opt-in command-timeout configuration value; omitting it preserves today's provider-default behavior exactly
+- [ ] Both additions are purely additive — zero change to any existing public member's behavior or signature
+- [ ] New tests prove restore (single + bulk) genuinely reverses a prior soft delete, and that the configured command timeout is actually applied to issued commands
+- [ ] `06.Persistence/CLAUDE.md` documents both additions in their respective sections; `dotnet build`/`dotnet test` green with zero regressions
+---
+
+---
+### P-338 — Persistence: Opt-In Read-Replica Connection Routing for Read Repositories
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-053
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+An opt-in capability to route `IReadRepository<TAggregate,TId>` operations to a separate, secondary PostgreSQL connection (a streaming replica) distinct from the primary connection `IRepository<TAggregate,TId>` writes always use — configured additively on the existing builder surface, disabled by default, with today's single-connection behavior completely unchanged unless a consumer explicitly configures a replica connection string. Because the domain already separates `IRepository`/write and `IReadRepository`/read into distinct interfaces, this is a routing addition at the composition/DI layer, not a redesign of either contract.
+
+#### Why this is needed
+Read-replica routing is one of the most common horizontal-scaling patterns for a PostgreSQL-backed service under real production load, and this platform's own read/write interface split already provides exactly the seam such a feature needs — most systems that add this later have to first retrofit a read/write split before they can route between them; this platform already has it. For a shared kernel meant to serve hundreds of services at scale, offering this as a ready-made, opt-in capability avoids each team that eventually needs it reinventing the same routing wiring independently and inconsistently. This differs from the previously-declined Npgsql binary-COPY-protocol bulk insert (WO-051): that feature required substantial new machinery with no existing architectural seam and no concrete consumer need; this one has both an existing seam (the read/write interface split) and a well-understood, broadly-applicable use case.
+
+#### Acceptance criteria
+- [ ] Default behavior (no replica connection configured) is provably unchanged — all reads and writes continue to use the single primary connection exactly as today
+- [ ] An opt-in configuration path accepts a secondary connection string/DbContext options source for read traffic; enabling it routes `IReadRepository`-surfaced operations to that connection while `IRepository` writes remain on the primary unconditionally
+- [ ] XML documentation and the package README explicitly call out read-after-write consistency as a caller responsibility once replica routing is enabled — a command handler that writes and then immediately reads via `IReadRepository` in the same logical operation may observe stale data under replication lag, stated in capital-letter-emphasized terms, mirroring the platform's existing pattern for other opt-in features with a real correctness caveat
+- [ ] A read inside an active transaction or an `ITransactionalUnitOfWork` scope is never routed to the replica even if replica routing is otherwise enabled — reads inside an explicit transaction always see the primary
+- [ ] New tests (Testcontainers-based) prove routing actually occurs and that the transaction-scope exception holds
+- [ ] `dotnet build`/`dotnet test` green with zero regressions; feature is fully additive with no breaking change to any existing signature
+---
+
+---
+### P-339 — Persistence: pgvector Nearest-Neighbor Query Ergonomics
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-053
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+`HasVectorColumn`/`VectorColumnAttribute` today do nothing beyond mapping a property to a raw `vector(N)` PostgreSQL column type (confirmed: the implementation is a direct `HasColumnType($"vector({dimensions})")` string, not even routed through `Pgvector.EntityFrameworkCore`'s own helper types) — there is zero SharedKernel-provided help for the query side, forcing every consumer to reach directly for `Pgvector.EntityFrameworkCore`'s own LINQ methods with no platform convention around it. Add a thin, additive layer of query ergonomics on top of the existing column mapping: distance-ordering helpers (cosine distance and L2/Euclidean distance, matching the two distance functions `Pgvector.EntityFrameworkCore` itself exposes) usable from a `Specification<T>`-shaped query, so a "top-K nearest neighbor" read is expressible through the same specification pipeline every other query on this platform already goes through, rather than as a one-off LINQ expression bypassing specifications entirely.
+
+#### Why this is needed
+pgvector support shipped as column-mapping-only and has stayed that way through every subsequent gold-standard pass — meaning the one thing a consumer actually wants to do with a vector column (find the nearest rows to a query vector) has zero platform support today. This is squarely a developer-friendly, gold-standard gap: a service that wants a lightweight embedded-vector similarity search alongside its relational data (the entire reason `06.Persistence` offers pgvector as an alternative to standing up `10.Intelligence`'s Qdrant for that use case) currently gets no more help than raw `Pgvector.EntityFrameworkCore`, making the SharedKernel's own pgvector support marginally more than a documentation pointer to a third-party package.
+
+#### Acceptance criteria
+- [ ] A distance-ordering helper is usable inside a `Specification<T>` subclass's ordering definition, translating to a genuine server-side `ORDER BY` on the vector distance function — never a client-side evaluation
+- [ ] Both cosine distance and L2/Euclidean distance are supported, matching `Pgvector.EntityFrameworkCore`'s own exposed distance functions
+- [ ] The helper composes with existing specification features (paging/`Take` for top-K, criteria filtering) without special-casing the evaluator pipeline
+- [ ] A real PostgreSQL Testcontainers integration test proves a nearest-neighbor query against seeded vector data returns rows in genuinely correct distance order
+- [ ] Package README gains a pgvector nearest-neighbor Quick-Start example
+- [ ] `dotnet build`/`dotnet test` green with zero regressions; purely additive, zero change to `HasVectorColumn`'s existing mapping behavior
 ---
 
 ## Changelog
@@ -12114,3 +12279,7 @@ This review found a confirmed, live instance of `EF.Property<T>` usage (`Tenante
 - [2026-07-31] Phase Backlog P-329 → ● Complete — all four tasks (D-25, R-21, T-30, DO-08) shipped; 11.Communication's adoption of `04.Contracts`' P-328 namespace rename is done end to end. P-330 (16.Testing) intentionally left untouched — different domain, its own namespace-adoption phase (state-map-phase)
 - [2026-07-31] Testing → Docs (●) — P-330/WO-052 closed; `SK.16.Core`/`SK.16.Tests`/`SK.16.Docs` all promoted (101/101, 65/65, 32/32). `Contracts/EnvelopeAssertions.cs`/`EnvelopeAssertionsTests.cs` confirmed adopting `04.Contracts`' P-328 `Envelopes` namespace rename — found already committed same-day prior to this session (`77e87c4`), independently re-verified via grep sweep, clean build, and 794/794 full `SharedKernel.Testing.SelfTests` regression (state-map-phase)
 - [2026-07-31] Phase Backlog P-330 → ● Complete — all five tasks (D-165, S-43, C-101, T-65, DO-32) shipped; 16.Testing's adoption of `04.Contracts`' P-328 namespace rename is done end to end (state-map-phase)
+- [2026-08-03] WO-053: fresh, independent 06.Persistence gold-standard follow-up review dispatched (P-333–P-339, all `○` Pending), triggered by direct user request ("analyse 06.Persistence, check for bad practice, improve to gold standard/developer-friendly, check if we can add any more feature"), three days after WO-051 shipped 11 real correctness fixes to this same domain. Deliberately did not re-litigate WO-051's fixes — spot-checked `ListKeysetAsync<TKey>`/`GetByIdsChunkedAsync`/the `TenantedRepository` `Expression.Property` fix are genuinely present in shipped source, then moved on. Found this domain is the only one of the platform's WO-041-era foundational infrastructure domains that shipped a full gold-standard pass (WO-051) without ever adopting the mandatory `[LoggerMessage]` logging standard — a repo-wide grep confirmed zero `ILogger`/`LoggerMessage` usage across all four packages' production code despite `01.Core`'s registry already reserving the `6000-6999` EventId block, leaving four operationally critical paths (concurrency-conflict translation, migration/seeder lifecycle, transient-fault retry firing, encryption key-rotation progress) completely silent; bundled with a smaller, thematically-related tracing gap (`EfRepository.GetByIdAsync`/`.ExistsAsync` are the only two public members not wrapped in the existing `RepositoryTracing` helper) into one observability phase (P-333). Found `EncryptionOptions`/`PersistenceServiceOptions`'s own XML docs claim `IConfiguration` section-binding that was never actually implemented — neither `WithEncryption()` nor `WithServiceName()` ever calls `GetSection(...)`, a confirmed doc/code mismatch closed by adding real, named-constant-anchored binding rather than just correcting the doc down to reality (P-334). Found `16.Testing` has zero test doubles for `06.Persistence`'s core write/read/UoW contracts, and that `FakeDbConnectionFactory` specifically has sat at "[STATUS: Planned]" in `16.Testing/CLAUDE.md` since WO-008 (2026-06-22) — roughly a dozen `16.Testing` work orders later, still never built (P-335, domain `16.Testing`). Found `06.Persistence` does not dogfood the shared `16.Testing` `PostgreSqlContainerFixture` it expects other domains to standardize on — `.PostgreSQL.Tests` and `.Dapper.Tests` each roll independent, drifted Testcontainers setups instead (P-336). Accepted three gold-standard feature/DX additions the user explicitly invited: a soft-delete restore/undelete capability symmetric with the existing automatic delete path, paired with a global command/query timeout knob currently unreachable through this domain's own builder (bundled as P-337, mirroring the WO-051/P-323 small-independent-fixes bundling precedent); an opt-in PostgreSQL read-replica connection-routing capability for `IReadRepository`, accepted (unlike WO-051's declined Npgsql COPY-protocol bulk insert) specifically because the platform's existing read/write interface split already provides the exact seam this feature needs, with an explicit read-after-write consistency guardrail written into its own acceptance criteria (P-338); and pgvector nearest-neighbor query ergonomics (cosine/L2 distance-ordering usable from a `Specification<T>`), since `HasVectorColumn` was confirmed to do nothing beyond raw column-type mapping with zero query-side help anywhere (P-339). **Explicitly declined, not written as a phase:** EF Core compiled query delegates (`EF.CompileAsyncQuery`) — EF Core 10's built-in query-plan caching plus the already-shipped compiled-model feature (P-152) capture most of the available win, and a fixed-shape compiled delegate sits awkwardly against this domain's dynamic, specification-driven query model without a demonstrated hot-path need. Also noted but not actioned: a weak/inconclusive test-coverage signal around five specification/convention members, per the research pass's own admission insufficiently confirmed to write as a phase. Domain Summary Board rows for 06.Persistence and 16.Testing were both already `●` Published/Complete, so no `state-map-phase` calls were made — this is a backlog-only pass, ready for a future `/dispatch-phase` (arch-lead, user request, WO-053, P-333–P-339)
+- [2026-08-03] Phase(s) P-333, P-334, P-336, P-337, P-338, P-339 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-08-03] Phase(s) P-335 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-08-03] 06.Persistence → Design (●) — promoted from SK.06.Design (state-map-phase)
