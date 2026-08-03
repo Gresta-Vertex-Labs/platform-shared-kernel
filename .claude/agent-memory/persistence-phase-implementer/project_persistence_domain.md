@@ -5,6 +5,71 @@ metadata:
   type: project
 ---
 
+## SK.06.Core fully closed 2026-08-03 (145/145) — WO-053 C-129..C-145, same session as Scaffold close
+Implemented and tested all 17 remaining Core tasks in one session, immediately after the Scaffold
+close documented below. Production code for most tasks had ALREADY been written by a prior
+(uncommitted-to-state-map) session — this session's actual work was: verify each file against
+`06.Persistence/CLAUDE.md`'s already-reconciled target-state docs (zero drift found — the
+Design-confirmation pass a few sessions earlier had already corrected the two genuine spec/reality
+mismatches, `ConcurrencyInterceptor.TryTranslate` non-static + `Pgvector.EntityFrameworkCore.
+VectorDbFunctionsExtensions` naming), then write ~92 new tests across 8 new test files + additions
+to 2 existing files, run the full EfCore (353/353) and PostgreSQL (41/41, real Docker) suites, fix
+one genuine test-writing-time bug (below), then close the state-map loop end to end (sub-map task
+rows → sub-map Overall Progress → sub-map changelog → root Domain Summary Board → root Overall
+Progress counts → root changelog — the full `state-map-phase` Sub-map-mode promotion chain).
+
+**New genuine bug found and fixed, NOT foreseeable from design docs alone**: the new
+`PersistenceRetryDiagnosticListener` (C-131) subscribes to `System.Diagnostics.DiagnosticListener
+.AllListeners` — a single PROCESS-WIDE static, with no per-`DbConnection`/per-test correlation field
+available on the diagnostic payload (`ExecutionStrategyEventData`) the way `Activity.ParentId`
+provides for tracing spans (see the pre-existing "Cross-test ActivitySource contamination" entry
+below — this is the SAME class of hazard, one layer lower in the BCL, but with NO equivalent fix
+available). `PersistenceRetryDiagnosticListenerTests` (proving the listener logs N times for N
+observed retries) and `RetryExhaustionLoggingTests` (proving `EfUnitOfWork`/`EfTransactionalUnitOfWork`
+log on retry-exhaustion) both force genuine EF Core retries via the identical
+`AlwaysRetryStrategyFactory`/`FaultInjectingInterceptor` fixture technique — when xUnit ran them
+concurrently (different test CLASSES, xUnit's default), retry events from EITHER test's `DbContext`
+were visible to BOTH tests' listener instances, inflating counts (observed: expected 2, got 3).
+**Fix, and the pattern to reuse for any FUTURE test class that forces genuine retries**: tag every
+such class into one shared xUnit collection — `[CollectionDefinition("RetryDiagnostics")]` on one
+marker class (public sealed, no body needed beyond the attribute) plus `[Collection("RetryDiagnostics")]`
+on each test class — forcing xUnit to run them sequentially relative to EACH OTHER (they still run
+in parallel with every other, non-retry-forcing test class). Documented as a new `06.Persistence/
+CLAUDE.md` Test Rules bullet via `sync-brain`, placed directly after the existing structured-logging
+Test Rules bullet.
+
+**Two reusable FluentAssertions/testing-infra gotchas surfaced while writing C-144/C-145's pure
+expression-tree-shape tests** (`VectorOrderingExpressionsTests.cs`, `SharedKernel.Persistence
+.PostgreSQL.Tests` — the first tests in that project needing NO Testcontainer at all, since
+`Pgvector.EntityFrameworkCore`'s distance methods are EF-Core query-translation placeholders never
+meaningfully invoked client-side, so only the built `Expression` tree's SHAPE is assertable):
+1. `Expression.Call(...)`/`Expression.Property(...)` etc. return BCL-INTERNAL derived subtypes
+   (`MethodCallExpression2`, `PropertyExpression`) rather than the public base type
+   (`MethodCallExpression`, `MemberExpression`) directly. FluentAssertions' `.Should().BeOfType<T>()`
+   checks EXACT type equality and fails against these — use `.Should().BeAssignableTo<T>()` instead
+   (or a plain C# `(T)expr`/`is T` cast/check, which works fine against internal subtypes since they
+   genuinely inherit from the public base). This will bite ANY future expression-tree-shape test in
+   this domain (e.g. a future `KeysetSpecification` seek-predicate shape test) — always reach for
+   `BeAssignableTo<T>()` first when asserting on a node produced by the `Expression` factory methods,
+   never `BeOfType<T>()`.
+2. `SharedKernel.Testing.Logging.LogRecord`'s real property names are `.LogLevel` (not `.Level`) and
+   `.State` (an `IReadOnlyList<KeyValuePair<string,object?>>?`, not `.Properties`) — confirmed by
+   reading the real type directly after two build failures from guessing the wrong names. Always
+   `Read` `16.Testing/SharedKernel.Testing/Logging/LogRecord.cs` before writing a raw `record.Xxx`
+   property access in a new logging test — `TryGetProperty(name, out value)` is the sanctioned way
+   to read a structured property; `.LogLevel`/`.EventId`/`.Message`/`.Exception`/`.Scopes` are the
+   only other public members.
+
+Phase completion status (this session): SK.06.Design ●(103/103), SK.06.Scaffold ●(18/18),
+SK.06.Core ●(145/145, NEW this session), SK.06.Tests ◐(101/121 — WO-053 added T-98..T-121 which
+this session did NOT specifically target/close), SK.06.Docs ◐(52/64 — WO-053 added DO-53..DO-64,
+also not targeted this session), SK.06.Published ●(8/8). A future session should re-check whether
+the 92 tests THIS session wrote for C-129..C-145 happen to already satisfy some of T-98..T-121's
+task text (likely, given the close 1:1 correspondence between WO-053's Core and Tests task lists)
+before writing anything new — grep this session's new test file names against the Tests-phase task
+descriptions first, per the now-well-established "code may already exist, verify before writing"
+pattern documented throughout this file.
+
 ## SK.06.Scaffold fully closed 2026-08-03 (18/18) — S-17 + T-106..T-109 done same session
 S-17 (WO-053/P-336) was left `◐` by a prior session pending T-106..T-108 (a separate Tests-phase
 gate). The next Scaffold-phase dispatch explicitly authorized doing that migration work now to
@@ -60,6 +125,10 @@ the container to a class fixture. This is why finding #2 above was previously in
 migration, "once per test method" coincided with "once per fresh container," masking the ordering bug.
 
 ## Phase completion status (as of 2026-07-31, WO-051 FULLY CLOSED — all 6 phases ● end to end)
+> STALE as of 2026-08-03: WO-053 (P-333/334/336/337/338/339) added new tasks across Design/Scaffold/
+> Core/Tests/Docs after this snapshot — Core is closed again (see the top-of-file entry), but
+> Tests/Docs are `◐` again with new WO-053 task IDs (T-98..T-121, DO-53..DO-64). "ZERO pending
+> phases" below is no longer accurate. Kept for history per this file's own established convention.
 - SK.06.Design: complete (84/84 tasks) — D-65..D-84 (WO-051 batches 1+2) done 2026-07-30
 - SK.06.Core: complete (128/128 tasks) — C-98..C-128 verified/closed 2026-07-31
 - SK.06.Tests: complete (97/97 tasks) — T-61..T-97 verified/closed 2026-07-31
