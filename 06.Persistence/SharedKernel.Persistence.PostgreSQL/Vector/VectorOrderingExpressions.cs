@@ -124,10 +124,36 @@ public static class VectorOrderingExpressions
             _ => throw new ArgumentOutOfRangeException(nameof(metric), metric, "Unsupported vector distance metric."),
         };
 
-        var queryVectorConstant = Expression.Constant(queryVector, typeof(PgVector));
-        var distanceCall = Expression.Call(distanceMethod, vectorSelector.Body, queryVectorConstant);
+        // Deliberately NOT Expression.Constant(queryVector, typeof(PgVector)) directly: a bare
+        // ConstantExpression is treated by EF Core's query pipeline as an already-evaluated INLINE
+        // SQL literal, rendered via Vector.ToString() ("[1,2,3]") with no quoting/cast — confirmed
+        // empirically to produce a genuine PostgresException ("syntax error at or near '['") when
+        // executed, since Pgvector.EntityFrameworkCore's distance-function SQL translator does not
+        // attach a "vector" RelationalTypeMapping to an already-bare constant argument the way it
+        // does for a genuine query PARAMETER. Wrapping the value inside a tiny holder and accessing
+        // it via a MemberExpression reproduces the EXACT shape the C# compiler emits for a captured
+        // local variable inside an ordinary LINQ lambda closure (a display-class instance held as a
+        // ConstantExpression, read via member access) — the shape EF Core's own parameter-extraction
+        // visitor recognizes and promotes to a genuine ADO.NET query parameter, which Npgsql then
+        // writes through its normal, already-proven-working Vector parameter type mapping (the same
+        // path every INSERT/UPDATE of a Vector-typed column already uses).
+        var queryVectorHolder = new VectorQueryParameterHolder(queryVector);
+        var queryVectorAccess = Expression.Property(
+            Expression.Constant(queryVectorHolder),
+            nameof(VectorQueryParameterHolder.Value));
+
+        var distanceCall = Expression.Call(distanceMethod, vectorSelector.Body, queryVectorAccess);
         var boxed = Expression.Convert(distanceCall, typeof(object));
 
         return Expression.Lambda<Func<TAggregate, object>>(boxed, vectorSelector.Parameters[0]);
+    }
+
+    // Deliberately a private, single-property holder — its ONLY purpose is to give the query
+    // vector value the same "MemberExpression over a closure-held ConstantExpression" shape EF
+    // Core's parameter-extraction visitor already recognizes for genuine LINQ closures. Never
+    // exposed, never reused for any other purpose.
+    private sealed class VectorQueryParameterHolder(PgVector value)
+    {
+        public PgVector Value { get; } = value;
     }
 }
