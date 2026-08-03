@@ -11,7 +11,6 @@ using SharedKernel.Persistence.PostgreSQL.Conventions;
 using SharedKernel.Persistence.PostgreSQL.Extensions;
 using SharedKernel.Persistence.PostgreSQL.Jsonb;
 using SharedKernel.Persistence.PostgreSQL.Vector;
-using SharedKernel.Persistence.PostgreSQL.Tests.Fixtures;
 using Testcontainers.PostgreSql;
 
 namespace SharedKernel.Persistence.PostgreSQL.Tests.Integration;

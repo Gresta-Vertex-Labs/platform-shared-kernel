@@ -56,6 +56,27 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <!--
+      P-333: direct reference required to use the [LoggerMessage] source-generator attribute
+      (Microsoft.Extensions.Logging.Abstractions.LoggerMessageAttribute). Previously only
+      transitively available via Microsoft.EntityFrameworkCore. Version aligned with the pinned
+      EF Core 10.0.5 / Microsoft.Extensions.DependencyInjection.Abstractions 10.0.5 family.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    <!--
+      P-334: provides OptionsBuilder<TOptions>.Bind(IConfiguration), the fluent extension the
+      .WithEncryption(IConfiguration,...)/.WithServiceName(IConfiguration) overloads depend on.
+      Microsoft.Extensions.Options itself is already available transitively (via the existing
+      IOptionsMonitor<EncryptionOptions> usage) — .ConfigurationExtensions is a separate package.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.5" />
+    <!--
+      P-338: the CONCRETE Microsoft.Extensions.DependencyInjection package (not merely
+      .Abstractions) — provides ActivatorUtilities.CreateInstance<T>, used to construct the
+      read-replica TContext instance while reusing scope-ambient DI-resolved interceptor
+      instances (EfCorePersistenceBuilder.WithReadReplica / IReadReplicaContextAccessor<TContext>).
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
   </ItemGroup>
 
   <ItemGroup>
