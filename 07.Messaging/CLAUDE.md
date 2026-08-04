@@ -15,7 +15,7 @@ Philosophy: **Abstraction-first. Transport-swappable. Outbox-native. CloudEvents
 | Package | Role | References |
 | --- | --- | --- |
 | `SharedKernel.Messaging.Abstractions` | `IMessageBus`, `IEventPublisher`, `PublishContext`, `IMessagingBuilder`, `MessagingOptions` — pure interface library; no transport NuGet dependencies | `Microsoft.Extensions.DependencyInjection.Abstractions` only |
-| `SharedKernel.Messaging.MassTransit` | Concrete MassTransit bus wiring: `MassTransitMessageBus`, `MassTransitEventPublisher`, `ConsumerBase<TMessage>`, `MessagingBusBuilder`, transport adapters (RabbitMQ, ASB), retry policy, EF Core outbox integration | `SharedKernel.Messaging.Abstractions`, `SharedKernel.Contracts` (for `EventEnvelope<TEvent>` in publisher implementation), `MassTransit` 9.1.2, `MassTransit.RabbitMQ` 9.1.2, `MassTransit.Azure.ServiceBus.Core` 9.1.2, `MassTransit.EntityFrameworkCore` 9.1.2 (note: NOT `MassTransit.EntityFrameworkCoreIntegration`), `Microsoft.EntityFrameworkCore` 10.x (outbox `TDbContext` constraint only), `Microsoft.Extensions.Logging.Abstractions` 10.x |
+| `SharedKernel.Messaging.MassTransit` | Concrete MassTransit bus wiring: `MassTransitMessageBus`, `MassTransitEventPublisher`, `ConsumerBase<TMessage>`, `MessagingBusBuilder`, transport adapters (RabbitMQ, ASB), retry policy, EF Core outbox integration — gaining a bus-backed readiness probe, tenant-aware envelope construction, symmetric header propagation across all three dispatch verbs, per-consumer concurrency controls, dead-letter policy, ordered delivery, an ambient correlation/tenant propagator pair, opt-in payload compression/encryption, and full diagnostics coverage (queued P-340–P-349, WO-054) | `SharedKernel.Messaging.Abstractions`, `SharedKernel.Contracts` (for `EventEnvelope<TEvent>` in publisher implementation), `MassTransit` 9.1.2, `MassTransit.RabbitMQ` 9.1.2, `MassTransit.Azure.ServiceBus.Core` 9.1.2, `MassTransit.EntityFrameworkCore` 9.1.2 (note: NOT `MassTransit.EntityFrameworkCoreIntegration`), `Microsoft.EntityFrameworkCore` 10.x (outbox `TDbContext` constraint only), `Microsoft.Extensions.Logging.Abstractions` 10.x — gaining `SharedKernel.Compression`/`SharedKernel.Cryptography` (`01.Core`) for opt-in payload transform (queued P-346, WO-054) |
 
 All packages target `net10.0`. `ImplicitUsings` enabled. `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
@@ -61,10 +61,14 @@ IMessageBus
         Point-to-point semantics — equivalent to queue send.
         Endpoint address is resolved by convention from the transport provider.
         Use for commands and work items with exactly one handler.
+        Registered IMessageHeaderPropagators are applied before dispatch, identically to
+        PublishAsync (P-341/WO-054 — this was previously a silent asymmetry; fixed).
 
     .RequestAsync<TRequest, TResponse>(TRequest request, CancellationToken ct)     → Task<TResponse>
         Synchronous request/response pattern over the message bus.
         Uses a private temporary reply queue under the hood.
+        Registered IMessageHeaderPropagators are applied before dispatch, identically to
+        PublishAsync (P-341/WO-054 — this was previously a silent asymmetry; fixed).
         CAUTION: Adds latency and tight temporal coupling — prefer event-driven fire-and-forget.
                  Always pass a timeout-bound CancellationToken; never pass CancellationToken.None.
 
@@ -86,9 +90,14 @@ IEventPublisher
     .PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct)            → Task
         Publishes a CloudEvents-compliant integration event.
         The MassTransit implementation wraps TEvent in EventEnvelope<TEvent> (04.Contracts)
-        before sending to the transport.
+        before sending to the transport, constructed EXCLUSIVELY via EventEnvelope.Wrap<TEvent>()
+        (04.Contracts's own mandated factory) — never a raw object-initializer/constructor call
+        (P-340/WO-054, fixing a confirmed prior violation of 04.Contracts's own construction rule).
         CorrelationId and CausationId are propagated from Activity.Current?.TraceId when available.
         SourceService is sourced from MessagingOptions.ServiceName.
+        TenantId is sourced from PublishContext.TenantId when explicitly set (or from the ambient
+        TenantHeaderPropagator when MessagingBusBuilder.WithTenantContext<T>() is registered,
+        P-345/WO-054); otherwise omitted (null), exactly like an unset CorrelationId/CausationId.
 
     .PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct) → Task
         Overload for explicit envelope metadata override (CorrelationId, CausationId, custom headers).
@@ -106,13 +115,23 @@ IEventPublisher
 PublishContext  (sealed class — mutable builder, NOT a record or immutable type)
     .CorrelationId                                          → Guid?  (null = auto-populate from Activity.Current)
     .CausationId                                            → Guid?  (null = omitted from envelope)
+    .TenantId                                                → Guid?  (null = omitted from envelope; added P-340/WO-054)
+    .PartitionKey                                            → string?  (null = no ordered-delivery affinity; added P-344/WO-054)
     .Headers                                                → IReadOnlyDictionary<string, string>
     .WithCorrelationId(Guid correlationId)                  → PublishContext  (fluent, returns this)
     .WithCausationId(Guid causationId)                      → PublishContext  (fluent, returns this)
+    .WithTenantId(Guid tenantId)                            → PublishContext  (fluent, returns this — P-340/WO-054)
+    .WithPartitionKey(string partitionKey)                  → PublishContext  (fluent, returns this — P-344/WO-054)
     .WithHeader(string key, string value)                   → PublishContext  (fluent, returns this)
     NOTE: Passed as an Action<PublishContext> callback to PublishAsync overloads.
           Callers configure the instance; the implementation owns the lifetime.
           Header keys must be non-null, non-empty strings. Duplicate keys overwrite silently.
+          TenantId flows into EventEnvelope<TEvent>.TenantId (04.Contracts, P-331) via the
+          IEventPublisher path only — IMessageBus has no envelope to carry it, so TenantId on a
+          plain IMessageBus.PublishAsync/SendAsync call is a no-op today (queued for review if a
+          future phase adds a message-bus-level envelope). PartitionKey maps to RabbitMQ routing-key
+          affinity or Azure Service Bus session identity depending on the configured transport —
+          see "Ordered delivery via partition key" below.
 ```
 
 #### Messaging DI builder contract (`Extensions/`)
@@ -240,6 +259,30 @@ IMessageHeaderPropagator  (interface)
           composition root (referencing SharedKernel.Messaging.Abstractions); do not implement
           propagators inside SharedKernel — they require service-specific ambient context.
           Zero transport NuGet dependencies in the interface definition.
+          EXCEPTION (P-345/WO-054): AmbientCorrelationHeaderPropagator and TenantHeaderPropagator
+          (both in SharedKernel.Messaging.MassTransit) are the two narrow, by-name exceptions to
+          "do not implement propagators inside SharedKernel" — see their own contract entries below.
+    APPLIES TO ALL THREE DISPATCH VERBS (P-341/WO-054): registered propagators run identically
+          before IMessageBus.PublishAsync, IMessageBus.SendAsync, IMessageBus.RequestAsync, and
+          IEventPublisher.PublishAsync — not publish alone. The explicit-callback-wins precedence
+          rule holds identically across all four call shapes.
+```
+
+#### Tenant-context seam (`TenantContext/`) — P-345/WO-054
+
+```text
+ITenantContextAccessor  (interface)
+    .TenantId  → Guid?
+        Reads the current ambient tenant identity from whatever source the consuming service
+        actually uses (HTTP claim, gRPC metadata, background-job context, etc.). Returns null
+        when no tenant context is available.
+    NOTE: A locally-owned seam interface, referencing nothing outside 01.Core–04.Contracts —
+          mirrors 05.Application.Behaviors' IAuthorizationContext/IUnitOfWork bridge pattern.
+          The consuming service's composition root implements this against its real
+          ITenantProvider (12.Security) or ICurrentTenantService (06.Persistence); this package
+          never references either directly. Register the implementation and enable automatic
+          tenant propagation via MessagingBusBuilder.WithTenantContext<TAccessor>(); when not
+          registered, TenantHeaderPropagator (built on this seam) is a provable no-op.
 ```
 
 #### Send endpoint resolver (`MessageBus/`) — P-131
@@ -253,6 +296,26 @@ ISendEndpointResolver  (interface)
         Override per command type via MessagingBusBuilder.WithSendEndpointRoute<T>(queueName).
     NOTE: Internal to the MassTransit package. Injected into MassTransitMessageBus.
           Application code never calls ISendEndpointResolver directly.
+```
+
+#### Bus readiness probe (`MessageBus/`) — P-347/WO-054
+
+```text
+IMessageBusProbe  (interface)
+    .ProbeAsync(CancellationToken ct)  → Task<MessageBusHealth>
+        Reports the health of the actual, already-configured message bus this domain's
+        MessagingBusBuilder constructs for the consuming service — never an independently
+        constructed connection built from separately supplied configuration.
+    NOTE: Registered as a singleton by MessagingBusBuilder.Build() unconditionally — no opt-in
+          builder call required. 07.Messaging ships this probe primitive only; it ships no
+          IHealthCheck implementation. Wiring into AddHealthChecks() is 13.ServiceDefaults's
+          concern, mirroring the readiness-probe split already established by
+          06.Persistence/08.Storage/09.Search/10.Intelligence/17.Workflows.
+
+MessageBusHealth  (sealed record)
+    .IsHealthy    → bool
+    .Description  → string?  (human-readable detail; null when healthy)
+    NOTE: Returned by IMessageBusProbe.ProbeAsync. Value equality via record semantics.
 ```
 
 #### Batch options (`Batch/`) — P-129
@@ -297,9 +360,14 @@ RabbitMqBusOptions  (sealed class, DI options section "SharedKernel:Messaging:Ra
     .VirtualHost            → string  (default "/")
     .Prefetch               → ushort  (default 16 — messages pre-fetched per consumer channel)
     .RequestedHeartbeat     → TimeSpan  (default 60s — AMQP heartbeat to detect stale connections)
+    .ConcurrentMessageLimit → int?  (default null — no platform-imposed limit; P-342/WO-054)
     NOTE: Never embed credentials in appsettings.json committed to source control.
           Source credentials from environment variables, Kubernetes Secrets, or Azure Key Vault.
           Prefetch tuning: lower for slow consumers, higher for fast CPU-bound consumers.
+          ConcurrentMessageLimit is DISTINCT from Prefetch: Prefetch bounds how many unacknowledged
+          messages the broker delivers to the channel; ConcurrentMessageLimit bounds how many of
+          those the consumer processes in parallel. Set globally here, or per consumer via
+          ConsumerDefinitionBase<TConsumer>.ConcurrentMessageLimit (per-consumer wins).
 
 AzureServiceBusOptions  (sealed class, DI options section "SharedKernel:Messaging:AzureServiceBus")
     .ConnectionString       → string?  (local/dev only; mutually exclusive with FullyQualifiedNamespace)
@@ -309,6 +377,10 @@ AzureServiceBusOptions  (sealed class, DI options section "SharedKernel:Messagin
     NOTE: Exactly one of ConnectionString or FullyQualifiedNamespace must be set; startup validation
           throws InvalidOperationException if both or neither are set.
           Managed identity via DefaultAzureCredential is strongly preferred in Kubernetes workloads.
+          MaxConcurrentCalls is applied to the receive endpoint's configured concurrency by
+          MessagingBusBuilder's internal ConfigureAzureServiceBus helper (P-342/WO-054, fixing a
+          confirmed prior defect where this option was read into AzureServiceBusOptions but never
+          consulted anywhere the bus was actually built — setting it had zero observable effect).
 
 RetryOptions  (sealed class, configures MassTransit retry pipeline)
     .Attempts               → int  (default 3; total attempts including the first delivery)
@@ -327,6 +399,26 @@ OutboxOptions  (sealed class, configures MassTransit EF Core outbox delivery wor
     NOTE: OutboxOptions configures MassTransit's built-in EF Core outbox delivery background service.
           The consuming service's DbContext must include MassTransit outbox tables (see outbox migration rule).
           Delivery is at-least-once — consumers must be idempotent.
+
+DeadLetterOptions  (sealed class, DI options section "SharedKernel:Messaging:DeadLetter") — P-343/WO-054
+    .QueueNameSuffix        → string  (default "_error" — matches MassTransit's own RabbitMQ default,
+                                        so the platform default changes nothing until overridden)
+    .MessageTimeToLive      → TimeSpan?  (default null — no expiry, unbounded retention)
+    NOTE: RabbitMQ-only. Consumed by MessagingBusBuilder.WithDeadLetterPolicy(). Azure Service Bus
+          dead-lettering is transport-native and unaffected by this options class — see "Dead-letter
+          and poison-message policy" below. Calling WithDeadLetterPolicy() under an ASB transport
+          logs an advisory Warning at startup rather than throwing (mirrors the WithVersionTranslator
+          advisory-Warning pattern).
+
+PayloadTransformOptions  (sealed class, DI options section "SharedKernel:Messaging:PayloadTransform") — P-346/WO-054
+    .EnableCompression      → bool  (default false)
+    .EnableEncryption       → bool  (default false)
+    NOTE: Consumed by MessagingBusBuilder.WithPayloadTransform(). Both flags are independently
+          toggleable, but publish-side ordering is always compress-then-encrypt and consume-side
+          ordering is always decrypt-then-decompress — never caller-configurable. Requires
+          01.Core's IPayloadCompressor (SharedKernel.Compression) and/or ISymmetricEncryptionService
+          (SharedKernel.Cryptography) to already be registered in DI; Build() throws
+          InvalidOperationException if a required dependency for an enabled flag is missing.
 ```
 
 #### Idempotency behavior (`Consumers/`) — P-134
@@ -347,6 +439,32 @@ IdempotentConsumerBehavior<TMessage>  (internal sealed class, implements IFilter
           logic inside ConsumeAsync bodies (hard violation).
 ```
 
+#### Built-in header propagators (`HeaderPropagation/`) — P-345/WO-054
+
+```text
+AmbientCorrelationHeaderPropagator  (sealed class, implements IMessageHeaderPropagator)
+    .Propagate(PublishContext context)  → void
+        Reads Activity.Current?.TraceId when an ambient Activity exists and calls
+        context.WithCorrelationId(...). No-op when there is no ambient Activity.
+    NOTE: Requires zero consumer-supplied dependency — register via
+          MessagingBusBuilder.WithAmbientCorrelationPropagation(). This is one of two named,
+          documented exceptions to "never implement IMessageHeaderPropagator inside SharedKernel.*"
+          (see the IMessageHeaderPropagator contract entry above) — distributed-trace correlation
+          identity is not service-specific ambient context; it is already available to any BCL
+          code via System.Diagnostics.Activity.Current.
+
+TenantHeaderPropagator  (sealed class, implements IMessageHeaderPropagator)
+    .Propagate(PublishContext context)  → void
+        Resolves ITenantContextAccessor? from DI (optional — GetService, not GetRequiredService).
+        When present and its TenantId has a value, calls context.WithTenantId(value).
+        When ITenantContextAccessor is not registered, this is a provable no-op.
+    NOTE: Register via MessagingBusBuilder.WithTenantContext<TAccessor>() — registers both
+          TAccessor as scoped ITenantContextAccessor and this propagator in one call. The second
+          named exception to the "never implement propagators inside SharedKernel.*" rule — safe
+          here because the seam (ITenantContextAccessor) that supplies the actual service-specific
+          value is itself bridged by the consuming service, not by this class.
+```
+
 #### Consumer definition base (`Consumers/`) — P-136
 
 ```text
@@ -358,6 +476,7 @@ ConsumerDefinitionBase<TConsumer>  (abstract class, implements IConsumerDefiniti
       (c) Wires retry exception filter: for each type in NonRetryableExceptions, calls
           r.Ignore(exceptionType) so those exceptions bypass retry and dead-letter immediately
       (d) Delegates to abstract ConfigureConsumer for subclass-specific configuration
+      (e) Sets concurrency limit from ConcurrentMessageLimit if non-null (P-342/WO-054)
 
     protected abstract ConfigureConsumer(IReceiveEndpointConfigurator, IConsumerConfigurator<TConsumer>,
                                           IBusRegistrationContext)  → void
@@ -371,6 +490,9 @@ ConsumerDefinitionBase<TConsumer>  (abstract class, implements IConsumerDefiniti
 
     protected virtual EndpointName  → string?  (default null — MassTransit convention)
     protected virtual PrefetchCount  → int?     (default null — MassTransit default)
+    protected virtual ConcurrentMessageLimit  → int?  (default null — no per-consumer override;
+                                                        falls back to RabbitMqBusOptions.ConcurrentMessageLimit
+                                                        or AzureServiceBusOptions.MaxConcurrentCalls; P-342/WO-054)
     NOTE: Register consuming-service definitions via AddConsumer<TConsumer, TDefinition>().
           Prefer this base over raw IConsumerDefinition<TConsumer>; the retry exception filter
           wiring is the platform's minimum standard for consumer configuration.
@@ -402,11 +524,25 @@ MessagingDiagnostics  (internal static class)
               a static ILogger category name or a Meter instance), NOT a "static mutable state"
               hard violation. ActivitySource carries no mutable business state; the .NET diagnostics
               API is explicitly designed around process-lifetime static instrument instances.
-        Consumed by ConsumerBase<TMessage>.Consume() and MassTransitEventPublisher.PublishAsync<TEvent>()
-        to start child Activities. Consumed by 13.ServiceDefaults.WithMessagingTelemetry() (P-132),
-        which wires "SharedKernel.Messaging" into the host's TracerProvider via .AddSource(...) —
-        13.ServiceDefaults never constructs this ActivitySource itself; it only registers the
-        already-existing source name with the host's TracerProvider/MeterProvider.
+        Consumed by ConsumerBase<TMessage>.Consume(), MassTransitEventPublisher.PublishAsync<TEvent>(),
+        and — as of P-348/WO-054 — MassTransitMessageBus.SendAsync<T>(), .RequestAsync<TRequest,TResponse>(),
+        and .ExecuteRoutingSlipAsync() to start child Activities. Consumed by
+        13.ServiceDefaults.WithMessagingTelemetry() (P-132), which wires "SharedKernel.Messaging"
+        into the host's TracerProvider via .AddSource(...) — 13.ServiceDefaults never constructs
+        this ActivitySource itself; it only registers the already-existing source name with the
+        host's TracerProvider/MeterProvider.
+
+    .Meter              → Meter  (static readonly; "SharedKernel.Messaging", "1.0.0" — P-348/WO-054)
+        NOTE: Companion static Meter instrument, added alongside ActivitySource under the same
+              platform-standard static-instrument exception (see the ActivitySource NOTE above —
+              identical reasoning applies to Meter). Hosts five instruments:
+                messaging.publish.count    (Counter<long>)  — tagged messaging.event_type/message_type
+                messaging.consume.count    (Counter<long>)  — tagged messaging.message_type
+                messaging.consume.duration (Histogram<double>, ms) — tagged messaging.message_type
+                messaging.retry.count      (Counter<long>)  — tagged messaging.message_type
+                messaging.fault.count      (Counter<long>)  — tagged messaging.message_type
+              Consumed by 13.ServiceDefaults.WithMessagingTelemetry() via .AddMeter(...), mirroring
+              the ActivitySource registration split above.
 ```
 
 #### Consumer and publisher instrumentation (`Consumers/`, `EventPublisher/`) — P-172
@@ -428,9 +564,35 @@ MassTransitEventPublisher.PublishAsync<TEvent>()  (updated)
     before delegating to IPublishEndpoint. Tags:
         messaging.event_type = typeof(TEvent).Name
     The activity is disposed after the publish call completes (success or exception).
+    Increments MessagingDiagnostics.Meter's messaging.publish.count instrument (P-348/WO-054).
     NOTE: This activity is independent of the EventEnvelope<TEvent> CloudEvents CorrelationId field —
           the Activity's own TraceId/SpanId comes from .NET's ambient Activity.Current chain; the
           envelope's CorrelationId is still sourced per the CloudEvents compliance rule below.
+
+MassTransitMessageBus.SendAsync<T>() / .RequestAsync<TRequest,TResponse>() / .ExecuteRoutingSlipAsync()  — P-348/WO-054
+    Each starts and disposes its own child Activity, matching the Consume/Publish shape exactly:
+        SendAsync              → "MessageBus.Send",              tag messaging.message_type
+        RequestAsync            → "MessageBus.Request",           tags messaging.request_type, messaging.response_type
+        ExecuteRoutingSlipAsync → "MessageBus.ExecuteRoutingSlip", tag messaging.routing_slip.activity_count
+    Prior to P-348, none of these three verbs produced any activity at all — a completeness gap,
+    not a design gap, now closed to full dispatch-surface coverage. Increments
+    MessagingDiagnostics.Meter's messaging.consume.count/messaging.consume.duration (consumer side)
+    and messaging.fault.count (FaultConsumerAdapter) instruments per the Meter contract above.
+```
+
+#### Bus readiness probe implementation (`MessageBus/`) — P-347/WO-054
+
+```text
+MassTransitMessageBusProbe  (internal sealed class, implements IMessageBusProbe)
+    .ProbeAsync(CancellationToken ct)  → Task<MessageBusHealth>
+        Wraps the real, already-registered IBusControl/IBus instance this builder configures
+        for the consuming service. Queries MassTransit's own bus-health surface — never opens
+        a second, independently constructed transport connection built from separately supplied
+        configuration.
+    NOTE: Registered as a singleton by MessagingBusBuilder.Build() unconditionally, matching
+          MassTransit's own singleton IBus/IBusControl lifetime. Transport-agnostic from the
+          caller's perspective — behaves identically whether the consuming service configured
+          RabbitMQ or Azure Service Bus.
 ```
 
 #### Shared log scope construction (`Logging/`) — P-254
@@ -688,8 +850,24 @@ MessagingBusBuilder  (sealed class, implements IMessagingBuilder)
     .WithHeaderPropagator<T>()
         — registers T as a scoped IMessageHeaderPropagator in DI.
         — Multiple calls are additive; propagators are applied in registration order.
-        — At every IMessageBus.PublishAsync and IEventPublisher.PublishAsync call, all registered
-          propagators are invoked before the explicit Action<PublishContext> configure callback.
+        — At every IMessageBus.PublishAsync, IMessageBus.SendAsync, IMessageBus.RequestAsync, and
+          IEventPublisher.PublishAsync call, all registered propagators are invoked before the
+          explicit Action<PublishContext> configure callback (P-341/WO-054 — SendAsync/RequestAsync
+          previously skipped propagator invocation entirely; fixed. Applies identically across
+          all three dispatch verbs now, not publish alone).
+        — Returns MessagingBusBuilder for fluent chaining.
+
+    .WithAmbientCorrelationPropagation()  — P-345/WO-054
+        — registers AmbientCorrelationHeaderPropagator as a scoped IMessageHeaderPropagator.
+        — Zero-argument — requires no consumer-authored class, unlike WithHeaderPropagator<T>().
+        — Populates CorrelationId from ambient Activity.Current on every dispatch verb.
+        — Returns MessagingBusBuilder for fluent chaining.
+
+    .WithTenantContext<TAccessor>()  where TAccessor : class, ITenantContextAccessor  — P-345/WO-054
+        — registers TAccessor as scoped ITenantContextAccessor AND registers TenantHeaderPropagator
+          as a scoped IMessageHeaderPropagator, in one call.
+        — The consuming service only writes the ITenantContextAccessor implementation bridging its
+          real tenant source — it never writes a propagator by hand.
         — Returns MessagingBusBuilder for fluent chaining.
 
     .WithVersionTranslator<TOld, TNew, TTranslator>()
@@ -710,6 +888,30 @@ MessagingBusBuilder  (sealed class, implements IMessagingBuilder)
           IActivity<TArguments, TLog> directly for advanced use cases).
         — Returns MessagingBusBuilder for fluent chaining.
 
+    .WithDeadLetterPolicy(Action<DeadLetterOptions>? configure = null)  — P-343/WO-054
+        — RabbitMQ only. Applies QueueNameSuffix to the receive endpoint's error-queue naming and
+          MessageTimeToLive as a dead-letter-queue TTL argument.
+        — null uses default DeadLetterOptions (QueueNameSuffix="_error", MessageTimeToLive=null).
+        — When called while UseAzureServiceBus() is the configured transport, logs an advisory
+          Warning at startup (same IHostedService-deferred-advisory pattern as WithVersionTranslator)
+          rather than throwing — ASB dead-lettering is transport-native and unaffected by this option.
+        — Optional. Omitting preserves MassTransit's own default RabbitMQ error-queue behavior.
+        — Returns MessagingBusBuilder for fluent chaining.
+
+    .WithPayloadTransform(Action<PayloadTransformOptions>? configure = null)  — P-346/WO-054
+        — wires an opt-in compressing/encrypting serializer decorator around the platform's
+          default STJ serializer. Publish-side order is always compress-then-encrypt; consume-side
+          order is always decrypt-then-decompress — never caller-configurable.
+        — null uses default PayloadTransformOptions (both flags false — effectively a no-op).
+        — At Build() time, throws InvalidOperationException if EnableCompression is true and
+          IPayloadCompressor is not registered, or if EnableEncryption is true and
+          ISymmetricEncryptionService is not registered (register via 01.Core's
+          AddSharedKernelCompression()/AddSharedKernelCryptography() first).
+        — Changes wire format — a consumer without the matching transform enabled fails loudly
+          at deserialization rather than silently misinterpreting the payload.
+        — Optional. Omitting leaves publish/consume behavior unchanged (disabled by default).
+        — Returns MessagingBusBuilder for fluent chaining.
+
     .Build() → IServiceCollection
         — Registers IMessageBus → MassTransitMessageBus (scoped).
         — Registers IEventPublisher → MassTransitEventPublisher (scoped).
@@ -718,6 +920,8 @@ MessagingBusBuilder  (sealed class, implements IMessagingBuilder)
         — Registers IHostedService for MassTransit bus lifecycle (start/stop via IBusControl).
         — Registers MassTransitRoutingSlipBuilder as scoped IRoutingSlipBuilder (always, even when
           AddRoutingSlipActivity has not been called — the interface is usable independently).
+        — Registers IMessageBusProbe → MassTransitMessageBusProbe (singleton, always, unconditionally
+          — P-347/WO-054; wraps the real registered bus, no opt-in call required).
         — Startup validation: MessagingOptions.ServiceName non-null/non-empty; transport configured.
         — If WithIdempotency() was called and IIdempotencyStore is not registered in IServiceCollection,
           throws InvalidOperationException with diagnostic message.
@@ -766,6 +970,16 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 | Message Schema Evolution | P-137 | `SK.07.VersionTranslation` | Abstractions (`IMessageVersionTranslator<TOld, TNew>`) + MassTransit (`WithVersionTranslator`, `TranslatorRegistrationValidator`) |
 | Routing Slip Activity Base | P-139 | `SK.07.RoutingSlip` | Abstractions (`IRoutingSlipBuilder`, `IMessageBus.ExecuteRoutingSlipAsync`) + MassTransit (`RoutingSlipActivityBase<TArguments, TLog>`, `MassTransitRoutingSlipBuilder`, `AddRoutingSlipActivity`) |
 | ActivitySource and Consume/Publish Instrumentation | P-172 | `SK.07.OTel` | MassTransit (`MessagingDiagnostics.ActivitySource`, `ConsumerBase<TMessage>.Consume()` and `MassTransitEventPublisher.PublishAsync<TEvent>()` instrumentation) |
+| Correct EventEnvelope Construction & Tenant Identity Through Publish | P-340 | `SK.07.EnvelopeTenancy` | Abstractions (`PublishContext.TenantId`/`WithTenantId`) + MassTransit (`MassTransitEventPublisher.PublishEnvelope<TEvent>` refactored onto `EventEnvelope.Wrap<TEvent>()`) |
+| Header-Propagator Symmetry Across Publish, Send, and Request | P-341 | `SK.07.PropagationSymmetry` | MassTransit (`MassTransitMessageBus.SendAsync<T>`/`RequestAsync<TRequest,TResponse>` propagator invocation) |
+| Working Per-Consumer Concurrency Controls (RabbitMQ + ASB) | P-342 | `SK.07.ConsumerConcurrency` | MassTransit (`AzureServiceBusOptions.MaxConcurrentCalls` wiring fix, `RabbitMqBusOptions.ConcurrentMessageLimit`, `ConsumerDefinitionBase<TConsumer>.ConcurrentMessageLimit`) |
+| Dead-Letter and Poison-Message Delivery Policy | P-343 | `SK.07.DeadLetter` | MassTransit (`DeadLetterOptions`, `MessagingBusBuilder.WithDeadLetterPolicy()`) |
+| Ordered Delivery via Partition Key / Session Affinity | P-344 | `SK.07.OrderedDelivery` | Abstractions (`PublishContext.PartitionKey`/`WithPartitionKey`) + MassTransit (RabbitMQ routing-key / ASB session-identity mapping) |
+| Built-In Ambient Header Propagator and Tenant-Context Seam | P-345 | `SK.07.AmbientPropagation` | Abstractions (`ITenantContextAccessor`) + MassTransit (`AmbientCorrelationHeaderPropagator`, `TenantHeaderPropagator`, `WithAmbientCorrelationPropagation()`, `WithTenantContext<T>()`) |
+| Opt-In Payload Compression and Encryption Before Transport | P-346 | `SK.07.PayloadTransform` | MassTransit (`PayloadTransformOptions`, compressing/encrypting serializer decorator, `WithPayloadTransform()`) |
+| Bus-Backed Readiness Probe Primitive | P-347 | `SK.07.ReadinessProbe` | Abstractions (`IMessageBusProbe`, `MessageBusHealth`) + MassTransit (`MassTransitMessageBusProbe`) |
+| Complete Distributed-Tracing and Metrics Coverage Across All Dispatch Verbs | P-348 | `SK.07.DiagnosticsCoverage` | MassTransit (`MessagingDiagnostics.Meter` + Send/Request/ExecuteRoutingSlip activity instrumentation) |
+| NuGet Packaging Completeness and Reference-Implementation Quick-Start Recipes | P-349 | `SK.07.PackagingRecipes` | Abstractions + MassTransit (`PackageReadmeFile` wiring, `IIdempotencyStore`/tenant-context recipes) |
 
 ---
 
@@ -798,7 +1012,15 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 - Hardcoding queue names in `WithSendEndpointRoute<T>()` without namespacing by target service — the queue name must follow the `{target-service-name}-{command-type}` kebab-case convention matching the target service's `MessagingOptions.ServiceName` prefix (added in P-131).
 - Implementing custom deduplication logic inside `ConsumeAsync` bodies (e.g., checking a local `HashSet<Guid>` or querying the database on every message) — the platform-standard deduplication mechanism is `WithIdempotency()` with a registered `IIdempotencyStore` implementation; ad-hoc in-consumer deduplication is non-standard and creates inconsistency across services (added in P-134).
 - Calling `WithIdempotency()` on `MessagingBusBuilder` without first registering a concrete `IIdempotencyStore` — `Build()` throws `InvalidOperationException` at startup; SharedKernel does not provide a store implementation; the consuming service bridges to its own persistence layer (added in P-134).
-- Implementing `IMessageHeaderPropagator` inside `SharedKernel.*` packages — propagators require access to service-specific ambient context (e.g., `IHttpContextAccessor`, tenant resolution, feature flag state) that does not exist in the SharedKernel; propagators belong in the consuming service's composition root (added in P-135).
+- Implementing `IMessageHeaderPropagator` inside `SharedKernel.*` packages — propagators require access to service-specific ambient context (e.g., `IHttpContextAccessor`, tenant resolution, feature flag state) that does not exist in the SharedKernel; propagators belong in the consuming service's composition root (added in P-135). **Exception (P-345):** `AmbientCorrelationHeaderPropagator` (reads BCL `Activity.Current` — not service-specific) and `TenantHeaderPropagator` (reads the locally-owned `ITenantContextAccessor` seam, itself bridged by the consuming service) are the two, by-name-only, documented exceptions. Do not add a third ad hoc propagator inside `SharedKernel.*` under cover of this exception.
+- Constructing `EventEnvelope<TEvent>` via a raw object initializer or constructor call anywhere in `SharedKernel.Messaging.MassTransit` — always `SharedKernel.Contracts.Events.EventEnvelope.Wrap<TEvent>()`, `04.Contracts`'s own mandated factory (added in P-340; this was a confirmed, previously-shipped violation in `MassTransitEventPublisher.PublishEnvelope<TEvent>` that also caused `TenantId` to always be `null`).
+- Skipping registered `IMessageHeaderPropagator` invocation on any of the four dispatch call shapes (`IMessageBus.PublishAsync`, `.SendAsync`, `.RequestAsync`, `IEventPublisher.PublishAsync`) — propagation must apply uniformly across all of them; a propagator silently applying to publish but not send/request is a confirmed prior defect, not an acceptable variance (added in P-341).
+- Making `PayloadTransformOptions`' publish-side compress-then-encrypt / consume-side decrypt-then-decompress ordering caller-configurable — the order is fixed platform-wide to match `01.Core`'s established compress-then-encrypt convention; reversing it wastes CPU compressing high-entropy ciphertext for no size benefit (added in P-346).
+- Introducing a new bespoke compression or cryptographic primitive inside `07.Messaging` for payload transform — always build on `01.Core`'s existing `IPayloadCompressor` (`SharedKernel.Compression`) and `ISymmetricEncryptionService` (`SharedKernel.Cryptography`) (added in P-346).
+- Implementing `IMessageBusProbe` by constructing an independent, second transport connection from separately supplied configuration — the probe must query the real, already-registered `IBusControl`/`IBus` instance `MessagingBusBuilder` builds for the consuming service, otherwise a passing health check does not prove the service's actual bus connection is healthy (added in P-347).
+- Adding an `IHealthCheck` implementation inside `07.Messaging` — this domain ships the `IMessageBusProbe` primitive only; wiring into `AddHealthChecks()` is `13.ServiceDefaults`'s concern (added in P-347).
+- Inventing a platform-specific substitute for ordered delivery (e.g., an in-process sequencing buffer, a custom sequence-number header consumers must manually check) instead of mapping `PublishContext.PartitionKey` to each transport's genuine native ordered-delivery mechanism (RabbitMQ routing-key affinity, Azure Service Bus session identity) — added in P-344.
+- Hardcoding a dead-letter queue name or TTL value inline instead of going through `DeadLetterOptions`/`MessagingBusBuilder.WithDeadLetterPolicy()` — mirrors the existing hardcoded-queue-address prohibition (added in P-343).
 - Overriding `IConsumerDefinition<TConsumer>.Configure` directly in a `ConsumerDefinitionBase<TConsumer>` subclass — the base class seals this method to guarantee that retry exception filter wiring always runs; subclasses must implement `ConfigureConsumer` instead (added in P-136).
 - Implementing `IMessageVersionTranslator<TOld, TNew>.Translate` with I/O, external service calls, or side effects — translation is called in the deserialization pipeline and must be a synchronous pure function; any async or stateful translation is a hard violation (added in P-137).
 - Constructing `MassTransit.RoutingSlipBuilder` directly in application code — use `IRoutingSlipBuilder` (from `SharedKernel.Messaging.Abstractions`) so application code has no compile-time dependency on MassTransit types; pass the `IRoutingSlipBuilder.Build()` result to `IMessageBus.ExecuteRoutingSlipAsync` (added in P-139).
@@ -834,15 +1056,17 @@ The following capabilities have full task rows in `07.Messaging/state-map.md` an
 
 ### CloudEvents compliance rule
 
-`MassTransitEventPublisher.PublishAsync<TEvent>` wraps `TEvent` in `EventEnvelope<TEvent>` (from `04.Contracts`) before publishing to the transport. The envelope fields are populated as follows:
+`MassTransitEventPublisher.PublishAsync<TEvent>` wraps `TEvent` in `EventEnvelope<TEvent>` (from `04.Contracts`) before publishing to the transport. As of P-340/WO-054, the envelope is constructed **exclusively** via `SharedKernel.Contracts.Events.EventEnvelope.Wrap<TEvent>(domainEvent, sourceService, correlationId, causationId, tenantId)` — `04.Contracts`'s own mandated factory — never a raw object initializer. The envelope fields are populated as follows (corrected against the real shipped `EventEnvelope<TEvent>`/`EventEnvelope.Wrap<TEvent>` source, whose `CorrelationId`/`CausationId` are `string?`, not `Guid`, and whose version/timestamp fields are named `EventVersion`/`OccurredOn`, not `SchemaVersion`/`TimestampUtc`):
 
 | Envelope field | Source |
 | --- | --- |
-| `CorrelationId` | `Activity.Current?.TraceId` as `Guid` if available; otherwise `Guid.NewGuid()`. Overrideable via `PublishContext.WithCorrelationId`. |
-| `CausationId` | `PublishContext.CausationId` when explicitly set; otherwise omitted (`Guid.Empty`). |
+| `CorrelationId` (`string?`) | `PublishContext.CorrelationId` (`Guid`) when explicitly set via `WithCorrelationId`, formatted `"D"`; else `Activity.Current?.TraceId.ToString()` if an ambient trace exists; else a new `Guid.NewGuid().ToString("D")`. |
+| `CausationId` (`string?`) | `PublishContext.CausationId` when explicitly set via `WithCausationId`, formatted `"D"`; otherwise omitted (`null`) — no ambient fallback. |
+| `TenantId` (`Guid?`) | `PublishContext.TenantId` when explicitly set via `WithTenantId` (or populated ambiently by `TenantHeaderPropagator` when `MessagingBusBuilder.WithTenantContext<T>()` is registered, P-345); otherwise omitted (`null`). Added in P-340/WO-054 — previously always `null` on every published message due to the raw-object-initializer defect this phase fixes. |
 | `SourceService` | `MessagingOptions.ServiceName` resolved from `IOptions<MessagingOptions>`. |
-| `SchemaVersion` | `DomainEventVersionHelper.GetVersion(typeof(TEvent))` (from `03.Domain`); defaults to `1` when `[DomainEventVersion]` attribute is absent. |
-| `TimestampUtc` | `DateTimeOffset.UtcNow` at publish time. |
+| `EventVersion` | `DomainEventVersionHelper.GetVersion(typeof(TEvent))` (from `03.Domain`); defaults to `1` when `[DomainEventVersionAttribute]` is absent. |
+| `OccurredOn` | Copied from the domain event's own `OccurredOn` property (when the business fact occurred, not when the envelope was built or published). |
+| `EventId` | Copied from the domain event's own `Id` property — not a new envelope-level identity; used for transport-level deduplication. |
 
 The MassTransit message envelope maps to the CloudEvents HTTP binding:
 
@@ -876,6 +1100,45 @@ When `.WithEntityFrameworkOutbox<TDbContext>()` is called:
 - The MassTransit outbox delivery background service polls for unsent rows and publishes to the broker.
 - At-least-once delivery is guaranteed; all consumers must be idempotent.
 - The consuming service owns and runs the EF migrations for outbox tables. `SharedKernel.Messaging.MassTransit` provides no migrations of its own.
+
+### Dead-letter and poison-message policy (P-343/WO-054)
+
+A message becomes "poison" and is routed to dead-letter only at one of two decision points:
+
+1. **Immediate**: the endpoint-level `ConsumerDefinitionBase<TConsumer>.NonRetryableExceptions` filter classifies the thrown exception type as fatal — no retry attempts occur at all.
+2. **After exhaustion**: the global `RetryOptions` attempt budget (configured via `WithRetry()`) is exhausted without a successful delivery.
+
+An open `CircuitBreakerOptions` breaker (`WithCircuitBreaker()`) is a **distinct** failure path — it short-circuits delivery entirely while open, failing fast with `CircuitBreakerException` until `ResetInterval` elapses and the breaker moves to `HalfOpen`. A message rejected by an open breaker is not itself dead-lettered by the breaker; whether it is retried again depends on the retry/non-retryable classification above once the breaker allows delivery through again.
+
+**RabbitMQ** — configurable via `DeadLetterOptions`/`MessagingBusBuilder.WithDeadLetterPolicy()`:
+
+- `QueueNameSuffix` (default `"_error"`, matching MassTransit's own RabbitMQ default naming — the platform default changes nothing until explicitly overridden).
+- `MessageTimeToLive` (default `null` — unbounded retention).
+- Omitting `WithDeadLetterPolicy()` entirely preserves MassTransit's own default RabbitMQ error-queue behavior — this domain adds a configuration surface, it does not change the unconfigured default.
+
+**Azure Service Bus** — dead-lettering is entirely transport-native and outside this domain's configuration surface: ASB moves a message to its built-in `$DeadLetterQueue` once `MaxDeliveryCount` (an ASB queue/subscription-level setting, configured at the Azure resource, not through `AzureServiceBusOptions`) is exceeded. `WithDeadLetterPolicy()` may still be called under an ASB transport for consistency across a multi-transport codebase, but it has no effect — `Build()` logs an advisory `Warning` rather than throwing, mirroring the `WithVersionTranslator` advisory pattern. There is currently no platform-level configuration surface for ASB's `MaxDeliveryCount`; it is set at the Azure resource/Bicep/ARM level.
+
+### Ordered delivery via partition key (P-344/WO-054)
+
+`PublishContext.PartitionKey` (`string?`) maps to each transport's genuine native ordered-delivery mechanism — never a platform-invented substitute:
+
+- **RabbitMQ**: `PartitionKey` drives routing-key affinity so all messages sharing a key traverse the same queue-binding path in publish order.
+- **Azure Service Bus**: `PartitionKey` is applied as the outgoing message's session identifier (`SessionId`). The receiving endpoint must have sessions enabled for the ordering guarantee to hold — enabling sessions on an endpoint is a consuming-service/infrastructure responsibility this builder does not silently apply retroactively.
+
+**Ordering caveat**: ordering is guaranteed only among messages sharing the same `PartitionKey` **and** consumed by a single active consumer instance on that endpoint. Multiple concurrent consumer instances processing the same partitioned endpoint (horizontal scale-out) break the ordering guarantee even with a correctly-set key — this is inherent to both transports' native mechanisms, not a platform limitation. Omitting `PartitionKey` leaves publish/send behavior exactly as it was before this feature — no ordering guarantee beyond the transport's own default.
+
+### Opt-in payload compression and encryption (P-346/WO-054)
+
+`MessagingBusBuilder.WithPayloadTransform(Action<PayloadTransformOptions>?)` wires an opt-in serializer decorator around the platform's default STJ serializer, built entirely on `01.Core`'s existing primitives — `IPayloadCompressor` (`SharedKernel.Compression`) and `ISymmetricEncryptionService` (`SharedKernel.Cryptography`). Never a new bespoke compression/cryptography primitive in this domain.
+
+- **Fixed ordering, not caller-configurable**: publish-side is always compress-then-encrypt; consume-side is always decrypt-then-decompress — matching `01.Core`'s platform-wide convention (compressing already-encrypted, high-entropy ciphertext wastes CPU for no size benefit).
+- **Disabled by default**: `EnableCompression` and `EnableEncryption` both default to `false`. Enabling either changes the wire format — this is a deliberate, explicit, per-service opt-in, never ambient behavior a consuming service could be surprised by.
+- **`Build()`-time dependency guard**: enabling a flag without its corresponding `01.Core` service already registered in DI throws `InvalidOperationException` at `Build()`, mirroring the `WithIdempotency()` missing-`IIdempotencyStore` guard.
+- **Loud failure on mismatch**: a consumer without the matching transform enabled must fail clearly at deserialization (`PayloadTransformMismatchException` or equivalent) — never silently misinterpret compressed/encrypted bytes as plaintext JSON.
+
+### Bus-backed readiness probe (P-347/WO-054)
+
+`IMessageBusProbe.ProbeAsync(CancellationToken)` reports the health of the actual, already-configured message bus `MessagingBusBuilder` builds for the consuming service — never an independently constructed connection built from separately supplied configuration. Registered as a singleton, unconditionally, by `Build()` — no opt-in call required. `07.Messaging` ships this probe primitive only; it ships **no** `IHealthCheck` implementation. Wiring `IMessageBusProbe` into `AddHealthChecks()` remains `13.ServiceDefaults`'s concern, mirroring the readiness-probe split already established by `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows`.
 
 ### Logging authoring standard and EventId allocation (P-254)
 
@@ -1083,21 +1346,43 @@ services
     .AddConsumer<OrderPlacedConsumer>()
     .Build();
 
-// Header propagation (P-135) — propagators registered in consuming service
+// Header propagation (P-135) — a hand-rolled propagator for a service-specific concern
+// not already covered by the built-in propagators below
 services
     .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
     .UseRabbitMq("rabbitmq://localhost")
-    .WithHeaderPropagator<TenantHeaderPropagator>()      // scoped; reads ITenantProvider
-    .WithHeaderPropagator<CorrelationHeaderPropagator>() // scoped; reads Activity.Current
+    .WithHeaderPropagator<FeatureFlagHeaderPropagator>() // scoped; reads IFeatureManager, e.g.
     .AddConsumer<OrderPlacedConsumer>()
     .Build();
 
-// TenantHeaderPropagator example (in the consuming service — not in SharedKernel)
-public sealed class TenantHeaderPropagator : IMessageHeaderPropagator
+// FeatureFlagHeaderPropagator example (in the consuming service — not in SharedKernel)
+public sealed class FeatureFlagHeaderPropagator : IMessageHeaderPropagator
 {
-    public TenantHeaderPropagator(ITenantProvider tenantProvider) { ... }
+    public FeatureFlagHeaderPropagator(IFeatureManager featureManager) { ... }
     public void Propagate(PublishContext context)
-        => context.WithHeader("x-sk-tenant-id", _tenantProvider.TenantId.ToString());
+        => context.WithHeader("x-sk-feature-set", _featureManager.CurrentSetName);
+}
+
+// Built-in ambient correlation + tenant-context propagation (P-345/WO-054) — the platform-provided
+// alternative to hand-rolling correlation/tenant propagators from scratch
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithAmbientCorrelationPropagation()             // zero-argument — no consumer-authored class
+    .WithTenantContext<AppTenantContextAccessor>()   // bridges the seam below; scoped
+    .AddConsumer<OrderPlacedConsumer>()
+    .Build();
+
+// AppTenantContextAccessor — the ONLY class the consuming service writes to get tenant
+// identity flowing into every published EventEnvelope<TEvent>.TenantId automatically.
+// Bridges this domain's local ITenantContextAccessor seam to the service's real tenant
+// source (12.Security's ITenantProvider here), mirroring 05.Application's
+// IAuthorizationContext/IUnitOfWork bridge pattern.
+public sealed class AppTenantContextAccessor : ITenantContextAccessor
+{
+    private readonly ITenantProvider _tenantProvider;
+    public AppTenantContextAccessor(ITenantProvider tenantProvider) => _tenantProvider = tenantProvider;
+    public Guid? TenantId => _tenantProvider.TenantId;
 }
 
 // Per-consumer definition base (P-136) — in the consuming service
@@ -1179,6 +1464,61 @@ public sealed class ProcessPaymentHandler
         await _bus.ExecuteRoutingSlipAsync(slip, ct);
     }
 }
+
+// Explicit tenant identity + partition key on a single publish call (P-340/P-344) —
+// used when the ambient WithTenantContext<T>()/WithAmbientCorrelationPropagation() propagators
+// (shown above) are not registered, or an explicit per-call override is needed
+await _eventPublisher.PublishAsync(orderPlacedEvent, ctx =>
+{
+    ctx.WithTenantId(currentTenantId);           // → EventEnvelope<TEvent>.TenantId
+    ctx.WithPartitionKey(orderPlacedEvent.OrderId.ToString()); // ordered delivery per order
+}, ct);
+
+// Per-consumer concurrency override (P-342) — in the consuming service
+public sealed class OrderPlacedConsumerDefinition : ConsumerDefinitionBase<OrderPlacedConsumer>
+{
+    protected override int? ConcurrentMessageLimit => 4; // overrides the global RabbitMQ/ASB default
+}
+
+// Dead-letter policy (P-343) — RabbitMQ only
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithDeadLetterPolicy(o =>
+    {
+        o.QueueNameSuffix = "-poison";
+        o.MessageTimeToLive = TimeSpan.FromDays(7);
+    })
+    .AddConsumer<OrderPlacedConsumer>()
+    .Build();
+
+// Opt-in payload compression + encryption (P-346) — requires 01.Core's compression/cryptography
+// packages already registered
+services.AddSharedKernelCompression();   // 01.Core — IPayloadCompressor
+services.AddSharedKernelCryptography();  // 01.Core — ISymmetricEncryptionService
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithPayloadTransform(o =>
+    {
+        o.EnableCompression = true;
+        o.EnableEncryption = true; // wire format changes — every consumer of these message types
+                                    // must also call WithPayloadTransform with matching flags
+    })
+    .AddConsumer<OrderPlacedConsumer>()
+    .Build();
+
+// Bus-backed readiness probe (P-347) — injected wherever K8s liveness/readiness needs it;
+// 13.ServiceDefaults wraps this in an IHealthCheck via AddHealthChecks(), not shown here
+public sealed class MessagingReadinessCheck // illustrative — the real IHealthCheck lives in 13.ServiceDefaults
+{
+    public MessagingReadinessCheck(IMessageBusProbe probe) { ... }
+    public async Task<bool> IsReadyAsync(CancellationToken ct)
+    {
+        var health = await _probe.ProbeAsync(ct);
+        return health.IsHealthy;
+    }
+}
 ```
 
 `SharedKernel.Messaging.Abstractions` ships **no DI extensions** — it is a pure interface library.
@@ -1213,6 +1553,11 @@ public sealed class ProcessPaymentHandler
 - `IRoutingSlipBuilder` is an interface — AOT-safe. `MassTransitRoutingSlipBuilder` delegates to MassTransit `RoutingSlipBuilder` — verify AOT status of MassTransit Courier on each major upgrade. `RoutingSlipActivityBase<TArguments, TLog>` is a generic abstract class; closed generic instantiation at startup is model-build time only.
 - `MessagingDiagnostics.ActivitySource` and the `Activity` instances it produces (`System.Diagnostics`, BCL) are fully AOT-safe — no reflection, no dynamic code generation. `Activity.SetTag` uses object boxing for primitive tag values but performs no type scanning or `MakeGenericMethod` calls. Starting/disposing an `Activity` per consume/publish call is a hot-path allocation when a listener is attached (and a no-op fast path when no listener is attached) — acceptable for AOT and for steady-state throughput.
 - `[LoggerMessage]`-attributed partial log methods (`Microsoft.Extensions.Logging.Abstractions`, P-254) are compiled by a Roslyn source generator at build time — zero reflection, zero `Activator.CreateInstance`, fully AOT-safe by construction; this is why the platform-wide logging standard mandates this pattern over hand-written `LoggerMessage.Define<>()` delegates or ad hoc `ILogger.LogXxx()` calls. `MessagingLogScope.Create(Guid?)` returns a plain `Dictionary<string, object?>` populated by direct indexer assignment — no reflection, AOT-safe.
+- `PublishContext.TenantId`/`PartitionKey` (P-340/P-344) are plain nullable properties on the existing sealed mutable builder — no reflection added. `ITenantContextAccessor` is an interface — AOT-safe. `AmbientCorrelationHeaderPropagator`/`TenantHeaderPropagator` are sealed classes with no reflection in `Propagate` — AOT-safe (P-345).
+- `IMessageBusProbe`/`MessageBusHealth` (P-347) are, respectively, an interface and a sealed record with no reflection in construction or equality — AOT-safe. `MassTransitMessageBusProbe` delegates to MassTransit's own bus-health surface; AOT safety follows the same "verify on each MassTransit major upgrade" caveat already stated for `MassTransitMessageBus`/`MassTransitEventPublisher` above.
+- `DeadLetterOptions`/`PayloadTransformOptions` (P-343/P-346) are plain POCOs registered via the options system — AOT-safe, same shape as every other `*Options` class in this package.
+- `MessagingDiagnostics.Meter` and its `Counter<long>`/`Histogram<double>` instruments (P-348, `System.Diagnostics.Metrics`, BCL) are fully AOT-safe by the same reasoning already stated for `ActivitySource` above — no reflection, no dynamic code generation, and the same static-instrument exception to the "no static mutable state" hard rule applies identically to `Meter` as it does to `ActivitySource`.
+- The compressing/encrypting serializer decorator (P-346) delegates to `01.Core`'s `IPayloadCompressor`/`ISymmetricEncryptionService` — both already AOT-preferred per `01.Core`'s own brain; this package adds no additional reflection on top of them. STJ serialization of the (pre-transform) message payload is subject to the same NativeAOT source-generated-`JsonSerializerContext` requirement already stated above for `EventEnvelope<TEvent>`.
 
 ---
 
@@ -1239,6 +1584,12 @@ public sealed class ProcessPaymentHandler
 - **SQLite keep-alive connection for in-memory database persistence** — when using a SQLite in-memory database across multiple `ServiceScope` instances in the same test, open a `SqliteConnection("Data Source=:memory:")` and keep it open for the test's lifetime. Pass that connection to `UseSqlite(connection)`. If the connection closes, the in-memory database is dropped and subsequent scopes see an empty schema.
 - **`ActivitySource` / `Activity` assertion pattern (P-172):** subscribe an `ActivityListener` with `ShouldListenTo = source => source.Name == "SharedKernel.Messaging"` and `Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData` BEFORE invoking `Consume()` or `PublishAsync()` — without an attached listener, `ActivitySource.StartActivity` returns `null` (fast-path no-op) and no activity is created to assert against. Collect started activities into a `List<Activity>` via `listener.ActivityStarted = act => list.Add(act)`. Always call `ActivitySource.AddActivityListener(listener)` and dispose/remove it at test teardown to avoid cross-test listener leakage (listeners are process-global, not scoped to a `ServiceProvider`).
 - **`ActivityListener` parallel-test-isolation hazard:** the listener registered via `ActivitySource.AddActivityListener` is process-wide, not scoped to the test method or class. Under xUnit's default parallel test-class execution, other test classes in the same run that also drive `ConsumerBase<T>.Consume()` or `MassTransitEventPublisher.PublishAsync<T>()` emit their own activities on the same `"SharedKernel.Messaging"` source while your listener is attached. Asserting `capturedActivities.Should().ContainSingle(a => a.OperationName == "...")` is flaky — it can capture activities from unrelated concurrently-running tests. Always filter by the test's own unique tag value (e.g. `a.GetTagItem("messaging.message_type") == nameof(MyTestMessage)`) in addition to `OperationName`, never by `OperationName` alone.
+- **Propagator-symmetry tests (P-341):** any test asserting `IMessageHeaderPropagator` output must cover all three dispatch verbs it applies to (`PublishAsync`, `SendAsync`, `RequestAsync`) when the scenario is verb-agnostic — a propagator test that only exercises `PublishAsync` is exactly the gap that produced the P-341 defect in the first place.
+- **`IMessageBusProbe` health tests (P-347):** assert `IsHealthy = true` against a started `TestHarness`/in-memory bus, and `IsHealthy = false` (with a non-null `Description`) against a bus that was never started or whose underlying transport connection was torn down (e.g. a Testcontainers RabbitMQ container stopped mid-test). Never assert health by independently pinging the broker outside the probe — the whole point of the probe is that it reflects the real, already-configured bus instance.
+- **Payload transform round-trip and mismatch tests (P-346):** a round-trip test must exercise both `EnableCompression` and `EnableEncryption` together (the fixed compress-then-encrypt/decrypt-then-decompress order) as well as each flag independently. A mismatch test (publisher transform-enabled, consumer not, or vice versa) must assert a loud, typed failure (`PayloadTransformMismatchException` or equivalent) — never assert on a generic `Exception`, since a generic assertion would also pass for an unrelated failure mode and mask a regression to silent misinterpretation.
+- **Ordered-delivery Testcontainers tests (P-344):** publish interleaved messages under at least two distinct `PartitionKey` values against a single active consumer instance; assert each key's own messages are observed in publish order — asserting order across the *combined* stream (ignoring key) is not the guarantee this feature makes and will produce a flaky/meaningless test.
+- **Dead-letter Testcontainers tests (P-343):** configure a consumer whose `ConsumerDefinitionBase.NonRetryableExceptions` (or an exhausted `WithRetry()` budget) routes a thrown exception to dead-letter; assert the message is observable at the configured `DeadLetterOptions.QueueNameSuffix` destination — do not assert merely that the original queue is empty, which is also true for a successfully-processed message.
+- **`MeterListener` assertion pattern (P-348):** subscribe a `MeterListener` with `InstrumentPublished = (instrument, listener) => { if (instrument.Meter.Name == "SharedKernel.Messaging") listener.EnableMeasurementEvents(instrument); }` BEFORE invoking the operation under test; `Counter<T>`/`Histogram<T>` measurements are only observed while a listener is actively enabled for that specific instrument. Like `ActivityListener` (below), `MeterListener` subscription is process-wide — apply the same per-test unique-tag-value filtering discipline to avoid cross-test-class flakiness under xUnit's default parallel execution.
 - **`[LoggerMessage]` assertions use `EventId`, never message-text substring matching (P-254):** when a test needs to assert that a specific log statement fired, capture via a test `ILogger`/`ILoggerFactory` double (`16.Testing`) and assert on the structured `EventId.Id` (e.g. `7001` for `ConsumerBase`'s consume-error log) rather than parsing the rendered message string — the message template text is not a stable contract, the `EventId` is. **`MessagingLogScope`-seeded scope assertions:** any test asserting `BeginScope` contents on `ConsumerBase`, `BatchConsumerBase`, `FaultConsumerAdapter`, or `RoutingSlipActivityBase` must assert the `"CorrelationId"` key is present and formatted as `Guid.ToString("D")` (or empty string when unavailable) — this is the one shape `MessagingLogScope.Create` guarantees identically across all four types. Tests assert against the literal string `"CorrelationId"` (the key's runtime value), not against `MessagingLogScope.CorrelationIdKey` — the constant (P-263) is production-side authoring hygiene only; test code has no obligation to reference it.
 
 ---
@@ -1267,3 +1618,4 @@ public sealed class ProcessPaymentHandler
 - [2026-07-10] WO-041 / P-254 implemented — all 18 LR tasks complete, verified against the pre-written CLAUDE.md spec (Interface Contracts, EventId allocation table, hard violations) with zero discrepancies found. `Logging/MessagingLogScope.cs` added exactly as documented. All 6 files retrofitted: `ConsumerBase<TMessage>` (EventId 7001), `BatchConsumerBase<TMessage>` (7002/7003), `FaultConsumerAdapter<TMessage,TFaultConsumer>` (7004/7005 — the raw `_logger.LogError` call converted to `LogFaultConsumerError`), `RoutingSlipActivityBase<TArguments,TLog>` (7006/7007, plus the documented `CorrelationId`-scope behavior change), `VersionTranslatingConsumer<TOld,TNew>` (7008), `TranslatorRegistrationValidator` (7009, converted to `internal static partial class` with a `static partial void` method). Implementation note not previously captured: `[LoggerMessage]` partial methods on a type whose only `ILogger` member is a *property* (not a field) trigger source-generator diagnostic SYSLIB1019 ("no ILogger field found") — `ConsumerBase`, `BatchConsumerBase`, and `RoutingSlipActivityBase` all expose `protected ILogger Logger { get; }`, so their `[LoggerMessage]` methods had to be declared `static partial` with an explicit `ILogger logger` parameter (passing `Logger` at each call site) rather than instance `partial` methods; `FaultConsumerAdapter` and `VersionTranslatingConsumer`/`TranslatorRegistrationValidator` use a private/injected `ILogger` *field*, so their methods stayed instance (or `static partial` on the static-class case) with no parameter workaround needed. LR-15 added a new `RoutingSlipTests.cs` test (`ExecuteRoutingSlip_LogScope_ContainsCorrelationIdEqualToTrackingNumber`) using a dedicated `RoutingSlipCapturingLogger`/`RoutingSlipLogScopeCaptureStore` pair to assert the full BeginScope dictionary contents. LR-16/LR-17 were run for real (not deferred) — both `00.Governance` P-250 (SK0020/SK0021 analyzer, `LoggingEventIdIntegrityAssertion`) and `01.Core` P-249 (`LoggingEventIdRanges`) had already shipped by the time this phase ran: added a `LoggingEventIdGovernanceTests.cs` test referencing `SharedKernel.Primitives` + `SharedKernel.ArchitectureTests` (new test-only ProjectReferences, mirroring the established cross-domain test-consumption precedent) confirming zero EventId collisions/zero range violations against the real built assembly; SK0020/SK0021 zero-diagnostics verified via a temporary analyzer ProjectReference on the production csproj (added, built, confirmed 0 warnings, then reverted — not a permanent wiring change, out of this phase's scope). `FluentAssertions` bumped 8.4.0→8.10.0 in the test csproj to satisfy `SharedKernel.ArchitectureTests`' floor. 108/108 `SharedKernel.Messaging.MassTransit.Tests` passing (up from 107 pre-phase + 1 new LR-16 governance test); one pre-existing Docker-dependent `RabbitMqIntegrationTests` failure (unrelated, `[Trait("Category","Integration")]`, excluded from the count) and one known flaky `ActivityListener` parallel-test-isolation failure (documented in Test Rules, self-resolved on rerun) observed during the session, neither caused by this retrofit. `SK.07.LoggingRetrofit` now 18/18 `●` (messaging-phase-implementer)
 - [2026-07-14] WO-042 / P-263 queued — new `SK.07.LoggingRetrofit` tasks LR-19→LR-22: `MessagingLogScope`'s inline `"CorrelationId"` dictionary-key literal (written once, inside `Create(Guid?)`, restated three more times in the type's own XML docs) is promoted to a package-local `internal const string CorrelationIdKey`. Closes the platform-wide "no bare literal for a semantically significant, documented key name" rule (WO-042's core principle) for this one already-well-documented case. Confirmed by audit: all four consumer/activity base types already call through `MessagingLogScope.Create` rather than constructing the dictionary key themselves, so this is a single-file rename with zero call-site fan-out; `RoutingSlipTests.cs`'s existing `"CorrelationId"` key assertion is unaffected (it checks the key's runtime string value via `RoutingSlipLogScopeCaptureStore.CapturedState`, not the production-side authoring path). Deliberately kept local to `07.Messaging` rather than promoted to `01.Core` — a `BeginScope` dictionary key name is this domain's own structured-logging contract, not a cross-service wire format (`EventId` ranges are the `01.Core`-owned cross-domain concern; scope-dictionary key names are not). Interface Contracts' `MessagingLogScope` entry and the Test Rules `MessagingLogScope`-seeded scope assertion bullet both updated to reference `CorrelationIdKey`; `SK.07.LoggingRetrofit` demoted from ●(18/18) to ○(18/22) pending implementation (messaging-arch-planner, WO-042)
 - [2026-07-16] WO-042 / P-263 implemented — LR-19→LR-22 complete. `MessagingLogScope.cs` gained `internal const string CorrelationIdKey = "CorrelationId";` with its own XML doc `<remarks>` explaining the deliberate non-promotion to `01.Core`; `Create(Guid?)`'s dictionary initializer now reads `[CorrelationIdKey] = ...` instead of the bare literal; the type's `<remarks>`/`<returns>` docs (three prior restatements of the literal) now reference `<see cref="CorrelationIdKey"/>`/`CorrelationIdKey` instead. Single-file change exactly as scoped — zero call-site fan-out, since all four consumer/activity base types already went through `MessagingLogScope.Create`. Verified against pre-existing `main` tip: `SharedKernel.Messaging.MassTransit.Tests` 108/108 passing both before and after the edit (`RoutingSlipTests`' `"CorrelationId"` key assertions unaffected, confirming the rename changed only the production authoring path, not the runtime value); the one failing `RabbitMqIntegrationTests.PublishAndConsume_RealBroker_MessageDelivered` reproduces identically pre- and post-change (Docker-gated `[Trait("Category","Integration")]` test, unrelated health-check DI resolution issue, not caused by this phase). Interface Contracts' `MessagingLogScope` entry required no edit — the arch-planner's WO-042 pass had already pre-written it to the post-implementation shape. `SK.07.LoggingRetrofit` now 22/22 `●` (messaging-phase-implementer)
+- [2026-08-04] WO-054 (arch-lead, root P-340–P-352) — 10 new phases planned (P-340–P-349, all `○` Pending): EnvelopeTenancy, PropagationSymmetry, ConsumerConcurrency, DeadLetter, OrderedDelivery, AmbientPropagation (depends on EnvelopeTenancy+PropagationSymmetry), PayloadTransform, ReadinessProbe, DiagnosticsCoverage, PackagingRecipes (depends on AmbientPropagation). Every defect cited was verified directly against the real shipped `.cs` source before being written up, not assumed from this file's own prior prose — and in the process this pass also caught and corrected three pieces of already-stale documentation unrelated to the new phases: (1) the CloudEvents compliance rule table claimed `CorrelationId`/`CausationId` are `Guid` and named `SchemaVersion`/`TimestampUtc` — the real shipped `EventEnvelope<TEvent>` (`SharedKernel.Contracts` v2.0.0, confirmed by direct source read) types them `string?` and names them `EventVersion`/`OccurredOn`; corrected in place. (2) `IEventPublisher`'s interface-contract prose never mentioned `EventEnvelope.Wrap<TEvent>()` as the mandated construction path, silently tolerating the exact raw-object-initializer defect P-340 fixes. (3) the DI Registration section's header-propagation example defined a from-scratch `TenantHeaderPropagator` class reading `ITenantProvider` directly — a name that now collides with the real shipped `TenantHeaderPropagator` type from P-345 — replaced with a `FeatureFlagHeaderPropagator` example plus the new seam-based `WithAmbientCorrelationPropagation()`/`WithTenantContext<T>()` worked example. New sections added: "Dead-letter and poison-message policy", "Ordered delivery via partition key", "Opt-in payload compression and encryption", "Bus-backed readiness probe". Ten new hard-violation rules added (raw `EventEnvelope<TEvent>` construction, asymmetric propagator invocation, non-configurable-ordering violation, bespoke crypto/compression primitives, independently-constructed probe connections, `IHealthCheck` inside this domain, invented ordering substitutes, hardcoded dead-letter naming) plus one existing rule ("never implement `IMessageHeaderPropagator` inside `SharedKernel.*`") narrowed with a named two-type exception. Packages table, Queued Capabilities table, Interface Contracts (`PublishContext.TenantId`/`PartitionKey`, `IMessageBusProbe`/`MessageBusHealth`, `ITenantContextAccessor`, `AmbientCorrelationHeaderPropagator`/`TenantHeaderPropagator`, `MassTransitMessageBusProbe`, `DeadLetterOptions`/`PayloadTransformOptions`, `ConsumerDefinitionBase.ConcurrentMessageLimit`, `MessagingDiagnostics.Meter`), AOT Compatibility, Test Rules, and DI Registration sections all updated (messaging-arch-planner, WO-054, P-340–P-349)
