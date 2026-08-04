@@ -5,6 +5,56 @@ metadata:
   type: project
 ---
 
+## SK.06.Docs fully closed 2026-08-04 (64/64) — WO-053 DO-53..DO-64, closing the domain out end to end
+Sixth+ confirmed instance of "state-map ○ but content already exists": all six CLAUDE.md narrative
+sections these 12 tasks required (Structured Logging, Soft-Delete Restore, Read-Replica Routing,
+pgvector query-ergonomics subsection, Traced-operations table, Test Rules `PostgreSqlContainerFixture`
+bullet) were ALREADY written to target-state by an earlier design-confirmation pass — zero CLAUDE.md
+content edits needed. The genuine gaps were narrower than the task list implied and lived in the
+`.cs` XML docs and the package READMEs, not CLAUDE.md:
+1. **The IN-CAPS read-after-write consistency caveat existed in only ONE of the three places DO-61
+   explicitly named.** `EfCorePersistenceBuilder.WithReadReplica`'s XML doc had it; `IReadReplicaContextAccessor<TContext>`'s
+   interface-level remarks and `EfReadRepository`'s `replicaAccessor` constructor-parameter doc did
+   not. When a task enumerates several specific doc locations for the identical caveat, verify EACH
+   one individually — a caveat present at the "obvious" top-level entry point does not imply it
+   propagated to the lower-level implementation-detail types a careful reader would also land on.
+2. **Package READMEs lagged CLAUDE.md's own DI Registration examples by a whole batch of features.**
+   `SharedKernel.Persistence.EfCore/README.md` had no config-binding, soft-delete-restore,
+   command-timeout, or read-replica-routing sections at all, despite CLAUDE.md's DI Registration
+   block already carrying all four as of the Design-phase pass; `SharedKernel.Persistence.PostgreSQL/README.md`
+   had zero query-side pgvector content (mapping-only, matching the OLD pre-P-339 state) even though
+   `VectorOrderingExpressions.ByDistance` had shipped and been fully documented in CLAUDE.md two
+   sessions earlier. **Lesson: never assume a package README tracks CLAUDE.md 1:1 just because both
+   are "Docs" deliverables — grep the README directly for the new symbol names (`WithReadReplica`,
+   `VectorOrderingExpressions`, etc.) before marking a README-touching Docs task done.**
+3. Also added a small, previously-missing "no secret logged" remark to `AdvisoryLockAcquired`/
+   `AdvisoryLockReleased`'s `[LoggerMessage]` XML docs in `PersistenceLog.cs` (DO-55's literal wording
+   named "advisory-lock logs" explicitly alongside encryption-rotation logs, even though neither log
+   actually carries anything sensitive — added anyway to satisfy the literal acceptance criterion).
+
+**state-map-phase mechanics nuance worth remembering for future sessions on THIS domain (or any
+domain with a similar sub-phase-completion-order quirk):** `06.Persistence`'s own `SK.06.Published`
+phase key had already reached 8/8 `●` back on 2026-07-31 — independently of, and BEFORE, `SK.06.Docs`
+finishing — because `06.Persistence/state-map.md`'s own "Published" phase key only tracks four narrow
+NuGet-packaging tasks (P-05..P-08), not "every other phase is also done." So when `SK.06.Docs` finally
+reached 64/64 in THIS session, ALL SIX phase keys (Design/Scaffold/Core/Tests/Docs/Published) became
+`●` simultaneously as a side effect, even though the `state-map-phase` skill's literal S8 instruction
+("phase → the root phase name from the Phase Key Registry row" for the JUST-completed key) would say
+to set the root Domain Summary Board's Current Phase to "Docs," not "Published." Resolved by setting
+Current Phase to "Published" anyway (matching the pattern every other FULLY-closed domain in the root
+board uses — 03/04/08/09/10/12/17 all show `Published` once all six sub-phases are `●`, never
+whichever phase happened to close last) and additionally running the S8b-style domain-wide Phase
+Backlog bulk-close (six WO-053 entries P-333/334/336/337/338/339, all still `◐ Dispatched` despite
+their underlying work being 100% shipped and tested) even though the raw call parameter was
+`phase_key: SK.06.Docs`, not `SK.06.Published`. **The literal skill instructions do not anticipate a
+domain whose own sub-map lets "Published" tasks finish out of order ahead of "Docs"/"Tests" — when
+this happens, check ALL SIX phase-key rows in the sub-map's own Overall Progress table before writing
+the root propagation, not just the one phase_key named in the call.**
+
+Full suites re-verified green after the doc-only source edits: `EfCore.Tests` 358/358, `PostgreSQL.Tests`
+53/53 (real Docker). Zero production behavior changed this session — every edit was either an XML
+doc comment or a README section.
+
 ## SK.06.Tests fully closed 2026-08-04 (121/121) — WO-053 T-98..T-105/T-110..T-121, closing out the Tests-phase gap left by the Core-phase session below
 Verified each of the 20 `○` tasks file-by-file against the 92 tests the prior Core-phase session had
 already written, per the standing "code may already exist, verify before writing" pattern. 10/20 were
