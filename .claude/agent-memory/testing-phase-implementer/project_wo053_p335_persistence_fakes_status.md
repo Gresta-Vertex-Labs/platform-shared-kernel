@@ -1,0 +1,15 @@
+---
+name: project_wo053_p335_persistence_fakes_status
+description: WO-053/P-335 status — 06.Persistence core write/read/UoW/connection-factory fakes (FakeRepository, FakeUnitOfWork, FakePersistenceTransaction, FakeDbConnectionFactory) in 16.Testing's Persistence/ folder.
+type: project
+---
+
+`SK.16.Core` closed 2026-08-04 (C-102–C-105, 105/105) — `FakeDbConnectionFactory`, `FakeRepository<TAggregate,TId>` (single type implementing BOTH `IRepository<TAggregate,TId>` and `IReadRepository<TAggregate,TId>`), `FakeUnitOfWork`, `FakePersistenceTransaction` all implemented in `16.Testing/SharedKernel.Testing/Persistence/`.
+
+**Why:** `FakeDbConnectionFactory` had been `[STATUS: Planned]` since P-182/WO-029 (2026-06-22) — roughly a dozen work orders — and never built. `06.Persistence`'s own write/read/UoW abstractions had zero `16.Testing` coverage at all before this phase, despite every other domain from `02.Caching` through `17.Workflows` having one. P-335/WO-053 closed both gaps in one phase.
+
+**How to apply:**
+- `SK.16.Tests` (T-66–T-71) and `SK.16.Docs` (DO-33–DO-35) remain `○` Pending as of 2026-08-04 — a future session needs to write `SharedKernel.Testing.SelfTests/Persistence/{FakeDbConnectionFactoryTests,FakeRepositoryTests,FakeUnitOfWorkTests}.cs` (per the T-66–T-71 task text in `16.Testing/state-map.md`) before this phase is fully closed end to end.
+- `IReadRepository.ListKeysetAsync<TKey>`'s real, live constraint is `where TKey : struct, IComparable<TKey>` — NOT bare `IComparable<TKey>`. This matches `03.Domain`'s `KeysetSpecification<T,TKey>` own WO-051/C-39-corrected constraint. `16.Testing/CLAUDE.md`'s `Persistence/` Interface Contracts block had this abbreviated (drift found and fixed 2026-08-04) — if this section drifts again, re-verify against the live `06.Persistence/SharedKernel.Persistence.Abstractions/Repositories/IReadRepository.cs` file directly, not the CLAUDE.md prose.
+- `IRestorableRepository<TAggregate,TId>` (a sibling `06.Persistence` phase, WO-053/P-337) SHIPPED sometime between the Design-phase pass (2026-08-03, confirmed absent) and the Core-phase pass (2026-08-04, confirmed present) — it now exists at `06.Persistence/SharedKernel.Persistence.Abstractions/Repositories/IRestorableRepository.cs` with a single `RestoreAsync(TAggregate, CancellationToken)` member. `FakeRepository<TAggregate,TId>` deliberately does NOT implement it (out of P-335's own scope) — extending the fake to cover it is a legitimate, flagged future follow-up, not an oversight.
+- `FakeRepository<TAggregate,TId>`'s `.SimulateFailure` gates exactly the 6 write-side mutating members (`AddAsync`/`UpdateAsync`/`DeleteAsync`/`AddRangeAsync`/`UpdateRangeAsync`/`DeleteRangeAsync`); the 3 pure-lookup members (`GetByIdAsync`/`ExistsAsync`/`GetBySpecAsync`) and every `IReadRepository` read-side member are never gated. `DeleteAsync` is ALWAYS a hard removal even for `ISoftDeletable` aggregates (no in-place `IsDeleted` flip — that property has `private set` in production, populated only via EF Core's `ChangeTracker`).
