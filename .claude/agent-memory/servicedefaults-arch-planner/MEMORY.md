@@ -7,3 +7,4 @@
 - [Verify dependency claims](feedback_verify_dependency_claims.md) — always check the target domain's own state-map before marking a cross-domain dependency Available; a phase input's "already implemented" claim can be stale
 - [Provider-agnostic adapter pattern](provider_agnostic_adapter_pattern.md) — for multi-provider domains (08.Storage's .S3/.Obs), take config as an explicit param, never read a concrete provider's options type
 - [Upstream contract-definition gap](upstream_contract_definition_gap.md) — 10.Intelligence's own brain self-contradicts on ICompletionProviderDescriptor.ProbeAsync; how to lock only the verified part and flag the rest
+- [Messaging health check probe pattern](messaging_health_check_probe_pattern.md) — WO-054/P-351: retired independently-constructed-connection health checks; probe-wraps-real-bus pattern; how to plan a breaking-change removal while blocked on a cross-domain dependency

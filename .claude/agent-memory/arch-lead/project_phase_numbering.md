@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-07-27, the last NEW phases written to `state-map.md` Phase Backlog are **P-292–P-300** (under WO-049, all `○` Pending — 01.Core gold-standard review). WO-048 before that retracted/amended existing phases (P-281, P-285, P-286) and minted no new phase IDs.
+As of 2026-08-04, the last NEW phases written to `state-map.md` Phase Backlog are **P-340–P-352** (under WO-054, all `○` Pending — 07.Messaging gold-standard review). See [[project_wo054_messaging_goldstandard_review]] for full detail. WO-050/051/052/053 before that each minted their own new phase ranges (P-301–306, P-307–327, P-328–332, P-333–339 respectively) — all gold-standard reviews of already-published domains, same pattern as WO-049/WO-054.
 
-Next new phase must be **P-301**. Next new Work Order must be **WO-050**.
+Next new phase must be **P-353**. Next new Work Order must be **WO-055**.
+
+As of 2026-07-27 (superseded above): the last NEW phases were P-292–P-300 (WO-049, 01.Core gold-standard review). WO-048 before that retracted/amended existing phases (P-281, P-285, P-286) and minted no new phase IDs.
 
 **WO-049 context:** 01.Core gold-standard architecture review, direct user request. See [[project_wo049_core_goldstandard_review]] for full detail. Nine phases: seven inside `01.Core` itself (P-292 Result Try/Combine, P-293 IIdGenerator/Guid-v7, P-294 WellKnownTagKeys, P-295 TimeProvider-backed IClock, P-296 IContentHasher, P-297 new `SharedKernel.Compression` package — the direct answer to "more packages like Cryptography", P-298 feature-flag variants), plus P-299 (00.Governance Result-discard analyzer — the single highest-leverage finding) and P-300 (16.Testing fakes for Cryptography/FeatureManagement, the only domain with zero 16.Testing coverage). All three touched domain boards (00/01/16) were already `●` Published, so no `state-map-phase` calls — backlog-only. `sync-brain` called (root mode) — Folder Map row 01, Magic String Convention section, and 8 new "What Goes Where" rows added, each marked design-locked/queued since nothing is implemented yet. Declined: `Option<T>`/`Maybe<T>`, FluentValidation-in-Configuration, `Error.Code` namespace-enforcement analyzer.
 
