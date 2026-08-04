@@ -71,14 +71,22 @@ internal static partial class PersistenceLog
         Message = "Migration and seed startup sequence failed for context '{ContextType}'.")]
     internal static partial void MigrationAndSeedFailed(ILogger logger, Exception exception, string contextType);
 
-    /// <summary>Logged immediately after the PostgreSQL advisory lock is acquired.</summary>
+    /// <summary>
+    /// Logged immediately after the PostgreSQL advisory lock is acquired. Never logs the lock key
+    /// value, the connection string, or any other secret/sensitive value — only the CLR type name
+    /// of the <c>TContext</c> the lock guards.
+    /// </summary>
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 5,
         Level = LogLevel.Information,
         Message = "Advisory lock acquired for context '{ContextType}'.")]
     internal static partial void AdvisoryLockAcquired(ILogger logger, string contextType);
 
-    /// <summary>Logged immediately after the PostgreSQL advisory lock is released.</summary>
+    /// <summary>
+    /// Logged immediately after the PostgreSQL advisory lock is released. Never logs the lock key
+    /// value, the connection string, or any other secret/sensitive value — only the CLR type name
+    /// of the <c>TContext</c> the lock guarded.
+    /// </summary>
     [LoggerMessage(
         EventId = LoggingEventIdRanges.Persistence + 6,
         Level = LogLevel.Information,

@@ -74,6 +74,10 @@ public abstract class EfReadRepository<TAggregate, TId> : IReadRepository<TAggre
     /// directly, exactly as before this parameter existed. Purely additive — every existing
     /// <see cref="EfReadRepository{TAggregate, TId}"/> subclass continues to compile and behave
     /// identically without passing anything new.
+    /// READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE THIS IS NON-NULL — a
+    /// handler that writes then immediately reads through this repository in the same logical
+    /// operation MAY OBSERVE STALE DATA under replication lag. A read issued while an EF Core
+    /// transaction is active on <see cref="DbContext"/> is NEVER routed to the replica.
     /// </param>
     protected EfReadRepository(
         SharedKernelDbContext dbContext,

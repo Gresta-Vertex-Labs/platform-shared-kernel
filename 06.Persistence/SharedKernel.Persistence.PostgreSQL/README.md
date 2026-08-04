@@ -9,6 +9,7 @@ PostgreSQL-specific EF Core conventions for Platform.SharedKernel microservices,
 - `XminConcurrencyTokenConvention` / `XminRowVersionValueConverter` — the working `IHasConcurrency`/`FullAuditableAggregateRoot<TId>` concurrency mechanism (`.IsRowVersion()` alone is non-functional on a plain PostgreSQL `bytea` column)
 - `HasJsonbColumn` / `JsonbColumnAttribute` — JSONB column mapping via Npgsql's native JSON support
 - `HasVectorColumn` / `VectorColumnAttribute` — pgvector-typed column mapping (`Pgvector.EntityFrameworkCore`)
+- `VectorDistanceMetric` / `VectorOrderingExpressions.ByDistance<TAggregate>(...)` — server-side nearest-neighbor `ORDER BY` expression builder for `Pgvector.Vector`-typed columns (cosine/L2, zero runtime reflection)
 - `NpgsqlConnectionFactory` — `IDbConnectionFactory` implementation shared with the Dapper package
 - `AddSharedKernelPostgreSQL(connectionString)` — registers the shared `NpgsqlDataSource` and `IDbConnectionFactory`
 
@@ -59,6 +60,28 @@ public sealed class ProductConfig : EntityTypeConfigurationBase<Product, Product
 ```
 
 Call `EnsureVectorExtension()` in a migration or at startup before the first vector column is used.
+
+## pgvector nearest-neighbor queries (Quick-Start)
+
+`HasVectorColumn`/`VectorColumnAttribute` map the column type only. `VectorOrderingExpressions.ByDistance<TAggregate>(...)` is the first query-side ergonomics for actually finding the nearest rows to a query vector — compose it into your own `Specification<T>` subclass alongside the usual `Criteria`/paging; zero `SpecificationEvaluator<T>` changes are needed:
+
+```csharp
+public sealed class NearestProductsSpecification : Specification<Product>
+{
+    public NearestProductsSpecification(Vector queryEmbedding, int topK)
+    {
+        AddCriteria(p => p.IsActive);
+        ApplyOrderBy(VectorOrderingExpressions.ByDistance<Product>(
+            p => p.Embedding, queryEmbedding, VectorDistanceMetric.Cosine));
+        ApplyPaging(skip: 0, take: topK);
+    }
+}
+
+var nearest = await productReadRepository.ListAsync(
+    new NearestProductsSpecification(queryVector, topK: 10), ct);
+```
+
+`VectorDistanceMetric` supports `Cosine` and `L2` (Euclidean) — a deliberate narrowing of the six distance/similarity functions `Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions` exposes. Scoped to `Pgvector.Vector`-typed properties only; a `float[]`-typed vector column is out of scope for this helper.
 
 ## Package
 

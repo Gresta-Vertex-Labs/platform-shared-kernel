@@ -14,6 +14,9 @@ EF Core 10 implementation of `SharedKernel.Persistence.Abstractions` for Platfor
 - `SpecificationEvaluator<T>` — criteria → keyset seek → includes → split-query → ordering → distinct → tracking → paging → projection, in that fixed order
 - `EntityTypeConfigurationBase<TEntity,TId>`, `StronglyTypedIdValueConverter<TId,TValue>` — EF Core configuration building blocks
 - `EncryptedValueConverter`, `.Encrypt()` extension, `EncryptionModelConvention` — transparent field-level AES-256-GCM column encryption
+- `IRestorableRepository<TAggregate,TId>` / `EfRepository.RestoreAsync` — single-entity soft-delete restore (stages only, same save boundary as every other write)
+- `IReadReplicaContextAccessor<TContext>` / `.WithReadReplica(...)` — opt-in read-replica routing for `IReadRepository`
+- `[LoggerMessage]`-based structured logging (EventIds `6000-6010`) across `ConcurrencyInterceptor`, `MigrationAndSeedHostedService`, transient-retry diagnostics, and `EncryptionRotationService` — never a key byte or plaintext/ciphertext value
 - `EfCorePersistenceBuilder<TContext>` — fluent DI builder (`AddSharedKernelEfCore<TContext>(...)`)
 
 ## Install
@@ -73,6 +76,56 @@ services
 // Inside IEntityTypeConfiguration<Customer>.Configure:
 //   builder.Property(x => x.Email).HasMaxLength(255).Encrypt().IsRequired();
 ```
+
+## Configuration-section binding
+
+`.WithEncryption(...)` and `.WithServiceName(...)` also accept an `IConfiguration` overload — binds from `EncryptionOptions.SectionName`/`PersistenceServiceOptions.SectionName` (`"SharedKernel:Encryption"`/`"SharedKernel:Persistence"`) instead of a code-only `Action<T>`. Both overloads compose under normal `IOptions<T>` later-registration-wins semantics:
+
+```csharp
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
+    .WithEncryption(configuration)     // binds configuration.GetSection(EncryptionOptions.SectionName)
+    .WithServiceName(configuration)    // binds configuration.GetSection(PersistenceServiceOptions.SectionName)
+    .Build();
+```
+
+```json
+{
+  "SharedKernel": {
+    "Encryption": { "Enabled": true, "CurrentVersion": "v1", "Keys": { "v1": "<Base64-encoded 32-byte key>" } },
+    "Persistence": { "ServiceName": "order-service" }
+  }
+}
+```
+
+## Soft-delete restore and command timeout (opt-in)
+
+```csharp
+// Single-entity restore — stages only; caller still calls SaveChangesAsync.
+var order = await orderRepository.GetBySpecAsync(new ByIdSpecification<Order, OrderId>(orderId), ct);
+if (order is not null)
+{
+    await orderRepository.RestoreAsync(order, ct);
+    await unitOfWork.SaveChangesAsync(ct);
+}
+
+// Command timeout — provider-neutral (Microsoft.EntityFrameworkCore.Relational), not Npgsql-specific.
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
+    .WithCommandTimeout(commandTimeoutSeconds: 30)
+    .Build();
+```
+
+## Read-replica routing (opt-in)
+
+```csharp
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(primaryConnectionString))
+    .WithReadReplica(options => options.UseNpgsql(replicaConnectionString))
+    .Build();
+```
+
+`IReadRepository` reads are routed to the replica connection; `IRepository` writes always target the primary. **READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE ENABLED** — a handler that writes then immediately reads via `IReadRepository` in the same logical operation MAY OBSERVE STALE DATA under replication lag. A read issued inside an active transaction is NEVER routed to the replica, even when this is configured.
 
 ## Explicit transactions, bulk mutation, streaming, keyset pagination
 

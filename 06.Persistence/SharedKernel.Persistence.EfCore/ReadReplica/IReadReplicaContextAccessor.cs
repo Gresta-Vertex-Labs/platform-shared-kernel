@@ -30,6 +30,13 @@ namespace SharedKernel.Persistence.EfCore.ReadReplica;
 /// implementation is ever registered and every <c>EfReadRepository</c> constructor resolves
 /// <see langword="null"/> for the corresponding optional parameter.
 /// </para>
+/// <para>
+/// READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE A NON-NULL
+/// IMPLEMENTATION IS REGISTERED — a handler that writes then immediately reads via
+/// <c>IReadRepository</c> in the same logical operation MAY OBSERVE STALE DATA under replication
+/// lag, because <see cref="GetEffectiveContext"/> only ever falls back to the primary when an EF
+/// Core transaction is currently open, never merely because a write recently happened outside one.
+/// </para>
 /// </remarks>
 public interface IReadReplicaContextAccessor<TContext>
     where TContext : SharedKernelDbContext
@@ -37,7 +44,7 @@ public interface IReadReplicaContextAccessor<TContext>
     /// <summary>
     /// Returns <paramref name="primaryContext"/> unconditionally when
     /// <c>primaryContext.Database.CurrentTransaction</c> is non-<see langword="null"/> — reads
-    /// inside an active transaction are never routed to the replica. Otherwise returns a lazily
+    /// inside an active transaction are NEVER routed to the replica. Otherwise returns a lazily
     /// constructed, scope-cached replica context instance.
     /// </summary>
     /// <param name="primaryContext">The primary, scope-resolved <typeparamref name="TContext"/> instance.</param>
