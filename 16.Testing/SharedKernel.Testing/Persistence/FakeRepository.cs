@@ -39,12 +39,32 @@ namespace SharedKernel.Testing.Persistence;
 /// once" asserts on <c>FakeUnitOfWork.SaveChangesCallCount</c> directly.
 /// </para>
 /// <para>
+/// <b>Write-semantics asymmetry, by design:</b> <see cref="AddAsync"/> throws
+/// <see cref="InvalidOperationException"/> on a duplicate derived key — a FAIL-FAST choice, catching a
+/// test-authoring bug (adding the same aggregate twice) immediately rather than faithfully deferring
+/// the eventual real unique-constraint violation to a phantom later <c>SaveChangesAsync</c> this fake
+/// does not model. <see cref="UpdateAsync"/> throws
+/// <see cref="System.Collections.Generic.KeyNotFoundException"/> on a missing derived key rather than
+/// silently upserting — a silent upsert would mask a genuine "this aggregate was never
+/// <see cref="AddAsync"/>-ed" test bug. <see cref="DeleteAsync"/>, by contrast, is ALWAYS a hard
+/// removal AND idempotent (a missing key is a silent no-op, matching this package's universal
+/// idempotent-delete convention) — see its own remarks for why it never flips
+/// <see cref="ISoftDeletable.IsDeleted"/> in place instead of removing the row outright. Three
+/// different failure postures for three different mistakes: Add/Update both fail loudly because a
+/// silent auto-correction would hide a real test-authoring error, while Delete succeeds silently
+/// because "delete something already gone" is not, on its own, evidence of a bug.
+/// </para>
+/// <para>
 /// <b>Scope lock:</b> <c>IRestorableRepository&lt;TAggregate, TId&gt;</c> — a sibling interface
 /// dispatched to <c>06.Persistence</c> in the SAME work order (WO-053/P-337) — is deliberately NOT
 /// implemented by this type. Extending this fake to additionally implement
 /// <c>IRestorableRepository&lt;TAggregate, TId&gt;</c> is a natural, additive future follow-up once a
 /// concrete consumer needs it — not undertaken here, since P-335's own acceptance criteria name only
-/// <see cref="IRepository{TAggregate, TId}"/>/<see cref="IReadRepository{TAggregate, TId}"/>.
+/// <see cref="IRepository{TAggregate, TId}"/>/<see cref="IReadRepository{TAggregate, TId}"/>. RE-VERIFIED
+/// at Docs-phase implementation time (2026-08-04): <c>06.Persistence</c>'s
+/// <c>Repositories/IRestorableRepository.cs</c> (a single <c>RestoreAsync(TAggregate, CancellationToken)</c>
+/// member) is now compiled, shipped code — not merely ratified prose — confirming this scope lock is
+/// still a deliberate, active omission rather than a stale note describing a since-vanished interface.
 /// </para>
 /// </remarks>
 public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TId>, IReadRepository<TAggregate, TId>
@@ -119,6 +139,10 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Fails FAST on a duplicate derived key rather than silently overwriting — see the class-level
+    /// "Write-semantics asymmetry" remarks above for the full rationale.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <see cref="SimulateFailure"/> is <see langword="true"/>, or when an aggregate with
     /// the same derived key already exists.
@@ -149,6 +173,11 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Throws rather than silently upserting on a missing derived key — a silent upsert would mask a
+    /// genuine "this aggregate was never <see cref="AddAsync"/>-ed" test bug. See the class-level
+    /// "Write-semantics asymmetry" remarks above for the full rationale.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">Thrown when <see cref="SimulateFailure"/> is <see langword="true"/>.</exception>
     /// <exception cref="System.Collections.Generic.KeyNotFoundException">Thrown when no aggregate with the derived key exists.</exception>
     public Task UpdateAsync(TAggregate aggregate, CancellationToken ct = default)
@@ -493,8 +522,17 @@ public sealed class FakeRepository<TAggregate, TId> : IRepository<TAggregate, TI
     /// canonical specification-evaluator pipeline — everything except paging (step 7). Shared by
     /// every read-side member, including the total-count pass for paged queries.
     /// </summary>
+    /// <remarks>
+    /// Step -1 (<c>TagWith</c>), steps 2/2b/2c (Includes/StringIncludes/AsSplitQuery), and step 6
+    /// (AsNoTracking) are all deliberate, DOCUMENTED in-memory no-ops of the real
+    /// <c>06.Persistence</c> pipeline — named explicitly here (and in the inline comments below) so a
+    /// reader never mistakes their absence from this method for an oversight rather than a considered
+    /// simplification with no in-memory equivalent.
+    /// </remarks>
     private IEnumerable<TAggregate> ApplyFilterOrderDistinct(ISpecification<TAggregate> spec)
     {
+        // Step -1 (TagWith) is a deliberate in-memory no-op — an in-memory LINQ query has no SQL
+        // query-tagging concept for a diagnostic comment to attach to.
         IEnumerable<TAggregate> query = _items.Values;
 
         // Step 0: soft-delete filter — a runtime `is` check, never a generic constraint.
