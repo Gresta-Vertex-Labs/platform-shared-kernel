@@ -22,6 +22,13 @@ namespace SharedKernel.Testing.Application;
 /// bridging the local seam to a real persistence provider is a decision made only at each consuming
 /// service's composition root, never inside this package.
 /// </remarks>
+/// <remarks>
+/// Deliberate naming collision, disambiguated only by namespace: a DIFFERENT, unrelated type,
+/// <see cref="SharedKernel.Testing.Persistence.FakeUnitOfWork"/> (P-335/WO-053), implements
+/// <c>SharedKernel.Persistence.Abstractions.ITransactionalUnitOfWork</c>/<c>IUnitOfWork</c>
+/// (<c>06.Persistence</c>) — the two types share a simple name because the two interfaces they fake
+/// happen to share a simple name.
+/// </remarks>
 public sealed class FakeUnitOfWork : IUnitOfWork
 {
     private int _saveChangesCallCount;
