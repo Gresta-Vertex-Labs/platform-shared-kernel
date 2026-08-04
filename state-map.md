@@ -32,8 +32,7 @@ Design → Scaffold → Core → Tests → Docs → Published
 
 | Domain                                                | Current Phase   | Focus (one line)                                                                                                                                 |
 |-------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-
-_Nothing in progress — all domains at ○ Not Started._
+| [16.Testing](16.Testing/state-map.md) | Docs | T-72–T-74 (one blocked on `07.Messaging` P-340/P-344) and DO-36 remain to close WO-054's `16.Testing` contribution |
 
 <!--
 Format when active:
@@ -84,7 +83,7 @@ Format when blocked:
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | SK.13.Core/Tests/Docs all fully closed again (2026-07-30) — `WithPersistenceTelemetry()` (C-45/T-40/DO-11, WO-051/P-326) implemented per D-16's locked design: wires `WithTracing(t => t.AddSource("SharedKernel.Persistence"))` ONLY — the family's first genuinely tracing-only member, since `06.Persistence`'s P-319 phase ships no companion `Meter`; blocker (`06.Persistence`'s C-110) re-verified cleared directly against `06.Persistence/state-map.md` and the compiled `PersistenceActivitySource.cs` before implementing. All six `SK.13.*` phase keys now `●`/`—` — domain fully complete end to end again. 91/91 SharedKernel.ServiceDefaults.Tests (+3) + 30/30 SharedKernel.MultiTenancy.Tests passing, 0 regressions. | — |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-041/P-257 code-level work landed — SK.15.LoggingRetrofit (LR-01–LR-05) `●`: `WebhookDispatcher.LogObserverException` converted to a `[LoggerMessage]`-attributed `Log.ObserverException` on a nested partial class, `EventId = LoggingEventIdRanges.Integration + 0` (15000); zero remaining direct `ILogger`/hand-written `Define` calls; 48/48 tests still passing. | P-257 full acceptance still pending `00.Governance`'s P-250 (SK0020/SK0021 analyzers). |
-| 16 | [Testing](16.Testing/state-map.md) | Docs | `●` | SK.16.Docs closed (35/35, WO-053) — DO-33–DO-35 documented `Persistence/FakeDbConnectionFactory`/`FakeRepository<TAggregate,TId>`/`FakeUnitOfWork`/`FakePersistenceTransaction`; DO-33/DO-35 were already fully satisfied from the Core-phase pass (verified, not assumed — re-confirmed the `13.ServiceDefaults` cross-reference is still accurate on disk); DO-34 closed two genuine gaps — the pipeline's `TagWith` no-op step was never named alongside its siblings, and `AddAsync`/`UpdateAsync` documented WHAT they throw but never WHY (added a unified "write-semantics asymmetry" rationale). All six phases (Design/Scaffold/Core/Tests/Docs/Published) are `●` again — WO-053's `16.Testing` contribution complete end to end; full regression 844/844 non-container tests passing, zero regressions. | — |
+| 16 | [Testing](16.Testing/state-map.md) | Docs | `◐` | SK.16.Core closed again (107/107, WO-054/P-352) — `Messaging/InMemoryMessageBus.cs`/`InMemoryEventPublisher.cs` gained a `PublishContext`-capture mechanism (a 4-tuple `_recorded`, a new `_requestContexts` queue) plus an optional constructor-injected `IEnumerable<IMessageHeaderPropagator>` applied identically before every dispatch verb, mirroring the real `MassTransitMessageBus.BuildContextFromPropagators`'s propagators-first/explicit-configure-wins precedence exactly; new `ShouldHavePublishedContext<T>()`/`ShouldHaveSentContext<T>()`/`ShouldHaveRequestedContext<TRequest,TResponse>()`/`ShouldHavePublishedContext<TEvent>()` assertion helpers return a reference to the real captured instance, so `PublishContext.TenantId`/`.PartitionKey` become visible automatically once `07.Messaging` ships them, with zero further `16.Testing` code changes. Every pre-existing public member's signature/behavior unchanged — confirmed via the pre-existing `SharedKernel.Testing.SelfTests/Messaging/` suite passing unchanged (24/24); full regression 870/870, zero regressions. **State corrected `●`→`◐`**: WO-054 (dispatched same-day) added fresh Tests/Docs tasks (T-72–T-74, one `⚑` Blocked pending `07.Messaging` P-340/P-344; DO-36) to the domain's already-`Docs`-labeled sub-map, which had gone stale (still read `●` in this row despite `SK.16.Docs` itself regressing to `◐` 35/36) — a factual correction, not a narrative regression; `Current Phase` intentionally left at `Docs` per this domain's established precedent (never walk the milestone name backward for an interim WO cycle's earlier-phase-key promotion). | T-72–T-74 (one blocked) and DO-36 remain to fully close WO-054's `16.Testing` contribution. |
 | 17 | [Workflows](17.Workflows/state-map.md) | Published | `●` | SK.17.Published complete (7/7) — all six phase keys (Design/Scaffold/Core/Tests/Docs/Published) now `●`, 81/81 tasks done. Docs-phase NuGet metadata re-verified genuinely complete (no `08.Storage`-style `PackageReadmeFile` gap); `dotnet pack` clean, zero `NU5039`/`NU5128`. New `17.Workflows/consumer-verify` harness (four surfaces, real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()`, never `BuildServiceProvider()`) proves `.AsClientOnly()` resolves the dispatch surface with zero DI exceptions and no `IHostedService`; a worker-hosting composition against a real `WorkflowEnvironment` registers the hosted worker service and completes a full start→activity→result round trip; and config misconfiguration fails loudly via a genuine two-tier mechanism — an entirely-absent key throws `InvalidOperationException` synchronously at `.Build()` (before any `IHost` exists), a present-but-invalid value throws `OptionsValidationException` at `IHost.StartAsync()` naming the property. 158/158 tests still passing. Root Phase Backlog **P-287 (WO-046) closed**. | — |
 
 ---
@@ -111,7 +110,7 @@ Format when active:
 | Phase | Domains |
 |-------|---------|
 | ● Published | 12 |
-| ● Docs | 3 |
+| ● Docs | 2 |
 | ● Phase 41 (Distributed Tracing ActivitySource Spans for Cache Read/Write Operations) | 1 |
 | ● LoggingRetrofit | 1 |
 | ● Governance: Architecture Enforcement for the 08.Storage Package Topology | 0 |
@@ -125,7 +124,7 @@ Format when active:
 | ● Core | 0 |
 | ● Design | 0 |
 | ● Scaffold | 0 |
-| ◐ In Progress | 0 |
+| ◐ In Progress | 1 |
 | ⚑ Blocked | 0 |
 | ○ Not Started | 0 |
 
@@ -1920,6 +1919,290 @@ pgvector support shipped as column-mapping-only and has stayed that way through 
 - [ ] A real PostgreSQL Testcontainers integration test proves a nearest-neighbor query against seeded vector data returns rows in genuinely correct distance order
 - [ ] Package README gains a pgvector nearest-neighbor Quick-Start example
 - [ ] `dotnet build`/`dotnet test` green with zero regressions; purely additive, zero change to `HasVectorColumn`'s existing mapping behavior
+---
+
+---
+### P-340 — Messaging: Correct EventEnvelope Construction & Wire Tenant Identity Through Publish
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+The integration-event publish path must construct the CloudEvents-compliant transport envelope exclusively through `04.Contracts`'s own mandated factory path — never via a raw object initializer — and must carry tenant identity through to that envelope when the publishing service is tenant-scoped. The publish-time context object gains tenant identity as a first-class, explicitly-settable field alongside its existing correlation/causation identity fields, mirroring how those two are already exposed. When a tenant identity is available (explicitly supplied by the caller, or later ambiently sourced per P-345), it must reach the envelope's tenant field; when absent, the field is omitted exactly as correlation/causation already behave when unset.
+
+#### Why this is needed
+`04.Contracts` shipped an optional tenant-identity field on its cross-service event envelope specifically so a dead-letter-queue inspector, audit tool, or replay utility could answer "which tenant does this event belong to" without deserializing the event payload — and its own construction contract states its factory method is the only permitted way to build an instance. The platform's own MassTransit-backed publisher currently does neither: it builds the envelope by hand, sidestepping the factory contract entirely, and the tenant field it was built to carry is consequently always empty on every message this platform actually sends. This is a silent violation of a sibling domain's own construction contract and makes a capability the platform already paid to build entirely inert on its only production call path.
+
+#### Acceptance criteria
+- [ ] The integration-event publish path constructs the transport envelope exclusively through `04.Contracts`'s mandated factory method — no direct object-initializer or constructor construction remains
+- [ ] The publish-time context object exposes an explicit, settable tenant-identity field, following the same nullable/fluent-builder shape its existing correlation/causation fields already use
+- [ ] When a tenant identity is supplied, it is present on the resulting envelope; when absent, the envelope's tenant field is omitted exactly as an unset correlation/causation id already behaves today
+- [ ] Existing correlation-id/causation-id population behavior is unchanged — this is purely additive
+- [ ] A new test proves the envelope's tenant field round-trips correctly when supplied, and proves the factory-method-only construction rule is actually exercised (not merely asserted by inspection)
+- [ ] `07.Messaging/CLAUDE.md` corrected where it currently implies direct envelope construction
+---
+
+---
+### P-341 — Messaging: Header-Propagator Symmetry Across Publish, Send, and Request
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+Every registered header propagator must run identically regardless of which of the three dispatch verbs a caller uses — fan-out publish, point-to-point send, or request/response. Today only the fan-out publish path invokes registered propagators; the point-to-point send path and the request/response path silently skip them entirely.
+
+#### Why this is needed
+A consuming service that registers a header propagator to carry tenant identity or correlation context reasonably expects it to apply to everything it sends over the bus, not just broadcast events. The current asymmetry is invisible from the outside — nothing errors, nothing warns — a command dispatched via the point-to-point verb simply arrives at its consumer missing headers a developer configured and has every reason to believe are being attached. This is exactly the class of silent cross-cutting-concern gap the platform's own magic-string and logging-standard reviews (WO-041, WO-042) were created to stop finding after the fact.
+
+#### Acceptance criteria
+- [ ] All three dispatch verbs (fan-out, point-to-point, request/response) apply every registered header propagator identically before dispatch
+- [ ] The existing precedence rule (an explicit per-call configuration callback overrides a propagated value for the same key) holds identically across all three verbs
+- [ ] A new test proves propagator output is present on point-to-point and request/response dispatches, not only on fan-out publish
+- [ ] No behavior change to the fan-out publish path, which already works correctly
+- [ ] `07.Messaging/CLAUDE.md` corrected to state propagators apply platform-wide across all three verbs, not only publish
+---
+
+---
+### P-342 — Messaging: Working Per-Consumer Concurrency Controls for RabbitMQ and Azure Service Bus
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+Two related throughput-tuning gaps close together. First, the existing Azure Service Bus concurrent-call-limit option must actually take effect on the receive endpoint it is documented to configure — today it is read into the captured options and then never consulted anywhere the bus is actually built, so setting it has zero observable effect. Second, RabbitMQ-backed consumers need an equivalent per-consumer-endpoint concurrency ceiling, distinct from the existing broker-level prefetch count, configurable both globally and per consumer definition, mirroring how per-consumer prefetch and endpoint naming already work.
+
+#### Why this is needed
+A configuration option that is documented, type-safe, and silently does nothing is worse than no option at all — a developer tuning throughput under load has every reason to trust it and no way to discover it is inert short of reading the wiring source directly. Prefetch alone does not give a service control over how many messages a single consumer instance processes concurrently, which is the throughput lever most services actually need when a downstream dependency (a database, an external API) is the real bottleneck, not broker delivery rate. For a platform meant to back hundreds of services at production scale, both transports need a working, equivalent throughput-tuning surface.
+
+#### Acceptance criteria
+- [ ] The Azure Service Bus concurrent-call-limit option is proven, by test, to actually change the receive endpoint's configured concurrency — not merely stored
+- [ ] RabbitMQ gains an equivalent per-consumer-endpoint concurrency ceiling, settable both as a global default and as a per-consumer-definition override, following the same override-precedence shape prefetch and endpoint naming already use
+- [ ] Neither change alters default behavior for a consumer that does not explicitly configure either knob
+- [ ] `07.Messaging/CLAUDE.md` corrected to remove any implication that the Azure Service Bus option already worked, and documents the new RabbitMQ knob
+---
+
+---
+### P-343 — Messaging: Dead-Letter and Poison-Message Delivery Policy
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+An explicit, documented, configurable dead-letter/poison-message policy surface for both transports — today this is entirely implicit, inherited silently from whatever the underlying transport library's own defaults happen to be, with zero platform-level configuration surface or documentation of what actually happens to a message that exhausts retries. At minimum: a configurable dead-letter destination naming convention and message time-to-live for RabbitMQ, and explicit documentation (with configuration where the transport allows it) of how Azure Service Bus's native dead-lettering interacts with this platform's retry and circuit-breaker layers.
+
+#### Why this is needed
+Every message consumer eventually produces a poison message, and what happens to it next — where it lands, how long it is retained, how an operator finds and triages it — is one of the most operationally important behaviors of any message-bus platform. Leaving this entirely to transport-library defaults, undocumented and unconfigurable from this platform's own surface, means every consuming team either doesn't know what happens to their poison messages or has to reverse-engineer MassTransit/RabbitMQ/Azure Service Bus defaults independently — the exact kind of per-team reinvention this shared kernel exists to prevent.
+
+#### Acceptance criteria
+- [ ] RabbitMQ-backed consumers can configure a dead-letter destination naming convention and message time-to-live through this platform's own options surface, with a sensible platform default when unconfigured
+- [ ] Azure Service Bus's native dead-lettering behavior in combination with this platform's retry and circuit-breaker layers is explicitly documented, including any configuration this platform exposes for it
+- [ ] Interaction with the existing retry policy and circuit-breaker options is explicitly documented — at what point a message is considered poison and routed to dead-letter versus retried again
+- [ ] A new integration test proves a message that exhausts retries is actually observable at the configured dead-letter destination
+- [ ] `07.Messaging/CLAUDE.md` gains a dedicated dead-letter/poison-message policy section
+---
+
+---
+### P-344 — Messaging: Ordered Delivery via Partition Key / Session Affinity
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+A first-class way for a caller to request ordered delivery of related messages — e.g., every event raised by the same aggregate instance arriving at its consumer(s) in the order it was published. The publish-time context gains an optional partition/affinity key; when supplied, the implementation maps it to each transport's native ordered-delivery mechanism (RabbitMQ routing-key affinity, Azure Service Bus session identity). When omitted, behavior is exactly as it is today — no ordering guarantee beyond the transport's default.
+
+#### Why this is needed
+Per-aggregate event ordering is one of the most common correctness requirements in event-driven microservice architectures — a consumer that processes an aggregate's events out of order can derive an incorrect final state. Today there is no way to request this through the platform's own abstraction; a service with a genuine ordering requirement has no choice but to drop to raw MassTransit APIs directly, which defeats the purpose of a transport-agnostic abstraction and reintroduces exactly the direct-transport-type coupling this domain's own governance rules exist to prevent elsewhere.
+
+#### Acceptance criteria
+- [ ] The publish-time context exposes an optional partition/affinity key, following the same nullable/fluent-builder shape its other fields already use
+- [ ] When supplied, RabbitMQ delivery uses it for routing-key affinity and Azure Service Bus delivery uses it as session identity, each transport's genuine native ordering mechanism — not a platform-invented substitute
+- [ ] When omitted, publish/send behavior is provably unchanged from today
+- [ ] A new integration test proves messages published with the same key to the same transport are observed by a consumer in publish order
+- [ ] `07.Messaging/CLAUDE.md` documents the feature, including the caveat that ordering is only guaranteed among messages sharing the same key and consumed by a single active consumer instance
+---
+
+---
+### P-345 — Messaging: Built-In Ambient Header Propagator and Local Tenant-Context Seam
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** P-340, P-341
+
+#### What is needed
+Two complementary, opt-in pieces closing the platform's current "every consuming service hand-writes header propagation from scratch" gap. First, a ready-to-use propagator requiring no consumer-supplied dependency that carries distributed-trace correlation identity from the ambient trace context into every dispatch, available simply by registering it — no consuming-service code required. Second, a locally-owned seam interface (owned by this domain, referencing nothing outside it) that a consuming service's composition root implements to bridge its own real tenant-identity source into this domain's dispatch pipeline — mirroring the existing bridge pattern `05.Application` already uses for its own local seams. A propagator built on this seam populates tenant identity automatically (into the field P-340 adds) whenever the seam is registered, and is a silent no-op when it is not.
+
+#### Why this is needed
+This domain's layering position (referencing only `01.Core` through `04.Contracts`) correctly forbids it from depending on `12.Security.Abstractions` directly, which is exactly why correlation and tenant propagation are hand-written per service today — but distributed-trace correlation identity needs no such dependency at all, since it is already ambiently available from the BCL's own trace-context API, and tenant identity has a proven, precedented way to cross this exact layering boundary without violating it: a locally-owned seam interface bridged at the consuming service's composition root, exactly as `05.Application`'s `IAuthorizationContext`/`IUnitOfWork` already do. Shipping both closes the gap between "technically possible for every service to build this" and "actually built once, correctly, and reused everywhere" — the entire reason a shared kernel exists.
+
+#### Acceptance criteria
+- [ ] A built-in correlation propagator requiring zero consumer-supplied registration dependency is available and, once registered, populates correlation identity from ambient trace context on every dispatch verb (in parity with P-341)
+- [ ] A locally-owned tenant-context seam interface is defined in this domain, referencing nothing outside `01.Core` through `04.Contracts`
+- [ ] A propagator built on that seam populates the tenant-identity field (P-340) automatically when the seam is registered by the consuming service, and is a provable no-op when it is not
+- [ ] Both propagators compose correctly with the existing explicit-callback-wins precedence rule
+- [ ] `07.Messaging/CLAUDE.md`'s Quick-Start gains a worked example showing a consuming service bridging its real tenant-identity source through the new seam in a handful of lines, replacing the current from-scratch example
+---
+
+---
+### P-346 — Messaging: Opt-In Payload Compression and Encryption Before Transport
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+An opt-in pipeline hook that compresses and/or encrypts a message's serialized payload before it is handed to the transport, and reverses the same on the consuming side before deserialization — built directly on `01.Core`'s existing general-purpose payload compression and symmetric-encryption primitives, never a new bespoke implementation. When both are enabled, compression always runs before encryption, matching the platform's own established compress-then-encrypt convention. Disabled by default; enabling it changes wire format, so it is a deliberate, explicit per-service opt-in, not ambient behavior.
+
+#### Why this is needed
+`01.Core` shipped its general-purpose compression and encryption primitives explicitly citing "before publishing to a queue" as a target use case, and `17.Workflows` already proved the same compress/encrypt-payload pattern out for its own durable-execution payloads — yet `07.Messaging`, the platform's actual queue/bus backbone, wires in neither today. Services publishing large payloads pay unnecessary transport and storage cost, and services publishing sensitive payloads (PII, financial data) have no platform-provided way to keep that data encrypted in transit and at rest inside the broker without hand-rolling it themselves — exactly the kind of gap this shared kernel exists to close once, correctly, rather than leaving to per-team reinvention.
+
+#### Acceptance criteria
+- [ ] Compression and encryption are each independently opt-in and independently toggleable
+- [ ] When both are enabled, compression is always applied before encryption on publish, and the reverse order on consume, with this ordering not being caller-configurable
+- [ ] The feature is built entirely on `01.Core`'s existing compression/encryption abstractions — no new cryptographic or compression primitive is introduced in this domain
+- [ ] Default (disabled) behavior is provably unchanged
+- [ ] A new test proves a round-trip publish/consume with both enabled correctly reproduces the original payload, and that an enabled-but-mismatched-configuration consumer fails loudly rather than silently misinterpreting the payload
+- [ ] `07.Messaging/CLAUDE.md` documents the feature and its wire-format-changing, opt-in-only nature
+---
+
+---
+### P-347 — Messaging: Bus-Backed Readiness Probe Primitive
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+A readiness-probe primitive reflecting the health of the actual, already-configured message bus this domain builds for the consuming service — not an independently constructed connection built from separately supplied configuration. This mirrors the readiness-probe primitive every other infrastructure domain (`06.Persistence`, `08.Storage`, `09.Search`, `10.Intelligence`, `17.Workflows`) already ships for `13.ServiceDefaults` to wrap into a K8s health check. This domain ships the probe primitive only — no `IHealthCheck` implementation belongs here; wiring into `AddHealthChecks()` remains `13.ServiceDefaults`'s concern.
+
+#### Why this is needed
+Every other infrastructure domain on this platform proves connectivity against the actual configured connection its own builder produces. `07.Messaging` is the one domain where the platform's health-check wiring currently builds a second, independent connection from separately supplied configuration values instead of asking the real, already-configured bus whether it is healthy — meaning the two can drift apart, and a passing health check does not actually prove the service's real bus connection is healthy. Closing this brings the domain in line with the platform's own established and repeatedly-applied readiness-probe-split precedent.
+
+#### Acceptance criteria
+- [ ] The probe primitive reports health by querying the actual bus instance this domain's builder constructs for the consuming service — never a second, independently constructed connection
+- [ ] The probe primitive is transport-agnostic from the caller's perspective (works identically whether the consuming service configured RabbitMQ or Azure Service Bus)
+- [ ] No `IHealthCheck` implementation is added in this domain — the probe is a plain primitive only
+- [ ] A new test proves the probe reflects a genuinely down bus connection as unhealthy and a genuinely up one as healthy
+- [ ] `07.Messaging/CLAUDE.md` documents the probe primitive and explicitly notes `13.ServiceDefaults` owns the `IHealthCheck` wiring, mirroring the existing readiness-probe-split wording used by sibling domains
+---
+
+---
+### P-348 — Messaging: Complete Distributed-Tracing and Metrics Coverage Across All Dispatch Verbs
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** None
+
+#### What is needed
+This domain's own diagnostic instrumentation must cover every dispatch verb consistently, not only consume and fan-out publish. Point-to-point send, request/response, and routing-slip execution must each produce a tagged activity from this domain's own diagnostic source, matching the tag conventions the already-instrumented paths use. Alongside this, verify and complete this domain's own metric instruments (publish/consume counts, processing duration, retry counts, fault/dead-letter counts) so the counters `13.ServiceDefaults` wires into the host's metrics provider are actually complete, not just the tracing source.
+
+#### Why this is needed
+Consistent instrumentation is what makes distributed tracing actually useful for debugging a real incident — a trace that silently drops out for two of five dispatch verbs forces an operator to already suspect where to look rather than being told by the trace itself. This domain already did the harder work of building its own diagnostic source and getting it wired into the host's telemetry providers; leaving half the dispatch surface uninstrumented is a completeness gap, not a design gap, and is inexpensive to close now versus expensive to discover missing during a live incident later.
+
+#### Acceptance criteria
+- [ ] Point-to-point send, request/response, and routing-slip execution each produce a tagged activity from this domain's own diagnostic source, using the same tag-naming convention already established by the consume/publish paths
+- [ ] This domain's metric instruments are confirmed complete for publish/consume counts, processing duration, retry counts, and fault/dead-letter counts — any gap found is closed
+- [ ] No change to the existing, already-correct consume/publish instrumentation
+- [ ] A new test using an in-process activity/metric listener proves the newly-instrumented verbs actually emit
+- [ ] `07.Messaging/CLAUDE.md`'s diagnostics section is updated to list full verb coverage
+---
+
+---
+### P-349 — Messaging: NuGet Packaging Completeness and Reference-Implementation Quick-Start Recipes
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 07.Messaging
+**Depends on:** P-345
+
+#### What is needed
+Two packaging/documentation completions. First, both packages' project files must actually embed their existing package README into the published NuGet package — today the READMEs exist on disk but neither project wires the packaging property that embeds them, so neither README ships with the package despite existing. Second, the package documentation gains copy-paste-ready reference recipes for the two seams this domain deliberately leaves for the consuming service to implement (the idempotency-store contract, and — where not already closed by P-345 — any remaining header-propagation pattern), replacing prose-only descriptions with a working example a team can adapt in minutes rather than build from a blank page.
+
+#### Why this is needed
+A README that exists on disk but never ships in the package is a silent packaging defect this platform has already found and fixed in another domain — the fix here is equally mechanical and equally worth closing. Separately, two of this domain's most commonly-needed cross-cutting concerns are deliberately left for each consuming service to implement for sound layering reasons — but "deliberately left to the consumer" should not mean "no worked example exists anywhere in the mono-repo." A concrete, adaptable recipe turns a blank-page implementation task into a five-minute copy-and-adjust task for every one of the hundreds of teams that will eventually need it.
+
+#### Acceptance criteria
+- [ ] Both packages' project files wire their existing README into the packed NuGet output; a clean pack produces zero missing-readme packaging warnings
+- [ ] The package documentation includes a complete, working reference recipe for implementing the idempotency-store contract against a plausible backing store
+- [ ] The package documentation's propagation/tenant-context example reflects the seam shipped in P-345 rather than a from-scratch implementation
+- [ ] No production code behavior changes — this phase is packaging and documentation only
+---
+
+---
+### P-350 — Governance: Prohibit Direct EventEnvelope Construction Outside Its Mandated Factory
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 00.Governance
+**Depends on:** P-340
+
+#### What is needed
+A mechanically-enforced rule prohibiting direct construction of the cross-service event envelope type anywhere outside its own mandated factory method's implementation — object-initializer or constructor construction of the envelope type from any other call site fails the check. This mirrors the platform's existing enforcement precedents for other "one correct construction path" rules (raw `HttpClient` injection, inline `ProblemDetails` construction, ad hoc logging calls).
+
+#### Why this is needed
+This review found the platform's own MassTransit-backed publisher silently violating this exact construction contract despite the contract being explicitly documented in the envelope type's own XML documentation — proof that a documented-only convention is not sufficient for a contract this consequential (it is the platform's cross-service wire format). Every previous instance of this class of gap on this platform (magic strings, ad hoc logging, inline ProblemDetails) was closed the same way: convert a documented convention into a mechanically-enforced one so it cannot silently regress again, in this domain or any other that touches the envelope type in the future.
+
+#### Acceptance criteria
+- [ ] A new mechanically-enforced check fails on any direct construction of the event envelope type outside its own factory method's implementation
+- [ ] The check passes against the corrected publisher implementation from P-340
+- [ ] The check is verified against the real compiled assemblies of at least `07.Messaging`, not only test fixtures — mirroring this platform's own repeated lesson that governance rules must be proven against real source before being trusted
+- [ ] `00.Governance/CLAUDE.md` documents the new rule alongside its sibling "one correct construction path" precedents
+---
+
+---
+### P-351 — ServiceDefaults: Rewire Messaging Health Checks Onto the Real Configured Bus
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-347
+
+#### What is needed
+The existing RabbitMQ and Azure Service Bus messaging health checks must report on the actual bus connection the consuming service's own `07.Messaging` registration already configured, via the new readiness-probe primitive (P-347) — not via a second, independently constructed connection built from separately supplied configuration values.
+
+#### Why this is needed
+A health check that can pass while the service's real bus connection is unhealthy (or fail while the real connection is fine) because it validates a different, independently configured connection is worse than no health check — it actively misleads an operator during an incident. This brings messaging health checks in line with how every other infrastructure health check on this platform already works: wrapping the owning domain's own readiness-probe primitive rather than reimplementing connectivity checking independently.
+
+#### Acceptance criteria
+- [ ] Both the RabbitMQ and Azure Service Bus messaging health checks are rewired to use the new `07.Messaging` readiness-probe primitive exclusively — no independent connection construction remains for this purpose
+- [ ] A configuration drift scenario (health check config accidentally pointing at a different broker than the real bus) is no longer possible by construction, since there is only one configuration source now
+- [ ] Existing health check registration method signatures are unchanged from the consuming service's perspective wherever possible; any unavoidable signature change is called out explicitly as a breaking change
+- [ ] A new test proves the health check genuinely reflects the real configured bus's health, not an independent connection
+- [ ] `13.ServiceDefaults/CLAUDE.md` updated to describe the corrected wiring
+---
+
+---
+### P-352 — Testing: Update In-Memory Messaging Doubles for the Expanded Publish-Context Surface
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-054
+**Domain:** 16.Testing
+**Depends on:** P-340, P-341, P-344, P-345
+
+#### What is needed
+The existing in-memory message-bus and event-publisher test doubles must stay faithful to `07.Messaging.Abstractions`'s real, now-expanded publish-time context surface (tenant identity, partition/affinity key) and dispatch-verb behavior (header propagators applying uniformly across publish/send/request). Assertions consuming-service tests already rely on for the existing surface must continue to pass unmodified.
+
+#### Why this is needed
+This platform's in-memory test doubles are only useful if they stay honest reflections of the real abstraction they stand in for — a fake that silently falls behind the real interface's surface gives a consuming service's unit tests false confidence: tests pass against the fake while the same code would behave differently against the real bus. Every prior expansion of the messaging abstraction surface has correctly triggered a matching `16.Testing` update; this expansion is no different.
+
+#### Acceptance criteria
+- [ ] The in-memory doubles expose and correctly record tenant identity and partition/affinity key when supplied, matching the real publish-time context surface
+- [ ] The in-memory doubles apply registered header propagators identically across all three dispatch verbs, matching the real corrected behavior
+- [ ] All pre-existing test-double behavior and assertions remain unchanged in intent — this is purely additive
+- [ ] `16.Testing/CLAUDE.md` updated to reflect the expanded double surface
 ---
 
 ## Changelog
@@ -12292,3 +12575,8 @@ This review found a confirmed, live instance of `EF.Property<T>` usage (`Tenante
 - [2026-08-04] Testing → Core (●) — promoted from SK.16.Core (105/105, P-335/WO-053's C-102–C-105); implemented `FakeDbConnectionFactory`/`FakeRepository<TAggregate,TId>`/`FakeUnitOfWork`/`FakePersistenceTransaction` in the existing `Persistence/` folder against the live `06.Persistence`/`03.Domain` source, zero drift; `IRestorableRepository<TAggregate,TId>` (06.Persistence's own WO-053/P-337) confirmed shipped since Design but deliberately NOT implemented against, per the phase's own scope lock; `dotnet build` clean, 0 errors, 7 pre-existing warnings. `SK.16.Tests`/`SK.16.Docs` remain `◐` (T-66–T-71/DO-33–DO-35 still pending) — domain Current Phase again left as-is (still "Docs" from the prior WO-052 cycle), mirroring the S-44 precedent immediately above (state-map-phase)
 - [2026-08-04] Testing → Tests (●) — promoted from SK.16.Tests (71/71, P-335/WO-053's T-66–T-71); proved `FakeDbConnectionFactory`/`FakeRepository<TAggregate,TId>`/`FakeUnitOfWork`/`FakePersistenceTransaction` via 50 new tests in `SharedKernel.Testing.SelfTests/Persistence/` (844/844 non-container tests green, zero regressions); `dotnet build` clean on both packages. Domain Summary Board row 16 corrected in the same pass — `State` was stale `●` (carried over from the prior P-330/WO-052 closeout) even though `SK.16.Docs` genuinely regressed to `◐` (32/35) once P-335/WO-053 added DO-33–DO-35; corrected to `◐`. `Current Phase` deliberately left at `Docs` (not regressed to `Tests`), mirroring the S-44/C-102–C-105 precedent immediately above — Docs remains the domain's furthest-along, still-incomplete phase. Only `SK.16.Docs` (DO-33–DO-35) remains to close WO-053's `16.Testing` contribution (state-map-phase)
 - [2026-08-04] Testing → Docs (●) — promoted from SK.16.Docs (35/35, P-335/WO-053's DO-33–DO-35); DO-33 (`FakeDbConnectionFactory`) and DO-35 (`FakeUnitOfWork`/`FakePersistenceTransaction`) were both found already fully satisfied from the Core-phase pass on independent re-verification (the `13.ServiceDefaults` cross-reference re-checked directly against the live `DatabaseTenantResolutionStrategyTests.cs`, still accurate); DO-34 closed two genuine gaps in `FakeRepository<TAggregate,TId>`'s docs — the `TagWith` pipeline no-op step was never named alongside its siblings, and `AddAsync`/`UpdateAsync` stated what they throw but never why (added a unified class-level write-semantics-asymmetry rationale). `dotnet build` clean, 0 errors; full regression 844/844 non-container tests, zero regressions. All six `SK.16.*` phase keys are `●` again — WO-053's `16.Testing` contribution complete end to end; domain returns to fully published (state-map-phase)
+- [2026-08-04] Phase(s) P-340, P-341, P-342, P-343, P-344, P-345, P-346, P-347, P-348, P-349 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-08-04] Phase(s) P-350 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-08-04] Phase(s) P-351 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-08-04] Phase(s) P-352 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-08-04] Testing → Core (●) — promoted from SK.16.Core (107/107, P-352/WO-054's C-106/C-107); implemented the `PublishContext`-capture + `IMessageHeaderPropagator`-application mechanism on `Messaging/InMemoryMessageBus.cs`/`InMemoryEventPublisher.cs` against the live `07.Messaging.Abstractions` source, mirroring `MassTransitMessageBus.BuildContextFromPropagators`'s precedence exactly; zero regressions (24/24 pre-existing Messaging SelfTests, 870/870 full suite). Domain Summary Board row 16 corrected in the same pass — `State` was stale `●` (carried over from the WO-053 full-publish closeout, line above) even though `SK.16.Core` had silently regressed to `◐` (105/107) the moment P-352/WO-054 added C-106/C-107, and `SK.16.Docs`/`SK.16.Tests` remain `◐` too (DO-36; T-72–T-74 with T-74 `⚑` Blocked pending `07.Messaging` P-340/P-344) — corrected to `◐`; `Current Phase` deliberately left at `Docs` (not regressed to `Core`), mirroring this domain's own established precedent. Overall Progress: `● Docs` 3→2, `◐ In Progress` 0→1 (sum still 18). Root Phase Backlog P-352 remains `◐` Dispatched — Core is a standard lifecycle phase key with no individual Phase Backlog entry to close (state-map-phase)
