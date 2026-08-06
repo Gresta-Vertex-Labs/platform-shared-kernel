@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SharedKernel.Compression;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Messaging.Abstractions.Batch;
 using SharedKernel.Messaging.Abstractions.Extensions;
 using SharedKernel.Messaging.Abstractions.Faults;
@@ -23,7 +25,12 @@ using SharedKernel.Messaging.MassTransit.Options;
 using SharedKernel.Messaging.MassTransit.RoutingSlips;
 using SharedKernel.Messaging.MassTransit.Sagas;
 using SharedKernel.Messaging.MassTransit.SchemaEvolution;
+using SharedKernel.Messaging.MassTransit.Serialization;
 using System.Linq;
+
+// Aliased to avoid the "MassTransit.Configuration" leaf segment colliding with this file's own
+// enclosing namespace tree, SharedKernel.Messaging.MassTransit.*.
+using MtSystemTextJsonMessageSerializerFactory = MassTransit.Configuration.SystemTextJsonMessageSerializerFactory;
 
 // Alias our scheduling/batch options to disambiguate from same-named MassTransit types.
 using SkQuartzSchedulerOptions = SharedKernel.Messaging.Abstractions.Scheduling.QuartzSchedulerOptions;
@@ -90,6 +97,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     // Dead-letter policy (P-343) — set by WithDeadLetterPolicy().
     private bool _withDeadLetterPolicy;
     private DeadLetterOptions? _deadLetterOptions;
+
+    // Payload transform (P-346) — set by WithPayloadTransform().
+    private bool _withPayloadTransform;
+    private PayloadTransformOptions? _payloadTransformOptions;
 
     /// <inheritdoc />
     public IServiceCollection Services { get; }
@@ -939,6 +950,54 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     }
 
     // -------------------------------------------------------------------------
+    // Payload Transform (P-346)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Configures opt-in compression and/or encryption of a message's serialized payload before it
+    /// reaches the transport (and the reverse on consume), built entirely on <c>01.Core</c>'s
+    /// <c>SharedKernel.Compression</c>/<c>SharedKernel.Cryptography</c> primitives.
+    /// </summary>
+    /// <param name="configure">
+    /// Optional action to customise <see cref="PayloadTransformOptions"/>.
+    /// When <see langword="null"/>, both <see cref="PayloadTransformOptions.EnableCompression"/> and
+    /// <see cref="PayloadTransformOptions.EnableEncryption"/> default to <see langword="false"/> —
+    /// calling this method with no configuration has no observable effect on the wire format.
+    /// </param>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// The publish-side ordering is always compress-then-encrypt; the consume-side ordering is
+    /// always decrypt-then-decompress. Neither ordering is caller-configurable.
+    /// </para>
+    /// <para>
+    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
+    /// <see cref="PayloadTransformOptions.EnableCompression"/> is set and no
+    /// <see cref="IPayloadCompressor"/> is registered (via <c>SharedKernel.Compression</c>'s
+    /// <c>AddSharedKernelCompression()</c>), or if
+    /// <see cref="PayloadTransformOptions.EnableEncryption"/> is set and no
+    /// <see cref="ISymmetricEncryptionService"/> is registered (via <c>SharedKernel.Cryptography</c>'s
+    /// <c>AddSharedKernelCryptography()</c>).
+    /// </para>
+    /// <para>
+    /// <strong>This changes the wire format</strong> of every message published on this bus once
+    /// either flag is enabled — every consumer of a message type published through this bus must
+    /// configure a matching <see cref="PayloadTransformOptions"/> (identical
+    /// <see cref="PayloadTransformOptions.EnableCompression"/>/<see cref="PayloadTransformOptions.EnableEncryption"/>
+    /// values), or deserialization fails loudly with
+    /// <see cref="PayloadTransformMismatchException"/> instead of silently misinterpreting the
+    /// payload.
+    /// </para>
+    /// </remarks>
+    public MessagingBusBuilder WithPayloadTransform(Action<PayloadTransformOptions>? configure = null)
+    {
+        _withPayloadTransform = true;
+        _payloadTransformOptions = new PayloadTransformOptions();
+        configure?.Invoke(_payloadTransformOptions);
+        return this;
+    }
+
+    // -------------------------------------------------------------------------
     // Build
     // -------------------------------------------------------------------------
 
@@ -988,6 +1047,27 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                 throw new InvalidOperationException(
                     "IIdempotencyStore is not registered. " +
                     "Call services.AddScoped<IIdempotencyStore, YourImplementation>() before calling WithIdempotency().");
+        }
+
+        // PT-04 / P-346: Guard — WithPayloadTransform() requires the matching 01.Core primitive to
+        // already be registered for each enabled flag.
+        if (_withPayloadTransform && _payloadTransformOptions is not null)
+        {
+            if (_payloadTransformOptions.EnableCompression
+                && Services.FirstOrDefault(d => d.ServiceType == typeof(IPayloadCompressor)) is null)
+            {
+                throw new InvalidOperationException(
+                    "PayloadTransformOptions.EnableCompression is set but no IPayloadCompressor is registered. " +
+                    "Call services.AddSharedKernelCompression(configuration) before calling WithPayloadTransform().");
+            }
+
+            if (_payloadTransformOptions.EnableEncryption
+                && Services.FirstOrDefault(d => d.ServiceType == typeof(ISymmetricEncryptionService)) is null)
+            {
+                throw new InvalidOperationException(
+                    "PayloadTransformOptions.EnableEncryption is set but no ISymmetricEncryptionService is registered. " +
+                    "Call services.AddSharedKernelCryptography(configuration) before calling WithPayloadTransform().");
+            }
         }
 
         // C-21 / C-22: Validate and resolve ServiceName without BuildServiceProvider().
@@ -1154,6 +1234,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     if (_withDeadLetterPolicy && _deadLetterOptions is not null)
                         ConfigureDeadLetterPolicy(busCfg, _deadLetterOptions);
 
+                    // P-346: Wire the compress/encrypt payload-transform serializer when enabled.
+                    if (_withPayloadTransform && _payloadTransformOptions is not null)
+                        ConfigurePayloadTransform(busCfg, ctx, _payloadTransformOptions);
+
                     ConfigureResilience(busCfg);
                     busCfg.ConfigureEndpoints(ctx);
                 });
@@ -1176,6 +1260,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     // ID-03 / P-134: Wire global idempotency consume pipeline filter.
                     if (_withIdempotency)
                         busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
+
+                    // P-346: Wire the compress/encrypt payload-transform serializer when enabled.
+                    if (_withPayloadTransform && _payloadTransformOptions is not null)
+                        ConfigurePayloadTransform(busCfg, ctx, _payloadTransformOptions);
 
                     ConfigureResilience(busCfg);
                     busCfg.ConfigureEndpoints(ctx);
@@ -1309,6 +1397,46 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
 
         cfg.SendTopology.ConfigureErrorSettings = queue => queue.SetQueueArgument("x-message-ttl", timeToLive);
         cfg.SendTopology.ConfigureDeadLetterSettings = queue => queue.SetQueueArgument("x-message-ttl", timeToLive);
+    }
+
+    // Internal (not private) so PayloadTransformConfigurationTests can exercise this helper
+    // in isolation via a substituted IBusFactoryConfigurator (P-346/WO-054).
+    internal static void ConfigurePayloadTransform(
+        IBusFactoryConfigurator busCfg,
+        IBusRegistrationContext ctx,
+        PayloadTransformOptions options)
+    {
+        // Resolved from the real, fully-built IServiceProvider IBusRegistrationContext wraps —
+        // both are already-validated singletons per the Build()-time guard above, never a second,
+        // independently constructed IServiceProvider (mirrors the ID-03 idempotency-filter pattern
+        // of resolving dependencies via `ctx` inside the transport-specific configuration callback).
+        IPayloadCompressor? compressor = options.EnableCompression
+            ? ctx.GetRequiredService<IPayloadCompressor>()
+            : null;
+
+        ISymmetricEncryptionService? encryptionService = options.EnableEncryption
+            ? ctx.GetRequiredService<ISymmetricEncryptionService>()
+            : null;
+
+        // MassTransit's own default JSON (de)serializer, freshly constructed with default options —
+        // matches exactly what the bus would otherwise use unconfigured, so wrapping it introduces
+        // no independent behavior change beyond the compress/encrypt transform itself.
+        var innerFactory = new MtSystemTextJsonMessageSerializerFactory(configure: null);
+
+        // ClearSerialization() is required, not optional: AddSerializer(factory, isSerializer: true)
+        // alone only changes which serializer PRODUCES outgoing messages — MassTransit's own
+        // already-registered default deserializer for the same content type remains active on the
+        // RECEIVE side, since serializer/deserializer registration is additive by content type, not
+        // overwrite-by-content-type. Without this call, an incoming compressed/encrypted message body
+        // is handed to the untouched default deserializer, which fails trying to parse ciphertext as
+        // JSON (confirmed empirically — the wrong deserializer instance appeared in the stack trace of
+        // a MassTransit-internal SerializationException during implementation). Clearing first and
+        // re-registering makes this factory the ONLY serializer/deserializer for the bus.
+        var factory = new PayloadTransformSerializerFactory(innerFactory, options, compressor, encryptionService);
+
+        busCfg.ClearSerialization();
+        busCfg.AddSerializer(factory, isSerializer: true);
+        busCfg.AddDeserializer(factory, isDefault: true);
     }
 
     private static void ValidateAzureServiceBusOptions(AzureServiceBusOptions opts)

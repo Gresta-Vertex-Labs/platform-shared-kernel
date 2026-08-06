@@ -29,11 +29,17 @@
       Project references:
         SharedKernel.Messaging.Abstractions — IMessageBus, IEventPublisher, IMessagingBuilder, MessagingOptions
         SharedKernel.Contracts             — EventEnvelope<TEvent> used by MassTransitEventPublisher
+        SharedKernel.Compression           — IPayloadCompressor, used by WithPayloadTransform() (P-346)
+        SharedKernel.Cryptography          — ISymmetricEncryptionService, used by WithPayloadTransform() (P-346)
+      Both SharedKernel.Compression and SharedKernel.Cryptography are 01.Core packages, already
+      permitted by the root layering rule ("07.Messaging may reference 01-04").
       NO reference to any 06.Persistence.* package is permitted.
       The EF Core outbox is wired via generic TDbContext type parameter only.
     -->
     <ProjectReference Include="..\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Compression\SharedKernel.Compression.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
 
   <ItemGroup>
