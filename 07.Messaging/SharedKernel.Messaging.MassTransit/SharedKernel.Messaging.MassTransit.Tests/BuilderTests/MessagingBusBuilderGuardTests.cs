@@ -250,6 +250,36 @@ public sealed class MessagingBusBuilderGuardTests
                 "Build() must throw with ServiceName in the message when whitespace");
     }
 
+    // -------------------------------------------------------------------------
+    // RP-04/RP-07 (P-347): IMessageBusProbe is registered as a singleton unconditionally.
+    // Asserted via the ServiceDescriptor itself, not a resolved instance — resolving
+    // IMessageBusProbe requires MassTransit to build IBusInstance, which (per the real
+    // MassTransit 9.1.2 license-gate behavior discovered during this phase — see the
+    // "MassTransit 9.x API notes" entry) needs a configured license even before the bus is
+    // started against a real transport. Functional ProbeAsync behavior is proven separately
+    // in HarnessTests/ReadinessProbeTests.cs via MassTransit.Testing.TestHarness, which is
+    // license-exempt.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Build_AfterUseRabbitMq_RegistersIMessageBusProbe_AsSingleton_Unconditionally()
+    {
+        var services = new ServiceCollection();
+        services
+            .AddSharedKernelMessaging(o => o.ServiceName = "test-service")
+            .UseRabbitMq("rabbitmq://localhost")
+            .Build();
+
+        var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IMessageBusProbe));
+
+        descriptor.Should().NotBeNull(
+            "IMessageBusProbe must be registered unconditionally by Build() — no opt-in call required");
+        descriptor!.Lifetime.Should().Be(ServiceLifetime.Singleton,
+            "IMessageBusProbe must match MassTransit's own singleton IBus/IBusControl lifetime");
+        descriptor.ImplementationType.Should().Be(typeof(
+            SharedKernel.Messaging.MassTransit.MessageBus.MassTransitMessageBusProbe));
+    }
+
     [Fact]
     public void Build_WithoutInlineAction_DeferredPath_DoesNotThrow()
     {

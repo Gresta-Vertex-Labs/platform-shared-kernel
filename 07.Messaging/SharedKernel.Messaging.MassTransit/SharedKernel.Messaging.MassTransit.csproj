@@ -65,6 +65,16 @@
       Only loaded at composition root; zero impact on Abstractions package.
     -->
     <PackageReference Include="MassTransit.Quartz" Version="9.1.2" />
+    <!--
+      Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions — HealthCheckContext/
+      HealthCheckResult/HealthStatus/HealthCheckRegistration types only, used by
+      MassTransitMessageBusProbe (P-347) to invoke MassTransit's own MassTransit.Monitoring.
+      BusHealthCheck. Deliberately the Abstractions-only package, not the full
+      Microsoft.Extensions.Diagnostics.HealthChecks package (that package's AddHealthChecks()/
+      HealthCheckService/publisher-hosted-service machinery is 13.ServiceDefaults's concern —
+      this domain ships no IHealthCheck implementation and no AddHealthChecks() wiring.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.5" />
   </ItemGroup>
 
   <ItemGroup>

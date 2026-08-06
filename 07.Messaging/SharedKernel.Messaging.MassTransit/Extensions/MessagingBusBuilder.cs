@@ -1125,6 +1125,12 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         Services.AddScoped<Abstractions.MessageBus.IMessageBus, MassTransitMessageBus>();
         Services.AddScoped<Abstractions.EventPublisher.IEventPublisher, MassTransitEventPublisher>();
 
+        // P-347: Register the bus-backed readiness probe as a singleton, unconditionally — no
+        // opt-in builder call required. Matches MassTransit's own singleton IBus/IBusControl
+        // lifetime; it is a pure read-only reflection of the bus this builder already constructs,
+        // not a new capability with its own configuration surface.
+        Services.AddSingleton<Abstractions.MessageBus.IMessageBusProbe, MassTransitMessageBusProbe>();
+
         // RS-07: Register IRoutingSlipBuilder as scoped, always — independent of whether
         // AddRoutingSlipActivity<TActivity>() has been called.
         Services.AddScoped<
