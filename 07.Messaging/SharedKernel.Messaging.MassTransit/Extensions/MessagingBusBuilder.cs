@@ -13,9 +13,11 @@ using SharedKernel.Messaging.Abstractions.Idempotency;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.Abstractions.Scheduling;
 using SharedKernel.Messaging.Abstractions.SchemaEvolution;
+using SharedKernel.Messaging.Abstractions.TenantContext;
 using SharedKernel.Messaging.MassTransit.Consumers;
 using SharedKernel.Messaging.MassTransit.DeadLetter;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
+using SharedKernel.Messaging.MassTransit.HeaderPropagation;
 using SharedKernel.Messaging.MassTransit.MessageBus;
 using SharedKernel.Messaging.MassTransit.Options;
 using SharedKernel.Messaging.MassTransit.RoutingSlips;
@@ -727,6 +729,58 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         where T : class, IMessageHeaderPropagator
     {
         Services.AddScoped<IMessageHeaderPropagator, T>();
+        return this;
+    }
+
+    /// <summary>
+    /// Registers the built-in <see cref="AmbientCorrelationHeaderPropagator"/> as a scoped
+    /// <see cref="IMessageHeaderPropagator"/>. Zero-argument — requires no consumer-authored class,
+    /// unlike <see cref="WithHeaderPropagator{T}"/>.
+    /// </summary>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// Populates <see cref="SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.CorrelationId"/>
+    /// from the ambient <see cref="System.Diagnostics.Activity.Current"/> on every dispatch verb
+    /// (<c>PublishAsync</c>, <c>SendAsync</c>, <c>RequestAsync</c>). Distributed-trace correlation
+    /// identity needs no consuming-service-supplied dependency — it is one of two named, documented
+    /// exceptions to "never implement <see cref="IMessageHeaderPropagator"/> inside SharedKernel"
+    /// (P-345/WO-054).
+    /// </remarks>
+    public MessagingBusBuilder WithAmbientCorrelationPropagation()
+    {
+        Services.AddScoped<IMessageHeaderPropagator, AmbientCorrelationHeaderPropagator>();
+        return this;
+    }
+
+    /// <summary>
+    /// Registers <typeparamref name="TAccessor"/> as a scoped <see cref="ITenantContextAccessor"/>
+    /// and registers the built-in <see cref="TenantHeaderPropagator"/> as a scoped
+    /// <see cref="IMessageHeaderPropagator"/>, in one call.
+    /// </summary>
+    /// <typeparam name="TAccessor">
+    /// The consuming service's <see cref="ITenantContextAccessor"/> implementation, bridging its
+    /// real tenant-identity source (e.g. <c>ITenantProvider</c> from <c>12.Security</c>).
+    /// </typeparam>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// The consuming service only writes the <see cref="ITenantContextAccessor"/> implementation
+    /// bridging its real tenant source — it never writes a propagator by hand, mirroring
+    /// <see cref="WithAmbientCorrelationPropagation"/>'s zero-consumer-boilerplate shape.
+    /// </para>
+    /// <para>
+    /// When this method is not called, <see cref="TenantHeaderPropagator"/> is never registered and
+    /// <see cref="SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.TenantId"/>
+    /// is populated only via an explicit
+    /// <see cref="SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext.WithTenantId"/>
+    /// call or another registered <see cref="WithHeaderPropagator{T}"/> propagator.
+    /// </para>
+    /// </remarks>
+    public MessagingBusBuilder WithTenantContext<TAccessor>()
+        where TAccessor : class, ITenantContextAccessor
+    {
+        Services.AddScoped<ITenantContextAccessor, TAccessor>();
+        Services.AddScoped<IMessageHeaderPropagator, TenantHeaderPropagator>();
         return this;
     }
 
