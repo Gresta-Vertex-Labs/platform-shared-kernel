@@ -14,6 +14,7 @@ using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.Abstractions.Scheduling;
 using SharedKernel.Messaging.Abstractions.SchemaEvolution;
 using SharedKernel.Messaging.MassTransit.Consumers;
+using SharedKernel.Messaging.MassTransit.DeadLetter;
 using SharedKernel.Messaging.MassTransit.EventPublisher;
 using SharedKernel.Messaging.MassTransit.MessageBus;
 using SharedKernel.Messaging.MassTransit.Options;
@@ -83,6 +84,10 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     private enum SchedulingKind { None, InMemory, Quartz }
     private SchedulingKind _scheduling = SchedulingKind.None;
     private SkQuartzSchedulerOptions? _quartzOptions;
+
+    // Dead-letter policy (P-343) — set by WithDeadLetterPolicy().
+    private bool _withDeadLetterPolicy;
+    private DeadLetterOptions? _deadLetterOptions;
 
     /// <inheritdoc />
     public IServiceCollection Services { get; }
@@ -830,6 +835,56 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
     }
 
     // -------------------------------------------------------------------------
+    // Dead-Letter Policy (P-343)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Configures a RabbitMQ dead-letter/poison-message delivery policy — the message time-to-live
+    /// applied to the automatically-derived fault/dead-letter destination.
+    /// </summary>
+    /// <param name="configure">
+    /// Optional action to customise <see cref="DeadLetterOptions"/>.
+    /// When <see langword="null"/>, default options apply
+    /// (<see cref="DeadLetterOptions.QueueNameSuffix"/> = <c>"_error"</c>,
+    /// <see cref="DeadLetterOptions.MessageTimeToLive"/> = <see langword="null"/>).
+    /// </param>
+    /// <returns>This builder for fluent chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// RabbitMQ only. <see cref="DeadLetterOptions.MessageTimeToLive"/>, when set, is applied as the
+    /// <c>x-message-ttl</c> argument on the receive endpoint's automatically-derived fault and
+    /// dead-letter queues via <c>IRabbitMqSendTopologyConfigurator.ConfigureErrorSettings</c> /
+    /// <c>.ConfigureDeadLetterSettings</c> — the same queues MassTransit routes a message to once
+    /// retries are exhausted or a <c>ConsumerDefinitionBase&lt;TConsumer&gt;.NonRetryableExceptions</c>
+    /// filter classifies the exception as fatal.
+    /// </para>
+    /// <para>
+    /// <strong>MassTransit 9.1.2 capability note:</strong> see
+    /// <see cref="DeadLetterOptions.QueueNameSuffix"/> for why the suffix itself has no observable
+    /// effect on the destination's name in the installed MassTransit version — only
+    /// <see cref="DeadLetterOptions.MessageTimeToLive"/> is currently wired.
+    /// </para>
+    /// <para>
+    /// When called while <see cref="UseAzureServiceBus(string)"/> is the configured transport, this
+    /// is a no-op — <c>Build()</c> registers an advisory-warning
+    /// <see cref="Microsoft.Extensions.Hosting.IHostedService"/> instead of throwing, since Azure
+    /// Service Bus dead-lettering is entirely transport-native.
+    /// </para>
+    /// <para>
+    /// Optional. Omitting this method preserves MassTransit's own default RabbitMQ error-queue
+    /// behavior — this domain adds a configuration surface, it does not change the unconfigured
+    /// default.
+    /// </para>
+    /// </remarks>
+    public MessagingBusBuilder WithDeadLetterPolicy(Action<DeadLetterOptions>? configure = null)
+    {
+        _withDeadLetterPolicy = true;
+        _deadLetterOptions = new DeadLetterOptions();
+        configure?.Invoke(_deadLetterOptions);
+        return this;
+    }
+
+    // -------------------------------------------------------------------------
     // Build
     // -------------------------------------------------------------------------
 
@@ -965,6 +1020,13 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     sp.GetRequiredService<ILogger<TranslatorRegistrationValidationHostedService>>()));
         }
 
+        // P-343: Register an advisory startup check when WithDeadLetterPolicy() was called while
+        // the Azure Service Bus transport is configured — DeadLetterOptions is RabbitMQ-only.
+        if (_withDeadLetterPolicy && _transport == TransportKind.AzureServiceBus)
+        {
+            Services.AddSingleton<IHostedService, DeadLetterPolicyAdvisoryHostedService>();
+        }
+
         // Capture Quartz queue name for use inside closures.
         var quartzQueueName = _quartzOptions?.Schema ?? "quartz";
         var quartzSchedulerUri = new Uri($"queue:{quartzQueueName}");
@@ -1032,6 +1094,11 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
                     // UseConsumeFilter with the open generic type applies to all message types.
                     if (_withIdempotency)
                         busCfg.UseConsumeFilter(typeof(IdempotentConsumerBehavior<>), ctx);
+
+                    // P-343: Apply the dead-letter policy's message TTL to the automatically-derived
+                    // fault/dead-letter queues.
+                    if (_withDeadLetterPolicy && _deadLetterOptions is not null)
+                        ConfigureDeadLetterPolicy(busCfg, _deadLetterOptions);
 
                     ConfigureResilience(busCfg);
                     busCfg.ConfigureEndpoints(ctx);
@@ -1166,6 +1233,28 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         // precedence over this default on that consumer's own endpoint.
         if (opts.ConcurrentMessageLimit.HasValue)
             cfg.ConcurrentMessageLimit = opts.ConcurrentMessageLimit.Value;
+    }
+
+    // Internal (not private) so DeadLetterPolicyConfigurationTests can exercise this helper
+    // in isolation via a substituted IRabbitMqBusFactoryConfigurator (P-343/WO-054).
+    internal static void ConfigureDeadLetterPolicy(IRabbitMqBusFactoryConfigurator cfg, DeadLetterOptions opts)
+    {
+        // MassTransit 9.1.2 capability note: IRabbitMqSendTopologyConfigurator.ConfigureErrorSettings/
+        // .ConfigureDeadLetterSettings configure the ARGUMENTS of the automatically-derived fault
+        // ("_error") and dead-letter ("_skipped") queues — confirmed via reflection against
+        // MassTransit.RabbitMqTransport 9.1.2 to be the same settings RabbitMqReceiveEndpointBuilder
+        // uses to build the real fault transport a faulted/retry-exhausted message is routed to.
+        // There is no public hook here (or anywhere else in the RabbitMQ transport's configuration
+        // surface) to rename those queues — DeadLetterOptions.QueueNameSuffix is therefore accepted
+        // but has no observable effect in this MassTransit version; see its own XML doc for the full
+        // explanation. Only MessageTimeToLive is wired below.
+        if (!opts.MessageTimeToLive.HasValue)
+            return;
+
+        var timeToLive = opts.MessageTimeToLive.Value;
+
+        cfg.SendTopology.ConfigureErrorSettings = queue => queue.SetQueueArgument("x-message-ttl", timeToLive);
+        cfg.SendTopology.ConfigureDeadLetterSettings = queue => queue.SetQueueArgument("x-message-ttl", timeToLive);
     }
 
     private static void ValidateAzureServiceBusOptions(AzureServiceBusOptions opts)
