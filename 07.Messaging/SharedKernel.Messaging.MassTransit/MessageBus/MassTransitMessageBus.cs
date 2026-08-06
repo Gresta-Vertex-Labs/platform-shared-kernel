@@ -106,7 +106,26 @@ internal sealed class MassTransitMessageBus : IMessageBus
             ? route
             : _resolver.Resolve<T>();
         var endpoint = await _sendEndpointProvider.GetSendEndpoint(new Uri($"queue:{queueName}")).ConfigureAwait(false);
-        await endpoint.Send(command, ct).ConfigureAwait(false);
+
+        // P-341: Run registered propagators before dispatch, identical precedence to PublishAsync.
+        // SendAsync has no Action<PublishContext> overload, so "explicit callback" reduces to "none" —
+        // propagator output alone determines CorrelationId/headers here.
+        var ctx = BuildContextFromPropagators(configure: null);
+
+        if (ctx is null)
+        {
+            await endpoint.Send(command, ct).ConfigureAwait(false);
+            return;
+        }
+
+        await endpoint.Send(command, pipe =>
+        {
+            if (ctx.CorrelationId.HasValue)
+                pipe.CorrelationId = ctx.CorrelationId.Value;
+
+            foreach (var (key, value) in ctx.Headers)
+                pipe.Headers.Set(key, value);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -114,11 +133,36 @@ internal sealed class MassTransitMessageBus : IMessageBus
         where TRequest : class
         where TResponse : class
     {
+        // P-341: Run registered propagators before dispatch, identical precedence to PublishAsync/SendAsync.
+        var ctx = BuildContextFromPropagators(configure: null);
+
         // Use IServiceProvider to resolve IRequestClient<TRequest> via MassTransit DI integration.
         // The CancellationToken is passed via the ct parameter — callers must pass a timeout-bound token.
         var client = _serviceProvider.CreateRequestClient<TRequest>();
-        var response = await client.GetResponse<TResponse>(request, ct).ConfigureAwait(false);
-        return response.Message;
+
+        if (ctx is null)
+        {
+            var response = await client.GetResponse<TResponse>(request, ct).ConfigureAwait(false);
+            return response.Message;
+        }
+
+        // IRequestClient<TRequest>.GetResponse does not accept the raw Action<SendContext<T>> pipe
+        // shape Send/Publish use — it exposes an IRequestPipeConfigurator<TRequest> callback instead.
+        // UseExecute() adds a synchronous execute filter over the underlying SendContext<TRequest>,
+        // giving the same CorrelationId/Headers access as the Send/Publish pipe callbacks.
+        var propagatedResponse = await client.GetResponse<TResponse>(request, requestPipeConfigurator =>
+        {
+            requestPipeConfigurator.UseExecute(sendContext =>
+            {
+                if (ctx.CorrelationId.HasValue)
+                    sendContext.CorrelationId = ctx.CorrelationId.Value;
+
+                foreach (var (key, value) in ctx.Headers)
+                    sendContext.Headers.Set(key, value);
+            });
+        }, ct).ConfigureAwait(false);
+
+        return propagatedResponse.Message;
     }
 
     /// <inheritdoc />
