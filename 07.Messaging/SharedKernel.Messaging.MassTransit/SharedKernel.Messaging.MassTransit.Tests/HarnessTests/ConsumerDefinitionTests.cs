@@ -4,6 +4,7 @@ using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using SharedKernel.Messaging.MassTransit.Consumers;
 
 namespace SharedKernel.Messaging.MassTransit.Tests.HarnessTests;
@@ -167,6 +168,55 @@ public sealed class ConsumerDefinitionTests
             "IBusRegistrationContext passed to ConfigureConsumer must be non-null");
 
         await harness.Stop();
+    }
+
+    // -------------------------------------------------------------------------
+    // CC-09: ConcurrentMessageLimit per-consumer override (P-342)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ConcurrentMessageLimit_Override_AppliedToEndpointConfigurator_TakesPrecedenceOverGlobalDefault()
+    {
+        // Arrange: a substituted endpoint configurator — no real bus/broker is involved.
+        // Invoking the sealed IConsumerDefinition<T>.Configure entry point directly exercises the
+        // exact code path MassTransit calls during real endpoint configuration, without needing to
+        // inspect internal bus topology after a full Build().
+        var endpointConfigurator = Substitute.For<IReceiveEndpointConfigurator>();
+        var consumerConfigurator = Substitute.For<IConsumerConfigurator<CcOverrideConsumer>>();
+        var context = Substitute.For<IBusRegistrationContext>();
+
+        IConsumerDefinition<CcOverrideConsumer> definition = new CcOverrideDefinition();
+
+        // Act
+        definition.Configure(endpointConfigurator, consumerConfigurator, context);
+
+        // Assert: the per-consumer override (7) reaches the endpoint configurator directly.
+        // A receive-endpoint-level MassTransit setting always overrides the bus-level default for
+        // that same endpoint — this is what "takes precedence over the global RabbitMQ/ASB
+        // default" means in practice: the override is written here, on THIS endpoint only.
+        endpointConfigurator.ConcurrentMessageLimit.Should().Be(7,
+            "a per-consumer ConcurrentMessageLimit override must reach the endpoint configurator, " +
+            "taking precedence over the transport-level bus-wide default on this consumer's own " +
+            "endpoint only");
+    }
+
+    [Fact]
+    public void ConcurrentMessageLimit_NotOverridden_EndpointConfiguratorConcurrencyLeftToTransportDefault()
+    {
+        // Arrange: a definition with no ConcurrentMessageLimit override (default null).
+        var endpointConfigurator = Substitute.For<IReceiveEndpointConfigurator>();
+        var consumerConfigurator = Substitute.For<IConsumerConfigurator<CcNoOverrideConsumer>>();
+        var context = Substitute.For<IBusRegistrationContext>();
+
+        IConsumerDefinition<CcNoOverrideConsumer> definition = new CcNoOverrideDefinition();
+
+        // Act
+        definition.Configure(endpointConfigurator, consumerConfigurator, context);
+
+        // Assert: the setter must never even be invoked — the transport-level default
+        // (RabbitMqBusOptions.ConcurrentMessageLimit / AzureServiceBusOptions.MaxConcurrentCalls)
+        // is left to apply unmodified for this endpoint.
+        endpointConfigurator.Received(0).ConcurrentMessageLimit = Arg.Any<int?>();
     }
 }
 
@@ -341,5 +391,64 @@ internal sealed class CdContextDefinition : ConsumerDefinitionBase<CdContextCons
         IBusRegistrationContext context)
     {
         CdContextTracker.SetConfigured(context is not null);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CC-09: ConcurrentMessageLimit per-consumer override — consumer/definition pair
+// ---------------------------------------------------------------------------
+
+public sealed record CcOverrideMessage(string Text);
+public sealed record CcNoOverrideMessage(string Text);
+
+// NSubstitute/Castle DynamicProxy cannot proxy MassTransit.Abstractions's
+// IConsumerConfigurator<TConsumer> (a strong-named assembly) when TConsumer is an `internal`
+// type from this assembly, without an explicit InternalsVisibleTo grant to Castle's dynamically
+// generated proxy assembly — these two consumer types must be `public`, unlike the rest of this
+// file's `internal` consumers, solely to make them substitutable for CC-09's direct
+// IConsumerDefinition<TConsumer>.Configure(...) invocation tests.
+public sealed class CcOverrideConsumer : ConsumerBase<CcOverrideMessage>
+{
+    public CcOverrideConsumer() : base(NullLogger.Instance) { }
+
+    protected override Task ConsumeAsync(CcOverrideMessage message, CancellationToken ct)
+        => Task.CompletedTask;
+}
+
+public sealed class CcNoOverrideConsumer : ConsumerBase<CcNoOverrideMessage>
+{
+    public CcNoOverrideConsumer() : base(NullLogger.Instance) { }
+
+    protected override Task ConsumeAsync(CcNoOverrideMessage message, CancellationToken ct)
+        => Task.CompletedTask;
+}
+
+/// <summary>
+/// Definition that overrides <see cref="ConsumerDefinitionBase{TConsumer}.ConcurrentMessageLimit"/>.
+/// </summary>
+internal sealed class CcOverrideDefinition : ConsumerDefinitionBase<CcOverrideConsumer>
+{
+    protected override int? ConcurrentMessageLimit => 7;
+
+    protected override void ConfigureConsumer(
+        IReceiveEndpointConfigurator endpointConfigurator,
+        IConsumerConfigurator<CcOverrideConsumer> consumerConfigurator,
+        IBusRegistrationContext context)
+    {
+        // No additional configuration.
+    }
+}
+
+/// <summary>
+/// Definition with the default (null) ConcurrentMessageLimit — no per-consumer override.
+/// </summary>
+internal sealed class CcNoOverrideDefinition : ConsumerDefinitionBase<CcNoOverrideConsumer>
+{
+    protected override void ConfigureConsumer(
+        IReceiveEndpointConfigurator endpointConfigurator,
+        IConsumerConfigurator<CcNoOverrideConsumer> consumerConfigurator,
+        IBusRegistrationContext context)
+    {
+        // No additional configuration.
     }
 }

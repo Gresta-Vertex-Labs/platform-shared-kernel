@@ -12,7 +12,8 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// <remarks>
 /// <para>
 /// Consuming services extend this class and override <see cref="NonRetryableExceptions"/>,
-/// <see cref="EndpointName"/>, and <see cref="PrefetchCount"/> as needed.
+/// <see cref="EndpointName"/>, <see cref="PrefetchCount"/>, and <see cref="ConcurrentMessageLimit"/>
+/// as needed.
 /// The retry exception filter wiring is the platform minimum standard for consumer configuration
 /// — it runs unconditionally before <c>ConfigureConsumer</c> is called.
 /// </para>
@@ -76,12 +77,41 @@ public abstract class ConsumerDefinitionBase<TConsumer> : ConsumerDefinition<TCo
     protected virtual IReadOnlyList<Type> NonRetryableExceptions => [];
 
     /// <summary>
+    /// Gets the maximum number of messages processed concurrently on this consumer's receive endpoint.
+    /// When <see langword="null"/> (the default), the transport-level default applies — see
+    /// <see cref="SharedKernel.Messaging.MassTransit.Options.RabbitMqBusOptions.ConcurrentMessageLimit"/>
+    /// or <see cref="SharedKernel.Messaging.MassTransit.Options.AzureServiceBusOptions.MaxConcurrentCalls"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="PrefetchCount"/>: <c>Prefetch</c> bounds how many unacknowledged
+    /// messages the broker delivers to the channel; <see cref="ConcurrentMessageLimit"/> bounds how
+    /// many of those this endpoint processes in parallel.
+    /// </para>
+    /// <para>
+    /// When set, this per-consumer value takes precedence over the transport-level default on this
+    /// consumer's own endpoint only — it does not affect any other consumer's endpoint.
+    /// </para>
+    /// <para>
+    /// <c>new</c> is required here: <c>MassTransit.ConsumerDefinition&lt;TConsumer&gt;</c> (the base
+    /// class this type extends) already declares its own <c>ConcurrentMessageLimit</c> property
+    /// (public get, protected set). This member intentionally shadows it — the sealed
+    /// <see cref="ConfigureConsumer(IReceiveEndpointConfigurator, IConsumerConfigurator{TConsumer}, IRegistrationContext)"/>
+    /// entry point reads this shadowing property and applies it directly to the receive endpoint
+    /// configurator, exactly like <see cref="PrefetchCount"/>, rather than relying on MassTransit's
+    /// own base-class field.
+    /// </para>
+    /// </remarks>
+    protected virtual new int? ConcurrentMessageLimit => null;
+
+    /// <summary>
     /// MassTransit entry point. Applies platform-standard configuration:
     /// (a) sets the endpoint name when <see cref="EndpointName"/> is non-null,
     /// (b) sets the prefetch count when <see cref="PrefetchCount"/> is non-null,
     /// (c) wires the retry exception filter for each type in <see cref="NonRetryableExceptions"/>,
     /// (d) delegates to <see cref="ConfigureConsumer(IReceiveEndpointConfigurator, IConsumerConfigurator{TConsumer}, IBusRegistrationContext)"/>
-    /// for subclass-specific configuration.
+    /// for subclass-specific configuration,
+    /// (e) sets the concurrency limit when <see cref="ConcurrentMessageLimit"/> is non-null.
     /// </summary>
     /// <param name="endpointConfigurator">The receive endpoint configurator.</param>
     /// <param name="consumerConfigurator">The consumer configurator.</param>
@@ -127,6 +157,12 @@ public abstract class ConsumerDefinitionBase<TConsumer> : ConsumerDefinition<TCo
 
         // (d) Delegate to the subclass for additional configuration.
         ConfigureConsumer(endpointConfigurator, consumerConfigurator, (IBusRegistrationContext)context);
+
+        // (e) Apply explicit per-consumer concurrency limit when provided (P-342/WO-054).
+        // Overrides the transport-level default (RabbitMqBusOptions.ConcurrentMessageLimit or
+        // AzureServiceBusOptions.MaxConcurrentCalls) for this consumer's endpoint only.
+        if (ConcurrentMessageLimit.HasValue)
+            endpointConfigurator.ConcurrentMessageLimit = ConcurrentMessageLimit.Value;
     }
 
     /// <summary>

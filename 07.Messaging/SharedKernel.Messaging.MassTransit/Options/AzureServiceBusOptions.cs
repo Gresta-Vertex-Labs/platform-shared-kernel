@@ -40,6 +40,13 @@ public sealed class AzureServiceBusOptions
     /// Gets or sets the maximum number of concurrent message-processing calls per consumer.
     /// Default is <c>1</c>.
     /// </summary>
+    /// <remarks>
+    /// Applied to the bus-level receive endpoint default by
+    /// <see cref="SharedKernel.Messaging.MassTransit.Extensions.MessagingBusBuilder"/>'s internal
+    /// Azure Service Bus configuration helper (P-342/WO-054, fixing a confirmed prior defect where
+    /// this option was read into <see cref="AzureServiceBusOptions"/> but never consulted anywhere
+    /// the bus was actually built — setting it previously had zero observable effect).
+    /// </remarks>
     public int MaxConcurrentCalls { get; set; } = 1;
 
     /// <summary>

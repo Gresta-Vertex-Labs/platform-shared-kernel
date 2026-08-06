@@ -55,4 +55,23 @@ public sealed class RabbitMqBusOptions
     /// Default is <c>60 seconds</c>.
     /// </summary>
     public TimeSpan RequestedHeartbeat { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Gets or sets the maximum number of messages processed concurrently per consumer,
+    /// applied as the bus-level default across all receive endpoints.
+    /// Default is <see langword="null"/> — no platform-imposed limit (MassTransit's own default applies).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="Prefetch"/>: <see cref="Prefetch"/> bounds how many unacknowledged
+    /// messages the broker delivers to the channel; <see cref="ConcurrentMessageLimit"/> bounds how
+    /// many of those the consumer processes in parallel.
+    /// </para>
+    /// <para>
+    /// Override per consumer via
+    /// <see cref="SharedKernel.Messaging.MassTransit.Consumers.ConsumerDefinitionBase{TConsumer}.ConcurrentMessageLimit"/> —
+    /// a per-consumer endpoint setting always takes precedence over this bus-level default.
+    /// </para>
+    /// </remarks>
+    public int? ConcurrentMessageLimit { get; set; }
 }

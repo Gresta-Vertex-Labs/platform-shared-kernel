@@ -139,17 +139,7 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         var opts = new RabbitMqBusOptions();
         configure(opts);
 
-        _rabbitMqBusConfigurator = (_, cfg) =>
-        {
-            cfg.Host(opts.Host, opts.VirtualHost, h =>
-            {
-                h.Username(opts.Username);
-                h.Password(opts.Password);
-                h.Heartbeat(opts.RequestedHeartbeat);
-            });
-
-            cfg.PrefetchCount = opts.Prefetch;
-        };
+        _rabbitMqBusConfigurator = (_, cfg) => ConfigureRabbitMq(cfg, opts);
 
         return this;
     }
@@ -1118,7 +1108,9 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
         }
     }
 
-    private static void ConfigureAzureServiceBus(
+    // Internal (not private) so ConcurrencyLimitConfigurationTests can exercise this helper
+    // in isolation via a substituted IServiceBusBusFactoryConfigurator (P-342/WO-054).
+    internal static void ConfigureAzureServiceBus(
         IServiceBusBusFactoryConfigurator cfg,
         AzureServiceBusOptions opts)
     {
@@ -1144,6 +1136,36 @@ public sealed class MessagingBusBuilder : IMessagingBuilder
             throw new InvalidOperationException(
                 "AzureServiceBusOptions requires exactly one of ConnectionString or FullyQualifiedNamespace to be set.");
         }
+
+        // P-342/WO-054: Apply the bus-level receive endpoint concurrency default. Previously this
+        // option was read into AzureServiceBusOptions but never consulted anywhere the bus was
+        // actually built — setting it had zero observable effect.
+        // NOTE: IServiceBusEndpointConfigurator.MaxConcurrentCalls is obsolete in MassTransit 9.1.2
+        // ("Set ConcurrentMessageLimit instead (which is exactly what setting this property does)").
+        // ConcurrentMessageLimit (from the core IBusFactoryConfigurator, shared with the RabbitMQ
+        // transport) is the current API — setting it here is the transport-correct equivalent of
+        // the old MaxConcurrentCalls assignment.
+        cfg.ConcurrentMessageLimit = opts.MaxConcurrentCalls;
+    }
+
+    // Internal (not private) so ConcurrencyLimitConfigurationTests can exercise this helper
+    // in isolation via a substituted IRabbitMqBusFactoryConfigurator (P-342/WO-054).
+    internal static void ConfigureRabbitMq(IRabbitMqBusFactoryConfigurator cfg, RabbitMqBusOptions opts)
+    {
+        cfg.Host(opts.Host, opts.VirtualHost, h =>
+        {
+            h.Username(opts.Username);
+            h.Password(opts.Password);
+            h.Heartbeat(opts.RequestedHeartbeat);
+        });
+
+        cfg.PrefetchCount = opts.Prefetch;
+
+        // P-342/WO-054: Optional bus-level default concurrency ceiling, distinct from PrefetchCount.
+        // A per-consumer override on ConsumerDefinitionBase<TConsumer>.ConcurrentMessageLimit takes
+        // precedence over this default on that consumer's own endpoint.
+        if (opts.ConcurrentMessageLimit.HasValue)
+            cfg.ConcurrentMessageLimit = opts.ConcurrentMessageLimit.Value;
     }
 
     private static void ValidateAzureServiceBusOptions(AzureServiceBusOptions opts)
