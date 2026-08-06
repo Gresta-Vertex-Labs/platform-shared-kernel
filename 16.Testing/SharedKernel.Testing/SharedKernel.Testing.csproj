@@ -191,8 +191,14 @@
     <!--
       HealthCheckAssertionExtensions (S-11, P-187): HealthCheckRegistration type.
       SCOPE LOCK: never reference SharedKernel.ServiceDefaults or SharedKernel.MultiTenancy.
+      Bumped 10.0.0 -> 10.0.5 (07.Messaging P-347/WO-054): SharedKernel.Messaging.MassTransit's
+      new MassTransitMessageBusProbe pulls this same package at >=10.0.5 transitively (via the
+      07.Messaging.MassTransit ProjectReference below); NU1605 treats a lower explicit pin here as
+      a downgrade error. Same floor-bump pattern already applied repeatedly elsewhere in this repo
+      (e.g. Testcontainers.RabbitMq 4.4.0->4.13.0, P-340; Microsoft.Extensions.DependencyInjection
+      10.0.5->10.0.9, WO-030).
     -->
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.5" />
     <!--
       MassTransit.TestFramework (C-29): includes the in-memory ITestHarness used by
       TestHarnessFactory only. InMemoryMessageBus/InMemoryEventPublisher remain reference-isolated
