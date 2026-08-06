@@ -22,56 +22,102 @@ Read `10.Intelligence/state-map.md` in full.
 
 ### If `$ARGUMENTS` is provided
 Parse the input as either:
-- A phase key: `SK.10.{Phase}` — match directly against the `## Phase Key Registry` table.
-- A phase name: `Design`, `Scaffold`, `Core`, `Tests`, `Docs`, or `Published` — match case-insensitively.
+- A **phase key** — `SK.10.{Phase}`, matched exactly against the `Phase Key` column of the `## Overall Progress` table.
+- A **phase name** — the `Phase` column value, matched case-insensitively.
 
-Find the matching phase section. If every task under that phase key is `●` Complete, output:
+Accept **any** phase key present in the table — never restrict the accepted values to the six
+lifecycle phase names.
+
+If no row matches, output:
+```
+Phase {input} not found in 10.Intelligence/state-map.md.
+Available phases: {comma-separated list of every Phase Key in the Overall Progress table}
+```
+Then stop.
+
+If the matched row's State is `●` Complete, output:
 ```
 Phase {name} is already complete in 10.Intelligence/state-map.md. Nothing to do.
 ```
 Then stop.
 
+If the matched row's State is `⚑` Blocked, report the blocker from the domain's `## Blocked` section and stop.
+
 ### If `$ARGUMENTS` is empty — auto-detect
-Scan the phase sections in this fixed sequence order:
 
-```
-1. Design      (SK.10.Design)
-2. Scaffold    (SK.10.Scaffold)
-3. Core        (SK.10.Core)
-4. Tests       (SK.10.Tests)
-5. Docs        (SK.10.Docs)
-6. Published   (SK.10.Published)
-```
+**Read every row of the `## Overall Progress` table, in the order they appear.** That table is the
+single source of truth for which phases exist — never a hardcoded phase list. Domains accumulate
+work-order/feature phase keys well beyond the canonical six (as of 2026-08-05: `00.Governance` has
+38 rows, `02.Caching` 36, `07.Messaging` 28, `11.Communication` 9, `15.Integration` 7). A hardcoded
+six-phase scan reports "All phases complete" while dozens of genuinely pending tasks sit in the
+table — the exact defect this step was rewritten to fix.
 
-**Priority 1:** Find the first phase containing at least one `◐` (in progress) task. This is a phase already started — resume it.
+For each row capture: **Phase Key**, **Phase** name, **Total**, **● Done**, **○ Pending**,
+**⚑ Blocked** (present in some domains only), and **State**.
 
-**Priority 2:** If none contain `◐`, find the first phase containing at least one `○` (not started) task where all prior phases in the sequence are fully `●` (complete). This is the next phase to begin.
+Classify each row by its phase-key suffix:
+- **Lifecycle phase** — `Design`, `Scaffold`, `Core`, `Tests`, `Docs`, `Published`. Strictly ordered
+  relative to one another, in exactly that order.
+- **Extension phase** — any other suffix (`SK.07.EnvelopeTenancy`, `SK.02.CacheWarmup`,
+  `SK.00.MagicStringGuard`, …). These carry **no positional ordering**. Their prerequisites live in
+  the domain's `## Pending Phases` / `## Cross-Domain Dependencies` / `## Blocked` sections and in
+  the root `state-map.md` Phase Backlog's `Depends on` field — never in table position.
 
-**Stop condition — no tasks authored yet:** If the target phase section has **no task rows at all** (it still carries a `_No tasks defined yet._` placeholder, or its task table is empty), output:
-```
-implement-phase-intelligence: Phase {name} has no tasks defined in 10.Intelligence/state-map.md.
-The 10.Intelligence domain has not been designed yet — there is nothing for the implementer to build.
-Run /arch to raise a work order for this domain, then /dispatch-phase to route it to intelligence-arch-planner,
-which populates the phase task tables.
-```
-Then stop — do **not** spawn the implementer. This domain starts life with an empty state-map template, so this is the expected first-run outcome, not an error.
+Select a target in this priority order:
 
-**Stop condition:** If all phases are fully `●` Complete, output:
+**Priority 1 — resume.** The first row (table order) whose State is `◐` In progress.
+
+**Priority 2 — start next.** If no row is `◐`, the first row whose State is `○` Not started, subject
+to one guard:
+
+- If it is a **lifecycle phase**, every *earlier lifecycle phase* must be `●` Complete (or `—` N/A).
+  If one is not, stop and output:
+  ```
+  Phase {name} cannot start yet — {prior-phase} must complete first.
+  Current state: {prior-phase} is {state}.
+  ```
+  Ignore extension phases entirely when evaluating this guard — an `○` extension phase never blocks
+  a lifecycle phase, and vice versa.
+
+- If it is an **extension phase**, the lifecycle-ordering guard does **not** apply. Instead check the
+  domain's `## Blocked` and `## Cross-Domain Dependencies` sections for an unresolved entry naming
+  this phase key. If one exists, output it and stop:
+  ```
+  Phase {name} is blocked — {blocker text from the domain state-map}.
+  ```
+
+Rows whose State is `⚑` Blocked are **never** auto-selected — skip them and keep scanning.
+
+**Stop condition — nothing left.** If every row is `●` Complete (or `—` N/A), output:
 ```
 All phases complete in 10.Intelligence/state-map.md. The 10.Intelligence domain is fully implemented.
 ```
 Then stop.
 
-**Stop condition:** If the next `○` phase has a prior phase that is not yet fully `●` (i.e., a prior phase still has `○` or `◐` tasks), output:
+**Stop condition — only blocked work remains.** If the only non-complete rows are `⚑` Blocked, output:
 ```
-Phase {name} cannot start yet — {prior-phase} must complete first.
-Current state: {prior-phase} has {N} incomplete task(s).
+No actionable phase in 10.Intelligence/state-map.md — {N} phase(s) remain, all ⚑ Blocked:
+  {phase key} — {blocker from the domain's ## Blocked section}
 ```
 Then stop.
+
+**Stop condition — phase not yet populated.** If the selected phase's task table is empty or still
+reads `_No tasks defined yet._`, output:
+```
+Phase {name} has no tasks defined yet in 10.Intelligence/state-map.md.
+Run the intelligence-arch-planner agent first to populate this phase from a capability request.
+```
+Then stop — do not dispatch the implementer against an empty phase.
 
 ---
 
 ## Step 3 — Extract the phase content
+
+> **Locate the phase section by its `<!-- phase-key: {key} -->` HTML comment marker, not by heading text.**
+> Heading formats vary across domains (`## Phase: Core <!-- … -->` vs `## Phase SK.00.MagicStringGuard — Governance: … <!-- … -->`);
+> the marker is the one reliable anchor. Task-table column sets vary too — `| ID | Task | Work Order | Package(s) | State |`,
+> `| ID | Task | Maps to | Package(s) | State |`, and `| ID | Task | Package(s) | State |` all occur — so read whatever columns
+> that phase's own table declares. Only `ID`, `Task`, and `State` are guaranteed present.
 
 From the identified phase (e.g. `SK.10.Scaffold`), extract:
 1. The phase key and name.
