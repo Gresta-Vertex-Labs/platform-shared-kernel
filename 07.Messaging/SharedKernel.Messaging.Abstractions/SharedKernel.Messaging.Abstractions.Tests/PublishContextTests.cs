@@ -37,6 +37,32 @@ public sealed class PublishContextTests
     }
 
     [Fact]
+    public void WithPartitionKey_SetsPartitionKey()
+    {
+        var ctx = new PublishContext().WithPartitionKey("order-123");
+
+        ctx.PartitionKey.Should().Be("order-123");
+    }
+
+    [Fact]
+    public void WithPartitionKey_NullKey_ThrowsArgumentException()
+    {
+        var act = () => new PublishContext().WithPartitionKey(null!);
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("partitionKey");
+    }
+
+    [Fact]
+    public void WithPartitionKey_EmptyKey_ThrowsArgumentException()
+    {
+        var act = () => new PublishContext().WithPartitionKey(string.Empty);
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("partitionKey");
+    }
+
+    [Fact]
     public void WithHeader_AddsHeaderToCollection()
     {
         var ctx = new PublishContext().WithHeader("x-tenant", "tenant-abc");
@@ -97,6 +123,7 @@ public sealed class PublishContextTests
             .WithCorrelationId(id)
             .WithCausationId(causationId)
             .WithTenantId(tenantId)
+            .WithPartitionKey("order-123")
             .WithHeader("x-flag", "true");
 
         returned.Should().BeSameAs(ctx);
@@ -110,6 +137,7 @@ public sealed class PublishContextTests
         ctx.CorrelationId.Should().BeNull();
         ctx.CausationId.Should().BeNull();
         ctx.TenantId.Should().BeNull();
+        ctx.PartitionKey.Should().BeNull();
         ctx.Headers.Should().BeEmpty();
     }
 }

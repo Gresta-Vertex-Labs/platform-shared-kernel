@@ -52,6 +52,9 @@ internal sealed class MassTransitMessageBus : IMessageBus
 
             foreach (var (key, value) in ctx.Headers)
                 pipe.Headers.Set(key, value);
+
+            // P-344/WO-054: maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
+            pipe.ApplyPartitionKey(ctx.PartitionKey);
         }, ct);
     }
 
@@ -69,6 +72,9 @@ internal sealed class MassTransitMessageBus : IMessageBus
 
             foreach (var (key, value) in ctx.Headers)
                 pipe.Headers.Set(key, value);
+
+            // P-344/WO-054: maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
+            pipe.ApplyPartitionKey(ctx.PartitionKey);
         }, ct);
     }
 
@@ -125,6 +131,9 @@ internal sealed class MassTransitMessageBus : IMessageBus
 
             foreach (var (key, value) in ctx.Headers)
                 pipe.Headers.Set(key, value);
+
+            // P-344/WO-054: maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
+            pipe.ApplyPartitionKey(ctx.PartitionKey);
         }, ct).ConfigureAwait(false);
     }
 

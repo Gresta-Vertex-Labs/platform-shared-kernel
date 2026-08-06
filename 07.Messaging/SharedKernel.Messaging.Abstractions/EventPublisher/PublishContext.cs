@@ -43,6 +43,19 @@ public sealed class PublishContext
     public Guid? TenantId { get; private set; }
 
     /// <summary>
+    /// Gets the partition/affinity key used to derive ordered-delivery routing for the outgoing
+    /// message. <c>null</c> means no ordered-delivery affinity is requested.
+    /// </summary>
+    /// <remarks>
+    /// Maps to RabbitMQ routing-key affinity or Azure Service Bus session identity depending on the
+    /// configured transport — see "Ordered delivery via partition key" in
+    /// <c>07.Messaging/CLAUDE.md</c> (P-344/WO-054). Ordering is guaranteed only among messages
+    /// sharing the same <see cref="PartitionKey"/> and consumed by a single active consumer instance
+    /// on that endpoint.
+    /// </remarks>
+    public string? PartitionKey { get; private set; }
+
+    /// <summary>
     /// Gets the custom transport headers to attach to the outgoing message.
     /// Keys are non-null, non-empty. Duplicate keys overwrite the earlier value.
     /// </summary>
@@ -78,6 +91,23 @@ public sealed class PublishContext
     public PublishContext WithTenantId(Guid tenantId)
     {
         TenantId = tenantId;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the partition/affinity key used to derive ordered-delivery routing for the outgoing message.
+    /// </summary>
+    /// <param name="partitionKey">
+    /// The partition key, e.g. an aggregate instance identifier. Must not be null or empty.
+    /// </param>
+    /// <returns>This <see cref="PublishContext"/> instance for fluent chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="partitionKey"/> is null or empty.</exception>
+    public PublishContext WithPartitionKey(string partitionKey)
+    {
+        if (string.IsNullOrEmpty(partitionKey))
+            throw new ArgumentException("Partition key must not be null or empty.", nameof(partitionKey));
+
+        PartitionKey = partitionKey;
         return this;
     }
 

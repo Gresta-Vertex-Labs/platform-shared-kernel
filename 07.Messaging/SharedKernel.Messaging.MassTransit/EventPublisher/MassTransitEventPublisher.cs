@@ -9,6 +9,7 @@ using SharedKernel.Messaging.Abstractions.EventPublisher;
 using SharedKernel.Messaging.Abstractions.HeaderPropagation;
 using SharedKernel.Messaging.Abstractions.Options;
 using SharedKernel.Messaging.MassTransit.Diagnostics;
+using SharedKernel.Messaging.MassTransit.MessageBus;
 
 // Alias to disambiguate from MassTransit.PublishContext
 using MessagingPublishContext = SharedKernel.Messaging.Abstractions.EventPublisher.PublishContext;
@@ -162,15 +163,19 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             causationId,
             tenantId);
 
-        if (ctx?.Headers is { Count: > 0 } headers)
+        // P-344/WO-054: the pipe callback must also run when only PartitionKey is set (no headers).
+        if (ctx is { } publishContext && (publishContext.Headers.Count > 0 || publishContext.PartitionKey is not null))
         {
             return publishEndpoint.Publish(envelope, pipe =>
             {
-                foreach (var (key, value) in headers)
+                foreach (var (key, value) in publishContext.Headers)
                     pipe.Headers.Set(key, value);
 
                 if (Guid.TryParse(correlationId, out var corrGuid))
                     pipe.CorrelationId = corrGuid;
+
+                // Maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
+                pipe.ApplyPartitionKey(publishContext.PartitionKey);
             }, ct);
         }
 
