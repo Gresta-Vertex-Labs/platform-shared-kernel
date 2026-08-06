@@ -31,9 +31,14 @@ public interface IEventPublisher
     /// <returns>A task that completes when the event has been accepted by the transport.</returns>
     /// <remarks>
     /// The MassTransit implementation wraps <typeparamref name="TEvent"/> in <c>EventEnvelope&lt;TEvent&gt;</c>
-    /// (from <c>04.Contracts</c>) before sending to the transport.
+    /// (from <c>04.Contracts</c>) before sending to the transport, constructed exclusively via
+    /// <c>EventEnvelope.Wrap&lt;TEvent&gt;()</c> — <c>04.Contracts</c>'s own mandated factory — never a raw
+    /// object-initializer/constructor call (P-340/WO-054).
     /// <c>CorrelationId</c> and <c>CausationId</c> are propagated from <c>Activity.Current?.TraceId</c>
     /// when available. <c>SourceService</c> is sourced from <c>MessagingOptions.ServiceName</c>.
+    /// <c>TenantId</c> is sourced from <see cref="PublishContext.TenantId"/> when explicitly set;
+    /// otherwise omitted (<c>null</c>), exactly like an unset <c>CorrelationId</c>/<c>CausationId</c>
+    /// (P-340/WO-054).
     /// </remarks>
     Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct) where TEvent : class;
 

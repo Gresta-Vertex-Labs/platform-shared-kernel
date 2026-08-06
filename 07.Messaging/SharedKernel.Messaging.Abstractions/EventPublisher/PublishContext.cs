@@ -30,6 +30,19 @@ public sealed class PublishContext
     public Guid? CausationId { get; private set; }
 
     /// <summary>
+    /// Gets the tenant identifier the published event belongs to.
+    /// <c>null</c> means the tenant is omitted from the envelope, exactly like an unset
+    /// <see cref="CorrelationId"/> or <see cref="CausationId"/>.
+    /// </summary>
+    /// <remarks>
+    /// Flows into <c>EventEnvelope&lt;TEvent&gt;.TenantId</c> (<c>04.Contracts</c>, P-331) via the
+    /// <c>IEventPublisher</c> path only — <c>IMessageBus</c> has no envelope to carry it, so setting
+    /// <see cref="TenantId"/> on a plain <c>IMessageBus.PublishAsync</c>/<c>SendAsync</c> call is a
+    /// no-op today (P-340/WO-054).
+    /// </remarks>
+    public Guid? TenantId { get; private set; }
+
+    /// <summary>
     /// Gets the custom transport headers to attach to the outgoing message.
     /// Keys are non-null, non-empty. Duplicate keys overwrite the earlier value.
     /// </summary>
@@ -54,6 +67,17 @@ public sealed class PublishContext
     public PublishContext WithCausationId(Guid causationId)
     {
         CausationId = causationId;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the tenant identifier for the outgoing integration event envelope.
+    /// </summary>
+    /// <param name="tenantId">The tenant identifier the published event belongs to.</param>
+    /// <returns>This <see cref="PublishContext"/> instance for fluent chaining.</returns>
+    public PublishContext WithTenantId(Guid tenantId)
+    {
+        TenantId = tenantId;
         return this;
     }
 

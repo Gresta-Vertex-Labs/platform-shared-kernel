@@ -17,7 +17,9 @@ namespace SharedKernel.Messaging.MassTransit.EventPublisher;
 
 /// <summary>
 /// MassTransit implementation of <see cref="IEventPublisher"/>.
-/// Wraps integration events in <see cref="EventEnvelope{TEvent}"/> and publishes via MassTransit.
+/// Wraps integration events in <see cref="EventEnvelope{TEvent}"/> — constructed exclusively via
+/// <see cref="EventEnvelope.Wrap{TEvent}"/>, never a raw object initializer (P-340/WO-054) —
+/// and publishes via MassTransit.
 /// </summary>
 internal sealed class MassTransitEventPublisher : IEventPublisher
 {
@@ -147,18 +149,18 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
             ? ctx.CausationId.Value.ToString("D")
             : null;
 
-        // Build the CloudEvents-compliant envelope.
-        var envelope = new EventEnvelope<TEvent>
-        {
-            EventId = integrationEvent.Id,
-            OccurredOn = integrationEvent.OccurredOn,
-            EventType = typeof(TEvent).Name,
-            EventVersion = DomainEventVersionHelper.GetVersion(typeof(TEvent)),
-            CorrelationId = correlationId,
-            CausationId = causationId,
-            SourceService = sourceService,
-            Payload = integrationEvent,
-        };
+        // Resolve TenantId: explicit override only, no ambient fallback (P-340/WO-054).
+        Guid? tenantId = ctx?.TenantId;
+
+        // Build the CloudEvents-compliant envelope exclusively via EventEnvelope.Wrap<TEvent>()
+        // (04.Contracts's mandated factory) — never a raw object-initializer construction
+        // (P-340/WO-054, fixing a confirmed prior violation of that construction rule).
+        var envelope = EventEnvelope.Wrap(
+            integrationEvent,
+            sourceService,
+            correlationId,
+            causationId,
+            tenantId);
 
         if (ctx?.Headers is { Count: > 0 } headers)
         {

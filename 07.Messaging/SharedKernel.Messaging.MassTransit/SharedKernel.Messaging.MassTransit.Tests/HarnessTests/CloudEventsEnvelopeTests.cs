@@ -169,6 +169,93 @@ public sealed class CloudEventsEnvelopeTests
     }
 
     [Fact]
+    public async Task PublishAsync_WithTenantId_UsesProvidedValue()
+    {
+        await using var provider = BuildProvider("envelope-tenant-service");
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using var scope = provider.CreateScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+        var evt = new OrderPlacedEvent { OccurredOn = DateTimeOffset.UtcNow, OrderId = Guid.NewGuid() };
+        var tenantId = Guid.NewGuid();
+
+        await publisher.PublishAsync(evt, ctx => ctx.WithTenantId(tenantId), CancellationToken.None);
+
+        (await harness.Published.Any<EventEnvelope<OrderPlacedEvent>>()).Should().BeTrue();
+        var envelope = harness.Published.Select<EventEnvelope<OrderPlacedEvent>>().First();
+        envelope.Context.Message.TenantId.Should().Be(tenantId,
+            "explicit TenantId set via PublishContext.WithTenantId must flow into EventEnvelope<TEvent>.TenantId");
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithoutTenantId_TenantIdIsNull()
+    {
+        await using var provider = BuildProvider("envelope-no-tenant-service");
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using var scope = provider.CreateScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+        var evt = new OrderPlacedEvent { OccurredOn = DateTimeOffset.UtcNow, OrderId = Guid.NewGuid() };
+
+        await publisher.PublishAsync(evt, CancellationToken.None);
+
+        (await harness.Published.Any<EventEnvelope<OrderPlacedEvent>>()).Should().BeTrue();
+        var envelope = harness.Published.Select<EventEnvelope<OrderPlacedEvent>>().First();
+        envelope.Context.Message.TenantId.Should().BeNull(
+            "an unset PublishContext.TenantId must omit TenantId, exactly like an unset CausationId");
+
+        await harness.Stop();
+    }
+
+    [Fact]
+    public async Task PublishAsync_ConstructsEnvelopeExclusivelyViaWrapFactory()
+    {
+        // T-340/ET-07: proves factory-only construction is actually exercised, not merely
+        // asserted by inspection. Independently builds the expected envelope via
+        // EventEnvelope.Wrap<TEvent>() using the exact same inputs PublishEnvelope<TEvent>
+        // received, then asserts the captured published envelope is record-equal to it.
+        // A regression back to a hand-built object initializer that omits or mis-populates
+        // any field would fail this whole-record comparison even though narrower
+        // field-by-field assertions would not catch it.
+        const string sourceService = "envelope-factory-only-service";
+        await using var provider = BuildProvider(sourceService);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using var scope = provider.CreateScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+        var evt = new OrderPlacedEvent { OccurredOn = DateTimeOffset.UtcNow, OrderId = Guid.NewGuid() };
+        var correlationId = Guid.NewGuid();
+        var causationId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+
+        await publisher.PublishAsync(
+            evt,
+            ctx => ctx.WithCorrelationId(correlationId).WithCausationId(causationId).WithTenantId(tenantId),
+            CancellationToken.None);
+
+        (await harness.Published.Any<EventEnvelope<OrderPlacedEvent>>()).Should().BeTrue();
+        var actual = harness.Published.Select<EventEnvelope<OrderPlacedEvent>>().First().Context.Message;
+
+        var expected = EventEnvelope.Wrap(
+            evt,
+            sourceService,
+            correlationId.ToString("D"),
+            causationId.ToString("D"),
+            tenantId);
+
+        actual.Should().Be(expected,
+            "the envelope must be constructed exclusively via EventEnvelope.Wrap<TEvent>() — " +
+            "any drift back to a raw object initializer would produce a non-record-equal result");
+
+        await harness.Stop();
+    }
+
+    [Fact]
     public async Task PublishAsync_NonDomainEvent_ThrowsInvalidOperationException()
     {
         // Tests the runtime guard in MassTransitEventPublisher directly without the harness.

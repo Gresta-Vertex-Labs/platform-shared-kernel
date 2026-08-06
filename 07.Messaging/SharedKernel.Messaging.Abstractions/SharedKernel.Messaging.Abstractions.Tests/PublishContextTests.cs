@@ -28,6 +28,15 @@ public sealed class PublishContextTests
     }
 
     [Fact]
+    public void WithTenantId_SetsTenantId()
+    {
+        var id = Guid.NewGuid();
+        var ctx = new PublishContext().WithTenantId(id);
+
+        ctx.TenantId.Should().Be(id);
+    }
+
+    [Fact]
     public void WithHeader_AddsHeaderToCollection()
     {
         var ctx = new PublishContext().WithHeader("x-tenant", "tenant-abc");
@@ -81,11 +90,13 @@ public sealed class PublishContextTests
     {
         var id = Guid.NewGuid();
         var causationId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
         var ctx = new PublishContext();
 
         var returned = ctx
             .WithCorrelationId(id)
             .WithCausationId(causationId)
+            .WithTenantId(tenantId)
             .WithHeader("x-flag", "true");
 
         returned.Should().BeSameAs(ctx);
@@ -98,6 +109,7 @@ public sealed class PublishContextTests
 
         ctx.CorrelationId.Should().BeNull();
         ctx.CausationId.Should().BeNull();
+        ctx.TenantId.Should().BeNull();
         ctx.Headers.Should().BeEmpty();
     }
 }
