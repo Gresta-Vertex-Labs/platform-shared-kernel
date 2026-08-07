@@ -41,6 +41,24 @@ public sealed class InMemoryEventPublisherTests
             context.WithCorrelationId(correlationId).WithCausationId(causationId).WithHeader(headerKey, headerValue);
     }
 
+    /// <summary>
+    /// Test-double propagator shaped like the real, shipped 07.Messaging <c>TenantHeaderPropagator</c> —
+    /// populates only <see cref="PublishContext.TenantId"/> via <see cref="PublishContext.WithTenantId"/>.
+    /// Mirrors <c>InMemoryMessageBusTests.TenantPropagator</c> (T-74/P-352/WO-054).
+    /// </summary>
+    private sealed class TenantPropagator(Guid tenantId) : IMessageHeaderPropagator
+    {
+        public void Propagate(PublishContext context) => context.WithTenantId(tenantId);
+    }
+
+    /// <summary>Test-double propagator that populates only <see cref="PublishContext.PartitionKey"/> via
+    /// <see cref="PublishContext.WithPartitionKey"/>. Mirrors
+    /// <c>InMemoryMessageBusTests.PartitionKeyPropagator</c> (T-74/P-352/WO-054).</summary>
+    private sealed class PartitionKeyPropagator(string partitionKey) : IMessageHeaderPropagator
+    {
+        public void Propagate(PublishContext context) => context.WithPartitionKey(partitionKey);
+    }
+
     [Fact]
     public async Task PublishAsync_RecordsEvent_InPublishedList()
     {
@@ -243,5 +261,101 @@ public sealed class InMemoryEventPublisherTests
 
         IReadOnlyList<TestIntegrationEvent> typed = publisher.PublishedOf<TestIntegrationEvent>();
         Assert.Equal([first, second], typed);
+    }
+
+    // --- P-352/WO-054: PublishContext.TenantId/.PartitionKey round-trip (T-74) ---
+    // 07.Messaging.Abstractions/EventPublisher/PublishContext.cs re-verified directly on disk before
+    // writing these tests: TenantId (Guid?)/WithTenantId, PartitionKey (string?)/WithPartitionKey are
+    // all real, shipped members (P-340/P-344/WO-054) — the T-74 blocker has cleared.
+
+    [Fact]
+    public async Task PublishAsync_NoConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
+    {
+        var tenantId = Guid.NewGuid();
+        var publisher = new InMemoryEventPublisher([new TenantPropagator(tenantId)]);
+
+        await publisher.PublishAsync(new TestIntegrationEvent("a"), CancellationToken.None);
+
+        var context = publisher.ShouldHavePublishedContext<TestIntegrationEvent>();
+        Assert.Equal(tenantId, context.TenantId);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
+    {
+        var tenantId = Guid.NewGuid();
+        var publisher = new InMemoryEventPublisher([new TenantPropagator(tenantId)]);
+
+        await publisher.PublishAsync(
+            new TestIntegrationEvent("a"), ctx => ctx.WithHeader("k", "v"), CancellationToken.None);
+
+        var context = publisher.ShouldHavePublishedContext<TestIntegrationEvent>();
+        Assert.Equal(tenantId, context.TenantId);
+        Assert.Equal("v", context.Headers["k"]);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithConfigure_ExplicitTenantIdWinsOverPropagatorTenantId()
+    {
+        var propagatorTenantId = Guid.NewGuid();
+        var explicitTenantId = Guid.NewGuid();
+        var publisher = new InMemoryEventPublisher([new TenantPropagator(propagatorTenantId)]);
+
+        await publisher.PublishAsync(
+            new TestIntegrationEvent("a"), ctx => ctx.WithTenantId(explicitTenantId), CancellationToken.None);
+
+        var context = publisher.ShouldHavePublishedContext<TestIntegrationEvent>();
+        Assert.Equal(explicitTenantId, context.TenantId);
+    }
+
+    [Fact]
+    public async Task PublishAsync_NoConfigure_PartitionKeyPropagator_RoundTripsPartitionKeyThroughCapturedContext()
+    {
+        var publisher = new InMemoryEventPublisher([new PartitionKeyPropagator("order-42")]);
+
+        await publisher.PublishAsync(new TestIntegrationEvent("a"), CancellationToken.None);
+
+        var context = publisher.ShouldHavePublishedContext<TestIntegrationEvent>();
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithConfigure_PartitionKeyRoundTripsThroughCapturedContext()
+    {
+        var publisher = new InMemoryEventPublisher(); // no propagators — direct explicit configure only
+
+        await publisher.PublishAsync(
+            new TestIntegrationEvent("a"), ctx => ctx.WithPartitionKey("order-42"), CancellationToken.None);
+
+        var context = publisher.ShouldHavePublishedContext<TestIntegrationEvent>();
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task PublishAsync_NoPropagatorsRegistered_ConfigureCallbackAlone_PopulatesTenantIdAndPartitionKey()
+    {
+        var publisher = new InMemoryEventPublisher(); // default ctor — zero propagators
+        var tenantId = Guid.NewGuid();
+
+        await publisher.PublishAsync(
+            new TestIntegrationEvent("a"),
+            ctx => ctx.WithTenantId(tenantId).WithPartitionKey("order-42"),
+            CancellationToken.None);
+
+        var context = publisher.ShouldHavePublishedContext<TestIntegrationEvent>();
+        Assert.Equal(tenantId, context.TenantId);
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task PublishAsync_NoPropagatorsNoConfigure_TenantIdAndPartitionKeyAreNull()
+    {
+        var publisher = new InMemoryEventPublisher();
+
+        await publisher.PublishAsync(new TestIntegrationEvent("a"), CancellationToken.None);
+
+        var context = publisher.ShouldHavePublishedContext<TestIntegrationEvent>();
+        Assert.Null(context.TenantId);
+        Assert.Null(context.PartitionKey);
     }
 }

@@ -47,6 +47,26 @@ public sealed class InMemoryMessageBusTests
             context.WithCorrelationId(correlationId).WithCausationId(causationId).WithHeader(headerKey, headerValue);
     }
 
+    /// <summary>
+    /// Test-double propagator shaped like the real, shipped 07.Messaging <c>TenantHeaderPropagator</c> —
+    /// populates only <see cref="PublishContext.TenantId"/> via <see cref="PublishContext.WithTenantId"/>.
+    /// Used to prove TenantId round-trips through the captured context identically across every
+    /// dispatch shape (T-74/P-352/WO-054).
+    /// </summary>
+    private sealed class TenantPropagator(Guid tenantId) : IMessageHeaderPropagator
+    {
+        public void Propagate(PublishContext context) => context.WithTenantId(tenantId);
+    }
+
+    /// <summary>Test-double propagator that populates only <see cref="PublishContext.PartitionKey"/> via
+    /// <see cref="PublishContext.WithPartitionKey"/> — proves PartitionKey round-trips through the
+    /// captured context on dispatch verbs with no <c>configure</c> overload (SendAsync/RequestAsync),
+    /// mirroring <see cref="TenantPropagator"/>'s single-purpose shape (T-74/P-352/WO-054).</summary>
+    private sealed class PartitionKeyPropagator(string partitionKey) : IMessageHeaderPropagator
+    {
+        public void Propagate(PublishContext context) => context.WithPartitionKey(partitionKey);
+    }
+
     [Fact]
     public async Task PublishAsync_RecordsMessage_RetrievableViaShouldHavePublished()
     {
@@ -343,5 +363,166 @@ public sealed class InMemoryMessageBusTests
     {
         var bus = new InMemoryMessageBus();
         Assert.Throws<InvalidOperationException>(bus.ShouldHaveRequestedContext<TestRequest, TestResponse>);
+    }
+
+    // --- P-352/WO-054: PublishContext.TenantId/.PartitionKey round-trip (T-74) ---
+    // 07.Messaging.Abstractions/EventPublisher/PublishContext.cs re-verified directly on disk before
+    // writing these tests: TenantId (Guid?)/WithTenantId, PartitionKey (string?)/WithPartitionKey are
+    // all real, shipped members (P-340/P-344/WO-054) — the T-74 blocker has cleared.
+
+    [Fact]
+    public async Task PublishAsync_NoConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
+    {
+        var tenantId = Guid.NewGuid();
+        var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
+
+        await bus.PublishAsync(new TestEvent("a"), CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Equal(tenantId, context.TenantId);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithConfigure_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
+    {
+        var tenantId = Guid.NewGuid();
+        var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
+
+        await bus.PublishAsync(new TestEvent("a"), ctx => ctx.WithHeader("k", "v"), CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Equal(tenantId, context.TenantId);
+        Assert.Equal("v", context.Headers["k"]);
+    }
+
+    [Fact]
+    public async Task SendAsync_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
+    {
+        var tenantId = Guid.NewGuid();
+        var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
+
+        await bus.SendAsync(new TestCommand("do-it"), CancellationToken.None);
+
+        var context = bus.ShouldHaveSentContext<TestCommand>();
+        Assert.Equal(tenantId, context.TenantId);
+    }
+
+    [Fact]
+    public async Task RequestAsync_TenantPropagator_RoundTripsTenantIdThroughCapturedContext()
+    {
+        var tenantId = Guid.NewGuid();
+        var bus = new InMemoryMessageBus([new TenantPropagator(tenantId)]);
+        bus.SetResponseHandler<TestRequest, TestResponse>(req => new TestResponse(req.X * 2));
+
+        await bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(21), CancellationToken.None);
+
+        var context = bus.ShouldHaveRequestedContext<TestRequest, TestResponse>();
+        Assert.Equal(tenantId, context.TenantId);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithConfigure_ExplicitTenantIdWinsOverPropagatorTenantId()
+    {
+        var propagatorTenantId = Guid.NewGuid();
+        var explicitTenantId = Guid.NewGuid();
+        var bus = new InMemoryMessageBus([new TenantPropagator(propagatorTenantId)]);
+
+        await bus.PublishAsync(
+            new TestEvent("a"),
+            ctx => ctx.WithTenantId(explicitTenantId),
+            CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Equal(explicitTenantId, context.TenantId);
+    }
+
+    [Fact]
+    public async Task PublishAsync_NoConfigure_PartitionKeyPropagator_RoundTripsPartitionKeyThroughCapturedContext()
+    {
+        var bus = new InMemoryMessageBus([new PartitionKeyPropagator("order-42")]);
+
+        await bus.PublishAsync(new TestEvent("a"), CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithConfigure_PartitionKeyRoundTripsThroughCapturedContext()
+    {
+        var bus = new InMemoryMessageBus(); // no propagators — direct explicit configure only
+
+        await bus.PublishAsync(
+            new TestEvent("a"),
+            ctx => ctx.WithPartitionKey("order-42"),
+            CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task SendAsync_PartitionKeyPropagator_RoundTripsPartitionKeyThroughCapturedContext()
+    {
+        var bus = new InMemoryMessageBus([new PartitionKeyPropagator("order-42")]);
+
+        await bus.SendAsync(new TestCommand("do-it"), CancellationToken.None);
+
+        var context = bus.ShouldHaveSentContext<TestCommand>();
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task RequestAsync_PartitionKeyPropagator_RoundTripsPartitionKeyThroughCapturedContext()
+    {
+        var bus = new InMemoryMessageBus([new PartitionKeyPropagator("order-42")]);
+        bus.SetResponseHandler<TestRequest, TestResponse>(req => new TestResponse(req.X * 2));
+
+        await bus.RequestAsync<TestRequest, TestResponse>(new TestRequest(21), CancellationToken.None);
+
+        var context = bus.ShouldHaveRequestedContext<TestRequest, TestResponse>();
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithConfigure_ExplicitPartitionKeyWinsOverPropagatorPartitionKey()
+    {
+        var bus = new InMemoryMessageBus([new PartitionKeyPropagator("from-propagator")]);
+
+        await bus.PublishAsync(
+            new TestEvent("a"),
+            ctx => ctx.WithPartitionKey("from-configure"),
+            CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Equal("from-configure", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task PublishAsync_NoPropagatorsRegistered_ConfigureCallbackAlone_PopulatesTenantIdAndPartitionKey()
+    {
+        var bus = new InMemoryMessageBus(); // default ctor — zero propagators
+        var tenantId = Guid.NewGuid();
+
+        await bus.PublishAsync(
+            new TestEvent("a"),
+            ctx => ctx.WithTenantId(tenantId).WithPartitionKey("order-42"),
+            CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Equal(tenantId, context.TenantId);
+        Assert.Equal("order-42", context.PartitionKey);
+    }
+
+    [Fact]
+    public async Task PublishAsync_NoPropagatorsNoConfigure_TenantIdAndPartitionKeyAreNull()
+    {
+        var bus = new InMemoryMessageBus();
+
+        await bus.PublishAsync(new TestEvent("a"), CancellationToken.None);
+
+        var context = bus.ShouldHavePublishedContext<TestEvent>();
+        Assert.Null(context.TenantId);
+        Assert.Null(context.PartitionKey);
     }
 }
