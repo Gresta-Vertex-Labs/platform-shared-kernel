@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 
 namespace SharedKernel.Messaging.MassTransit.Diagnostics;
 
@@ -23,8 +24,11 @@ namespace SharedKernel.Messaging.MassTransit.Diagnostics;
 /// by every call site in the assembly.
 /// </para>
 /// <para>
-/// <see cref="ActivitySource"/> is the only sanctioned static field in this domain.
-/// Do not add additional ad-hoc static fields under cover of this exception.
+/// <see cref="ActivitySource"/> and, as of P-348/WO-054, <see cref="System.Diagnostics.Metrics.Meter"/> are
+/// the only sanctioned static fields in this domain (the <c>Meter</c>'s instrument fields
+/// below fall under the same exception — they are process-lifetime instrument handles,
+/// not mutable business state). Do not add additional ad-hoc static fields under cover of
+/// this exception.
 /// </para>
 /// <para>
 /// Ownership boundary: this source is owned and constructed here, in
@@ -53,9 +57,91 @@ internal static class MessagingDiagnostics
     /// The single, process-lifetime <see cref="ActivitySource"/> instance for the
     /// whole <c>SharedKernel.Messaging.MassTransit</c> package. Used by
     /// <see cref="Consumers.ConsumerBase{TMessage}.Consume"/> to start the
-    /// <c>"Consumer.Consume"</c> activity and by
+    /// <c>"Consumer.Consume"</c> activity, by
     /// <see cref="EventPublisher.MassTransitEventPublisher"/> to start the
-    /// <c>"EventPublisher.Publish"</c> activity.
+    /// <c>"EventPublisher.Publish"</c> activity, and — as of P-348/WO-054 — by
+    /// <c>MassTransitMessageBus.SendAsync</c>, <c>.RequestAsync</c>, and
+    /// <c>.ExecuteRoutingSlipAsync</c> to start their own child activities, closing the
+    /// dispatch-surface coverage gap those three verbs previously had.
     /// </summary>
     public static readonly ActivitySource ActivitySource = new(SourceName, SourceVersion);
+
+    /// <summary>
+    /// The single, process-lifetime <see cref="System.Diagnostics.Metrics.Meter"/> instance for the whole
+    /// <c>SharedKernel.Messaging.MassTransit</c> package (P-348/WO-054). Hosts the five
+    /// instruments below. Consumed by <c>13.ServiceDefaults.WithMessagingTelemetry()</c>,
+    /// which registers <see cref="SourceName"/> with the host's <c>MeterProvider</c> via
+    /// <c>.AddMeter(...)</c> — mirroring the <see cref="ActivitySource"/> registration split.
+    /// </summary>
+    public static readonly Meter Meter = new(SourceName, SourceVersion);
+
+    /// <summary>
+    /// Counts messages/integration events successfully published, tagged
+    /// <c>messaging.event_type</c> (from <see cref="EventPublisher.MassTransitEventPublisher"/>)
+    /// or <c>messaging.message_type</c> (from <c>MassTransitMessageBus.PublishAsync</c>).
+    /// Incremented only after the underlying MassTransit publish call completes without
+    /// throwing — a publish that faults is never counted as published.
+    /// </summary>
+    public static readonly Counter<long> PublishCounter = Meter.CreateCounter<long>(
+        name: "messaging.publish.count",
+        unit: "{message}",
+        description: "Number of messages/integration events successfully published.");
+
+    /// <summary>
+    /// Counts successful <see cref="Consumers.ConsumerBase{TMessage}.ConsumeAsync"/>
+    /// completions, tagged <c>messaging.message_type</c>. Incremented only when
+    /// <c>ConsumeAsync</c> returns without throwing — a faulted consume attempt is
+    /// never counted here (see <see cref="RetryCounter"/> and <see cref="FaultCounter"/>).
+    /// </summary>
+    public static readonly Counter<long> ConsumeCounter = Meter.CreateCounter<long>(
+        name: "messaging.consume.count",
+        unit: "{message}",
+        description: "Number of messages successfully consumed by a ConsumerBase<TMessage> subclass.");
+
+    /// <summary>
+    /// Records the wall-clock duration, in milliseconds, of a single
+    /// <see cref="Consumers.ConsumerBase{TMessage}.ConsumeAsync"/> invocation, tagged
+    /// <c>messaging.message_type</c>. Recorded unconditionally — on both success and
+    /// failure — so the histogram reflects true end-to-end consume latency, including
+    /// attempts that ultimately faulted.
+    /// </summary>
+    public static readonly Histogram<double> ConsumeDurationHistogram = Meter.CreateHistogram<double>(
+        name: "messaging.consume.duration",
+        unit: "ms",
+        description: "Duration, in milliseconds, of a single ConsumeAsync invocation (success or failure).");
+
+    /// <summary>
+    /// Counts retry-filter re-deliveries observed by
+    /// <see cref="Consumers.ConsumerBase{TMessage}.Consume"/>, tagged
+    /// <c>messaging.message_type</c>. MassTransit 9.1.2 ships <c>IRetryObserver</c> /
+    /// <c>IRetryObserverConnector</c> in its public API, but no reachable configurator
+    /// surface (<c>IBusFactoryConfigurator</c>, <c>IReceiveEndpointConfigurator</c>,
+    /// <c>IBus</c>, <c>IBusControl</c>) implements <c>IRetryObserverConnector</c> in the
+    /// shipped 9.1.2 build — confirmed by reflection over the shipped assembly, not
+    /// documented in its XML doc comments — so <c>ConnectRetryObserver</c> is unreachable
+    /// from <c>MessagingBusBuilder</c>'s configuration-time API. The verified, working
+    /// alternative is <c>ConsumeContext.GetRetryAttempt()</c>
+    /// (<c>MassTransit.RetryContextExtensions</c>): confirmed via a live
+    /// <c>TestHarness</c> run to return <c>0</c> on the original delivery and <c>1, 2, ...</c>
+    /// on each subsequent retry-filter re-delivery, and to return <c>0</c> safely (never
+    /// throw) when no retry middleware is configured at all. This is a per-invocation
+    /// context inspection, not a subscribed observer callback — it is the best available
+    /// observation point in 9.1.2, not the originally-anticipated <c>IRetryObserver</c> hook.
+    /// </summary>
+    public static readonly Counter<long> RetryCounter = Meter.CreateCounter<long>(
+        name: "messaging.retry.count",
+        unit: "{retry}",
+        description: "Number of retry-filter re-deliveries observed via ConsumeContext.GetRetryAttempt() > 0.");
+
+    /// <summary>
+    /// Counts <c>Fault&lt;TMessage&gt;</c> messages observed by
+    /// <see cref="Consumers.FaultConsumerAdapter{TMessage, TFaultConsumer}"/>, tagged
+    /// <c>messaging.message_type</c>. Incremented unconditionally for every delivered
+    /// fault, regardless of whether the registered <c>IFaultConsumer&lt;TMessage&gt;</c>
+    /// itself then succeeds or throws while handling it.
+    /// </summary>
+    public static readonly Counter<long> FaultCounter = Meter.CreateCounter<long>(
+        name: "messaging.fault.count",
+        unit: "{fault}",
+        description: "Number of Fault<TMessage> messages observed by FaultConsumerAdapter.");
 }

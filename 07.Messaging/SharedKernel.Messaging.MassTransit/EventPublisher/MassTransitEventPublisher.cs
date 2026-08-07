@@ -20,7 +20,9 @@ namespace SharedKernel.Messaging.MassTransit.EventPublisher;
 /// MassTransit implementation of <see cref="IEventPublisher"/>.
 /// Wraps integration events in <see cref="EventEnvelope{TEvent}"/> — constructed exclusively via
 /// <see cref="EventEnvelope.Wrap{TEvent}"/>, never a raw object initializer (P-340/WO-054) —
-/// and publishes via MassTransit.
+/// and publishes via MassTransit. Starts an <c>"EventPublisher.Publish"</c> activity and
+/// increments <see cref="MessagingDiagnostics.PublishCounter"/> on successful publish
+/// (P-172/P-348/WO-054).
 /// </summary>
 internal sealed class MassTransitEventPublisher : IEventPublisher
 {
@@ -128,7 +130,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
         };
     }
 
-    private static Task PublishEnvelope<TEvent>(
+    private static async Task PublishEnvelope<TEvent>(
         IPublishEndpoint publishEndpoint,
         TEvent integrationEvent,
         string sourceService,
@@ -166,7 +168,7 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
         // P-344/WO-054: the pipe callback must also run when only PartitionKey is set (no headers).
         if (ctx is { } publishContext && (publishContext.Headers.Count > 0 || publishContext.PartitionKey is not null))
         {
-            return publishEndpoint.Publish(envelope, pipe =>
+            await publishEndpoint.Publish(envelope, pipe =>
             {
                 foreach (var (key, value) in publishContext.Headers)
                     pipe.Headers.Set(key, value);
@@ -176,9 +178,16 @@ internal sealed class MassTransitEventPublisher : IEventPublisher
 
                 // Maps to RabbitMQ routing-key affinity / Azure Service Bus session identity.
                 pipe.ApplyPartitionKey(publishContext.PartitionKey);
-            }, ct);
+            }, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await publishEndpoint.Publish(envelope, ct).ConfigureAwait(false);
         }
 
-        return publishEndpoint.Publish(envelope, ct);
+        // P-348/WO-054: incremented only after the publish call above completes without
+        // throwing — a faulted publish is never counted as published.
+        MessagingDiagnostics.PublishCounter.Add(
+            1, new KeyValuePair<string, object?>("messaging.event_type", typeof(TEvent).Name));
     }
 }

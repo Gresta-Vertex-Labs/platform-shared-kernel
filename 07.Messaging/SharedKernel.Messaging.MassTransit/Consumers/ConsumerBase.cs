@@ -64,17 +64,37 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
     /// Headers whose keys do <em>not</em> start with <c>"x-sk-"</c> are ignored and not added
     /// to the log scope to avoid leaking unrelated transport metadata.
     /// </para>
+    /// <para>
+    /// P-348/WO-054: also increments <see cref="MessagingDiagnostics.RetryCounter"/> when
+    /// <c>context.GetRetryAttempt() &gt; 0</c> (this invocation is a retry-filter
+    /// re-delivery), increments <see cref="MessagingDiagnostics.ConsumeCounter"/> after
+    /// <see cref="ConsumeAsync"/> completes without throwing, and records
+    /// <see cref="MessagingDiagnostics.ConsumeDurationHistogram"/> unconditionally
+    /// (success or failure) — all tagged <c>messaging.message_type</c>.
+    /// </para>
     /// </remarks>
     public async Task Consume(ConsumeContext<TMessage> context)
     {
         using var activity = MessagingDiagnostics.ActivitySource.StartActivity("Consumer.Consume");
-        activity?.SetTag("messaging.message_type", typeof(TMessage).Name);
+        var messageTypeName = typeof(TMessage).Name;
+        activity?.SetTag("messaging.message_type", messageTypeName);
+
+        var metricTag = new KeyValuePair<string, object?>("messaging.message_type", messageTypeName);
+
+        // P-348/WO-054: GetRetryAttempt() > 0 identifies this invocation as a retry-filter
+        // re-delivery (0 on the original delivery, and safely 0 — never throws — when no
+        // retry middleware is configured at all). See MessagingDiagnostics.RetryCounter's
+        // doc comment for why this is the best available observation point in MassTransit
+        // 9.1.2: IRetryObserver/IRetryObserverConnector exist but nothing reachable from
+        // MessagingBusBuilder implements the connector.
+        if (context.GetRetryAttempt() > 0)
+            MessagingDiagnostics.RetryCounter.Add(1, metricTag);
 
         // HP-05: Build log scope with CorrelationId, MessageType, and any x-sk-* headers.
         // OT-03: additive messaging.destination / messaging.message_type entries.
         var scopeState = MessagingLogScope.Create(context.CorrelationId);
-        scopeState["MessageType"] = typeof(TMessage).Name;
-        scopeState["messaging.message_type"] = typeof(TMessage).Name;
+        scopeState["MessageType"] = messageTypeName;
+        scopeState["messaging.message_type"] = messageTypeName;
 
         var destination = context.DestinationAddress?.AbsolutePath;
         if (destination is not null)
@@ -92,14 +112,22 @@ public abstract partial class ConsumerBase<TMessage> : IConsumer<TMessage>
 
         using var scope = Logger.BeginScope(scopeState);
 
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             await ConsumeAsync(context.Message, context.CancellationToken).ConfigureAwait(false);
+            MessagingDiagnostics.ConsumeCounter.Add(1, metricTag);
         }
         catch (Exception ex)
         {
-            LogConsumeError(Logger, typeof(TMessage).Name, ex);
+            LogConsumeError(Logger, messageTypeName, ex);
             throw; // Never swallow — activates MassTransit retry/fault policies.
+        }
+        finally
+        {
+            // Recorded unconditionally (success or failure) so the histogram reflects true
+            // end-to-end consume latency, including attempts that ultimately faulted.
+            MessagingDiagnostics.ConsumeDurationHistogram.Record(stopwatch.Elapsed.TotalMilliseconds, metricTag);
         }
     }
 

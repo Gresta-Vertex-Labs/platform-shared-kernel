@@ -3,6 +3,7 @@ using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Messaging.Abstractions.Faults;
+using SharedKernel.Messaging.MassTransit.Diagnostics;
 using SharedKernel.Messaging.MassTransit.Logging;
 
 namespace SharedKernel.Messaging.MassTransit.Consumers;
@@ -19,6 +20,8 @@ namespace SharedKernel.Messaging.MassTransit.Consumers;
 /// NOT a subclass of <see cref="ConsumerBase{TMessage}"/>. Implements <c>IConsumer&lt;Fault&lt;TMessage&gt;&gt;</c>
 /// directly and applies equivalent log-then-rethrow semantics. Registered by
 /// <c>MessagingBusBuilder.AddFaultConsumer&lt;TMessage, TFaultConsumer&gt;()</c> — never register directly.
+/// Increments <see cref="MessagingDiagnostics.FaultCounter"/> unconditionally for every delivered
+/// fault (P-348/WO-054).
 /// </remarks>
 internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : IConsumer<Fault<TMessage>>
     where TMessage : class
@@ -47,6 +50,10 @@ internal sealed partial class FaultConsumerAdapter<TMessage, TFaultConsumer> : I
         var fault = context.Message;
         var faultId = fault.FaultId;
         var messageTypeName = typeof(TMessage).Name;
+
+        // P-348/WO-054: incremented unconditionally for every delivered fault, regardless of
+        // whether the registered IFaultConsumer<TMessage> below then succeeds or throws.
+        MessagingDiagnostics.FaultCounter.Add(1, new KeyValuePair<string, object?>("messaging.message_type", messageTypeName));
 
         // Propagate CorrelationId from headers to Activity when no active span.
         var correlationId = context.CorrelationId;
