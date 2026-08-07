@@ -14,6 +14,7 @@
     <Description>MassTransit 9.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ, Azure Service Bus, configurable retry, and transactional EF Core outbox integration. CloudEvents-compliant envelope publishing.</Description>
     <PackageTags>messaging;masstransit;rabbitmq;azure-service-bus;outbox;cloud-events;consumer-base;shared-kernel</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
     <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
@@ -89,6 +90,11 @@
     <Compile Remove="SharedKernel.Messaging.MassTransit.Tests\**" />
     <EmbeddedResource Remove="SharedKernel.Messaging.MassTransit.Tests\**" />
     <None Remove="SharedKernel.Messaging.MassTransit.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embeds README.md into the packed .nupkg (PackageReadmeFile above) — P-349/WO-054 -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

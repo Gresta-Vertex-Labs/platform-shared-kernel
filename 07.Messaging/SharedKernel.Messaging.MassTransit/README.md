@@ -1,0 +1,106 @@
+# SharedKernel.Messaging.MassTransit
+
+MassTransit 9.x wiring for Platform.SharedKernel microservices: `MassTransitMessageBus`,
+`MassTransitEventPublisher`, `ConsumerBase<TMessage>`, `MessagingBusBuilder`, RabbitMQ and Azure
+Service Bus transports, configurable retry, a transactional EF Core outbox integration (wired via a
+generic `TDbContext` type parameter — no `06.Persistence.*` reference), opt-in idempotent-consumer
+deduplication, header propagation (including built-in ambient correlation and tenant-context
+propagators), ordered delivery, opt-in payload compression/encryption, and a bus readiness probe.
+CloudEvents-compliant envelope publishing via `SharedKernel.Contracts`'s `EventEnvelope<TEvent>`.
+
+## Install
+
+```
+dotnet add package SharedKernel.Messaging.MassTransit
+```
+
+```xml
+<PackageReference Include="SharedKernel.Messaging.MassTransit" Version="1.0.0" />
+```
+
+## Usage
+
+```csharp
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithRetry()
+    .AddConsumer<OrderPlacedConsumer>()
+    .Build();
+
+// Application layer injects the abstractions only — never the MassTransit concrete types
+public sealed class PlaceOrderHandler(IMessageBus bus, IEventPublisher publisher) { /* ... */ }
+
+// Consumer implementation
+public sealed class OrderPlacedConsumer : ConsumerBase<OrderPlacedEvent>
+{
+    protected override Task ConsumeAsync(OrderPlacedEvent message, CancellationToken ct)
+    {
+        // Business logic only — no MassTransit concerns here.
+        // Do not swallow exceptions: an unhandled exception activates MassTransit's
+        // retry/fault policies.
+    }
+}
+```
+
+See [`07.Messaging/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/CLAUDE.md)
+for the full `MessagingBusBuilder` fluent API — Azure Service Bus, the EF Core outbox, circuit
+breakers, fault consumers, deferred scheduling, sagas, batch consumers, dead-letter policy, ordered
+delivery, and payload transform are all documented there with worked examples.
+
+## Recipe: ambient correlation and tenant-identity propagation
+
+Every published `EventEnvelope<TEvent>` carries `CorrelationId` and `TenantId` fields. Rather than
+hand-rolling an `IMessageHeaderPropagator` that reads `Activity.Current` or a tenant provider
+directly, use the two built-in propagators shipped in this package:
+
+- `WithAmbientCorrelationPropagation()` — zero-argument; populates `CorrelationId` from the ambient
+  `Activity.Current.TraceId` on every dispatch verb. No consumer-authored class required.
+- `WithTenantContext<TAccessor>()` — bridges the locally-owned `ITenantContextAccessor` seam
+  (`SharedKernel.Messaging.Abstractions`) to your service's real tenant-identity source. You write
+  **only** the `ITenantContextAccessor` implementation; the built-in `TenantHeaderPropagator` does
+  the rest. When no accessor is registered, tenant propagation is a provable no-op — `TenantId`
+  simply stays `null`, exactly like an unset `CorrelationId`/`CausationId`.
+
+```csharp
+services
+    .AddSharedKernelMessaging(o => o.ServiceName = "order-service")
+    .UseRabbitMq("rabbitmq://localhost")
+    .WithAmbientCorrelationPropagation()             // zero-argument — no consumer-authored class
+    .WithTenantContext<AppTenantContextAccessor>()   // bridges the seam below; scoped
+    .AddConsumer<OrderPlacedConsumer>()
+    .Build();
+
+// AppTenantContextAccessor — the ONLY class you write to get tenant identity flowing into
+// every published EventEnvelope<TEvent>.TenantId automatically. Bridges the locally-owned
+// ITenantContextAccessor seam to your service's real tenant source (12.Security's
+// ITenantProvider here), mirroring 05.Application's IAuthorizationContext/IUnitOfWork
+// bridge pattern — SharedKernel.Messaging.* never references 12.Security directly.
+public sealed class AppTenantContextAccessor(ITenantProvider tenantProvider) : ITenantContextAccessor
+{
+    public Guid? TenantId => tenantProvider.TenantId;
+}
+```
+
+Both propagators run automatically before dispatch on `IMessageBus.PublishAsync`, `.SendAsync`,
+`.RequestAsync`, and `IEventPublisher.PublishAsync` — you never call them directly. An explicit
+`PublishContext.WithCorrelationId(...)`/`.WithTenantId(...)` in a per-call `Action<PublishContext>`
+callback always overrides the propagated ambient value.
+
+If you have an additional service-specific concern to propagate (feature flags, a custom header),
+implement `IMessageHeaderPropagator` yourself and register it via `WithHeaderPropagator<T>()` —
+propagators compose additively in registration order.
+
+## Layering
+
+```
+SharedKernel.Messaging.MassTransit  →  SharedKernel.Messaging.Abstractions, SharedKernel.Contracts,
+                                        SharedKernel.Compression, SharedKernel.Cryptography (01.Core),
+                                        MassTransit 9.x
+```
+
+Target framework: `net10.0`. No `06.Persistence.*` reference — the EF Core outbox is wired via a
+generic `TDbContext` type parameter only.
+
+For full documentation see
+[`07.Messaging/CLAUDE.md`](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel/blob/main/07.Messaging/CLAUDE.md).
