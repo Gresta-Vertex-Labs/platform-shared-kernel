@@ -25,8 +25,8 @@ public static class HealthCheckExtensions
     /// </returns>
     /// <remarks>
     /// Registers <b>only</b> base infrastructure — never a dependency-specific check. Every
-    /// dependency-specific check (database, Redis, RabbitMQ, Azure Service Bus, cache) is an
-    /// explicit opt-in call on the returned builder.
+    /// dependency-specific check (database, Redis, messaging, cache) is an explicit opt-in call
+    /// on the returned builder.
     /// </remarks>
     public static IHealthChecksBuilder AddSharedKernelHealthChecks(this IServiceCollection services)
     {

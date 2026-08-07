@@ -3,6 +3,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
@@ -36,24 +37,14 @@ public sealed class HealthCheckNamesTests
     }
 
     [Fact]
-    public void AddRabbitMqMessagingHealthCheck_DefaultName_MatchesHealthCheckNamesRabbitMq()
+    public void AddMessagingReadinessCheck_DefaultName_MatchesHealthCheckNamesMessaging()
     {
         var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IMessageBusProbe>());
 
-        services.AddHealthChecks().AddRabbitMqMessagingHealthCheck("amqp://localhost");
+        services.AddHealthChecks().AddMessagingReadinessCheck();
 
-        var registration = GetRegistration(services, HealthCheckNames.RabbitMq);
-        Assert.NotNull(registration);
-    }
-
-    [Fact]
-    public void AddAzureServiceBusMessagingHealthCheck_DefaultName_MatchesHealthCheckNamesAzureServiceBus()
-    {
-        var services = new ServiceCollection();
-
-        services.AddHealthChecks().AddAzureServiceBusMessagingHealthCheck("my-namespace.servicebus.windows.net");
-
-        var registration = GetRegistration(services, HealthCheckNames.AzureServiceBus);
+        var registration = GetRegistration(services, HealthCheckNames.Messaging);
         Assert.NotNull(registration);
     }
 

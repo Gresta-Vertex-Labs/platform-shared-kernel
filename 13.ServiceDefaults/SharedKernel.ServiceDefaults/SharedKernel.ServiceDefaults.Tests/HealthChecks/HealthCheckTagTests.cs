@@ -3,6 +3,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
@@ -45,29 +46,15 @@ public sealed class HealthCheckTagTests
     }
 
     [Fact]
-    public void AddRabbitMqMessagingHealthCheck_RegistersWithReadyMessagingTags_NeverLive()
+    public void AddMessagingReadinessCheck_RegistersWithReadyMessagingTags_NeverLive()
     {
         var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IMessageBusProbe>());
 
-        services.AddHealthChecks().AddRabbitMqMessagingHealthCheck("amqp://localhost");
-
-        var registrations = GetRegistrations(services);
-        var registration = Assert.Single(registrations, r => r.Name == "rabbitmq");
-
-        Assert.Contains(HealthCheckTags.Ready, registration.Tags);
-        Assert.Contains(HealthCheckTags.Messaging, registration.Tags);
-        Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
-    }
-
-    [Fact]
-    public void AddAzureServiceBusMessagingHealthCheck_RegistersWithReadyMessagingTags_NeverLive()
-    {
-        var services = new ServiceCollection();
-
-        services.AddHealthChecks().AddAzureServiceBusMessagingHealthCheck("my-namespace.servicebus.windows.net");
+        services.AddHealthChecks().AddMessagingReadinessCheck();
 
         var registrations = GetRegistrations(services);
-        var registration = Assert.Single(registrations, r => r.Name == "azure-service-bus");
+        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.Messaging);
 
         Assert.Contains(HealthCheckTags.Ready, registration.Tags);
         Assert.Contains(HealthCheckTags.Messaging, registration.Tags);

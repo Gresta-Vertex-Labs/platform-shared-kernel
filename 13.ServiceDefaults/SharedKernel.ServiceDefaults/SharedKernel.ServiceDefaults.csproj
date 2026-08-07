@@ -11,7 +11,7 @@
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
-    <Description>Host composition layer for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry + health check wiring), liveness/readiness health check endpoint mappings, StartupGate, and opt-in dependency-specific health check adapters (database, Redis, RabbitMQ, Azure Service Bus).</Description>
+    <Description>Host composition layer for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry + health check wiring), liveness/readiness health check endpoint mappings, StartupGate, and opt-in dependency-specific health check adapters (database, Redis, messaging).</Description>
     <PackageTags>shared-kernel;service-defaults;opentelemetry;health-checks;kubernetes;observability</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryType>git</RepositoryType>
@@ -72,12 +72,7 @@
       package as redundant. Removing them avoids a build error under TreatWarningsAsErrors.
     -->
     <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
-    <PackageReference Include="AspNetCore.HealthChecks.Rabbitmq" Version="9.0.0" />
-    <PackageReference Include="AspNetCore.HealthChecks.AzureServiceBus" Version="9.0.0" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.41" />
-    <PackageReference Include="RabbitMQ.Client" Version="7.2.1" />
-    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
-    <PackageReference Include="Azure.Identity" Version="1.21.0" />
   </ItemGroup>
 
   <ItemGroup>

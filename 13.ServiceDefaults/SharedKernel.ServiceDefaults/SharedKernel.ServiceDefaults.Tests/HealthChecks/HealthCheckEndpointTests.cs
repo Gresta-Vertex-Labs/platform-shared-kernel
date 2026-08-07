@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using NSubstitute;
+using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.ServiceDefaults.HealthChecks;
 
 namespace SharedKernel.ServiceDefaults.Tests.HealthChecks;
@@ -118,8 +120,8 @@ public sealed class HealthCheckEndpointTests : IAsyncDisposable
     [Fact]
     public async Task HealthLive_NeverEvaluatesMessagingReadinessChecks()
     {
-        // Messaging health checks (AddRabbitMqMessagingHealthCheck, AddAzureServiceBusMessagingHealthCheck)
-        // are tagged "ready"+"messaging" — they must never surface on /health/live, even when failing.
+        // Messaging health checks (AddMessagingReadinessCheck) are tagged "ready"+"messaging" —
+        // they must never surface on /health/live, even when failing.
         var host = await StartHostAsync(checks => checks.AddCheck(
             "failing-messaging",
             () => HealthCheckResult.Unhealthy(),
@@ -135,22 +137,28 @@ public sealed class HealthCheckEndpointTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task HealthLive_NeverEvaluatesRealRabbitMqOrAzureServiceBusHealthCheckRegistrations()
+    public async Task HealthLive_NeverEvaluatesRealMessagingReadinessCheckRegistration()
     {
-        // Uses the real opt-in extension methods (not synthetic AddCheck calls) to prove the
-        // registered RabbitMQ/ASB checks are excluded from the "/health/live" predicate by tag,
-        // independent of whether the underlying broker connection actually succeeds or fails.
-        var host = await StartHostAsync(checks => checks
-            .AddRabbitMqMessagingHealthCheck("amqp://localhost")
-            .AddAzureServiceBusMessagingHealthCheck("my-namespace.servicebus.windows.net"));
+        // Uses the real opt-in extension method (not a synthetic AddCheck call) to prove the
+        // registered messaging check is excluded from the "/health/live" predicate by tag,
+        // independent of whether the underlying probe reports the bus as unhealthy.
+        var probe = Substitute.For<IMessageBusProbe>();
+        probe.ProbeAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new MessageBusHealth(false, "bus unreachable")));
+
+        var host = await StartHostAsync(checks =>
+        {
+            checks.Services.AddSingleton(probe);
+            checks.AddMessagingReadinessCheck();
+        });
         host.Services.GetRequiredService<SharedKernel.ServiceDefaults.Probes.StartupGate>().MarkReady();
 
         using var client = host.GetTestClient();
         var liveResponse = await client.GetAsync("/health/live");
 
-        // Neither messaging check is tagged "live", so /health/live evaluates an empty set and
-        // reports Healthy regardless of whether the (unreachable, in this test) broker would
-        // otherwise fail the check on /health/ready.
+        // The messaging check is not tagged "live", so /health/live evaluates an empty set and
+        // reports Healthy regardless of the (deliberately unhealthy, in this test) probe result
+        // that would otherwise fail the check on /health/ready.
         Assert.Equal(HttpStatusCode.OK, liveResponse.StatusCode);
     }
 

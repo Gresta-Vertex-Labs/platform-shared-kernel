@@ -19,11 +19,8 @@ public static class HealthCheckNames
     /// <summary>Default registration name for Redis connectivity checks.</summary>
     public const string Redis = "redis";
 
-    /// <summary>Default registration name for RabbitMQ connectivity checks.</summary>
-    public const string RabbitMq = "rabbitmq";
-
-    /// <summary>Default registration name for Azure Service Bus connectivity checks.</summary>
-    public const string AzureServiceBus = "azure-service-bus";
+    /// <summary>Default registration name for message-bus connectivity checks.</summary>
+    public const string Messaging = "messaging";
 
     /// <summary>Default registration name for cache readiness checks.</summary>
     public const string Cache = "cache";
