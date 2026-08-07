@@ -30,7 +30,12 @@ upstream phase key (e.g. `07.Messaging`'s `SK.07.OTel`, tasks `OT-01`–`OT-08`)
   resolved — remove it, matching the "no blockers" placeholder convention used elsewhere in the repo).
   Update the `## Cross-Domain Dependencies` row's Status column from "Blocked" to "Available" rather than
   deleting it (it documents the dependency existed and is now satisfied).
-- The task's own row in the relevant `## Phase: Core` table flips from `⚑` to `●`.
+- The task's own row in the relevant `## Phase: {X}` table flips to `●`. Note: this domain's blocked tasks
+  are *not* always marked `⚑` in their own task-table row while blocked — as of the WO-054/P-351 session
+  (2026-08-07), the task rows themselves stayed `○` and the blocking fact lived only in the separate
+  `## Blocked` section table plus inline prose in the task's own description ("**BLOCKED:** ..."). Don't
+  assume a task showing `○` in its phase table is simply "not started yet" — always cross-check the
+  `## Blocked` table too before treating a `○` task as unblocked/available.
 - When this is the *last* `⚑` in that phase, the phase's Overall Progress row flips from `⚑` to `●` and
   the phase promotes to root via `/state-map-phase` — this also closes the root `state-map.md`'s
   `## Phase Backlog` entries for that root-phase's constituent backlog IDs (e.g. P-010, P-122, P-132,

@@ -163,3 +163,40 @@ this, do **not** include a `domain:` field in the args — the skill's own mode 
 mode whenever `domain:` is present, and there is no way to force Root mode through that field; if a root edit
 is genuinely needed, just make it directly (Read → Grep the target line → Edit → append changelog) rather than
 relying on the skill's dispatch to reach Root mode.
+
+**Test counts as of 2026-08-07, end of session (WO-054/P-351, messaging health-check rewire — S-17/C-46/
+T-41/T-42/DO-12 all `●`):** 92 `SharedKernel.ServiceDefaults.Tests` passing (+1 net from the prior 91: -4
+retired-method tests removed, +5 new/replacement tests added), 30 `SharedKernel.MultiTenancy.Tests` unchanged.
+**First-of-its-kind session for this domain: a confirmed breaking-change retirement, not an additive
+extension.** `AddRabbitMqMessagingHealthCheck`/`AddAzureServiceBusMessagingHealthCheck` were removed outright
+(no deprecation window) and replaced by `AddMessagingReadinessCheck()`, which resolves `07.Messaging`'s
+`IMessageBusProbe` from DI and takes zero caller-supplied parameters — the pattern to reuse for any future
+"replace, don't extend" phase: (1) delete the retired `.cs` files as dead code in the *same* commit as the new
+adapter, never leave them dangling; (2) remove the now-orphaned `PackageReference`s from the `.csproj` in the
+same commit too — a partial removal (files deleted, packages still referenced, or vice versa) either leaves
+dead package refs or fails to build; (3) grep the whole repo (not just this domain) for the retired method
+names before declaring done — governance/other domains' test fixtures may reference the *name* as a string
+literal inside a contrived test fixture (harmless, no real dependency) vs. a genuine compile-time call (must
+fix) — distinguish the two before treating a grep hit as actionable, see
+`00.Governance/SharedKernel.ArchitectureTests.Tests/ServiceDefaultsGovernanceRulesTests.cs`'s contrived
+`AddAzureServiceBusHealthCheck`-named fixture method for an example of the harmless kind; (4) the "gating
+structural proof" test pattern for this class of retirement is: assert the new adapter's constructor accepts
+*only* the neutral probe interface, and that the test file's own using-directives/DI container contain zero
+imports of the retired transport SDKs — a passing test is then only possible if the implementation has zero
+remaining independent-connection code path (see `MessagingReadinessHealthCheckTests`'s own XML doc for the
+worked example).
+
+**Root `state-map.md` propagation for a WO whose 13.ServiceDefaults blocker just cleared and every phase key
+resolves in one session:** confirmed directly against this session that when *all* of Scaffold/Core/Tests/Docs
+promote to `●` together (not just one sub-phase), the correct root Domain Summary Board write is
+`Current Phase = Published`, `State = ●` — restoring the domain's steady-state row exactly as documented in
+[[crossdomain_blocking_pattern]] — not merely refreshing the Summary cells while leaving a stale
+"Core"/"Scaffold"/etc. Current Phase behind (that guidance was written for the case where only *some* phase
+keys resolve; when literally all of them do in the same session, write the domain back to its true steady
+state). Also had to close the root `## Phase Backlog`'s `### P-351` entry manually (`Status:` line →
+`` `●` Complete ``, each `- [ ]` acceptance-criterion checkbox → `- [x]` with a short parenthetical proof) —
+this WO's phase key (`SK.13.Scaffold`/`.Core`/`.Tests`/`.Docs`) maps to a standard lifecycle phase name, which
+the `state-map-phase` skill's own Step S8a explicitly classifies as "Case 3 — skip automatic Phase Backlog
+closing" (no `Root Backlog ID` column, and the phase name isn't itself a `P-NNN` token) — so this class of
+WO-driven-but-lifecycle-shaped phase key never self-closes its root backlog entry automatically; closing it is
+always a manual, must-remember step for the implementer, not something to expect the skill to do for you.
