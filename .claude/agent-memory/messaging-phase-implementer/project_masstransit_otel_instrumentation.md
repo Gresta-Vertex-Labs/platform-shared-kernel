@@ -1,6 +1,6 @@
 ---
 name: masstransit-otel-instrumentation
-description: MessagingDiagnostics.ActivitySource wiring (SK.07.OTel/P-172), ConsumerBase/MassTransitEventPublisher instrumentation points, and the ActivityListener parallel-test-isolation hazard
+description: MessagingDiagnostics.ActivitySource/Meter wiring (SK.07.OTel/P-172, SK.07.DiagnosticsCoverage/P-348), full dispatch-verb Activity+Meter coverage, ActivityListener/MeterListener parallel-test-isolation hazard
 metadata:
   type: project
 ---
@@ -28,6 +28,42 @@ metadata:
 **Fix:** always filter by the test's own unique tag value in addition to `OperationName` — e.g. `a.OperationName == "Consumer.Consume" && Equals(a.GetTagItem("messaging.message_type"), nameof(MyUniqueTestMessage))`. Never assert global singularity by operation name alone when other tests in the same assembly drive the same instrumented code path. This is documented as a Test Rules bullet in `07.Messaging/CLAUDE.md` now — check there before writing new OTel-adjacent tests in this package.
 
 **Established `ActivityListener` test harness shape** (mirrors the prior art in `02.Caching/SharedKernel.Caching.Redis.PubSub` — `CacheInvalidationIntegrationTests.cs`'s `HandleMessage_CreatesOTelActivity_WithExpectedTags`): subscribe `ShouldListenTo = source => source.Name == SourceName`, `Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded`, capture via `ActivityStopped` (not `ActivityStarted` — stopped guarantees the activity's full tag set and duration are finalized) into a `List<Activity>` + signal a `TaskCompletionSource<bool>` so the test can `await activityStopped.Task.WaitAsync(TimeSpan.FromSeconds(5))` instead of guessing a sleep duration.
+
+## Full dispatch-surface coverage + Meter (P-348/WO-054, SK.07.DiagnosticsCoverage)
+
+`MessagingDiagnostics` gained a companion static `Meter("SharedKernel.Messaging","1.0.0")`
+alongside `ActivitySource`, under the identical static-instrument exception. Five instruments:
+`PublishCounter`/`ConsumeCounter`/`ConsumeDurationHistogram`/`RetryCounter`/`FaultCounter`
+(`Counter<long>`/`Histogram<double>`, `System.Diagnostics.Metrics`, BCL).
+
+`MassTransitMessageBus.SendAsync<T>()`/`.RequestAsync<TRequest,TResponse>()`/
+`.ExecuteRoutingSlipAsync()` were the only three dispatch verbs with zero `Activity` coverage
+before this phase — each now starts/disposes `"MessageBus.Send"`/`"MessageBus.Request"`/
+`"MessageBus.ExecuteRoutingSlip"` via the same `using var activity = ...StartActivity(...)`
+shape as `Consume`/`EventPublisher.Publish`. `MassTransitMessageBus.PublishAsync<T>` did NOT
+gain an `Activity` (only `SendAsync`/`RequestAsync`/`ExecuteRoutingSlipAsync` had the
+completeness gap) — it gained only a `Meter` counter increment.
+
+Retry-counter wiring required a real MassTransit-API investigation — see
+[[masstransit-retry-observability-gap]] for the full story: `IRetryObserver`/
+`IRetryObserverConnector` exist but are unreachable in 9.1.2; `ConsumeContext.GetRetryAttempt()`
+is the verified working alternative, checked unconditionally at the top of `Consume()`.
+
+**`MeterListener` test pattern** (parallel to the `ActivityListener` pattern above — same
+process-wide hazard, same unique-tag-value mitigation): `listener.InstrumentPublished = (i, l) =>
+{ if (i.Meter.Name == "SharedKernel.Messaging") l.EnableMeasurementEvents(i); };
+listener.SetMeasurementEventCallback<long>(...); listener.SetMeasurementEventCallback<double>(...);
+listener.Start();` — `Start()` replays already-published instruments, so it correctly picks up
+the static `Meter`'s instruments even though they were published before the listener existed.
+No `ActivityListener`-style `Sample`/`ShouldListenTo` needed — `MeterListener` only needs
+`InstrumentPublished` to opt in per-instrument.
+
+**Publish-counter success-only semantics required making previously-fire-and-return methods
+`async`:** `MassTransitEventPublisher`'s static `PublishEnvelope<TEvent>` and both
+`MassTransitMessageBus.PublishAsync<T>` overloads used to `return publishEndpoint.Publish(...)`
+directly (no `await` inside the method). To increment `PublishCounter` only *after* the publish
+genuinely succeeds (not merely after the `Task` is constructed), all three became `async Task`
+with an internal `await ... .ConfigureAwait(false)` followed by the counter increment.
 
 ## Test file location and conventions followed
 
