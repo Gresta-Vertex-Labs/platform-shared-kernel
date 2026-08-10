@@ -5,9 +5,13 @@ metadata:
   type: project
 ---
 
-As of 2026-08-04, the last NEW phases written to `state-map.md` Phase Backlog are **P-340–P-352** (under WO-054, all `○` Pending — 07.Messaging gold-standard review). See [[project_wo054_messaging_goldstandard_review]] for full detail. WO-050/051/052/053 before that each minted their own new phase ranges (P-301–306, P-307–327, P-328–332, P-333–339 respectively) — all gold-standard reviews of already-published domains, same pattern as WO-049/WO-054.
+As of 2026-08-10, the last NEW phases written to `state-map.md` Phase Backlog are **P-353–P-355** (under WO-055, all `○` Pending — 09.Search gold-standard review, the first review this WO-050+ cycle to come back genuinely clean; see [[project_wo055_search_goldstandard_review]]). WO-050/051/052/053/054 before that each minted their own new phase ranges (P-301–306, P-307–327, P-328–332, P-333–339, P-340–352 respectively) — all gold-standard reviews of already-published domains, same pattern.
 
-Next new phase must be **P-353**. Next new Work Order must be **WO-055**.
+Next new phase must be **P-356**. Next new Work Order must be **WO-056**.
+
+**File-layout note confirmed again this session:** `state-map.md`'s `### P-NNN` headers are NOT in monotonic physical line order — e.g. P-328–352 (WO-052/054) physically sit around line ~1650-2220, while P-307–327 (WO-051) sit much further down around line ~12370-12511, because each session's phases were appended at whatever was the file's true EOF *at that time*, and the file kept growing afterward via changelog-style bullets. Numeric phase-ID order stays monotonic even though physical line order doesn't. Always verify the next ID via `grep -oE "^### P-[0-9]+" state-map.md | sed 's/### P-//' | sort -n | tail -1` (or equivalent), never assume the physically-last `### P-` heading in the file is the highest-numbered one — confirm by number, not by position. Always append new entries at the current true EOF (`tail`), not at the historical Phase Backlog insertion point from a prior session.
+
+As of 2026-08-04 (superseded above): last NEW phases were P-340–P-352 (WO-054). See [[project_wo054_messaging_goldstandard_review]] for full detail.
 
 As of 2026-07-27 (superseded above): the last NEW phases were P-292–P-300 (WO-049, 01.Core gold-standard review). WO-048 before that retracted/amended existing phases (P-281, P-285, P-286) and minted no new phase IDs.
 
