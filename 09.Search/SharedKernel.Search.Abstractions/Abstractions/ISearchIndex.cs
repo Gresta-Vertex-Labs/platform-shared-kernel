@@ -31,8 +31,8 @@ namespace SharedKernel.Search.Abstractions.Abstractions;
 /// enforced, and the domain's sharpest sharp edge.
 /// </para>
 /// <para>
-/// <b>Bulk partial failure is not collapsed:</b> <see cref="IndexManyAsync"/>/
-/// <see cref="DeleteManyAsync"/> return a successful <see cref="Result{T}"/> carrying a
+/// <b>Bulk partial failure is not collapsed:</b> <c>IndexManyAsync</c>/<c>DeleteManyAsync</c>
+/// return a successful <see cref="Result{T}"/> carrying a
 /// <see cref="SearchBulkReceipt"/> even when <see cref="SearchBulkReceipt.Failures"/> is non-empty.
 /// <c>Result.Failure</c> is reserved for "the request itself did not execute".
 /// </para>
@@ -68,10 +68,26 @@ public interface ISearchIndex<TDocument>
         SearchWriteConsistency consistency,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Upserts many documents in one logical batch operation.</summary>
+    /// <summary>
+    /// Upserts many documents in one logical batch operation. Delegates to the
+    /// <see cref="IndexManyAsync(IReadOnlyCollection{TDocument}, SearchWriteConsistency, SearchBulkWriteOptions, CancellationToken)"/>
+    /// overload passing <see cref="SearchBulkWriteOptions.Default"/> — today's unthrottled, sequential
+    /// behavior, unchanged.
+    /// </summary>
     Task<Result<SearchBulkReceipt>> IndexManyAsync(
         IReadOnlyCollection<TDocument> documents,
         SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Upserts many documents in one logical batch operation, honoring the opt-in backpressure
+    /// controls in <paramref name="bulkOptions"/> over the batch-dispatch loop the provider already
+    /// runs internally.
+    /// </summary>
+    Task<Result<SearchBulkReceipt>> IndexManyAsync(
+        IReadOnlyCollection<TDocument> documents,
+        SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a single document by id.</summary>
@@ -80,10 +96,26 @@ public interface ISearchIndex<TDocument>
         SearchWriteConsistency consistency,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Deletes many documents by id in one logical batch operation.</summary>
+    /// <summary>
+    /// Deletes many documents by id in one logical batch operation. Delegates to the
+    /// <see cref="DeleteManyAsync(IReadOnlyCollection{string}, SearchWriteConsistency, SearchBulkWriteOptions, CancellationToken)"/>
+    /// overload passing <see cref="SearchBulkWriteOptions.Default"/> — today's unthrottled, sequential
+    /// behavior, unchanged.
+    /// </summary>
     Task<Result<SearchBulkReceipt>> DeleteManyAsync(
         IReadOnlyCollection<string> documentIds,
         SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes many documents by id in one logical batch operation, honoring the opt-in backpressure
+    /// controls in <paramref name="bulkOptions"/> over the batch-dispatch loop the provider already
+    /// runs internally.
+    /// </summary>
+    Task<Result<SearchBulkReceipt>> DeleteManyAsync(
+        IReadOnlyCollection<string> documentIds,
+        SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default);
 
     /// <summary>

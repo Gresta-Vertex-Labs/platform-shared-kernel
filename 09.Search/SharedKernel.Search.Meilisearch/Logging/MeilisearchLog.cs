@@ -146,4 +146,10 @@ internal static partial class MeilisearchLog
         Level = LogLevel.Debug,
         Message = "Started document walk over index '{IndexName}' with batch size {BatchSize}.")]
     public static partial void MeilisearchDocumentWalkStarted(this ILogger logger, string indexName, int batchSize);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 121,
+        Level = LogLevel.Debug,
+        Message = "Bulk operation on index '{IndexName}' throttled: waiting {DelayMs}ms before the next batch.")]
+    public static partial void MeilisearchBulkThrottled(this ILogger logger, string indexName, double delayMs);
 }

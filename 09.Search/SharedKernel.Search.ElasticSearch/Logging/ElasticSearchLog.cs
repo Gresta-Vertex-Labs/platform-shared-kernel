@@ -163,4 +163,10 @@ internal static partial class ElasticSearchLog
         Message = "Aggregation on index '{IndexName}' executed {AggregationCount} request(s) in {TookMs}ms.")]
     public static partial void ElasticSearchAggregationExecuted(
         this ILogger logger, string indexName, int aggregationCount, long tookMs);
+
+    [LoggerMessage(
+        EventId = LoggingEventIdRanges.Search + 224,
+        Level = LogLevel.Debug,
+        Message = "Bulk operation on index '{IndexName}' throttled: waiting {DelayMs}ms before the next batch.")]
+    public static partial void ElasticSearchBulkThrottled(this ILogger logger, string indexName, double delayMs);
 }

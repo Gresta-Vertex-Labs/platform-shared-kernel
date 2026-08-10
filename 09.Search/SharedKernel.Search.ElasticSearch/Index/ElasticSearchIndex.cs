@@ -4,6 +4,7 @@ using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.Core.Bulk;
 using Elastic.Clients.Elasticsearch.Core.Search;
 using Elastic.Clients.Elasticsearch.QueryDsl;
+using Elastic.Transport;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
@@ -92,9 +93,17 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     }
 
     /// <inheritdoc />
+    public Task<Result<SearchBulkReceipt>> IndexManyAsync(
+        IReadOnlyCollection<TDocument> documents,
+        SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default)
+        => IndexManyAsync(documents, consistency, SearchBulkWriteOptions.Default, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<Result<SearchBulkReceipt>> IndexManyAsync(
         IReadOnlyCollection<TDocument> documents,
         SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default)
     {
         foreach (var document in documents)
@@ -111,17 +120,28 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         }
 
         var refresh = ToRefresh(consistency);
+        var path = $"{Uri.EscapeDataString(_writeAlias)}/_bulk?refresh={ToRefreshQueryValue(refresh)}";
         var failures = new List<SearchItemFailure>();
         var succeededCount = 0;
         var stopwatch = Stopwatch.StartNew();
+        var isFirstBatch = true;
 
-        foreach (var batch in Batch(documents, _options.BulkMaxDocuments, _options.BulkMaxBytes))
+        foreach (var batch in SerializeAndBatch(documents, _options.BulkMaxDocuments, _options.BulkMaxBytes))
         {
-            var operations = new BulkOperationsCollection(
-                batch.Select(doc => (IBulkOperation)new BulkIndexOperation<TDocument>(doc, _writeAlias) { Id = doc.DocumentId }));
+            if (!isFirstBatch && bulkOptions.MaxBatchesPerSecond is { } maxBatchesPerSecond)
+            {
+                var delay = TimeSpan.FromSeconds(1.0 / maxBatchesPerSecond);
+                _logger.ElasticSearchBulkThrottled(_definition.Name, delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
 
-            var request = new BulkRequest(_writeAlias) { Operations = operations, Refresh = refresh };
-            var response = await _client.BulkAsync(request, cancellationToken).ConfigureAwait(false);
+            isFirstBatch = false;
+
+            var bulkBody = ConcatenateBulkBody(batch);
+            var response = await _client.Transport
+                .RequestAsync<BulkResponse>(
+                    Elastic.Transport.HttpMethod.POST, path, PostData.Bytes(bulkBody), cancellationToken)
+                .ConfigureAwait(false);
 
             if (!response.IsValidResponse && response.Items.Count == 0)
             {
@@ -193,11 +213,28 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
     }
 
     /// <inheritdoc />
-    public async Task<Result<SearchBulkReceipt>> DeleteManyAsync(
+    public Task<Result<SearchBulkReceipt>> DeleteManyAsync(
         IReadOnlyCollection<string> documentIds,
         SearchWriteConsistency consistency,
         CancellationToken cancellationToken = default)
+        => DeleteManyAsync(documentIds, consistency, SearchBulkWriteOptions.Default, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// This provider issues a delete-by-id bulk operation as a single request regardless of
+    /// <paramref name="documentIds"/>'s size — there is no existing per-batch dispatch loop to pace, so
+    /// <paramref name="bulkOptions"/>'s <see cref="SearchBulkWriteOptions.MaxBatchesPerSecond"/> has no
+    /// observable effect here (see <see cref="IndexManyAsync(IReadOnlyCollection{TDocument}, SearchWriteConsistency, SearchBulkWriteOptions, CancellationToken)"/>
+    /// for the throttled path, which does chunk).
+    /// </remarks>
+    public async Task<Result<SearchBulkReceipt>> DeleteManyAsync(
+        IReadOnlyCollection<string> documentIds,
+        SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
+        CancellationToken cancellationToken = default)
     {
+        _ = bulkOptions;
+
         foreach (var documentId in documentIds)
         {
             if (!IsValidDocumentId(documentId))
@@ -545,6 +582,13 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         // other in-flight requests, with no Meilisearch analogue.
         => consistency == SearchWriteConsistency.Searchable ? Refresh.WaitFor : Refresh.False;
 
+    private static string ToRefreshQueryValue(Refresh refresh) => refresh switch
+    {
+        Refresh.WaitFor => "wait_for",
+        Refresh.True => "true",
+        _ => "false",
+    };
+
     private static bool IsValidDocumentId(string documentId)
         => documentId.Length > 0 && documentId.All(static c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 
@@ -561,23 +605,36 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         SucceededCount = 0,
     };
 
-    private static IEnumerable<List<TDocument>> Batch(IReadOnlyCollection<TDocument> documents, int maxDocuments, int maxBytes)
+    /// <summary>
+    /// Serializes each document's <c>_bulk</c> index-operation wire bytes exactly once — via
+    /// <see cref="ElasticsearchClient.ElasticsearchClientSettings"/>, the same settings
+    /// <see cref="ElasticsearchClient.BulkAsync(BulkRequest, CancellationToken)"/> would have used —
+    /// and groups them into batches bounded by <paramref name="maxDocuments"/> and
+    /// <paramref name="maxBytes"/> using the real serialized length rather than a separate estimate.
+    /// Each document's buffer is reused verbatim as part of the wire body in
+    /// <see cref="ConcatenateBulkBody"/>, eliminating the prior double-serialization (once for a
+    /// chunk-size estimate via a standalone <c>JsonSerializer.SerializeToUtf8Bytes</c> call, once more
+    /// inside the SDK's own typed <c>BulkAsync</c> — a pass that could silently diverge from the first
+    /// if a source-serializer context were configured, since the estimate never saw it).
+    /// </summary>
+    private IEnumerable<List<byte[]>> SerializeAndBatch(
+        IReadOnlyCollection<TDocument> documents, int maxDocuments, int maxBytes)
     {
-        var batch = new List<TDocument>();
+        var batch = new List<byte[]>();
         var batchBytes = 0;
 
         foreach (var document in documents)
         {
-            var estimatedSize = EstimateSize(document);
-            if (batch.Count > 0 && (batch.Count >= maxDocuments || batchBytes + estimatedSize > maxBytes))
+            var serialized = SerializeIndexOperation(document);
+            if (batch.Count > 0 && (batch.Count >= maxDocuments || batchBytes + serialized.Length > maxBytes))
             {
                 yield return batch;
                 batch = [];
                 batchBytes = 0;
             }
 
-            batch.Add(document);
-            batchBytes += estimatedSize;
+            batch.Add(serialized);
+            batchBytes += serialized.Length;
         }
 
         if (batch.Count > 0)
@@ -586,6 +643,39 @@ internal sealed class ElasticSearchIndex<TDocument> : ISearchIndex<TDocument>
         }
     }
 
-    private static int EstimateSize(TDocument document)
-        => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(document).Length;
+    /// <summary>
+    /// Serializes one document's <c>_bulk</c> index-operation (the action-meta line plus the source
+    /// line) via the SDK's own <see cref="BulkOperationsCollection.Serialize"/> — never a standalone
+    /// raw <c>System.Text.Json</c> call — so the byte buffer is guaranteed identical to what the SDK
+    /// itself would have produced for this document, and reusable verbatim on the wire.
+    /// </summary>
+    private byte[] SerializeIndexOperation(TDocument document)
+    {
+        var operations = new BulkOperationsCollection(
+            new IBulkOperation[] { new BulkIndexOperation<TDocument>(document, _writeAlias) { Id = document.DocumentId } });
+        using var stream = new MemoryStream();
+        operations.Serialize(stream, _client.ElasticsearchClientSettings, SerializationFormatting.None);
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Concatenates a batch's pre-serialized per-document buffers into one <c>_bulk</c> NDJSON body.
+    /// Safe because each buffer is an independently complete, newline-terminated
+    /// <c>{action}\n{source}\n</c> pair — concatenating N such buffers is byte-identical to serializing
+    /// all N operations together as one <see cref="BulkOperationsCollection"/> (verified against the
+    /// real compiled SDK; see <c>09.Search/CLAUDE.md</c>).
+    /// </summary>
+    private static byte[] ConcatenateBulkBody(List<byte[]> batch)
+    {
+        var totalLength = batch.Sum(bytes => bytes.Length);
+        var buffer = new byte[totalLength];
+        var offset = 0;
+        foreach (var bytes in batch)
+        {
+            Buffer.BlockCopy(bytes, 0, buffer, offset, bytes.Length);
+            offset += bytes.Length;
+        }
+
+        return buffer;
+    }
 }

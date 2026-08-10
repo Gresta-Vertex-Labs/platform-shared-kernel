@@ -50,11 +50,20 @@ public sealed class ContractShapeTests
     [InlineData(nameof(ISearchIndex<TestDocument>.ClearAsync))]
     public void EveryWriteMember_TakesNonOptional_SearchWriteConsistencyParameter(string memberName)
     {
-        var method = SearchIndexType.GetMethod(memberName)!;
-        var parameter = method.GetParameters().Single(p => p.ParameterType == typeof(SearchWriteConsistency));
+        // IndexManyAsync/DeleteManyAsync are overloaded (the additive SearchBulkWriteOptions overload,
+        // D-33/C-52) — GetMethod(string) throws AmbiguousMatchException for either name, so every
+        // overload sharing memberName is checked instead of assuming exactly one match.
+        var methods = SearchIndexType.GetMethods().Where(m => m.Name == memberName).ToList();
+        methods.Should().NotBeEmpty($"no member named {memberName} was found on ISearchIndex<TDocument>");
 
-        parameter.IsOptional.Should().BeFalse(
-            $"{memberName}'s SearchWriteConsistency parameter must be mandatory and non-defaulted");
+        foreach (var method in methods)
+        {
+            var parameter = method.GetParameters().Single(p => p.ParameterType == typeof(SearchWriteConsistency));
+
+            parameter.IsOptional.Should().BeFalse(
+                $"{memberName}'s SearchWriteConsistency parameter must be mandatory and non-defaulted " +
+                $"(overload with {method.GetParameters().Length} parameter(s))");
+        }
     }
 
     [Theory]

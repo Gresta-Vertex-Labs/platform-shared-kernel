@@ -99,14 +99,18 @@ ISearchIndex<TDocument>   where TDocument : class, ISearchDocument
                     SearchWriteConsistency consistency, CancellationToken ct)  → Task<Result<SearchBulkReceipt>>
     .IndexManyAsync(IReadOnlyCollection<TDocument> documents, SearchWriteConsistency consistency,
                     SearchBulkWriteOptions bulkOptions, CancellationToken ct)  → Task<Result<SearchBulkReceipt>>
-         — QUEUED, WO-055/P-354, not yet implemented (state-map D-33/D-34/C-52/C-53/C-54) —
+         — SHIPPED, WO-055/P-354 (state-map D-33/D-34/C-52/C-53/C-54) —
     .DeleteAsync(string documentId, SearchWriteConsistency consistency,
                  CancellationToken ct)                                         → Task<Result<SearchWriteReceipt>>
     .DeleteManyAsync(IReadOnlyCollection<string> documentIds,
                      SearchWriteConsistency consistency, CancellationToken ct) → Task<Result<SearchBulkReceipt>>
     .DeleteManyAsync(IReadOnlyCollection<string> documentIds, SearchWriteConsistency consistency,
                      SearchBulkWriteOptions bulkOptions, CancellationToken ct) → Task<Result<SearchBulkReceipt>>
-         — QUEUED, WO-055/P-354, not yet implemented (state-map D-33/D-34/C-52/C-53/C-54) —
+         — SHIPPED, WO-055/P-354 (state-map D-33/D-34/C-52/C-53/C-54); the ElasticSearch and
+           Meilisearch DeleteManyAsync 4-arg overloads accept bulkOptions for interface parity but it
+           has no observable throttle effect — neither adapter chunks a delete-by-id bulk call into
+           multiple dispatches, so there is no inter-batch gap to pace (see each provider's own
+           DeleteManyAsync XML-doc remark) —
     .DeleteByFilterAsync(SearchFilter filter, TenantScope tenantScope,
                          SearchWriteConsistency consistency, CancellationToken ct)
                                                                                → Task<Result<SearchWriteReceipt>>
@@ -157,20 +161,21 @@ ISearchIndex<TDocument>   where TDocument : class, ISearchDocument
           only actionable output. Result.Failure is reserved for "the request itself did not execute".
           Callers requiring all-or-nothing check SearchBulkReceipt.HasFailures.
 
-    NOTE (SearchBulkWriteOptions — QUEUED, WO-055/P-354, not yet implemented): a caller wanting
+    NOTE (SearchBulkWriteOptions — SHIPPED, WO-055/P-354): a caller wanting
           "which documents failed" already has it — SearchBulkReceipt.Failures/SearchItemFailure has
           carried per-document DocumentId+Error since WO-044/P-272; the complement of the caller's own
           originally-submitted id list against Failures IS the succeeded set, so no additional
           "succeeded ids" list is planned (it would also bloat the receipt on a large successful bulk
           write for no purpose the complement doesn't already serve — ratified at D-31, no code change).
-          What genuinely does not exist yet is backpressure: neither provider exposes any way to bound
-          how fast a large reindex drives the engine. The queued fix is an ADDITIVE pair of
+          What did not exist before this phase was backpressure: neither provider exposed any way to
+          bound how fast a large reindex drives the engine. The fix is an ADDITIVE pair of
           IndexManyAsync/DeleteManyAsync overloads taking a new SearchBulkWriteOptions (see Models
           below) — a per-call, provider-neutral rate cap over the batch-dispatch loop both providers
           already run internally, defaulting to null/unthrottled (byte-for-byte today's behaviour). The
-          existing 3-arg overloads are UNCHANGED and become one-line delegations to the new 4-arg ones
+          existing 3-arg overloads are UNCHANGED and are one-line delegations to the new 4-arg ones
           passing SearchBulkWriteOptions.Default — this is why the addition is a MINOR bump, not a
-          breaking SemVer-major one. See 09.Search/state-map.md Phase: Design D-31 through D-35.
+          breaking SemVer-major one. See 09.Search/state-map.md Phase: Design D-31 through D-35 and
+          Phase: Core C-51 through C-55.
 
     NOTE (WHY A DISTINCT OVERLOAD, NOT A DEFAULT PARAMETER — D-33 design lock): the new
           SearchBulkWriteOptions argument is added as a FOURTH overload, never as
@@ -704,9 +709,15 @@ SearchBulkReceipt   (sealed record)
     NOTE: One SearchItemFailure per failed document, carrying a SharedKernel.Primitives Error — never
           collapsed into one opaque error, mirroring the FileDeleteOutcome precedent in 08.Storage.
 
-SearchBulkWriteOptions   (sealed record — QUEUED, WO-055/P-354, not yet implemented, state-map D-32/D-35/C-51)
+SearchBulkWriteOptions   (sealed record — SHIPPED, WO-055/P-354, state-map D-32/D-35/C-51)
     .MaxBatchesPerSecond                                                   → double? { get; init; }  (default null)
     .Default                                                  → static SearchBulkWriteOptions { get; }
+
+    NOTE (NON-POSITIVE VALUE THROWS — mirrors TenantScope.Of/SearchFilter.Between): the
+          MaxBatchesPerSecond init accessor throws ArgumentException for a zero or negative value — a
+          rate cap of zero or less is not a valid pace, a programming error caught at first use rather
+          than a Result-encoded expected failure, matching this domain's established convention of
+          throwing (never returning Result) for an invalid literal supplied by the calling code itself.
 
     NOTE (RATE, NOT CONCURRENCY — a deliberate scope decision): neither provider issues concurrent
           in-flight batch requests today — both ElasticSearchIndex.IndexManyAsync's Batch()+foreach and
@@ -996,17 +1007,25 @@ MeilisearchIndex<TDocument>   (sealed class, implements ISearchIndex<TDocument>)
       awaits all of them under Searchable and folds them into one SearchBulkReceipt whose ProviderToken
       is the LAST taskUid (tasks process in enqueue order, so waiting on the last implies the earlier
       ones completed).
-    — THROTTLE ENFORCEMENT POINT (QUEUED, WO-055/P-354, not yet implemented — state-map D-34/C-54):
-      honouring bulkOptions.MaxBatchesPerSecond on the new 4-arg IndexManyAsync/DeleteManyAsync
-      overloads REQUIRES RESTRUCTURING this write path, not a mechanical one-line change.
-      AddDocumentsInBatchesAsync issues every batch internally inside the SDK with no seam for an
-      inter-batch pause, so the queued fix replaces this single SDK call with an explicit per-batch
-      dispatch loop using the SDK's single-batch AddDocumentsAsync call — the same call IndexAsync
-      already makes with a one-element list — awaiting a computed Task.Delay between successive
-      batch dispatches only when MaxBatchesPerSecond is set. DeleteManyAsync's own batch-dispatch loop
-      receives the identical delay-insertion treatment. MaxBatchesPerSecond == null skips the delay
-      entirely, leaving the restructured loop's observable behaviour byte-for-byte identical to
-      today's single AddDocumentsInBatchesAsync call when the caller does not opt in.
+    — THROTTLE ENFORCEMENT POINT (SHIPPED, WO-055/P-354 — state-map D-34/C-54): honouring
+      bulkOptions.MaxBatchesPerSecond on the new 4-arg IndexManyAsync overload REQUIRED
+      RESTRUCTURING this write path, not a mechanical one-line change. AddDocumentsInBatchesAsync
+      issued every batch internally inside the SDK with no seam for an inter-batch pause, so the fix
+      replaces that single SDK call with an explicit per-batch dispatch loop — chunking the
+      caller's document list into DefaultBatchSize-sized slices itself and calling the SDK's
+      single-batch AddDocumentsAsync call per slice (the same call IndexAsync already makes with a
+      one-element list) — awaiting a computed `TimeSpan.FromSeconds(1.0 / MaxBatchesPerSecond)` delay
+      before every batch dispatch after the first, only when MaxBatchesPerSecond is set, logging
+      MeilisearchBulkThrottled (EventId 9121) each time. Batch boundaries are otherwise UNCHANGED —
+      the same DefaultBatchSize-sized, document-order-preserving chunks the SDK's own
+      AddDocumentsInBatchesAsync produced. DeleteManyAsync's 4-arg overload, in contrast, needed NO
+      restructuring: it already dispatches the caller's whole documentIds collection as a SINGLE
+      DeleteDocumentsAsync call with no existing per-batch loop, so there is no inter-batch gap to
+      pace — bulkOptions is accepted for interface parity but has no observable throttle effect (see
+      the XML-doc remark on the 4-arg DeleteManyAsync overload). MaxBatchesPerSecond == null skips
+      the delay entirely on IndexManyAsync, leaving the restructured loop's observable behaviour
+      byte-for-byte identical to today's single AddDocumentsInBatchesAsync call when the caller does
+      not opt in.
     — SearchAsync: RequireExactTotalHits = false → Offset/Limit, yielding SearchResult<T> with
       EstimatedTotalHits → Accuracy = Estimated. true → Page/HitsPerPage, yielding
       PaginatedSearchResult<T> with exact TotalHits → Accuracy = Exact. The SDK's SearchAsync<T> returns
@@ -1033,16 +1052,18 @@ MeilisearchIndex<TDocument>   (sealed class, implements ISearchIndex<TDocument>)
       404 path instead — the same SDK exception-type inconsistency documented on ProbeAsync above.
       Fixed by adding the missing HttpRequestException catch clause alongside the existing
       MeilisearchApiError one.
-    — KNOWN DEFECT (QUEUED, WO-055/P-353, not yet implemented — state-map D-30/C-50): GetAsync's final
-      line reads `raw.Deserialize<TDocument>(DocumentSerializerOptions) ?? throw new
+    — FIXED DEFECT (SHIPPED, WO-055/P-353 — state-map D-30/C-50): GetAsync's final line used to read
+      `raw.Deserialize<TDocument>(DocumentSerializerOptions) ?? throw new
       InvalidOperationException("Meilisearch returned a null document.")` — a raw `throw`, breaking this
       domain's otherwise-universal Result-railway discipline that every OTHER error path in this same
-      file already follows (including this method's own two 404 catches immediately above it). The
-      queued fix returns `Result<TDocument>.Failure(SearchErrors.EngineFault(
-      SearchWellKnown.MeilisearchProviderName, "GetAsync", <reason>))` instead, mirroring CountAsync's
-      sibling "Expected a paginated response but received '...'" EngineFault return in the same file.
-      This is the ONLY call site touched by this fix — SearchAsync's JsonElement mapping path and every
-      other member are unaffected.
+      file already followed (including this method's own two 404 catches immediately above it). Fixed
+      to return `Result<TDocument>.Failure(SearchErrors.EngineFault(
+      SearchWellKnown.MeilisearchProviderName, "GetAsync", "Meilisearch returned a null document."))`
+      instead, mirroring CountAsync's sibling "Expected a paginated response but received '...'"
+      EngineFault return in the same file, and logging through the existing MeilisearchEngineFault
+      log call (no new EventId needed). This was the ONLY call site touched by this fix — SearchAsync's
+      JsonElement mapping path and every other member are unaffected. Re-verified against the real
+      Meilisearch container (existing GetAsync round-trip tests, 92/92 green) — no regression.
     — EnumerateAsync walks GET /indexes/{uid}/documents (offset+limit), NOT the search endpoint — so it
       is not subject to the maxTotalHits ceiling.
 
@@ -1236,6 +1257,7 @@ MeilisearchLog   (internal static partial class — [LoggerMessage], EventId sub
     9118 Warning      MeilisearchSchemaFingerprintMismatch  {IndexName} {Expected} {Actual}
     9119 Error        MeilisearchEngineFault             {Operation} {IndexName}
     9120 Debug        MeilisearchDocumentWalkStarted     {IndexName} {BatchSize}
+    9121 Debug        MeilisearchBulkThrottled           {IndexName} {DelayMs}
 ```
 
 ---
@@ -1255,38 +1277,64 @@ ElasticSearchIndex<TDocument>   (sealed class, implements ISearchIndex<TDocument
     — IndexAsync(doc, i => i.Index(name).Id(doc.DocumentId).Refresh(...)) — Accepted → Refresh.False,
       Searchable → Refresh.WaitFor. Refresh.True IS NEVER EMITTED.
       ProviderToken = "{index}:{seqNo}:{primaryTerm}".
-    — IndexManyAsync → BulkAsync(b => b.Index(name).IndexMany(...)) batched by PAYLOAD BYTES (target
-      5–15 MB) and document count, whichever hits first; ItemsWithErrors project per-item into
+    — IndexManyAsync batches documents by PAYLOAD BYTES (BulkMaxBytes) and document count
+      (BulkMaxDocuments), whichever hits first; ItemsWithErrors project per-item into
       SearchItemFailure. BulkAllObservable ships but has been undocumented since the 8.18 doc deletion —
-      the adapter uses plain BulkAsync with its own batching rather than depending on an undocumented
-      helper.
-    — THROTTLE ENFORCEMENT POINT (QUEUED, WO-055/P-354, not yet implemented — state-map D-34/C-53):
-      honouring bulkOptions.MaxBatchesPerSecond on the new 4-arg IndexManyAsync/DeleteManyAsync
-      overloads is a STRAIGHTFORWARD insertion here, unlike the Meilisearch side — IndexManyAsync
-      already runs its own sequential `foreach (var batch in Batch(...))` loop calling BulkAsync once
-      per batch, so the queued fix awaits a computed Task.Delay between successive loop iterations only
-      when MaxBatchesPerSecond is set, with no restructuring of the batching/serialization logic itself
-      (independent of, and unaffected by, D-29's double-serialization fix to this same loop).
-      DeleteManyAsync's own batch-dispatch loop receives the identical delay-insertion treatment.
-      MaxBatchesPerSecond == null skips the delay entirely — byte-for-byte identical to today's foreach
-      when the caller does not opt in.
-    — KNOWN DEFECT (QUEUED, WO-055/P-353, not yet implemented — state-map D-29/C-49): the private
-      Batch()/EstimateSize() helpers that decide chunk boundaries call
+      the adapter never depends on it.
+    — THROTTLE ENFORCEMENT POINT (SHIPPED, WO-055/P-354 — state-map D-34/C-53): honouring
+      bulkOptions.MaxBatchesPerSecond on the new 4-arg IndexManyAsync overload was a STRAIGHTFORWARD
+      insertion, unlike the Meilisearch side — IndexManyAsync already runs its own sequential
+      `foreach (var batch in SerializeAndBatch(...))` loop, so the fix awaits a computed
+      `TimeSpan.FromSeconds(1.0 / MaxBatchesPerSecond)` delay before every batch dispatch after the
+      first, only when MaxBatchesPerSecond is set, logging ElasticSearchBulkThrottled (EventId 9224)
+      each time — with no restructuring of the batching/serialization logic itself beyond D-29's own
+      single-serialization fix (below), which the throttle insertion is independent of and unaffected
+      by. DeleteManyAsync's 4-arg overload, mirroring the Meilisearch side exactly, needed NO
+      restructuring: it dispatches the caller's whole documentIds collection as a SINGLE BulkAsync
+      call with no existing per-batch loop, so bulkOptions is accepted for interface parity but has
+      no observable throttle effect (see the XML-doc remark on the 4-arg DeleteManyAsync overload).
+      MaxBatchesPerSecond == null skips the delay entirely — byte-for-byte identical to today's
+      foreach when the caller does not opt in.
+    — FIXED DEFECT (SHIPPED, WO-055/P-353 — state-map D-29/C-49): the private Batch()/EstimateSize()
+      helpers that decided chunk boundaries used to call
       `System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(document)` per document PURELY to measure
       size — a plain default-STJ pass wholly independent of, and not reused by, the ES client's own
-      internal serialization of the same TDocument objects when BulkAsync builds the real `_bulk` NDJSON
-      body moments later. Every document in a large reindex is therefore serialized TWICE per bulk
-      operation, and the two passes are not even guaranteed to use the same serializer settings (the ES
-      client may be configured with .WithSourceSerializerContext(...), which EstimateSize's raw
-      JsonSerializer.SerializeToUtf8Bytes call never sees). The queued fix serializes each document's
-      wire bytes exactly once and reuses that one buffer for both the chunk-boundary size decision and
-      the actual bulk request body — the precise mechanism (a pre-serialized-bytes bulk-operation
-      constructor on Elastic.Clients.Elasticsearch.Core.Bulk if 9.4.2 ships one, or routing through
-      Elastic.Transport's raw PostData seam if it does not) is an open SDK-shape question to resolve
-      against the real compiled assembly at Core time, mirroring this domain's own established
-      "reflect the real compiled assembly, document the finding" methodology already used for
-      ElasticSearchFilterCompiler's D-23/Core-phase leaf-query-shape resolution above. No change to
-      IndexManyAsync's signature or to SearchBulkReceipt either way.
+      internal serialization of the same TDocument objects when the typed `_client.BulkAsync(request,
+      ct)` call built the real `_bulk` NDJSON body moments later. Every document in a large reindex was
+      therefore serialized TWICE per bulk operation, and the two passes were not even guaranteed to use
+      the same serializer settings.
+      RESOLVED SDK-SHAPE FINDING (verified against the real compiled `Elastic.Clients.Elasticsearch`
+      9.4.2 assembly via reflection, not guessed): `Elastic.Clients.Elasticsearch.Core.Bulk` ships **no**
+      pre-serialized-bytes constructor on `BulkIndexOperation<T>` — only `ctor(T document)` and
+      `ctor(T document, IndexName index)` — so that candidate mechanism does not exist. The fix instead
+      routes through `Elastic.Transport`'s raw `PostData` seam: `ElasticsearchClient.Transport` (typed
+      `ITransport<IElasticsearchClientSettings>`, implementing the non-generic `ITransport`) exposes a
+      `RequestAsync<TResponse>(HttpMethod, string path, PostData postData, CancellationToken)` extension
+      method (`Elastic.Transport.TransportExtensions`) — the SAME low-level entry point the SDK's own
+      generated typed methods (`BulkAsync`, `IndexAsync`, etc.) call internally to issue a request, so it
+      carries the identical content-type/header/OTel-attribute behaviour as any typed call. `BulkResponse`
+      has a public parameterless constructor, satisfying `RequestAsync<TResponse>`'s
+      `where TResponse : TransportResponse, new()` constraint. `SerializeIndexOperation` now serializes
+      each document's `_bulk` action-meta-plus-source pair EXACTLY ONCE per document via
+      `BulkOperationsCollection.Serialize(stream, _client.ElasticsearchClientSettings,
+      SerializationFormatting.None)` — the SDK's own serialization routine, never a standalone raw STJ
+      call, so the resulting `byte[]` is guaranteed identical to what `BulkAsync` would have produced and
+      automatically respects any `.WithSourceSerializerContext(...)` configuration. That same buffer's
+      `.Length` feeds the chunk-boundary size decision (`SerializeAndBatch`) AND, unmodified, becomes part
+      of the wire body: `ConcatenateBulkBody` concatenates a batch's per-document buffers (each an
+      independently complete, newline-terminated `{action}\n{source}\n` pair) into one `_bulk` NDJSON
+      body — VERIFIED functionally (not merely asserted) that concatenating N independently-serialized
+      single-document `BulkOperationsCollection` buffers is byte-identical to serializing all N operations
+      together as one collection, via a live reflection/functional probe against the real compiled SDK.
+      The batch body is then posted via `_client.Transport.RequestAsync<BulkResponse>(HttpMethod.POST,
+      "{alias}/_bulk?refresh={value}", PostData.Bytes(bulkBody), ct)` — the refresh mode travels as a
+      query-string parameter on the path (`EndpointPath.PathAndQuery`'s own documented shape) rather than
+      via `BulkRequest.Refresh`, since the typed request path is bypassed entirely. No change to
+      IndexManyAsync's public signature or to SearchBulkReceipt either way — this is an internal-only
+      fix. DeleteManyAsync is UNAFFECTED (it builds `BulkDeleteOperation`s with no document body, so no
+      serialization redundancy existed there) and still calls the typed `_client.BulkAsync(request, ct)`.
+      Re-verified against the real ElasticSearch container (existing bulk round-trip tests, 98/98 green)
+      — no regression.
     — EnumerateAsync walks search_after + PIT, always closing the PIT in a finally.
 
 ElasticSearchFilterCompiler   (internal sealed class)
@@ -1540,6 +1588,7 @@ ElasticSearchLog   (internal static partial class — [LoggerMessage], EventId s
     9221 Warning      ElasticSearchSourceSerializerContextMissing  {DocumentTypeName}
     9222 Error        ElasticSearchEngineFault                {Operation} {IndexName} {StatusCode}
     9223 Debug        ElasticSearchAggregationExecuted        {IndexName} {AggregationCount} {TookMs}
+    9224 Debug        ElasticSearchBulkThrottled              {IndexName} {DelayMs}
 ```
 
 ---
@@ -1728,3 +1777,4 @@ A service may register **both** providers, but only against **different `TDocume
 - [2026-07-20] SK.09.Docs complete (DO-01–DO-08, 8/8) — `GenerateDocumentationFile`/`TreatWarningsAsErrors`/full NuGet metadata block (incl. `PackageReadmeFile` + packed `README.md`, learning `08.Storage`'s Published-phase lesson up front instead of repeating its miss) landed on all three production `.csproj` files; zero CS1591/CS1574 across all three packages, fixing two genuine doc defects surfaced only once `TreatWarningsAsErrors` was enabled (`MeilisearchResultMapper`'s class-level `<typeparamref name="TDocument"/>` referencing a type parameter that belongs to its `Map<TDocument>` method, not the class; `ElasticSearchResultMapper`'s `cref="SearchResponse{TDocument}.IsValidResponse"` failing to resolve because the member is inherited from a non-generic base rather than declared directly on the generic type — both fixed by dropping to plain `<c>`-tagged prose, since neither needed a cross-reference link badly enough to fight the resolver). `SearchFilter`'s class-level remarks gained the "what is deliberately absent, and why" plus the mandated nested/object-array flattening-technique paragraphs that DO-01 named explicitly and that Core/Tests phases had never actually written into the type's own XML doc (only into `09.Search/CLAUDE.md`'s prose) — closing a genuine doc-completeness gap, not a false-positive. **The CS8509/CS8524 collision flagged at Core phase as "to become a hard error once Docs-phase `TreatWarningsAsErrors` lands" was resolved, not silenced**: a scratch repro proved the Core-phase premise half-wrong — adding an explicit `null =>` arm to the `SearchFilter`/`AggregationRequest` switches does not clear CS8509, it only shifts the compiler's reported gap from `_` to `not null`, proving the compiler cannot perform closed-world exhaustiveness analysis over a sealed-subtype hierarchy of an abstract base at all, regardless of how the switch is written (a permanent C# limitation, not a fixable gap in these five switches); `SearchValueKind`'s CS8524 is the structurally identical enum analogue. Resolution: both provider `.csproj` files carry `<WarningsNotAsErrors>CS8509;CS8524</WarningsNotAsErrors>` — narrowly scoped to these two diagnostic IDs, keeping them **visible** in every build log rather than hidden by `NoWarn`/`#pragma warning disable`, while every other warning stays fatal — with an inline comment at each of the five affected switch sites (`MeilisearchFilterCompiler.Compile`/`.FormatValue`, `ElasticSearchFilterCompiler.Compile`/`.ToFieldValue`, `ElasticSearchAnalytics<TDocument>.GetName`) cross-referencing the new "Reconciling switch exhaustiveness with `TreatWarningsAsErrors`" section under Implementation Rules. That section also corrects the Core-phase premise on record: the real backstop against a silently-dropped ninth node was never going to be a compile-time catch (that was untested), it is the runtime `SwitchExpressionException` every switch expression throws automatically on an unmatched value — strictly better than a `_ => throw` discard arm, which would produce the identical runtime behaviour while erasing the compiler's own honest "not provably exhaustive" signal for no benefit. Three README.md files written (`SharedKernel.Search.Abstractions`, `SharedKernel.Search.Meilisearch`, `SharedKernel.Search.ElasticSearch`), each covering its DO-05/06/07-mandated content in full, including the two ElasticSearch hard warnings (`MaxTotalHits` 1000-not-10000 parity default; document-level security as a commercial-tier gap versus Meilisearch's engine-enforced tenant tokens) and the two Meilisearch hard warnings (tenant tokens cannot be revoked before expiry; the global sequential task queue's cross-workload/instance-wide-`PendingWriteCount` blast radius). DO-08 drift check: read every provider-exclusive contract, options type, DI builder, error factory list (29 `SearchErrors` + 3 `MeilisearchErrors` + 4 `ElasticSearchErrors`, tallies re-confirmed against source), and `[LoggerMessage]` `EventId` table (Meilisearch 9100–9120/21 entries, ElasticSearch 9200–9223/24 entries, both confirmed gap-free and duplicate-free against source) against the brain's Interface Contracts section — zero drift found in any interface shape or DI registration pattern; two genuinely stale Technology-Stack-adjacent notes corrected: the "Testing containers" row now states the actual pinned image tags (`getmeili/meilisearch:v1.20.0`, `docker.elastic.co/elasticsearch/elasticsearch:9.4.2`) instead of only the NuGet package version, and the Test Rules bullet flagging the community Meilisearch image's SDK-surface support as "unconfirmed" is updated to CONFIRMED per the Tests-phase real-backend evidence (92/92 `SharedKernel.Search.Meilisearch.Tests` green against exactly that image). All 345 tests still green after every edit (155 Abstractions + 92 Meilisearch + 98 ElasticSearch); all three projects build 0 errors with only the two/three intentionally-downgraded-but-visible CS8509/CS8524 warnings. Propagated to root (search-phase-implementer)
 - [2026-07-20] SK.09.Published complete (P-01–P-08, 8/8) — **09.Search domain (WO-044) complete end to end, all six phases `●` for all three packages, 139/139 tasks.** P-01 re-verified all three `.csproj` files already carried the full NuGet metadata block incl. `PackageReadmeFile`+packed `README.md` — **the first domain where this specific `08.Storage`-flagged gap did not recur**, confirming this domain's own Docs-phase discipline held. P-02: all three packed clean to `.nupkg`+`.snupkg`, zero `NU5039`/`NU5128`. P-03: new `09.Search/consumer-verify/` area — **three** console harnesses (`Meilisearch/`, `ElasticSearch/`, `BothProviders/`), a deliberate split from every prior domain's single-project `consumer-verify` precedent (`08.Storage`/`13.ServiceDefaults`/`14.Presentation`/`15.Integration`/`04.Contracts`) because the P-06 capability-segregation proof structurally requires two **disjoint** compilation closures — a single project referencing both providers could never prove segregation, since both exclusive interfaces would simply be nameable together. P-04/P-05: real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()` composition resolves every neutral and provider-exclusive contract with zero DI exceptions; `ElasticsearchClient` proven singleton; both raw-client accessors proven gated. **One DI gap re-confirmed at the real-host level, not new:** `AddSharedKernelMeilisearchSearch()`/`AddSharedKernelElasticSearchSearch()` do not self-register `IClock` — every harness surface resolving `ISearchIndex<TDoc>` registers `SystemClock` itself, same as the `ILogger<T>` precedent. ElasticSearch surfaces set `ValidateEngineVersionOnStart=false` deliberately so DI-composition pass/fail never depends on Docker/a live cluster (the live-engine guard is `SK.09.Tests` T-22's job). P-06: capability segregation proved as a **genuine, captured build-time compiler failure** via the new negative-compile-probe technique (documented in Test Rules above) — real `CS0234`+`CS0246` diagnostics captured in both directions, transcripts permanently recorded in both `Program.cs` header comments. P-07: missing config throws `OptionsValidationException` at `IHost.StartAsync()` naming the specific property; `consumer-verify.BothProviders` demonstrates the same-`TDocument` dual-registration hard violation against real compiled code (documented in DI Registration above). All 16 consumer-verify surfaces pass; full regression re-run confirms 345/345 tests still green, zero production `.cs` changes this session. Propagated to root (search-phase-implementer)
 - [2026-08-10] WO-055 dispatched — two phases added to the Design→Published pipeline, all tasks `○` Pending, no code changed yet. **P-353 (Bulk-Indexing Serialization & Result-Discipline Hardening, D-29/D-30, C-49/C-50, T-27–T-29, DO-09, P-09):** two genuine defects confirmed by reading the real shipped provider source (not the "Published, 345/345 green" documentation, consistent with the platform's now-repeated WO-050/WO-051/WO-053/WO-054 finding that a domain can be well-built and still carry small real defects invisible from docs alone) — `ElasticSearchIndex<TDocument>.IndexManyAsync`'s private `Batch()`/`EstimateSize()` helpers serialize every document via a standalone `JsonSerializer.SerializeToUtf8Bytes` purely to size chunk boundaries, wholly independent of the ES client's own internal serialization of the same objects moments later inside `BulkAsync` — every document in a large reindex pays for two independent JSON passes; `MeilisearchIndex<TDocument>.GetAsync`'s final line throws a raw `InvalidOperationException` when deserialization yields `null`, the one call site in the file that breaks the Result-railway discipline every sibling error path in the same method already follows. Both fixes are internal-only — zero public API signature change. **P-354 (Bulk-Write Outcome Reporting & Opt-In Backpressure, D-31–D-35, S-14, C-51–C-55, T-30–T-34, DO-10, P-10):** verified against real source that per-document bulk-write outcome reporting was NOT a gap — `SearchBulkReceipt.Failures`/`SearchItemFailure` (`DocumentId`+`Error` per failed document) has shipped since WO-044/P-272, and a caller can already retry exactly the failed subset via their own submitted-list-minus-`Failures` complement; ratified as already-delivered at D-31, no code change. The genuine gap is backpressure — neither provider exposes any way to bound how fast a large reindex drives the engine (both are already fully sequential, zero concurrency, today). Queued fix: a new `SearchBulkWriteOptions` sealed record (`.Abstractions/Models/`) carrying a `MaxBatchesPerSecond : double?` rate cap (deliberately rate, not concurrency — neither provider has ever run batches in parallel, and inventing that machinery is a materially larger change than the stated goal requires), delivered as ADDITIVE `IndexManyAsync`/`DeleteManyAsync` overloads on `ISearchIndex<TDocument>` — the existing 3-arg overloads are unchanged and become one-line delegations to the new 4-arg ones passing `SearchBulkWriteOptions.Default` (today's unthrottled behaviour, byte-for-byte), making this a MINOR bump, never the SemVer-major escape valve the phase brief allowed for. Downstream obligation recorded for `16.Testing` (P-355, not this domain's to build): `InMemorySearchIndex<TDocument>` will need the two new overloads once this ships (arch-lead, WO-055, P-353/P-354)
+- [2026-08-10] SK.09.Core WO-055 sub-pass complete (C-49–C-55, 7/7) — the domain's final 7 Core tasks. **C-49 (ElasticSearch bulk single-serialization fix):** resolved D-29's open SDK-shape question by reflecting the real compiled `Elastic.Clients.Elasticsearch` 9.4.2 / `Elastic.Transport` assemblies (a throwaway console harness against the actual NuGet-cached DLLs, not guessed) — confirmed no pre-serialized-bytes constructor exists on `Core.Bulk.BulkIndexOperation<T>`, so the fix routes through `Elastic.Transport`'s raw `PostData` seam via `ElasticsearchClient.Transport.RequestAsync<BulkResponse>(HttpMethod.POST, path, PostData.Bytes(...), ct)` — the same low-level entry point the SDK's own typed methods use internally. `SerializeIndexOperation` now calls `BulkOperationsCollection.Serialize(stream, _client.ElasticsearchClientSettings, SerializationFormatting.None)` once per document, reusing that exact buffer for both the chunk-boundary size decision (`SerializeAndBatch`) and the wire body (`ConcatenateBulkBody`) — verified functionally that concatenating independently-serialized single-document buffers is byte-identical to serializing them together as one collection. Full details on `ElasticSearchIndex<TDocument>`'s Interface Contracts block above. **C-50 (Meilisearch `GetAsync` Result-discipline fix):** the raw `InvalidOperationException` throw on null deserialization now returns `Result<TDocument>.Failure(SearchErrors.EngineFault(...))`, reusing the existing `MeilisearchEngineFault` log call — no new `EventId`. **C-51 (`SearchBulkWriteOptions`):** shipped in `.Abstractions/Models/` — `.MaxBatchesPerSecond : double?`, `.Default`, a validating `init` accessor throwing `ArgumentException` for a non-positive value (mirrors `TenantScope.Of`/`SearchFilter.Between`). **C-52 (additive `ISearchIndex<TDocument>` overloads):** two new 4-arg `IndexManyAsync`/`DeleteManyAsync` overloads added as genuinely distinct overloads (never a default-parameter insertion, per D-33's arity-safety rationale); the existing 3-arg overloads on both providers are now one-line delegations to `SearchBulkWriteOptions.Default`. **C-53/C-54 (throttle):** ElasticSearch's `IndexManyAsync` inserts a computed `Task.Delay` between batches with no restructuring beyond C-49's own fix; Meilisearch's `IndexManyAsync` required genuine restructuring — `AddDocumentsInBatchesAsync` was replaced with an explicit per-batch dispatch loop chunking documents itself and calling the SDK's single-batch `AddDocumentsAsync` per chunk, preserving `DefaultBatchSize`-sized, order-preserving chunks and every existing failure-attribution/task-wait behavior. Both providers' `DeleteManyAsync` 4-arg overloads accept `bulkOptions` for interface parity but produce no observable throttle effect — neither provider ever chunked a delete-by-id bulk call, so there is no inter-batch gap to pace (documented via XML-doc `<remarks>` on each 4-arg `DeleteManyAsync`). **C-55 (logging):** `MeilisearchBulkThrottled` (9121) and `ElasticSearchBulkThrottled` (9224) added as the next sequential `EventId` in each sub-block — both ranges remain gap-free. **Verification:** all three packages build 0 errors (only the pre-existing, intentionally-downgraded CS8509/CS8524 warnings); a genuine pre-existing test regression was found and fixed — `ContractShapeTests.EveryWriteMember_TakesNonOptional_SearchWriteConsistencyParameter` used `Type.GetMethod(name)`, which now throws `AmbiguousMatchException` for the newly-overloaded `IndexManyAsync`/`DeleteManyAsync`; fixed to iterate every overload sharing the name via `GetMethods().Where(...)`. Ran the full existing suite via a temporary, fully-reverted local patch to `16.Testing`'s `InMemorySearchIndex<TDocument>` (adding stub delegating 4-arg overloads solely to unblock local compilation — never committed, `git checkout --` restored the file before finishing) — confirmed 155 Abstractions + 92 Meilisearch + 98 ElasticSearch (345/345) all green, the Meilisearch/ElasticSearch runs against REAL Docker containers (Docker was available in this session's environment), giving real-engine confirmation that C-49's bulk rewrite and C-50's GetAsync fix introduced no regression. `16.Testing`'s own `InMemorySearchIndex<TDocument>` now genuinely does not implement the full `ISearchIndex<TDocument>` interface (confirmed by the real compile error before the diagnostic patch) — this is the anticipated, explicitly-documented consequence recorded in both this file and `16.Testing/CLAUDE.md` as P-355, owned entirely by a future `16.Testing` session; no `16.Testing` file was modified by this domain. All 55 `SK.09.Core` tasks are now `●` — propagated to root (search-phase-implementer)

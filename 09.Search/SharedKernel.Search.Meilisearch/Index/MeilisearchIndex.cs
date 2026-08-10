@@ -62,9 +62,26 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     }
 
     /// <inheritdoc />
+    public Task<Result<SearchBulkReceipt>> IndexManyAsync(
+        IReadOnlyCollection<TDocument> documents,
+        SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default)
+        => IndexManyAsync(documents, consistency, SearchBulkWriteOptions.Default, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Dispatches one batch at a time via the SDK's single-batch <c>AddDocumentsAsync</c> — the same
+    /// call <see cref="IndexAsync"/> already uses for a one-element list — rather than the SDK's own
+    /// <c>AddDocumentsInBatchesAsync</c>, which issues every batch internally with no seam for
+    /// inter-batch pacing. This explicit loop is what lets
+    /// <paramref name="bulkOptions"/>.<see cref="SearchBulkWriteOptions.MaxBatchesPerSecond"/> insert a
+    /// delay between batches; batch boundaries are otherwise unchanged
+    /// (<see cref="MeilisearchOptions.DefaultBatchSize"/>-sized chunks, in document order).
+    /// </remarks>
     public async Task<Result<SearchBulkReceipt>> IndexManyAsync(
         IReadOnlyCollection<TDocument> documents,
         SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default)
     {
         foreach (var document in documents)
@@ -91,10 +108,29 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             });
         }
 
-        var tasks = (await _client.Index(_definition.Name)
-                .AddDocumentsInBatchesAsync(documents, _options.DefaultBatchSize, _definition.PrimaryKeyField, cancellationToken)
-                .ConfigureAwait(false))
-            .ToList();
+        var documentList = documents.ToList();
+        var meilisearchIndex = _client.Index(_definition.Name);
+        var tasks = new List<global::Meilisearch.TaskInfo>();
+        var isFirstBatch = true;
+
+        for (var batchStart = 0; batchStart < documentList.Count; batchStart += _options.DefaultBatchSize)
+        {
+            if (!isFirstBatch && bulkOptions.MaxBatchesPerSecond is { } maxBatchesPerSecond)
+            {
+                var delay = TimeSpan.FromSeconds(1.0 / maxBatchesPerSecond);
+                _logger.MeilisearchBulkThrottled(_definition.Name, delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+
+            isFirstBatch = false;
+
+            var batchCount = Math.Min(_options.DefaultBatchSize, documentList.Count - batchStart);
+            var batch = documentList.GetRange(batchStart, batchCount);
+            var task = await meilisearchIndex
+                .AddDocumentsAsync(batch, _definition.PrimaryKeyField, cancellationToken)
+                .ConfigureAwait(false);
+            tasks.Add(task);
+        }
 
         var lastTaskUid = tasks.Count > 0 ? tasks[^1].TaskUid.ToString(CultureInfo.InvariantCulture) : string.Empty;
         _logger.MeilisearchDocumentsEnqueued(_definition.Name, documents.Count, lastTaskUid);
@@ -107,7 +143,6 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
         // failed batch is reported as failed.
         if (consistency == SearchWriteConsistency.Searchable)
         {
-            var documentList = documents.ToList();
             var batchIndex = 0;
             foreach (var task in tasks)
             {
@@ -170,11 +205,29 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
     }
 
     /// <inheritdoc />
-    public async Task<Result<SearchBulkReceipt>> DeleteManyAsync(
+    public Task<Result<SearchBulkReceipt>> DeleteManyAsync(
         IReadOnlyCollection<string> documentIds,
         SearchWriteConsistency consistency,
         CancellationToken cancellationToken = default)
+        => DeleteManyAsync(documentIds, consistency, SearchBulkWriteOptions.Default, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// This provider issues a document-id bulk delete as a single request regardless of
+    /// <paramref name="documentIds"/>'s size — there is no existing per-batch dispatch loop to pace, so
+    /// <paramref name="bulkOptions"/>'s <see cref="SearchBulkWriteOptions.MaxBatchesPerSecond"/> has no
+    /// observable effect here (see
+    /// <see cref="IndexManyAsync(IReadOnlyCollection{TDocument}, SearchWriteConsistency, SearchBulkWriteOptions, CancellationToken)"/>
+    /// for the throttled path, which does chunk).
+    /// </remarks>
+    public async Task<Result<SearchBulkReceipt>> DeleteManyAsync(
+        IReadOnlyCollection<string> documentIds,
+        SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
+        CancellationToken cancellationToken = default)
     {
+        _ = bulkOptions;
+
         foreach (var documentId in documentIds)
         {
             if (!IsValidDocumentId(documentId))
@@ -363,8 +416,14 @@ internal sealed class MeilisearchIndex<TDocument> : ISearchIndex<TDocument>
             }
         }
 
-        var document = raw.Deserialize<TDocument>(DocumentSerializerOptions)
-            ?? throw new InvalidOperationException("Meilisearch returned a null document.");
+        var document = raw.Deserialize<TDocument>(DocumentSerializerOptions);
+        if (document is null)
+        {
+            _logger.MeilisearchEngineFault("GetAsync", _definition.Name);
+            return Result<TDocument>.Failure(SearchErrors.EngineFault(
+                SearchWellKnown.MeilisearchProviderName, "GetAsync", "Meilisearch returned a null document."));
+        }
+
         return Result<TDocument>.Success(document);
     }
 
