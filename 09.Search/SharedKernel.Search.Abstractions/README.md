@@ -113,6 +113,22 @@ public sealed class ProductSearchService(ISearchIndex<ProductSearchDocument> ind
 
 Repeated `Where(...)` calls **AND together rather than replace** — the alternative (last-call-wins) is exactly the silent-clause-dropping defect class that leaks tenant data. Compose an OR explicitly: `Where(SearchFilter.Any(a, b))`. Both construction paths stay legal — the builder is optional sugar over the plain `SearchRequest` record, so `SearchRequest.Default with { FreeText = "x", Facets = ["status"] }` works identically and is validated by the same executor.
 
+## Pacing a large bulk write — `SearchBulkWriteOptions`
+
+`IndexManyAsync`/`DeleteManyAsync` each have a second, 4-argument overload accepting a `SearchBulkWriteOptions` that caps how fast the provider's own internal batch-dispatch loop may proceed:
+
+```csharp
+Result<SearchBulkReceipt> receipt = await index.IndexManyAsync(
+    documents,
+    SearchWriteConsistency.Accepted,
+    new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
+    ct);
+```
+
+`MaxBatchesPerSecond` is a **rate** cap over the batch dispatches both providers already issue internally — it does not introduce concurrency (neither provider ever dispatches batches in parallel) and it is independent of each provider's own chunk-**size** knobs (`MeilisearchOptions.DefaultBatchSize`, `ElasticSearchOptions.BulkMaxBytes`/`BulkMaxDocuments`). Use it to protect a shared engine's availability for concurrent read/query traffic while a large reindex or bulk import runs against it.
+
+The existing 3-argument `IndexManyAsync`/`DeleteManyAsync` overloads are unchanged — they delegate to the 4-argument overload passing `SearchBulkWriteOptions.Default` (`MaxBatchesPerSecond = null`), which is byte-for-byte today's unthrottled, sequential behavior. Passing `SearchBulkWriteOptions.Default` explicitly is therefore equivalent to calling the 3-argument overload. Note that `DeleteManyAsync`'s 4-argument overload accepts `bulkOptions` for interface parity only — neither provider chunks a delete-by-id bulk call into multiple dispatches, so there is no inter-batch gap to pace; see each provider's own README for the throttled `IndexManyAsync` path, which does chunk.
+
 ## The `RequireExactTotalHits` → `ToPagedList()` cost and accuracy note
 
 By default (`RequireExactTotalHits = false`), Meilisearch reports an **estimated** total (`TotalHitsAccuracy.Estimated`, which can be over or under the true count) and ElasticSearch caps its exact-count work at its `track_total_hits` default (`TotalHitsAccuracy.LowerBound` once that ceiling is hit). Both are materially cheaper than an exact count. Setting `RequireExactTotalHits = true` costs more on both engines but guarantees `TotalHitsAccuracy.Exact`.

@@ -123,6 +123,20 @@ Every write on a Meilisearch instance — across **every index** on that instanc
 
 Neither of these is visible from this package's types alone — `ISearchIndex<TDocument>`/`MeilisearchOptions` say nothing about instance topology, because instance topology is a deployment decision, not an API concern. It is deliberately called out here rather than left as a surprise.
 
+## Pacing a large reindex — `SearchBulkWriteOptions`
+
+The global-queue behaviour above is exactly what `IndexManyAsync`'s 4-argument overload exists to mitigate — pace a large reindex so it does not starve latency-sensitive writes to other indexes on the same instance:
+
+```csharp
+Result<SearchBulkReceipt> receipt = await index.IndexManyAsync(
+    products,
+    SearchWriteConsistency.Accepted,
+    new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
+    ct);
+```
+
+This provider dispatches each `MeilisearchOptions.DefaultBatchSize`-sized batch via the SDK's single-batch `AddDocumentsAsync` call and awaits a computed delay between batches after the first — the same call `IndexAsync` already makes with a one-element list, so no other write behaviour changes. `MaxBatchesPerSecond = null` (the 3-argument overload's default) skips the delay entirely, leaving today's single-`AddDocumentsInBatchesAsync`-equivalent pacing unchanged. `DeleteManyAsync`'s 4-argument overload accepts `bulkOptions` for interface parity only — this provider dispatches a document-id bulk delete as one request regardless of size, so there is no inter-batch gap to pace.
+
 ## Package
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see [09.Search/CLAUDE.md](../CLAUDE.md) for the full interface contracts, filter-compiler escaping/precedence rules, and AOT posture.

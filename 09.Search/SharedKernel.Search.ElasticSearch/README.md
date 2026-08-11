@@ -136,6 +136,20 @@ await cursorSearch.CloseCursorAsync(cursor.Value, ct);
 
 Built on point-in-time plus `search_after` — never the scroll API, which Elastic explicitly de-recommends for deep pagination. `SearchCursor.Token` is opaque and must never be parsed. Distinct from `ISearchIndex<TDocument>.EnumerateAsync`, which is an unordered corpus walk for reindex/export, not relevance-ordered — Meilisearch has no `search_after`/point-in-time equivalent at any price, which is why this contract is declared here, not on the neutral surface.
 
+## Pacing a large bulk write — `SearchBulkWriteOptions`
+
+`IndexManyAsync`'s 4-argument overload paces this provider's existing byte/document-count batch loop (`BulkMaxBytes`/`BulkMaxDocuments`) so a large reindex does not starve concurrent read/query traffic against the same cluster:
+
+```csharp
+Result<SearchBulkReceipt> receipt = await index.IndexManyAsync(
+    orders,
+    SearchWriteConsistency.Accepted,
+    new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
+    ct);
+```
+
+This provider already runs a sequential `foreach` over its own byte/document-count batches, so honoring `MaxBatchesPerSecond` was a straightforward insertion of a computed delay before every batch dispatch after the first — no restructuring of the batching or serialization logic itself. `MaxBatchesPerSecond = null` (the 3-argument overload's default) skips the delay entirely, leaving today's unthrottled `foreach` unchanged. `DeleteManyAsync`'s 4-argument overload accepts `bulkOptions` for interface parity only — this provider dispatches a document-id bulk delete as a single `BulkAsync` call regardless of size, so there is no inter-batch gap to pace.
+
 ## Hard warning — `MaxTotalHits` defaults to 1000, not ElasticSearch's native 10 000
 
 ElasticSearch's own `index.max_result_window` defaults to 10 000; this package defaults `MaxTotalHits` to **1000** instead — the same ceiling Meilisearch's `maxTotalHits` defaults to — and `EnsureIndexAsync` pushes `index.max_result_window` down to match. This is deliberate, cross-provider-parity behaviour, not an oversight: a query proven legal against one provider is thereby guaranteed legal against the other, so a provider swap never converts a page-51 query into a production surprise. The trade-off is real — this knowingly hobbles ElasticSearch's stronger native ceiling — and is the change most likely to generate "the abstraction broke my search" friction.
