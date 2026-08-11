@@ -1,5 +1,6 @@
 using System.Reflection;
 using FluentAssertions;
+using SharedKernel.Primitives.Results;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.Search.Abstractions.Models;
 
@@ -141,6 +142,86 @@ public sealed class ContractShapeTests
         properties.Should().HaveCount(4, "ProviderName, MaxTotalHits, MaxFacetValues, RegisteredIndexes — and nothing else");
         properties.Should().NotContain(p => p.PropertyType.IsEnum,
             "no property may be a capability-flags enum — the compile-error-on-swap mechanism replaces runtime flag checks");
+    }
+
+    // T-31 (P-354): lock the two new 4-arg IndexManyAsync/DeleteManyAsync overloads (D-32/D-33, C-52)
+    // onto ISearchIndex<TDocument> alongside the unchanged 3-arg overloads, against silent regression —
+    // e.g. a future edit collapsing the pair back into one method, or widening SearchBulkWriteOptions
+    // into a defaulted parameter on the existing overload (the D-33 design lock this domain's brain
+    // explicitly rejects, since a default parameter would silently rebind existing 3-positional-argument
+    // call sites' CancellationToken argument instead of failing to compile).
+
+    [Theory]
+    [InlineData(nameof(ISearchIndex<TestDocument>.IndexManyAsync))]
+    [InlineData(nameof(ISearchIndex<TestDocument>.DeleteManyAsync))]
+    public void BulkWriteMember_HasExactlyTwoOverloads(string memberName)
+    {
+        var methods = SearchIndexType.GetMethods().Where(m => m.Name == memberName).ToList();
+
+        methods.Should().HaveCount(2, $"{memberName} must have exactly the 3-arg (unchanged) and 4-arg " +
+            "(SearchBulkWriteOptions-carrying) overloads — never collapsed into one, never a third");
+    }
+
+    [Fact]
+    public void IndexManyAsync_ThreeArgOverload_HasUnchangedParameterShape()
+    {
+        var method = SearchIndexType.GetMethods()
+            .Single(m => m.Name == nameof(ISearchIndex<TestDocument>.IndexManyAsync) && m.GetParameters().Length == 3);
+
+        var parameters = method.GetParameters();
+        parameters[0].ParameterType.GetGenericTypeDefinition().Should().Be(typeof(IReadOnlyCollection<>));
+        parameters[1].ParameterType.Should().Be(typeof(SearchWriteConsistency));
+        parameters[2].ParameterType.Should().Be(typeof(CancellationToken));
+        parameters[2].IsOptional.Should().BeTrue("CancellationToken cancellationToken = default remains the trailing optional parameter");
+    }
+
+    [Fact]
+    public void IndexManyAsync_FourArgOverload_HasSearchBulkWriteOptionsAsMandatoryThirdParameter()
+    {
+        var method = SearchIndexType.GetMethods()
+            .Single(m => m.Name == nameof(ISearchIndex<TestDocument>.IndexManyAsync) && m.GetParameters().Length == 4);
+
+        var parameters = method.GetParameters();
+        parameters[0].ParameterType.GetGenericTypeDefinition().Should().Be(typeof(IReadOnlyCollection<>));
+        parameters[1].ParameterType.Should().Be(typeof(SearchWriteConsistency));
+        parameters[2].ParameterType.Should().Be(typeof(SearchBulkWriteOptions),
+            "the new overload's third parameter must be SearchBulkWriteOptions, never inserted before cancellationToken on the 3-arg overload");
+        parameters[2].IsOptional.Should().BeFalse(
+            "SearchBulkWriteOptions must be a mandatory, non-defaulted parameter on this distinct overload — D-33's design lock");
+        parameters[3].ParameterType.Should().Be(typeof(CancellationToken));
+        parameters[3].IsOptional.Should().BeTrue();
+        method.ReturnType.Should().Be(typeof(Task<Result<SearchBulkReceipt>>));
+    }
+
+    [Fact]
+    public void DeleteManyAsync_ThreeArgOverload_HasUnchangedParameterShape()
+    {
+        var method = SearchIndexType.GetMethods()
+            .Single(m => m.Name == nameof(ISearchIndex<TestDocument>.DeleteManyAsync) && m.GetParameters().Length == 3);
+
+        var parameters = method.GetParameters();
+        parameters[0].ParameterType.GetGenericTypeDefinition().Should().Be(typeof(IReadOnlyCollection<>));
+        parameters[0].ParameterType.GetGenericArguments()[0].Should().Be(typeof(string));
+        parameters[1].ParameterType.Should().Be(typeof(SearchWriteConsistency));
+        parameters[2].ParameterType.Should().Be(typeof(CancellationToken));
+        parameters[2].IsOptional.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DeleteManyAsync_FourArgOverload_HasSearchBulkWriteOptionsAsMandatoryThirdParameter()
+    {
+        var method = SearchIndexType.GetMethods()
+            .Single(m => m.Name == nameof(ISearchIndex<TestDocument>.DeleteManyAsync) && m.GetParameters().Length == 4);
+
+        var parameters = method.GetParameters();
+        parameters[0].ParameterType.GetGenericTypeDefinition().Should().Be(typeof(IReadOnlyCollection<>));
+        parameters[0].ParameterType.GetGenericArguments()[0].Should().Be(typeof(string));
+        parameters[1].ParameterType.Should().Be(typeof(SearchWriteConsistency));
+        parameters[2].ParameterType.Should().Be(typeof(SearchBulkWriteOptions));
+        parameters[2].IsOptional.Should().BeFalse();
+        parameters[3].ParameterType.Should().Be(typeof(CancellationToken));
+        parameters[3].IsOptional.Should().BeTrue();
+        method.ReturnType.Should().Be(typeof(Task<Result<SearchBulkReceipt>>));
     }
 
     private sealed class TestDocument : ISearchDocument
