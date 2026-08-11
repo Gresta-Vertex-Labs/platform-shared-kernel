@@ -6,8 +6,9 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Search.Abstractions</PackageId>
-    <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
+    <!-- WO-055/P-354 (P-10): MINOR bump — new public SearchBulkWriteOptions type, additive only -->
+    <Version>1.1.0</Version>
+    <PackageVersion>1.1.0</PackageVersion>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>

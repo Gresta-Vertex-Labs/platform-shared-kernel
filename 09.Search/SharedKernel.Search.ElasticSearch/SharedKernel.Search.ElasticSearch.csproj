@@ -12,8 +12,18 @@
     -->
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Search.ElasticSearch</PackageId>
-    <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
+    <!--
+      WO-055 P-09/P-10 version-bump decision (recorded per the phase's own instruction not to silently
+      collapse two distinct bumps): P-353's internal-only bulk double-serialization fix is PATCH-shaped
+      in isolation, and P-354's new SearchBulkWriteOptions overloads are MINOR-shaped in isolation, but
+      both land in the SAME work order and the SAME re-pack session with no intervening published
+      release ever consuming a standalone PATCH artifact — a real 1.0.1 pack would be immediately
+      superseded by 1.1.0 with zero consumer ever depending on the intermediate version. The two bumps
+      are therefore folded into a single MINOR release, 1.1.0, covering both fixes in one pack. This is
+      a deliberate decision, not an oversight — see 09.Search/state-map.md Phase: Published P-09/P-10.
+    -->
+    <Version>1.1.0</Version>
+    <PackageVersion>1.1.0</PackageVersion>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
