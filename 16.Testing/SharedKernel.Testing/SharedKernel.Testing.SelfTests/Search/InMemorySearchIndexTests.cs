@@ -587,6 +587,150 @@ public sealed class InMemorySearchIndexTests
         Assert.True((await index.WaitUntilSearchableAsync(indexResult.Value, TimeSpan.FromSeconds(1), CancellationToken.None)).IsFailure);
     }
 
+    // --- P-355/WO-055: 4-arg SearchBulkWriteOptions overload parity + LastBulkWriteOptions audit surface (T-75/T-76) ---
+
+    [Fact]
+    public async Task IndexManyAsync_FourArgOverloadWithDefaultOptions_ProducesIdenticalReceipt_ToThreeArgOverload()
+    {
+        // Re-runs IndexManyAsync_PartialInvalidIds_ReturnsSuccess_WithPerItemFailures through the new
+        // 4-arg path on a separate, otherwise-identical fake instance -- intra-package parity only (this
+        // package takes no ProjectReference to the real Meilisearch/ElasticSearch providers).
+        var threeArgIndex = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        var fourArgIndex = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        TestProductDocument[] Docs() =>
+        [
+            Doc("prod-1", "Widget", "active", 9.99, "tenant-a"),
+            Doc("bad id!", "Broken", "active", 1.0, "tenant-a"),
+        ];
+
+        var threeArgResult = await threeArgIndex.IndexManyAsync(Docs(), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var fourArgResult = await fourArgIndex.IndexManyAsync(
+            Docs(), SearchWriteConsistency.Accepted, SearchBulkWriteOptions.Default, CancellationToken.None);
+
+        Assert.True(threeArgResult.IsSuccess);
+        Assert.True(fourArgResult.IsSuccess);
+        Assert.Equal(threeArgResult.Value.SucceededCount, fourArgResult.Value.SucceededCount);
+        Assert.Equal(threeArgResult.Value.HasFailures, fourArgResult.Value.HasFailures);
+        Assert.True(threeArgResult.Value.Failures.SequenceEqual(fourArgResult.Value.Failures));
+        Assert.Equal(threeArgResult.Value.Receipt, fourArgResult.Value.Receipt);
+    }
+
+    [Fact]
+    public async Task DeleteManyAsync_FourArgOverloadWithDefaultOptions_ProducesIdenticalReceipt_ToThreeArgOverload()
+    {
+        // Re-runs DeleteManyAsync_MixedPresence_CountsEveryRequestedIdAsSucceeded through the new 4-arg
+        // path on a separate, otherwise-identical fake instance.
+        var threeArgIndex = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        var fourArgIndex = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        await threeArgIndex.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await fourArgIndex.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+
+        var threeArgResult = await threeArgIndex.DeleteManyAsync(["prod-1", "never-existed"], SearchWriteConsistency.Accepted, CancellationToken.None);
+        var fourArgResult = await fourArgIndex.DeleteManyAsync(
+            ["prod-1", "never-existed"], SearchWriteConsistency.Accepted, SearchBulkWriteOptions.Default, CancellationToken.None);
+
+        Assert.True(threeArgResult.IsSuccess);
+        Assert.True(fourArgResult.IsSuccess);
+        Assert.Equal(threeArgResult.Value.SucceededCount, fourArgResult.Value.SucceededCount);
+        Assert.Equal(threeArgResult.Value.HasFailures, fourArgResult.Value.HasFailures);
+        Assert.True(threeArgResult.Value.Failures.SequenceEqual(fourArgResult.Value.Failures));
+        Assert.Equal(threeArgResult.Value.Receipt, fourArgResult.Value.Receipt);
+    }
+
+    [Fact]
+    public void LastBulkWriteOptions_IsNull_BeforeAnyBulkCall()
+    {
+        var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+
+        Assert.Null(index.LastBulkWriteOptions);
+    }
+
+    [Fact]
+    public async Task LastBulkWriteOptions_ReflectsCallerSuppliedThrottle_AfterExplicitFourArgIndexManyCall()
+    {
+        var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        var throttle = new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 };
+
+        await index.IndexManyAsync([Doc("prod-1", "Widget", "active", 9.99, "tenant-a")], SearchWriteConsistency.Accepted, throttle, CancellationToken.None);
+
+        Assert.Same(throttle, index.LastBulkWriteOptions);
+        Assert.Equal(5, index.LastBulkWriteOptions!.MaxBatchesPerSecond);
+    }
+
+    [Fact]
+    public async Task LastBulkWriteOptions_ReflectsCallerSuppliedThrottle_AfterExplicitFourArgDeleteManyCall()
+    {
+        var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        var throttle = new SearchBulkWriteOptions { MaxBatchesPerSecond = 2.5 };
+
+        await index.DeleteManyAsync(["prod-1"], SearchWriteConsistency.Accepted, throttle, CancellationToken.None);
+
+        Assert.Same(throttle, index.LastBulkWriteOptions);
+        Assert.Equal(2.5, index.LastBulkWriteOptions!.MaxBatchesPerSecond);
+    }
+
+    [Fact]
+    public async Task LastBulkWriteOptions_ReflectsDefault_AfterThreeArgCall_FollowingAPriorCustomFourArgCall()
+    {
+        // Proves genuine per-call delegation (3-arg -> 4-arg passing SearchBulkWriteOptions.Default),
+        // not a field the 3-arg path merely defaults once and never revisits: a prior 4-arg call with a
+        // real throttle must be overwritten by a SUBSEQUENT 3-arg call reverting to Default.
+        var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        await index.IndexManyAsync(
+            [Doc("prod-1", "Widget", "active", 9.99, "tenant-a")],
+            SearchWriteConsistency.Accepted,
+            new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
+            CancellationToken.None);
+        Assert.Equal(5, index.LastBulkWriteOptions!.MaxBatchesPerSecond);
+
+        await index.IndexManyAsync([Doc("prod-2", "Gadget", "active", 4.99, "tenant-a")], SearchWriteConsistency.Accepted, CancellationToken.None);
+
+        Assert.Same(SearchBulkWriteOptions.Default, index.LastBulkWriteOptions);
+        Assert.Null(index.LastBulkWriteOptions.MaxBatchesPerSecond);
+    }
+
+    [Fact]
+    public async Task LastBulkWriteOptions_IsSharedAcrossIndexManyAndDeleteManyAsync()
+    {
+        // IndexManyAsync and DeleteManyAsync write into the SAME audit surface -- a 3-arg DeleteManyAsync
+        // call must revert LastBulkWriteOptions to Default even though the most recent throttle came from
+        // an IndexManyAsync call, proving the two members are not tracked independently.
+        var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        await index.IndexAsync(Doc("prod-1", "Widget", "active", 9.99, "tenant-a"), SearchWriteConsistency.Accepted, CancellationToken.None);
+        await index.IndexManyAsync(
+            [Doc("prod-2", "Gadget", "active", 4.99, "tenant-a")],
+            SearchWriteConsistency.Accepted,
+            new SearchBulkWriteOptions { MaxBatchesPerSecond = 5 },
+            CancellationToken.None);
+        Assert.Equal(5, index.LastBulkWriteOptions!.MaxBatchesPerSecond);
+
+        await index.DeleteManyAsync(["prod-1"], SearchWriteConsistency.Accepted, CancellationToken.None);
+
+        Assert.Same(SearchBulkWriteOptions.Default, index.LastBulkWriteOptions);
+    }
+
+    [Fact]
+    public async Task IndexManyAsync_WithThrottleSet_AppliesNoArtificialDelay()
+    {
+        // The fake's documented contract: MaxBatchesPerSecond is accepted and recorded, never used to
+        // simulate real provider pacing. A throttle of 1 batch/second would, under REAL pacing, force a
+        // multi-batch write to take whole seconds -- the in-memory dictionary write must remain instant.
+        var index = new InMemorySearchIndex<TestProductDocument>(TenantedDefinition());
+        var documents = Enumerable.Range(0, 50)
+            .Select(i => Doc($"prod-{i}", "Widget", "active", i, "tenant-a"))
+            .ToArray();
+        var throttle = new SearchBulkWriteOptions { MaxBatchesPerSecond = 1 };
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await index.IndexManyAsync(documents, SearchWriteConsistency.Accepted, throttle, CancellationToken.None);
+        stopwatch.Stop();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(50, result.Value.SucceededCount);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1), $"Expected no artificial pacing delay, elapsed {stopwatch.Elapsed}.");
+    }
+
     private static TestProductDocument Doc(
         string id,
         string name,
