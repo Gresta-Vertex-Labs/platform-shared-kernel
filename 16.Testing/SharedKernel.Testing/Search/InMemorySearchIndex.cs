@@ -112,6 +112,20 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
     /// </summary>
     public IReadOnlyList<string> DeletedDocumentIds => _deletedDocumentIds.ToArray();
 
+    /// <summary>
+    /// Gets the <see cref="SearchBulkWriteOptions"/> most recently supplied to a bulk write
+    /// (<see cref="IndexManyAsync(IReadOnlyCollection{TDocument}, SearchWriteConsistency, SearchBulkWriteOptions, CancellationToken)"/>
+    /// or
+    /// <see cref="DeleteManyAsync(IReadOnlyCollection{string}, SearchWriteConsistency, SearchBulkWriteOptions, CancellationToken)"/>)
+    /// -- <see langword="null"/> until the first bulk call. Updated on every bulk call, including via
+    /// the 3-arg overloads' own <see cref="SearchBulkWriteOptions.Default"/> delegation, so it is
+    /// always populated after any bulk call, never only after an explicit 4-arg one. No real
+    /// throttling is applied here -- an in-memory dictionary write has no batch-dispatch loop to
+    /// pace -- this property exists solely so a test can assert the fake genuinely received the
+    /// caller's configuration instead of silently discarding it.
+    /// </summary>
+    public SearchBulkWriteOptions? LastBulkWriteOptions { get; private set; }
+
     /// <inheritdoc />
     public Task<SharedKernel.Primitives.Results.Result<SearchWriteReceipt>> IndexAsync(
         TDocument document, SearchWriteConsistency consistency, CancellationToken cancellationToken = default)
@@ -146,12 +160,32 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to the 4-arg overload passing <see cref="SearchBulkWriteOptions.Default"/> --
+    /// today's unthrottled behavior, unchanged.
+    /// </remarks>
     public Task<SharedKernel.Primitives.Results.Result<SearchBulkReceipt>> IndexManyAsync(
         IReadOnlyCollection<TDocument> documents,
         SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default) =>
+        IndexManyAsync(documents, consistency, SearchBulkWriteOptions.Default, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Records <paramref name="bulkOptions"/> into <see cref="LastBulkWriteOptions"/> before
+    /// performing the write. No real pacing is applied -- see <see cref="LastBulkWriteOptions"/>'s
+    /// own remarks for why.
+    /// </remarks>
+    public Task<SharedKernel.Primitives.Results.Result<SearchBulkReceipt>> IndexManyAsync(
+        IReadOnlyCollection<TDocument> documents,
+        SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(documents);
+        ArgumentNullException.ThrowIfNull(bulkOptions);
+
+        LastBulkWriteOptions = bulkOptions;
 
         if (SimulateFailure)
         {
@@ -231,12 +265,32 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to the 4-arg overload passing <see cref="SearchBulkWriteOptions.Default"/> --
+    /// today's unthrottled behavior, unchanged.
+    /// </remarks>
     public Task<SharedKernel.Primitives.Results.Result<SearchBulkReceipt>> DeleteManyAsync(
         IReadOnlyCollection<string> documentIds,
         SearchWriteConsistency consistency,
+        CancellationToken cancellationToken = default) =>
+        DeleteManyAsync(documentIds, consistency, SearchBulkWriteOptions.Default, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Records <paramref name="bulkOptions"/> into <see cref="LastBulkWriteOptions"/> before
+    /// performing the deletes. No real pacing is applied -- see <see cref="LastBulkWriteOptions"/>'s
+    /// own remarks for why.
+    /// </remarks>
+    public Task<SharedKernel.Primitives.Results.Result<SearchBulkReceipt>> DeleteManyAsync(
+        IReadOnlyCollection<string> documentIds,
+        SearchWriteConsistency consistency,
+        SearchBulkWriteOptions bulkOptions,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(documentIds);
+        ArgumentNullException.ThrowIfNull(bulkOptions);
+
+        LastBulkWriteOptions = bulkOptions;
 
         if (SimulateFailure)
         {
@@ -511,6 +565,7 @@ public sealed class InMemorySearchIndex<TDocument> : ISearchIndex<TDocument>
         _indexedDocumentIds.Clear();
         _deletedDocumentIds.Clear();
         _issuedTokens.Clear();
+        LastBulkWriteOptions = null;
     }
 
     private static bool IsValidDocumentId(string documentId) =>
