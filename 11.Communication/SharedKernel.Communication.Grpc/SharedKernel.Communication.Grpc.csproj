@@ -22,7 +22,20 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!--
+      NU5104: a stable package must not depend on a prerelease package. Suppressed deliberately —
+      OpenTelemetry.Instrumentation.GrpcNetClient 1.15.1-beta.1 is the only available net10.0-compatible
+      version of this package today (documented in this domain's CLAUDE.md Technology Stack table);
+      pinning this package's own Version below 1.0.0 solely to silence NU5104 would be a worse
+      workaround than acknowledging the real, already-documented upstream constraint.
+    -->
+    <NoWarn>$(NoWarn);NU5104</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <!--
