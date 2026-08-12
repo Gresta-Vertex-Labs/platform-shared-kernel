@@ -19,7 +19,7 @@ public sealed class HttpResponseMessageExtensionsTests
         var response = new HttpResponseMessage(statusCode);
 
         // Act
-        var result = await response.EnsureSuccessOrErrorAsync<string>();
+        var result = await response.EnsureSuccessOrErrorAsync();
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -39,7 +39,7 @@ public sealed class HttpResponseMessageExtensionsTests
         var response = new HttpResponseMessage(statusCode) { Content = content };
 
         // Act
-        var result = await response.EnsureSuccessOrErrorAsync<string>();
+        var result = await response.EnsureSuccessOrErrorAsync();
 
         // Assert
         result.IsFailure.Should().BeTrue();
@@ -56,7 +56,7 @@ public sealed class HttpResponseMessageExtensionsTests
         var response = new HttpResponseMessage(HttpStatusCode.UnprocessableEntity) { Content = content };
 
         // Act
-        var result = await response.EnsureSuccessOrErrorAsync<string>();
+        var result = await response.EnsureSuccessOrErrorAsync();
 
         // Assert
         result.IsFailure.Should().BeTrue();

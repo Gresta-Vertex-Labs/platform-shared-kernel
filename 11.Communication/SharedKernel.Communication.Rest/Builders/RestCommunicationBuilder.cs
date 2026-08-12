@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
 using Polly;
 using SharedKernel.Communication.Internal.Resolvers;
 using SharedKernel.Communication.Rest.Handlers;
@@ -14,6 +15,10 @@ internal sealed class RestCommunicationBuilder : IRestCommunicationBuilder
 {
     // Captured once at construction time to avoid O(n) Services.Any(...) probe on every AddRestClient call.
     private readonly bool _resolverRegistered;
+
+    // Stateless — validates the just-constructed options instance directly, at the point of consumption,
+    // since RestClientOptions is never resolved via IOptions<RestClientOptions>.Value (P-358/WO-056).
+    private static readonly RestClientOptionsValidator OptionsValidator = new();
 
     internal RestCommunicationBuilder(IServiceCollection services)
     {
@@ -32,6 +37,16 @@ internal sealed class RestCommunicationBuilder : IRestCommunicationBuilder
     {
         var options = new RestClientOptions();
         configure?.Invoke(options);
+
+        // Validate the just-constructed instance immediately after configure?.Invoke(options) and
+        // before it is applied to the HttpClient/resilience pipeline — the registered
+        // IValidateOptions<RestClientOptions> can never structurally fire on its own, since this type
+        // is never resolved via IOptions<RestClientOptions>.Value (P-358/WO-056).
+        var validationResult = OptionsValidator.Validate(name, options);
+        if (validationResult.Failed)
+        {
+            throw new OptionsValidationException(name, typeof(RestClientOptions), validationResult.Failures);
+        }
 
         var hasBaseAddress = !string.IsNullOrWhiteSpace(options.BaseAddress);
         var hasResolver = _resolverRegistered;
@@ -76,6 +91,23 @@ internal sealed class RestCommunicationBuilder : IRestCommunicationBuilder
                     capturedServiceName));
         }
 
+        // Fixed pipeline order (outer → inner): CorrelationId → TenantId → IdempotencyKey (conditional)
+        // → StandardResilienceHandler → transport. Registration order on IHttpClientBuilder determines
+        // outer-to-inner handler order — the first-registered handler wraps every handler registered
+        // after it — so these three header-injecting handlers must be registered BEFORE
+        // AddStandardResilienceHandler for them to run exactly once per logical call, outside Polly's
+        // retry loop, rather than being re-entered on every retry attempt.
+        builder.AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+        builder.AddHttpMessageHandler<TenantIdDelegatingHandler>();
+
+        // Opt-in idempotency-key propagation (P-364/WO-056) — only added when explicitly enabled.
+        // Positioned after TenantIdDelegatingHandler, before StandardResilienceHandler so the key is
+        // set once, before Polly's first attempt, and survives unchanged through every retry.
+        if (options.EnableIdempotencyKeyPropagation)
+        {
+            builder.AddHttpMessageHandler<IdempotencyKeyDelegatingHandler>();
+        }
+
         // Attach StandardResilienceHandler — mandatory; configures retry, circuit breaker, timeout.
         // Polly validation constraint: SamplingDuration must be >= 2 * AttemptTimeout.
         var resilience = options.Resilience;
@@ -105,10 +137,6 @@ internal sealed class RestCommunicationBuilder : IRestCommunicationBuilder
                 o.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(resilience.BreakDurationSec);
             }
         });
-
-        // Fixed pipeline order: CorrelationId → TenantId → StandardResilienceHandler → transport
-        builder.AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
-        builder.AddHttpMessageHandler<TenantIdDelegatingHandler>();
 
         return this;
     }

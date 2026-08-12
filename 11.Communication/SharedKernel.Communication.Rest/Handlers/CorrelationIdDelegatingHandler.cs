@@ -21,7 +21,7 @@ internal sealed class CorrelationIdDelegatingHandler : DelegatingHandler
     {
         if (!request.Headers.Contains(HeaderName))
         {
-            var correlationId = Activity.Current?.Id ?? Guid.NewGuid().ToString("N");
+            var correlationId = Activity.Current?.Id ?? Guid.NewGuid().ToString();
             request.Headers.TryAddWithoutValidation(HeaderName, correlationId);
         }
 

@@ -30,33 +30,90 @@ public sealed class RestClientOptions
 
     /// <summary>Resilience pipeline settings (retry, circuit breaker).</summary>
     public RestResilienceOptions Resilience { get; set; } = new();
+
+    /// <summary>
+    /// When <c>true</c>, attaches a stable <c>x-idempotency-key</c> header to every outgoing request
+    /// via the opt-in <c>IdempotencyKeyDelegatingHandler</c>, generated once per logical call and
+    /// preserved unchanged across every Polly-driven retry. Default: <c>false</c>.
+    /// Enable for typed clients issuing non-idempotent verbs (POST/PATCH/DELETE) that a downstream
+    /// service can deduplicate by this header, converting <c>StandardResilienceHandler</c>'s default
+    /// retry behavior from a silent duplicate-side-effect hazard into an explicit, documented guarantee.
+    /// </summary>
+    public bool EnableIdempotencyKeyPropagation { get; set; }
 }
 
 /// <summary>
-/// Validates <see cref="RestClientOptions"/> for clients that do not use service discovery.
-/// BaseAddress is required unless the caller has registered an IServiceEndpointResolver separately.
-/// The endpoint-resolver check cannot be done here (no DI access) — it is enforced in
-/// <c>RestCommunicationBuilder.AddRestClient&lt;TClient&gt;</c> at registration time.
+/// Validates <see cref="RestClientOptions"/> (and its nested <see cref="RestResilienceOptions"/>) for
+/// clients that do not use service discovery. BaseAddress is required unless the caller has registered
+/// an IServiceEndpointResolver separately. The endpoint-resolver check cannot be done here (no DI access)
+/// — it is enforced in <c>RestCommunicationBuilder.AddRestClient&lt;TClient&gt;</c> at registration time.
+/// Invoked directly by <c>RestCommunicationBuilder.AddRestClient&lt;TClient&gt;</c> against the
+/// just-constructed options instance (P-358/WO-056) — this type is also registered as
+/// <see cref="IValidateOptions{TOptions}"/> for any future direct <see cref="IOptions{TOptions}"/>
+/// consumer, but that registration alone is not the enforcement mechanism relied upon, since
+/// <see cref="RestClientOptions"/> is never resolved via <c>IOptions&lt;RestClientOptions&gt;.Value</c>.
 /// </summary>
 internal sealed class RestClientOptionsValidator : IValidateOptions<RestClientOptions>
 {
     public ValidateOptionsResult Validate(string? name, RestClientOptions options)
     {
+        var failures = new List<string>();
+
         // BaseAddress emptiness validation only — resolver presence is checked in the builder.
         // An explicit empty string is suspicious; null means "use service discovery".
         if (options.BaseAddress is not null && string.IsNullOrWhiteSpace(options.BaseAddress))
         {
-            return ValidateOptionsResult.Fail(
-                $"RestClientOptions.BaseAddress must not be an empty or whitespace string. " +
-                $"Set it to a valid URI or leave it null to use IServiceEndpointResolver.");
+            failures.Add(
+                "RestClientOptions.BaseAddress must not be an empty or whitespace string. " +
+                "Set it to a valid URI or leave it null to use IServiceEndpointResolver.");
         }
 
         if (options.TimeoutSeconds <= 0)
         {
-            return ValidateOptionsResult.Fail(
+            failures.Add(
                 $"RestClientOptions.TimeoutSeconds must be greater than zero. Got: {options.TimeoutSeconds}.");
         }
 
-        return ValidateOptionsResult.Success;
+        var resilience = options.Resilience;
+
+        if (resilience.RetryCount <= 0)
+        {
+            failures.Add(
+                $"RestResilienceOptions.RetryCount must be greater than zero. Got: {resilience.RetryCount}.");
+        }
+
+        if (resilience.RetryBaseDelayMs < 0)
+        {
+            failures.Add(
+                $"RestResilienceOptions.RetryBaseDelayMs must not be negative. Got: {resilience.RetryBaseDelayMs}.");
+        }
+
+        if (resilience.FailureThreshold <= 0)
+        {
+            failures.Add(
+                $"RestResilienceOptions.FailureThreshold must be greater than zero. Got: {resilience.FailureThreshold}.");
+        }
+
+        if (resilience.SamplingDurationSec <= 0)
+        {
+            failures.Add(
+                $"RestResilienceOptions.SamplingDurationSec must be greater than zero. Got: {resilience.SamplingDurationSec}.");
+        }
+
+        if (resilience.BreakDurationSec <= 0)
+        {
+            failures.Add(
+                $"RestResilienceOptions.BreakDurationSec must be greater than zero. Got: {resilience.BreakDurationSec}.");
+        }
+
+        if (resilience.TotalTimeoutBufferSec < 0)
+        {
+            failures.Add(
+                $"RestResilienceOptions.TotalTimeoutBufferSec must not be negative. Got: {resilience.TotalTimeoutBufferSec}.");
+        }
+
+        return failures.Count > 0
+            ? ValidateOptionsResult.Fail(failures)
+            : ValidateOptionsResult.Success;
     }
 }

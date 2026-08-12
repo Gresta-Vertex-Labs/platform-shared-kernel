@@ -13,26 +13,32 @@ namespace SharedKernel.Communication.Rest.Extensions;
 public static class HttpResponseMessageExtensions
 {
     /// <summary>
-    /// Returns <c>Result.Success</c> for 2xx responses or deserializes a ProblemDetails body
-    /// into <c>Result.Failure(Error)</c> for non-2xx responses.
-    /// The extension does not deserialize the success payload — callers are responsible for
-    /// reading the response body on success.
+    /// Status-check-only helper: returns <see cref="Result.Success"/> for 2xx responses, or
+    /// deserializes a ProblemDetails body into <see cref="Result.Failure(Error)"/> for non-2xx
+    /// responses. This method never reads or deserializes a success-path response body — its
+    /// signature makes no promise about a payload. Callers that need the deserialized response body
+    /// should use <see cref="ReadEnvelopeAsync{T}(HttpResponseMessage, JsonTypeInfo{T}, CancellationToken)"/>
+    /// or its <see cref="JsonSerializerOptions"/> overload instead.
     /// </summary>
-    /// <typeparam name="T">Expected payload type on success (used only to type the Result wrapper).</typeparam>
-    public static async Task<Result<T>> EnsureSuccessOrErrorAsync<T>(
+    /// <remarks>
+    /// Supersedes the retired generic <c>EnsureSuccessOrErrorAsync&lt;T&gt;</c> (P-361/WO-056), which
+    /// returned <c>Result&lt;T&gt;.Success(default!)</c> unconditionally on 2xx — a generic parameter
+    /// that promised a deserialized payload the method never actually produced.
+    /// </remarks>
+    public static async Task<Result> EnsureSuccessOrErrorAsync(
         this HttpResponseMessage response,
         CancellationToken cancellationToken = default)
     {
         if (response.IsSuccessStatusCode)
         {
-            return Result<T>.Success(default!);
+            return Result.Success();
         }
 
         var error = await ProblemDetailsDeserializer
             .DeserializeAsync(response, cancellationToken)
             .ConfigureAwait(false);
 
-        return Result<T>.Failure(error);
+        return Result.Failure(error);
     }
 
     /// <summary>
