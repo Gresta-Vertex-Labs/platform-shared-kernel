@@ -93,7 +93,7 @@ internal sealed partial class CorrelationTracingInterceptor(ILogger<CorrelationT
             // Inject x-correlation-id — do not overwrite if caller set it
             if (!GrpcMetadataHelper.HasMetadataEntry(headers, CorrelationIdKey))
             {
-                var correlationId = activity?.Id ?? Guid.NewGuid().ToString("N");
+                var correlationId = activity?.Id ?? Guid.NewGuid().ToString();
                 headers = GrpcMetadataHelper.CloneAndAdd(headers, CorrelationIdKey, correlationId);
             }
 
