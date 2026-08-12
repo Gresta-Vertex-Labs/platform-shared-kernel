@@ -108,6 +108,7 @@
     <Project Path="11.Communication/SharedKernel.Communication.Internal/SharedKernel.Communication.Internal.Tests/SharedKernel.Communication.Internal.Tests.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Rest/SharedKernel.Communication.Rest.csproj" />
     <Project Path="11.Communication/SharedKernel.Communication.Rest/SharedKernel.Communication.Rest.Tests/SharedKernel.Communication.Rest.Tests.csproj" />
+    <Project Path="11.Communication/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/12.Security/">
     <Project Path="12.Security/SharedKernel.Security.Abstractions/SharedKernel.Security.Abstractions.csproj" />
