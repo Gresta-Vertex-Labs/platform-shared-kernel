@@ -79,7 +79,7 @@ Format when blocked:
 | 08 | [Storage](08.Storage/state-map.md) | Published | `●` | SK.08.Published complete (7/7) — found and fixed a Docs-phase gap (`PackageReadmeFile`/packed `README.md` never wired into any of the three `.csproj` files, causing a `NU5039` pack warning despite complete READMEs existing); all three pack clean to `.nupkg`+`.snupkg` with zero warnings; new `08.Storage/consumer-verify` harness (five surfaces) proves `AddSharedKernelS3Storage()`/`AddSharedKernelObsStorage()` resolve `IFileStorage`/`IBlobUriGenerator` through a real `IHost.StartAsync()`, both providers compose side by side via keyed DI with zero collision (exercises the README's C-29/DO-06 pattern against real compiled code for the first time), and missing options fail loudly at startup, not silently. All six phases (Design→Published) now `●` — 08.Storage domain (WO-043) complete end to end. | — |
 | 09 | [Search](09.Search/state-map.md) | Published | `●` | **SK.09.Published re-closed (P-09/P-10, 10/10) — WO-055 fully shipped, 158/158 tasks across the whole domain.** All three packages re-packed this session: `SharedKernel.Search.Abstractions`/`.Meilisearch`/`.ElasticSearch` each `1.0.0` → `1.1.0`, a deliberate single MINOR bump folding P-353's PATCH-shaped internal fixes and P-354's MINOR-shaped additive `SearchBulkWriteOptions` overloads together rather than shipping an intermediate PATCH artifact no consumer could ever depend on (recorded explicitly in both provider `.csproj` files and the P-09 task row, not silently collapsed). `dotnet pack` clean, zero `NU5039`/`NU5128`; all three `consumer-verify` harnesses re-run against the rebuilt 1.1.0 assemblies — 10/10 surfaces pass with zero DI exceptions. Full regression against real Docker containers: **371/371 passing**, zero regressions from the re-pack. All six phases (Design/Scaffold/Core/Tests/Docs/Published) now `●` for all three packages — WO-044 (131 tasks) and WO-055 (27 tasks) both fully shipped end to end. | — |
 | 10 | [Intelligence](10.Intelligence/state-map.md) | Published | `●` | WO-048 (2026-07-27, arch-lead decision + intelligence-arch-planner refactor): `SharedKernel.AI.Milvus` retracted from the plan entirely — `Milvus.Client` never shipped a stable release, sat `⚑` Blocked at Scaffold S-05 across every session since 2026-07-22 with no path forward, and the user decided to drop it rather than keep carrying it as a recurring blocker. Domain re-scoped to its three real packages (`.Abstractions`/`.Qdrant`/`.SemanticKernel`) and closed out: 49/49 tasks complete, 0 blocked, all six phases (Design/Scaffold/Core/Tests/Docs/Published) `●`. `.Abstractions` remains provider-count-agnostic by design — a future second vector provider can still be added as new tasks without touching it. 276/276 tests green. | — |
-| 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | **SK.11.Tests re-closed (38/38) — WO-056's eight deferred regression/DI-resolution test tasks (T-31–T-38) shipped.** Canonical hyphenated-GUID-fallback regression coverage added to `.Rest`/`.Grpc` (T-31); the SK0011/SK0001 temp-analyzer-verification technique was applied to `.Rest`/`.GraphQL` for the first time, zero findings, closing the verification-coverage gap that let the `.Rest` SK0011 occurrence go undetected originally (T-32); deterministic `FakeClock`-driven TTL-cache tests for `KubernetesServiceEndpointResolver` (cache-hit/cache-expired/stale-while-revalidate) added to `.Internal`, seeding the resolver's cache via reflection since `Microsoft.Extensions.ServiceDiscovery`'s real resolver never re-queries a successfully-resolved query string (T-33); startup-level `OptionsValidationException` proofs for `.Rest`/`.GraphQL` firing through real `AddRestClient`/`AddSharedKernelGraphQL` registration, not just direct validator calls (T-34); a genuine gRPC deadline-exceeded behavioral proof (`RpcException`/`StatusCode.DeadlineExceeded`) plus `GrpcClientOptionsValidator` registration-time proofs added to `.Grpc` (T-35); the symmetric service-discovery registration guard proven in both call orders in `.Internal` (T-36); the non-generic `EnsureSuccessOrErrorAsync`'s status-check-only contract reconfirmed plus a zero-remaining-`<T>`-call-site audit in `.Rest` (T-37); full `IdempotencyKeyDelegatingHandler` coverage including a same-`HttpRequestMessage`-instance retry-stability proof and behavioral pipeline-presence/absence proofs in `.Rest` (T-38). Full regression: `.Rest.Tests` 77/77 (was 66), `.Grpc.Tests` 64/64 (was 60), `.GraphQL.Tests` 45/45 (was 43), `.Internal.Tests` 57/57 (was 52) — 243/243, zero regressions. Domain Summary Board row left at Docs/`●` per the same precedent set by the SK.11.Design/Scaffold/Rest/Grpc/GraphQL/Internal promotions immediately above — Tests is earlier in the pipeline than the domain's already-reached Docs/Published milestones, so the row is not regressed. | WO-056's remaining phase keys (Docs/Published still carry pending tasks from the same review, incl. DO-09–DO-15 and PB-07/PB-08) remain open — Rest, Grpc, GraphQL, Internal, and Tests are now closed; five of nine phase keys done. |
+| 11 | [Communication](11.Communication/state-map.md) | Docs | `●` | **SK.11.Docs re-closed (15/15) — WO-056's seven remaining Docs tasks (DO-09–DO-15) shipped.** Verified each against both the current `CLAUDE.md` text and the real shipped `.cs` source directly, per this session's explicit instruction not to assume a task's description still matched reality. Six of the seven (DO-09/P-356 canonical GUID fallback, DO-10/P-357 `IClock`-sourced TTL comparisons, DO-12/P-359 real per-call deadline + `GrpcClientOptionsValidator`, DO-13/P-360 symmetric service-discovery guard, DO-14/P-361 non-generic `EnsureSuccessOrErrorAsync`, DO-15/P-364 `IdempotencyKeyDelegatingHandler`) were already fully and correctly documented — landed in the same edit passes that shipped R-22–R-26/G-18–G-20/GQ-10/I-12/I-13 — confirmed verified-no-change via grep against the compiled source. DO-11 found one genuine gap: the layering-violation guard table carried a stale, pre-P-358 duplicate row ("`RestClientOptionsValidator` not registered" — superseded by an already-corrected combined row a few lines above it); removed the stale duplicate. Every phase key in `11.Communication/state-map.md` is now `●` except Published (PB-05/PB-06/PB-07/PB-08 remain `○`) — WO-056's last open phase key. | Published: PB-07 (`consumer-verify` content) and PB-08 (per-package `README.md` + `PackageReadmeFile` wiring) must land before the gated PB-05/PB-06 pack-and-publish tasks — this domain's first-ever NuGet release. |
 | 12 | [Security](12.Security/state-map.md) | Published | `●` | Both packages packed to `.nupkg` + `.snupkg`; 13 Abstractions + 33 Oidc tests passing; full NuGet metadata present. | — |
 | 13 | [ServiceDefaults](13.ServiceDefaults/state-map.md) | Published | `●` | **WO-054/P-351 closed 2026-08-07** — `AddMessagingReadinessCheck` (wrapping `07.Messaging`'s `IMessageBusProbe`, shipped P-347) replaces `AddRabbitMqMessagingHealthCheck`/`AddAzureServiceBusMessagingHealthCheck` outright, a confirmed breaking change: both retired methods built their own independent connection from a caller-supplied string instead of reflecting the real configured bus. The recorded blocker (`07.Messaging`'s `SK.07.ReadinessProbe`) was re-verified and found stale — `07.Messaging` shipped it end to end on 2026-08-06. S-17/C-46/T-41/T-42/DO-12 all implemented and tested with zero deviation from the already-locked D-17 contract; the five now-dead `AspNetCore.HealthChecks.Rabbitmq`/`.AzureServiceBus`/`RabbitMQ.Client`/`Azure.Messaging.ServiceBus`/`Azure.Identity` package references removed. All six `SK.13.*` phase keys `●`/`—` again — domain fully complete end to end. 92/92 SharedKernel.ServiceDefaults.Tests (+1 net) + 30/30 SharedKernel.MultiTenancy.Tests passing, 0 regressions. **A SemVer-major repack is needed at the next `devops-lead` publish pass** (two public extension methods removed outright) — not performed in this session. Root Phase Backlog **P-351 closed**. | The SemVer-major repack (two extension methods removed) is the only item still open for this domain — a `devops-lead` publish-pass concern, not further `servicedefaults-phase-implementer` work. |
 | 14 | [Presentation](14.Presentation/state-map.md) | Published | `●` | WO-042/P-262 closed — `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` now forward to `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` instead of independently-owned literals (`ItemsKey` confirmed untouched); no new NuGet/ProjectReference required; `SharedKernel.Presentation.WebApi` re-packed to `1.0.2`, `consumer-verify` re-confirms zero DI exceptions; 45/45 WebApi + 11/11 SignalR tests passing. | — |
@@ -12714,7 +12714,7 @@ This platform's own established, repeatedly-applied precedent (Caching WO-050/P-
 ---
 ### P-356 — Communication: Fix Non-Canonical Correlation-ID Fallback Format (Rest + Grpc)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-056
 **Domain:** 11.Communication
 **Depends on:** None
@@ -12726,16 +12726,16 @@ When no ambient `Activity.Current` exists, both `CorrelationIdDelegatingHandler`
 A confirmed, duplicated defect — two independent occurrences of the same governance-rule violation — that produces correlation IDs in a format inconsistent with the rest of the platform, undermining log/trace correlation exactly at the cross-service boundary this domain exists to standardize.
 
 #### Acceptance criteria
-- [ ] Both fallback call sites emit a canonical, hyphenated GUID string
-- [ ] A regression test exists for each package proving the fallback format when no ambient `Activity` is present
-- [ ] SK0011 verified clean against both packages, not just the two checked during the prior retrofit
-- [ ] `11.Communication/CLAUDE.md`'s documentation of this fallback behavior is corrected in the same pass
+- [x] Both fallback call sites emit a canonical, hyphenated GUID string
+- [x] A regression test exists for each package proving the fallback format when no ambient `Activity` is present
+- [x] SK0011 verified clean against both packages, not just the two checked during the prior retrofit
+- [x] `11.Communication/CLAUDE.md`'s documentation of this fallback behavior is corrected in the same pass
 ---
 
 ---
 ### P-357 — Communication: Inject IClock into KubernetesServiceEndpointResolver
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-056
 **Domain:** 11.Communication
 **Depends on:** None
@@ -12747,15 +12747,15 @@ A confirmed, duplicated defect — two independent occurrences of the same gover
 A confirmed governance violation (SK0001) originally surfaced during the P-255 logging retrofit and explicitly left as an unfixed follow-up at the time — never turned into a phase until now. Beyond rule compliance, the direct clock call makes the TTL cache's stale-while-revalidate and expiry behavior untestable deterministically: today it cannot be exercised across cache-hit vs. cache-expired branches without real wall-clock sleeps.
 
 #### Acceptance criteria
-- [ ] `IClock` is injected into `KubernetesServiceEndpointResolver` and both direct wall-clock call sites are replaced
-- [ ] A deterministic unit test proves cache-hit vs. cache-expired vs. stale-while-revalidate behavior using a controllable clock, replacing any prior real-time-dependent test
-- [ ] SK0001 verified clean against this file
+- [x] `IClock` is injected into `KubernetesServiceEndpointResolver` and both direct wall-clock call sites are replaced
+- [x] A deterministic unit test proves cache-hit vs. cache-expired vs. stale-while-revalidate behavior using a controllable clock, replacing any prior real-time-dependent test
+- [x] SK0001 verified clean against this file
 ---
 
 ---
 ### P-358 — Communication: Fix Options-Validation Pipeline So Invalid Configuration Fails Loudly at Startup (Rest + GraphQL)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-056
 **Domain:** 11.Communication
 **Depends on:** None
@@ -12767,17 +12767,17 @@ Two independent instances of the same root-cause defect. In `SharedKernel.Commun
 This defeats the domain's own documented hard rule ("`RestClientOptionsValidator` not registered — Hard violation") through a subtler mechanism than the rule anticipated: the validator IS registered but can never structurally fire. A misconfigured `TimeoutSeconds` or `MaxPageSize` should fail fast with a clear message at service startup, not manifest as an opaque Polly or HotChocolate exception minutes into production traffic.
 
 #### Acceptance criteria
-- [ ] `RestClientOptions` (including nested `RestResilienceOptions`) is validated through the actual Options pipeline that produces the instance used to build the client, and an invalid value throws a clear, named exception at startup
-- [ ] `GraphQLOptions` validation runs against the same instance applied to HotChocolate's paging/schema configuration, before it takes effect
-- [ ] `RestResilienceOptions`'s numeric fields are range-validated (no negative retry counts, thresholds, or durations)
-- [ ] Existing validator unit tests are supplemented with a startup-level test proving the validator fires through real DI resolution, not just when called directly
-- [ ] `11.Communication/CLAUDE.md`'s hard-rule wording is corrected to describe the real failure mode this phase closes
+- [x] `RestClientOptions` (including nested `RestResilienceOptions`) is validated through the actual Options pipeline that produces the instance used to build the client, and an invalid value throws a clear, named exception at startup
+- [x] `GraphQLOptions` validation runs against the same instance applied to HotChocolate's paging/schema configuration, before it takes effect
+- [x] `RestResilienceOptions`'s numeric fields are range-validated (no negative retry counts, thresholds, or durations)
+- [x] Existing validator unit tests are supplemented with a startup-level test proving the validator fires through real DI resolution, not just when called directly
+- [x] `11.Communication/CLAUDE.md`'s hard-rule wording is corrected to describe the real failure mode this phase closes
 ---
 
 ---
 ### P-359 — Communication: Wire GrpcClientOptions.DeadlineSeconds into a Real Per-Call Deadline
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-056
 **Domain:** 11.Communication
 **Depends on:** None
@@ -12789,15 +12789,15 @@ This defeats the domain's own documented hard rule ("`RestClientOptionsValidator
 An unenforced deadline on outbound gRPC calls is a resource-exhaustion and cascading-failure hazard identical in kind to the dead `AzureServiceBusOptions.MaxConcurrentCalls` defect already found and fixed in `07.Messaging` (WO-054/P-342) — a documented, type-safe, seemingly-active knob that silently does nothing.
 
 #### Acceptance criteria
-- [ ] Every client registered via `AddGrpcClient<TClient>` enforces `DeadlineSeconds` as a real per-call deadline
-- [ ] A test proves a call exceeding the configured deadline is cancelled/faulted as expected
-- [ ] `GrpcClientOptions` rejects a non-positive `DeadlineSeconds` at startup
+- [x] Every client registered via `AddGrpcClient<TClient>` enforces `DeadlineSeconds` as a real per-call deadline
+- [x] A test proves a call exceeding the configured deadline is cancelled/faulted as expected
+- [x] `GrpcClientOptions` rejects a non-positive `DeadlineSeconds` at startup
 ---
 
 ---
 ### P-360 — Communication: Symmetric Service-Discovery Registration Guard
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-056
 **Domain:** 11.Communication
 **Depends on:** None
@@ -12809,14 +12809,14 @@ An unenforced deadline on outbound gRPC calls is a resource-exhaustion and casca
 A developer wiring both calls (e.g. during a migration from static to K8s discovery, or a copy-pasted example) gets no signal today that their intended resolver never took effect — a silent misconfiguration in exactly the composition-root code every consuming service writes once and rarely revisits.
 
 #### Acceptance criteria
-- [ ] Registering `AddK8sServiceDiscovery` after `AddStaticServiceDiscovery` (or any other resolver) produces the same class of clear signal the reverse order already produces
-- [ ] A test exists for both call orders proving the guard fires symmetrically
+- [x] Registering `AddK8sServiceDiscovery` after `AddStaticServiceDiscovery` (or any other resolver) produces the same class of clear signal the reverse order already produces
+- [x] A test exists for both call orders proving the guard fires symmetrically
 ---
 
 ---
 ### P-361 — Communication: Fix EnsureSuccessOrErrorAsync<T> to Return the Deserialized Success Payload
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-056
 **Domain:** 11.Communication
 **Depends on:** None
@@ -12828,9 +12828,9 @@ A developer wiring both calls (e.g. during a migration from static to K8s discov
 This package has not yet been packed or published to any feed — there are zero external consumers today, making this the last moment to correct a public API's behavior for free instead of after it ships, when the fix becomes a breaking change. As shipped, a developer who reasonably assumes the generic parameter means "give me the deserialized body" gets silent `default`/`null` instead, in the platform's single most widely-consumed package.
 
 #### Acceptance criteria
-- [ ] `EnsureSuccessOrErrorAsync<T>`'s success path returns the actual deserialized response body, or the misleading generic overload is removed/renamed before first publish
-- [ ] Behavior is covered by a test asserting the result's value is populated (not default) on a 2xx response
-- [ ] `11.Communication/CLAUDE.md`'s Interface Contracts section is updated to match the corrected behavior
+- [x] `EnsureSuccessOrErrorAsync<T>`'s success path returns the actual deserialized response body, or the misleading generic overload is removed/renamed before first publish — resolved via retirement: the generic overload was removed and replaced with a non-generic status-check-only `EnsureSuccessOrErrorAsync`, since the sibling `ReadEnvelopeAsync<T>` already implements the deserializing contract correctly
+- [x] Behavior is covered by a test asserting the result's value is populated (not default) on a 2xx response — superseded by a test proving the non-generic replacement never reads the response body on the success path, matching its non-generic (no payload promised) signature
+- [x] `11.Communication/CLAUDE.md`'s Interface Contracts section is updated to match the corrected behavior
 ---
 
 ---
@@ -12877,7 +12877,7 @@ The user's explicit premise for this review is that this domain "must be on ever
 ---
 ### P-364 — Communication: Opt-In Idempotency-Key Propagation for Outbound REST Calls
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-056
 **Domain:** 11.Communication
 **Depends on:** None
@@ -12889,11 +12889,11 @@ An opt-in delegating handler for `SharedKernel.Communication.Rest`, following th
 `StandardResilienceHandler` retries transient failures by default (`RetryCount = 3`), which means every typed REST client this domain produces can already silently re-issue a POST/PATCH/DELETE against a downstream service with no way for that service to distinguish a retried call from a genuinely repeated one. This is the highest-leverage new capability for a package the user wants on every project: it converts an existing, easy-to-trigger duplicate-side-effect hazard into an explicit, documented, opt-in guarantee — mirroring the idempotency story the platform already tells at the in-process command level (`05.Application`'s `IIdempotentRequest`) and the message-consumer level (`07.Messaging`'s `IIdempotencyStore`), completing it at the outbound-HTTP level.
 
 #### Acceptance criteria
-- [ ] A new opt-in delegating handler generates or accepts a caller-supplied idempotency-key value and attaches it under a single named header constant
-- [ ] The same key is reused across every retry attempt of one logical outbound call — verified by a test asserting the header value is identical across simulated retries
-- [ ] A caller-supplied key value is never overwritten
-- [ ] Disabled by default; enabling it is a single fluent call on `IRestCommunicationBuilder`/`AddRestClient<TClient>`
-- [ ] The header name is a named constant colocated in this package (domain-local — no `01.Core` `WellKnownHeaders` entry needed unless a second domain independently needs the same literal)
+- [x] A new opt-in delegating handler generates or accepts a caller-supplied idempotency-key value and attaches it under a single named header constant
+- [x] The same key is reused across every retry attempt of one logical outbound call — verified by a test asserting the header value is identical across simulated retries
+- [x] A caller-supplied key value is never overwritten
+- [x] Disabled by default; enabling it is a single fluent call on `IRestCommunicationBuilder`/`AddRestClient<TClient>`
+- [x] The header name is a named constant colocated in this package (domain-local — no `01.Core` `WellKnownHeaders` entry needed unless a second domain independently needs the same literal)
 ---
 
 ---
@@ -12927,3 +12927,5 @@ A `WithCommunicationTelemetry` entry point joining the existing `WithApplication
 - [2026-08-11] Communication → GraphQL (●) — promoted from SK.11.GraphQL (10/10, GQ-10 shipped WO-056's sole GraphQL gap-fill task: `AddSharedKernelGraphQL` now calls `GraphQLOptionsValidator.Validate(name: null, options)` directly against the locally-constructed `options` instance immediately after `configure?.Invoke(options)` and before `services.Configure<GraphQLOptions>(...)`/`ModifyPagingOptions`/`DisableIntrospection` ever apply its values to HotChocolate, throwing `OptionsValidationException` on failure — the identical validate-at-point-of-consumption pattern R-23/G-20 established for `.Rest`/`.Grpc` (P-358, GraphQL half — Rest half already shipped); `string.Empty` used as the non-nullable `OptionsValidationException.optionsName` sentinel, since `GraphQLOptions` carries no per-client name concept unlike `RestClientOptions`/`GrpcClientOptions`. A pre-existing, unrelated `Microsoft.Extensions.DependencyInjection` version pin (10.0.5, one version behind `SharedKernel.Testing`'s 10.0.9 floor) blocking the test project's restore was also fixed, matching the Rest/Grpc/Internal test projects already at 10.0.9. 43/43 `SharedKernel.Communication.GraphQL.Tests` passing). Domain Summary Board row left at Docs/`●` per the same precedent set by the SK.11.Design/Scaffold/Rest/Grpc promotions immediately above — GraphQL is earlier in the pipeline than the domain's already-reached Docs/Published milestones, so the row is not regressed; WO-056's Internal/Tests/Docs/Published implementation tasks remain pending. Root Phase Backlog: P-157 was already `●` Complete from the original WO-025 build-out and needed no change; P-358 remains `◐` Dispatched — its `.Rest`/`.GraphQL` code-level acceptance criteria are now both met, but it also requires a startup-level DI-resolution regression test (T-34) and a `CLAUDE.md` hard-rule wording correction (DO-11), both explicitly deferred to future Tests/Docs-phase sessions per this phase's own scope (state-map-phase)
 - [2026-08-12] Communication → Internal (●) — promoted from SK.11.Internal (13/13, I-12/I-13 shipped WO-056's Internal gap-fill: `KubernetesServiceEndpointResolver` now takes an injected `IClock` and sources both TTL-cache time comparisons from `clock.UtcNow`, never `DateTimeOffset.UtcNow` directly (P-357), with `AddK8sServiceDiscovery` registering a safety-net `TryAddSingleton<IClock, SystemClock>()` mirroring `.Grpc`'s identical P-359 pattern; `AddK8sServiceDiscovery`'s registration guard is now symmetric with `AddStaticServiceDiscovery`'s `services.Any(...)` + `InvalidOperationException` shape, replacing the prior silent `TryAddSingleton` no-op (P-360); 52/52 `SharedKernel.Communication.Internal.Tests` passing, `SharedKernel.Communication.Grpc` rebuilds clean against the updated `.Internal`). Domain Summary Board row left at Docs/`●` per the same precedent set by the SK.11.Design/Scaffold/Rest/Grpc/GraphQL promotions immediately above — Internal is earlier in the pipeline than the domain's already-reached Docs/Published milestones, so the row is not regressed; WO-056's Tests/Docs/Published implementation tasks remain pending. Root Phase Backlog: P-155 was already `●` Complete from the original WO-025 build-out and needed no change; P-357/P-360 remain `◐` Dispatched — both now have their `.Internal` code-level acceptance criteria met, but each also requires Tests-phase regression coverage (T-33's `FakeClock`-driven TTL-cache proof for P-357, T-36's symmetric-guard-both-directions proof for P-360) explicitly deferred to a future Tests-phase session per this phase's own scope (state-map-phase)
 - [2026-08-12] Communication → Tests (●) — promoted from SK.11.Tests (38/38, T-31–T-38 shipped WO-056's eight deferred regression/DI-resolution test tasks across all four packages: canonical hyphenated-GUID-fallback regression coverage for `.Rest`/`.Grpc` (T-31, P-356); the SK0011/SK0001 temp-analyzer-verification technique extended to `.Rest`/`.GraphQL` for the first time, zero findings (T-32, P-356); `FakeClock`-driven deterministic TTL-cache tests for `KubernetesServiceEndpointResolver`, seeding its cache via reflection since the real `ServiceEndpointResolver` never re-queries a successfully-resolved query string (T-33, P-357); startup-level `OptionsValidationException` proofs firing through real `AddRestClient`/`AddSharedKernelGraphQL` registration calls (T-34, P-358); a genuine gRPC deadline-exceeded behavioral proof plus `GrpcClientOptionsValidator` registration-time proofs (T-35, P-359); the symmetric service-discovery registration guard proven in both call orders (T-36, P-360); the non-generic `EnsureSuccessOrErrorAsync` contract reconfirmed plus a zero-remaining-call-site audit (T-37, P-361); and full `IdempotencyKeyDelegatingHandler` coverage including a same-request-instance retry-stability proof and behavioral pipeline-presence/absence proofs (T-38, P-364). Full regression across all four packages: `.Rest.Tests` 77/77 (was 66), `.Grpc.Tests` 64/64 (was 60), `.GraphQL.Tests` 45/45 (was 43), `.Internal.Tests` 57/57 (was 52) — 243/243, zero regressions). Domain Summary Board row left at Docs/`●` per the same precedent set by the SK.11.Design/Scaffold/Rest/Grpc/GraphQL/Internal promotions immediately above — Tests is earlier in the pipeline than the domain's already-reached Docs/Published milestones, so the row is not regressed; WO-056's Docs/Published implementation tasks remain pending. Root Phase Backlog: P-356/P-357/P-358/P-359/P-360/P-361/P-364 all now have their Tests-phase acceptance criteria met, but each remains `◐` Dispatched since each still requires its corresponding Docs-phase task (DO-09 through DO-15) before it can close — none flipped to `●` Complete in this pass (state-map-phase)
+- [2026-08-12] Communication → Docs (●) — re-closed SK.11.Docs (15/15, DO-09–DO-15 shipped WO-056's remaining Docs tasks). Six of seven (DO-09/P-356, DO-10/P-357, DO-12/P-359, DO-13/P-360, DO-14/P-361, DO-15/P-364) were verified against both `CLAUDE.md` text and shipped `.cs` source and found already fully and correctly documented — no edit needed. DO-11/P-358 found one genuine gap: a stale, pre-P-358 duplicate row in the layering-violation guard table ("`RestClientOptionsValidator` not registered" — superseded by an already-corrected combined row a few lines above it) — removed. Every phase key in `11.Communication/state-map.md` is now `●` except Published. Root Phase Backlog: with every Docs-phase acceptance-criterion gate now satisfied, P-356/P-357/P-358/P-359/P-360/P-361/P-364 all flip to `●` Complete (see next changelog line); P-362/P-363 remain `◐` Dispatched — both still depend on PB-07/PB-08, which remain `○` Pending in the Published phase (state-map-phase)
+- [2026-08-12] Phase Backlog P-356, P-357, P-358, P-359, P-360, P-361, P-364 → ● Complete — every acceptance criterion for each now verified met across `11.Communication`'s Rest/Grpc/GraphQL/Internal/Tests/Docs phase keys (state-map-phase)
