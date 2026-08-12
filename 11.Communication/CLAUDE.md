@@ -18,6 +18,8 @@ Philosophy: **Protocol-Agnostic Resilience. Propagate Context Always. Fail Infor
 
 **P-260 (WO-042) header-name constant consolidation — fully closed.** `CorrelationIdDelegatingHandler`/`TenantIdDelegatingHandler` (`.Rest`, R-19/R-20 ●) and `TenantIdInterceptor`/`CorrelationTracingInterceptor` (`.Grpc`, G-16/G-17 ●) source their `x-correlation-id`/`x-tenant-id` header/metadata names from `01.Core`'s `WellKnownHeaders` (P-259) instead of independently-declared literals; the gRPC package's locally-named `const`s survive only as thin value-forwarding aliases (carved out for gRPC's lowercase-metadata-key convention — verified safe via `Grpc.Core.Metadata`'s internal key-casing normalization, see gRPC rules below). T-29 replaced the remaining test-local literal duplicates in `.Rest.Tests`/`.Grpc.Tests` with `WellKnownHeaders` references; DO-07 confirmed the propagation-rules documentation was already accurate. No new project reference was required.
 
+**WO-056 (P-356–P-364) — nine gap-fill phases design-locked; Rest, Grpc, and GraphQL shipped, six more phase keys queued.** A fresh review against real shipped source (not domain-brain prose) found nine defects: a duplicated SK0011 violation (non-canonical correlation-ID fallback), the SK0001 finding P-255/T-28 flagged as an unfixed "candidate follow-up" and never turned into a phase, a structurally-dead options-validator wiring defect in both `.Rest` and `.GraphQL`, an unenforced `GrpcClientOptions.DeadlineSeconds`, an asymmetric service-discovery registration guard, a misleading `EnsureSuccessOrErrorAsync<T>`, a missing `consumer-verify` harness, this domain's still-never-been-published status, and a gap in the platform's outbound idempotency story. `SK.11.Design`/`SK.11.Scaffold`/`SK.11.Rest`/`SK.11.Grpc`/`SK.11.GraphQL` are now `●` (R-22–R-26, G-18–G-20, GQ-10 implemented and tested); `SK.11.Internal` (I-12/I-13), `SK.11.Tests` (T-31–T-38, deliberately deferred alongside each shipped fix), `SK.11.Docs`, and `SK.11.Published` remain `○`/`◐` in `state-map.md` — the source of truth for what remains. The sections below (Interface Contracts, Implementation Rules, DI Registration, Test Rules) describe the shipped `.Rest`/`.Grpc`/`.GraphQL` behavior and the still-target design for `.Internal`. See the Changelog for the full per-defect breakdown.
+
 **P-329 (WO-052) namespace adoption — complete.** `04.Contracts`' P-328 renamed `SharedKernel.Contracts.Envelope` → `SharedKernel.Contracts.Envelopes` (eliminating the namespace/type-name collision that previously forced consuming code onto a `using EnvelopeNs = ...` alias workaround). Source audit confirmed — and was independently re-confirmed directly against shipped `04.Contracts` source — that `HttpResponseMessageExtensions.cs` (`.Rest`) was the **sole** production reference to the retired namespace anywhere in this domain. The one-line swap has landed: `HttpResponseMessageExtensions.cs:4` now reads `using SharedKernel.Contracts.Envelopes;` (D-25, R-21 both `●`). The regression pass (T-30, `●`) re-ran independently rather than being reused: `dotnet build` on `SharedKernel.Communication.Rest.csproj` is clean (0 warnings/0 errors) and `SharedKernel.Communication.Rest.Tests` is 66/66 passing. That build proof is validated only at the **`ProjectReference` level** — `04.Contracts` and `11.Communication` are wired by `ProjectReference` in this repo, not by a consumed `.nupkg`, so no packed-package consumption test was run. `ReadEnvelopeAsyncTests.cs` needed no change — it imports neither namespace variant (relies on `var` type inference); its real `[Fact]` count is **10** (5 in the `JsonTypeInfo<T>` section, 5 in the `JsonSerializerOptions?` section), correcting an earlier "12-test suite" miscount that had propagated through WO-052 phase prose. `.Grpc`'s doc-comment mention of `Envelope<T>` (Interface Contracts, gRPC rules below) remains a type-name mention only, never a namespace import, and required no change — confirmed by direct re-check of every `Envelope`/`namespace` occurrence in this file. All four P-329 tasks (D-25, R-21, T-30, DO-08) are now `●`. Every phase key in `11.Communication/state-map.md` is now `●` except Published (not yet dispatched).
 
 ---
@@ -70,22 +72,28 @@ IRestCommunicationBuilder
 RestClientOptions  (sealed class)
     BaseAddress          string?             // [Required] when IServiceEndpointResolver not registered
     ServiceName          string?             // default null — overrides name param for DNS lookup when set
-    TimeoutSeconds       int                 // default 30 — per-request timeout
+    TimeoutSeconds       int                 // default 30 — per-request timeout; must be > 0
     Resilience           RestResilienceOptions
+    EnableIdempotencyKeyPropagation bool     // default false (P-364/WO-056) — opt-in IdempotencyKeyDelegatingHandler
 
 RestResilienceOptions  (sealed class)
-    RetryCount           int                 // default 3
-    RetryBaseDelayMs     int                 // default 500 — exponential backoff base
+    RetryCount           int                 // default 3; must be > 0
+    RetryBaseDelayMs     int                 // default 500 — exponential backoff base; must be >= 0
     CircuitBreakerEnabled bool               // default true
-    FailureThreshold     int                 // default 5 failures before CB opens
-    SamplingDurationSec  int                 // default 30 — failure counting window
-    BreakDurationSec     int                 // default 30 — CB open duration
+    FailureThreshold     int                 // default 5 failures before CB opens; must be > 0
+    SamplingDurationSec  int                 // default 30 — failure counting window; must be > 0
+    BreakDurationSec     int                 // default 30 — CB open duration; must be > 0
     TotalTimeoutBufferSec int                // default 10, minimum 0 — added to TimeoutSeconds × (RetryCount + 1)
                                              // to compute TotalRequestTimeout; provides headroom for jitter
                                              // and circuit-breaker probe time; set to 0 for tight latency budgets
+                                             // All range constraints above enforced by RestClientOptionsValidator
+                                             // (P-358/WO-056) — see REST client rules below for how/when it fires.
 
 CorrelationIdDelegatingHandler  [internal sealed — transient]
-    // Reads Activity.Current?.Id; falls back to Guid.NewGuid().ToString("N").
+    // Reads Activity.Current?.Id; falls back to Guid.NewGuid().ToString() — the default "D"
+    // (hyphenated) format, the platform's canonical GUID string shape (P-356/WO-056).
+    // Never Guid.NewGuid().ToString("N") — that non-hyphenated 32-char-hex form was a
+    // confirmed SK0011 violation, fixed under P-356.
     // Header name sourced from 01.Core's WellKnownHeaders.CorrelationId (P-259/P-260) —
     // never an independently-declared literal.
     // Injects x-correlation-id header. Never overwrites a caller-supplied header.
@@ -98,6 +106,17 @@ TenantIdDelegatingHandler  [internal sealed — transient]
     // Silent no-op when HttpContext null, IUserContext not registered, or TenantId null.
     // Never throws.
 
+IdempotencyKeyDelegatingHandler  [internal sealed — transient]  (P-364/WO-056)
+    // Opt-in only — added to the handler pipeline solely when
+    // RestClientOptions.EnableIdempotencyKeyPropagation is true (default false).
+    // Generates a hyphenated Guid.NewGuid().ToString() idempotency-key value and injects it
+    // under IdempotencyHeaders.IdempotencyKey ("x-idempotency-key") only when the header is
+    // not already present on the outgoing HttpRequestMessage. Never overwrites a
+    // caller-supplied key.
+    // StandardResilienceHandler retries re-send the SAME HttpRequestMessage instance, so the
+    // header-already-present check is sufficient by construction to keep the key identical
+    // across every retry attempt of one logical call — no extra per-call state needed.
+
 ProblemDetailsDeserializer  [internal static]
     // Deserializes application/problem+json response bodies on non-2xx responses.
     // Uses STJ source-generated ProblemDetailsJsonContext (AOT path).
@@ -105,9 +124,15 @@ ProblemDetailsDeserializer  [internal static]
     // Maps: type → Error.Code, detail ?? title → Error.Message.
 
 HttpResponseMessageExtensions  [public static]
-    EnsureSuccessOrErrorAsync<T>(this HttpResponseMessage, CancellationToken)
-        → Task<Result<T>>
-    // 2xx → Result.Ok; non-2xx → Result.Fail(Error) via ProblemDetailsDeserializer.
+    EnsureSuccessOrErrorAsync(this HttpResponseMessage, CancellationToken = default)
+        → Task<Result>
+    // CORRECTED (P-361/WO-056): the prior generic EnsureSuccessOrErrorAsync<T> is retired — it
+    // returned Result<T>.Success(default!) unconditionally on 2xx, never actually reading or
+    // deserializing the response body despite the generic parameter's promise. This package was
+    // never packed or published, so the fix is retirement rather than a breaking-change patch.
+    // Status-check-only: 2xx → Result.Success(); non-2xx → Result.Failure(Error) via
+    // ProblemDetailsDeserializer. Callers wanting the deserialized payload use ReadEnvelopeAsync<T>
+    // below — never re-add a generic overload that promises a payload it does not deliver.
 
     ReadEnvelopeAsync<T>(this HttpResponseMessage, JsonTypeInfo<T> typeInfo, CancellationToken)
         → Task<Envelope<T>>
@@ -121,9 +146,16 @@ HttpResponseMessageExtensions  [public static]
     // Uses static readonly JsonSerializerOptions from ProblemDetailsDeserializer when options is null.
 
 AddSharedKernelRestCommunication(this IServiceCollection) → IRestCommunicationBuilder
-    // Entry point. Registers IRestCommunicationBuilder, both delegation handlers (transient),
-    // STJ ProblemDetailsJsonContext, and RestClientOptionsValidator
+    // Entry point. Registers IRestCommunicationBuilder, all three delegation handlers (transient —
+    // CorrelationIdDelegatingHandler, TenantIdDelegatingHandler, IdempotencyKeyDelegatingHandler,
+    // the last only actually added to a given client's pipeline when opted in), STJ
+    // ProblemDetailsJsonContext, and RestClientOptionsValidator
     // (services.AddSingleton<IValidateOptions<RestClientOptions>, RestClientOptionsValidator>()).
+    // CORRECTED (P-358/WO-056): that IValidateOptions<RestClientOptions> registration is retained
+    // but is NOT the mechanism that actually enforces validation — RestClientOptions is never
+    // resolved via IOptions<T>.Value by application code, so the registered validator can never
+    // structurally fire through it. Real enforcement happens inside AddRestClient<TClient> itself —
+    // see REST client rules below.
 ```
 
 ### `SharedKernel.Communication.Grpc` — public surface
@@ -138,8 +170,15 @@ IGrpcCommunicationBuilder
 
 GrpcClientOptions  (sealed class)
     Address              string?             // optional when IServiceEndpointResolver registered
-    DeadlineSeconds      int                 // default 30 — per-call deadline
+    DeadlineSeconds      int                 // default 30 — REAL, ENFORCED per-call deadline (P-359/WO-056);
+                                             // must be > 0 — GrpcClientOptionsValidator rejects <= 0
     EnableRetry          bool                // default true
+
+GrpcClientOptionsValidator  [internal sealed, implements IValidateOptions<GrpcClientOptions>]  (P-359/WO-056)
+    // New — no validator existed for this options type before P-359. Rejects DeadlineSeconds <= 0.
+    // Invoked directly inside AddGrpcClient<TClient> immediately after configure?.Invoke(options),
+    // mirroring RestClientOptionsValidator's validate-at-point-of-consumption pattern (see REST client
+    // rules' P-358 note) — never relies on the IOptions<T> pipeline, for the same structural reason.
 
 GrpcMetadataHelper  [internal static]
     // Shared helper used by CorrelationTracingInterceptor and TenantIdInterceptor.
@@ -151,7 +190,9 @@ GrpcMetadataHelper  [internal static]
 CorrelationTracingInterceptor  [internal sealed — Interceptor]
     // Overrides AsyncUnaryCall, AsyncServerStreamingCall, AsyncClientStreamingCall,
     // AsyncDuplexStreamingCall.
-    // Reads Activity.Current at call time (not DI registration time).
+    // Reads Activity.Current at call time (not DI registration time); falls back to
+    // Guid.NewGuid().ToString() (hyphenated "D" format, P-356/WO-056 — never .ToString("N"),
+    // a confirmed SK0011 violation fixed under P-356) when no ambient trace exists.
     // Correlation metadata key sourced from 01.Core's WellKnownHeaders.CorrelationId
     // (P-259/P-260) — never an independently-typed literal.
     // Injects traceparent (W3C format), tracestate, and x-correlation-id into metadata.
@@ -183,6 +224,11 @@ TimestampProtoExtensions  [public static class]
 
 AddSharedKernelGrpcCommunication(this IServiceCollection) → IGrpcCommunicationBuilder
     // Entry point. Registers IGrpcCommunicationBuilder and both interceptors globally.
+    // Also registers a safety-net IClock (services.TryAddSingleton<IClock, SystemClock>(), P-359/WO-056 —
+    // shipped) so AddGrpcClient<TClient>'s real per-call deadline enforcement works with zero new
+    // caller-side setup; a consuming service's own IClock registration always wins. And registers
+    // GrpcClientOptionsValidator as IValidateOptions<GrpcClientOptions> (not the enforcement mechanism
+    // relied upon — see gRPC rules below).
 ```
 
 ### `SharedKernel.Communication.GraphQL` — public surface
@@ -194,6 +240,21 @@ AddSharedKernelGraphQL(this IServiceCollection, Action<GraphQLOptions>? configur
     // Wires: snake_case naming, SharedKernelFilterConvention, offset + cursor pagination,
     //        SharedKernelErrorFilter, MaxPageSize cap, AllowIntrospection gate.
     // Idempotent — safe to call twice (second call is a no-op).
+    // CORRECTED (P-358/WO-056, shipped): GraphQLOptionsValidator.Validate(name: null, options) is now
+    // called directly against the locally-constructed options instance, immediately after
+    // configure?.Invoke(options) and BEFORE ModifyPagingOptions/DisableIntrospection ever apply its
+    // values to HotChocolate — throws OptionsValidationException synchronously on failure. The
+    // registered services.AddSingleton<IValidateOptions<GraphQLOptions>, GraphQLOptionsValidator>()
+    // is retained but was never actually reachable through the IOptions<T> pipeline (GraphQLOptions
+    // is never resolved via IOptions<T>.Value here), for the identical structural reason documented
+    // for .Rest's RestClientOptionsValidator.
+    // IMPLEMENTATION NOTE: OptionsValidationException's optionsName constructor parameter is
+    // non-nullable (string, not string?) — passing null literally does not compile under this
+    // project's Nullable=enable + TreatWarningsAsErrors=true. The shipped fix passes string.Empty as
+    // the "no name" sentinel instead, since GraphQLOptions is a single unnamed options instance with
+    // no per-client name concept (unlike RestClientOptions/GrpcClientOptions, which pass a real
+    // name/clientName). Any future single-instance, non-named IValidateOptions<T> validate-at-point-
+    // of-consumption fix in this domain should follow the same string.Empty convention, not null.
 
 GraphQLOptions  (sealed class)
     EnableFiltering      bool                // default true
@@ -251,11 +312,23 @@ K8sServiceDiscoveryOptions  (sealed class)
     // keyed by serviceName (OrdinalIgnoreCase) with CachedEntry { Uri, DateTimeOffset ExpiresAt }.
     // Stale-while-revalidate: on DNS failure with stale entry, logs Warning via [LoggerMessage]
     // (EventId 11304, LogStaleCacheUsed) and returns stale Uri.
+    // CORRECTED (P-357/WO-056): cache-hit and cache-write expiry comparisons now read the current
+    // instant via an injected IClock, never a direct DateTimeOffset.UtcNow call (the confirmed
+    // SK0001 finding P-255/T-28 flagged as an unfixed follow-up and never turned into a phase until
+    // now) — see the Internal package's Cross-cutting rules below for the AddK8sServiceDiscovery
+    // safety-net IClock registration.
 
 AddK8sServiceDiscovery(this IServiceCollection, Action<K8sServiceDiscoveryOptions>? configure = null)
     → IServiceCollection
     // Registers KubernetesServiceEndpointResolver as IServiceEndpointResolver (singleton).
     // Wires Microsoft.Extensions.ServiceDiscovery DNS resolver.
+    // Registers a safety-net IClock (services.TryAddSingleton<IClock, SystemClock>()) so this
+    // extension keeps working with zero new caller-side setup — a consuming service's own IClock
+    // registration, of any implementation, always wins (P-357/WO-056).
+    // CORRECTED (P-360/WO-056): now throws InvalidOperationException if IServiceEndpointResolver is
+    // already registered — the exact same guard AddStaticServiceDiscovery already had, closing an
+    // asymmetry where this direction previously silently no-op'd via TryAddSingleton, leaving
+    // whichever resolver was registered first (e.g. StaticServiceEndpointResolver) silently active.
 
 AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpoints)
     → IServiceCollection
@@ -263,6 +336,8 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
     // Throws InvalidOperationException if IServiceEndpointResolver already registered.
     // Logs LogLevel.Warning at startup via StaticServiceDiscoveryStartupWarning (IHostedService),
     // via [LoggerMessage] (EventId 11308, LogStaticServiceDiscoveryActive).
+    // Symmetric with AddK8sServiceDiscovery's identical guard as of P-360/WO-056 — whichever
+    // registration call runs second against an already-registered resolver throws, in both directions.
 ```
 
 ---
@@ -278,11 +353,12 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - `BaseAddress` on `RestClientOptions` is the only allowed way to set the base URI — callers must never hardcode URIs inside typed client methods.
 - ProblemDetails deserialization uses STJ source-generated `ProblemDetailsJsonContext` in the primary path; reflection-based STJ is the fallback only.
 - The reflection-based STJ fallback in `ProblemDetailsDeserializer` uses a **`static readonly JsonSerializerOptions`** field initialized once at class load — never allocate `new JsonSerializerOptions()` per call (hot-path GC violation).
-- The handler pipeline order is fixed: `CorrelationIdDelegatingHandler` → `TenantIdDelegatingHandler` → `StandardResilienceHandler` → transport.
+- The handler pipeline order is fixed: `CorrelationIdDelegatingHandler` → `TenantIdDelegatingHandler` → `IdempotencyKeyDelegatingHandler` (conditional — only when `EnableIdempotencyKeyPropagation = true`, P-364/WO-056) → `StandardResilienceHandler` → transport. The idempotency handler must run **before** `StandardResilienceHandler` so the key is set once, before the first attempt, and survives unchanged through every retry.
 - `TimeoutSeconds` is applied as a per-request timeout via `StandardResilienceHandler`, not as a global `HttpClient.Timeout`.
 - `TotalRequestTimeout` formula: `TimeoutSeconds × (RetryCount + 1) + TotalTimeoutBufferSec`. The buffer (default 10 s) accounts for jitter headroom and circuit-breaker probe time. Consumers can set `TotalTimeoutBufferSec = 0` for tight latency budgets.
 - **`StandardResilienceHandler` lesson (DO-05):** Polly v8's circuit-breaker strategy enforces a hard validation constraint — `CircuitBreaker.SamplingDuration` must be at least `2 × AttemptTimeout.Timeout`, or `AddStandardResilienceHandler` throws at configuration time. `RestCommunicationBuilder.AddRestClient<TClient>` guards this automatically: it computes `minimumSamplingDuration = attemptTimeout × 2 + 1 tick` and silently raises `SamplingDurationSec` to that floor whenever a caller's configured value would violate the constraint (e.g. a short `TimeoutSeconds` combined with the default 30 s `SamplingDurationSec` is safe, but a long `TimeoutSeconds` paired with a short `SamplingDurationSec` is not). This auto-adjustment is silent by design — it never throws back to the caller — so consumers tuning `TimeoutSeconds` and `RestResilienceOptions.SamplingDurationSec` together should be aware the effective sampling window may be larger than the value they set.
-- `RestClientOptionsValidator` **must** be registered in `AddSharedKernelRestCommunication` — it must never be left unregistered silently.
+- `RestClientOptionsValidator` **must** be registered in `AddSharedKernelRestCommunication` — it must never be left unregistered silently. **Registration alone is not enough (P-358/WO-056 correction):** `RestClientOptions` is never resolved via `IOptions<RestClientOptions>.Value` by application code — it is constructed directly inside `AddRestClient<TClient>` and applied immediately to `IHttpClientBuilder`. A registered-but-never-actually-invoked `IValidateOptions<T>` is therefore a **structurally dead validator**, indistinguishable at review time from a correctly-wired one — this is exactly the defect P-358 closed. `RestCommunicationBuilder.AddRestClient<TClient>` **must** call `RestClientOptionsValidator`'s `Validate(name, options)` directly against the just-constructed `options` instance, immediately after `configure?.Invoke(options)` and before the `HttpClient`/resilience pipeline is built, throwing `Microsoft.Extensions.Options.OptionsValidationException(name, typeof(RestClientOptions), result.Failures)` on failure. The same rule applies to `RestResilienceOptions`'s numeric fields, which gained range validation under the same phase — see the field table above.
+- **Idempotency-key propagation (P-364/WO-056):** `IdempotencyKeyDelegatingHandler` is opt-in only, enabled per typed client via `RestClientOptions.EnableIdempotencyKeyPropagation = true`. When enabled, it attaches a stable idempotency-key header before the first Polly attempt and never regenerates it on retry — `StandardResilienceHandler` retries re-send the same `HttpRequestMessage` instance, so a simple "header already present" check keeps the key stable across every retry of one logical call. Same no-overwrite contract as the correlation/tenant handlers: a caller-supplied key always wins. Disabled by default because `StandardResilienceHandler`'s default `RetryCount = 3` means every typed client already silently re-issues non-idempotent HTTP verbs (POST/PATCH/DELETE) on transient failure — this handler converts that existing, easy-to-trigger duplicate-side-effect hazard into an explicit, documented guarantee when a downstream service can consume it.
 - `RestCommunicationBuilder` captures resolver presence as `bool _resolverRegistered` at construction time (`Services.Any(...)` must not be called per `AddRestClient<TClient>` invocation).
 - `ServiceDiscoveryResolvingHandler` must **never** be registered as a shared DI type when service discovery is used. Each typed client gets its own instance via an inline `AddHttpMessageHandler(sp => new ServiceDiscoveryResolvingHandler(..., capturedName))` factory closure.
 - `RestClientOptions.ServiceName` (nullable `string?`) overrides the `name` parameter for DNS lookup when set. When `null`, the `name` parameter is used. Document clearly in all new client registration examples.
@@ -290,7 +366,8 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 ### gRPC rules
 
 - All interceptors are registered globally via `AddGrpcClient<T>().AddInterceptor<T>(InterceptorScope.Channel)` — no per-call interceptor injection. `InterceptorScope` is in the `Grpc.Net.ClientFactory` namespace.
-- `CorrelationTracingInterceptor` must read `Activity.Current` at the **moment of the call**, not at DI registration time.
+- `CorrelationTracingInterceptor` must read `Activity.Current` at the **moment of the call**, not at DI registration time. When no ambient trace is active, the fallback correlation ID must be `Guid.NewGuid().ToString()` (hyphenated `"D"` format) — never `Guid.NewGuid().ToString("N")`, a confirmed SK0011 violation fixed under P-356/WO-056.
+- **`GrpcClientOptions.DeadlineSeconds` is a real, enforced per-call deadline (P-359/WO-056, shipped):** every client built via `AddGrpcClient<TClient>` applies `DeadlineSeconds` to every outgoing call — a documented, type-safe, previously-never-consulted option was the same class of defect `07.Messaging`'s dead `AzureServiceBusOptions.MaxConcurrentCalls` was (WO-054/P-342). **Verified empirically against the real `Grpc.Net.ClientFactory` 2.80.0 assembly (by reflection over the installed NuGet DLL, not assumed from prose)** — `IHttpClientBuilder` has **no** `ConfigureDefaultCallOptions(...)` method in this version; that was an unverified assumption in the original design. The real mechanism is `GrpcClientFactoryOptions.CallOptionsActions` (`IList<Action<CallOptionsContext>>`), populated inside the same `(IServiceProvider, GrpcClientFactoryOptions)` configure delegate already passed to `services.AddGrpcClient<TClient>(...)` for address resolution — `GrpcCommunicationBuilder.AddGrpcClient<TClient>` resolves `IClock` once from that closure's `sp`, then adds a `CallOptionsActions` entry that reads `clock.UtcNow` fresh at call time (never captured ahead of time) to compute `CallOptions.Deadline`; never a direct `DateTime.UtcNow`/`DateTimeOffset.UtcNow` call — reintroducing that violation while fixing the adjacent P-357 `KubernetesServiceEndpointResolver` finding would have been self-defeating. **Design refinement beyond the original P-359 text:** the deadline is applied only when `CallOptions.Deadline is null`, so it never overwrites a per-call deadline the caller already supplied through the generated client's own `CallOptions` overload — mirroring this domain's existing "caller-supplied value always wins" convention for `x-correlation-id`/`x-tenant-id`. `AddSharedKernelGrpcCommunication` registers a safety-net `services.TryAddSingleton<IClock, SystemClock>()` (mirroring `AddK8sServiceDiscovery`'s identical P-357 safety net) so this newly-added `IClock` dependency needs zero new caller-side setup. `GrpcClientOptionsValidator` rejects `DeadlineSeconds <= 0` at registration time, invoked the same direct-call-at-point-of-consumption way `RestClientOptionsValidator` is (see REST client rules' P-358 note) — `GrpcClientOptions` is likewise never resolved via `IOptions<T>.Value`, so the same structural-dead-validator trap applies here by default; it is also registered as `IValidateOptions<GrpcClientOptions>` in DI for any future direct `IOptions<T>` consumer.
 - Interceptors must catch **all** exceptions, log at `Error` level, and continue — they must never propagate exceptions into the gRPC call pipeline.
 - `MoneyProtoExtensions` and `TimestampProtoExtensions` are pure, static, and allocation-minimal — no `new()` allocations for conversion; no `ToString()`-based intermediate representations. Money conversion: `Units` (int64) + `Nanos` (int32, billionths) where `NanosPerUnit = 1_000_000_000`.
 - `GrpcChannel` instances are expensive — rely on `Grpc.Net.ClientFactory` channel caching (singleton pattern); never create a new `GrpcChannel.ForAddress()` per call.
@@ -312,6 +389,7 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - GraphQL error responses must map to the same `ProblemDetails` shape as REST responses — `SharedKernelErrorFilter` handles this automatically when registered via `AddSharedKernelGraphQL`.
 - `MaxPageSize` default is 100. Hard cap is 500 — `GraphQLOptions` validator rejects values above 500. Any override beyond 500 requires documented justification in the consuming service.
 - `AddSharedKernelGraphQL` is idempotent — calling it twice does not double-register conventions, error filters, or pagination settings.
+- **`GraphQLOptions` validation must run against the exact instance applied to HotChocolate (P-358/WO-056 correction):** `AddSharedKernelGraphQL` constructs `GraphQLOptions` locally and applies it directly to `ModifyPagingOptions`/`DisableIntrospection` — never via `IOptions<T>.Value` — so `GraphQLOptionsValidator`'s DI registration alone cannot fire. Call `GraphQLOptionsValidator`'s `Validate(name: null, options)` directly against the locally-constructed instance, immediately after `configure?.Invoke(options)` and before any HotChocolate configuration reads its values, throwing `OptionsValidationException` synchronously on failure. Same structural root cause and same fix pattern as `.Rest`'s `RestClientOptionsValidator`.
 - HotChocolate v16 is **not AOT-safe** — do not add `<IsAotCompatible>true</IsAotCompatible>` to `SharedKernel.Communication.GraphQL.csproj` or any consuming project that references it.
 - `DefaultFilterOperations` constants use `LowerThan` (= 20) and `LowerThanOrEquals` (= 22) — **not** `LessThan`/`LessThanOrEquals` (those names do not exist in HC v16).
 - HC v16 offset paging returns `IPage` (not `CollectionSegment<T>`); use `IPageTotalCountProvider.TotalCount` for count and `IPage.Items.OfType<T>()` for typed items.
@@ -328,6 +406,8 @@ AddStaticServiceDiscovery(this IServiceCollection, Dictionary<string, Uri> endpo
 - `ResolveAsync` must **never throw** for an unresolvable service name in production — it returns a non-null `Uri` using the K8s DNS convention and lets the caller's transport surface the connection error.
 - `StaticServiceEndpointResolver` must only be registered in non-production environments — `AddStaticServiceDiscovery` logs `LogLevel.Warning` at startup.
 - `AddStaticServiceDiscovery` throws `InvalidOperationException` if `IServiceEndpointResolver` is already registered — prevents silent resolver replacement in misconfigured environments.
+- **The registration guard is symmetric (P-360/WO-056 correction):** `AddK8sServiceDiscovery` throws the identical `InvalidOperationException` when `IServiceEndpointResolver` is already registered — it must never silently no-op via `TryAddSingleton` when called second. Whichever service-discovery extension runs second against an already-registered resolver must produce the same clear signal, regardless of call order. A developer migrating from static to K8s discovery, or copy-pasting an example, must never lose their intended resolver silently.
+- **`KubernetesServiceEndpointResolver` sources current time from an injected `IClock`, never `DateTimeOffset.UtcNow` directly (P-357/WO-056 correction):** both the cache-hit comparison and the cache-write expiry computation in `ResolveAsync` read `clock.UtcNow`. `AddK8sServiceDiscovery` registers a safety-net `services.TryAddSingleton<IClock, SystemClock>()` so the extension keeps working with zero new caller-side setup — a consuming service's own `IClock` registration, of any implementation, always wins over the safety net.
 - `StaticServiceEndpointResolver.ResolveAsync` returns the K8s convention URI for unknown service names (never throws) to maintain behavioural parity with `KubernetesServiceEndpointResolver`.
 - `KubernetesServiceEndpointResolver` implements a TTL-based in-memory endpoint cache controlled by `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds` (default 30, 0 = disabled). The cache uses `ConcurrentDictionary<string, CachedEntry>` keyed case-insensitively. Stale-while-revalidate: DNS failure with stale entry logs `Warning` and returns stale `Uri` (never throws). DNS failure with no prior entry falls through to K8s convention URI.
 - `K8sServiceDiscoveryOptionsValidator` rejects negative `EndpointCacheTtlSeconds` values. Zero is valid (disables caching).
@@ -360,6 +440,13 @@ The following are unconditional violations that must be caught at design review:
 | `MaxPageSize` set above 500 without documented justification | Violation |
 | Reflection-based STJ used as primary ProblemDetails deserialization path (not as fallback) | Violation |
 | `new JsonSerializerOptions()` allocated per call inside `ProblemDetailsDeserializer` | Violation — must be `static readonly` |
+| `RestClientOptionsValidator`/`GraphQLOptionsValidator`/`GrpcClientOptionsValidator` not registered, **or** registered but never invoked against the actual instance applied to the client/schema (P-358/WO-056) | Hard violation — options validation silently absent or structurally dead; validation must run synchronously at the point of consumption, immediately after `configure?.Invoke(options)` |
+| `GrpcClientOptions.DeadlineSeconds` configured but not applied as a real `CallOptions.Deadline` on every call (P-359/WO-056) | Hard violation — a documented, type-safe option that silently does nothing, mirroring `07.Messaging`'s dead `AzureServiceBusOptions.MaxConcurrentCalls` defect (WO-054/P-342) |
+| `AddK8sServiceDiscovery` silently no-ops (e.g. via `TryAddSingleton`) when `IServiceEndpointResolver` is already registered (P-360/WO-056) | Hard violation — the guard must be symmetric with `AddStaticServiceDiscovery`'s existing throw |
+| Correlation-ID fallback (`.Rest` or `.Grpc`) synthesized via `Guid.NewGuid().ToString("N")` instead of `Guid.NewGuid().ToString()` (P-356/WO-056) | Hard violation — SK0011 non-canonical GUID format |
+| Direct `DateTime.UtcNow`/`DateTimeOffset.UtcNow` call anywhere in `.Internal` or `.Grpc` production code (e.g. computing a gRPC deadline instant) | Hard violation — SK0001; always inject `IClock` (P-357/P-359/WO-056) |
+| A generic `EnsureSuccessOrErrorAsync<T>`-shaped method reintroduced that returns a default/unpopulated value on success | Hard violation — P-361/WO-056 retired exactly this shape; use `ReadEnvelopeAsync<T>` for a deserialized payload, the non-generic `EnsureSuccessOrErrorAsync` for a status-check-only outcome |
+| `IdempotencyKeyDelegatingHandler` regenerates its key value on a Polly retry, or overwrites a caller-supplied `x-idempotency-key` header | Hard violation — P-364/WO-056; the same value must survive every retry of one logical call |
 | `RestClientOptionsValidator` not registered in `AddSharedKernelRestCommunication` | Hard violation — options validation silently absent |
 | `Services.Any(d => ...)` called inside `AddRestClient` or `AddGrpcClient` per-registration (O(n) probe) | Violation — resolver presence captured once at builder construction |
 | `ServiceDiscoveryResolvingHandler` registered as a shared DI type when multiple clients need distinct service names | Hard violation — per-client closure factory required |
@@ -485,6 +572,14 @@ services.AddSharedKernelRestCommunication()
 // return await response.ReadEnvelopeAsync<OrderDto>(OrderJsonContext.Default.OrderDto, ct);
 // On 2xx: Envelope<OrderDto>.Ok(dto); on non-2xx: Envelope<OrderDto>.Fail(error)
 
+// REST client with opt-in idempotency-key propagation (P-364/WO-056) — attaches a stable
+// x-idempotency-key header before the first Polly attempt and reuses it across every retry
+services.AddSharedKernelRestCommunication()
+        .AddRestClient<IPaymentServiceClient>(options => {
+            options.BaseAddress = "http://payment-service";
+            options.EnableIdempotencyKeyPropagation = true;   // POST/PATCH/DELETE calls now safe to retry
+        });
+
 // K8s discovery with TTL cache tuned for tight latency (disable buffer)
 services.AddK8sServiceDiscovery(options => {
     options.Namespace = "production";
@@ -506,14 +601,17 @@ services.AddSharedKernelRestCommunication()
 - HTTP delegation handler tests (`CorrelationIdDelegatingHandler`, `TenantIdDelegatingHandler`) must use `HttpMessageHandler` test doubles — never make real HTTP calls.
 - gRPC interceptor tests must use `Grpc.Core.Testing.TestServerCallContext` or an equivalent in-memory channel stub.
 - `KubernetesServiceEndpointResolver` tests must mock the DNS resolver — no live K8s cluster dependency; DNS-dependent tests tagged `[Trait("Category", "Integration")]`.
+- **TTL cache tests must use `16.Testing`'s `FakeClock`, never a real wall-clock sleep (P-357/WO-056 correction):** cache-hit, cache-expired, and stale-while-revalidate branches are driven deterministically by advancing `FakeClock`'s current instant — a real-time-dependent test (`Thread.Sleep`/`Task.Delay` waiting for a TTL to elapse) is a regression back to the flaky, slow pattern this phase eliminated.
+- **Correlation-ID/idempotency-key fallback-format tests must assert the canonical hyphenated shape specifically, not just `Guid.TryParse` success (P-356/WO-056):** a bare `TryParse` accepts both the hyphenated `"D"` format and the non-hyphenated `"N"` format, so it would not catch a regression back to `.ToString("N")`. Assert the string contains hyphens, or compare against `Guid.TryParseExact(value, "D", out _)`.
 - `StaticServiceEndpointResolver` unit tests: registered service → correct `Uri`; unregistered service → K8s convention URL; `ResolveAsync` never throws.
 - REST resilience tests: use `HttpMessageHandler` test doubles to simulate transient failures; assert retry fires `RetryCount` times; assert circuit breaker opens after `FailureThreshold`.
 - GraphQL tests: use HotChocolate's `IRequestExecutor` test builder; assert filter + sort + paging work with configured convention; assert `MaxPageSize` enforcement; assert error mapping to `ProblemDetails` shape.
 - All test projects reference `16.Testing/SharedKernel.Testing` for shared helpers.
 - Integration tests making real network calls must carry `[Trait("Category", "Integration")]` and must be skipped in unit-only CI runs.
+- **`consumer-verify` (P-362/WO-056):** a dedicated project at `11.Communication/consumer-verify/`, mirroring `17.Workflows/consumer-verify`'s shape exactly — a real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()` composition (never `BuildServiceProvider()` alone) proving all four packages' DI entry points resolve cleanly, plus the two P-358 regression proofs (a deliberately invalid `RestClientOptions`/`GraphQLOptions` each fail `IHost.StartAsync()` loudly via `OptionsValidationException`, not silently). This is the class of proof a unit test calling a validator object directly does not provide, and is exactly what would have caught the original dead-validator defect. Not a `.Tests` project — `IsPackable=false`, `OutputType=Exe`, never shipped.
 - **`[LoggerMessage]` `EventId`/`Level` regression coverage (WO-041, P-255, T-27):** verify via reflection over the compiled type (`GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static).GetCustomAttribute<LoggerMessageAttribute>()`, asserting `.EventId`/`.Level`) rather than only exercising the runtime call path — several call sites (DNS-failure fallback, stale-cache-used, SRV/A-record-lookup-failed) are not reachable through the pass-through `IServiceEndpointResolver` test provider (`AddPassThroughServiceEndpointProvider`, `Microsoft.Extensions.ServiceDiscovery`'s own always-succeeds test provider) without a fault-injectable DNS provider, matching the same documented limitation `TtlCacheTests` already records for its `[Trait("Category", "Integration")]`-tagged, skipped stale-cache tests. Combine with a runtime capturing-`ILogger<T>`/`TestLogSink` assertion for every call site that IS reachable (e.g. `TenantIdInterceptor`'s injected-exception path; `KubernetesServiceEndpointResolver`'s SRV-lookup-attempt/service-resolved/cache-hit paths on a successful pass-through resolution) so the retrofit is verified both statically (attribute-correct) and dynamically (actually fires) wherever feasible.
 - **Real-assembly `LoggingEventIdIntegrityAssertion` invocation (WO-041, P-255, T-28):** each package's own `.Tests` project carries a **test-project-only** `ProjectReference` to `00.Governance/SharedKernel.ArchitectureTests` (never from the production `.csproj`) — mirrors the cross-domain precedent already established by `05.Application.Behaviors.Tests` and `SharedKernel.Messaging.MassTransit.Tests`. Requires bumping `FluentAssertions` to `8.10.0` in the referencing test project (`SharedKernel.ArchitectureTests` itself pins 8.10.0; a lower pin triggers `NU1605`). A cross-assembly "no EventId collision between `.Grpc` and `.Internal`" test belongs in **`SharedKernel.Communication.Grpc.Tests` only** — never `.Internal.Tests` — because `.Grpc`'s production `.csproj` already legitimately references `.Internal` (G-09 service-discovery integration); the reverse direction from `.Internal.Tests` would invert `CommunicationLayeringRules.CommunicationInternalNeverReferencesOtherCommunicationPackages`, even as a test-only reference. When a test needs `typeof(SomeInternalType).Assembly` from outside `.Internal`'s own `InternalsVisibleTo` grant, anchor on a **public** type (`IServiceEndpointResolver`, `K8sServiceDiscoveryOptions`) — not an `internal sealed` implementation type (`KubernetesServiceEndpointResolver`), which only `SharedKernel.Communication.Internal.Tests` can see.
-- **SK0020/SK0021 zero-diagnostics verification (WO-041, P-255, T-28):** verified via a **temporary** analyzer `ProjectReference` on the production `.csproj` (`<ProjectReference ... OutputItemType="Analyzer" ReferenceOutputAssembly="false" />` pointing at `00.Governance/SharedKernel.Analyzers`), built with `-p:TreatWarningsAsErrors=false` to surface every analyzer diagnostic as a warning instead of a build-breaking error, grepped for `SK0020`/`SK0021`, then **reverted** — never a permanent wiring change (same technique as `07.Messaging`'s LR-16/LR-17). This surfaced two pre-existing, unrelated findings out of scope for the logging retrofit: `KubernetesServiceEndpointResolver`'s `DateTimeOffset.UtcNow` calls (SK0001 — should inject `IClock`) and `CorrelationTracingInterceptor`'s `Guid.ToString("N")` correlation-ID fallback (SK0011 — non-canonical GUID format) — both flagged here as a candidate follow-up work order, not fixed under this phase's scope.
+- **SK0020/SK0021 zero-diagnostics verification (WO-041, P-255, T-28):** verified via a **temporary** analyzer `ProjectReference` on the production `.csproj` (`<ProjectReference ... OutputItemType="Analyzer" ReferenceOutputAssembly="false" />` pointing at `00.Governance/SharedKernel.Analyzers`), built with `-p:TreatWarningsAsErrors=false` to surface every analyzer diagnostic as a warning instead of a build-breaking error, grepped for `SK0020`/`SK0021`, then **reverted** — never a permanent wiring change (same technique as `07.Messaging`'s LR-16/LR-17). This surfaced two pre-existing, unrelated findings out of scope for the logging retrofit: `KubernetesServiceEndpointResolver`'s `DateTimeOffset.UtcNow` calls (SK0001 — should inject `IClock`) and `CorrelationTracingInterceptor`'s `Guid.ToString("N")` correlation-ID fallback (SK0011 — non-canonical GUID format) — both flagged here as a candidate follow-up work order at the time, not fixed under this phase's scope. **Fixed under P-357 and P-356 respectively (WO-056)** — see the Changelog entry below and this file's Internal/gRPC rules above for the corrected contracts.
 
 ---
 
@@ -536,3 +634,17 @@ services.AddSharedKernelRestCommunication()
 - [2026-07-15] T-29, DO-07 (P-260/WO-042) closed — test-local literal duplicates of `x-correlation-id`/`x-tenant-id` replaced with `WellKnownHeaders.CorrelationId`/`.TenantId` references in `CorrelationIdDelegatingHandlerTests.cs`/`TenantIdDelegatingHandlerTests.cs` (`.Rest.Tests`) and `GrpcMetadataHelperTests.cs` (`.Grpc.Tests`); `TenantIdInterceptorTests.cs`/`CorrelationTracingInterceptorTests.cs` already referenced the production `TenantIdKey`/`CorrelationIdKey` symbols, not literals, so needed no change. One test assertion required adjusting for the `Grpc.Core.Metadata` lowercase-normalization behavior documented under gRPC rules (`CloneAndAdd_EmptySource_ResultContainsOnlyNewEntry` now compares the stored key against `WellKnownHeaders.TenantId.ToLowerInvariant()`) — no production behavior changed. DO-07: verified the existing "Cross-cutting propagation rules" and gRPC-rules sections already fully document the `WellKnownHeaders` sourcing and the gRPC thin-alias exception; no edit needed. 66/66 `.Rest.Tests` + 60/60 `.Grpc.Tests` passing. P-260/WO-042 fully closed — every phase key in `11.Communication` is now ● except Published (communication-phase-implementer)
 - [2026-07-14] P-260 (WO-042) planned — new phase closing the header-name duplication class flagged alongside P-259/P-261: `CorrelationIdDelegatingHandler`/`TenantIdDelegatingHandler` (`.Rest`) and `TenantIdInterceptor`/`CorrelationTracingInterceptor` (`.Grpc`) each independently declared their own `x-correlation-id`/`x-tenant-id` literal `const`, with no shared source of truth. Design decision (D-24): both packages now consume `01.Core`'s `WellKnownHeaders.CorrelationId`/`.TenantId` (P-259, already shipped) directly; a locally-named `const` survives only as a thin value-forwarding alias where a package benefits from a local symbol name — explicitly carved out for gRPC's lowercase-metadata-key convention (`TenantIdInterceptor.TenantIdKey`, correlation metadata key) — never as a second, independently-typed literal. No new `.csproj` reference needed in either package (both already reference `01.Core`; the P-163 rejection of a `04.Contracts` reference in `.Grpc` remains untouched and unrelated). 8 tasks added: D-24 (contract), R-19/R-20 (Rest retrofit), G-16/G-17 (Grpc retrofit), T-29 (test-literal cleanup across `.Rest.Tests`/`.Grpc.Tests`), DO-07 (CLAUDE.md update). Interface Contracts, propagation rules, and layering-violation guard table updated to document the single-source-of-truth requirement and the thin-alias exception (communication-arch-planner, WO-042)
 - [2026-07-31] P-329 (WO-052) planned — new phase adopting `04.Contracts`' P-328 rename of `SharedKernel.Contracts.Envelope` → `SharedKernel.Contracts.Envelopes` (fixing a namespace/type-name collision that forced a `using EnvelopeNs = ...` alias workaround). Source audit (not assumed from prior docs) confirmed the entire blast radius in `11.Communication` is one line: `HttpResponseMessageExtensions.cs`'s `using SharedKernel.Contracts.Envelope;` import — the only production reference to the retired namespace anywhere in this domain. `ReadEnvelopeAsyncTests.cs` never imports the namespace directly (relies on `var` type inference) and needs no change; `.Grpc.csproj`'s doc comment mentioning `Envelope<T>` is prose documenting the P-163 no-reference rule, not an import, and is unaffected. 4 tasks added: D-25 (adoption-contract design confirming single-file scope), R-21 (the one-line `using` swap), T-30 (regression pass — 66 `.Rest.Tests` incl. `ReadEnvelopeAsyncTests`'s 12), DO-08 (this Current Phase note). No Scaffold/Grpc/GraphQL/Internal/Published tasks — nothing else in this domain touches the renamed namespace. Gated on `04.Contracts` shipping P-328 first (`◐` Dispatched, not yet implemented as of this entry) — implementation cannot start until then (communication-arch-planner, WO-052)
+- [2026-08-11] WO-056 (P-356–P-364) — nine gap-fill phases dispatched, verified against real shipped `.cs` source (direct file reads, not domain-brain prose) rather than assumed correct because every prior phase key showed `●`. Nine confirmed defects, all design-locked in this file's sections above, all `○` Pending in `state-map.md`:
+  - **P-356** — `CorrelationIdDelegatingHandler.cs:24` (`.Rest`) and `CorrelationTracingInterceptor.cs:96` (`.Grpc`) both fall back to `Guid.NewGuid().ToString("N")` — a duplicated SK0011 violation. The `.Rest` occurrence was never caught during the P-255/WO-041 logging retrofit because the temporary-analyzer-`ProjectReference` verification technique used there was wired only into `.Grpc`/`.Internal`'s `.csproj` files, never `.Rest`'s — a verification-coverage gap, not a false "clean" claim. Fix: canonical `Guid.NewGuid().ToString()` (hyphenated `"D"` format) in both call sites.
+  - **P-357** — `KubernetesServiceEndpointResolver.cs:93,107` call `DateTimeOffset.UtcNow` directly — the exact SK0001 finding P-255/T-28 surfaced via a temporary SK0020/SK0021-verification analyzer pass and flagged as an unfixed "candidate follow-up," never turned into a phase until now. `16.Testing`'s `FakeClock` already exists and ships today, so no new `16.Testing` work is needed to fix it — only `.Internal`'s own constructor/DI wiring changes.
+  - **P-358** — `RestCommunicationBuilder.AddRestClient<TClient>` constructs `RestClientOptions` via `new()` + direct `configure?.Invoke(options)`, never through `IOptions<T>`, so the registered `RestClientOptionsValidator` (confirmed nested inside `RestClientOptions.cs`, validating only `BaseAddress`/`TimeoutSeconds`) can never structurally fire. `AddSharedKernelGraphQL` has the identical shape — applies its locally-built `GraphQLOptions` to HotChocolate's paging config before the registered `GraphQLOptionsValidator` ever runs. Fix locked as validate-at-point-of-consumption (direct `Validate(...)` call + `OptionsValidationException` throw, immediately after `configure?.Invoke`) for both packages, deliberately not forced into the standard `.ValidateOnStart()` shape neither options type actually needs. `RestResilienceOptions`'s numeric fields (confirmed to carry zero range validation today) gain it in the same pass.
+  - **P-359** — `GrpcCommunicationBuilder.cs` never references `DeadlineSeconds` anywhere (confirmed via grep); no `GrpcClientOptionsValidator` exists at all (the `Address`-required check is inline, not `IValidateOptions`-based). Design requires the deadline-instant computation route through `IClock` rather than reintroduce a fresh `DateTimeOffset.UtcNow` call while P-357 fixes an adjacent one in the same domain.
+  - **P-360** — `ServiceCollectionExtensions.cs` (`.Internal`) confirmed the exact asymmetry: `AddK8sServiceDiscovery` uses `TryAddSingleton` (silent no-op) while `AddStaticServiceDiscovery` uses `services.Any(...)` + `InvalidOperationException`.
+  - **P-361** — `HttpResponseMessageExtensions.EnsureSuccessOrErrorAsync<T>` confirmed returning `Result<T>.Success(default!)` unconditionally on 2xx; its own XML doc already half-admits the gap. Fix is **retirement**, not patching — this package has never been packed or published, so a breaking rename costs nothing today and avoids triplicating deserialization logic that `ReadEnvelopeAsync<T>`'s two overloads already implement correctly.
+  - **P-362** — a `consumer-verify` project, scaffolded to mirror `17.Workflows/consumer-verify` (read in full as the grounding precedent for this domain's harness), proving all four DI entry points and the P-358 fix through a real `IHost.StartAsync()`. `11.Communication` was the one `consumer-verify`-precedented domain still without one, despite being referenced by every consuming service in the platform.
+  - **P-363** — re-verification against the real `.csproj` files found `PB-01`–`PB-04`'s NuGet metadata (`PackageId`/`Version`/`Authors`/license/repository/copyright/`GenerateDocumentationFile`/`TreatWarningsAsErrors`/symbols) already fully complete on all four packages — corrected from `○` to `●` in `state-map.md` rather than re-planned. Only `PackageReadmeFile`/README content was genuinely missing; `PB-05`/`PB-06` (pack/publish) are now explicitly gated on the full WO-056 correctness bundle landing first, since this is the domain's first-ever release.
+  - **P-364** — a new opt-in `IdempotencyKeyDelegatingHandler`, completing the platform's idempotency story (`05.Application`'s `IIdempotentRequest`, `07.Messaging`'s `IIdempotencyStore`) at the outbound-HTTP level, converting the existing (and previously undocumented) hazard that `StandardResilienceHandler`'s default retries already silently re-issue non-idempotent verbs into an explicit, opt-in guarantee.
+
+  34 new tasks added across all nine phase keys (D-26–D-32, S-14, R-22–R-26, G-18–G-20, GQ-10, I-12/I-13, T-31–T-38, DO-09–DO-15, PB-07/PB-08), plus PB-01–PB-04 corrected `○`→`●`. Interface Contracts, Implementation Rules, DI Registration, and Test Rules sections above already describe the corrected, post-fix target design this review locked — the corresponding `.cs` source has not yet been changed to match. No Layering Rules, Package Naming, or breaking-change concerns beyond the deliberate `EnsureSuccessOrErrorAsync<T>` retirement, safe pre-publish with zero external consumers (communication-arch-planner, user request, WO-056, P-356–P-364)
+- [2026-08-11] GQ-10 (P-358/WO-056) shipped — `AddSharedKernelGraphQL` now calls `GraphQLOptionsValidator.Validate(name: null, options)` directly against the locally-constructed `options` instance, immediately after `configure?.Invoke(options)` and before `services.Configure<GraphQLOptions>(...)`/`ModifyPagingOptions`/`DisableIntrospection` ever apply its values to HotChocolate, throwing `OptionsValidationException` on failure — the GraphQL half of P-358's validate-at-point-of-consumption fix (the `.Rest` half shipped earlier in R-23/R-24). Discovered during implementation: `OptionsValidationException`'s `optionsName` constructor parameter is non-nullable, so the shipped code passes `string.Empty` rather than `null` as D-28's design text literally said — documented as an implementation note directly under `AddSharedKernelGraphQL` in Interface Contracts. Also fixed a pre-existing, unrelated blocker: `SharedKernel.Communication.GraphQL.Tests.csproj` pinned `Microsoft.Extensions.DependencyInjection` to 10.0.5 (one version behind `SharedKernel.Testing`'s 10.0.9 floor), causing a hard `NU1605` restore failure — bumped to 10.0.9 to match `.Rest`/`.Grpc`/`.Internal`'s test projects. 43/43 `SharedKernel.Communication.GraphQL.Tests` passing, zero regressions. `SK.11.GraphQL` now 10/10 ●, promoted to root state-map. T-34 (startup-level DI-resolution regression test) and DO-11 (CLAUDE.md hard-rule wording correction) remain queued, deferred to future Tests/Docs-phase sessions per this phase's own scope, mirroring the R-22–R-26/G-18–G-20 precedent (communication-phase-implementer)
+- [2026-08-11] G-18–G-20 (WO-056) shipped in `.Grpc` — canonical GUID fallback (P-356); real per-call `CallOptions.Deadline` via the empirically-verified `GrpcClientFactoryOptions.CallOptionsActions` (not the assumed-but-nonexistent `ConfigureDefaultCallOptions`), IClock-sourced, never overwriting a caller-supplied deadline; new `GrpcClientOptionsValidator` (P-359). `AddSharedKernelGrpcCommunication` gained a safety-net `IClock` registration. gRPC rules and `AddSharedKernelGrpcCommunication` contract corrected to name the real mechanism; Current Phase note updated — `SK.11.Design`/`Scaffold`/`Rest`/`Grpc` now `●`, five phase keys remain. 60/60 `SharedKernel.Communication.Grpc.Tests` passing; T-31/T-32/T-35 (dedicated regression tests) deliberately deferred to a future Tests-phase session (communication-phase-implementer)
