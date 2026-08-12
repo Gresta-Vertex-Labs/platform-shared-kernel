@@ -93,6 +93,33 @@ public sealed class CorrelationIdDelegatingHandlerTests
         // Assert
         await act.Should().NotThrowAsync();
     }
+
+    /// <summary>
+    /// T-31 (P-356/WO-056): the GUID fallback must be the canonical hyphenated <c>"D"</c> format —
+    /// never <c>Guid.NewGuid().ToString("N")</c> (the confirmed SK0011 violation). A bare
+    /// <c>Guid.TryParse</c> accepts both formats and would not catch a regression back to
+    /// <c>"N"</c>, so this asserts the exact format via <see cref="Guid.TryParseExact"/> and
+    /// hyphen presence explicitly.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_WithNoActivity_FallbackIsCanonicalHyphenatedFormat()
+    {
+        // Arrange
+        Activity.Current = null;
+        string? captured = null;
+        var stub = new CaptureHeaderHandler(CorrelationHeader, h => captured = h);
+        var client = BuildClient(stub);
+
+        // Act
+        await client.GetAsync("/test");
+
+        // Assert
+        captured.Should().NotBeNullOrEmpty();
+        Guid.TryParseExact(captured, "D", out _).Should().BeTrue(
+            "the fallback must be the canonical hyphenated GUID format (\"D\"), not Guid.NewGuid().ToString(\"N\")");
+        captured.Should().Contain("-");
+        captured.Should().HaveLength(36);
+    }
 }
 
 /// <summary>Test double that captures a single header value and returns 200 OK.</summary>

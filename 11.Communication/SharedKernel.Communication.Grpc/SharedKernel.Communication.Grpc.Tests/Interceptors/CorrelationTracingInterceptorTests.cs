@@ -212,6 +212,41 @@ public sealed class CorrelationTracingInterceptorTests
             .Should().NotBeNull("x-correlation-id must be injected on duplex-streaming calls");
     }
 
+    /// <summary>
+    /// T-31 (P-356/WO-056): the GUID fallback must be the canonical hyphenated <c>"D"</c> format —
+    /// never <c>Guid.NewGuid().ToString("N")</c> (the confirmed SK0011 violation). A bare
+    /// <c>Guid.TryParse</c> accepts both formats and would not catch a regression back to
+    /// <c>"N"</c>, so this asserts the exact format via <see cref="Guid.TryParseExact"/> and
+    /// hyphen presence explicitly.
+    /// </summary>
+    [Fact]
+    public void AsyncUnaryCall_WithNoActivity_FallbackIsCanonicalHyphenatedFormat()
+    {
+        // Arrange
+        Activity.Current = null;
+        var interceptor = CreateInterceptor();
+        Metadata? capturedMetadata = null;
+        var context = BuildContext(null);
+
+        // Act
+        interceptor.AsyncUnaryCall("request", context,
+            (_, ctx) =>
+            {
+                capturedMetadata = ctx.Options.Headers;
+                return MakeFakeUnaryCall();
+            });
+
+        // Assert
+        capturedMetadata.Should().NotBeNull();
+        var entry = GetEntry(capturedMetadata!, CorrelationTracingInterceptor.CorrelationIdKey);
+        entry.Should().NotBeNull();
+        var value = entry!.Value;
+        Guid.TryParseExact(value, "D", out _).Should().BeTrue(
+            "the fallback must be the canonical hyphenated GUID format (\"D\"), not Guid.NewGuid().ToString(\"N\")");
+        value.Should().Contain("-");
+        value.Should().HaveLength(36);
+    }
+
     private static AsyncUnaryCall<string> MakeFakeUnaryCall() =>
         new(
             Task.FromResult("response"),

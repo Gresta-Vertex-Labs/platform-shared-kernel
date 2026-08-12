@@ -38,6 +38,43 @@ public sealed class ServiceCollectionExtensionsTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // T-36 (P-360/WO-056): the registration guard is symmetric —
+    // whichever service-discovery extension runs second throws, regardless of call order.
+    // ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddK8sServiceDiscovery_ThrowsInvalidOperationException_AfterAddStaticServiceDiscovery()
+    {
+        // Arrange — this is the newly-fixed direction (T-07's sibling): AddK8sServiceDiscovery used
+        // to silently no-op via TryAddSingleton here instead of throwing.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddStaticServiceDiscovery(new Dictionary<string, Uri>());
+
+        // Act
+        Action act = () => services.AddK8sServiceDiscovery();
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*KubernetesServiceEndpointResolver*already registered*");
+    }
+
+    [Fact]
+    public void AddK8sServiceDiscovery_ThrowsInvalidOperationException_AfterAddK8sServiceDiscovery()
+    {
+        // Arrange — same-direction double-registration must also fail loudly, not silently no-op.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddK8sServiceDiscovery();
+
+        // Act
+        Action act = () => services.AddK8sServiceDiscovery();
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     [Fact]
     public async Task AddStaticServiceDiscovery_RegistersResolver_WhenNotAlreadyRegistered()
     {

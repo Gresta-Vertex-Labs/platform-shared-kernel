@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SharedKernel.Communication.Rest.Builders;
 using SharedKernel.Communication.Rest.Extensions;
 using SharedKernel.Communication.Rest.Handlers;
@@ -118,6 +119,67 @@ public sealed class RestCommunicationBuilderTests
 
         // Assert
         returned.Should().BeSameAs(builder, "AddRestClient must return 'this' for chaining");
+    }
+
+    /// <summary>
+    /// T-34 (P-358/WO-056): proves R-23's validate-at-point-of-consumption fix genuinely fires
+    /// through the real <c>AddRestClient&lt;TClient&gt;</c> call itself — synchronously, at
+    /// registration time — not merely when calling <c>RestClientOptionsValidator</c> directly.
+    /// </summary>
+    [Fact]
+    public void AddRestClient_WithInvalidTimeoutSeconds_ThrowsOptionsValidationExceptionAtCallSite()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = services.AddSharedKernelRestCommunication();
+
+        // Act
+        Action act = () => builder.AddRestClient<TestTypedClient>("test-client", o =>
+        {
+            o.BaseAddress = "http://test-service";
+            o.TimeoutSeconds = -1;
+        });
+
+        // Assert
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage("*TimeoutSeconds*");
+    }
+
+    [Fact]
+    public void AddRestClient_WithInvalidRetryCount_ThrowsOptionsValidationExceptionAtCallSite()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var builder = services.AddSharedKernelRestCommunication();
+
+        // Act
+        Action act = () => builder.AddRestClient<TestTypedClient>("test-client", o =>
+        {
+            o.BaseAddress = "http://test-service";
+            o.Resilience.RetryCount = -1;
+        });
+
+        // Assert
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage("*RetryCount*");
+    }
+
+    [Fact]
+    public void AddRestClient_WithInvalidResilienceOptions_NeverRegistersTypedClient()
+    {
+        // Arrange — a failed registration must not leave a half-registered typed client resolvable.
+        var services = new ServiceCollection();
+        var builder = services.AddSharedKernelRestCommunication();
+
+        // Act
+        Action act = () => builder.AddRestClient<TestTypedClient>("test-client", o =>
+        {
+            o.BaseAddress = "http://test-service";
+            o.Resilience.TotalTimeoutBufferSec = -1;
+        });
+
+        // Assert
+        act.Should().Throw<OptionsValidationException>();
     }
 }
 

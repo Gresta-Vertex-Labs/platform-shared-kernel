@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SharedKernel.Communication.GraphQL.Extensions;
 using SharedKernel.Communication.GraphQL.Options;
 
@@ -71,5 +72,32 @@ public sealed class AddSharedKernelGraphQLTests
         var sp = services.BuildServiceProvider();
         var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<GraphQLOptions>>();
         options.Value.AllowIntrospection.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// T-34 (P-358/WO-056): proves R-23/GQ-10's validate-at-point-of-consumption fix genuinely fires
+    /// through the real <c>AddSharedKernelGraphQL</c> call itself — synchronously, before any
+    /// HotChocolate schema is built — not merely when calling <c>GraphQLOptionsValidator</c> directly.
+    /// </summary>
+    [Fact]
+    public void AddSharedKernelGraphQL_WithMaxPageSizeAbove500_ThrowsOptionsValidationExceptionAtCallSite()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddSharedKernelGraphQL(o => o.MaxPageSize = 501);
+
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage("*MaxPageSize*");
+    }
+
+    [Fact]
+    public void AddSharedKernelGraphQL_WithMaxPageSizeZero_ThrowsOptionsValidationExceptionAtCallSite()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddSharedKernelGraphQL(o => o.MaxPageSize = 0);
+
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage("*MaxPageSize*");
     }
 }
