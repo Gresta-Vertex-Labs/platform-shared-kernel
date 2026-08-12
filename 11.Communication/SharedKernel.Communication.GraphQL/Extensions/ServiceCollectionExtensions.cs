@@ -16,6 +16,13 @@ public static class ServiceCollectionExtensions
     // Sentinel service descriptor used for idempotency guard.
     private sealed class SharedKernelGraphQLRegistrationMarker;
 
+    // Stateless — validates the just-constructed options instance directly, at the point of
+    // consumption, since GraphQLOptions is never resolved via IOptions<GraphQLOptions>.Value here
+    // (P-358/WO-056), mirroring RestClientOptionsValidator's/GrpcClientOptionsValidator's identical
+    // validate-at-point-of-consumption pattern (see RestCommunicationBuilder.AddRestClient<TClient> /
+    // GrpcCommunicationBuilder.AddGrpcClient<TClient>).
+    private static readonly GraphQLOptionsValidator OptionsValidator = new();
+
     /// <summary>
     /// Registers platform-standard HotChocolate GraphQL conventions:
     /// snake_case operation naming, <c>SharedKernelFilterConvention</c>,
@@ -50,6 +57,23 @@ public static class ServiceCollectionExtensions
         // Bind and validate GraphQLOptions.
         var options = new GraphQLOptions();
         configure?.Invoke(options);
+
+        // Validate the just-constructed instance immediately after configure?.Invoke(options) and
+        // before it is ever applied to services.Configure<GraphQLOptions>/ModifyPagingOptions/
+        // DisableIntrospection — the registered IValidateOptions<GraphQLOptions> can never
+        // structurally fire on its own, since this type is never resolved via
+        // IOptions<GraphQLOptions>.Value (P-358/WO-056).
+        var validationResult = OptionsValidator.Validate(name: null, options);
+        if (validationResult.Failed)
+        {
+            // OptionsValidationException's optionsName parameter is non-nullable — GraphQLOptions has
+            // no per-client name concept (unlike RestClientOptions/GrpcClientOptions), so string.Empty
+            // is the faithful "no name" sentinel for this single, unnamed options instance.
+            throw new OptionsValidationException(
+                string.Empty,
+                typeof(GraphQLOptions),
+                validationResult.Failures);
+        }
 
         services.Configure<GraphQLOptions>(o =>
         {
