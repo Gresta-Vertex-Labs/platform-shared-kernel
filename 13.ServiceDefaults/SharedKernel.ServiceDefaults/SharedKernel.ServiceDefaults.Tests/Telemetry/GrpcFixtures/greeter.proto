@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+option csharp_namespace = "SharedKernel.ServiceDefaults.Tests.Telemetry.GrpcFixtures";
+
+package greeter;
+
+// Minimal single-RPC service used ONLY to prove, end-to-end, that
+// WithCommunicationTelemetry()'s .AddGrpcClientInstrumentation() wiring produces a real span
+// carrying gRPC RPC semantic-convention tags for a genuine outbound gRPC call (T-43, WO-056/P-365).
+// Not a production contract — test-only, lives under SharedKernel.ServiceDefaults.Tests.
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}

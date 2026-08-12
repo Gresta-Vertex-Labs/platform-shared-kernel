@@ -35,6 +35,42 @@
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+    <!--
+      T-43 (WO-056/P-365) gating proof only — never referenced by the production
+      SharedKernel.ServiceDefaults.csproj. Grpc.AspNetCore (server + Grpc.Tools codegen +
+      Google.Protobuf) and Grpc.Net.Client (client) host a real, minimal in-process gRPC service
+      (GrpcFixtures/greeter.proto) so CommunicationTelemetryExtensionsTests can prove
+      WithCommunicationTelemetry()'s .AddGrpcClientInstrumentation() wiring against a genuine
+      outbound call, not merely that the extension didn't throw.
+    -->
+    <PackageReference Include="Grpc.AspNetCore" Version="2.80.0" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.80.0" />
+    <!--
+      T-43 (WO-056/P-365) gating proof only. C-47 confirmed (by decompiling the installed
+      assemblies) that Microsoft.Extensions.Http.Resilience 10.7.0 — the real production
+      dependency chain WithCommunicationTelemetry()'s Polly meter wiring targets — transitively
+      pins Polly.Core/Polly.Extensions 8.4.2. This test project cannot pin that exact version
+      itself: SharedKernel.Testing -> SharedKernel.Application.Behaviors already floors
+      Polly.Core at >= 8.7.0 transitively, and NU1605 (treated as an error under
+      TreatWarningsAsErrors elsewhere in this solution) forbids downgrading below a floor set
+      elsewhere in the graph. 8.7.0 is a same-major (v8) release of the identical package this
+      finding targets — the "Polly"-named Meter this test proves against is a stable, documented
+      public surface of Polly's own resilience telemetry, not a version-specific implementation
+      detail.
+    -->
+    <PackageReference Include="Polly.Core" Version="8.7.0" />
+    <PackageReference Include="Polly.Extensions" Version="8.7.0" />
+    <!--
+      T-43 (WO-056/P-365) gating proof only. In-memory metric exporter — the metrics-signal
+      analogue of this file's existing BaseProcessor&lt;Activity&gt; tracing-capture idiom
+      (T-39/T-40 precedent) — used to prove the "Polly" meter's measurements actually flow through
+      a built MeterProvider.
+    -->
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" Version="1.16.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Telemetry\GrpcFixtures\greeter.proto" GrpcServices="Both" />
   </ItemGroup>
 
 </Project>

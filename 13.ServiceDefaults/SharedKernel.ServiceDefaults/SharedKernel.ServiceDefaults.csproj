@@ -65,6 +65,24 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
     <!--
+      OpenTelemetry.Instrumentation.GrpcNetClient 1.15.1-beta.1: gRPC client OTel instrumentation,
+      activated by WithCommunicationTelemetry() (S-18/C-47, WO-056/P-365) — never by
+      AddSharedKernelTelemetry()'s base wiring. Still in beta but the only available net10.0-
+      compatible version of this package today; version-aligned with
+      11.Communication.Grpc/SharedKernel.Communication.Grpc.csproj's existing pin so the two
+      packages never silently diverge onto different beta builds within a single consuming
+      service's dependency graph. Contributes no new NU5104 exposure beyond what this project's
+      NoWarn suppression above (added for OpenTelemetry.Instrumentation.EntityFrameworkCore) already
+      covers. No PackageReference is needed for Polly's own "Polly"-named Meter — reached by bare
+      string name only (AddMeter("Polly")), requiring no compile-time dependency. NOTE: this
+      comment originally also named an AddSource("Polly") ActivitySource; C-47 later established by
+      decompiling the actually-installed assemblies that Polly 8.4.2 (the version pinned
+      transitively by Microsoft.Extensions.Http.Resilience 10.7.0) creates a "Polly" Meter but no
+      ActivitySource anywhere, so WithCommunicationTelemetry() wires the meter only — corrected here
+      so the two do not drift.
+    -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.15.1-beta.1" />
+    <!--
       Microsoft.Extensions.Diagnostics.HealthChecks and Microsoft.Extensions.Hosting are NOT
       referenced as explicit PackageReferences — both ship as part of the
       Microsoft.AspNetCore.App shared framework (see FrameworkReference above), and NuGet's
