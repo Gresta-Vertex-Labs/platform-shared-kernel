@@ -5,7 +5,19 @@ metadata:
   type: project
 ---
 
-## Phase completion status (as of 2026-08-11, mid-WO-056)
+## Phase completion status (as of 2026-08-12, WO-056 Tests phase closed)
+
+**UPDATE 2026-08-12:** `SK.11.Tests` (T-31–T-38) fully shipped and closed — all 8 deferred
+regression/DI-resolution tests from the WO-056 review landed in one session. Full regression:
+`.Rest.Tests` 77/77 (was 66), `.Grpc.Tests` 64/64 (was 60), `.GraphQL.Tests` 45/45 (was 43),
+`.Internal.Tests` 57/57 (was 52) — 243/243, zero regressions. Root Domain Summary Board row for
+Communication stayed at Docs/`●` per the established "never regress the row" precedent (Tests is
+earlier in the pipeline than the already-reached Docs/Published milestones). Only `SK.11.Docs`
+(DO-09–DO-15) and `SK.11.Published` (PB-07/PB-08) remain to close WO-056 in full — see
+[[feedback_grpc_deadline_test_technique]] and the TTL-cache-reflection-seeding note below for the
+new test techniques this pass established.
+
+## Phase completion status (as of 2026-08-11, mid-WO-056) — historical, superseded by the update above
 
 WO-056 (P-356–P-364, dispatched 2026-08-11) added 34 new tasks across all nine phase keys on top of
 the previously-all-● baseline below. As of this entry:
