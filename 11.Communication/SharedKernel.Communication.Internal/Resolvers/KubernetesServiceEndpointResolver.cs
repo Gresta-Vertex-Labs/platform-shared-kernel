@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.ServiceDiscovery;
 using SharedKernel.Communication.Internal.Options;
+using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Communication.Internal.Resolvers;
 
@@ -23,7 +24,8 @@ namespace SharedKernel.Communication.Internal.Resolvers;
 internal sealed partial class KubernetesServiceEndpointResolver(
     ServiceEndpointResolver resolver,
     IOptions<K8sServiceDiscoveryOptions> options,
-    ILogger<KubernetesServiceEndpointResolver> logger) : IServiceEndpointResolver
+    ILogger<KubernetesServiceEndpointResolver> logger,
+    IClock clock) : IServiceEndpointResolver
 {
     private readonly K8sServiceDiscoveryOptions _options = options.Value;
 
@@ -90,7 +92,7 @@ internal sealed partial class KubernetesServiceEndpointResolver(
         var ttl = _options.EndpointCacheTtlSeconds;
 
         // Fast path — cache hit when TTL > 0 and entry has not expired.
-        if (ttl > 0 && _cache.TryGetValue(serviceName, out var cached) && DateTimeOffset.UtcNow < cached.ExpiresAt)
+        if (ttl > 0 && _cache.TryGetValue(serviceName, out var cached) && clock.UtcNow < cached.ExpiresAt)
         {
             LogCacheHit(logger, serviceName, cached.Uri);
             return cached.Uri;
@@ -104,7 +106,7 @@ internal sealed partial class KubernetesServiceEndpointResolver(
             // DNS succeeded — update cache when TTL > 0.
             if (ttl > 0)
             {
-                var expiry = DateTimeOffset.UtcNow.AddSeconds(ttl);
+                var expiry = clock.UtcNow.AddSeconds(ttl);
                 _cache[serviceName] = new CachedEntry(resolved, expiry);
             }
 

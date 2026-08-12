@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.ServiceDiscovery;
 using SharedKernel.Communication.Internal.Options;
 using SharedKernel.Communication.Internal.Resolvers;
+using SharedKernel.Primitives.Clocks;
 
 namespace SharedKernel.Communication.Internal.Extensions;
 
@@ -20,10 +21,23 @@ public static class ServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional callback to configure <see cref="K8sServiceDiscoveryOptions"/>.</param>
     /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if <see cref="IServiceEndpointResolver"/> is already registered in the container.
+    /// </exception>
     public static IServiceCollection AddK8sServiceDiscovery(
         this IServiceCollection services,
         Action<K8sServiceDiscoveryOptions>? configure = null)
     {
+        // Guard: throw if IServiceEndpointResolver already registered. Symmetric with
+        // AddStaticServiceDiscovery's identical guard (P-360/WO-056) — whichever service-discovery
+        // extension runs second against an already-registered resolver must fail loudly instead of
+        // one direction silently no-op'ing via TryAddSingleton and losing the intended resolver.
+        if (services.Any(d => d.ServiceType == typeof(IServiceEndpointResolver)))
+            throw new InvalidOperationException(
+                $"Cannot register KubernetesServiceEndpointResolver: {nameof(IServiceEndpointResolver)} is already registered. " +
+                "Ensure AddK8sServiceDiscovery is called before any other service discovery extension " +
+                "and that AddStaticServiceDiscovery is not also registered in the same container.");
+
         if (configure is not null)
             services.Configure(configure);
 
@@ -34,7 +48,15 @@ public static class ServiceCollectionExtensions
         // ServiceEndpointWatcherFactory, pass-through provider, etc.)
         services.AddServiceDiscoveryCore();
 
-        services.TryAddSingleton<IServiceEndpointResolver, KubernetesServiceEndpointResolver>();
+        // P-357/WO-056: safety-net IClock default so KubernetesServiceEndpointResolver's TTL-cache
+        // expiry comparisons (which now source current time from an injected IClock, never a direct
+        // DateTimeOffset.UtcNow call) keep working with zero new caller-side setup — TryAdd so a
+        // consuming service's own IClock registration (of any implementation) always wins. Mirrors
+        // AddSharedKernelGrpcCommunication's identical safety-net registration added for the same
+        // reason under P-359 (.Grpc).
+        services.TryAddSingleton<IClock, SystemClock>();
+
+        services.AddSingleton<IServiceEndpointResolver, KubernetesServiceEndpointResolver>();
 
         return services;
     }
