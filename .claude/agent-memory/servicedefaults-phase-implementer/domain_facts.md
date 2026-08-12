@@ -200,3 +200,39 @@ the `state-map-phase` skill's own Step S8a explicitly classifies as "Case 3 — 
 closing" (no `Root Backlog ID` column, and the phase name isn't itself a `P-NNN` token) — so this class of
 WO-driven-but-lifecycle-shaped phase key never self-closes its root backlog entry automatically; closing it is
 always a manual, must-remember step for the implementer, not something to expect the skill to do for you.
+
+**Test counts as of 2026-08-12, end of session (SK.13.Core closed a fifth time — C-47, `WithCommunicationTelemetry`,
+WO-056/P-365; S-18 had landed earlier the same day):** 96/96 `SharedKernel.ServiceDefaults.Tests` passing (+4 from
+the prior 92), 30 `SharedKernel.MultiTenancy.Tests` unchanged. `WithCommunicationTelemetry` is the eighth
+`With*Telemetry` sibling and the first requiring genuine empirical package verification via decompilation (see
+[[decompile_verification_technique]]) rather than confirming a SharedKernel-owned source/meter name already
+exists. `SK.13.Core` is fully `●`/`—` (46/46 + C-40 N/A) but `SK.13.Tests` (T-43) and `SK.13.Docs` (DO-13) remain
+`○` — this is the first time in this domain's history a Core phase closed while Tests/Docs deliberately did not,
+because T-43's acceptance criterion (a real/in-process gRPC call + Polly retry producing genuine captured
+spans/metrics) is explicitly scoped as its own separate, larger session, not bundled into Core. Root Domain
+Summary Board row 13 stayed at `Published`/`●` throughout (per the now-well-established convention) — only
+Summary: Done/Next cells were refreshed; SK.13.Core's promotion to root was recorded via the changelog only,
+with Current Phase/State left unchanged, never regressed to "Core".
+
+**Test counts as of 2026-08-12, later same-day session (SK.13.Tests closed — T-43, the genuine gRPC/Polly
+capture proof, WO-056/P-365):** 100/100 `SharedKernel.ServiceDefaults.Tests` passing (+4 from the prior 96),
+30 `SharedKernel.MultiTenancy.Tests` unchanged. `SK.13.Tests` now 42/43 `●` (+1 `—` N/A: T-35) — fully closed.
+Only `SK.13.Docs` (DO-13) remains open in this domain as of this entry. See
+[[grpc_polly_test_capture_pattern]] for the full reusable recipe (WebApplicationFactory content-root
+workaround, ResponseVersionHandler, Polly.Core version-floor bump to 8.7.0, OpenTelemetry.Exporter.InMemory
+metrics capture). Root Domain Summary Board row 13 stayed `Published`/`●` throughout, per the established
+convention — only Summary cells refreshed.
+
+**Root `state-map.md` is ~1.5MB and exceeds the Read tool's whole-file size cap** — always use `Grep` to
+locate the target line/section first (e.g. `Grep "13\.ServiceDefaults"` or `Grep "### P-365"`), then `Read`
+with a small `offset`/`limit` window around the hit. Never attempt a bare `Read` on the whole file.
+
+**`sync-brain` skill mode routing confirmed again this session:** passing `domain: 13.ServiceDefaults` in the
+args routes to Sub-domain mode (touches only `13.ServiceDefaults/CLAUDE.md`); omitting `domain:` entirely
+(even while still describing the same 13.ServiceDefaults change) routes to Root mode (touches only the root
+`CLAUDE.md`). Needed **two separate invocations** this session — one per mode — to both (a) verify/confirm
+the domain-local `CLAUDE.md` edits already made directly, and (b) fix the root `CLAUDE.md`'s stale Folder Map
+row 13 + "What Goes Where" row (both still said "queued"/"still `○` Pending" and mischaracterized Polly's
+wiring as "ActivitySource/Meter" when C-47 had already found it Meter-only). This confirms/extends the
+[[decompile_verification_technique]] memory's existing note about this same routing quirk — worth checking
+before assuming one call handles both files.
