@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Security.ApiKey</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Pre-shared-key / machine-client authentication scheme for SharedKernel security: IApiKeyValidator extensibility point, constant-time key comparison built on SharedKernel.Cryptography, ApiKeyAuthenticationHandler, and AddApiKeyAuthentication composing alongside JWT Bearer via a policy/forwarding scheme. Never OIDC. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
+    <PackageTags>shared-kernel;security;api-key;authentication;machine-client;identity</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.AspNetCore.App shared framework: supplies Microsoft.AspNetCore.Authentication.Abstractions
+      (AuthenticationHandler<TOptions>, ILogger/[LoggerMessage] via Microsoft.Extensions.Logging.Abstractions).
+      A FrameworkReference, not a NuGet PackageReference — satisfies SC-10's "no other third-party NuGet
+      dependencies" constraint (12.Security/CLAUDE.md Technology Stack: "framework-provided, not a NuGet
+      dependency").
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Security.ApiKey.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Security.ApiKey.Tests\**" />
+    <None Remove="SharedKernel.Security.ApiKey.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Grants SharedKernel.Security.ApiKey.Tests direct access to internal types (e.g.
+      ConstantTimeKeyComparer) so its constant-time-comparison behavior can be proven directly
+      (T-16, WO-057/P-370) rather than only indirectly through ApiKeyAuthenticationHandler.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Security.ApiKey.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>
