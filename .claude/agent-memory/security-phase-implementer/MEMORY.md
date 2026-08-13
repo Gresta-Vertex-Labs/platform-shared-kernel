@@ -1,3 +1,3 @@
 # Memory Index
 
-- [Security Domain: Core Implementation Patterns](security_core_patterns.md) — OidcUserContext/OidcTenantProvider claims mapping, DI scoped factory, AnonymousUserContext fallback, SecurityOptions binding, AOT constraints
+- [Security Domain: Core Implementation Patterns](security_core_patterns.md) — claims mapping, IdentityKind/Permissions, ApiKey decorator pattern, cross-domain IUserContext fallout, AOT constraints

@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-08-11, the last NEW phases written to `state-map.md` Phase Backlog are **P-356–P-365** (under WO-056, all `○` Pending — 11.Communication gold-standard review; see [[project_wo056_communication_goldstandard_review]]). WO-050/051/052/053/054/055 before that each minted their own new phase ranges (P-301–306, P-307–327, P-328–332, P-333–339, P-340–352, P-353–355 respectively) — all gold-standard reviews of already-published domains, same pattern.
+As of 2026-08-13, the last NEW phases written to `state-map.md` Phase Backlog are **P-366–P-374** (under WO-057, all `○` Pending — 12.Security gold-standard review; see [[project_wo057_security_goldstandard_review]]). WO-050/051/052/053/054/055/056 before that each minted their own new phase ranges (P-301–306, P-307–327, P-328–332, P-333–339, P-340–352, P-353–355, P-356–365 respectively) — all gold-standard reviews of already-published domains, same pattern.
 
-Next new phase must be **P-366**. Next new Work Order must be **WO-057**.
+Next new phase must be **P-375**. Next new Work Order must be **WO-058**.
+
+As of 2026-08-11 (superseded above): last NEW phases were P-356–P-365 (under WO-056, 11.Communication gold-standard review).
 
 As of 2026-08-10 (superseded above): last NEW phases were P-353–P-355 (WO-055, 09.Search — the first review that WO-050+ cycle to come back genuinely clean). See [[project_wo055_search_goldstandard_review]].
 
