@@ -37,6 +37,12 @@ public sealed class FakeUserContext : IUserContext
     public IReadOnlyCollection<string> Roles { get; set; } = [];
 
     /// <summary>
+    /// Gets or sets the permissions (fine-grained scopes) granted to the authenticated identity.
+    /// </summary>
+    /// <remarks>Defaults to an empty collection. Mirrors <see cref="Roles"/>'s shape exactly (WO-057, P-368).</remarks>
+    public IReadOnlyCollection<string> Permissions { get; set; } = [];
+
+    /// <summary>
     /// Gets or sets all claims carried by the current principal, keyed by claim type.
     /// </summary>
     /// <remarks>Defaults to an empty dictionary.</remarks>
@@ -53,8 +59,27 @@ public sealed class FakeUserContext : IUserContext
     /// </remarks>
     public bool IsAuthenticated { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets the kind of identity represented by this context.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <see cref="IdentityKind.User"/>. This fake represents every <see cref="IdentityKind"/>
+    /// value — including <see cref="IdentityKind.ServicePrincipal"/> and <see cref="IdentityKind.System"/>
+    /// — through this one settable property rather than a dedicated sentinel type (WO-057, P-374). A test
+    /// exercising a "system/background execution context" path constructs
+    /// <c>new FakeUserContext { IdentityKind = IdentityKind.System }</c> (optionally with
+    /// <c>UserId = Guid.Empty</c>, mirroring the production <c>SystemUserContext</c> singleton's own
+    /// invariant) rather than reaching for a second fake type.
+    /// </remarks>
+    public IdentityKind IdentityKind { get; set; } = IdentityKind.User;
+
     /// <inheritdoc />
     /// <remarks>Comparison against <see cref="Roles"/> is case-insensitive.</remarks>
     public bool HasRole(string role) =>
         Roles.Contains(role, StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc />
+    /// <remarks>Comparison against <see cref="Permissions"/> is case-insensitive. Mirrors <see cref="HasRole"/> exactly (WO-057, P-368).</remarks>
+    public bool HasPermission(string permission) =>
+        Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
 }

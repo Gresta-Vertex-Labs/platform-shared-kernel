@@ -81,9 +81,12 @@ public abstract class TestSharedKernelDbContext : SharedKernelDbContext
         public string? Email => null;
         public string? Username => "test-user";
         public IReadOnlyCollection<string> Roles => [];
+        public IReadOnlyCollection<string> Permissions => [];
         public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
         public bool IsAuthenticated => true;
+        public IdentityKind IdentityKind => IdentityKind.User;
 
         public bool HasRole(string role) => false;
+        public bool HasPermission(string permission) => false;
     }
 }

@@ -128,4 +128,88 @@ public sealed class FakeUserContextTests
 
         Assert.IsType<FakeUserContext>(context);
     }
+
+    [Fact]
+    public void Constructor_Defaults_IdentityKindIsUser()
+    {
+        var context = new FakeUserContext();
+
+        Assert.Equal(IdentityKind.User, context.IdentityKind);
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Anonymous)]
+    [InlineData(IdentityKind.ServicePrincipal)]
+    [InlineData(IdentityKind.System)]
+    [InlineData(IdentityKind.User)]
+    public void IdentityKind_CanBeSet_ToExerciseEveryValue(IdentityKind identityKind)
+    {
+        var context = new FakeUserContext { IdentityKind = identityKind };
+
+        Assert.Equal(identityKind, context.IdentityKind);
+    }
+
+    [Fact]
+    public void Constructor_Defaults_PermissionsIsEmpty()
+    {
+        var context = new FakeUserContext();
+
+        Assert.Empty(context.Permissions);
+    }
+
+    [Fact]
+    public void Permissions_CanBeSet_ToExercisePermissionRestrictedPath()
+    {
+        var context = new FakeUserContext { Permissions = ["orders:write", "orders:read"] };
+
+        Assert.Equal(2, context.Permissions.Count);
+        Assert.Contains("orders:write", context.Permissions);
+    }
+
+    [Fact]
+    public void HasPermission_MatchingPermission_ReturnsTrue()
+    {
+        var context = new FakeUserContext { Permissions = ["orders:write"] };
+
+        Assert.True(context.HasPermission("orders:write"));
+    }
+
+    [Fact]
+    public void HasPermission_IsCaseInsensitive()
+    {
+        var context = new FakeUserContext { Permissions = ["orders:write"] };
+
+        Assert.True(context.HasPermission("ORDERS:WRITE"));
+        Assert.True(context.HasPermission("Orders:Write"));
+    }
+
+    [Fact]
+    public void HasPermission_NoMatch_ReturnsFalse()
+    {
+        var context = new FakeUserContext { Permissions = ["orders:write"] };
+
+        Assert.False(context.HasPermission("orders:delete"));
+    }
+
+    [Fact]
+    public void HasPermission_EmptyPermissions_ReturnsFalse()
+    {
+        var context = new FakeUserContext();
+
+        Assert.False(context.HasPermission("orders:write"));
+    }
+
+    [Theory]
+    [InlineData("orders:write")]
+    [InlineData("")]
+    [InlineData("anything")]
+    public void HasPermission_AbsentPermissions_NeverThrows_AlwaysReturnsFalse(string permission)
+    {
+        var context = new FakeUserContext();
+
+        var result = Record.Exception(() => context.HasPermission(permission));
+
+        Assert.Null(result);
+        Assert.False(context.HasPermission(permission));
+    }
 }
