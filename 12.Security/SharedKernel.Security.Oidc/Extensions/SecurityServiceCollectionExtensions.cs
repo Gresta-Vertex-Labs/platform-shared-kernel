@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
 using SharedKernel.Configuration.Extensions;
@@ -39,10 +41,17 @@ public static class SecurityServiceCollectionExtensions
     /// Any relaxation of these defaults must be explicit and documented at the call site.
     /// </para>
     /// <para>
+    /// <c>TokenValidationParameters.NameClaimType</c>/<c>RoleClaimType</c> are sourced from
+    /// <see cref="SecurityOptions.ClaimMapping"/> — the same values <see cref="OidcUserContext"/> reads,
+    /// so ASP.NET Core's own claims machinery (<c>HttpContext.User.IsInRole(...)</c>,
+    /// <c>[Authorize(Roles = ...)]</c>) never diverges from <see cref="IUserContext.HasRole"/>
+    /// (WO-057, P-366).
+    /// </para>
+    /// <para>
     /// <see cref="IUserContext"/> resolves to <see cref="AnonymousUserContext"/> when no
-    /// <see cref="Microsoft.AspNetCore.Http.HttpContext"/> is present (e.g. background workers,
-    /// console hosts, or unit-test DI containers). Callers must check
-    /// <see cref="IUserContext.IsAuthenticated"/> before consuming <see cref="IUserContext.UserId"/>.
+    /// <see cref="HttpContext"/> is present (e.g. background workers, console hosts, or unit-test DI
+    /// containers). Callers must check <see cref="IUserContext.IsAuthenticated"/> before consuming
+    /// <see cref="IUserContext.UserId"/>.
     /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelSecurity(
@@ -58,27 +67,7 @@ public static class SecurityServiceCollectionExtensions
 
         services.AddHttpContextAccessor();
 
-        // Register IUserContext as Scoped — one instance per HTTP request.
-        // Falls back to AnonymousUserContext when HttpContext is null (background jobs, unit tests).
-        services.AddScoped<IUserContext>(sp =>
-        {
-            var accessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-            var user = accessor.HttpContext?.User;
-            return user is not null
-                ? new OidcUserContext(user)
-                : AnonymousUserContext.Instance;
-        });
-
-        // Register ITenantProvider as Scoped — one instance per HTTP request.
-        // Returns Guid.Empty when HttpContext is null.
-        services.AddScoped<ITenantProvider>(sp =>
-        {
-            var accessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-            var user = accessor.HttpContext?.User;
-            return user is not null
-                ? new OidcTenantProvider(user)
-                : new OidcTenantProvider(new System.Security.Claims.ClaimsPrincipal());
-        });
+        RegisterUserContextAndTenantProvider(services);
 
         // Configure JWT Bearer. Authority and Audience are resolved at options-resolution time
         // via IOptionsMonitor<SecurityOptions>, not at service-collection configuration time,
@@ -93,6 +82,7 @@ public static class SecurityServiceCollectionExtensions
             .Configure<IOptions<SecurityOptions>>((jwtBearerOptions, securityOptions) =>
             {
                 var jwt = securityOptions.Value.Jwt;
+                var claimMapping = securityOptions.Value.ClaimMapping;
 
                 jwtBearerOptions.Authority = jwt.Authority;
                 jwtBearerOptions.Audience = jwt.Audience;
@@ -105,6 +95,9 @@ public static class SecurityServiceCollectionExtensions
                     ValidateAudience = true,
                     ValidateLifetime = jwt.ValidateLifetime,
                     ClockSkew = TimeSpan.FromSeconds(jwt.ClockSkewSeconds),
+                    // Sourced from the same ClaimMapping OidcUserContext reads — never divergent (P-366).
+                    NameClaimType = claimMapping.NameClaimType,
+                    RoleClaimType = claimMapping.RoleClaimType,
                 };
             });
 
@@ -126,6 +119,12 @@ public static class SecurityServiceCollectionExtensions
     /// Uses <c>Microsoft.Identity.Web</c> for Azure B2C authority/audience resolution.
     /// </para>
     /// <para>
+    /// <c>TokenValidationParameters.NameClaimType</c>/<c>RoleClaimType</c> are post-configured from
+    /// <see cref="SecurityOptions.ClaimMapping"/> — identically to <see cref="AddSharedKernelSecurity"/> —
+    /// applied via <c>PostConfigure</c> so this package's claim-mapping intent always wins regardless of
+    /// what <c>Microsoft.Identity.Web</c>'s own <c>Configure</c> delegate set (WO-057, P-366).
+    /// </para>
+    /// <para>
     /// <b>AOT note:</b> <c>Microsoft.Identity.Web</c> is not fully AOT-safe. This method is isolated
     /// so that services using standard Entra ID (non-B2C) can call <see cref="AddSharedKernelSecurity"/>
     /// instead, avoiding the AOT blast radius entirely.
@@ -144,30 +143,53 @@ public static class SecurityServiceCollectionExtensions
 
         services.AddHttpContextAccessor();
 
-        // Register IUserContext as Scoped. Falls back to AnonymousUserContext when HttpContext is null.
-        services.AddScoped<IUserContext>(sp =>
-        {
-            var accessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-            var user = accessor.HttpContext?.User;
-            return user is not null
-                ? new OidcUserContext(user)
-                : AnonymousUserContext.Instance;
-        });
-
-        // Register ITenantProvider as Scoped. Returns Guid.Empty when HttpContext is null.
-        services.AddScoped<ITenantProvider>(sp =>
-        {
-            var accessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
-            var user = accessor.HttpContext?.User;
-            return user is not null
-                ? new OidcTenantProvider(user)
-                : new OidcTenantProvider(new System.Security.Claims.ClaimsPrincipal());
-        });
+        RegisterUserContextAndTenantProvider(services);
 
         // Azure B2C / Entra External ID wiring via Microsoft.Identity.Web.
         // AOT note: Microsoft.Identity.Web is not fully AOT-safe — isolated here intentionally.
         services.AddMicrosoftIdentityWebApiAuthentication(configuration, "AzureAdB2C");
 
+        // PostConfigure runs after every Configure delegate (including Microsoft.Identity.Web's own),
+        // regardless of registration order — guaranteeing our claim-mapping intent always wins.
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .PostConfigure<IOptions<SecurityOptions>>((jwtBearerOptions, securityOptions) =>
+            {
+                var claimMapping = securityOptions.Value.ClaimMapping;
+                jwtBearerOptions.TokenValidationParameters.NameClaimType = claimMapping.NameClaimType;
+                jwtBearerOptions.TokenValidationParameters.RoleClaimType = claimMapping.RoleClaimType;
+            });
+
         return services;
+    }
+
+    private static void RegisterUserContextAndTenantProvider(IServiceCollection services)
+    {
+        // Register IUserContext as Scoped — one instance per HTTP request.
+        // Falls back to AnonymousUserContext when HttpContext is null (background jobs, unit tests).
+        services.AddScoped<IUserContext>(sp =>
+        {
+            var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+            var user = accessor.HttpContext?.User;
+            if (user is null)
+            {
+                return AnonymousUserContext.Instance;
+            }
+
+            var claimMapping = sp.GetRequiredService<IOptions<SecurityOptions>>().Value.ClaimMapping;
+            var logger = sp.GetRequiredService<ILogger<OidcUserContext>>();
+            return new OidcUserContext(user, claimMapping, logger);
+        });
+
+        // Register ITenantProvider as Scoped — one instance per HTTP request.
+        // Returns Guid.Empty when HttpContext is null.
+        services.AddScoped<ITenantProvider>(sp =>
+        {
+            var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+            var user = accessor.HttpContext?.User;
+            var logger = sp.GetRequiredService<ILogger<OidcTenantProvider>>();
+            return user is not null
+                ? new OidcTenantProvider(user, logger)
+                : new OidcTenantProvider(new System.Security.Claims.ClaimsPrincipal(), logger);
+        });
     }
 }

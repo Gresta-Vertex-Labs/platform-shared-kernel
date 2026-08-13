@@ -94,4 +94,34 @@ public sealed class SecurityOptionsTests
     {
         Assert.Equal("Security", SecurityOptions.SectionKey);
     }
+
+    // ---- ClaimMapping defaults (WO-057, P-366) ----
+
+    [Fact]
+    public void ClaimMapping_DefaultEmailClaimType_IsShortName()
+    {
+        var options = new SecurityOptions();
+        Assert.Equal("email", options.ClaimMapping.EmailClaimType);
+    }
+
+    [Fact]
+    public void ClaimMapping_DefaultNameClaimType_IsShortName()
+    {
+        var options = new SecurityOptions();
+        Assert.Equal("name", options.ClaimMapping.NameClaimType);
+    }
+
+    [Fact]
+    public void ClaimMapping_DefaultRoleClaimType_IsShortName()
+    {
+        var options = new SecurityOptions();
+        Assert.Equal("roles", options.ClaimMapping.RoleClaimType);
+    }
+
+    [Fact]
+    public void ClaimMapping_DefaultPermissionClaimType_IsScope()
+    {
+        var options = new SecurityOptions();
+        Assert.Equal("scope", options.ClaimMapping.PermissionClaimType);
+    }
 }

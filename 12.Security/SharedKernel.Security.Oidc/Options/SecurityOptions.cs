@@ -19,6 +19,14 @@ public sealed class SecurityOptions
     public JwtOptions Jwt { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets the claim-type mapping used to resolve <see cref="Mapping.OidcUserContext"/>'s
+    /// email/username/roles/permissions from the current <see cref="System.Security.Claims.ClaimsPrincipal"/>.
+    /// </summary>
+    /// <remarks>Added WO-057 (P-366). See <see cref="ClaimMappingOptions"/> for the full rationale.</remarks>
+    [Required]
+    public ClaimMappingOptions ClaimMapping { get; set; } = new();
+
+    /// <summary>
     /// JWT Bearer token validation configuration.
     /// </summary>
     public sealed class JwtOptions

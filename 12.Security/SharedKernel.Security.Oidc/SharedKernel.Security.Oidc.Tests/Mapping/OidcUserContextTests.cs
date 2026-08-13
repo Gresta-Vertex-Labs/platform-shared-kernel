@@ -1,12 +1,29 @@
 using System.Security.Claims;
+using Microsoft.Extensions.Logging;
+using SharedKernel.Security.Abstractions.Abstractions;
 using SharedKernel.Security.Abstractions.Claims;
 using SharedKernel.Security.Oidc.Mapping;
+using SharedKernel.Security.Oidc.Options;
+using SharedKernel.Testing.Logging;
 using Xunit;
 
 namespace SharedKernel.Security.Oidc.Tests.Mapping;
 
 public sealed class OidcUserContextTests
 {
+    // Default, unmapped short-name claim shape — what every standards-conformant OIDC issuer emits by
+    // default against a .NET 8+ JwtBearerHandler (MapInboundClaims = false). (WO-057, P-366/T-07)
+    private static readonly ClaimMappingOptions DefaultMapping = new();
+
+    // Legacy long-form ClaimTypes.* shape — a consumer that opted into MapInboundClaims = true, or an
+    // older token. (WO-057, P-366/T-08)
+    private static readonly ClaimMappingOptions LegacyMapping = new()
+    {
+        EmailClaimType = ClaimTypes.Email,
+        NameClaimType = ClaimTypes.Name,
+        RoleClaimType = ClaimTypes.Role,
+    };
+
     private static ClaimsPrincipal BuildPrincipal(params Claim[] claims)
     {
         var identity = new ClaimsIdentity(claims, "Bearer");
@@ -20,66 +37,73 @@ public sealed class OidcUserContextTests
         return new ClaimsPrincipal(identity);
     }
 
-    // ---- UserId and IsAuthenticated ----
+    // ---- UserId, IsAuthenticated, IdentityKind ----
 
     [Fact]
-    public void ValidPrincipal_MapsUserId_AndIsAuthenticated()
+    public void ValidPrincipal_MapsUserId_AndIsAuthenticated_AsUser()
     {
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Equal(userId, sut.UserId);
         Assert.True(sut.IsAuthenticated);
+        Assert.Equal(IdentityKind.User, sut.IdentityKind);
     }
 
     [Fact]
-    public void MissingSubClaim_ForcesIsAuthenticated_False()
+    public void MissingSubClaim_OnAuthenticatedPrincipal_ResolvesServicePrincipal()
     {
-        var principal = BuildPrincipal(new Claim(ClaimTypes.Email, "user@example.com"));
+        // Corrected invariant (WO-057, P-367): an authenticated principal with no human subject is a
+        // legitimate client-credentials/M2M identity, not a rejected token.
+        var principal = BuildPrincipal(new Claim("email", "svc@example.com"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
-        Assert.False(sut.IsAuthenticated);
+        Assert.True(sut.IsAuthenticated);
+        Assert.Equal(IdentityKind.ServicePrincipal, sut.IdentityKind);
         Assert.Equal(Guid.Empty, sut.UserId);
     }
 
     [Fact]
-    public void UnparseableSubClaim_ForcesIsAuthenticated_False()
+    public void UnparseableSubClaim_OnAuthenticatedPrincipal_ResolvesServicePrincipal()
     {
         var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, "not-a-guid"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
-        Assert.False(sut.IsAuthenticated);
+        Assert.True(sut.IsAuthenticated);
+        Assert.Equal(IdentityKind.ServicePrincipal, sut.IdentityKind);
         Assert.Equal(Guid.Empty, sut.UserId);
     }
 
     [Fact]
-    public void UnauthenticatedPrincipal_WithValidSub_IsAuthenticated_False()
+    public void UnauthenticatedPrincipal_WithValidSub_ResolvesAnonymous()
     {
-        // ClaimsIdentity without authentication type → IsAuthenticated = false
+        // ClaimsIdentity without authentication type → the underlying principal itself is not
+        // authenticated. This is the only case that forces Anonymous/IsAuthenticated = false.
         var userId = Guid.NewGuid();
         var principal = UnauthenticatedPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.False(sut.IsAuthenticated);
+        Assert.Equal(IdentityKind.Anonymous, sut.IdentityKind);
         Assert.Equal(Guid.Empty, sut.UserId);
     }
 
-    // ---- Email and Username ----
+    // ---- Email and Username (default short-name mapping) ----
 
     [Fact]
-    public void Email_MappedFromEmailClaim()
+    public void Email_MappedFromShortNameClaim_ByDefault()
     {
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(
             new Claim(SecurityClaimTypes.UserId, userId.ToString()),
-            new Claim(SecurityClaimTypes.Email, "test@example.com"));
+            new Claim("email", "test@example.com"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Equal("test@example.com", sut.Email);
     }
@@ -90,20 +114,20 @@ public sealed class OidcUserContextTests
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Null(sut.Email);
     }
 
     [Fact]
-    public void Username_MappedFromNameClaim()
+    public void Username_MappedFromShortNameClaim_ByDefault()
     {
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(
             new Claim(SecurityClaimTypes.UserId, userId.ToString()),
-            new Claim(ClaimTypes.Name, "jdoe"));
+            new Claim("name", "jdoe"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Equal("jdoe", sut.Username);
     }
@@ -114,23 +138,58 @@ public sealed class OidcUserContextTests
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Null(sut.Username);
     }
 
-    // ---- Roles ----
+    // ---- Legacy ClaimTypes.* shape (regression, T-08) ----
 
     [Fact]
-    public void Roles_CollectedFromRoleClaims()
+    public void Email_And_Username_And_Roles_ResolveCorrectly_UnderLegacyClaimMapping()
     {
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(
             new Claim(SecurityClaimTypes.UserId, userId.ToString()),
-            new Claim(SecurityClaimTypes.Role, "admin"),
-            new Claim(SecurityClaimTypes.Role, "editor"));
+            new Claim(ClaimTypes.Email, "legacy@example.com"),
+            new Claim(ClaimTypes.Name, "legacyuser"),
+            new Claim(ClaimTypes.Role, "admin"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, LegacyMapping);
+
+        Assert.Equal("legacy@example.com", sut.Email);
+        Assert.Equal("legacyuser", sut.Username);
+        Assert.Contains("admin", sut.Roles);
+        Assert.True(sut.HasRole("admin"));
+    }
+
+    // ---- Roles (default "roles" claim, both real-world shapes) ----
+
+    [Fact]
+    public void Roles_CollectedFromOneClaimPerRole_ByDefault()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("roles", "admin"),
+            new Claim("roles", "editor"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Contains("admin", sut.Roles);
+        Assert.Contains("editor", sut.Roles);
+        Assert.Equal(2, sut.Roles.Count);
+    }
+
+    [Fact]
+    public void Roles_CollectedFromSingleJsonArrayValuedClaim()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("roles", "[\"admin\",\"editor\"]"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Contains("admin", sut.Roles);
         Assert.Contains("editor", sut.Roles);
@@ -143,7 +202,7 @@ public sealed class OidcUserContextTests
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Empty(sut.Roles);
     }
@@ -156,9 +215,9 @@ public sealed class OidcUserContextTests
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(
             new Claim(SecurityClaimTypes.UserId, userId.ToString()),
-            new Claim(SecurityClaimTypes.Role, "Admin"));
+            new Claim("roles", "Admin"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.True(sut.HasRole("Admin"));
     }
@@ -169,9 +228,9 @@ public sealed class OidcUserContextTests
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(
             new Claim(SecurityClaimTypes.UserId, userId.ToString()),
-            new Claim(SecurityClaimTypes.Role, "Admin"));
+            new Claim("roles", "Admin"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.True(sut.HasRole("admin"));
         Assert.True(sut.HasRole("ADMIN"));
@@ -184,11 +243,54 @@ public sealed class OidcUserContextTests
         var userId = Guid.NewGuid();
         var principal = BuildPrincipal(
             new Claim(SecurityClaimTypes.UserId, userId.ToString()),
-            new Claim(SecurityClaimTypes.Role, "editor"));
+            new Claim("roles", "editor"));
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.False(sut.HasRole("admin"));
+    }
+
+    // ---- Permissions (default "scope" claim, space-delimited) ----
+
+    [Fact]
+    public void Permissions_ParsedFromSpaceDelimitedScopeClaim()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("scope", "orders:read orders:write"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Equal(2, sut.Permissions.Count);
+        Assert.Contains("orders:read", sut.Permissions);
+        Assert.Contains("orders:write", sut.Permissions);
+    }
+
+    [Fact]
+    public void Permissions_IsEmpty_WhenScopeClaimAbsent()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Empty(sut.Permissions);
+    }
+
+    [Fact]
+    public void HasPermission_IsCaseInsensitive()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("scope", "Orders:Read"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.True(sut.HasPermission("orders:read"));
+        Assert.True(sut.HasPermission("ORDERS:READ"));
+        Assert.False(sut.HasPermission("orders:write"));
     }
 
     // ---- Claims dictionary ----
@@ -206,7 +308,7 @@ public sealed class OidcUserContextTests
         ], "Bearer");
         var principal = new ClaimsPrincipal(identity);
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Equal("first@example.com", sut.Claims[ClaimTypes.Email]);
     }
@@ -217,8 +319,90 @@ public sealed class OidcUserContextTests
         var identity = new ClaimsIdentity([], "Bearer");
         var principal = new ClaimsPrincipal(identity);
 
-        var sut = new OidcUserContext(principal);
+        var sut = new OidcUserContext(principal, DefaultMapping);
 
         Assert.Empty(sut.Claims);
+    }
+
+    // ---- Argument validation ----
+
+    [Fact]
+    public void NullPrincipal_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new OidcUserContext(null!, DefaultMapping));
+    }
+
+    [Fact]
+    public void NullClaimMapping_Throws()
+    {
+        var principal = BuildPrincipal();
+        Assert.Throws<ArgumentNullException>(() => new OidcUserContext(principal, null!));
+    }
+
+    // ---- Structured security-audit logging (WO-057, P-371, T-17) ----
+    // EventId 12100 "ServicePrincipalRecognized" — fires only on the ServicePrincipal branch
+    // (authenticated principal, no parseable human subject). Never fires for the User or Anonymous
+    // branches. Never logs a raw claim value — only the structured SubjectClaimPresent boolean.
+
+    [Fact]
+    public void MissingSubClaim_OnAuthenticatedPrincipal_LogsServicePrincipalRecognized_AtDebugLevel_WithSubjectClaimPresentFalse()
+    {
+        var logger = new InMemoryLogger<OidcUserContext>();
+        var principal = BuildPrincipal(new Claim("email", "svc@example.com"));
+
+        _ = new OidcUserContext(principal, DefaultMapping, logger);
+
+        var record = logger.Records.ShouldHaveLogged(new EventId(12100), LogLevel.Debug);
+        Assert.True(record.TryGetProperty("SubjectClaimPresent", out var value));
+        Assert.Equal(false, value);
+        Assert.DoesNotContain("svc@example.com", record.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnparseableSubClaim_OnAuthenticatedPrincipal_LogsServicePrincipalRecognized_WithSubjectClaimPresentTrue()
+    {
+        var logger = new InMemoryLogger<OidcUserContext>();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, "not-a-guid"));
+
+        _ = new OidcUserContext(principal, DefaultMapping, logger);
+
+        var record = logger.Records.ShouldHaveLogged(new EventId(12100), LogLevel.Debug);
+        Assert.True(record.TryGetProperty("SubjectClaimPresent", out var value));
+        Assert.Equal(true, value);
+        Assert.DoesNotContain("not-a-guid", record.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidPrincipal_WithHumanSubject_NeverLogsServicePrincipalRecognized()
+    {
+        var logger = new InMemoryLogger<OidcUserContext>();
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        _ = new OidcUserContext(principal, DefaultMapping, logger);
+
+        logger.Records.ShouldNotHaveLogged(new EventId(12100));
+    }
+
+    [Fact]
+    public void UnauthenticatedPrincipal_NeverLogsServicePrincipalRecognized()
+    {
+        var logger = new InMemoryLogger<OidcUserContext>();
+        var userId = Guid.NewGuid();
+        var principal = UnauthenticatedPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        _ = new OidcUserContext(principal, DefaultMapping, logger);
+
+        logger.Records.ShouldNotHaveLogged(new EventId(12100));
+    }
+
+    [Fact]
+    public void NullLogger_DoesNotThrow_OnServicePrincipalPath()
+    {
+        var principal = BuildPrincipal(new Claim("email", "svc@example.com"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping, logger: null);
+
+        Assert.Equal(IdentityKind.ServicePrincipal, sut.IdentityKind);
     }
 }
