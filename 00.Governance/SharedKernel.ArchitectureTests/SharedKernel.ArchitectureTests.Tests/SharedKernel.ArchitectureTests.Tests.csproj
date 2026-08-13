@@ -132,6 +132,17 @@
          acceptance criteria treat real-assembly verification as GATING, not optional. -->
     <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Security.Abstractions/.Oidc assemblies in
+         SecurityArchitectureRulesTests (WO-057 P-373, SK.00.SecurityContextGuard) — both
+         12.Security (.Abstractions/.Oidc) and 03.Domain are already fully Published as of this
+         phase's authoring, so real-assembly verification is wired alongside the contrived-fixture
+         proof rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests
+         precedent — non-gating for this phase. SharedKernel.Domain is already referenced above
+         (03.Domain, for DomainGoldStandardRules/DomainLayerPurityRules). -->
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
