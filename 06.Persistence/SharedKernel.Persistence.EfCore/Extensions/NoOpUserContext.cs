@@ -29,11 +29,20 @@ internal sealed class NoOpUserContext : IUserContext
     public IReadOnlyCollection<string> Roles => [];
 
     /// <inheritdoc />
+    public IReadOnlyCollection<string> Permissions => [];
+
+    /// <inheritdoc />
     public IReadOnlyDictionary<string, string> Claims => new Dictionary<string, string>();
 
     /// <inheritdoc />
     public bool IsAuthenticated => false;
 
     /// <inheritdoc />
+    public IdentityKind IdentityKind => IdentityKind.Anonymous;
+
+    /// <inheritdoc />
     public bool HasRole(string role) => false;
+
+    /// <inheritdoc />
+    public bool HasPermission(string permission) => false;
 }
