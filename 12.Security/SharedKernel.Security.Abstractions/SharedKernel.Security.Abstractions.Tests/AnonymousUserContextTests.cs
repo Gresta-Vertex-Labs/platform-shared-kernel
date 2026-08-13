@@ -44,12 +44,32 @@ public sealed class AnonymousUserContextTests
     }
 
     [Fact]
+    public void Permissions_IsEmpty()
+    {
+        Assert.Empty(_sut.Permissions);
+    }
+
+    [Fact]
+    public void IdentityKind_IsAnonymous()
+    {
+        Assert.Equal(IdentityKind.Anonymous, _sut.IdentityKind);
+    }
+
+    [Fact]
     public void HasRole_AlwaysReturnsFalse_ForAnyRole()
     {
         Assert.False(_sut.HasRole("admin"));
         Assert.False(_sut.HasRole("ADMIN"));
         Assert.False(_sut.HasRole("user"));
         Assert.False(_sut.HasRole(string.Empty));
+    }
+
+    [Fact]
+    public void HasPermission_AlwaysReturnsFalse_ForAnyPermission()
+    {
+        Assert.False(_sut.HasPermission("orders:read"));
+        Assert.False(_sut.HasPermission("ORDERS:READ"));
+        Assert.False(_sut.HasPermission(string.Empty));
     }
 
     [Fact]

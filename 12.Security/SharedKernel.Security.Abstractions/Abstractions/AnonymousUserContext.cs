@@ -10,10 +10,16 @@ namespace SharedKernel.Security.Abstractions.Abstractions;
 /// instance when no <c>HttpContext</c> is present.
 /// </para>
 /// <para>
-/// All string properties are <see langword="null"/>; <see cref="Roles"/> and <see cref="Claims"/>
-/// are empty read-only collections; <see cref="UserId"/> is <see cref="Guid.Empty"/>;
-/// <see cref="IsAuthenticated"/> is <see langword="false"/>; <see cref="HasRole"/> always
-/// returns <see langword="false"/>.
+/// All string properties are <see langword="null"/>; <see cref="Roles"/>, <see cref="Permissions"/>, and
+/// <see cref="Claims"/> are empty read-only collections; <see cref="UserId"/> is <see cref="Guid.Empty"/>;
+/// <see cref="IsAuthenticated"/> is <see langword="false"/>; <see cref="IdentityKind"/> is
+/// <see cref="Security.Abstractions.Abstractions.IdentityKind.Anonymous"/>; <see cref="HasRole"/> and
+/// <see cref="HasPermission"/> always return <see langword="false"/>.
+/// </para>
+/// <para>
+/// A peer of <see cref="SystemUserContext"/>, not a replacement for it — this sentinel represents a
+/// genuinely unauthenticated/rejected caller, while <see cref="SystemUserContext"/> represents a
+/// trusted, non-HTTP execution authority.
 /// </para>
 /// </remarks>
 public sealed class AnonymousUserContext : IUserContext
@@ -34,19 +40,22 @@ public sealed class AnonymousUserContext : IUserContext
     public IReadOnlyCollection<string> Roles => [];
 
     /// <inheritdoc/>
-    public IReadOnlyDictionary<string, string> Claims => EmptyDictionary.Instance;
+    public IReadOnlyCollection<string> Permissions => [];
+
+    /// <inheritdoc/>
+    public IReadOnlyDictionary<string, string> Claims => EmptyClaimsDictionary.Instance;
 
     /// <inheritdoc/>
     public bool IsAuthenticated => false;
 
     /// <inheritdoc/>
+    public IdentityKind IdentityKind => IdentityKind.Anonymous;
+
+    /// <inheritdoc/>
     /// <returns>Always <see langword="false"/>.</returns>
     public bool HasRole(string role) => false;
 
-    // Immutable empty dictionary singleton — avoids allocation on every property access.
-    private static class EmptyDictionary
-    {
-        internal static readonly IReadOnlyDictionary<string, string> Instance =
-            new Dictionary<string, string>(0);
-    }
+    /// <inheritdoc/>
+    /// <returns>Always <see langword="false"/>.</returns>
+    public bool HasPermission(string permission) => false;
 }
