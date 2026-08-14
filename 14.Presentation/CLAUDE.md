@@ -61,10 +61,20 @@ A microservice may legitimately depend on both packages simultaneously for entir
 ```text
 ErrorTypeStatusCodeMap  (static class)
     .Resolve(ErrorType type) → int   (HTTP status code)
-    NOTE: Validation → 400, Unauthorized → 401, Forbidden → 403, NotFound → 404, Conflict → 409,
-          Failure → 500. Any ErrorType not explicitly mapped falls back to 500.
+    NOTE: Validation → 400, Unauthorized → 401, NotFound → 404, Conflict → 409,
+          BusinessRule → 422, Unexpected → 500. Any ErrorType not explicitly mapped
+          (including None) falls back to 500. This is the real shipped mapping, verified
+          against SharedKernel.Primitives.Errors.ErrorType and ErrorTypeStatusCodeMap.cs
+          directly (WO-058, P-381, D-19) — a prior revision of this note claimed a
+          "Forbidden → 403 ... Failure → 500" mapping that never matched either the shipped
+          ErrorType enum (no Forbidden or Failure member ever existed) or the shipped map;
+          corrected here rather than perpetuated.
           Single source of truth — inline switch statements duplicating this mapping anywhere
           else in a consuming service is a platform violation.
+          PENDING (WO-058, P-381, gated on 01.Core): ErrorType.Forbidden → 403 is designed
+          but not yet addable — 01.Core does not yet ship ErrorType.Forbidden/
+          Error.Forbidden(...). See Interface Contracts → Declarative role/permission
+          authorization below and this domain's state-map.md Cross-Domain Dependencies.
 
 ErrorProblemDetailsExtensions  (static class)
     .ToProblemDetails(this Error error, HttpContext? context = null) → ProblemDetails
@@ -186,6 +196,86 @@ AddSharedKernelCorrelationId(this IServiceCollection) / UseSharedKernelCorrelati
           UseSharedKernelCorrelationId must be the first call in the pipeline.
 ```
 
+#### Declarative role/permission authorization (`Authorization/`)
+
+> **Status: Design-locked (WO-058, P-381, D-15–D-19).** Shape below is confirmed. Implementation
+> (Scaffold/Core/Tests/Docs/Published) is **gated** — `01.Core` does not yet ship
+> `Error.Forbidden(string, string)` / `ErrorType.Forbidden` (confirmed via direct read of the
+> shipped `SharedKernel.Primitives/Errors/Error.cs`/`ErrorType.cs`; only `Unexpected`/
+> `Validation`/`NotFound`/`Conflict`/`Unauthorized`/`BusinessRule` exist today). This is a real,
+> flagged cross-domain dependency — see `state-map.md`'s Cross-Domain Dependencies table — not a
+> silent substitution of `Error.Unauthorized(...)`, which would misreport 401 for a 403 case.
+
+```text
+RequireRoleAttribute  (sealed class : Attribute)
+    ctor(params string[] roles)
+    .Roles → IReadOnlyCollection<string>
+    NOTE: Plain endpoint-metadata attribute. Usable directly on an MVC controller/action (MVC
+          auto-surfaces it as endpoint metadata) or attached to a minimal-API endpoint via
+          .WithMetadata(new RequireRoleAttribute(...)) — see AuthorizationEndpointFilterExtensions
+          below for the sugar form. Roles listed within ONE attribute instance are OR'd (caller
+          needs any one). Stacking multiple [RequireRole]/[RequirePermission] attributes on the
+          same endpoint is AND'd (caller must satisfy every attached attribute) — mirrors, in
+          spirit, 05.Application's IAuthorizeRequest.AllOfRequirements(across)/
+          AnyOfRequirements(within) vocabulary; this package does not reuse that exact API shape,
+          only the composition idea, since attribute constructors don't carry two separate lists
+          as naturally as an interface's two properties do.
+
+RequirePermissionAttribute  (sealed class : Attribute)
+    ctor(params string[] permissions)
+    .Permissions → IReadOnlyCollection<string>
+    NOTE: Same shape and composition semantics as RequireRoleAttribute, evaluated against
+          IUserContext.HasPermission instead of HasRole.
+
+AuthorizationRequirementEndpointFilter  (sealed class, implements IEndpointFilter)
+    .InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+        → ValueTask<object?>
+    NOTE: Reads RequireRoleAttribute/RequirePermissionAttribute instances off
+          context.HttpContext.GetEndpoint()?.Metadata. No-ops (calls next(context) immediately,
+          resolving nothing) when neither attribute is present — this filter is safe to register
+          globally on every route, mirroring this domain's existing "global registration, no-op
+          when inapplicable" pattern already used by TenantContextHubFilter/
+          HubExceptionMappingFilter in .SignalR. Resolves IUserContext (12.Security.Abstractions,
+          AddScoped) from context.HttpContext.RequestServices. Evaluates each attached attribute
+          per the AND-across/OR-within rule above, calling IUserContext.HasRole/HasPermission.
+          On the first failing attribute, short-circuits (never calls next()) and returns
+          Error.Forbidden(...).ToProblemDetails() via Results.Problem(...) — identical response
+          shape to a handler-level AuthorizationBehavior rejection (05.Application), so an API
+          consumer sees one consistent error contract regardless of which layer rejected the
+          request. An anonymous/unauthenticated caller is correctly rejected with no dedicated
+          IsAuthenticated branch in this filter, because HasRole/HasPermission already return
+          false unconditionally for every unauthenticated/non-human IUserContext implementation
+          shipped in 12.Security (AnonymousUserContext, and SystemUserContext's own HasRole/
+          HasPermission are likewise hardcoded false) — verified against their shipped source,
+          not assumed.
+
+AuthorizationEndpointFilterExtensions  (static class)
+    .RequireRole(this RouteHandlerBuilder builder, params string[] roles) → RouteHandlerBuilder
+    .RequireRole(this RouteGroupBuilder builder, params string[] roles) → RouteGroupBuilder
+    .RequirePermission(this RouteHandlerBuilder builder, params string[] permissions)
+        → RouteHandlerBuilder
+    .RequirePermission(this RouteGroupBuilder builder, params string[] permissions)
+        → RouteGroupBuilder
+    NOTE: Minimal-API sugar — calls .WithMetadata(new RequireRoleAttribute(roles)) /
+          new RequirePermissionAttribute(permissions) under the hood. Purely metadata attachment;
+          does not itself perform the check or register the filter.
+
+AddSharedKernelAuthorizationFilters(this IServiceCollection) → IServiceCollection
+    NOTE: Registers AuthorizationRequirementEndpointFilter as a singleton — mirrors the
+          TenantContextHubFilter/HubExceptionMappingFilter DI-registration convention in
+          .SignalR, so the filter can take constructor dependencies later even though it is
+          stateless today. Unlike AddSharedKernelSignalR's global hub-filter registration via
+          HubOptions.AddFilter<T>(), this filter CANNOT auto-attach itself to every endpoint a
+          consuming service maps — ASP.NET Core's minimal-API/MVC endpoint routing has no
+          equivalent "apply to every mapped endpoint automatically" hook exposed by this
+          package's dependency surface. The consumer must additionally call
+          .AddEndpointFilter<AuthorizationRequirementEndpointFilter>() on MapControllers() and/or
+          each minimal-API route group. This wiring step must be documented prominently in the
+          README (DO-10) — it is the one place this domain's "convention over configuration"
+          philosophy cannot fully deliver a zero-wiring default, and that must be stated plainly
+          rather than implied to work automatically.
+```
+
 ### `SharedKernel.Presentation.SignalR` — confirmed public surface
 
 #### Hub filters (`Filters/`)
@@ -263,6 +353,15 @@ WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString,
 
 - `ResultHttpExtensions` are the only permitted `Result<T>` → HTTP conversion. They are conceptually parallel to, but functionally distinct from, `SharedKernel.Contracts.Mapping.ResultEnvelopeExtensions` (04.Contracts) — see the note in Interface Contracts above. Do not conflate the two; an endpoint is free to use either or both.
 - The Minimal API overloads return `IResult`; the MVC overloads return `ActionResult`/`ActionResult<T>`. There is no third "auto-detect host model" overload — callers pick the form matching their hosting model explicitly.
+
+### Declarative role/permission authorization rules (WO-058, P-381 — design-locked, implementation gated)
+
+- `[RequireRole]`/`[RequirePermission]` must always evaluate through `IUserContext.HasRole`/`HasPermission` — never `ClaimTypes.Role`, never raw `ClaimsPrincipal`/`Claim` inspection, and never the built-in ASP.NET Core `[Authorize(Roles = "...")]` attribute. That built-in attribute reads `ClaimTypes.Role` directly, bypassing this platform's `ClaimMapping`-aware, case-insensitive `HasRole`/`HasPermission` logic — exactly the claim-shape fragility `WO-057`/`P-366` fixed in `12.Security.Oidc`. A consuming service that mixes `[Authorize(Roles=...)]` and `[RequireRole(...)]` on different endpoints has silently reintroduced that fragility on the former; this package's own docs must call this out.
+- A failed check must always produce a `ProblemDetails` body via `Error.ToProblemDetails()` — never a bare, body-less ASP.NET Core 403. This is what makes an HTTP-boundary authorization rejection indistinguishable, from the API consumer's point of view, from an in-process `05.Application` `AuthorizationBehavior` rejection.
+- `AuthorizationRequirementEndpointFilter` must remain a single global filter that no-ops when neither attribute is present — never a per-endpoint conditionally-registered filter. This mirrors the SignalR hub filter rule below ("prefer global registration") applied to the HTTP surface: one filter, metadata-driven, safe to attach to every route.
+- Composition is AND across stacked attributes, OR within one attribute's role/permission list. This is a fixed, documented rule — do not add a configurable combination mode without a new Design phase; the acceptance criteria for this capability only requires the two composition primitives already described.
+- This filter is **not** a substitute for `05.Application`'s `AuthorizationBehavior`/`IAuthorizeRequest` — it is the HTTP-boundary sibling for checks that belong at the edge (e.g., an entire endpoint requires an `Admin` role regardless of which command/query it dispatches). A command dispatched from an endpoint that already passed `[RequireRole]` may still carry its own, separate `IAuthorizeRequest` requirements evaluated deeper in the pipeline — the two layers are complementary, not exclusive.
+- `ErrorType.Forbidden`/`Error.Forbidden(...)` are a genuine, currently-missing `01.Core` primitive this capability depends on — see the Cross-Domain Dependencies table in `state-map.md`. Do not implement this capability's Core phase against `Error.Unauthorized(...)` as a stand-in; 401 and 403 are semantically distinct HTTP outcomes (not-authenticated vs. authenticated-but-forbidden) and this domain's `ErrorTypeStatusCodeMap` already encodes that distinction for every other `ErrorType` it maps.
 
 ### API versioning rules
 
@@ -346,6 +445,26 @@ public async Task<ActionResult<OrderDto>> GetById(Guid id, CancellationToken ct)
     return result.ToActionResult();
 }
 
+// WebApi — declarative role/permission authorization (PENDING, WO-058/P-381 — design-locked,
+// implementation gated on 01.Core shipping Error.Forbidden/ErrorType.Forbidden; shown here for
+// the confirmed shape, not yet buildable)
+builder.Services.AddSharedKernelAuthorizationFilters();
+
+// Minimal API — attribute-free sugar form
+app.MapGet("/orders/{id}", GetOrderHandler)
+   .RequireRole("Admin", "OrdersManager")     // OR within this call
+   .RequirePermission("orders:read")           // AND against the RequireRole above
+   .AddEndpointFilter<AuthorizationRequirementEndpointFilter>();
+
+// MVC controller — attribute form (registration is still required at the route-group/
+// MapControllers() level; the attribute alone does not activate the check)
+[RequireRole("Admin", "OrdersManager")]
+[RequirePermission("orders:read")]
+[HttpGet("{id}")]
+public async Task<ActionResult<OrderDto>> GetById(Guid id, CancellationToken ct) { /* ... */ }
+// ... at composition root:
+app.MapControllers().AddEndpointFilter<AuthorizationRequirementEndpointFilter>();
+
 // SignalR — minimal setup (in-memory, single replica)
 builder.Services.AddSharedKernelSignalR();
 
@@ -374,6 +493,7 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - `EventId` regression pins (WO-041, P-256): unit tests asserting each of the three `[LoggerMessage]`-attributed methods carries its exact assigned `EventId` (14000, 14001, 14100) — read via reflection over the compiled `[LoggerMessage]` attribute, not by triggering the log call and inspecting a captured `EventId` at runtime, so the test fails immediately if a future edit silently renumbers the method.
 - `CorrelationIdMiddleware.BaggageKey` (WO-041, P-256): unit test asserting the constant's value equals the literal `"correlation.id"` exactly.
 - Correlation-on-log-record integration test (WO-041, P-256): exercises a request through `CorrelationIdMiddleware`, emits a log record downstream via `ILogger`, and — using a test-local minimal `BaseProcessor<LogRecord>` mirroring `13.ServiceDefaults`'s documented `BaggageLogRecordProcessor` contract — asserts the correlation id appears in `LogRecord.Attributes` under `CorrelationIdMiddleware.BaggageKey`. This test must never take a `ProjectReference` on `SharedKernel.ServiceDefaults` — see the Logging EventId assignment & correlation verification subsection above.
+- `RequireRoleAttribute`/`RequirePermissionAttribute`/`AuthorizationRequirementEndpointFilter` (WO-058, P-381 — **gated**, not yet implementable): once `01.Core` ships `Error.Forbidden`/`ErrorType.Forbidden`, unit tests must cover — an authorized fake `IUserContext` (`HasRole`/`HasPermission` → `true`) passes and `next()` runs exactly once; an unauthorized fake short-circuits with a `ProblemDetails` body/status matching `Error.Forbidden(...).ToProblemDetails()` (403, never a bare/empty 403); an anonymous fake mirroring `12.Security`'s `AnonymousUserContext` (`HasRole`/`HasPermission` always `false`) is rejected before `next()` runs, with an explicit assertion this happens via the ordinary false-path and not a bespoke `IsAuthenticated` check; an endpoint carrying neither attribute passes through as a no-op with zero `IUserContext` resolution attempted; multiple stacked attributes AND, a single attribute's multi-value list ORs. Plus a regression test that `ErrorTypeStatusCodeMap.Resolve(ErrorType.Forbidden)` returns 403.
 
 ### WebApplicationFactory integration test pattern (confirmed at Tests phase)
 
@@ -403,3 +523,4 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - [2026-07-14] WO-041 P-256 closed — `01.Core`'s `LoggingEventIdRanges.Presentation` constant confirmed landed, unblocking the full remaining task set in one session. D-12/D-13 confirmed against ground-truth source (`CorrelationIdMiddleware.BaggageKey` was already present in code from a prior partial pass — no change needed, design lock formalized). C-14–C-17 added `EventId = LoggingEventIdRanges.Presentation + N` to all three `[LoggerMessage]` attributes (`using SharedKernel.Primitives.Logging;` added to all three files); C-18 confirmed both packages build 0 warnings/0 errors post-change (informational — no `SK0020`/`SK0021` violations, this domain already conformed). T-11–T-13 added: two reflection-based `EventId` regression-pin tests (`LoggerMessageEventIdTests` in `.WebApi.Tests`, `HubExceptionMappingFilterEventIdTests` in `.SignalR.Tests` — read the compiled `LoggerMessageAttribute` via `BindingFlags.NonPublic | BindingFlags.Static` reflection over the private nested `Log` class, never trigger-and-capture at runtime); a `BaggageKey` literal-value pin test; and `CorrelationLogRecordIntegrationTests` — a test-local `BaseProcessor<LogRecord>` mirroring `13.ServiceDefaults`'s `BaggageLogRecordProcessor` contract exactly, requiring a new test-only `OpenTelemetry.Extensions.Hosting` 1.16.0 package reference in `SharedKernel.Presentation.WebApi.Tests.csproj` (matching `13.ServiceDefaults`'s existing pin) — zero `ProjectReference` to `SharedKernel.ServiceDefaults`. DO-06/DO-07 confirmed already satisfied by the existing XML doc comments and the prior changelog entry above. P-06: both packages re-packed to `1.0.1` (patch bump, additive-only changes), `dotnet pack` 0 warnings; `consumer-verify` re-run confirms all 6 surfaces PASS with zero DI exceptions (the harness's own build hit a pre-existing, unrelated `NU1903`-as-error on `Microsoft.OpenApi` 2.0.0 — confirmed present identically on `main` before this session via `git stash`, worked around locally with `-p:WarningsNotAsErrors=NU1903` for verification purposes only, not committed). 42/42 `SharedKernel.Presentation.WebApi.Tests` (+4) and 11/11 `SharedKernel.Presentation.SignalR.Tests` (+1) passing. All six phases (`SK.14.Design` through `SK.14.Published`) now fully `●` (presentation-phase-implementer, WO-041)
 - [2026-07-14] WO-042 P-262 dispatched — consume `01.Core`'s shared `WellKnownHeaders`/`WellKnownBaggageKeys` (P-259, D-30) instead of independently-owned literals. D-14 (design, locked now): `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` become documented forwarding aliases over `01.Core`'s `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId` — the constants stay for call-site ergonomics/backward compatibility, but the literal value must originate from `01.Core`, never be retyped locally; `ItemsKey` confirmed explicitly out of scope (presentation-local `HttpContext.Items` key, not a cross-service wire concept, no `01.Core` equivalent) and stays untouched. New Interface Contracts note added under `CorrelationIdMiddleware` and a new Correlation-id rules bullet added documenting the pending sourcing change. **This phase's code (C-19/C-20), tests (T-14), docs (DO-08), and re-pack (P-07) are explicitly gated on `01.Core`'s `C-43` shipping** — only `01.Core`'s D-30 design is locked as of this writing, the constant does not yet exist in `01.Core` source. **DO-07 closure note:** DO-07 (recording the `13.ServiceDefaults` P-251 literal mismatch) remains `●` as the flagging task it always was — but this phase is what actually resolves the underlying concern DO-07 raised: once C-19 ships and `13.ServiceDefaults` independently aligns to the same `01.Core` source, the mismatch class becomes structurally impossible rather than merely documented. New task rows D-14 (`●`), S-11/C-19/C-20/T-14/DO-08/P-07 (all `○`, gated) added to `state-map.md`; new Cross-Domain Dependencies row added (`SK.14.Core` → `01.Core`, `Pending`) (presentation-arch-planner, WO-042)
 - [2026-07-16] WO-042 P-262 closed — `01.Core`'s `C-43` confirmed shipped (`SharedKernel.Primitives/Propagation/WellKnownHeaders.cs` / `WellKnownBaggageKeys.cs`, namespace `SharedKernel.Primitives.Propagation`), unblocking the full remaining task set in one session. S-11 confirmed no new NuGet/`ProjectReference` was required — both constants ship in the already-referenced `SharedKernel.Primitives` package (the same one already used for `LoggingEventIdRanges`). C-19: `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` changed from independently-owned literals to `public const string HeaderName = WellKnownHeaders.CorrelationId;` / `public const string BaggageKey = WellKnownBaggageKeys.CorrelationId;` (both C#-legal compile-time-constant forwards); `ItemsKey` confirmed untouched. C-20: build confirmed 0 warnings/0 errors beyond the pre-existing, unrelated `NU1903` advisory on `Microsoft.OpenApi` 2.0.0 (present on `main` before this session); grep confirmed no remaining call site outside the two forwarding-alias declarations re-types either literal. T-14: three new tests added to `CorrelationIdMiddlewareTests` (`HeaderName_ForwardsWellKnownHeadersCorrelationId`, `BaggageKey_ForwardsWellKnownBaggageKeysCorrelationId`, `ItemsKey_UnchangedFromPreP262Literal`) asserting byte-identical sourcing by direct reference to the `01.Core` constants, not a hand-copied literal on either side. DO-08: XML doc comments on `CorrelationIdMiddleware.HeaderName`/`.BaggageKey` rewritten to describe them as shipped forwarding aliases (`<see cref>` references to `WellKnownHeaders.CorrelationId`/`WellKnownBaggageKeys.CorrelationId`); this file's Interface Contracts and Correlation-id rules sections updated from PENDING to SHIPPED; DO-07's underlying concern now structurally resolved. P-07: `SharedKernel.Presentation.WebApi` re-packed to `1.0.2` (patch bump, additive forwarding-alias change only), `dotnet pack` 0 warnings beyond the known `NU1903` advisory; `consumer-verify` re-run confirms all 6 surfaces PASS with zero DI exceptions. 45/45 `SharedKernel.Presentation.WebApi.Tests` (+3) passing; 11/11 `SharedKernel.Presentation.SignalR.Tests` unchanged (unaffected package, re-run as regression confirmation). All six phases (`SK.14.Design` through `SK.14.Published`) now fully `●` — root Phase Backlog **P-262** closed (presentation-phase-implementer, WO-042)
+- [2026-08-13] WO-058 P-381 dispatched — declarative `[RequireRole]`/`[RequirePermission]` endpoint-filter authorization for `SharedKernel.Presentation.WebApi`: an HTTP-boundary sibling to `05.Application`'s in-process `AuthorizationBehavior`, correctly routed through `IUserContext.HasRole`/`HasPermission` rather than the built-in ASP.NET Core `[Authorize(Roles=...)]` (which reads raw `ClaimTypes.Role` and would silently reintroduce the claim-shape fragility `WO-057`/`P-366` fixed). Design locked (D-15–D-19): `RequireRoleAttribute`/`RequirePermissionAttribute` as endpoint-metadata attributes usable on both MVC actions and minimal-API endpoints; a single global `AuthorizationRequirementEndpointFilter` (`IEndpointFilter`, metadata-driven, no-op when absent — mirroring the SignalR hub filter global-registration convention) that short-circuits a failing check through `Error.ToProblemDetails()`, never a bare 403; `AuthorizationEndpointFilterExtensions` minimal-API sugar and `AddSharedKernelAuthorizationFilters` DI registration, with the required (non-automatic) `.AddEndpointFilter<AuthorizationRequirementEndpointFilter>()` wiring step documented as this domain's one place "convention over configuration" cannot fully self-wire. New "Declarative role/permission authorization" Interface Contracts and Implementation Rules subsections added, both explicitly marked design-locked/implementation-gated. **Genuine cross-domain blocker recorded (D-18), not silently worked around:** direct read of the shipped `01.Core/SharedKernel.Primitives/Errors/Error.cs`/`ErrorType.cs` confirmed neither `Error.Forbidden(...)` nor `ErrorType.Forbidden` exists — substituting `Error.Unauthorized(...)` was explicitly declined since 401 (not-authenticated) and 403 (authenticated-but-forbidden) are semantically distinct outcomes this domain's own `ErrorTypeStatusCodeMap` already distinguishes for every other mapped `ErrorType`. Full task/blocker detail lives in `state-map.md`'s new Cross-Domain Dependencies row (`SK.14.Core` → `01.Core`, `Pending`) — a sibling `05.Application` phase (P-380, same WO-058) independently surfaced the identical gap. **Unrelated pre-existing documentation defect also corrected in the same pass (D-19):** the `ErrorTypeStatusCodeMap` Interface Contracts note had claimed a `Forbidden → 403`/`Failure → 500` mapping that never matched the real shipped `ErrorType` enum (no `Forbidden`/`Failure` member ever existed — only `Unexpected`/`BusinessRule`) or the real shipped `Resolve` switch; corrected above to the actual shipped six-case mapping (presentation-arch-planner, WO-058)
