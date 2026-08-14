@@ -6,11 +6,16 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Primitives</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
     <Description>Foundational primitives for the SharedKernel: Result&lt;T&gt;, Error, ErrorCodes, IClock, SmartEnum, ValidationResult. Zero external dependencies. AOT-compatible.</Description>
+    <PackageReleaseNotes>1.1.0 (WO-059 / P-384):
+- Added ErrorType.Forbidden (= 7, next sequential value after BusinessRule = 6) and the corresponding Error.Forbidden(string code, string message) factory, mirroring BusinessRule's addition pattern (P-042). Forbidden represents a caller who is generally permitted to attempt an operation, but for whom this specific instance/condition is not satisfied — maps to HTTP 403 Forbidden at the presentation layer. Distinct from Unauthorized (not permitted to attempt this at all — HTTP 401) and from BusinessRule (a domain invariant violation, not an authorization/permission gate).
+- Purely additive: no existing ErrorType member's numeric value changed and no existing Error factory's signature changed.
+- COMPILE-TIME RISK: a downstream consumer with an exhaustive switch/switch expression over ErrorType carrying no discard/default arm will fail to compile after upgrading to this version, because a new enum member now exists. This is a compile-time signal, not a runtime break — add a discard/default arm or an explicit Forbidden case to restore exhaustiveness.
+- No new ErrorCodes constant added — unlike BusinessRule's companion ErrorCodes.Domain.RuleViolated, no consuming phase requested a shared code constant for Forbidden.</PackageReleaseNotes>
     <PackageTags>shared-kernel;result;railway-oriented;clock;smart-enum;aot</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

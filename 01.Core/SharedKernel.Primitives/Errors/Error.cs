@@ -72,4 +72,19 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     /// </returns>
     public static Error BusinessRule(string code, string message)
         => new(code, message, ErrorType.BusinessRule);
+
+    /// <summary>
+    /// Creates an <see cref="ErrorType.Forbidden"/> error representing a caller who is generally
+    /// permitted to attempt this kind of operation, but for whom this specific instance/condition
+    /// is not satisfied.
+    /// </summary>
+    /// <param name="code">A stable machine-readable identifier for the violated gate.</param>
+    /// <param name="message">A human-readable description of why the operation is forbidden.</param>
+    /// <returns>
+    /// An <see cref="Error"/> with <see cref="Error.Type"/> set to <see cref="ErrorType.Forbidden"/>.
+    /// Maps to HTTP 403 Forbidden at the presentation layer. Distinct from
+    /// <see cref="Unauthorized"/>, which means the caller is not permitted to attempt this at all.
+    /// </returns>
+    public static Error Forbidden(string code, string message)
+        => new(code, message, ErrorType.Forbidden);
 }

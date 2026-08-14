@@ -39,4 +39,23 @@ public enum ErrorType
     /// </para>
     /// </remarks>
     BusinessRule = 6,
+
+    /// <summary>
+    /// The caller is generally permitted to attempt this kind of operation, but this specific
+    /// instance/condition is not satisfied.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Maps to HTTP 403 Forbidden at the presentation layer — e.g., a maker-checker dual-approval
+    /// gate rejecting the same user who submitted the request, or a role/permission attribute
+    /// rejecting an authenticated-but-under-privileged caller.
+    /// </para>
+    /// <para>
+    /// Semantically distinct from <see cref="Unauthorized"/>, which means the caller is not
+    /// permitted to attempt this at all (HTTP 401 — no/invalid credentials), and from
+    /// <see cref="BusinessRule"/>, which represents a domain invariant violation rather than an
+    /// authorization/permission gate.
+    /// </para>
+    /// </remarks>
+    Forbidden = 7,
 }
