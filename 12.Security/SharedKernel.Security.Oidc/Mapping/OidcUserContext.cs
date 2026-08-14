@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Security.Abstractions.Abstractions;
 using SharedKernel.Security.Abstractions.Claims;
+using SharedKernel.Security.Oidc.Dpop;
 using SharedKernel.Security.Oidc.Logging;
 using SharedKernel.Security.Oidc.Options;
 
@@ -72,6 +73,26 @@ public sealed class OidcUserContext : IUserContext
     /// <inheritdoc/>
     public IdentityKind IdentityKind { get; }
 
+    /// <inheritdoc/>
+    public IReadOnlyCollection<string> AuthenticationMethods { get; }
+
+    /// <inheritdoc/>
+    public string? AuthContextClassReference { get; }
+
+    /// <inheritdoc/>
+    public DateTimeOffset? AuthTime { get; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Set to <see langword="true"/> only when <c>DpopProofValidator</c> has confirmed a fresh,
+    /// correctly-bound DPoP proof for the current request by stamping the internal
+    /// <c>Dpop.DpopClaimTypes.SenderConstrained</c> claim onto the validated principal
+    /// (<see cref="System.Security.Claims.ClaimsPrincipal"/>) during <c>OnTokenValidated</c>. Always
+    /// <see langword="false"/> for an ordinary bearer token, even when DPoP is enabled host-wide
+    /// (WO-058, P-376).
+    /// </remarks>
+    public bool IsSenderConstrained { get; }
+
     /// <summary>
     /// Initialises a new <see cref="OidcUserContext"/> from the supplied <paramref name="principal"/>.
     /// </summary>
@@ -103,9 +124,14 @@ public sealed class OidcUserContext : IUserContext
         Claims = claimsDict;
         Roles = ReadDefensiveMultiValueClaim(principal, claimMapping.RoleClaimType);
         Permissions = ReadSpaceDelimitedClaim(claimsDict, claimMapping.PermissionClaimType);
+        AuthenticationMethods = ReadDefensiveAmrClaim(principal, claimMapping.AmrClaimType);
 
         Email = claimsDict.TryGetValue(claimMapping.EmailClaimType, out var email) ? email : null;
         Username = claimsDict.TryGetValue(claimMapping.NameClaimType, out var name) ? name : null;
+        AuthContextClassReference = claimsDict.TryGetValue(claimMapping.AcrClaimType, out var acr) ? acr : null;
+        AuthTime = ParseAuthTime(claimsDict, claimMapping.AuthTimeClaimType);
+        IsSenderConstrained = claimsDict.TryGetValue(DpopClaimTypes.SenderConstrained, out var dpopBound)
+            && string.Equals(dpopBound, bool.TrueString, StringComparison.OrdinalIgnoreCase);
 
         var baseAuthenticated = principal.Identity?.IsAuthenticated ?? false;
         var subjectClaimPresent = claimsDict.TryGetValue(SecurityClaimTypes.UserId, out var sub);
@@ -148,6 +174,14 @@ public sealed class OidcUserContext : IUserContext
     /// <inheritdoc/>
     public bool HasPermission(string permission) =>
         Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc/>
+    public bool WasAuthenticatedWith(string method) =>
+        AuthenticationMethods.Contains(method, StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc/>
+    public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) =>
+        AuthTime.HasValue && (now - AuthTime.Value) <= maxAge;
 
     /// <summary>
     /// Reads every claim of type <paramref name="claimType"/> from <paramref name="principal"/>,
@@ -226,5 +260,58 @@ public sealed class OidcUserContext : IUserContext
         }
 
         return raw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    /// <summary>
+    /// Reads every claim of type <paramref name="claimType"/> (the OIDC <c>amr</c> claim), defensively
+    /// handling both real-world shapes: one <see cref="Claim"/> per authentication method, or a single
+    /// claim whose value is a space-delimited list of methods. Never throws on either shape (WO-058, P-375).
+    /// </summary>
+    private static IReadOnlyCollection<string> ReadDefensiveAmrClaim(ClaimsPrincipal principal, string claimType)
+    {
+        List<string>? rawValues = null;
+        foreach (var claim in principal.Claims)
+        {
+            if (string.Equals(claim.Type, claimType, StringComparison.Ordinal))
+            {
+                (rawValues ??= []).Add(claim.Value);
+            }
+        }
+
+        if (rawValues is null || rawValues.Count == 0)
+        {
+            return [];
+        }
+
+        // Exactly one claim whose value contains spaces — the "single claim, space-delimited" shape.
+        if (rawValues.Count == 1 && rawValues[0].Contains(' '))
+        {
+            return rawValues[0].Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        // Otherwise — one Claim per method, the common shape.
+        return rawValues;
+    }
+
+    /// <summary>
+    /// Parses the OIDC <c>auth_time</c> claim (a NumericDate — Unix seconds) into a
+    /// <see cref="DateTimeOffset"/>. Absent or unparseable values yield <see langword="null"/>, never a
+    /// throw (WO-058, P-375).
+    /// </summary>
+    private static DateTimeOffset? ParseAuthTime(IReadOnlyDictionary<string, string> claims, string claimType)
+    {
+        if (!claims.TryGetValue(claimType, out var raw) || !long.TryParse(raw, out var seconds))
+        {
+            return null;
+        }
+
+        try
+        {
+            return DateTimeOffset.FromUnixTimeSeconds(seconds);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
     }
 }

@@ -405,4 +405,195 @@ public sealed class OidcUserContextTests
 
         Assert.Equal(IdentityKind.ServicePrincipal, sut.IdentityKind);
     }
+
+    // ---- AuthenticationMethods (amr), AuthContextClassReference (acr), AuthTime (WO-058, P-375, T-18/T-19) ----
+
+    [Fact]
+    public void AuthenticationMethods_CollectedFromOneClaimPerMethod()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("amr", "pwd"),
+            new Claim("amr", "otp"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Equal(2, sut.AuthenticationMethods.Count);
+        Assert.Contains("pwd", sut.AuthenticationMethods);
+        Assert.Contains("otp", sut.AuthenticationMethods);
+    }
+
+    [Fact]
+    public void AuthenticationMethods_CollectedFromSingleSpaceDelimitedClaim()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("amr", "pwd otp hwk"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Equal(3, sut.AuthenticationMethods.Count);
+        Assert.Contains("pwd", sut.AuthenticationMethods);
+        Assert.Contains("otp", sut.AuthenticationMethods);
+        Assert.Contains("hwk", sut.AuthenticationMethods);
+    }
+
+    [Fact]
+    public void AuthenticationMethods_IsEmpty_WhenAbsent()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Empty(sut.AuthenticationMethods);
+    }
+
+    [Fact]
+    public void WasAuthenticatedWith_IsCaseInsensitive()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("amr", "mfa"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.True(sut.WasAuthenticatedWith("mfa"));
+        Assert.True(sut.WasAuthenticatedWith("MFA"));
+        Assert.False(sut.WasAuthenticatedWith("pwd"));
+    }
+
+    [Fact]
+    public void AuthContextClassReference_MappedFromAcrClaim()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("acr", "urn:mace:incommon:iap:silver"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Equal("urn:mace:incommon:iap:silver", sut.AuthContextClassReference);
+    }
+
+    [Fact]
+    public void AuthContextClassReference_IsNull_WhenAbsent()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Null(sut.AuthContextClassReference);
+    }
+
+    [Fact]
+    public void AuthTime_ParsedFromNumericDateClaim()
+    {
+        var userId = Guid.NewGuid();
+        var expected = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("auth_time", expected.ToUnixTimeSeconds().ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Equal(expected, sut.AuthTime);
+    }
+
+    [Fact]
+    public void AuthTime_IsNull_WhenAbsent()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Null(sut.AuthTime);
+    }
+
+    [Fact]
+    public void AuthTime_IsNull_WhenMalformed_NeverThrows()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("auth_time", "not-a-number"));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.Null(sut.AuthTime);
+    }
+
+    // ---- IsAuthenticationFresherThan (WO-058, P-375, T-20) ----
+
+    [Fact]
+    public void IsAuthenticationFresherThan_ReturnsTrue_ForRecentAuthTime_AgainstExplicitNow()
+    {
+        var userId = Guid.NewGuid();
+        var authTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("auth_time", authTime.ToUnixTimeSeconds().ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        var now = authTime.AddMinutes(3);
+        Assert.True(sut.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), now));
+    }
+
+    [Fact]
+    public void IsAuthenticationFresherThan_ReturnsFalse_ForStaleAuthTime_AgainstExplicitNow()
+    {
+        var userId = Guid.NewGuid();
+        var authTime = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("auth_time", authTime.ToUnixTimeSeconds().ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        var now = authTime.AddMinutes(10);
+        Assert.False(sut.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), now));
+    }
+
+    [Fact]
+    public void IsAuthenticationFresherThan_ReturnsFalse_WhenAuthTimeAbsent()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.False(sut.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), DateTimeOffset.UtcNow));
+    }
+
+    // ---- IsSenderConstrained (WO-058, P-376) ----
+
+    [Fact]
+    public void IsSenderConstrained_IsFalse_ByDefault()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(new Claim(SecurityClaimTypes.UserId, userId.ToString()));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.False(sut.IsSenderConstrained);
+    }
+
+    [Fact]
+    public void IsSenderConstrained_IsTrue_WhenDpopMarkerClaimPresent()
+    {
+        var userId = Guid.NewGuid();
+        var principal = BuildPrincipal(
+            new Claim(SecurityClaimTypes.UserId, userId.ToString()),
+            new Claim("sk_dpop_bound", bool.TrueString));
+
+        var sut = new OidcUserContext(principal, DefaultMapping);
+
+        Assert.True(sut.IsSenderConstrained);
+    }
 }

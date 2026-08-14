@@ -66,4 +66,37 @@ public sealed class ClaimMappingOptions
     /// </remarks>
     [Required(AllowEmptyStrings = false)]
     public string PermissionClaimType { get; set; } = "scope";
+
+    /// <summary>
+    /// Gets or sets the claim type <c>IUserContext.AuthenticationMethods</c> is resolved from (the OIDC
+    /// <c>"amr"</c> — Authentication Method Reference — claim).
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <c>"amr"</c> — the standard OIDC claim name, already a short form. Resolution is
+    /// defensive to both real-world shapes: one <see cref="System.Security.Claims.Claim"/> per method, or
+    /// a single claim whose value is space-delimited (mirrors the <see cref="RoleClaimType"/> reader
+    /// exactly) (WO-058, P-375).
+    /// </remarks>
+    [Required(AllowEmptyStrings = false)]
+    public string AmrClaimType { get; set; } = "amr";
+
+    /// <summary>
+    /// Gets or sets the claim type <c>IUserContext.AuthContextClassReference</c> is resolved from (the
+    /// OIDC <c>"acr"</c> — Authentication Context Class Reference — claim).
+    /// </summary>
+    /// <remarks>Defaults to <c>"acr"</c> — the standard OIDC claim name, already a short form (WO-058, P-375).</remarks>
+    [Required(AllowEmptyStrings = false)]
+    public string AcrClaimType { get; set; } = "acr";
+
+    /// <summary>
+    /// Gets or sets the claim type <c>IUserContext.AuthTime</c> is resolved from (the OIDC
+    /// <c>"auth_time"</c> claim — a NumericDate/Unix-seconds value per the OIDC spec).
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <c>"auth_time"</c> — the standard OIDC claim name, already a short form. Parsed via
+    /// <see cref="DateTimeOffset.FromUnixTimeSeconds(long)"/>; absent or unparseable yields
+    /// <see langword="null"/>, never a throw (WO-058, P-375).
+    /// </remarks>
+    [Required(AllowEmptyStrings = false)]
+    public string AuthTimeClaimType { get; set; } = "auth_time";
 }
