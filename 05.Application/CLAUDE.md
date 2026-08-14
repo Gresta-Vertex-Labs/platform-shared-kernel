@@ -2,9 +2,11 @@
 
 ## What This Domain Is
 
-The MediatR-based CQRS plumbing layer. Every command, query, streaming query, domain-event handler, and cross-cutting pipeline concern (validation, logging, metrics, tracing, transactions, caching, cache invalidation, authorization, idempotency, resilience) in a downstream microservice derives from the contracts defined here. This domain may reference `01.Core`, `02.Caching` (abstractions only), `03.Domain`, and `04.Contracts` — it must never reference `06.Persistence`, `07.Messaging`, `12.Security`, or any concrete infrastructure package.
+The MediatR-based CQRS plumbing layer. Every command, query, streaming query, domain-event handler, and cross-cutting pipeline concern (validation, logging, metrics, tracing, transactions, caching, cache invalidation, authorization, idempotency, resilience, dual-control/maker-checker approval) in a downstream microservice derives from the contracts defined here. This domain may reference `01.Core`, `02.Caching` (abstractions only), `03.Domain`, and `04.Contracts` — it must never reference `06.Persistence`, `07.Messaging`, `12.Security`, or any concrete infrastructure package.
 
-> **Local-seam bridging is the load-bearing pattern in this domain.** `TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), and `IdempotentCommandBehavior` (`IIdempotencyKeyStore`) each define a minimal interface owned by this package, never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging` respectively). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied three times, not three different patterns.
+> **Local-seam bridging is the load-bearing pattern in this domain.** `TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), `IdempotentCommandBehavior` (`IIdempotencyKeyStore`), and — as of WO-058 (shipped) — `DualApprovalBehavior` (`IDualApprovalStore`, plus `IAuthorizationContextIdentity` as an additive sibling capability on the existing `IAuthorizationContext` seam) each define a minimal interface owned by this package, never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging` respectively). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied four times, not four different patterns.
+>
+> **WO-058 status (2026-08-14): Design (`●` 9/9), Scaffold (`●` 22/22), Core (`●` 81/81), and Tests (`●` 73/73) all complete.** `01.Core` shipped `Error.Forbidden(...)` (P-384/WO-059) — `ErrorType.Forbidden`/`Error.Forbidden(string code, string message)`, mirroring `BusinessRule`'s exact shape, verified by direct inspection of `01.Core/SharedKernel.Primitives/Errors/Error.cs`/`ErrorType.cs` — unblocking `IAuthorizationContextIdentity`/`DualApprovalBehavior` (C-78), `AddDualApprovalBehavior()`'s two-dependency `Build()`-time guard (C-79), the pipeline-order insertion at canonical position 6 (C-80), and final build verification (C-81), all implemented and shipped exactly per the locked design — no `Error.Unauthorized` workaround was ever used. `DualApprovalBehavior`/`AddDualApprovalBehavior()` test coverage (`SK.05.Tests`' own T-69..T-73) shipped the same day: `DualApprovalContractShapeTests`, `DualApprovalBehaviorTests` (all four required scenarios — no-approval short-circuit, distinct-identity pass-through, self-approval short-circuit for both `Result`/`Result<T>`, query-type exclusion — plus the shipped `InvalidOperationException` misconfiguration path), the two-dependency `Build()`-time guard tests, and a new eleven-step `PipelineOrderAssertion` regression test. Both packages build 0 warnings/0 errors; `SharedKernel.Application.Behaviors.Tests` 150/150 passing (132 baseline + 18 new). A `16.Testing` in-memory `IDualApprovalStore` fake is also required by this phase but remains out of this domain's jurisdiction to build — still undispatched. Docs/Published phases for WO-058 remain open — see `05.Application/state-map.md`.
 >
 > **WO-036 status (2026-06-30): fully implemented.** `TracingBehavior`, the streaming query vocabulary (`IStreamQuery<TResponse>`/`IStreamQueryHandler<,>`), `ResilienceBehavior`, `CacheInvalidationBehavior`, the reusable pipeline test harness, and all WO-036 tests (T-13..T-18) are `●` complete. Docs/Published phases remain pending — see `05.Application/state-map.md`.
 >
@@ -31,7 +33,7 @@ Philosophy: **MediatR-native. Result-returning. Behavior-composable. Zero infras
 | Package | Role | References |
 | --- | --- | --- |
 | `SharedKernel.Application` | `ICommand`, `ICommand<TResponse>`, `IQuery<TResponse>`, `ICommandHandler<>`, `ICommandHandler<,>`, `IQueryHandler<,>`, `IStreamQuery<TResponse>`, `IStreamQueryHandler<,>`, `IDomainEventHandler<TDomainEvent>`, `DomainEventNotification<TDomainEvent>`, `MediatRDomainEventDispatcher` + `MediatRDomainEventDispatcherOptions` (WO-038 parallel dispatch), `IFireAndForgetCommand` (WO-038) — the MediatR vocabulary (including the streaming-query vocabulary, WO-036) and the domain-event-to-MediatR bridge | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Domain`, `MediatR` |
-| `SharedKernel.Application.Behaviors` | `ValidationBehavior<,>`, `LoggingBehavior<,>`, `MetricsBehavior<,>` (+ `outcome` tag via `ResponseOutcomeClassifier`, WO-039), `TracingBehavior<,>`, `TransactionBehavior<,>` + `IUnitOfWork`, `CachingBehavior<,>` + `ICacheableQuery<TResponse>`, `CacheInvalidationBehavior<,>` + `IInvalidatesCache` + `InvalidateOnlyOnSuccess` opt-in flag (WO-038), `AuthorizationBehavior<,>` + `IAuthorizationContext` (multi-requirement, WO-038) / `IAuthorizeRequest` (AllOf/AnyOf, WO-038), `IdempotentCommandBehavior<,>` + idempotency seam/`IIdempotentRequest` + `IIdempotencyResponseStore` opt-in replay seam (WO-039), `ResilienceBehavior<,>` + `IRetryableRequest`, `FireAndForgetGuardBehavior<,>` + `IFireAndForgetDispatcher` + `FireAndForgetOptions` + `FireAndForgetBackgroundConsumer` + `FireAndForgetDispatchContext` trusted-dispatch marker (WO-038; self-blocking bug fixed WO-039 P-238), streaming behaviors: `StreamLoggingBehavior<,>`, `StreamMetricsBehavior<,>`, `StreamTracingBehavior<,>`, `StreamValidationBehavior<,>`, `StreamAuthorizationBehavior<,>` (WO-038, `IStreamPipelineBehavior<,>`), `ApplicationBehaviorsBuilder.AddDefaultBehaviors()` onboarding preset (WO-039), `ILoggableRequest<TResponse>` opt-in structured payload logging marker (WO-040, shipped) — opt-in MediatR pipeline behaviors (ten unary + five streaming) | `SharedKernel.Application`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, `MediatR`, `FluentValidation`, Polly v8 resilience pipeline (see Technology Stack) |
+| `SharedKernel.Application.Behaviors` | `ValidationBehavior<,>`, `LoggingBehavior<,>`, `MetricsBehavior<,>` (+ `outcome` tag via `ResponseOutcomeClassifier`, WO-039), `TracingBehavior<,>`, `TransactionBehavior<,>` + `IUnitOfWork`, `CachingBehavior<,>` + `ICacheableQuery<TResponse>`, `CacheInvalidationBehavior<,>` + `IInvalidatesCache` + `InvalidateOnlyOnSuccess` opt-in flag (WO-038), `AuthorizationBehavior<,>` + `IAuthorizationContext` (multi-requirement, WO-038) / `IAuthorizeRequest` (AllOf/AnyOf, WO-038), `IdempotentCommandBehavior<,>` + idempotency seam/`IIdempotentRequest` + `IIdempotencyResponseStore` opt-in replay seam (WO-039), `ResilienceBehavior<,>` + `IRetryableRequest`, `FireAndForgetGuardBehavior<,>` + `IFireAndForgetDispatcher` + `FireAndForgetOptions` + `FireAndForgetBackgroundConsumer` + `FireAndForgetDispatchContext` trusted-dispatch marker (WO-038; self-blocking bug fixed WO-039 P-238), streaming behaviors: `StreamLoggingBehavior<,>`, `StreamMetricsBehavior<,>`, `StreamTracingBehavior<,>`, `StreamValidationBehavior<,>`, `StreamAuthorizationBehavior<,>` (WO-038, `IStreamPipelineBehavior<,>`), `ApplicationBehaviorsBuilder.AddDefaultBehaviors()` onboarding preset (WO-039), `ILoggableRequest<TResponse>` opt-in structured payload logging marker (WO-040, shipped), `DualApprovalBehavior<,>` + `IRequiresDualApproval` + `IDualApprovalStore` + `IAuthorizationContextIdentity` dual-control/maker-checker seam (WO-058, shipped) — opt-in MediatR pipeline behaviors (eleven unary + five streaming) | `SharedKernel.Application`, `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Caching.Abstractions`, `MediatR`, `FluentValidation`, Polly v8 resilience pipeline (see Technology Stack) |
 
 Both packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`). Both production `.csproj` files set `GenerateDocumentationFile=true` and `TreatWarningsAsErrors=true` (matching `06.Persistence`/`07.Messaging` convention) so a missing XML doc comment on any public member (CS1591) or an unresolved `<see cref="..."/>` (CS1574) fails the build — doc coverage is enforced mechanically, not just audited once at Docs phase.
 
@@ -567,6 +569,27 @@ AuthorizationBehavior<TRequest, TResponse>  (sealed class, implements IPipelineB
           genuinely unexpected faults; an unauthorized caller is an expected, foreseeable outcome. On full
           pass, calls next() and returns its result unchanged. Runs after ValidationBehavior and before
           CachingBehavior/TransactionBehavior.
+
+IAuthorizationContextIdentity  (interface — WO-058, shipped; optional capability, NOT a modification to IAuthorizationContext)
+    .GetCurrentIdentityAsync(CancellationToken ct)                              → Task<string>
+    NOTE: An IAuthorizationContext implementation MAY additionally implement this interface to expose the
+          identity of the currently-executing caller. Added as a NEW, SEPARATE interface rather than a
+          breaking modification to the already-published (WO-035, v1.x) IAuthorizationContext contract —
+          mirrors IIdempotencyResponseStore's exact precedent as a sibling capability layered onto
+          IIdempotencyKeyStore (WO-039, P-242), not a fresh pattern. DualApprovalBehavior (see DualApproval
+          section below) detects this via an `is IAuthorizationContextIdentity` pattern-match on the
+          injected IAuthorizationContext — a standard .NET optional-capability-interface check, not
+          reflection, the same class of check IdempotentCommandBehavior already uses for
+          IIdempotencyResponseStore. AuthorizationBehavior itself never needs or uses this interface; it
+          exists solely to support DualApprovalBehavior's self-approval prevention. The returned identity
+          MUST be the SAME opaque identity string the composition-root bridge uses to identify the current
+          approver when later recording an approval via IDualApprovalStore.RecordApprovalAsync — keeping
+          identity representation consistent across both sides of the maker-checker check is the consuming
+          service's responsibility; this package never interprets, normalizes, or compares identity strings
+          beyond ordinal equality. IMPLEMENTATION DETAIL (shipped, not originally pinned down at Design time):
+          when the registered IAuthorizationContext does NOT additionally implement this interface,
+          DualApprovalBehavior throws InvalidOperationException — a composition-root misconfiguration, not a
+          foreseeable business outcome, so it does not use the Result.Failure(Error.Forbidden(...)) channel.
 ```
 
 #### Idempotency (`Idempotency/`)
@@ -641,6 +664,81 @@ IdempotentCommandBehavior<TRequest, TResponse>  (sealed class, implements IPipel
           never reach this behavior anyway) and immediately before TransactionBehavior, so a duplicate is
           rejected before TransactionBehavior's SaveChangesAsync would run a second time for the same
           logical operation.
+```
+
+#### Dual-Control / Maker-Checker Approval (`DualApproval/`) — WO-058, shipped 2026-08-14
+
+> Maker-checker/four-eyes controls — one identity initiates a privileged action, a distinct second identity must
+> approve it before it executes — are a baseline requirement (SOX, banking regulation, PCI-DSS) for high-value
+> financial operations: large payment approval, credit-limit changes, signing-key rotation, production
+> configuration changes. This is a pipeline-behavior authorization gate structurally identical to the already-
+> shipped `AuthorizationBehavior`, not a `12.Security` capability — `12.Security`'s `IUserContext` already
+> carries everything needed to identify an approver; no new `12.Security` type is required.
+>
+> **Cross-domain blocker cleared 2026-08-14:** `DualApprovalBehavior`'s short-circuit requires `Error.Forbidden(...)`
+> (`01.Core/SharedKernel.Primitives.Errors.Error`/`ErrorType`) — `01.Core` shipped it as P-384/WO-059 (one new
+> `ErrorType` enum member + one new static factory method, exactly mirroring how `BusinessRule` was added),
+> verified by direct inspection of `01.Core/SharedKernel.Primitives/Errors/Error.cs`/`ErrorType.cs`;
+> `SharedKernel.Primitives` was repacked `1.1.0`. `IRequiresDualApproval`, `IDualApprovalStore`,
+> `IAuthorizationContextIdentity`, and `DualApprovalBehavior<TRequest,TResponse>` are all implemented and shipped
+> against the real factory — `Error.Unauthorized(...)` was never substituted as an interim measure, per this
+> section's original design instruction (`Unauthorized` means "not permitted to attempt this at all";
+> dual-control's rejection means "permitted, but a second, distinct approver has not yet signed off on this
+> specific instance" — a materially different, HTTP-403-shaped semantic).
+
+```text
+IRequiresDualApproval  (interface — marker)
+    .ApprovalKey                                                    → string
+    NOTE: Marker a COMMAND implements to require a second, distinct approving identity before its handler
+          runs. Self-supplied, mirroring IIdempotentRequest.IdempotencyKey's exact pattern — the command
+          instance alone computes its own key (e.g. a deterministic identifier tying this specific pending
+          change to its approval record; often, but not required to be, the same value as the command's own
+          IdempotencyKey if it also implements IIdempotentRequest). Never implemented by a query —
+          IQuery<TResponse> never implements ICommandBase, and dual-control is a mutation-gating concern by
+          definition, mirroring IIdempotentRequest's commands-only scope exactly.
+
+IDualApprovalStore  (interface — local seam, owned by this package)
+    .TryGetApprovalAsync(string approvalKey, CancellationToken ct)             → Task<string?>
+    .RecordApprovalAsync(string approvalKey, string approverIdentity, CancellationToken ct)   → Task
+    NOTE: Mirrors IIdempotencyKeyStore's bridge shape exactly — this package ships only the interface, no
+          implementation; the consuming service provides one backed by whatever durable store it prefers
+          (a dedicated approvals table, a distributed cache key, etc.) and registers it at the composition
+          root. TryGetApprovalAsync returns the recorded approver's identity, or null if no approval has
+          been recorded yet for this key — the identity itself (not just a bool) is required so
+          DualApprovalBehavior can compare it against the current initiator's identity for self-approval
+          prevention. RecordApprovalAsync is called ONLY by the consuming service's OWN separate
+          approval-recording workflow (e.g. a distinct "ApproveChangeCommand" an approver dispatches
+          through their own request) — DualApprovalBehavior itself NEVER calls RecordApprovalAsync; it only
+          ever reads. Zero reference to 06.Persistence/07.Messaging/12.Security from this package — same
+          layering discipline as every other local seam in this domain.
+
+DualApprovalBehavior<TRequest, TResponse>  (sealed class, implements IPipelineBehavior<TRequest, TResponse>)
+    where TRequest : ICommandBase, IRequiresDualApproval, IRequest<TResponse>
+    NOTE: Constrained to ICommandBase ONLY — mirrors TransactionBehavior/IdempotentCommandBehavior's exact
+          constraint shape; never applies to queries (a DI-level fact). Resolves the current caller's
+          identity via the injected IAuthorizationContext's IAuthorizationContextIdentity capability (see
+          Authorization section above), then calls
+          IDualApprovalStore.TryGetApprovalAsync(request.ApprovalKey, ct):
+            - No recorded approval (null) → short-circuits WITHOUT calling next(), returns
+              Result.Failure(Error.Forbidden(...)) — "awaiting a second approver."
+            - Recorded approval whose identity equals the resolved initiator identity (SELF-APPROVAL) →
+              short-circuits WITHOUT calling next(), returns Result.Failure(Error.Forbidden(...)) — this
+              check is evaluated unconditionally whenever a record exists, so self-approval can never slip
+              through merely because a non-null record is present. STRUCTURALLY IMPOSSIBLE, not merely
+              discouraged: there is no code path in this behavior that calls next() when the two identities
+              match, regardless of how the record was created.
+            - Recorded approval from a DISTINCT identity → calls next(), returns its result unchanged.
+          NEVER throws for the awaiting-approval or self-approval cases — Result.Failure(Error.Forbidden(...))
+          is a foreseeable, expected outcome, mirroring AuthorizationBehavior's never-throw contract; the one
+          deliberate behavior short-circuit reserved for a thrown exception remains ValidationException.
+          Does NOT clear, consume, or expire the approval record — record lifecycle (one-time-use
+          invalidation, expiry, re-approval-on-command-change) is the consuming service's own
+          approval-recording workflow's responsibility; this behavior only ever reads.
+          Reuses Shared/FailureResponseFactory.cs for the generic TResponse failure construction — the same
+          mechanism AuthorizationBehavior/IdempotentCommandBehavior already use, never a third
+          implementation of "construct an arbitrary Result/Result<T> failure from an Error when TResponse is
+          generic."
+          Runs sixth in the canonical pipeline — see Pipeline Composition below.
 ```
 
 #### Resilience (`Resilience/`) — WO-036, implemented
@@ -856,6 +954,11 @@ ApplicationBehaviorsBuilder
     .AddAuthorizationBehavior()
         — Build() throws InvalidOperationException if IAuthorizationContext is not registered in
           IServiceCollection when this was called — same missing-dependency guard shape as Transaction/Caching.
+    .AddDualApprovalBehavior()  — WO-058, shipped 2026-08-14 (see DualApproval section above)
+        — This domain's FIRST TWO-dependency Build()-time guard: throws InvalidOperationException naming
+          IAuthorizationContext if it is not registered, and a distinct InvalidOperationException naming
+          IDualApprovalStore if that is not registered — both are required for DualApprovalBehavior to
+          function (identity resolution and approval-record lookup respectively).
     .AddIdempotencyBehavior()
         — Build() throws InvalidOperationException if IIdempotencyKeyStore is not registered in
           IServiceCollection when this was called.
@@ -893,35 +996,37 @@ ApplicationBehaviorsBuilder
 
 ### Pipeline composition (canonical order)
 
-> **WO-036 and WO-038 Core phases complete (C-18..C-50 ●).** The ten-named-slot unary order below is fully implemented. WO-038 adds `FireAndForgetGuardBehavior<,>` (for fire-and-forget dispatch) and five `IStreamPipelineBehavior<,>` streaming behaviors — none alter the canonical unary order.
+> **WO-036 and WO-038 Core phases complete (C-18..C-50 ●).** The ten-named-slot unary order was fully implemented and shipped. **WO-058 (2026-08-13) revises this to ELEVEN named slots at the design level — `DualApprovalBehavior` inserted as the new step 6 — but Core implementation is genuinely blocked on `01.Core` shipping `Error.Forbidden(...)` (see the DualApproval section above).** Until that lands, the eleven-step order below is documented/locked but only ten of the eleven steps exist in shipped code. WO-038 also adds `FireAndForgetGuardBehavior<,>` (for fire-and-forget dispatch) and five `IStreamPipelineBehavior<,>` streaming behaviors — neither alters the canonical unary order.
 
 ```text
-1.  LoggingBehavior            ← outermost; logs the full pipeline, including validation/auth/resilience failures
+1.  LoggingBehavior            ← outermost; logs the full pipeline, including validation/auth/approval/resilience failures
 2.  MetricsBehavior             ← records sharedkernel.application.request.duration regardless of outcome
 3.  TracingBehavior             ← WO-036; starts/disposes the request-traversal Activity regardless of outcome
-4.  ValidationBehavior          ← throws ValidationException before any handler, auth, cache, or retry work happens
-5.  AuthorizationBehavior       ← TRequest : IAuthorizeRequest (commands AND queries); rejects before cache/mutation
-6.  CachingBehavior              ← queries only (TRequest : ICacheableQuery<TResponse>)
-7.  ResilienceBehavior          ← WO-036; commands only in practice (TRequest : IRetryableRequest); wraps Idempotency+Transaction
-8.  IdempotentCommandBehavior   ← commands only (TRequest : ICommandBase, IIdempotentRequest); innermost-but-two
-9.  TransactionBehavior         ← commands only (TRequest : ICommandBase); wraps handler + commit
-10. CacheInvalidationBehavior   ← WO-036; commands only (TRequest : ICommandBase, IInvalidatesCache); innermost — after commit
+4.  ValidationBehavior          ← throws ValidationException before any handler, auth, approval, cache, or retry work happens
+5.  AuthorizationBehavior       ← TRequest : IAuthorizeRequest (commands AND queries); rejects before approval/cache/mutation
+6.  DualApprovalBehavior        ← WO-058, shipped; commands only (TRequest : ICommandBase, IRequiresDualApproval); rejects before cache/mutation
+7.  CachingBehavior              ← queries only (TRequest : ICacheableQuery<TResponse>)
+8.  ResilienceBehavior          ← WO-036; commands only in practice (TRequest : IRetryableRequest); wraps Idempotency+Transaction
+9.  IdempotentCommandBehavior   ← commands only (TRequest : ICommandBase, IIdempotentRequest); innermost-but-two
+10. TransactionBehavior         ← commands only (TRequest : ICommandBase); wraps handler + commit
+11. CacheInvalidationBehavior   ← WO-036; commands only (TRequest : ICommandBase, IInvalidatesCache); innermost — after commit
 ```
 
 **Positional rationale, step by step:**
 
-1. **Logging outermost** — every request, including ones that fail validation, authorization, or exhaust all resilience retries, must produce a start/end log line; logging must never be skipped by an inner short-circuit.
-2. **Metrics second** — the duration histogram must capture the full pipeline cost (validation, auth, cache, retries, commit, invalidation), not just the handler; recorded via try/finally regardless of how the request terminates.
+1. **Logging outermost** — every request, including ones that fail validation, authorization, dual-approval, or exhaust all resilience retries, must produce a start/end log line; logging must never be skipped by an inner short-circuit.
+2. **Metrics second** — the duration histogram must capture the full pipeline cost (validation, auth, approval, cache, retries, commit, invalidation), not just the handler; recorded via try/finally regardless of how the request terminates.
 3. **Tracing third (WO-036)** — immediately adjacent to Metrics because both occupy the same "measure/observe the whole pipeline" band; positioned just inside Metrics so the trace span and the duration measurement bracket nearly the same scope, while Logging remains the true outermost layer (a span failing to start must still be logged). A distinct behavior from Metrics, not folded into it — one measures, one traces; single responsibility.
-4. **Validation fourth** — malformed input is rejected before spending a permission check, a cache lookup, a retry budget, an idempotency-store round trip, or a transaction — the cheapest, most foundational rejection happens first.
-5. **Authorization fifth** — runs after validation (don't spend a permission check on garbage input) and before everything that follows: never let an unauthorized request reach a cache lookup (step 6), consume a retry budget (step 7), an idempotency check (step 8), a mutation (step 9), or an invalidation (step 10).
-6. **Caching sixth** — queries only; applies after authorization so an unauthorized query never populates or reads the cache. Mutually exclusive with steps 7–10 at the request-type level (`ICacheableQuery<TResponse>` is never implemented by a command, and `ICommandBase` is never implemented by `IQuery<TResponse>`).
-7. **Resilience seventh (WO-036)** — commands only in practice (queries that want retry use `IRetryableRequest` too, but queries already exited the command-only band at step 6's mutual exclusion; a retryable *query* would sit here in place of step 6 if it also needs caching+retry composition, an edge case not yet exercised). Positioned to WRAP Idempotency (step 8) and Transaction (step 9) — this is the resolution to the retry-after-partial-commit hazard: a retry re-runs the FULL duplicate-check-then-commit unit on each attempt, never a bare second commit attempt that bypasses idempotency detection. Positioned after Authorization (don't burn a retry budget on an unauthorized request) and after Caching (a cache hit never needs to retry anything).
-8. **Idempotency eighth** — commands only; runs immediately before the commit boundary so a duplicate submission is detected and rejected before `TransactionBehavior`'s `SaveChangesAsync` can run a second time for the same logical operation. Now sits *inside* Resilience precisely so that a Polly-driven retry attempt re-checks idempotency on every attempt rather than skipping the check after the first.
-9. **Transaction ninth** — wraps the handler call and the commit; by the time a command reaches this step it has already passed validation, authorization, (if applicable) resilience retry composition, and the idempotency check, so `SaveChangesAsync` only ever runs for a genuinely new, authorized, validated, non-duplicate command.
-10. **CacheInvalidation tenth, innermost (WO-036)** — runs only after `TransactionBehavior` returns without throwing, i.e. only after a CONFIRMED commit; evicting before commit risks invalidating a cache entry for a mutation that ultimately rolled back. This is the absolute innermost position in the entire pipeline — nothing runs after it.
+4. **Validation fourth** — malformed input is rejected before spending a permission check, an approval-record lookup, a cache lookup, a retry budget, an idempotency-store round trip, or a transaction — the cheapest, most foundational rejection happens first.
+5. **Authorization fifth** — runs after validation (don't spend a permission check on garbage input) and before everything that follows: never let an unauthorized request reach a dual-approval lookup (step 6), a cache lookup (step 7), consume a retry budget (step 8), an idempotency check (step 9), a mutation (step 10), or an invalidation (step 11).
+6. **DualApproval sixth (WO-058, shipped)** — commands only; runs immediately after Authorization and before everything mutation-adjacent that follows: never let an unapproved command reach a retry budget (step 8), an idempotency check (step 9), a mutation (step 10), or an invalidation (step 11). Distinct from Authorization: Authorization answers "is this identity permitted to attempt this kind of action at all" (a static permission/policy question); DualApproval answers "has a second, distinct identity signed off on this exact pending instance of the action" (a per-instance maker-checker gate). The two are orthogonal and independently opt-in — a command may implement one, the other, both, or neither. Positioned before Caching/Resilience/Idempotency/Transaction/CacheInvalidation for the same reason Authorization is: an unapproved command must never touch a retry budget, an idempotency-store round trip, a mutation, or a cache-invalidation call.
+7. **Caching seventh** — queries only; applies after authorization so an unauthorized query never populates or reads the cache. Mutually exclusive with step 6 and steps 8–11 at the request-type level (`ICacheableQuery<TResponse>` is never implemented by a command, and `ICommandBase` is never implemented by `IQuery<TResponse>`) — DualApproval (step 6, commands-only) and Caching (step 7, queries-only) join the same mutual-exclusion partition as {8, 9, 10, 11}.
+8. **Resilience eighth (WO-036)** — commands only in practice (queries that want retry use `IRetryableRequest` too, but queries already exited the command-only band at step 7's mutual exclusion; a retryable *query* would sit here in place of step 7 if it also needs caching+retry composition, an edge case not yet exercised). Positioned to WRAP Idempotency (step 9) and Transaction (step 10) — this is the resolution to the retry-after-partial-commit hazard: a retry re-runs the FULL duplicate-check-then-commit unit on each attempt, never a bare second commit attempt that bypasses idempotency detection. Positioned after Authorization/DualApproval (don't burn a retry budget on an unauthorized or unapproved request) and after Caching (a cache hit never needs to retry anything).
+9. **Idempotency ninth** — commands only; runs immediately before the commit boundary so a duplicate submission is detected and rejected before `TransactionBehavior`'s `SaveChangesAsync` can run a second time for the same logical operation. Sits *inside* Resilience precisely so that a Polly-driven retry attempt re-checks idempotency on every attempt rather than skipping the check after the first.
+10. **Transaction tenth** — wraps the handler call and the commit; by the time a command reaches this step it has already passed validation, authorization, dual-approval (if applicable), (if applicable) resilience retry composition, and the idempotency check, so `SaveChangesAsync` only ever runs for a genuinely new, authorized, approved, validated, non-duplicate command.
+11. **CacheInvalidation eleventh, innermost (WO-036)** — runs only after `TransactionBehavior` returns without throwing, i.e. only after a CONFIRMED commit; evicting before commit risks invalidating a cache entry for a mutation that ultimately rolled back. This is the absolute innermost position in the entire pipeline — nothing runs after it.
 
-Steps 6 and {7, 8, 9, 10} are mutually exclusive at the request-type level (`ICacheableQuery<TResponse>` vs. `ICommandBase`), so a single request only ever actually passes through one of {6} or {7, 8, 9, 10} — the full ten-step order is documented for completeness across the whole request universe, not because any one request traverses all ten. Within {7, 8, 9, 10}, each sub-step is itself independently opt-in via its own marker (`IRetryableRequest`, `IIdempotentRequest`, always-on for any `ICommandBase` for Transaction, `IInvalidatesCache`) — a command implementing none of `IRetryableRequest`/`IIdempotentRequest`/`IInvalidatesCache` still passes through Transaction alone.
+Steps {6, 8, 9, 10, 11} (commands-only) and step 7 (queries-only) are mutually exclusive at the request-type level (`ICacheableQuery<TResponse>` vs. `ICommandBase`), so a single request only ever actually passes through one of {7} or {6, 8, 9, 10, 11} — the full eleven-step order is documented for completeness across the whole request universe, not because any one request traverses all eleven. Within {6, 8, 9, 10, 11}, each sub-step (other than the always-on-for-any-`ICommandBase` Transaction) is itself independently opt-in via its own marker (`IRequiresDualApproval`, `IRetryableRequest`, `IIdempotentRequest`, `IInvalidatesCache`) — a command implementing none of them still passes through Transaction alone.
 
 ### Constructing a generic failure response (`AuthorizationBehavior`/`IdempotentCommandBehavior`)
 
@@ -990,6 +1095,11 @@ Do not replace the current implementation with `dynamic` or raw string-based ref
 - **(WO-041, P-253)** A direct `ILogger.LogInformation/LogWarning/LogError/LogDebug/LogTrace/LogCritical(...)` extension-method call, `ILogger.Log(...)` interface call, or a hand-written `LoggerMessage.Define<>()` static delegate anywhere in `SharedKernel.Application.Behaviors` production source — every log statement in this package must be authored via the `[LoggerMessage]` source-generated partial-method pattern, matching the platform-wide root `CLAUDE.md` Logging Conventions mandate (WO-041) and mechanically enforced by `00.Governance`'s SK0020/SK0021 (P-250).
 - **(WO-041, P-253)** An `EventId` literal disconnected from `SharedKernel.Primitives.Logging.LoggingEventIdRanges.Application` (this domain's reserved `5000`-`5999` block, sub-divided `5000`-`5099`/`5100`-`5199` per package) — every `[LoggerMessage(EventId = ...)]` value in this domain must be expressed as `ApplicationBehaviorsLoggingEventIds.SomeField` (itself computed from the registry), never an ad hoc numeric literal in the style of `StreamLoggingBehavior`'s pre-retrofit `EventId(1, "StreamStarted")`.
 - **(WO-041, P-253)** Changing `LoggingBehavior<,>`'s message templates, log levels, the `ResponseOutcomeClassifier`-driven Information/Warning branch, or the `ILoggableRequest<TResponse>`-driven `BeginScope` opt-in mechanism (WO-040, P-246) under cover of "just doing the `[LoggerMessage]` retrofit" — this phase is an authoring-mechanism change only; any behavioral change must be its own, separately-justified phase.
+- **(WO-058, shipped)** Constraining `DualApprovalBehavior` to anything other than `ICommandBase, IRequiresDualApproval` — dual-control is commands-only, mirroring `TransactionBehavior`/`IdempotentCommandBehavior`'s exact constraint shape; a query type must never satisfy `IRequiresDualApproval`'s applicability.
+- **(WO-058, shipped)** `DualApprovalBehavior` calling `next()` without first confirming BOTH "an approval record exists" AND "the recorded approver's identity differs from the resolved initiator's identity" — self-approval must be structurally impossible, not merely discouraged; short-circuit both conditions with `Result.Failure(Error.Forbidden(...))`, never throw.
+- **(WO-058, shipped)** Modifying the already-published, shipped `IAuthorizationContext` interface directly to add identity resolution — use the new sibling `IAuthorizationContextIdentity` optional-capability interface instead (the `IIdempotencyResponseStore` precedent), so existing `IAuthorizationContext` implementations in downstream services do not break.
+- **(WO-058, shipped)** Substituting `Error.Unauthorized(...)` for `Error.Forbidden(...)` in `DualApprovalBehavior` "until `01.Core` ships the real factory" — wait for the actual `01.Core` phase to land; do not silently repurpose a semantically different `ErrorType`, and do not ship a version that would need a later behavioral rename.
+- **(WO-058, shipped)** `IDualApprovalStore.RecordApprovalAsync` being called from within `DualApprovalBehavior` itself — this behavior only ever reads approval state; recording an approval is the consuming service's own separate approval-workflow responsibility (a distinct command/admin action the approver dispatches).
 
 ---
 
@@ -1020,6 +1130,8 @@ services
     .AddTracingBehavior()          // no missing-dependency guard (BCL ActivitySource)
     .AddValidationBehavior()
     .AddAuthorizationBehavior()    // requires IAuthorizationContext registered
+    // WO-058, shipped 2026-08-14:
+    .AddDualApprovalBehavior()     // requires IAuthorizationContext (with IAuthorizationContextIdentity) AND IDualApprovalStore registered
     .AddCachingBehavior()          // requires SharedKernel.Caching.Abstractions.ICacheService registered
     .AddCacheInvalidationBehavior()// reuses the ICacheService guard above
     .AddResilienceBehavior()       // requires a ResiliencePipelineProvider<string> registered
@@ -1039,6 +1151,20 @@ services.AddScoped<SharedKernel.Application.Behaviors.IUnitOfWork>(sp =>
 // composition root only, never inside SharedKernel.Application.Behaviors itself
 services.AddScoped<SharedKernel.Application.Behaviors.IAuthorizationContext>(sp =>
     new UserContextAuthorizationAdapter(sp.GetRequiredService<SharedKernel.Security.Abstractions.IUserContext>()));
+
+// WO-058, shipped 2026-08-14.
+// UserContextAuthorizationAdapter (above) additionally implements IAuthorizationContextIdentity so
+// DualApprovalBehavior can resolve "who is calling right now" from the SAME bridge AuthorizationBehavior
+// already uses — no second IAuthorizationContext registration.
+// public sealed class UserContextAuthorizationAdapter : IAuthorizationContext, IAuthorizationContextIdentity
+// {
+//     public Task<string> GetCurrentIdentityAsync(CancellationToken ct) => Task.FromResult(_userContext.UserId);
+//     // ... IAuthorizationContext members unchanged ...
+// }
+
+// Approval store — composition root provides the implementation; never a 06.Persistence/07.Messaging/
+// 12.Security reference from SharedKernel.Application.Behaviors itself
+services.AddScoped<SharedKernel.Application.Behaviors.IDualApprovalStore, SqlDualApprovalStore>();
 
 // Idempotency key store — composition root provides the implementation (e.g. backed by the same
 // distributed store used elsewhere, or a dedicated table/cache key); never a 07.Messaging reference
@@ -1146,6 +1272,42 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
         => _eventPublisher.PublishAsync(
             new OrderPlacedIntegrationEvent(domainEvent.Payload.OrderId), ct);
 }
+
+// (WO-058, shipped 2026-08-14) Dual-control/maker-checker
+// worked example. A high-risk command opts in via IRequiresDualApproval:
+public sealed record RotateSigningKeyCommand(Guid KeyId) : ICommand, IRequiresDualApproval
+{
+    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
+}
+
+// A SEPARATE admin/approval command an approver (a DISTINCT identity from the initiator) dispatches — its
+// handler is the ONLY place IDualApprovalStore.RecordApprovalAsync is ever called; DualApprovalBehavior
+// itself only ever reads:
+public sealed record ApproveKeyRotationCommand(Guid KeyId) : ICommand
+{
+    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
+}
+
+public sealed class ApproveKeyRotationCommandHandler(
+    IDualApprovalStore store, IAuthorizationContextIdentity identity) : ICommandHandler<ApproveKeyRotationCommand>
+{
+    public async Task<Result> Handle(ApproveKeyRotationCommand request, CancellationToken ct)
+    {
+        var approverId = await identity.GetCurrentIdentityAsync(ct);
+        await store.RecordApprovalAsync(request.ApprovalKey, approverId, ct);
+        return Result.Success();
+    }
+}
+
+// The retry-after-approval flow:
+//   1. Alice dispatches RotateSigningKeyCommand -> no approval recorded yet ->
+//      Result.Failure(Error.Forbidden(...)) -- "awaiting a second approver." Handler never invoked.
+//   2. Bob (a DISTINCT identity) dispatches ApproveKeyRotationCommand for the same KeyId ->
+//      IDualApprovalStore.RecordApprovalAsync("rotate-signing-key:{KeyId}", "bob", ct).
+//   3. Alice dispatches RotateSigningKeyCommand a SECOND time (same command/key) -> approval record found,
+//      recorded identity "bob" != initiator identity "alice" -> next() is called -> handler executes.
+//   4. If Alice had instead recorded her OWN approval in step 2 (self-approval), step 3 would STILL
+//      short-circuit with Result.Failure(Error.Forbidden(...)) -- self-approval is structurally impossible.
 ```
 
 `SharedKernel.Application` and `SharedKernel.Application.Behaviors` ship **no MediatR registration of their own** — only the dispatcher bridge and the opt-in behavior builder.
@@ -1207,6 +1369,7 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
 - **(WO-039, P-243, shipped)** `AddDefaultBehaviors()` tests: registration output is equivalent to calling the four individual `.AddXBehavior()` methods; combining the preset with an individual call for the same behavior produces no duplicate registration and preserves canonical order; the preset alone never throws `InvalidOperationException` from `Build()`.
 - **(WO-041, P-253, shipped 2026-07-10)** Logging-authoring retrofit tests: existing `LoggingBehavior`/`StreamLoggingBehavior`/`FireAndForget*` test suites pass unmodified in observable behavior (log level, message content, `ElapsedMilliseconds` value, `BeginScope` attachment) after the `[LoggerMessage]` conversion — one non-behavioral fix was required: NSubstitute's `ILogger<T>` mock defaults `IsEnabled()` to `false`, which silently no-ops `[LoggerMessage]`-generated partial methods; fixed via `logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true)` at each affected call site (`LoggingBehaviorTests`, `LoggingBehaviorFailureLevelTests`, `LoggingBehaviorLoggableRequestTests`); new tests assert the correct `EventId` on every retrofitted log call (`LoggingBehavior` 5100-5103, `FireAndForget` 5110-5111, `StreamLoggingBehavior` 5120-5123); a Mono.Cecil IL-shape assertion (mirroring T-33's `FailureResponseFactoryReflectionShapeTests.cs` technique, via the existing test-project-only `00.Governance/SharedKernel.ArchitectureTests` reference) proves zero hand-authored `Call`/`Callvirt` IL instructions in `SharedKernel.Application.Behaviors.dll` resolve to `LoggerExtensions.Log*`/`ILogger.Log`/`LoggerMessage.Define*` — correctly excluding the `[LoggerMessage]` source generator's own `[GeneratedCodeAttribute]`-marked output (including its `.cctor` delegate-cache field-assignment pairing, confirmed via Mono.Cecil attribute inspection to legitimately call `LoggerMessage.Define<>` as generator-internal machinery); a real-assembly test invokes `00.Governance`'s `LoggingEventIdIntegrityAssertion` against this domain's real `SharedKernel.Application`/`SharedKernel.Application.Behaviors` assemblies, now that `01.Core` P-249 and `00.Governance` P-250 have both shipped — passes. `SharedKernel.Application.Behaviors.Tests` 130/130 passing.
 - **(WO-040, P-246, shipped)** `ILoggableRequest<TResponse>` opt-in payload logging tests (`LoggingBehavior` test file, extended): a request implementing the marker attaches `LoggableRequestFields` to the entry-log scope; `GetLoggableResponseFields(response)` is attached to the completion-log scope on both a success and a `Result.Failure` outcome (structured fields compose correctly with the existing Information/Warning level decision); `GetLoggableResponseFields` is never invoked and no response-fields scope is entered on a thrown exception; a null/empty field-set result enters no scope (zero-overhead path); a request NOT implementing the marker produces a byte-for-byte identical log call sequence to the pre-WO-040 baseline — a dedicated regression test, not just code review, mechanically enforcing the additive-only guarantee.
+- **(WO-058, unblocked 2026-08-14 — `DualApprovalBehavior`/`IAuthorizationContextIdentity` shipped, tests not yet written)** `DualApprovalBehavior` tests: no recorded approval → handler never invoked, `Result.Failure` with `ErrorType.Forbidden` returned (asserted for both `Result` and `Result<T>` response shapes); recorded approval from a DISTINCT identity → `next()` invoked and its result returned unchanged; recorded approval from the SAME identity as the initiator (self-approval) → handler never invoked, `Result.Failure` with `ErrorType.Forbidden` returned even though a record exists; a query type can never satisfy `IRequiresDualApproval` — a compile-time/contract-shape assertion only, mirroring `IIdempotentRequest`'s existing query-exclusion test; `AddDualApprovalBehavior()` `Build()`-time guard tests for both dependencies (`IAuthorizationContext`, `IDualApprovalStore`) missing individually and together. Now actionable — tracked as `SK.05.Tests` T-69..T-73, a separate phase key from `SK.05.Core` (now `●`) — see `05.Application/state-map.md`.
 - **Standard test package set:** `xunit` 2.9.3, `xunit.runner.visualstudio` 2.8.2, `Microsoft.NET.Test.Sdk` 17.13.0, `coverlet.collector` 6.0.4, `FluentAssertions` 8.10.0 (bumped from 8.4.0 in WO-039 P-241/S-17 — `00.Governance/SharedKernel.ArchitectureTests` pins `FluentAssertions` 8.10.0, and NuGet's `NU1605` package-downgrade check errors on a lower pin transitively required by a `ProjectReference`; both test projects must stay at or above whatever `SharedKernel.ArchitectureTests` requires), `NSubstitute` 5.3.0 — same pins already used across `06.Persistence`/`07.Messaging` unless a documented reason requires otherwise.
 - **Test-project-only `SharedKernel.ArchitectureTests` reference (WO-039 P-241, S-17):** both `SharedKernel.Application.Tests.csproj` and `SharedKernel.Application.Behaviors.Tests.csproj` carry a `ProjectReference` to `00.Governance/SharedKernel.ArchitectureTests` — never from either production `.csproj`. The reference is scaffolded ahead of P-241's Core phase (which is blocked on `00.Governance` P-240 plus this domain's own P-237/P-239 Core phases) so the real-assembly rule invocations can be written the moment those blockers clear.
 - **GlobalUsings.cs required** — every test project must include a `GlobalUsings.cs` containing `global using Xunit;`. `ImplicitUsings` does not auto-import xUnit attributes.
@@ -1217,6 +1380,9 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
 
 > Maintained by the application domain agent. One line per significant change.
 
+- [2026-08-14] WO-058 Core phase partially shipped (C-76/C-77, 2/6) — implemented `IRequiresDualApproval` and `IDualApprovalStore` in `SharedKernel.Application.Behaviors/DualApproval/`, exactly per the already-locked D-72/D-73 design; both are plain interfaces with no dependency on `01.Core`'s still-missing `Error.Forbidden(...)`. Re-verified C-78 (`IAuthorizationContextIdentity` + `DualApprovalBehavior<,>`) is genuinely `⚑` blocked by direct inspection of `01.Core/SharedKernel.Primitives/Errors/Error.cs`/`ErrorType.cs` (still only `Unexpected`/`Validation`/`NotFound`/`Conflict`/`Unauthorized`/`BusinessRule`); C-79 (`AddDualApprovalBehavior()`) and C-80 (pipeline-order insertion) are transitively gated on `DualApprovalBehavior<,>` existing, and C-81 (build verification) is explicitly scoped to "once C-76..C-80 land" — all three correctly left untouched. Both packages rebuild 0 warnings/0 errors in Release; full regression `SharedKernel.Application.Tests` 28/28 + `SharedKernel.Application.Behaviors.Tests` 132/132 passing, unchanged (no new tests — `DualApprovalBehavior` tests remain blocked on C-78). Top-of-file WO-058 status callout updated to "Core `◐` partial (2/6)". `05.Application/state-map.md` `SK.05.Core` now 77/81 `◐` — not promoted, `state-map-phase` not invoked. The `01.Core` `Error.Forbidden(...)` blocker still needs its own companion `core-arch-planner` dispatch (application-phase-implementer)
+- [2026-08-14] WO-058 Scaffold phase closed (S-20..S-22, 22/22) — created only the empty `DualApproval/` folder in `SharedKernel.Application.Behaviors`, matching every prior Scaffold session's folders-only convention (Resilience/CacheInvalidation/Streaming/TestHarness precedent). `IRequiresDualApproval`/`IDualApprovalStore`/`IAuthorizationContextIdentity`/`DualApprovalBehavior` deliberately left unwritten — their real implementation is Core's job (C-76/C-77/C-78), and C-78 remains genuinely `⚑` blocked on `01.Core` shipping `Error.Forbidden(...)`. Confirmed via `dotnet build` that both production packages build 0 warnings/0 errors and carry zero forbidden `ProjectReference`s (`06.Persistence`/`07.Messaging`/`12.Security`); full regression 28/28 + 132/132 tests passing, no code changes. Top-of-file WO-058 status callout corrected from the stale "Design dispatched, 0/9" to reflect Design and Scaffold both complete (application-phase-implementer)
+- [2026-08-13] WO-058 (root P-380) dispatched — a new opt-in dual-control/maker-checker pipeline behavior, `DualApprovalBehavior<TRequest,TResponse>`, gated by a new `IRequiresDualApproval` marker (structurally identical to `IAuthorizeRequest`/`IIdempotentRequest`), backed by a new local seam `IDualApprovalStore` (mirrors `IIdempotencyKeyStore`'s bridge shape) for high-value commands requiring a second, distinct approving identity. Self-approval prevention solved WITHOUT a breaking change to the already-published `IAuthorizationContext`: a new sibling optional-capability interface, `IAuthorizationContextIdentity`, added instead — mirrors the `IIdempotencyResponseStore`/`IIdempotencyKeyStore` precedent exactly (WO-039, P-242). Canonical pipeline order revised from ten to eleven named slots, inserting `DualApprovalBehavior` as step 6 (immediately after Authorization, before Caching); steps 7-10 renumbered to 8-11. `ApplicationBehaviorsBuilder.AddDualApprovalBehavior()` designed as this domain's first two-dependency `Build()`-time guard. **Genuine, disclosed cross-domain blocker:** `DualApprovalBehavior`'s short-circuit needs `Error.Forbidden(...)`, confirmed absent from `01.Core` today (verified by direct inspection of `01.Core/SharedKernel.Primitives/Errors/Error.cs`/`ErrorType.cs`) — flagged for a companion `01.Core` phase, explicitly NOT worked around by reusing `Error.Unauthorized(...)` (a materially different semantic). A `16.Testing` in-memory `IDualApprovalStore` fake is required by this phase's own acceptance criteria but is out of this domain's jurisdiction — flagged as a companion `testing-arch-planner` phase. Local-seam bridging callout updated from "three times" to "four times"; Packages table, Pipeline Composition, Hard Violations, DI Registration (with a worked maker-checker retry example), and Test Rules all updated (application-arch-planner)
 - [2026-06-29] Domain brain initialized — packages, interfaces, MediatR command/query contracts (`ICommand`/`ICommand<TResponse>`/`IQuery<TResponse>`), the domain-event-to-MediatR bridge (`IDomainEventHandler<TDomainEvent>`/`DomainEventNotification<TDomainEvent>`/`MediatRDomainEventDispatcher`, fulfilling 03.Domain's P-081 forward reference), five pipeline behaviors (Validation/Logging/Metrics/Transaction/Caching), canonical pipeline composition order, hard violations, DI registration shape, AOT notes, test rules; `CachingBehavior`/`ICacheableQuery<TResponse>` design carried forward verbatim from root `state-map.md` P-015 (WO-004, pending dispatch — not yet implemented); `IUnitOfWork` deliberately kept distinct from `06.Persistence.Abstractions.IUnitOfWork` to respect the layering direction; MediatR pinned to 12.4.x ahead of v13's commercial license
 - [2026-06-29] WO-035 (root P-214–P-219) dispatched — two new opt-in pipeline behaviors designed and documented: `AuthorizationBehavior<,>` (+ local `IAuthorizationContext` seam + `IAuthorizeRequest` marker, zero `12.Security` reference, applies to commands AND queries) and `IdempotentCommandBehavior<,>` (+ local `IIdempotencyKeyStore` seam mirroring `07.Messaging.Abstractions.IIdempotencyStore`'s shape + `IIdempotentRequest` marker, constrained to `ICommandBase` only, zero `07.Messaging` reference); canonical pipeline order revised from five to seven steps (Logging → Metrics → Validation → Authorization → Caching → Idempotency → Transaction) with full positional rationale documented per step; `ApplicationBehaviorsBuilder` gains `.AddAuthorizationBehavior()`/`.AddIdempotencyBehavior()` with `Build()`-time missing-dependency guards mirroring Transaction/Caching; new top-level callout documents the "local-seam bridging" pattern as a single repeated pattern (IUnitOfWork/IAuthorizationContext/IIdempotencyKeyStore), not three unrelated ones; this design is not yet implemented — implementation tracked in `05.Application/state-map.md` Scaffold/Core/Tests/Docs/Published phases
 - [2026-06-29] SK.05.Scaffold complete — both `.csproj` files wired: `SharedKernel.Application` → `MediatR` pinned to exact `12.4.1` + `ProjectReference` to `SharedKernel.Primitives`/`SharedKernel.Core`/`SharedKernel.Domain`; `SharedKernel.Application.Behaviors` → `MediatR 12.4.1` + `FluentValidation` pinned to exact `11.11.0` + `ProjectReference` to `SharedKernel.Application`/`SharedKernel.Primitives`/`SharedKernel.Core`/`SharedKernel.Caching.Abstractions`; folder structure created in both packages exactly per the Interface Contracts section headers; both nested test stub projects (`SharedKernel.Application.Tests`, `SharedKernel.Application.Behaviors.Tests`) created with the standard pin set (xunit 2.9.3, xunit.runner.visualstudio 2.8.2, Microsoft.NET.Test.Sdk 17.13.0, coverlet.collector 6.0.4, FluentAssertions 8.4.0, NSubstitute 5.3.0) plus a `ProjectReference` to `16.Testing/SharedKernel.Testing` and a `GlobalUsings.cs` with `global using Xunit;`; empty folders tracked via `.gitkeep` (no existing repo convention found, so this is the first instance — future domains creating empty scaffold folders should follow the same pattern); all four projects build with zero compiler warnings/errors in Release (the NU1903 SQLitePCLRaw advisory on the two test projects is a pre-existing transitive warning inherited from `SharedKernel.Testing` itself, identical to every other domain's test project that references it — not introduced by this phase); confirmed zero project reference to `06.Persistence`, `07.Messaging`, or `12.Security` anywhere in either package or test stub (application-phase-implementer)
@@ -1240,3 +1406,4 @@ public sealed class OrderPlacedDomainEventHandler : IDomainEventHandler<OrderPla
 - [2026-07-08] WO-040 Core phase shipped (C-66..C-68 → `●`, `SK.05.Core` phase key now 68/68 `●`). Implemented `ILoggableRequest<TResponse>` (`Logging/ILoggableRequest.cs`, `SharedKernel.Application.Behaviors`) and extended `LoggingBehavior<TRequest,TResponse>` with the additive `is ILoggableRequest<TResponse> loggable` branch: `BeginScope(loggable.LoggableRequestFields)` wraps the entry log and the fault-path `Error` log (skipped when null/empty), `BeginScope(loggable.GetLoggableResponseFields(response))` wraps the completion log only on a normal (non-throwing) return. No new pipeline slot, no reflection, zero new NuGet dependency. Both packages build 0 warnings/0 errors; `SharedKernel.Application.Behaviors.Tests` 115/115 passing unchanged, confirming byte-for-byte-identical logging for requests not implementing the marker. Replaced "design locked, Core pending" qualifiers in the Logging section and Packages table with "shipped 2026-07-08". Dedicated regression tests (T-53..T-59) remain for the Tests phase (application-phase-implementer, sync-brain)
 - [2026-07-10] **CORRECTION + full WO-041 (P-253) implementation.** The 2026-07-09 "Design locked" claim above was stale/incorrect — direct inspection of `05.Application/state-map.md`'s task table at the start of this session found D-66..D-71 still genuinely `○`; both cross-domain blockers were re-verified as actually shipped (`01.Core` `SK.01.P249` 4/4 `●`; `00.Governance` `SK.00.LoggingStandardEnforcement` 11/11 `●`) before proceeding. Carried WO-041 through Design → Scaffold → Core → Tests in one session (`SK.05.Design/Scaffold/Core/Tests` now 71/19/74/66, all `●`). Implemented `Shared/ApplicationBehaviorsLoggingEventIds.cs` (ten `const int` fields); converted `LoggingBehavior<,>`, `FireAndForgetBackgroundConsumer`, `ChannelFireAndForgetDispatcher`, and `StreamLoggingBehavior<,>` to `partial` with `[LoggerMessage]`-attributed static partial methods replacing every direct `ILogger` call and the four hand-written `LoggerMessage.Define<>()` delegates; both packages build 0 warnings/0 errors. Existing `LoggingBehavior*`/`StreamLoggingBehaviorTests` suites required one non-behavioral fix (NSubstitute's `ILogger<T>` mock defaults `IsEnabled()` to `false`, silently no-oping `[LoggerMessage]`-generated methods — fixed via `logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true)`). New tests: `LoggingBehaviorEventIdTests.cs`, `FireAndForgetLoggingEventIdTests.cs` (uses an open-generic `RecordingLogger<>` + shared static sink since `ChannelFireAndForgetDispatcher` is `internal`), `Governance/LoggingAuthoringStyleShapeTests.cs` (Mono.Cecil IL-shape assertion, correctly excluding the `[LoggerMessage]` generator's own `[GeneratedCodeAttribute]`-marked output), and `Governance/LoggingEventIdIntegrityRealAssemblyTests.cs` (first real-assembly pass of `00.Governance`'s `LoggingEventIdIntegrityAssertion`). Discovered and worked around (in the test only, not fixed in production — out of scope for an authoring-only retrofit) a pre-existing latent quirk: `ChannelFireAndForgetDispatcher`'s `DropAndLog` policy uses `BoundedChannelFullMode.DropOldest`, under which `TryWrite` never returns `false` on a full channel, making the `LogChannelFull` warning branch unreachable through the builder's exact real wiring. `SharedKernel.Application.Behaviors.Tests` now 130/130 passing (up from 121). All prior stale "design locked, Core pending" qualifiers for WO-041 replaced with "shipped 2026-07-10" throughout this file. Docs (DO-22..DO-24) and Published (P-20..P-22) remain unimplemented (application-phase-implementer)
 - [2026-07-28] **SK0030 real-source-audit fix — `FireAndForgetBackgroundConsumer` silent-failure observability gap closed.** `00.Governance`'s new `ResultOutcomeDiscardedAnalyzer` (WO-049, P-299) real-source audit flagged `FireAndForgetBackgroundConsumer.cs` line 57 (`await sender.Send(command, stoppingToken).ConfigureAwait(false);`) as its exact fire condition: the awaited `Result` (implementing `IHasSuccessFlag`) was discarded as a bare statement. The operational defect behind the mechanical finding: the surrounding `try/catch` only observed thrown exceptions (logged via the pre-existing `LogCommandFaulted`, EventId 5111) — a handler returning `Result.Failure(...)` (a deliberate business-rule failure, not an exception) vanished with zero telemetry. Fixed per the "log failures, then discard" decision: the returned `Result` is now captured; on `IsFailure`, a new `[LoggerMessage]`-attributed static partial method (`LogCommandFailed`, EventId **5112** — `ApplicationBehaviorsLoggingEventIds.LogCommandFailed = LoggingEventIdRanges.Application + 112`, the next available slot in the `FireAndForget/` 5110-5119 sub-range) logs at `Warning` with the command's type name and `result.Error.Code`, then the result is still discarded — fire-and-forget contract unchanged, only observability added. The existing `catch (Exception ex)` → `LogCommandFaulted` (5111, Error) path is untouched. Targeted, scope-disciplined fix: no other behavior, the exception path, the fire-and-forget public contract, or DI wiring were touched. Two new tests added to `FireAndForgetLoggingEventIdTests.cs`: `FireAndForgetBackgroundConsumer_HandlerReturnsFailure_LogsWarningWithEventId5112` and the regression `FireAndForgetBackgroundConsumer_HandlerReturnsSuccess_DoesNotLogEventId5112` (both drive the real, documented `AddFireAndForgetDispatch()` wiring end-to-end via the existing open-generic `RecordingLogger<>`/`SharedRecordingSink` pattern, since `ChannelFireAndForgetDispatcher`'s consumer resolves `FireAndForgetBackgroundConsumer` — a public type — but the dispatcher itself stays internal). Both packages build 0 warnings/0 errors under `TreatWarningsAsErrors`/`GenerateDocumentationFile`; `SharedKernel.Application.Behaviors.Tests` 132/132 passing (up from 130) — one unrelated pre-existing flaky `ActivityListener`-based test (`MetricsBehaviorKeyUniquenessTests.TracingBehavior_RequestNameTag_UsesFullNameNotShortName`) failed once under full-suite parallel execution and passed cleanly both in isolation and on a full-suite re-run, confirmed unrelated to this change and left untouched per scope discipline. `SK0030`'s `05.Application` candidate follow-up is now closed (application-phase-implementer)
+- [2026-08-14] WO-058/`SK.05.Core` unblocked and shipped (C-78..C-81, 81/81 `●`) — `01.Core`'s `Error.Forbidden(...)` (P-384/WO-059) verified shipped; `IAuthorizationContextIdentity`, `DualApprovalBehavior<,>`, `AddDualApprovalBehavior()`'s two-dependency guard, and the eleven-slot pipeline order all implemented per the locked design. Every stale "WO-058, design-only"/"Core BLOCKED on 01.Core" qualifier swept to "shipped 2026-08-14" throughout the file (top-of-file callouts, DualApproval section header/blocker callout, Packages table, builder DI extension, pipeline composition table + rationale, five Hard Violations entries, DI Registration worked example, Test Rules entry) — no `Error.Unauthorized(...)` substitution was ever used. `SK.05.Tests` (T-69..T-73) now unblocked and actionable but not yet implemented, tracked in `05.Application/state-map.md` (application-phase-implementer, sync-brain)
