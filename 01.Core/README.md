@@ -73,6 +73,7 @@ Error e2 = Error.NotFound("product.not_found", "Product SKU-42 was not found.");
 Error e3 = Error.Conflict("order.duplicate", "An order for this customer already exists.");
 Error e4 = Error.Unauthorized("auth.token_expired", "Your session has expired.");
 Error e5 = Error.Unexpected("infra.db_timeout", "Database query timed out.");
+Error e6 = Error.Forbidden("approval.self_approval_denied", "You cannot approve your own request.");
 
 // Sentinel — no error
 Error none = Error.None;
@@ -83,10 +84,25 @@ string response = error.Type switch
     ErrorType.NotFound     => "404 Not Found",
     ErrorType.Validation   => "400 Bad Request",
     ErrorType.Unauthorized => "401 Unauthorized",
+    ErrorType.Forbidden    => "403 Forbidden",
     ErrorType.Conflict     => "409 Conflict",
     _                      => "500 Internal Server Error",
 };
 ```
+
+#### Error.Forbidden vs. Error.Unauthorized — Choosing the Right One
+
+Both map to a rejected request, but they mean different things. `Error.Unauthorized` says the caller is **not permitted to attempt this at all** — no or invalid credentials (HTTP 401). `Error.Forbidden` says the caller **is generally permitted to attempt this kind of operation, but this specific instance/condition is not satisfied** — e.g. a maker-checker dual-approval gate rejecting the same user who submitted the request, or a role/permission check rejecting an authenticated-but-under-privileged caller (HTTP 403).
+
+```csharp
+// Unauthorized — the caller has no valid credentials at all
+Error.Unauthorized("auth.token_expired", "Your session has expired.");
+
+// Forbidden — the caller is authenticated, but this specific action is not allowed for them
+Error.Forbidden("approval.self_approval_denied", "You cannot approve your own request.");
+```
+
+Substituting `Unauthorized` for a genuinely `Forbidden` condition is a platform anti-pattern — pick the factory that matches the actual reason for rejection, not the one that happens to be more familiar.
 
 #### ErrorCodes — Well-Known Code Constants
 
