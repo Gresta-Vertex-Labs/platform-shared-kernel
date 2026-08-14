@@ -5,6 +5,7 @@ using Polly.Registry;
 using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Behaviors.DualApproval;
 using SharedKernel.Application.Behaviors.FireAndForget;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Logging;
@@ -27,9 +28,9 @@ namespace SharedKernel.Application.Behaviors.Extensions;
 /// <remarks>
 /// Use <c>.AddXBehavior()</c> methods to opt in to individual behaviors, then call
 /// <see cref="Build"/> to register them. Registration order is always the fixed canonical
-/// ten-named-slot order (Logging → Metrics → Tracing → Validation → Authorization → Caching →
-/// Resilience → Idempotency → Transaction → CacheInvalidation) regardless of the order in which
-/// <c>.AddXBehavior()</c> methods were called.
+/// eleven-named-slot order (Logging → Metrics → Tracing → Validation → Authorization →
+/// DualApproval → Caching → Resilience → Idempotency → Transaction → CacheInvalidation)
+/// regardless of the order in which <c>.AddXBehavior()</c> methods were called.
 /// </remarks>
 public sealed class ApplicationBehaviorsBuilder
 {
@@ -39,6 +40,7 @@ public sealed class ApplicationBehaviorsBuilder
     private bool _metrics;
     private bool _tracing;
     private bool _authorization;
+    private bool _dualApproval;
     private bool _caching;
     private bool _resilience;
     private bool _idempotency;
@@ -137,6 +139,24 @@ public sealed class ApplicationBehaviorsBuilder
     public ApplicationBehaviorsBuilder AddAuthorizationBehavior()
     {
         _authorization = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Opts in to <see cref="DualApprovalBehavior{TRequest,TResponse}"/>.
+    /// </summary>
+    /// <returns>This builder, for chaining.</returns>
+    /// <remarks>
+    /// This domain's FIRST two-dependency <see cref="Build"/>-time guard: throws
+    /// <see cref="InvalidOperationException"/> naming <see cref="IAuthorizationContext"/> if it is
+    /// not registered, and a distinct <see cref="InvalidOperationException"/> naming
+    /// <see cref="IDualApprovalStore"/> if that is not registered — both are required for
+    /// <see cref="DualApprovalBehavior{TRequest,TResponse}"/> to function (identity resolution and
+    /// approval-record lookup respectively).
+    /// </remarks>
+    public ApplicationBehaviorsBuilder AddDualApprovalBehavior()
+    {
+        _dualApproval = true;
         return this;
     }
 
@@ -292,8 +312,10 @@ public sealed class ApplicationBehaviorsBuilder
     /// Thrown when <see cref="AddTransactionBehavior"/> was opted into without
     /// <see cref="IUnitOfWork"/> registered, when <see cref="AddCachingBehavior"/> or
     /// <see cref="AddCacheInvalidationBehavior"/> was opted into without
-    /// <see cref="ICacheService"/> registered, when <see cref="AddAuthorizationBehavior"/> or
-    /// <see cref="AddStreamingBehaviors"/> was opted into without <see cref="IAuthorizationContext"/>
+    /// <see cref="ICacheService"/> registered, when <see cref="AddAuthorizationBehavior"/>,
+    /// <see cref="AddDualApprovalBehavior"/>, or <see cref="AddStreamingBehaviors"/> was opted into
+    /// without <see cref="IAuthorizationContext"/> registered, when
+    /// <see cref="AddDualApprovalBehavior"/> was opted into without <see cref="IDualApprovalStore"/>
     /// registered, when <see cref="AddIdempotencyBehavior"/> was opted into without
     /// <see cref="IIdempotencyKeyStore"/> registered, or when <see cref="AddResilienceBehavior"/>
     /// was opted into without <see cref="ResiliencePipelineProvider{TKey}"/> of
@@ -317,9 +339,15 @@ public sealed class ApplicationBehaviorsBuilder
                 "AddCachingBehavior()/AddCacheInvalidationBehavior() require SharedKernel.Caching.Abstractions.ICacheService " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
 
-        if ((_authorization || _streaming) && !IsRegistered<IAuthorizationContext>())
+        if ((_authorization || _dualApproval || _streaming) && !IsRegistered<IAuthorizationContext>())
             throw new InvalidOperationException(
-                "AddAuthorizationBehavior()/AddStreamingBehaviors() require SharedKernel.Application.Behaviors.Authorization.IAuthorizationContext " +
+                "AddAuthorizationBehavior()/AddDualApprovalBehavior()/AddStreamingBehaviors() require " +
+                "SharedKernel.Application.Behaviors.Authorization.IAuthorizationContext to be registered " +
+                "in the service collection. Register an implementation before calling Build().");
+
+        if (_dualApproval && !IsRegistered<IDualApprovalStore>())
+            throw new InvalidOperationException(
+                "AddDualApprovalBehavior() requires SharedKernel.Application.Behaviors.DualApproval.IDualApprovalStore " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
 
         if (_idempotency && !IsRegistered<IIdempotencyKeyStore>())
@@ -333,8 +361,8 @@ public sealed class ApplicationBehaviorsBuilder
                 "to be registered in the service collection. Register one before calling Build().");
 
         // Fixed canonical unary order — never configurable:
-        // Logging -> Metrics -> Tracing -> Validation -> Authorization -> Caching -> Resilience ->
-        // Idempotency -> Transaction -> CacheInvalidation
+        // Logging -> Metrics -> Tracing -> Validation -> Authorization -> DualApproval -> Caching ->
+        // Resilience -> Idempotency -> Transaction -> CacheInvalidation
         if (_logging)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 
@@ -349,6 +377,9 @@ public sealed class ApplicationBehaviorsBuilder
 
         if (_authorization)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuthorizationBehavior<,>));
+
+        if (_dualApproval)
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(DualApprovalBehavior<,>));
 
         if (_caching)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CachingBehavior<,>));
