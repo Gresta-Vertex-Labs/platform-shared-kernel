@@ -6,3 +6,4 @@
 - [P-256 EventId sub-block allocation](project_p256_eventid_allocation.md) — WebApi 14000-14099, SignalR 14100-14199; gate resolved 2026-07-14
 - [13.ServiceDefaults's P-251 test hardcodes the wrong CorrelationId baggage-key literal](project_correlationid_baggage_key_mismatch.md) — discovered in P-256, flagged not fixed (out of jurisdiction)
 - [Cross-domain gating pattern for phases blocked on another domain's unshipped constant](project_cross_domain_gating_pattern.md) — design now/code gated later shape, used by P-256 and P-262/WO-042
+- [01.Core has no Error.Forbidden/ErrorType.Forbidden](project_p381_forbidden_gap.md) — blocks WO-058/P-381; also fixed a stale pre-existing CLAUDE.md doc defect (fake "Forbidden→403/Failure→500" mapping)

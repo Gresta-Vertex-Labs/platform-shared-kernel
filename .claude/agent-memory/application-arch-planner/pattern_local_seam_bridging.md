@@ -11,15 +11,18 @@ metadata:
 2. The behavior depends on the local interface only.
 3. The **consuming service bridges** the local seam to the real implementation via a one-line adapter registered at the **composition root** — never inside this package.
 
-Three instances of this pattern exist (as of WO-035, 2026-06-29):
+Four instances of this pattern exist (as of WO-058, 2026-08-13):
 
 | Behavior | Local seam | Bridges to | Real package |
 | --- | --- | --- | --- |
 | `TransactionBehavior` | `IUnitOfWork` (`SaveChangesAsync` only) | `IUnitOfWork` | `06.Persistence.Abstractions` |
-| `AuthorizationBehavior` | `IAuthorizationContext` (`IsAuthorizedAsync(string, ct)` only) | `IUserContext`/`ITenantProvider` | `12.Security.Abstractions` |
+| `AuthorizationBehavior` | `IAuthorizationContext` (`IsAuthorizedAsync(string, ct)`/`AllOf`/`AnyOf`) | `IUserContext`/`ITenantProvider` | `12.Security.Abstractions` |
 | `IdempotentCommandBehavior` | `IIdempotencyKeyStore` (`HasProcessedAsync`/`MarkProcessedAsync`, mirrors shape but not identity of `07.Messaging`'s `IIdempotencyStore`) | (consuming service's own store) | `07.Messaging.Abstractions` (shape-only precedent, not a reference) |
+| `DualApprovalBehavior` (WO-058, design-only, Core BLOCKED on `01.Core` `Error.Forbidden`) | `IDualApprovalStore` (`TryGetApprovalAsync`/`RecordApprovalAsync`, mirrors `IIdempotencyKeyStore`'s bridge shape) | (consuming service's own approvals store) | N/A — no cross-domain reference at all, purely a new local seam for a new local-only concern |
 
-**Why this matters when planning a new phase:** if a new cross-cutting behavior in this domain seems to need something from a higher layer (06/07/12), the answer is almost always "add a fourth local seam, bridged the same way" — not "relax the layering rule" and not "invent a different bridging mechanism." Check this table first before designing something novel.
+**Why this matters when planning a new phase:** if a new cross-cutting behavior in this domain seems to need something from a higher layer (06/07/12), the answer is almost always "add another local seam, bridged the same way" — not "relax the layering rule" and not "invent a different bridging mechanism." Check this table first before designing something novel.
+
+**Extending an ALREADY-PUBLISHED local seam without a breaking change (WO-058 precedent):** when a new behavior needs one more capability from an existing seam (e.g. `DualApprovalBehavior` needing "who is calling right now" from the same identity source `AuthorizationBehavior` uses), do NOT add a new member directly to the already-shipped interface (`IAuthorizationContext` here) — that breaks every downstream implementation. Instead add a NEW, separate, optional-capability interface (`IAuthorizationContextIdentity`) that an implementation MAY additionally implement, detected via an `is`-pattern-match at the call site — never reflection. This is the exact same technique `IIdempotencyResponseStore` used alongside the already-shipped `IIdempotencyKeyStore` (WO-039, P-242) to add opt-in response replay without breaking existing stores. Two instances of this sibling-capability-interface technique now exist; reach for it by default whenever a new phase wants to grow an already-published seam rather than touching the seam itself.
 
 **`Build()`-time guard convention:** each of these three (plus Caching's `ICacheService`) gets a missing-dependency check inside `ApplicationBehaviorsBuilder.Build()` that throws `InvalidOperationException` with an actionable message if the corresponding seam/abstraction wasn't registered in `IServiceCollection` before `.AddXBehavior()` + `.Build()` ran. This guard convention extends to ANY opt-in behavior with an external dependency, not just layering-seam bridges — WO-036's `ResilienceBehavior` (needs a registered Polly v8 `ResiliencePipelineProvider`) and `CacheInvalidationBehavior` (reuses the EXISTING `ICacheService` guard rather than duplicating it — the guard is keyed on the dependency type, not on which `.AddXBehavior()` call requested it) both follow this same guard shape even though Resilience isn't bridging a higher layer at all (Polly is a same-layer, in-process library, not 06/07/12 infrastructure).
 
