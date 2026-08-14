@@ -6,3 +6,4 @@
 - [BaggageLogRecordProcessor](baggage_log_record_processor.md) — Activity.Baggage→LogRecord.Attributes pattern, OTel logging test technique, test-only cross-package ProjectReference precedent
 - [Decompile verification technique](decompile_verification_technique.md) — ilspycmd workflow to verify third-party telemetry (Polly has Meter not ActivitySource; TryAddSingleton = free idempotency)
 - [gRPC/Polly test capture pattern](grpc_polly_test_capture_pattern.md) — WebApplicationFactory+Grpc.Net.Client real-call span proof, Polly ConfigureTelemetry+InMemoryExporter metric proof (T-43)
+- [Kestrel private-delegate reflection technique](kestrel_private_delegate_reflection_technique.md) — prove ConfigureHttpsDefaults wiring via reflection over KestrelServerOptions.HttpsDefaults, no real TLS handshake (T-44)

@@ -109,6 +109,13 @@ domain that already reached Published never regresses its Current Phase column j
 order reopens earlier phase keys for extension. Confirmed this pattern holds for `Core`, not just
 `Design`/`Scaffold` — the precedent generalizes to every standard lifecycle phase key.
 
+**WO-058 (2026-08-13):** confirms the "Design phase = pure specification, verification-only" pattern
+generalizes beyond WO-057 — `SK.12.Design` re-closed 34/34 (●) purely by re-reading `12.Security/CLAUDE.md`
+and confirming all 12 remaining tasks (D-23–D-34: step-up auth surface, DPoP, `.Mtls` package shape, token
+revocation seam) were already fully specified by `security-arch-planner`'s dispatch — zero `.cs`/`.md` edits
+needed. Also confirms the "root Domain Summary Board Current Phase stays `Published`, only `State` regresses
+to `◐`" precedent holds a third time (now proven across WO-057's Design/Scaffold/Core AND WO-058's Design).
+
 ## Cross-domain `IUserContext` interface-change fallout (WO-057, 2026-08-13)
 
 Adding members to `IUserContext` (`IdentityKind`, `Permissions`, `HasPermission`) breaks EVERY other
@@ -167,6 +174,60 @@ build output for `error CS` (not just `error`) isolates genuine compile errors f
   partial method declarations yet; those are added in Core (C-24), since source-generated partial methods
   have no body for a human to "leave empty" — the whole method declaration is deferred, not just its body.
 
+## WO-058 Scaffold phase (SC-16–SC-24, 2026-08-13)
+
+- **Scaffold-only phases do not warrant `sync-brain`.** Confirmed by re-reading `12.Security/CLAUDE.md`'s
+  own Changelog: WO-057's Scaffold phase (SC-10–SC-15) never produced a distinct "SK.12.Scaffold closed"
+  brain-sync changelog line — only Design (dispatch), Tests, Docs, and Core phases did. The reason: when
+  `security-arch-planner` dispatches a work order, it writes the FULL target-state Interface Contracts
+  into CLAUDE.md up front (marked `design-locked`) — Scaffold only wires plumbing (csproj refs, folders,
+  solution registration, stub files) against an already-fully-specified brain, so there is nothing for a
+  brain sync to correct. Skipped again this session for the identical reason.
+- **"Stub file" in a Scaffold task has three different legitimate shapes, not one**, depending on what the
+  named type IS:
+  - **A pure-contract type (interface, POCO options class) whose shape was already fully finalized in the
+    Design phase** → write it FULLY now. An interface's method signature and an options class's properties
+    carry zero "logic" (logic = imperative implementation code) — deferring them to Core would just be
+    busywork churn, not genuine phase discipline. Example: `IDpopProofReplayCache`,`ITokenRevocationCheck`
+    (single-method interfaces, D-28/D-33 already pinned their exact signatures), `DpopOptions` (a bare
+    `int ProofFreshnessWindowSeconds { get; set; } = 60`).
+  - **A `[LoggerMessage]`-attributed partial method whose EventId/Level/Message is already published in
+    CLAUDE.md's Logging Conventions table** → declare it now too. The attribute is 100% declarative; the
+    source generator produces the entire method body, so there is no hand-written logic to defer. This is
+    what "method skeleton" means in a Scaffold task when the surrounding phase spec explicitly asks for a
+    `[LoggerMessage]` skeleton (not just "no bodies yet" like the original SC-15 stub) — check the task's
+    exact wording, don't assume the SC-15 precedent generalizes verbatim.
+  - **A class whose entire purpose IS an algorithm/imperative logic** (e.g. `DpopProofValidator` — JWT
+    parsing, signature verification, freshness checks) → leave as a doc-only empty class body with an XML
+    `<remarks>` naming the future Core task ID that will fill it in. This is the one case where "no logic
+    yet" is taken literally.
+- **A brand-new sibling provider package's csproj should copy the immediately-preceding sibling's csproj
+  almost verbatim**, not re-derive patterns from first principles. `SharedKernel.Security.Mtls.csproj` was
+  built directly off `SharedKernel.Security.ApiKey.csproj`: same `<FrameworkReference
+  Include="Microsoft.AspNetCore.App" />` trick for a framework-provided auth handler
+  (`Microsoft.AspNetCore.Authentication.Certificate` this time, not `.Abstractions`) instead of a
+  `PackageReference` — even though `12.Security/CLAUDE.md`'s own Technology Stack table literally reads
+  "NuGet: Microsoft.AspNetCore.Authentication.Certificate", the accompanying prose ("framework-provided
+  handler") is the authoritative signal, and the table's "NuGet" column header is naming the *capability*
+  supplier, not literally mandating a `PackageReference` element. Same `.Tests.csproj` package-version
+  pins (xunit 2.9.3, Microsoft.NET.Test.Sdk 17.13.0, `Microsoft.Extensions.DependencyInjection`/`.Hosting`
+  pinned to `10.0.9` because the project references `16.Testing/SharedKernel.Testing`, which itself pulls
+  that floor transitively — a lower pin here is an `NU1605` downgrade error, same as `.ApiKey.Tests`).
+- **Scaffold-phase skipped test stubs for a brand-new package use `[Fact(Skip = "...")]` naming the
+  specific blocking Core-phase task IDs** (e.g. `"...awaiting IMtlsCertificateValidator/MtlsUserContext/
+  certificate authentication handler (SK.12.Core C-32/C-33/C-34)."`), never a bare empty test class —
+  keeps `dotnet test` reporting 0 failed/N skipped instead of 0 tests found, and gives the next session's
+  implementer a direct pointer to which Core task closes each stub.
+- **`ClaimMappingOptions`/an existing options class extended with new properties mid-domain is genuinely a
+  Scaffold task, not Core** — properties-with-defaults are declarative data, so adding
+  `AmrClaimType`/`AcrClaimType`/`AuthTimeClaimType` (defaults `"amr"`/`"acr"`/`"auth_time"`) to the
+  already-shipped `ClaimMappingOptions` belonged in Scaffold (SC-16); the Core-phase counterpart (C-27) is
+  specifically the *resolution logic* in `OidcUserContext` that reads these new properties — the split is
+  clean and mirrors the interface-vs-implementation distinction above. Avoid `<see cref>` references from
+  a Scaffold-phase XML doc to `IUserContext` members that don't exist yet (e.g. `AuthenticationMethods`
+  before C-25 ships) — produces an unresolvable-cref warning; describe in prose instead until the member
+  is real.
+
 ## SharedKernel.Security.ApiKey Core-phase design decisions (WO-057, 2026-08-13)
 
 - **Composing `IUserContext` across sibling provider packages without a cross-reference.** `ApiKey` cannot
@@ -210,3 +271,115 @@ build output for `error CS` (not just `error`) isolates genuine compile errors f
   `httpContext.Request.QueryString = QueryString.Create("api_key", "value")`. `16.Testing`'s
   `InMemoryLogger<T>` works as the `ILogger<THandler>` constructor argument for asserting on
   `[LoggerMessage]` output.
+
+## WO-058 Core phase (SK.12.Core, C-25–C-37, 2026-08-14) — step-up auth, DPoP, mTLS, revocation
+
+- **`Microsoft.AspNetCore.Authentication.Certificate` is NOT part of the `Microsoft.AspNetCore.App` shared
+  framework — confirmed by listing the actual installed shared-framework directories on disk, not by
+  trusting the pre-written domain brain.** `12.Security/CLAUDE.md`'s Technology Stack table had this row
+  labeled "framework-provided handler," inherited verbatim from the `.ApiKey`/`Microsoft.AspNetCore
+  .Authentication.Abstractions` precedent (which genuinely IS framework-provided). The `Certificate` auth
+  middleware is a separate, real NuGet package that must be added via `<PackageReference
+  Include="Microsoft.AspNetCore.Authentication.Certificate" Version="10.0.0" />` — the `<FrameworkReference
+  Include="Microsoft.AspNetCore.App" />` alone does not resolve `CertificateAuthenticationOptions`/
+  `CertificateValidatedContext`/etc. **Lesson: when a design doc says "framework-provided" for a specific
+  ASP.NET Core sub-area (not the base `Http`/`DependencyInjection`/`Authentication.Abstractions` surface),
+  verify against the real installed SDK (`find "$(dirname $(which dotnet))/shared/Microsoft.AspNetCore.App"
+  -iname "*Xyz*"`) before writing the csproj — do not assume every `Microsoft.AspNetCore.*`-namespaced type
+  ships in the shared framework just because some do.**
+
+- **Cross-request signal bridging via a synthetic marker claim.** DPoP proof validation (RFC 9449) happens
+  inside `JwtBearerEvents.OnTokenValidated`, but `IUserContext.IsSenderConstrained` is read much later, when
+  `OidcUserContext` is constructed by the DI `IUserContext` factory from the (by-then-already-validated)
+  `ClaimsPrincipal`. Bridged by stamping an internal, never-emitted-by-any-real-IdP marker claim
+  (`SharedKernel.Security.Oidc.Dpop.DpopClaimTypes.SenderConstrained = "sk_dpop_bound"`) onto
+  `context.Principal`'s `ClaimsIdentity` inside the validator, on success only; `OidcUserContext`'s
+  constructor just checks for its presence. **Generalizes to any future signal that must survive from
+  token-validation-time to `IUserContext`-construction-time without adding a new constructor parameter or
+  widening the `ClaimsPrincipal`-only construction contract** — cheaper than plumbing an `HttpContext.Items`
+  side-channel, and travels naturally with the principal through any code that re-reads it.
+
+- **Root-vs-scoped `IServiceProvider` captive-dependency trap inside `services.AddOptions<TOptions>(...)
+  .Configure(o => {...})`.** The delegate passed to `.Configure(...)` runs once, using whatever
+  `IServiceProvider` `IOptionsMonitor`'s internal machinery resolves it with — effectively the ROOT
+  container, not a per-request scope. Resolving a `Scoped`-lifetime service (e.g. `IDpopProofReplayCache`,
+  `ITokenRevocationCheck`) from a provider captured at that point either throws (scope-validation enabled)
+  or silently returns a container-lifetime-pinned instance. **Fix: never resolve scoped seam dependencies
+  from an `IServiceProvider` captured by the `Configure` delegate's closure. Resolve them from
+  `context.HttpContext.RequestServices` INSIDE the per-request `OnTokenValidated`/event-handler delegate
+  body instead** — that delegate runs per-request with the real scoped container. This is the one AOT/DI
+  gotcha in this domain worth checking on every future `.Configure<JwtBearerOptions>()`-based extension.
+
+- **Wrap-previous-handler chaining pattern for composable `JwtBearerEvents.OnTokenValidated` extensions.**
+  `SecurityAuthenticationBuilder.RequireDpop<TReplayCache>()`/`.WithRevocationCheck<TCheck>()` both do:
+  ```csharp
+  services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme).Configure(o => {
+      o.Events ??= new();
+      var previous = o.Events.OnTokenValidated;
+      o.Events.OnTokenValidated = async ctx => {
+          if (previous is not null) await previous(ctx);
+          if (ctx.Result is not null) return;   // an earlier handler already failed the request
+          // ...this seam's own validation, resolved from ctx.HttpContext.RequestServices...
+      };
+  });
+  ```
+  Calling `.RequireDpop()` then `.WithRevocationCheck()` composes both in call order without either knowing
+  the other exists — each just wraps whatever was there before. `ctx.Result is not null` is the short-circuit
+  that stops a later handler from overriding an earlier rejection. Reusable for any future opt-in
+  `JwtBearerEvents` extension in this domain (e.g. a future custom claims-enrichment step).
+
+- **A builder that must both configure DI (fluent chain) and remain 100% `IServiceCollection`-compatible for
+  every OTHER extension method in the ecosystem** (`AddAuthorization()`, `AddHttpContextAccessor()`, etc.) is
+  solved by making the builder itself implement `IServiceCollection`, forwarding every member to a wrapped
+  instance (`SecurityAuthenticationBuilder : IServiceCollection`). Changing `AddSharedKernelSecurity`'s return
+  type from `IServiceCollection` to this builder is **source-compatible, not breaking** — any existing caller
+  that only chains further `IServiceCollection` extension methods keeps compiling, because the builder IS an
+  `IServiceCollection`. Worth reusing as the default shape whenever a domain needs "fluent builder +
+  full IServiceCollection passthrough" instead of forcing callers into a narrower builder-only API.
+
+- **`Microsoft.IdentityModel.Tokens.JsonWebKey` ships a built-in RFC 7638 JWK thumbprint
+  (`.ComputeJwkThumbprint()`) and `Base64UrlEncoder.Encode/.Decode`** — both already transitively available
+  via the `JwtBearer`/`Microsoft.Identity.Web` NuGet chain `SharedKernel.Security.Oidc.csproj` already
+  references, so implementing DPoP's `jkt` computation needed ZERO new top-level `PackageReference`. To parse
+  a DPoP proof's embedded `jwk` header (a nested JSON object, not a simple claim): base64url-decode
+  `JsonWebToken.EncodedHeader`, parse with `JsonDocument`, extract the raw `"jwk"` property text, feed it
+  directly to `JsonWebKey.Create(json)` — simpler than trying to coerce `JsonWebToken.TryGetHeaderValue<T>`
+  into a nested-object shape. Self-signed-by-embedded-key proof verification is a legitimate narrow use of
+  `JsonWebTokenHandler.ValidateTokenAsync(proof, new TokenValidationParameters { ValidateIssuer=false,
+  ValidateAudience=false, ValidateLifetime=false, IssuerSigningKey = jwk })`.
+
+- **Building a real signed DPoP proof JWT in tests** (no mocking needed — genuine crypto):
+  `ECDsa.Create(ECCurve.NamedCurves.nistP256)` → `JsonWebKeyConverter.ConvertFromECDsaSecurityKey(new
+  ECDsaSecurityKey(ecdsa))` for the Kty/Crv/X/Y components → `JsonWebTokenHandler.CreateToken(new
+  SecurityTokenDescriptor { SigningCredentials = ..., Claims = {htm, htu, iat, jti}, AdditionalHeaderClaims =
+  {typ, jwk = {kty, crv, x, y}} })`. Reusable recipe for any future test needing a real signed JWT with an
+  embedded JWK header.
+
+- **A third package now shares the `InternalsVisibleTo` → `.Tests` pattern** (`.ApiKey` →
+  `ConstantTimeKeyComparer`, `.Oidc` → `DpopProofValidator`/`RevocationCheckRunner`/`DpopClaimTypes`, `.Mtls`
+  → `MtlsAuthenticationHandler`/`ConstantTimeThumbprintComparer`/`MtlsClaimTypes`) — confirmed as the
+  established, repeatable convention for testing `internal` validator/handler classes directly in this
+  domain, not a one-off.
+
+- **Testing `CertificateAuthenticationEvents.OnCertificateValidated` (mTLS) without a real TLS handshake.**
+  Build a `CertificateValidatedContext(httpContext, scheme, options) { ClientCertificate = cert }` directly —
+  `CertificateAuthenticationHandler` itself is `internal` to the framework package and cannot be referenced
+  from a test project, so use a throwaway local `IAuthenticationHandler`-implementing stand-in class (e.g.
+  `NoOpAuthenticationHandler`) purely to satisfy `AuthenticationScheme`'s `handlerType` constructor argument
+  — it is never actually invoked by these unit tests. Self-signed test certs via `RSA.Create(2048)` +
+  `CertificateRequest(...).CreateSelfSigned(...)`. For an RFC 8705 `cnf.x5t#S256` claim, build the JSON
+  directly as an interpolated string (`$"{{\"x5t#S256\":\"{thumbprint}\"}}"`) rather than
+  `JsonSerializer.Serialize` + `.Replace(...)` — C# property names can't contain `#`, so serializing a POCO
+  and string-replacing the property name afterward is a needless hack; a literal JSON string is clearer.
+
+- **Cross-domain `IUserContext` interface-change fallout, reconfirmed a second time (first was WO-057).**
+  Adding six more `IUserContext` members again required fixing implementers OUTSIDE `12.Security`:
+  `06.Persistence.EfCore/Extensions/NoOpUserContext.cs`, two of that package's own test fixtures
+  (`EfCorePersistenceBuilderTests.CustomUserContext`, `DbContextPoolingTests.MutableTestUserContext`),
+  `16.Testing/SharedKernel.Testing/Security/FakeUserContext.cs` (gains matching SETTABLE properties, per its
+  established convention — sentinels in production fallbacks, mutable fields in the public test fake), and
+  `16.Testing/.../Persistence/TestSharedKernelDbContext.cs`'s private nested `NoOpUserContext`. The
+  repo-wide grep pattern from WO-057's memory entry (`class\s+\w+(<[^>]+>)?\s*(\([^)]*\))?\s*:\s*[\w<>,\.\s]
+  *\bIUserContext\b`) again caught every implementer correctly — **this rule is now confirmed reliable across
+  two independent interface-breaking sessions; keep using it (re-derive fresh each time, never trust a prior
+  session's list as still-exhaustive) whenever `IUserContext` or `ITenantProvider` gains a member.**

@@ -236,3 +236,24 @@ row 13 + "What Goes Where" row (both still said "queued"/"still `○` Pending" a
 wiring as "ActivitySource/Meter" when C-47 had already found it Meter-only). This confirms/extends the
 [[decompile_verification_technique]] memory's existing note about this same routing quirk — worth checking
 before assuming one call handles both files.
+
+**Test counts as of 2026-08-14, end of session (SK.13.Tests closed — T-44, the mTLS composition genuine
+delegation/no-op-regression proof, WO-058/P-378):** 130/130 `SharedKernel.ServiceDefaults.Tests` passing (+30
+from the prior 100), 30 `SharedKernel.MultiTenancy.Tests` unchanged. The recorded `⚑` blocker ("Depends on
+C-48 landing") was stale — `SK.13.Core` (C-48) had already shipped earlier the same day. New
+`SharedKernel.ServiceDefaults.Tests/Security/` folder (first test folder for this new `Security/` production
+folder): `MtlsClientCertificateExtensionsTests.cs`, `MtlsForwardedHeaderMiddlewareTests.cs`,
+`MtlsForwardedHeaderExtensionsTests.cs`, `MtlsNoOpRegressionTests.cs`. See
+[[kestrel_private_delegate_reflection_technique]] for the new reflection-based genuine-delegation-proof
+technique this session introduced — Kestrel exposes no public API to read back `ConfigureHttpsDefaults(...)`
+wiring, so proving it requires reflecting over `KestrelServerOptions`'s private `HttpsDefaults` property
+(confirmed via `ilspycmd` decompilation to be a single overwritten delegate field, not a list). Regression-proof
+discipline applied per this domain's T-39/T-40/T-41/T-43 precedent: temporarily removed each of the three
+pieces of production wiring (the `ClientCertificateValidation` assignment, the `Connection.ClientCertificate`
+assignment, the `.Validate(...).ValidateOnStart()` chain) and confirmed the corresponding tests genuinely fail,
+then restored via `git diff` showing zero net change. Root Domain Summary Board row 13 was updated from
+`Core`/`●` to `Tests`/`●` (not reverted to `Published` — `SK.13.Docs`/DO-14 is still open, so the domain's true
+lifecycle position is genuinely "Tests," matching how the prior C-48/S-19 sessions already progressed the row
+from `Scaffold`→`Core` rather than jumping back to `Published`; the "stay at Published" guidance earlier in
+this file only applies once *every* phase key resolves together in one session). Only `DO-14` (`SK.13.Docs`)
+remains open for WO-058 as of this entry.
