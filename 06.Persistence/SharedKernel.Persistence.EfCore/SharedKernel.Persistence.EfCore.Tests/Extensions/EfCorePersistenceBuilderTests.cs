@@ -143,4 +143,10 @@ internal sealed class CustomUserContext(Guid userId) : IUserContext
     public IdentityKind IdentityKind => IdentityKind.User;
     public bool HasRole(string role) => false;
     public bool HasPermission(string permission) => false;
+    public IReadOnlyCollection<string> AuthenticationMethods => [];
+    public string? AuthContextClassReference => null;
+    public DateTimeOffset? AuthTime => null;
+    public bool IsSenderConstrained => false;
+    public bool WasAuthenticatedWith(string method) => false;
+    public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
 }

@@ -45,4 +45,22 @@ internal sealed class NoOpUserContext : IUserContext
 
     /// <inheritdoc />
     public bool HasPermission(string permission) => false;
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> AuthenticationMethods => [];
+
+    /// <inheritdoc />
+    public string? AuthContextClassReference => null;
+
+    /// <inheritdoc />
+    public DateTimeOffset? AuthTime => null;
+
+    /// <inheritdoc />
+    public bool IsSenderConstrained => false;
+
+    /// <inheritdoc />
+    public bool WasAuthenticatedWith(string method) => false;
+
+    /// <inheritdoc />
+    public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
 }
