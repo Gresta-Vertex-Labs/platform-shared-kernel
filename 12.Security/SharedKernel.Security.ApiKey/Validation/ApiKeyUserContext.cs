@@ -88,4 +88,28 @@ public sealed class ApiKeyUserContext : IUserContext
 
     /// <inheritdoc/>
     public bool HasPermission(string permission) => Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc/>
+    /// <remarks>Empty — no OIDC authentication-context concept for a pre-shared key (WO-058, P-375).</remarks>
+    public IReadOnlyCollection<string> AuthenticationMethods => [];
+
+    /// <inheritdoc/>
+    /// <remarks>Always <see langword="null"/> — no OIDC authentication-context concept for a pre-shared key (WO-058, P-375).</remarks>
+    public string? AuthContextClassReference => null;
+
+    /// <inheritdoc/>
+    /// <remarks>Always <see langword="null"/> — no OIDC authentication-context concept for a pre-shared key (WO-058, P-375).</remarks>
+    public DateTimeOffset? AuthTime => null;
+
+    /// <inheritdoc/>
+    /// <remarks>Always <see langword="false"/> — a pre-shared key is never DPoP-bound (WO-058, P-376).</remarks>
+    public bool IsSenderConstrained => false;
+
+    /// <inheritdoc/>
+    /// <returns>Always <see langword="false"/>.</returns>
+    public bool WasAuthenticatedWith(string method) => false;
+
+    /// <inheritdoc/>
+    /// <returns>Always <see langword="false"/>.</returns>
+    public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) => false;
 }

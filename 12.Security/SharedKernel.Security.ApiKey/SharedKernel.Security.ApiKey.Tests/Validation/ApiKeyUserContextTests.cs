@@ -131,4 +131,46 @@ public sealed class ApiKeyUserContextTests
         var sut = new ApiKeyUserContext(BuildPrincipal());
         Assert.IsAssignableFrom<IUserContext>(sut);
     }
+
+    [Fact]
+    public void AuthenticationMethods_IsEmpty()
+    {
+        var sut = new ApiKeyUserContext(BuildPrincipal());
+        Assert.Empty(sut.AuthenticationMethods);
+    }
+
+    [Fact]
+    public void AuthContextClassReference_IsNull()
+    {
+        var sut = new ApiKeyUserContext(BuildPrincipal());
+        Assert.Null(sut.AuthContextClassReference);
+    }
+
+    [Fact]
+    public void AuthTime_IsNull()
+    {
+        var sut = new ApiKeyUserContext(BuildPrincipal());
+        Assert.Null(sut.AuthTime);
+    }
+
+    [Fact]
+    public void IsSenderConstrained_IsFalse()
+    {
+        var sut = new ApiKeyUserContext(BuildPrincipal());
+        Assert.False(sut.IsSenderConstrained);
+    }
+
+    [Fact]
+    public void WasAuthenticatedWith_AlwaysReturnsFalse()
+    {
+        var sut = new ApiKeyUserContext(BuildPrincipal());
+        Assert.False(sut.WasAuthenticatedWith("mfa"));
+    }
+
+    [Fact]
+    public void IsAuthenticationFresherThan_AlwaysReturnsFalse()
+    {
+        var sut = new ApiKeyUserContext(BuildPrincipal());
+        Assert.False(sut.IsAuthenticationFresherThan(TimeSpan.FromDays(365), DateTimeOffset.UtcNow));
+    }
 }
