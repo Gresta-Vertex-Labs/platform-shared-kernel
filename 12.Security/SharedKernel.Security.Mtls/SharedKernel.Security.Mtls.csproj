@@ -1,0 +1,77 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- NuGet packaging metadata -->
+    <PackageId>SharedKernel.Security.Mtls</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Description>Mutual-TLS client-certificate authentication scheme for SharedKernel security: IMtlsCertificateValidator extensibility point, MtlsUserContext, RFC 8705 certificate-bound (cnf.x5t#S256) access-token validation, and AddMtlsAuthentication composing alongside JWT Bearer/API-key via the same ServiceDescriptor-capture decorator mechanism as SharedKernel.Security.ApiKey. A sibling provider package, never OIDC, never references .Oidc/.ApiKey. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
+    <PackageTags>shared-kernel;security;mtls;mutual-tls;client-certificate;open-banking;identity</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.AspNetCore.App shared framework: supplies Microsoft.Extensions.Logging.Abstractions
+      ([LoggerMessage]) and Microsoft.AspNetCore.Http/DependencyInjection. A FrameworkReference, not a
+      NuGet PackageReference — mirrors SharedKernel.Security.ApiKey's identical "framework-provided, not
+      a NuGet dependency" precedent (12.Security/CLAUDE.md Technology Stack).
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      CORRECTED at Core-phase implementation time (WO-058, C-33): Microsoft.AspNetCore.Authentication.Certificate
+      (CertificateAuthenticationHandler) is NOT part of the Microsoft.AspNetCore.App shared framework —
+      verified directly against the installed shared-framework directory, which carries no
+      Microsoft.AspNetCore.Authentication.Certificate.dll. It ships only as a standalone NuGet package.
+      The original design's "framework-provided handler" framing (12.Security/CLAUDE.md Technology Stack)
+      was incorrect and is corrected here; version pinned to match SharedKernel.Security.Oidc's
+      Microsoft.AspNetCore.Authentication.JwtBearer pin for consistency across the domain's provider packages.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude the nested test project from the main project's compilation -->
+    <Compile Remove="SharedKernel.Security.Mtls.Tests\**" />
+    <EmbeddedResource Remove="SharedKernel.Security.Mtls.Tests\**" />
+    <None Remove="SharedKernel.Security.Mtls.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Grants SharedKernel.Security.Mtls.Tests direct access to internal types (MtlsAuthenticationHandler,
+      ConstantTimeThumbprintComparer, MtlsClaimTypes) so the certificate-validated event handler and the
+      RFC 8705 cnf.x5t#S256 binding check can be proven directly (WO-058, T-25/T-26) — mirrors
+      SharedKernel.Security.ApiKey's identical InternalsVisibleTo grant for ConstantTimeKeyComparer.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Security.Mtls.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>
