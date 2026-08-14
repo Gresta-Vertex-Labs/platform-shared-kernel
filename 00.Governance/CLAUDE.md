@@ -3966,6 +3966,89 @@ NoSecurityContextSingletonRegistrationPredicate  (class : ICustomRule — intern
     the first match, with failure message naming the offending type, method, and the matched
     type's simple name. Lives in Predicates/ folder. Used by
     SecurityArchitectureRules.NoSingletonRegistrationOfSecurityContextTypes.
+
+    .DpopProofValidationNeverDuplicatedOutsideOidc(params Assembly[] assemblies)  → ConditionList
+        (WO-058 P-383) Asserts that no type outside SharedKernel.Security.Oidc references the
+        DPoP header-name literal or performs proof-JWT parsing. Uses
+        NoDpopProofValidationDuplicationPredicate (ICustomRule — see below), which checks TWO
+        independent surfaces inside every method body — either match violates the rule:
+          (a) an Ldstr IL instruction whose operand is exactly "DPoP" (case-sensitive, the
+              RFC 9449 canonical header name) — reuses the Ldstr literal-collection technique
+              already established by HealthCheckTagIntegrityRules/MetricsInstrumentationRules.
+          (b) a Call/Callvirt/Newobj instruction whose resolved operand's declaring type
+              FullName is exactly "System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler" or
+              "Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler" — reuses SK0301's
+              (NoAesCipherInDomainOrApplicationPredicate) raw-type-reference technique, applied
+              to JWT-proof-parsing types instead of cipher types.
+        Exemption: SharedKernel.Security.Oidc only — the real, DPoP-proof-validating
+        implementation package once 12.Security's P-376 ships. No second forward-looking
+        exemption prefix (unlike SK0031's two-namespace shape) — DPoP is exclusively an
+        OIDC/JWT-bearer-adjacent concern, not spread across every identity provider package.
+        Failure message names the offending type and which surface ("DPoP" literal vs.
+        JWT-handler type reference) matched.
+        Rationale: mirrors this domain's own SecurityContextGuard (P-373) motivation, applied
+        proactively rather than retroactively — mechanize "this validation logic lives in
+        exactly one package" for a new sender-constraining credential mechanism BEFORE it
+        ships, rather than waiting for a future gold-standard review to discover the drift.
+        Offending pattern: a type outside SharedKernel.Security.Oidc reads
+        Request.Headers["DPoP"] and hand-parses the proof JWT itself.
+        Compliant pattern: the type calls into SharedKernel.Security.Oidc's own DPoP
+        proof-validation surface instead of duplicating header-name literals or JWT parsing.
+        UNVERIFIABLE against real assemblies as of this phase's authoring (12.Security's P-376
+        is planned but not yet implemented) — proven now only against contrived fixtures; real-
+        assembly re-verification is a Cross-Domain Dependency, not force-failed or deferred
+        silently.
+
+    .ClientCertificateAccessNeverDuplicatedOutsideMtls(params Assembly[] assemblies)  → ConditionList
+        (WO-058 P-383) Asserts that no type outside SharedKernel.Security.Mtls reads
+        HttpContext.Connection.ClientCertificate directly. Uses
+        NoRawClientCertificateAccessOutsideMtlsPredicate (ICustomRule — see below), a
+        single-surface IL match: a Call/Callvirt instruction whose resolved
+        MethodReference.Name == "get_ClientCertificate" and
+        MethodReference.DeclaringType.FullName == "Microsoft.AspNetCore.Http.ConnectionInfo" —
+        the property-getter shape of HttpContext.Connection.ClientCertificate. This single,
+        precise signal satisfies both halves of the phase's own "HttpContext.Connection.
+        ClientCertificate/X509Certificate2" acceptance-criterion phrasing in one match, since
+        ConnectionInfo.ClientCertificate IS declared as X509Certificate2? — a bare "any
+        X509Certificate2 type reference" surface was deliberately rejected as a second
+        condition because 01.Core/SharedKernel.Cryptography's IAsymmetricSignatureService
+        legitimately handles X.509-adjacent cryptographic material for unrelated
+        (non-HTTP-connection) signing/verification purposes; a broad type-reference match
+        would false-positive there.
+        Exemption: SharedKernel.Security.Mtls only — the new sibling provider package
+        12.Security's P-377 will ship.
+        Failure message names the offending type and method containing the
+        ClientCertificate-getter call.
+        Rationale: same proactive-locality motivation as DpopProofValidationNever
+        DuplicatedOutsideOidc above — mTLS client-certificate trust/validation logic must live
+        in exactly one package, mechanized before SharedKernel.Security.Mtls ships rather than
+        discovered as drift in a later review.
+        Offending pattern: a type outside SharedKernel.Security.Mtls reads
+        httpContext.Connection.ClientCertificate directly to perform its own trust decision.
+        Compliant pattern: the type calls into SharedKernel.Security.Mtls's own
+        certificate-validation surface instead of reading the raw connection property itself.
+        UNVERIFIABLE against real assemblies as of this phase's authoring (12.Security's P-377
+        is planned but not yet implemented — no SharedKernel.Security.Mtls package exists on
+        disk) — proven now only against contrived fixtures; real-assembly re-verification is a
+        Cross-Domain Dependency, not force-failed or deferred silently.
+
+NoDpopProofValidationDuplicationPredicate  (class : ICustomRule — internal predicate)
+    No exemption guard beyond the SharedKernel.Security.Oidc namespace check performed by the
+    caller. For each type, walks TypeDefinition.Methods.Body.Instructions once, checking each
+    instruction against the two surfaces described above (Ldstr "DPoP" literal; JWT-handler
+    type reference on Call/Callvirt/Newobj operands). Returns false (rule violated) on the
+    first match across either surface, with failure message naming the offending type and the
+    matched surface. Lives in Predicates/ folder. Used by
+    SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc.
+
+NoRawClientCertificateAccessOutsideMtlsPredicate  (class : ICustomRule — internal predicate)
+    No exemption guard beyond the SharedKernel.Security.Mtls namespace check performed by the
+    caller. For each type, walks TypeDefinition.Methods.Body.Instructions for Call/Callvirt
+    opcodes whose resolved MethodReference matches Name == "get_ClientCertificate" and
+    DeclaringType.FullName == "Microsoft.AspNetCore.Http.ConnectionInfo". Returns false (rule
+    violated) on the first match, with failure message naming the offending type and method.
+    Lives in Predicates/ folder. Used by
+    SecurityArchitectureRules.ClientCertificateAccessNeverDuplicatedOutsideMtls.
 ```
 
 ---
@@ -4309,4 +4392,9 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - `NoSecurityContextSingletonRegistrationPredicate` carries a documented limitation: it detects only the closed-generic `AddSingleton<TService>(...)`/`AddSingleton<TService,TImpl>(...)` call shapes, not the non-generic `AddSingleton(Type, Type)`/`AddSingleton(Type, Func<...>)` overloads — mirroring `HealthCheckTagIntegrityRules`'s own documented data-flow limitation; revisit only if a real false negative is found in production DI wiring.
 - Both `SecurityArchitectureRules` factory methods reuse the existing `Mono.Cecil >= 0.11.5` reference already in `SharedKernel.ArchitectureTests` — zero new NuGet dependency. Neither carries an SK diagnostic ID — following the `EfCorePackageHygieneRules`/`RedisTopologyRules` "boundary/regression rule, no ID" convention; only the constructor-injection check (SK0031) is a Roslyn analyzer with an assigned ID.
 - Real-assembly status for all three `SK.00.SecurityContextGuard` rules is NON-GATING and immediately verifiable — unlike most recent phases in this file, `12.Security` (both `.Abstractions` and `.Oidc`) and `03.Domain` are both already fully Published as of this phase's authoring (`12.Security/CLAUDE.md`'s own changelog records `SK.12.Published complete`; `03.Domain` shipped `SharedKernel.Domain` v1.7.0 at WO-051). Real-assembly tests should be wired in the implementation phase, not deferred as a follow-up — no Cross-Domain Dependencies entry is needed.
+- `SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc`/`.ClientCertificateAccessNeverDuplicatedOutsideMtls` (WO-058 P-383) extend the EXISTING `SecurityArchitectureRules` class from P-373 — not a new class — with two more locality predicates, applying the `SK.00.SecurityContextGuard` lesson proactively: mechanize "this validation logic lives in exactly one package" for a new sender-constraining credential mechanism BEFORE it ships, rather than waiting for a future gold-standard review to discover the drift. Neither carries an SK diagnostic ID — both are `NetArchTest` `ICustomRule` predicates, per this phase's own acceptance criteria, following the same "boundary/regression rule, no ID" convention as `SecurityArchitectureRules`'s first two methods; SK0032 remains the next available sequential Roslyn-analyzer ID, not consumed here.
+- `NoDpopProofValidationDuplicationPredicate` checks TWO independent surfaces (Ldstr `"DPoP"` literal — reusing `HealthCheckTagIntegrityRules`'s Ldstr literal-collection technique; JWT-proof-parsing type reference on `JwtSecurityTokenHandler`/`JsonWebTokenHandler` — reusing SK0301's raw-type-reference technique) inside a single predicate, mirroring `NoTenantProviderReferenceInDomainPredicate`'s "multiple detection surfaces feeding one predicate" shape. Exemption: `SharedKernel.Security.Oidc` only — no second forward-looking exemption prefix, unlike SK0031's two-namespace shape, since DPoP is exclusively an OIDC/JWT-bearer-adjacent concern.
+- `NoRawClientCertificateAccessOutsideMtlsPredicate` is a single-surface match on `ConnectionInfo.get_ClientCertificate`'s property-getter call — deliberately NOT a broad `X509Certificate2` type-reference check, to avoid a false positive against `01.Core/SharedKernel.Cryptography`'s unrelated `IAsymmetricSignatureService` X.509-adjacent signing/verification code. Exemption: `SharedKernel.Security.Mtls` only — the new sibling provider package `12.Security`'s P-377 will ship.
+- Both `SK.00.SenderConstrainedCredentialGuard` rules are UNVERIFIABLE against real assemblies as of this phase's authoring — `12.Security`'s P-376 (DPoP) and P-377 (`SharedKernel.Security.Mtls`) are planned but not yet implemented, dispatched deliberately last in WO-058's dependency order for that reason. Design, implementation, and all contrived fire/pass-path fixture tests proceed now; real-assembly re-verification is tracked as a Cross-Domain Dependencies entry, not force-failed or silently deferred — mirroring the `SK.00.MagicStringGuard`/`SK.00.EfPropertyUsageGuard` precedent for a not-yet-implemented dependency.
 - [2026-08-13] SK.00.SecurityContextGuard → ● closeout — `RawSecurityContextConstructorInjectionAnalyzer` (SK0031) implemented in `SharedKernel.Analyzers/Diagnostics/`, mirroring SK0013's `ConstructorDeclarationSyntax`-parameter simple-name-match + `SyntaxNode.Parent` namespace-ancestor walk exactly, extended to three forbidden type names (`IHttpContextAccessor`/`ClaimsPrincipal`/`HttpContext`) and two exemption prefixes. `NoTenantProviderReferenceInDomainPredicate` and `NoSecurityContextSingletonRegistrationPredicate` implemented in `Predicates/`; `SecurityArchitectureRules` implemented as a new class in `Rules/` with both factory methods. Verified against the pre-written CLAUDE.md spec (diagnostic registry, architecture test contracts, all six Implementation Rules bullets) — no discrepancy found, no code-behavior edits required. **STALE-PROSE CORRECTION (verified against real disk state, not assumed):** `SharedKernel.Security.ApiKey` now genuinely exists — `12.Security` shipped WO-057's P-366–P-372 in full (v1.0.0) since this phase was authored — so the SK0031 diagnostic-registry Note and the corresponding Implementation Rules bullet describing the `SharedKernel.Security.ApiKey` exemption prefix as "forward-looking and currently vacuous" are now stale; corrected in place with "CORRECTED AT IMPLEMENTATION TIME" annotations (per this domain's "annotate, never silently rewrite" convention) rather than rewritten — no analyzer code change was needed, since the exemption is a plain namespace-prefix string match that already worked generically against the real package. Real-assembly verification (non-gating, immediately available since both `12.Security` and `03.Domain` were already Published) was wired directly rather than deferred: `SharedKernel.ArchitectureTests.Tests.csproj` gained two test-only `ProjectReference`s (`PrivateAssets="all"`) to `SharedKernel.Security.Abstractions`/`.Oidc`; `SecurityArchitectureRulesTests.DomainNeverReferencesTenantProvider_RealDomainAssembly_RulePasses` and `.NoSingletonRegistrationOfSecurityContextTypes_RealOidcAssembly_RulePasses` both confirm zero violations against the real, shipped assemblies — `SharedKernel.Domain` has no dependency on `12.Security` at all, and the real `SecurityServiceCollectionExtensions.RegisterUserContextAndTenantProvider` registers both `IUserContext`/`ITenantProvider` via `AddScoped`, never `AddSingleton`. One fixture-authoring fix during T-288/T-289: the initial DI-registration fixtures called the stub `AddSingleton`/`AddScoped` extension methods via dot-syntax without a `using` directive in scope, producing a genuine `CS1061` compile failure — fixed by calling the stub methods via their static form, which compiles to the identical `Call`-to-`GenericInstanceMethod` IL shape the predicate inspects either way. 7 new analyzer tests (T-281–T-285 plus two extra pass-path cases) — 240/240 `SharedKernel.Analyzers.Tests` pass (233 baseline + 7); 6 new architecture tests (T-286–T-291) — 195/195 `SharedKernel.ArchitectureTests.Tests` pass (189 baseline + 6); 0 build warnings/errors introduced by this phase's own code. This is the last `○` phase key — every phase key in `00.Governance/state-map.md` is now `●`. Promoted to root `state-map.md` (Phase Backlog P-373 closed to `●` Complete) (governance-phase-implementer, state-map-phase, sync-brain)
+- [2026-08-13] Phase SK.00.SenderConstrainedCredentialGuard added — WO-058 (P-383), depends on `12.Security` P-376 (DPoP) and P-377 (new `SharedKernel.Security.Mtls` sibling provider package) for real-assembly verification only, both dispatched to `security-arch-planner` in the same run but NOT yet implemented as of this phase's authoring — dispatched deliberately last in WO-058's dependency order for that reason. Applies `SK.00.SecurityContextGuard`'s (P-373) own lesson proactively rather than retroactively: mechanize a "this validation logic lives in exactly one package" locality rule for each of two new sender-constraining credential mechanisms BEFORE either ships, instead of waiting for a future gold-standard review to discover the drift. Extends the EXISTING `SecurityArchitectureRules` class (not a new class, per this phase's own explicit instruction) with two more zero-SK-ID `ICustomRule`-backed factory methods: `DpopProofValidationNeverDuplicatedOutsideOidc` (two-surface match inside `NoDpopProofValidationDuplicationPredicate` — an `Ldstr "DPoP"` literal, reusing `HealthCheckTagIntegrityRules`'s Ldstr literal-collection technique, OR a `JwtSecurityTokenHandler`/`JsonWebTokenHandler` type reference, reusing SK0301's raw-type-reference technique — outside `SharedKernel.Security.Oidc`, single exemption namespace, no `SharedKernel.Security.ApiKey`-style second forward-looking prefix since DPoP is exclusively OIDC/JWT-bearer-adjacent) and `ClientCertificateAccessNeverDuplicatedOutsideMtls` (single-surface match inside `NoRawClientCertificateAccessOutsideMtlsPredicate` — a `ConnectionInfo.get_ClientCertificate` property-getter call outside `SharedKernel.Security.Mtls`; deliberately NOT a broad `X509Certificate2` type-reference check, to avoid a false positive against `01.Core/SharedKernel.Cryptography`'s unrelated `IAsymmetricSignatureService` X.509-adjacent signing/verification code). No new SK diagnostic ID — both are architecture-test `ICustomRule` predicates per this phase's own acceptance criteria, not Roslyn analyzers; SK0032 remains the next available sequential ID, unconsumed. Both rules are UNVERIFIABLE against real assemblies as of this phase's authoring; design, implementation, and all eight contrived fire/pass-path fixture tests (T-292–T-298) proceed now, per this phase's own explicit non-gating acceptance criterion, and the two real-assembly re-verification tests (T-299, T-300) are tracked as a new Cross-Domain Dependencies block, not silently deferred. Five new implementation rules added — WO-058 P-383, depends on 12.Security P-376/P-377 (governance-arch-planner)
