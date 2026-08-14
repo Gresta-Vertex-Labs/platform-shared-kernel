@@ -55,6 +55,14 @@
       CLAUDE.md's Layering Rules -> Hard rules for the ratified grant.
     -->
     <ProjectReference Include="..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" />
+    <!--
+      WO-058/P-378: referenced solely so AddMtlsClientCertificate/AddMtlsForwardedHeaderCertificate
+      (Core phase, C-48) can resolve SharedKernel.Security.Mtls.Validation.IMtlsCertificateValidator.
+      12.Security is already inside this domain's granted 01-12 composition-root range, so unlike
+      the 17.Workflows reference above, no separate named layering exception is required.
+      13.ServiceDefaults never reimplements X.509 chain/revocation validation itself.
+    -->
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj" />
   </ItemGroup>
 
   <ItemGroup>
