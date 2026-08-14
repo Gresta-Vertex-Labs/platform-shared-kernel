@@ -6,14 +6,14 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Security.Abstractions</PackageId>
-    <Version>2.0.0</Version>
+    <Version>3.0.0</Version>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
     <Description>Zero-dependency security abstractions for SharedKernel: IUserContext, ITenantProvider, IdentityKind, AnonymousUserContext, SystemUserContext, SecurityClaimTypes. References only SharedKernel.Primitives. AOT-safe.</Description>
     <PackageTags>shared-kernel;security;identity;user-context;tenant;abstractions;aot</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReleaseNotes>2.0.0 (breaking): IUserContext gains two new members, IdentityKind and Permissions/HasPermission — every implementer of IUserContext outside this package must be updated to add them. Also adds the IdentityKind enum (Anonymous/User/ServicePrincipal/System) and the SystemUserContext sentinel for background-execution hosts. See WO-057 (P-367/P-368/P-369).</PackageReleaseNotes>
+    <PackageReleaseNotes>3.0.0 (breaking): IUserContext gains six new step-up-authentication members — AuthenticationMethods, AuthContextClassReference, AuthTime, IsSenderConstrained, WasAuthenticatedWith(string), and IsAuthenticationFresherThan(TimeSpan, DateTimeOffset) — every implementer of IUserContext outside this package must be updated to add them. AnonymousUserContext/SystemUserContext updated with sentinel values (empty/null/false). See WO-058 (P-375/P-376). 2.0.0 (breaking): IUserContext gained IdentityKind and Permissions/HasPermission; added the IdentityKind enum and the SystemUserContext sentinel. See WO-057 (P-367/P-368/P-369).</PackageReleaseNotes>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>

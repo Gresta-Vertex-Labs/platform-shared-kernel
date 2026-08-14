@@ -105,4 +105,74 @@ public interface IUserContext
     /// </returns>
     /// <remarks>Mirrors <see cref="HasRole"/> exactly (WO-057, P-368).</remarks>
     bool HasPermission(string permission);
+
+    /// <summary>
+    /// Gets the OIDC Authentication Method Reference (<c>amr</c>) values for the current session.
+    /// </summary>
+    /// <remarks>
+    /// Empty when the identity source carries no authentication-context concept (API key, mTLS,
+    /// <see cref="AnonymousUserContext"/>, <see cref="SystemUserContext"/>). Added WO-058 (P-375).
+    /// </remarks>
+    IReadOnlyCollection<string> AuthenticationMethods { get; }
+
+    /// <summary>
+    /// Gets the OIDC Authentication Context Class Reference (<c>acr</c>) assurance-level claim.
+    /// </summary>
+    /// <remarks>
+    /// <see langword="null"/> when absent or not applicable to the identity source. Added WO-058 (P-375).
+    /// </remarks>
+    string? AuthContextClassReference { get; }
+
+    /// <summary>
+    /// Gets the UTC instant the authentication event actually occurred (the OIDC <c>auth_time</c> claim).
+    /// </summary>
+    /// <remarks>
+    /// Distinct from token-issued-at. <see langword="null"/> when absent, malformed, or not applicable
+    /// to the identity source. Added WO-058 (P-375).
+    /// </remarks>
+    DateTimeOffset? AuthTime { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the current request's access token was validated as
+    /// DPoP-bound (RFC 9449) for this request.
+    /// </summary>
+    /// <remarks>
+    /// <see langword="true"/> only when a fresh, correctly-signed proof matching the token's
+    /// <c>cnf.jkt</c> was presented for THIS request. <see langword="false"/> for every other identity
+    /// source, including a valid-but-unconstrained bearer token. Added WO-058 (P-376).
+    /// </remarks>
+    bool IsSenderConstrained { get; }
+
+    /// <summary>
+    /// Returns <see langword="true"/> if the identity's session was authenticated using the specified
+    /// method.
+    /// </summary>
+    /// <param name="method">The authentication method reference to check. Comparison is case-insensitive.</param>
+    /// <returns>
+    /// <see langword="true"/> when <paramref name="method"/> is found in
+    /// <see cref="AuthenticationMethods"/>; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <remarks>Mirrors <see cref="HasRole"/> exactly. Added WO-058 (P-375).</remarks>
+    bool WasAuthenticatedWith(string method);
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <see cref="AuthTime"/> is present and the elapsed time since
+    /// authentication is within <paramref name="maxAge"/>.
+    /// </summary>
+    /// <param name="maxAge">The maximum acceptable age of the authentication event.</param>
+    /// <param name="now">
+    /// The current instant, supplied explicitly by the caller (typically from its own injected
+    /// <c>IClock</c>/<c>TimeProvider</c>). This member never calls <see cref="DateTimeOffset.UtcNow"/>
+    /// internally, per the platform's injectable-time convention.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when <see cref="AuthTime"/> has a value and
+    /// <c>now - AuthTime.Value &lt;= maxAge</c>; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <remarks>
+    /// Use this to gate step-up-required operations (wire transfers, limit changes, credential
+    /// rotation) on freshly-verified authentication rather than a token's raw expiry. Added WO-058
+    /// (P-375).
+    /// </remarks>
+    bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now);
 }

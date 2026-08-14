@@ -83,4 +83,41 @@ public sealed class AnonymousUserContextTests
     {
         Assert.IsAssignableFrom<IUserContext>(_sut);
     }
+
+    [Fact]
+    public void AuthenticationMethods_IsEmpty()
+    {
+        Assert.Empty(_sut.AuthenticationMethods);
+    }
+
+    [Fact]
+    public void AuthContextClassReference_IsNull()
+    {
+        Assert.Null(_sut.AuthContextClassReference);
+    }
+
+    [Fact]
+    public void AuthTime_IsNull()
+    {
+        Assert.Null(_sut.AuthTime);
+    }
+
+    [Fact]
+    public void IsSenderConstrained_IsFalse()
+    {
+        Assert.False(_sut.IsSenderConstrained);
+    }
+
+    [Fact]
+    public void WasAuthenticatedWith_AlwaysReturnsFalse()
+    {
+        Assert.False(_sut.WasAuthenticatedWith("mfa"));
+        Assert.False(_sut.WasAuthenticatedWith(string.Empty));
+    }
+
+    [Fact]
+    public void IsAuthenticationFresherThan_AlwaysReturnsFalse()
+    {
+        Assert.False(_sut.IsAuthenticationFresherThan(TimeSpan.FromDays(365), DateTimeOffset.UtcNow));
+    }
 }
