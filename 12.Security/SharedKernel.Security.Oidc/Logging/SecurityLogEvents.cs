@@ -40,4 +40,34 @@ internal static partial class SecurityLogEvents
         Level = LogLevel.Warning,
         Message = "Tenant claim '{TenantClaimType}' was absent or could not be parsed as a Guid on an authenticated principal; TenantId resolved to Guid.Empty.")]
     public static partial void TenantClaimResolutionFailed(ILogger logger, string tenantClaimType);
+
+    /// <summary>
+    /// Logged when <c>DpopProofValidator</c> rejects a DPoP (RFC 9449) proof presented alongside a
+    /// sender-constrained access token.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="failureReason"/> is a structured value (e.g. <c>"MissingProof"</c>,
+    /// <c>"JktMismatch"</c>, <c>"Expired"</c>, <c>"Replayed"</c>) — never the raw proof or token.
+    /// Wired into <c>DpopProofValidator</c> in SK.12.Core (C-30/C-37).
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 12102,
+        Level = LogLevel.Warning,
+        Message = "DPoP proof validation failed (reason: {FailureReason}).")]
+    public static partial void DpopProofRejected(ILogger logger, string failureReason);
+
+    /// <summary>
+    /// Logged when an access token is rejected because <c>ITokenRevocationCheck</c> reported it as
+    /// revoked, or because the check itself was unavailable or threw and therefore failed closed.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="checkAvailable"/> distinguishes a genuine revocation from a fail-closed outcome
+    /// without leaking which — both reject with the same generic authentication-failure shape at the
+    /// call site. Wired into the revocation-check seam in SK.12.Core (C-36/C-37).
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 12103,
+        Level = LogLevel.Warning,
+        Message = "Access token rejected by revocation check (CheckAvailable={CheckAvailable}).")]
+    public static partial void TokenRevocationRejected(ILogger logger, bool checkAvailable);
 }

@@ -26,7 +26,13 @@ public static class SecurityServiceCollectionExtensions
     /// The application configuration. Must contain a <c>Security</c> section with <c>Jwt.Authority</c>
     /// and <c>Jwt.Audience</c>; the application fails at startup when these are missing.
     /// </param>
-    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <returns>
+    /// A <see cref="SecurityAuthenticationBuilder"/> wrapping <paramref name="services"/> — usable
+    /// anywhere an <see cref="IServiceCollection"/> is expected, and additionally exposing
+    /// <see cref="SecurityAuthenticationBuilder.RequireDpop{TReplayCache}"/>/
+    /// <see cref="SecurityAuthenticationBuilder.WithRevocationCheck{TCheck}"/> for optional,
+    /// chainable opt-ins (WO-058, P-376/P-379).
+    /// </returns>
     /// <remarks>
     /// <para>
     /// Call this method after <c>AddAuthentication()</c> in the host startup pipeline.
@@ -54,7 +60,7 @@ public static class SecurityServiceCollectionExtensions
     /// <see cref="IUserContext.UserId"/>.
     /// </para>
     /// </remarks>
-    public static IServiceCollection AddSharedKernelSecurity(
+    public static SecurityAuthenticationBuilder AddSharedKernelSecurity(
         this IServiceCollection services,
         IConfiguration configuration)
     {
@@ -101,7 +107,7 @@ public static class SecurityServiceCollectionExtensions
                 };
             });
 
-        return services;
+        return new SecurityAuthenticationBuilder(services);
     }
 
     /// <summary>
@@ -113,7 +119,12 @@ public static class SecurityServiceCollectionExtensions
     /// The application configuration. Must contain an <c>AzureAdB2C</c> section consumed by
     /// <c>Microsoft.Identity.Web</c>, and a <c>Security</c> section for <see cref="SecurityOptions"/>.
     /// </param>
-    /// <returns>The same <paramref name="services"/> for chaining.</returns>
+    /// <returns>
+    /// A <see cref="SecurityAuthenticationBuilder"/> wrapping <paramref name="services"/> — identical
+    /// return shape to <see cref="AddSharedKernelSecurity"/>, including its
+    /// <see cref="SecurityAuthenticationBuilder.RequireDpop{TReplayCache}"/>/
+    /// <see cref="SecurityAuthenticationBuilder.WithRevocationCheck{TCheck}"/> opt-ins (WO-058, P-376/P-379).
+    /// </returns>
     /// <remarks>
     /// <para>
     /// Uses <c>Microsoft.Identity.Web</c> for Azure B2C authority/audience resolution.
@@ -130,7 +141,7 @@ public static class SecurityServiceCollectionExtensions
     /// instead, avoiding the AOT blast radius entirely.
     /// </para>
     /// </remarks>
-    public static IServiceCollection AddAzureB2CAuthentication(
+    public static SecurityAuthenticationBuilder AddAzureB2CAuthentication(
         this IServiceCollection services,
         IConfiguration configuration)
     {
@@ -159,7 +170,7 @@ public static class SecurityServiceCollectionExtensions
                 jwtBearerOptions.TokenValidationParameters.RoleClaimType = claimMapping.RoleClaimType;
             });
 
-        return services;
+        return new SecurityAuthenticationBuilder(services);
     }
 
     private static void RegisterUserContextAndTenantProvider(IServiceCollection services)
