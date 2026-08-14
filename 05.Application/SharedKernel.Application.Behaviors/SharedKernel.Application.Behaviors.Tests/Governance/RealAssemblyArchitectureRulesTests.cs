@@ -8,6 +8,7 @@ using SharedKernel.ArchitectureTests.Rules;
 using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Behaviors.DualApproval;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Logging;
@@ -38,6 +39,15 @@ namespace SharedKernel.Application.Behaviors.Tests.Governance;
 /// actual <see cref="Microsoft.Extensions.DependencyInjection.IServiceCollection"/> produced by
 /// <see cref="ApplicationBehaviorsBuilder.Build"/> with every unary behavior opted in, pinning the
 /// documented ten-step canonical order as a permanent regression guard.
+/// </para>
+/// <para>
+/// T-72 (WO-058): the same <see cref="PipelineOrderAssertion.AssertRegistrationOrder"/> precedent is
+/// extended to the new ELEVEN-step canonical order — <see cref="DualApprovalBehavior{TRequest,TResponse}"/>
+/// inserted at position 6 (immediately after <see cref="AuthorizationBehavior{TRequest,TResponse}"/>,
+/// before <see cref="CachingBehavior{TRequest,TResponse}"/>) — with every unary behavior, including
+/// <c>DualApproval</c>, opted in. A full <c>00.Governance</c> real-assembly wiring update for this new
+/// step (e.g. a companion <c>ApplicationPipelineRules</c> real-assembly assertion) is a separate, later
+/// cross-domain follow-up — not required to close this task.
 /// </para>
 /// <para>
 /// T-43: <see cref="MetricsInstrumentationRules.RequestDurationRecordsIncludeOutcomeTag"/> PASSES
@@ -158,6 +168,80 @@ public sealed class RealAssemblyArchitectureRulesTests
             "ApplicationBehaviorsBuilder.Build() must register all ten unary behaviors in the "
             + "fixed canonical order: Logging -> Metrics -> Tracing -> Validation -> Authorization "
             + "-> Caching -> Resilience -> Idempotency -> Transaction -> CacheInvalidation");
+    }
+
+    // ---- T-72 (WO-058): the new eleven-step canonical order, DualApprovalBehavior at position 6 ----
+
+    [Fact]
+    public void AssertRegistrationOrder_AllUnaryBehaviorsIncludingDualApprovalAdded_MatchesCanonicalElevenStepOrder()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IUnitOfWork>());
+        services.AddSingleton(Substitute.For<ICacheService>());
+        services.AddSingleton(Substitute.For<IAuthorizationContext>());
+        services.AddSingleton(Substitute.For<IDualApprovalStore>());
+        services.AddSingleton(Substitute.For<IIdempotencyKeyStore>());
+        services.AddSingleton(Substitute.For<ResiliencePipelineProvider<string>>());
+
+        services.AddSharedKernelApplicationBehaviors()
+            .AddLoggingBehavior()
+            .AddMetricsBehavior()
+            .AddTracingBehavior()
+            .AddValidationBehavior()
+            .AddAuthorizationBehavior()
+            .AddDualApprovalBehavior()
+            .AddCachingBehavior()
+            .AddResilienceBehavior()
+            .AddIdempotencyBehavior()
+            .AddTransactionBehavior()
+            .AddCacheInvalidationBehavior()
+            .Build();
+
+        var act = () => PipelineOrderAssertion.AssertRegistrationOrder(
+            services,
+            typeof(LoggingBehavior<,>),
+            typeof(MetricsBehavior<,>),
+            typeof(TracingBehavior<,>),
+            typeof(ValidationBehavior<,>),
+            typeof(AuthorizationBehavior<,>),
+            typeof(DualApprovalBehavior<,>),
+            typeof(CachingBehavior<,>),
+            typeof(ResilienceBehavior<,>),
+            typeof(IdempotentCommandBehavior<,>),
+            typeof(TransactionBehavior<,>),
+            typeof(CacheInvalidationBehavior<,>));
+
+        act.Should().NotThrow(
+            "ApplicationBehaviorsBuilder.Build() must register all eleven unary behaviors in the "
+            + "fixed canonical order: Logging -> Metrics -> Tracing -> Validation -> Authorization "
+            + "-> DualApproval -> Caching -> Resilience -> Idempotency -> Transaction -> CacheInvalidation, "
+            + "with DualApprovalBehavior at canonical position 6 regardless of .AddXBehavior() call order");
+    }
+
+    [Fact]
+    public void AssertRegistrationOrder_DualApprovalRegisteredOutOfOrderExpectation_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IAuthorizationContext>());
+        services.AddSingleton(Substitute.For<IDualApprovalStore>());
+        services.AddSingleton(Substitute.For<ICacheService>());
+
+        // Deliberately called in the "wrong" order — Build() must still register in the fixed
+        // canonical sequence (DualApproval before Caching), never the .AddXBehavior() call order.
+        services.AddSharedKernelApplicationBehaviors()
+            .AddCachingBehavior()
+            .AddDualApprovalBehavior()
+            .Build();
+
+        var act = () => PipelineOrderAssertion.AssertRegistrationOrder(
+            services,
+            typeof(CachingBehavior<,>),
+            typeof(DualApprovalBehavior<,>));
+
+        act.Should().Throw<InvalidOperationException>(
+            "Build() registers DualApprovalBehavior BEFORE CachingBehavior (canonical position 6 "
+            + "before 7) regardless of .AddCachingBehavior()/.AddDualApprovalBehavior() call order, "
+            + "so asserting the reverse expectation must fail");
     }
 
     [Fact]

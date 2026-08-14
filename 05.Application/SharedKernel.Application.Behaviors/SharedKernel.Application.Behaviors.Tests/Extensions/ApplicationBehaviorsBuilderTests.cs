@@ -6,6 +6,7 @@ using Polly.Registry;
 using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
+using SharedKernel.Application.Behaviors.DualApproval;
 using SharedKernel.Application.Behaviors.Extensions;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Logging;
@@ -66,6 +67,54 @@ public sealed class ApplicationBehaviorsBuilderTests
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IIdempotencyKeyStore*");
+    }
+
+    // ---- WO-058, T-71: AddDualApprovalBehavior() two-dependency Build()-time guard ----
+
+    [Fact]
+    public void Build_DualApprovalBehaviorWithoutIAuthorizationContext_ThrowsInvalidOperationExceptionNamingIt()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDualApprovalStore>());
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddDualApprovalBehavior().Build();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuthorizationContext*");
+    }
+
+    [Fact]
+    public void Build_DualApprovalBehaviorWithoutIDualApprovalStore_ThrowsInvalidOperationExceptionNamingIt()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IAuthorizationContext>());
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddDualApprovalBehavior().Build();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IDualApprovalStore*");
+    }
+
+    [Fact]
+    public void Build_DualApprovalBehaviorWithBothDependenciesMissing_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddDualApprovalBehavior().Build();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Build_DualApprovalBehaviorWithBothDependenciesRegistered_DoesNotThrow()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IAuthorizationContext>());
+        services.AddSingleton(Substitute.For<IDualApprovalStore>());
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddDualApprovalBehavior().Build();
+
+        act.Should().NotThrow();
     }
 
     [Fact]
