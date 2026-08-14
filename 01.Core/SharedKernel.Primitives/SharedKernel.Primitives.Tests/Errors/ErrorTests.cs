@@ -114,4 +114,35 @@ public sealed class ErrorTests
         var b = Error.BusinessRule("domain.rule.violated", "msg");
         Assert.Equal(a, b);
     }
+
+    // T-43: Error.Forbidden returns an Error with Type == ErrorType.Forbidden
+    [Fact]
+    public void Forbidden_SetsCorrectType()
+    {
+        var error = Error.Forbidden("approval.self_approval_denied", "You cannot approve your own request.");
+        Assert.Equal(ErrorType.Forbidden, error.Type);
+        Assert.Equal("approval.self_approval_denied", error.Code);
+        Assert.Equal("You cannot approve your own request.", error.Message);
+    }
+
+    // T-44: Error.Forbidden(code, message) != Error.Unauthorized(code, message) for the identical pair
+    [Fact]
+    public void Forbidden_IsDistinctFromUnauthorized_ByErrorType()
+    {
+        var forbidden = Error.Forbidden("e.code", "same message");
+        var unauthorized = Error.Unauthorized("e.code", "same message");
+
+        Assert.NotEqual(forbidden, unauthorized);
+        Assert.NotEqual(forbidden.Type, unauthorized.Type);
+        Assert.Equal(ErrorType.Forbidden, forbidden.Type);
+        Assert.Equal(ErrorType.Unauthorized, unauthorized.Type);
+    }
+
+    [Fact]
+    public void Forbidden_RecordEquality_SameCodeMessageType_AreEqual()
+    {
+        var a = Error.Forbidden("approval.self_approval_denied", "msg");
+        var b = Error.Forbidden("approval.self_approval_denied", "msg");
+        Assert.Equal(a, b);
+    }
 }

@@ -16,7 +16,7 @@
     Compression → Primitives + Configuration transitive chain also verified here.
   -->
   <ItemGroup>
-    <PackageReference Include="SharedKernel.Primitives"        Version="1.0.0" />
+    <PackageReference Include="SharedKernel.Primitives"        Version="1.1.0" />
     <PackageReference Include="SharedKernel.Core"              Version="1.0.0" />
     <PackageReference Include="SharedKernel.Configuration"     Version="1.0.0" />
     <PackageReference Include="SharedKernel.FeatureManagement" Version="1.0.0" />

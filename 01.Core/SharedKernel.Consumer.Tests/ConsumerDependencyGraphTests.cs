@@ -63,12 +63,28 @@ public sealed class ConsumerDependencyGraphTests
         Error conflict     = Error.Conflict("c.code", "Conflict.");
         Error unauthorized = Error.Unauthorized("u.code", "Unauthorized.");
         Error unexpected   = Error.Unexpected("x.code", "Unexpected.");
+        Error forbidden    = Error.Forbidden("f.code", "Forbidden.");
 
         Assert.Equal(ErrorType.Validation,   validation.Type);
         Assert.Equal(ErrorType.NotFound,     notFound.Type);
         Assert.Equal(ErrorType.Conflict,     conflict.Type);
         Assert.Equal(ErrorType.Unauthorized, unauthorized.Type);
         Assert.Equal(ErrorType.Unexpected,   unexpected.Type);
+        Assert.Equal(ErrorType.Forbidden,    forbidden.Type);
+    }
+
+    // P-16/WO-059: Error.Forbidden resolves through a real PackageReference to SharedKernel.Primitives
+    // 1.1.0 (not just via ProjectReference source) and is distinguishable from Error.Unauthorized by
+    // ErrorType — the same guarantee T-44 proves at the source level.
+    [Fact]
+    public void Primitives_Error_Forbidden_IsDistinctFromUnauthorized_ByErrorType()
+    {
+        Error forbidden    = Error.Forbidden("approval.self_approval_denied", "Cannot approve own request.");
+        Error unauthorized = Error.Unauthorized("approval.self_approval_denied", "Cannot approve own request.");
+
+        Assert.NotEqual(forbidden, unauthorized);
+        Assert.Equal(ErrorType.Forbidden, forbidden.Type);
+        Assert.Equal(ErrorType.Unauthorized, unauthorized.Type);
     }
 
     [Fact]
