@@ -82,4 +82,37 @@ public sealed class FakeUserContext : IUserContext
     /// <remarks>Comparison against <see cref="Permissions"/> is case-insensitive. Mirrors <see cref="HasRole"/> exactly (WO-057, P-368).</remarks>
     public bool HasPermission(string permission) =>
         Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Gets or sets the OIDC Authentication Method Reference (<c>amr</c>) values for the current session.
+    /// </summary>
+    /// <remarks>Defaults to an empty collection (WO-058, P-375).</remarks>
+    public IReadOnlyCollection<string> AuthenticationMethods { get; set; } = [];
+
+    /// <summary>Gets or sets the OIDC Authentication Context Class Reference (<c>acr</c>) claim.</summary>
+    /// <remarks>Defaults to <see langword="null"/> (WO-058, P-375).</remarks>
+    public string? AuthContextClassReference { get; set; }
+
+    /// <summary>Gets or sets the UTC instant the authentication event actually occurred.</summary>
+    /// <remarks>Defaults to <see langword="null"/> (WO-058, P-375).</remarks>
+    public DateTimeOffset? AuthTime { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the current request's access token is DPoP-bound.
+    /// </summary>
+    /// <remarks>Defaults to <see langword="false"/> (WO-058, P-376).</remarks>
+    public bool IsSenderConstrained { get; set; }
+
+    /// <inheritdoc />
+    /// <remarks>Comparison against <see cref="AuthenticationMethods"/> is case-insensitive. Mirrors <see cref="HasRole"/> exactly (WO-058, P-375).</remarks>
+    public bool WasAuthenticatedWith(string method) =>
+        AuthenticationMethods.Contains(method, StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A pure function mirroring the real <see cref="IUserContext.IsAuthenticationFresherThan"/>
+    /// contract verbatim — never calls <see cref="DateTimeOffset.UtcNow"/> internally (WO-058, P-375).
+    /// </remarks>
+    public bool IsAuthenticationFresherThan(TimeSpan maxAge, DateTimeOffset now) =>
+        AuthTime.HasValue && (now - AuthTime.Value) <= maxAge;
 }
