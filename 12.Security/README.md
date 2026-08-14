@@ -7,8 +7,9 @@ Philosophy: **Thin abstractions. Claims-first. No domain coupling. Request-scope
 - **`SharedKernel.Security.Abstractions`** — `IUserContext`, `ITenantProvider`, `IdentityKind`, `AnonymousUserContext`/`SystemUserContext` sentinels, `SecurityClaimTypes`. Zero NuGet dependencies — the only types application and domain-adjacent code should ever inject.
 - **`SharedKernel.Security.Oidc`** — the concrete JWT/OIDC implementation: `OidcUserContext`/`OidcTenantProvider`, configurable claims-to-context mapping, Azure B2C / Microsoft Entra External ID wiring, structured security-audit logging, and the `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` DI entry points.
 - **`SharedKernel.Security.ApiKey`** — pre-shared-key / machine-client authentication. A sibling provider to `.Oidc`, never a dependent of it — composes alongside JWT Bearer via a policy/forwarding scheme so a host can accept either credential type on the same endpoints.
+- **`SharedKernel.Security.Mtls`** — mutual-TLS client-certificate authentication for regulated Open Banking/PSD2-style external APIs. A fourth sibling provider, never a dependent of `.Oidc`/`.ApiKey` and never referenced by them — composes alongside either via the same policy/forwarding-scheme pattern `.ApiKey` established, and additionally enforces RFC 8705 certificate-bound (`cnf.x5t#S256`) access tokens when a bearer token accompanies the certificate.
 
-Every microservice in the platform depends on `SharedKernel.Security.Abstractions` to read the current user and tenant — never on `.Oidc` or `.ApiKey` directly. Only the host's composition root (`Program.cs`) references the concrete provider packages.
+Every microservice in the platform depends on `SharedKernel.Security.Abstractions` to read the current user and tenant — never on `.Oidc`, `.ApiKey`, or `.Mtls` directly. Only the host's composition root (`Program.cs`) references the concrete provider packages.
 
 ## Quick Start
 
@@ -22,7 +23,11 @@ services.AddAzureB2CAuthentication(configuration);
 // Machine-client / pre-shared-key callers — composes alongside either call above:
 services.AddApiKeyAuthentication<MyDatabaseBackedApiKeyValidator>();
 
-// In application code, inject the abstractions — never a concrete OIDC/ApiKey type:
+// Certificate-based (mTLS) machine clients, e.g. regulated Open Banking TPPs — also composes
+// alongside the calls above:
+services.AddMtlsAuthentication<MyCertificateWhitelistValidator>();
+
+// In application code, inject the abstractions — never a concrete OIDC/ApiKey/Mtls type:
 public sealed class MyCommandHandler(IUserContext user, ITenantProvider tenant)
 {
     public Task Handle(MyCommand command, CancellationToken ct)
@@ -42,8 +47,8 @@ public sealed class MyCommandHandler(IUserContext user, ITenantProvider tenant)
 
 ## Ordering rules
 
-1. Call `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` first — it registers JWT Bearer authentication plus the scoped `IUserContext`/`ITenantProvider` factories.
-2. `AddApiKeyAuthentication<TValidator>()` is optional and additive. Call it *after* step 1 so its scheme-aware `IUserContext` factory can correctly delegate to the OIDC-backed factory for non-API-key-authenticated requests.
+1. Call `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` first — it registers JWT Bearer authentication plus the scoped `IUserContext`/`ITenantProvider` factories. Both return a `SecurityAuthenticationBuilder` that can additionally chain `.RequireDpop<TReplayCache>()`/`.WithRevocationCheck<TCheck>()` — see `SharedKernel.Security.Oidc/README.md`'s Quick Starts.
+2. `AddApiKeyAuthentication<TValidator>()` and `AddMtlsAuthentication<TValidator>()` are both optional and additive, and may be combined. Call each *after* step 1 so its scheme-aware `IUserContext` factory can correctly delegate to whichever factory was already registered for a request authenticated on a different scheme.
 3. Application code injects `IUserContext`/`ITenantProvider` — never `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext` directly. Those are infrastructure details this domain exists to hide.
 
 ## Packages
@@ -51,7 +56,8 @@ public sealed class MyCommandHandler(IUserContext user, ITenantProvider tenant)
 | Package | README |
 | --- | --- |
 | `SharedKernel.Security.Abstractions` | [`SharedKernel.Security.Abstractions/README.md`](SharedKernel.Security.Abstractions/README.md) |
-| `SharedKernel.Security.Oidc` | [`SharedKernel.Security.Oidc/README.md`](SharedKernel.Security.Oidc/README.md) — also holds the four end-to-end cross-domain recipes (`05.Application`, `06.Persistence`, `07.Messaging`, background-execution hosts) |
+| `SharedKernel.Security.Oidc` | [`SharedKernel.Security.Oidc/README.md`](SharedKernel.Security.Oidc/README.md) — also holds the five end-to-end cross-domain recipes (`05.Application`, `06.Persistence`, `07.Messaging`, background-execution hosts, step-up authorization) plus the DPoP and token-revocation Quick Starts |
 | `SharedKernel.Security.ApiKey` | [`SharedKernel.Security.ApiKey/README.md`](SharedKernel.Security.ApiKey/README.md) |
+| `SharedKernel.Security.Mtls` | [`SharedKernel.Security.Mtls/README.md`](SharedKernel.Security.Mtls/README.md) |
 
 See `12.Security/CLAUDE.md` for the full interface contracts, implementation rules, and AOT notes.

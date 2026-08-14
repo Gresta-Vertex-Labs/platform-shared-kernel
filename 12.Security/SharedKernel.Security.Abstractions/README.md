@@ -13,6 +13,8 @@ Zero-dependency security abstractions for the SharedKernel. References only `Sha
 | `SystemUserContext` | Sealed class | Sentinel for trusted, non-HTTP execution contexts (background hosts) |
 | `SecurityClaimTypes` | Static class | Well-known claim type string constants (sub, tenant_id, plus legacy email/role reference constants) |
 
+`IUserContext` also carries a step-up-authentication signal surface — `AuthenticationMethods`/`AuthContextClassReference`/`AuthTime`/`WasAuthenticatedWith`/`IsAuthenticationFresherThan` — and a sender-constraining signal, `IsSenderConstrained`. See below.
+
 ## `IUserContext` / `ITenantProvider`
 
 ```csharp
@@ -68,6 +70,41 @@ var access = user.IdentityKind switch
     IdentityKind.Anonymous or _ => AccessLevel.None,
 };
 ```
+
+## Step-up authentication signals (`AuthenticationMethods`/`AuthContextClassReference`/`AuthTime`)
+
+PSD2/FFIEC/PCI-DSS-style regimes commonly require gating a high-risk operation (a funds transfer, a limit change, a credential rotation) on *how* and *how recently* the caller authenticated — not merely "the token is still valid." These members surface the OIDC `amr`/`acr`/`auth_time` claims for exactly that:
+
+| Member | Meaning |
+| --- | --- |
+| `AuthenticationMethods` | The OIDC `amr` (Authentication Method Reference) values for the session — e.g. `"pwd"`, `"otp"`, `"mfa"`, `"hwk"`. Empty when the identity source has no authentication-context concept (API key, mTLS, `AnonymousUserContext`, `SystemUserContext`). |
+| `AuthContextClassReference` | The OIDC `acr` (Authentication Context Class Reference) assurance-level claim. `null` when absent or not applicable. |
+| `AuthTime` | The UTC instant authentication actually occurred (OIDC `auth_time`) — distinct from token-issued-at. `null` when absent, malformed, or not applicable. |
+| `WasAuthenticatedWith(method)` | `true` when `method` is found in `AuthenticationMethods`. Case-insensitive, mirrors `HasRole` exactly. |
+| `IsAuthenticationFresherThan(maxAge, now)` | `true` when `AuthTime` is present and `now - AuthTime <= maxAge`. **`now` is always supplied by the caller** (typically from its own injected `IClock`) — this member never calls `DateTimeOffset.UtcNow` internally, per the platform's injectable-time convention. |
+
+```csharp
+// Gate a high-risk command on recent, strong authentication rather than a token's raw expiry:
+if (!user.WasAuthenticatedWith("mfa") || !user.IsAuthenticationFresherThan(TimeSpan.FromMinutes(5), clock.UtcNow))
+{
+    return Result.Failure(Error.Unauthorized("step_up.required", "Recent MFA is required for this operation."));
+}
+```
+
+See `SharedKernel.Security.Oidc/README.md`'s "Step-up authorization" recipe for a fully worked `IAuthorizationContext` bridge.
+
+## `IsSenderConstrained`
+
+`true` only when the current request's access token was validated as DPoP-bound (RFC 9449) for **this** request — a fresh, correctly-signed proof matching the token's `cnf.jkt` was presented. `false` for every other identity source, including a valid-but-unconstrained bearer token, an API-key-authenticated request, and an mTLS-authenticated request (mTLS is its own, distinct sender-constraining mechanism — see `SharedKernel.Security.Mtls/README.md`'s RFC 8705 section).
+
+```csharp
+if (requiresSenderConstrainedToken && !user.IsSenderConstrained)
+{
+    return Result.Failure(Error.Unauthorized("token.not_sender_constrained", "A DPoP-bound access token is required."));
+}
+```
+
+Opt into DPoP validation via `SharedKernel.Security.Oidc`'s `.RequireDpop<TReplayCache>()` — see its README's DPoP Quick Start.
 
 ## `AnonymousUserContext`
 
