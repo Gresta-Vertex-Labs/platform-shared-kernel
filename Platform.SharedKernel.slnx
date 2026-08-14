@@ -117,6 +117,8 @@
     <Project Path="12.Security/SharedKernel.Security.Oidc/SharedKernel.Security.Oidc.Tests/SharedKernel.Security.Oidc.Tests.csproj" />
     <Project Path="12.Security/SharedKernel.Security.ApiKey/SharedKernel.Security.ApiKey.csproj" />
     <Project Path="12.Security/SharedKernel.Security.ApiKey/SharedKernel.Security.ApiKey.Tests/SharedKernel.Security.ApiKey.Tests.csproj" />
+    <Project Path="12.Security/SharedKernel.Security.Mtls/SharedKernel.Security.Mtls.csproj" />
+    <Project Path="12.Security/SharedKernel.Security.Mtls/SharedKernel.Security.Mtls.Tests/SharedKernel.Security.Mtls.Tests.csproj" />
   </Folder>
   <Folder Name="/13.ServiceDefaults/">
     <Project Path="13.ServiceDefaults/SharedKernel.MultiTenancy/SharedKernel.MultiTenancy.csproj" />
