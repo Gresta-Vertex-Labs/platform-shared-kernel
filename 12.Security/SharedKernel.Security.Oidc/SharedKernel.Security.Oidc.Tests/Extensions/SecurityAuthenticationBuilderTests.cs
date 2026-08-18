@@ -121,6 +121,48 @@ public sealed class SecurityAuthenticationBuilderTests
         Assert.NotNull(jwtOptions.Events?.OnTokenValidated);
     }
 
+    // ---- WithRevocationCheckCaching ordering (WO-060, P-388, T-37) ----
+
+    [Fact]
+    public void WithRevocationCheckCaching_CalledBeforeWithRevocationCheck_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var builder = services.AddSharedKernelSecurity(BuildValidConfig());
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => builder.WithRevocationCheckCaching<TestRevocationCheckCache>());
+
+        Assert.Contains(nameof(SecurityAuthenticationBuilder.WithRevocationCheckCaching), ex.Message);
+        Assert.Contains(nameof(SecurityAuthenticationBuilder.WithRevocationCheck), ex.Message);
+    }
+
+    [Fact]
+    public void WithRevocationCheckCaching_CalledAfterWithRevocationCheck_Succeeds()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var builder = services
+            .AddSharedKernelSecurity(BuildValidConfig())
+            .WithRevocationCheck<TestRevocationCheck>()
+            .WithRevocationCheckCaching<TestRevocationCheckCache>();
+
+        Assert.IsType<SecurityAuthenticationBuilder>(builder);
+
+        var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var resolved = scope.ServiceProvider.GetRequiredService<ITokenRevocationCheck>();
+
+        Assert.IsType<CachingTokenRevocationCheck>(resolved);
+    }
+
+    private sealed class TestRevocationCheckCache : IRevocationCheckCache
+    {
+        public Task<bool?> TryGetAsync(string tokenIdentifier, CancellationToken ct) => Task.FromResult<bool?>(null);
+
+        public Task SetAsync(string tokenIdentifier, bool isRevoked, TimeSpan ttl, CancellationToken ct) => Task.CompletedTask;
+    }
+
     [Fact]
     public void AddAzureB2CAuthentication_AlsoReturnsSecurityAuthenticationBuilder()
     {

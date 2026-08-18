@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -17,6 +18,15 @@ public sealed class DpopProofValidatorTests
 {
     private const string RequestMethod = "GET";
     private const string RequestUrl = "https://api.example.com/orders";
+
+    // WO-060 (C-38/P-385): the access token every test's proof is bound to via its "ath" claim, and
+    // that BuildContext puts on the request's Authorization header by default — so a proof/context pair
+    // built from the same-named defaults resolve a matching ath without every call site needing to pass
+    // it explicitly.
+    private const string DefaultAccessToken = "test-access-token-value";
+
+    private static string ComputeAth(string accessToken) =>
+        Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)));
 
     private sealed class TestReplayCache : IDpopProofReplayCache
     {
@@ -51,7 +61,8 @@ public sealed class DpopProofValidatorTests
         string? htu = RequestUrl,
         long? iatOverride = null,
         string? jti = null,
-        string? typOverride = "dpop+jwt")
+        string? typOverride = "dpop+jwt",
+        string? accessTokenForAth = DefaultAccessToken)
     {
         var handler = new JsonWebTokenHandler();
         var claims = new Dictionary<string, object>();
@@ -67,6 +78,10 @@ public sealed class DpopProofValidatorTests
 
         claims["iat"] = iatOverride ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         claims["jti"] = jti ?? Guid.NewGuid().ToString("N");
+        if (accessTokenForAth is not null)
+        {
+            claims["ath"] = ComputeAth(accessTokenForAth);
+        }
 
         var headerClaims = new Dictionary<string, object>();
         if (typOverride is not null)
@@ -95,7 +110,8 @@ public sealed class DpopProofValidatorTests
     private static TokenValidatedContext BuildContext(
         string? dpopHeaderValue,
         string? cnfJkt,
-        IDpopProofReplayCache replayCache)
+        IDpopProofReplayCache replayCache,
+        string? accessToken = DefaultAccessToken)
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Method = RequestMethod;
@@ -106,6 +122,11 @@ public sealed class DpopProofValidatorTests
         if (dpopHeaderValue is not null)
         {
             httpContext.Request.Headers["DPoP"] = dpopHeaderValue;
+        }
+
+        if (accessToken is not null)
+        {
+            httpContext.Request.Headers.Authorization = $"Bearer {accessToken}";
         }
 
         var services = new ServiceCollection();
@@ -275,5 +296,212 @@ public sealed class DpopProofValidatorTests
         await DpopProofValidator.ValidateAsync(context);
 
         Assert.NotNull(context.Result);
+    }
+
+    // ---- ath (access-token-hash) binding — WO-060, P-385, T-29/T-30/T-31 ----
+
+    [Fact]
+    public async Task AthBoundToDifferentAccessToken_Rejects()
+    {
+        var (key, kty, crv, x, y) = CreateKeyMaterial();
+        var jkt = ComputeExpectedJkt(kty, crv, x, y);
+        // The proof is otherwise COMPLETELY valid — correct htm/htu/iat/jkt/jti, a genuine signature —
+        // and fails ONLY because its "ath" claim is bound to a DIFFERENT access token than the one
+        // actually presented on this request (BuildContext still presents DefaultAccessToken).
+        var proof = BuildProof(key, kty, crv, x, y, accessTokenForAth: "a-completely-different-access-token");
+        var context = BuildContext(proof, jkt, new TestReplayCache());
+
+        await DpopProofValidator.ValidateAsync(context);
+
+        Assert.NotNull(context.Result);
+    }
+
+    [Fact]
+    public async Task MissingAth_Rejects()
+    {
+        var (key, kty, crv, x, y) = CreateKeyMaterial();
+        var jkt = ComputeExpectedJkt(kty, crv, x, y);
+        // Otherwise fully valid proof (correct htm/htu/iat/jkt/jti, real signature) — the "ath" claim
+        // is simply absent.
+        var proof = BuildProof(key, kty, crv, x, y, accessTokenForAth: null);
+        var context = BuildContext(proof, jkt, new TestReplayCache());
+
+        await DpopProofValidator.ValidateAsync(context);
+
+        Assert.NotNull(context.Result);
+    }
+
+    [Fact]
+    public async Task MalformedAth_Rejects()
+    {
+        var (key, kty, crv, x, y) = CreateKeyMaterial();
+        var jkt = ComputeExpectedJkt(kty, crv, x, y);
+
+        // Otherwise fully valid proof, except "ath" is present as the WRONG JSON shape (a numeric
+        // value where a base64url-encoded string is expected) — TryGetPayloadValue<string> fails to
+        // read it, which must reject exactly like a missing/mismatched ath, never throw.
+        var proof = BuildProofWithRawClaims(
+            key,
+            kty,
+            crv,
+            x,
+            y,
+            extraPayloadClaims: new Dictionary<string, object> { ["ath"] = 123456 });
+        var context = BuildContext(proof, jkt, new TestReplayCache());
+
+        await DpopProofValidator.ValidateAsync(context);
+
+        Assert.NotNull(context.Result);
+    }
+
+    // ---- DPoP proof-JWT algorithm allowlist — WO-060, P-387, T-34/T-35 ----
+
+    [Fact]
+    public async Task DisallowedProofAlgorithm_Rejects_BeforeAnyOtherBindingIsChecked()
+    {
+        var (key, kty, crv, x, y) = CreateKeyMaterial();
+        var jkt = ComputeExpectedJkt(kty, crv, x, y);
+
+        // The proof JWT is itself signed with HS256 (a symmetric algorithm outside the default
+        // ["PS256", "ES256"] allowlist). The embedded "jwk" header still advertises the EC key, so
+        // every OTHER check (typ/htm/htu/iat/jkt) would otherwise pass — only the algorithm allowlist
+        // must be what rejects this proof, and it must do so before jwk/signature evaluation.
+        var handler = new JsonWebTokenHandler();
+        var symmetricKey = new SymmetricSecurityKey(new byte[32]);
+        var claims = new Dictionary<string, object>
+        {
+            ["htm"] = RequestMethod,
+            ["htu"] = RequestUrl,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["ath"] = ComputeAth(DefaultAccessToken),
+        };
+        var headerClaims = new Dictionary<string, object>
+        {
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = new Dictionary<string, object> { ["kty"] = kty, ["crv"] = crv, ["x"] = x, ["y"] = y },
+        };
+        var proof = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            SigningCredentials = new SigningCredentials(symmetricKey, SecurityAlgorithms.HmacSha256),
+            Claims = claims,
+            AdditionalHeaderClaims = headerClaims,
+        });
+
+        var context = BuildContext(proof, jkt, new TestReplayCache());
+
+        await DpopProofValidator.ValidateAsync(context);
+
+        Assert.NotNull(context.Result);
+    }
+
+    [Fact]
+    public async Task NoneAlgorithmProof_Rejects_BeforeAnyOtherBindingIsChecked()
+    {
+        var (key, kty, crv, x, y) = CreateKeyMaterial();
+        var jkt = ComputeExpectedJkt(kty, crv, x, y);
+
+        // An unsigned ("alg": "none") proof JWT — every other claim is otherwise well-formed and
+        // would pass every subsequent check; only the algorithm allowlist must reject it, before any
+        // signature verification is even attempted (there is none to attempt).
+        var handler = new JsonWebTokenHandler();
+        var claims = new Dictionary<string, object>
+        {
+            ["htm"] = RequestMethod,
+            ["htu"] = RequestUrl,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["ath"] = ComputeAth(DefaultAccessToken),
+        };
+        var headerClaims = new Dictionary<string, object>
+        {
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = new Dictionary<string, object> { ["kty"] = kty, ["crv"] = crv, ["x"] = x, ["y"] = y },
+        };
+        var proof = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            Claims = claims,
+            AdditionalHeaderClaims = headerClaims,
+        });
+
+        var context = BuildContext(proof, jkt, new TestReplayCache());
+
+        await DpopProofValidator.ValidateAsync(context);
+
+        Assert.NotNull(context.Result);
+    }
+
+    [Fact]
+    public async Task Ps256SignedProof_Accepted_NoRegressionForFapiCompliantDefault()
+    {
+        using var rsa = RSA.Create(2048);
+        var key = new RsaSecurityKey(rsa);
+        var jwk = JsonWebKeyConverter.ConvertFromRSASecurityKey(key);
+        var jkt = Base64UrlEncoder.Encode(new JsonWebKey { Kty = jwk.Kty, N = jwk.N, E = jwk.E }.ComputeJwkThumbprint());
+
+        var handler = new JsonWebTokenHandler();
+        var claims = new Dictionary<string, object>
+        {
+            ["htm"] = RequestMethod,
+            ["htu"] = RequestUrl,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["ath"] = ComputeAth(DefaultAccessToken),
+        };
+        var headerClaims = new Dictionary<string, object>
+        {
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = new Dictionary<string, object> { ["kty"] = jwk.Kty, ["n"] = jwk.N, ["e"] = jwk.E },
+        };
+        var proof = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSsaPssSha256),
+            Claims = claims,
+            AdditionalHeaderClaims = headerClaims,
+        });
+
+        var context = BuildContext(proof, jkt, new TestReplayCache());
+
+        await DpopProofValidator.ValidateAsync(context);
+
+        Assert.Null(context.Result);
+    }
+
+    private static string BuildProofWithRawClaims(
+        ECDsaSecurityKey key,
+        string kty,
+        string crv,
+        string x,
+        string y,
+        IDictionary<string, object> extraPayloadClaims)
+    {
+        var handler = new JsonWebTokenHandler();
+        var claims = new Dictionary<string, object>
+        {
+            ["htm"] = RequestMethod,
+            ["htu"] = RequestUrl,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["jti"] = Guid.NewGuid().ToString("N"),
+        };
+
+        foreach (var (claimType, value) in extraPayloadClaims)
+        {
+            claims[claimType] = value;
+        }
+
+        var headerClaims = new Dictionary<string, object>
+        {
+            ["typ"] = "dpop+jwt",
+            ["jwk"] = new Dictionary<string, object> { ["kty"] = kty, ["crv"] = crv, ["x"] = x, ["y"] = y },
+        };
+
+        var descriptor = new SecurityTokenDescriptor
+        {
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.EcdsaSha256),
+            Claims = claims,
+            AdditionalHeaderClaims = headerClaims,
+        };
+
+        return handler.CreateToken(descriptor);
     }
 }

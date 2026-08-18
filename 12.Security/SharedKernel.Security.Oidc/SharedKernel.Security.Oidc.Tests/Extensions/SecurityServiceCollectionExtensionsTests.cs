@@ -1,7 +1,10 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using SharedKernel.Security.Abstractions.Abstractions;
 using SharedKernel.Security.Oidc.Extensions;
 using Xunit;
@@ -226,5 +229,112 @@ public sealed class SecurityServiceCollectionExtensionsTests
 
         Assert.Equal(sharedJwtOptions.TokenValidationParameters.NameClaimType, b2cJwtOptions.TokenValidationParameters.NameClaimType);
         Assert.Equal(sharedJwtOptions.TokenValidationParameters.RoleClaimType, b2cJwtOptions.TokenValidationParameters.RoleClaimType);
+    }
+
+    // ---- JWT Bearer path signing-algorithm allowlist (WO-060, P-387, T-34/T-35) ----
+    //
+    // These tests drive the REAL TokenValidationParameters wired by AddSharedKernelSecurity (via
+    // ValidAlgorithms) through the actual Microsoft.IdentityModel.JsonWebTokens validation pipeline —
+    // not a reimplementation of the allowlist check — cloning it and neutralizing only
+    // issuer/audience/authority (which require live OIDC discovery, unavailable in a unit test) so the
+    // algorithm-allowlist behavior itself is proven end-to-end against production wiring.
+
+    private static async Task<TokenValidationParameters> ResolveWiredValidationParametersAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSharedKernelSecurity(BuildValidConfig());
+        var provider = services.BuildServiceProvider();
+
+        var jwtOptions = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+
+        await Task.CompletedTask;
+        return jwtOptions.TokenValidationParameters;
+    }
+
+    [Fact]
+    public async Task JwtBearerWiring_DefaultValidAlgorithms_IsFapiBaseline()
+    {
+        var wired = await ResolveWiredValidationParametersAsync();
+
+        Assert.Equal(["PS256", "ES256"], wired.ValidAlgorithms);
+    }
+
+    [Fact]
+    public async Task JwtBearerPath_DisallowedAlgorithm_Rejected_EvenWithACorrectSigningKey()
+    {
+        var wired = await ResolveWiredValidationParametersAsync();
+
+        // Sign with a key that WOULD verify successfully were the algorithm not restricted — proving
+        // the rejection is genuinely caused by the allowlist, not an unrelated signature failure.
+        var key = new SymmetricSecurityKey(new byte[32]);
+        var handler = new JsonWebTokenHandler();
+        var token = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
+            Claims = new Dictionary<string, object> { ["sub"] = Guid.NewGuid().ToString() },
+        });
+
+        var validationParameters = wired.Clone();
+        validationParameters.ValidateIssuer = false;
+        validationParameters.ValidateAudience = false;
+        validationParameters.IssuerSigningKey = key;
+
+        var result = await handler.ValidateTokenAsync(token, validationParameters);
+
+        Assert.False(result.IsValid);
+        // The IdentityModel pipeline enforces ValidAlgorithms as part of signing-key resolution — an
+        // out-of-allowlist algorithm means no candidate key is ever considered a match, so rejection
+        // surfaces as either exception depending on validation order, but never as a successful result
+        // that reached actual HMAC verification against the (otherwise genuinely correct) key.
+        Assert.True(
+            result.Exception is SecurityTokenInvalidAlgorithmException or SecurityTokenSignatureKeyNotFoundException,
+            $"Expected an algorithm-allowlist-driven rejection, got: {result.Exception}");
+    }
+
+    [Fact]
+    public async Task JwtBearerPath_UnsignedNoneAlgorithmToken_Rejected_BeforeClaimEvaluation()
+    {
+        var wired = await ResolveWiredValidationParametersAsync();
+
+        var handler = new JsonWebTokenHandler();
+        var token = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            Claims = new Dictionary<string, object> { ["sub"] = Guid.NewGuid().ToString() },
+        });
+
+        var validationParameters = wired.Clone();
+        validationParameters.ValidateIssuer = false;
+        validationParameters.ValidateAudience = false;
+
+        var result = await handler.ValidateTokenAsync(token, validationParameters);
+
+        Assert.False(result.IsValid);
+        Assert.NotNull(result.Exception);
+    }
+
+    [Fact]
+    public async Task JwtBearerPath_Es256SignedToken_Accepted_NoRegressionForFapiCompliantDefault()
+    {
+        var wired = await ResolveWiredValidationParametersAsync();
+
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var key = new ECDsaSecurityKey(ecdsa);
+        var handler = new JsonWebTokenHandler();
+        var token = handler.CreateToken(new SecurityTokenDescriptor
+        {
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.EcdsaSha256),
+            Claims = new Dictionary<string, object> { ["sub"] = Guid.NewGuid().ToString() },
+        });
+
+        var validationParameters = wired.Clone();
+        validationParameters.ValidateIssuer = false;
+        validationParameters.ValidateAudience = false;
+        validationParameters.IssuerSigningKey = key;
+
+        var result = await handler.ValidateTokenAsync(token, validationParameters);
+
+        Assert.True(result.IsValid);
     }
 }
