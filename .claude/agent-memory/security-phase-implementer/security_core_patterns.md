@@ -147,7 +147,21 @@ build output for `error CS` (not just `error`) isolates genuine compile errors f
 
 - NuGet metadata was present from the Scaffold phase — no .csproj edits needed in Published
 - NU1903 warnings on `System.Security.Cryptography.Xml` 9.0.0 are transitive from `Microsoft.Identity.Web` — cannot be suppressed without removing the package; not a code defect
-- `dotnet pack` outputs to `artifacts/nupkg/` (created on first pack run)
+- **CORRECTED (2026-08-18, WO-060 Published pass):** `dotnet pack --configuration Release` with no `-o`
+  flag outputs to each project's OWN `bin/Release/` folder (e.g.
+  `12.Security/SharedKernel.Security.Oidc/bin/Release/SharedKernel.Security.Oidc.4.0.0.nupkg`), NOT
+  `artifacts/nupkg/` — that folder holds a one-time stale manual pack from 2026-06-02 (still at 1.0.0,
+  never updated since) from an explicit `-o artifacts/nupkg` flag used in that single early session. No
+  `Directory.Build.props` exists anywhere in the repo to override `PackageOutputPath`. Verified against
+  `05.Application`/`14.Presentation`'s own Published-phase precedent (`bin/Release/*.nupkg`) before trusting
+  this. Do not keep writing to `artifacts/nupkg/` from memory — check the project's own `bin/Release/` first.
+- No `12.Security/consumer-verify` harness exists anywhere in the repo as of 2026-08-18 (checked: every
+  other domain 02/04/08/09/10/11/13/14/15/17 that has one lives at `{NN.Domain}/consumer-verify/`). If a
+  future Published-phase note asks to "extend the consumer-verify harness if one exists," the correct
+  action is to report its absence, not build one — that is new scope requiring its own phase spec.
+- WO-060's Published phase (PUB-17–19) was pure build/pack/test verification, zero new types — confirms
+  a Published phase can be entirely mechanical when Core/Tests/Docs already shipped everything and the
+  CLAUDE.md brain was kept current at each prior phase (no `sync-brain` call was needed this session).
 
 ## SharedKernel.Security.ApiKey scaffold notes (WO-057, 2026-08-13)
 

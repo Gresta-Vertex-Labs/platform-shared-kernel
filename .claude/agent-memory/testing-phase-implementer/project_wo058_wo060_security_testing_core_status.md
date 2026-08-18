@@ -1,0 +1,18 @@
+---
+name: project_wo058_wo060_security_testing_core_status
+description: 16.Testing SK.16.Core AND SK.16.Tests both closed 2026-08-17 (122/122, 85/85) for combined WO-058 remainder + WO-060 — SecurityTestContextBuilder, FakeDualApprovalStore, DpopTestProofBuilder, MtlsTestCertificateBuilder, ApiKeyRotationScenarioBuilder all implemented and proven.
+type: project
+---
+
+`16.Testing`'s `SK.16.Core` phase closed 2026-08-17 at 122/122 tasks (C-114–C-122), fully promoted in `16.Testing/state-map.md`. Six new/extended production files, all under `16.Testing/SharedKernel.Testing/`:
+- `Security/SecurityTestContextBuilder.cs` (net-new) — fluent `ClaimsPrincipal`/`IUserContext` test-fixture builder, identity-basics (C-114) + AMR/ACR/AuthTime (C-116) built in the same pass.
+- `Application/FakeDualApprovalStore.cs` (net-new, C-117) + `AddFakeDualApprovalStore()` added as a standalone method to the existing `Application/ApplicationServiceCollectionExtensions.cs` (C-118).
+- `Security/DpopTestProofBuilder.cs` (net-new, C-119) — real ES256-signed RFC 9449 DPoP proof construction, zero JWT library.
+- `Security/MtlsTestCertificateBuilder.cs` (net-new, C-120) — self-signed/ephemeral-CA-chained/revoked X.509 certs; see [[feedback_crl_builder_ecdsa_api_and_crypto_smoke_test]] for the real `CertificateRevocationListBuilder` API gotcha this surfaced.
+- `Security/ApiKeyRotationScenarioBuilder.cs` (net-new, C-121).
+
+**Why:** two blockers recorded in `state-map.md` (`12.Security` P-375 AMR/ACR/AuthTime, `05.Application` P-380 `IDualApprovalStore`) were both found stale on re-verification — see [[feedback_check_already_done_before_working]]'s third variant. `FakeUserContext.cs` had already been extended by a prior/concurrent session (git commit `3c9b5ab`) before this pass even started.
+
+**SK.16.Tests closed the same day (later session), 85/85 (T-79–T-85).** Five new test files under `SharedKernel.Testing.SelfTests`: `Security/SecurityTestContextBuilderTests.cs` (23 tests, T-79/T-80), `Application/FakeDualApprovalStoreTests.cs` (11 tests across two classes, T-81), `Security/DpopTestProofBuilderTests.cs` (13 tests, T-82), `Security/MtlsTestCertificateBuilderTests.cs` (10 tests, T-83), `Security/ApiKeyRotationScenarioBuilderTests.cs` (9 tests, T-84 — intra-package half only, see [[feedback_crl_builder_ecdsa_api_and_crypto_smoke_test]]'s companion note on the `AddEntry` sign-padding quirk this session also discovered). T-84's end-to-end `ApiKeyRotationComparer` interop half is DEFERRED — re-confirmed on disk that `12.Security/SharedKernel.Security.ApiKey/` still ships no such type, mirroring `Search/`'s T-75 precedent (proceed with the intra-package half, defer the rest, record it explicitly rather than silently marking the task "done"). Full regression 930/930 → **996/996** (66 net new), zero regressions. Also fixed a real state-map inconsistency: DO-40 (Docs phase) carried a stale `⚑` Blocked marker after its sole real dependency (T-81) shipped — corrected to `○`, matching every sibling Docs row's convention (a same-phase-ahead-of-a-later-phase dependency is ordinary sequencing, never `⚑`).
+
+**How to apply:** Only Docs phase (DO-39–DO-44, 6 tasks) remains for this WO-058-companion/WO-060 batch — future-session `SK.16.Docs` work: XML doc comments on all five new/extended types plus a `16.Testing/CLAUDE.md` `[STATUS: Planned]` marker removal and changelog entry. Root Phase Backlog P-382/P-391 both deliberately left `◐` Dispatched — each needs its own CLAUDE.md-update criterion; P-391 additionally needs `12.Security`'s still-undispatched `ApiKeyRotationComparer` (P-389) for its full interop-half criterion.
