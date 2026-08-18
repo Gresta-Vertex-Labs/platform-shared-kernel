@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Application.Behaviors.Authorization;
+using SharedKernel.Application.Behaviors.DualApproval;
 using SharedKernel.Application.Behaviors.Idempotency;
 using SharedKernel.Application.Behaviors.Transaction;
 
@@ -39,6 +40,27 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IUnitOfWork, FakeUnitOfWork>();
         services.AddSingleton<IAuthorizationContext>(new FakeAuthorizationContext(defaultResult: true));
         services.AddSingleton<IIdempotencyKeyStore, FakeIdempotencyKeyStore>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="FakeDualApprovalStore"/> as <see cref="IDualApprovalStore"/> as a singleton.
+    /// </summary>
+    /// <remarks>
+    /// A STANDALONE call — deliberately NOT bundled into <see cref="AddFakeApplicationBehaviorServices"/>,
+    /// mirroring <see cref="FakeIdempotencyResponseStore"/>'s existing precedent of requiring
+    /// manual/separate registration rather than being folded into the default bundle, since dual-control
+    /// (<c>IRequiresDualApproval</c>) is an opt-in capability exactly like idempotency-response-replay is,
+    /// not one of <see cref="AddFakeApplicationBehaviorServices"/>'s three always-bundled fakes.
+    /// </remarks>
+    /// <param name="services">The service collection to register against.</param>
+    /// <returns><paramref name="services"/>, for fluent chaining.</returns>
+    public static IServiceCollection AddFakeDualApprovalStore(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddSingleton<IDualApprovalStore, FakeDualApprovalStore>();
 
         return services;
     }
