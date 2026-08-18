@@ -70,4 +70,19 @@ internal static partial class SecurityLogEvents
         Level = LogLevel.Warning,
         Message = "Access token rejected by revocation check (CheckAvailable={CheckAvailable}).")]
     public static partial void TokenRevocationRejected(ILogger logger, bool checkAvailable);
+
+    /// <summary>
+    /// Logged when the JWT Bearer (non-DPoP) validation path rejects an access token signed with an
+    /// algorithm outside <c>SecurityOptions.JwtOptions.ValidAlgorithms</c>.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="presentedAlgorithm"/> is the algorithm NAME only (e.g. <c>"HS256"</c>,
+    /// <c>"none"</c>) — never any part of the token itself. Wired in SK.12.Core (WO-060, P-387) — the one
+    /// path in this phase with no existing failure-audit hook to reuse.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 12104,
+        Level = LogLevel.Warning,
+        Message = "Access token rejected: signing algorithm '{PresentedAlgorithm}' is not in the configured ValidAlgorithms allowlist.")]
+    public static partial void JwtSigningAlgorithmRejected(ILogger logger, string presentedAlgorithm);
 }

@@ -57,5 +57,30 @@ public sealed class SecurityOptions
         /// Defaults to <c>30</c> seconds to tolerate minor clock drift between services.
         /// </summary>
         public int ClockSkewSeconds { get; set; } = 30;
+
+        /// <summary>
+        /// Gets or sets the set of JWS signing algorithms accepted for an incoming access token.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Defaults to <c>["PS256", "ES256"]</c> — the FAPI 2.0 Security Profile baseline — restricting
+        /// accepted signing algorithms as a defense against algorithm-confusion/downgrade attacks
+        /// (including a crafted <c>"alg": "none"</c> token), which this allowlist rejects implicitly by
+        /// never containing <c>"none"</c>.
+        /// </para>
+        /// <para>
+        /// THIS IS A DELIBERATE BREAKING DEFAULT once wired: many real-world identity providers (Entra ID,
+        /// Auth0, Okta) sign access tokens with RS256 by default, which is NOT in the default allowlist —
+        /// a consuming service on such a provider must explicitly widen this collection to include
+        /// <c>"RS256"</c> (or its own provider's actual signing algorithm), or every previously-valid token
+        /// is rejected.
+        /// </para>
+        /// <para>
+        /// Wired into <c>TokenValidationParameters.ValidAlgorithms</c> by both
+        /// <c>AddSharedKernelSecurity</c> and <c>AddAzureB2CAuthentication</c> (WO-060, C-40). A rejection
+        /// is audit-logged via <c>SecurityLogEvents.JwtSigningAlgorithmRejected</c> (EventId 12104).
+        /// </para>
+        /// </remarks>
+        public IReadOnlyCollection<string> ValidAlgorithms { get; set; } = ["PS256", "ES256"];
     }
 }

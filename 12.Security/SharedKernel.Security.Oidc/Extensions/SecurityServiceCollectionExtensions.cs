@@ -5,8 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
+using Microsoft.IdentityModel.Tokens;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Security.Abstractions.Abstractions;
+using SharedKernel.Security.Oidc.Logging;
 using SharedKernel.Security.Oidc.Mapping;
 using SharedKernel.Security.Oidc.Options;
 
@@ -93,7 +95,7 @@ public static class SecurityServiceCollectionExtensions
                 jwtBearerOptions.Authority = jwt.Authority;
                 jwtBearerOptions.Audience = jwt.Audience;
 
-                jwtBearerOptions.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                jwtBearerOptions.TokenValidationParameters = new TokenValidationParameters
                 {
                     // ValidateIssuer = true is the default — made explicit to document the intent.
                     ValidateIssuer = true,
@@ -104,8 +106,15 @@ public static class SecurityServiceCollectionExtensions
                     // Sourced from the same ClaimMapping OidcUserContext reads — never divergent (P-366).
                     NameClaimType = claimMapping.NameClaimType,
                     RoleClaimType = claimMapping.RoleClaimType,
+                    // WO-060 (C-40): restricts accepted JWS signing algorithms to the FAPI 2.0 baseline by
+                    // default, rejecting an out-of-allowlist alg (including "none") before any signature
+                    // or claim evaluation proceeds. See SecurityOptions.JwtOptions.ValidAlgorithms's own
+                    // XML docs for the deliberate breaking-default rationale.
+                    ValidAlgorithms = jwt.ValidAlgorithms,
                 };
             });
+
+        ConfigureAlgorithmRejectionLogging(services);
 
         return new SecurityAuthenticationBuilder(services);
     }
@@ -168,7 +177,13 @@ public static class SecurityServiceCollectionExtensions
                 var claimMapping = securityOptions.Value.ClaimMapping;
                 jwtBearerOptions.TokenValidationParameters.NameClaimType = claimMapping.NameClaimType;
                 jwtBearerOptions.TokenValidationParameters.RoleClaimType = claimMapping.RoleClaimType;
+                // WO-060 (C-40): identical enforcement to AddSharedKernelSecurity — PostConfigure so this
+                // package's allowlist intent always wins regardless of what Microsoft.Identity.Web's own
+                // Configure delegate set.
+                jwtBearerOptions.TokenValidationParameters.ValidAlgorithms = securityOptions.Value.Jwt.ValidAlgorithms;
             });
+
+        ConfigureAlgorithmRejectionLogging(services);
 
         return new SecurityAuthenticationBuilder(services);
     }
@@ -202,5 +217,45 @@ public static class SecurityServiceCollectionExtensions
                 ? new OidcTenantProvider(user, logger)
                 : new OidcTenantProvider(new System.Security.Claims.ClaimsPrincipal(), logger);
         });
+    }
+
+    /// <summary>
+    /// Wires structured <c>JwtSigningAlgorithmRejected</c> (EventId 12104) audit logging into
+    /// <c>JwtBearerEvents.OnAuthenticationFailed</c> whenever the JWT Bearer pipeline rejects a token
+    /// because its signing algorithm falls outside <see cref="SecurityOptions.JwtOptions.ValidAlgorithms"/>.
+    /// </summary>
+    /// <remarks>
+    /// Always captures and invokes any previously-registered <c>OnAuthenticationFailed</c> handler first
+    /// — never overwrites it outright — mirroring the chaining discipline
+    /// <see cref="SecurityAuthenticationBuilder.RequireDpop{TReplayCache}"/>/
+    /// <see cref="SecurityAuthenticationBuilder.WithRevocationCheck{TCheck}"/> already apply to
+    /// <c>OnTokenValidated</c> (WO-060, P-387).
+    /// </remarks>
+    private static void ConfigureAlgorithmRejectionLogging(IServiceCollection services)
+    {
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure(jwtBearerOptions =>
+            {
+                jwtBearerOptions.Events ??= new JwtBearerEvents();
+                var previousOnAuthenticationFailed = jwtBearerOptions.Events.OnAuthenticationFailed;
+                jwtBearerOptions.Events.OnAuthenticationFailed = async context =>
+                {
+                    if (context.Exception is SecurityTokenInvalidAlgorithmException algorithmException)
+                    {
+                        var logger = context.HttpContext.RequestServices
+                            .GetService<ILoggerFactory>()?
+                            .CreateLogger("SharedKernel.Security.Oidc.Extensions.SecurityServiceCollectionExtensions");
+                        if (logger is not null)
+                        {
+                            SecurityLogEvents.JwtSigningAlgorithmRejected(logger, algorithmException.InvalidAlgorithm ?? "unknown");
+                        }
+                    }
+
+                    if (previousOnAuthenticationFailed is not null)
+                    {
+                        await previousOnAuthenticationFailed(context).ConfigureAwait(false);
+                    }
+                };
+            });
     }
 }

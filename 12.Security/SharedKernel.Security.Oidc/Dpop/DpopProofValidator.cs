@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -49,6 +51,7 @@ internal static class DpopProofValidator
 
         var services = context.HttpContext.RequestServices;
         var logger = services.GetService<ILoggerFactory>()?.CreateLogger(LoggerCategoryName);
+        var dpopOptions = services.GetRequiredService<IOptions<DpopOptions>>().Value;
 
         if (!context.HttpContext.Request.Headers.TryGetValue(ProofHeaderName, out var headerValues)
             || headerValues.Count == 0
@@ -68,6 +71,15 @@ internal static class DpopProofValidator
         catch (Exception ex) when (ex is SecurityTokenMalformedException or ArgumentException or FormatException)
         {
             Reject(context, logger, "MalformedProof");
+            return;
+        }
+
+        // WO-060 (C-41): reject an out-of-allowlist proof-JWT signing algorithm — including a crafted
+        // "alg": "none" — BEFORE any other DPoP check runs, so an alg-confusion/downgrade attempt never
+        // reaches typ/jwk parsing or embedded-jwk signature evaluation at all.
+        if (!IsAlgorithmAllowed(proofJwt.Alg, dpopOptions.ValidAlgorithms))
+        {
+            Reject(context, logger, "AlgorithmNotAllowed");
             return;
         }
 
@@ -142,7 +154,6 @@ internal static class DpopProofValidator
             return;
         }
 
-        var dpopOptions = services.GetRequiredService<IOptions<DpopOptions>>().Value;
         var proofIssuedAt = DateTimeOffset.FromUnixTimeSeconds(iatSeconds);
         var freshnessWindow = TimeSpan.FromSeconds(dpopOptions.ProofFreshnessWindowSeconds);
         var age = DateTimeOffset.UtcNow - proofIssuedAt;
@@ -183,6 +194,12 @@ internal static class DpopProofValidator
             return;
         }
 
+        if (!ValidateAccessTokenHash(proofJwt, context))
+        {
+            Reject(context, logger, "AthMismatch");
+            return;
+        }
+
         var replayCache = services.GetRequiredService<IDpopProofReplayCache>();
         var proofExpiresAt = proofIssuedAt + freshnessWindow;
         var isFirstUse = await replayCache.TryConsumeAsync(jti, proofExpiresAt, context.HttpContext.RequestAborted).ConfigureAwait(false);
@@ -218,6 +235,82 @@ internal static class DpopProofValidator
             return null;
         }
     }
+
+    /// <summary>
+    /// Validates the DPoP proof JWT's <c>ath</c> (access-token-hash) claim against the current request's
+    /// raw bearer access token (RFC 9449 §4.3).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ath</c> is a fifth binding, alongside <c>htm</c>/<c>htu</c>/<c>iat</c>/<c>jkt</c>/<c>jti</c>,
+    /// that cryptographically ties the DPoP proof to the SPECIFIC access token it accompanies — distinct
+    /// from <c>jkt</c>, which ties the proof to the client's DPoP key, not to any one token.
+    /// </para>
+    /// <para>
+    /// Computes <c>base64url(SHA-256(raw bearer access token))</c> and compares it CONSTANT-TIME (via
+    /// <c>System.Security.Cryptography.CryptographicOperations.FixedTimeEquals</c>, the same technique
+    /// <c>01.Core/SharedKernel.Cryptography</c>'s <c>HmacSha256Signer</c> uses) against
+    /// <paramref name="proofJwt"/>'s own <c>ath</c> claim (WO-060, P-385).
+    /// </para>
+    /// </remarks>
+    /// <param name="proofJwt">The parsed and signature-verified DPoP proof JWT.</param>
+    /// <param name="context">The <c>OnTokenValidated</c> context for the current request.</param>
+    private static bool ValidateAccessTokenHash(JsonWebToken proofJwt, TokenValidatedContext context)
+    {
+        if (!proofJwt.TryGetPayloadValue<string>("ath", out var presentedAth) || string.IsNullOrWhiteSpace(presentedAth))
+        {
+            return false;
+        }
+
+        var rawAccessToken = ResolveRawAccessToken(context);
+        if (string.IsNullOrEmpty(rawAccessToken))
+        {
+            return false;
+        }
+
+        var expectedAthBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawAccessToken));
+        var expectedAth = Base64UrlEncoder.Encode(expectedAthBytes);
+
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(expectedAth),
+            Encoding.UTF8.GetBytes(presentedAth));
+    }
+
+    /// <summary>
+    /// Resolves the raw bearer access-token string for the current request, used as the input to the
+    /// <c>ath</c> hash computation.
+    /// </summary>
+    /// <remarks>
+    /// Prefers <see cref="TokenValidatedContext.SecurityToken"/> (the already-parsed
+    /// <see cref="JsonWebToken"/> for the token that was just validated), falling back to the raw
+    /// <c>Authorization: Bearer</c> header when the security token is a different type.
+    /// </remarks>
+    private static string? ResolveRawAccessToken(TokenValidatedContext context)
+    {
+        if (context.SecurityToken is JsonWebToken accessTokenJwt)
+        {
+            return accessTokenJwt.EncodedToken;
+        }
+
+        var authorizationHeader = context.HttpContext.Request.Headers.Authorization.ToString();
+        const string bearerPrefix = "Bearer ";
+        var rawToken = authorizationHeader.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? authorizationHeader[bearerPrefix.Length..].Trim()
+            : authorizationHeader;
+
+        return string.IsNullOrWhiteSpace(rawToken) ? null : rawToken;
+    }
+
+    /// <summary>
+    /// Determines whether <paramref name="algorithm"/> is present in <paramref name="validAlgorithms"/>.
+    /// </summary>
+    /// <remarks>
+    /// A missing/empty <paramref name="algorithm"/> — including the header shape a crafted
+    /// <c>"alg": "none"</c> proof would present — never matches, since <paramref name="validAlgorithms"/>
+    /// never contains an empty string (WO-060, P-387).
+    /// </remarks>
+    private static bool IsAlgorithmAllowed(string? algorithm, IReadOnlyCollection<string> validAlgorithms) =>
+        !string.IsNullOrEmpty(algorithm) && validAlgorithms.Contains(algorithm, StringComparer.Ordinal);
 
     private static void Reject(TokenValidatedContext context, ILogger? logger, string reason)
     {
