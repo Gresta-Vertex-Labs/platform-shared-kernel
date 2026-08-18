@@ -6,13 +6,13 @@
     <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Application.Behaviors</PackageId>
-    <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
+    <Version>1.1.0</Version>
+    <PackageVersion>1.1.0</PackageVersion>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
-    <Description>Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Validation, Logging, Metrics, Transaction, Caching, Authorization, and Idempotency, composed in a fixed canonical order via ApplicationBehaviorsBuilder. References SharedKernel.Application, SharedKernel.Caching.Abstractions, MediatR, and FluentValidation.</Description>
-    <PackageTags>cqrs;mediatr;pipeline-behavior;validation;caching;transaction;authorization;idempotency;shared-kernel</PackageTags>
+    <Description>Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Logging, Metrics, Tracing, Validation, Authorization, DualApproval (maker-checker), Caching, Resilience, Idempotency (with opt-in response replay), Transaction, and CacheInvalidation, composed in a fixed canonical order via ApplicationBehaviorsBuilder — plus opt-in fire-and-forget command dispatch infrastructure and opt-in structured request/response payload logging (ILoggableRequest&lt;TResponse&gt;). References SharedKernel.Application, SharedKernel.Caching.Abstractions, MediatR, FluentValidation, and Polly.Core.</Description>
+    <PackageTags>cqrs;mediatr;pipeline-behavior;validation;logging;metrics;tracing;caching;resilience;transaction;authorization;dual-approval;idempotency;shared-kernel</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
