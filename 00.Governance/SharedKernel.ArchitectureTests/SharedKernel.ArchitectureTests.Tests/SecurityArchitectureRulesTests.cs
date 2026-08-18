@@ -20,6 +20,16 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <c>SharedKernel.Domain</c> and <c>SharedKernel.Security.Oidc</c> assemblies — both packages
 /// were already fully Published as of this phase's authoring, so real-assembly verification is
 /// wired directly rather than deferred as a follow-up.
+/// T-292–T-295: Rule 3 — <c>DpopProofValidationNeverDuplicatedOutsideOidc</c> (contrived fire
+/// paths for both detection surfaces, an exemption pass path, and a negative-control pass path).
+/// T-296–T-298: Rule 4 — <c>ClientCertificateAccessNeverDuplicatedOutsideMtls</c> (contrived fire
+/// path, exemption pass path, negative-control pass path).
+/// T-299/T-300: real-assembly verification against the real, shipped
+/// <c>SharedKernel.Security.Oidc</c> DPoP surface and the real, shipped
+/// <c>SharedKernel.Security.Mtls</c> assembly — originally tracked as a Cross-Domain Dependency
+/// pending <c>12.Security</c> P-376/P-377, confirmed RESOLVED on disk before this phase's
+/// implementation session (12.Security shipped its full WO-058/WO-060 scope), so wired directly
+/// here rather than deferred.
 /// </remarks>
 public class SecurityArchitectureRulesTests
 {
@@ -320,6 +330,393 @@ public class SecurityArchitectureRulesTests
         result.IsSuccessful.Should().BeTrue(
             because: "the real, shipped SecurityServiceCollectionExtensions registers both " +
                      "IUserContext and ITenantProvider via AddScoped — never AddSingleton");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-292 — Rule 3 fire path: raw "DPoP" header-name literal outside SharedKernel.Security.Oidc
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-292: A fixture type outside <c>SharedKernel.Security.Oidc</c> containing a raw
+    /// <c>"DPoP"</c> header-name Ldstr literal must fail
+    /// <see cref="SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc"/>.
+    /// </summary>
+    [Fact]
+    public void DpopProofValidationNeverDuplicatedOutsideOidc_RawDpopLiteral_RuleFails()
+    {
+        const string source = """
+            namespace Fixture.Consumer
+            {
+                // Violation: reads a raw "DPoP" header-name literal outside
+                // SharedKernel.Security.Oidc instead of calling into that package's own
+                // proof-validation surface.
+                public sealed class RawDpopReader
+                {
+                    public string ReadDpopHeader(System.Collections.Generic.IDictionary<string, string> headers)
+                    {
+                        return headers["DPoP"];
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("DpopRawLiteralViolation", source);
+
+        var result = SecurityArchitectureRules
+            .DpopProofValidationNeverDuplicatedOutsideOidc(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "RawDpopReader reads a raw \"DPoP\" header-name literal outside " +
+                     "SharedKernel.Security.Oidc — DPoP proof-validation logic must live " +
+                     "exclusively in that package");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-293 — Rule 3 fire path: JwtSecurityTokenHandler reference outside SharedKernel.Security.Oidc
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-293: A fixture type outside <c>SharedKernel.Security.Oidc</c> that references
+    /// <c>JwtSecurityTokenHandler</c> to parse a proof JWT must fail
+    /// <see cref="SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc"/>.
+    /// </summary>
+    [Fact]
+    public void DpopProofValidationNeverDuplicatedOutsideOidc_JwtHandlerReference_RuleFails()
+    {
+        const string source = """
+            namespace System.IdentityModel.Tokens.Jwt
+            {
+                // Stub simulating the real JwtSecurityTokenHandler — same namespace and name so
+                // the exact-FullName match fires correctly.
+                public sealed class JwtSecurityTokenHandler
+                {
+                    public object ReadToken(string token) => new object();
+                }
+            }
+
+            namespace Fixture.Consumer
+            {
+                // Violation: hand-parses the proof JWT itself outside SharedKernel.Security.Oidc
+                // instead of calling into that package's own proof-validation surface.
+                public sealed class RawProofParser
+                {
+                    public object Parse(string proofJwt)
+                    {
+                        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                        return handler.ReadToken(proofJwt);
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("DpopJwtHandlerViolation", source);
+
+        var result = SecurityArchitectureRules
+            .DpopProofValidationNeverDuplicatedOutsideOidc(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "RawProofParser references JwtSecurityTokenHandler outside " +
+                     "SharedKernel.Security.Oidc — proof-JWT parsing must live exclusively in " +
+                     "that package");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-294 — Rule 3 pass path (exemption): identical usage inside SharedKernel.Security.Oidc
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-294: The identical <c>"DPoP"</c>-literal/JWT-parsing-type usage inside a
+    /// <c>SharedKernel.Security.Oidc</c>-namespaced fixture type must pass
+    /// <see cref="SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc"/>.
+    /// </summary>
+    [Fact]
+    public void DpopProofValidationNeverDuplicatedOutsideOidc_ExemptedOidcNamespace_RulePasses()
+    {
+        const string source = """
+            namespace System.IdentityModel.Tokens.Jwt
+            {
+                public sealed class JwtSecurityTokenHandler
+                {
+                    public object ReadToken(string token) => new object();
+                }
+            }
+
+            namespace SharedKernel.Security.Oidc.Dpop
+            {
+                // Compliant: this IS the real, shipped home for DPoP proof-validation logic —
+                // both surfaces are legitimate here.
+                public sealed class FixtureDpopValidator
+                {
+                    public object Validate(System.Collections.Generic.IDictionary<string, string> headers)
+                    {
+                        var raw = headers["DPoP"];
+                        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                        return handler.ReadToken(raw);
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("DpopExemptedNamespaceCompliant", source);
+
+        var result = SecurityArchitectureRules
+            .DpopProofValidationNeverDuplicatedOutsideOidc(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "FixtureDpopValidator lives inside SharedKernel.Security.Oidc.Dpop — the " +
+                     "sole legitimate home for DPoP proof-validation logic, exempted " +
+                     "unconditionally");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-295 — Rule 3 pass path (negative control): zero DPoP/JWT-parsing usage
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-295: A fixture type with zero DPoP/JWT-parsing usage must pass
+    /// <see cref="SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc"/>.
+    /// </summary>
+    [Fact]
+    public void DpopProofValidationNeverDuplicatedOutsideOidc_NoDpopOrJwtUsage_RulePasses()
+    {
+        const string source = """
+            namespace Fixture.Consumer
+            {
+                public sealed class UnrelatedType
+                {
+                    public int Add(int a, int b) => a + b;
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("DpopNegativeControl", source);
+
+        var result = SecurityArchitectureRules
+            .DpopProofValidationNeverDuplicatedOutsideOidc(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "UnrelatedType contains no \"DPoP\" literal and no JWT-handler reference " +
+                     "anywhere in the fixture assembly");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-296 — Rule 4 fire path: ConnectionInfo.ClientCertificate getter outside
+    // SharedKernel.Security.Mtls
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-296: A fixture type outside <c>SharedKernel.Security.Mtls</c> that calls
+    /// <c>ConnectionInfo.ClientCertificate</c>'s getter directly must fail
+    /// <see cref="SecurityArchitectureRules.ClientCertificateAccessNeverDuplicatedOutsideMtls"/>.
+    /// </summary>
+    [Fact]
+    public void ClientCertificateAccessNeverDuplicatedOutsideMtls_RawGetterCall_RuleFails()
+    {
+        const string source = """
+            namespace Microsoft.AspNetCore.Http
+            {
+                // Stub simulating the real ConnectionInfo — same namespace and name so the
+                // exact-FullName/member-name match fires correctly.
+                public sealed class ConnectionInfo
+                {
+                    public object ClientCertificate { get; set; }
+                }
+            }
+
+            namespace Fixture.Consumer
+            {
+                // Violation: reads ConnectionInfo.ClientCertificate directly outside
+                // SharedKernel.Security.Mtls instead of calling into that package's own
+                // certificate-validation surface.
+                public sealed class RawCertReader
+                {
+                    public object ReadCert(Microsoft.AspNetCore.Http.ConnectionInfo connection)
+                    {
+                        return connection.ClientCertificate;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("ClientCertificateRawAccessViolation", source);
+
+        var result = SecurityArchitectureRules
+            .ClientCertificateAccessNeverDuplicatedOutsideMtls(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "RawCertReader calls ConnectionInfo.ClientCertificate's getter directly " +
+                     "outside SharedKernel.Security.Mtls — client-certificate trust/validation " +
+                     "logic must live exclusively in that package");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-297 — Rule 4 pass path (exemption): identical usage inside SharedKernel.Security.Mtls
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-297: The identical <c>ClientCertificate</c>-getter call inside a
+    /// <c>SharedKernel.Security.Mtls</c>-namespaced fixture type must pass
+    /// <see cref="SecurityArchitectureRules.ClientCertificateAccessNeverDuplicatedOutsideMtls"/>.
+    /// </summary>
+    [Fact]
+    public void ClientCertificateAccessNeverDuplicatedOutsideMtls_ExemptedMtlsNamespace_RulePasses()
+    {
+        const string source = """
+            namespace Microsoft.AspNetCore.Http
+            {
+                public sealed class ConnectionInfo
+                {
+                    public object ClientCertificate { get; set; }
+                }
+            }
+
+            namespace SharedKernel.Security.Mtls.Validation
+            {
+                // Compliant: this IS the real, shipped home for client-certificate
+                // trust/validation logic.
+                public sealed class FixtureMtlsHandler
+                {
+                    public object ReadCert(Microsoft.AspNetCore.Http.ConnectionInfo connection)
+                    {
+                        return connection.ClientCertificate;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("ClientCertificateExemptedNamespaceCompliant", source);
+
+        var result = SecurityArchitectureRules
+            .ClientCertificateAccessNeverDuplicatedOutsideMtls(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "FixtureMtlsHandler lives inside SharedKernel.Security.Mtls.Validation — " +
+                     "the sole legitimate home for client-certificate trust/validation logic, " +
+                     "exempted unconditionally");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-298 — Rule 4 pass path (negative control): zero ClientCertificate access
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-298: A fixture type with zero <c>ClientCertificate</c> access must pass
+    /// <see cref="SecurityArchitectureRules.ClientCertificateAccessNeverDuplicatedOutsideMtls"/>.
+    /// </summary>
+    [Fact]
+    public void ClientCertificateAccessNeverDuplicatedOutsideMtls_NoClientCertificateAccess_RulePasses()
+    {
+        const string source = """
+            namespace Fixture.Consumer
+            {
+                public sealed class UnrelatedType
+                {
+                    public int Add(int a, int b) => a + b;
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("ClientCertificateNegativeControl", source);
+
+        var result = SecurityArchitectureRules
+            .ClientCertificateAccessNeverDuplicatedOutsideMtls(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "UnrelatedType contains no ConnectionInfo.ClientCertificate getter call " +
+                     "anywhere in the fixture assembly");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-299 — Real-assembly verification: SharedKernel.Security.Oidc's real DPoP surface
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-299: Re-points
+    /// <see cref="SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc"/> at
+    /// the real, shipped <c>SharedKernel.Security.Oidc</c> assembly (which contains the real
+    /// <c>DpopProofValidator</c>, itself referencing both detection surfaces) and confirms zero
+    /// violations outside that package's own namespace.
+    /// </summary>
+    /// <remarks>
+    /// Originally tracked as a Cross-Domain Dependency pending <c>12.Security</c> P-376 — CONFIRMED
+    /// RESOLVED on disk before this phase's implementation session:
+    /// <c>SharedKernel.Security.Oidc</c> is packed at <c>4.0.0</c> and ships a real
+    /// <c>Dpop/DpopProofValidator.cs</c> implementing the full RFC 9449 algorithm. Since this test
+    /// scans the ENTIRE assembly (including <c>DpopProofValidator</c> itself, which legitimately
+    /// contains both the <c>"DPoP"</c> literal and a <c>JwtSecurityTokenHandler</c>/
+    /// <c>JsonWebTokenHandler</c> reference), a pass here proves the namespace exemption is
+    /// correctly scoped — not merely that the scan never reached the real implementation.
+    /// </remarks>
+    [Fact]
+    public void DpopProofValidationNeverDuplicatedOutsideOidc_RealOidcAssembly_RulePasses()
+    {
+        var oidcAssembly = typeof(SharedKernel.Security.Oidc.Extensions.SecurityServiceCollectionExtensions).Assembly;
+
+        var result = SecurityArchitectureRules
+            .DpopProofValidationNeverDuplicatedOutsideOidc(oidcAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "the real, shipped SharedKernel.Security.Oidc assembly's DPoP surface " +
+                     "(DpopProofValidator and its collaborators) lives entirely inside the " +
+                     "exempted SharedKernel.Security.Oidc namespace — no other type in the " +
+                     "assembly duplicates the \"DPoP\" literal or JWT-handler references");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-300 — Real-assembly verification: the real, shipped SharedKernel.Security.Mtls assembly
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-300: Re-points
+    /// <see cref="SecurityArchitectureRules.ClientCertificateAccessNeverDuplicatedOutsideMtls"/>
+    /// at the real, shipped <c>SharedKernel.Security.Mtls</c> assembly and confirms zero
+    /// violations.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Originally tracked as a Cross-Domain Dependency pending <c>12.Security</c> P-377 —
+    /// CONFIRMED RESOLVED on disk before this phase's implementation session:
+    /// <c>SharedKernel.Security.Mtls</c> is packed at <c>2.0.0</c> and ships a real
+    /// <c>Validation/MtlsAuthenticationHandler.cs</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Verified this is a genuine pass, not a vacuous one — the scan reaches real code.</strong>
+    /// Read the shipped source directly (not assumed from its name): the real handler reads
+    /// <c>context.ClientCertificate</c> where <c>context</c> is
+    /// <c>Microsoft.AspNetCore.Authentication.Certificate.CertificateValidatedContext</c> — a
+    /// DIFFERENT declaring type than <c>Microsoft.AspNetCore.Http.ConnectionInfo</c>, which the
+    /// predicate deliberately targets. The ASP.NET Core certificate-authentication middleware
+    /// itself resolves the certificate from <c>ConnectionInfo.ClientCertificate</c> before ever
+    /// invoking this package's event handler, so no type in this assembly needs to (or does)
+    /// call that exact getter. This is a real, non-vacuous pass: Mono.Cecil walks every method
+    /// body in the assembly (proven by T-296's contrived fixture using the identical detection
+    /// technique against a type that DOES call the getter), and the real code simply never
+    /// performs that specific IL shape — not because the namespace exemption silently swallowed
+    /// a violation, but because the offending surface genuinely does not occur here.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ClientCertificateAccessNeverDuplicatedOutsideMtls_RealMtlsAssembly_RulePasses()
+    {
+        var mtlsAssembly = typeof(SharedKernel.Security.Mtls.Extensions.MtlsServiceCollectionExtensions).Assembly;
+
+        var result = SecurityArchitectureRules
+            .ClientCertificateAccessNeverDuplicatedOutsideMtls(mtlsAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "the real, shipped SharedKernel.Security.Mtls assembly never calls " +
+                     "ConnectionInfo.ClientCertificate's getter directly — the certificate " +
+                     "arrives already resolved via CertificateValidatedContext.ClientCertificate, " +
+                     "a different declaring type the predicate does not match");
     }
 
     // ---------------------------------------------------------------------------

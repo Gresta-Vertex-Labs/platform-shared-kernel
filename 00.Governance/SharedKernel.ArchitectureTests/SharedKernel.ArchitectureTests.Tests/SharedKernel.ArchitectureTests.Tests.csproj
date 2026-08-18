@@ -143,6 +143,16 @@
                       PrivateAssets="all" />
     <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Security.Mtls assembly in
+         SecurityArchitectureRulesTests (WO-058 P-383, SK.00.SenderConstrainedCredentialGuard) —
+         verified on disk that 12.Security shipped its full WO-058/WO-060 scope (DPoP inside
+         SharedKernel.Security.Oidc, and the new SharedKernel.Security.Mtls sibling provider
+         package) before this phase's implementation session, so the T-299/T-300 real-assembly
+         re-verification tests originally tracked as a Cross-Domain Dependency are wired directly
+         here rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests
+         precedent. -->
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
