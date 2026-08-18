@@ -32,6 +32,16 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     "<c>IUserContext</c> and <c>ITenantProvider</c> are scoped — one instance per HTTP request.
 ///     Never register as singleton."
 ///   </description></item>
+///   <item><description>
+///     Rule 3 — <see cref="DpopProofValidationNeverDuplicatedOutsideOidc"/> (WO-058 P-383):
+///     mechanizes "DPoP (RFC 9449) proof-validation logic lives exclusively in
+///     <c>SharedKernel.Security.Oidc</c>," applied proactively before that surface shipped.
+///   </description></item>
+///   <item><description>
+///     Rule 4 — <see cref="ClientCertificateAccessNeverDuplicatedOutsideMtls"/> (WO-058 P-383):
+///     mechanizes "mTLS client-certificate trust/validation logic lives exclusively in
+///     <c>SharedKernel.Security.Mtls</c>," applied proactively before that package shipped.
+///   </description></item>
 /// </list>
 /// <para>
 /// The third documented hard rule — "Application-layer and domain-adjacent code must inject
@@ -148,4 +158,97 @@ public static class SecurityArchitectureRules
             .HaveNameStartingWith(string.Empty)
             .Should()
             .MeetCustomRule(new NoSecurityContextSingletonRegistrationPredicate());
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that no type in the supplied assemblies,
+    /// outside <c>SharedKernel.Security.Oidc</c>, references the raw <c>"DPoP"</c> header-name
+    /// string literal or performs proof-JWT parsing via <c>JwtSecurityTokenHandler</c>/
+    /// <c>JsonWebTokenHandler</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// (WO-058 P-383) Mechanizes "this validation logic lives in exactly one package" for DPoP
+    /// (RFC 9449) sender-constrained proof validation, applying the
+    /// <c>SK.00.SecurityContextGuard</c> (P-373) lesson proactively rather than retroactively —
+    /// before <c>12.Security</c>'s DPoP surface even shipped, not after a future gold-standard
+    /// review discovered the drift.
+    /// </para>
+    /// <para>
+    /// See <see cref="NoDpopProofValidationDuplicationPredicate"/> for the full two-surface
+    /// detection technique. Exemption: <c>SharedKernel.Security.Oidc</c> only — the real,
+    /// DPoP-proof-validating implementation package.
+    /// </para>
+    /// <para>
+    /// <strong>Offending pattern:</strong> a type outside <c>SharedKernel.Security.Oidc</c> reads
+    /// <c>Request.Headers["DPoP"]</c> and hand-parses the proof JWT itself.
+    /// </para>
+    /// <para>
+    /// <strong>Compliant pattern:</strong> the type calls into
+    /// <c>SharedKernel.Security.Oidc</c>'s own DPoP proof-validation surface instead of
+    /// duplicating header-name literals or JWT parsing.
+    /// </para>
+    /// </remarks>
+    /// <param name="assemblies">
+    /// The assemblies to evaluate — typically every platform production assembly, including
+    /// <c>SharedKernel.Security.Oidc</c> itself (which is exempted internally by the predicate).
+    /// </param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> asserting no supplied assembly duplicates DPoP
+    /// proof-validation logic outside <c>SharedKernel.Security.Oidc</c>.
+    /// </returns>
+    public static ConditionList DpopProofValidationNeverDuplicatedOutsideOidc(
+        params Assembly[] assemblies) =>
+        Types
+            .InAssemblies(assemblies)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .MeetCustomRule(new NoDpopProofValidationDuplicationPredicate());
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that no type in the supplied assemblies,
+    /// outside <c>SharedKernel.Security.Mtls</c>, reads
+    /// <c>HttpContext.Connection.ClientCertificate</c> directly.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// (WO-058 P-383) Mechanizes "this validation logic lives in exactly one package" for mTLS
+    /// client-certificate trust/validation, applying the same proactive-locality motivation as
+    /// <see cref="DpopProofValidationNeverDuplicatedOutsideOidc"/> — before
+    /// <c>SharedKernel.Security.Mtls</c> even shipped, not after a future gold-standard review
+    /// discovered the drift.
+    /// </para>
+    /// <para>
+    /// See <see cref="NoRawClientCertificateAccessOutsideMtlsPredicate"/> for the full
+    /// single-surface detection technique. Exemption: <c>SharedKernel.Security.Mtls</c> only —
+    /// the sibling provider package that owns certificate trust/validation.
+    /// </para>
+    /// <para>
+    /// <strong>Offending pattern:</strong> a type outside <c>SharedKernel.Security.Mtls</c>
+    /// reads <c>httpContext.Connection.ClientCertificate</c> directly to perform its own trust
+    /// decision.
+    /// </para>
+    /// <para>
+    /// <strong>Compliant pattern:</strong> the type calls into
+    /// <c>SharedKernel.Security.Mtls</c>'s own certificate-validation surface instead of reading
+    /// the raw connection property itself.
+    /// </para>
+    /// </remarks>
+    /// <param name="assemblies">
+    /// The assemblies to evaluate — typically every platform production assembly, including
+    /// <c>SharedKernel.Security.Mtls</c> itself (which is exempted internally by the predicate).
+    /// </param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> asserting no supplied assembly reads
+    /// <c>ConnectionInfo.ClientCertificate</c> directly outside
+    /// <c>SharedKernel.Security.Mtls</c>.
+    /// </returns>
+    public static ConditionList ClientCertificateAccessNeverDuplicatedOutsideMtls(
+        params Assembly[] assemblies) =>
+        Types
+            .InAssemblies(assemblies)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .MeetCustomRule(new NoRawClientCertificateAccessOutsideMtlsPredicate());
 }
