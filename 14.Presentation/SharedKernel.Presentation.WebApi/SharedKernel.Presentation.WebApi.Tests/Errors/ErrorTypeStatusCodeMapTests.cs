@@ -11,6 +11,7 @@ public class ErrorTypeStatusCodeMapTests
     [Theory]
     [InlineData(ErrorType.Validation, StatusCodes.Status400BadRequest)]
     [InlineData(ErrorType.Unauthorized, StatusCodes.Status401Unauthorized)]
+    [InlineData(ErrorType.Forbidden, StatusCodes.Status403Forbidden)]
     [InlineData(ErrorType.NotFound, StatusCodes.Status404NotFound)]
     [InlineData(ErrorType.Conflict, StatusCodes.Status409Conflict)]
     [InlineData(ErrorType.BusinessRule, StatusCodes.Status422UnprocessableEntity)]

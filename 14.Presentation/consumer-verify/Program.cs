@@ -6,10 +6,12 @@
 
 using Asp.Versioning.ApiExplorer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Presentation.SignalR.Extensions;
 using SharedKernel.Presentation.SignalR.Filters;
+using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Presentation.WebApi.ExceptionHandling;
 using SharedKernel.Presentation.WebApi.Middleware;
 using SharedKernel.Presentation.WebApi.OpenApi;
@@ -88,6 +90,43 @@ Console.WriteLine("Surface 5 PASS: AddSharedKernelSignalR (in-memory, no backpla
 }
 
 Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(...) resolves with zero DI exceptions");
+
+// ── Surface 7: full WebApi stack + AddSharedKernelAuthorizationFilters ──────
+{
+    var builder = WebApplication.CreateBuilder();
+
+    builder.Services.AddProblemDetails();
+    builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
+    builder.Services.AddSharedKernelCorrelationId();
+    builder.Services.AddSharedKernelApiVersioning();
+    builder.Services.AddSharedKernelOpenApi(title: "Consumer Verify API (Authorization)");
+    builder.Services.AddSharedKernelAuthorizationFilters();
+
+    var app = builder.Build();
+
+    using (var scope = app.Services.CreateScope())
+    {
+        var authorizationFilter = scope.ServiceProvider.GetRequiredService<AuthorizationRequirementEndpointFilter>();
+        Verify(authorizationFilter is not null, "AuthorizationRequirementEndpointFilter resolves as a registered singleton alongside the full WebApi stack");
+    }
+
+    app.UseSharedKernelCorrelationId();
+    app.UseExceptionHandler();
+    app.MapSharedKernelOpenApi();
+
+    // Prove the documented wiring form itself constructs without exception: attaching the filter
+    // to a mapped minimal-API route group via .AddEndpointFilter<AuthorizationRequirementEndpointFilter>()
+    // and stacking .RequireRole/.RequirePermission sugar on an individual route.
+    var authorizedGroup = app
+        .MapGroup("/consumer-verify")
+        .AddEndpointFilter<AuthorizationRequirementEndpointFilter>();
+    authorizedGroup
+        .MapGet("/secure", () => Results.Ok())
+        .RequireRole("Admin")
+        .RequirePermission("orders:read");
+
+    Console.WriteLine("Surface 7 PASS: AddSharedKernelAuthorizationFilters + .AddEndpointFilter<AuthorizationRequirementEndpointFilter>() + .RequireRole/.RequirePermission compose alongside the full WebApi stack with zero DI exceptions");
+}
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
