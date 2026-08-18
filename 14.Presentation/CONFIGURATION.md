@@ -73,6 +73,32 @@ No options. Must be called on a `WebApplication` (not `IApplicationBuilder`) —
 
 No Swagger UI route is ever mapped.
 
+### `AddSharedKernelAuthorizationFilters(this IServiceCollection)`
+
+No options. Registers `AuthorizationRequirementEndpointFilter` as a **singleton** — mirrors the
+`TenantContextHubFilter`/`HubExceptionMappingFilter` DI-registration convention in
+`SharedKernel.Presentation.SignalR`, so the filter can take constructor dependencies later even
+though it is stateless today.
+
+**This call alone does not attach the filter to any endpoint.** Unlike
+`AddSharedKernelSignalR`'s global hub-filter registration via `HubOptions.AddFilter<T>()`, ASP.NET
+Core's minimal-API/MVC endpoint routing exposes no "apply to every mapped endpoint automatically"
+hook this package can use. You must additionally call
+`.AddEndpointFilter<AuthorizationRequirementEndpointFilter>()` on `MapControllers()` and/or each
+minimal-API route group — see the WebApi `README.md`'s "Declarative role/permission authorization"
+section for both wiring forms. Omitting this step leaves every `[RequireRole]`/`[RequirePermission]`
+attribute inert (present as metadata, never evaluated) — the endpoint stays fully open.
+
+| Type | Ctor | Composition | Failure response |
+| --- | --- | --- | --- |
+| `RequireRoleAttribute` | `params string[] roles` | roles within one instance OR'd; stacked instances AND'd | `Error.Forbidden(...).ToProblemDetails()` (403) |
+| `RequirePermissionAttribute` | `params string[] permissions` | permissions within one instance OR'd; stacked instances AND'd | `Error.Forbidden(...).ToProblemDetails()` (403) |
+
+Evaluated against `IUserContext.HasRole`/`HasPermission` (`12.Security.Abstractions`) — never
+`ClaimTypes.Role` and never the built-in `[Authorize(Roles = "...")]`, which bypasses this
+platform's claim-mapping-aware role/permission resolution. An endpoint carrying neither attribute
+passes through the filter as a no-op — safe to register the filter on every route.
+
 ### `SharedKernelExceptionHandler` (registered manually, not via an extension method)
 
 ```csharp
