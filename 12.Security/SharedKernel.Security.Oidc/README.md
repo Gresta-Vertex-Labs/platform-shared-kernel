@@ -114,6 +114,21 @@ services
 
 A correctly-bound request (valid proof signature, matching `htm`/`htu`, fresh `iat`, unseen `jti`, and a `jkt` matching the access token's `cnf.jkt` claim) resolves `IUserContext.IsSenderConstrained == true`. A request presenting an ordinary, unconstrained bearer token — or any proof that fails validation — is rejected outright by the authentication pipeline; `IsSenderConstrained` only ever reads `false` for a request that *did* authenticate (e.g. via API key or mTLS, which have no DPoP concept), never as a "partially accepted" state for a failed DPoP request.
 
+**`ath` binding (RFC 9449 §4.3, WO-060):** in addition to `htm`/`htu`/`iat`/`jkt`/`jti`, every proof must also carry an `ath` claim equal to `base64url(SHA-256(the accompanying raw bearer access token))`, compared constant-time. This is a **fifth, mandatory binding** — distinct from `jkt`, which ties the proof to the client's DPoP *key*, `ath` ties it to the *specific access token* the proof accompanies, so a proof minted for one token cannot be replayed alongside a different (even validly DPoP-bound) token from the same client. A missing, malformed, or mismatched `ath` rejects through the same failure path as every other binding — no separate error surface, no extra integration step for a consumer already implementing `IDpopProofReplayCache` correctly.
+
+## Signing-algorithm allowlist (`Jwt.ValidAlgorithms`, FAPI 2.0 baseline)
+
+`SecurityOptions.Jwt.ValidAlgorithms` restricts which JWS signing algorithms an incoming access token may be signed with, enforced **before** any signature or claim evaluation proceeds — an out-of-allowlist `alg` (including a crafted `"alg": "none"` token) is rejected at the earliest possible point, for both the JWT Bearer path and (via the independently-configurable `DpopOptions.ValidAlgorithms`) the DPoP proof path.
+
+The default, `["PS256", "ES256"]`, is the [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-security-profile-2_0.html) baseline — a defense against algorithm-confusion/downgrade attacks, not an arbitrary restriction. **This is a deliberately breaking default:** most real-world identity providers (Microsoft Entra ID, Auth0, Okta) sign access tokens with `RS256` by default, which is *not* in this allowlist. A consuming service on such a provider must explicitly widen it after upgrading, or every previously-valid token is rejected:
+
+```csharp
+services.Configure<SecurityOptions>(options =>
+    options.Jwt.ValidAlgorithms = ["PS256", "ES256", "RS256"]);
+```
+
+Widening the allowlist is a deliberate, documented choice for a non-FAPI identity provider — it is not itself a security regression, since `RS256` remains a strong asymmetric algorithm; the default simply does not assume it. A rejection is audit-logged via `SecurityLogEvents.JwtSigningAlgorithmRejected` (EventId `12104`), naming only the rejected algorithm — never any part of the token itself.
+
 ## Token Revocation Quick Start (RFC 7662-shaped)
 
 > **Trade-off callout:** this is the **one capability in this domain with a genuine per-request latency/availability cost.** Every other check in this package (signature, issuer, audience, lifetime, DPoP proof binding) is self-contained — a revocation check, by its nature, asks *something else* (a database, a cache, or the identity provider's own introspection endpoint) whether a token is still good, on the hot path of every authenticated request. Enable it only when your regulatory or threat model genuinely requires near-real-time revocation (immediate session kill-switch, compromised-token response) — not as a default-on hardening step.
@@ -148,6 +163,86 @@ services
 ```
 
 The check runs only *after* standard signature/issuer/audience/lifetime validation succeeds — a structurally invalid token is rejected regardless of whether revocation checking is configured or reachable. A revoked token rejects with the exact same generic authentication-failure shape as an expired or malformed token — no distinct, information-leaking error is ever surfaced to the caller, and a non-opted-in host never invokes `ITokenRevocationCheck` at all.
+
+### Caching the revocation check (`IRevocationCheckCache`, WO-060)
+
+A revocation check runs on every authenticated request — for most consumers, most of that traffic asks the same question about the same still-valid token repeatedly within a short window. `IRevocationCheckCache` lets you avoid the repeat round-trip without weakening the fail-closed contract above: `CachingTokenRevocationCheck` checks the cache first, calls through to your `ITokenRevocationCheck` on a miss, and populates the cache with `RevocationCheckCacheOptions.RevokedTtl` (default **5 seconds**) or `.NotRevokedTtl` (default **30 seconds**) depending on the outcome.
+
+**Do not unify the two TTLs.** `RevokedTtl` is deliberately much shorter than `NotRevokedTtl` — a "not revoked" verdict may be cached generously, because a false negative there costs one extra introspection call, not a security gap. A "revoked" verdict must never be allowed to look "not revoked" again for long, so it is trusted for only a few seconds before the inner check is consulted again. Setting both TTLs to the same value defeats the reason this seam exists.
+
+Like `IDpopProofReplayCache`, this package **never references `02.Caching`** — `IRevocationCheckCache` is implemented and wired entirely at your own composition root, mirroring the `IUnitOfWork`/`ITenantContextAccessor` local-seam bridge pattern already used elsewhere on the platform. Two worked examples:
+
+**`IMemoryCache`-backed** (single-instance/dev, or as an L1 in front of a distributed store):
+
+```csharp
+public sealed class MemoryRevocationCheckCache(IMemoryCache cache) : IRevocationCheckCache
+{
+    public Task<bool?> TryGetAsync(string tokenIdentifier, CancellationToken ct) =>
+        Task.FromResult(cache.TryGetValue(CacheKey(tokenIdentifier), out bool isRevoked)
+            ? (bool?)isRevoked
+            : null);
+
+    public Task SetAsync(string tokenIdentifier, bool isRevoked, TimeSpan ttl, CancellationToken ct)
+    {
+        cache.Set(CacheKey(tokenIdentifier), isRevoked, ttl);
+        return Task.CompletedTask;
+    }
+
+    private static string CacheKey(string tokenIdentifier) => $"revocation:{tokenIdentifier}";
+}
+```
+
+**Redis-backed**, via `02.Caching.Abstractions`'s `ICacheService` (correct for a multi-instance deployment, where an in-process `IMemoryCache` would let each pod cache a stale answer independently):
+
+```csharp
+public sealed class RedisRevocationCheckCache(ICacheService cache) : IRevocationCheckCache
+{
+    public async Task<bool?> TryGetAsync(string tokenIdentifier, CancellationToken ct) =>
+        await cache.GetAsync<bool?>(CacheKey(tokenIdentifier), ct);
+
+    public async Task SetAsync(string tokenIdentifier, bool isRevoked, TimeSpan ttl, CancellationToken ct) =>
+        await cache.SetAsync(CacheKey(tokenIdentifier), isRevoked, CachePolicy.For(ttl, ttl), ct);
+
+    private static string CacheKey(string tokenIdentifier) => $"revocation:{tokenIdentifier}";
+}
+```
+
+`CachePolicy.For(ttl, ttl)` pins both the L1 and L2 duration to the caller-supplied `ttl` (`RevokedTtl`/`NotRevokedTtl`, chosen by `CachingTokenRevocationCheck` per outcome) — this bridge does not introduce a second, independently-tuned TTL layer on top of the one the revocation-caching seam already controls.
+
+Opt in by chaining `.WithRevocationCheckCaching<TCache>()` **after** `.WithRevocationCheck<TCheck>()` in the same call — calling it first throws `InvalidOperationException`, since there is nothing to cache-wrap yet:
+
+```csharp
+services
+    .AddSharedKernelSecurity(configuration)
+    .WithRevocationCheck<IntrospectionBackedRevocationCheck>()
+    .WithRevocationCheckCaching<RedisRevocationCheckCache>();
+```
+
+A cache-lookup failure (a thrown exception from `TryGetAsync`/`SetAsync`) falls through to the inner `ITokenRevocationCheck` — it never causes a legitimately non-revoked token to be rejected merely because the cache was unreadable, and it never treats an unreadable cache as license to skip the check outright.
+
+> For the multi-tenant trust-boundary question this recipe does not answer — whether a token's `tenant_id` claim can be trusted to name the *correct* tenant, not merely an authentically-signed one — see [Multi-tenant JWT claim trust boundary](#multi-tenant-jwt-claim-trust-boundary) below.
+
+## Multi-tenant JWT claim trust boundary
+
+This section states precisely what tenant-claim trust this package provides once JWT validation succeeds, and what remains your identity provider's (IdP's) own responsibility. It exists because this boundary was previously undocumented anywhere in this domain's brain or READMEs — a defensible design that read as silence during a security due-diligence review (WO-060, P-392). The full version of this content, including how it extends to `SharedKernel.Security.ApiKey`/`.Mtls`'s analogous claims, lives in `12.Security/CLAUDE.md`'s `## Domain Invariants` section; this is the README-facing summary.
+
+**What this package guarantees**, once `SecurityOptions.Jwt` signature/issuer/audience/lifetime validation succeeds (and, as of WO-060, the [`Jwt.ValidAlgorithms` allowlist check](#signing-algorithm-allowlist-jwtvalidalgorithms-fapi-20-baseline) passes):
+
+- The `tenant_id` claim value returned by `OidcTenantProvider.TenantId` is **exactly the value the issuing IdP placed in the token** — a bearer of the token cannot change it without invalidating the token's signature.
+- Neither `OidcUserContext` nor `OidcTenantProvider` reinterprets the claim beyond a direct `Guid.TryParse` — the trust boundary is exactly "what the IdP signed," never a value this package independently derives, caches, or re-computes.
+- A structurally invalid token (bad signature, wrong issuer/audience, expired, disallowed algorithm) never reaches claim resolution at all — `TenantId` only ever reflects a claim from a token this package has already cryptographically authenticated.
+
+**What remains your IdP's own responsibility — this package cannot verify it:**
+
+- That `tenant_id` was populated with the *correct* tenant for the authenticated principal. If a single `SecurityOptions.Jwt.Authority` genuinely serves more than one tenant (a shared multi-tenant IdP tenant, as opposed to per-tenant issuer segregation), this package has no independent way to confirm the claim's value actually names a tenant the subject is a legitimate member of — that correctness is delegated entirely to the IdP's own claim-issuance logic.
+- A misconfigured IdP, or an app registration that lets a caller influence which `tenant_id` value is minted into its own token, produces a token this package will faithfully accept as validly signed — with an incorrect tenant claim. Signature validity proves authenticity of the *claim value*, not correctness of the tenant it names.
+
+**Recommended posture:**
+
+- **Preferred:** a per-tenant `Authority`/issuer topology, so a token minted for Tenant A's issuer cannot even pass `ValidateIssuer`/`Jwt.Authority` validation against a host configured for Tenant B — the boundary above becomes moot because cross-tenant claim confusion never reaches this package's validation pipeline.
+- **When a single shared multi-tenant IdP `Authority` is unavoidable:** treat `ITenantProvider.TenantId` as *authenticated-but-not-independently-verified*, and layer an additional authoritative check (e.g. a tenant-membership lookup against your own tenant/user store) before using it for a high-consequence authorization decision. This package performs no such secondary check itself — doing so would require a data-access dependency `12.Security`'s zero-infrastructure-coupling design (may only reference `01.Core`) forbids.
+
+This boundary applies uniformly to every trust decision this domain hands you a claim/result for — including the two other recipes from this same documentation pass: the [revocation-caching seam](#caching-the-revocation-check-irevocationcheckcache-wo-060) trusts whatever `ITokenRevocationCheck`/`IRevocationCheckCache` your composition root wires in exactly as much as it trusts the underlying token, and `SharedKernel.Security.ApiKey`'s [rotation-window recipe](../SharedKernel.Security.ApiKey/README.md#rotation-window-recipe-wo-060) trusts `ApiKeyValidationResult.ClientId`/`.Roles`/`.Permissions` exactly as much as it trusts your own `IApiKeyValidator`'s answer — in every case, the validator/IdP is the source of truth this domain surfaces, never one it independently re-derives.
 
 ## End-to-end recipes
 

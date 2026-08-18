@@ -45,14 +45,28 @@ Register **after** `AddSharedKernelSecurity`/`AddAzureB2CAuthentication` (and, i
 
 ```csharp
 services.AddSharedKernelSecurity(configuration);
-services.AddMtlsAuthentication<WhitelistedCertificateValidator>(options =>
+services.AddMtlsAuthentication<WhitelistedCertificateValidator>();
+```
+
+The common path above takes **no options override**. As of `2.0.0` (WO-060), `MtlsAuthenticationOptions` defaults to `AllowedCertificateTypes = CertificateTypes.Chained` and `RevocationMode = X509RevocationMode.Offline` — a self-signed certificate is rejected at the framework's own pre-filter stage, before `IMtlsCertificateValidator` ever runs, and revocation is checked against locally cached CRL data. This matches (or exceeds) plain ASP.NET Core's own `CertificateAuthenticationOptions` defaults, so the documented common path starts from a posture no weaker than using the framework directly.
+
+> **Breaking change in `2.0.0`:** prior to `2.0.0` these options defaulted to `CertificateTypes.All`/`X509RevocationMode.NoCheck` — a self-signed certificate reached `IMtlsCertificateValidator` and was accepted or rejected purely by the validator's own logic, with no framework-level pre-filter. If your `IMtlsCertificateValidator` was relying on that permissiveness (e.g. accepting a self-signed certificate as part of a private-PKI trust chain), it will now be rejected before your validator ever sees it. See the opt-out below to restore the prior posture explicitly.
+
+A request presenting a certificate the validator accepts resolves `IUserContext.IdentityKind == IdentityKind.ServicePrincipal`, `IsAuthenticated == true`, `UserId == Guid.Empty` — the identical machine-to-machine identity shape `SharedKernel.Security.ApiKey`'s `ApiKeyUserContext` produces. A request presenting a valid JWT (with no certificate, or a certificate the validator rejects) still resolves via whichever `IUserContext` factory was registered before this call — the certificate-aware factory only takes over for requests actually authenticated on the `Certificate` scheme.
+
+### Opting back into a private-PKI trust chain
+
+A private-PKI Open Banking QWAC/QSEAL trust chain is not a standard public CA, and the certificates it issues may not build a chain the framework's default pre-filter recognizes. For that documented case only, opt back into the pre-`2.0.0` posture explicitly:
+
+```csharp
+services.AddMtlsAuthentication<PrivatePkiCertificateValidator>(options =>
 {
-    options.AllowedCertificateTypes = CertificateTypes.All;   // default — full trust delegated to the validator
-    options.RevocationMode = X509RevocationMode.NoCheck;      // default — this package does no CRL/OCSP of its own
+    options.AllowedCertificateTypes = CertificateTypes.All;    // WEAKENS TRUST VALIDATION — see XML docs
+    options.RevocationMode = X509RevocationMode.NoCheck;       // WEAKENS TRUST VALIDATION — see XML docs
 });
 ```
 
-A request presenting a certificate the validator accepts resolves `IUserContext.IdentityKind == IdentityKind.ServicePrincipal`, `IsAuthenticated == true`, `UserId == Guid.Empty` — the identical machine-to-machine identity shape `SharedKernel.Security.ApiKey`'s `ApiKeyUserContext` produces. A request presenting a valid JWT (with no certificate, or a certificate the validator rejects) still resolves via whichever `IUserContext` factory was registered before this call — the certificate-aware factory only takes over for requests actually authenticated on the `Certificate` scheme.
+**Overriding either property genuinely weakens trust validation** — every certificate, self-signed or not, now reaches `IMtlsCertificateValidator` for a decision the framework was previously making first, and revocation is no longer checked at all. Only take this opt-out for a real, documented reason (a private-PKI trust chain your validator independently verifies); it is never a shortcut for "my test certificate doesn't validate."
 
 ## RFC 8705 certificate-bound access tokens (`cnf.x5t#S256`)
 
@@ -67,6 +81,6 @@ This is the FAPI 1.0-era sender-constraining mechanism several regional Open Ban
 ## Security notes
 
 - **Constant-time comparison** is used for the `cnf.x5t#S256` binding check — a `ConstantTimeThumbprintComparer` built on `01.Core/SharedKernel.Cryptography`'s `IHmacSigner`, never `string.Equals`/`==`/`SequenceEqual`, mirroring `.ApiKey`'s `ConstantTimeKeyComparer` technique exactly.
-- `AllowedCertificateTypes`/`RevocationMode` default to `CertificateTypes.All`/`X509RevocationMode.NoCheck` — this package deliberately relaxes the ASP.NET Core Certificate handler's own default chained-only/revocation-checked policy so that full trust and revocation control genuinely land with your `IMtlsCertificateValidator`, not a framework default you might not expect.
+- `AllowedCertificateTypes`/`RevocationMode` default to `CertificateTypes.Chained`/`X509RevocationMode.Offline` (WO-060) — no weaker than plain ASP.NET Core's own `CertificateAuthenticationOptions` defaults, so the documented `AddMtlsAuthentication<TValidator>()` common path (no options override) never leaves a consumer less secure than using the framework directly. Overriding either to a more permissive value is an explicit, CAPS-documented opt-out (see above), never a default.
 - A rejected, absent, or validator-invalid certificate never resolves to an authenticated context — authentication fails outright.
 - This package does not attempt certificate issuance, CA management, or revocation checking (CRL/OCSP) — those remain the consuming service's own concern.
