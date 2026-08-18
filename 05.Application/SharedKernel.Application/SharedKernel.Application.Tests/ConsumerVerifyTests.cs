@@ -113,4 +113,47 @@ public sealed class ConsumerVerifyTests
         var received = await tcs.Task;
         received.Should().Be(domainEvent);
     }
+
+    // ---- WO-036/WO-038 extension (P-09/P-14): the AddSharedKernelApplication(configure) overload
+    // — added for the parallel-dispatch options surface — resolves end to end through the exact
+    // same DI chain a consuming service would wire up, and dispatching multiple domain events with
+    // ParallelDispatch = true still reaches every registered handler. ----
+
+    private sealed record OrderPlacedDomainEvent(int Sequence) : DomainEvent;
+
+    private sealed class OrderPlacedDomainEventHandler(
+        System.Collections.Concurrent.ConcurrentBag<int> received)
+        : IDomainEventHandler<OrderPlacedDomainEvent>
+    {
+        public Task Handle(OrderPlacedDomainEvent domainEvent, CancellationToken cancellationToken)
+        {
+            received.Add(domainEvent.Sequence);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task FullDIChain_ParallelDispatchOverload_ResolvesAndDispatchesAllEventsToRegisteredHandler()
+    {
+        var received = new System.Collections.Concurrent.ConcurrentBag<int>();
+        var services = new ServiceCollection();
+        services.AddSingleton(received);
+
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ConsumerVerifyTests>());
+        // The configure-overload — added for parallel dispatch (WO-038, P-233) — must resolve
+        // cleanly through the exact same DI chain as the parameterless overload.
+        services.AddSharedKernelApplication(opts => opts.ParallelDispatch = true);
+        services.AddDomainEventHandler<OrderPlacedDomainEvent, OrderPlacedDomainEventHandler>();
+
+        using var provider = services.BuildServiceProvider();
+        var dispatcher = provider.GetRequiredService<IDomainEventDispatcher>();
+
+        var events = Enumerable.Range(1, 3)
+            .Select(i => (IDomainEvent)new OrderPlacedDomainEvent(i) { OccurredOn = DateTimeOffset.UtcNow })
+            .ToList();
+
+        await dispatcher.DispatchAsync(events, CancellationToken.None);
+
+        received.Should().BeEquivalentTo([1, 2, 3]);
+    }
 }
