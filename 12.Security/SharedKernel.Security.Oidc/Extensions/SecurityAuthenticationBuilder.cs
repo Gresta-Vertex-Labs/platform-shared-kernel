@@ -1,6 +1,7 @@
 using System.Collections;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SharedKernel.Security.Oidc.Dpop;
 using SharedKernel.Security.Oidc.Revocation;
 
@@ -112,6 +113,58 @@ public sealed class SecurityAuthenticationBuilder : IServiceCollection
                     await RevocationCheckRunner.ValidateAsync(context).ConfigureAwait(false);
                 };
             });
+
+        return this;
+    }
+
+    /// <summary>
+    /// Opts into caching outcomes of the already-registered <see cref="ITokenRevocationCheck"/> via an
+    /// <see cref="IRevocationCheckCache"/>, avoiding a revocation/introspection round-trip on every
+    /// request.
+    /// </summary>
+    /// <typeparam name="TCache">The consumer-supplied <see cref="IRevocationCheckCache"/> implementation.</typeparam>
+    /// <returns>The same <see cref="SecurityAuthenticationBuilder"/> for chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when this method is called before <see cref="WithRevocationCheck{TCheck}"/> in the same
+    /// fluent chain — there is nothing to cache-wrap yet.
+    /// </exception>
+    /// <remarks>
+    /// Opt-in, disabled by default, matching the base revocation check's own opt-in posture — a consumer
+    /// who calls only <see cref="WithRevocationCheck{TCheck}"/> gets today's uncached behavior unchanged
+    /// (WO-060, P-388).
+    /// </remarks>
+    public SecurityAuthenticationBuilder WithRevocationCheckCaching<TCache>()
+        where TCache : class, IRevocationCheckCache
+    {
+        var previousDescriptor = _services.LastOrDefault(d => d.ServiceType == typeof(ITokenRevocationCheck));
+        if (previousDescriptor is null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(WithRevocationCheckCaching)}<{typeof(TCache).Name}>() must be chained AFTER " +
+                $"{nameof(WithRevocationCheck)}<TCheck>() in the same fluent call — there is no registered " +
+                $"{nameof(ITokenRevocationCheck)} to cache-wrap yet.");
+        }
+
+        var innerImplementationType = previousDescriptor.ImplementationType
+            ?? throw new InvalidOperationException(
+                $"The registered {nameof(ITokenRevocationCheck)} was not registered via a type-based " +
+                $"registration and cannot be cache-wrapped by {nameof(WithRevocationCheckCaching)}.");
+
+        _services.AddScoped<IRevocationCheckCache, TCache>();
+        _services.AddOptions<RevocationCheckCacheOptions>();
+
+        // Decorator via ServiceDescriptor capture (mirrors the .ApiKey/.Mtls IUserContext decorator
+        // pattern) — a new registration for ITokenRevocationCheck is appended, which DI resolves in
+        // preference to the earlier WithRevocationCheck<TCheck> registration it wraps. The inner
+        // implementation is built fresh per scope via ActivatorUtilities so its own constructor
+        // dependencies are still resolved from the container.
+        _services.AddScoped<ITokenRevocationCheck>(sp =>
+        {
+            var inner = (ITokenRevocationCheck)ActivatorUtilities.CreateInstance(sp, innerImplementationType);
+            var cache = sp.GetRequiredService<IRevocationCheckCache>();
+            var options = sp.GetRequiredService<IOptions<RevocationCheckCacheOptions>>();
+            return new CachingTokenRevocationCheck(inner, cache, options);
+        });
 
         return this;
     }
