@@ -4,26 +4,27 @@ Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Loggi
 
 This package ships **no MediatR registration of its own** — the consuming service already registers MediatR; `ApplicationBehaviorsBuilder` only appends behaviors to the already-registered pipeline.
 
-## Canonical pipeline order (non-negotiable, ten named slots)
+## Canonical pipeline order (non-negotiable, eleven named slots)
 
 ```text
-1.  LoggingBehavior            ← outermost; logs the full pipeline, including validation/auth/resilience failures
+1.  LoggingBehavior            ← outermost; logs the full pipeline, including validation/auth/approval/resilience failures
 2.  MetricsBehavior             ← records sharedkernel.application.request.duration, tagged with an outcome
 3.  TracingBehavior             ← starts/disposes the request-traversal Activity regardless of outcome
-4.  ValidationBehavior          ← throws ValidationException before any handler, auth, cache, or retry work happens
+4.  ValidationBehavior          ← throws ValidationException before any handler, auth, approval, cache, or retry work happens
 5.  AuthorizationBehavior       ← commands AND queries (IAuthorizeRequest)
-6.  CachingBehavior              ← queries only (ICacheableQuery<TResponse>)
-7.  ResilienceBehavior          ← commands only in practice (IRetryableRequest); wraps Idempotency + Transaction
-8.  IdempotentCommandBehavior   ← commands only (ICommandBase, IIdempotentRequest)
-9.  TransactionBehavior         ← commands only (ICommandBase); wraps handler + commit
-10. CacheInvalidationBehavior   ← commands only (ICommandBase, IInvalidatesCache); innermost — after commit
+6.  DualApprovalBehavior        ← commands only (ICommandBase, IRequiresDualApproval); rejects before cache/mutation
+7.  CachingBehavior              ← queries only (ICacheableQuery<TResponse>)
+8.  ResilienceBehavior          ← commands only in practice (IRetryableRequest); wraps Idempotency + Transaction
+9.  IdempotentCommandBehavior   ← commands only (ICommandBase, IIdempotentRequest)
+10. TransactionBehavior         ← commands only (ICommandBase); wraps handler + commit
+11. CacheInvalidationBehavior   ← commands only (ICommandBase, IInvalidatesCache); innermost — after commit
 ```
 
-`ApplicationBehaviorsBuilder.Build()` always registers behaviors in this order, regardless of the order `.AddXBehavior()` was called in. Steps 6 and {7, 8, 9, 10} are mutually exclusive at the request-type level — a query never satisfies `ICommandBase`, and a command never satisfies `ICacheableQuery<TResponse>` — so a single request only ever actually traverses one of those two bands.
+`ApplicationBehaviorsBuilder.Build()` always registers behaviors in this order, regardless of the order `.AddXBehavior()` was called in. Step 6 and step 7 are mutually exclusive with each other and with {8, 9, 10, 11} at the request-type level — a query never satisfies `ICommandBase`, and a command never satisfies `ICacheableQuery<TResponse>` — so a single request only ever actually traverses one of {7} or {6, 8, 9, 10, 11}. `DualApprovalBehavior` (step 6) is distinct from `AuthorizationBehavior` (step 5): Authorization answers "is this identity permitted to attempt this kind of action at all" (a static permission/policy question); DualApproval answers "has a second, distinct identity signed off on this exact pending instance of the action" (a per-instance maker-checker gate). The two are orthogonal and independently opt-in.
 
 ## The local-seam bridging pattern
 
-`TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), and `IdempotentCommandBehavior` (`IIdempotencyKeyStore`) each define a **minimal interface owned by this package** — never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging` respectively, none of which this package may reference). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied three times, not three different patterns.
+`TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), `IdempotentCommandBehavior` (`IIdempotencyKeyStore`), and `DualApprovalBehavior` (`IDualApprovalStore`, plus `IAuthorizationContextIdentity` as an additive sibling capability on `IAuthorizationContext`) each define a **minimal interface owned by this package** — never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging` respectively, none of which this package may reference). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied four times, not four different patterns.
 
 ## Install
 
@@ -49,7 +50,7 @@ services
 
 This is provably equivalent to calling `.AddLoggingBehavior().AddMetricsBehavior().AddTracingBehavior().AddValidationBehavior()` individually — it is a convenience preset, not a different code path. Every other behavior below requires its own registered local-seam/infrastructure bridge and remains a deliberate, individual opt-in; none may ever be folded into this preset.
 
-## Quick Start — full ten-named-slot registration
+## Quick Start — full eleven-named-slot registration
 
 ```csharp
 services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
@@ -65,6 +66,7 @@ services
     .AddTracingBehavior()           // no missing-dependency guard (BCL ActivitySource)
     .AddValidationBehavior()
     .AddAuthorizationBehavior()     // requires IAuthorizationContext registered (see below)
+    .AddDualApprovalBehavior()      // requires IAuthorizationContext (with IAuthorizationContextIdentity) AND IDualApprovalStore registered (see below)
     .AddCachingBehavior()           // requires SharedKernel.Caching.Abstractions.ICacheService registered
     .AddCacheInvalidationBehavior() // reuses the ICacheService guard above
     .AddResilienceBehavior()        // requires a ResiliencePipelineProvider registered
@@ -75,7 +77,7 @@ services
     .Build();
 ```
 
-`Build()` throws `InvalidOperationException` at registration time if `.AddTransactionBehavior()`, `.AddCachingBehavior()`/`.AddCacheInvalidationBehavior()`, `.AddAuthorizationBehavior()`, `.AddIdempotencyBehavior()`, or `.AddResilienceBehavior()` was called without its required dependency already registered in `IServiceCollection`.
+`Build()` throws `InvalidOperationException` at registration time if `.AddTransactionBehavior()`, `.AddCachingBehavior()`/`.AddCacheInvalidationBehavior()`, `.AddAuthorizationBehavior()`, `.AddDualApprovalBehavior()`, `.AddIdempotencyBehavior()`, or `.AddResilienceBehavior()` was called without its required dependency already registered in `IServiceCollection`. `.AddDualApprovalBehavior()` is this package's first **two**-dependency guard — it throws a distinct message naming whichever of `IAuthorizationContext`/`IDualApprovalStore` is missing (or both).
 
 ## Bridging the local seams at the composition root
 
@@ -86,8 +88,20 @@ services.AddScoped<SharedKernel.Application.Behaviors.IUnitOfWork>(sp =>
     new EfUnitOfWorkAdapter(sp.GetRequiredService<SharedKernel.Persistence.Abstractions.IUnitOfWork>()));
 
 // IAuthorizationContext — bridge to 12.Security's real IUserContext/ITenantProvider.
+// Additionally implementing IAuthorizationContextIdentity lets DualApprovalBehavior resolve "who is
+// calling right now" from the SAME bridge AuthorizationBehavior already uses — no second registration.
 services.AddScoped<SharedKernel.Application.Behaviors.IAuthorizationContext>(sp =>
     new UserContextAuthorizationAdapter(sp.GetRequiredService<SharedKernel.Security.Abstractions.IUserContext>()));
+// public sealed class UserContextAuthorizationAdapter : IAuthorizationContext, IAuthorizationContextIdentity
+// {
+//     public Task<string> GetCurrentIdentityAsync(CancellationToken ct) => Task.FromResult(_userContext.UserId);
+//     // ... IAuthorizationContext members unchanged ...
+// }
+
+// IDualApprovalStore — the consuming service supplies its own implementation (e.g. a dedicated
+// approvals table or a distributed cache key). Never a 06.Persistence/07.Messaging/12.Security
+// reference from this package itself.
+services.AddScoped<SharedKernel.Application.Behaviors.IDualApprovalStore, SqlDualApprovalStore>();
 
 // IIdempotencyKeyStore — the consuming service supplies its own implementation
 // (e.g. backed by the same distributed store 07.Messaging's IIdempotencyStore uses,
@@ -148,6 +162,46 @@ public sealed record UpdateOrderTotalCommand(string IdempotencyKey, Guid OrderId
 ```
 
 A command implementing `IRetryableRequest` **without** also implementing `IIdempotentRequest` is a documented misuse — there is no compile-time way to enforce "interface A implies interface B" across two independent marker interfaces in C#, so code review must catch this; the compiler will not. Queries may implement `IRetryableRequest` alone (a read is always safe to retry).
+
+## Dual-control / maker-checker approval — `IRequiresDualApproval` + `IDualApprovalStore`
+
+Maker-checker (four-eyes) controls — one identity initiates a privileged action, a distinct second identity must approve it before it executes — are a baseline requirement (SOX, banking regulation, PCI-DSS) for high-value operations: large payment approval, credit-limit changes, signing-key rotation, production configuration changes. `DualApprovalBehavior` is a pipeline-behavior authorization gate structurally identical to `AuthorizationBehavior`, gated by a new marker a high-risk command implements:
+
+```csharp
+// A high-risk command opts in via IRequiresDualApproval:
+public sealed record RotateSigningKeyCommand(Guid KeyId) : ICommand, IRequiresDualApproval
+{
+    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
+}
+
+// A SEPARATE admin/approval command an approver (a DISTINCT identity from the initiator) dispatches — its
+// handler is the ONLY place IDualApprovalStore.RecordApprovalAsync is ever called; DualApprovalBehavior
+// itself only ever reads:
+public sealed record ApproveKeyRotationCommand(Guid KeyId) : ICommand
+{
+    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
+}
+
+public sealed class ApproveKeyRotationCommandHandler(
+    IDualApprovalStore store, IAuthorizationContextIdentity identity) : ICommandHandler<ApproveKeyRotationCommand>
+{
+    public async Task<Result> Handle(ApproveKeyRotationCommand request, CancellationToken ct)
+    {
+        var approverId = await identity.GetCurrentIdentityAsync(ct);
+        await store.RecordApprovalAsync(request.ApprovalKey, approverId, ct);
+        return Result.Success();
+    }
+}
+```
+
+The retry-after-approval flow:
+
+1. Alice dispatches `RotateSigningKeyCommand` → no approval recorded yet → `Result.Failure(Error.Forbidden(...))` — "awaiting a second approver." Handler never invoked.
+2. Bob (a DISTINCT identity) dispatches `ApproveKeyRotationCommand` for the same `KeyId` → `IDualApprovalStore.RecordApprovalAsync("rotate-signing-key:{KeyId}", "bob", ct)`.
+3. Alice dispatches `RotateSigningKeyCommand` a SECOND time (same command/key) → approval record found, recorded identity `"bob"` != initiator identity `"alice"` → `next()` is called → handler executes.
+4. If Alice had instead recorded her OWN approval in step 2 (self-approval), step 3 would STILL short-circuit with `Result.Failure(Error.Forbidden(...))` — self-approval is structurally impossible: `DualApprovalBehavior` checks the recorded approver's identity against the resolved initiator's identity unconditionally whenever a record exists, so there is no code path that calls `next()` when the two identities match, regardless of how the record was created.
+
+`DualApprovalBehavior` never calls `next()` unless BOTH "an approval record exists" AND "the recorded approver differs from the current initiator" hold — and it never throws for the awaiting-approval or self-approval cases, since both are foreseeable, expected outcomes (the same never-throw contract `AuthorizationBehavior` follows). It also never clears, consumes, or expires the approval record itself — that lifecycle (one-time-use invalidation, expiry, re-approval-on-command-change) is the consuming service's own approval-recording workflow's responsibility.
 
 ## Fire-and-forget dispatch
 
