@@ -99,6 +99,22 @@
     -->
     <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.41" />
+    <!--
+      Azure.Extensions.AspNetCore.Configuration.Secrets / Azure.Identity: required so
+      AddSharedKernelKeyVaultConfiguration (Core phase, C-56, WO-061/P-398) can call
+      builder.Configuration.AddAzureKeyVault(vaultUri, credential ?? new DefaultAzureCredential()).
+      Deliberate re-addition, not a silent restore: S-17/WO-054/P-351 previously removed
+      Azure.Identity 1.21.0 as a dead transitive dependency of the retired
+      AzureServiceBusHealthCheck. This is an unrelated, independently-justified reference for an
+      opt-in secrets-manager configuration source — entirely additive to this package's own
+      dependency graph; AddServiceDefaults() itself gains no new mandatory dependency, since
+      AddSharedKernelKeyVaultConfiguration is never called from it. Floor versions confirmed
+      against the live NuGet feed at implementation time (2026-08-19), not carried forward from any
+      stale prior pin: Azure.Extensions.AspNetCore.Configuration.Secrets's latest stable is 1.5.2;
+      Azure.Identity's latest stable is 1.21.0 (unchanged from the version S-17 removed).
+    -->
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
   </ItemGroup>
 
   <ItemGroup>
