@@ -206,10 +206,14 @@ If the Phase Key Registry table has a `Root Backlog ID` column and the row's val
 If Case 1 does not apply, check whether the `Maps to Root Phase` value begins with `P-` followed by digits (e.g. `P-042 Error.BusinessRule Factory`). If yes, extract that leading `P-NNN` token as the single Phase Backlog ID. Proceed to **Closing the entries**.
 
 **Case 3 — Standard lifecycle phase**
-If `Maps to Root Phase` is exactly one of `Design`, `Scaffold`, `Core`, `Tests`, `Docs`, `Published`: **skip this step entirely**. Standard lifecycle phases update only the Domain Summary Board — they have no individual Phase Backlog entry.
+If `Maps to Root Phase` is exactly one of `Design`, `Scaffold`, `Core`, `Tests`, `Docs`, `Published`: **skip the targeted close in this step** — a lifecycle phase has no single Phase Backlog entry of its own.
+
+This does **not** mean the domain's backlog entries can never auto-close. A work order dispatched into a domain that tracks it through the standard lifecycle keys (rather than a dedicated extension key) has its entries spread across Design/Scaffold/Core/Tests/Docs, so no individual phase completion is the right moment to close them — but the moment _every_ phase key completes is. Step S8c handles exactly that case; do not attempt to compensate here.
+
+Do **not** "fix" this by adding a `Root Backlog ID` column listing those IDs on a lifecycle row: the IDs span several phases, so Case 1 would fire on the first of them to complete and close the entries while later phases are still open — premature closing, strictly worse than leaving them for S8c.
 
 **Case 4 — No match**
-If none of Cases 1–3 apply: skip silently. This covers WO-specific phases whose Phase Key Registry row does not yet have a `Root Backlog ID` column. To activate automatic closing for such a phase, add the `Root Backlog ID` column to the sub state-map's Phase Key Registry and fill in the P-NNN value.
+If none of Cases 1–3 apply: skip silently. This covers WO-specific extension phase keys whose Phase Key Registry row does not yet have a `Root Backlog ID` column. To activate automatic closing for such a phase, add the `Root Backlog ID` column to the sub state-map's Phase Key Registry and fill in the P-NNN value — correct here precisely because an extension key maps to its own backlog entries one-to-one, unlike the lifecycle keys in Case 3.
 
 ### Closing the entries
 
@@ -245,9 +249,49 @@ Append exactly one changelog line per closed batch:
 
 If no entries match (Phase Backlog is empty or all already `●`), skip silently — do not append a changelog line.
 
+## Step S8c — Close Phase Backlog entries (domain fully complete)
+
+**Only execute this step if Step S8b did not already run** (i.e. `phase` is not `Published`).
+
+Purpose: close the domain's remaining Phase Backlog entries when a work order was tracked through the standard lifecycle phase keys rather than a dedicated extension key. Case 3 in Step S8a deliberately skips those, and S8b fires only on a `Published` _transition_ — which never happens for a domain that was already Published before the work order arrived. Without this step those entries can never auto-close by any path.
+
+### Trigger condition
+
+Using the sub state-map's `## Overall Progress` table (already read in Step S7 — do not re-read it):
+
+Check **every** row, not only the six lifecycle keys. Proceed only if every row's `State` is `●` or `—` (N/A). If even one row is `○`, `◐`, or `⚑`, **skip this step silently** — an open extension phase key may own the very entries this step would otherwise close.
+
+### Closing the entries (guarded variant of Step S8b)
+
+In the already-read root `state-map.md`, collect every `## Phase Backlog` entry whose **Domain** field matches this domain and whose **Status** is `○` Pending or `◐` Dispatched. Never consider another domain's entries.
+
+For each candidate, read its `#### Acceptance criteria` list and apply one guard before closing:
+
+- **If any criterion names a different domain** — a `{NN}.{Name}` folder token other than this domain's own (e.g. a `16.Testing` fake, a `01.Core` registry entry, a root `CLAUDE.md` row owned by `arch-lead`) — **do not close it.** That criterion cannot have been satisfied by this domain's phase keys, and closing would hide real outstanding work. Add the ID to the still-open list for Step S9 instead.
+- **Otherwise** — update `**Status:**` to `` `●` Complete ``, changing nothing else in the entry.
+
+This guard is what separates S8c from S8b's unconditional bulk-close. It is mechanical and deliberately conservative: a false skip costs one hand-close, a false close silently loses work.
+
+Append exactly one line to the root `## Changelog`, naming the IDs actually closed:
+```
+- [YYYY-MM-DD] Phase Backlog {comma-separated closed IDs} → ● Complete — every {domain} phase key is now ●/— (state-map-phase)
+```
+
+If nothing was closed, skip the changelog line silently — but still report any skipped IDs in Step S9.
+
+### Caveat — domain completion is the signal, and it is not a proof
+
+The cross-domain guard above catches the failure mode that actually occurred: root Phase Backlog P-380, P-382, and P-391 each sat `◐` for months because their final criterion was owned by another domain, and each names that domain in its own criteria text — so the guard skips them, exactly as it should.
+
+One case the guard does **not** catch: an entry dispatched into this domain but never planned into any phase key. If `arch-lead` adds a backlog entry and the domain's arch-planner has not yet authored tasks for it, every existing phase key can be `●` while that entry's real work has not started, and nothing in its criteria names another domain. Closing it would be wrong. When Step S9 reports what was closed, sanity-check any ID you do not recognise as work this domain actually did — if it has no corresponding tasks anywhere in the sub state-map, restore it to `◐` and record why.
+
+Neither guard nor caveat makes this step a substitute for reading acceptance criteria when the stakes are high. It exists so routine, single-domain work orders stop needing a hand-close, not so nobody ever checks.
+
 ## Step S9 — Report
 
 Output ≤ 5 bullet points: task updated, phase key state after update, whether root propagation fired and what changed if it did. If stopped due to parse error, list missing fields and a corrected example.
+
+If promotion fired and any `## Phase Backlog` entry for this domain is still `○` Pending or `◐` Dispatched after Steps S8a–S8c, name those IDs in one additional bullet and state that they were left open. Do not close them — surface them. This is the signal that an entry is waiting on something outside the domain's own phase keys, which is otherwise invisible until someone audits the backlog by hand.
 
 ---
 
@@ -257,7 +301,8 @@ Output ≤ 5 bullet points: task updated, phase key state after update, whether 
 - Sub-map mode operates on one sub state-map file, plus the root `state-map.md` only if promotion fires.
 - Never add new sections, rename sections, or reorder sections in either file.
 - Never edit the `## Legend`, `## Phase Key Registry`, or phase list during command execution — they are maintained by arch-planner agents, not by this command at runtime.
-- Sub state-map Phase Key Registries may include an optional fourth column `Root Backlog ID`. When present and non-empty (not `—`), Step S8a uses it to resolve which `### P-NNN` Phase Backlog entries in the root state-map to close when that phase key completes. Add this column when creating new WO-specific phase keys so they self-close correctly.
+- Sub state-map Phase Key Registries may include an optional fourth column `Root Backlog ID`. When present and non-empty (not `—`), Step S8a uses it to resolve which `### P-NNN` Phase Backlog entries in the root state-map to close when that phase key completes. Add this column when creating new WO-specific **extension** phase keys so they self-close correctly — never on a standard lifecycle row, where it would close entries before later phases finish (see Step S8a, Case 3).
+- Exactly one of Steps S8a / S8b / S8c closes Phase Backlog entries on any given run: S8a for an extension phase key that maps to its own entries, S8b on a `Published` transition, S8c when every phase key in the domain is `●`/`—` and neither of the others applied. A domain tracking a work order through its lifecycle keys reaches closure via S8c, which is the only path for a domain that was already `Published` before that work order arrived.
 - The root `## Domain Summary Board` is always exactly 18 rows — no insertions, no deletions.
 - State symbols in tables must always be wrapped in backticks: `` `○` ``, `` `◐` ``, `` `●` ``, `` `⚑` ``.
 - Active Work and Blocked tables use the exact column headers shown above — never alter them.

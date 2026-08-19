@@ -237,6 +237,31 @@ wiring as "ActivitySource/Meter" when C-47 had already found it Meter-only). Thi
 [[decompile_verification_technique]] memory's existing note about this same routing quirk — worth checking
 before assuming one call handles both files.
 
+**Test counts as of 2026-08-19, end of session (SK.13.Core closed a sixth time — C-49–C-58, WO-061/
+P-393–P-400, the fintech/security-review tranche):** 162/162 `SharedKernel.ServiceDefaults.Tests`
+passing (+32 from the prior 130), 47/47 `SharedKernel.MultiTenancy.Tests` passing (+17 from the
+prior 30 — this package's first non-30 count in a long time, since it had never before gained
+production logging or a startup-validator needing dedicated coverage). New production folders:
+`SharedKernel.ServiceDefaults/Logging/` (`ServiceDefaultsLog.cs`), `SharedKernel.ServiceDefaults/
+RateLimiting/`, `SharedKernel.ServiceDefaults/Configuration/`; `SharedKernel.MultiTenancy/Logging/`
+(`MultiTenancyLog.cs`). `SharedKernel.MultiTenancy.csproj` gained its first-ever `InternalsVisibleTo`
+grant (previously never needed — this package had no internal types before `MultiTenancyLog`). Key
+implementation corrections made mid-session, both documented in code/CLAUDE.md rather than silently
+applied — see [[di_captive_dependency_patterns]] for the full writeups: (1) `TenantResolutionOptionsValidator`
+(C-54) captures `IServiceProvider`+fresh-`IServiceScope`-per-call instead of the design's literal
+`IEnumerable<ITenantResolutionStrategy>` constructor injection, avoiding a captive-dependency error
+(the three platform strategies are Scoped, but `IValidateOptions<T>` must be Singleton to be resolved
+by `ValidateOnStart()`); (2) `HealthCheckRegistrationLogging` (C-53) uses `PostConfigure<IServiceProvider>`
++ manual `GetService<ILoggerFactory>()` null-check rather than `PostConfigure<ILoggerFactory>` directly
+— the latter broke 18 pre-existing tests that build a bare `ServiceCollection` with no logging
+registered, since `PostConfigure<TDep>` always uses `GetRequiredService<TDep>()` internally; (3)
+`TenantResolutionMiddleware`'s `ITenantStatusValidator` resolution (C-58) null-conditions
+`context.RequestServices` itself, not just the `GetService<T>()` call, since a bare `DefaultHttpContext()`
+in a unit test has a null `RequestServices` by default. `SK.13.Tests` (T-45–T-66)/`SK.13.Docs`
+(DO-15–DO-22) remain their own separate, genuinely open phase keys — this session added reasonable
+approximating coverage (including a real `TestServer` 429-burst proof and a real unreachable-endpoint
+Key Vault fail-fast proof) but did not walk the full elaborate T-45–T-66 checklist task-by-task.
+
 **Test counts as of 2026-08-14, end of session (SK.13.Tests closed — T-44, the mTLS composition genuine
 delegation/no-op-regression proof, WO-058/P-378):** 130/130 `SharedKernel.ServiceDefaults.Tests` passing (+30
 from the prior 100), 30 `SharedKernel.MultiTenancy.Tests` unchanged. The recorded `⚑` blocker ("Depends on

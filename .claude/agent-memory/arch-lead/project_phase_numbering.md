@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-08-13, the last NEW phases written to `state-map.md` Phase Backlog are **P-366–P-374** (under WO-057, all `○` Pending — 12.Security gold-standard review; see [[project_wo057_security_goldstandard_review]]). WO-050/051/052/053/054/055/056 before that each minted their own new phase ranges (P-301–306, P-307–327, P-328–332, P-333–339, P-340–352, P-353–355, P-356–365 respectively) — all gold-standard reviews of already-published domains, same pattern.
+As of 2026-08-19, the last NEW phases written to `state-map.md` Phase Backlog are **P-393–P-401** (under WO-061, all `○` Pending — 13.ServiceDefaults gold-standard/fintech review; see [[project_wo061_servicedefaults_goldstandard_review]]). WO-058/059/060 before that used P-375–384 and P-385–392 respectively (12.Security fintech follow-up passes).
 
-Next new phase must be **P-375**. Next new Work Order must be **WO-058**.
+Next new phase must be **P-402**. Next new Work Order must be **WO-062**.
+
+As of 2026-08-13 (superseded above): last NEW phases were P-366–P-374 (under WO-057, 12.Security gold-standard review; see [[project_wo057_security_goldstandard_review]]). WO-050/051/052/053/054/055/056 before that each minted their own new phase ranges (P-301–306, P-307–327, P-328–332, P-333–339, P-340–352, P-353–355, P-356–365 respectively) — all gold-standard reviews of already-published domains, same pattern.
 
 As of 2026-08-11 (superseded above): last NEW phases were P-356–P-365 (under WO-056, 11.Communication gold-standard review).
 

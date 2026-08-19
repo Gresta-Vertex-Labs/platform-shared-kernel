@@ -7,3 +7,5 @@
 - [Decompile verification technique](decompile_verification_technique.md) — ilspycmd workflow to verify third-party telemetry (Polly has Meter not ActivitySource; TryAddSingleton = free idempotency)
 - [gRPC/Polly test capture pattern](grpc_polly_test_capture_pattern.md) — WebApplicationFactory+Grpc.Net.Client real-call span proof, Polly ConfigureTelemetry+InMemoryExporter metric proof (T-43)
 - [Kestrel private-delegate reflection technique](kestrel_private_delegate_reflection_technique.md) — prove ConfigureHttpsDefaults wiring via reflection over KestrelServerOptions.HttpsDefaults, no real TLS handshake (T-44)
+- [DI captive-dependency patterns](di_captive_dependency_patterns.md) — IServiceScopeFactory-per-call for Scoped-from-Singleton, `PostConfigure<IServiceProvider>` for optional deps, HttpContext.RequestServices can be null (C-49–C-58)
+- [ASP.NET Core namespace gotchas](aspnetcore_namespace_gotchas.md) — AddRateLimiter lives in Microsoft.AspNetCore.Builder not DependencyInjection; ConfigurationManager loads eagerly/synchronously on .Add() (C-55/C-56)
