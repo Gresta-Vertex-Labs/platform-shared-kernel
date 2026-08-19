@@ -68,4 +68,50 @@ public sealed class MultiTenancyExtensionsTests
 
         Assert.DoesNotContain(services, sd => sd.ServiceType == typeof(TenantResolutionMiddleware));
     }
+
+    [Fact]
+    public void AddSharedKernelMultiTenancy_DefaultStrategyOrder_ResolvesOptionsWithoutThrowing()
+    {
+        // The default StrategyOrder ([Claim, Header, Database], WO-061/P-393) must pass its own
+        // startup validation (WO-061/P-396) against the three strategies this method itself
+        // registers — resolving IOptions<T>.Value forces the same IValidateOptions pipeline
+        // .ValidateOnStart() runs eagerly at real host startup.
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDbConnectionFactory>());
+
+        services.AddSharedKernelMultiTenancy();
+
+        using var provider = services.BuildServiceProvider();
+        var exception = Record.Exception(() => provider.GetRequiredService<IOptions<TenantResolutionOptions>>().Value);
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void AddSharedKernelMultiTenancy_StrategyOrderNamesUnregisteredStrategy_ResolvingOptionsThrowsOptionsValidationException()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDbConnectionFactory>());
+
+        services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = ["TotallyBogusStrategyName"]);
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<TenantResolutionOptions>>().Value);
+    }
+
+    [Fact]
+    public void AddSharedKernelMultiTenancy_EmptyStrategyOrder_ResolvingOptionsThrowsOptionsValidationException()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IDbConnectionFactory>());
+
+        services.AddSharedKernelMultiTenancy(o => o.StrategyOrder = []);
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<TenantResolutionOptions>>().Value);
+    }
 }
