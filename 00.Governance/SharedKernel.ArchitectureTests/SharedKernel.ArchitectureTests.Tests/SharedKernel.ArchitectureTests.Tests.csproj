@@ -153,6 +153,22 @@
          precedent. -->
     <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.MultiTenancy/.ServiceDefaults assemblies in
+         SecureDefaultsAssertionTests (WO-061 P-401, SK.00.TenantAndMtlsBoundaryLock) — verified on
+         disk that 13.ServiceDefaults shipped its full WO-061 scope (TenantResolutionOptions.
+         StrategyOrder's corrected [Claim, Header, Database] default; MtlsForwardedHeaderOptions.
+         TrustedNetworks + AddMtlsForwardedHeaderCertificate's ServiceDefaultsLog.
+         ForwardedHeaderTrustBoundaryUnconfigured warning) before this phase's implementation
+         session, so the T-317/T-318 real-assembly re-verification tests originally tracked as a
+         Cross-Domain Dependency are wired directly here rather than deferred, mirroring the
+         StorageTopologyRulesTests/SearchTopologyRulesTests/SecurityArchitectureRulesTests
+         precedent. SharedKernel.MultiTenancy is new to this project; SharedKernel.ServiceDefaults
+         was not previously referenced despite this project's earlier ServiceDefaultsGovernance
+         phase (SK.00.ServiceDefaultsGovernance/P-173) using contrived fixtures only. -->
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

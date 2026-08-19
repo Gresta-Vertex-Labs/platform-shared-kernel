@@ -28,6 +28,16 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// full WO-060 scope (C-39/C-40/C-41) earlier in the same overall session, so these are wired
 /// directly here as GATING tests rather than deferred, mirroring the
 /// <c>SK.00.SenderConstrainedCredentialGuard</c> precedent from the immediately-preceding phase.
+/// <para>
+/// T-311–T-318 (<c>SK.00.TenantAndMtlsBoundaryLock</c>/WO-061/P-401):
+/// <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals"/> and
+/// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> against contrived
+/// fixtures (T-311–T-316) and the real, shipped <c>SharedKernel.MultiTenancy</c>/
+/// <c>.ServiceDefaults</c> assemblies (T-317/T-318, GATING — originally authored as non-gating
+/// and tracked as a Cross-Domain Dependency pending <c>13.ServiceDefaults</c> P-393/P-394/P-395,
+/// CONFIRMED RESOLVED on disk before this phase's implementation session: that domain shipped its
+/// full WO-061 scope, 171/171 + 51/51 tests green, before this session began).
+/// </para>
 /// </remarks>
 public class SecureDefaultsAssertionTests
 {
@@ -501,6 +511,354 @@ public class SecureDefaultsAssertionTests
         dpopAlgorithmsAct.Should().NotThrow(
             because: "the real, shipped DpopOptions.ValidAlgorithms defaults to " +
                      "[\"PS256\", \"ES256\"] — the same FAPI 2.0 baseline (WO-060, C-41)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-311 — AssertStringCollectionPropertyDefaultEquals pass path: exact order match
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-311: A fixture options type whose default-constructed <c>StrategyOrder</c>-shaped
+    /// property is exactly <c>["Claim", "Header", "Database"]</c> must pass
+    /// <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals"/>.
+    /// </summary>
+    [Fact]
+    public void AssertStringCollectionPropertyDefaultEquals_ClaimHeaderDatabase_DoesNotThrow()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                // Compliant: mirrors the corrected WO-061/P-393 hardened default order.
+                public sealed class FixtureTenantResolutionOptionsSecureOrder
+                {
+                    public System.Collections.Generic.IReadOnlyList<string> StrategyOrder
+                        { get; set; } = ["Claim", "Header", "Database"];
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsStrategyOrderPass", source);
+        var optionsType = assembly.GetType(
+            "Fixture.SecureDefaults.FixtureTenantResolutionOptionsSecureOrder")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals(
+                optionsType, "StrategyOrder", ["Claim", "Header", "Database"]);
+
+        act.Should().NotThrow(
+            because: "the fixture's default-constructed StrategyOrder resolves to exactly " +
+                     "[\"Claim\", \"Header\", \"Database\"], matching the expected sequence " +
+                     "element-for-element and position-for-position");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-312 — AssertStringCollectionPropertyDefaultEquals fire path: wrong order (real historical shape)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-312: A fixture options type whose default-constructed <c>StrategyOrder</c>-shaped
+    /// property is <c>["Header", "Claim", "Database"]</c> — reproducing the real, historical
+    /// pre-P-393 shipped default order — must fail
+    /// <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals"/>.
+    /// </summary>
+    [Fact]
+    public void AssertStringCollectionPropertyDefaultEquals_HeaderClaimDatabase_ThrowsNamingActualAndExpected()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                // Violation: reproduces the real, historical pre-P-393 shipped default order — an
+                // unsigned, caller-supplied X-Tenant-Id header outranks a cryptographically
+                // verified JWT tenant claim for the same request.
+                public sealed class FixtureTenantResolutionOptionsWeakOrder
+                {
+                    public System.Collections.Generic.IReadOnlyList<string> StrategyOrder
+                        { get; set; } = ["Header", "Claim", "Database"];
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsStrategyOrderFail", source);
+        var optionsType = assembly.GetType(
+            "Fixture.SecureDefaults.FixtureTenantResolutionOptionsWeakOrder")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals(
+                optionsType, "StrategyOrder", ["Claim", "Header", "Database"]);
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's default-constructed StrategyOrder resolves to " +
+                         "[\"Header\", \"Claim\", \"Database\"], the exact WEAKER-than-corrected " +
+                         "shape the real pre-P-393 default shipped")
+            .WithMessage("*position 0*")
+            .WithMessage("*Header*")
+            .WithMessage("*Claim*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-313 — AssertStringCollectionPropertyDefaultEquals fire path: missing entry (length mismatch)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-313: A fixture whose default order is missing an entry present in the expected sequence
+    /// must fail <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals"/>
+    /// on the length mismatch, not silently succeed as a truncation-tolerant prefix match.
+    /// </summary>
+    [Fact]
+    public void AssertStringCollectionPropertyDefaultEquals_MissingEntry_ThrowsNamingLengthMismatch()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                // Violation: missing "Database" — must fail on length, never silently pass as a
+                // truncation-tolerant prefix match.
+                public sealed class FixtureTenantResolutionOptionsMissingEntry
+                {
+                    public System.Collections.Generic.IReadOnlyList<string> StrategyOrder
+                        { get; set; } = ["Claim", "Header"];
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsStrategyOrderMissing", source);
+        var optionsType = assembly.GetType(
+            "Fixture.SecureDefaults.FixtureTenantResolutionOptionsMissingEntry")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals(
+                optionsType, "StrategyOrder", ["Claim", "Header", "Database"]);
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's default-constructed StrategyOrder resolves to only 2 " +
+                         "elements, one fewer than the 3-element expected sequence")
+            .WithMessage("*2-element*")
+            .WithMessage("*3-element*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-314 — AssertStringCollectionPropertyDefaultEquals fire path: extra entry (length mismatch)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-314: A fixture whose default order contains every expected element but with one extra,
+    /// unexpected entry appended must fail
+    /// <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals"/> on the
+    /// length mismatch.
+    /// </summary>
+    [Fact]
+    public void AssertStringCollectionPropertyDefaultEquals_ExtraEntry_ThrowsNamingLengthMismatch()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                // Violation: an extra, unexpected "Gateway" entry appended — must fail on length,
+                // never silently pass because every expected element is present somewhere.
+                public sealed class FixtureTenantResolutionOptionsExtraEntry
+                {
+                    public System.Collections.Generic.IReadOnlyList<string> StrategyOrder
+                        { get; set; } = ["Claim", "Header", "Database", "Gateway"];
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsStrategyOrderExtra", source);
+        var optionsType = assembly.GetType(
+            "Fixture.SecureDefaults.FixtureTenantResolutionOptionsExtraEntry")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals(
+                optionsType, "StrategyOrder", ["Claim", "Header", "Database"]);
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's default-constructed StrategyOrder resolves to 4 " +
+                         "elements, one more than the 3-element expected sequence")
+            .WithMessage("*4-element*")
+            .WithMessage("*3-element*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-315 — AssertMethodBodyInvokesMethod pass path: callee call present
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-315: A fixture method body that calls the designated callee method must pass
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_CalleeCallPresent_DoesNotThrow()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                public static class FixtureWarningLog
+                {
+                    public static void TrustBoundaryUnconfigured(string headerName) { }
+                }
+
+                // Compliant: mirrors the real AddMtlsForwardedHeaderCertificate shape — the
+                // registration method calls the designated warning-log method.
+                public static class FixtureRegistrationPresent
+                {
+                    public static void Register(string headerName)
+                    {
+                        FixtureWarningLog.TrustBoundaryUnconfigured(headerName);
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsInvokesPresent", source);
+        var declaringType = assembly.GetType("Fixture.SecureDefaults.FixtureRegistrationPresent")!;
+        var calleeDeclaringType = assembly.GetType("Fixture.SecureDefaults.FixtureWarningLog")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "Register", calleeDeclaringType, "TrustBoundaryUnconfigured");
+
+        act.Should().NotThrow(
+            because: "the fixture's Register method genuinely calls " +
+                     "FixtureWarningLog.TrustBoundaryUnconfigured");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-316 — AssertMethodBodyInvokesMethod fire path: callee call removed
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-316: A fixture method body identical in shape but with the callee-method call removed —
+    /// reproducing the exact "warning silently deleted in a future edit" regression this phase
+    /// exists to prevent — must fail
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_CalleeCallRemoved_ThrowsNamingMethod()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                public static class FixtureWarningLog
+                {
+                    public static void TrustBoundaryUnconfigured(string headerName) { }
+                }
+
+                // Violation: identical in shape to the compliant fixture, but the warning-log
+                // call was silently deleted — the exact regression this phase exists to prevent.
+                public static class FixtureRegistrationRemoved
+                {
+                    public static void Register(string headerName)
+                    {
+                        _ = headerName;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsInvokesRemoved", source);
+        var declaringType = assembly.GetType("Fixture.SecureDefaults.FixtureRegistrationRemoved")!;
+        var calleeDeclaringType = assembly.GetType("Fixture.SecureDefaults.FixtureWarningLog")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "Register", calleeDeclaringType, "TrustBoundaryUnconfigured");
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's Register method no longer calls " +
+                         "FixtureWarningLog.TrustBoundaryUnconfigured — the call site was removed")
+            .WithMessage("*Register*")
+            .WithMessage("*TrustBoundaryUnconfigured*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-317 — Real-assembly verification (GATING): SharedKernel.MultiTenancy
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-317: Re-points
+    /// <see cref="SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals"/> at the
+    /// real, shipped <c>TenantResolutionOptions.StrategyOrder</c> and confirms the corrected
+    /// <c>[Claim, Header, Database]</c> order holds.
+    /// </summary>
+    /// <remarks>
+    /// Originally tracked as a Cross-Domain Dependency pending <c>13.ServiceDefaults</c> P-393 —
+    /// CONFIRMED RESOLVED on disk before this phase's implementation session:
+    /// <c>SharedKernel.MultiTenancy</c> ships C-49's corrected default. Non-vacuous: verified by a
+    /// temporary sanity check during implementation — asserting the deliberately-wrong
+    /// <c>["Header", "Claim", "Database"]</c> order against this exact real type, confirmed to
+    /// fail with the same message shape T-312's contrived fixture produces, then removed before
+    /// commit — this test proves the real type's actual resolved default, not merely that the
+    /// scan runs without error.
+    /// </remarks>
+    [Fact]
+    public void AssertStringCollectionPropertyDefaultEquals_RealTenantResolutionOptions_HardenedOrderHolds()
+    {
+        var optionsType = typeof(SharedKernel.MultiTenancy.Resolution.TenantResolutionOptions);
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals(
+                optionsType, "StrategyOrder", ["Claim", "Header", "Database"]);
+
+        act.Should().NotThrow(
+            because: "the real, shipped TenantResolutionOptions.StrategyOrder defaults to " +
+                     "[\"Claim\", \"Header\", \"Database\"] — the corrected, secure order " +
+                     "(WO-061, C-49)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-318 — Real-assembly verification (GATING): SharedKernel.ServiceDefaults
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-318: Re-points <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the
+    /// real, shipped <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c>
+    /// registration method and confirms it still calls
+    /// <c>ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured</c>.
+    /// </summary>
+    /// <remarks>
+    /// Originally tracked as a Cross-Domain Dependency pending <c>13.ServiceDefaults</c>
+    /// P-394/P-395 — CONFIRMED RESOLVED on disk before this phase's implementation session:
+    /// <c>SharedKernel.ServiceDefaults</c> ships C-50/C-53's warning call site. Non-vacuous:
+    /// verified by a temporary sanity check during implementation — asserting a deliberately-wrong
+    /// callee method name against this exact real registration method, confirmed to fail with the
+    /// same message shape T-316's contrived fixture produces, then removed before commit. This
+    /// also proves — by construction, since the real call site lives inside a compiler-generated
+    /// <c>PostConfigure</c> lambda closure, not directly in the registration method's own IL body
+    /// — that <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>'s lambda-closure
+    /// scanning is exercised for real, not merely by a contrived fixture shaped to avoid needing
+    /// it.
+    /// </remarks>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_RealMtlsForwardedHeaderExtensions_WarningCallSiteHolds()
+    {
+        var declaringType =
+            typeof(SharedKernel.ServiceDefaults.Security.MtlsForwardedHeaderExtensions);
+
+        // ServiceDefaultsLog is `internal` to SharedKernel.ServiceDefaults — no
+        // InternalsVisibleTo grant exists (or should exist) to this governance test project, so
+        // `typeof(...)` cannot name it directly. Assembly.GetType(string) resolves a Type object
+        // by name regardless of accessibility — this helper only ever compares the resolved
+        // Type's FullName against Mono.Cecil's TypeReference.FullName, never invokes a member
+        // through it, so no accessibility violation occurs at runtime either.
+        var calleeDeclaringType =
+            declaringType.Assembly.GetType("SharedKernel.ServiceDefaults.Logging.ServiceDefaultsLog")
+            ?? throw new InvalidOperationException(
+                "Could not resolve SharedKernel.ServiceDefaults.Logging.ServiceDefaultsLog via " +
+                "Assembly.GetType — has it been renamed or moved?");
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType,
+                "AddMtlsForwardedHeaderCertificate",
+                calleeDeclaringType,
+                "ForwardedHeaderTrustBoundaryUnconfigured");
+
+        act.Should().NotThrow(
+            because: "the real, shipped AddMtlsForwardedHeaderCertificate's PostConfigure lambda " +
+                     "still calls ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured " +
+                     "when TrustedNetworks is left unconfigured (WO-061, C-50/C-53)");
     }
 
     // ---------------------------------------------------------------------------
