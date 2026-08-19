@@ -1,6 +1,9 @@
 using System.Collections.Frozen;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using SharedKernel.MultiTenancy.Logging;
 using SharedKernel.MultiTenancy.Resolution;
 
 namespace SharedKernel.MultiTenancy.Middleware;
@@ -22,11 +25,21 @@ namespace SharedKernel.MultiTenancy.Middleware;
 /// <c>app.UseMiddleware&lt;TenantResolutionMiddleware&gt;()</c>, so that
 /// <c>ClaimTenantResolutionStrategy</c> has access to a populated <see cref="HttpContext.User"/>.
 /// </para>
+/// <para>
+/// <b>Opt-in tenant-status gate (WO-061/P-400):</b> after a strategy resolves a non-<see cref="Guid.Empty"/>
+/// tenant, an <see cref="ITenantStatusValidator"/> is resolved from
+/// <see cref="HttpContext.RequestServices"/> via <c>GetService</c> — never <c>GetRequiredService</c>,
+/// since it is genuinely optional. When registered, a <see langword="false"/> result from
+/// <see cref="ITenantStatusValidator.IsActiveAsync"/> routes through the exact same
+/// <see cref="Guid.Empty"/> fail-closed path as "no strategy resolved," reusing
+/// <see cref="MultiTenancyLog.TenantNotResolved"/> rather than a distinct log message.
+/// </para>
 /// </remarks>
 public sealed class TenantResolutionMiddleware(
     RequestDelegate next,
     IEnumerable<ITenantResolutionStrategy> strategies,
-    Microsoft.Extensions.Options.IOptions<TenantResolutionOptions> options)
+    Microsoft.Extensions.Options.IOptions<TenantResolutionOptions> options,
+    ILogger<TenantResolutionMiddleware> logger)
 {
     /// <summary>
     /// The <see cref="ITenantResolutionStrategy.StrategyName"/> → strategy lookup, computed once
@@ -52,6 +65,7 @@ public sealed class TenantResolutionMiddleware(
         ArgumentNullException.ThrowIfNull(tenantProvider);
 
         var resolvedTenantId = Guid.Empty;
+        string? resolvedStrategyName = null;
 
         foreach (var strategyName in options.Value.StrategyOrder)
         {
@@ -67,9 +81,40 @@ public sealed class TenantResolutionMiddleware(
             if (resolved is { } tenantId)
             {
                 resolvedTenantId = tenantId;
-                tenantProvider.SetTenantId(tenantId);
+                resolvedStrategyName = strategyName;
                 break;
             }
+        }
+
+        if (resolvedStrategyName is not null)
+        {
+            // Optional gate (WO-061/P-400): "not registered" (null) always passes through
+            // unchanged — only a registered validator returning false fails closed. Null-safe on
+            // RequestServices itself, which is null for a bare HttpContext never routed through the
+            // real ASP.NET Core hosting pipeline (e.g. a DefaultHttpContext built directly in a
+            // unit test with no IServiceProvidersFeature attached).
+            var statusValidator = context.RequestServices?.GetService<ITenantStatusValidator>();
+            var isActive = statusValidator is null
+                || await statusValidator
+                    .IsActiveAsync(resolvedTenantId, context.RequestAborted)
+                    .ConfigureAwait(false);
+
+            if (isActive)
+            {
+                tenantProvider.SetTenantId(resolvedTenantId);
+                MultiTenancyLog.TenantResolved(logger, resolvedTenantId, resolvedStrategyName);
+            }
+            else
+            {
+                // Fail-closed: an inactive/suspended tenant is treated identically to "no tenant
+                // resolved" — same Guid.Empty sentinel, same log call site, no distinct signal.
+                resolvedTenantId = Guid.Empty;
+                MultiTenancyLog.TenantNotResolved(logger);
+            }
+        }
+        else
+        {
+            MultiTenancyLog.TenantNotResolved(logger);
         }
 
         // Ambient enrichment: make TenantId available to every log record produced for the
