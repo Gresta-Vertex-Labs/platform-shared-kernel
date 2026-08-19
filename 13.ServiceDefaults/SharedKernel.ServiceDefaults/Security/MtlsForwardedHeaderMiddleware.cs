@@ -1,8 +1,11 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.ServiceDefaults.Logging;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.ServiceDefaults.Security;
@@ -20,6 +23,13 @@ namespace SharedKernel.ServiceDefaults.Security;
 /// add this middleware explicitly:
 /// <c>app.UseMiddleware&lt;MtlsForwardedHeaderMiddleware&gt;()</c> — registering the services alone
 /// leaves this middleware absent from the pipeline, a silent no-op rather than a crash.
+/// </para>
+/// <para>
+/// <b>Trust-boundary allowlist (WO-061/P-394):</b> when <see cref="MtlsForwardedHeaderOptions.TrustedNetworks"/>
+/// is non-empty, a request whose <see cref="ConnectionInfo.RemoteIpAddress"/> falls outside every
+/// configured network is rejected outright — the header is never decoded, never validated, and
+/// <see cref="ConnectionInfo.ClientCertificate"/> is never set, regardless of whether the
+/// certificate itself would otherwise validate.
 /// </para>
 /// <para>
 /// <b>Decode shape:</b> the configured header's value is decoded as either a Base64-encoded DER
@@ -48,13 +58,17 @@ namespace SharedKernel.ServiceDefaults.Security;
 /// </remarks>
 public sealed class MtlsForwardedHeaderMiddleware(
     RequestDelegate next,
-    IOptions<MtlsForwardedHeaderOptions> options)
+    IOptions<MtlsForwardedHeaderOptions> options,
+    ILogger<MtlsForwardedHeaderMiddleware> logger)
 {
+    /// <summary>Placeholder logged in place of a thumbprint/subject when a certificate was never decoded.</summary>
+    private const string NotDecodedPlaceholder = "(not decoded)";
+
     /// <summary>
     /// Reads, decodes, and validates the forwarded client certificate for the current request
     /// (setting it on <c>HttpContext.Connection.ClientCertificate</c> when validation succeeds),
-    /// then invokes the next middleware in the pipeline. Never throws for a missing, malformed, or
-    /// rejected certificate.
+    /// then invokes the next middleware in the pipeline. Never throws for a missing, malformed,
+    /// untrusted-source, or rejected certificate.
     /// </summary>
     /// <param name="context">The current HTTP context.</param>
     /// <param name="validator">The scoped <see cref="IMtlsCertificateValidator"/>.</param>
@@ -63,7 +77,27 @@ public sealed class MtlsForwardedHeaderMiddleware(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(validator);
 
-        var headerName = options.Value.HeaderName;
+        var configuredOptions = options.Value;
+        var trustedNetworks = configuredOptions.TrustedNetworks;
+
+        // Trust-boundary allowlist check (WO-061/P-394), mirroring the role ASP.NET Core's own
+        // ForwardedHeadersOptions.KnownProxies/KnownNetworks plays for UseForwardedHeaders(): a
+        // request from outside the configured allowlist is rejected here, before the header is ever
+        // decoded — the certificate is never given a chance to "otherwise validate."
+        if (trustedNetworks.Count > 0
+            && !IsTrustedRemoteAddress(context.Connection.RemoteIpAddress, trustedNetworks))
+        {
+            ServiceDefaultsLog.MtlsCertificateRejected(
+                logger,
+                NotDecodedPlaceholder,
+                NotDecodedPlaceholder,
+                $"remote IP '{context.Connection.RemoteIpAddress}' is not within the configured TrustedNetworks allowlist");
+
+            await next(context).ConfigureAwait(false);
+            return;
+        }
+
+        var headerName = configuredOptions.HeaderName;
 
         if (context.Request.Headers.TryGetValue(headerName, out var headerValues)
             && TryDecodeCertificate(headerValues.ToString(), out var certificate))
@@ -80,14 +114,42 @@ public sealed class MtlsForwardedHeaderMiddleware(
                     certificate!.Dispose();
                     return Task.CompletedTask;
                 });
+                ServiceDefaultsLog.MtlsCertificateAccepted(logger, certificate!.Thumbprint, certificate.Subject);
             }
             else
             {
-                certificate!.Dispose();
+                ServiceDefaultsLog.MtlsCertificateRejected(
+                    logger,
+                    certificate!.Thumbprint,
+                    certificate.Subject,
+                    "rejected by IMtlsCertificateValidator");
+                certificate.Dispose();
             }
         }
 
         await next(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Determines whether <paramref name="remoteIpAddress"/> falls within any network in
+    /// <paramref name="trustedNetworks"/>. See <see cref="MtlsForwardedHeaderOptions.TrustedNetworks"/>.
+    /// </summary>
+    private static bool IsTrustedRemoteAddress(IPAddress? remoteIpAddress, IReadOnlyCollection<IPNetwork> trustedNetworks)
+    {
+        if (remoteIpAddress is null)
+        {
+            return false;
+        }
+
+        foreach (var network in trustedNetworks)
+        {
+            if (network.Contains(remoteIpAddress))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
