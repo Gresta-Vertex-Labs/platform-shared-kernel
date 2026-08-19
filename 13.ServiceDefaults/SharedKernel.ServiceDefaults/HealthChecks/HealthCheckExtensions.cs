@@ -49,20 +49,43 @@ public static class HealthCheckExtensions
     /// (may depend on database, cache, or broker connectivity).
     /// </summary>
     /// <param name="endpoints">The endpoint route builder.</param>
+    /// <param name="requireAuthorization">
+    /// When <see langword="true"/>, both endpoint mappings chain <c>.RequireAuthorization()</c>.
+    /// Defaults to <see langword="false"/> — byte-identical to this method's pre-P-399 behavior.
+    /// </param>
     /// <returns>The same <paramref name="endpoints"/> instance, for fluent chaining.</returns>
-    public static IEndpointRouteBuilder MapDefaultHealthCheckEndpoints(this IEndpointRouteBuilder endpoints)
+    /// <remarks>
+    /// <b>DEFENSE-IN-DEPTH ONLY, NEVER A SUBSTITUTE FOR NETWORK ISOLATION.</b>
+    /// <c>/health/live</c>/<c>/health/ready</c> MUST BE NETWORK-RESTRICTED AT THE
+    /// INGRESS/<c>NETWORKPOLICY</c> LAYER IN ANY ENVIRONMENT WHERE THEY ARE NOT INTENTIONALLY
+    /// PUBLIC, INDEPENDENT OF WHETHER <paramref name="requireAuthorization"/> IS USED. A Kubernetes
+    /// kubelet's own liveness/readiness probe calls are typically unauthenticated — enabling this
+    /// parameter on an endpoint set the kubelet itself calls will cause the kubelet's own probes to
+    /// be rejected. When exposing health data to an external audience, prefer a minimal response
+    /// writer that serializes only <c>{ status }</c> — never <c>HealthReport.Entries[*].Data</c>/
+    /// <c>.Description</c>, which can leak dependency version/connection details.
+    /// </remarks>
+    public static IEndpointRouteBuilder MapDefaultHealthCheckEndpoints(
+        this IEndpointRouteBuilder endpoints,
+        bool requireAuthorization = false)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        endpoints.MapHealthChecks("/health/live", new HealthCheckOptions
+        var liveBuilder = endpoints.MapHealthChecks("/health/live", new HealthCheckOptions
         {
             Predicate = registration => registration.Tags.Contains(HealthCheckTags.Live),
         });
 
-        endpoints.MapHealthChecks("/health/ready", new HealthCheckOptions
+        var readyBuilder = endpoints.MapHealthChecks("/health/ready", new HealthCheckOptions
         {
             Predicate = registration => registration.Tags.Contains(HealthCheckTags.Ready),
         });
+
+        if (requireAuthorization)
+        {
+            liveBuilder.RequireAuthorization();
+            readyBuilder.RequireAuthorization();
+        }
 
         return endpoints;
     }
