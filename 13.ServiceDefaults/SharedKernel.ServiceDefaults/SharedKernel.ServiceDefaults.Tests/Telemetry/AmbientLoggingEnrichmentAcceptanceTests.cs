@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using SharedKernel.MultiTenancy.Middleware;
@@ -51,7 +52,8 @@ public sealed class AmbientLoggingEnrichmentAcceptanceTests
         var middleware = new TenantResolutionMiddleware(
             _ => Task.CompletedTask,
             [new HeaderTenantResolutionStrategy()],
-            options);
+            options,
+            NullLogger<TenantResolutionMiddleware>.Instance);
         var tenantProvider = new AmbientTenantProvider();
 
         // Runs the real TenantResolutionMiddleware, which sets TenantBaggageKeys.TenantId on
