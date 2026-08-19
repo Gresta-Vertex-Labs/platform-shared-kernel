@@ -1,7 +1,9 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using SharedKernel.Security.Mtls.Validation;
@@ -13,7 +15,8 @@ namespace SharedKernel.ServiceDefaults.Tests.Security;
 /// Covers T-44's acceptance criteria for <see cref="MtlsForwardedHeaderMiddleware"/>: a present,
 /// well-formed header produces a validated certificate exposed to downstream code exactly when the
 /// injected <see cref="IMtlsCertificateValidator"/> accepts it; an absent or malformed header is a
-/// silent no-op; the middleware never throws.
+/// silent no-op; the middleware never throws. Also covers WO-061/P-394's <c>TrustedNetworks</c>
+/// allowlist: a forged header from a non-allowlisted remote IP is rejected before decode.
 /// </summary>
 public sealed class MtlsForwardedHeaderMiddlewareTests
 {
@@ -26,7 +29,7 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
     }
 
-    private static MtlsForwardedHeaderMiddleware CreateMiddleware(out bool[] nextCalled)
+    private static MtlsForwardedHeaderMiddleware CreateMiddleware(out bool[] nextCalled, MtlsForwardedHeaderOptions? options = null)
     {
         var called = new bool[1];
         nextCalled = called;
@@ -35,8 +38,8 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
             called[0] = true;
             return Task.CompletedTask;
         };
-        var options = Options.Create(new MtlsForwardedHeaderOptions { HeaderName = HeaderName });
-        return new MtlsForwardedHeaderMiddleware(next, options);
+        var wrappedOptions = Options.Create(options ?? new MtlsForwardedHeaderOptions { HeaderName = HeaderName });
+        return new MtlsForwardedHeaderMiddleware(next, wrappedOptions, NullLogger<MtlsForwardedHeaderMiddleware>.Instance);
     }
 
     [Fact]
@@ -174,5 +177,96 @@ public sealed class MtlsForwardedHeaderMiddlewareTests
         var act = async () => await middleware.InvokeAsync(context, null!);
 
         await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TrustedNetworksConfigured_RemoteIpOutsideAllowlist_RejectsBeforeDecode_NoOp_NoThrow_CallsNext()
+    {
+        // WO-061/P-394 acceptance criterion: a forged header from a non-allowlisted remote IP must
+        // never populate ClientCertificate even when the certificate itself is otherwise valid —
+        // the header must never even be decoded/validated in this case.
+        using var certificate = CreateSelfSignedCertificate();
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HeaderName] = Convert.ToBase64String(certificate.RawData);
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.7");
+
+        var options = new MtlsForwardedHeaderOptions { HeaderName = HeaderName };
+        options.AddTrustedNetwork(IPNetwork.Parse("10.0.0.0/8"));
+
+        var validator = Substitute.For<IMtlsCertificateValidator>();
+        validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+
+        var middleware = CreateMiddleware(out var nextCalled, options);
+        var act = async () => await middleware.InvokeAsync(context, validator);
+
+        await act.Should().NotThrowAsync();
+        context.Connection.ClientCertificate.Should().BeNull();
+        nextCalled[0].Should().BeTrue();
+        await validator.DidNotReceive().ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TrustedNetworksConfigured_RemoteIpWithinAllowlist_ProceedsNormally()
+    {
+        using var certificate = CreateSelfSignedCertificate();
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HeaderName] = Convert.ToBase64String(certificate.RawData);
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.1.2.3");
+
+        var options = new MtlsForwardedHeaderOptions { HeaderName = HeaderName };
+        options.AddTrustedNetwork(IPNetwork.Parse("10.0.0.0/8"));
+
+        var validator = Substitute.For<IMtlsCertificateValidator>();
+        validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+
+        var middleware = CreateMiddleware(out var nextCalled, options);
+        await middleware.InvokeAsync(context, validator);
+
+        context.Connection.ClientCertificate.Should().NotBeNull();
+        nextCalled[0].Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TrustedNetworksConfigured_RemoteIpNull_RejectsBeforeDecode()
+    {
+        using var certificate = CreateSelfSignedCertificate();
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HeaderName] = Convert.ToBase64String(certificate.RawData);
+        context.Connection.RemoteIpAddress = null;
+
+        var options = new MtlsForwardedHeaderOptions { HeaderName = HeaderName };
+        options.AddTrustedNetwork(IPNetwork.Parse("10.0.0.0/8"));
+
+        var validator = Substitute.For<IMtlsCertificateValidator>();
+
+        var middleware = CreateMiddleware(out var nextCalled, options);
+        await middleware.InvokeAsync(context, validator);
+
+        context.Connection.ClientCertificate.Should().BeNull();
+        nextCalled[0].Should().BeTrue();
+        await validator.DidNotReceive().ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_TrustedNetworksEmpty_PreservesUnrestrictedPreP394Behavior()
+    {
+        // The default (empty TrustedNetworks) must be byte-identical to pre-P-394 behavior —
+        // any remote IP proceeds to decode/validate.
+        using var certificate = CreateSelfSignedCertificate();
+        var context = new DefaultHttpContext();
+        context.Request.Headers[HeaderName] = Convert.ToBase64String(certificate.RawData);
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.7");
+
+        var validator = Substitute.For<IMtlsCertificateValidator>();
+        validator.ValidateAsync(Arg.Any<X509Certificate2>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MtlsValidationResult.Valid()));
+
+        var middleware = CreateMiddleware(out var nextCalled);
+        await middleware.InvokeAsync(context, validator);
+
+        context.Connection.ClientCertificate.Should().NotBeNull();
+        nextCalled[0].Should().BeTrue();
     }
 }
