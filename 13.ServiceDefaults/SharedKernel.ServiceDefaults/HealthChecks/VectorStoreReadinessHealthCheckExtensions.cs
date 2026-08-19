@@ -45,12 +45,20 @@ public static class VectorStoreReadinessHealthCheckExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(collectionName);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.VectorStore];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.VectorStoreReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new VectorStoreReadinessHealthCheck(
                 sp.GetRequiredService<IVectorCollectionProvisioner>(),
                 collectionName),
             failureStatus: null,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.VectorStore]));
+            tags: tags));
     }
 }

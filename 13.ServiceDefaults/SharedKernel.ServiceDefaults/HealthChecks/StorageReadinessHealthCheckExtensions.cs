@@ -40,10 +40,18 @@ public static class StorageReadinessHealthCheckExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(bucket);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Storage];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.StorageReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new StorageReadinessHealthCheck(sp.GetRequiredService<IFileStorage>(), bucket),
             failureStatus: null,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Storage]));
+            tags: tags));
     }
 }

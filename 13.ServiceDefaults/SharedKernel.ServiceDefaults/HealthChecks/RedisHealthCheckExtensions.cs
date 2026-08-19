@@ -32,9 +32,17 @@ public static class RedisHealthCheckExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Redis, HealthCheckTags.Cache];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.RedisHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.AddRedis(
             connectionString,
             name: name,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Redis, HealthCheckTags.Cache]);
+            tags: tags);
     }
 }

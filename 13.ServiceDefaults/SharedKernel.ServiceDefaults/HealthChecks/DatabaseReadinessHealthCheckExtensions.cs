@@ -36,11 +36,19 @@ public static class DatabaseReadinessHealthCheckExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Db];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.DatabaseReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new DatabaseReadinessHealthCheck<TContext>(sp.GetRequiredService<TContext>()),
             failureStatus: null,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Db]));
+            tags: tags));
     }
 
     /// <summary>
@@ -62,10 +70,18 @@ public static class DatabaseReadinessHealthCheckExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Db];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.DatabaseReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new DapperDatabaseReadinessHealthCheck(sp.GetRequiredService<IDbConnectionFactory>()),
             failureStatus: null,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Db]));
+            tags: tags));
     }
 }

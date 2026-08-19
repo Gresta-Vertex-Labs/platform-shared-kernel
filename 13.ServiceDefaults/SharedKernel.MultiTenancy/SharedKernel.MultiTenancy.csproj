@@ -51,4 +51,13 @@
     <None Remove="SharedKernel.MultiTenancy.Tests\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--
+      Grants SharedKernel.MultiTenancy.Tests direct access to internal types (MultiTenancyLog,
+      WO-061/P-395) so its [LoggerMessage] call sites can be exercised directly — mirrors
+      SharedKernel.ServiceDefaults.csproj's identical InternalsVisibleTo grant.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.MultiTenancy.Tests" />
+  </ItemGroup>
+
 </Project>

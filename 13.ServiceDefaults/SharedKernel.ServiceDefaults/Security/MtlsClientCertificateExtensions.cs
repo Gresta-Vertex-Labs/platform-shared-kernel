@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using SharedKernel.ServiceDefaults.Logging;
 using SharedKernel.Security.Mtls.Validation;
 
 namespace SharedKernel.ServiceDefaults.Security;
@@ -99,10 +101,11 @@ public static class MtlsClientCertificateExtensions
 
     /// <summary>
     /// Bridges Kestrel's synchronous <c>ClientCertificateValidation</c> callback to the async-only
-    /// <see cref="IMtlsCertificateValidator.ValidateAsync"/>, resolving the Scoped validator from a
-    /// freshly-created <see cref="IServiceScope"/>. See the "Blocking-bridge cost" and
-    /// "Scoped-service resolution" remarks on <see cref="AddMtlsClientCertificate"/> for why both
-    /// of these are necessary here and nowhere else in this call chain.
+    /// <see cref="IMtlsCertificateValidator.ValidateAsync"/>, resolving the Scoped validator (and,
+    /// for audit logging — WO-061/P-395 — the <see cref="ILogger"/>) from a freshly-created
+    /// <see cref="IServiceScope"/>. See the "Blocking-bridge cost" and "Scoped-service resolution"
+    /// remarks on <see cref="AddMtlsClientCertificate"/> for why both of these are necessary here
+    /// and nowhere else in this call chain.
     /// </summary>
     private static bool ValidateCertificate(X509Certificate2 certificate, IServiceScopeFactory scopeFactory)
     {
@@ -110,6 +113,27 @@ public static class MtlsClientCertificateExtensions
         var validator = scope.ServiceProvider.GetRequiredService<IMtlsCertificateValidator>();
 
         var result = validator.ValidateAsync(certificate, CancellationToken.None).GetAwaiter().GetResult();
+
+        var logger = scope.ServiceProvider
+            .GetService<ILoggerFactory>()?
+            .CreateLogger("SharedKernel.ServiceDefaults.Security.MtlsClientCertificateExtensions");
+
+        if (logger is not null)
+        {
+            if (result.IsValid)
+            {
+                ServiceDefaultsLog.MtlsCertificateAccepted(logger, certificate.Thumbprint, certificate.Subject);
+            }
+            else
+            {
+                ServiceDefaultsLog.MtlsCertificateRejected(
+                    logger,
+                    certificate.Thumbprint,
+                    certificate.Subject,
+                    "rejected by IMtlsCertificateValidator");
+            }
+        }
+
         return result.IsValid;
     }
 }

@@ -56,10 +56,18 @@ public static class MessagingReadinessHealthCheckExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Messaging];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.MessagingReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new MessagingReadinessHealthCheck(sp.GetRequiredService<IMessageBusProbe>()),
             failureStatus: null,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Messaging]));
+            tags: tags));
     }
 }

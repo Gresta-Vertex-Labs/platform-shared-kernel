@@ -43,10 +43,18 @@ public static class WorkflowReadinessHealthCheckExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Workflows];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.WorkflowReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new WorkflowReadinessHealthCheck(sp.GetRequiredService<IWorkflowServiceProbe>()),
             failureStatus: null,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Workflows]));
+            tags: tags));
     }
 }

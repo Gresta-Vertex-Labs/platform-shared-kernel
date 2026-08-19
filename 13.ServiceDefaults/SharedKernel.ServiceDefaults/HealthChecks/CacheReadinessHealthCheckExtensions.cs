@@ -26,8 +26,16 @@ public static class CacheReadinessHealthCheckExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Cache];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.CacheReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.AddCheck<CacheReadinessHealthCheck>(
             name,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Cache]);
+            tags: tags);
     }
 }

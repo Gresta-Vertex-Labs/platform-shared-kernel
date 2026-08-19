@@ -44,10 +44,18 @@ public static class SearchReadinessHealthCheckExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(indexName);
 
+        string[] tags = [HealthCheckTags.Ready, HealthCheckTags.Search];
+
+        HealthCheckRegistrationLogging.LogRegistration(
+            builder.Services,
+            "SharedKernel.ServiceDefaults.HealthChecks.SearchReadinessHealthCheckExtensions",
+            name,
+            tags);
+
         return builder.Add(new HealthCheckRegistration(
             name,
             sp => new SearchReadinessHealthCheck(sp.GetRequiredService<ISearchIndexProvisioner>(), indexName),
             failureStatus: null,
-            tags: [HealthCheckTags.Ready, HealthCheckTags.Search]));
+            tags: tags));
     }
 }
