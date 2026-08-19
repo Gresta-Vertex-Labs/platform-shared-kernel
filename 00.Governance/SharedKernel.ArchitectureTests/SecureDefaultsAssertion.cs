@@ -96,10 +96,11 @@ namespace SharedKernel.ArchitectureTests;
 /// <see cref="LoggingEventIdIntegrityAssertion"/>/<see cref="WellKnownConstantOwnershipAssertion"/>.
 /// </para>
 /// <para>
-/// <strong>Real-assembly status.</strong> Confirmed on disk at implementation time (2026-08-18):
-/// <c>12.Security</c> shipped its full WO-060 scope before this phase's implementation session —
-/// <c>SharedKernel.Security.Mtls</c>'s <c>MtlsAuthenticationOptions.AllowedCertificateTypes</c>
-/// defaults to <c>CertificateTypes.Chained</c> and <c>.RevocationMode</c> defaults to
+/// <strong>Real-assembly status (Technique 1/2 — <c>SK.00.SecureDefaultsLock</c>/P-390).</strong>
+/// Confirmed on disk at implementation time (2026-08-18): <c>12.Security</c> shipped its full
+/// WO-060 scope before that phase's implementation session — <c>SharedKernel.Security.Mtls</c>'s
+/// <c>MtlsAuthenticationOptions.AllowedCertificateTypes</c> defaults to
+/// <c>CertificateTypes.Chained</c> and <c>.RevocationMode</c> defaults to
 /// <c>X509RevocationMode.Offline</c> (C-39); <c>SharedKernel.Security.Oidc</c>'s
 /// <c>SecurityOptions.JwtOptions.ValidAlgorithms</c> and <c>DpopOptions.ValidAlgorithms</c> both
 /// default to <c>["PS256", "ES256"]</c> (C-40/C-41). Both real-assembly checks are wired directly
@@ -109,6 +110,79 @@ namespace SharedKernel.ArchitectureTests;
 /// <c>SK.00.SearchTopology</c> precedent for this exact class of dependency-resolved-before-
 /// implementation finding — this phase's own authoring-time prose and Cross-Domain Dependencies
 /// section were stale.
+/// </para>
+/// <para>
+/// <strong>Technique 3 — <see cref="AssertStringCollectionPropertyDefaultEquals"/>: order-
+/// sensitive constructor-initializer string-sequence equality.</strong> Added by
+/// <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401. Reuses the exact private literal-collection walk
+/// Technique 2 already built (<c>ResolveConstructorStringLiteralCollectionDefault</c> — collect
+/// every <see cref="OpCodes.Ldstr"/> operand walking BACKWARD from the target property's
+/// backing-field <see cref="OpCodes.Stfld"/> to the previous initializer segment's boundary, then
+/// reverse) rather than a forbidden-intersection check, because relative order is the security
+/// property being locked: <c>TenantResolutionOptions.StrategyOrder</c>'s
+/// <c>[Header, Claim, Database]</c> and <c>[Claim, Header, Database]</c> contain identical
+/// elements but only the latter is secure under first-non-null-result-wins resolution semantics.
+/// Confirmed against the real, compiled <c>TenantResolutionOptions</c> constructor that the
+/// backward-walk-then-reverse technique correctly reconstructs forward declaration order even for
+/// a C# collection-expression default (<c>[a, b, c]</c>), which the Roslyn compiler lowers to a
+/// <c>newarr</c>/<c>dup</c>/<c>ldc.i4.N</c>/<c>ldstr</c>/<c>stelem.ref</c> sequence per element —
+/// interleaved index-then-value IL, not a flat run of consecutive <c>Ldstr</c> instructions — yet
+/// the existing backward walk still collects the three <c>Ldstr</c> operands in reverse emission
+/// order and the final <see cref="List{T}.Reverse"/> restores the correct forward sequence. Fails
+/// if the collected sequence's length differs from <c>expectedValuesInOrder</c>'s length, or if
+/// any positional element differs under ordinal (case-sensitive) comparison — platform
+/// <c>StrategyName</c> values are compile-time constants, not user input, so no case-insensitive
+/// leniency is warranted here unlike the JWS-algorithm check in
+/// <see cref="AssertStringCollectionPropertyDefaultExcludes"/>.
+/// </para>
+/// <para>
+/// <strong>Technique 4 — <see cref="AssertMethodBodyInvokesMethod"/>: method-body invocation-
+/// presence assertion, including compiler-generated lambda closures.</strong> Added by
+/// <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401 — the first check in this file that fails on the
+/// ABSENCE of a call site rather than the presence of an unwanted one. Loads
+/// <paramref name="declaringType"/>'s <see cref="TypeDefinition"/>, locates the single method
+/// named <c>methodName</c> (a setup exception, never a silent false pass/fail, if zero or more
+/// than one match), and scans its instruction body for a <see cref="OpCodes.Call"/>/
+/// <see cref="OpCodes.Callvirt"/> instruction whose resolved <see cref="MethodReference"/> matches
+/// <c>calleeDeclaringType</c>/<c>calleeMethodName</c> by name and declaring-type
+/// <see cref="TypeReference.FullName"/>. <strong>Confirmed by direct Mono.Cecil inspection of the
+/// real, shipped <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c> IL that a
+/// plain single-method-body scan is insufficient</strong>: the call to
+/// <c>ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured</c> lives inside the C#
+/// <c>.PostConfigure&lt;ILoggerFactory&gt;((configuredOptions, loggerFactory) =&gt; { ... })</c>
+/// lambda argument, which the Roslyn compiler lowers to its own method
+/// (<c>&lt;AddMtlsForwardedHeaderCertificate&gt;b__0_0</c>) on a compiler-generated
+/// <c>&lt;&gt;c</c> closure type nested inside <c>MtlsForwardedHeaderExtensions</c> — the
+/// enclosing method's own IL contains only a delegate construction (<c>ldftn</c>/<c>newobj</c>
+/// against a cached static field), never the callee call itself. Consequently, when the direct
+/// body scan finds no match, this method additionally scans every method on every nested type of
+/// <c>declaringType</c> whose name starts with <c>&lt;{methodName}&gt;b__</c> — the Roslyn-emitted
+/// naming convention for a lambda declared inside <c>methodName</c>, regardless of whether the
+/// compiler hosts it on the shared <c>&lt;&gt;c</c> cache type (no captured outer state) or a
+/// per-call <c>&lt;&gt;c__DisplayClassN_M</c> closure type (captured state) — both are nested
+/// types of <c>declaringType</c> either way. This mirrors how a source-generated
+/// <c>[LoggerMessage]</c> partial-method call compiles to a perfectly ordinary
+/// <see cref="OpCodes.Call"/> at whichever call site invokes it (Rule 4 of this phase's own
+/// design) — the added complexity here is entirely about WHERE that call site's IL physically
+/// lives when the call is made from inside a lambda, not about the source generator itself.
+/// </para>
+/// <para>
+/// <strong>Real-assembly status (Technique 3/4 — <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401).
+/// </strong> Confirmed on disk at implementation time (2026-08-19) — the Cross-Domain Dependency
+/// this phase's own authoring-time prose recorded against <c>13.ServiceDefaults</c> P-393/P-394/
+/// P-395 was stale: that domain had already shipped its full WO-061 scope (171/171 + 51/51 tests
+/// green) before this phase's implementation session began, mirroring the now-repeated
+/// dependency-resolved-before-implementation pattern this file's own Cross-Domain Dependencies
+/// section already records for <c>SK.00.SenderConstrainedCredentialGuard</c>/
+/// <c>SK.00.SecureDefaultsLock</c>. <c>SharedKernel.MultiTenancy</c>'s
+/// <c>TenantResolutionOptions.StrategyOrder</c> defaults to
+/// <c>[TenantResolutionStrategyNames.Claim, .Header, .Database]</c> (const-folded to
+/// <c>["Claim", "Header", "Database"]</c> at the IL level); <c>SharedKernel.ServiceDefaults</c>'s
+/// <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c> genuinely calls
+/// <c>ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured</c> from inside its
+/// <c>PostConfigure</c> lambda when <c>TrustedNetworks</c> is left empty. Both real-assembly
+/// checks are wired directly in <c>SecureDefaultsAssertionTests</c> as GATING tests (T-317/T-318)
+/// rather than deferred as a Cross-Domain Dependency follow-up.
 /// </para>
 /// </remarks>
 public static class SecureDefaultsAssertion
@@ -242,6 +316,182 @@ public static class SecureDefaultsAssertion
                     + Environment.NewLine
                     + string.Join(Environment.NewLine, violations));
         }
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="optionsType"/>'s parameterless-constructed instance resolves
+    /// <paramref name="propertyName"/> to a string collection whose elements exactly match
+    /// <paramref name="expectedValuesInOrder"/>, in the same order.
+    /// </summary>
+    /// <param name="optionsType">
+    /// The options type to inspect (e.g. <c>typeof(TenantResolutionOptions)</c>). Must declare a
+    /// parameterless constructor and a public instance string-collection-typed property named
+    /// <paramref name="propertyName"/>.
+    /// </param>
+    /// <param name="propertyName">
+    /// The string-collection-typed property's name (e.g. <c>"StrategyOrder"</c>).
+    /// </param>
+    /// <param name="expectedValuesInOrder">
+    /// The exact expected sequence, compared ordinally (case-sensitive) and positionally. Order
+    /// matters — this is an ORDER-SENSITIVE check, unlike
+    /// <see cref="AssertStringCollectionPropertyDefaultExcludes"/>'s forbidden-intersection check.
+    /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="propertyName"/> does not resolve to a public instance property
+    /// on <paramref name="optionsType"/>, when the collected default's length differs from
+    /// <paramref name="expectedValuesInOrder"/>'s length, or when any positional element differs.
+    /// </exception>
+    public static void AssertStringCollectionPropertyDefaultEquals(
+        Type optionsType,
+        string propertyName,
+        IReadOnlyList<string> expectedValuesInOrder)
+    {
+        _ = GetPublicInstanceProperty(optionsType, propertyName);
+
+        var collected = ResolveConstructorStringLiteralCollectionDefault(optionsType, propertyName);
+
+        if (collected.Count != expectedValuesInOrder.Count)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals: "
+                    + $"'{optionsType.FullName}.{propertyName}' default-constructs to a "
+                    + $"{collected.Count}-element sequence ([{string.Join(", ", collected)}]), "
+                    + $"expected a {expectedValuesInOrder.Count}-element sequence "
+                    + $"([{string.Join(", ", expectedValuesInOrder)}]).");
+        }
+
+        var mismatches = new List<string>();
+
+        for (var i = 0; i < collected.Count; i++)
+        {
+            if (!string.Equals(collected[i], expectedValuesInOrder[i], StringComparison.Ordinal))
+            {
+                mismatches.Add(
+                    $"position {i}: actual '{collected[i]}', expected '{expectedValuesInOrder[i]}'");
+            }
+        }
+
+        if (mismatches.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertStringCollectionPropertyDefaultEquals: "
+                    + $"'{optionsType.FullName}.{propertyName}' default-constructs to "
+                    + $"[{string.Join(", ", collected)}], expected "
+                    + $"[{string.Join(", ", expectedValuesInOrder)}] — mismatch(es): "
+                    + string.Join("; ", mismatches));
+        }
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="declaringType"/>'s method named <paramref name="methodName"/>
+    /// — or a compiler-generated lambda closure it declares — invokes
+    /// <paramref name="calleeDeclaringType"/>'s method named <paramref name="calleeMethodName"/>.
+    /// </summary>
+    /// <param name="declaringType">
+    /// The type declaring the method to inspect (e.g.
+    /// <c>typeof(MtlsForwardedHeaderExtensions)</c>).
+    /// </param>
+    /// <param name="methodName">
+    /// The name of the method to inspect (e.g. <c>"AddMtlsForwardedHeaderCertificate"</c>). Must
+    /// resolve to exactly one method on <paramref name="declaringType"/> — an overloaded method
+    /// name is rejected as ambiguous rather than silently checking only the first match.
+    /// </param>
+    /// <param name="calleeDeclaringType">
+    /// The type declaring the expected callee (e.g. <c>typeof(ServiceDefaultsLog)</c>).
+    /// </param>
+    /// <param name="calleeMethodName">
+    /// The expected callee's method name (e.g. <c>"ForwardedHeaderTrustBoundaryUnconfigured"</c>).
+    /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="methodName"/> resolves to zero or more than one method on
+    /// <paramref name="declaringType"/>, or when neither the method's own body nor any lambda
+    /// closure it declares contains a <c>Call</c>/<c>Callvirt</c> instruction targeting
+    /// <paramref name="calleeDeclaringType"/>.<paramref name="calleeMethodName"/>.
+    /// </exception>
+    public static void AssertMethodBodyInvokesMethod(
+        Type declaringType,
+        string methodName,
+        Type calleeDeclaringType,
+        string calleeMethodName)
+    {
+        using var assemblyDefinition = AssemblyDefinition.ReadAssembly(declaringType.Assembly.Location);
+        var typeDefinition = ResolveTypeDefinition(assemblyDefinition.MainModule, declaringType);
+
+        var matchingMethods = typeDefinition.Methods.Where(m => m.Name == methodName).ToList();
+
+        if (matchingMethods.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertMethodBodyInvokesMethod found no method named "
+                    + $"'{methodName}' on type '{declaringType.FullName}'.");
+        }
+
+        if (matchingMethods.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertMethodBodyInvokesMethod found "
+                    + $"{matchingMethods.Count} methods named '{methodName}' on type "
+                    + $"'{declaringType.FullName}' — ambiguous; this helper requires a uniquely "
+                    + "named method.");
+        }
+
+        var method = matchingMethods[0];
+
+        if (MethodBodyInvokes(method, calleeDeclaringType, calleeMethodName))
+            return;
+
+        // The direct method body contains no matching call — check every compiler-generated
+        // lambda closure declared inside it. A lambda argument passed to a method call (e.g. the
+        // Action<TOptions,TDep> handed to OptionsBuilder<T>.PostConfigure<TDep>) compiles to a
+        // method on a nested closure type named "<{methodName}>b__{classIndex}_{lambdaIndex}" —
+        // hosted on the shared "<>c" cache type when the lambda captures no outer state, or a
+        // per-declaration "<>c__DisplayClassN_M" type when it does. Either way, the enclosing
+        // method's own IL contains only a delegate-construction sequence (ldftn/newobj), never
+        // the callee call itself, so the call site must be located inside the nested type.
+        var lambdaNamePrefix = $"<{methodName}>b__";
+
+        foreach (var nestedType in typeDefinition.NestedTypes)
+        {
+            foreach (var candidateMethod in nestedType.Methods)
+            {
+                if (!candidateMethod.Name.StartsWith(lambdaNamePrefix, StringComparison.Ordinal))
+                    continue;
+
+                if (MethodBodyInvokes(candidateMethod, calleeDeclaringType, calleeMethodName))
+                    return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "SecureDefaultsAssertion.AssertMethodBodyInvokesMethod: "
+                + $"'{declaringType.FullName}.{methodName}' (including any lambda closures it "
+                + $"declares) does not call '{calleeDeclaringType.FullName}.{calleeMethodName}'.");
+    }
+
+    private static bool MethodBodyInvokes(
+        MethodDefinition method,
+        Type calleeDeclaringType,
+        string calleeMethodName)
+    {
+        if (!method.HasBody)
+            return false;
+
+        foreach (var instruction in method.Body.Instructions)
+        {
+            if (instruction.OpCode != OpCodes.Call && instruction.OpCode != OpCodes.Callvirt)
+                continue;
+
+            if (instruction.Operand is not MethodReference calleeReference)
+                continue;
+
+            if (calleeReference.Name != calleeMethodName)
+                continue;
+
+            if (calleeReference.DeclaringType.FullName == calleeDeclaringType.FullName)
+                return true;
+        }
+
+        return false;
     }
 
     private static PropertyInfo GetPublicInstanceProperty(Type optionsType, string propertyName) =>
