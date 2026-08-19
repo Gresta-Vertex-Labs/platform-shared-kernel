@@ -17,13 +17,29 @@ public sealed class TenantResolutionOptions
 
     /// <summary>
     /// Gets or sets the ordered list of strategy names to attempt. Defaults to
-    /// <see cref="TenantResolutionStrategyNames.Header"/>, <see cref="TenantResolutionStrategyNames.Claim"/>,
+    /// <see cref="TenantResolutionStrategyNames.Claim"/>, <see cref="TenantResolutionStrategyNames.Header"/>,
     /// <see cref="TenantResolutionStrategyNames.Database"/>, in that order.
     /// </summary>
+    /// <remarks>
+    /// <b>SECURITY-MOTIVATED DEFAULT — DO NOT REORDER BACK TO <c>[Header, Claim, Database]</c>
+    /// WITHOUT A SECURITY REVIEW.</b> The prior default let an unsigned, caller-supplied
+    /// <c>X-Tenant-Id</c> header outrank a cryptographically-verified JWT tenant claim for the same
+    /// request — a direct cross-tenant data-access vector, since <c>AmbientTenantProvider.TenantId</c>
+    /// is what <c>06.Persistence</c>'s <c>TenantedDbContext</c> global filter trusts. Putting
+    /// <see cref="TenantResolutionStrategyNames.Claim"/> first closes that vector:
+    /// <see cref="ClaimTenantResolutionStrategy"/> returns <see langword="null"/> for any
+    /// unauthenticated request or a token carrying no tenant claim, which is what makes this reorder
+    /// provably safe for the pre-existing B2B/API-key header-only path — that path is completely
+    /// unaffected, since it never has a claim to compete with. Only a request that is both
+    /// authenticated with a tenant claim <b>and</b> carries a different <c>X-Tenant-Id</c> header
+    /// changes behavior under this default, and it changes to the secure outcome (the claim wins).
+    /// A service that already explicitly configures its own <see cref="StrategyOrder"/> via
+    /// <c>AddSharedKernelMultiTenancy(options =&gt; ...)</c> is unaffected by this default entirely.
+    /// </remarks>
     public IReadOnlyList<string> StrategyOrder { get; set; } =
     [
-        TenantResolutionStrategyNames.Header,
         TenantResolutionStrategyNames.Claim,
+        TenantResolutionStrategyNames.Header,
         TenantResolutionStrategyNames.Database,
     ];
 }
