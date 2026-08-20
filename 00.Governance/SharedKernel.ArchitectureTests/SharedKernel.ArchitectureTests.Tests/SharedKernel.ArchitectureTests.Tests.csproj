@@ -169,6 +169,24 @@
                       PrivateAssets="all" />
     <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Presentation.WebApi assembly in
+         SecureDefaultsAssertionTests (WO-062 P-410, SK.00.CorsWildcardCredentialsGuard) — verified
+         on disk that 14.Presentation shipped its full P-404 scope (CorsPolicyOptions,
+         CorsPolicyOptionsValidator, AddSharedKernelCors, SharedKernel.Presentation.WebApi packed at
+         1.2.0) before this phase's implementation session, so the T-328 real-assembly
+         re-verification test originally tracked as a Cross-Domain Dependency is wired directly
+         here rather than deferred, mirroring the SecurityArchitectureRulesTests/
+         SecureDefaultsAssertionTests (WO-061) precedent. NOTE: the real AddSharedKernelCors does
+         NOT construct-and-throw a named exception directly — it registers CorsPolicyOptionsValidator
+         (an IValidateOptions<CorsPolicyOptions> returning ValidateOptionsResult.Fail(...)) via
+         ValidateOnStart(), so the actual throw (a framework-owned OptionsValidationException) never
+         appears in this assembly's own IL. AssertMethodBodyThrowsExceptionType itself therefore has
+         no real call site to prove against here (see the SecureDefaultsAssertionTests T-328 remarks
+         for the full reasoning) — this reference exists so T-328 can instead re-point the ALREADY-
+         SHIPPED AssertMethodBodyInvokesMethod at CorsPolicyOptionsValidator.Validate, proving it
+         genuinely calls ValidateOptionsResult.Fail, a technique matching the guard's REAL shape. -->
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

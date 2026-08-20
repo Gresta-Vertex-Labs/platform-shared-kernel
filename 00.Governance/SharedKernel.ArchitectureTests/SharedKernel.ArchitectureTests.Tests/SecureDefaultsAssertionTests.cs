@@ -38,6 +38,18 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// CONFIRMED RESOLVED on disk before this phase's implementation session: that domain shipped its
 /// full WO-061 scope, 171/171 + 51/51 tests green, before this session began).
 /// </para>
+/// <para>
+/// T-326/T-327 (<c>SK.00.CorsWildcardCredentialsGuard</c>/WO-062/P-410):
+/// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/> against contrived
+/// pass/fail-path fixtures. T-328: the real-assembly re-verification originally scoped to re-point
+/// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/> at
+/// <c>SharedKernel.Presentation.WebApi</c>'s real <c>AddSharedKernelCors</c> instead re-points the
+/// EXISTING <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at
+/// <c>CorsPolicyOptionsValidator.Validate</c> — the real, shipped guard is validator-based
+/// (<c>IValidateOptions&lt;CorsPolicyOptions&gt;</c> returning <c>ValidateOptionsResult.Fail</c>),
+/// never a direct <c>throw</c> inside this assembly's own IL; see that test's own remarks for the
+/// full design/reality-mismatch reasoning.
+/// </para>
 /// </remarks>
 public class SecureDefaultsAssertionTests
 {
@@ -859,6 +871,191 @@ public class SecureDefaultsAssertionTests
             because: "the real, shipped AddMtlsForwardedHeaderCertificate's PostConfigure lambda " +
                      "still calls ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured " +
                      "when TrustedNetworks is left unconfigured (WO-061, C-50/C-53)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-326 — AssertMethodBodyThrowsExceptionType pass path: throw present
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-326: A fixture method body that constructs and throws the expected exception type must
+    /// pass <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyThrowsExceptionType_ThrowPresent_DoesNotThrow()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                public sealed class FixtureGuardException : System.Exception
+                {
+                    public FixtureGuardException(string message) : base(message) { }
+                }
+
+                // Compliant: mirrors a startup guard that genuinely constructs and throws the
+                // expected exception type when a dangerous configuration is detected.
+                public static class FixtureGuardPresent
+                {
+                    public static void Validate(bool isDangerous)
+                    {
+                        if (isDangerous)
+                        {
+                            throw new FixtureGuardException("dangerous configuration detected");
+                        }
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsThrowsPresent", source);
+        var declaringType = assembly.GetType("Fixture.SecureDefaults.FixtureGuardPresent")!;
+        var expectedExceptionType = assembly.GetType("Fixture.SecureDefaults.FixtureGuardException")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
+                declaringType, "Validate", expectedExceptionType);
+
+        act.Should().NotThrow(
+            because: "the fixture's Validate method genuinely constructs and throws " +
+                     "FixtureGuardException");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-327 — AssertMethodBodyThrowsExceptionType fire path: throw removed
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-327: A fixture method body identical in shape but with the throw removed — reproducing
+    /// the exact "startup guard silently deleted in a future edit" regression this check exists to
+    /// prevent — must fail
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyThrowsExceptionType_ThrowRemoved_ThrowsNamingMethodAndException()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                public sealed class FixtureGuardException : System.Exception
+                {
+                    public FixtureGuardException(string message) : base(message) { }
+                }
+
+                // Violation: identical in shape to the compliant fixture, but the guard's throw
+                // was silently deleted — the exact regression this check exists to prevent.
+                public static class FixtureGuardRemoved
+                {
+                    public static void Validate(bool isDangerous)
+                    {
+                        _ = isDangerous;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsThrowsRemoved", source);
+        var declaringType = assembly.GetType("Fixture.SecureDefaults.FixtureGuardRemoved")!;
+        var expectedExceptionType = assembly.GetType("Fixture.SecureDefaults.FixtureGuardException")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
+                declaringType, "Validate", expectedExceptionType);
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's Validate method no longer constructs and throws " +
+                         "FixtureGuardException — the throw was removed")
+            .WithMessage("*Validate*")
+            .WithMessage("*FixtureGuardException*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-328 — Real-assembly verification (GATING; re-pointed technique — see remarks)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-328: Confirms the real, shipped CORS wildcard-origin-plus-credentials guard exists inside
+    /// <c>SharedKernel.Presentation.WebApi</c> — proven via
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>, NOT
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>, per the
+    /// design/reality mismatch documented below.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Cross-Domain Dependency resolved.</strong> Originally tracked as pending
+    /// <c>14.Presentation</c> P-404 reaching Core — CONFIRMED RESOLVED on disk before this phase's
+    /// implementation session: <c>SharedKernel.Presentation.WebApi</c> is packed at <c>1.2.0</c>
+    /// and ships <c>Cors/CorsPolicyOptions.cs</c>, <c>Cors/CorsPolicyOptionsValidator.cs</c>,
+    /// <c>Cors/CorsExtensions.cs</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Design/reality mismatch found and resolved.</strong> This phase's own design prose
+    /// (D-73) anticipated <c>AddSharedKernelCors</c> itself constructing and throwing a named
+    /// exception directly — the exact shape
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/> (T-326/T-327) is
+    /// built to prove. The REAL shipped guard is validator-based, not throw-based:
+    /// <c>CorsExtensions.AddSharedKernelCors</c> registers <c>CorsPolicyOptionsValidator</c> (an
+    /// <c>IValidateOptions&lt;CorsPolicyOptions&gt;</c> whose <c>Validate</c> method returns
+    /// <c>ValidateOptionsResult.Fail(...)</c> on the dangerous combination) via
+    /// <c>services.AddOptions&lt;CorsPolicyOptions&gt;().Configure(configure).ValidateOnStart()</c>.
+    /// The actual <c>throw new OptionsValidationException(...)</c> this produces happens entirely
+    /// inside <c>Microsoft.Extensions.Options</c>'s own <c>OptionsFactory&lt;TOptions&gt;</c>
+    /// machinery at <c>IHost.StartAsync()</c> — FRAMEWORK code, never emitted into
+    /// <c>SharedKernel.Presentation.WebApi</c>'s own IL at all. There is therefore no
+    /// <c>Newobj</c>-then-<c>Throw</c> sequence anywhere in this real assembly for
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/> to find —
+    /// re-pointing it at <c>AddSharedKernelCors</c> would be STRUCTURALLY UNABLE to ever pass
+    /// against this real assembly, regardless of how correctly the guard itself behaves.
+    /// </para>
+    /// <para>
+    /// <strong>Resolution.</strong> Per this phase's own explicit guidance to use judgment rather
+    /// than force-fit a mismatched technique or silently skip verification: this test re-points the
+    /// ALREADY-SHIPPED <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> (from
+    /// <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401) at <c>CorsPolicyOptionsValidator.Validate</c>,
+    /// asserting it genuinely calls <c>ValidateOptionsResult.Fail</c> — an invocation-presence
+    /// assertion matching the guard's REAL shape, reusing existing, already-proven infrastructure
+    /// instead of adding a narrowly-motivated seventh method to <see cref="SecureDefaultsAssertion"/>
+    /// for a single call site. <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>
+    /// itself remains unverified against a real assembly by this phase — proven only via
+    /// T-326/T-327's contrived fixtures — and remains available as a generically useful technique
+    /// for a FUTURE guard that genuinely throws directly from its own method body (the shape most
+    /// of this class's other methods were built for).
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> <c>CorsPolicyOptionsValidator</c> is <c>internal</c> — no
+    /// <c>InternalsVisibleTo</c> grant exists (or should exist) to this governance test project, so
+    /// <c>typeof(...)</c> cannot name it directly. <c>Assembly.GetType(string)</c> resolves a
+    /// <see cref="Type"/> object by name regardless of accessibility, mirroring T-318's identical
+    /// technique for <c>ServiceDefaultsLog</c> — this helper only ever compares
+    /// <see cref="System.Reflection.MemberInfo.Name"/>/declaring-type
+    /// <c>FullName</c>, never invokes a member through it. T-315/T-316's contrived fixtures already
+    /// prove <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> correctly fires
+    /// when the expected call site is ABSENT — this test proves the real type's actual call site is
+    /// PRESENT, not merely that the scan runs without error.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_RealCorsPolicyOptionsValidator_CallsValidateOptionsResultFail()
+    {
+        var webApiAssembly = typeof(SharedKernel.Presentation.WebApi.Cors.CorsPolicyNames).Assembly;
+
+        var declaringType =
+            webApiAssembly.GetType("SharedKernel.Presentation.WebApi.Cors.CorsPolicyOptionsValidator")
+            ?? throw new InvalidOperationException(
+                "Could not resolve SharedKernel.Presentation.WebApi.Cors.CorsPolicyOptionsValidator " +
+                "via Assembly.GetType — has it been renamed or moved?");
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType,
+                "Validate",
+                typeof(Microsoft.Extensions.Options.ValidateOptionsResult),
+                "Fail");
+
+        act.Should().NotThrow(
+            because: "the real, shipped CorsPolicyOptionsValidator.Validate calls " +
+                     "ValidateOptionsResult.Fail(...) on the dangerous AllowCredentials + " +
+                     "empty/wildcard AllowedOrigins combination (WO-062, P-404)");
     }
 
     // ---------------------------------------------------------------------------
