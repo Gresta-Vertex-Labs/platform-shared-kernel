@@ -285,6 +285,193 @@ AddSharedKernelAuthorizationFilters(this IServiceCollection) → IServiceCollect
           rather than implied to work automatically.
 ```
 
+#### Multi-field validation ProblemDetails (`Errors/`)
+
+> **Status: Shipped end to end (WO-062, P-402).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. Fixes a confirmed silent-data-loss defect: `ValidationException.Errors` (`01.Core`, already shipped) carries every failing field, but `SharedKernelExceptionHandler` previously read only the base `SharedKernelException.Error` property — which `ValidationException`'s own constructor sets to `errors[0]`. A request failing validation on three fields returned a body naming only one.
+
+```text
+ValidationProblemDetailsExtensions  (static class)
+    .ToProblemDetails(this ValidationException exception, HttpContext? context = null) → ProblemDetails
+    NOTE: Groups exception.Errors by Error.Code into Extensions["errors"] (Dictionary<string, string[]>),
+          mirroring ASP.NET Core's own built-in ValidationProblemDetails.Errors shape so client tooling
+          that already understands that convention (form-binding libraries, generated SDKs) works
+          unmodified. Status/Type/traceId resolve identically to the single-Error path (still
+          ErrorTypeStatusCodeMap.Resolve(ErrorType.Validation) → 400) — this extension changes the
+          BODY shape only, never the status-code mapping. Additive to, never a replacement for,
+          ErrorProblemDetailsExtensions.ToProblemDetails(Error) — every non-ValidationException error
+          (NotFound/Conflict/Forbidden/Unauthorized/BusinessRule/Unexpected) continues to produce a
+          byte-for-byte identical single-error body.
+
+SharedKernelExceptionHandler  (extended)
+    NOTE: Gains a ValidationException-specific branch, checked BEFORE the generic
+          SharedKernelException.Error fallback, routing through ValidationProblemDetailsExtensions
+          instead of the single-Error path.
+```
+
+#### Security response headers (`SecurityHeaders/`)
+
+> **Status: Shipped end to end (WO-062, P-403).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. `SecurityHeadersOptions`/`SecurityHeadersMiddleware`/`UseSharedKernelSecurityHeaders` now live in `Middleware/`; every header assignment is guarded by `Headers.ContainsKey(...)` and HSTS ships enabled by default per the design below.
+
+```text
+SecurityHeadersOptions  (class)
+    Hsts / ContentTypeOptions / FrameOptions / ReferrerPolicy / PermissionsPolicy
+        NOTE: Each individually toggle-able and value-configurable. HSTS is opt-OUT (on by default),
+              not opt-in — but ships with a documented, CAPITALIZED warning that it must be disabled
+              or given a short max-age for local HTTP-only development.
+    .WithContentSecurityPolicy(string policy) / .WithContentSecurityPolicy(Action<CspBuilder>)
+        NOTE: The ONLY way a Content-Security-Policy header is ever set. No default CSP value exists —
+              CSP is response-shape-specific (a pure JSON API vs. one also serving Scalar's interactive
+              UI) and a wrong default could break this package's own MapSharedKernelOpenApi/Scalar UI.
+
+SecurityHeadersMiddleware  (sealed class)
+    .InvokeAsync(HttpContext context, RequestDelegate next) → Task
+    NOTE: Every header assignment is guarded by context.Response.Headers.ContainsKey(...) first — an
+          inner middleware/endpoint's more-specific header value always wins; this middleware never
+          overwrites.
+
+UseSharedKernelSecurityHeaders(this IApplicationBuilder, Action<SecurityHeadersOptions>? configure = null)
+    NOTE: Registered immediately after UseSharedKernelCorrelationId() and before UseExceptionHandler().
+```
+
+#### CORS policy convention (`Cors/`)
+
+> **Status: Shipped end to end (WO-062, P-404).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. `CorsPolicyOptions`/`CorsPolicyNames`/`CorsPolicyOptionsValidator`/`AddSharedKernelCors` now live in the new `Cors/` folder, with the `IValidateOptions<CorsPolicyOptions>` + `ValidateOnStart()` fail-fast guard wired exactly as designed below.
+
+```text
+CorsPolicyOptions  (class)
+    AllowedOrigins (ICollection<string>) / AllowCredentials (bool) / AllowedMethods / AllowedHeaders
+CorsPolicyNames  (static class)
+    .Default → const string
+        NOTE: A named policy convention so consuming services reference one discoverable name instead
+              of re-inventing policy-name literals.
+
+AddSharedKernelCors(this IServiceCollection, Action<CorsPolicyOptions> configure) → IServiceCollection
+    NOTE: Wraps services.AddCors(...). Registers an IValidateOptions<CorsPolicyOptions> guard
+          (ValidateOnStart()) that throws a clear, actionable exception at IHost.StartAsync() when
+          AllowCredentials = true is combined with an empty/wildcard AllowedOrigins — the classic
+          OWASP-catalogued misconfiguration the underlying CORS spec itself forbids but ASP.NET Core
+          only throws on at the FIRST real credentialed cross-origin request in production. This
+          package makes the dangerous combination impossible to express through its own builder
+          surface, fail-fast at startup instead.
+```
+
+#### Inbound idempotency-key HTTP boundary (`Idempotency/`)
+
+> **Status: Shipped end to end (WO-062, P-405).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. Closes the gap between `05.Application`'s in-process `IIdempotentRequest`/`IdempotentCommandBehavior` (duplicate-submission protection for a dispatched command) and `11.Communication.Rest`'s still-queued outbound propagation (P-364) — neither owns the *inbound* HTTP-boundary half: extracting and validating a client-supplied `Idempotency-Key` header before a request ever reaches MediatR.
+
+```text
+IdempotencyKeyHeader  (const string, "Idempotency-Key")
+    NOTE: DOMAIN-LOCAL for now — mirrors CorrelationIdMiddleware's pre-WO-042 shape, before
+          01.Core's WellKnownHeaders existed. 01.Core's WellKnownHeaders has no IdempotencyKey member
+          as of this writing (confirmed via direct read) and this capability does not block on one
+          being added. A future forwarding-alias promotion (mirroring D-14/C-19's CorrelationId
+          precedent) is a natural follow-up only if/when 11.Communication.Rest's P-364 ships and both
+          domains want the byte-identical literal.
+
+HttpContextIdempotencyExtensions  (static class)
+    .TryGetIdempotencyKey(this HttpContext context, out string? key) → bool
+    NOTE: Reads and format-validates (non-empty/non-whitespace, bounded length) the header; returns
+          false on missing/malformed input rather than throwing. This is the recommended way for an
+          endpoint handler to read the validated value onto a command's IIdempotentRequest.
+          IdempotencyKey property before dispatch — this package does not attempt automatic MediatR
+          request binding, only the extraction/validation primitive and the guard filter below.
+
+RequireIdempotencyKeyAttribute  (sealed class : Attribute)
+IdempotencyKeyRequirementEndpointFilter  (sealed class, implements IEndpointFilter)
+    NOTE: A deliberately SEPARATE filter from AuthorizationRequirementEndpointFilter — idempotency-key
+          presence is not an authorization concern and must never be folded into that filter. Mirrors
+          its exact shape: no-ops when the attribute is absent (safe to register globally), and
+          short-circuits a missing/malformed key with Error.Validation(...).ToProblemDetails() → 400
+          via the existing single-Error ErrorProblemDetailsExtensions path (this is a request-shape
+          validation failure, not a new ErrorType).
+
+AddSharedKernelIdempotencyFilters(this IServiceCollection) → IServiceCollection
+    NOTE: Registers IdempotencyKeyRequirementEndpointFilter as a singleton, mirroring
+          AddSharedKernelAuthorizationFilters's shape — same non-automatic .AddEndpointFilter<...>()
+          wiring requirement and caveat.
+```
+
+### `SharedKernel.Presentation.WebApi` — declarative step-up/fresh-authentication (extends Authorization/)
+
+> **Status: Shipped end to end (WO-062, P-406).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. Extends `AuthorizationRequirementEndpointFilter` (never duplicates it) to consume the step-up/fresh-authentication signals `12.Security` shipped in WO-058/P-375 — `IUserContext.AuthenticationMethods`/`.AuthContextClassReference`/`.AuthTime`/`.WasAuthenticatedWith`/`.IsAuthenticationFresherThan(TimeSpan, DateTimeOffset)` — but that no HTTP-boundary declarative consumer existed for until this phase. Confirmed via direct read of the shipped `12.Security.Abstractions/Abstractions/IUserContext.cs` that `IsAuthenticationFresherThan` already exists and takes an explicit `now` parameter (never calls `DateTimeOffset.UtcNow` internally, per the platform's injectable-time convention) — this is the method this filter must call, not a hand-rolled `AuthTime` comparison. Also confirmed `16.Testing`'s `FakeUserContext`/`SecurityTestContextBuilder` already expose settable `AuthTime`/`AuthenticationMethods` — no `16.Testing` gap, no follow-up phase needed.
+
+```text
+RequireFreshAuthenticationAttribute  (sealed class : Attribute)
+    ctor(int maxAgeSeconds)
+    NOTE: Rejects a request whose IUserContext.AuthTime is older than maxAgeSeconds (or absent) with
+          Error.Forbidden(...) → 403 — the same rejection shape [RequireRole]/[RequirePermission]
+          already use. An anonymous/unauthenticated caller is rejected via the ordinary absent-AuthTime
+          path, mirroring the existing no-dedicated-IsAuthenticated-branch discipline.
+
+RequireAuthenticationMethodAttribute  (sealed class : Attribute)
+    ctor(params string[] methods)
+    NOTE: Rejects a request whose IUserContext.WasAuthenticatedWith(...) does not satisfy at least one
+          declared method (OR-within, mirroring RequireRoleAttribute's composition) with the same
+          Error.Forbidden(...) shape.
+
+AuthorizationRequirementEndpointFilter  (extended, not duplicated)
+    NOTE: Additionally inspects the two attributes above. Composes AND-across with each other and with
+          the existing [RequireRole]/[RequirePermission] — no second filter type, no second
+          .AddEndpointFilter<...>() registration call required. Resolves IClock (01.Core/
+          SharedKernel.Primitives, already referenced) from HttpContext.RequestServices LAZILY, only
+          when a RequireFreshAuthenticationAttribute is actually present on the endpoint — an endpoint
+          using only [RequireRole]/[RequirePermission] must never require IClock to be registered.
+
+AuthorizationEndpointFilterExtensions  (extended)
+    .RequireFreshAuthentication(this RouteHandlerBuilder/RouteGroupBuilder, int maxAgeSeconds)
+    .RequireAuthenticationMethod(this RouteHandlerBuilder/RouteGroupBuilder, params string[] methods)
+```
+
+#### Optimistic-concurrency ETag / conditional-request helpers (`Concurrency/`, `Http/`)
+
+> **Status: Shipped end to end (WO-062, P-407).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. Bridges `06.Persistence`'s `IHasConcurrency.RowVersion`-based optimistic concurrency (mapped to `Error.Conflict`/409) to HTTP's own standard conditional-request mechanism (`ETag`/`If-Match`, RFC 9110 §13) — additive to, never a replacement for, `Error.Conflict`. **Design decision, not a blocker:** declined requesting a new `ErrorType.PreconditionFailed` from `01.Core` (confirmed absent via direct read of `ErrorType.cs`) — 412 is an HTTP-protocol-native conditional-request outcome that never originates as a domain `Error`/`Result<T>` failure, unlike the platform's `ErrorType`-mapped cases, so it is constructed directly rather than routed through the `Error`/`ErrorTypeStatusCodeMap` machinery.
+
+```text
+RowVersionETag  (static class)
+    .From(byte[] rowVersion) → string
+    NOTE: Produces a well-formed, correctly-quoted ETag header value from a RowVersion-shaped token,
+          usable directly on a GET response for a concurrency-tracked resource.
+
+ConditionalRequestExtensions  (static class)
+    .TryValidateIfMatch(this HttpContext, string currentETag, out ProblemDetails? problemDetails) → bool
+    NOTE: Evaluates an inbound If-Match request header against the resource's current ETag; produces
+          a 412 Precondition Failed ProblemDetails on mismatch, built via the shared internal RFC 9457
+          shaping helper below — never a hand-rolled literal, never routed through Error/ErrorType.
+          Zero change to ErrorTypeStatusCodeMap's existing seven-case mapping or to 06.Persistence's own
+          concurrency-conflict behavior; both Error.Conflict/409 and If-Match/412 remain independently
+          available — a service may adopt one, the other, or both.
+          CORRECTED at Core-phase implementation: built on Microsoft.AspNetCore.Http.Headers.
+          RequestHeaders(context.Request.Headers).IfMatch (IList<EntityTagHeaderValue>) and
+          Microsoft.Net.Http.Headers.EntityTagHeaderValue — its RFC 9110-strong-comparison member is
+          the INSTANCE method .Compare(EntityTagHeaderValue, bool useStrongComparison), not a static
+          overload — confirmed via a throwaway reflection probe against the installed net10.0 shared
+          framework, not assumed from an older API surface.
+
+(internal) RFC 9457 problem-details shaping helper  (Http/)
+    NOTE: Extracted from ErrorProblemDetailsExtensions's existing private ProblemTypeBaseUri
+          constant/construction pattern into a shared internal helper — zero behavioral change to
+          ErrorProblemDetailsExtensions's existing public output. Reused by the 429 rate-limit-
+          rejection helper below so both non-Error HTTP outcomes (412, 429) share one Type-URI/
+          traceId-population convention instead of two independently hand-rolled ones.
+```
+
+#### Rate-limit rejection → ProblemDetails/429 bridge (`RateLimiting/`)
+
+> **Status: Shipped end to end (WO-062, P-408).** `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`. Closes a gap `13.ServiceDefaults`'s own `AddSharedKernelRateLimiting()` (P-397/WO-061) explicitly deferred here — its README documents a *recipe* asking a consuming service's `OnRejected` callback to shape a 429 `ProblemDetails` "consistent with this domain's conventions," but no real, reusable helper was ever built to receive that handoff, leaving every consumer to hand-roll it (exactly the inline-`ProblemDetails`-construction anti-pattern `ErrorProblemDetailsExtensions`/governance already forbid everywhere else).
+
+```text
+RateLimitRejectionProblemDetails  (static class)
+    .Create(HttpContext context, TimeSpan? retryAfter = null) → ProblemDetails
+    NOTE: Produces a 429 ProblemDetails (RFC 9457 Type URI via the shared Http/ helper from P-407,
+          Extensions["traceId"] populated identically to every other error path) plus, when a retry
+          duration is supplied, sets the standard Retry-After RESPONSE HEADER (not just a body field,
+          via Microsoft.Net.Http.Headers.HeaderNames.RetryAfter) so proxies/client SDKs that already
+          understand Retry-After work unmodified. Zero new PackageReference — built entirely on the
+          existing Microsoft.AspNetCore.Http/Mvc.ProblemDetails surface. 13.ServiceDefaults's
+          AddSharedKernelRateLimiting() is this helper's primary intended caller, referenced by name
+          only — no ProjectReference either direction.
+```
+
 ### `SharedKernel.Presentation.SignalR` — confirmed public surface
 
 #### Hub filters (`Filters/`)
@@ -347,6 +534,23 @@ WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString,
           — the latter type name does not exist in this package.
 ```
 
+> **Status: Shipped end to end (WO-062, P-409).** `SharedKernel.Presentation.SignalR` re-packed to `1.0.2`. `AddSharedKernelSignalR` now sets an explicit, conservative platform default for SignalR's own resource-exhaustion-relevant `HubOptions` (`MaximumReceiveMessageSize`/`MaximumParallelInvocationsPerClient`/`ClientTimeoutInterval`/`KeepAliveInterval`), closing the gap where these previously remained at whatever the framework's own current defaults were (not uniformly hardened across SignalR versions; no message-size ceiling is a real resource-exhaustion vector on a long-lived WebSocket/SSE surface).
+
+```text
+AddSharedKernelSignalR  (extended)
+    NOTE: Sets an explicit, documented, conservative default for MaximumReceiveMessageSize (a concrete
+          byte ceiling), MaximumParallelInvocationsPerClient, ClientTimeoutInterval, and
+          KeepAliveInterval — applied BEFORE the caller's existing configureHubOptions callback runs,
+          so every default remains fully overridable (raise or lower) with no signature change. Pinned
+          explicitly even where a value matches SignalR's current framework default, so the platform's
+          posture is documented and stable across future SignalR version changes rather than implicit.
+          SHIPPED VALUES: MaximumReceiveMessageSize = 32 * 1024 (32 KB), MaximumParallelInvocationsPerClient
+          = 1, ClientTimeoutInterval = TimeSpan.FromSeconds(30), KeepAliveInterval = TimeSpan.FromSeconds(15).
+          Property types confirmed via reflection against the installed HubOptions before use:
+          MaximumReceiveMessageSize is long?, MaximumParallelInvocationsPerClient is a non-nullable int,
+          ClientTimeoutInterval/KeepAliveInterval are TimeSpan?.
+```
+
 ---
 
 ## Implementation Rules
@@ -357,6 +561,8 @@ WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString,
 - `ErrorTypeStatusCodeMap.Resolve` is the single source of truth for `ErrorType` → HTTP status mapping. Do not duplicate this switch anywhere else.
 - `SharedKernelExceptionHandler` must never leak exception messages or stack traces outside `IHostEnvironment.IsDevelopment()`.
 - `ProblemDetails.Extensions["traceId"]` must always be populated when `Activity.Current` is non-null — this is the platform's primary "give support this ID" field surfaced to API consumers.
+- **Multi-field validation errors (WO-062, P-402 — shipped):** `ValidationException` is the one case where a single `Error` is insufficient — `ValidationProblemDetailsExtensions.ToProblemDetails(ValidationException, ...)` must be used instead of the single-`Error` path, grouping every failing field's `Error` by `Code` into `Extensions["errors"]`. Every other `SharedKernelException` subtype continues through the single-`Error` `ErrorProblemDetailsExtensions.ToProblemDetails(Error)` path unchanged — this is a narrow, `ValidationException`-specific exception to the "one `Error`, one body" model, not a general precedent for other exception types to grow their own bespoke body shape.
+- **HTTP protocol-level outcomes that never originate as a domain `Error` (WO-062, P-407/P-408 — shipped) are never routed through `Error`/`ErrorType`.** A 412 Precondition Failed (`If-Match` mismatch) and a 429 Too Many Requests (rate-limit rejection) are both HTTP-boundary-native outcomes with no corresponding `Result<T>` failure ever produced deeper in the stack — unlike `NotFound`/`Conflict`/`Validation`/etc., which represent application/domain failure categories translated to HTTP as a deliberate mapping step. These two outcomes are built via a small shared internal RFC 9457 shaping helper (extracted from `ErrorProblemDetailsExtensions`'s existing `Type`-URI/`traceId` construction pattern) instead of growing the `ErrorType` enum for outcomes that were never an `Error` to begin with. Do not propose a new `ErrorType` member for a future HTTP-protocol-native outcome without first asking whether it is genuinely a domain/application failure category (belongs in `ErrorType`) or a pure HTTP-boundary concern (belongs in this shared shaping helper instead).
 
 ### `Result<T>` HTTP boundary rules
 
@@ -371,6 +577,7 @@ WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString,
 - Composition is AND across stacked attributes, OR within one attribute's role/permission list. This is a fixed, documented rule — do not add a configurable combination mode without a new Design phase; the acceptance criteria for this capability only requires the two composition primitives already described.
 - This filter is **not** a substitute for `05.Application`'s `AuthorizationBehavior`/`IAuthorizeRequest` — it is the HTTP-boundary sibling for checks that belong at the edge (e.g., an entire endpoint requires an `Admin` role regardless of which command/query it dispatches). A command dispatched from an endpoint that already passed `[RequireRole]` may still carry its own, separate `IAuthorizeRequest` requirements evaluated deeper in the pipeline — the two layers are complementary, not exclusive.
 - `ErrorType.Forbidden`/`Error.Forbidden(...)` shipped in `01.Core`'s `SharedKernel.Primitives` 1.1.0 (P-384/WO-059) and this capability's Core phase is implemented against them, never against `Error.Unauthorized(...)` as a stand-in — 401 and 403 are semantically distinct HTTP outcomes (not-authenticated vs. authenticated-but-forbidden) and this domain's `ErrorTypeStatusCodeMap` now encodes that distinction for every mapped `ErrorType`, including `Forbidden → 403`.
+- **Step-up/fresh-authentication rules (WO-062, P-406 — shipped):** `[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` **extend** `AuthorizationRequirementEndpointFilter` — never a second filter type, never a second `.AddEndpointFilter<...>()` registration call. Both must evaluate through `IUserContext.IsAuthenticationFresherThan(TimeSpan, DateTimeOffset)`/`.WasAuthenticatedWith(string)` (both already shipped, `12.Security.Abstractions`, WO-058/P-375) — never a hand-rolled `AuthTime` comparison against a locally-called `DateTimeOffset.UtcNow`. `IsAuthenticationFresherThan` requires an explicit `now`; the filter resolves `IClock` (`01.Core/SharedKernel.Primitives`) from `HttpContext.RequestServices` **lazily, only when `[RequireFreshAuthentication]` is present** on the evaluated endpoint — an endpoint carrying only `[RequireRole]`/`[RequirePermission]` must never require `IClock` to be registered in the consumer's container. Composition and rejection shape (AND-across, `Error.Forbidden(...)` → 403, no dedicated `IsAuthenticated` branch) are identical to `[RequireRole]`/`[RequirePermission]`.
 
 ### API versioning rules
 
@@ -384,6 +591,40 @@ WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString,
 - **AOT-discovered correction (Core phase):** `Microsoft.OpenApi` 2.0.0's model types (`OpenApiDocument`, `OpenApiComponents`, `OpenApiSecurityScheme`, `SecuritySchemeType`, `OpenApiInfo`, etc.) live directly under the `Microsoft.OpenApi` namespace, **not** `Microsoft.OpenApi.Models` — the latter namespace does not exist in this version and is a holdover from the pre-2.0 Swashbuckle-era API shape. Always verify the actual namespace via reflection against the installed package version rather than assuming from older documentation/training data.
 - The Bearer security scheme registered by `AddSharedKernelOpenApi`'s document transformer is metadata only (for the "Authorize" button in Scalar's UI) — it performs no token validation. Token validation is exclusively `12.Security.Oidc`'s concern.
 - One OpenAPI document per discovered API version. Do not collapse multiple versions into a single document with manual `[ApiExplorerSettings]` filtering — that defeats the purpose of version-grouped documents.
+
+### Security response header rules (WO-062, P-403 — shipped)
+
+- `UseSharedKernelSecurityHeaders()` must be registered immediately after `UseSharedKernelCorrelationId()` and before `UseExceptionHandler()`/error-handling middleware — correlation-id-then-security-headers-then-exception-handler is the fixed pipeline ordering.
+- HSTS is opt-**out**, not opt-in — it ships on by default, unlike every other capability added in this batch. Its XML docs and README must carry a capitalized warning that it needs disabling (or a short `max-age`) for local HTTP-only development, mirroring ASP.NET Core's own `UseHsts()` guidance.
+- `Content-Security-Policy` is never set by default — only `WithContentSecurityPolicy(...)` sets one. A wrong or generic default CSP is a real risk to this package's own `MapSharedKernelOpenApi`/Scalar UI, so this package declines to guess one.
+- Every header assignment is guarded by `context.Response.Headers.ContainsKey(...)` — an inner middleware/endpoint's more-specific header value always wins over this middleware's platform default.
+
+### CORS policy rules (WO-062, P-404 — shipped)
+
+- `AddSharedKernelCors`'s `CorsPolicyOptions` must make `AllowCredentials = true` combined with an empty/wildcard `AllowedOrigins` **structurally impossible to express** — enforced via an `IValidateOptions<CorsPolicyOptions>` + `ValidateOnStart()` fail-fast guard at `IHost.StartAsync()`, never deferred to the first real credentialed cross-origin request (the underlying CORS spec's own silent-until-triggered failure mode).
+- Consumers reference the named default policy (`CorsPolicyNames.Default`) rather than re-inventing a policy-name literal at each call site — mirrors the platform's magic-string convention applied to CORS policy names.
+- Environment-specific origin allowlists (dev/staging/prod) are a configuration concern, not a hardcoded list inside this package.
+
+### Inbound idempotency-key rules (WO-062, P-405 — shipped)
+
+- `IdempotencyKeyRequirementEndpointFilter` is a **separate filter type** from `AuthorizationRequirementEndpointFilter` — idempotency-key presence is a request-shape concern, not an authorization concern, and must never be folded into the authorization filter or its attribute set.
+- `IdempotencyKeyHeader` is domain-local for now (see the Interface Contracts note above) — never independently re-typed as a raw string literal at a second call site inside this package.
+- A missing/malformed key on an endpoint carrying `[RequireIdempotencyKey]` always produces a `ProblemDetails` body (`ErrorType.Validation` → 400) via the existing single-`Error` path — never a bare exception, never a new `ErrorType`.
+- This package supplies extraction/validation and the guard filter only — it never attempts automatic binding of the validated key into a MediatR command's `IIdempotentRequest.IdempotencyKey` property; that remains the endpoint handler's own responsibility before dispatch.
+
+### ETag / conditional-request rules (WO-062, P-407 — shipped)
+
+- `RowVersionETag`/`ConditionalRequestExtensions` are additive helper surface — adoption is optional per consuming service, and zero existing behavior (`ErrorTypeStatusCodeMap`'s seven-case mapping, `06.Persistence`'s `Error.Conflict`/409) changes as a result of this capability existing.
+- A 412 response is constructed via the shared internal RFC 9457 shaping helper (`Http/`), never via `Error`/`ErrorType` — see the "HTTP protocol-level outcomes" rule under ProblemDetails rules above for the general principle this follows.
+- Docs must explicitly state the ETag/`If-Match` recipe is additive to, never a replacement for, `Error.Conflict` — a service may use either, both, or neither.
+
+### Rate-limit rejection bridge rules (WO-062, P-408 — shipped)
+
+- `RateLimitRejectionProblemDetails` is the only sanctioned way to shape a rate-limit rejection into `ProblemDetails` — a consuming service's `RateLimiterOptions.OnRejected` callback (wired via `13.ServiceDefaults`'s `AddSharedKernelRateLimiting()`) must call this helper directly rather than hand-rolling a 429 body, mirroring the platform's inline-`ProblemDetails`-construction prohibition applied to every other error shape.
+- Reuses the same shared `Http/` RFC 9457 shaping helper as the 412 path (P-407) rather than duplicating the `Type`-URI/`traceId` construction a second time.
+- `Retry-After`, when supplied, is always a real HTTP response header, never body-only.
+- This package takes no `ProjectReference` on `13.ServiceDefaults` in either direction — the helper is discoverable and callable by name only, mirroring every other cross-domain "referenced by name, not by project" relationship already documented in this file (e.g. the correlation-id baggage key).
+- **Flagged, not performed, follow-up (DO-17, WO-062):** `13.ServiceDefaults/README.md`'s `AddSharedKernelRateLimiting` `OnRejected` recipe (as of this writing) hand-rolls its own `ProblemDetails` literal inline instead of calling `RateLimitRejectionProblemDetails.Create(context.HttpContext, retryAfter)` — exactly the inline-`ProblemDetails`-construction anti-pattern this helper exists to close. Updating that recipe is `13.ServiceDefaults`'s own file, out of this domain's jurisdiction — flagged here for `servicedefaults-arch-planner`/`servicedefaults-phase-implementer` to pick up, mirroring the DO-07 cross-domain-flag-not-fix precedent (WO-041) rather than this domain reaching into another domain's README.
 
 ### Correlation-id rules
 
@@ -413,6 +654,12 @@ WithRedisBackplane(this ISignalRServerBuilder builder, string connectionString,
 - `WithRedisBackplane` is purely additive/opt-in — omitting it keeps SignalR fully in-memory (single-instance only), which is correct for local dev and single-replica deployments.
 - Never share an `IConnectionMultiplexer` instance between `02.Caching.Redis.Core`'s `AddRedisConnection` and SignalR's backplane — `AddStackExchangeRedis` manages its own connection lifecycle internally and the two domains must not be wired together. This is intentional isolation, not an oversight: a backplane outage must not be conflated with a cache-connection outage in health checks or logs.
 - See "Why SignalR's Redis backplane is distinct from `02.Caching.Redis.PubSub`" above before proposing any code sharing between the two.
+
+### SignalR secure connection/message defaults (WO-062, P-409 — shipped)
+
+- `AddSharedKernelSignalR` sets explicit, documented, conservative defaults for `MaximumReceiveMessageSize`/`MaximumParallelInvocationsPerClient`/`ClientTimeoutInterval`/`KeepAliveInterval` — pinned even where a value matches SignalR's own current framework default, so the platform's posture stays stable and documented across future SignalR version bumps rather than implicit.
+- These defaults are applied **before** the caller's existing `configureHubOptions` callback runs — the platform default is a starting point, never a hard ceiling; a consuming service can always raise or lower any of the four independently. No new parameter, no signature change to `AddSharedKernelSignalR`.
+- This is purely a `HubOptions` default-value change — it must never alter `TenantContextHubFilter`/`HubExceptionMappingFilter`/`WithRedisBackplane` behavior.
 
 ### AOT notes
 
@@ -472,6 +719,57 @@ public async Task<ActionResult<OrderDto>> GetById(Guid id, CancellationToken ct)
 // ... at composition root:
 app.MapControllers().AddEndpointFilter<AuthorizationRequirementEndpointFilter>();
 
+// WebApi — step-up/fresh-authentication (WO-062/P-406 — shipped)
+app.MapPost("/payments/{id}/confirm", ConfirmPaymentHandler)
+   .RequireFreshAuthentication(maxAgeSeconds: 300)      // AuthTime within the last 5 minutes
+   .RequireAuthenticationMethod("mfa", "otp")            // OR within this call
+   .AddEndpointFilter<AuthorizationRequirementEndpointFilter>();   // same filter as [RequireRole]
+
+// WebApi — multi-field validation ProblemDetails (WO-062/P-402 — shipped)
+// No extra wiring — SharedKernelExceptionHandler routes ValidationException through the
+// multi-error path automatically; a client posting 3 invalid fields sees all 3 in the response.
+
+// WebApi — security response headers (WO-062/P-403 — shipped)
+builder.Services.Configure<SecurityHeadersOptions>(o => o.WithContentSecurityPolicy("default-src 'self'"));
+// ...
+app.UseSharedKernelCorrelationId();       // first
+app.UseSharedKernelSecurityHeaders();     // second
+app.UseExceptionHandler();                // third
+
+// WebApi — CORS (WO-062/P-404 — shipped)
+builder.Services.AddSharedKernelCors(o =>
+{
+    o.AllowedOrigins.Add("https://app.example.com");
+    o.AllowCredentials = true;   // fine — origins are explicit, never wildcard
+});
+// ...
+app.UseCors(CorsPolicyNames.Default);
+
+// WebApi — inbound idempotency-key HTTP boundary (WO-062/P-405 — shipped)
+builder.Services.AddSharedKernelIdempotencyFilters();
+app.MapPost("/payments", CreatePaymentHandler)
+   .RequireIdempotencyKey()
+   .AddEndpointFilter<IdempotencyKeyRequirementEndpointFilter>();
+// ... inside CreatePaymentHandler:
+httpContext.TryGetIdempotencyKey(out string? key);
+var command = new CreatePaymentCommand(..., IdempotencyKey: key);   // dispatched through
+                                                                     // 05.Application's
+                                                                     // IdempotentCommandBehavior
+
+// WebApi — ETag / If-Match conditional requests (WO-062/P-407 — shipped)
+app.MapGet("/accounts/{id}", async (Guid id, IAccountQueryService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    var account = await svc.GetByIdAsync(id, ct);
+    ctx.Response.Headers.ETag = RowVersionETag.From(account.RowVersion);
+    return Results.Ok(account);
+});
+app.MapPut("/accounts/{id}", async (Guid id, UpdateAccountRequest body, HttpContext ctx, CancellationToken ct) =>
+{
+    // ConditionalRequestExtensions evaluates the inbound If-Match header against the current
+    // ETag and short-circuits with 412 on mismatch before the update proceeds — additive to,
+    // never a replacement for, the existing Error.Conflict/409 path.
+});
+
 // SignalR — minimal setup (in-memory, single replica)
 builder.Services.AddSharedKernelSignalR();
 
@@ -516,6 +814,17 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - `Asp.Versioning.Http` 10.0.0 exposes the requested API version on `HttpContext` as the extension **property** `HttpContext.RequestedApiVersion` (`Microsoft.AspNetCore.Http.HttpContextExtensions`) — there is no callable `GetRequestedApiVersion()` method despite that name appearing in some docs/training data. Always verify via reflection against the installed package before writing test/endpoint code against it (see `00.Governance`-adjacent guidance: verify real API shapes, don't trust the name).
 - SignalR Redis backplane fan-out test: two independent in-memory `TestServer` SignalR hosts (each built the same way — `AddSharedKernelSignalR().WithRedisBackplane(connectionString)` against the same `RedisContainerFixture` (`16.Testing/SharedKernel.Testing.Containers`) connection string) prove cross-instance fan-out by sending via one instance's `IHubContext<THub>` and asserting receipt on a `Microsoft.AspNetCore.SignalR.Client.HubConnection` connected through the other instance's `TestServer.CreateHandler()`. `SharedKernel.Presentation.SignalR.Tests` carries `Microsoft.AspNetCore.SignalR.Client` 10.0.5 (the latest available for this package — not the 10.0.9 WebApi-stack line) and `Microsoft.AspNetCore.TestHost` 10.0.9 as test-only package references.
 
+### WO-062 test additions (design-locked; queued P-402–P-409)
+
+- `ValidationProblemDetailsExtensions`: N = 1, 2, 3 field-error test cases asserting `Extensions["errors"]` count matches `ValidationException.Errors.Count`; a full regression sweep of every non-`ValidationException` `ErrorType` proving the single-error body is byte-for-byte unchanged.
+- `SecurityHeadersMiddleware`: default header-set-present test; a CSP-omitted-means-no-header test (never a wrong default); a pre-set-header-never-overwritten test; an HSTS-individually-toggleable-off test.
+- `AddSharedKernelCors`: a startup-throws-on-wildcard-plus-credentials test (via the real `IHost.StartAsync()` path, not just constructing the options object); a valid-explicit-origin-plus-credentials-succeeds test; an integration test proving the named policy allows a configured origin and rejects an unconfigured one.
+- `IdempotencyKeyRequirementEndpointFilter`/`TryGetIdempotencyKey`: header present/absent/whitespace/malformed unit tests; a no-op-when-attribute-absent test (mirrors T-16's "zero unrelated-service resolution" technique); a regression test proving no unhandled exception ever leaks past the filter.
+- Step-up authentication (`RequireFreshAuthentication`/`RequireAuthenticationMethod`): within-window/expired/absent-`AuthTime` cases; OR-within-list semantics for `RequireAuthenticationMethod`; a composition test stacking `[RequireRole]` + `[RequireFreshAuthentication]`; and — reusing the exact empty-container/throwing-double technique T-16 established for `IUserContext` — a test proving `IClock` is never resolved from `HttpContext.RequestServices` when no `[RequireFreshAuthentication]` attribute is present on the endpoint.
+- `RowVersionETag`/`ConditionalRequestExtensions`: well-formed-ETag-output tests across representative `byte[]` inputs; match/mismatch/absent-`If-Match` cases; a regression test that `ErrorTypeStatusCodeMap` still resolves exactly its existing seven mapped `ErrorType`s (including `Forbidden → 403`, shipped WO-058) plus the 500 fallback (no new case silently added). Shipped as `Concurrency/RowVersionETagTests.cs`/`Concurrency/ConditionalRequestExtensionsTests.cs` (T-36–T-38, WO-062).
+- `RateLimitRejectionProblemDetails`: a shape test (429/`Type`/`traceId`); a `Retry-After`-header-set-only-when-supplied test.
+- SignalR `HubOptions` defaults: a defaults-match-documented-values test when `configureHubOptions` is omitted; an every-default-overridable test; a full existing-suite regression run proving `TenantContextHubFilter`/`HubExceptionMappingFilter`/`WithRedisBackplane` are untouched.
+
 ### Documentation build enforcement (confirmed at Docs phase)
 
 - Both production `.csproj` files set `<GenerateDocumentationFile>true</GenerateDocumentationFile>` — this is what actually turns missing-XML-doc (CS1591) and unresolved-`cref` (CS1574/CS1580) warnings on; without it the compiler silently skips doc validation even when every member already has a `///` comment block. Enabling it after the Core phase surfaced 4 pre-existing unresolved-`cref` warnings (`IHostEnvironment.IsDevelopment()` and `MapOpenApi(IEndpointRouteBuilder, string)` lacked a `using` for their containing namespace; `HubOptions.HubFilters` doesn't exist under that exact member name; `HttpContext` was ambiguous without a `Microsoft.AspNetCore.Http` `using`) — fixed via `<c>` plain-text references or fully-qualified `cref`s rather than adding usings that would pull unrelated types into scope. Any future PR that adds a new public member must build clean with this flag already on — do not defer doc-comment correctness to a later "Docs phase" cleanup pass.
@@ -543,3 +852,7 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - [2026-08-17] WO-058 P-381 `SK.14.Tests` (T-15–T-18) shipped — 26 new tests (4 `RequireRoleAttributeTests`, 4 `RequirePermissionAttributeTests`, 8 `AuthorizationRequirementEndpointFilterTests`, 9 `AuthorizationCompositionTests`, plus a new `ErrorType.Forbidden` `InlineData` row in `ErrorTypeStatusCodeMapTests`) added to `SharedKernel.Presentation.WebApi.Tests/Authorization/`. Confirmed three real API shapes via a throwaway reflection probe before writing assertions, per this domain's own "verify real API shapes" discipline: `EndpointFilterInvocationContext.Create(HttpContext)` is the correct static factory (no public constructor exists), `Results.Problem(ProblemDetails)` returns the concrete `Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult`, and `Endpoint`'s `RequestDelegate` constructor parameter accepts `null` at runtime despite its nullable annotation. New `Authorization/EndpointFilterTestHelpers.cs` (a `CreateContext(IUserContext?, params object[] metadata)` builder that only registers `IUserContext` in `HttpContext.RequestServices` when non-null, so the no-op-path test proves zero resolution was attempted simply by never registering the service) and `Authorization/IsAuthenticatedGuardUserContext.cs` (a test-only `IUserContext` whose `IsAuthenticated` getter throws, proving T-16's "rejected via the ordinary `HasRole`/`HasPermission` false-path, not a bespoke `IsAuthenticated` branch" requirement structurally rather than by inspection) added as new, reusable test infrastructure — both documented in a new "Testing endpoint filters without a host" Test Rules subsection. `16.Testing`'s existing `FakeUserContext` was sufficient for every authenticated-but-mismatched-role/permission case, so no new fake was needed there. Interface Contracts `Authorization/` Status banner updated from "Core shipped" to "Scaffold, Core, and Tests all shipped." `dotnet build`/`dotnet test SharedKernel.Presentation.WebApi.Tests.csproj --configuration Release` succeeds 0 errors and passes 71/71 (45 pre-existing + 26 net new), zero regressions. Docs (DO-09/DO-10) and Published (P-08) remain open and out of scope for this session (presentation-phase-implementer)
 - [2026-08-17] WO-058 P-381 `SK.14.Docs` (DO-09/DO-10) shipped — read the four shipped `Authorization/` files directly before doing anything. **DO-09 found already-satisfied:** C-25's Core-phase XML docs were already complete, thorough `<remarks>` prose covering both non-obvious design decisions the phase called out (the deliberate absence of an `IsAuthenticated` branch, and the no-op-when-absent behavior). Verified with a real `dotnet build --configuration Release`: 0 errors, zero CS1591/CS1574/CS1580, only the pre-existing unrelated `NU1903` advisory — no doc edits made, consistent with this domain's established DO-06/DO-07/DO-08 pattern of Docs tasks turning out already-satisfied. **DO-10 (the substantive task):** added a "Declarative role/permission authorization" section to `SharedKernel.Presentation.WebApi/README.md` — Minimal API form (route-group `.AddEndpointFilter<AuthorizationRequirementEndpointFilter>()` + `.RequireRole`/`.RequirePermission` sugar), MVC form (`[RequireRole("Admin")]` action attribute + `MapControllers().AddEndpointFilter<AuthorizationRequirementEndpointFilter>()`), the AND-across/OR-within composition rule stated as fixed and non-configurable, an unsoftened blockquote callout that this filter — unlike SignalR's global hub filters — never auto-attaches and a missed `.AddEndpointFilter<...>()` call leaves every attribute silently inert, and the `[Authorize(Roles=...)]`-must-never-be-mixed-in rule tying back to `WO-057`/`P-366`. Added a matching `AddSharedKernelAuthorizationFilters` entry to `14.Presentation/CONFIGURATION.md` (judged in-scope per DO-05's "every DI extension method documented" precedent). Interface Contracts `Authorization/` Status banner updated from "Scaffold, Core, and Tests all shipped" to "Scaffold, Core, Tests, and Docs all shipped — only Published (P-08) remains open." Zero source files touched; full `SharedKernel.Presentation.WebApi.Tests` suite re-confirmed 71/71 green, unchanged. `SK.14.Docs` now `●` 10/10, root Phase Backlog **P-381** remains open pending only `SK.14.Published` (presentation-phase-implementer)
 - [2026-08-17] WO-058 P-381 `SK.14.Published` (P-08) shipped — the final task of the `14.Presentation` domain. Re-packed `SharedKernel.Presentation.WebApi` to `1.1.0` (a **minor** bump per the task's explicit instruction — the `Authorization/` namespace is a genuinely new additive public surface, not a patch-level fix); `Description`/`PackageTags` extended to mention the authorization surface. `SharedKernel.Presentation.SignalR` untouched (WO-058 never targeted it), stays at `1.0.1`. `consumer-verify/Program.cs` gained **Surface 7**: composes `AddSharedKernelAuthorizationFilters()` alongside the existing full WebApi stack, resolves `AuthorizationRequirementEndpointFilter` as a registered singleton, then proves the documented wiring form itself — `.MapGroup(...).AddEndpointFilter<AuthorizationRequirementEndpointFilter>()` plus `.RequireRole`/`.RequirePermission` sugar on a mapped route — constructs with zero DI/build exceptions. All 7 surfaces PASS. Both previously-documented environment facts re-verified rather than assumed: the harness still hits the pre-existing `NU1903`-as-error on `Microsoft.OpenApi` 2.0.0 (worked around locally with `-p:WarningsNotAsErrors=NU1903` for this session's verification run only, not committed); no internal NuGet feed exists in this repo, so `dotnet pack` produced local `.nupkg`/`.snupkg` only — no `dotnet nuget push` was run, no publish occurred. Full regression: `SharedKernel.Presentation.WebApi.Tests` 71/71 green, `SharedKernel.Presentation.SignalR.Tests` 11/11 green. Interface Contracts `Authorization/` Status banner updated from "only Published (P-08) remains open" to "Shipped end to end." All six `SK.14.*` phase keys now `●` — root Phase Backlog **P-381** closes as a consequence (presentation-phase-implementer)
+- [2026-08-20] WO-062 dispatched — eight new phases (P-402–P-409) processed against this already-fully-`●`-Published domain, a big-fintech/gold-standard hardening pass covering both packages. **`SharedKernel.Presentation.WebApi` (P-402–P-408, seven phases):** (1) multi-field validation `ProblemDetails` — fixes a confirmed silent-data-loss defect where `SharedKernelExceptionHandler` surfaced only `ValidationException.Errors[0]`; new `ValidationProblemDetailsExtensions.ToProblemDetails(ValidationException, ...)` groups every field by `Error.Code` into `Extensions["errors"]`, mirroring ASP.NET Core's own `ValidationProblemDetails.Errors` shape, additive to the untouched single-`Error` path. (2) Security response headers — `UseSharedKernelSecurityHeaders`/`SecurityHeadersOptions`: HSTS/`X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy`/`Permissions-Policy` on by default, CSP deliberately opt-in-only, never overwrites an already-set header. (3) CORS convention builder — `AddSharedKernelCors`/`CorsPolicyOptions` makes the classic `AllowAnyOrigin()`+`AllowCredentials()` misconfiguration structurally inexpressible via a startup `ValidateOnStart()` fail-fast guard. (4) Inbound idempotency-key HTTP boundary — `TryGetIdempotencyKey`/`RequireIdempotencyKeyAttribute`/`IdempotencyKeyRequirementEndpointFilter`, closing the gap between `05.Application`'s in-process `IIdempotentRequest` and `11.Communication.Rest`'s still-queued outbound propagation (P-364); deliberately a **separate** filter from `AuthorizationRequirementEndpointFilter`, not an authorization concern. (5) Declarative step-up/fresh-authentication — `[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` **extend** (never duplicate) `AuthorizationRequirementEndpointFilter`, built on `IUserContext.IsAuthenticationFresherThan(TimeSpan, DateTimeOffset)`/`.WasAuthenticatedWith(string)` — both already shipped in `12.Security.Abstractions` (WO-058/P-375, confirmed via direct read of the real `IUserContext.cs`, which also confirmed `IsAuthenticationFresherThan` already takes an explicit `now` per the platform's injectable-time convention, so this filter resolves `IClock` from `HttpContext.RequestServices` lazily, only when the new attribute is present). Verified — not assumed — that `16.Testing`'s `FakeUserContext`/`SecurityTestContextBuilder` already expose settable `AuthTime`/`AuthenticationMethods`; no `16.Testing` gap, no follow-up phase escalated. (6) ETag/`If-Match` conditional-request helpers — `RowVersionETag`/`ConditionalRequestExtensions` bridge `06.Persistence`'s row-version concurrency to RFC 9110 §13, additive to `Error.Conflict`/409. (7) Rate-limit-rejection→429 bridge — `RateLimitRejectionProblemDetails` finally builds the real helper `13.ServiceDefaults`'s `AddSharedKernelRateLimiting()` (P-397/WO-061) deferred here without ever landing one. **`SharedKernel.Presentation.SignalR` (P-409, one phase):** conservative, documented, always-overridable `HubOptions` defaults (`MaximumReceiveMessageSize`/`MaximumParallelInvocationsPerClient`/`ClientTimeoutInterval`/`KeepAliveInterval`) set inside `AddSharedKernelSignalR` before the caller's `configureHubOptions` runs, closing a resource-exhaustion gap with no prior platform default. **Two design decisions made instead of escalating cross-domain blockers (mirroring D-18's `Error.Forbidden` precedent from WO-058, but resolved locally rather than gated):** `IdempotencyKeyHeader` ships as a domain-local constant (mirrors `CorrelationIdMiddleware`'s pre-WO-042 shape; `01.Core`'s `WellKnownHeaders` confirmed to have no `IdempotencyKey` member, not requested); a candidate `ErrorType.PreconditionFailed` for the 412 path was declined — HTTP protocol-level outcomes (412, 429) that never originate as a domain `Error` are built via a new shared internal RFC 9457 shaping helper (extracted from `ErrorProblemDetailsExtensions`'s existing `ProblemTypeBaseUri` pattern) instead of growing `ErrorType` for non-`Error` outcomes. Both recorded as non-blocking, informational rows in `state-map.md`'s Cross-Domain Dependencies table for future-promotion traceability, not as `Pending` gates. New Interface Contracts subsections added for all eight capabilities (all marked "Design-locked (WO-062, P-40x)"); five new Implementation Rules subsections added (Security response header rules, CORS policy rules, Inbound idempotency-key rules, ETag/conditional-request rules, Rate-limit rejection bridge rules) plus extensions to the existing ProblemDetails rules, Declarative role/permission authorization rules, and SignalR Redis backplane rules sections; DI Registration gained eight new worked examples; Test Rules gained a new "WO-062 test additions" subsection. Task rows D-20–D-45, S-13–S-20, C-26–C-50, T-19–T-43, DO-11–DO-18, P-09–P-16 added to `state-map.md`, all `○` — every prior task through D-19/S-12/C-25/T-18/DO-10/P-08 remains `●` and unaffected. Per this agent's jurisdiction, the root `CLAUDE.md` "What Goes Where" rows several of these phases' acceptance criteria request are **not** added here — flagged as a follow-up for `arch-lead`/`sync-brain`, mirroring the DO-07 cross-domain-flag-not-fix precedent (presentation-arch-planner, WO-062)
+- [2026-08-20] WO-062 `SK.14.Core` shipped (C-26–C-50, 25/25) — all eight P-402–P-409 Interface Contracts/Implementation Rules status banners flipped from "Design-locked" to "Core implementation shipped — Tests/Docs/Published still pending": `ValidationProblemDetailsExtensions`, `SecurityHeadersOptions`/`SecurityHeadersMiddleware`/`UseSharedKernelSecurityHeaders`, `CorsPolicyOptions`/`AddSharedKernelCors`/`CorsPolicyOptionsValidator`, `HttpContextIdempotencyExtensions`/`RequireIdempotencyKeyAttribute`/`IdempotencyKeyRequirementEndpointFilter`, `RequireFreshAuthenticationAttribute`/`RequireAuthenticationMethodAttribute` extending `AuthorizationRequirementEndpointFilter`, `RowVersionETag`/`ConditionalRequestExtensions`/the new shared internal `Http/ProblemDetailsShaping` helper, `RateLimitRejectionProblemDetails`, and the `AddSharedKernelSignalR` `HubOptions` defaults all now live in source. Two "CORRECTED at Core-phase implementation" notes added, both verified via a throwaway reflection probe against the installed `net10.0` shared framework before use, per this domain's established discipline: `EntityTagHeaderValue`'s RFC 9110 strong-comparison member is the instance method `.Compare(EntityTagHeaderValue, bool)`, not a static overload, and `Microsoft.AspNetCore.Http.Headers.RequestHeaders(IHeaderDictionary).IfMatch` is the correct typed-header access path; `HubOptions.MaximumReceiveMessageSize` is `long?`, `.MaximumParallelInvocationsPerClient` is a non-nullable `int`, `.ClientTimeoutInterval`/`.KeepAliveInterval` are `TimeSpan?` — confirmed, not assumed. Shipped `AddSharedKernelSignalR` default values recorded verbatim (`MaximumReceiveMessageSize = 32 * 1024`, `MaximumParallelInvocationsPerClient = 1`, `ClientTimeoutInterval = 30s`, `KeepAliveInterval = 15s`). Zero new `PackageReference`/`ProjectReference` — confirmed by the prior Scaffold-phase session (S-13–S-20). Both packages build 0 warnings/0 errors beyond the pre-existing unrelated `NU1903` advisory; full regression `SharedKernel.Presentation.WebApi.Tests` 71/71 + `SharedKernel.Presentation.SignalR.Tests` 11/11 green, proving the single-`Error` `ProblemDetails` path stayed byte-for-byte unchanged (D-22's non-goal). `SK.14.Tests`/`Docs`/`Published` (T-19–T-43/DO-11–DO-18/P-09–P-16) remain open — next phase (presentation-phase-implementer, state-map-phase)
+- [2026-08-20] WO-062 `SK.14.Tests` shipped (T-19–T-43, 25/25) — 63 new tests across both packages implementing every remaining WO-062 test task. `SharedKernel.Presentation.WebApi.Tests` gained `ValidationProblemDetailsExtensionsTests`, two new `SharedKernelExceptionHandlerTests` methods (multi-error handler wiring proof; a `TheoryData<SharedKernelException, Error>`-driven regression sweep across every non-`ValidationException` `ErrorType`), `Middleware/SecurityHeadersMiddlewareTests`, `Cors/CorsExtensionsTests`, `Idempotency/HttpContextIdempotencyExtensionsTests`/`IdempotencyKeyRequirementEndpointFilterTests`, `Authorization/StepUpAuthenticationTests`, `Concurrency/RowVersionETagTests`/`ConditionalRequestExtensionsTests`, and `RateLimiting/RateLimitRejectionProblemDetailsTests`; `SharedKernel.Presentation.SignalR.Tests` gained `Extensions/SignalRExtensionsHubOptionsTests`. `SharedKernel.Presentation.WebApi.Tests` now 134/134 green (71 pre-existing + 63 net new); `SharedKernel.Presentation.SignalR.Tests` now 14/14 green (11 pre-existing + 3 net new). **Two pre-existing documentation defects found and corrected in the same pass, unrelated to any new capability:** three "six-case"/"six mapped `ErrorType`s" references to `ErrorTypeStatusCodeMap` (P-407's Interface Contracts note, its Implementation Rules bullet, and the Test Rules bullet) were stale — the real shipped map has carried seven explicit cases since `ErrorType.Forbidden` shipped in WO-058, and this P-407 prose was apparently written against an older count; corrected in place, mirroring D-19's established precedent for this exact class of drift. All eight P-402–P-409 Interface Contracts status banners flipped from "Core implementation shipped — Tests/Docs/Published still pending" to "Core and Tests implementation shipped — Docs/Published still pending." `SK.14.Docs` (DO-11–DO-18)/`SK.14.Published` (P-09–P-16) remain open — next phase (presentation-phase-implementer, state-map-phase)
+- [2026-08-20] WO-062 `SK.14.Published` shipped (P-09–P-16, 16/16) — the domain's final WO-062 phase, closing all six `SK.14.*` phase keys end to end. `SharedKernel.Presentation.WebApi` re-packed **once**, `1.1.0` → `1.2.0` (a single coherent minor bump covering all six additive Core-phase capabilities rather than seven sequential per-phase bumps, since none of the intermediate versions ever shipped to a consumer); `SharedKernel.Presentation.SignalR` re-packed `1.0.1` → `1.0.2` (patch — P-409's `HubOptions` default-value change is purely internal). `consumer-verify` gained Surface 8 (CORS + security headers, including a negative-path proof that `CorsPolicyOptionsValidator` genuinely fails fast), Surface 9 (idempotency filters), and Surface 10 (direct functional checks of the pure-static ETag/rate-limit helpers, which carry no DI wiring of their own); Surface 7 extended in place to also compose the step-up-authentication attributes. All 10 surfaces PASS with zero DI exceptions; `SharedKernel.Presentation.WebApi.Tests` 134/134 green, `SharedKernel.Presentation.SignalR.Tests` 14/14 green, zero regressions. All eight P-402–P-409 Interface Contracts status banners flipped from "Core, Tests, and Docs implementation shipped — Published still pending" to "Shipped end to end," each noting its package's new version. This closes `14.Presentation`'s WO-062 scope end to end (presentation-phase-implementer, state-map-phase, sync-brain)

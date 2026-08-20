@@ -241,6 +241,324 @@ complement to that pipeline behavior, not a replacement for it: `[RequireRole]` 
 endpoint regardless of which command/query it dispatches, while `IAuthorizeRequest` gates an
 individual command/query regardless of which endpoint dispatched it.
 
+### Step-up / fresh-authentication gating
+
+`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` **extend the same**
+`AuthorizationRequirementEndpointFilter` used by `[RequireRole]`/`[RequirePermission]` above — there
+is no second filter type and no second `.AddEndpointFilter<...>()` registration call. They gate an
+endpoint on *how recently* and *how* the caller authenticated, built on `12.Security`'s step-up
+signals (`IUserContext.AuthTime`/`.AuthenticationMethods`, WO-058/P-375) — useful for a high-risk
+action that should require the caller to have completed MFA recently, even if their session token
+is otherwise still valid.
+
+Worked example: confirming a payment requires the caller's authentication to be no older than five
+minutes **and** to have used MFA or a one-time passcode:
+
+```csharp
+builder.Services.AddSharedKernelAuthorizationFilters();
+
+var app = builder.Build();
+
+var payments = app.MapGroup("/v{version:apiVersion}/payments")
+    .AddEndpointFilter<AuthorizationRequirementEndpointFilter>();
+
+payments.MapPost("/{id:guid}/confirm", ConfirmPaymentHandler)
+    .RequireFreshAuthentication(maxAgeSeconds: 300)   // AuthTime within the last 5 minutes ...
+    .RequireAuthenticationMethod("mfa", "otp");        // ... AND authenticated via MFA or OTP (OR'd)
+```
+
+The equivalent MVC form:
+
+```csharp
+[HttpPost("{id:guid}/confirm")]
+[RequireFreshAuthentication(300)]
+[RequireAuthenticationMethod("mfa", "otp")]
+public async Task<ActionResult> ConfirmPayment(Guid id, CancellationToken ct)
+    => (await _payments.ConfirmAsync(id, ct)).ToActionResult();
+```
+
+A caller whose session is 10 minutes old, or who only authenticated with a password, gets
+`Error.Forbidden(...).ToProblemDetails()` (403) — the same rejection shape `[RequireRole]`/
+`[RequirePermission]` already use, so this is one consistent error contract regardless of which
+attribute rejected the request. `[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]`
+compose AND-across with each other and with any `[RequireRole]`/`[RequirePermission]` stacked on the
+same endpoint; `[RequireAuthenticationMethod]`'s own method list is OR-within, mirroring
+`[RequireRole]`'s composition rule. `IClock` (`01.Core`) is resolved lazily — only when
+`[RequireFreshAuthentication]` is actually present on the evaluated endpoint — so an endpoint using
+only `[RequireRole]`/`[RequirePermission]` never requires `IClock` to be registered.
+
+---
+
+## Multi-field validation errors
+
+A `ValidationException` (`01.Core`) carries *every* failing field's `Error`, not just one.
+`SharedKernelExceptionHandler` routes it through `ValidationProblemDetailsExtensions` instead of the
+single-`Error` path, grouping every failing field by `Error.Code` into `Extensions["errors"]` —
+mirroring ASP.NET Core's own built-in `ValidationProblemDetails.Errors` shape so client tooling that
+already understands that convention (form-binding libraries, generated SDKs) works unmodified. No
+extra wiring is needed — this happens automatically once `SharedKernelExceptionHandler` is
+registered.
+
+A request that throws:
+
+```csharp
+throw new ValidationException(
+[
+    Error.Validation("Order.CustomerId", "CustomerId is required."),
+    Error.Validation("Order.Lines", "At least one order line is required."),
+    Error.Validation("Order.Lines", "Line quantity must be greater than zero."),
+]);
+```
+
+produces a body naming all three failures, not just the first:
+
+```json
+{
+  "type": "https://httpstatuses.io/400",
+  "title": "Order.CustomerId",
+  "status": 400,
+  "detail": "CustomerId is required.",
+  "errorCode": "Order.CustomerId",
+  "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  "errors": {
+    "Order.CustomerId": ["CustomerId is required."],
+    "Order.Lines": ["At least one order line is required.", "Line quantity must be greater than zero."]
+  }
+}
+```
+
+`Title`/`Detail`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]` are identical to
+what the single-`Error` path would already produce for the exception's first error — `errors` is
+purely additive. Every other `SharedKernelException` subtype (`NotFoundException`,
+`ConflictException`, etc.) continues through the unchanged single-`Error`
+`ErrorProblemDetailsExtensions.ToProblemDetails(Error)` path — this multi-error shape is specific to
+`ValidationException`, not a general precedent for other exception types.
+
+---
+
+## Security response headers
+
+`UseSharedKernelSecurityHeaders()` writes a conservative default set of HTTP response security
+headers on every response. Register it immediately after `UseSharedKernelCorrelationId()` and before
+`UseExceptionHandler()`:
+
+```csharp
+var app = builder.Build();
+
+app.UseSharedKernelCorrelationId();     // 1st — correlation id must be set even on error responses
+app.UseSharedKernelSecurityHeaders();   // 2nd
+app.UseExceptionHandler();              // 3rd
+```
+
+| Header | Default | Toggle-able? |
+| --- | --- | --- |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Yes — `options.Hsts.Enabled` |
+| `X-Content-Type-Options` | `nosniff` | Yes — `options.ContentTypeOptions.Enabled` |
+| `X-Frame-Options` | `DENY` | Yes — `options.FrameOptions.Enabled` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Yes — `options.ReferrerPolicy.Enabled` |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` | Yes — `options.PermissionsPolicy.Enabled` |
+| `Content-Security-Policy` | *(none)* | Only set via `WithContentSecurityPolicy(...)` — no default |
+
+> **HSTS IS ENABLED BY DEFAULT — THIS WILL BREAK LOCAL HTTP-ONLY DEVELOPMENT.** A browser that
+> caches a long-lived HSTS policy for a host refuses plain HTTP connections to that host until the
+> policy expires. **DISABLE IT OR GIVE IT A SHORT `MaxAge` FOR LOCAL DEV:**
+>
+> ```csharp
+> if (builder.Environment.IsDevelopment())
+> {
+>     app.UseSharedKernelSecurityHeaders(o => o.Hsts.Enabled = false);
+> }
+> else
+> {
+>     app.UseSharedKernelSecurityHeaders();
+> }
+> ```
+
+`Content-Security-Policy` is never set by default — a wrong generic default could break this
+package's own `MapSharedKernelOpenApi`/Scalar UI. Opt in explicitly:
+
+```csharp
+app.UseSharedKernelSecurityHeaders(o =>
+    o.WithContentSecurityPolicy(csp => csp
+        .AddDirective("default-src", "'self'")
+        .AddDirective("script-src", "'self' 'unsafe-inline'")));
+```
+
+Every header assignment is guarded — an inner middleware/endpoint that already set a header keeps
+its value; this middleware never overwrites.
+
+---
+
+## CORS
+
+`AddSharedKernelCors` registers one named policy (`CorsPolicyNames.Default`) and makes the classic
+`AllowCredentials` + wildcard/empty-origin misconfiguration **impossible to express** — it fails
+fast at `IHost.StartAsync()` rather than at the first real credentialed cross-origin request.
+
+Worked example — a browser-hosted SPA that calls this service's SignalR hub with credentials
+(cookies/`Authorization` header) attached to the WebSocket/SSE negotiate request:
+
+```csharp
+builder.Services.AddSharedKernelCors(o =>
+{
+    o.AllowedOrigins.Add("https://app.example.com");   // explicit origin — never "*" with credentials
+    o.AllowCredentials = true;                          // required for a credentialed SignalR connection
+    o.AllowedHeaders.Add("Authorization");
+});
+
+var app = builder.Build();
+
+app.UseCors(CorsPolicyNames.Default);   // before MapHub<T>()
+app.MapHub<OrdersHub>("/hubs/orders");
+```
+
+On the client:
+
+```javascript
+const connection = new signalR.HubConnectionBuilder()
+    .withUrl("https://api.example.com/hubs/orders", { withCredentials: true })
+    .build();
+```
+
+Omitting `AllowedOrigins` (or leaving it wildcarded) while `AllowCredentials = true` throws at
+startup instead of silently deploying a broken or insecure policy:
+
+```text
+CorsPolicyOptions.AllowCredentials cannot be combined with an empty or wildcard AllowedOrigins
+list. Specify one or more explicit origins, or set AllowCredentials to false.
+```
+
+Environment-specific allowlists (dev/staging/prod origins) are a configuration concern for the
+consuming service — read them from `IConfiguration` rather than hardcoding them.
+
+---
+
+## Inbound idempotency-key HTTP boundary
+
+`[RequireIdempotencyKey]` guards an endpoint on the presence of a valid client-supplied
+`Idempotency-Key` request header — the HTTP-boundary half that neither `05.Application`'s in-process
+`IIdempotentRequest`/`IdempotentCommandBehavior` nor `11.Communication.Rest`'s outbound propagation
+covers. The end-to-end recipe, header to dispatch:
+
+```csharp
+builder.Services.AddSharedKernelIdempotencyFilters();
+
+var app = builder.Build();
+
+var payments = app.MapGroup("/v{version:apiVersion}/payments")
+    .AddEndpointFilter<IdempotencyKeyRequirementEndpointFilter>();
+
+payments.MapPost("/", CreatePaymentHandler)
+    .RequireIdempotencyKey();
+
+// CreatePaymentHandler:
+static async Task<IResult> CreatePaymentHandler(
+    CreatePaymentRequest body,
+    HttpContext httpContext,
+    ISender sender,
+    CancellationToken ct)
+{
+    // 1. The filter already guaranteed the header is present and well-formed — read it.
+    httpContext.TryGetIdempotencyKey(out string? idempotencyKey);
+
+    // 2. Construct the command carrying that key.
+    var command = new CreatePaymentCommand(body.AccountId, body.Amount, IdempotencyKey: idempotencyKey!);
+
+    // 3. Dispatch as normal — 05.Application's IdempotentCommandBehavior<TRequest,TResponse>
+    //    short-circuits a duplicate submission of the same key without re-executing the handler.
+    Result<PaymentDto> result = await sender.Send(command, ct);
+    return result.ToProblemDetailsResult();
+}
+```
+
+A request missing the header, or carrying only whitespace, is rejected by the filter itself — before
+`CreatePaymentHandler` ever runs — with a 400 `ProblemDetails` body via the ordinary single-`Error`
+path (`Error.Validation`). This package supplies extraction/validation and the guard filter only; it
+never automatically binds the header value onto `IIdempotentRequest.IdempotencyKey` — that mapping
+step is always the endpoint handler's own responsibility, as shown above.
+
+`IdempotencyKeyRequirementEndpointFilter` is a deliberately **separate** filter from
+`AuthorizationRequirementEndpointFilter` — idempotency-key presence is a request-shape concern, not
+an authorization concern, and the two are never folded together.
+
+---
+
+## Optimistic concurrency — ETag / If-Match
+
+`RowVersionETag`/`ConditionalRequestExtensions` bridge `06.Persistence`'s row-version optimistic
+concurrency (`IHasConcurrency.RowVersion`, normally surfaced as `Error.Conflict`/409) to HTTP's own
+standard conditional-request mechanism (RFC 9110 §13). **This is additive — never a replacement for
+`Error.Conflict`.** A service may use either, both, or neither.
+
+The end-to-end recipe:
+
+```csharp
+// 1. GET returns the resource's current state and its ETag.
+app.MapGet("/v{version:apiVersion}/accounts/{id:guid}", async (
+    Guid id, IAccountQueryService svc, HttpContext ctx, CancellationToken ct) =>
+{
+    var account = await svc.GetByIdAsync(id, ct);
+    ctx.Response.Headers.ETag = RowVersionETag.From(account.RowVersion);
+    return Results.Ok(account);
+});
+
+// 2. The client sends that ETag back as If-Match on its update.
+// 3. A stale If-Match (someone else updated the resource first) short-circuits with 412 —
+//    before the update is attempted — instead of racing to a 409 deeper in the write path.
+app.MapPut("/v{version:apiVersion}/accounts/{id:guid}", async (
+    Guid id, UpdateAccountRequest body, IAccountQueryService reads, HttpContext ctx, CancellationToken ct) =>
+{
+    var current = await reads.GetByIdAsync(id, ct);
+    var currentETag = RowVersionETag.From(current.RowVersion);
+
+    if (!ctx.TryValidateIfMatch(currentETag, out var problemDetails))
+    {
+        return Microsoft.AspNetCore.Http.Results.Problem(problemDetails!);   // 412 Precondition Failed
+    }
+
+    // 4. If-Match matched — proceed with the update. Error.Conflict/409 remains the write path's
+    //    own defense against a race that slips in between the check above and the actual write.
+    Result<AccountDto> result = await accountService.UpdateAsync(id, body, ct);
+    return result.ToProblemDetailsResult();
+});
+```
+
+On a 412, the client's correct recovery is to **re-fetch** the resource (step 1 again), pick up the
+new `ETag`, and retry the update against the fresh state — the same recovery a client already
+performs on a 409 `Error.Conflict` response. A 412 is constructed directly via a shared internal RFC
+9457 shaping helper, deliberately **not** routed through `Error`/`ErrorType` — it is an
+HTTP-protocol-native outcome that never originates as a domain failure, unlike `Error.Conflict`.
+
+---
+
+## Rate-limit rejection → ProblemDetails bridge
+
+`RateLimitRejectionProblemDetails.Create` shapes a rate-limiter rejection into an RFC 9457 429
+`ProblemDetails` body — closing the handoff `13.ServiceDefaults`'s `AddSharedKernelRateLimiting()`
+leaves for a consuming service's own `RateLimiterOptions.OnRejected` callback (referenced by name
+only; neither package takes a `ProjectReference` on the other):
+
+```csharp
+builder.AddSharedKernelRateLimiting(options =>
+{
+    options.OnRejected = async (context, ct) =>
+    {
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var delay)
+            ? delay
+            : (TimeSpan?)null;
+
+        var problemDetails = RateLimitRejectionProblemDetails.Create(context.HttpContext, retryAfter);
+
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        await context.HttpContext.Response.WriteAsJsonAsync(problemDetails, ct);
+    };
+});
+```
+
+When `retryAfter` is supplied, it is written as a real `Retry-After` HTTP response header (in whole
+seconds) — not just a body field — so proxies and client SDKs that already understand `Retry-After`
+work unmodified.
+
 ---
 
 ## What you get out of the box
@@ -255,6 +573,13 @@ individual command/query regardless of which endpoint dispatched it.
 | OpenAPI + Scalar | `AddSharedKernelOpenApi`, `MapSharedKernelOpenApi` |
 | Correlation ID propagation | `CorrelationIdMiddleware`, `AddSharedKernelCorrelationId`, `UseSharedKernelCorrelationId` |
 | Declarative role/permission authorization | `RequireRoleAttribute`, `RequirePermissionAttribute`, `AuthorizationRequirementEndpointFilter`, `AddSharedKernelAuthorizationFilters` |
+| Declarative step-up/fresh-authentication gating | `RequireFreshAuthenticationAttribute`, `RequireAuthenticationMethodAttribute` |
+| Multi-field validation `ProblemDetails` | `ValidationProblemDetailsExtensions.ToProblemDetails` |
+| Security response headers | `SecurityHeadersOptions`, `UseSharedKernelSecurityHeaders` |
+| CORS policy convention | `CorsPolicyOptions`, `CorsPolicyNames`, `AddSharedKernelCors` |
+| Inbound idempotency-key HTTP boundary | `HttpContextIdempotencyExtensions.TryGetIdempotencyKey`, `RequireIdempotencyKeyAttribute`, `IdempotencyKeyRequirementEndpointFilter`, `AddSharedKernelIdempotencyFilters` |
+| ETag / `If-Match` conditional requests | `RowVersionETag`, `ConditionalRequestExtensions` |
+| Rate-limit rejection → `ProblemDetails`/429 bridge | `RateLimitRejectionProblemDetails` |
 
 See the [Configuration Reference](../CONFIGURATION.md) for every DI extension method's options and
 defaults.

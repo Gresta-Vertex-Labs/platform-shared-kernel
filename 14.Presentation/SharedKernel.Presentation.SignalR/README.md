@@ -61,6 +61,34 @@ builder.Services.AddSharedKernelSignalR(options =>
 });
 ```
 
+### Resource-exhaustion defaults
+
+`AddSharedKernelSignalR` also sets explicit, conservative defaults on four `HubOptions` members that
+control per-connection resource consumption on a long-lived WebSocket/SSE surface — pinned even
+where a value matches SignalR's own current framework default, so the platform's posture is
+documented and stable across future SignalR version bumps rather than implicit:
+
+| `HubOptions` member | Platform default | Why |
+| --- | --- | --- |
+| `MaximumReceiveMessageSize` | `32 * 1024` (32 KB) | Caps the size of a single inbound message from a client. With no ceiling, one misbehaving or hostile client can send an arbitrarily large message and consume disproportionate memory/CPU per connection — a real resource-exhaustion vector this domain previously left entirely to whatever SignalR's own current default happened to be. |
+| `MaximumParallelInvocationsPerClient` | `1` | Caps how many hub method invocations from the *same* client SignalR will run concurrently. Prevents one client from starving the server by firing many concurrent long-running invocations down a single connection. |
+| `ClientTimeoutInterval` | `30` seconds | How long the server waits for a client keep-alive before considering the connection dead and reclaiming its resources. |
+| `KeepAliveInterval` | `15` seconds | How often the server pings a connected client to keep the connection alive and detect drops promptly. |
+
+These defaults are applied **before** your `configureHubOptions` callback runs, so every one of them
+remains fully overridable (raise or lower) with no signature change:
+
+```csharp
+builder.Services.AddSharedKernelSignalR(options =>
+{
+    // Override the platform default for a hub that legitimately needs larger messages.
+    options.MaximumReceiveMessageSize = 128 * 1024;
+});
+```
+
+This is purely a `HubOptions` default-value change — it never alters
+`TenantContextHubFilter`/`HubExceptionMappingFilter`/`WithRedisBackplane` behavior.
+
 ---
 
 ## Scale-out setup — Redis backplane
@@ -125,6 +153,7 @@ await hubContext.Clients
 | Exception-to-`HubException` redaction | `HubExceptionMappingFilter` |
 | Tenant-scoped group naming | `HubGroupNaming.TenantGroup` |
 | SignalR + global filter registration | `AddSharedKernelSignalR` |
+| Conservative resource-exhaustion `HubOptions` defaults | `AddSharedKernelSignalR` (see "Resource-exhaustion defaults" above) |
 | Redis scale-out backplane | `WithRedisBackplane` |
 
 See the [Configuration Reference](../CONFIGURATION.md) for every DI extension method's options and

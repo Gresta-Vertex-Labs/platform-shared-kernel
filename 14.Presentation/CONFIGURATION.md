@@ -118,6 +118,116 @@ Known `SharedKernelException` subtypes always surface their carried `Error`'s me
 code regardless of environment — that detail is intentional/curated by the throwing code, not
 leaked internals.
 
+A `ValidationException` is handled through a dedicated branch — checked before the generic
+`SharedKernelException.Error` fallback — that routes through `ValidationProblemDetailsExtensions`
+(below) instead of the single-`Error` path, so every failing field is preserved in the response, not
+just the first.
+
+### `ValidationProblemDetailsExtensions.ToProblemDetails(this ValidationException, HttpContext? context = null)`
+
+Not a DI extension — a pure static mapping method, consumed automatically by
+`SharedKernelExceptionHandler` once it and `AddProblemDetails()`/`AddExceptionHandler<...>()` are
+registered. No options. Groups `ValidationException.Errors` by `Error.Code` into
+`Extensions["errors"]` (`Dictionary<string, string[]>`) — every other field of the produced
+`ProblemDetails` (`Title`/`Detail`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]`)
+resolves identically to the single-`Error` path applied to the exception's first error.
+
+### `UseSharedKernelSecurityHeaders(this IApplicationBuilder, Action<SecurityHeadersOptions>? configure = null)`
+
+| Parameter | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `configure` | no | `null` | Customises `SecurityHeadersOptions`. Omit to use every documented default value. |
+
+**Ordering requirement:** register immediately after `UseSharedKernelCorrelationId()` and before
+`UseExceptionHandler()`/error-handling middleware.
+
+| `SecurityHeadersOptions` member | Header | Default value | Enabled by default? |
+| --- | --- | --- | --- |
+| `Hsts` | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (365 days, `IncludeSubDomains = true`, `Preload = false`) | **Yes — opt-OUT, unlike every other header below.** See the CAPITALIZED local-dev warning in the WebApi `README.md`. |
+| `ContentTypeOptions` | `X-Content-Type-Options` | `nosniff` | Yes |
+| `FrameOptions` | `X-Frame-Options` | `DENY` | Yes |
+| `ReferrerPolicy` | `Referrer-Policy` | `strict-origin-when-cross-origin` | Yes |
+| `PermissionsPolicy` | `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` | Yes |
+| `WithContentSecurityPolicy(...)` | `Content-Security-Policy` | *(no header set)* | No — only set via an explicit call; there is no default CSP value |
+
+Every header assignment is guarded by `Response.Headers.ContainsKey(...)` — an inner
+middleware/endpoint's more-specific header value always wins; this middleware never overwrites an
+already-set header.
+
+### `AddSharedKernelCors(this IServiceCollection, Action<CorsPolicyOptions> configure)`
+
+| Parameter | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `configure` | yes | — | Configures `CorsPolicyOptions.AllowedOrigins`/`AllowCredentials`/`AllowedMethods`/`AllowedHeaders` for the single named policy (`CorsPolicyNames.Default`) this method registers |
+
+Deny-by-default: an empty `AllowedOrigins` permits no cross-origin requests. An empty
+`AllowedMethods`/`AllowedHeaders` allows any method/header (ASP.NET Core CORS's own default), since
+those two are rarely the security-sensitive knob — `AllowedOrigins` combined with
+`AllowCredentials` is.
+
+Also registers `CorsPolicyOptions` through the standard `Microsoft.Extensions.Options` pipeline with
+`ValidateOnStart()`, so the fail-fast guard below runs — and fails — at `IHost.StartAsync()`:
+
+| Combination | Result |
+| --- | --- |
+| `AllowCredentials = true` **and** `AllowedOrigins` empty or contains `"*"` | Startup throws with a clear, actionable message — never deferred to the first real credentialed cross-origin request |
+| `AllowCredentials = true` **and** `AllowedOrigins` is one or more explicit origins | Succeeds |
+
+Apply the registered policy with `app.UseCors(CorsPolicyNames.Default)` — reference the constant,
+never re-type the policy-name literal.
+
+### `AddSharedKernelIdempotencyFilters(this IServiceCollection)`
+
+No options. Registers `IdempotencyKeyRequirementEndpointFilter` as a **singleton** — mirrors
+`AddSharedKernelAuthorizationFilters`'s exact registration shape, including the same caveat: **this
+call alone does not attach the filter to any endpoint.** You must additionally call
+`.AddEndpointFilter<IdempotencyKeyRequirementEndpointFilter>()` on `MapControllers()` and/or each
+minimal-API route group — see the WebApi `README.md`'s "Inbound idempotency-key HTTP boundary"
+section for the full end-to-end recipe. Omitting this step leaves `[RequireIdempotencyKey]` inert.
+
+| Constant | Value | Purpose |
+| --- | --- | --- |
+| `HttpContextIdempotencyExtensions.IdempotencyKeyHeader` | `"Idempotency-Key"` | Request header name (domain-local for now — see the type's XML docs) |
+| `HttpContextIdempotencyExtensions.MaxIdempotencyKeyLength` | `256` | Maximum accepted key length, in characters |
+
+A missing/malformed key on an endpoint carrying `[RequireIdempotencyKey]` short-circuits with
+`Error.Validation(...).ToProblemDetails()` (400) via the ordinary single-`Error` path — never a new
+`ErrorType`, never a bare exception.
+
+### Step-up/fresh-authentication attributes (extend `AuthorizationRequirementEndpointFilter`)
+
+`RequireFreshAuthenticationAttribute(int maxAgeSeconds)` and
+`RequireAuthenticationMethodAttribute(params string[] methods)` are evaluated by the **same**
+`AuthorizationRequirementEndpointFilter`/`AddSharedKernelAuthorizationFilters` registered above —
+there is no second filter type and no second `.AddEndpointFilter<...>()` call. See the WebApi
+`README.md`'s "Step-up / fresh-authentication gating" section for a worked example.
+
+| Attribute | Evaluated against | Rejection |
+| --- | --- | --- |
+| `[RequireFreshAuthentication(maxAgeSeconds)]` | `IUserContext.IsAuthenticationFresherThan(TimeSpan, DateTimeOffset)` — `DateTimeOffset` supplied by `IClock` (`01.Core`), resolved lazily only when this attribute is present | `Error.Forbidden(...).ToProblemDetails()` (403) |
+| `[RequireAuthenticationMethod(params string[] methods)]` | `IUserContext.WasAuthenticatedWith(string)` — OR across the supplied methods | `Error.Forbidden(...).ToProblemDetails()` (403) |
+
+An endpoint carrying only `[RequireRole]`/`[RequirePermission]` never requires `IClock` to be
+registered in the consumer's container — it is resolved only when `[RequireFreshAuthentication]` is
+actually present on the evaluated endpoint.
+
+### `RowVersionETag` / `ConditionalRequestExtensions` (no DI registration — pure static helpers)
+
+No options, no registration. `RowVersionETag.From(byte[] rowVersion)` produces a well-formed, quoted
+`ETag` header value; `HttpContext.TryValidateIfMatch(string currentETag, out ProblemDetails?)`
+evaluates the inbound `If-Match` header, producing a 412 `ProblemDetails` on mismatch. See the WebApi
+`README.md`'s "Optimistic concurrency — ETag / If-Match" section for the full GET → If-Match → 412 →
+re-fetch recipe. Additive to, never a replacement for, `Error.Conflict`/409 — zero change to
+`ErrorTypeStatusCodeMap`'s existing mapping.
+
+### `RateLimitRejectionProblemDetails.Create(HttpContext context, TimeSpan? retryAfter = null)` (no DI registration — pure static helper)
+
+No options, no registration. Call it directly from a consuming service's
+`RateLimiterOptions.OnRejected` callback (wired via `13.ServiceDefaults`'s
+`AddSharedKernelRateLimiting()` — referenced by name only, no `ProjectReference` either direction).
+Produces a 429 `ProblemDetails`; when `retryAfter` is supplied, also sets a real `Retry-After`
+response header (whole seconds), not just a body field.
+
 ---
 
 ## `SharedKernel.Presentation.SignalR`
@@ -137,6 +247,22 @@ Always registers, as singletons, and as global filters via `HubOptions.AddFilter
 
 The two filters do not depend on each other's execution order — one attaches connection data, the
 other wraps method invocations.
+
+Also sets four conservative, explicitly documented resource-exhaustion defaults on `HubOptions`,
+applied **before** `configureHubOptions` runs (so every value below is fully overridable, raise or
+lower, with no signature change):
+
+| `HubOptions` member | Platform default | Type |
+| --- | --- | --- |
+| `MaximumReceiveMessageSize` | `32 * 1024` (32 KB) | `long?` |
+| `MaximumParallelInvocationsPerClient` | `1` | `int` (non-nullable) |
+| `ClientTimeoutInterval` | `TimeSpan.FromSeconds(30)` | `TimeSpan?` |
+| `KeepAliveInterval` | `TimeSpan.FromSeconds(15)` | `TimeSpan?` |
+
+These are pinned explicitly even where a value matches SignalR's own current framework default, so
+the platform's posture stays documented and stable across future SignalR version bumps rather than
+implicit. See the SignalR `README.md`'s "Resource-exhaustion defaults" section for the rationale
+behind each value.
 
 Returns the stock `ISignalRServerBuilder` from `Microsoft.AspNetCore.SignalR`'s own `AddSignalR` —
 no custom wrapper type — so it composes with any other `ISignalRServerBuilder` extension,
