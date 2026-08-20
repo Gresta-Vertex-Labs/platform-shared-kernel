@@ -7,12 +7,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Presentation.WebApi</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
-    <Description>HTTP API surface conventions for SharedKernel microservices: RFC 9457 ProblemDetails error mapping (ErrorTypeStatusCodeMap, Error.ToProblemDetails), global IExceptionHandler (SharedKernelExceptionHandler), Result&lt;T&gt; to IResult/ActionResult HTTP-boundary extensions (ResultHttpExtensions), API versioning (AddSharedKernelApiVersioning), native OpenAPI document generation + Scalar interactive UI (AddSharedKernelOpenApi/MapSharedKernelOpenApi), inbound correlation-id middleware (CorrelationIdMiddleware), and declarative role/permission endpoint-filter authorization (RequireRoleAttribute, RequirePermissionAttribute, AuthorizationRequirementEndpointFilter, AddSharedKernelAuthorizationFilters).</Description>
-    <PackageTags>shared-kernel;webapi;problemdetails;rfc9457;api-versioning;openapi;scalar;correlation-id;authorization;aspnetcore</PackageTags>
+    <Description>HTTP API surface conventions for SharedKernel microservices: RFC 9457 ProblemDetails error mapping (ErrorTypeStatusCodeMap, Error.ToProblemDetails) including multi-field validation errors (ValidationProblemDetailsExtensions), global IExceptionHandler (SharedKernelExceptionHandler), Result&lt;T&gt; to IResult/ActionResult HTTP-boundary extensions (ResultHttpExtensions), API versioning (AddSharedKernelApiVersioning), native OpenAPI document generation + Scalar interactive UI (AddSharedKernelOpenApi/MapSharedKernelOpenApi), inbound correlation-id middleware (CorrelationIdMiddleware), declarative role/permission and step-up/fresh-authentication endpoint-filter authorization (RequireRoleAttribute, RequirePermissionAttribute, RequireFreshAuthenticationAttribute, RequireAuthenticationMethodAttribute, AuthorizationRequirementEndpointFilter, AddSharedKernelAuthorizationFilters), platform security response headers (UseSharedKernelSecurityHeaders), a deny-by-default CORS policy convention (AddSharedKernelCors), inbound Idempotency-Key HTTP-boundary support (RequireIdempotencyKeyAttribute, AddSharedKernelIdempotencyFilters), ETag/If-Match conditional-request concurrency helpers (RowVersionETag, ConditionalRequestExtensions), and a rate-limit-rejection ProblemDetails/429 bridge (RateLimitRejectionProblemDetails).</Description>
+    <PackageTags>shared-kernel;webapi;problemdetails;rfc9457;api-versioning;openapi;scalar;correlation-id;authorization;security-headers;cors;idempotency;etag;rate-limiting;aspnetcore</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>

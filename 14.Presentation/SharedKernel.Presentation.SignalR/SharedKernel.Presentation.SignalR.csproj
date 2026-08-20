@@ -7,11 +7,11 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- NuGet packaging metadata -->
     <PackageId>SharedKernel.Presentation.SignalR</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Gresta-Vertex-Labs</Authors>
     <Company>Gresta-Vertex-Labs</Company>
     <Product>Platform.SharedKernel</Product>
-    <Description>Real-time SignalR conventions for SharedKernel microservices: tenant-context hub filter (TenantContextHubFilter), exception-to-HubException mapping filter (HubExceptionMappingFilter), tenant-scoped group naming convention (HubGroupNaming), global filter registration (AddSharedKernelSignalR), and an opt-in Redis-backed scale-out backplane (WithRedisBackplane) isolated from 02.Caching.Redis.Core.</Description>
+    <Description>Real-time SignalR conventions for SharedKernel microservices: tenant-context hub filter (TenantContextHubFilter), exception-to-HubException mapping filter (HubExceptionMappingFilter), tenant-scoped group naming convention (HubGroupNaming), global filter registration with conservative resource-exhaustion HubOptions defaults (AddSharedKernelSignalR), and an opt-in Redis-backed scale-out backplane (WithRedisBackplane) isolated from 02.Caching.Redis.Core.</Description>
     <PackageTags>shared-kernel;signalr;realtime;hub-filter;redis;multi-tenant;aspnetcore</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
