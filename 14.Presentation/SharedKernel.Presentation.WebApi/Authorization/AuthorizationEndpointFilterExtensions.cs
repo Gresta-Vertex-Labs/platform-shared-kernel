@@ -67,6 +67,52 @@ public static class AuthorizationEndpointFilterExtensions
         => builder.WithMetadata(new RequirePermissionAttribute(permissions));
 
     /// <summary>
+    /// Attaches a <see cref="RequireFreshAuthenticationAttribute"/> to the endpoint produced by
+    /// <paramref name="builder"/>.
+    /// </summary>
+    /// <param name="builder">The route handler builder to attach metadata to.</param>
+    /// <param name="maxAgeSeconds">The maximum acceptable age, in seconds, of the caller's authentication event.</param>
+    /// <returns>The same <paramref name="builder"/>, for chaining.</returns>
+    public static RouteHandlerBuilder RequireFreshAuthentication(this RouteHandlerBuilder builder, int maxAgeSeconds)
+        => builder.WithMetadata(new RequireFreshAuthenticationAttribute(maxAgeSeconds));
+
+    /// <summary>
+    /// Attaches a <see cref="RequireFreshAuthenticationAttribute"/> to every endpoint produced by
+    /// <paramref name="builder"/>.
+    /// </summary>
+    /// <param name="builder">The route group builder to attach metadata to.</param>
+    /// <param name="maxAgeSeconds">The maximum acceptable age, in seconds, of the caller's authentication event.</param>
+    /// <returns>The same <paramref name="builder"/>, for chaining.</returns>
+    public static RouteGroupBuilder RequireFreshAuthentication(this RouteGroupBuilder builder, int maxAgeSeconds)
+        => builder.WithMetadata(new RequireFreshAuthenticationAttribute(maxAgeSeconds));
+
+    /// <summary>
+    /// Attaches a <see cref="RequireAuthenticationMethodAttribute"/> to the endpoint produced by
+    /// <paramref name="builder"/>.
+    /// </summary>
+    /// <param name="builder">The route handler builder to attach metadata to.</param>
+    /// <param name="methods">
+    /// The set of authentication method references, any one of which satisfies this attribute
+    /// (OR semantics).
+    /// </param>
+    /// <returns>The same <paramref name="builder"/>, for chaining.</returns>
+    public static RouteHandlerBuilder RequireAuthenticationMethod(this RouteHandlerBuilder builder, params string[] methods)
+        => builder.WithMetadata(new RequireAuthenticationMethodAttribute(methods));
+
+    /// <summary>
+    /// Attaches a <see cref="RequireAuthenticationMethodAttribute"/> to every endpoint produced by
+    /// <paramref name="builder"/>.
+    /// </summary>
+    /// <param name="builder">The route group builder to attach metadata to.</param>
+    /// <param name="methods">
+    /// The set of authentication method references, any one of which satisfies this attribute
+    /// (OR semantics).
+    /// </param>
+    /// <returns>The same <paramref name="builder"/>, for chaining.</returns>
+    public static RouteGroupBuilder RequireAuthenticationMethod(this RouteGroupBuilder builder, params string[] methods)
+        => builder.WithMetadata(new RequireAuthenticationMethodAttribute(methods));
+
+    /// <summary>
     /// Registers <see cref="AuthorizationRequirementEndpointFilter"/> as a singleton service.
     /// </summary>
     /// <param name="services">The service collection to register against.</param>
