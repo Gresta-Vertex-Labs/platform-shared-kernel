@@ -17,6 +17,14 @@ public abstract class AnalyzerBase : DiagnosticAnalyzer
     /// <summary>Category constant for design-pattern diagnostics (SK0003–SK0006).</summary>
     protected const string Design = "Design";
 
+    /// <summary>
+    /// Category constant for security-relevant diagnostics (SK0032). Introduced WO-062/P-410 —
+    /// the first Roslyn analyzer whose registry entry documents a "Security" category rather than
+    /// "Usage"/"Design" (mirrors the "Security" category label already used in prose for the
+    /// non-analyzer SK0301-series architecture-test predicates).
+    /// </summary>
+    protected const string Security = "Security";
+
     private const string HelpLinkBase =
         "https://github.com/gresta-vertex-labs/platform-shared-kernel/blob/main/00.Governance/README.md";
 

@@ -10,3 +10,4 @@ SK0004 | Design | Warning | NullErrorReturn
 SK0005 | Design | Warning | StringOnlyExceptionConstructor
 SK0024 | Usage | Warning | RawSearchFieldNameLiteral
 SK0025 | Usage | Warning | ObsoleteElasticsearchClientUsage
+SK0032 | Security | Warning | CorsWildcardOriginWithCredentials
