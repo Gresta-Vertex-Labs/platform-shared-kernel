@@ -494,6 +494,135 @@ public static class SecureDefaultsAssertion
         return false;
     }
 
+    /// <summary>
+    /// Asserts that <paramref name="declaringType"/>'s method named <paramref name="methodName"/>
+    /// — or a compiler-generated lambda closure it declares — constructs and throws
+    /// <paramref name="expectedExceptionType"/>.
+    /// </summary>
+    /// <param name="declaringType">
+    /// The type declaring the method to inspect (e.g. the real, shipped
+    /// <c>AddSharedKernelCors</c>-owning type).
+    /// </param>
+    /// <param name="methodName">
+    /// The name of the method to inspect. Must resolve to exactly one method on
+    /// <paramref name="declaringType"/> — an overloaded method name is rejected as ambiguous
+    /// rather than silently checking only the first match.
+    /// </param>
+    /// <param name="expectedExceptionType">
+    /// The exception type a matching <c>Newobj</c>-then-<c>Throw</c> sequence must construct.
+    /// </param>
+    /// <remarks>
+    /// Introduces this class's METHOD-BODY THROW-PRESENCE ASSERTION technique — a sibling to
+    /// <see cref="AssertMethodBodyInvokesMethod"/>'s invocation-presence-assertion technique (both
+    /// fail on the ABSENCE of an expected element, not the presence of an unwanted one), but scans
+    /// for a <see cref="OpCodes.Newobj"/> instruction constructing <paramref name="expectedExceptionType"/>
+    /// followed ANYWHERE LATER in the same method body's instruction stream by a
+    /// <see cref="OpCodes.Throw"/> opcode, rather than a <see cref="OpCodes.Call"/>/
+    /// <see cref="OpCodes.Callvirt"/> invocation. Reuses <see cref="AssertMethodBodyInvokesMethod"/>'s
+    /// closure-method-scanning extension: when the direct method body contains no matching
+    /// <c>Newobj</c>-then-<c>Throw</c> sequence, every method on every nested type of
+    /// <paramref name="declaringType"/> whose name starts with <c>&lt;{methodName}&gt;b__</c> is
+    /// additionally scanned — a startup validation guard is just as plausibly registered via a
+    /// <c>PostConfigure</c>/<c>Validate</c>-style lambda as
+    /// <c>AddMtlsForwardedHeaderCertificate</c>'s own shape (the motivating case for that
+    /// extension) was.
+    /// <para>
+    /// <strong>Documented limitation</strong> (intentional, consistent with every presence-based
+    /// technique in this file): a whole-method-body-plus-closures presence check, not a
+    /// reachability/control-flow check tied to the specific dangerous-configuration branch — it
+    /// cannot distinguish "throws only when the dangerous combination is detected" from "throws
+    /// unconditionally for every configuration" or "throws for an unrelated reason elsewhere in the
+    /// same method." This proves "the guard exists and constructs+throws the expected exception
+    /// type," not "the guard is provably correct for every input" — the latter remains the
+    /// producing domain's own unit-test responsibility, not this one's.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="methodName"/> resolves to zero or more than one method on
+    /// <paramref name="declaringType"/>, or when neither the method's own body nor any lambda
+    /// closure it declares contains a <c>Newobj</c>-then-<c>Throw</c> sequence constructing
+    /// <paramref name="expectedExceptionType"/>.
+    /// </exception>
+    public static void AssertMethodBodyThrowsExceptionType(
+        Type declaringType,
+        string methodName,
+        Type expectedExceptionType)
+    {
+        using var assemblyDefinition = AssemblyDefinition.ReadAssembly(declaringType.Assembly.Location);
+        var typeDefinition = ResolveTypeDefinition(assemblyDefinition.MainModule, declaringType);
+
+        var matchingMethods = typeDefinition.Methods.Where(m => m.Name == methodName).ToList();
+
+        if (matchingMethods.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType found no method named "
+                    + $"'{methodName}' on type '{declaringType.FullName}'.");
+        }
+
+        if (matchingMethods.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType found "
+                    + $"{matchingMethods.Count} methods named '{methodName}' on type "
+                    + $"'{declaringType.FullName}' — ambiguous; this helper requires a uniquely "
+                    + "named method.");
+        }
+
+        var method = matchingMethods[0];
+
+        if (MethodBodyThrows(method, expectedExceptionType))
+            return;
+
+        // The direct method body contains no matching Newobj-then-Throw sequence — check every
+        // compiler-generated lambda closure declared inside it, same rationale/naming convention as
+        // AssertMethodBodyInvokesMethod.
+        var lambdaNamePrefix = $"<{methodName}>b__";
+
+        foreach (var nestedType in typeDefinition.NestedTypes)
+        {
+            foreach (var candidateMethod in nestedType.Methods)
+            {
+                if (!candidateMethod.Name.StartsWith(lambdaNamePrefix, StringComparison.Ordinal))
+                    continue;
+
+                if (MethodBodyThrows(candidateMethod, expectedExceptionType))
+                    return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType: "
+                + $"'{declaringType.FullName}.{methodName}' (including any lambda closures it "
+                + "declares) does not construct and throw "
+                + $"'{expectedExceptionType.FullName}'.");
+    }
+
+    private static bool MethodBodyThrows(MethodDefinition method, Type expectedExceptionType)
+    {
+        if (!method.HasBody)
+            return false;
+
+        var instructions = method.Body.Instructions;
+        var constructedExpectedException = false;
+
+        foreach (var instruction in instructions)
+        {
+            if (instruction.OpCode == OpCodes.Newobj
+                && instruction.Operand is MethodReference constructorReference
+                && constructorReference.DeclaringType.FullName == expectedExceptionType.FullName)
+            {
+                constructedExpectedException = true;
+                continue;
+            }
+
+            if (constructedExpectedException && instruction.OpCode == OpCodes.Throw)
+                return true;
+        }
+
+        return false;
+    }
+
     private static PropertyInfo GetPublicInstanceProperty(Type optionsType, string propertyName) =>
         optionsType.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)
             ?? throw new InvalidOperationException(
