@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Errors;
 
 namespace SharedKernel.Presentation.WebApi.Errors;
@@ -15,15 +15,13 @@ namespace SharedKernel.Presentation.WebApi.Errors;
 /// </remarks>
 public static class ErrorProblemDetailsExtensions
 {
-    private const string ProblemTypeBaseUri = "https://httpstatuses.io/";
-
     /// <summary>
     /// Maps the specified <paramref name="error"/> to a <see cref="ProblemDetails"/> instance.
     /// </summary>
     /// <param name="error">The error to convert.</param>
     /// <param name="context">
     /// The current <see cref="HttpContext"/>, used to populate <c>Extensions["traceId"]</c> when
-    /// <see cref="Activity.Current"/> is unavailable. May be <see langword="null"/>.
+    /// <see cref="System.Diagnostics.Activity.Current"/> is unavailable. May be <see langword="null"/>.
     /// </param>
     /// <returns>
     /// A <see cref="ProblemDetails"/> with <c>Title</c> set to <see cref="Error.Code"/>,
@@ -35,18 +33,9 @@ public static class ErrorProblemDetailsExtensions
     public static ProblemDetails ToProblemDetails(this Error error, HttpContext? context = null)
     {
         var status = ErrorTypeStatusCodeMap.Resolve(error.Type);
-        var traceId = Activity.Current?.Id ?? context?.TraceIdentifier;
-
-        var problemDetails = new ProblemDetails
-        {
-            Title = error.Code,
-            Detail = error.Message,
-            Status = status,
-            Type = $"{ProblemTypeBaseUri}{status}",
-        };
+        var problemDetails = ProblemDetailsShaping.Create(status, error.Code, error.Message, context);
 
         problemDetails.Extensions["errorCode"] = error.Code;
-        problemDetails.Extensions["traceId"] = traceId;
 
         return problemDetails;
     }
