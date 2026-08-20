@@ -15,14 +15,22 @@ namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 /// <see cref="Microsoft.AspNetCore.Mvc.ProblemDetails"/> responses.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Register via <c>services.AddExceptionHandler&lt;SharedKernelExceptionHandler&gt;()</c> together
-/// with <c>services.AddProblemDetails()</c>. Known <see cref="SharedKernelException"/> subtypes
-/// (<c>01.Core</c>) that carry an <see cref="Error"/> are mapped via
-/// <see cref="ErrorProblemDetailsExtensions.ToProblemDetails"/>; unknown exceptions fall back to a
-/// generic 500 <see cref="Microsoft.AspNetCore.Mvc.ProblemDetails"/> with <c>Detail</c> suppressed
-/// outside <c>IHostEnvironment.IsDevelopment()</c>. Always logs the full exception at
-/// <see cref="LogLevel.Error"/> before writing the response, and always returns
-/// <see langword="true"/> — this is the terminal handler in the exception-handling chain.
+/// with <c>services.AddProblemDetails()</c>. <see cref="ValidationException"/> — which carries
+/// every failing field's <see cref="Error"/>, not just one — is checked FIRST and mapped via
+/// <see cref="ValidationProblemDetailsExtensions.ToProblemDetails"/> so no field error is silently
+/// dropped. Every other known <see cref="SharedKernelException"/> subtype (<c>01.Core</c>) that
+/// carries an <see cref="Error"/> is mapped via
+/// <see cref="ErrorProblemDetailsExtensions.ToProblemDetails(Error, HttpContext?)"/>; unknown
+/// exceptions fall back to a generic 500 <see cref="Microsoft.AspNetCore.Mvc.ProblemDetails"/> with
+/// <c>Detail</c> suppressed outside <c>IHostEnvironment.IsDevelopment()</c>.
+/// </para>
+/// <para>
+/// Always logs the full exception at <see cref="LogLevel.Error"/> before writing the response, and
+/// always returns <see langword="true"/> — this is the terminal handler in the exception-handling
+/// chain.
+/// </para>
 /// </remarks>
 public sealed partial class SharedKernelExceptionHandler : IExceptionHandler
 {
@@ -61,8 +69,7 @@ public sealed partial class SharedKernelExceptionHandler : IExceptionHandler
     {
         Log.UnhandledException(_logger, exception);
 
-        var error = ResolveError(exception);
-        var problemDetails = error.ToProblemDetails(httpContext);
+        var problemDetails = BuildProblemDetails(exception, httpContext);
 
         if (!_environment.IsDevelopment() && exception is not SharedKernelException)
         {
@@ -76,10 +83,13 @@ public sealed partial class SharedKernelExceptionHandler : IExceptionHandler
         return true;
     }
 
-    private static Error ResolveError(Exception exception) => exception switch
+    private static Microsoft.AspNetCore.Mvc.ProblemDetails BuildProblemDetails(Exception exception, HttpContext httpContext) => exception switch
     {
-        SharedKernelException sharedKernelException => sharedKernelException.Error,
-        _ => Error.Unexpected(UnexpectedErrorCode, UnexpectedErrorMessage),
+        // Checked BEFORE the generic SharedKernelException branch: ValidationException carries
+        // every failing field's Error, not just Errors[0] (which base.Error is set to).
+        ValidationException validationException => validationException.ToProblemDetails(httpContext),
+        SharedKernelException sharedKernelException => sharedKernelException.Error.ToProblemDetails(httpContext),
+        _ => Error.Unexpected(UnexpectedErrorCode, UnexpectedErrorMessage).ToProblemDetails(httpContext),
     };
 
     /// <summary>
