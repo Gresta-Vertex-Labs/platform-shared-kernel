@@ -131,6 +131,13 @@
       call site.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj" />
+    <!--
+      Integration in-memory doubles (S-52, P-431/WO-064): InMemoryWebhookDispatcher
+      (IWebhookDispatcher), InMemoryWebhookDeliveryObserver (IWebhookDeliveryObserver). First
+      ProjectReference from 16.Testing to 15.Integration — the new Integration/ capability folder,
+      mapped 1:1 to 15.Integration, references SharedKernel.Integration.Webhooks only.
+    -->
+    <ProjectReference Include="..\..\15.Integration\SharedKernel.Integration.Webhooks\SharedKernel.Integration.Webhooks.csproj" />
   </ItemGroup>
 
   <ItemGroup>
