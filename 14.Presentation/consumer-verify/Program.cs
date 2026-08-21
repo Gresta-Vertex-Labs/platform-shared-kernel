@@ -3,11 +3,18 @@
 // the full WebApi stack (ProblemDetails, exception handler, versioning, OpenAPI/Scalar), declarative
 // role/permission + step-up/fresh-authentication authorization, security response headers, CORS,
 // inbound idempotency-key support, ETag/If-Match + rate-limit ProblemDetails helpers (WO-062,
-// P-402–P-408), and AddSharedKernelSignalR with and without WithRedisBackplane, confirming every
-// surface composes into a resolvable DI container / request pipeline with zero DI exceptions.
+// P-402–P-408), payload/JSON-depth limits, non-default OpenAPI security schemes, RFC 8594
+// Sunset/Deprecation headers, structured security-audit logging, correlation-id format validation,
+// upload validation (WO-063, P-411–P-416), and AddSharedKernelSignalR with and without
+// WithRedisBackplane plus hub-invocation rate limiting (WO-063, P-417), confirming every surface
+// composes into a resolvable DI container / request pipeline with zero DI exceptions.
 
+using System.Net.Http;
 using Asp.Versioning.ApiExplorer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +29,7 @@ using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Presentation.WebApi.Middleware;
 using SharedKernel.Presentation.WebApi.OpenApi;
 using SharedKernel.Presentation.WebApi.RateLimiting;
+using SharedKernel.Presentation.WebApi.Uploads;
 using SharedKernel.Presentation.WebApi.Versioning;
 
 // ── Surface 1: full WebApi stack — ProblemDetails + exception handler ───────
@@ -253,6 +261,94 @@ Console.WriteLine("Surface 6 PASS: AddSharedKernelSignalR().WithRedisBackplane(.
     Verify(rateLimitContext.Response.Headers["Retry-After"] == "30", "RateLimitRejectionProblemDetails.Create sets the Retry-After response header in whole seconds");
 
     Console.WriteLine("Surface 10 PASS: RowVersionETag / ConditionalRequestExtensions / RateLimitRejectionProblemDetails behave correctly as standalone static helpers");
+}
+
+// ── Surface 11: AddSharedKernelOpenApi — non-default security-scheme combination ──
+// Closes P-18/WO-063's explicit ask for "a generated-document assertion for at least one
+// non-default scheme combination" — a real listening Kestrel host generates the actual OpenAPI
+// document (Bearer default-true + ApiKey + MutualTls opted in) and the response body is asserted
+// against, not merely the DI graph.
+{
+    var builder = WebApplication.CreateBuilder();
+    builder.WebHost.UseUrls("http://127.0.0.1:0");
+
+    builder.Services.AddProblemDetails();
+    builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
+    builder.Services.AddSharedKernelCorrelationId();
+    builder.Services.AddSharedKernelApiVersioning();
+    builder.Services.AddSharedKernelOpenApi(
+        title: "Consumer Verify API (Security Schemes)",
+        configureSecuritySchemes: o =>
+        {
+            o.ApiKey = true;
+            o.ApiKeyHeaderName = "X-Api-Key";
+            o.MutualTls = true;
+        });
+
+    var app = builder.Build();
+    app.UseSharedKernelCorrelationId();
+    app.UseExceptionHandler();
+    app.MapSharedKernelOpenApi();
+
+    await app.StartAsync();
+
+    string documentJson;
+    try
+    {
+        var address = app.Services.GetRequiredService<IServer>()
+            .Features.Get<IServerAddressesFeature>()!.Addresses.First();
+        var documentName = app.Services.GetRequiredService<IApiVersionDescriptionProvider>()
+            .ApiVersionDescriptions.First().GroupName;
+
+        using var httpClient = new HttpClient();
+        documentJson = await httpClient.GetStringAsync($"{address}/openapi/{documentName}.json");
+    }
+    finally
+    {
+        await app.StopAsync();
+    }
+
+    Verify(documentJson.Contains("\"Bearer\"", StringComparison.Ordinal), "Generated OpenAPI document includes the default Bearer security scheme");
+    Verify(documentJson.Contains("\"ApiKey\"", StringComparison.Ordinal), "Generated OpenAPI document includes the opted-in ApiKey security scheme");
+    Verify(documentJson.Contains("\"MutualTLS\"", StringComparison.Ordinal), "Generated OpenAPI document includes the opted-in MutualTLS security scheme component");
+    Verify(documentJson.Contains("\"mutualTLS\"", StringComparison.Ordinal), "Generated OpenAPI document serializes MutualTlsSecurityScheme's literal \"type\": \"mutualTLS\" (Microsoft.OpenApi's SecuritySchemeType enum has no MutualTls member)");
+    Verify(documentJson.Contains("\"security\"", StringComparison.Ordinal), "Generated OpenAPI document declares a top-level security requirement for the active schemes");
+
+    Console.WriteLine("Surface 11 PASS: AddSharedKernelOpenApi with a non-default Bearer+ApiKey+MutualTls scheme combination produces a valid, correctly-shaped generated OpenAPI document (real listening-host round trip, not DI resolution alone)");
+}
+
+// ── Surface 12: AddSharedKernelUploadValidation ─────────────────────────────
+{
+    var builder = WebApplication.CreateBuilder();
+
+    builder.Services.AddProblemDetails();
+    builder.Services.AddExceptionHandler<SharedKernelExceptionHandler>();
+    builder.Services.AddSharedKernelCorrelationId();
+    builder.Services.AddSharedKernelUploadValidation(o =>
+    {
+        o.MaxSizeBytes = 5 * 1024 * 1024;
+        o.AllowedContentTypes.Add("application/pdf");
+    });
+
+    var app = builder.Build();
+
+    using (var scope = app.Services.CreateScope())
+    {
+        var uploadFilter = scope.ServiceProvider.GetRequiredService<UploadValidationEndpointFilter>();
+        Verify(uploadFilter is not null, "UploadValidationEndpointFilter resolves as a registered singleton");
+    }
+
+    app.UseSharedKernelCorrelationId();
+    app.UseExceptionHandler();
+
+    var documents = app
+        .MapGroup("/consumer-verify/documents")
+        .AddEndpointFilter<UploadValidationEndpointFilter>();
+    documents
+        .MapPost("/", (HttpContext ctx) => Results.Ok())
+        .RequireValidatedUpload(allowedContentTypes: ["application/pdf"]);
+
+    Console.WriteLine("Surface 12 PASS: AddSharedKernelUploadValidation + .AddEndpointFilter<UploadValidationEndpointFilter>() + .RequireValidatedUpload() compose alongside the WebApi stack with zero DI exceptions");
 }
 
 Console.WriteLine();
