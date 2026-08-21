@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Primitives.Logging;
@@ -12,7 +13,10 @@ namespace SharedKernel.Presentation.WebApi.Middleware;
 /// <remarks>
 /// <para>
 /// Reads the <see cref="HeaderName"/> request header; generates <c>Guid.NewGuid("N")</c> when
-/// absent or whitespace. Stores the resolved value in
+/// absent, whitespace, or failing the <see cref="CorrelationIdOptions.MaxLength"/>/
+/// <see cref="CorrelationIdOptions.AllowedCharacterPattern"/> shape check — the caller-supplied
+/// value never reaches <c>HttpContext.Items</c>, <see cref="Activity"/> baggage, or the response
+/// header until it has passed this validation. Stores the resolved value in
 /// <c>HttpContext.Items["CorrelationId"]</c> and calls
 /// <c>Activity.Current?.SetBaggage(BaggageKey, value)</c> so OTel spans and
 /// <c>11.Communication</c>'s outbound correlation-id delegating handler can propagate the same
@@ -60,16 +64,27 @@ public sealed partial class CorrelationIdMiddleware
 
     private readonly RequestDelegate _next;
     private readonly ILogger<CorrelationIdMiddleware> _logger;
+    private readonly CorrelationIdOptions _options;
+    private readonly Regex _allowedCharacterRegex;
 
     /// <summary>
     /// Initialises a new <see cref="CorrelationIdMiddleware"/>.
     /// </summary>
     /// <param name="next">The next middleware delegate in the pipeline.</param>
     /// <param name="logger">The logger used for correlation-id resolution diagnostics.</param>
-    public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
+    /// <param name="options">
+    /// The caller-supplied-value shape validation configuration. When no
+    /// <see cref="CorrelationIdOptions"/> is registered in the container (e.g. a host that calls
+    /// <see cref="CorrelationIdExtensions.UseSharedKernelCorrelationId"/> without ever calling
+    /// <see cref="CorrelationIdExtensions.AddSharedKernelCorrelationId"/>), the platform-default
+    /// options are used instead — this validation is never silently skipped.
+    /// </param>
+    public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger, CorrelationIdOptions? options = null)
     {
         _next = next;
         _logger = logger;
+        _options = options ?? new CorrelationIdOptions();
+        _allowedCharacterRegex = new Regex(_options.AllowedCharacterPattern, RegexOptions.Compiled | RegexOptions.CultureInvariant);
     }
 
     /// <summary>
@@ -103,14 +118,28 @@ public sealed partial class CorrelationIdMiddleware
         if (context.Request.Headers.TryGetValue(HeaderName, out var headerValue))
         {
             var value = headerValue.ToString();
+
             if (!string.IsNullOrWhiteSpace(value))
-                return value;
+            {
+                if (IsValidFormat(value))
+                {
+                    return value;
+                }
+
+                // Never log the raw rejected value itself — an unvalidated, caller-controlled
+                // string is exactly the log-injection vector this validation defends against.
+                // Length alone is sufficient audit context.
+                Log.CorrelationIdRejected(_logger, value.Length);
+            }
         }
 
         var generated = Guid.NewGuid().ToString("N");
         Log.CorrelationIdGenerated(_logger, generated);
         return generated;
     }
+
+    private bool IsValidFormat(string value)
+        => value.Length <= _options.MaxLength && _allowedCharacterRegex.IsMatch(value);
 
     private static partial class Log
     {
@@ -119,5 +148,11 @@ public sealed partial class CorrelationIdMiddleware
             Level = LogLevel.Debug,
             Message = "Generated new correlation id {CorrelationId} for inbound request.")]
         public static partial void CorrelationIdGenerated(ILogger logger, string correlationId);
+
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 6,
+            Level = LogLevel.Warning,
+            Message = "Rejected a caller-supplied correlation id of length {CorrelationIdLength} failing format validation; generating a new one instead.")]
+        public static partial void CorrelationIdRejected(ILogger logger, int correlationIdLength);
     }
 }

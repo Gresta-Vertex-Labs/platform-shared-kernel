@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -111,6 +112,152 @@ public class CorrelationIdMiddlewareTests
         await responseFeature.FireOnStartingAsync();
 
         httpContext.Response.Headers.ContainsKey(CorrelationIdMiddleware.HeaderName).Should().BeTrue();
+    }
+
+    // --- Caller-supplied correlation-id format validation (WO-063, P-415, T-55/T-56/T-57) ---
+
+    [Theory]
+    [InlineData("has spaces")]
+    [InlineData("has/slash")]
+    [InlineData("has<angle>brackets")]
+    [InlineData("has\"quote")]
+    public async Task InvokeAsync_HeaderContainsDisallowedCharacter_GeneratesFreshValueInstead(string invalidValue)
+    {
+        var httpContext = CreateHttpContext(out var responseFeature);
+        httpContext.Request.Headers[CorrelationIdMiddleware.HeaderName] = invalidValue;
+
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask, NullLogger<CorrelationIdMiddleware>.Instance);
+
+        await middleware.InvokeAsync(httpContext);
+        await responseFeature.FireOnStartingAsync();
+
+        var storedValue = httpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
+        storedValue.Should().NotBe(invalidValue);
+        storedValue.Should().MatchRegex("^[0-9a-f]{32}$");
+        httpContext.Response.Headers[CorrelationIdMiddleware.HeaderName].ToString().Should().Be(storedValue);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HeaderExceedsMaxLength_GeneratesFreshValueInstead()
+    {
+        var httpContext = CreateHttpContext(out var responseFeature);
+        var overLength = new string('a', 129); // MaxLength default is 128.
+        httpContext.Request.Headers[CorrelationIdMiddleware.HeaderName] = overLength;
+
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask, NullLogger<CorrelationIdMiddleware>.Instance);
+
+        await middleware.InvokeAsync(httpContext);
+        await responseFeature.FireOnStartingAsync();
+
+        var storedValue = httpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
+        storedValue.Should().NotBe(overLength);
+        storedValue!.Length.Should().Be(32);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RejectedValue_NeverReachesActivityBaggageOrResponseHeaderVerbatim()
+    {
+        // The regression this capability's acceptance criteria specifically calls for: a rejected
+        // caller-supplied value must never reach Activity.Current.Baggage or the response header —
+        // a fresh well-formed value is generated instead (T-55).
+        using var activity = new Activity("test-activity").Start();
+        var httpContext = CreateHttpContext(out var responseFeature);
+        const string rejectedValue = "invalid value with spaces";
+        httpContext.Request.Headers[CorrelationIdMiddleware.HeaderName] = rejectedValue;
+
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask, NullLogger<CorrelationIdMiddleware>.Instance);
+
+        await middleware.InvokeAsync(httpContext);
+        await responseFeature.FireOnStartingAsync();
+
+        Activity.Current!.Baggage.Should().NotContain(kv => kv.Key == CorrelationIdMiddleware.BaggageKey && kv.Value == rejectedValue);
+        httpContext.Response.Headers[CorrelationIdMiddleware.HeaderName].ToString().Should().NotBe(rejectedValue);
+        activity.Stop();
+    }
+
+    [Theory]
+    [InlineData("550e8400-e29b-41d4-a716-446655440000")] // well-formed GUID (with dashes)
+    [InlineData("550e8400e29b41d4a716446655440000")] // well-formed GUID ("N" format, no dashes)
+    [InlineData("01ARZ3NDEKTSV4RRFFQ69G5FAV")] // well-formed ULID shape
+    public async Task InvokeAsync_WellFormedCallerSuppliedValue_PreservedUnchangedEndToEnd(string wellFormedValue)
+    {
+        using var activity = new Activity("test-activity").Start();
+        var httpContext = CreateHttpContext(out var responseFeature);
+        httpContext.Request.Headers[CorrelationIdMiddleware.HeaderName] = wellFormedValue;
+
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask, NullLogger<CorrelationIdMiddleware>.Instance);
+
+        await middleware.InvokeAsync(httpContext);
+        await responseFeature.FireOnStartingAsync();
+
+        httpContext.Items[CorrelationIdMiddleware.ItemsKey].Should().Be(wellFormedValue);
+        Activity.Current!.Baggage.Should().Contain(kv => kv.Key == CorrelationIdMiddleware.BaggageKey && kv.Value == wellFormedValue);
+        httpContext.Response.Headers[CorrelationIdMiddleware.HeaderName].ToString().Should().Be(wellFormedValue);
+        activity.Stop();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_MaxLengthConfiguredIndependently_AppliesConfiguredValue()
+    {
+        var httpContext = CreateHttpContext(out var responseFeature);
+        var tenCharValue = new string('a', 10);
+        httpContext.Request.Headers[CorrelationIdMiddleware.HeaderName] = tenCharValue;
+        var options = new CorrelationIdOptions { MaxLength = 5 }; // Shorter than the 10-char value.
+
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask, NullLogger<CorrelationIdMiddleware>.Instance, options);
+
+        await middleware.InvokeAsync(httpContext);
+        await responseFeature.FireOnStartingAsync();
+
+        var storedValue = httpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
+        storedValue.Should().NotBe(tenCharValue, "the configured MaxLength of 5 must reject a 10-character value");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AllowedCharacterPatternConfiguredIndependently_AppliesConfiguredValue()
+    {
+        var httpContext = CreateHttpContext(out var responseFeature);
+        const string valueWithDot = "abc.def";
+        httpContext.Request.Headers[CorrelationIdMiddleware.HeaderName] = valueWithDot;
+        // Restrict to lowercase letters only — the default pattern would otherwise allow '.'.
+        var options = new CorrelationIdOptions { AllowedCharacterPattern = "^[a-z]+$" };
+
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask, NullLogger<CorrelationIdMiddleware>.Instance, options);
+
+        await middleware.InvokeAsync(httpContext);
+        await responseFeature.FireOnStartingAsync();
+
+        var storedValue = httpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
+        storedValue.Should().NotBe(valueWithDot, "the configured stricter pattern must reject a value containing '.'");
+    }
+
+    [Fact]
+    public void CorrelationIdOptions_Defaults_AreDocumentedConservativeValues()
+    {
+        var options = new CorrelationIdOptions();
+
+        options.MaxLength.Should().Be(128);
+        options.AllowedCharacterPattern.Should().Be("^[A-Za-z0-9\\-_:.]+$");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_NoOptionsSuppliedToConstructor_UsesDocumentedDefaultOptions()
+    {
+        // A host that calls UseSharedKernelCorrelationId() without ever calling
+        // AddSharedKernelCorrelationId() must still apply the default-safe validation rather than
+        // crashing on an unresolvable DI dependency.
+        var httpContext = CreateHttpContext(out var responseFeature);
+        var overLength = new string('a', 200);
+        httpContext.Request.Headers[CorrelationIdMiddleware.HeaderName] = overLength;
+
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask, NullLogger<CorrelationIdMiddleware>.Instance, options: null);
+
+        await middleware.InvokeAsync(httpContext);
+        await responseFeature.FireOnStartingAsync();
+
+        var storedValue = httpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
+        storedValue.Should().NotBe(overLength);
+        storedValue!.Length.Should().Be(32);
     }
 
     /// <summary>
