@@ -25,13 +25,17 @@
 
   <ItemGroup>
     <!--
-      Layering boundary (15.Integration/CLAUDE.md): exactly these four ProjectReferences are
-      permitted. SharedKernel.Primitives is referenced for future-proofing only (D-01) — not
-      consumed by the public surface today. No reference to 06.Persistence, 11.Communication.*,
-      or SharedKernel.Messaging.MassTransit is permitted.
+      Layering boundary (15.Integration/CLAUDE.md): exactly these five ProjectReferences are
+      permitted. SharedKernel.Primitives is referenced for future-proofing (D-01) plus
+      LoggingEventIdRanges (WO-041). SharedKernel.Cryptography (01.Core) was added under
+      WO-064/P-427 for ISymmetricEncryptionService (opt-in AES-GCM payload encryption) — still
+      within the "may reference 01.Core" layering allowance, not a new cross-domain exception. No
+      reference to 06.Persistence, 11.Communication.*, or SharedKernel.Messaging.MassTransit is
+      permitted.
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" />
   </ItemGroup>

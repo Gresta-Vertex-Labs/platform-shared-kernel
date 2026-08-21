@@ -44,6 +44,28 @@ public sealed class WebhookDeliveryOptions : IValidatableObject
     [Range(1, int.MaxValue)]
     public int MaxConcurrentDeliveries { get; set; } = 8;
 
+    /// <summary>
+    /// When <see langword="true"/>, disables the default <c>IWebhookUrlValidator</c>'s SSRF guard —
+    /// loopback, link-local, private (RFC1918/RFC4193), and multicast/reserved targets are permitted
+    /// through. Defaults to <see langword="false"/> (fail-closed). Intended for legitimate internal
+    /// test/staging subscriptions only — never enable this for a service that accepts
+    /// externally-supplied subscription URLs.
+    /// </summary>
+    public bool AllowPrivateNetworkTargets { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, the outbound JSON payload is encrypted (AES-GCM, via
+    /// <c>SharedKernel.Cryptography</c>'s <c>ISymmetricEncryptionService</c>) before signing —
+    /// encrypt-then-sign, so the HMAC signature continues to cover exactly the transmitted bytes.
+    /// Defaults to <see langword="false"/>. TLS already provides transport confidentiality; this is
+    /// defense-in-depth for subscribers who want payload-level confidentiality independent of their
+    /// own TLS termination boundary. Requires an <c>ISymmetricEncryptionService</c> to be registered
+    /// (via <c>SharedKernel.Cryptography</c>'s <c>AddSharedKernelCryptography()</c> plus a consumer-supplied
+    /// <c>IEncryptionKeyProvider</c>) — enabling this option without registering that service fails
+    /// loudly at first delivery, not silently.
+    /// </summary>
+    public bool EncryptPayload { get; set; }
+
     /// <inheritdoc />
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
