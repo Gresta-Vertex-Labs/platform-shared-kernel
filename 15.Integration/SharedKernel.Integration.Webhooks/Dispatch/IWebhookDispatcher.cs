@@ -49,4 +49,19 @@ public interface IWebhookDispatcher
         TEvent integrationEvent,
         CancellationToken ct)
         where TEvent : IIntegrationEvent;
+
+    /// <summary>
+    /// Sends a synthetic onboarding/connectivity-check delivery to <paramref name="subscription"/>.
+    /// </summary>
+    /// <param name="subscription">The subscription to send the test delivery to.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The terminal delivery outcome, identical in shape to a real event delivery.</returns>
+    /// <remarks>
+    /// Constructs a <c>WebhookPingEvent</c> and calls
+    /// <see cref="DispatchToSubscriptionAsync{TEvent}"/> verbatim — zero parallel signing, retry, or
+    /// observer logic. Lets a subscriber verify their endpoint, signature verification, and header
+    /// handling before any real business event fires. The delivered payload's event type is always
+    /// <c>"WebhookPingEvent"</c>, unambiguously distinguishing it from real business events.
+    /// </remarks>
+    Task<WebhookDeliveryResult> SendTestDeliveryAsync(WebhookSubscription subscription, CancellationToken ct);
 }
