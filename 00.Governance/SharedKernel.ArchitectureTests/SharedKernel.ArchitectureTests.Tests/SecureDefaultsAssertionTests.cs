@@ -62,6 +62,22 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// exactly (a conditional invocation, never a throw), unlike
 /// <c>SK.00.CorsWildcardCredentialsGuard</c>'s validator-vs-throw mismatch.
 /// </para>
+/// <para>
+/// T-332–T-336 (<c>SK.00.WebhookSsrfGuardLock</c>/WO-064/P-432): the first phase in this family to
+/// lock TWO independent facts with two different techniques. Technique A —
+/// <see cref="SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton"/> — against contrived
+/// pass/fire/boundary-path fixtures (T-332–T-334) and the real, shipped
+/// <c>SharedKernel.Integration.Webhooks.Extensions.ServiceCollectionExtensions.AddSharedKernelWebhooks</c>
+/// (T-335, GATING — originally authored as non-gating and tracked as a Cross-Domain Dependency
+/// pending <c>15.Integration</c> P-422/H-06/H-07, CONFIRMED RESOLVED on disk before this phase's
+/// implementation session: that domain had already shipped
+/// <c>IWebhookUrlValidator</c>/<c>PrivateNetworkWebhookUrlValidator</c> and their default
+/// <c>TryAddSingleton</c> registration past Design into Core). Technique B — a genuinely EXECUTED
+/// test (T-336, GATING, same resolved dependency) invoking the real, compiled
+/// <c>PrivateNetworkWebhookUrlValidator</c> against a fixed IP-literal table — the first executed
+/// (not IL-only) real-assembly test in this file, per that method's own remarks explaining why no
+/// static technique can honestly prove range-membership behavior.
+/// </para>
 /// </remarks>
 public class SecureDefaultsAssertionTests
 {
@@ -1227,6 +1243,279 @@ public class SecureDefaultsAssertionTests
     }
 
     // ---------------------------------------------------------------------------
+    // T-332 — AssertMethodBodyRegistersSingleton pass path: expected pair registered
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-332: A fixture builder method that registers the expected service→implementation pair via
+    /// <c>AddSingleton&lt;TService,TImplementation&gt;()</c> must pass
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyRegistersSingleton_ExpectedPairRegistered_DoesNotThrow()
+    {
+        const string source = """
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Fixture.SecureDefaults
+            {
+                public interface IFixtureUrlValidator { }
+
+                public sealed class FixtureUrlValidatorDefault : IFixtureUrlValidator { }
+
+                // Compliant: mirrors AddSharedKernelWebhooks registering its default SSRF guard.
+                public static class FixtureRegistrationPresent
+                {
+                    public static IServiceCollection Build(IServiceCollection services)
+                    {
+                        services.AddSingleton<IFixtureUrlValidator, FixtureUrlValidatorDefault>();
+                        return services;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsRegistersSingletonPresent", source);
+        var declaringType = assembly.GetType("Fixture.SecureDefaults.FixtureRegistrationPresent")!;
+        var serviceType = assembly.GetType("Fixture.SecureDefaults.IFixtureUrlValidator")!;
+        var implementationType = assembly.GetType("Fixture.SecureDefaults.FixtureUrlValidatorDefault")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton(
+                declaringType, "Build", serviceType, implementationType);
+
+        act.Should().NotThrow(
+            because: "Build registers IFixtureUrlValidator -> FixtureUrlValidatorDefault via " +
+                     "AddSingleton");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-333 — AssertMethodBodyRegistersSingleton fire path: registration removed
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-333: A fixture builder method with the default registration silently removed — the exact
+    /// regression this check exists to prevent — must fail
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyRegistersSingleton_RegistrationRemoved_ThrowsNamingTypes()
+    {
+        const string source = """
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Fixture.SecureDefaults
+            {
+                public interface IFixtureUrlValidator { }
+
+                public sealed class FixtureUrlValidatorDefault : IFixtureUrlValidator { }
+
+                // Regression case: the default registration was silently deleted in a later edit.
+                public static class FixtureRegistrationRemoved
+                {
+                    public static IServiceCollection Build(IServiceCollection services)
+                    {
+                        return services;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsRegistersSingletonRemoved", source);
+        var declaringType = assembly.GetType("Fixture.SecureDefaults.FixtureRegistrationRemoved")!;
+        var serviceType = assembly.GetType("Fixture.SecureDefaults.IFixtureUrlValidator")!;
+        var implementationType = assembly.GetType("Fixture.SecureDefaults.FixtureUrlValidatorDefault")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton(
+                declaringType, "Build", serviceType, implementationType);
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's Build method no longer registers IFixtureUrlValidator -> " +
+                         "FixtureUrlValidatorDefault — the registration was removed")
+            .WithMessage("*FixtureRegistrationRemoved*")
+            .WithMessage("*FixtureUrlValidatorDefault*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-334 — AssertMethodBodyRegistersSingleton fire path (boundary): wrong implementation
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-334: A fixture builder method that registers a DIFFERENT implementation type for the same
+    /// service interface must fail
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton"/> — proving the check
+    /// verifies the exact service→implementation pairing, not merely "some <c>AddSingleton</c> call
+    /// for that service exists somewhere."
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyRegistersSingleton_DifferentImplementationRegistered_ThrowsNamingTypes()
+    {
+        const string source = """
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Fixture.SecureDefaults
+            {
+                public interface IFixtureUrlValidator { }
+
+                public sealed class FixtureUrlValidatorDefault : IFixtureUrlValidator { }
+
+                public sealed class FixtureUrlValidatorOther : IFixtureUrlValidator { }
+
+                // Boundary case: the same service interface is registered, but with a DIFFERENT
+                // implementation type.
+                public static class FixtureRegistrationWrongImplementation
+                {
+                    public static IServiceCollection Build(IServiceCollection services)
+                    {
+                        services.AddSingleton<IFixtureUrlValidator, FixtureUrlValidatorOther>();
+                        return services;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsRegistersSingletonWrongImpl", source);
+        var declaringType =
+            assembly.GetType("Fixture.SecureDefaults.FixtureRegistrationWrongImplementation")!;
+        var serviceType = assembly.GetType("Fixture.SecureDefaults.IFixtureUrlValidator")!;
+        var implementationType = assembly.GetType("Fixture.SecureDefaults.FixtureUrlValidatorDefault")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton(
+                declaringType, "Build", serviceType, implementationType);
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "Build registers IFixtureUrlValidator -> FixtureUrlValidatorOther, not " +
+                         "the expected FixtureUrlValidatorDefault — the exact pairing is not " +
+                         "satisfied")
+            .WithMessage("*FixtureRegistrationWrongImplementation*")
+            .WithMessage("*FixtureUrlValidatorDefault*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-335 — Real-assembly verification (GATING): SharedKernel.Integration.Webhooks (Technique A)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-335 (<c>SK.00.WebhookSsrfGuardLock</c>/WO-064/P-432): Re-points
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton"/> at the real, shipped
+    /// <c>ServiceCollectionExtensions.AddSharedKernelWebhooks</c> registration method and confirms
+    /// it still registers <c>IWebhookUrlValidator -> PrivateNetworkWebhookUrlValidator</c> as the
+    /// default SSRF guard.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
+    /// recorded P-422 (H-06/H-07) as <c>○</c> Not Started against <c>15.Integration/state-map.md</c>
+    /// — STALE by the time of this implementation session: that domain had already shipped
+    /// <c>IWebhookUrlValidator</c>/<c>PrivateNetworkWebhookUrlValidator</c> and their default
+    /// registration inside <c>AddSharedKernelWebhooks</c> before this phase's implementation
+    /// session began, mirroring the now-repeated dependency-resolved-before-implementation pattern
+    /// this file already records for <c>SK.00.SenderConstrainedCredentialGuard</c>/
+    /// <c>SK.00.SecureDefaultsLock</c>/<c>SK.00.TenantAndMtlsBoundaryLock</c>/
+    /// <c>SK.00.CorsWildcardCredentialsGuard</c>/<c>SK.00.CorrelationIdValidationGuard</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Design/reality drift found and corrected.</strong> This phase's own design prose
+    /// (Implementation Rule 3) assumed a plain <c>AddSingleton</c> call — the real, shipped
+    /// registration instead uses <c>services.TryAddSingleton&lt;IWebhookUrlValidator,
+    /// PrivateNetworkWebhookUrlValidator&gt;()</c>. <see cref="SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton"/>
+    /// was written to accept both method-name shapes from the start (see that method's own
+    /// remarks) rather than being narrowed after the fact.
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
+    /// asserting a deliberately-wrong implementation type against this exact real registration
+    /// method, confirmed to fail with the same message shape T-333's contrived fixture produces,
+    /// then reverted before commit. The real call site lives directly in
+    /// <c>AddSharedKernelWebhooks</c>'s own IL body, not inside a lambda closure, so no
+    /// closure-scanning extension is exercised by this particular call site (that extension
+    /// remains proven by T-318/T-328/T-331's own real call sites).
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AssertMethodBodyRegistersSingleton_RealAddSharedKernelWebhooks_DefaultUrlValidatorRegistrationHolds()
+    {
+        var declaringType =
+            typeof(SharedKernel.Integration.Webhooks.Extensions.ServiceCollectionExtensions);
+        var serviceType = typeof(SharedKernel.Integration.Webhooks.Dispatch.IWebhookUrlValidator);
+        var implementationType =
+            typeof(SharedKernel.Integration.Webhooks.Dispatch.PrivateNetworkWebhookUrlValidator);
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton(
+                declaringType, "AddSharedKernelWebhooks", serviceType, implementationType);
+
+        act.Should().NotThrow(
+            because: "the real, shipped AddSharedKernelWebhooks still registers " +
+                     "IWebhookUrlValidator -> PrivateNetworkWebhookUrlValidator as the default " +
+                     "SSRF guard (WO-064, P-422)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-336 — Real-assembly, EXECUTED verification: PrivateNetworkWebhookUrlValidator (Technique B)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-336 (<c>SK.00.WebhookSsrfGuardLock</c>/WO-064/P-432): invokes the real, compiled
+    /// <c>PrivateNetworkWebhookUrlValidator</c> against a fixed table of IP-literal hosts and
+    /// confirms it rejects loopback/private/link-local-metadata targets while accepting a
+    /// public-internet control address.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Deliberate departure from this file's IL-only discipline.</strong> Every other
+    /// method in this class proves a STRUCTURAL fact via Mono.Cecil IL inspection, never executing
+    /// the assembly under test. "Rejects the documented private/loopback/link-local/metadata IP
+    /// ranges" is a COMPUTED BEHAVIOR of range-membership logic whose concrete representation
+    /// (hardcoded byte-range comparisons, as shipped, or something else) is not something a sound,
+    /// representation-agnostic static IL technique could honestly prove — see
+    /// <c>SecureDefaultsAssertion</c>'s own class remarks (Technique 5) and this phase's
+    /// Implementation Rule 4. This test instead resolves and directly invokes the real, compiled
+    /// <c>PrivateNetworkWebhookUrlValidator</c>'s public <c>IWebhookUrlValidator</c> contract
+    /// method — the first genuinely EXECUTED real-assembly test in this file.
+    /// </para>
+    /// <para>
+    /// <strong>Offline and deterministic.</strong> Every host below is an IP literal, never a DNS
+    /// hostname — <c>Dns.GetHostAddressesAsync</c> against an IP-literal host resolves purely
+    /// locally per BCL contract, with no actual network I/O, mirroring <c>15.Integration</c>'s own
+    /// H-08 test-design constraint ("never a real DNS lookup or network call") applied here to a
+    /// governance test instead of a domain test.
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
+    /// inverting the expected accept/reject outcomes, confirmed to fail, then reverted before
+    /// commit.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("127.0.0.1", false)] // loopback
+    [InlineData("10.0.0.1", false)] // RFC 1918 private
+    [InlineData("169.254.169.254", false)] // link-local / cloud-metadata (AWS/Azure/GCP)
+    [InlineData("8.8.8.8", true)] // public-internet control address
+    public async Task PrivateNetworkWebhookUrlValidator_RealValidator_RejectsPrivateAcceptsPublic(
+        string ipLiteralHost,
+        bool expectedAllowed)
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(
+            new SharedKernel.Integration.Webhooks.Options.WebhookDeliveryOptions());
+        var validator =
+            new SharedKernel.Integration.Webhooks.Dispatch.PrivateNetworkWebhookUrlValidator(options);
+
+        var url = new Uri($"https://{ipLiteralHost}/webhook");
+
+        var allowed = await validator.ValidateAsync(url, CancellationToken.None);
+
+        allowed.Should().Be(
+            expectedAllowed,
+            because: $"the real, shipped PrivateNetworkWebhookUrlValidator must " +
+                     $"{(expectedAllowed ? "allow" : "reject")} {ipLiteralHost} (WO-064, P-422)");
+    }
+
+    // ---------------------------------------------------------------------------
     // Fixture compilation helper
     // ---------------------------------------------------------------------------
 
@@ -1252,6 +1541,12 @@ public class SecureDefaultsAssertionTests
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
             MetadataReference.CreateFromFile(Assembly.Load("System.Collections").Location),
+            // Provides IServiceCollection plus both ServiceCollectionServiceExtensions
+            // (AddSingleton) and ServiceCollectionDescriptorExtensions (TryAddSingleton) — both
+            // live in this one Abstractions-only package — needed to compile T-332–T-334's
+            // AssertMethodBodyRegistersSingleton fixture assemblies.
+            MetadataReference.CreateFromFile(
+                typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
         };
 
         var compilation = CSharpCompilation.Create(

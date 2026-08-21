@@ -187,6 +187,16 @@
          genuinely calls ValidateOptionsResult.Fail, a technique matching the guard's REAL shape. -->
     <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj"
                       PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Integration.Webhooks assembly in
+         SecureDefaultsAssertionTests (WO-064 P-432, SK.00.WebhookSsrfGuardLock) — verified on disk
+         that 15.Integration shipped IWebhookUrlValidator/PrivateNetworkWebhookUrlValidator and
+         their default TryAddSingleton registration inside AddSharedKernelWebhooks (Core phase,
+         not merely Design) before this phase's implementation session, so the T-335/T-336
+         real-assembly re-verification tests originally tracked as a Cross-Domain Dependency are
+         wired directly here rather than deferred, mirroring the SecureDefaultsAssertionTests
+         (WO-061/WO-062/WO-063) precedent. -->
+    <ProjectReference Include="..\..\..\15.Integration\SharedKernel.Integration.Webhooks\SharedKernel.Integration.Webhooks.csproj"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
