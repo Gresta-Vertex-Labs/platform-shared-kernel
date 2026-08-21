@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SharedKernel.Presentation.SignalR.Filters;
 
 namespace SharedKernel.Presentation.SignalR.Extensions;
@@ -19,15 +20,22 @@ public static class SignalRExtensions
     /// either platform filter by clearing the registered <c>HubOptions.HubFilters</c> entries, or
     /// to add service-specific filters.
     /// </param>
+    /// <param name="configureRateLimit">
+    /// An optional callback declaring per-connection hub-method invocation rate limits and/or
+    /// argument-payload shape validation — see <see cref="HubInvocationRateLimitOptions"/>.
+    /// <see cref="HubInvocationRateLimitFilter"/> is always registered, but is a genuine no-op
+    /// (never rejects an invocation) when this parameter is omitted, carrying zero observable
+    /// behavior change for a host that does not opt in.
+    /// </param>
     /// <returns>
     /// The stock <see cref="ISignalRServerBuilder"/> returned by
     /// <c>Microsoft.AspNetCore.SignalR</c>'s own <c>AddSignalR</c> — no custom wrapper type.
     /// </returns>
     /// <remarks>
     /// <para>
-    /// Both platform filters are registered globally via <see cref="HubOptions"/> extension method
+    /// Every platform filter is registered globally via <see cref="HubOptions"/> extension method
     /// <c>AddFilter&lt;T&gt;()</c> — not via per-hub <c>[HubFilter]</c> attributes — so every hub in
-    /// a consuming service gets both by default.
+    /// a consuming service gets all three by default.
     /// </para>
     /// <para>
     /// Also sets explicit, documented, conservative resource-exhaustion defaults on
@@ -42,15 +50,26 @@ public static class SignalRExtensions
     /// </remarks>
     public static ISignalRServerBuilder AddSharedKernelSignalR(
         this IServiceCollection services,
-        Action<HubOptions>? configureHubOptions = null)
+        Action<HubOptions>? configureHubOptions = null,
+        Action<HubInvocationRateLimitOptions>? configureRateLimit = null)
     {
         services.AddSingleton<TenantContextHubFilter>();
         services.AddSingleton<HubExceptionMappingFilter>();
+
+        var rateLimitOptions = new HubInvocationRateLimitOptions();
+        configureRateLimit?.Invoke(rateLimitOptions);
+        services.AddSingleton(rateLimitOptions);
+        services.AddSingleton<HubInvocationRateLimitFilter>();
+
+        // Startup-time CORS diagnostic (P-418) — flags any mapped SignalR hub endpoint lacking
+        // CORS metadata via a one-time Warning log; never rejects a connection or throws.
+        services.AddHostedService<SignalRCorsStartupDiagnostic>();
 
         return services.AddSignalR(options =>
         {
             options.AddFilter<TenantContextHubFilter>();
             options.AddFilter<HubExceptionMappingFilter>();
+            options.AddFilter<HubInvocationRateLimitFilter>();
 
             // Conservative, explicitly pinned resource-exhaustion defaults (WO-062, P-409) —
             // applied BEFORE configureHubOptions so every caller override always wins.
