@@ -21,6 +21,8 @@ public static class OpenApiExtensions
 {
     private const string FallbackDocumentName = "v1";
     private const string BearerSecuritySchemeName = "Bearer";
+    private const string ApiKeySecuritySchemeName = "ApiKey";
+    private const string MutualTlsSecuritySchemeName = "MutualTLS";
 
     /// <summary>
     /// Registers one native OpenAPI document per discovered API version group.
@@ -28,25 +30,36 @@ public static class OpenApiExtensions
     /// <param name="services">The service collection to add registrations to.</param>
     /// <param name="title">The title shown in the generated OpenAPI document(s) and Scalar UI.</param>
     /// <param name="description">An optional description shown alongside <paramref name="title"/>.</param>
+    /// <param name="configureSecuritySchemes">
+    /// An optional callback to customise which security schemes are registered — see
+    /// <see cref="OpenApiSecuritySchemesOptions"/>. Additive parameter: omitting it preserves this
+    /// method's original unconditional Bearer-only behavior.
+    /// </param>
     /// <returns>The same <paramref name="services"/> instance, for chaining.</returns>
     /// <remarks>
     /// Sources version groups from <see cref="IApiVersionDescriptionProvider"/> when
     /// <c>AddSharedKernelApiVersioning</c> was called first; falls back to a single
     /// <c>"v1"</c> document otherwise. Registers a document transformer setting
-    /// <c>Info.Title</c>/<c>Info.Description</c> and adding the Bearer JWT security scheme by name
-    /// (scheme metadata only — token validation logic stays in <c>12.Security.Oidc</c>, never
-    /// duplicated here).
+    /// <c>Info.Title</c>/<c>Info.Description</c> and adding every active security scheme by name
+    /// (scheme metadata only — token validation logic stays in <c>12.Security.Oidc</c>/<c>.ApiKey</c>/
+    /// <c>.Mtls</c>, never duplicated here). Each active scheme is registered as its own separate
+    /// OpenAPI security requirement object (OR semantics) — see
+    /// <see cref="OpenApiSecuritySchemesOptions"/> for details.
     /// </remarks>
     public static IServiceCollection AddSharedKernelOpenApi(
         this IServiceCollection services,
         string title,
-        string? description = null)
+        string? description = null,
+        Action<OpenApiSecuritySchemesOptions>? configureSecuritySchemes = null)
     {
+        var securitySchemesOptions = new OpenApiSecuritySchemesOptions();
+        configureSecuritySchemes?.Invoke(securitySchemesOptions);
+
         var versionProviderDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IApiVersionDescriptionProvider));
 
         if (versionProviderDescriptor is null)
         {
-            services.AddOpenApi(FallbackDocumentName, options => ConfigureDocument(options, title, description, FallbackDocumentName));
+            services.AddOpenApi(FallbackDocumentName, options => ConfigureDocument(options, title, description, FallbackDocumentName, securitySchemesOptions));
             return services;
         }
 
@@ -61,7 +74,7 @@ public static class OpenApiExtensions
         foreach (var apiVersionDescription in versionDescriptionProvider.ApiVersionDescriptions)
         {
             var documentName = apiVersionDescription.GroupName;
-            services.AddOpenApi(documentName, options => ConfigureDocument(options, title, description, documentName));
+            services.AddOpenApi(documentName, options => ConfigureDocument(options, title, description, documentName, securitySchemesOptions));
         }
 
         return services;
@@ -100,7 +113,12 @@ public static class OpenApiExtensions
         return app;
     }
 
-    private static void ConfigureDocument(OpenApiOptions options, string title, string? description, string documentName)
+    private static void ConfigureDocument(
+        OpenApiOptions options,
+        string title,
+        string? description,
+        string documentName,
+        OpenApiSecuritySchemesOptions securitySchemesOptions)
     {
         options.AddDocumentTransformer((document, _, _) =>
         {
@@ -110,16 +128,73 @@ public static class OpenApiExtensions
 
             var components = document.Components ?? new OpenApiComponents();
             var securitySchemes = components.SecuritySchemes ?? new Dictionary<string, IOpenApiSecurityScheme>();
-            securitySchemes[BearerSecuritySchemeName] = new OpenApiSecurityScheme
+
+            if (securitySchemesOptions.Bearer)
             {
-                Type = SecuritySchemeType.Http,
-                Scheme = "bearer",
-                BearerFormat = "JWT",
-            };
+                securitySchemes[BearerSecuritySchemeName] = new OpenApiSecurityScheme
+                {
+                    Type = SecuritySchemeType.Http,
+                    Scheme = "bearer",
+                    BearerFormat = "JWT",
+                };
+            }
+
+            if (securitySchemesOptions.ApiKey)
+            {
+                securitySchemes[ApiKeySecuritySchemeName] = new OpenApiSecurityScheme
+                {
+                    Type = SecuritySchemeType.ApiKey,
+                    Name = securitySchemesOptions.ApiKeyHeaderName,
+                    In = ParameterLocation.Header,
+                };
+            }
+
+            if (securitySchemesOptions.MutualTls)
+            {
+                securitySchemes[MutualTlsSecuritySchemeName] = new MutualTlsSecurityScheme();
+            }
+
             components.SecuritySchemes = securitySchemes;
             document.Components = components;
+
+            // Resolves every OpenApiSecuritySchemeReference constructed below against the
+            // just-updated Components.SecuritySchemes dictionary — without this, each reference's
+            // Target stays unresolved and the corresponding entry silently serializes as an empty
+            // object inside document.Security (confirmed via a real serialization round trip
+            // against the installed Microsoft.OpenApi 2.0.0 package).
+            document.RegisterComponents();
+
+            var securityRequirements = new List<OpenApiSecurityRequirement>();
+
+            if (securitySchemesOptions.Bearer)
+            {
+                securityRequirements.Add(BuildSecurityRequirement(document, BearerSecuritySchemeName));
+            }
+
+            if (securitySchemesOptions.ApiKey)
+            {
+                securityRequirements.Add(BuildSecurityRequirement(document, ApiKeySecuritySchemeName));
+            }
+
+            if (securitySchemesOptions.MutualTls)
+            {
+                securityRequirements.Add(BuildSecurityRequirement(document, MutualTlsSecuritySchemeName));
+            }
+
+            // Each active scheme is its OWN SEPARATE security requirement object — OR semantics,
+            // a request satisfies ANY one active mechanism — never a single combined requirement
+            // object, which would mean simultaneous/AND-required semantics. The opposite of this
+            // package's usual AND-across-attributes composition rule elsewhere
+            // ([RequireRole]/[RequirePermission]).
+            if (securityRequirements.Count > 0)
+            {
+                document.Security = securityRequirements;
+            }
 
             return Task.CompletedTask;
         });
     }
+
+    private static OpenApiSecurityRequirement BuildSecurityRequirement(OpenApiDocument document, string schemeName)
+        => new() { [new OpenApiSecuritySchemeReference(schemeName, document, null)] = [] };
 }
