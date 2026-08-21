@@ -184,6 +184,83 @@ namespace SharedKernel.ArchitectureTests;
 /// checks are wired directly in <c>SecureDefaultsAssertionTests</c> as GATING tests (T-317/T-318)
 /// rather than deferred as a Cross-Domain Dependency follow-up.
 /// </para>
+/// <para>
+/// <strong>Technique 5 — <see cref="AssertMethodBodyRegistersSingleton"/>: closed-generic
+/// DI-registration-presence assertion.</strong> Added by
+/// <c>SK.00.WebhookSsrfGuardLock</c>/P-432 — generalizes/INVERTS
+/// <see cref="Rules.SecurityArchitectureRules"/>'s sibling predicate (the internal
+/// <c>NoSecurityContextSingletonRegistrationPredicate</c>, WO-057/P-373)
+/// <see cref="GenericInstanceMethod.GenericArguments"/> inspection technique from "assert ABSENCE
+/// of a singleton registration for a forbidden type" to "assert PRESENCE of a singleton
+/// registration for exactly the given service→implementation pair." Locates
+/// <paramref name="declaringType"/>'s single method matching <c>methodName</c> (a setup
+/// exception, never a silent false pass/fail, on zero or more than one match — the same
+/// discipline as every other method-body-scanning technique in this class) and scans its
+/// instruction body — plus, reusing <see cref="AssertMethodBodyInvokesMethod"/>'s proven
+/// closure-scanning extension (T-318/T-328), every method on every nested type whose name starts
+/// with <c>&lt;{methodName}&gt;b__</c> — for a <see cref="OpCodes.Call"/>/
+/// <see cref="OpCodes.Callvirt"/> instruction whose operand is a closed
+/// <see cref="GenericInstanceMethod"/> named either <c>"AddSingleton"</c> or
+/// <c>"TryAddSingleton"</c> whose <see cref="GenericInstanceMethod.GenericArguments"/> equal
+/// <c>[serviceType, implementationType]</c> in that order.
+/// </para>
+/// <para>
+/// <strong>Both registration-method names are accepted, deliberately.</strong> This phase's own
+/// authoring-time design prose (Implementation Rule 3) assumed the real registration would use
+/// plain <c>AddSingleton&lt;TService,TImplementation&gt;()</c>, reasoning from
+/// <c>WithUrlValidator&lt;T&gt;()</c>'s documented "last call wins" override semantics. Direct
+/// inspection of the real, shipped
+/// <c>SharedKernel.Integration.Webhooks.Extensions.ServiceCollectionExtensions.AddSharedKernelWebhooks</c>
+/// before this method was written found it instead uses
+/// <c>services.TryAddSingleton&lt;IWebhookUrlValidator, PrivateNetworkWebhookUrlValidator&gt;()</c>
+/// (<c>Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions</c>)
+/// — a deliberate, correct choice by <c>15.Integration</c>, not a defect: <c>TryAddSingleton</c>
+/// is a no-op when a registration for <c>IWebhookUrlValidator</c> already exists, which is
+/// exactly what lets a consuming service call <c>WithUrlValidator&lt;T&gt;()</c> either before or
+/// after <c>AddSharedKernelWebhooks()</c> and still get its override (the "last call wins" prose
+/// this phase's design read literally, but which <c>WithUrlValidator&lt;T&gt;()</c>'s own
+/// implementation achieves via <c>RemoveAll&lt;IWebhookUrlValidator&gt;()</c> immediately followed
+/// by a plain <c>AddSingleton</c>, not via registration-order-dependent <c>TryAdd</c> semantics on
+/// the default side). Matching only <c>TryAddSingleton</c> would fit today's one real caller but
+/// silently reject a legitimate future <c>AddSingleton</c>-based default elsewhere in the
+/// platform; matching only <c>AddSingleton</c> would miss the one real caller this phase exists to
+/// lock — so both literals are accepted rather than the class being narrowed to whichever shape
+/// happened to match first.
+/// </para>
+/// <para>
+/// <strong>Exact-pairing discipline, not mere call-presence.</strong> A registration for the same
+/// <paramref name="serviceType"/> with a DIFFERENT closed <paramref name="implementationType"/>
+/// argument does not satisfy this check — mirroring
+/// <see cref="AssertStringCollectionPropertyDefaultEquals"/>'s order-sensitive (not merely
+/// membership-sensitive) discipline, applied here to a registration pairing instead of a string
+/// sequence. This is also why <c>WithUrlValidator&lt;T&gt;()</c>'s own
+/// <c>services.AddSingleton&lt;IWebhookUrlValidator, TValidator&gt;()</c> call site can never be
+/// accidentally satisfy a check pointed at <c>AddSharedKernelWebhooks</c>: even setting aside that
+/// <see cref="AssertMethodBodyRegistersSingleton"/> is scoped to one named method, that call's
+/// second generic argument is the OPEN generic method parameter <c>TValidator</c>, not a closed
+/// <c>PrivateNetworkWebhookUrlValidator</c> reference — its
+/// <see cref="GenericInstanceMethod.GenericArguments"/> element resolves to a
+/// <see cref="GenericParameter"/>, whose <see cref="MemberReference.FullName"/> can never equal a
+/// concrete implementation type's <see cref="Type.FullName"/>.
+/// </para>
+/// <para>
+/// <strong>Real-assembly status (Technique 5 — <c>SK.00.WebhookSsrfGuardLock</c>/P-432).</strong>
+/// Confirmed on disk at implementation time (2026-08-21) — the Cross-Domain Dependency this
+/// phase's own authoring-time prose recorded against <c>15.Integration</c> P-422 (H-06/H-07) as
+/// <c>○</c> Not Started was STALE: that domain had already shipped <c>IWebhookUrlValidator</c>/
+/// <c>PrivateNetworkWebhookUrlValidator</c> and their default registration past Design into Core
+/// before this phase's implementation session began, mirroring the now-repeated
+/// dependency-resolved-before-implementation pattern this file's own Cross-Domain Dependencies
+/// section already records six times over. The real, compiled
+/// <c>ServiceCollectionExtensions.AddSharedKernelWebhooks</c> genuinely calls
+/// <c>services.TryAddSingleton&lt;IWebhookUrlValidator, PrivateNetworkWebhookUrlValidator&gt;()</c>
+/// directly in its own IL body (not inside a lambda closure — unlike the T-318/T-331 real call
+/// sites, this one exercises no closure-scanning). Wired directly in
+/// <c>SecureDefaultsAssertionTests</c> as a GATING test (T-335) rather than deferred as a
+/// Cross-Domain Dependency follow-up, verified non-vacuous via a temporary sanity check (a
+/// deliberately-wrong implementation type against the same real registration method, confirmed to
+/// fail, then reverted before commit).
+/// </para>
 /// </remarks>
 public static class SecureDefaultsAssertion
 {
@@ -618,6 +695,140 @@ public static class SecureDefaultsAssertion
 
             if (constructedExpectedException && instruction.OpCode == OpCodes.Throw)
                 return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The two <c>Microsoft.Extensions.DependencyInjection(.Extensions)</c> method names that
+    /// register a closed-generic singleton service→implementation pair —
+    /// <c>AddSingleton&lt;TService,TImplementation&gt;()</c> and
+    /// <c>TryAddSingleton&lt;TService,TImplementation&gt;()</c>. Both are accepted by
+    /// <see cref="AssertMethodBodyRegistersSingleton"/> — see that method's remarks for why
+    /// neither name alone is sufficient.
+    /// </summary>
+    private static readonly HashSet<string> SingletonRegistrationMethodNames =
+        new(StringComparer.Ordinal) { "AddSingleton", "TryAddSingleton" };
+
+    /// <summary>
+    /// Asserts that <paramref name="declaringType"/>'s method named <paramref name="methodName"/>
+    /// — or a compiler-generated lambda closure it declares — registers
+    /// <paramref name="implementationType"/> as a singleton implementation of
+    /// <paramref name="serviceType"/>, via either <c>AddSingleton&lt;TService,TImplementation&gt;()</c>
+    /// or <c>TryAddSingleton&lt;TService,TImplementation&gt;()</c>.
+    /// </summary>
+    /// <param name="declaringType">
+    /// The type declaring the method to inspect (e.g. the real, shipped DI extension class
+    /// hosting <c>AddSharedKernelWebhooks</c>).
+    /// </param>
+    /// <param name="methodName">
+    /// The name of the method to inspect (e.g. <c>"AddSharedKernelWebhooks"</c>). Must resolve to
+    /// exactly one method on <paramref name="declaringType"/> — an overloaded method name is
+    /// rejected as ambiguous rather than silently checking only the first match.
+    /// </param>
+    /// <param name="serviceType">
+    /// The expected registered service interface (e.g.
+    /// <c>typeof(IWebhookUrlValidator)</c>).
+    /// </param>
+    /// <param name="implementationType">
+    /// The expected registered implementation type (e.g.
+    /// <c>typeof(PrivateNetworkWebhookUrlValidator)</c>).
+    /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="methodName"/> resolves to zero or more than one method on
+    /// <paramref name="declaringType"/>, or when neither the method's own body nor any lambda
+    /// closure it declares registers <paramref name="implementationType"/> as a singleton
+    /// implementation of <paramref name="serviceType"/>.
+    /// </exception>
+    public static void AssertMethodBodyRegistersSingleton(
+        Type declaringType,
+        string methodName,
+        Type serviceType,
+        Type implementationType)
+    {
+        using var assemblyDefinition = AssemblyDefinition.ReadAssembly(declaringType.Assembly.Location);
+        var typeDefinition = ResolveTypeDefinition(assemblyDefinition.MainModule, declaringType);
+
+        var matchingMethods = typeDefinition.Methods.Where(m => m.Name == methodName).ToList();
+
+        if (matchingMethods.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton found no method named "
+                    + $"'{methodName}' on type '{declaringType.FullName}'.");
+        }
+
+        if (matchingMethods.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton found "
+                    + $"{matchingMethods.Count} methods named '{methodName}' on type "
+                    + $"'{declaringType.FullName}' — ambiguous; this helper requires a uniquely "
+                    + "named method.");
+        }
+
+        var method = matchingMethods[0];
+
+        if (MethodBodyRegistersSingleton(method, serviceType, implementationType))
+            return;
+
+        // The direct method body contains no matching registration — check every
+        // compiler-generated lambda closure declared inside it, same rationale/naming convention
+        // as AssertMethodBodyInvokesMethod/AssertMethodBodyThrowsExceptionType.
+        var lambdaNamePrefix = $"<{methodName}>b__";
+
+        foreach (var nestedType in typeDefinition.NestedTypes)
+        {
+            foreach (var candidateMethod in nestedType.Methods)
+            {
+                if (!candidateMethod.Name.StartsWith(lambdaNamePrefix, StringComparison.Ordinal))
+                    continue;
+
+                if (MethodBodyRegistersSingleton(candidateMethod, serviceType, implementationType))
+                    return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "SecureDefaultsAssertion.AssertMethodBodyRegistersSingleton: "
+                + $"'{declaringType.FullName}.{methodName}' (including any lambda closures it "
+                + $"declares) does not register '{implementationType.FullName}' as a singleton "
+                + $"implementation of '{serviceType.FullName}' (via AddSingleton or "
+                + "TryAddSingleton).");
+    }
+
+    private static bool MethodBodyRegistersSingleton(
+        MethodDefinition method,
+        Type serviceType,
+        Type implementationType)
+    {
+        if (!method.HasBody)
+            return false;
+
+        foreach (var instruction in method.Body.Instructions)
+        {
+            if (instruction.OpCode != OpCodes.Call && instruction.OpCode != OpCodes.Callvirt)
+                continue;
+
+            if (instruction.Operand is not GenericInstanceMethod genericInstanceMethod)
+                continue;
+
+            if (!SingletonRegistrationMethodNames.Contains(genericInstanceMethod.ElementMethod.Name))
+                continue;
+
+            var genericArguments = genericInstanceMethod.GenericArguments;
+
+            if (genericArguments.Count != 2)
+                continue;
+
+            if (
+                genericArguments[0].FullName == serviceType.FullName
+                && genericArguments[1].FullName == implementationType.FullName
+            )
+            {
+                return true;
+            }
         }
 
         return false;
