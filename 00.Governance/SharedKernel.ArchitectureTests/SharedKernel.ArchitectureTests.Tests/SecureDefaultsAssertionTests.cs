@@ -50,6 +50,18 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// never a direct <c>throw</c> inside this assembly's own IL; see that test's own remarks for the
 /// full design/reality-mismatch reasoning.
 /// </para>
+/// <para>
+/// T-329/T-330 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415):
+/// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> against contrived pass/
+/// fail-path fixtures shaped after <c>CorrelationIdMiddleware.ResolveCorrelationId</c>'s real
+/// check-then-substitute pattern. T-331: real-assembly, GATING verification re-points the same,
+/// already-shipped technique at the real <c>CorrelationIdMiddleware.ResolveCorrelationId</c> and
+/// its real private <c>IsValidFormat</c> callee — the first phase in this "lock a not-yet-shipped
+/// hardened guard" family to require zero new production code in
+/// <see cref="SecureDefaultsAssertion"/>, since the real shipped shape matched this phase's design
+/// exactly (a conditional invocation, never a throw), unlike
+/// <c>SK.00.CorsWildcardCredentialsGuard</c>'s validator-vs-throw mismatch.
+/// </para>
 /// </remarks>
 public class SecureDefaultsAssertionTests
 {
@@ -1056,6 +1068,162 @@ public class SecureDefaultsAssertionTests
             because: "the real, shipped CorsPolicyOptionsValidator.Validate calls " +
                      "ValidateOptionsResult.Fail(...) on the dangerous AllowCredentials + " +
                      "empty/wildcard AllowedOrigins combination (WO-062, P-404)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-329 — AssertMethodBodyInvokesMethod pass path: correlation-id validation call present
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-329 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415): A fixture method body
+    /// shaped after <c>CorrelationIdMiddleware.ResolveCorrelationId</c>'s real check-then-
+    /// substitute pattern — calling its own format-validation helper before deciding whether to
+    /// preserve the caller-supplied value or regenerate a fresh one — must pass
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_CorrelationValidationCallPresent_DoesNotThrow()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                // Compliant: mirrors the real CorrelationIdMiddleware.ResolveCorrelationId
+                // shape — the resolution method checks the caller-supplied value's format
+                // before deciding whether to preserve it or regenerate a fresh one.
+                public sealed class FixtureCorrelationResolverPresent
+                {
+                    public string ResolveCorrelationId(string headerValue)
+                    {
+                        if (IsValidFormat(headerValue))
+                        {
+                            return headerValue;
+                        }
+
+                        return "generated";
+                    }
+
+                    private bool IsValidFormat(string value) => value.Length <= 128;
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsCorrelationInvokesPresent", source);
+        var declaringType =
+            assembly.GetType("Fixture.SecureDefaults.FixtureCorrelationResolverPresent")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "ResolveCorrelationId", declaringType, "IsValidFormat");
+
+        act.Should().NotThrow(
+            because: "the fixture's ResolveCorrelationId method genuinely calls IsValidFormat " +
+                     "before deciding whether to preserve the caller-supplied value");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-330 — AssertMethodBodyInvokesMethod fire path: correlation-id validation call removed
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-330 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415): A fixture method body
+    /// identical in shape but with the format-validation call removed — reproducing the exact
+    /// "format-validation silently deleted in a future edit" regression this check exists to
+    /// prevent — must fail <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_CorrelationValidationCallRemoved_ThrowsNamingMethod()
+    {
+        const string source = """
+            namespace Fixture.SecureDefaults
+            {
+                // Violation: identical in shape to the compliant fixture, but the format-
+                // validation call was silently deleted — the caller-supplied value would be
+                // preserved unconditionally, regardless of length/character-allowlist shape.
+                public sealed class FixtureCorrelationResolverRemoved
+                {
+                    public string ResolveCorrelationId(string headerValue)
+                    {
+                        return headerValue;
+                    }
+
+                    private bool IsValidFormat(string value) => value.Length <= 128;
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsCorrelationInvokesRemoved", source);
+        var declaringType =
+            assembly.GetType("Fixture.SecureDefaults.FixtureCorrelationResolverRemoved")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "ResolveCorrelationId", declaringType, "IsValidFormat");
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's ResolveCorrelationId method no longer calls " +
+                         "IsValidFormat — the format-validation call site was removed")
+            .WithMessage("*ResolveCorrelationId*")
+            .WithMessage("*IsValidFormat*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-331 — Real-assembly verification (GATING): SharedKernel.Presentation.WebApi
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-331 (<c>SK.00.CorrelationIdValidationGuard</c>/WO-063/P-415): Re-points
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the real, shipped
+    /// <c>CorrelationIdMiddleware.ResolveCorrelationId</c> and confirms it still calls its own
+    /// private <c>IsValidFormat</c> format-validation helper.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
+    /// recorded P-415 as <c>○</c> Design-only against <c>14.Presentation/state-map.md</c> — STALE
+    /// by the time of this implementation session: that domain shipped its full WO-063 scope
+    /// (D-57/D-58/S-25/C-64/C-65/T-55–T-57/DO-23 all <c>●</c>,
+    /// <c>SharedKernel.Presentation.WebApi</c> re-packed to <c>1.3.0</c>) before this phase's
+    /// implementation session began, mirroring the now-repeated dependency-resolved-before-
+    /// implementation pattern this file already records for
+    /// <c>SK.00.SenderConstrainedCredentialGuard</c>/<c>SK.00.SecureDefaultsLock</c>/
+    /// <c>SK.00.TenantAndMtlsBoundaryLock</c>/<c>SK.00.CorsWildcardCredentialsGuard</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Design matched reality, unlike the CORS phase.</strong> The real, shipped
+    /// <c>CorrelationIdMiddleware.ResolveCorrelationId</c> is a conditional check-then-substitute
+    /// shape exactly as this phase's design (D-58) anticipated — it calls its own private
+    /// <c>IsValidFormat</c> helper and falls back to regenerating a fresh value when the check
+    /// fails, never throwing. <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>
+    /// is therefore the correct technique with no re-pointing surprise, unlike
+    /// <c>SK.00.CorsWildcardCredentialsGuard</c>'s validator-vs-throw mismatch — this phase adds
+    /// zero new production code to <see cref="SecureDefaultsAssertion"/>.
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
+    /// asserting a deliberately-wrong callee method name (<c>"IsValidFormatXyz"</c>) against this
+    /// exact real method, confirmed to fail with the same message shape T-330's contrived fixture
+    /// produces, then reverted before commit. Both <c>ResolveCorrelationId</c> and
+    /// <c>IsValidFormat</c> are declared directly on <c>CorrelationIdMiddleware</c> itself — the
+    /// callee is a private instance method on the SAME type, not a different one — and the call
+    /// site lives directly in <c>ResolveCorrelationId</c>'s own IL body, not inside a lambda
+    /// closure, so no closure-scanning extension is exercised by this particular call site (that
+    /// extension remains proven by T-318/T-328's own real-assembly call sites).
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_RealCorrelationIdMiddleware_ValidationCallSiteHolds()
+    {
+        var declaringType = typeof(SharedKernel.Presentation.WebApi.Middleware.CorrelationIdMiddleware);
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "ResolveCorrelationId", declaringType, "IsValidFormat");
+
+        act.Should().NotThrow(
+            because: "the real, shipped CorrelationIdMiddleware.ResolveCorrelationId still calls " +
+                     "its own private IsValidFormat format-validation helper before preserving a " +
+                     "caller-supplied value (WO-063, C-65)");
     }
 
     // ---------------------------------------------------------------------------
