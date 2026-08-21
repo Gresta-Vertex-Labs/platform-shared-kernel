@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.WebApi.Idempotency;
 
@@ -26,9 +29,25 @@ namespace SharedKernel.Presentation.WebApi.Idempotency;
 /// request-shape validation failure, not a new <see cref="ErrorType"/>.
 /// </para>
 /// </remarks>
-public sealed class IdempotencyKeyRequirementEndpointFilter : IEndpointFilter
+public sealed partial class IdempotencyKeyRequirementEndpointFilter : IEndpointFilter
 {
     private const string MissingIdempotencyKeyErrorCode = "Idempotency.KeyRequired";
+
+    private readonly ILogger<IdempotencyKeyRequirementEndpointFilter> _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IdempotencyKeyRequirementEndpointFilter"/> class.
+    /// </summary>
+    /// <param name="logger">
+    /// The logger used to record rejection-path security audit events. When no
+    /// <see cref="ILogger{TCategoryName}"/> is registered in the container, a no-op
+    /// <see cref="NullLogger{T}"/> is used instead — this filter never fails to construct merely
+    /// because logging was not configured.
+    /// </param>
+    public IdempotencyKeyRequirementEndpointFilter(ILogger<IdempotencyKeyRequirementEndpointFilter>? logger = null)
+    {
+        _logger = logger ?? NullLogger<IdempotencyKeyRequirementEndpointFilter>.Instance;
+    }
 
     /// <inheritdoc/>
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
@@ -48,9 +67,24 @@ public sealed class IdempotencyKeyRequirementEndpointFilter : IEndpointFilter
                 $"The '{HttpContextIdempotencyExtensions.IdempotencyKeyHeader}' header is required and must be "
                     + $"a non-empty value of at most {HttpContextIdempotencyExtensions.MaxIdempotencyKeyLength} characters.");
 
+            var endpointDisplayName = context.HttpContext.GetEndpoint()?.DisplayName ?? "(unknown endpoint)";
+            Log.IdempotencyKeyRequirementRejected(_logger, endpointDisplayName);
+
             return Microsoft.AspNetCore.Http.Results.Problem(error.ToProblemDetails(context.HttpContext));
         }
 
         return await next(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Source-generated log messages for <see cref="IdempotencyKeyRequirementEndpointFilter"/>.
+    /// </summary>
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 3,
+            Level = LogLevel.Warning,
+            Message = "Missing or malformed idempotency key rejected the request to endpoint {EndpointDisplayName}.")]
+        public static partial void IdempotencyKeyRequirementRejected(ILogger logger, string endpointDisplayName);
     }
 }

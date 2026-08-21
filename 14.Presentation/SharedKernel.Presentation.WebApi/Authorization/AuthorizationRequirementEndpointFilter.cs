@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Presentation.WebApi.Errors;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Logging;
 using SharedKernel.Security.Abstractions.Abstractions;
 
 namespace SharedKernel.Presentation.WebApi.Authorization;
@@ -51,11 +54,27 @@ namespace SharedKernel.Presentation.WebApi.Authorization;
 /// registered in the consumer's container.
 /// </para>
 /// </remarks>
-public sealed class AuthorizationRequirementEndpointFilter : IEndpointFilter
+public sealed partial class AuthorizationRequirementEndpointFilter : IEndpointFilter
 {
     private const string ForbiddenErrorCode = "Authorization.Forbidden";
     private const string AuthenticationNotFreshErrorCode = "Authorization.AuthenticationNotFresh";
     private const string AuthenticationMethodNotSatisfiedErrorCode = "Authorization.AuthenticationMethodNotSatisfied";
+
+    private readonly ILogger<AuthorizationRequirementEndpointFilter> _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AuthorizationRequirementEndpointFilter"/> class.
+    /// </summary>
+    /// <param name="logger">
+    /// The logger used to record rejection-path security audit events. When no
+    /// <see cref="ILogger{TCategoryName}"/> is registered in the container, a no-op
+    /// <see cref="NullLogger{T}"/> is used instead — this filter never fails to construct merely
+    /// because logging was not configured.
+    /// </param>
+    public AuthorizationRequirementEndpointFilter(ILogger<AuthorizationRequirementEndpointFilter>? logger = null)
+    {
+        _logger = logger ?? NullLogger<AuthorizationRequirementEndpointFilter>.Instance;
+    }
 
     /// <inheritdoc/>
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
@@ -123,9 +142,25 @@ public sealed class AuthorizationRequirementEndpointFilter : IEndpointFilter
         return await next(context).ConfigureAwait(false);
     }
 
-    private static IResult BuildForbiddenResult(HttpContext httpContext, string code, string message)
+    private IResult BuildForbiddenResult(HttpContext httpContext, string code, string message)
     {
         var error = Error.Forbidden(code, message);
+        var endpointDisplayName = httpContext.GetEndpoint()?.DisplayName ?? "(unknown endpoint)";
+
+        Log.AuthorizationRequirementRejected(_logger, endpointDisplayName, code);
+
         return Microsoft.AspNetCore.Http.Results.Problem(error.ToProblemDetails(httpContext));
+    }
+
+    /// <summary>
+    /// Source-generated log messages for <see cref="AuthorizationRequirementEndpointFilter"/>.
+    /// </summary>
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 2,
+            Level = LogLevel.Warning,
+            Message = "Authorization requirement {RequirementCode} rejected the request to endpoint {EndpointDisplayName}.")]
+        public static partial void AuthorizationRequirementRejected(ILogger logger, string endpointDisplayName, string requirementCode);
     }
 }

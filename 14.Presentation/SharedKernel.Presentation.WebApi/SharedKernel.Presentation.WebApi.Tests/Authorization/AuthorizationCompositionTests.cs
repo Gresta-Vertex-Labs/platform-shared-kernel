@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Testing.Security;
 using Xunit;
@@ -16,7 +17,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_StackedAttributes_CallerSatisfiesBoth_PassesThrough()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Admin", "Manager"] };
         var context = EndpointFilterTestHelpers.CreateContext(
@@ -33,7 +34,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_StackedAttributes_CallerSatisfiesOnlyFirst_Rejected()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Admin"] };
         var context = EndpointFilterTestHelpers.CreateContext(
@@ -50,7 +51,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_StackedAttributes_CallerSatisfiesOnlySecond_Rejected()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Manager"] };
         var context = EndpointFilterTestHelpers.CreateContext(
@@ -67,7 +68,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_StackedAttributes_CallerSatisfiesNeither_Rejected()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Viewer"] };
         var context = EndpointFilterTestHelpers.CreateContext(
@@ -84,7 +85,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_SingleAttributeMultiValueList_CallerMatchesAnyOne_PassesThrough()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Manager"] };
         var context = EndpointFilterTestHelpers.CreateContext(
@@ -100,7 +101,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_SingleAttributeMultiValueList_CallerMatchesNone_Rejected()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Viewer"] };
         var context = EndpointFilterTestHelpers.CreateContext(
@@ -116,7 +117,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_SingleRequirePermissionAttributeMultiValueList_CallerMatchesAnyOne_PassesThrough()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Permissions = ["orders:read"] };
         var context = EndpointFilterTestHelpers.CreateContext(
@@ -132,7 +133,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_MixedRoleAndPermissionAttributes_AreAndedTogether_CallerMustSatisfyBoth()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         // Satisfies the role requirement but not the permission requirement — must be rejected,
         // proving role and permission attributes compose with the same AND rule as same-typed ones.
@@ -151,7 +152,7 @@ public class AuthorizationCompositionTests
     [Fact]
     public async Task InvokeAsync_MixedRoleAndPermissionAttributes_CallerSatisfiesBoth_PassesThrough()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Admin"], Permissions = ["orders:write"] };
         var context = EndpointFilterTestHelpers.CreateContext(

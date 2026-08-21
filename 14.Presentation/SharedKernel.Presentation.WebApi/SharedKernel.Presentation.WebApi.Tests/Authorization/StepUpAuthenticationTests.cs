@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Security.Abstractions.Abstractions;
@@ -23,7 +24,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireFreshAuthentication_AuthTimeWithinWindow_PassesThrough()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var clock = new FakeClock(FixedNow);
         var userContext = new FakeUserContext { AuthTime = FixedNow - TimeSpan.FromSeconds(60) };
@@ -38,7 +39,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireFreshAuthentication_AuthTimeOlderThanWindow_Rejects403()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var clock = new FakeClock(FixedNow);
         var userContext = new FakeUserContext { AuthTime = FixedNow - TimeSpan.FromSeconds(600) };
@@ -54,7 +55,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireFreshAuthentication_AbsentAuthTime_RejectsViaOrdinaryFalsePath_NotIsAuthenticatedBranch()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var clock = new FakeClock(FixedNow);
         // IsAuthenticatedGuardUserContext.IsAuthenticationFresherThan is hardcoded false and its
@@ -73,7 +74,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireAuthenticationMethod_MatchingMethod_PassesThrough()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { AuthenticationMethods = ["otp"] };
         var context = CreateContext(userContext, clock: null, new RequireAuthenticationMethodAttribute("mfa", "otp"));
@@ -87,7 +88,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireAuthenticationMethod_NoMatchingMethod_Rejects403()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { AuthenticationMethods = ["password"] };
         var context = CreateContext(userContext, clock: null, new RequireAuthenticationMethodAttribute("mfa", "otp"));
@@ -102,7 +103,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireRoleAndRequireFreshAuthentication_RoleFails_FreshnessWouldPass_Rejects()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var clock = new FakeClock(FixedNow);
         var userContext = new FakeUserContext { Roles = ["Viewer"], AuthTime = FixedNow };
@@ -121,7 +122,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireRoleAndRequireFreshAuthentication_RolePasses_FreshnessFails_Rejects()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var clock = new FakeClock(FixedNow);
         var userContext = new FakeUserContext { Roles = ["Admin"], AuthTime = FixedNow - TimeSpan.FromSeconds(600) };
@@ -140,7 +141,7 @@ public class StepUpAuthenticationTests
     [Fact]
     public async Task InvokeAsync_RequireRoleAndRequireFreshAuthentication_BothPass_PassesThrough()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var clock = new FakeClock(FixedNow);
         var userContext = new FakeUserContext { Roles = ["Admin"], AuthTime = FixedNow };
@@ -163,7 +164,7 @@ public class StepUpAuthenticationTests
         // [RequireFreshAuthentication]), that call would throw and this test would fail with the
         // thrown exception instead of completing normally — mirroring T-16's
         // empty-container/throwing-double technique applied to IClock.
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Admin"] };
         var context = CreateContext(userContext, clock: null, new RequireRoleAttribute("Admin"));

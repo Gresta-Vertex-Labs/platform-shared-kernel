@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Presentation.WebApi.Idempotency;
 using SharedKernel.Presentation.WebApi.Tests.Authorization;
 using Xunit;
@@ -11,7 +12,7 @@ public class IdempotencyKeyRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_AttributeAbsent_NoOps_PassesThrough_NoHeaderResolutionAttempted()
     {
-        var filter = new IdempotencyKeyRequirementEndpointFilter();
+        var filter = new IdempotencyKeyRequirementEndpointFilter(NullLogger<IdempotencyKeyRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         // No RequireIdempotencyKeyAttribute metadata attached, and no Idempotency-Key header set at
         // all — if the filter attempted header resolution on a no-op path, it would simply find no
@@ -27,7 +28,7 @@ public class IdempotencyKeyRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_AttributePresent_KeyMissing_ShortCircuitsWith400ProblemDetails()
     {
-        var filter = new IdempotencyKeyRequirementEndpointFilter();
+        var filter = new IdempotencyKeyRequirementEndpointFilter(NullLogger<IdempotencyKeyRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var context = EndpointFilterTestHelpers.CreateContext(userContext: null, new RequireIdempotencyKeyAttribute());
 
@@ -41,7 +42,7 @@ public class IdempotencyKeyRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_AttributePresent_KeyMalformed_ShortCircuitsWith400ProblemDetails()
     {
-        var filter = new IdempotencyKeyRequirementEndpointFilter();
+        var filter = new IdempotencyKeyRequirementEndpointFilter(NullLogger<IdempotencyKeyRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var context = EndpointFilterTestHelpers.CreateContext(userContext: null, new RequireIdempotencyKeyAttribute());
         context.HttpContext.Request.Headers[HttpContextIdempotencyExtensions.IdempotencyKeyHeader] = "   ";
@@ -56,7 +57,7 @@ public class IdempotencyKeyRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_AttributePresent_KeyValid_AllowsNextExactlyOnce()
     {
-        var filter = new IdempotencyKeyRequirementEndpointFilter();
+        var filter = new IdempotencyKeyRequirementEndpointFilter(NullLogger<IdempotencyKeyRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var context = EndpointFilterTestHelpers.CreateContext(userContext: null, new RequireIdempotencyKeyAttribute());
         context.HttpContext.Request.Headers[HttpContextIdempotencyExtensions.IdempotencyKeyHeader] = "valid-key";
@@ -71,7 +72,7 @@ public class IdempotencyKeyRequirementEndpointFilterTests
     public async Task InvokeAsync_MalformedInput_NeverThrowsUnhandledException()
     {
         // (T-31 — REGRESSION)
-        var filter = new IdempotencyKeyRequirementEndpointFilter();
+        var filter = new IdempotencyKeyRequirementEndpointFilter(NullLogger<IdempotencyKeyRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var context = EndpointFilterTestHelpers.CreateContext(userContext: null, new RequireIdempotencyKeyAttribute());
         var overLength = new string('a', HttpContextIdempotencyExtensions.MaxIdempotencyKeyLength + 1);

@@ -1,4 +1,7 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SharedKernel.Primitives.Logging;
 
 namespace SharedKernel.Presentation.WebApi.Cors;
 
@@ -13,8 +16,29 @@ namespace SharedKernel.Presentation.WebApi.Cors;
 /// <see cref="CorsExtensions.AddSharedKernelCors"/> with <c>ValidateOnStart()</c>, so the
 /// combination fails fast at <c>IHost.StartAsync()</c> instead.
 /// </remarks>
-internal sealed class CorsPolicyOptionsValidator : IValidateOptions<CorsPolicyOptions>
+internal sealed partial class CorsPolicyOptionsValidator : IValidateOptions<CorsPolicyOptions>
 {
+    private const string ValidationFailureMessage =
+        "CorsPolicyOptions.AllowCredentials cannot be combined with an empty or wildcard "
+            + "AllowedOrigins list. Specify one or more explicit origins, or set "
+            + "AllowCredentials to false.";
+
+    private readonly ILogger<CorsPolicyOptionsValidator> _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CorsPolicyOptionsValidator"/> class.
+    /// </summary>
+    /// <param name="logger">
+    /// The logger used to record the startup-failure security audit event. When no
+    /// <see cref="ILogger{TCategoryName}"/> is registered in the container, a no-op
+    /// <see cref="NullLogger{T}"/> is used instead — this validator never fails to construct (nor,
+    /// therefore, to run its fail-fast validation) merely because logging was not configured.
+    /// </param>
+    public CorsPolicyOptionsValidator(ILogger<CorsPolicyOptionsValidator>? logger = null)
+    {
+        _logger = logger ?? NullLogger<CorsPolicyOptionsValidator>.Instance;
+    }
+
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, CorsPolicyOptions options)
     {
@@ -23,12 +47,22 @@ internal sealed class CorsPolicyOptionsValidator : IValidateOptions<CorsPolicyOp
 
         if (options.AllowCredentials && isEmptyOrWildcard)
         {
-            return ValidateOptionsResult.Fail(
-                "CorsPolicyOptions.AllowCredentials cannot be combined with an empty or wildcard "
-                    + "AllowedOrigins list. Specify one or more explicit origins, or set "
-                    + "AllowCredentials to false.");
+            Log.CorsPolicyValidationFailed(_logger, ValidationFailureMessage);
+            return ValidateOptionsResult.Fail(ValidationFailureMessage);
         }
 
         return ValidateOptionsResult.Success;
+    }
+
+    /// <summary>
+    /// Source-generated log messages for <see cref="CorsPolicyOptionsValidator"/>.
+    /// </summary>
+    private static partial class Log
+    {
+        [LoggerMessage(
+            EventId = LoggingEventIdRanges.Presentation + 4,
+            Level = LogLevel.Critical,
+            Message = "CORS policy options failed startup validation: {FailureReason}")]
+        public static partial void CorsPolicyValidationFailed(ILogger logger, string failureReason);
     }
 }

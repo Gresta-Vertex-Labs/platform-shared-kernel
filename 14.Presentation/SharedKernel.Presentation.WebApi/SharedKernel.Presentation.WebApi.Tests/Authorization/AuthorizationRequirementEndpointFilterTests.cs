@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Logging.Abstractions;
 using SharedKernel.Presentation.WebApi.Authorization;
 using SharedKernel.Testing.Security;
 using Xunit;
@@ -11,7 +12,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_NoAttributesPresent_NoOps_PassesThrough_WithoutResolvingUserContext()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         // No IUserContext registered at all — if the filter attempted resolution here, the
         // GetRequiredService<IUserContext> call inside it would throw, failing this test.
@@ -26,7 +27,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_RequireRole_AuthorizedPrincipal_PassesThrough_NextInvokedExactlyOnce()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Admin"] };
         var context = EndpointFilterTestHelpers.CreateContext(userContext, new RequireRoleAttribute("Admin"));
@@ -40,7 +41,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_RequireRole_UnauthorizedPrincipal_ShortCircuits_NeverInvokesNext()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Viewer"] };
         var context = EndpointFilterTestHelpers.CreateContext(userContext, new RequireRoleAttribute("Admin"));
@@ -53,7 +54,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_RequireRole_UnauthorizedPrincipal_ReturnsForbiddenProblemDetails_MatchingErrorForbiddenShape()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Roles = ["Viewer"] };
         var context = EndpointFilterTestHelpers.CreateContext(userContext, new RequireRoleAttribute("Admin"));
@@ -72,7 +73,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_RequirePermission_AuthorizedPrincipal_PassesThrough_NextInvokedExactlyOnce()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Permissions = ["orders:write"] };
         var context = EndpointFilterTestHelpers.CreateContext(userContext, new RequirePermissionAttribute("orders:write"));
@@ -86,7 +87,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_RequirePermission_UnauthorizedPrincipal_ShortCircuits_ReturnsForbiddenProblemDetails()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new FakeUserContext { Permissions = ["orders:read"] };
         var context = EndpointFilterTestHelpers.CreateContext(userContext, new RequirePermissionAttribute("orders:write"));
@@ -101,7 +102,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_UnauthenticatedShapedUserContext_RejectedViaOrdinaryHasRoleFalsePath_NotIsAuthenticatedBranch()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         // IsAuthenticatedGuardUserContext throws if .IsAuthenticated is ever read — if this test
         // passes without throwing, the filter never consulted IsAuthenticated to reach its verdict.
@@ -118,7 +119,7 @@ public class AuthorizationRequirementEndpointFilterTests
     [Fact]
     public async Task InvokeAsync_UnauthenticatedShapedUserContext_RequirePermission_RejectedViaOrdinaryHasPermissionFalsePath()
     {
-        var filter = new AuthorizationRequirementEndpointFilter();
+        var filter = new AuthorizationRequirementEndpointFilter(NullLogger<AuthorizationRequirementEndpointFilter>.Instance);
         var next = new EndpointFilterTestHelpers.RecordingNext();
         var userContext = new IsAuthenticatedGuardUserContext();
         var context = EndpointFilterTestHelpers.CreateContext(userContext, new RequirePermissionAttribute("orders:write"));
