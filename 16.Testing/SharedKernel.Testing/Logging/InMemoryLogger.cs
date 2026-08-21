@@ -52,13 +52,27 @@ public sealed class InMemoryLogger : ILogger
     {
         ArgumentNullException.ThrowIfNull(formatter);
 
-        var properties = state as IReadOnlyList<KeyValuePair<string, object?>>;
+        // The formatted message must be captured before any defensive copy below — the
+        // caller-supplied formatter itself reads from `state`.
+        var message = formatter(state, exception);
+
+        // Some [LoggerMessage] source generators (e.g. Microsoft.Gen.Logging, pulled in
+        // transitively by Microsoft.Extensions.Http.Resilience/.Telemetry) pass a pooled,
+        // thread-local state object that is cleared for reuse immediately after this Log call
+        // returns — an ordinary ILogger implementation is expected to have already consumed
+        // everything it needs synchronously. Storing a live reference to that object would mean
+        // LogRecord.State reads back empty by the time a test inspects it. A defensive
+        // ToArray() copy here, taken while the state is still live, is required for correctness
+        // regardless of which generator produced the caller's TState.
+        var properties = state is IReadOnlyList<KeyValuePair<string, object?>> stateProperties
+            ? stateProperties.ToArray()
+            : null;
 
         var record = new LogRecord
         {
             EventId = eventId,
             LogLevel = logLevel,
-            Message = formatter(state, exception),
+            Message = message,
             State = properties,
             Exception = exception,
             Scopes = CaptureScopes(),
