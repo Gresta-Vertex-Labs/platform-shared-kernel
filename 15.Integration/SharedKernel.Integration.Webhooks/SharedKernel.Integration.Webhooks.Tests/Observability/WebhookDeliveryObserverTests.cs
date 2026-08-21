@@ -59,7 +59,7 @@ public sealed class WebhookDeliveryObserverTests
     }
 
     private static WebhookSubscription Subscription() =>
-        new(Guid.NewGuid(), new Uri("https://example.test/hook"), "secret", [], true);
+        new(Guid.NewGuid(), new Uri("https://example.test/hook"), ["secret"], [], true);
 
     [Fact]
     public async Task DispatchToSubscriptionAsync_InvokesRegisteredObserver_OnceForAttemptAndCompletion()

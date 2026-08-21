@@ -8,7 +8,7 @@ namespace SharedKernel.Integration.Webhooks.Tests.Dispatch;
 public sealed class WebhookDispatcherFanOutTests
 {
     private static WebhookSubscription Subscription(bool isActive = true, params string[] eventTypes) =>
-        new(Guid.NewGuid(), new Uri("https://example.test/hook"), "secret", eventTypes, isActive);
+        new(Guid.NewGuid(), new Uri("https://example.test/hook"), ["secret"], eventTypes, isActive);
 
     [Fact]
     public async Task DispatchAsync_FansOutToAllActiveMatchingSubscriptions()

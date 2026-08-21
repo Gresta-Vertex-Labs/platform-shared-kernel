@@ -9,7 +9,7 @@ namespace SharedKernel.Integration.Webhooks.Tests.Dispatch;
 public sealed class WebhookDispatcherRetryTests
 {
     private static WebhookSubscription Subscription() =>
-        new(Guid.NewGuid(), new Uri("https://example.test/hook"), "secret", [], true);
+        new(Guid.NewGuid(), new Uri("https://example.test/hook"), ["secret"], [], true);
 
     [Fact]
     public async Task DispatchToSubscriptionAsync_TransientFailureThenSuccess_RetriesAndReportsAttempts()
