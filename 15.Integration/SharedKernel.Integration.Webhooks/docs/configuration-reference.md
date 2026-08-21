@@ -18,7 +18,9 @@ actionable `OptionsValidationException`, not on first dispatch.
         "MaxBackoffDelay": "00:01:00",
         "RequestTimeout": "00:00:10",
         "SignatureTolerance": "00:05:00",
-        "MaxConcurrentDeliveries": 8
+        "MaxConcurrentDeliveries": 8,
+        "AllowPrivateNetworkTargets": false,
+        "EncryptPayload": false
       }
     }
   }
@@ -39,6 +41,8 @@ actionable `OptionsValidationException`, not on first dispatch.
 | `RequestTimeout` | `TimeSpan` | `00:00:10` (10 seconds) | Must be `> TimeSpan.Zero` (via `IValidatableObject`) |
 | `SignatureTolerance` | `TimeSpan` | `00:05:00` (5 minutes) | Must be `> TimeSpan.Zero` (via `IValidatableObject`) |
 | `MaxConcurrentDeliveries` | `int` | `8` | `[Range(1, int.MaxValue)]` — must be at least 1 |
+| `AllowPrivateNetworkTargets` | `bool` | `false` | None (a plain opt-out flag) |
+| `EncryptPayload` | `bool` | `false` | None (a plain opt-in flag) |
 
 ### `MaxAttempts`
 
@@ -77,6 +81,49 @@ The upper bound on simultaneous in-flight deliveries within a single `IWebhookDi
 fan-out, enforced via a bounded semaphore gate. Protects against unbounded `Task.WhenAll` over an
 arbitrarily large subscription list — a hard requirement of this package's design, not a tunable
 safety net that can be disabled.
+
+### `AllowPrivateNetworkTargets`
+
+When `true`, disables the default `IWebhookUrlValidator`'s SSRF guard (`PrivateNetworkWebhookUrlValidator`)
+— loopback, link-local, private (RFC1918/RFC4193), and multicast/reserved delivery targets are
+permitted through instead of being rejected before every send. Defaults to `false` (fail-closed).
+Intended only for legitimate internal test/staging subscriptions — never enable this for a service
+that accepts externally-supplied subscription URLs.
+
+### `EncryptPayload`
+
+When `true`, the outbound JSON payload is encrypted (AES-GCM, via `01.Core/SharedKernel.Cryptography`'s
+`ISymmetricEncryptionService`) before signing — encrypt-then-sign, so the HMAC signature continues to
+cover exactly the bytes actually transmitted. Defaults to `false`. TLS already provides transport
+confidentiality; this is defense-in-depth for subscribers who want payload-level confidentiality
+independent of their own TLS termination boundary. Enabling this option requires an
+`ISymmetricEncryptionService` to be registered (via `SharedKernel.Cryptography`'s
+`AddSharedKernelCryptography()` plus a consumer-supplied `IEncryptionKeyProvider`) — omitting that
+registration fails loudly with an `InvalidOperationException` at first delivery, never silently.
+
+---
+
+## Resilience-handler field mapping
+
+`AddSharedKernelWebhooks()` resolves the bound `WebhookDeliveryOptions` from the app's
+`IServiceProvider` inside `Microsoft.Extensions.Http.Resilience`'s
+`AddStandardResilienceHandler().Configure((HttpStandardResilienceOptions, IServiceProvider) => ...)`
+callback and applies it to the named `HttpClient`'s resilience pipeline via this exact formula —
+never left to the library's own built-in defaults:
+
+| `WebhookDeliveryOptions` property | Resilience pipeline field |
+| --- | --- |
+| `MaxAttempts` | `Retry.MaxRetryAttempts = Math.Max(1, MaxAttempts - 1)` — the resilience library counts retries *after* the initial attempt, while `WebhookDeliveryResult.Attempts` counts the initial attempt too, so the two are off-by-one by definition, not by bug. Polly's own `RetryStrategyOptions.MaxRetryAttempts` carries a hard `[Range(1, int.MaxValue)]` floor and cannot itself express "zero retries" — when `MaxAttempts == 1`, the floor of `1` is kept to satisfy that validator, and `Retry.ShouldHandle` is instead short-circuited to `false` so no retry is ever actually triggered. |
+| `BaseBackoffDelay` | `Retry.Delay` |
+| — | `Retry.BackoffType = DelayBackoffType.Exponential` (fixed, not configurable) |
+| `MaxBackoffDelay` | `Retry.MaxDelay` |
+| `RequestTimeout` | `AttemptTimeout.Timeout` |
+| `RequestTimeout` + `MaxBackoffDelay` + `MaxAttempts` | `TotalRequestTimeout.Timeout = (RequestTimeout + MaxBackoffDelay) * MaxAttempts` — a documented worst-case bound: every attempt takes at most `RequestTimeout`, followed by at most `MaxBackoffDelay` before the next attempt, repeated `MaxAttempts` times. |
+
+A GATING regression test (`WebhookResilienceConfigurationTests`) configures non-default values for
+all four driving properties and proves the dispatcher's real attempt count, inter-attempt delay
+bound, and per-attempt timeout match the configured values — not the resilience library's own
+built-in defaults.
 
 ---
 

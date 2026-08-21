@@ -47,7 +47,7 @@ public sealed class EfWebhookSubscriptionStore(AppDbContext db) : IWebhookSubscr
             .ToListAsync(ct);
 
         return rows.Select(r => new WebhookSubscription(
-            r.Id, r.Url, r.Secret, r.EventTypes, r.IsActive)).ToList();
+            r.Id, r.Url, r.Secrets, r.EventTypes, r.IsActive)).ToList();
     }
 }
 ```
@@ -75,6 +75,116 @@ builder.Services.AddSharedKernelWebhooks(options =>
 Invalid combinations (e.g. `MaxAttempts = 0`, `MaxBackoffDelay < BaseBackoffDelay`, a non-positive
 `TimeSpan`) fail startup validation with an actionable `OptionsValidationException` message —
 they never surface as a silent runtime misbehavior.
+
+---
+
+## Outbound URL validation (SSRF guard)
+
+Every delivery is validated against `IWebhookUrlValidator` immediately before the HTTP send — never
+once at subscription-registration time, closing the DNS-rebinding bypass where a hostname resolves to
+a public IP at validation time and a private one at connection time. The default implementation,
+`PrivateNetworkWebhookUrlValidator`, resolves the target host and rejects delivery when the resolved
+IP falls in a loopback, link-local (`169.254.0.0/16`/`fe80::/10`), private (RFC1918/RFC4193), or
+multicast/reserved range, for both IPv4 and IPv6. A rejected target surfaces as a failed, non-throwing
+`WebhookDeliveryResult` — never a thrown exception — exactly like any other HTTP-level failure.
+
+For legitimate internal test/staging subscriptions, opt out via `WebhookDeliveryOptions`:
+
+```csharp
+builder.Services.AddSharedKernelWebhooks(options =>
+{
+    options.AllowPrivateNetworkTargets = true; // never enable this for externally-supplied URLs
+});
+```
+
+A consuming service with a non-default target-network policy (e.g. an internal allowlist) can supply
+a fully custom validator instead — the last-registered validator wins:
+
+```csharp
+builder.Services.WithUrlValidator<CustomAllowlistWebhookUrlValidator>();
+```
+
+Prefer `AllowPrivateNetworkTargets` for the common "allow internal staging targets" case; the
+SSRF-guard default posture must never be silently disabled.
+
+---
+
+## Zero-downtime signing-secret rotation
+
+`WebhookSubscription.Secrets` is a newest-first list of every HMAC-SHA256 secret currently valid for
+a subscription. A delivery is always signed with `Secrets[0]` (the newest); verification accepts a
+match against *any* candidate in the list, supporting a dual-valid overlap window during rotation:
+
+1. **Issue a new secret** — prepend it to `Secrets` so it becomes `Secrets[0]`, keeping the old secret
+   in the list. New deliveries sign with the new secret immediately; the subscriber's own verifier
+   (still configured with only the old secret) will reject them until step 2.
+2. **Dual-valid overlap window** — update the subscriber's own verifier to accept both secrets
+   (`WebhookSignatureVerifier.Verify(..., secretCandidates: subscription.Secrets)`), so both the new
+   and the old secret validate successfully during the transition.
+3. **Retire the old secret** — once the subscriber confirms they've deployed the new secret, remove
+   the old one from `Secrets`.
+
+```csharp
+var subscription = subscription with { Secrets = [newSecret, .. subscription.Secrets] }; // step 1
+// ...subscriber deploys verification against both secrets (step 2)...
+var subscription = subscription with { Secrets = [subscription.Secrets[0]] }; // step 3, retire the old one
+```
+
+Existing single-`Secret` callers see no breaking change — `WebhookSubscription`'s obsolete
+single-secret constructor still compiles, mapping to a one-element `Secrets` list.
+
+---
+
+## Custom per-subscription headers
+
+`WebhookSubscription.Headers` applies optional static headers to every outbound delivery for that
+subscription, alongside the standard signature/timestamp/delivery-id headers:
+
+```csharp
+var subscription = new WebhookSubscription(
+    subscriptionId, url, secrets, eventTypes, isActive,
+    Headers: new Dictionary<string, string> { ["X-Partner-Id"] = "acme-corp" });
+```
+
+A header name colliding case-insensitively with `WebhookSignatureHeaders.SignatureHeaderName`,
+`.TimestampHeaderName`, or `.DeliveryIdHeaderName` is rejected at dispatch time — as a failed,
+non-throwing `WebhookDeliveryResult` — before any HTTP call is attempted. The platform signature
+headers are never silently overwritten in either direction.
+
+---
+
+## Opt-in payload encryption
+
+When `WebhookDeliveryOptions.EncryptPayload` is enabled, the outbound JSON payload is encrypted
+(AES-GCM, via `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService`) before signing —
+encrypt-then-sign, so `WebhookSignatureVerifier` continues to detect tampering on exactly the bytes
+that were transmitted. Disabled by default; TLS already provides transport confidentiality — this is
+defense-in-depth for subscribers who want payload-level confidentiality independent of their own TLS
+termination boundary.
+
+```csharp
+builder.Services.AddSharedKernelCryptography(); // 01.Core/SharedKernel.Cryptography
+builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>();
+
+builder.Services.AddSharedKernelWebhooks(options => options.EncryptPayload = true);
+```
+
+On the subscriber side, decrypt after verifying the signature (verify-then-decrypt — the signature
+covers the ciphertext, so verification must happen first):
+
+```csharp
+var isValid = WebhookSignatureVerifier.Verify(rawBody, timestamp, signature, subscription.Secrets);
+if (!isValid)
+{
+    return Results.Unauthorized();
+}
+
+var plaintext = symmetricEncryptionService.DecryptToString(rawBody).Value; // rawBody is the ciphertext
+```
+
+Enabling `EncryptPayload` without registering an `ISymmetricEncryptionService` fails loudly with an
+`InvalidOperationException` at first delivery, never silently. This uses only the already-permitted
+`01.Core` reference — no new cross-domain dependency.
 
 ---
 
@@ -147,6 +257,22 @@ For a single already-resolved subscription (e.g. a manual "redeliver this one" a
 var result = await webhookDispatcher.DispatchToSubscriptionAsync(subscription, integrationEvent, ct);
 ```
 
+### Subscriber-side delivery deduplication
+
+Every delivery carries an `X-Webhook-Delivery-Id` header (`WebhookSignatureHeaders.DeliveryIdHeaderName`)
+— a `Guid` generated once per delivery and held stable across every retry attempt of it, also returned
+as `WebhookDeliveryResult.DeliveryId`. A subscriber's receiver endpoint can use this value as an
+idempotency key to deduplicate a re-sent request (e.g. a retried delivery whose earlier attempt's
+response was lost in transit):
+
+```csharp
+var deliveryId = request.Headers[WebhookSignatureHeaders.DeliveryIdHeaderName].ToString();
+if (await processedDeliveryStore.HasProcessedAsync(deliveryId, ct))
+{
+    return Results.Ok(); // already processed this exact delivery — ack without reprocessing
+}
+```
+
 ### Reacting to delivery exhaustion
 
 When a subscription exhausts `WebhookDeliveryOptions.MaxAttempts` without ever receiving a 2xx
@@ -165,6 +291,39 @@ public sealed class DisableSubscriptionOnExhaustion(AppDbContext db) // wired vi
     }
 }
 ```
+
+---
+
+## Testing a new subscription
+
+`IWebhookDispatcher.SendTestDeliveryAsync` sends a synthetic onboarding/connectivity-check delivery
+to a subscription — signed, retried, and header-complete exactly like a real event dispatch, reusing
+`DispatchToSubscriptionAsync` verbatim with zero parallel signing/retry logic. Use it from an
+onboarding or admin flow so a new subscriber can verify their endpoint, signature verification, and
+header handling before any real business event fires:
+
+```csharp
+app.MapPost("/admin/webhook-subscriptions/{subscriptionId:guid}/test", async (
+    Guid subscriptionId,
+    IWebhookSubscriptionLookup subscriptions,
+    IWebhookDispatcher webhookDispatcher,
+    CancellationToken ct) =>
+{
+    var subscription = await subscriptions.GetByIdAsync(subscriptionId, ct);
+    if (subscription is null)
+    {
+        return Results.NotFound();
+    }
+
+    var result = await webhookDispatcher.SendTestDeliveryAsync(subscription, ct);
+    return Results.Ok(result);
+});
+```
+
+The delivered payload's event type is always `"WebhookPingEvent"` — a reserved name giving the
+subscriber an unambiguous way to distinguish a test delivery from real business data at their own
+routing logic. `WebhookPingEvent` is never published onto `07.Messaging` and never fanned out via
+`DispatchAsync`'s normal subscription lookup.
 
 ---
 
@@ -195,7 +354,7 @@ app.MapPost("/webhooks/inbound/{subscriptionId:guid}", async (
         payloadJson: rawBody,
         timestampHeaderValue: request.Headers[WebhookSignatureHeaders.TimestampHeaderName],
         signatureHeaderValue: request.Headers[WebhookSignatureHeaders.SignatureHeaderName],
-        secret: subscription.Secret);
+        secretCandidates: subscription.Secrets); // accepts a match against any active secret
 
     if (!isValid)
     {
@@ -227,9 +386,15 @@ path.
 
 - Construct `new HttpClient()` or accept a raw `HttpClient` injection — outbound HTTP only goes
   through `IHttpClientFactory`'s named client.
-- Log, serialize, or transmit `WebhookSubscription.Secret` — only the derived HMAC digest ever
-  leaves this package.
+- Log, serialize, or transmit `WebhookSubscription.Secret`/`.Secrets` — only the derived HMAC digest
+  ever leaves this package.
 - Compare a signature digest with `==`/`string.Equals` — `WebhookSignatureVerifier` uses
-  `CryptographicOperations.FixedTimeEquals` exclusively.
+  `CryptographicOperations.FixedTimeEquals` exclusively, including per-candidate when verifying
+  against multiple rotation-window secrets, without short-circuiting the iteration.
 - Reference `06.Persistence`, `11.Communication.*`, or `SharedKernel.Messaging.MassTransit`.
-- Throw out of `IWebhookDispatcher` because of a single subscriber's HTTP failure.
+- Throw out of `IWebhookDispatcher` because of a single subscriber's HTTP failure or an
+  `IWebhookUrlValidator` rejection.
+- Deliver to a target resolving to a loopback, link-local, private, or multicast/reserved IP address
+  by default — the SSRF guard is fail-closed unless explicitly opted out.
+- Introduce a new cryptographic primitive of its own for opt-in payload encryption — it composes
+  `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService` exclusively.
