@@ -9,16 +9,33 @@ contracts and implementation rules.
 
 ## `SharedKernel.Presentation.WebApi`
 
-### `AddSharedKernelCorrelationId(this IServiceCollection)`
+### `AddSharedKernelCorrelationId(this IServiceCollection, Action<CorrelationIdOptions>? configure = null)`
 
-No options. Registers no services today — present so the DI registration shape mirrors
-`UseSharedKernelCorrelationId` and stays stable if `CorrelationIdMiddleware` ever needs
-constructor-injected configuration.
+| Parameter | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `configure` | no | `null` | Customises `CorrelationIdOptions`. Omit to use the documented default `MaxLength`/`AllowedCharacterPattern` — every well-formed value already in production use (GUIDs, ULIDs) continues to pass unchanged. |
+
+| `CorrelationIdOptions` member | Default | Purpose |
+| --- | --- | --- |
+| `MaxLength` | `128` | Maximum accepted length, in characters, for a caller-supplied `X-Correlation-Id` header value |
+| `AllowedCharacterPattern` | alphanumerics plus `-` `_` `:` `.` | A safe-but-permissive allowlist covering GUID/ULID/general safe-token shapes |
+
+A host that never calls this method still gets the default-safe validation applied automatically —
+`CorrelationIdMiddleware` falls back to a fresh default `CorrelationIdOptions` instance when none is
+registered in DI, so `UseSharedKernelCorrelationId()` alone is never a broken/unvalidated
+configuration.
 
 ### `UseSharedKernelCorrelationId(this IApplicationBuilder)`
 
 No options. Must be the **first** call in the pipeline — before `UseExceptionHandler` — so the
 `X-Correlation-Id` response header is set even on error responses.
+
+**Format-validation behavior:** a caller-supplied header value exceeding `MaxLength` or containing a
+character outside `AllowedCharacterPattern` is rejected exactly like an absent/whitespace header —
+regenerated via a fresh `Guid.NewGuid("N")`, **before** the rejected value ever reaches
+`HttpContext.Items`, `Activity.SetBaggage`, or the response header. Only the rejected value's
+*length* is logged (`EventId` 14006) — never its raw content, which would recreate the exact
+log-injection vector this validation defends against.
 
 | Constant | Value | Purpose |
 | --- | --- | --- |
@@ -48,12 +65,40 @@ defaults. There is no override parameter on this method itself; to deviate, call
 **Ordering requirement:** call this before `AddSharedKernelOpenApi` — the OpenAPI extension reads
 `IApiVersionDescriptionProvider` to discover version groups.
 
-### `AddSharedKernelOpenApi(this IServiceCollection, string title, string? description = null)`
+### `AddSharedKernelApiVersioning(..., Action<ApiVersionLifecycleOptions>? configureLifecycle = null)`
+
+| Parameter | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `configureLifecycle` | no | `null` | Additive parameter on the same method above — declares a per-`ApiVersion` optional sunset date and successor link (RFC 8594). Omitting it produces zero new response headers. |
+
+```csharp
+builder.Services.AddSharedKernelApiVersioning(configureLifecycle: o =>
+{
+    o.Configure(new ApiVersion(2, 0),
+        sunsetDate: new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        successor: new Uri("https://api.example.com/v3/orders"));
+});
+```
+
+| Response header | When set | Source |
+| --- | --- | --- |
+| `Sunset` | The resolved API version has a declared `SunsetDate` | This registry — an RFC 7231 HTTP-date (`.ToString("R")`), never an arbitrary string |
+| `Deprecation` | The resolved API version is in Asp.Versioning's own `DeprecatedApiVersions` | Asp.Versioning's existing `Deprecated`/`HasDeprecatedApiVersion(...)` declaration — never a second, parallel flag on this registry |
+| `Link: rel="successor-version"` | A successor `Uri` is declared **alongside** a sunset date | This registry |
+
+Additive to, never a rework of, the existing `ReportApiVersions` header family
+(`api-supported-versions`/`api-deprecated-versions`) — both may appear on the same response
+simultaneously. **Deliberately not built on `Asp.Versioning.Http`'s own `Policies.Sunset(...)`/
+`SunsetPolicyManager`** — a real round trip showed that surface never fires its headers for an
+empty/unnamed policy name; this is an independent, simpler registry instead.
+
+### `AddSharedKernelOpenApi(this IServiceCollection, string title, string? description = null, Action<OpenApiSecuritySchemesOptions>? configureSecuritySchemes = null)`
 
 | Parameter | Required | Default | Effect |
 | --- | --- | --- | --- |
 | `title` | yes | — | `OpenApiInfo.Title` in every registered document |
 | `description` | no | `null` | `OpenApiInfo.Description` in every registered document |
+| `configureSecuritySchemes` | no | `null` | Additive parameter — omitting it preserves the original unconditional Bearer-only document shape |
 
 Behavior: registers one native OpenAPI document per API-version group discovered via
 `IApiVersionDescriptionProvider` (when `AddSharedKernelApiVersioning` was called first); otherwise
@@ -61,6 +106,19 @@ registers a single fallback document named `"v1"`. Every document gets a transfo
 `Info.Title`/`Info.Description`/`Info.Version` (the document/group name) and registers a `Bearer`
 HTTP security scheme by name — metadata only, no token validation (that stays in
 `12.Security.Oidc`).
+
+| `OpenApiSecuritySchemesOptions` member | Default | Effect |
+| --- | --- | --- |
+| `Bearer` | `true` | Unchanged default — existing Bearer-only consumers see zero behavior change |
+| `ApiKey` | `false` | Registers an `ApiKey`-type scheme named `ApiKey`, `in: header` |
+| `ApiKeyHeaderName` | `"X-Api-Key"` | The header name documented on the `ApiKey` scheme — a plain configurable string; this package never takes a `ProjectReference` on `SharedKernel.Security.ApiKey` to reuse its header-name constant |
+| `MutualTls` | `false` | Registers an OpenAPI 3.1 `mutualTLS`-typed scheme |
+
+**Each active scheme is registered as its own separate security requirement object — OR semantics**
+(a request satisfies the document by presenting *any one* active mechanism), the opposite of this
+package's `[RequireRole]`/`[RequirePermission]` AND-across-attributes composition rule. See the
+WebApi `README.md`'s "OpenAPI security schemes" section for worked Bearer+ApiKey/Bearer+mTLS
+examples and the Scalar-UI manual-verification record (T-49).
 
 ### `MapSharedKernelOpenApi(this WebApplication app)`
 
@@ -228,15 +286,66 @@ No options, no registration. Call it directly from a consuming service's
 Produces a 429 `ProblemDetails`; when `retryAfter` is supplied, also sets a real `Retry-After`
 response header (whole seconds), not just a body field.
 
+### `AddSharedKernelPayloadLimits(this IServiceCollection, Action<PayloadLimitsOptions>? configure = null)`
+
+| Parameter | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `configure` | no | `null` | Customises `PayloadLimitsOptions` |
+
+| `PayloadLimitsOptions` member | Default | Effect |
+| --- | --- | --- |
+| `MaxRequestBodySizeBytes` | `1_048_576` (1 MB) | Wired into `IHttpMaxRequestBodySizeFeature.MaxRequestBodySize` by `UseSharedKernelPayloadLimits` |
+| `MaxJsonDepth` | `32` | Wired into both `Microsoft.AspNetCore.Http.Json.JsonOptions` (Minimal API) and `Microsoft.AspNetCore.Mvc.JsonOptions.JsonSerializerOptions` (MVC, no-ops gracefully when MVC isn't registered) |
+
+Registration-time half. Fully opt-in — a host calling neither this method nor
+`UseSharedKernelPayloadLimits` is byte-identical to before this capability existed.
+
+### `UseSharedKernelPayloadLimits(this IApplicationBuilder, Action<PayloadLimitsOptions>? configure = null)`
+
+Request-scoped middleware half. Sets
+`context.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize`, guarded by
+`.IsReadOnly` (the feature throws once body reading has started or is unsupported by the current
+server) rather than crashing the pipeline. A body-size violation surfaces as
+`Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException`, mapped by
+`SharedKernelExceptionHandler`'s new branch to a 413 `ProblemDetails` — see the WebApi `README.md`'s
+"Payload size / JSON max-depth limits" section for the Kestrel connection-level-vs-pipeline caveat
+(a `Content-Length`-declared oversized body never reaches this path; only a chunked body does).
+
+### `AddSharedKernelUploadValidation(this IServiceCollection, Action<UploadValidationOptions> configure)`
+
+| Parameter | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `configure` | yes | — | Configures the service-wide `UploadValidationOptions` defaults |
+
+| `UploadValidationOptions` member | Purpose |
+| --- | --- |
+| `MaxSizeBytes` | Service-wide default maximum upload size |
+| `AllowedContentTypes` | Service-wide default allow-list (compared after stripping any `;`-delimited parameter, e.g. `charset=utf-8`) |
+| `AllowedMagicBytes` | Optional `content-type → signature bytes` map for a deeper leading-byte check |
+
+### `RequireValidatedUploadAttribute(long? maxSizeBytes = null, params string[] allowedContentTypes)` / `UploadValidationEndpointFilter`
+
+Mirrors `RequireIdempotencyKeyAttribute`/`IdempotencyKeyRequirementEndpointFilter`'s exact
+global-registration/no-op-when-absent shape — the filter is always registered, but performs zero
+validation on an endpoint carrying no `[RequireValidatedUpload]`/`.RequireValidatedUpload(...)`
+metadata. Per-endpoint `maxSizeBytes`/`allowedContentTypes` args, when supplied, take precedence over
+the global `UploadValidationOptions` defaults. Rejects with 413 (size)/415 (content type)/400
+(magic-byte mismatch) `ProblemDetails`, before the endpoint handler runs. See the WebApi
+`README.md`'s "File / multipart upload validation" section for a worked KYC-document example.
+
+> **THIS IS A BOUNDARY-SHAPE CHECK ONLY — VIRUS/MALWARE SCANNING IS NEVER PERFORMED.** Wire a real
+> scanning pipeline separately for any upload that needs one.
+
 ---
 
 ## `SharedKernel.Presentation.SignalR`
 
-### `AddSharedKernelSignalR(this IServiceCollection, Action<HubOptions>? configureHubOptions = null)`
+### `AddSharedKernelSignalR(this IServiceCollection, Action<HubOptions>? configureHubOptions = null, Action<HubInvocationRateLimitOptions>? configureRateLimit = null)`
 
 | Parameter | Required | Default | Effect |
 | --- | --- | --- | --- |
-| `configureHubOptions` | no | `null` | Invoked **after** the platform registers its two global filters — use it to remove either platform filter from `options.HubFilters`, add service-specific filters, or set other `HubOptions` (e.g. `MaximumReceiveMessageSize`) |
+| `configureHubOptions` | no | `null` | Invoked **after** the platform registers its three global filters — use it to remove any platform filter from `options.HubFilters`, add service-specific filters, or set other `HubOptions` (e.g. `MaximumReceiveMessageSize`) |
+| `configureRateLimit` | no | `null` | Configures `HubInvocationRateLimitOptions`. Omitted/`null` still registers `HubInvocationRateLimitFilter` (so it can be enabled later with no redeploy of the registration itself), but every check defaults to disabled — a genuine no-op |
 
 Always registers, as singletons, and as global filters via `HubOptions.AddFilter<T>()`:
 
@@ -244,9 +353,38 @@ Always registers, as singletons, and as global filters via `HubOptions.AddFilter
 | --- | --- | --- |
 | `TenantContextHubFilter` | Singleton + global hub filter | Connection-scoped (`OnConnectedAsync`) |
 | `HubExceptionMappingFilter` | Singleton + global hub filter | Invocation-scoped (`InvokeMethodAsync`) |
+| `HubInvocationRateLimitFilter` | Singleton + global hub filter | Invocation-scoped (`InvokeMethodAsync`), consulted before the target method body runs |
 
-The two filters do not depend on each other's execution order — one attaches connection data, the
-other wraps method invocations.
+The filters do not depend on each other's execution order for their own logic, with one documented
+exception: `HubExceptionMappingFilter` has a `catch (HubException) { throw; }` branch, checked
+first, so a `HubException` thrown by `HubInvocationRateLimitFilter` (or any future filter) always
+reaches the caller with its specific message intact instead of being re-wrapped into the generic
+redacted one.
+
+| `HubInvocationRateLimitOptions` member | Default | Effect |
+| --- | --- | --- |
+| `PermitLimit` | `null` (disabled) | Token-bucket permit count per `Window`, per connection — rate limiting is disabled until this is set |
+| `Window` | `TimeSpan.FromSeconds(1)` | The replenishment window paired with `PermitLimit`; only meaningful once `PermitLimit` is set |
+| `MaxStringArgumentLength` | `null` (disabled) | Rejects a hub-method `string` argument longer than this, before the method body executes |
+| `ArgumentValidators` | empty | Composable additional argument-shape checks |
+
+A rejected invocation throws a `HubException` with a specific, caller-safe message (e.g. `"Too many
+requests. Please slow down."`) — additive to, and distinct from, `MaximumReceiveMessageSize` (which
+caps the whole transport message, not an individual argument).
+
+### `SignalRCorsStartupDiagnostic` (registered automatically — no separate DI call)
+
+No options, no separate registration call — `AddSharedKernelSignalR` registers this
+`IHostedService` unconditionally. On `IHostApplicationLifetime.ApplicationStarted`, it scans every
+mapped endpoint and logs a `Warning` (`[LoggerMessage]`, `EventId` 14102) for any SignalR-hub-shaped
+endpoint (identified via `Microsoft.AspNetCore.SignalR.HubMetadata`) lacking CORS metadata
+(`Microsoft.AspNetCore.Cors.Infrastructure.ICorsMetadata` — e.g. an attached `.RequireCors(...)`
+policy). Each hub's `/negotiate` companion endpoint is skipped to avoid a duplicate warning for the
+same gap. This package never takes a `ProjectReference` on `SharedKernel.Presentation.WebApi` to
+close the CORS gap directly — the check is diagnostic-only (a logged `Warning`, never a thrown
+exception or a blocked startup). See the SignalR `README.md`'s "SignalR + CORS" section for the
+worked hub-plus-CORS example, referencing `SharedKernel.Presentation.WebApi`'s
+`CorsPolicyNames.Default` by name only.
 
 Also sets four conservative, explicitly documented resource-exhaustion defaults on `HubOptions`,
 applied **before** `configureHubOptions` runs (so every value below is fully overridable, raise or

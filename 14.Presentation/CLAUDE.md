@@ -28,7 +28,7 @@ Both packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Te
 | Error response shape | RFC 9457 `ProblemDetails` (`Microsoft.AspNetCore.Http`, built-in) | shared framework | `.WebApi` |
 | Global exception-to-response pipeline | `IExceptionHandler` (ASP.NET Core 8+, built-in) + `AddProblemDetails()` | shared framework | `.WebApi` |
 | API versioning | `Asp.Versioning.Http` + `Asp.Versioning.Mvc.ApiExplorer` | `10.0.0` | `.WebApi` |
-| OpenAPI document generation | `Microsoft.AspNetCore.OpenApi` — native, source-gen-friendly, ships in the `net10.0` SDK | `10.0.9` | `.WebApi` |
+| OpenAPI document generation | `Microsoft.AspNetCore.OpenApi` — native, source-gen-friendly, ships in the `net10.0` SDK | `10.0.11` | `.WebApi` |
 | OpenAPI interactive UI | `Scalar.AspNetCore` | `2.16.5` | `.WebApi` |
 | Correlation-id propagation (inbound) | `System.Diagnostics.Activity` (BCL) — no new dependency | shared framework | `.WebApi` |
 | Real-time hub | `Microsoft.AspNetCore.SignalR` (built-in) | shared framework | `.SignalR` |
@@ -36,6 +36,8 @@ Both packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Te
 | Hub pipeline extensibility | `IHubFilter` (built-in, .NET 7+) | shared framework | `.SignalR` |
 
 > Versions pinned at Scaffold (SK.14.Scaffold, 2026-06-25). All three NuGet packages confirmed compatible with `net10.0` at pin time via direct NuGet flat-container version listing (not assumed from documentation). Re-verify AOT status on any future version bump per the AOT notes below — none of the three are BCL.
+>
+> **`Microsoft.AspNetCore.OpenApi` re-pinned `10.0.9` → `10.0.11` (WO-063, `SK.14.Published`, P-17–P-24, 2026-08-21) for a security fix, not a feature bump.** `10.0.9` transitively pins `Microsoft.OpenApi` `2.0.0`, which carries `GHSA-v5pm-xwqc-g5wc`/`CVE-2026-49451` (CVSS 7.5 high — a crafted OpenAPI document with a circular schema reference can crash the parsing process via stack overflow; patched at `2.7.5`+ on the 2.x line). Confirmed via direct `.nuspec` inspection across `10.0.9`/`10.0.10`/`10.0.11` that only `10.0.11` (still `net10.0`, non-preview) changes its own `Microsoft.OpenApi` dependency range to `[2.7.5, 3.0.0)` — `10.0.9`/`10.0.10` both still hard-pin `2.0.0`. This is the only NuGet-version pin change ever made in this domain purely to resolve a security advisory rather than to adopt a new API surface; any future advisory affecting a pinned dependency in this table should be resolved the same way — check for a patched transitive version first, never default to a `NoWarn`/`WarningsNotAsErrors` suppression.
 >
 > **Note:** Swashbuckle/NSwag are deliberately not used. `Microsoft.AspNetCore.OpenApi` + `Scalar.AspNetCore` is the .NET 9/10-idiomatic pairing — Scalar renders the native OpenAPI document directly, avoiding Swashbuckle's reflection-heavy assembly-scanning generation pipeline. This is a better fit for the root brain's AOT-preferred guidance than the Swashbuckle stack.
 
@@ -551,6 +553,263 @@ AddSharedKernelSignalR  (extended)
           ClientTimeoutInterval/KeepAliveInterval are TimeSpan?.
 ```
 
+### Payload size / JSON max-depth DoS protection (`PayloadLimits/`)
+
+> **Status: Shipped end to end (WO-063, P-411).** `SharedKernel.Presentation.WebApi` implements this in the new `PayloadLimits/` folder. A repo-wide grep across `14.Presentation` confirmed zero existing `MaxRequestBodySize`/`RequestSizeLimit`/`MaxDepth` wiring anywhere in this domain — every WO-062 perimeter-hardening capability (security headers, CORS, rate limiting) addresses request rate/origin, none addresses request size/shape. This is the one DoS vector with zero coverage prior to this phase. **Confirmed via a real listening-Kestrel-host round trip (not `TestServer`, which does not enforce `IHttpMaxRequestBodySizeFeature` the same way):** a body exceeding `MaxRequestBodySizeBytes` throws `Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException` — a Kestrel-internal type that extends the public `Microsoft.AspNetCore.Http.BadHttpRequestException`, so catching the public base type via ordinary pattern matching correctly handles it — carrying `StatusCode = 413` and an already client-safe `Message` (e.g. `"Request body too large. The max request body size is N bytes."`); this message is explicitly exempted from `SharedKernelExceptionHandler`'s existing dev-only detail-suppression gate, alongside `SharedKernelException`.
+
+```text
+PayloadLimitsOptions  (class)
+    MaxRequestBodySizeBytes (long, default 1_048_576 / 1 MB)
+    MaxJsonDepth            (int, default 32)
+    NOTE: Both independently configurable; conservative platform defaults, fully overridable per
+          service.
+
+AddSharedKernelPayloadLimits(this IServiceCollection, Action<PayloadLimitsOptions>? configure = null)
+    → IServiceCollection
+    NOTE: Service-registration-time half — wires MaxJsonDepth into BOTH
+          Microsoft.AspNetCore.Http.Json.JsonOptions (Minimal API) and
+          Microsoft.AspNetCore.Mvc.JsonOptions.JsonSerializerOptions (MVC, only takes effect when
+          MVC services are also registered — must no-op gracefully, never throw, when MVC is
+          absent), mirroring this package's existing dual Minimal-API/MVC support pattern
+          (ResultHttpExtensions).
+
+UseSharedKernelPayloadLimits(this IApplicationBuilder, Action<PayloadLimitsOptions>? configure = null)
+    → IApplicationBuilder
+    NOTE: Request-scoped middleware half — sets
+          context.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize, guarded by
+          .IsReadOnly (the feature throws InvalidOperationException once body reading has started
+          or when unsupported by the current server) rather than crashing the pipeline. Two-part
+          registration mirrors AddSharedKernelCorrelationId/UseSharedKernelCorrelationId.
+
+SharedKernelExceptionHandler  (extended)
+    NOTE: Gains a BadHttpRequestException-specific branch, checked BEFORE the generic
+          unknown-exception 500 fallback, mapping exception.StatusCode (413 for the
+          body-too-large case) through the shared Http/ RFC 9457 shaping helper (P-407) instead of
+          forcing 500. MUST be verified against the real installed net10.0 shared framework at
+          Core-phase implementation — does BadHttpRequestException actually propagate to
+          IExceptionHandler for a raw/Minimal-API body read, or is it intercepted earlier by
+          model-binding machinery? — per this domain's "verify real API shapes" discipline.
+```
+
+Fully opt-in: a host calling neither extension is byte-identical to today. A JSON-depth violation surfaces via STJ's own existing `JsonException`→400 path — this phase only wires the `MaxDepth` value, it invents no new depth-violation response shape.
+
+### OpenAPI security-scheme completeness — ApiKey + mTLS (`OpenApi/`)
+
+> **Status: Shipped end to end (WO-063, P-412).** `OpenApiExtensions.cs` registered exactly one `OpenApiSecurityScheme` ("Bearer") before this phase, despite `12.Security` shipping three sibling authentication providers (`.Oidc`/Bearer, `.ApiKey`, `.Mtls`) — confirmed by direct source read. A partner team generating a client SDK off this domain's OpenAPI document for a service actually authenticating via `SharedKernel.Security.ApiKey`/`.Mtls` sees a misleading auth contract.
+>
+> **Two genuine API-shape discoveries made at Core-phase implementation, both verified via reflection before use, not assumed:**
+> 1. `Microsoft.OpenApi` 2.0.0's `SecuritySchemeType` enum has **no `MutualTls`/`MutualTLS` member at all** — only `ApiKey`/`Http`/`OAuth2`/`OpenIdConnect` — despite `mutualTLS` being a valid OpenAPI 3.1 security-scheme `type` value per spec. Since `OpenApiSecurityScheme.Type` is strongly typed to that enum, the standard type cannot express this scheme. Resolved via a new internal `OpenApi/MutualTlsSecurityScheme : OpenApiSecurityScheme` subclass overriding the virtual `SerializeAsV31(IOpenApiWriter)` to write the literal `"type": "mutualTLS"` directly — `OpenApiSecurityScheme` is not sealed and its serialization methods are virtual, confirmed via reflection, and a real serialization round trip confirmed the resulting document is valid and correctly referenced.
+> 2. Registering each active scheme as its own `OpenApiSecurityRequirement` (via `new OpenApiSecuritySchemeReference(schemeName, document, null)`) **silently serializes as an empty `{}` object** unless `document.RegisterComponents()` is called after `Components.SecuritySchemes` is populated but before the reference is constructed — without it, `OpenApiSecuritySchemeReference.UnresolvedReference` stays `true` and the reference's `Reference.ReferenceV3` never resolves. This is a non-obvious two-step dance (populate components → `RegisterComponents()` → construct references) that any future edit to this transformer must preserve.
+
+```text
+OpenApiSecuritySchemesOptions  (class)
+    Bearer (bool, default true)          — unchanged default; existing Bearer-only consumers see
+                                            zero behavior change if they never touch this parameter
+    ApiKey (bool, default false)
+    ApiKeyHeaderName (string, default "X-Api-Key")
+    MutualTls (bool, default false)
+    NOTE: ApiKeyHeaderName stays a plain configurable string — this package does NOT take a new
+          ProjectReference on SharedKernel.Security.ApiKey/.Mtls merely to reuse a header-name
+          constant. The consuming service's own composition root (which already references
+          whichever concrete 12.Security provider it uses) is responsible for passing the matching
+          value explicitly, consistent with this package's existing "IUserContext/Abstractions
+          only, no concrete provider reference" posture.
+
+AddSharedKernelOpenApi(this IServiceCollection, string title, string? description = null,
+                        Action<OpenApiSecuritySchemesOptions>? configureSecuritySchemes = null)
+    → IServiceCollection
+    NOTE: Additive parameter — omitting it preserves today's unconditional Bearer-only behavior.
+          Each active scheme is registered as its OWN SEPARATE OpenAPI security requirement object
+          (OR semantics — a request satisfies ANY one active mechanism), never a single combined
+          requirement object (which would mean simultaneous-auth-required/AND semantics). This is
+          the opposite of this package's usual AND-across-attributes composition rule
+          ([RequireRole]/[RequirePermission]) and is easy to get backwards — document explicitly.
+          MutualTls registers via Microsoft.OpenApi's OpenAPI 3.1 mutualTLS scheme type; the exact
+          enum/type member name must be verified via reflection against the installed
+          Microsoft.OpenApi 2.0.0 package before use, mirroring this domain's existing
+          Microsoft.OpenApi-namespace correction precedent (types live under Microsoft.OpenApi, not
+          Microsoft.OpenApi.Models).
+```
+
+### RFC 8594 Sunset/Deprecation headers (`Versioning/`)
+
+> **Status: Shipped end to end (WO-063, P-413).** `AddSharedKernelApiVersioning` previously only set Asp.Versioning's native `ReportApiVersions` (`api-supported-versions`/`api-deprecated-versions` headers) — informational only, carrying no retirement-date commitment. Big-fintech public/partner-facing APIs commonly need machine-readable retirement notice on deprecated versions; RFC 8594 is the standard mechanism.
+>
+> **Deliberately NOT built on `Asp.Versioning.Http`'s own `Policies.Sunset(...)`/`.Deprecate(...)`/`SunsetPolicyManager`/`DeprecationPolicyManager`/`DefaultApiVersionReporter` surface, despite that surface existing and being registered by `AddApiVersioning()` today.** A real round trip (constructing a policy via `options.Policies.Sunset(name, apiVersion).SetEffectiveDate(...).Link(...)`, then invoking the already-registered `IReportApiVersions.Report(HttpResponse, ApiVersionModel)`) never produced `Sunset`/`Deprecation`/`Link` headers for a policy keyed on an empty/unnamed policy name within the session's available time — the exact name-matching semantics `IPolicyManager<T>.TryGetPolicy(string name, ApiVersion, out T)` expects were not reverse-engineered successfully. Rather than block on that, this phase's own independent `ApiVersionLifecycleOptions` registry (a plain `Dictionary<ApiVersion, (DateTimeOffset? SunsetDate, Uri? Successor)>`) was implemented and proven correct via a real end-to-end host round trip instead. **A future revisit to actually drive Asp.Versioning's own policy system (rather than this parallel registry) is a legitimate simplification opportunity if the naming semantics are ever cracked** — flag this to any future session touching `Versioning/`.
+>
+> **Mechanism confirmed via a real round trip, not assumed:** the response-shaping component is `ApiVersionLifecycleMiddleware`, self-inserted via `ApiVersionLifecycleStartupFilter` (an `IStartupFilter`) rather than requiring a second `Use...` call — this is the standard ASP.NET Core technique for a library to insert middleware with zero host-side wiring, mirroring how `ReportApiVersions`'s own headers already work with no `Use...` call. The middleware reads `HttpContext.RequestedApiVersion` (confirmed to be an extension **property**, not a callable method, on `Microsoft.AspNetCore.Http.HttpContextExtensions`) and `context.GetEndpoint()?.Metadata.GetMetadata<Asp.Versioning.ApiVersionMetadata>().Map(ApiVersionMapping.Explicit).DeprecatedApiVersions` from inside an `HttpResponse.OnStarting` callback (mirroring `CorrelationIdMiddleware`/`SecurityHeadersMiddleware`'s existing discipline) so both are reliably populated regardless of where in the pipeline the middleware itself executes.
+
+```text
+ApiVersionLifecycleOptions  (class)
+    NOTE: Per-ApiVersion registry of an optional SunsetDate (DateTimeOffset?) and an optional
+          successor Uri? (for Link: rel="successor-version"). Deprecation status is read from
+          Asp.Versioning's OWN already-existing per-version Deprecated declaration
+          ([ApiVersion("1.0", Deprecated = true)] / ApiVersionModel.DeprecatedApiVersions) rather
+          than re-declaring a parallel deprecated flag here.
+
+AddSharedKernelApiVersioning(..., Action<ApiVersionLifecycleOptions>? configureLifecycle = null)
+    NOTE: Additive parameter on the EXISTING method — never a second registration method.
+
+(new response-shaping component, Versioning/)
+    NOTE: Exact mechanism (middleware vs. endpoint filter) decided at Core phase based on where
+          HttpContext.RequestedApiVersion/the endpoint's ApiVersionModel metadata is reliably
+          available. Sets, per response: Sunset (RFC 8594, HTTP-date format via
+          DateTimeOffset.ToString("R") / RFC 1123 pattern — never an arbitrary string) when the
+          resolved version has a declared SunsetDate; Deprecation (boolean form this phase) when
+          the resolved version is in DeprecatedApiVersions, independent of whether a sunset date is
+          set; Link: <successor-uri>; rel="successor-version" only when a successor Uri is declared
+          alongside a sunset date.
+```
+
+Zero behavior change for a service declaring no sunset date on any version. Additive to, never a rework of, the existing `ReportApiVersions` header family — both may appear on the same response simultaneously.
+
+### Structured security-audit logging across rejection paths (extends `Authorization/`, `Idempotency/`, `Cors/`, `RateLimiting/`)
+
+> **Status: Shipped end to end (WO-063, P-414).** A grep confirmed exactly three `[LoggerMessage]` call sites existed in the whole domain before this phase (`CorrelationIdMiddleware` 14000, `SharedKernelExceptionHandler` 14001, `HubExceptionMappingFilter` 14100) of the reserved `14000`–`14999` range — effectively unused. None of the four WO-062 HTTP-rejection paths logged anything. `12.Security` (WO-057/P-371) and `13.ServiceDefaults` (WO-061/P-395) both independently added this class of security-audit logging for their own rejection/denial paths — `14.Presentation`, the layer where an external caller's 401/403/429 actually surfaces, was the one domain in the chain still logging none of it.
+>
+> **`RateLimitRejectionProblemDetails` is a pure static helper with no DI-constructed instance**, so its logger cannot be constructor-injected like the other three sites — it resolves `ILogger` per call via `context.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger(...)`, guarded with `?.` because a bare/manually-constructed `HttpContext` (as several of this method's own pre-existing unit tests use) may have a `null` `RequestServices` — confirmed by a real test failure (`ArgumentNullException` on the un-guarded first attempt) before the guard was added.
+
+```text
+AuthorizationRequirementEndpointFilter       [LoggerMessage] EventId = 14002 (rejection path)
+IdempotencyKeyRequirementEndpointFilter      [LoggerMessage] EventId = 14003 (rejection path)
+CorsPolicyOptionsValidator                   [LoggerMessage] EventId = 14004 (startup-failure path)
+RateLimitRejectionProblemDetails             [LoggerMessage] EventId = 14005 (rejection path)
+    NOTE: Non-PII/non-secret context only — endpoint display name, the specific requirement/
+          attribute type that failed, CORS validation failure reason, rate-limit policy name.
+          NEVER raw bearer tokens, API keys, certificate bytes, or full ClaimsPrincipal dumps —
+          mirrors 12.Security's (WO-057/P-371) established no-secret-material logging discipline.
+```
+
+### Caller-supplied correlation-id format validation (extends `Middleware/`)
+
+> **Status: Shipped end to end (WO-063, P-415).** `CorrelationIdMiddleware.ResolveCorrelationId` accepted any non-empty/non-whitespace caller-supplied header value verbatim before this phase — no shape check, no length bound — before writing it into `Activity` baggage, the response header, and every downstream structured log record via `13.ServiceDefaults`'s `BaggageLogRecordProcessor`. An unvalidated, caller-controlled string flowing directly into OTel baggage is a log-injection/oversized-baggage-propagation vector — the same trust-boundary class this platform already fixed twice elsewhere (`11.Communication`'s GUID-fallback defect, WO-056; `13.ServiceDefaults`'s forwarded-header trust boundary, WO-061) but never yet at the point a raw correlation-id header first enters the system.
+>
+> A rejected value's raw content is never logged, only its length (`Log.CorrelationIdRejected(logger, value.Length)`, `EventId` 14006) — logging the rejected raw string itself would recreate exactly the injection vector this validation defends against.
+>
+> `CorrelationIdMiddleware`'s constructor now also takes an optional `CorrelationIdOptions? options = null`, falling back to a fresh default-options instance — so a host that calls `UseSharedKernelCorrelationId()` without ever calling `AddSharedKernelCorrelationId()` (previously a genuine no-op registration, now a real one) still gets the default-safe validation applied automatically rather than crashing on an unresolvable DI dependency.
+
+```text
+CorrelationIdOptions  (class)
+    MaxLength (int, conservative default e.g. 128)
+    AllowedCharacterPattern  — a safe-but-permissive allowlist covering GUID/ULID/general safe-token
+                               shapes (alphanumerics plus -_:.)
+
+AddSharedKernelCorrelationId(this IServiceCollection, Action<CorrelationIdOptions>? configure = null)
+    NOTE: Additive parameter — default values preserve today's behavior for any well-formed
+          caller-supplied value.
+
+CorrelationIdMiddleware.ResolveCorrelationId  (extended)
+    NOTE: Rejects (falls back to freshly generating, exactly as it already does for an absent/
+          whitespace header) a caller-supplied value exceeding MaxLength or containing a character
+          outside AllowedCharacterPattern — BEFORE that value ever reaches HttpContext.Items,
+          Activity.SetBaggage, or the response header. A well-formed value (GUID, ULID, or another
+          safe token shape matching the default pattern) continues to be preserved unchanged — not
+          a breaking change for existing well-behaved callers.
+```
+
+### File/multipart upload size & content-type validation (`Uploads/`)
+
+> **Status: Shipped end to end (WO-063, P-416).** No file/multipart upload size or content-type validation helper existed anywhere in this package before this phase — confirmed absent, not merely undocumented. Document-heavy fintech workflows (KYC documents, statements, dispute evidence) routinely accept uploads directly through the API boundary before handing them to `08.Storage`; every consuming service today independently invents size/type validation with no shared, tested helper. Content-type comparison strips any `;`-delimited parameter (e.g. `charset=utf-8`) before matching against `AllowedContentTypes`, and the magic-byte check reads exactly `signature.Length` leading bytes via `HttpRequest.EnableBuffering()` + a seek-back to position `0` so the endpoint handler still sees the full, unconsumed body.
+
+```text
+UploadValidationOptions  (class)
+    MaxSizeBytes, AllowedContentTypes (collection), AllowedMagicBytes (optional dictionary
+    mapping content-type → signature bytes for a deeper check)
+
+AddSharedKernelUploadValidation(this IServiceCollection, Action<UploadValidationOptions> configure)
+    → IServiceCollection
+    NOTE: Mirrors AddSharedKernelCors's registration shape.
+
+RequireValidatedUploadAttribute  (sealed class : Attribute)
+    ctor(long? maxSizeBytes = null, params string[] allowedContentTypes)
+    NOTE: Per-endpoint override args fall back to the global UploadValidationOptions defaults when
+          omitted (different upload endpoints — a KYC-document endpoint vs. an avatar endpoint —
+          routinely need very different limits).
+
+UploadValidationEndpointFilter  (sealed class, implements IEndpointFilter)
+    NOTE: Mirrors RequireIdempotencyKeyAttribute/IdempotencyKeyRequirementEndpointFilter's exact
+          global-registration/no-op-when-absent shape. Declared Content-Type/Content-Length checked
+          before the body is fully buffered; when a magic-byte signature is configured for the
+          declared content type, buffers the request body (HttpRequest.EnableBuffering(), seeking
+          back to position 0 after the peek) to compare leading bytes; short-circuits a mismatch
+          with a 415/400 ProblemDetails via the existing shared Http/ shaping path.
+```
+
+**Explicitly and repeatedly out of scope, documented in capitals in both XML docs and README:** virus/malware scanning, antivirus-engine integration — this is a boundary-shape check ONLY, never a replacement for a real scanning pipeline. No third-party MIME-detection library is added — a small, locally-maintained, extensible magic-byte signature table is sufficient.
+
+### `SharedKernel.Presentation.SignalR` — hub-level invocation rate limiting & argument validation (extends `Filters/`, `Extensions/`)
+
+> **Status: Shipped end to end (WO-063, P-417).** P-409's `HubOptions` defaults are connection-level only — no per-method invocation rate limit or argument-payload validation existed before this phase. A single connection with an unbounded invocation rate can still exhaust server resources or hammer a downstream dependency even with P-409's defaults in place; real-time fintech workloads (live trading updates, payment status streams) are exactly the ones most likely to expose a hub method to high-frequency invocation.
+>
+> `HubInvocationRateLimitOptions` bundles BOTH the rate-limit knobs (`PermitLimit`/`Window`) AND the argument-shape knobs (`MaxStringArgumentLength`/composable `ArgumentValidators`) into one options type, evaluated by one filter — not two separate filter types — since `AddSharedKernelSignalR` only exposes a single new `configureRateLimit` parameter. Every check defaults to disabled (`PermitLimit`/`MaxStringArgumentLength` both `int?` defaulting `null`, `ArgumentValidators` an empty collection) so the filter is a genuine, zero-behavior-change no-op until explicitly configured — the filter itself is always registered.
+>
+> **Verified end-to-end with a live `HubConnection`, not just DI resolution:** invocations within `PermitLimit` succeed; the invocation that exceeds it throws a `HubException` whose message is the filter's own specific `"Too many requests. Please slow down."` text, unmodified — proving the composition-hazard fix below actually works together with this new filter, not merely that both exist independently. An oversized `string` argument is rejected the same way with its own specific message, before the target method body ever executes.
+
+```text
+HubInvocationRateLimitFilter  (sealed class, implements IHubFilter)
+    NOTE: Built on System.Threading.RateLimiting primitives — the same underlying library
+          13.ServiceDefaults's AddSharedKernelRateLimiting()/P-397 wraps for HTTP, used here
+          DIRECTLY against a hub connection since ASP.NET Core's HTTP rate-limiting middleware does
+          not apply to SignalR invocations. A RateLimiter instance is created lazily per connection
+          (stored in Context.Items, mirroring TenantContextHubFilter's existing per-connection
+          storage pattern) and consulted in InvokeMethodAsync before the target method body runs.
+          A rejected invocation throws HubException carrying a specific, caller-safe "too many
+          requests" message.
+
+AddSharedKernelSignalR(..., Action<HubInvocationRateLimitOptions>? configureRateLimit = null)
+    NOTE: Additive parameter. null/omitted means the filter still registers but no-ops (safe to
+          register globally, mirrors every other filter in this package) — zero behavior change
+          for a host that does not opt in.
+
+HubExceptionMappingFilter  (extended — GENUINE COMPOSITION HAZARD FOUND AND FIXED)
+    NOTE: The existing catch-all had NO branch recognizing an already-thrown HubException as
+          terminal — a HubException raised by the new rate-limit filter would fall into the
+          existing "unknown exception" branch and be RE-WRAPPED into the generic
+          HubException("An unexpected error occurred."), silently discarding the specific
+          rate-limit message the whole point of this capability is to surface. Gains a
+          catch (HubException) { throw; } branch, checked FIRST, so an already-well-formed
+          HubException (from this filter or any future filter) always passes through unchanged
+          regardless of hub-filter registration order. This is now a standing hub-filter-
+          composition rule for future filter authors — see SignalR hub filter rules below.
+
+(composable argument-payload size/shape validation check)
+    NOTE: Additive to and distinct from MaximumReceiveMessageSize (P-409) — that caps the whole
+          transport message, this validates individual argument values before the target method
+          body executes.
+```
+
+**Scaffold-phase verification (WO-063, S-27 — confirmed):** `System.Threading.RateLimiting` ships transitively via the existing `FrameworkReference Microsoft.AspNetCore.App` on `net10.0` — confirmed via a real build probe (a scratch `.cs` file referencing `RateLimiter`/`TokenBucketRateLimiter` with zero added `PackageReference`, `dotnet build -c Release` succeeded with 0 errors, scratch file deleted immediately after). No new `PackageReference` is needed for `HubInvocationRateLimitFilter`/`HubInvocationRateLimitOptions` at Core phase.
+
+### `SharedKernel.Presentation.SignalR` — CORS/negotiate-endpoint origin policy integration (extends `Extensions/`)
+
+> **Status: Shipped end to end (WO-063, P-418).** `AddSharedKernelSignalR` had no CORS wiring, no origin-check guidance, and no documented interaction with the hub's `/negotiate` endpoint before this phase — confirmed absent by direct source read. A service correctly adopting P-404's deny-by-default CORS guard for its REST endpoints but forgetting the SignalR hub (a separate ASP.NET Core endpoint requiring its own explicit CORS policy attachment — a well-documented real-world SignalR gotcha) ends up with either an inaccessible hub or an overly permissive fallback policy reached for out of frustration.
+>
+> **Two hub-endpoint marker types confirmed via reflection against the installed assemblies, not assumed, before use:**
+> 1. `Microsoft.AspNetCore.SignalR.HubMetadata` (public, in `Microsoft.AspNetCore.SignalR.Core`) is the marker `MapHub<THub>()` attaches identifying "this endpoint belongs to hub type `HubType`."
+> 2. The actual "a CORS decision was made for this endpoint" marker `RequireCors(...)`/`EnableCorsAttribute`/`DisableCorsAttribute` all implement is `Microsoft.AspNetCore.Cors.Infrastructure.ICorsMetadata` — **not** `ICorsPolicyMetadata` as first assumed from the type name; a real minimal-host round trip mapping one hub with `.RequireCors(...)` and one without proved `RequireCors(policyName)` attaches a concrete `Microsoft.AspNetCore.Cors.EnableCorsAttribute`, which implements `ICorsMetadata` (the general marker, covering both an applied policy and an explicit `DisableCorsAttribute` opt-out) but not `ICorsPolicyMetadata` (a narrower interface `EnableCorsAttribute` does not implement in this ASP.NET Core version).
+>
+> Each hub's `/negotiate` companion endpoint is skipped during the scan (identified by `Microsoft.AspNetCore.Http.Connections.NegotiateMetadata`) — confirmed via the same round trip that it always carries identical CORS metadata to its primary hub endpoint, so evaluating it too would only produce a duplicate warning for the same underlying gap.
+
+```text
+(design decision, not a blocker): declined a new ProjectReference from SharedKernel.Presentation.
+SignalR to SharedKernel.Presentation.WebApi's CorsPolicyOptions — the two packages remain
+deliberately independent API surfaces (see "Packages" above); a pure real-time host must not be
+forced to pull in Asp.Versioning/Microsoft.AspNetCore.OpenApi/Scalar.AspNetCore transitively just
+to get a CORS integration point.
+
+(startup diagnostic check, Extensions/)
+    NOTE: A hosted-service/IHostApplicationLifetime.ApplicationStarted-triggered scan over
+          EndpointDataSource.Endpoints, flagging any SignalR-hub-shaped endpoint lacking CORS
+          metadata (ICorsMetadata/an applied policy) via [LoggerMessage] Warning,
+          EventId = LoggingEventIdRanges.Presentation + 102 (14102). The exact endpoint-metadata
+          shape used to recognize "this endpoint is a mapped SignalR hub" (e.g. HubMetadata or an
+          equivalent marker type carried by MapHub<THub>()'s endpoint conventions) must be verified
+          via reflection at Core-phase implementation, per this domain's established discipline —
+          not assumed from memory.
+```
+
+A worked "hub plus CORS composition" example (`endpoints.MapHub<THub>().RequireCors(CorsPolicyNames.Default)`, composing the WebApi package's own named policy constant by reference/documentation only, zero code coupling) is added to `SharedKernel.Presentation.SignalR/README.md`.
+
 ---
 
 ## Implementation Rules
@@ -640,6 +899,9 @@ AddSharedKernelSignalR  (extended)
 - Every `[LoggerMessage]`-attributed method in this domain carries an explicit `EventId` derived from `SharedKernel.Primitives.Logging.LoggingEventIdRanges.Presentation` (14000) — never a compiler-auto-assigned or ad hoc numeric literal. Compiler auto-numbering is a latent stability hazard: adding, removing, or reordering `[LoggerMessage]` methods in the same class silently renumbers every ID that follows.
 - Sub-block allocation, in package declaration order per the root registry convention (100-wide sub-blocks per package within the domain's 1000-wide block): `SharedKernel.Presentation.WebApi` = 14000–14099, `SharedKernel.Presentation.SignalR` = 14100–14199.
 - Assigned `EventId`s: `CorrelationIdMiddleware` = 14000, `SharedKernelExceptionHandler` = 14001 (both `.WebApi`); `HubExceptionMappingFilter` = 14100 (`.SignalR`). Any future `[LoggerMessage]` method added to either package continues sequentially within that package's sub-block — never reuse a retired ID.
+- **Newly allocated and consumed (WO-063, P-414 — shipped):** `AuthorizationRequirementEndpointFilter` = 14002, `IdempotencyKeyRequirementEndpointFilter` = 14003, `CorsPolicyOptionsValidator` = 14004, `RateLimitRejectionProblemDetails` = 14005 (all `.WebApi`, within the existing 14000–14099 sub-block) — all four are live `[LoggerMessage]` call sites in shipped source, verified directly against the real `.cs` files (`Authorization/AuthorizationRequirementEndpointFilter.cs`, `Idempotency/IdempotencyKeyRequirementEndpointFilter.cs`, `Cors/CorsPolicyOptionsValidator.cs`, `RateLimiting/RateLimitRejectionProblemDetails.cs`), not assumed from design prose.
+- **Also newly allocated and consumed (WO-063, P-415 — shipped, not called out by this ID's own design phase but confirmed present in shipped source):** `CorrelationIdMiddleware.Log.CorrelationIdRejected` = 14006 (`.WebApi`) — the format-validation rejection log added alongside the pre-existing `CorrelationIdGenerated` = 14000 on the same middleware. Logs only the rejected value's length, never its raw content, per the log-injection-defense rule stated in the Correlation-id format-validation rules subsection below.
+- **Newly allocated and consumed (WO-063, P-418 — shipped):** the SignalR CORS startup diagnostic (`SignalRCorsStartupDiagnostic`) = 14102 (`.SignalR`, within 14100–14199; 14101 remains reserved for a future `HubInvocationRateLimitFilter` rejection log — `HubInvocationRateLimitFilter` itself (P-417) does not log on rejection, it only throws a caller-safe `HubException`, so 14101 stays unconsumed as of this writing). Both packages' sub-blocks remain overwhelmingly unused (`.WebApi` now at 7/100 — 14000–14006 — and `.SignalR` at 2/100 — 14100 and 14102 — after this WO), confirming this domain's near-total historical under-use of its own reserved `EventId` range prior to WO-063.
 - This domain requires no code-shape changes to conform to `00.Governance`'s `SK0020`/`SK0021` (`LoggingAuthoringStyleAnalyzer`, P-250) — it already authors exclusively via `[LoggerMessage]`, never a direct `ILogger` extension-method call or hand-written `LoggerMessage.Define` delegate. The explicit `EventId` assignment is what closes the remaining gap against `00.Governance`'s `LoggingEventIdIntegrityAssertion` (global uniqueness + per-assembly range membership).
 - **Correlation-on-log-record verification is proven without a cross-domain `ProjectReference`.** `13.ServiceDefaults`'s `BaggageLogRecordProcessor` (P-251) is what makes `CorrelationIdMiddleware`'s `Activity` baggage land on emitted `LogRecord`s — but this domain must never take a `ProjectReference` on `SharedKernel.ServiceDefaults` to prove that (per the existing `13.ServiceDefaults` non-dependency rule above). This domain's own test suite instead uses a test-local minimal `BaseProcessor<LogRecord>` that mirrors `BaggageLogRecordProcessor`'s documented contract (generic `Activity.Baggage` → `LogRecord.Attributes` copy, never overwriting an explicit attribute) to prove its own middleware's output is compatible with that mechanism — the reciprocal of the technique `13.ServiceDefaults`'s own correlation test already uses in the opposite direction (simulating this middleware's baggage-setting call via raw BCL `Activity.SetBaggage(...)` rather than referencing this package).
 
@@ -648,6 +910,13 @@ AddSharedKernelSignalR  (extended)
 - `TenantContextHubFilter` and `HubExceptionMappingFilter` are registered as *global* hub filters via `HubOptions.AddFilter<T>()`, not per-hub `[HubFilter]` attributes — every hub in a consuming service gets both by default through `AddSharedKernelSignalR`.
 - `HubExceptionMappingFilter` must never let a non-`HubException` cross the filter boundary — SignalR serializes unknown exception types inconsistently across transports; only `HubException` messages are guaranteed to reach the client safely.
 - Filter ordering: `TenantContextHubFilter` (connection-scoped, attaches data) is independent of `HubExceptionMappingFilter` (invocation-scoped, wraps calls) — they do not depend on each other's execution order.
+- **A `HubException` already thrown by any filter/hub method must always pass through `HubExceptionMappingFilter` unchanged (WO-063, P-417 — shipped, no code change needed):** the mapping filter's catch-all has a `catch (HubException) { throw; }` branch, checked first, so an already-well-formed, specific `HubException` (e.g. from `HubInvocationRateLimitFilter`'s rate-limit rejection) is never re-wrapped into the generic redacted `"An unexpected error occurred."` message. **This branch was found, via `git log` on the file, to have already existed since the domain's very first WO-031 build-out commit** — WO-063's D-64 flagged it as a hazard to fix based on reading the file at design time, but the Core-phase session confirmed (via `git log --all`) it was never actually missing; the design phase's "hazard" framing was itself based on a stale read, not a real gap. Nothing was changed; this bullet documents the standing composition rule for every future filter in this package that throws its own `HubException` — never assume the existing catch-all already handles this correctly without verifying it explicitly, even though in this instance it already did.
+- `HubInvocationRateLimitFilter` (WO-063, P-417 — shipped) is registered globally like the other two filters, but is genuinely opt-in via `configureRateLimit` — omitted/`null` means the filter still registers (so it can always be enabled later without a redeploy of the filter registration itself) but no-ops on every invocation.
+
+### SignalR CORS integration rule (WO-063, P-418 — shipped)
+
+- `SharedKernel.Presentation.SignalR` never takes a `ProjectReference` on `SharedKernel.Presentation.WebApi` — the two packages remain deliberately independent API surfaces (see "Packages" above). The CORS gap for mapped hubs is closed via a startup-time diagnostic `Warning` (not a hard dependency, not a thrown exception) plus documentation, never a direct code coupling.
+- A host correctly attaching a CORS policy to its mapped hub(s) must never see a false-positive warning — the diagnostic check inspects real endpoint metadata, not a heuristic guess.
 
 ### SignalR Redis backplane rules
 
@@ -661,11 +930,50 @@ AddSharedKernelSignalR  (extended)
 - These defaults are applied **before** the caller's existing `configureHubOptions` callback runs — the platform default is a starting point, never a hard ceiling; a consuming service can always raise or lower any of the four independently. No new parameter, no signature change to `AddSharedKernelSignalR`.
 - This is purely a `HubOptions` default-value change — it must never alter `TenantContextHubFilter`/`HubExceptionMappingFilter`/`WithRedisBackplane` behavior.
 
+### Payload-limits rules (WO-063, P-411 — shipped)
+
+- `AddSharedKernelPayloadLimits`/`UseSharedKernelPayloadLimits` are fully opt-in — a host calling neither is byte-identical to today.
+- `MaxJsonDepth` must be wired into both `Microsoft.AspNetCore.Http.Json.JsonOptions` (Minimal API) and `Microsoft.AspNetCore.Mvc.JsonOptions` (MVC, when registered) — never only one, since this package supports both hosting models equally elsewhere (`ResultHttpExtensions`).
+- A body-size violation is mapped through the shared `Http/` RFC 9457 shaping helper via a new `BadHttpRequestException`-specific branch on `SharedKernelExceptionHandler`, checked before the generic 500 fallback — never left to fall through to a generic redacted 500.
+- `UseSharedKernelPayloadLimits` must guard `IHttpMaxRequestBodySizeFeature.IsReadOnly` before assignment — never crash the pipeline when the feature cannot be set (e.g., certain test-host shapes).
+
+### OpenAPI security-scheme rules (WO-063, P-412 — shipped)
+
+- Each active scheme (Bearer/ApiKey/mTLS) is registered as its own separate OpenAPI security requirement object — OR semantics. A single combined requirement object (AND/simultaneous-auth-required semantics) must never be used for this capability; this is the opposite of this package's usual AND-across-attributes composition rule and is easy to get backwards.
+- `ApiKeyHeaderName` stays a plain configurable string — this package never takes a `ProjectReference` on `SharedKernel.Security.ApiKey`/`.Mtls` merely to avoid a call-site literal for a header name.
+- Enabling `ApiKey`/`MutualTls` must never change the existing default-Bearer-only document shape for a consumer that does not touch the new `configureSecuritySchemes` parameter.
+
+### API version lifecycle (Sunset/Deprecation) rules (WO-063, P-413 — shipped)
+
+- `Sunset` is always a valid RFC 7231 HTTP-date (`DateTimeOffset.ToString("R")`) — never an arbitrary string or a bare date.
+- `Deprecation` is sourced from Asp.Versioning's own `Deprecated`/`DeprecatedApiVersions` — never a second, independently-declared deprecated flag.
+- `Link: rel="successor-version"` appears only alongside a declared sunset date and successor URI — never on its own.
+- This capability is additive to, never a rework of, the existing `ReportApiVersions` header family — both may be present simultaneously.
+
+### Security-audit logging rules (WO-063, P-414 — shipped)
+
+- The four newly-logged rejection paths (`AuthorizationRequirementEndpointFilter`/`IdempotencyKeyRequirementEndpointFilter`/`CorsPolicyOptionsValidator`/`RateLimitRejectionProblemDetails`) must never log raw bearer tokens, API keys, certificate bytes, or a full `ClaimsPrincipal` dump — non-PII context only (endpoint name, failed requirement/attribute type, CORS failure reason, rate-limit policy name), mirroring `12.Security`'s (WO-057/P-371) established discipline.
+- Every new `[LoggerMessage]` method carries its pre-assigned explicit `EventId` (14002–14005) — never compiler auto-numbering, per the platform-wide logging convention.
+- **A newly-DI-logging-enabled type's `ILogger<T>` constructor parameter must always be optional (`ILogger<T>? logger = null`), falling back to `Microsoft.Extensions.Logging.Abstractions.NullLogger<T>.Instance` — never a required parameter.** Making it required broke real DI composition for real reasons: `AuthorizationRequirementEndpointFilter`/`IdempotencyKeyRequirementEndpointFilter`/`CorsPolicyOptionsValidator` (all previously dependency-free types) failed to construct against `consumer-verify`'s own bare-`ServiceCollection` negative-path test (no logging registered) once a required `ILogger<T>` was added — a scenario that is entirely legitimate (a minimal DI container, a unit test, a library consumer that hasn't wired `AddLogging()`), not a misuse. This is now a standing rule for this domain: adding logging to a previously-logging-free public type must never turn "constructs with zero services registered" into "throws `InvalidOperationException`."
+
+### Correlation-id format-validation rules (WO-063, P-415 — shipped)
+
+- A caller-supplied correlation-id value failing the length/character-allowlist check is regenerated, never propagated verbatim — this check runs before the value ever reaches `HttpContext.Items`, `Activity.SetBaggage`, or the response header.
+- The default `MaxLength`/`AllowedCharacterPattern` must remain permissive enough that well-formed GUIDs, ULIDs, and other common safe correlation-id shapes already in production use are preserved unchanged — this is a bounds/injection guard, not a GUID-only restriction.
+
+### Upload validation rules (WO-063, P-416 — shipped)
+
+- `UploadValidationEndpointFilter` is a separate filter from `AuthorizationRequirementEndpointFilter`/`IdempotencyKeyRequirementEndpointFilter` — upload shape validation is neither an authorization nor an idempotency concern.
+- This capability is a boundary-shape check ONLY. Virus/malware scanning and antivirus-engine integration are explicitly OUT OF SCOPE, stated in capitals in both XML docs and README — never implied as covered.
+- Per-endpoint override args on `RequireValidatedUploadAttribute` take precedence over the global `UploadValidationOptions` defaults when supplied; an endpoint carrying no attribute performs zero validation (fully opt-in).
+- No third-party MIME-detection library is added — a small, locally-maintained, extensible magic-byte signature table is the sanctioned mechanism.
+
 ### AOT notes
 
 - `Microsoft.AspNetCore.OpenApi`'s schema generation uses source-generated reflection metadata where possible; verify AOT compatibility on every SDK upgrade since this is a fast-moving built-in feature.
 - `Asp.Versioning.*` and `Scalar.AspNetCore` AOT status must be re-verified on every major version bump — these are third-party packages, not BCL.
 - `Microsoft.AspNetCore.SignalR.StackExchangeRedis` is not fully AOT-verified as of this writing — confirm on adoption and wrap behind `WithRedisBackplane` (already an abstraction seam) if a swap is ever needed.
+- `System.Threading.RateLimiting` (WO-063, P-417 — shipped) ships transitively via the existing `FrameworkReference Microsoft.AspNetCore.App` on `net10.0` — confirmed via a real build probe at Scaffold phase (S-27: a scratch `.cs` file referencing `RateLimiter`/`TokenBucketRateLimiter` compiled with zero new `PackageReference`). AOT status of the namespace itself must still be re-verified on any future SDK major-version bump, per this domain's general AOT-preferred posture.
 
 ---
 
@@ -779,6 +1087,60 @@ builder.Services.AddSharedKernelSignalR()
 
 // SignalR — tenant-scoped group broadcast from inside a Hub method
 await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdated", orderId);
+
+// WebApi — payload size / JSON max-depth DoS protection (WO-063/P-411 — shipped)
+builder.Services.AddSharedKernelPayloadLimits(o => o.MaxJsonDepth = 32);
+// ...
+app.UseSharedKernelPayloadLimits(o => o.MaxRequestBodySizeBytes = 2 * 1024 * 1024);
+
+// WebApi — OpenAPI ApiKey + mTLS security schemes alongside the default Bearer (WO-063/P-412 — shipped)
+builder.Services.AddSharedKernelOpenApi(title: "Payments API", configureSecuritySchemes: o =>
+{
+    o.ApiKey = true;
+    o.ApiKeyHeaderName = "X-Api-Key";   // matches this service's own SharedKernel.Security.ApiKey wiring
+});
+
+// WebApi — RFC 8594 Sunset/Deprecation headers on a retiring API version (WO-063/P-413 — shipped)
+builder.Services.AddSharedKernelApiVersioning(configureLifecycle: o =>
+{
+    o.Configure(new ApiVersion(1, 0), sunsetDate: new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                successor: new Uri("https://api.example.com/v2/orders"));
+});
+// Deprecation itself still comes from Asp.Versioning's own HasDeprecatedApiVersion(...)/[ApiVersion(Deprecated = true)] —
+// Configure(...) above only declares the sunset date/successor link, never a parallel deprecated flag.
+
+// WebApi — security-audit logging (WO-063/P-414 — shipped) requires no extra wiring — AuthorizationRequirementEndpointFilter,
+// IdempotencyKeyRequirementEndpointFilter, CorsPolicyOptionsValidator, and RateLimitRejectionProblemDetails
+// log automatically on their existing rejection paths once each capability is already adopted.
+
+// WebApi — correlation-id format validation (WO-063/P-415 — shipped)
+builder.Services.AddSharedKernelCorrelationId(o =>
+{
+    o.MaxLength = 128;
+    // AllowedCharacterPattern left at its conservative default (GUID/ULID/safe-token shapes)
+});
+
+// WebApi — file/multipart upload validation (WO-063/P-416 — shipped)
+builder.Services.AddSharedKernelUploadValidation(o =>
+{
+    o.MaxSizeBytes = 10 * 1024 * 1024;   // 10 MB
+    o.AllowedContentTypes.Add("application/pdf");
+});
+app.MapPost("/kyc/documents", UploadKycDocumentHandler)
+   .RequireValidatedUpload(5 * 1024 * 1024, "application/pdf", "image/jpeg")   // maxSizeBytes, then params allowedContentTypes
+   .AddEndpointFilter<UploadValidationEndpointFilter>();
+
+// SignalR — hub invocation rate limiting + argument validation (WO-063/P-417 — shipped)
+builder.Services.AddSharedKernelSignalR(configureRateLimit: o =>
+{
+    o.PermitLimit = 20;
+    o.Window = TimeSpan.FromSeconds(10);
+});
+
+// SignalR — CORS/negotiate integration (WO-063/P-418 — shipped) — this package never wires CORS directly;
+// attach the WebApi package's own named policy at the composition root:
+app.MapHub<OrdersHub>("/hubs/orders").RequireCors(CorsPolicyNames.Default);
+// omitting .RequireCors(...) on a mapped hub triggers a startup Warning log (EventId 14102), not a thrown exception.
 ```
 
 ---
@@ -825,6 +1187,19 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - `RateLimitRejectionProblemDetails`: a shape test (429/`Type`/`traceId`); a `Retry-After`-header-set-only-when-supplied test.
 - SignalR `HubOptions` defaults: a defaults-match-documented-values test when `configureHubOptions` is omitted; an every-default-overridable test; a full existing-suite regression run proving `TenantContextHubFilter`/`HubExceptionMappingFilter`/`WithRedisBackplane` are untouched.
 
+### WO-063 test additions (confirmed at Tests phase — shipped, T-44–T-67)
+
+> **Status: Shipped end to end.** 63 net-new tests (52 `SharedKernel.Presentation.WebApi.Tests`, 11 `SharedKernel.Presentation.SignalR.Tests`) — `186/186` and `25/25` green respectively, zero production-code change. Three genuine test-construction discoveries below are worth preserving for any future session touching these capabilities, since each cost a first failed attempt before the working technique was found.
+
+- **Payload limits — the 413 case needs chunked transfer encoding, not a declared `Content-Length` body (genuine discovery, T-44):** a real listening Kestrel host is mandatory here (per the Core-phase note above, `TestServer` does not enforce `IHttpMaxRequestBodySizeFeature` the same way) — but a `StringContent` body with a `Content-Length` header exceeding `MaxRequestBodySizeBytes` is rejected by Kestrel at the **connection level**, before the ASP.NET Core middleware pipeline (and therefore `SharedKernelExceptionHandler`) ever runs, producing a bare 413 with an **empty body**. To route the rejection through the documented `BadHttpRequestException` → `SharedKernelExceptionHandler` → `ProblemDetails` path (and to prove the handler marker was never reached, since Kestrel must actually start dispatching the request first), send the oversized body with `request.Headers.TransferEncodingChunked = true` instead — this forces Kestrel to read the body incrementally and throw only once the running byte count exceeds the limit, by which point the exception-handling middleware is already in the call stack. `PayloadLimitsIntegrationTests.cs` builds the real host via `WebApplication.CreateBuilder()` + `builder.WebHost.UseUrls("http://127.0.0.1:0")` + `await app.StartAsync()`, reading the bound ephemeral port back via `app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()`.
+- OpenAPI security schemes: a default-Bearer-only-byte-identical-to-pre-P-412 regression test; a real-generated-OpenAPI-JSON test (fetch `/openapi/v1.json`, parse with `System.Text.Json.JsonDocument` — never a mocked `OpenApiDocument` model) proving a combined scheme configuration produces the correct `securitySchemes` dictionary and one OR'd `security` requirement object per active scheme, each keyed by the plain scheme name (a Security Requirement Object's JSON keys are the scheme names themselves, not `$ref` pointers).
+- Sunset/Deprecation headers: an HTTP-date-format-round-trips test (never an arbitrary string) via `DateTimeOffset.Parse` plus an exact `"R"`-format string-equality check; a `Deprecation`-present-independent-of-sunset-date test; a `Link: rel="successor-version"`-only-with-both-sunset-and-successor test; a zero-new-headers-when-nothing-declared regression test. Built with a real `ApiVersionSetBuilder` declaring three versions (`.HasApiVersion(1.0)`, `.HasDeprecatedApiVersion(2.0)`, `.HasDeprecatedApiVersion(3.0)`) and per-version `ApiVersionLifecycleOptions.Configure(...)` calls (2.0 gets a sunset date + successor; 3.0 gets a successor with no sunset date, to prove the Link-only-with-sunset rule).
+- **Security-audit logging — two of the four rejection paths are `internal` types, tested indirectly (genuine discovery, T-53/T-54):** `CorsPolicyOptionsValidator` cannot be `new`'d or `typeof()`'d from the test assembly. Exercise it through a real `HostBuilder`/`await host.StartAsync()` (mirroring `CorsExtensionsTests`' existing `OptionsValidationException` technique) with `services.AddInMemoryLoggerFactory()` (`16.Testing`) called *before* `services.AddSingleton<ILoggerFactory>(loggerFactory)` — the explicit registration wins on resolution (last-registered-wins for a single-instance service), while `AddInMemoryLoggerFactory()`'s `TryAdd` of the open-generic `Logger<>` adapter for `ILogger<T>` still lands. Retrieve captured records via `loggerFactory.GetLogger(categoryName)`, where `categoryName` for an internal type must be a hardcoded string literal (the BCL `Logger<T>`'s category name is the type's full name) since `typeof(InternalType)` does not compile outside the production assembly. `AuthorizationRequirementEndpointFilter`/`IdempotencyKeyRequirementEndpointFilter` are public and constructor-injectable, so they use `SharedKernel.Testing.Logging.InMemoryLogger<T>` directly — no host needed. The no-secret-leak proof puts a representative bearer token/sensitive value genuinely in the rejected request (an `Authorization` header, an unrelated `CorsPolicyOptions.AllowedHeaders` entry) and asserts it appears in neither `LogRecord.Message` nor any `LogRecord.State` property — never merely asserting absence without first proving presence in the input, which would pass vacuously.
+- Correlation-id format validation: an oversized/malformed-header-never-reaches-baggage-or-response-header regression test (the capability's own core acceptance criterion) — assert against `Activity.Current!.Baggage`, requiring a `new Activity(name).Start()`/`.Stop()` pair around the middleware call (no `ActivityListener` registration needed; a plain `Activity.Start()` always sets `Activity.Current` regardless of listeners, unlike `ActivitySource.StartActivity`); a well-formed-GUID (both dashed and `"N"`-format)/ULID-preserved-unchanged test; an options-independently-overridable test (`MaxLength`/`AllowedCharacterPattern` each tested in isolation); a no-options-supplied-to-constructor-still-applies-defaults test.
+- Upload validation: a fails-closed-before-full-body-buffering 413/415/400 test (marker technique, mirrors payload limits — but unit-level via a directly-constructed `EndpointFilterInvocationContext`/`UploadValidationEndpointFilter`, no host needed, since the filter's checks run entirely inside ASP.NET Core's endpoint-filter pipeline rather than at the Kestrel transport level); a content-type-mismatch-415 test including a `;charset=...`-parameter-stripped-before-matching case; a magic-byte-mismatch-400 and a magic-byte-match test (the latter also asserting the body stream's position is reset to `0` so the downstream handler still sees the full body); a no-attribute-means-zero-validation regression test; a per-endpoint-override-wins-over-global-default test (smaller endpoint `MaxSizeBytes` rejects even when the global default would have allowed it).
+- SignalR invocation rate limiting: a per-connection-throttled-while-other-connections-unaffected test (two independently-created `HubInvocationContext`s, each with its own `HubCallerContext.Items` dictionary via `Substitute.For<HubCallerContext>().Items.Returns(new Dictionary<object, object?>())`); **the composition-hazard regression test** — a real two-filter pipeline (`HubExceptionMappingFilter.InvokeMethodAsync` wrapping `HubInvocationRateLimitFilter.InvokeMethodAsync` wrapping the target delegate, mirroring `AddSharedKernelSignalR`'s actual registration order) proving a rate-limit-rejected invocation's `HubException` message reaches the caller with its specific text intact, never the generic redacted fallback; an argument-payload-validation-rejects-before-method-body-executes test (a `bool targetInvoked` flag proves the delegate never ran); a `configureRateLimit`-omitted-means-no-op regression test (default-constructed `HubInvocationRateLimitOptions`, 20 invocations with a 100 KB string argument, zero rejections) plus a full existing-suite regression run.
+- **SignalR CORS diagnostic — also an `internal` type, tested via a real `TestServer` host (T-64/T-65):** `SignalRCorsStartupDiagnostic` is an `IHostedService` registered by `AddSharedKernelSignalR`; its scan runs on `IHostApplicationLifetime.ApplicationStarted`, which fires synchronously as part of the generic host's own startup sequence — `hostBuilder.Start()` (not `StartAsync()`, to keep the test method synchronous where possible) is sufficient, no extra `Task.Delay` orchestration required, though a short bounded poll loop is a reasonable defensive habit against scheduling variance. Same `AddInMemoryLoggerFactory()` + explicit `ILoggerFactory` substitution technique as the CORS validator above; the category-name string is `"SharedKernel.Presentation.SignalR.Extensions.SignalRCorsStartupDiagnostic"`. Confirms D-65's decision (no `ProjectReference` to the WebApi package, diagnostic-only) is the actually-shipped shape — no negotiate-endpoint CORS-integration point exists to test, so T-66 has no test code, only this confirmation.
+
 ### Documentation build enforcement (confirmed at Docs phase)
 
 - Both production `.csproj` files set `<GenerateDocumentationFile>true</GenerateDocumentationFile>` — this is what actually turns missing-XML-doc (CS1591) and unresolved-`cref` (CS1574/CS1580) warnings on; without it the compiler silently skips doc validation even when every member already has a `///` comment block. Enabling it after the Core phase surfaced 4 pre-existing unresolved-`cref` warnings (`IHostEnvironment.IsDevelopment()` and `MapOpenApi(IEndpointRouteBuilder, string)` lacked a `using` for their containing namespace; `HubOptions.HubFilters` doesn't exist under that exact member name; `HttpContext` was ambiguous without a `Microsoft.AspNetCore.Http` `using`) — fixed via `<c>` plain-text references or fully-qualified `cref`s rather than adding usings that would pull unrelated types into scope. Any future PR that adds a new public member must build clean with this flag already on — do not defer doc-comment correctness to a later "Docs phase" cleanup pass.
@@ -856,3 +1231,7 @@ await Clients.Group(HubGroupNaming.TenantGroup(tenantId)).SendAsync("OrderUpdate
 - [2026-08-20] WO-062 `SK.14.Core` shipped (C-26–C-50, 25/25) — all eight P-402–P-409 Interface Contracts/Implementation Rules status banners flipped from "Design-locked" to "Core implementation shipped — Tests/Docs/Published still pending": `ValidationProblemDetailsExtensions`, `SecurityHeadersOptions`/`SecurityHeadersMiddleware`/`UseSharedKernelSecurityHeaders`, `CorsPolicyOptions`/`AddSharedKernelCors`/`CorsPolicyOptionsValidator`, `HttpContextIdempotencyExtensions`/`RequireIdempotencyKeyAttribute`/`IdempotencyKeyRequirementEndpointFilter`, `RequireFreshAuthenticationAttribute`/`RequireAuthenticationMethodAttribute` extending `AuthorizationRequirementEndpointFilter`, `RowVersionETag`/`ConditionalRequestExtensions`/the new shared internal `Http/ProblemDetailsShaping` helper, `RateLimitRejectionProblemDetails`, and the `AddSharedKernelSignalR` `HubOptions` defaults all now live in source. Two "CORRECTED at Core-phase implementation" notes added, both verified via a throwaway reflection probe against the installed `net10.0` shared framework before use, per this domain's established discipline: `EntityTagHeaderValue`'s RFC 9110 strong-comparison member is the instance method `.Compare(EntityTagHeaderValue, bool)`, not a static overload, and `Microsoft.AspNetCore.Http.Headers.RequestHeaders(IHeaderDictionary).IfMatch` is the correct typed-header access path; `HubOptions.MaximumReceiveMessageSize` is `long?`, `.MaximumParallelInvocationsPerClient` is a non-nullable `int`, `.ClientTimeoutInterval`/`.KeepAliveInterval` are `TimeSpan?` — confirmed, not assumed. Shipped `AddSharedKernelSignalR` default values recorded verbatim (`MaximumReceiveMessageSize = 32 * 1024`, `MaximumParallelInvocationsPerClient = 1`, `ClientTimeoutInterval = 30s`, `KeepAliveInterval = 15s`). Zero new `PackageReference`/`ProjectReference` — confirmed by the prior Scaffold-phase session (S-13–S-20). Both packages build 0 warnings/0 errors beyond the pre-existing unrelated `NU1903` advisory; full regression `SharedKernel.Presentation.WebApi.Tests` 71/71 + `SharedKernel.Presentation.SignalR.Tests` 11/11 green, proving the single-`Error` `ProblemDetails` path stayed byte-for-byte unchanged (D-22's non-goal). `SK.14.Tests`/`Docs`/`Published` (T-19–T-43/DO-11–DO-18/P-09–P-16) remain open — next phase (presentation-phase-implementer, state-map-phase)
 - [2026-08-20] WO-062 `SK.14.Tests` shipped (T-19–T-43, 25/25) — 63 new tests across both packages implementing every remaining WO-062 test task. `SharedKernel.Presentation.WebApi.Tests` gained `ValidationProblemDetailsExtensionsTests`, two new `SharedKernelExceptionHandlerTests` methods (multi-error handler wiring proof; a `TheoryData<SharedKernelException, Error>`-driven regression sweep across every non-`ValidationException` `ErrorType`), `Middleware/SecurityHeadersMiddlewareTests`, `Cors/CorsExtensionsTests`, `Idempotency/HttpContextIdempotencyExtensionsTests`/`IdempotencyKeyRequirementEndpointFilterTests`, `Authorization/StepUpAuthenticationTests`, `Concurrency/RowVersionETagTests`/`ConditionalRequestExtensionsTests`, and `RateLimiting/RateLimitRejectionProblemDetailsTests`; `SharedKernel.Presentation.SignalR.Tests` gained `Extensions/SignalRExtensionsHubOptionsTests`. `SharedKernel.Presentation.WebApi.Tests` now 134/134 green (71 pre-existing + 63 net new); `SharedKernel.Presentation.SignalR.Tests` now 14/14 green (11 pre-existing + 3 net new). **Two pre-existing documentation defects found and corrected in the same pass, unrelated to any new capability:** three "six-case"/"six mapped `ErrorType`s" references to `ErrorTypeStatusCodeMap` (P-407's Interface Contracts note, its Implementation Rules bullet, and the Test Rules bullet) were stale — the real shipped map has carried seven explicit cases since `ErrorType.Forbidden` shipped in WO-058, and this P-407 prose was apparently written against an older count; corrected in place, mirroring D-19's established precedent for this exact class of drift. All eight P-402–P-409 Interface Contracts status banners flipped from "Core implementation shipped — Tests/Docs/Published still pending" to "Core and Tests implementation shipped — Docs/Published still pending." `SK.14.Docs` (DO-11–DO-18)/`SK.14.Published` (P-09–P-16) remain open — next phase (presentation-phase-implementer, state-map-phase)
 - [2026-08-20] WO-062 `SK.14.Published` shipped (P-09–P-16, 16/16) — the domain's final WO-062 phase, closing all six `SK.14.*` phase keys end to end. `SharedKernel.Presentation.WebApi` re-packed **once**, `1.1.0` → `1.2.0` (a single coherent minor bump covering all six additive Core-phase capabilities rather than seven sequential per-phase bumps, since none of the intermediate versions ever shipped to a consumer); `SharedKernel.Presentation.SignalR` re-packed `1.0.1` → `1.0.2` (patch — P-409's `HubOptions` default-value change is purely internal). `consumer-verify` gained Surface 8 (CORS + security headers, including a negative-path proof that `CorsPolicyOptionsValidator` genuinely fails fast), Surface 9 (idempotency filters), and Surface 10 (direct functional checks of the pure-static ETag/rate-limit helpers, which carry no DI wiring of their own); Surface 7 extended in place to also compose the step-up-authentication attributes. All 10 surfaces PASS with zero DI exceptions; `SharedKernel.Presentation.WebApi.Tests` 134/134 green, `SharedKernel.Presentation.SignalR.Tests` 14/14 green, zero regressions. All eight P-402–P-409 Interface Contracts status banners flipped from "Core, Tests, and Docs implementation shipped — Published still pending" to "Shipped end to end," each noting its package's new version. This closes `14.Presentation`'s WO-062 scope end to end (presentation-phase-implementer, state-map-phase, sync-brain)
+- [2026-08-20] WO-063 dispatched — eight new phases (P-411–P-418) processed against this already-fully-`●`-Published domain (`SharedKernel.Presentation.WebApi` `1.2.0`, `.SignalR` `1.0.2`), a second big-fintech/gold-standard hardening pass distinct from WO-062's rejection-shape/perimeter focus: this pass targets resource-exhaustion (request payload size/JSON depth, SignalR invocation rate), documentation completeness (OpenAPI ApiKey/mTLS security schemes, RFC 8594 Sunset/Deprecation headers), audit-trail completeness (closing this domain's near-total historical non-use of its own reserved `14000`–`14999` `EventId` range — only 3 of ~1000 IDs consumed before this WO), and two remaining input-trust-boundary gaps (caller-supplied correlation-id format, file/multipart upload shape). **`SharedKernel.Presentation.WebApi` (P-411–P-416, six phases):** (1) Payload-size/JSON-max-depth DoS protection — `PayloadLimitsOptions`/`AddSharedKernelPayloadLimits`/`UseSharedKernelPayloadLimits` wrapping Kestrel's `IHttpMaxRequestBodySizeFeature` and STJ's `MaxDepth`; a 413 is mapped through a new `BadHttpRequestException`-specific branch on `SharedKernelExceptionHandler` rather than assumed to already be handled — flagged for Core-phase verification against the real framework. (2) OpenAPI ApiKey/mTLS security-scheme completeness — `OpenApiSecuritySchemesOptions` registers each active scheme as its own OR'd security requirement object; declined a new `ProjectReference` on `SharedKernel.Security.ApiKey` merely to reuse a header-name constant. (3) RFC 8594 Sunset/Deprecation headers — `ApiVersionLifecycleOptions` extends `AddSharedKernelApiVersioning`, sourcing deprecation status from Asp.Versioning's own existing `Deprecated` declaration rather than a parallel flag. (4) Structured security-audit logging — closes the last unlogged HTTP-boundary rejection paths in the chain `12.Security`(WO-057)/`13.ServiceDefaults`(WO-061) already covered: `AuthorizationRequirementEndpointFilter` (14002), `IdempotencyKeyRequirementEndpointFilter` (14003), `CorsPolicyOptionsValidator` (14004), `RateLimitRejectionProblemDetails` (14005). (5) Caller-supplied correlation-id format validation — a bounded length-plus-safe-character-allowlist check on `CorrelationIdMiddleware.ResolveCorrelationId`, closing the last unvalidated-external-input trust-boundary class this platform has fixed twice elsewhere (`11.Communication` WO-056, `13.ServiceDefaults` WO-061) but never yet at the point a raw correlation-id header first enters the system. (6) File/multipart upload size and content-type validation — `UploadValidationOptions`/`RequireValidatedUploadAttribute`/`UploadValidationEndpointFilter`, explicitly and repeatedly documented as boundary-shape validation only, NEVER virus/malware scanning. **`SharedKernel.Presentation.SignalR` (P-417–P-418, two phases):** (7) Hub-level per-connection invocation rate limiting plus argument-payload validation — `HubInvocationRateLimitFilter` built on `System.Threading.RateLimiting`, opt-in via a new `configureRateLimit` parameter. **Genuine pre-existing composition hazard found and design-locked, not left for Core-phase discovery:** `HubExceptionMappingFilter`'s existing catch-all had no branch recognizing an already-thrown `HubException` as terminal, so a rate-limit rejection's specific message would otherwise be silently re-wrapped into the generic redacted one — fixed via a new `catch (HubException) { throw; }` branch checked first, now a standing hub-filter-composition rule. (8) SignalR CORS/negotiate-endpoint origin-policy integration — **declined** a new `ProjectReference` from `.SignalR` to `.WebApi`'s `CorsPolicyOptions` (the two packages remain deliberately independent API surfaces); closed instead via a startup-time diagnostic `Warning` (new `EventId` 14102) plus a worked README example cross-referencing `CorsPolicyNames.Default` by name only. **Zero new cross-domain dependency across all eight phases** — every capability builds on BCL/already-referenced packages or prior-shipped `12.Security` capabilities; the one open item is a Scaffold-phase build-probe (S-27) confirming whether `System.Threading.RateLimiting` ships transitively via the existing `FrameworkReference Microsoft.AspNetCore.App` on `net10.0`. Eight new Interface Contracts subsections added (all "Design-locked, WO-063"); six new Implementation Rules subsections added (Payload-limits, OpenAPI security-scheme, API version lifecycle, Security-audit logging, Correlation-id format-validation, Upload validation rules) plus extensions to the existing SignalR hub filter rules (the composition-hazard fix) and a new SignalR CORS integration rule section; the EventId sub-block documentation updated with the six newly-allocated IDs; DI Registration gained eight new worked examples; Test Rules gained a new "WO-063 test additions" subsection. New task rows D-46–D-66, S-21–S-28, C-51–C-74, T-44–T-67, DO-19–DO-26, P-17–P-24 added to `state-map.md`, all `○` — every prior task through D-45/S-20/C-50/T-43/DO-18/P-16 remains `●` and unaffected. Per this agent's jurisdiction, no root `CLAUDE.md` "What Goes Where" rows are added here — flagged as a follow-up for `arch-lead`/`sync-brain`, mirroring the WO-062/DO-07 cross-domain-flag-not-fix precedent (presentation-arch-planner, WO-063)
+- [2026-08-20] WO-063 `SK.14.Core` shipped (C-51–C-74) — all eight P-411–P-418 status banners and Implementation Rules headers flipped from "Design-locked" to "Shipped end to end"; documented two genuine `Microsoft.OpenApi` 2.0.0 API-shape discoveries (no `mutualTLS` enum member, requiring a `SerializeAsV31`-overriding subclass; `OpenApiSecuritySchemeReference` needs `document.RegisterComponents()` or it serializes as `{}`); documented the deliberate decision NOT to drive Asp.Versioning's own `Policies.Sunset`/`DefaultApiVersionReporter` surface for RFC 8594 headers (a real round trip showed it never fires for an empty-named policy within session time) in favor of an independent `ApiVersionLifecycleOptions` registry + self-inserting `IStartupFilter`; documented the real `ICorsMetadata`/`NegotiateMetadata`/`HubMetadata` reflection findings for the SignalR CORS diagnostic; documented that `HubExceptionMappingFilter`'s `catch (HubException) { throw; }` branch was already present since WO-031 (D-64's "hazard" was a stale read, not a real gap — no code changed for C-71); added a new standing rule requiring every newly-DI-logging-enabled type's `ILogger<T>` constructor parameter to be optional (`? logger = null`, falling back to `NullLogger<T>.Instance`) after a required-parameter version broke `consumer-verify`'s own bare-`ServiceCollection` negative-path test; corrected two DI Registration examples that no longer matched the shipped API shape (`ApiVersionLifecycleOptions.AddSunset(...)` → `.Configure(...)`; `RequireValidatedUpload`'s named-`params`-argument syntax → positional); corrected the AOT notes' `System.Threading.RateLimiting` entry from "not yet confirmed" to "confirmed transitively available" (S-27 had already proven this at Scaffold phase but the brain was never updated). `SharedKernel.Presentation.WebApi.Tests` 134/134 green, `SharedKernel.Presentation.SignalR.Tests` 14/14 green, `consumer-verify` all 10 surfaces PASS — zero regression (presentation-phase-implementer, sync-brain)
+- [2026-08-21] WO-063 `SK.14.Tests` shipped (T-44–T-67, 24/24) — 63 net-new tests across both packages (52 WebApi + 11 SignalR), zero production code touched, confirming the Core phase's shipped surface was already correct on the first pass. The "WO-063 test additions" Test Rules subsection rewritten from "design-locked; queued" to "confirmed — shipped," with three genuine test-construction discoveries preserved for future sessions: (1) a `Content-Length`-declared oversized body is rejected by Kestrel at the connection level with an empty response body, before the exception-handling middleware ever runs — the 413-with-handler-never-reached proof requires chunked transfer encoding instead, forcing Kestrel to read incrementally and throw `BadHttpRequestException` from inside the running pipeline; (2) `CorsPolicyOptionsValidator` and `SignalRCorsStartupDiagnostic` are both `internal`, so their logging is proven indirectly via a real `IHost`/`TestServer` plus `16.Testing`'s `AddInMemoryLoggerFactory()` with an explicit `ILoggerFactory` substitution registered afterward (last-registration-wins), retrieving records via a hardcoded full-type-name category string since `typeof()` cannot reach an internal type across the assembly boundary; (3) `Activity.Current` is reliably non-null in a plain unit test via `new Activity(name).Start()` with no `ActivityListener` registration required (unlike `ActivitySource.StartActivity`, which does require one) — used to prove the correlation-id validator's rejected-value-never-reaches-baggage acceptance criterion. `SharedKernel.Presentation.WebApi.Tests` now 186/186 green (134 + 52 new), `SharedKernel.Presentation.SignalR.Tests` now 25/25 green (14 + 11 new). **Flagged, not fixed:** `consumer-verify`'s own build now fails via `TreatWarningsAsErrors=true` tripping on a pre-existing `Microsoft.OpenApi` 2.0.0 `NU1903` advisory (a consequence of the already-shipped Core phase's `MutualTlsSecurityScheme`, not this Tests phase) — all 10 harness surfaces confirmed logically PASS via a `-p:NoWarn=NU1903` override; the build-gate fix itself is `devops-lead`/Core-phase-session jurisdiction (presentation-phase-implementer, state-map-phase, sync-brain)
+- [2026-08-21] WO-063 `SK.14.Published` shipped (P-17–P-24, 24/24) — closes WO-063 (P-411–P-418) and all six `SK.14.*` phase keys end to end. **The prior session's flagged `consumer-verify` build blocker is resolved, not suppressed:** investigated per the three-path instruction — a patched `Microsoft.OpenApi` version exists (`2.7.5`+ on the 2.x line, per the GitHub Advisory API for `GHSA-v5pm-xwqc-g5wc`/`CVE-2026-49451`), and `Microsoft.AspNetCore.OpenApi` `10.0.11`'s own `.nuspec` (confirmed via direct inspection, not `10.0.9`/`10.0.10`, which both still hard-pin `Microsoft.OpenApi` `2.0.0`) declares the patched range — so `SharedKernel.Presentation.WebApi`'s `Microsoft.AspNetCore.OpenApi` reference was bumped `10.0.9` → `10.0.11` (Technology Stack table updated above), resolving `Microsoft.OpenApi` to `2.7.5` transitively. `consumer-verify` now builds and runs with zero `NoWarn`/`WarningsNotAsErrors` overrides of any kind, closing out every prior session's documented workaround (WO-041/WO-042/WO-058/WO-062 all separately worked around the same advisory locally without fixing it). `consumer-verify/Program.cs` gained the two phase-mandated new permanent surfaces: **Surface 11** (P-18) — a real listening-Kestrel-host round trip generating the actual OpenAPI document with a non-default `Bearer`+`ApiKey`+`MutualTls` scheme combination, asserting on the response body rather than DI resolution alone; **Surface 12** (P-22) — `AddSharedKernelUploadValidation()` DI composition mirroring Surface 9's shape. All 12 surfaces PASS with zero DI exceptions and zero build warnings. `SharedKernel.Presentation.WebApi` re-packed once, `1.2.0` → `1.3.0`; `SharedKernel.Presentation.SignalR` re-packed once, `1.0.2` → `1.1.0` — both single coherent minor bumps per the WO-062 precedent, `Description`/`PackageTags` extended for both. Both `dotnet pack` runs: 0 warnings, 0 errors. Full regression: `SharedKernel.Presentation.WebApi.Tests` 186/186 green, `SharedKernel.Presentation.SignalR.Tests` 25/25 green (presentation-phase-implementer, state-map-phase, sync-brain)

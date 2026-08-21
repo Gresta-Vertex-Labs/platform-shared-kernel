@@ -561,6 +561,256 @@ work unmodified.
 
 ---
 
+## Payload size / JSON max-depth limits
+
+`AddSharedKernelPayloadLimits`/`UseSharedKernelPayloadLimits` close the one DoS vector none of the
+WO-062 perimeter hardening (security headers, CORS, rate limiting) addresses: request **size and
+shape**, as opposed to rate or origin. Both are fully opt-in — a host calling neither is
+byte-identical to today.
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Registration-time half: wires MaxJsonDepth into both Minimal API's and MVC's JsonOptions
+// (the MVC half no-ops gracefully when MVC services are not registered).
+builder.Services.AddSharedKernelPayloadLimits(o =>
+{
+    o.MaxRequestBodySizeBytes = 2 * 1024 * 1024;   // 2 MB (default: 1 MB)
+    o.MaxJsonDepth = 32;                             // default: 32
+});
+
+var app = builder.Build();
+
+app.UseSharedKernelCorrelationId();
+app.UseSharedKernelSecurityHeaders();
+
+// Request-scoped half: sets IHttpMaxRequestBodySizeFeature.MaxRequestBodySize, guarded by
+// .IsReadOnly so it never throws on a server/test-host shape that can't set the feature.
+app.UseSharedKernelPayloadLimits();
+
+app.UseExceptionHandler();
+
+app.Run();
+```
+
+A request body exceeding `MaxRequestBodySizeBytes` throws
+`Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException` (a Kestrel-internal type
+extending the public `Microsoft.AspNetCore.Http.BadHttpRequestException`), which
+`SharedKernelExceptionHandler` maps to a 413 `ProblemDetails` — its already client-safe `Message`
+(e.g. `"Request body too large. The max request body size is N bytes."`) is exempted from the
+handler's usual dev-only detail-suppression gate.
+
+> **Kestrel enforces body size at two different points, and only one of them reaches
+> `ProblemDetails`.** A body sent with a declared `Content-Length` exceeding the limit is rejected
+> by Kestrel **at the connection level**, before the ASP.NET Core middleware pipeline — and
+> therefore `SharedKernelExceptionHandler` — ever runs, producing a bare 413 with an **empty body**.
+> Only a **chunked-transfer-encoded** body (or any body Kestrel reads incrementally past the limit)
+> throws `BadHttpRequestException` from inside the running pipeline, where the exception handler can
+> catch it and shape a real `ProblemDetails` response. Do not assume every oversized request
+> produces a `ProblemDetails` body — a client sending a declared `Content-Length` will see a plain,
+> bodyless 413 instead. This was confirmed via a real listening Kestrel host, not `TestServer`
+> (which does not enforce `IHttpMaxRequestBodySizeFeature` the same way).
+
+A JSON payload exceeding `MaxJsonDepth` surfaces via STJ's own existing `JsonException` → 400 path —
+this capability only wires the `MaxDepth` value into both hosting models' `JsonOptions`, it invents
+no new depth-violation response shape.
+
+---
+
+## OpenAPI security schemes — Bearer, ApiKey, mTLS
+
+`AddSharedKernelOpenApi`'s `configureSecuritySchemes` parameter registers additional OpenAPI
+security schemes alongside the default `Bearer` scheme, so a service authenticating via
+`SharedKernel.Security.ApiKey` or `.Mtls` gets an accurate OpenAPI document instead of a misleading
+Bearer-only one. Omitting the parameter is byte-identical to before this capability existed.
+
+**Bearer-only (default, unchanged):**
+
+```csharp
+builder.Services.AddSharedKernelOpenApi(title: "Orders API");
+// Equivalent to: configureSecuritySchemes: o => { } — o.Bearer defaults to true, everything else false.
+```
+
+**Bearer + ApiKey** (a service also accepting `SharedKernel.Security.ApiKey` machine-client tokens):
+
+```csharp
+builder.Services.AddSharedKernelOpenApi(title: "Orders API", configureSecuritySchemes: o =>
+{
+    o.ApiKey = true;
+    o.ApiKeyHeaderName = "X-Api-Key";   // match this service's own SharedKernel.Security.ApiKey wiring
+});
+```
+
+**Bearer + mTLS** (a service also accepting `SharedKernel.Security.Mtls` client-certificate auth):
+
+```csharp
+builder.Services.AddSharedKernelOpenApi(title: "Payments API", configureSecuritySchemes: o =>
+{
+    o.MutualTls = true;
+});
+```
+
+All three flags (`Bearer`/`ApiKey`/`MutualTls`) can be combined. `ApiKeyHeaderName` is a plain
+configurable string — this package never takes a `ProjectReference` on
+`SharedKernel.Security.ApiKey`/`.Mtls` merely to reuse a header-name constant; pass the value that
+matches your own service's concrete provider wiring.
+
+> **OR semantics, not AND.** Each active scheme is registered as its **own separate** OpenAPI
+> security requirement object — a request satisfies the document's security requirement by
+> presenting **any one** active mechanism (Bearer *or* ApiKey *or* mTLS), never all of them at once.
+> This is the **opposite** of this package's usual `[RequireRole]`/`[RequirePermission]`
+> AND-across-attributes composition rule and is easy to get backwards if you're used to that
+> convention — the two features compose in opposite directions on purpose.
+
+### Manual verification result (T-49)
+
+Scalar's "Authorize" affordance is rendered entirely client-side from the fetched OpenAPI document
+— this package's own responsibility ends at producing a correct document. A real listening host was
+used to confirm the full chain, not just the JSON in isolation:
+
+- `GET /openapi/v1.json` with `ApiKey`/`MutualTls` both enabled alongside the default `Bearer`
+  returns a `security` array with exactly **3** entries (one OR'd requirement object per active
+  scheme) and a `components.securitySchemes` dictionary naming all three (`Bearer`, `ApiKey`, and
+  the `mutualTLS`-typed scheme) — matching T-47/T-48's automated assertions against the real
+  generated document.
+- `GET /scalar/v1` returns `200 text/html`, and the returned page's bootstrap script correctly
+  configures Scalar's client-side renderer with `sources: [{"title":"v1","url":"openapi/v1.json"}]`
+  — i.e. Scalar is wired to fetch and render the exact document already proven correct.
+- A **pixel-level browser check** of the rendered "Authorize" button/dialog was not performed — this
+  session's environment has no browser. Scalar's client-side rendering of a standards-compliant
+  OpenAPI `securitySchemes`/`security` shape is stable, well-exercised upstream behavior that this
+  platform does not re-implement or need to visually re-verify; confirming the document contract
+  reaching it (above) is the correct and sufficient scope of verification for this package.
+
+---
+
+## RFC 8594 Sunset / Deprecation headers
+
+`ApiVersionLifecycleOptions` (via `AddSharedKernelApiVersioning`'s additive `configureLifecycle`
+parameter) lets a retiring API version carry a machine-readable `Sunset` date and an optional
+successor link, per [RFC 8594](https://www.rfc-editor.org/rfc/rfc8594). This is **additive to**,
+never a replacement for, the existing `ReportApiVersions` header family
+(`api-supported-versions`/`api-deprecated-versions`) — both header families may appear on the same
+response simultaneously.
+
+```csharp
+var apiVersionSet = app.NewApiVersionSet()
+    .HasApiVersion(new ApiVersion(1, 0))
+    .HasDeprecatedApiVersion(new ApiVersion(2, 0))   // deprecation itself still declared here —
+    .Build();                                          // Asp.Versioning's own mechanism, unchanged
+
+builder.Services.AddSharedKernelApiVersioning(configureLifecycle: o =>
+{
+    o.Configure(
+        new ApiVersion(2, 0),
+        sunsetDate: new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        successor: new Uri("https://api.example.com/v3/orders"));
+});
+```
+
+A response served under API version `2.0` now carries:
+
+```text
+Sunset: Fri, 01 Jan 2027 00:00:00 GMT
+Deprecation: true
+Link: <https://api.example.com/v3/orders>; rel="successor-version"
+```
+
+- `Sunset` is always a well-formed RFC 7231 HTTP-date (`DateTimeOffset.ToString("R")`) — never an
+  arbitrary string or a bare date.
+- `Deprecation` is sourced from Asp.Versioning's **own** `HasDeprecatedApiVersion(...)`/
+  `[ApiVersion(Deprecated = true)]` declaration, independent of whether a sunset date is set — this
+  package never grows a second, parallel "deprecated" flag.
+- `Link: rel="successor-version"` appears only when **both** a sunset date and a successor `Uri` are
+  declared together for that version.
+- A service that declares no sunset date on any version sees zero new headers — this capability is
+  a pure addition, not a rework of the versioning pipeline.
+
+---
+
+## Correlation-id format validation
+
+`CorrelationIdOptions` (via `AddSharedKernelCorrelationId`'s additive `configure` parameter) bounds
+and shape-checks a **caller-supplied** `X-Correlation-Id` header before it ever reaches
+`HttpContext.Items`, `Activity` baggage, or the response header. An unvalidated, caller-controlled
+string flowing straight into OTel baggage and every downstream structured log record is a
+log-injection/oversized-baggage-propagation vector — the same trust-boundary class this platform
+has already fixed twice elsewhere (`11.Communication`'s GUID-fallback defect, `13.ServiceDefaults`'s
+forwarded-header trust boundary) but never yet at the point a raw correlation-id header first enters
+the system.
+
+```csharp
+builder.Services.AddSharedKernelCorrelationId(o =>
+{
+    o.MaxLength = 128;   // default shown — conservative, but permissive enough for GUIDs/ULIDs
+    // o.AllowedCharacterPattern left at its conservative default: alphanumerics plus - _ : .
+});
+```
+
+**The guarantee: a malformed value is regenerated, never propagated.** A caller-supplied value
+exceeding `MaxLength` or containing a character outside `AllowedCharacterPattern` is rejected exactly
+like an absent/whitespace header already was — a fresh `Guid.NewGuid("N")` is generated instead,
+*before* the rejected value ever reaches `HttpContext.Items`, `Activity.SetBaggage`, or the response
+header. Only the **length** of a rejected value is logged (`EventId` 14006) — never its raw content,
+which would recreate the exact injection vector this validation defends against.
+
+Well-formed values already in production use (dashed GUIDs, `"N"`-format GUIDs, ULIDs, and other
+common safe token shapes) are preserved unchanged end-to-end — this is a bounds/injection guard, not
+a GUID-only restriction, so existing well-behaved callers see no behavior change. A host that calls
+`UseSharedKernelCorrelationId()` without ever calling `AddSharedKernelCorrelationId()` still gets the
+default-safe validation applied automatically, since the middleware falls back to a fresh default
+`CorrelationIdOptions` instance when none is registered in DI.
+
+---
+
+## File / multipart upload validation
+
+`RequireValidatedUploadAttribute` gates an upload endpoint on declared size, declared content type,
+and (optionally) a magic-byte signature check — a boundary-shape check for document-heavy workflows
+(KYC documents, statements, dispute evidence) that routinely accept uploads directly through the API
+before handing them to `08.Storage`.
+
+Worked example — a KYC document-upload endpoint accepting PDFs and JPEGs up to 5 MB, against a
+service-wide default of 10 MB:
+
+```csharp
+builder.Services.AddSharedKernelUploadValidation(o =>
+{
+    o.MaxSizeBytes = 10 * 1024 * 1024;   // 10 MB service-wide default
+    o.AllowedContentTypes.Add("application/pdf");
+    o.AllowedContentTypes.Add("image/jpeg");
+    // Optional deeper check: verify the declared content type against its actual leading bytes.
+    o.AllowedMagicBytes["application/pdf"] = [0x25, 0x50, 0x44, 0x46];   // "%PDF"
+});
+
+var app = builder.Build();
+
+app.MapPost("/v{version:apiVersion}/kyc/documents", UploadKycDocumentHandler)
+    .RequireValidatedUpload(maxSizeBytes: 5 * 1024 * 1024, "application/pdf", "image/jpeg")
+    .AddEndpointFilter<UploadValidationEndpointFilter>();
+```
+
+A request whose declared `Content-Length` exceeds the resolved limit, whose declared `Content-Type`
+(stripped of any `;`-delimited parameter, e.g. `charset=utf-8`, before matching) isn't in the allowed
+list, or whose leading bytes don't match a configured magic-byte signature for its declared type is
+rejected — 413/415/400 respectively, via `ProblemDetails` — **before** the endpoint handler ever runs.
+When a magic-byte check is configured, the filter buffers the request body
+(`HttpRequest.EnableBuffering()`) and seeks back to position `0` after the peek, so
+`UploadKycDocumentHandler` still sees the full, unconsumed body. Per-endpoint override args on
+`RequireValidatedUpload`/`RequireValidatedUploadAttribute` take precedence over the global
+`UploadValidationOptions` defaults; an endpoint carrying no attribute performs zero validation
+(fully opt-in).
+
+> **THIS IS A BOUNDARY-SHAPE CHECK ONLY. VIRUS/MALWARE SCANNING AND ANTIVIRUS-ENGINE INTEGRATION ARE
+> EXPLICITLY OUT OF SCOPE AND NEVER PERFORMED BY THIS CAPABILITY.** Passing this validation says
+> nothing about whether the uploaded content is safe to store or open — it only proves the upload is
+> the declared size and (optionally) the declared shape. Wire a real scanning pipeline separately
+> for any upload that needs one. No third-party MIME-detection library is added here — the
+> magic-byte table is a small, locally-maintained, extensible signature list, not a general-purpose
+> file-type sniffer.
+
+---
+
 ## What you get out of the box
 
 | Concern | Type |
@@ -580,6 +830,11 @@ work unmodified.
 | Inbound idempotency-key HTTP boundary | `HttpContextIdempotencyExtensions.TryGetIdempotencyKey`, `RequireIdempotencyKeyAttribute`, `IdempotencyKeyRequirementEndpointFilter`, `AddSharedKernelIdempotencyFilters` |
 | ETag / `If-Match` conditional requests | `RowVersionETag`, `ConditionalRequestExtensions` |
 | Rate-limit rejection → `ProblemDetails`/429 bridge | `RateLimitRejectionProblemDetails` |
+| Payload size / JSON max-depth limits | `PayloadLimitsOptions`, `AddSharedKernelPayloadLimits`, `UseSharedKernelPayloadLimits` |
+| OpenAPI ApiKey/mTLS security schemes | `OpenApiSecuritySchemesOptions` (via `AddSharedKernelOpenApi`) |
+| RFC 8594 Sunset/Deprecation headers | `ApiVersionLifecycleOptions` (via `AddSharedKernelApiVersioning`) |
+| Correlation-id format validation | `CorrelationIdOptions` (via `AddSharedKernelCorrelationId`) |
+| File/multipart upload validation | `UploadValidationOptions`, `RequireValidatedUploadAttribute`, `AddSharedKernelUploadValidation` |
 
 See the [Configuration Reference](../CONFIGURATION.md) for every DI extension method's options and
 defaults.
