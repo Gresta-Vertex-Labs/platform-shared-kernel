@@ -22,4 +22,11 @@ public static class WebhookSignatureHeaders
     /// The header carrying the Unix-seconds timestamp that was prefixed onto the signing input.
     /// </summary>
     public const string TimestampHeaderName = "X-Webhook-Timestamp";
+
+    /// <summary>
+    /// The header carrying the delivery id — a <see cref="Guid"/> generated once per delivery and
+    /// held stable across every retry attempt of that delivery, letting the subscriber deduplicate
+    /// re-sent requests.
+    /// </summary>
+    public const string DeliveryIdHeaderName = "X-Webhook-Delivery-Id";
 }
