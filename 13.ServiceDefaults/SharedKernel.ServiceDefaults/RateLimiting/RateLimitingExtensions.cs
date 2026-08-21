@@ -14,9 +14,13 @@ namespace SharedKernel.ServiceDefaults.RateLimiting;
 /// No new NuGet package — <c>Microsoft.AspNetCore.RateLimiting</c> ships inside the
 /// <c>Microsoft.AspNetCore.App</c> shared framework already referenced by this project. Entirely
 /// opt-in: never called from <c>AddServiceDefaults()</c>, and never references
-/// <c>14.Presentation</c> — a consuming service wanting a <c>ProblemDetails</c>-shaped rejection
-/// body attaches its own <c>RateLimiterOptions.OnRejected</c> delegate via the <c>configure</c>
-/// parameter on <see cref="AddSharedKernelRateLimiting"/> (below).
+/// <c>14.Presentation</c> — a consuming service wanting an RFC 9457 <c>ProblemDetails</c>-shaped
+/// rejection body attaches its own <c>RateLimiterOptions.OnRejected</c> delegate via the
+/// <c>configure</c> parameter on <see cref="AddSharedKernelRateLimiting"/> (below), calling
+/// <c>14.Presentation.WebApi</c>'s own <c>RateLimitRejectionProblemDetails.Create(HttpContext,
+/// TimeSpan?)</c> helper — the platform's only sanctioned way to shape that body. Both type names
+/// are named here in documentation/example code only; this project takes no compiled reference to
+/// <c>SharedKernel.Presentation.WebApi</c> in either direction.
 /// </remarks>
 public static class RateLimitingExtensions
 {
@@ -51,6 +55,21 @@ public static class RateLimitingExtensions
     /// <see cref="StatusCodes.Status429TooManyRequests"/>; <see cref="RateLimiterOptions.OnRejected"/>
     /// is left at the BCL default (a bare 429, no response body) unless <paramref name="configure"/>
     /// sets one.
+    /// </para>
+    /// <para>
+    /// A service that also references <c>SharedKernel.Presentation.WebApi</c> (<c>14.Presentation</c>)
+    /// and wants an RFC 9457 <c>ProblemDetails</c>-shaped rejection body sets
+    /// <see cref="RateLimiterOptions.OnRejected"/> inside <paramref name="configure"/> to extract the
+    /// limiter's suggested delay via <c>context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var
+    /// retryAfterMetadata)</c> (BCL <c>System.Threading.RateLimiting.MetadataName</c>) and call
+    /// <c>RateLimitRejectionProblemDetails.Create(context.HttpContext, retryAfterMetadata as
+    /// TimeSpan?)</c> — the platform's only sanctioned way to shape that body; hand-rolling a raw
+    /// <c>ProblemDetails</c> literal instead reproduces the inline-construction anti-pattern this
+    /// platform forbids everywhere else. See this package's <c>README.md</c> "Rate limiting" section
+    /// for the full worked recipe, proven by a compiled test
+    /// (<c>RateLimitRejectionRecipeTests</c>) via a test-only reference from the test project — this
+    /// production project takes no compiled reference to <c>SharedKernel.Presentation.WebApi</c> in
+    /// either direction.
     /// </para>
     /// <para>
     /// Entirely opt-in — must be paired with <c>app.UseRateLimiter()</c> after

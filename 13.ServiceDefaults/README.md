@@ -126,30 +126,37 @@ builder.AddSharedKernelRateLimiting(options =>
 });
 ```
 
-This domain never references `14.Presentation` — `RateLimiterOptions.OnRejected` is left at the BCL default (a bare `429`, no response body) unless a consumer supplies one. A service that also uses `14.Presentation.WebApi` and wants a consistent RFC 9457 `ProblemDetails` rejection body attaches its own `OnRejected` delegate via `configure`, in the SERVICE's own composition root — never a hard `ProjectReference` from `13.ServiceDefaults` to `14.Presentation`:
+This domain never references `14.Presentation` — `RateLimiterOptions.OnRejected` is left at the BCL default (a bare `429`, no response body) unless a consumer supplies one. A service that also uses `14.Presentation.WebApi` and wants a consistent RFC 9457 `ProblemDetails` rejection body attaches its own `OnRejected` delegate via `configure`, in the SERVICE's own composition root — never a hard `ProjectReference` from `13.ServiceDefaults` to `14.Presentation` — and calls that package's `RateLimitRejectionProblemDetails.Create(HttpContext, TimeSpan?)` helper to shape it. **This is the sanctioned way to build the rejection body — never hand-roll a raw `ProblemDetails` literal here**, mirroring `14.Presentation/CLAUDE.md`'s own "Rate-limit rejection bridge rules" (WO-062/P-408), which forbid exactly that construction pattern for every other 429 response on this platform:
 
 ```csharp
+using System.Threading.RateLimiting;
+using SharedKernel.Presentation.WebApi.RateLimiting;
+
 builder.AddSharedKernelRateLimiting(options =>
 {
     options.OnRejected = async (context, ct) =>
     {
-        // Built directly here — 429 (Too Many Requests) has no corresponding SharedKernel.Primitives
-        // Error/ErrorType member, since rate limiting is a transport-level concern, not a domain error.
-        // A service that models it as one may instead route this through its own Error type and
-        // 14.Presentation.WebApi's ErrorProblemDetailsExtensions.ToProblemDetails() for a byte-identical
-        // shape to its other error responses.
-        var problem = new ProblemDetails
-        {
-            Title = "rate_limit.exceeded",
-            Detail = "Too many requests — please retry later.",
-            Status = StatusCodes.Status429TooManyRequests,
-            Type = "https://httpstatuses.io/429",
-        };
-        context.HttpContext.Response.ContentType = "application/problem+json";
-        await context.HttpContext.Response.WriteAsJsonAsync(problem, ct);
+        // Recover the limiter's own suggested delay from the rejected lease (BCL
+        // System.Threading.RateLimiting.MetadataName) rather than inventing one.
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterMetadata)
+            ? retryAfterMetadata
+            : (TimeSpan?)null;
+
+        // The only sanctioned way to shape a rate-limit rejection into ProblemDetails — sets
+        // Status/Type/Extensions["traceId"] identically to every other error path, and — because
+        // retryAfter is supplied — also sets the real Retry-After response header itself.
+        var problemDetails = RateLimitRejectionProblemDetails.Create(context.HttpContext, retryAfter);
+
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            problemDetails,
+            options: null,
+            contentType: "application/problem+json",
+            cancellationToken: ct);
     };
 });
 ```
+
+`RateLimitRejectionProblemDetails.Create` sets the `Retry-After` HTTP response header itself (in whole seconds) whenever `retryAfter` is non-null, so proxies and client SDKs that already understand `Retry-After` work unmodified — the raw hand-rolled `ProblemDetails` this recipe replaced never set that header at all. This recipe is proven by a genuine compiled test (`RateLimitRejectionRecipeTests`, `SharedKernel.ServiceDefaults.Tests`) driving a real host through both the rejected request (429, `application/problem+json`, a `RateLimitRejectionProblemDetails`-shaped body, a parseable `Retry-After` header) and the no-recipe call shape (still the byte-identical BCL default — empty body, no `Retry-After`), via a **test-only** `ProjectReference` from the test project to `SharedKernel.Presentation.WebApi` — the production `SharedKernel.ServiceDefaults.csproj` takes no reference to `14.Presentation` in either direction.
 
 ### Secrets-manager configuration
 
