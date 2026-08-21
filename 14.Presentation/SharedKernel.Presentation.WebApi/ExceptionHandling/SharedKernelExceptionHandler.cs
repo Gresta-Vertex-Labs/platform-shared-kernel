@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SharedKernel.Core.Exceptions;
 using SharedKernel.Presentation.WebApi.Errors;
+using SharedKernel.Presentation.WebApi.Http;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Logging;
 
@@ -25,6 +27,16 @@ namespace SharedKernel.Presentation.WebApi.ExceptionHandling;
 /// <see cref="ErrorProblemDetailsExtensions.ToProblemDetails(Error, HttpContext?)"/>; unknown
 /// exceptions fall back to a generic 500 <see cref="Microsoft.AspNetCore.Mvc.ProblemDetails"/> with
 /// <c>Detail</c> suppressed outside <c>IHostEnvironment.IsDevelopment()</c>.
+/// </para>
+/// <para>
+/// <see cref="BadHttpRequestException"/> — thrown by Kestrel/the HTTP request-body pipeline for a
+/// body exceeding the configured maximum size (see <c>PayloadLimits.UseSharedKernelPayloadLimits</c>)
+/// — is also checked before the generic unknown-exception fallback. Its own carried
+/// <see cref="BadHttpRequestException.StatusCode"/> (413 for the body-too-large case) is mapped
+/// through the shared <see cref="Http.ProblemDetailsShaping"/> helper instead of forcing 500, and
+/// its <see cref="Exception.Message"/> is never suppressed by the development-only detail gate —
+/// unlike an arbitrary unknown exception, this message is a framework-authored, client-safe string
+/// purpose-built for exactly this response.
 /// </para>
 /// <para>
 /// Always logs the full exception at <see cref="LogLevel.Error"/> before writing the response, and
@@ -71,7 +83,11 @@ public sealed partial class SharedKernelExceptionHandler : IExceptionHandler
 
         var problemDetails = BuildProblemDetails(exception, httpContext);
 
-        if (!_environment.IsDevelopment() && exception is not SharedKernelException)
+        // BadHttpRequestException carries a framework-authored, client-safe message purpose-built
+        // for exactly this response (e.g. "Request body too large. The max request body size is
+        // N bytes.") — it must never be replaced by the generic redacted message, mirroring the
+        // existing SharedKernelException exemption.
+        if (!_environment.IsDevelopment() && exception is not (SharedKernelException or BadHttpRequestException))
         {
             problemDetails.Detail = UnexpectedErrorMessage;
         }
@@ -89,8 +105,22 @@ public sealed partial class SharedKernelExceptionHandler : IExceptionHandler
         // every failing field's Error, not just Errors[0] (which base.Error is set to).
         ValidationException validationException => validationException.ToProblemDetails(httpContext),
         SharedKernelException sharedKernelException => sharedKernelException.Error.ToProblemDetails(httpContext),
+        // Checked BEFORE the generic unknown-exception fallback: BadHttpRequestException already
+        // carries the correct status code (413 for a body exceeding
+        // PayloadLimitsOptions.MaxRequestBodySizeBytes) and a client-safe message — mapping it to a
+        // generic 500 would both misreport the status and discard useful, already-safe detail.
+        BadHttpRequestException badHttpRequestException => BuildBadHttpRequestProblemDetails(badHttpRequestException, httpContext),
         _ => Error.Unexpected(UnexpectedErrorCode, UnexpectedErrorMessage).ToProblemDetails(httpContext),
     };
+
+    private static Microsoft.AspNetCore.Mvc.ProblemDetails BuildBadHttpRequestProblemDetails(
+        BadHttpRequestException exception,
+        HttpContext httpContext)
+        => ProblemDetailsShaping.Create(
+            exception.StatusCode,
+            ReasonPhrases.GetReasonPhrase(exception.StatusCode),
+            exception.Message,
+            httpContext);
 
     /// <summary>
     /// Source-generated log messages for <see cref="SharedKernelExceptionHandler"/>.
