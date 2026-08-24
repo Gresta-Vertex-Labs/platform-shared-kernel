@@ -91,6 +91,19 @@ public sealed class FakeRenewableLock : IRenewableLock
     public int RenewalCount { get; private set; }
 
     /// <summary>
+    /// Gets or sets the fencing token reported by this fake lock.
+    /// </summary>
+    /// <remarks>
+    /// Minimal compile-time-only implementation of <c>02.Caching</c> Phase 43's
+    /// <c>IFencedLock.FencingToken</c> requirement (added to <c>IRenewableLock</c>).
+    /// Defaults to <c>1</c> and does not auto-increment on <see cref="RenewAsync"/> —
+    /// a caller-driven, behaviorally-faithful fake (auto-incrementing on renewal, with
+    /// dedicated test coverage) remains a queued follow-up for this domain, out of
+    /// <c>02.Caching</c>'s jurisdiction (see <c>02.Caching/CLAUDE.md</c>, Phase 43, FT-10).
+    /// </remarks>
+    public long FencingToken { get; set; } = 1;
+
+    /// <summary>
     /// When <see langword="true"/>, <see cref="RenewAsync"/> returns
     /// <see langword="false"/> and sets <see cref="IsAcquired"/> to
     /// <see langword="false"/>, simulating a lost lock.

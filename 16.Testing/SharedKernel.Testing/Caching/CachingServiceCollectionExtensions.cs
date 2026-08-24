@@ -60,6 +60,27 @@ public static class CachingServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers <see cref="FakeTenantCacheService"/> as <see cref="ITenantCacheService"/>, singleton.
+    /// </summary>
+    /// <remarks>
+    /// A standalone call, deliberately not bundled into <see cref="AddFakeCachingServices"/> —
+    /// mirroring <see cref="AddFakeTypedHashStore{T}"/>/<see cref="AddFakeCacheWarmupStrategy"/>'s
+    /// existing standalone-registration precedent. This matches the real, production
+    /// <c>AddTenantCacheService(this ICachingBuilder)</c> extension's own documented relationship
+    /// to <c>AddTenantCacheKeyProvider()</c>: additive, never a replacement.
+    /// </remarks>
+    /// <param name="services">The service collection to register against.</param>
+    /// <returns><paramref name="services"/>, for fluent chaining.</returns>
+    public static IServiceCollection AddFakeTenantCacheService(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddSingleton<ITenantCacheService, FakeTenantCacheService>();
+
+        return services;
+    }
+
+    /// <summary>
     /// Registers a new <see cref="FakeCacheWarmupStrategy"/> as <see cref="ICacheWarmupStrategy"/>,
     /// singleton.
     /// </summary>
