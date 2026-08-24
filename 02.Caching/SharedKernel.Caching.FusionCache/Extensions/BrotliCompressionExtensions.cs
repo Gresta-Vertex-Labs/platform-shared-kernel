@@ -33,6 +33,12 @@ public static class BrotliCompressionExtensions
     /// Thrown when <see cref="CachingOptions.CompressionOptions.L2ThresholdBytes"/> is not
     /// greater than zero after applying <paramref name="configure"/>.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when cache-value encryption (<c>AddCacheEncryption()</c>) has already been applied —
+    /// compression must always be the innermost decorator so encryption wraps it, producing
+    /// compress-then-encrypt on write. Call <c>AddBrotliCompression()</c> before
+    /// <c>AddCacheEncryption()</c>, never after.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Must be called <em>after</em> <c>AddSharedKernelCaching</c> so that the base
@@ -53,6 +59,13 @@ public static class BrotliCompressionExtensions
         Action<CachingOptions.CompressionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        if (builder.Services.Any(sd => sd.ServiceType == typeof(CacheEncryptionOptions)))
+        {
+            throw new InvalidOperationException(
+                "Brotli compression must be registered before cache encryption — call "
+                    + "AddBrotliCompression() before AddCacheEncryption(), never after.");
+        }
 
         var opts = new CachingOptions.CompressionOptions();
         configure?.Invoke(opts);

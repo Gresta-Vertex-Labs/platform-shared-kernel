@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using RedLockNet;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Primitives.Logging;
+using StackExchange.Redis;
 
 namespace SharedKernel.Caching.Redis.DistributedLocking;
 
@@ -21,6 +22,14 @@ namespace SharedKernel.Caching.Redis.DistributedLocking;
 /// <c>DisposeAsync</c> releases the currently held RedLock handle and transitions
 /// <see cref="IsAcquired"/> to <see langword="false"/>.
 /// </para>
+/// <para>
+/// Implements <see cref="IFencedLock"/> (Phase 43) via <see cref="IRenewableLock"/>.
+/// <see cref="FencingToken"/> is sourced from an atomic per-resource Redis counter
+/// (<see cref="RedisFencingTokenSource"/>) and is refreshed with a fresh <c>INCR</c> on
+/// every successful renewal — see <see cref="RenewAsync"/> — so the token observed after
+/// a renewal is always strictly greater than the token observed before it, directly
+/// mitigating the "brief unprotected window" hazard described above.
+/// </para>
 /// </remarks>
 internal sealed partial class RedLockRenewableLock : IRenewableLock
 {
@@ -28,6 +37,7 @@ internal sealed partial class RedLockRenewableLock : IRenewableLock
     private IRedLock _redLock;
 
     private readonly IDistributedLockFactory _factory;
+    private readonly IConnectionMultiplexer _multiplexer;
     private readonly string _resource;
     private readonly TimeSpan _expiry;
     private readonly TimeSpan _renewalWait;
@@ -44,23 +54,30 @@ internal sealed partial class RedLockRenewableLock : IRenewableLock
     internal RedLockRenewableLock(
         IRedLock redLock,
         IDistributedLockFactory factory,
+        IConnectionMultiplexer multiplexer,
         string resource,
         TimeSpan expiry,
         TimeSpan renewalWait,
         TimeSpan renewalRetry,
+        long fencingToken,
         ILogger logger)
     {
         _redLock = redLock;
         _factory = factory;
+        _multiplexer = multiplexer;
         _resource = resource;
         _expiry = expiry;
         _renewalWait = renewalWait;
         _renewalRetry = renewalRetry;
+        FencingToken = fencingToken;
         _logger = logger;
     }
 
     /// <inheritdoc />
     public bool IsAcquired => !_disposed && _redLock.IsAcquired;
+
+    /// <inheritdoc />
+    public long FencingToken { get; private set; }
 
     /// <inheritdoc />
     public async ValueTask<bool> RenewAsync(CancellationToken ct = default)
@@ -125,10 +142,17 @@ internal sealed partial class RedLockRenewableLock : IRenewableLock
                 return false;
             }
 
-            // New lock acquired — replace the stored handle.
+            // New lock acquired — replace the stored handle and issue a fresh fencing token.
+            // This is what makes the post-renewal handle detectable as superseding the
+            // pre-renewal handle: a write attempted from the stale handle after a write from
+            // the new handle has already been accepted is rejectable by a downstream
+            // "reject non-increasing token" guard, even though RedLock itself cannot prevent
+            // the stale handle from attempting the write in the first place.
             _redLock = newLock;
+            FencingToken = await RedisFencingTokenSource.NextAsync(_multiplexer, _resource)
+                .ConfigureAwait(false);
 
-            Log.LockRenewed(_logger, _resource, _expiry);
+            Log.LockRenewed(_logger, _resource, _expiry, FencingToken);
             return true;
         }
         finally
@@ -174,8 +198,9 @@ internal sealed partial class RedLockRenewableLock : IRenewableLock
         internal static partial void RenewalFailed(ILogger logger, string resource, Exception ex);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 310, Level = LogLevel.Debug,
-            Message = "Renewable lock on '{Resource}' renewed successfully (new expiry: {Expiry})")]
-        internal static partial void LockRenewed(ILogger logger, string resource, TimeSpan expiry);
+            Message = "Renewable lock on '{Resource}' renewed successfully (new expiry: {Expiry}, " +
+                "new fencing token={FencingToken})")]
+        internal static partial void LockRenewed(ILogger logger, string resource, TimeSpan expiry, long fencingToken);
 
         [LoggerMessage(EventId = LoggingEventIdRanges.Caching + 311, Level = LogLevel.Debug,
             Message = "Releasing renewable lock on '{Resource}'")]

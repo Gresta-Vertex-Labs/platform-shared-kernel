@@ -31,6 +31,10 @@
     <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
     <!-- Polly v8 resilience pipeline for the opt-in circuit breaker -->
     <PackageReference Include="Polly.Core" Version="8.5.2" />
+    <!-- RedisConnectionOptions.ValidateDataAnnotations() fail-fast validation (Phase 45) -->
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />
+    <!-- RedisConnectionOptions.ValidateOnStart() host-startup validation (Phase 45) -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <!-- Caching abstractions — ConnectionHealthState (Phase 26) -->
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
     <!-- LoggingEventIdRanges.Caching — this domain's reserved EventId block base (Phase 37, WO-041) -->

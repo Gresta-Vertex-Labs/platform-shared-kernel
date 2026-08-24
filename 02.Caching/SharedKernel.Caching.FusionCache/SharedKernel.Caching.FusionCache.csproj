@@ -41,6 +41,8 @@
     <ProjectReference Include="..\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
     <!-- LoggingEventIdRanges.Caching — this domain's reserved EventId block base (Phase 37, WO-041) -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <!-- ISymmetricEncryptionService — opt-in AES-GCM cache-value encryption (Phase 42, WO-065) -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
 
   <ItemGroup>

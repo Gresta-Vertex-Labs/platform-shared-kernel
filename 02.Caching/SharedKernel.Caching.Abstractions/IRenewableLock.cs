@@ -21,6 +21,12 @@ namespace SharedKernel.Caching.Abstractions;
 /// Use the <c>KeepAliveAsync</c> extension method in <c>SharedKernel.Caching.Redis</c>
 /// to automatically renew the lock on a configurable interval in the background.
 /// </para>
+/// <para>
+/// Extends <see cref="IFencedLock"/> — <see cref="IFencedLock.FencingToken"/> reflects the
+/// most recent successful acquisition of this lock. A dispose-then-recreate renewal (see
+/// <see cref="RenewAsync"/>) issues a fresh token on every successful renewal, so the token
+/// observed after a renewal is always strictly greater than the token observed before it.
+/// </para>
 /// <para>Example:
 /// <code>
 /// await using var renewableLock = await lockService.AcquireRenewableAsync(
@@ -40,7 +46,7 @@ namespace SharedKernel.Caching.Abstractions;
 /// </code>
 /// </para>
 /// </remarks>
-public interface IRenewableLock : IAsyncDisposable
+public interface IRenewableLock : IFencedLock
 {
     /// <summary>
     /// Gets a value indicating whether this lock is currently held.
