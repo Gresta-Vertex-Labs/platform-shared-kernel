@@ -16,12 +16,17 @@
     </PackageReference>
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <!-- DI host for registration sanity tests -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <!-- Version bumped to match SharedKernel.Testing's transitive floor (repo-wide drift, see Phases 42/43) -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
     <!-- Logging null provider for tests -->
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <!-- Version bumped to match SharedKernel.Testing's transitive floor (repo-wide drift, see Phases 42/43) -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.9" />
     <!-- StackExchange.Redis — required for IConnectionMultiplexer mocking -->
     <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
-    <PackageReference Include="Polly.Core" Version="8.5.2" />
+    <!-- Version bumped to match SharedKernel.Testing's transitive floor (repo-wide drift, see Phases 42/43) -->
+    <PackageReference Include="Polly.Core" Version="8.7.0" />
+    <!-- Fail-fast options validation surface under test (Phase 45) -->
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>

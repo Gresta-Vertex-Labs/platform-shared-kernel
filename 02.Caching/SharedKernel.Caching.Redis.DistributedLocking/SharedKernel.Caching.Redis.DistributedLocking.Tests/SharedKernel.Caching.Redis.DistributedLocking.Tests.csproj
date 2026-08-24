@@ -18,9 +18,11 @@
     <!-- Testcontainers Redis for integration tests -->
     <PackageReference Include="Testcontainers.Redis" Version="4.13.0" />
     <!-- DI host for integration-style DI registration tests -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <!-- Version floor raised to match SharedKernel.Testing's transitive minimum (NU1605 downgrade guard) -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
     <!-- Logging null provider for tests -->
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <!-- Version floor raised to match SharedKernel.Testing -> Microsoft.EntityFrameworkCore.Sqlite's transitive minimum (NU1605 downgrade guard) -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.9" />
     <!-- StackExchange.Redis — required for IConnectionMultiplexer in test assertions -->
     <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
   </ItemGroup>

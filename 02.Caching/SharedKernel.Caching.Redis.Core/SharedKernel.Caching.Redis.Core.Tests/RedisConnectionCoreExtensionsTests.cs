@@ -86,16 +86,19 @@ public sealed class RedisConnectionCoreExtensionsTests
     [Fact]
     public void AddRedisConnection_WithConfigureDelegate_AppliesConnectTimeout()
     {
+        // Phase 45 (WO-065/P-436): RedisConnectionOptions is now registered via
+        // services.AddOptions<RedisConnectionOptions>().Configure(...) — the configure delegate is
+        // invoked lazily, when IOptions<RedisConnectionOptions>.Value is first resolved, rather than
+        // synchronously inside AddRedisConnection itself. This test observes the applied value via a
+        // real DI resolution instead of a side-channel capture, matching that (correct) semantics.
         var services = new ServiceCollection();
-        var observed = new RedisConnectionOptions();
 
-        services.AddRedisConnection("localhost:6379", o =>
-        {
-            o.ConnectTimeoutMs = 1234;
-            observed.ConnectTimeoutMs = o.ConnectTimeoutMs;
-        });
+        services.AddRedisConnection("localhost:6379", o => o.ConnectTimeoutMs = 1234);
 
-        Assert.Equal(1234, observed.ConnectTimeoutMs);
+        var provider = services.BuildServiceProvider();
+        var resolved = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisConnectionOptions>>().Value;
+
+        Assert.Equal(1234, resolved.ConnectTimeoutMs);
         Assert.Single(services, d => d.ServiceType == typeof(IConnectionMultiplexer));
     }
 
