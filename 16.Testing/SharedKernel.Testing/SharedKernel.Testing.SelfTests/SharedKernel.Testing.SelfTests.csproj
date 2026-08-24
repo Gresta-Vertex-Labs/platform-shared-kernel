@@ -15,6 +15,15 @@
       classes, faker-seeding conventions, recorder/double self-checks).
     -->
     <ProjectReference Include="..\SharedKernel.Testing.csproj" />
+
+    <!--
+      T-88/P-438/WO-065: test-only proof dependency on a real production package, mirroring the
+      precedent documented at Security/ApiKeyRotationScenarioBuilderTests.cs (T-84) — proves that
+      Cryptography/FakeSymmetricEncryptionService genuinely satisfies AddCacheEncryption()'s
+      ISymmetricEncryptionService prerequisite. SharedKernel.Testing itself never takes this
+      reference; only this SelfTests project does, for this one interop proof.
+    -->
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
   </ItemGroup>
 
   <ItemGroup>
