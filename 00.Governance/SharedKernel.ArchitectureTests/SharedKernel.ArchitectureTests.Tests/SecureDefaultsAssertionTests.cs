@@ -2,7 +2,12 @@ using System.Reflection;
 using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Cryptography.Symmetric;
 using Xunit;
+using ZiggyCreatures.Caching.Fusion.Serialization;
+using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
 namespace SharedKernel.ArchitectureTests.Tests;
 
@@ -77,6 +82,35 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// <c>PrivateNetworkWebhookUrlValidator</c> against a fixed IP-literal table — the first executed
 /// (not IL-only) real-assembly test in this file, per that method's own remarks explaining why no
 /// static technique can honestly prove range-membership behavior.
+/// </para>
+/// <para>
+/// T-337–T-340 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437): the second phase
+/// in this family to lock TWO independent facts with two different techniques (after
+/// <c>SK.00.WebhookSsrfGuardLock</c>). Technique A — T-337, a genuinely EXECUTED real-assembly
+/// test (the SECOND in this file, after <c>SK.00.WebhookSsrfGuardLock</c>'s T-336) building the
+/// real, shipped <c>ICachingBuilder.AddBrotliCompression()</c> + <c>.AddCacheEncryption()</c>
+/// composed pipeline (<c>SharedKernel.Caching.FusionCache</c>), serializing a highly-compressible
+/// payload through it, and asserting the stored-byte output is meaningfully smaller than an
+/// encrypt-only baseline built directly via <c>ISymmetricEncryptionService</c> — proving compression
+/// genuinely ran before encryption, plus a round-trip-correctness precondition. Lives directly in
+/// this file rather than as a reusable <see cref="SecureDefaultsAssertion"/> method, per that
+/// class's own Technique 5/T-336 precedent for a computed-behavior check no static IL technique can
+/// honestly prove. Technique B — T-338/T-339 (contrived pass/fire-path fixtures) and T-340 (GATING,
+/// real-assembly) — reuses the EXISTING <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>
+/// unchanged, re-pointed at the real, shipped <c>RedisConnectionCoreExtensions.AddRedisConnection</c>
+/// (<c>SharedKernel.Caching.Redis.Core</c>), asserting a call to
+/// <c>Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions.ValidateOnStart</c> —
+/// CORRECTED at implementation time from this phase's own authoring-time Rule 6, which named
+/// <c>Microsoft.Extensions.Options.OptionsBuilderExtensions</c> instead (the real extension method
+/// lives in the <c>Microsoft.Extensions.Options</c> NuGet package but under the
+/// <c>Microsoft.Extensions.DependencyInjection</c> namespace). Both <c>02.Caching</c> Cross-Domain
+/// Dependencies (P-433/P-436) were CONFIRMED RESOLVED on disk before this phase's implementation
+/// session — that domain had already shipped its full Phase 42/Phase 45 scope (WO-065) past Design
+/// into Core, mirroring this file's own now-nine-times-repeated dependency-resolved-before-
+/// implementation pattern. The real <c>AddRedisConnection</c> call site
+/// (<c>services.AddOptions&lt;RedisConnectionOptions&gt;().Configure(...).ValidateDataAnnotations().ValidateOnStart()</c>)
+/// lives directly in its own IL body, not inside a lambda closure, so no closure-scanning extension
+/// is exercised by this particular call site.
 /// </para>
 /// </remarks>
 public class SecureDefaultsAssertionTests
@@ -1516,6 +1550,347 @@ public class SecureDefaultsAssertionTests
     }
 
     // ---------------------------------------------------------------------------
+    // T-337 — Real-assembly, EXECUTED verification: AddCacheEncryption() composition ordering
+    // (Technique A)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-337 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437): builds the real,
+    /// shipped <c>ICachingBuilder.AddBrotliCompression()</c> + <c>.AddCacheEncryption()</c>
+    /// composed pipeline (<c>SharedKernel.Caching.FusionCache</c>) and confirms compression
+    /// genuinely runs before encryption on write.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Deliberate departure from this file's IL-only discipline.</strong> Every
+    /// <see cref="SecureDefaultsAssertion"/> method proves a STRUCTURAL fact via Mono.Cecil IL
+    /// inspection, never executing the assembly under test. "Compression ran before encryption" is
+    /// a COMPUTED BEHAVIOR of two composed <c>IFusionCacheSerializer</c> decorator stages whose
+    /// concrete representation is not something a sound, representation-agnostic static IL
+    /// technique could honestly prove — mirroring <c>SK.00.WebhookSsrfGuardLock</c>'s own T-336
+    /// precedent exactly. This is the SECOND genuinely EXECUTED real-assembly test in this file,
+    /// living directly here rather than as a reusable <see cref="SecureDefaultsAssertion"/> method,
+    /// since it is a one-off assertion tied to one real pipeline.
+    /// </para>
+    /// <para>
+    /// <strong>Black-box, representation-agnostic.</strong> This test makes no assumption about
+    /// <c>CacheEncryptionSerializer</c>'s/<c>BrotliCacheSerializer</c>'s internal class shapes —
+    /// only the public <c>AddCacheEncryption()</c>/<c>AddBrotliCompression()</c> entry points and
+    /// the resulting <c>IFusionCacheSerializer.Serialize</c>/<c>Deserialize</c> round trip. It
+    /// serializes a highly-compressible payload (8192 repeated characters, well above
+    /// <c>CachingOptions.CompressionOptions.L2ThresholdBytes</c>'s 1024-byte default) through the
+    /// composed pipeline and captures the stored-byte length. It separately encrypts the SAME
+    /// serialized payload — resolved from the real inner STJ serializer, so this is byte-for-byte
+    /// what the pipeline itself feeds into compression/encryption — directly via
+    /// <c>ISymmetricEncryptionService</c> (no compression) as a baseline. If the real composition
+    /// order were reversed (encrypt-then-attempt-compress), compressing high-entropy ciphertext
+    /// would yield near-zero size reduction — a well-known property of general-purpose compression
+    /// against high-entropy input — so this assertion correctly fails and catches the exact
+    /// regression this phase exists to prevent.
+    /// </para>
+    /// <para>
+    /// <strong>Round-trip-correctness precondition</strong> (Implementation Rule 3). Decrypting and
+    /// decompressing the pipeline's stored bytes via its own read path must recover the original
+    /// payload exactly — guarding against the size-reduction assertion accidentally passing against
+    /// corrupted or no-op output rather than genuine compress-then-encrypt behavior.
+    /// </para>
+    /// <para>
+    /// <strong>DOCUMENTED LIMITATION</strong> (same class as every other technique in this file): a
+    /// size-ratio threshold is a reliable, low-false-positive signal for any straightforward
+    /// correct-vs-reversed implementation, not a byte-exact structural proof of instruction
+    /// ordering. The acceptance bar this test proves is "the shipped pipeline's observable size
+    /// behavior is consistent with compress-then-encrypt," not "the pipeline's IL provably calls
+    /// Compress before Encrypt in every code path."
+    /// </para>
+    /// <para>
+    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
+    /// tracked <c>02.Caching</c> P-433 (its own Phase 42, <c>CacheEncryptionAtRest</c>) as
+    /// <c>○</c> Not started — CONFIRMED RESOLVED on disk before this phase's implementation session:
+    /// that domain had already shipped its full Phase 42 scope (<c>CacheEncryptionSerializer</c>/
+    /// <c>CacheEncryptionCachingBuilderExtensions</c> both real and shipped inside
+    /// <c>SharedKernel.Caching.FusionCache</c>) before this phase's implementation session began,
+    /// mirroring this file's own now-nine-times-repeated dependency-resolved-before-implementation
+    /// pattern.
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
+    /// inverting the expected size relationship (asserting the pipeline output must be LARGER than
+    /// the baseline), confirmed to fail, then reverted before commit.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void CacheEncryptionPipeline_RealAddCacheEncryption_CompressesBeforeEncrypting()
+    {
+        var services = new ServiceCollection();
+
+        var keyProvider = new FixtureEncryptionKeyProvider();
+        var encryptionService = new AesGcmEncryptionService(keyProvider);
+        services.AddSingleton<ISymmetricEncryptionService>(encryptionService);
+
+        services
+            .AddSharedKernelCaching(o => o.ServiceName = "cache-encryption-ordering-test")
+            .AddBrotliCompression()
+            .AddCacheEncryption();
+
+        using var provider = services.BuildServiceProvider();
+        var serializer = provider.GetRequiredService<IFusionCacheSerializer>();
+
+        // A highly compressible payload, well above CompressionOptions.L2ThresholdBytes's
+        // 1024-byte default threshold — repeated-character input compresses to a tiny fraction of
+        // its original size under Brotli, but is incompressible once already AES-GCM encrypted.
+        var payload = new string('A', 8192);
+
+        var pipelineOutput = serializer.Serialize(payload);
+
+        // Round-trip-correctness precondition (Implementation Rule 3).
+        var roundTripped = serializer.Deserialize<string>(pipelineOutput);
+        roundTripped.Should().Be(
+            payload,
+            because: "the composed pipeline's read path must recover the original payload " +
+                     "exactly, guarding against the size assertion below passing against " +
+                     "corrupted or no-op output");
+
+        // Baseline: the SAME serialized bytes (resolved from the real inner STJ serializer, so
+        // this is byte-for-byte what the pipeline itself feeds into compression/encryption),
+        // encrypted directly with no compression.
+        var innerSerializer = provider.GetRequiredService<FusionCacheSystemTextJsonSerializer>();
+        var innerBytes = innerSerializer.Serialize(payload);
+        var baseline = encryptionService.Encrypt(innerBytes);
+        var baselineLength =
+            baseline.Nonce.Length
+            + baseline.Tag.Length
+            + baseline.Ciphertext.Length
+            + System.Text.Encoding.UTF8.GetByteCount(baseline.KeyId);
+
+        pipelineOutput.Length.Should().BeLessThan(
+            baselineLength / 2,
+            because: "compress-then-encrypt must produce a meaningfully smaller stored payload " +
+                     "than encrypt-only for a highly compressible input — if the real composition " +
+                     "order were reversed, compressing already-encrypted high-entropy ciphertext " +
+                     "would yield near-zero size reduction (WO-065, P-433)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-338 — AssertMethodBodyInvokesMethod pass path: ValidateOnStart() call present
+    // (Technique B)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-338 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437): A fixture method
+    /// body shaped after the real <c>AddRedisConnection</c>'s options-registration pattern —
+    /// calling <c>OptionsBuilder&lt;T&gt;.ValidateOnStart()</c> directly in its own fluent chain —
+    /// must pass <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_RedisValidateOnStartCallPresent_DoesNotThrow()
+    {
+        const string source = """
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Fixture.SecureDefaults
+            {
+                public sealed class FixtureRedisConnectionOptions
+                {
+                    public string ConnectionString { get; set; } = string.Empty;
+                }
+
+                // Compliant: mirrors the real AddRedisConnection shape — registers the options
+                // type and genuinely calls ValidateOnStart() so Microsoft.Extensions.Options's own
+                // startup-validation machinery runs eagerly at IHost.StartAsync().
+                public static class FixtureRedisConnectionExtensionsPresent
+                {
+                    public static IServiceCollection AddFixtureRedisConnection(
+                        this IServiceCollection services, string connectionString)
+                    {
+                        services
+                            .AddOptions<FixtureRedisConnectionOptions>()
+                            .Configure(o => o.ConnectionString = connectionString)
+                            .ValidateOnStart();
+
+                        return services;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsRedisValidateOnStartPresent", source);
+        var declaringType =
+            assembly.GetType("Fixture.SecureDefaults.FixtureRedisConnectionExtensionsPresent")!;
+        var calleeDeclaringType =
+            typeof(Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions);
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "AddFixtureRedisConnection", calleeDeclaringType, "ValidateOnStart");
+
+        act.Should().NotThrow(
+            because: "the fixture's AddFixtureRedisConnection method genuinely calls " +
+                     "ValidateOnStart() in its own fluent options-registration chain");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-339 — AssertMethodBodyInvokesMethod fire path: ValidateOnStart() call removed
+    // (Technique B)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-339 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437): An otherwise-
+    /// identical fixture method body with the <c>ValidateOnStart()</c> call removed — reproducing
+    /// the exact "eager startup validation silently deleted/never wired in a future edit"
+    /// regression this check exists to prevent — must fail
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// </summary>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_RedisValidateOnStartCallRemoved_ThrowsNamingMethod()
+    {
+        const string source = """
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Fixture.SecureDefaults
+            {
+                public sealed class FixtureRedisConnectionOptions
+                {
+                    public string ConnectionString { get; set; } = string.Empty;
+                }
+
+                // Violation: identical in shape to the compliant fixture, but the
+                // ValidateOnStart() call was silently deleted — RedisConnectionOptions's
+                // DataAnnotations would only ever be checked lazily on first options access, if at
+                // all, never eagerly at host startup.
+                public static class FixtureRedisConnectionExtensionsRemoved
+                {
+                    public static IServiceCollection AddFixtureRedisConnection(
+                        this IServiceCollection services, string connectionString)
+                    {
+                        services
+                            .AddOptions<FixtureRedisConnectionOptions>()
+                            .Configure(o => o.ConnectionString = connectionString);
+
+                        return services;
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SecureDefaultsRedisValidateOnStartRemoved", source);
+        var declaringType =
+            assembly.GetType("Fixture.SecureDefaults.FixtureRedisConnectionExtensionsRemoved")!;
+        var calleeDeclaringType =
+            typeof(Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions);
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "AddFixtureRedisConnection", calleeDeclaringType, "ValidateOnStart");
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's AddFixtureRedisConnection method no longer calls " +
+                         "ValidateOnStart() — the eager startup-validation call site was removed")
+            .WithMessage("*AddFixtureRedisConnection*")
+            .WithMessage("*ValidateOnStart*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-340 — Real-assembly verification (GATING): SharedKernel.Caching.Redis.Core
+    // (Technique B)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-340 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437): Re-points
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> at the real, shipped
+    /// <c>RedisConnectionCoreExtensions.AddRedisConnection</c> and confirms it still calls
+    /// <c>OptionsBuilderExtensions.ValidateOnStart</c> — proving <c>RedisConnectionOptions</c>'s
+    /// <c>[Required]</c>/<c>[Range]</c> <c>DataAnnotations</c> are genuinely enforced eagerly at
+    /// host-startup time, not merely decorative.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
+    /// tracked <c>02.Caching</c> P-436 (its own Phase 45, <c>RedisTransportHardening</c>) as
+    /// <c>○</c> Not started — CONFIRMED RESOLVED on disk before this phase's implementation
+    /// session: that domain had already shipped its full Phase 45 scope
+    /// (<c>RedisConnectionCoreExtensions.AddRedisConnection</c> wired to
+    /// <c>.ValidateDataAnnotations().ValidateOnStart()</c>) before this phase's implementation
+    /// session began, mirroring this file's own now-nine-times-repeated dependency-resolved-
+    /// before-implementation pattern.
+    /// </para>
+    /// <para>
+    /// <strong>Declaring-type/namespace correction applied.</strong> This phase's own
+    /// authoring-time Implementation Rule 6 named <c>calleeDeclaringType</c> as
+    /// <c>Microsoft.Extensions.Options.OptionsBuilderExtensions</c> — confirmed WRONG at
+    /// implementation time. The real extension method
+    /// <c>ValidateOnStart&lt;TOptions&gt;(this OptionsBuilder&lt;TOptions&gt;)</c> is declared in
+    /// the <c>Microsoft.Extensions.Options</c> NuGet package, but under the
+    /// <c>Microsoft.Extensions.DependencyInjection</c> namespace — the real, shipped
+    /// <c>RedisConnectionCoreExtensions.AddRedisConnection</c> resolves it that way, confirmed by
+    /// direct inspection before this test was written, per this rule's own "confirm, never assume"
+    /// instruction. Rule 6/T-340's design-time text in <c>state-map.md</c> was corrected to match
+    /// in the same pass.
+    /// </para>
+    /// <para>
+    /// <strong>No new <c>ProjectReference</c> needed.</strong> Unlike every other GATING
+    /// real-assembly test's Cross-Domain Dependency resolution in this file,
+    /// <c>SharedKernel.Caching.Redis.Core</c> was already referenced by
+    /// <c>SharedKernel.ArchitectureTests.Tests.csproj</c> (added for
+    /// <c>RedisTopologyRulesTests</c>) — this test simply reuses that existing reference.
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
+    /// asserting a deliberately-wrong callee method name against this exact real method, confirmed
+    /// to fail, then reverted before commit. The real call site
+    /// (<c>services.AddOptions&lt;RedisConnectionOptions&gt;().Configure(...)
+    /// .ValidateDataAnnotations().ValidateOnStart()</c>) lives directly in
+    /// <c>AddRedisConnection</c>'s own IL body, not inside a lambda closure, so no
+    /// closure-scanning extension is exercised by this particular call site (that extension
+    /// remains proven by T-318/T-328/T-331's own real call sites).
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AssertMethodBodyInvokesMethod_RealAddRedisConnection_ValidateOnStartCallSiteHolds()
+    {
+        var declaringType =
+            typeof(SharedKernel.Caching.Redis.Core.Extensions.RedisConnectionCoreExtensions);
+        var calleeDeclaringType =
+            typeof(Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions);
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "AddRedisConnection", calleeDeclaringType, "ValidateOnStart");
+
+        act.Should().NotThrow(
+            because: "the real, shipped AddRedisConnection still calls ValidateOnStart() so " +
+                     "RedisConnectionOptions's DataAnnotations are genuinely enforced eagerly at " +
+                     "host startup (WO-065, P-436)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-337 fixture helper
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Minimal <see cref="IEncryptionKeyProvider"/> test double for T-337 — seeds one fresh
+    /// 32-byte AES-256 key. Deliberately local to this file rather than a shared
+    /// <c>16.Testing</c> fake, mirroring this file's own established "governance test project
+    /// supplies its own minimal fixture" convention for real-assembly checks.
+    /// </summary>
+    private sealed class FixtureEncryptionKeyProvider : IEncryptionKeyProvider
+    {
+        private readonly CryptographicKey _key;
+
+        public FixtureEncryptionKeyProvider()
+        {
+            var material = new byte[32];
+            System.Security.Cryptography.RandomNumberGenerator.Fill(material);
+            _key = new CryptographicKey("secure-defaults-fixture-key", material);
+        }
+
+        public CryptographicKey GetCurrentKey() => _key;
+
+        public CryptographicKey? GetKey(string keyId) =>
+            string.Equals(keyId, _key.Id, StringComparison.Ordinal) ? _key : null;
+    }
+
+    // ---------------------------------------------------------------------------
     // Fixture compilation helper
     // ---------------------------------------------------------------------------
 
@@ -1547,6 +1922,11 @@ public class SecureDefaultsAssertionTests
             // AssertMethodBodyRegistersSingleton fixture assemblies.
             MetadataReference.CreateFromFile(
                 typeof(Microsoft.Extensions.DependencyInjection.IServiceCollection).Assembly.Location),
+            // Provides OptionsBuilder<T>/AddOptions<T>/ValidateOnStart() — needed to compile
+            // T-338/T-339's AssertMethodBodyInvokesMethod fixture assemblies (WO-065 P-437,
+            // SK.00.CacheEncryptionAndRedisValidationLock, Technique B).
+            MetadataReference.CreateFromFile(
+                typeof(Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions).Assembly.Location),
         };
 
         var compilation = CSharpCompilation.Create(

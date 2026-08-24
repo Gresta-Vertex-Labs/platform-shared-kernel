@@ -34,6 +34,13 @@
          fixture assemblies compiled via CompileInMemory run in-process against the current
          runtime's own corelib, so there is no reference-assembly version mismatch. -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <!-- Provides OptionsBuilder<T>/AddOptions<T>/ValidateOnStart() for compiling T-338/T-339's
+         contrived fixture assemblies (WO-065 P-437, SK.00.CacheEncryptionAndRedisValidationLock,
+         Technique B). ValidateOnStart() resolves as Microsoft.Extensions.DependencyInjection.
+         OptionsBuilderExtensions.ValidateOnStart — declared in this package under a different
+         namespace than the package name itself, confirmed against the real, shipped
+         RedisConnectionCoreExtensions.AddRedisConnection before writing T-340. -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>
@@ -196,6 +203,25 @@
          wired directly here rather than deferred, mirroring the SecureDefaultsAssertionTests
          (WO-061/WO-062/WO-063) precedent. -->
     <ProjectReference Include="..\..\..\15.Integration\SharedKernel.Integration.Webhooks\SharedKernel.Integration.Webhooks.csproj"
+                      PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Caching.FusionCache assembly's
+         AddCacheEncryption()/AddBrotliCompression() pipeline in SecureDefaultsAssertionTests
+         (WO-065 P-437, SK.00.CacheEncryptionAndRedisValidationLock, Technique A) — verified on
+         disk that 02.Caching shipped its full Phase 42 (P-433, CacheEncryptionAtRest) scope past
+         Design into Core before this phase's implementation session began, so the T-337
+         real-assembly executed behavioral test originally tracked as a Cross-Domain Dependency is
+         wired directly here rather than deferred, mirroring the SecureDefaultsAssertionTests
+         (WO-061/WO-062/WO-063/WO-064) precedent. SharedKernel.Caching.Redis.Core is already
+         referenced above (for RedisTopologyRulesTests) and hosts AddRedisConnection for T-340 —
+         no new reference was needed for Technique B. -->
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj"
+                      PrivateAssets="all" />
+    <!-- Required to resolve ISymmetricEncryptionService/AesGcmEncryptionService/
+         IEncryptionKeyProvider for T-337's encrypt-only baseline (WO-065 P-437, Technique A).
+         Already a transitive dependency of SharedKernel.Caching.FusionCache above, referenced
+         directly here for compile-time clarity, matching this project's own "reference every type
+         used directly in test code" convention. -->
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj"
                       PrivateAssets="all" />
   </ItemGroup>
 
