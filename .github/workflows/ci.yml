@@ -55,6 +55,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # MANDATORY for MinVer (see Directory.Build.props "Versioning"). checkout's default
+          # shallow clone fetches no tags, and MinVer does not fail when it finds none — it
+          # silently stamps the MinVerMinimumMajorMinor floor as a prerelease. Without this,
+          # a fully green run would produce correctly-named, wrongly-versioned packages.
+          fetch-depth: 0
 
       # The stock ubuntu-latest image leaves too little free disk to build 119 projects in
       # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
@@ -93,6 +98,19 @@ jobs:
         # change. CI is where that signal is deliberately restored to a hard failure.
         run: dotnet restore Platform.SharedKernel.slnx -warnaserror:NU1901,NU1902,NU1903,NU1904
 
+      # Lockstep is only real while MinVer is the sole version authority. MinVer's target
+      # overwrites $(Version) unconditionally, so a hand-written <Version> in a csproj is dead
+      # XML that silently disagrees with the packed artifact — fail on it here rather than let
+      # it mislead a reader.
+      - name: Assert no project declares its own version
+        run: |
+          set -e
+          if git grep -n -E '<(Version|VersionPrefix)>' -- '*.csproj'; then
+            echo "::error::A csproj declares <Version>/<VersionPrefix>. Versions come from MinVer and git tags only (see Directory.Build.props 'Versioning'). Delete the element."
+            exit 1
+          fi
+          echo "OK: no csproj declares its own version."
+
       - name: Build
         run: dotnet build Platform.SharedKernel.slnx --no-restore --configuration Release
 
@@ -126,6 +144,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # MANDATORY for MinVer (see Directory.Build.props "Versioning"). checkout's default
+          # shallow clone fetches no tags, and MinVer does not fail when it finds none — it
+          # silently stamps the MinVerMinimumMajorMinor floor as a prerelease. Without this,
+          # a fully green run would produce correctly-named, wrongly-versioned packages.
+          fetch-depth: 0
 
       # The stock ubuntu-latest image leaves too little free disk to build 119 projects in
       # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
@@ -160,6 +183,36 @@ jobs:
       - name: Pack every shipping package
         run: dotnet pack Platform.SharedKernel.slnx --no-restore --configuration Release
 
+      # The mechanical lock on repo-wide lockstep, asserted against the produced artifacts rather
+      # than against any property MSBuild reported: every .nupkg in the feed must carry one
+      # identical version. Also exports that version so the harness steps below consume the bits
+      # this run just built, instead of whatever happens to be newest in ./nupkgs.
+      - name: Verify version lockstep across packed packages
+        run: |
+          set -e
+          # Version is read off the produced artifacts, not off any property MSBuild reported.
+          # Anchored at end-of-name so a package ID that itself ends in a digit
+          # (SharedKernel.Storage.S3) cannot have part of its name misread as the version.
+          versions=$(for f in nupkgs/*.nupkg; do
+            basename "$f" .nupkg | grep -oE '[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$'
+          done | sort -u)
+          packed=$(find nupkgs -name "*.nupkg" | wc -l)
+          count=$(echo "$versions" | wc -l)
+          echo "Packed $packed package(s) carrying $count distinct version(s):"
+          echo "$versions" | awk '{ print "  " $0 }'
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Version lockstep broken - packed packages carry $count distinct versions."
+            exit 1
+          fi
+          case "$versions" in
+            0.0.0*)
+              echo "::error::MinVer stamped 0.0.0 - checkout has no tag history (fetch-depth: 0 missing)."
+              exit 1
+              ;;
+          esac
+          echo "SK_VERSION=$versions" >> "$GITHUB_ENV"
+          echo "All $packed packages share one version: $versions"
+
       - name: Restore consumer-verify harnesses against the freshly packed feed
         run: |
           set -e
@@ -173,7 +226,7 @@ jobs:
             "samples/OrderApi/OrderApi.csproj" \
             ; do
             echo "::group::restore $proj"
-            dotnet restore "$proj" --force
+            dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$SK_VERSION"
             echo "::endgroup::"
           done
 
@@ -187,21 +240,21 @@ jobs:
             "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
             ; do
             echo "::group::run $proj"
-            dotnet run --project "$proj" --no-restore --configuration Release
+            dotnet run --project "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
             echo "::endgroup::"
           done
 
       # samples/ are runnable services, not harnesses — build and exercise them against the
       # packed feed so a sample that breaks against a real published package fails CI here.
       - name: Build samples against packed packages
-        run: dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release
+        run: dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
       - name: Smoke-test OrderApi sample
         env:
           ASPNETCORE_URLS: http://localhost:5199
         run: |
           set -e
-          dotnet run --project "samples/OrderApi/OrderApi.csproj" --no-build --no-restore --configuration Release &
+          dotnet run --project "samples/OrderApi/OrderApi.csproj" --no-build --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" &
           pid=$!
           trap 'kill $pid 2>/dev/null || true' EXIT
           for _ in $(seq 1 40); do
@@ -220,11 +273,11 @@ jobs:
       # (real Redis) — run separately so its longer runtime and log volume don't crowd the
       # group above.
       - name: Run Caching consumer-verify (Testcontainers Redis)
-        run: dotnet run --project "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" --no-restore --configuration Release
+        run: dotnet run --project "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
       # SharedKernel.Consumer.Tests is an xUnit project (not an Exe harness) — run via `dotnet test`.
       - name: Run 01.Core consumer test suite
-        run: dotnet test "01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj" --no-restore --configuration Release
+        run: dotnet test "01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION"
 
   # ---------------------------------------------------------------------------------------------
   actionlint:
