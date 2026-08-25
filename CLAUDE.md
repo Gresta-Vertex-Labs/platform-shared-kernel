@@ -132,6 +132,15 @@ Sibling role-packages must never reference each other — only the shared `.Core
 
 ---
 
+## Package Versioning — one version, repo-wide
+
+Every shipping package in this repo carries **the same version**, derived from a single git tag. There is no per-package, per-domain, or per-family version, and no `<Version>` element in any `.csproj` — MinVer computes it from the newest reachable `v*` tag and overwrites `$(Version)` unconditionally. Releasing is `git tag vX.Y.Z`; all 50 packages then pack as `X.Y.Z`. Full rationale, guards and verification live in [`PLATFORM.md`](PLATFORM.md) → "Versioning".
+
+Two consequences for anyone writing or reading this file:
+
+- **Never add a `<Version>` to a `.csproj`, and never bump one package "on its own."** MinVer overrides it, so the element would be dead XML that silently disagrees with the packed artifact. CI fails the build on any reintroduced `<Version>`/`<VersionPrefix>`.
+- **The per-package version numbers quoted throughout the Folder Map and "What Goes Where" tables below are historical record, not current state.** Statements like "`.Oidc` `3.0.0`→`4.0.0` (breaking)" accurately describe what a given work order changed and why it was breaking — that history is worth keeping — but they no longer name a version any package actually ships. Read them as "this was a breaking change", not as a version pin. As of the switch (2026-08-25) those independent numbers ranged `1.0.0`–`4.0.0` and contained ten cross-package inconsistencies, three of which had a package depending on a *newer* version of its own abstraction than itself.
+
 ## Test Project Rules
 
 - Test projects are **nested inside the project folder they test**, not in a separate top-level `tests/` folder.
