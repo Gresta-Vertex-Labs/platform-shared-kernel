@@ -98,8 +98,9 @@ public sealed class OtelMetricsTests : IDisposable
         listener.RecordObservableInstruments();
 
         Assert.Equal("value", result);
-        Assert.True(counters.GetValueOrDefault("cache.hits") >= 1,
-            $"Expected cache.hits >= 1 but got {counters.GetValueOrDefault("cache.hits")}");
+        var hitsObserved = await WaitForCounterAsync(counters, "cache.hits", 1, listener);
+        Assert.True(hitsObserved >= 1,
+            $"Expected cache.hits >= 1 but got {hitsObserved}");
     }
 
     // -------------------------------------------------------------------------
@@ -118,8 +119,9 @@ public sealed class OtelMetricsTests : IDisposable
         listener.RecordObservableInstruments();
 
         Assert.Null(result);
-        Assert.True(counters.GetValueOrDefault("cache.misses") >= 1,
-            $"Expected cache.misses >= 1 but got {counters.GetValueOrDefault("cache.misses")}");
+        var missesObserved = await WaitForCounterAsync(counters, "cache.misses", 1, listener);
+        Assert.True(missesObserved >= 1,
+            $"Expected cache.misses >= 1 but got {missesObserved}");
     }
 
     // -------------------------------------------------------------------------
@@ -142,8 +144,9 @@ public sealed class OtelMetricsTests : IDisposable
 
         Assert.Equal("factory-value", result);
         // FusionCache fires a Memory.Miss event before invoking the factory
-        Assert.True(counters.GetValueOrDefault("cache.misses") >= 1,
-            $"Expected cache.misses >= 1 but got {counters.GetValueOrDefault("cache.misses")}");
+        var missesObserved = await WaitForCounterAsync(counters, "cache.misses", 1, listener);
+        Assert.True(missesObserved >= 1,
+            $"Expected cache.misses >= 1 but got {missesObserved}");
     }
 
     // -------------------------------------------------------------------------
@@ -193,8 +196,9 @@ public sealed class OtelMetricsTests : IDisposable
 
         listener.RecordObservableInstruments();
 
-        Assert.True(counters.GetValueOrDefault("cache.errors") >= 1,
-            $"Expected cache.errors >= 1 but got {counters.GetValueOrDefault("cache.errors")}");
+        var errorsObserved = await WaitForCounterAsync(counters, "cache.errors", 1, listener);
+        Assert.True(errorsObserved >= 1,
+            $"Expected cache.errors >= 1 but got {errorsObserved}");
     }
 
     // -------------------------------------------------------------------------
@@ -227,8 +231,9 @@ public sealed class OtelMetricsTests : IDisposable
         await Task.Delay(50);
         listener.RecordObservableInstruments();
 
-        Assert.True(counters.GetValueOrDefault("cache.evictions") >= 1,
-            $"Expected cache.evictions >= 1 but got {counters.GetValueOrDefault("cache.evictions")}");
+        var evictionsObserved = await WaitForCounterAsync(counters, "cache.evictions", 1, listener);
+        Assert.True(evictionsObserved >= 1,
+            $"Expected cache.evictions >= 1 but got {evictionsObserved}");
     }
 
     // -------------------------------------------------------------------------
@@ -301,5 +306,28 @@ public sealed class OtelMetricsTests : IDisposable
         Assert.Contains("cache.factory.duration", instrumentNames);
         Assert.Contains("cache.errors", instrumentNames);
         Assert.Contains("cache.evictions", instrumentNames);
+    }
+
+    /// <summary>
+    /// Waits briefly for a counter to reach <paramref name="minimum"/>. Measurements are published
+    /// through the Meter pipeline, which is not guaranteed to have delivered by the time the awaited
+    /// cache call returns -- asserting immediately passes on an idle machine and fails under load.
+    /// </summary>
+    private static async Task<long> WaitForCounterAsync(
+        ConcurrentDictionary<string, long> counters,
+        string name,
+        long minimum,
+        MeterListener listener)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            listener.RecordObservableInstruments();
+            var value = counters.GetValueOrDefault(name);
+            if (value >= minimum) return value;
+            await Task.Delay(25);
+        }
+
+        return counters.GetValueOrDefault(name);
     }
 }
