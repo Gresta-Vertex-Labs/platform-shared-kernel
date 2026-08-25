@@ -58,11 +58,11 @@ For each signal from Step R2:
 
 ## Step R4 — Append changelog entry
 
-Always append exactly one line to `## Changelog`:
+Always append exactly one line to `CLAUDE.changelog.md` (the root changelog was split out of `CLAUDE.md` on 2026-08-25 — see ROOT MODE constraints):
 ```
 - [YYYY-MM-DD] <one-line description of what changed> (<caller or agent name if mentioned in input, otherwise "agent">)
 ```
-Use today's date. Keep under 120 characters.
+Use today's date. Keep under 120 characters. **This limit is real — historical entries that ran to full paragraphs are why the changelog had to be split out. Do not write a paragraph.**
 
 ## Step R5 — Report
 
@@ -72,13 +72,13 @@ Output ≤ 5 bullet points of what changed and why. If no edits were made, expla
 
 ## Root mode format contract (never violate these)
 
-- Operates on exactly one file: `CLAUDE.md` at the repo root. No other file is read, written, or modified.
+- Operates on exactly two files: `CLAUDE.md` at the repo root (Steps R1–R3) and `CLAUDE.changelog.md` beside it (Step R4 append only). No other file is read, written, or modified.
 - Sub-domain `CLAUDE.md` files are owned by their domain agents — **never read, write, or reference them directly**. Only their summaries, passed as input to this command, are valid signal sources.
-- Section order must stay: What This Repo Is → Folder Map → Layering Rules → Package Naming Convention → Test Project Rules → "What Goes Where" → Abstractions Packages → Solution Format → Changelog
+- Section order must stay: What This Repo Is → Folder Map → Layering Rules → Package Naming Convention → Test Project Rules → "What Goes Where" → Abstractions Packages → Solution Format → Changelog (a pointer stub only — the entries themselves live in `CLAUDE.changelog.md`)
 - All tables use markdown pipe syntax
 - The Layering Rules code block stays as a plain fenced code block — no YAML, no JSON
 - Hard rules stay as a bullet list under the code block
-- The Changelog is append-only — never edit or remove existing entries
+- The Changelog is append-only — never edit or remove existing entries. At root this means `CLAUDE.changelog.md`; leave `CLAUDE.md`'s `## Changelog` pointer stub untouched
 - Do not add new top-level sections unless the input explicitly introduces a new cross-cutting concern that has no home in any existing section
 
 ---
