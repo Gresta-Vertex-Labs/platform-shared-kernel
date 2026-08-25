@@ -6,6 +6,11 @@
       if/when downstream consumers outside this repo need it.
     -->
     <IsPackable>false</IsPackable>
+    <!-- This is a test-helper LIBRARY, not a test project. It references xunit.core for the
+         IAsyncLifetime contract only and ships no test runner, but `dotnet test` on the
+         solution still tried to launch a test host against it and failed, making the whole
+         solution-wide test run exit non-zero regardless of actual results. -->
+    <IsTestProject>false</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
     <!-- Caching test doubles — FakeCacheService implements ICacheService -->
