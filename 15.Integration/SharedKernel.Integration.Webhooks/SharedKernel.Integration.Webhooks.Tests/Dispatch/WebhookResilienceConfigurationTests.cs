@@ -113,6 +113,10 @@ public sealed class WebhookResilienceConfigurationTests
         stopwatch.Stop();
 
         result.IsSuccess.Should().BeFalse();
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+        // The handler delays 2s; the configured 100ms timeout must abort well before that.
+        // The bound is 1.5s rather than 1s purely for runner jitter -- a CI run measured
+        // 1.015s of scheduling/handler-warmup overhead on top of the honored timeout.
+        // Anything at or above 2s means the timeout was not applied at all.
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1500));
     }
 }
