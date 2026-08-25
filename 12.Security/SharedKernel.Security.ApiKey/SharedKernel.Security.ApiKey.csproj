@@ -1,38 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Security.ApiKey</PackageId>
     <Version>1.2.0</Version>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Pre-shared-key / machine-client authentication scheme for SharedKernel security: IApiKeyValidator extensibility point, constant-time key comparison built on SharedKernel.Cryptography, ApiKeyAuthenticationHandler, and AddApiKeyAuthentication composing alongside JWT Bearer via a policy/forwarding scheme. Never OIDC. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
     <PackageTags>shared-kernel;security;api-key;authentication;machine-client;identity</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReleaseNotes>1.2.0 (non-breaking, additive): adds public ApiKeyRotationComparer.AnyMatch(string, IReadOnlyList&lt;string&gt;) — a constant-time, always-evaluate-every-candidate comparator for an IApiKeyValidator implementation that must accept more than one simultaneously-active key per client during a rotation window. Built on the same IHmacSigner-based technique as the existing internal ConstantTimeKeyComparer, but public since a consumer's own IApiKeyValidator implementation cannot reach an internal type. See WO-060 (P-389). 1.1.0 (non-breaking, tracks SharedKernel.Security.Abstractions 3.0.0): ApiKeyUserContext now implements the six new step-up-authentication IUserContext members as empty/null/false — a pre-shared key carries no OIDC authentication-context concept. IApiKeyValidator/ApiKeyValidationResult contracts unchanged. See WO-058 (P-375/P-376).</PackageReleaseNotes>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Microsoft.AspNetCore.App shared framework: supplies Microsoft.AspNetCore.Authentication.Abstractions
@@ -43,14 +20,6 @@
     -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Security.ApiKey.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Security.ApiKey.Tests\**" />
-    <None Remove="SharedKernel.Security.ApiKey.Tests\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Grants SharedKernel.Security.ApiKey.Tests direct access to internal types (e.g.
@@ -61,5 +30,4 @@
       <_Parameter1>SharedKernel.Security.ApiKey.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
-
 </Project>

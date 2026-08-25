@@ -1,30 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Storage.Obs</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Huawei Cloud OBS implementation of SharedKernel.Storage.Abstractions, consumed over OBS's S3-compatible endpoint via AWSSDK.S3: ObsFileStorage and ObsBlobUriGenerator. Independent sibling package of SharedKernel.Storage.S3 — never references it. Register via AddSharedKernelObsStorage(IConfiguration).</Description>
     <PackageTags>storage;blob;obs;huawei-cloud;object-storage;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
@@ -33,27 +14,14 @@
       CLAUDE.md): .S3 and .Obs never reference each other, even though both sit on AWSSDK.S3.
     -->
   </ItemGroup>
-
   <ItemGroup>
     <!--
       Huawei Cloud OBS is consumed over its S3-compatible endpoint via AWSSDK.S3 (the native
       HuaweiCloud.ESDK.OBS.Core SDK was rejected — stale, .NET Standard 2.0, personal-account
       maintained). Same pinned version as SharedKernel.Storage.S3.
     -->
-    <PackageReference Include="AWSSDK.S3" Version="4.0.101.1" />
+    <PackageReference Include="AWSSDK.S3" />
     <!-- [LoggerMessage] source-generated logging (ILogger<T>, LogLevel, LoggerMessage attribute). -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Storage.Obs.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Storage.Obs.Tests\**" />
-    <None Remove="SharedKernel.Storage.Obs.Tests\**" />
-  </ItemGroup>
-
 </Project>

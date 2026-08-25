@@ -1,41 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Core</PackageId>
     <Version>1.0.0</Version>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Core building blocks for the SharedKernel: base exception hierarchy, Result&lt;T&gt; railway extension methods (Map, Bind, Match, Tap, async), and BCL extension methods (string, IEnumerable&lt;T&gt;, DateTimeOffset, Guid). Depends on SharedKernel.Primitives.</Description>
     <PackageTags>shared-kernel;railway-oriented;exceptions;extensions;aot</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Core.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Core.Tests\**" />
-    <None Remove="SharedKernel.Core.Tests\**" />
-  </ItemGroup>
-
 </Project>

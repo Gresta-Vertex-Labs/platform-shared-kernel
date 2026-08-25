@@ -1,0 +1,44 @@
+<Project>
+
+  <!--
+    Evaluated AFTER the project body, so these targets can observe what the csproj itself set
+    (Description, PackageTags, IsPackable) and fail the pack step if a shipping project forgot one.
+    Mechanical enforcement of "Description/PackageTags stay per-project" (Rule 7 / PLATFORM.md
+    "Build Configuration Map").
+  -->
+
+  <!--
+    Documentation — shipping library projects only. Deliberately placed here, not in
+    Directory.Build.props: OutputType is set inside each project's own body, which is imported
+    AFTER Directory.Build.props but BEFORE Directory.Build.targets, so only here is $(OutputType)
+    actually resolved to "Exe" for the consumer-verify/*Consumer harnesses. Excludes test projects
+    (no public API to document) and Exe harnesses (a console Program.cs is not a public library
+    surface; generating docs for it produces CS1591 errors on every harness that also has its own
+    TreatWarningsAsErrors=true, which most consumer-verify projects do) — and only applies when the
+    project has not already set GenerateDocumentationFile itself.
+  -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true' and '$(OutputType)' != 'Exe' and '$(GenerateDocumentationFile)' == ''">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <Target Name="SKPKG001_RequireDescription" BeforeTargets="Pack" Condition="'$(IsPackable)' == 'true'">
+    <Error Condition="'$(Description)' == ''"
+           Text="SKPKG001: $(MSBuildProjectName) is packable but has no &lt;Description&gt;. Every shipped package needs a real, per-project description." />
+  </Target>
+
+  <Target Name="SKPKG002_RequirePackageTags" BeforeTargets="Pack" Condition="'$(IsPackable)' == 'true'">
+    <Error Condition="'$(PackageTags)' == ''"
+           Text="SKPKG002: $(MSBuildProjectName) is packable but has no &lt;PackageTags&gt;. Every shipped package needs per-project tags." />
+  </Target>
+
+  <Target Name="SKPKG003_RequireReadme" BeforeTargets="Pack" Condition="'$(IsPackable)' == 'true'">
+    <Error Condition="!Exists('README.md')"
+           Text="SKPKG003: $(MSBuildProjectName) is packable but has no adjacent README.md. PackageReadmeFile is centrally set and will fail Pack without one." />
+  </Target>
+
+  <Target Name="SKPKG004_TestsNeverPack" BeforeTargets="Pack" Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <Error Condition="'$(IsPackable)' == 'true'"
+           Text="SKPKG004: $(MSBuildProjectName) ends in .Tests and must never be packable, even if IsPackable=true was set by hand." />
+  </Target>
+
+</Project>

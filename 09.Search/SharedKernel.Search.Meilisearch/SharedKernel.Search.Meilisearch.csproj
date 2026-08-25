@@ -1,11 +1,6 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Search.Meilisearch</PackageId>
     <!--
       WO-055 P-09/P-10 version-bump decision (recorded per the phase's own instruction not to silently
       collapse two distinct bumps): P-353's internal-only GetAsync Result-discipline fix is PATCH-shaped
@@ -17,20 +12,8 @@
       a deliberate decision, not an oversight — see 09.Search/state-map.md Phase: Published P-09/P-10.
     -->
     <Version>1.1.0</Version>
-    <PackageVersion>1.1.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Meilisearch (BFF/fast) implementation of SharedKernel.Search.Abstractions: MeilisearchIndex&lt;TDocument&gt;, MeilisearchIndexProvisioner, MeilisearchProviderDescriptor, MeilisearchFilterCompiler, plus the Meilisearch-exclusive IInstantSearch&lt;TDocument&gt; (typo-tolerant/prefix instant search) and ITenantSearchTokenIssuer (engine-enforced per-tenant search tokens). Register via AddSharedKernelMeilisearchSearch(IConfiguration).</Description>
     <PackageTags>search;full-text-search;meilisearch;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!--
       CS8509/CS8524 are DELIBERATELY downgraded back to non-fatal warnings — never fully suppressed
       (NoWarn) and never masked with a discard (`_ =>`) arm — on the two closed-hierarchy switches this
@@ -43,10 +26,8 @@
       build log rather than being hidden.
     -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8509;CS8524</WarningsNotAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
@@ -59,10 +40,9 @@
       "Provider role note".
     -->
   </ItemGroup>
-
   <ItemGroup>
     <!-- Meilisearch engine SDK. Official Meilisearch org, MIT, targets netstandard2.0. -->
-    <PackageReference Include="MeiliSearch" Version="0.20.0" />
+    <PackageReference Include="MeiliSearch" />
     <!--
       Microsoft.Extensions.* set — required for DI extension (DependencyInjection.Abstractions),
       Options-pattern binding (Options), [LoggerMessage] source-generated logging
@@ -71,23 +51,11 @@
       and the named IHttpClientFactory client the MeilisearchClient is built from (Http — never
       `new HttpClient()`, per P-159/SK0013).
     -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Search.Meilisearch.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Search.Meilisearch.Tests\**" />
-    <None Remove="SharedKernel.Search.Meilisearch.Tests\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Allows the nested test project to white-box test internal implementation details
@@ -97,5 +65,4 @@
     -->
     <InternalsVisibleTo Include="SharedKernel.Search.Meilisearch.Tests" />
   </ItemGroup>
-
 </Project>

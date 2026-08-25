@@ -1,25 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.MultiTenancy</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, JWT claim delegation, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
     <PackageTags>shared-kernel;multi-tenancy;tenant-resolution;middleware</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!--
       NU1903: transitive high-severity advisory on System.Security.Cryptography.Xml 9.0.0,
       pulled in via the SharedKernel.Security.Oidc project reference. This is an upstream
@@ -29,28 +13,17 @@
       Cryptography.Xml-dependent package.
     -->
     <NoWarn>$(NoWarn);NU1903</NoWarn>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
   </ItemGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.MultiTenancy.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.MultiTenancy.Tests\**" />
-    <None Remove="SharedKernel.MultiTenancy.Tests\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Grants SharedKernel.MultiTenancy.Tests direct access to internal types (MultiTenancyLog,
@@ -59,5 +32,4 @@
     -->
     <InternalsVisibleTo Include="SharedKernel.MultiTenancy.Tests" />
   </ItemGroup>
-
 </Project>

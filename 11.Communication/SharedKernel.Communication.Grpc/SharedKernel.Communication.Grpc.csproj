@@ -1,28 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Communication.Grpc</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>gRPC channel factory via Grpc.Net.ClientFactory, CorrelationTracingInterceptor (W3C OTel + x-correlation-id), TenantIdInterceptor (x-tenant-id), MoneyProtoExtensions (Money &lt;-&gt; decimal), TimestampProtoExtensions (Timestamp &lt;-&gt; DateTimeOffset), and fluent IGrpcCommunicationBuilder DI entry point.</Description>
     <PackageTags>grpc;channel-factory;otel;tracing;correlation-id;tenant-id;protobuf;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
     <!--
       NU5104: a stable package must not depend on a prerelease package. Suppressed deliberately —
       OpenTelemetry.Instrumentation.GrpcNetClient 1.15.1-beta.1 is the only available net10.0-compatible
@@ -31,12 +12,8 @@
       workaround than acknowledging the real, already-documented upstream constraint.
     -->
     <NoWarn>$(NoWarn);NU5104</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Layering: 11.Communication.Grpc may reference 01.Core and 12.Security.Abstractions only.
@@ -52,7 +29,6 @@
     -->
     <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <!--
       Grpc.Net.Client 2.80.0: channel and call invoker for .NET gRPC clients.
@@ -64,34 +40,25 @@
       Microsoft.AspNetCore.Http.Abstractions 2.3.11: IHttpContextAccessor for TenantIdInterceptor
         request-scope IUserContext resolution.
     -->
-    <PackageReference Include="Grpc.Net.Client" Version="2.80.0" />
-    <PackageReference Include="Grpc.Net.ClientFactory" Version="2.80.0" />
-    <PackageReference Include="Google.Protobuf" Version="3.35.1" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Google.Protobuf" />
     <!--
       Google.Api.CommonProtos 2.17.0: provides Google.Type.Money (units + nanos well-known type)
       used by MoneyProtoExtensions. Also transitively provides Timestamp from Google.Protobuf.WellKnownTypes.
     -->
-    <PackageReference Include="Google.Api.CommonProtos" Version="2.17.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.15.1-beta.1" />
+    <PackageReference Include="Google.Api.CommonProtos" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" />
     <!--
       Microsoft.AspNetCore.Http: provides IHttpContextAccessor (abstractions) and HttpContextAccessor
       (concrete impl) for TenantIdInterceptor request-scope tenant resolution.
     -->
-    <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.3.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Http" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Allow test project to access internal types (CorrelationTracingInterceptor, TenantIdInterceptor) -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Communication.Grpc.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Communication.Grpc.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Communication.Grpc.Tests\**" />
-    <None Remove="SharedKernel.Communication.Grpc.Tests\**" />
-  </ItemGroup>
-
 </Project>

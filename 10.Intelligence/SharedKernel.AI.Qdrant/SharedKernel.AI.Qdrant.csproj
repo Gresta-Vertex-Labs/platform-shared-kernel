@@ -1,9 +1,5 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!--
       QdrantFilterCompiler.CompileNode switches over the closed 8-node VectorFilter hierarchy with no
       discard arm (per this domain's hard rule). The C# compiler cannot perform closed-world
@@ -15,26 +11,11 @@
     -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8509;CS8524</WarningsNotAsErrors>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.AI.Qdrant</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Qdrant vector-database provider for Platform.SharedKernel's SharedKernel.AI.Abstractions — implements IVectorCollection&lt;TRecord&gt;, IVectorCollectionProvisioner, and IVectorProviderDescriptor against the official Qdrant.Client gRPC SDK, including tenant-scope-outermost-conjunction filter translation over the closed 8-node VectorFilter AST, fail-loud model-identity/dimension validation before any I/O, and collection-metadata-backed schema Fingerprint drift detection. Additionally declares Qdrant-exclusive contracts (sparse/hybrid vector queries, quantization-profile access, a triple-gated raw-client escape hatch) unreachable from a Milvus- or SemanticKernel-only composition root.</Description>
     <PackageTags>ai;vector-database;qdrant;embeddings;rag;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
@@ -47,7 +28,6 @@
       Packages section.
     -->
   </ItemGroup>
-
   <ItemGroup>
     <!--
       Qdrant.Client — official .NET SDK, gRPC/protobuf-based. Verified against nuget.org 2026-07-22:
@@ -55,7 +35,7 @@
       net6.0/netstandard2.0/net462, 2.2M total downloads, actively maintained (monthly-cadence release
       history). Consumed by Microsoft.SemanticKernel.Connectors.Qdrant and Aspire hosting integrations.
     -->
-    <PackageReference Include="Qdrant.Client" Version="1.18.1" />
+    <PackageReference Include="Qdrant.Client" />
     <!--
       Grpc.Core.Api and Google.Protobuf — both already transitive via Qdrant.Client 1.18.1 (which
       depends on Grpc.Net.Client 2.71.0 -> Grpc.Core.Api 2.71.0, and Google.Protobuf 3.31.0 directly).
@@ -63,8 +43,8 @@
       own code references Grpc.Core.RpcException/StatusCode (error-code mapping) and
       Google.Protobuf.WellKnownTypes.Timestamp (DateTimeOffset range-filter translation) directly.
     -->
-    <PackageReference Include="Grpc.Core.Api" Version="2.71.0" />
-    <PackageReference Include="Google.Protobuf" Version="3.31.0" />
+    <PackageReference Include="Grpc.Core.Api" />
+    <PackageReference Include="Google.Protobuf" />
     <!--
       Microsoft.Extensions.* set — required for the DI extension (DependencyInjection.Abstractions),
       Options-pattern binding (Options), and [LoggerMessage] source-generated logging
@@ -72,25 +52,12 @@
       SharedKernel.Configuration). Pinned at 10.0.9 to match the version already pinned by the most
       recently implemented sibling capability packages (09.Search).
     -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.AI.Qdrant.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.AI.Qdrant.Tests\**" />
-    <None Remove="SharedKernel.AI.Qdrant.Tests\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <!-- White-box unit testing of internal types (filter compiler, record mapper, adapters) — no public surface growth. -->
     <InternalsVisibleTo Include="SharedKernel.AI.Qdrant.Tests" />
   </ItemGroup>
-
 </Project>

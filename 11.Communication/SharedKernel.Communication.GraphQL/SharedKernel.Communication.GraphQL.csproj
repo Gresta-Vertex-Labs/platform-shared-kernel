@@ -1,38 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!--
       IMPORTANT: <IsAotCompatible>true</IsAotCompatible> must NEVER be added here.
       HotChocolate v16 (14.x architecture) is NOT AOT-safe. Adding this flag is a hard violation.
     -->
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Communication.GraphQL</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>HotChocolate server-side GraphQL conventions for Platform.SharedKernel: SharedKernelFilterConvention (snake_case), FilterBase&lt;T&gt;/SortBase&lt;T&gt; abstract wrappers, PagedResponseType&lt;T&gt;, SharedKernelErrorFilter (ProblemDetails shape), and AddSharedKernelGraphQL DI entry point. NOT AOT-safe (HotChocolate constraint).</Description>
     <PackageTags>graphql;hotchocolate;filtering;sorting;paging;error-filter;snake-case;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Layering: 11.Communication may reference 01.Core, 04.Contracts, and 12.Security.Abstractions.
@@ -41,7 +18,6 @@
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <!--
       HotChocolate.Data 16.1.4: filtering, sorting, and pagination conventions.
@@ -50,22 +26,13 @@
       HotChocolate.AspNetCore 16.1.4: IRequestExecutorBuilder, IErrorFilter, schema wiring.
         NOT AOT-safe — do not add <IsAotCompatible>true</IsAotCompatible> to this project.
     -->
-    <PackageReference Include="HotChocolate.Data" Version="16.1.4" />
-    <PackageReference Include="HotChocolate.AspNetCore" Version="16.1.4" />
+    <PackageReference Include="HotChocolate.Data" />
+    <PackageReference Include="HotChocolate.AspNetCore" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Allow test project to access internal types (SharedKernelFilterConvention, SharedKernelErrorFilter) -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Communication.GraphQL.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Communication.GraphQL.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Communication.GraphQL.Tests\**" />
-    <None Remove="SharedKernel.Communication.GraphQL.Tests\**" />
-  </ItemGroup>
-
 </Project>

@@ -1,34 +1,27 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="NSubstitute" />
     <!-- Testcontainers Redis for integration tests -->
-    <PackageReference Include="Testcontainers.Redis" Version="4.13.0" />
+    <PackageReference Include="Testcontainers.Redis" />
     <!-- DI host for integration-style DI registration tests -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <!-- Logging null provider for tests -->
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
     <!-- StackExchange.Redis — required for IConnectionMultiplexer in test assertions -->
-    <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Caching.Redis.HashStore.csproj" />
     <!-- SharedKernel.Caching.Redis.Core provides AddRedisConnection (IConnectionMultiplexer registration) -->
     <ProjectReference Include="..\..\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" />
   </ItemGroup>
-
 </Project>

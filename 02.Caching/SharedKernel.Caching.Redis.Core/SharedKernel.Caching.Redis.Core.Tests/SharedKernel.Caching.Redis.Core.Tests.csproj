@@ -1,38 +1,31 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="NSubstitute" />
     <!-- DI host for registration sanity tests -->
     <!-- Version bumped to match SharedKernel.Testing's transitive floor (repo-wide drift, see Phases 42/43) -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <!-- Logging null provider for tests -->
     <!-- Version bumped to match SharedKernel.Testing's transitive floor (repo-wide drift, see Phases 42/43) -->
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
     <!-- StackExchange.Redis — required for IConnectionMultiplexer mocking -->
-    <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
+    <PackageReference Include="StackExchange.Redis" />
     <!-- Version bumped to match SharedKernel.Testing's transitive floor (repo-wide drift, see Phases 42/43) -->
-    <PackageReference Include="Polly.Core" Version="8.7.0" />
+    <PackageReference Include="Polly.Core" />
     <!-- Fail-fast options validation surface under test (Phase 45) -->
-    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Caching.Redis.Core.csproj" />
     <!-- SharedKernel.Testing provides shared Testcontainers/Bogus/auth test helpers -->
     <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
   </ItemGroup>
-
 </Project>

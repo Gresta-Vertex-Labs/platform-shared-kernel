@@ -1,13 +1,8 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
-
   <!--
     Consumer verification: resolves SharedKernel.* packages from the local NuGet feed (nupkgs/)
     to confirm the published dependency graph is correct.
@@ -16,23 +11,21 @@
     Compression → Primitives + Configuration transitive chain also verified here.
   -->
   <ItemGroup>
-    <PackageReference Include="SharedKernel.Primitives"        Version="1.1.0" />
-    <PackageReference Include="SharedKernel.Core"              Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Configuration"     Version="1.0.0" />
-    <PackageReference Include="SharedKernel.FeatureManagement" Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Guards"            Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Cryptography"      Version="2.0.0" />
-    <PackageReference Include="SharedKernel.Compression"       Version="1.0.0" />
+    <PackageReference Include="SharedKernel.Primitives" />
+    <PackageReference Include="SharedKernel.Core" />
+    <PackageReference Include="SharedKernel.Configuration" />
+    <PackageReference Include="SharedKernel.FeatureManagement" />
+    <PackageReference Include="SharedKernel.Guards" />
+    <PackageReference Include="SharedKernel.Cryptography" />
+    <PackageReference Include="SharedKernel.Compression" />
   </ItemGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk"         Version="17.13.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting"   Version="9.0.5" />
-    <PackageReference Include="xunit"                          Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio"      Version="2.8.2">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-
 </Project>

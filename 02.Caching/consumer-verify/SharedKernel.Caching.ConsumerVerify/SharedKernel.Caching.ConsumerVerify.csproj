@@ -1,35 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- Not shipped — verification harness only -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
   <ItemGroup>
     <!-- All 7 packages published by 02.Caching, referenced by PackageId against the local
          nupkgs feed (nuget.config's "local-shared-kernel" source) — deliberately NOT
          ProjectReference, so this harness proves the PACKED artifacts resolve/compose for a
          real downstream consumer, not merely that the source tree compiles. -->
-    <PackageReference Include="SharedKernel.Caching.Abstractions" Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Caching.FusionCache" Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Caching.Redis.Core" Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Caching.Redis" Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Caching.Redis.DistributedLocking" Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Caching.Redis.HashStore" Version="1.0.0" />
-    <PackageReference Include="SharedKernel.Caching.Redis.PubSub" Version="1.0.0" />
+    <PackageReference Include="SharedKernel.Caching.Abstractions" />
+    <PackageReference Include="SharedKernel.Caching.FusionCache" />
+    <PackageReference Include="SharedKernel.Caching.Redis.Core" />
+    <PackageReference Include="SharedKernel.Caching.Redis" />
+    <PackageReference Include="SharedKernel.Caching.Redis.DistributedLocking" />
+    <PackageReference Include="SharedKernel.Caching.Redis.HashStore" />
+    <PackageReference Include="SharedKernel.Caching.Redis.PubSub" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Generic host — lets every surface exercise the real IHost.StartAsync() composition
          path, never BuildServiceProvider() alone. -->
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
     <!-- Ephemeral Redis for the four Redis-backed surfaces — referenced directly, the way a
          real downstream microservice would, not via 16.Testing. -->
-    <PackageReference Include="Testcontainers.Redis" Version="4.13.0" />
+    <PackageReference Include="Testcontainers.Redis" />
   </ItemGroup>
-
 </Project>

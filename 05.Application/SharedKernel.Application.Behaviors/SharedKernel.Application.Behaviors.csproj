@@ -1,29 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Application.Behaviors</PackageId>
     <Version>1.1.0</Version>
-    <PackageVersion>1.1.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Logging, Metrics, Tracing, Validation, Authorization, DualApproval (maker-checker), Caching, Resilience, Idempotency (with opt-in response replay), Transaction, and CacheInvalidation, composed in a fixed canonical order via ApplicationBehaviorsBuilder — plus opt-in fire-and-forget command dispatch infrastructure and opt-in structured request/response payload logging (ILoggableRequest&lt;TResponse&gt;). References SharedKernel.Application, SharedKernel.Caching.Abstractions, MediatR, FluentValidation, and Polly.Core.</Description>
     <PackageTags>cqrs;mediatr;pipeline-behavior;validation;logging;metrics;tracing;caching;resilience;transaction;authorization;dual-approval;idempotency;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <!--
       SharedKernel.Application.Behaviors may reference SharedKernel.Caching.Abstractions
@@ -35,13 +17,12 @@
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Same MediatR ceiling as SharedKernel.Application — see that project's version-pin note. -->
-    <PackageReference Include="MediatR" Version="12.4.1" />
-    <PackageReference Include="FluentValidation" Version="11.11.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <!--
       Polly v8 resilience pipeline for ResilienceBehavior<,> (WO-036). Confirmed at Scaffold
       (state-map.md S-09) that no existing reference in this repo brings Polly.Core in
@@ -52,19 +33,11 @@
       release as of this phase — same major already proven in 11.Communication's typed HTTP
       clients, so no new major-version risk is introduced to the platform.
     -->
-    <PackageReference Include="Polly.Core" Version="8.7.0" />
+    <PackageReference Include="Polly.Core" />
     <!--
       BackgroundService lives in Microsoft.Extensions.Hosting.Abstractions — not available
       transitively through DependencyInjection.Abstractions; must be explicit (WO-038, C-43).
     -->
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Application.Behaviors.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Application.Behaviors.Tests\**" />
-    <None Remove="SharedKernel.Application.Behaviors.Tests\**" />
-  </ItemGroup>
-
 </Project>

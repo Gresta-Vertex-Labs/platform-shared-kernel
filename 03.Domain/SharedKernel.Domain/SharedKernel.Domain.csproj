@@ -1,13 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Domain</PackageId>
     <Version>1.7.0</Version>
-    <PackageVersion>1.7.0</PackageVersion>
     <PackageReleaseNotes>1.7.0 (WO-051 / P-307..P-313):
 - Fixed a silent eager-loading data-loss defect (P-307): AndSpecification&lt;T&gt;, OrSpecification&lt;T&gt;, and NotSpecification&lt;T&gt; now union both Includes and StringIncludes from their operand(s) — previously AndSpecification dropped expression Includes entirely and OrSpecification/NotSpecification dropped both Includes and StringIncludes.
 - KeysetSpecification&lt;T, TKey&gt; added (P-308): cursor/seek-pagination sibling to PagedSpecification&lt;T&gt;, extends ReadOnlySpecification&lt;T&gt;; constrained `where TKey : struct, IComparable&lt;TKey&gt;` (a `struct` constraint is required for AfterKey's TKey? to compile to a real Nullable&lt;TKey&gt; instead of erasing to plain TKey); mandatory Id tiebreaker via ApplyThenBy; guards on take/partial-cursor.
@@ -41,7 +35,7 @@
 - ISpecification&lt;T&gt;.IncludeDeleted flag added (C-35): when true, the consuming repository must bypass the global soft-delete query filter so soft-deleted records are included in results; default false.
 - Specification&lt;T&gt;.IncludeSoftDeleted() protected builder method added: call in concrete spec constructors for admin/audit/export/recovery specifications only; never in user-facing query specifications.
 - AndSpecification&lt;T&gt;, OrSpecification&lt;T&gt;, NotSpecification&lt;T&gt; now propagate IncludeDeleted = true when any operand has it set (more-permissive wins, mirrors AsNoTracking propagation).
-- WARNING: IgnoreQueryFilters() bypasses ALL EF Core global query filters including tenant isolation; re-apply tenant criterion manually via AddCriteria(e => e.TenantId == tenantId) for tenant-scoped soft-delete queries.
+- WARNING: IgnoreQueryFilters() bypasses ALL EF Core global query filters including tenant isolation; re-apply tenant criterion manually via AddCriteria(e =&gt; e.TenantId == tenantId) for tenant-scoped soft-delete queries.
 - Prerequisite for P-080 Capability 5 (soft-delete filter encapsulation in 06.Persistence.EfCore).
 
 1.3.0 (WO-011):
@@ -67,37 +61,12 @@
 - DomainEvent&lt;TPayload&gt; abstract record added (P-039): extends DomainEvent; required TPayload Payload where TPayload : notnull; non-generic DomainEvent unchanged.
 - ISpecification&lt;T&gt;.AsNoTracking flag and ReadOnlySpecification&lt;T&gt; convenience base added (P-040): composites propagate true when either operand is true.
 - AggregateRoot&lt;TId&gt;.Now remarks tightened (P-041): must not be used to supply OccurredOn; use RaiseDomainEvent(Func&lt;DateTimeOffset, IDomainEvent&gt;) factory overload.</PackageReleaseNotes>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>DDD building blocks for Platform.SharedKernel microservices: Entity, AggregateRoot, ValueObject, IDomainEvent, specifications, business rules, policies, and strongly-typed IDs.</Description>
     <PackageTags>ddd;domain;aggregate;valueobject;specification;SharedKernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" Condition="Exists('README.md')" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Domain.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Domain.Tests\**" />
-    <None Remove="SharedKernel.Domain.Tests\**" />
-  </ItemGroup>
-
 </Project>

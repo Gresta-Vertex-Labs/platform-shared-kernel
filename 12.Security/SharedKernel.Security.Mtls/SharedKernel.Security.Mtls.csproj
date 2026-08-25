@@ -1,38 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Security.Mtls</PackageId>
     <Version>2.0.0</Version>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Mutual-TLS client-certificate authentication scheme for SharedKernel security: IMtlsCertificateValidator extensibility point, MtlsUserContext, RFC 8705 certificate-bound (cnf.x5t#S256) access-token validation, and AddMtlsAuthentication composing alongside JWT Bearer/API-key via the same ServiceDescriptor-capture decorator mechanism as SharedKernel.Security.ApiKey. A sibling provider package, never OIDC, never references .Oidc/.ApiKey. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
     <PackageTags>shared-kernel;security;mtls;mutual-tls;client-certificate;open-banking;identity</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReleaseNotes>2.0.0 (BREAKING default-behavior change, fintech/FAPI-hardening pass): MtlsAuthenticationOptions.AllowedCertificateTypes now defaults to CertificateTypes.Chained (was CertificateTypes.All) — a self-signed client certificate is now rejected by the framework's own pre-filter before IMtlsCertificateValidator ever runs. MtlsAuthenticationOptions.RevocationMode now defaults to X509RevocationMode.Offline (was X509RevocationMode.NoCheck) — locally cached CRL data is now checked by default, with no new outbound network dependency. If your service legitimately relies on the old permissive defaults (e.g. a private-PKI Open Banking QWAC/QSEAL trust chain using self-signed or CRL-unchecked certificates), opt back in explicitly via AddMtlsAuthentication's configureOptions delegate. See WO-060 (P-386).</PackageReleaseNotes>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Microsoft.AspNetCore.App shared framework: supplies Microsoft.Extensions.Logging.Abstractions
@@ -42,7 +19,6 @@
     -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
-
   <ItemGroup>
     <!--
       CORRECTED at Core-phase implementation time (WO-058, C-33): Microsoft.AspNetCore.Authentication.Certificate
@@ -53,16 +29,8 @@
       was incorrect and is corrected here; version pinned to match SharedKernel.Security.Oidc's
       Microsoft.AspNetCore.Authentication.JwtBearer pin for consistency across the domain's provider packages.
     -->
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Certificate" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Security.Mtls.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Security.Mtls.Tests\**" />
-    <None Remove="SharedKernel.Security.Mtls.Tests\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Grants SharedKernel.Security.Mtls.Tests direct access to internal types (MtlsAuthenticationHandler,
@@ -74,5 +42,4 @@
       <_Parameter1>SharedKernel.Security.Mtls.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
-
 </Project>

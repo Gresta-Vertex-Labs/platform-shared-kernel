@@ -1,34 +1,16 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Contracts</PackageId>
     <Version>2.0.0</Version>
-    <PackageVersion>2.0.0</PackageVersion>
     <PackageReleaseNotes>2.0.0 (WO-052 / P-328, P-331, P-332):
 BREAKING CHANGE — Envelope/Envelope&lt;T&gt; moved from namespace SharedKernel.Contracts.Envelope (singular) to SharedKernel.Contracts.Envelopes (plural). This eliminates the long-standing namespace/type-name collision that previously required a `using EnvelopeNs = SharedKernel.Contracts.Envelope;` alias workaround at every consuming call site. Type members, factory methods, and implicit operators are byte-identical — this is a namespace-only move. Consumers must update their `using` statements from `SharedKernel.Contracts.Envelope` to `SharedKernel.Contracts.Envelopes` and remove any alias workaround; no other source change is required.
 EventEnvelope&lt;TEvent&gt; gains an optional nullable `Guid? TenantId` property (positioned after CausationId) plus a trailing optional `Guid? tenantId = null` parameter on `EventEnvelope.Wrap` — purely additive, source- and binary-compatible with every existing call site. Populated only when the publisher explicitly supplies it; never inferred from Payload.
 CursorPagedList&lt;T&gt; added — a new sealed record DTO in Pagination/ (namespace SharedKernel.Contracts.Pagination), the cursor/keyset-pagination counterpart to PagedList&lt;T&gt;. Carries Items/NextCursor/HasMore; deliberately no TotalCount/Page/PageSize. Create-only construction, purely additive.
 This is the package's first breaking release since 1.0.0 — the major version bump reflects the namespace rename alone; the TenantId and CursorPagedList&lt;T&gt; additions are individually additive and ship in the same release.</PackageReleaseNotes>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Cross-service DTOs for Platform.SharedKernel microservices: PagedList, CursorPagedList, Envelope, IIntegrationEvent, EventEnvelope transport wrapper (with optional TenantId routing metadata). ResultEnvelopeExtensions bridge Result&lt;T&gt; ↔ Envelope&lt;T&gt; at service boundaries. Zero external NuGet dependencies. AOT-safe STJ source-generated serialization.</Description>
     <PackageTags>contracts;dtos;integration-events;paged-list;cursor-pagination;envelope;shared-kernel;result-envelope-mapping</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <!--
       SharedKernel.Primitives: supplies Error, ErrorType, Result<T> primitives consumed by Envelope types.
@@ -39,12 +21,4 @@ This is the package's first breaking release since 1.0.0 — the major version b
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Contracts.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Contracts.Tests\**" />
-    <None Remove="SharedKernel.Contracts.Tests\**" />
-  </ItemGroup>
-
 </Project>

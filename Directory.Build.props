@@ -1,0 +1,131 @@
+<Project>
+
+  <!--
+    Platform.SharedKernel — centralized build configuration (DV-002/WO-devops-001).
+
+    Import order matters: MSBuild auto-imports Directory.Build.props BEFORE the project body and
+    Directory.Build.targets AFTER it. Properties set here are therefore *defaults* — any later
+    <PropertyGroup> in the project file itself (or in Directory.Build.targets) wins.
+
+    Exactly one copy of this file exists, at the repository root. A per-domain copy would stop
+    MSBuild's upward directory walk and silently drop this file for everything below it — see
+    PLATFORM.md "Migration hazard specific to this repo".
+  -->
+
+  <PropertyGroup>
+    <!--
+      Computed identity. Nested *.Tests projects (e.g. 08.Storage/SharedKernel.Storage.Abstractions/
+      SharedKernel.Storage.Abstractions.Tests/) are detected by project-name suffix. This does NOT
+      catch every non-shipping project in the repo (SharedKernel.Testing.SelfTests, and the
+      consumer-verify/*Consumer exe harnesses under 00.Governance/_verification and the
+      per-domain consumer-verify/ folders, do not end in ".Tests") — those already declare
+      <IsPackable>false</IsPackable> explicitly in their own project body, which always wins over
+      anything set here because Directory.Build.props is imported first. This property only drives
+      the mechanical, low-risk defaults below; it is never the sole gate on IsPackable.
+    -->
+    <IsTestProject Condition="$(MSBuildProjectName.EndsWith('.Tests'))">true</IsTestProject>
+    <IsTestProject Condition="'$(IsTestProject)' == ''">false</IsTestProject>
+  </PropertyGroup>
+
+  <!-- Language / compilation — every project. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!--
+      TreatWarningsAsErrors is deliberately NOT centralized here (Rule 7: a property that is not
+      genuinely uniform must stay per-project). Verified against real source: only 33 of 119 csproj
+      files set it, concentrated in the newer domains (04/05/07/08/09/10/11/13/17 and their
+      consumer-verify harnesses) — 00.Governance/01.Core/02.Caching/03.Domain/06.Persistence/
+      12.Security/16.Testing never opted in. A first attempt at centralizing this repo-wide
+      (matching PLATFORM.md's original PROPOSED design) turned ~60 previously-dormant warnings
+      (CS1574 unresolved &lt;see cref&gt; references, RS1041 analyzer-project compat warnings) into
+      hard build errors across files this agent has no jurisdiction to fix (.cs source content is
+      owned by each domain's phase-implementers, never devops-lead). Reverted: each of the original
+      33 files keeps its own explicit &lt;TreatWarningsAsErrors&gt;true&lt;/TreatWarningsAsErrors&gt;
+      unchanged; this is a per-project opt-in, like Description/PackageTags, not a centralized default.
+    -->
+    <!--
+      .NET 10 defaults NuGetAuditMode to "all" (was "direct"). Combined with a project's own
+      TreatWarningsAsErrors=true (see above), a newly-disclosed CVE in ANY transitive dependency
+      would break that project's build with no code change. Demote NU1901-NU1904 to non-fatal
+      warnings locally; CI escalates them back to hard errors via a dedicated
+      `dotnet restore -warnaserror` step (see ci.yml) so the audit signal is never silently lost,
+      only relocated to where it can be triaged deliberately.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+
+  <!-- Nested-test exclusion — shipping/non-test projects only.
+       Replaces the hand-written <Compile Remove="*.Tests\**"/><EmbeddedResource Remove=.../><None Remove=.../>
+       trio duplicated in ~45 production csproj files: DefaultItemExcludes feeds the SDK's default
+       item globs and covers all three item types in one line. -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true'">
+    <DefaultItemExcludes>$(DefaultItemExcludes);*.Tests\**;*.ConsumerVerify\**;consumer-verify\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <!--
+    Documentation — shipping library projects only. NOTE: the actual <GenerateDocumentationFile>
+    default is set in Directory.Build.targets, not here — OutputType is set inside each project's
+    own body, which is imported AFTER Directory.Build.props, so a condition on $(OutputType) here
+    would always see it unset/empty and never correctly exclude the Exe consumer-verify harnesses.
+    Directory.Build.targets runs after the project body, where $(OutputType) is genuinely resolved.
+  -->
+
+  <!-- Determinism / Source Link. SDK-built-in Source Link has been on by default since .NET 8 —
+       never add the legacy Microsoft.SourceLink.GitHub package alongside this. -->
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+    <!-- Only stamp CI-deterministic paths in CI: doing this locally breaks IDE "go to source" debugging. -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>portable</DebugType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+  </PropertyGroup>
+
+  <!-- Packaging identity — shipping projects only. Every property here was previously hand-duplicated
+       in ~45 production csproj files (Authors, Company, Product, Copyright, license, repo URLs,
+       symbol format). Description and PackageTags are NOT here: they are the two properties that
+       genuinely vary per package (Rule 7) and stay declared in each project's own csproj. -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true'">
+    <Authors>Gresta-Vertex-Labs</Authors>
+    <Company>Gresta-Vertex-Labs</Company>
+    <Product>Platform.SharedKernel</Product>
+    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!--
+      Single consolidated pack output location (DV-004): replaces the six scattered locations found
+      on disk (nupkgs/, artifacts/nupkg/, local-feed/, 06.Persistence/nupkg/, 02.Caching/nupkgs/,
+      and seven per-project bin/Release/ dirs). Matches NuGet.Config's "local-shared-kernel" feed.
+    -->
+    <PackageOutputPath>$(MSBuildThisFileDirectory)nupkgs</PackageOutputPath>
+  </PropertyGroup>
+
+  <!-- README packaging item — shipping projects only, guarded so a project without a README does not
+       fail restore/pack outright (SKPKG003 in Directory.Build.targets turns that into a hard error
+       instead, so the failure is explicit rather than a silently-missing file). -->
+  <ItemGroup Condition="'$(IsTestProject)' != 'true' and Exists('README.md')">
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Non-shipping defaults. Only applied when the project has not already declared IsPackable
+       itself (Directory.Build.props is imported first, so an explicit value in the project body
+       always wins regardless of this condition) — every existing *.Tests/consumer-verify/*Consumer
+       project already sets IsPackable=false explicitly; this is a safety net for future ones. -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true' and '$(IsPackable)' == ''">
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+</Project>

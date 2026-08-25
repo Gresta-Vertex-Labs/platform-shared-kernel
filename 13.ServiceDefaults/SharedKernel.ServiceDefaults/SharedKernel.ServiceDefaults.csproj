@@ -1,25 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.ServiceDefaults</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Host composition layer for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry + health check wiring), liveness/readiness health check endpoint mappings, StartupGate, and opt-in dependency-specific health check adapters (database, Redis, messaging).</Description>
     <PackageTags>shared-kernel;service-defaults;opentelemetry;health-checks;kubernetes;observability</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!--
       NU5104: a stable package release must not depend on a prerelease package. This package
       depends on OpenTelemetry.Instrumentation.EntityFrameworkCore, which as of this writing has
@@ -28,14 +12,11 @@
       ships a stable EFCore instrumentation release.
     -->
     <NoWarn>$(NoWarn);NU5104</NoWarn>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
@@ -64,14 +45,13 @@
     -->
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj" />
   </ItemGroup>
-
   <ItemGroup>
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" Version="1.11.0-beta.2" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <!--
       OpenTelemetry.Instrumentation.GrpcNetClient 1.15.1-beta.1: gRPC client OTel instrumentation,
       activated by WithCommunicationTelemetry() (S-18/C-47, WO-056/P-365) — never by
@@ -89,7 +69,7 @@
       ActivitySource anywhere, so WithCommunicationTelemetry() wires the meter only — corrected here
       so the two do not drift.
     -->
-    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" Version="1.15.1-beta.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient" />
     <!--
       Microsoft.Extensions.Diagnostics.HealthChecks and Microsoft.Extensions.Hosting are NOT
       referenced as explicit PackageReferences — both ship as part of the
@@ -97,8 +77,8 @@
       asset-pruning (NU1510) flags an explicit reference to an already-framework-provided
       package as redundant. Removing them avoids a build error under TreatWarningsAsErrors.
     -->
-    <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
-    <PackageReference Include="StackExchange.Redis" Version="2.8.41" />
+    <PackageReference Include="AspNetCore.HealthChecks.Redis" />
+    <PackageReference Include="StackExchange.Redis" />
     <!--
       Azure.Extensions.AspNetCore.Configuration.Secrets / Azure.Identity: required so
       AddSharedKernelKeyVaultConfiguration (Core phase, C-56, WO-061/P-398) can call
@@ -113,19 +93,10 @@
       stale prior pin: Azure.Extensions.AspNetCore.Configuration.Secrets's latest stable is 1.5.2;
       Azure.Identity's latest stable is 1.21.0 (unchanged from the version S-17 removed).
     -->
-    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
-    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
+    <PackageReference Include="Azure.Identity" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.ServiceDefaults.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.ServiceDefaults.Tests\**" />
-    <None Remove="SharedKernel.ServiceDefaults.Tests\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <InternalsVisibleTo Include="SharedKernel.ServiceDefaults.Tests" />
   </ItemGroup>
-
 </Project>

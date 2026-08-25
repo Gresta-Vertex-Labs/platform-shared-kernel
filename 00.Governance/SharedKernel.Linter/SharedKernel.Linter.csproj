@@ -1,30 +1,20 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <ContentTargetFolders>content</ContentTargetFolders>
     <NoWarn>NU5128</NoWarn>
     <NoDefaultExcludes>true</NoDefaultExcludes>
     <IsPackable>true</IsPackable>
-
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Linter</PackageId>
     <Version>1.0.0</Version>
-    <Authors>Gresta-Vertex-Labs</Authors>
     <Description>Content-only NuGet package that distributes SharedKernel's .editorconfig, .csharpierrc.json, and MSBuild props/targets for CSharpier formatting enforcement. Reference with PrivateAssets="all". Ships no DLL.</Description>
     <PackageTags>editorconfig;csharpier;linter;sharedkernel;governance;formatting</PackageTags>
-    <PackageProjectUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</RepositoryUrl>
     <DevelopmentDependency>true</DevelopmentDependency>
   </PropertyGroup>
-
   <ItemGroup>
     <Content Include="content\.editorconfig" PackagePath="content/.editorconfig" />
     <Content Include="content\.csharpierrc.json" PackagePath="content/.csharpierrc.json" />
     <Content Include="content\build\SharedKernel.Linter.props" PackagePath="content/build/SharedKernel.Linter.props" />
     <Content Include="content\build\SharedKernel.Linter.targets" PackagePath="content/build/SharedKernel.Linter.targets" />
   </ItemGroup>
-
 </Project>

@@ -1,12 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
   <ItemGroup>
     <!--
       Narrow exception to the no-nested-.Tests rule (WO-029, P-179): proves standalone
@@ -15,7 +10,6 @@
       classes, faker-seeding conventions, recorder/double self-checks).
     -->
     <ProjectReference Include="..\SharedKernel.Testing.csproj" />
-
     <!--
       T-88/P-438/WO-065: test-only proof dependency on a real production package, mirroring the
       precedent documented at Security/ApiKeyRotationScenarioBuilderTests.cs (T-84) — proves that
@@ -25,18 +19,16 @@
     -->
     <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Standard Test Package Set — direct package references; must never leak into SharedKernel.Testing.csproj itself. -->
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
-    <PackageReference Include="coverlet.collector" Version="6.0.4" />
-    <PackageReference Include="FluentAssertions" Version="8.4.0" />
-    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
   </ItemGroup>
-
 </Project>

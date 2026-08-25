@@ -1,30 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Messaging.MassTransit</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>MassTransit 9.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ, Azure Service Bus, configurable retry, and transactional EF Core outbox integration. CloudEvents-compliant envelope publishing.</Description>
     <PackageTags>messaging;masstransit;rabbitmq;azure-service-bus;outbox;cloud-events;consumer-base;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <!--
       Project references:
@@ -42,30 +23,29 @@
     <ProjectReference Include="..\..\01.Core\SharedKernel.Compression\SharedKernel.Compression.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- MassTransit 9.x transports and integrations -->
-    <PackageReference Include="MassTransit" Version="9.1.2" />
-    <PackageReference Include="MassTransit.RabbitMQ" Version="9.1.2" />
-    <PackageReference Include="MassTransit.Azure.ServiceBus.Core" Version="9.1.2" />
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="MassTransit.Azure.ServiceBus.Core" />
     <!--
       MassTransit.EntityFrameworkCore — EF Core outbox and saga persistence.
       Used via generic TDbContext type parameter in WithEntityFrameworkOutbox<TDbContext>().
       No 06.Persistence.* reference is introduced.
     -->
-    <PackageReference Include="MassTransit.EntityFrameworkCore" Version="9.1.2" />
+    <PackageReference Include="MassTransit.EntityFrameworkCore" />
     <!--
       Microsoft.EntityFrameworkCore — for the TDbContext : DbContext generic constraint in
       WithEntityFrameworkOutbox<TDbContext>(). No 06.Persistence.* reference is introduced.
     -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <!--
       MassTransit.Quartz — durable deferred message scheduling via Quartz.NET.
       Used by MessagingBusBuilder.WithQuartzScheduler() (P-127).
       Only loaded at composition root; zero impact on Abstractions package.
     -->
-    <PackageReference Include="MassTransit.Quartz" Version="9.1.2" />
+    <PackageReference Include="MassTransit.Quartz" />
     <!--
       Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions — HealthCheckContext/
       HealthCheckResult/HealthStatus/HealthCheckRegistration types only, used by
@@ -75,26 +55,12 @@
       HealthCheckService/publisher-hosted-service machinery is 13.ServiceDefaults's concern —
       this domain ships no IHealthCheck implementation and no AddHealthChecks() wiring.
     -->
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Allow test project to access internal types (MassTransitMessageBus, MassTransitEventPublisher) -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SharedKernel.Messaging.MassTransit.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Messaging.MassTransit.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Messaging.MassTransit.Tests\**" />
-    <None Remove="SharedKernel.Messaging.MassTransit.Tests\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Embeds README.md into the packed .nupkg (PackageReadmeFile above) — P-349/WO-054 -->
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
 </Project>

@@ -1,110 +1,84 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" PrivateAssets="all" />
-    <PackageReference Include="FluentAssertions" Version="8.10.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="FluentAssertions" />
     <!-- Provides NetArchTest.Rules and Mono.Cecil transitively -->
-    <PackageReference Include="NetArchTest.Rules" Version="1.3.2" />
-    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="Mono.Cecil" />
     <!-- Roslyn CSharpCompilation for in-memory fixture assembly generation in T-12 -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <!-- MediatR pinned to match 05.Application/SharedKernel.Application.Behaviors's own pin
          (see that project's version-pin note) — needed to reference MediatR.IStreamRequest<>/
          IPipelineBehavior<,> as extraReferences when compiling WO-036 P-225 fixture assemblies
          in ApplicationPipelineRulesTests. NuGet-only; 00.Governance never references
          05.Application (layering: 00.Governance references nothing). -->
-    <PackageReference Include="MediatR" Version="12.4.1" />
+    <PackageReference Include="MediatR" />
     <!-- Concrete DI container needed for T-153's IServiceCollection fixture in
          PipelineOrderAssertionTests (BuildServiceProvider is never called, but
          AddTransient/AddScoped extension methods require the concrete package). -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <!-- Provides LoggerMessageAttribute for compiling contrived [LoggerMessage] fixture
          assemblies in LoggingEventIdIntegrityAssertionTests (WO-041 P-250). Safe to reference
          directly here (unlike the CSharpAnalyzerTest sandbox in SharedKernel.Analyzers.Tests) —
          fixture assemblies compiled via CompileInMemory run in-process against the current
          runtime's own corelib, so there is no reference-assembly version mismatch. -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <!-- Provides OptionsBuilder<T>/AddOptions<T>/ValidateOnStart() for compiling T-338/T-339's
          contrived fixture assemblies (WO-065 P-437, SK.00.CacheEncryptionAndRedisValidationLock,
          Technique B). ValidateOnStart() resolves as Microsoft.Extensions.DependencyInjection.
          OptionsBuilderExtensions.ValidateOnStart — declared in this package under a different
          namespace than the package name itself, confirmed against the real, shipped
          RedisConnectionCoreExtensions.AddRedisConnection before writing T-340. -->
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.ArchitectureTests.csproj" />
     <!-- Required to resolve SharedKernel.Guards.Clauses.IGuardClause in GuardPurityRulesTests -->
-    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj" PrivateAssets="all" />
     <!-- Required to resolve typeof(IDomainService)/typeof(DomainService) in DomainGoldStandard/DomainLayerPurity tests -->
-    <ProjectReference Include="..\..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" PrivateAssets="all" />
     <!-- Required to resolve typeof(IIntegrationEvent) in ContractsPurityRules tests -->
-    <ProjectReference Include="..\..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" PrivateAssets="all" />
     <!-- Required to resolve the five-package Redis topology assemblies in RedisTopologyRulesTests -->
-    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis\SharedKernel.Caching.Redis.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.DistributedLocking\SharedKernel.Caching.Redis.DistributedLocking.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.HashStore\SharedKernel.Caching.Redis.HashStore.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.PubSub\SharedKernel.Caching.Redis.PubSub.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.Core\SharedKernel.Caching.Redis.Core.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis\SharedKernel.Caching.Redis.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.DistributedLocking\SharedKernel.Caching.Redis.DistributedLocking.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.HashStore\SharedKernel.Caching.Redis.HashStore.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.Redis.PubSub\SharedKernel.Caching.Redis.PubSub.csproj" PrivateAssets="all" />
     <!-- Required to resolve the messaging assemblies in RedisTopologyRulesTests -->
-    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.Abstractions\SharedKernel.Messaging.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\07.Messaging\SharedKernel.Messaging.MassTransit\SharedKernel.Messaging.MassTransit.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Communication.Grpc assembly in
          CommunicationLayeringRulesTests.GrpcNeverReferencesContracts pass-path test (T-128) -->
-    <ProjectReference Include="..\..\..\11.Communication\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\11.Communication\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj" PrivateAssets="all" />
     <!-- Test-only reference to the REAL compiled SharedKernel.Application assembly, required by
          WO-039 P-240 (SK.00.DomainEventDispatcherReflectionExemption) to point
          ReflectionGuardRules.NoMakeGenericMethodReflection at MediatRDomainEventDispatcher's actual
          compiled IL rather than a contrived fixture. Test-project-only ProjectReference — does not
          violate the "00.Governance references nothing" layering rule (production references only). -->
-    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Storage.Abstractions/.S3/.Obs assemblies in
          StorageTopologyRulesTests (WO-043 P-271) — 08.Storage reached Published (P-265/P-266/
          P-267 all shipped) before this phase's implementation session, so real-assembly
          verification is wired alongside the contrived-fixture proof rather than deferred. -->
-    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.S3\SharedKernel.Storage.S3.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.Obs\SharedKernel.Storage.Obs.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.S3\SharedKernel.Storage.S3.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\08.Storage\SharedKernel.Storage.Obs\SharedKernel.Storage.Obs.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Search.Abstractions/.Meilisearch/.ElasticSearch
          assemblies in SearchTopologyRulesTests (WO-044 P-278) — 09.Search reached Published
          (139/139 tasks, P-272/P-273/P-274 all shipped) before this phase's implementation
          session, so real-assembly verification is wired alongside the contrived-fixture proof
          rather than deferred, mirroring the StorageTopologyRulesTests precedent — this phase's
          own acceptance criteria treat real-assembly verification as GATING, not optional. -->
-    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.Meilisearch\SharedKernel.Search.Meilisearch.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.ElasticSearch\SharedKernel.Search.ElasticSearch.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.Abstractions\SharedKernel.Search.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.Meilisearch\SharedKernel.Search.Meilisearch.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\09.Search\SharedKernel.Search.ElasticSearch\SharedKernel.Search.ElasticSearch.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.AI.Abstractions/.Qdrant/.SemanticKernel
          assemblies in IntelligenceTopologyRulesTests (WO-045 P-286) — 10.Intelligence reached
          Published (all six phases ●, WO-048 Milvus retraction) before this phase's implementation
@@ -113,12 +87,9 @@
          precedent — this phase's own acceptance criteria treat real-assembly verification as
          GATING, not optional. There is no SharedKernel.AI.Milvus project reference — that package
          was permanently retracted before ever being built (WO-048). -->
-    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.Qdrant\SharedKernel.AI.Qdrant.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.SemanticKernel\SharedKernel.AI.SemanticKernel.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.Abstractions\SharedKernel.AI.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.Qdrant\SharedKernel.AI.Qdrant.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\10.Intelligence\SharedKernel.AI.SemanticKernel\SharedKernel.AI.SemanticKernel.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Workflows.Temporal assembly in
          WorkflowTopologyRulesTests (WO-046 P-290, SK.00.WorkflowTopology) — 17.Workflows reached
          Published (all six phases ●, 158/158 tests passing) before this phase's implementation
@@ -126,8 +97,7 @@
          rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests/
          IntelligenceTopologyRulesTests precedent — this phase's own acceptance criteria treat
          real-assembly verification as GATING, not optional. -->
-    <ProjectReference Include="..\..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\17.Workflows\SharedKernel.Workflows.Temporal\SharedKernel.Workflows.Temporal.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Persistence.EfCore assembly in
          EfCorePackageHygieneRulesTests (WO-051 P-327, SK.00.EfPropertyUsageGuard) — 06.Persistence's
          P-316 fix (TenantedRepository's two GetByIdForTenantAsync* methods migrated off
@@ -137,8 +107,7 @@
          proof rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests/
          IntelligenceTopologyRulesTests/WorkflowTopologyRulesTests precedent — this phase's own
          acceptance criteria treat real-assembly verification as GATING, not optional. -->
-    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\06.Persistence\SharedKernel.Persistence.EfCore\SharedKernel.Persistence.EfCore.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Security.Abstractions/.Oidc assemblies in
          SecurityArchitectureRulesTests (WO-057 P-373, SK.00.SecurityContextGuard) — both
          12.Security (.Abstractions/.Oidc) and 03.Domain are already fully Published as of this
@@ -146,10 +115,8 @@
          proof rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests
          precedent — non-gating for this phase. SharedKernel.Domain is already referenced above
          (03.Domain, for DomainGoldStandardRules/DomainLayerPurityRules). -->
-    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Security.Mtls assembly in
          SecurityArchitectureRulesTests (WO-058 P-383, SK.00.SenderConstrainedCredentialGuard) —
          verified on disk that 12.Security shipped its full WO-058/WO-060 scope (DPoP inside
@@ -158,8 +125,7 @@
          re-verification tests originally tracked as a Cross-Domain Dependency are wired directly
          here rather than deferred, mirroring the StorageTopologyRulesTests/SearchTopologyRulesTests
          precedent. -->
-    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\12.Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.MultiTenancy/.ServiceDefaults assemblies in
          SecureDefaultsAssertionTests (WO-061 P-401, SK.00.TenantAndMtlsBoundaryLock) — verified on
          disk that 13.ServiceDefaults shipped its full WO-061 scope (TenantResolutionOptions.
@@ -172,10 +138,8 @@
          precedent. SharedKernel.MultiTenancy is new to this project; SharedKernel.ServiceDefaults
          was not previously referenced despite this project's earlier ServiceDefaultsGovernance
          phase (SK.00.ServiceDefaultsGovernance/P-173) using contrived fixtures only. -->
-    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj"
-                      PrivateAssets="all" />
-    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\13.ServiceDefaults\SharedKernel.ServiceDefaults\SharedKernel.ServiceDefaults.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Presentation.WebApi assembly in
          SecureDefaultsAssertionTests (WO-062 P-410, SK.00.CorsWildcardCredentialsGuard) — verified
          on disk that 14.Presentation shipped its full P-404 scope (CorsPolicyOptions,
@@ -192,8 +156,7 @@
          for the full reasoning) — this reference exists so T-328 can instead re-point the ALREADY-
          SHIPPED AssertMethodBodyInvokesMethod at CorsPolicyOptionsValidator.Validate, proving it
          genuinely calls ValidateOptionsResult.Fail, a technique matching the guard's REAL shape. -->
-    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.WebApi\SharedKernel.Presentation.WebApi.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Integration.Webhooks assembly in
          SecureDefaultsAssertionTests (WO-064 P-432, SK.00.WebhookSsrfGuardLock) — verified on disk
          that 15.Integration shipped IWebhookUrlValidator/PrivateNetworkWebhookUrlValidator and
@@ -202,8 +165,7 @@
          real-assembly re-verification tests originally tracked as a Cross-Domain Dependency are
          wired directly here rather than deferred, mirroring the SecureDefaultsAssertionTests
          (WO-061/WO-062/WO-063) precedent. -->
-    <ProjectReference Include="..\..\..\15.Integration\SharedKernel.Integration.Webhooks\SharedKernel.Integration.Webhooks.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\15.Integration\SharedKernel.Integration.Webhooks\SharedKernel.Integration.Webhooks.csproj" PrivateAssets="all" />
     <!-- Required to resolve the real SharedKernel.Caching.FusionCache assembly's
          AddCacheEncryption()/AddBrotliCompression() pipeline in SecureDefaultsAssertionTests
          (WO-065 P-437, SK.00.CacheEncryptionAndRedisValidationLock, Technique A) — verified on
@@ -214,15 +176,12 @@
          (WO-061/WO-062/WO-063/WO-064) precedent. SharedKernel.Caching.Redis.Core is already
          referenced above (for RedisTopologyRulesTests) and hosts AddRedisConnection for T-340 —
          no new reference was needed for Technique B. -->
-    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\02.Caching\SharedKernel.Caching.FusionCache\SharedKernel.Caching.FusionCache.csproj" PrivateAssets="all" />
     <!-- Required to resolve ISymmetricEncryptionService/AesGcmEncryptionService/
          IEncryptionKeyProvider for T-337's encrypt-only baseline (WO-065 P-437, Technique A).
          Already a transitive dependency of SharedKernel.Caching.FusionCache above, referenced
          directly here for compile-time clarity, matching this project's own "reference every type
          used directly in test code" convention. -->
-    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj"
-                      PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" PrivateAssets="all" />
   </ItemGroup>
-
 </Project>

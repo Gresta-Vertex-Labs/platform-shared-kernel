@@ -1,50 +1,31 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <!-- RS2008: Release tracking warnings — suppressed during development phases before first publish -->
     <NoWarn>$(NoWarn);RS2008</NoWarn>
-
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Analyzers</PackageId>
     <Version>1.0.0</Version>
-    <Authors>Gresta-Vertex-Labs</Authors>
     <Description>Roslyn diagnostic analyzers enforcing SharedKernel coding standards. Ships no runtime DLL — compiler-only. Rules SK0001–SK0006 cover DateTime usage, FeatureManager injection, raw exception throws, null Error returns, string-only exception constructors, and guard clause purity.</Description>
     <PackageTags>roslyn;analyzer;sharedkernel;governance</PackageTags>
-    <PackageProjectUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/gresta-vertex-labs/platform-shared-kernel</RepositoryUrl>
-
     <!-- Analyzer packages ship no runtime assembly and are development-only dependencies -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <DevelopmentDependency>true</DevelopmentDependency>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <NoPackageAnalysis>true</NoPackageAnalysis>
   </PropertyGroup>
-
   <ItemGroup>
     <!-- Exclude nested test project obj/bin from the parent compile glob -->
     <Compile Remove="SharedKernel.Analyzers.Tests\**\*" />
   </ItemGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
   </ItemGroup>
-
   <ItemGroup>
     <AdditionalFiles Include="AnalyzerReleaseTracking.Shipped.txt" />
     <AdditionalFiles Include="AnalyzerReleaseTracking.Unshipped.txt" />
   </ItemGroup>
-
   <!-- Place the compiled analyzer assembly under analyzers/dotnet/cs in the NuGet package -->
   <ItemGroup>
-    <None Include="$(OutputPath)$(AssemblyName).dll"
-          Pack="true"
-          PackagePath="analyzers/dotnet/cs"
-          Visible="false" />
+    <None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
-
 </Project>

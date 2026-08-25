@@ -1,27 +1,20 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <!-- Not shipped — verification harness only -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Communication.Rest\SharedKernel.Communication.Rest.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Grpc\SharedKernel.Communication.Grpc.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.GraphQL\SharedKernel.Communication.GraphQL.csproj" />
     <ProjectReference Include="..\SharedKernel.Communication.Internal\SharedKernel.Communication.Internal.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <!-- Generic host — lets a future PB-07 pass exercise the real IHost.StartAsync() eager
          ValidateOnStart() path (mirroring the 17.Workflows/consumer-verify precedent's P-06 surface),
          not just BuildServiceProvider(). -->
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
-
 </Project>

@@ -1,30 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <!-- NuGet packaging metadata -->
-    <PackageId>SharedKernel.Workflows.Temporal</PackageId>
     <Version>1.0.0</Version>
-    <PackageVersion>1.0.0</PackageVersion>
-    <Authors>Gresta-Vertex-Labs</Authors>
-    <Company>Gresta-Vertex-Labs</Company>
-    <Product>Platform.SharedKernel</Product>
     <Description>Durable Temporal workflow orchestration for Platform.SharedKernel microservices: IWorkflowDispatcher/IWorkflowHandle/IWorkflowHandle&lt;TResult&gt;/IWorkflowIdFactory (tenant-scoped durable dispatch), WorkflowBase/ActivityBase/CommandActivity&lt;TCommand&gt; (deterministic workflow authoring plus the sole 05.Application MediatR bridge), ITemporalWorkflowsBuilder (worker hosting), Result&lt;T&gt;-to-Temporal-failure mapping, AES-256-GCM payload encryption, tenant/correlation header propagation, and a readiness-probe primitive — all over the official Temporalio .NET SDK. A deliberate single package: no SharedKernel.Workflows.Abstractions split exists, because durable execution's determinism/replay/versioning programming model IS the abstraction.</Description>
     <PackageTags>workflows;temporal;durable-execution;orchestration;shared-kernel</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Gresta-Vertex-Labs/platform-shared-kernel</PackageProjectUrl>
-    <Copyright>Copyright © 2026 Gresta-Vertex-Labs</Copyright>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
@@ -42,38 +23,25 @@
     -->
     <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <!--
       Temporalio SDK family — verified against nuget.org 2026-07-23: 1.17.0 is latest stable
       (published 2026-07-13, MIT, "temporalio" org). All four packages pinned to the SAME version
       (17.Workflows/CLAUDE.md, D-02/S-05).
     -->
-    <PackageReference Include="Temporalio" Version="1.17.0" />
-    <PackageReference Include="Temporalio.Extensions.Hosting" Version="1.17.0" />
-    <PackageReference Include="Temporalio.Extensions.OpenTelemetry" Version="1.17.0" />
-    <PackageReference Include="Temporalio.Extensions.DiagnosticSource" Version="1.17.0" />
+    <PackageReference Include="Temporalio" />
+    <PackageReference Include="Temporalio.Extensions.Hosting" />
+    <PackageReference Include="Temporalio.Extensions.OpenTelemetry" />
+    <PackageReference Include="Temporalio.Extensions.DiagnosticSource" />
     <!--
       Microsoft.Extensions.* set — pinned to 10.0.9, matching the version already pinned by the most
       recently implemented sibling capability packages (09.Search, 10.Intelligence), re-verified on
       disk rather than floated to nuget.org's newest (S-01).
     -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude the nested test project from the main project's compilation -->
-    <Compile Remove="SharedKernel.Workflows.Temporal.Tests\**" />
-    <EmbeddedResource Remove="SharedKernel.Workflows.Temporal.Tests\**" />
-    <None Remove="SharedKernel.Workflows.Temporal.Tests\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <!--
       Allows the nested test project to white-box test internal implementation details
@@ -83,5 +51,4 @@
     -->
     <InternalsVisibleTo Include="SharedKernel.Workflows.Temporal.Tests" />
   </ItemGroup>
-
 </Project>
