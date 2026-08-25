@@ -91,6 +91,12 @@ public sealed class PersistenceRetryDiagnosticListenerTests
 
             var options = new DbContextOptionsBuilder<RetryDiagListenerTestDbContext>()
                 .UseSqlite("DataSource=:memory:")
+            // Each context here calls ReplaceService/AddInterceptors with fresh instances,
+            // which forces EF to build a new internal service provider per context. Past 20
+            // EF escalates ManyServiceProvidersCreatedWarning to an exception, which fails
+            // these tests only when the full suite runs (CI), never in isolation. The extra
+            // providers are intentional test isolation, so the warning is suppressed here.
+            .ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
                 .ReplaceService<IExecutionStrategyFactory, AlwaysRetryStrategyFactory>()
                 .AddInterceptors(faultInjector)
                 .Options;
