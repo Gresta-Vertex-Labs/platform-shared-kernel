@@ -150,6 +150,7 @@ jobs:
             "01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj" \
             "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" \
             "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
+            "samples/OrderApi/OrderApi.csproj" \
             ; do
             echo "::group::restore $proj"
             dotnet restore "$proj" --force
@@ -169,6 +170,31 @@ jobs:
             dotnet run --project "$proj" --no-restore --configuration Release
             echo "::endgroup::"
           done
+
+      # samples/ are runnable services, not harnesses — build and exercise them against the
+      # packed feed so a sample that breaks against a real published package fails CI here.
+      - name: Build samples against packed packages
+        run: dotnet build "samples/OrderApi/OrderApi.csproj" --no-restore --configuration Release
+
+      - name: Smoke-test OrderApi sample
+        env:
+          ASPNETCORE_URLS: http://localhost:5199
+        run: |
+          set -e
+          dotnet run --project "samples/OrderApi/OrderApi.csproj" --no-build --no-restore --configuration Release &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for _ in $(seq 1 40); do
+            curl -sf http://localhost:5199/health/ready >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -sf http://localhost:5199/health/live  | grep -q Healthy
+          curl -sf http://localhost:5199/health/ready | grep -q Healthy
+          id=$(curl -sf -X POST http://localhost:5199/orders -H 'Content-Type: application/json' -d '{"customer":"CI","amount":10.00,"currency":"eur","lines":["item"]}' | sed 's/.*"id":"//;s/".*//')
+          test -n "$id"
+          curl -sf "http://localhost:5199/orders/$id" | grep -q '"currency":"EUR"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5199/orders/01999999-0000-7000-8000-000000000000)" = 404
+          echo "OrderApi sample smoke test passed"
 
       # SharedKernel.Caching.ConsumerVerify is a Testcontainers-backed 5-surface harness
       # (real Redis) — run separately so its longer runtime and log volume don't crowd the
