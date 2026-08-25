@@ -432,3 +432,6 @@ FodyWeavers.xsd
 # Local NuGet feed + package output (regenerable build outputs, never commit)
 local-feed/
 nupkgs/
+
+# Knowledge-graph output (regenerable via /graphify, never commit)
+graphify-out/
