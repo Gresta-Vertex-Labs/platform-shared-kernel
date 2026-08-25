@@ -47,7 +47,37 @@ public sealed class SiblingIndependenceTests
     /// </summary>
     private static string GetElasticSearchPackageRoot([CallerFilePath] string testFilePath = "")
     {
-        var testsProjectDirectory = Path.GetDirectoryName(testFilePath)!;
-        return Path.GetDirectoryName(testsProjectDirectory)!;
+        // Preferred: this file's own compile-time path.
+        var testsProjectDirectory = Path.GetDirectoryName(testFilePath);
+        var packageRoot = testsProjectDirectory is null
+            ? null
+            : Path.GetDirectoryName(testsProjectDirectory);
+
+        if (packageRoot is not null && Directory.Exists(packageRoot))
+            return packageRoot;
+
+        return Path.Combine(FindRepositoryRoot(), "09.Search", "SharedKernel.Search.ElasticSearch");
     }
+
+    /// <summary>
+    /// Walks up from the test binary to the repository root, identified by the solution file.
+    /// Used when <c>[CallerFilePath]</c> is unusable — a deterministic CI build
+    /// (<c>ContinuousIntegrationBuild=true</c>) makes SourceLink rewrite it to the <c>/_/</c>
+    /// placeholder root, which exists in the PDB but not on disk.
+    /// </summary>
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null
+               && !File.Exists(Path.Combine(directory.FullName, "Platform.SharedKernel.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException(
+                "Could not locate the repository root (Platform.SharedKernel.slnx) from "
+                + AppContext.BaseDirectory);
+    }
+
 }
