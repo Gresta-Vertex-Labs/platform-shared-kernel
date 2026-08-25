@@ -139,7 +139,12 @@ public sealed class StringIncludeTests
 
         var options = new DbContextOptionsBuilder<StringIncludeDbContext>()
             .UseSqlite("DataSource=:memory:")
-            .ConfigureWarnings(w => w.Ignore(RelationalEventId.AmbientTransactionWarning))
+            .ConfigureWarnings(w => w
+                .Ignore(RelationalEventId.AmbientTransactionWarning)
+                // The rest of this assembly already suppresses this; only this chain did not,
+                // so once the other EF failures were fixed this became the test that happened
+                // to cross EF's 20-internal-provider threshold and fail in its place.
+                .Ignore(CoreEventId.ManyServiceProvidersCreatedWarning))
             .Options;
 
         var svcOpts = TestDbContextFactory.DefaultServiceOptions();
