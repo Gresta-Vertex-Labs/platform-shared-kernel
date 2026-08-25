@@ -56,6 +56,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # The stock ubuntu-latest image leaves too little free disk to build 119 projects in
+      # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
+      # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
+      # SDK install is not the thing that tips it over.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -116,6 +126,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The stock ubuntu-latest image leaves too little free disk to build 119 projects in
+      # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
+      # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
+      # SDK install is not the thing that tips it over.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
 
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
