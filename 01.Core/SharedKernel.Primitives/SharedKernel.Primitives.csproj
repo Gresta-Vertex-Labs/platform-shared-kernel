@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.1.0</Version>
     <Description>Foundational primitives for the SharedKernel: Result&lt;T&gt;, Error, ErrorCodes, IClock, SmartEnum, ValidationResult. Zero external dependencies. AOT-compatible.</Description>
     <PackageReleaseNotes>1.1.0 (WO-059 / P-384):
 - Added ErrorType.Forbidden (= 7, next sequential value after BusinessRule = 6) and the corresponding Error.Forbidden(string code, string message) factory, mirroring BusinessRule's addition pattern (P-042). Forbidden represents a caller who is generally permitted to attempt an operation, but for whom this specific instance/condition is not satisfied — maps to HTTP 403 Forbidden at the presentation layer. Distinct from Unauthorized (not permitted to attempt this at all — HTTP 401) and from BusinessRule (a domain invariant violation, not an authorization/permission gate).

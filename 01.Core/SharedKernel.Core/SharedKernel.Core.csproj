@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Core building blocks for the SharedKernel: base exception hierarchy, Result&lt;T&gt; railway extension methods (Map, Bind, Match, Tap, async), and BCL extension methods (string, IEnumerable&lt;T&gt;, DateTimeOffset, Guid). Depends on SharedKernel.Primitives.</Description>
     <PackageTags>shared-kernel;railway-oriented;exceptions;extensions;aot</PackageTags>
   </PropertyGroup>

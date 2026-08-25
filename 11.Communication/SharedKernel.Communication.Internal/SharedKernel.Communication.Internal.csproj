@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>K8s-native service discovery for Platform.SharedKernel: IServiceEndpointResolver, KubernetesServiceEndpointResolver (DNS SRV + A-record via Microsoft.Extensions.ServiceDiscovery), StaticServiceEndpointResolver (dev/test only — logs Warning at startup), AddK8sServiceDiscovery and AddStaticServiceDiscovery DI extensions.</Description>
     <PackageTags>service-discovery;kubernetes;k8s;dns;headless;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

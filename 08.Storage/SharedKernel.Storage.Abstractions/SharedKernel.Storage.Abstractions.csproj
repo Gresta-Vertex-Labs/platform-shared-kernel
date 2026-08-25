@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Object-storage abstraction contracts for Platform.SharedKernel microservices: IFileStorage (upload/download/delete/exists/metadata/copy/batch-delete/streaming-list/health-probe) and IBlobUriGenerator (presigned upload/download URLs), plus the Result-valued StorageErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives. Implemented by SharedKernel.Storage.S3 and SharedKernel.Storage.Obs.</Description>
     <PackageTags>storage;blob;s3;object-storage;presigned-url;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

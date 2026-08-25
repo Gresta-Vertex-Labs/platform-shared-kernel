@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.1.0</Version>
     <Description>Real-time SignalR conventions for SharedKernel microservices: tenant-context hub filter (TenantContextHubFilter), exception-to-HubException mapping filter (HubExceptionMappingFilter), per-connection hub-method invocation rate limiting and argument-payload validation (HubInvocationRateLimitFilter, HubInvocationRateLimitOptions), tenant-scoped group naming convention (HubGroupNaming), global filter registration with conservative resource-exhaustion HubOptions defaults (AddSharedKernelSignalR), a startup-time diagnostic flagging hubs mapped without a CORS policy, and an opt-in Redis-backed scale-out backplane (WithRedisBackplane) isolated from 02.Caching.Redis.Core.</Description>
     <PackageTags>shared-kernel;signalr;realtime;hub-filter;rate-limiting;redis;multi-tenant;aspnetcore</PackageTags>
   </PropertyGroup>

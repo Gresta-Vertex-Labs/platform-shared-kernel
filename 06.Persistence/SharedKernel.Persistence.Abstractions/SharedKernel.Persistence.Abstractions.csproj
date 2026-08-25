@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Description>Zero-ORM persistence abstractions: IRepository, IReadRepository, IUnitOfWork, ITransactionalUnitOfWork, IDbConnectionFactory, ISpecificationEvaluator. References only SharedKernel.Primitives, SharedKernel.Domain, and SharedKernel.Contracts (for PagedList&lt;T&gt;). Implemented by SharedKernel.Persistence.EfCore.</Description>
-    <Version>1.0.0</Version>
     <PackageTags>persistence;repository;unit-of-work;specification;shared-kernel</PackageTags>
   </PropertyGroup>
   <ItemGroup>

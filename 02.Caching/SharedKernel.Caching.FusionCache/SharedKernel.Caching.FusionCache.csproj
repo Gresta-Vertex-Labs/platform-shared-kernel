@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>FusionCache L1 provider implementation for SharedKernel caching. Provides ICacheService backed by ZiggyCreatures.FusionCache with stampede protection, background eager-refresh, fail-safe stale serving, and tag-based eviction. L1-only by default; Redis distributed backplane is added via SharedKernel.Caching.Redis. AOT-compatible.</Description>
     <PackageTags>shared-kernel;caching;fusioncache;l1-cache;stampede-protection;aot</PackageTags>
   </PropertyGroup>

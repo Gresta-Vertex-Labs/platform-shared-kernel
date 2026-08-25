@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Two-path guard system for the SharedKernel: Guard.Against.* (functional, returns Error?) and Guard.Throw.* (imperative, throws DomainException). Zero external dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Core.</Description>
     <PackageTags>shared-kernel;guard;guard-clause;validation;railway-oriented;aot</PackageTags>
   </PropertyGroup>

@@ -4,7 +4,6 @@
          The IFeatureManager wrapper isolates consuming services from this concern —
          if AOT becomes required, only the adapter needs replacement. -->
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Feature flag abstraction for the SharedKernel: IFeatureManager interface and Microsoft.FeatureManagement adapter. Consuming services depend only on the abstraction — swap the adapter if a fully AOT-safe implementation becomes available. Depends on SharedKernel.Primitives.</Description>
     <PackageTags>shared-kernel;feature-flags;feature-management;abstraction;dependency-injection</PackageTags>
   </PropertyGroup>

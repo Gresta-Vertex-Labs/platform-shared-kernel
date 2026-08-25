@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>AWS S3 / MinIO implementation of SharedKernel.Storage.Abstractions: S3FileStorage (TransferUtility-backed streaming upload, server-side copy, chunked batch delete, streaming list, connectivity probe) and S3BlobUriGenerator (presigned upload/download URLs). MinIO is served through the same code path via ServiceUrl + ForcePathStyle configuration — no separate package needed. Register via AddSharedKernelS3Storage(IConfiguration).</Description>
     <PackageTags>storage;blob;s3;aws;minio;object-storage;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

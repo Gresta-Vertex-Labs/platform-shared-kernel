@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>LLM orchestration provider for Platform.SharedKernel's SharedKernel.AI.Abstractions — implements IEmbeddingGenerator and ISemanticKernel on top of Microsoft.SemanticKernel/OpenAI connectors, with unconditional token-usage accounting, pre-dispatch context-window validation, and a stateless orchestration boundary: no tool execution, no automatic retry, no completion caching. Any retry is an explicit, bounded, opt-in .WithBoundedRetry(...) builder call, never reachable through ISemanticKernel itself. Additionally declares SemanticKernel-exclusive contracts (plugin/planner access, a triple-gated raw-client escape hatch) unreachable from a Qdrant- or Milvus-only composition root.</Description>
     <PackageTags>ai;llm;semantic-kernel;openai;embeddings;rag;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

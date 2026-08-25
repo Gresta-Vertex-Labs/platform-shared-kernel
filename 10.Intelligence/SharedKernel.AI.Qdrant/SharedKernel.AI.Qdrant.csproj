@@ -11,7 +11,6 @@
     -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);CS8509;CS8524</WarningsNotAsErrors>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Qdrant vector-database provider for Platform.SharedKernel's SharedKernel.AI.Abstractions — implements IVectorCollection&lt;TRecord&gt;, IVectorCollectionProvisioner, and IVectorProviderDescriptor against the official Qdrant.Client gRPC SDK, including tenant-scope-outermost-conjunction filter translation over the closed 8-node VectorFilter AST, fail-loud model-identity/dimension validation before any I/O, and collection-metadata-backed schema Fingerprint drift detection. Additionally declares Qdrant-exclusive contracts (sparse/hybrid vector queries, quantization-profile access, a triple-gated raw-client escape hatch) unreachable from a Milvus- or SemanticKernel-only composition root.</Description>
     <PackageTags>ai;vector-database;qdrant;embeddings;rag;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

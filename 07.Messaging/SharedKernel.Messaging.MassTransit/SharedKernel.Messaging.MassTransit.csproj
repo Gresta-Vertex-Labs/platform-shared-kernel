@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>MassTransit 9.x wiring for Platform.SharedKernel microservices: MassTransitMessageBus, MassTransitEventPublisher, ConsumerBase, MessagingBusBuilder, RabbitMQ, Azure Service Bus, configurable retry, and transactional EF Core outbox integration. CloudEvents-compliant envelope publishing.</Description>
     <PackageTags>messaging;masstransit;rabbitmq;azure-service-bus;outbox;cloud-events;consumer-base;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

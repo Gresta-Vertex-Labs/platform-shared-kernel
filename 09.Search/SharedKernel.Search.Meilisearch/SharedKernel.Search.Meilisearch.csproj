@@ -11,7 +11,6 @@
       are therefore folded into a single MINOR release, 1.1.0, covering both fixes in one pack. This is
       a deliberate decision, not an oversight — see 09.Search/state-map.md Phase: Published P-09/P-10.
     -->
-    <Version>1.1.0</Version>
     <Description>Meilisearch (BFF/fast) implementation of SharedKernel.Search.Abstractions: MeilisearchIndex&lt;TDocument&gt;, MeilisearchIndexProvisioner, MeilisearchProviderDescriptor, MeilisearchFilterCompiler, plus the Meilisearch-exclusive IInstantSearch&lt;TDocument&gt; (typo-tolerant/prefix instant search) and ITenantSearchTokenIssuer (engine-enforced per-tenant search tokens). Register via AddSharedKernelMeilisearchSearch(IConfiguration).</Description>
     <PackageTags>search;full-text-search;meilisearch;shared-kernel</PackageTags>
     <!--

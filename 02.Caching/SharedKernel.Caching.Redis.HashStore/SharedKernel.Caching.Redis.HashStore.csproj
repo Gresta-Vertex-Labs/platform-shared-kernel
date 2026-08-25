@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Structured Redis Hash storage (IRedisHashService, ITypedHashStore&lt;T&gt;). Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), distributed locking, or pub/sub packages.</Description>
     <PackageTags>shared-kernel;caching;redis;hash;structured-storage;aot</PackageTags>
   </PropertyGroup>

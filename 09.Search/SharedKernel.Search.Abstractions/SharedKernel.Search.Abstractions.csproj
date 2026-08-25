@@ -2,7 +2,6 @@
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
     <!-- WO-055/P-354 (P-10): MINOR bump — new public SearchBulkWriteOptions type, additive only -->
-    <Version>1.1.0</Version>
     <Description>Full-text search abstraction contracts for Platform.SharedKernel microservices: ISearchIndex&lt;TDocument&gt; (index/delete/bulk/search/get/count/enumerate), ISearchIndexProvisioner (ensure/exists/delete/cutover/probe), ISearchProviderDescriptor (ceilings + zero-I/O pre-flight validation), IQueryBuilder&lt;TDocument&gt; over the closed 8-node SearchFilter AST and the closed five-kind SearchValue scalar union, plus the Result-valued SearchErrors factory. Zero third-party NuGet dependencies — references only SharedKernel.Primitives and SharedKernel.Contracts. Implemented by SharedKernel.Search.Meilisearch and SharedKernel.Search.ElasticSearch.</Description>
     <PackageTags>search;full-text-search;meilisearch;elasticsearch;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

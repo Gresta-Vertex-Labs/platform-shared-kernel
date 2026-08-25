@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Concrete multi-tenant resolution strategies for Platform.SharedKernel microservices: HTTP header, JWT claim delegation, and database tenant-directory isolation, composed via TenantResolutionMiddleware and AmbientTenantProvider.</Description>
     <PackageTags>shared-kernel;multi-tenancy;tenant-resolution;middleware</PackageTags>
     <!--

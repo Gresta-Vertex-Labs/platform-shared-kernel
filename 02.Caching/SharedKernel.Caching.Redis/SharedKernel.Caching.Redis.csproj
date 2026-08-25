@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Redis L2 distributed backplane for SharedKernel.Caching. Adds Redis-backed ICacheService (FusionCache L2 via StackExchange.Redis). Requires SharedKernel.Caching. AOT-compatible.</Description>
     <PackageTags>shared-kernel;caching;redis;fusioncache;l2-cache;aot</PackageTags>
   </PropertyGroup>

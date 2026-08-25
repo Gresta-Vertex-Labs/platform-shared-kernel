@@ -2,7 +2,6 @@
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>NetArchTest-based base classes and pre-built layering-rule predicates for SharedKernel architecture tests. Reference with PrivateAssets="all" — this package must never become a transitive production dependency.</Description>
     <PackageTags>architecture;netarchtest;sharedkernel;governance;testing</PackageTags>
   </PropertyGroup>

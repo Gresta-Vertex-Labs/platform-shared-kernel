@@ -5,7 +5,6 @@
       HotChocolate v16 (14.x architecture) is NOT AOT-safe. Adding this flag is a hard violation.
     -->
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>HotChocolate server-side GraphQL conventions for Platform.SharedKernel: SharedKernelFilterConvention (snake_case), FilterBase&lt;T&gt;/SortBase&lt;T&gt; abstract wrappers, PagedResponseType&lt;T&gt;, SharedKernelErrorFilter (ProblemDetails shape), and AddSharedKernelGraphQL DI entry point. NOT AOT-safe (HotChocolate constraint).</Description>
     <PackageTags>graphql;hotchocolate;filtering;sorting;paging;error-filter;snake-case;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Dependency-free generic payload compression for the SharedKernel: IPayloadCompressor over System.IO.Compression (BrotliStream default, GZipStream keyed alternate). Decompress returns Result&lt;byte[]&gt;/Result rather than throwing on corrupt/truncated input, mirroring ISymmetricEncryptionService.Decrypt's failure shape. Pure BCL System.IO.Compression only — zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Configuration. Always compress-then-encrypt, never the reverse.</Description>
     <PackageTags>shared-kernel;compression;brotli;gzip;aot</PackageTags>
   </PropertyGroup>

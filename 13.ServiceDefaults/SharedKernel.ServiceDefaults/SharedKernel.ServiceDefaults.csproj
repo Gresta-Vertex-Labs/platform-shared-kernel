@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Host composition layer for Platform.SharedKernel microservices: AddServiceDefaults (OpenTelemetry + health check wiring), liveness/readiness health check endpoint mappings, StartupGate, and opt-in dependency-specific health check adapters (database, Redis, messaging).</Description>
     <PackageTags>shared-kernel;service-defaults;opentelemetry;health-checks;kubernetes;observability</PackageTags>
     <!--

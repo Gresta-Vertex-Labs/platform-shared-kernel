@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.1.0</Version>
     <Description>MediatR-based CQRS vocabulary for Platform.SharedKernel microservices: ICommand, ICommand&lt;TResponse&gt;, IQuery&lt;TResponse&gt;, handler-alias interfaces, the streaming-query vocabulary (IStreamQuery&lt;TResponse&gt;, IStreamQueryHandler&lt;,&gt;), the fire-and-forget command marker (IFireAndForgetCommand), and the domain-event-to-MediatR bridge (IDomainEventHandler, DomainEventNotification, MediatRDomainEventDispatcher with optional parallel dispatch). References only SharedKernel.Primitives, SharedKernel.Core, SharedKernel.Domain, and MediatR.</Description>
     <PackageTags>cqrs;mediatr;application;command;query;streaming;domain-events;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

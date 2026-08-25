@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>2.0.0</Version>
     <PackageReleaseNotes>2.0.0 (WO-052 / P-328, P-331, P-332):
 BREAKING CHANGE — Envelope/Envelope&lt;T&gt; moved from namespace SharedKernel.Contracts.Envelope (singular) to SharedKernel.Contracts.Envelopes (plural). This eliminates the long-standing namespace/type-name collision that previously required a `using EnvelopeNs = SharedKernel.Contracts.Envelope;` alias workaround at every consuming call site. Type members, factory methods, and implicit operators are byte-identical — this is a namespace-only move. Consumers must update their `using` statements from `SharedKernel.Contracts.Envelope` to `SharedKernel.Contracts.Envelopes` and remove any alias workaround; no other source change is required.
 EventEnvelope&lt;TEvent&gt; gains an optional nullable `Guid? TenantId` property (positioned after CausationId) plus a trailing optional `Guid? tenantId = null` parameter on `EventEnvelope.Wrap` — purely additive, source- and binary-compatible with every existing call site. Populated only when the publisher explicitly supplies it; never inferred from Payload.

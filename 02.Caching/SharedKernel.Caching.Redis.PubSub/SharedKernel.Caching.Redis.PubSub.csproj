@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Ephemeral Redis Pub/Sub signaling and cache invalidation (IRedisChannelService, ICacheInvalidationBus, CacheInvalidationReceiver). At-most-once delivery, no durability guarantees — not a substitute for SharedKernel.Messaging.* (07.Messaging). Depends on SharedKernel.Caching.Redis.Core for connection management — does not transitively reference SharedKernel.Caching.Redis (L2), distributed locking, or hash store packages.</Description>
     <PackageTags>shared-kernel;caching;redis;pubsub;cache-invalidation;aot</PackageTags>
   </PropertyGroup>

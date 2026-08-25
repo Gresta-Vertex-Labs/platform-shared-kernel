@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Outbound webhook delivery for SharedKernel microservices: signed, retried, fan-out-safe dispatch of platform integration events to externally-configured HTTP subscribers (IWebhookDispatcher, WebhookDispatcher), HMAC-SHA256 request signing with replay-resistant verification (WebhookSignatureProvider, WebhookSignatureVerifier), the subscription and delivery-observation seams implemented by the consuming service (IWebhookSubscriptionStore, IWebhookDeliveryObserver), the delivery-exhausted integration event (WebhookDeliveryExhaustedEvent), and DI registration (AddSharedKernelWebhooks/WithDeliveryObserver).</Description>
     <PackageTags>shared-kernel;webhooks;outbound-integration;hmac;signing;resilience;retry;httpclientfactory</PackageTags>
   </PropertyGroup>

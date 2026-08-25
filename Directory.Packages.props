@@ -31,6 +31,22 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
     <CentralPackageVersionOverrideEnabled>false</CentralPackageVersionOverrideEnabled>
+    <!--
+      Required by the $(SharedKernelPackageVersion) float below (without it NuGet fails restore with
+      NU1011: "the following PackageVersion items cannot specify a floating version"). This switch only
+      makes a float *legal* to declare — it floats nothing on its own, and the 100+ third-party pins in
+      this file remain exact literals. It does not reopen the per-project override door either; that
+      stays shut via CentralPackageVersionOverrideEnabled=false above. The single float it permits is
+      confined to SharedKernel.* IDs, which NuGet.Config's packageSourceMapping routes exclusively to
+      the local ./nupkgs feed, and CI never exercises it at all (it passes an exact version).
+    -->
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+    <!--
+      Version used for every in-repo SharedKernel.* PackageReference (see the block below). Left as a
+      floating prerelease-inclusive wildcard for local development; CI passes the exact MinVer-computed
+      version with -p:SharedKernelPackageVersion=<ver>.
+    -->
+    <SharedKernelPackageVersion Condition="'$(SharedKernelPackageVersion)' == ''">*-*</SharedKernelPackageVersion>
   </PropertyGroup>
 
   <!--
@@ -39,6 +55,16 @@
   -->
   <ItemGroup>
     <!-- GHSA-2m69-gcr7-jv3q / CVE-2025-6965 (SQLite aggregate-terms memory corruption, <= 2.1.11) -->
+    <!--
+      MinVer (DV-007) — the single source of every SharedKernel package version. Declared as a
+      GlobalPackageReference so it applies to all 119 projects with an implicit PrivateAssets="all",
+      and therefore never appears as a dependency in any emitted .nuspec. It derives Version from
+      the newest reachable `v*` git tag and overwrites whatever a project might set, which is what
+      makes repo-wide lockstep structural rather than a convention someone has to remember. Its
+      knobs (MinVerTagPrefix / MinVerMinimumMajorMinor / MinVerAutoIncrement) live in
+      Directory.Build.props alongside the other build-identity properties.
+    -->
+    <GlobalPackageReference Include="MinVer" Version="7.0.0" />
     <GlobalPackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
     <!-- GHSA-q939-rpr3-3284 / CVE-2026-48798 (SSH.NET ScpClient path traversal, <= 2025.1.0) -->
     <GlobalPackageReference Include="SSH.NET" Version="2026.0.0" />
@@ -128,28 +154,41 @@
     <PackageVersion Include="Qdrant.Client" Version="1.18.1" />
     <PackageVersion Include="RedLock.net" Version="2.3.2" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.16.5" />
-    <PackageVersion Include="SharedKernel.Analyzers" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Application" Version="1.1.0" />
-    <PackageVersion Include="SharedKernel.Application.Behaviors" Version="1.1.0" />
-    <PackageVersion Include="SharedKernel.ArchitectureTests" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Caching.Abstractions" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Caching.FusionCache" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Caching.Redis" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Caching.Redis.Core" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Caching.Redis.DistributedLocking" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Caching.Redis.HashStore" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Caching.Redis.PubSub" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Compression" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Configuration" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Core" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Cryptography" Version="2.0.0" />
-    <PackageVersion Include="SharedKernel.Domain" Version="1.7.0" />
-    <PackageVersion Include="SharedKernel.FeatureManagement" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Guards" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Linter" Version="1.0.0" />
-    <PackageVersion Include="SharedKernel.Primitives" Version="1.1.0" />
-    <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="1.3.0" />
-    <PackageVersion Include="SharedKernel.ServiceDefaults" Version="1.0.0" />
+    <!--
+      In-repo SharedKernel packages, consumed by the PackageReference-based consumer-verify
+      harnesses and samples/ (never by a shipping package — those use ProjectReference, so
+      dotnet pack stamps their dependency versions automatically and none of them appear here).
+
+      Every one of these resolves to $(SharedKernelPackageVersion), never a literal, so this file
+      cannot drift from what MinVer actually stamps. Locally that is the floating `*-*`, which
+      picks the newest package present in the ./nupkgs feed including prereleases (NuGet.Config
+      maps SharedKernel.* exclusively to that local feed, so the float can never reach nuget.org).
+      CI overrides it with the exact packed version via -p:SharedKernelPackageVersion=<ver>, so the
+      harnesses provably consume the bits produced by that same run rather than whatever happens
+      to be newest on disk.
+    -->
+    <PackageVersion Include="SharedKernel.Analyzers" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Application" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Application.Behaviors" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.ArchitectureTests" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Abstractions" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.FusionCache" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Redis" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Redis.Core" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Redis.DistributedLocking" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Redis.HashStore" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Caching.Redis.PubSub" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Compression" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Configuration" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Core" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Cryptography" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Domain" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.FeatureManagement" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Guards" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Linter" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
     <PackageVersion Include="System.ClientModel" Version="1.10.0" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />

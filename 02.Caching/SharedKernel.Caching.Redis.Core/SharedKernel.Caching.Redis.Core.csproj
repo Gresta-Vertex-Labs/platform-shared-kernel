@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Foundational Redis connection layer for SharedKernel.Caching: IConnectionMultiplexer registration (AddRedisConnection), ConnectionHealthState tracking (RedisConnectionHealthTracker), and an opt-in Polly v8 ResiliencePipeline factory (AddRedisCircuitBreaker). Dependency root for SharedKernel.Caching.Redis, .DistributedLocking, .HashStore, and .PubSub. AOT-compatible.</Description>
     <PackageTags>shared-kernel;caching;redis;connection;resilience;circuit-breaker;aot</PackageTags>
   </PropertyGroup>

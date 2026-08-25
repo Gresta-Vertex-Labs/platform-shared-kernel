@@ -10,7 +10,6 @@
     <NoDefaultExcludes>true</NoDefaultExcludes>
     <IsPackable>true</IsPackable>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Content-only NuGet package that distributes SharedKernel's .editorconfig, .csharpierrc.json, and MSBuild props/targets for CSharpier formatting enforcement. Reference with PrivateAssets="all". Ships no DLL.</Description>
     <PackageTags>editorconfig;csharpier;linter;sharedkernel;governance;formatting</PackageTags>
     <DevelopmentDependency>true</DevelopmentDependency>

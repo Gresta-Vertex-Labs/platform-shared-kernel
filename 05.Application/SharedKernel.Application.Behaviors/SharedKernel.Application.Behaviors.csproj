@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.1.0</Version>
     <Description>Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Logging, Metrics, Tracing, Validation, Authorization, DualApproval (maker-checker), Caching, Resilience, Idempotency (with opt-in response replay), Transaction, and CacheInvalidation, composed in a fixed canonical order via ApplicationBehaviorsBuilder — plus opt-in fire-and-forget command dispatch infrastructure and opt-in structured request/response payload logging (ILoggableRequest&lt;TResponse&gt;). References SharedKernel.Application, SharedKernel.Caching.Abstractions, MediatR, FluentValidation, and Polly.Core.</Description>
     <PackageTags>cqrs;mediatr;pipeline-behavior;validation;logging;metrics;tracing;caching;resilience;transaction;authorization;dual-approval;idempotency;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

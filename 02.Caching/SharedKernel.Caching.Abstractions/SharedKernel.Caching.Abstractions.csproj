@@ -5,7 +5,6 @@
     <!-- AOT compatibility -->
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <!-- NuGet metadata -->
-    <Version>1.0.0</Version>
     <Description>Zero-infrastructure caching abstractions for Platform.SharedKernel. Contains ICacheService, CachePolicy, ICacheKeyProvider, IDistributedLockService, IRedisChannelService, IRedisHashService, ICacheInvalidationBus, CacheInvalidationMessage, and ICachingBuilder. No FusionCache, StackExchange.Redis, or RedLock.net transitive dependencies.</Description>
     <PackageTags>caching;abstractions;SharedKernel;FusionCache;AOT</PackageTags>
   </PropertyGroup>

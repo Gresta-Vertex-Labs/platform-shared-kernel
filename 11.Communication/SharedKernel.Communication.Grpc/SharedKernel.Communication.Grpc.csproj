@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>gRPC channel factory via Grpc.Net.ClientFactory, CorrelationTracingInterceptor (W3C OTel + x-correlation-id), TenantIdInterceptor (x-tenant-id), MoneyProtoExtensions (Money &lt;-&gt; decimal), TimestampProtoExtensions (Timestamp &lt;-&gt; DateTimeOffset), and fluent IGrpcCommunicationBuilder DI entry point.</Description>
     <PackageTags>grpc;channel-factory;otel;tracing;correlation-id;tenant-id;protobuf;shared-kernel</PackageTags>
     <!--

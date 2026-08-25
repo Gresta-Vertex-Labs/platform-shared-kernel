@@ -87,6 +87,39 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 
+  <!--
+    Versioning — repo-wide lockstep, one version for all 50 shipping packages (DV-007).
+
+    MinVer (declared as a GlobalPackageReference in Directory.Packages.props) computes Version from
+    the newest reachable git tag matching MinVerTagPrefix. There is deliberately no <Version> or
+    <VersionPrefix> anywhere in this repo: all 50 were deleted, and MinVer's target overwrites
+    $(Version) unconditionally, so re-adding one to a csproj would be dead XML rather than a working
+    escape hatch. A package therefore CANNOT be versioned independently of its siblings.
+
+    Why lockstep and not per-package or per-domain: dotnet pack converts a ProjectReference into a
+    PackageReference at the referenced project's version, and this repo's dependency graph fans out
+    from 01.Core — SharedKernel.Primitives is a transitive dependency of 45 of the other 49 packages,
+    SharedKernel.Core of 22, SharedKernel.Configuration and .Guards of 20 each. Any rule of the form
+    "bump a dependency, bump its dependents" therefore reaches almost every package anyway; lockstep
+    is that rule stated honestly, minus the per-dependency tag resolver the alternative would need.
+    The accepted cost is publishing no-op version bumps for untouched packages. See PLATFORM.md.
+
+    MinVerMinimumMajorMinor=1.0 sets the floor: with no v* tag reachable (the state of this repo
+    until the first release tag is pushed) MinVer stamps 1.0.0-alpha.0 rather than 0.0.0-alpha.0.
+    MinVerAutoIncrement=patch means commits after tag v1.2.3 build as 1.2.4-alpha.0.N.
+
+    HARD CI REQUIREMENT: actions/checkout must use fetch-depth: 0. Its default shallow clone carries
+    no tags, and MinVer's response to finding no tag is not to fail — it silently stamps the
+    MinVerMinimumMajorMinor floor as a prerelease, so a green build would publish mislabelled
+    packages. ci.yml sets fetch-depth: 0 on every job that runs dotnet, and the packaging job
+    additionally asserts that all packed .nupkg files carry one identical version.
+  -->
+  <PropertyGroup>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>1.0</MinVerMinimumMajorMinor>
+    <MinVerAutoIncrement>patch</MinVerAutoIncrement>
+  </PropertyGroup>
+
   <!-- Packaging identity — shipping projects only. Every property here was previously hand-duplicated
        in ~45 production csproj files (Authors, Company, Product, Copyright, license, repo URLs,
        symbol format). Description and PackageTags are NOT here: they are the two properties that

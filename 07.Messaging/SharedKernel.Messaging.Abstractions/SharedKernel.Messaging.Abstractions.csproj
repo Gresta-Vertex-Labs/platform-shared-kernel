@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.0.0</Version>
     <Description>Transport-agnostic messaging abstractions for Platform.SharedKernel microservices: IMessageBus, IEventPublisher, PublishContext, IMessagingBuilder, MessagingOptions. Zero transport NuGet dependencies — references only Microsoft.Extensions.DependencyInjection.Abstractions. AOT-safe.</Description>
     <PackageTags>messaging;abstractions;message-bus;event-publisher;cloud-events;shared-kernel;masstransit</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

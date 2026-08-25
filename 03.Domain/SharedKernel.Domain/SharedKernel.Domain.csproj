@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.7.0</Version>
     <PackageReleaseNotes>1.7.0 (WO-051 / P-307..P-313):
 - Fixed a silent eager-loading data-loss defect (P-307): AndSpecification&lt;T&gt;, OrSpecification&lt;T&gt;, and NotSpecification&lt;T&gt; now union both Includes and StringIncludes from their operand(s) — previously AndSpecification dropped expression Includes entirely and OrSpecification/NotSpecification dropped both Includes and StringIncludes.
 - KeysetSpecification&lt;T, TKey&gt; added (P-308): cursor/seek-pagination sibling to PagedSpecification&lt;T&gt;, extends ReadOnlySpecification&lt;T&gt;; constrained `where TKey : struct, IComparable&lt;TKey&gt;` (a `struct` constraint is required for AfterKey's TKey? to compile to a real Nullable&lt;TKey&gt; instead of erasing to plain TKey); mandatory Id tiebreaker via ApplyThenBy; guards on take/partial-cursor.

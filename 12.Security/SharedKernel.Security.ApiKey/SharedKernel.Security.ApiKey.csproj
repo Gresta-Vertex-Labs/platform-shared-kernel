@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Version>1.2.0</Version>
     <Description>Pre-shared-key / machine-client authentication scheme for SharedKernel security: IApiKeyValidator extensibility point, constant-time key comparison built on SharedKernel.Cryptography, ApiKeyAuthenticationHandler, and AddApiKeyAuthentication composing alongside JWT Bearer via a policy/forwarding scheme. Never OIDC. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
     <PackageTags>shared-kernel;security;api-key;authentication;machine-client;identity</PackageTags>
     <PackageReleaseNotes>1.2.0 (non-breaking, additive): adds public ApiKeyRotationComparer.AnyMatch(string, IReadOnlyList&lt;string&gt;) — a constant-time, always-evaluate-every-candidate comparator for an IApiKeyValidator implementation that must accept more than one simultaneously-active key per client during a rotation window. Built on the same IHmacSigner-based technique as the existing internal ConstantTimeKeyComparer, but public since a consumer's own IApiKeyValidator implementation cannot reach an internal type. See WO-060 (P-389). 1.1.0 (non-breaking, tracks SharedKernel.Security.Abstractions 3.0.0): ApiKeyUserContext now implements the six new step-up-authentication IUserContext members as empty/null/false — a pre-shared key carries no OIDC authentication-context concept. IApiKeyValidator/ApiKeyValidationResult contracts unchanged. See WO-058 (P-375/P-376).</PackageReleaseNotes>

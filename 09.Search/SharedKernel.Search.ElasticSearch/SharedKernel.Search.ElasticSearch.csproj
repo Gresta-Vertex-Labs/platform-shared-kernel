@@ -17,7 +17,6 @@
       are therefore folded into a single MINOR release, 1.1.0, covering both fixes in one pack. This is
       a deliberate decision, not an oversight — see 09.Search/state-map.md Phase: Published P-09/P-10.
     -->
-    <Version>1.1.0</Version>
     <Description>ElasticSearch (analytics/heavy) implementation of SharedKernel.Search.Abstractions: ElasticSearchIndex&lt;TDocument&gt;, ElasticSearchIndexProvisioner (alias-based cutover), ElasticSearchProviderDescriptor, ElasticSearchFilterCompiler, plus the ElasticSearch-exclusive IAnalyticsSearch&lt;TDocument&gt; (terms/cardinality/stats/date-histogram/range aggregations) and ICursorSearch&lt;TDocument&gt; (PIT + search_after deep pagination). Register via AddSharedKernelElasticSearchSearch(IConfiguration).</Description>
     <PackageTags>search;full-text-search;elasticsearch;analytics;shared-kernel</PackageTags>
     <!--
