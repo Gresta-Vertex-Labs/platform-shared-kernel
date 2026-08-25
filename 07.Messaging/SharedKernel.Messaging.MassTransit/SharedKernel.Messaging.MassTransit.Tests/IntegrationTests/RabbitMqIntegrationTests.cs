@@ -34,6 +34,9 @@ public sealed class RabbitMqIntegrationTests : IAsyncLifetime
         var connectionString = _container.GetConnectionString();
 
         var services = new ServiceCollection();
+        // MassTransit resolves ILoggerFactory when the bus starts; without this the
+        // hosted service throws on StartAsync. Documented gap, fixed here.
+        services.AddLogging();
         services
             .AddSharedKernelMessaging(o => o.ServiceName = "integration-test-service")
             .UseRabbitMq(connectionString)
@@ -76,7 +79,10 @@ public sealed class RabbitMqIntegrationTests : IAsyncLifetime
 // Test consumer and message types
 // ---------------------------------------------------------------------------
 
-file sealed class RabbitIntegrationConsumer : ConsumerBase<RabbitTestMessage>
+// NOT file-scoped: a file-local type carries a compiler-mangled metadata name
+// (<rabbit-mq-integration-tests>F<hash>__RabbitIntegrationConsumer), which MassTransit
+// kebab-cases directly into the queue name and RabbitMQ then rejects as invalid.
+internal sealed class RabbitIntegrationConsumer : ConsumerBase<RabbitTestMessage>
 {
     private static TaskCompletionSource<bool> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -104,4 +110,5 @@ file sealed class RabbitIntegrationConsumer : ConsumerBase<RabbitTestMessage>
     }
 }
 
-file sealed record RabbitTestMessage(string Text);
+// Likewise not file-scoped -- the message type name becomes the exchange name.
+internal sealed record RabbitTestMessage(string Text);

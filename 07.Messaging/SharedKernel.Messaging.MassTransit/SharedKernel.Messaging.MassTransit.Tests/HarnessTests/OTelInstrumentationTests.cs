@@ -34,7 +34,9 @@ public sealed class OTelInstrumentationTests
     [Fact]
     public async Task Consume_ProducesConsumerConsumeActivity_WithMessageTypeTag()
     {
-        var capturedActivities = new List<Activity>();
+        // ConcurrentBag, not List: the ActivityListener is process-wide, so ActivityStopped is
+        // invoked concurrently by whatever else is driving this ActivitySource at the time.
+        var capturedActivities = new System.Collections.Concurrent.ConcurrentBag<Activity>();
         var activityStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         using var listener = new ActivityListener
@@ -44,7 +46,15 @@ public sealed class OTelInstrumentationTests
             ActivityStopped = activity =>
             {
                 capturedActivities.Add(activity);
-                activityStopped.TrySetResult(true);
+
+                // Complete only for THIS test's activity. Signalling on any stopped activity let
+                // another class's Consumer.Consume release the wait early, so the assertion ran
+                // before the activity under test had finished -- the test then found nothing.
+                if (activity.OperationName == "Consumer.Consume"
+                    && Equals(activity.GetTagItem("messaging.message_type"), nameof(OTelTestMessage)))
+                {
+                    activityStopped.TrySetResult(true);
+                }
             },
         };
         ActivitySource.AddActivityListener(listener);
