@@ -1,6 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Content-only package ships no assembly, so a symbol package would be empty and fail NU5017. Overrides Directory.Build.props. -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <!-- Required: without it this content-only package packs nothing and fails NU5017. -->
+    <ContentTargetFolders>content</ContentTargetFolders>
     <ContentTargetFolders>content</ContentTargetFolders>
     <NoWarn>NU5128</NoWarn>
     <NoDefaultExcludes>true</NoDefaultExcludes>

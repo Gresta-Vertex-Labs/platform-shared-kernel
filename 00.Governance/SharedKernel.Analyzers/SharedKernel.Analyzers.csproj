@@ -1,14 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <!-- Roslyn analyzers MUST target netstandard2.0 — the compiler will not load any other TFM.
+         This deliberately overrides Directory.Build.props' net10.0 default. Do not remove. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <!-- RS2008: Release tracking warnings — suppressed during development phases before first publish -->
     <NoWarn>$(NoWarn);RS2008</NoWarn>
     <!-- NuGet packaging metadata -->
     <Version>1.0.0</Version>
-    <Description>Roslyn diagnostic analyzers enforcing SharedKernel coding standards. Ships no runtime DLL — compiler-only. Rules SK0001–SK0006 cover DateTime usage, FeatureManager injection, raw exception throws, null Error returns, string-only exception constructors, and guard clause purity.</Description>
+    <Description>Roslyn diagnostic analyzers enforcing SharedKernel coding standards. Ships no runtime DLL — compiler-only. 35 rules spanning core standards (SK0001–SK0011), application and communication (SK0013–SK0019), cross-cutting concerns (SK0022–SK0032), persistence (SK0201–SK0202), and messaging (SK0703–SK0708).</Description>
     <PackageTags>roslyn;analyzer;sharedkernel;governance</PackageTags>
     <!-- Analyzer packages ship no runtime assembly and are development-only dependencies -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Analyzer ships no runtime assembly, so a symbol package would be empty and fail NU5017. Overrides Directory.Build.props. -->
+    <IncludeSymbols>false</IncludeSymbols>
     <DevelopmentDependency>true</DevelopmentDependency>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <NoPackageAnalysis>true</NoPackageAnalysis>
