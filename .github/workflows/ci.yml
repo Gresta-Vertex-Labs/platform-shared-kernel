@@ -1,0 +1,258 @@
+name: CI
+
+# Standing design decisions (see PLATFORM.md "CI/CD Pipelines" for the full rationale):
+#   - ubuntu-latest only, forced by Testcontainers (Redis/PostgreSQL/RabbitMQ/MinIO/etc. need a
+#     Linux Docker daemon; GitHub-hosted Windows/macOS runners cannot run Linux containers).
+#   - ci-gate is the ONLY required status check. Individual jobs are never marked required
+#     directly — if a future path-filtered job were added and marked required, a PR that never
+#     triggers it would block forever. Renaming/adding/removing a job here never requires a
+#     ruleset edit.
+#   - concurrency cancels superseded PR runs only. Never cancel-in-progress for merge_group or
+#     push — a cancelled merge_group run drops the PR from the queue; a cancelled release-adjacent
+#     run can leave a partial package set.
+#   - Every third-party action is pinned to a full 40-character commit SHA with a trailing
+#     `# vX.Y.Z` comment. Re-resolve and re-pin on every bump; never float a tag.
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.claude/**'
+  merge_group:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.claude/**'
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_CLI_UI_LANGUAGE: en
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  # ---------------------------------------------------------------------------------------------
+  # Build + full test suite. Testcontainers-backed suites (Redis, PostgreSQL, RabbitMQ, MinIO,
+  # Qdrant, Elasticsearch, Meilisearch, ...) run in the same job — ubuntu-latest ships a Docker
+  # daemon out of the box, so there is no separate "integration" runner to provision.
+  # ---------------------------------------------------------------------------------------------
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          # CPM concentrates every version into Directory.Packages.props, so hashing that one
+          # file (plus global.json for the SDK band) is a near-perfect restore cache key —
+          # deliberately NOT setup-dotnet's own cache:true, which requires packages.lock.json
+          # (this repo has none, and generating 119 lock files to churn on every bump is a
+          # worse trade than a slightly coarser cache key).
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Platform.SharedKernel.slnx
+
+      - name: NuGet audit (escalated to error in CI only)
+        # Directory.Build.props demotes NU1901-NU1904 to non-fatal warnings locally so a
+        # newly-disclosed transitive CVE cannot break every developer's build with no code
+        # change. CI is where that signal is deliberately restored to a hard failure.
+        run: dotnet restore Platform.SharedKernel.slnx -warnaserror:NU1901,NU1902,NU1903,NU1904
+
+      - name: Build
+        run: dotnet build Platform.SharedKernel.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test Platform.SharedKernel.slnx --no-restore --configuration Release --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: TestResults/**/*.trx
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------------------------
+  # Proves the packed .nupkg artifacts actually resolve and function for a consumer — not just
+  # that the source compiles. Packs every real shipping package to a job-local feed, then builds
+  # AND RUNS the six consumer-verify/*Consumer harnesses that reference those packages via
+  # PackageReference (never ProjectReference) against that feed. These six are deliberately
+  # excluded from Platform.SharedKernel.slnx (see PLATFORM.md) so a normal `dotnet build` never
+  # touches them — this job is their only execution path.
+  # ---------------------------------------------------------------------------------------------
+  packaging-verify:
+    name: Packaging & Consumer-Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Platform.SharedKernel.slnx
+
+      # Every real shipping package (IsPackable=true, non-Exe, non-.Tests) is packed here. A
+      # project missing README.md/Description/PackageTags fails loudly via the SKPKG001-003
+      # guards in Directory.Build.targets rather than silently skipping — see PLATFORM.md's
+      # "known gaps" note for the packages currently failing this gate.
+      - name: Pack every shipping package
+        run: dotnet pack Platform.SharedKernel.slnx --no-restore --configuration Release
+
+      - name: Restore consumer-verify harnesses against the freshly packed feed
+        run: |
+          set -e
+          for proj in \
+            "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" \
+            "00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
+            "00.Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
+            "01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj" \
+            "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" \
+            "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
+            ; do
+            echo "::group::restore $proj"
+            dotnet restore "$proj" --force
+            echo "::endgroup::"
+          done
+
+      - name: Build and run consumer-verify harnesses
+        run: |
+          set -e
+          for proj in \
+            "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" \
+            "00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
+            "00.Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
+            "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
+            ; do
+            echo "::group::run $proj"
+            dotnet run --project "$proj" --no-restore --configuration Release
+            echo "::endgroup::"
+          done
+
+      # SharedKernel.Caching.ConsumerVerify is a Testcontainers-backed 5-surface harness
+      # (real Redis) — run separately so its longer runtime and log volume don't crowd the
+      # group above.
+      - name: Run Caching consumer-verify (Testcontainers Redis)
+        run: dotnet run --project "02.Caching/consumer-verify/SharedKernel.Caching.ConsumerVerify/SharedKernel.Caching.ConsumerVerify.csproj" --no-restore --configuration Release
+
+      # SharedKernel.Consumer.Tests is an xUnit project (not an Exe harness) — run via `dotnet test`.
+      - name: Run 01.Core consumer test suite
+        run: dotnet test "01.Core/SharedKernel.Consumer.Tests/SharedKernel.Consumer.Tests.csproj" --no-restore --configuration Release
+
+  # ---------------------------------------------------------------------------------------------
+  actionlint:
+    name: Lint workflow files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+        with:
+          args: -color
+
+  # ---------------------------------------------------------------------------------------------
+  # PR title is the ONLY string release automation will ever parse (squash merges collapse every
+  # commit into the PR title). Commit-message lint is deliberately NOT enforced anywhere in this
+  # workflow — it would fight the agent workflow's many small WIP commits and is moot once
+  # squashed. See PLATFORM.md "Commit-convention enforcement".
+  # ---------------------------------------------------------------------------------------------
+  pr-title:
+    name: PR title lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Lint PR title (Conventional Commits)
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+
+  # ---------------------------------------------------------------------------------------------
+  # The only required status check. Runs unconditionally (if: always()) so it produces a result
+  # even when an upstream job is skipped by a path filter, cancelled, or fails outright — a
+  # path-filtered job that is itself marked required in the branch/tag ruleset would leave a
+  # docs-only PR waiting forever for a check that never ran.
+  # ---------------------------------------------------------------------------------------------
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs: [build-test, packaging-verify, actionlint, pr-title]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check upstream job results
+        run: |
+          echo '${{ toJSON(needs) }}' | jq -e '
+            to_entries | map(.value.result) |
+            all(. == "success" or . == "skipped")
+          ' || {
+            echo "One or more required jobs failed or were cancelled."
+            echo '${{ toJSON(needs) }}'
+            exit 1
+          }
