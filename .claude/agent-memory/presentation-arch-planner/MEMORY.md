@@ -7,3 +7,4 @@
 - [13.ServiceDefaults's P-251 test hardcodes the wrong CorrelationId baggage-key literal](project_correlationid_baggage_key_mismatch.md) — discovered in P-256, flagged not fixed (out of jurisdiction)
 - [Cross-domain gating pattern for phases blocked on another domain's unshipped constant](project_cross_domain_gating_pattern.md) — design now/code gated later shape, used by P-256 and P-262/WO-042
 - [01.Core has no Error.Forbidden/ErrorType.Forbidden](project_p381_forbidden_gap.md) — blocks WO-058/P-381; also fixed a stale pre-existing CLAUDE.md doc defect (fake "Forbidden→403/Failure→500" mapping)
+- [SharedKernel.Presentation.Grpc deliberately ProjectReferences .WebApi](project_grpc_webapi_reference_decision.md) — sole cross-sibling reference in this domain, for Authorization/ attribute reuse; don't reason by analogy to SignalR's declined identical-shaped reference

@@ -6,3 +6,4 @@
 - [Local-seam bridging pattern](pattern_local_seam_bridging.md) — 4 local seams now; WO-058 adds the sibling-optional-capability-interface technique for extending an already-published seam without breaking it
 - [WO-041 logging retrofit (design locked 2026-07-09)](project_wo041_logging_retrofit.md) — [LoggerMessage] EventId allocation table (5100-5199), exhaustive 4-file list, blocked on 01.Core P-249 + 00.Governance P-250
 - [WO-058 dual-control/maker-checker (design locked 2026-08-13)](project_wo058_dual_approval.md) — DualApprovalBehavior, 11-step pipeline; Core BLOCKED on 01.Core Error.Forbidden (not dispatched); 16.Testing fake needed (not dispatched)
+- [WO-071 AuditingBehavior (design locked 2026-08-26)](project_wo071_auditing_behavior.md) — 12-step pipeline, 5th local seam (IAuditTrailWriter), NO cross-domain Core blocker (novel finding); depends on 06.Persistence P-456

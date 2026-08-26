@@ -29,7 +29,7 @@ Extract the following fields. All are required; if any are missing or ambiguous,
 
 | Field | Expected values |
 |-------|----------------|
-| `domain` | A number 00–17 (e.g. `01`, `06`) or the folder name (e.g. `Core`, `Persistence`) |
+| `domain` | A two-digit domain number (e.g. `01`, `06`, `18`) or the folder name (e.g. `Core`, `Persistence`, `Idempotency`). Valid numbers are exactly those present as rows in the root `state-map.md` Domain Summary Board — never a fixed range. |
 | `phase` | One of: `Design`, `Scaffold`, `Core`, `Tests`, `Docs`, `Published` |
 | `state` | One of: `○` (not started), `◐` (in progress), `●` (complete), `⚑` (blocked) |
 | `summary_done` | One sentence describing what has been completed. Use `—` if nothing is done yet. |
@@ -83,7 +83,7 @@ When first populating the table, replace the placeholder with header + row:
 
 ## Step R6 — Recalculate Overall Progress
 
-Re-count the Domain Summary Board and update every count. Counts must always sum to 18.
+Re-count the Domain Summary Board and update every count. Counts must always sum to **the number of rows currently in the Domain Summary Board** — count the rows on every run, never assume a fixed total. The board grows whenever `arch-lead` ratifies a new capability domain.
 - **○ Not Started** = rows where State is `○`
 - **◐ In Progress** = rows where State is `◐`
 - **⚑ Blocked** = rows where State is `⚑`
@@ -303,10 +303,10 @@ If promotion fired and any `## Phase Backlog` entry for this domain is still `�
 - Never edit the `## Legend`, `## Phase Key Registry`, or phase list during command execution — they are maintained by arch-planner agents, not by this command at runtime.
 - Sub state-map Phase Key Registries may include an optional fourth column `Root Backlog ID`. When present and non-empty (not `—`), Step S8a uses it to resolve which `### P-NNN` Phase Backlog entries in the root state-map to close when that phase key completes. Add this column when creating new WO-specific **extension** phase keys so they self-close correctly — never on a standard lifecycle row, where it would close entries before later phases finish (see Step S8a, Case 3).
 - Exactly one of Steps S8a / S8b / S8c closes Phase Backlog entries on any given run: S8a for an extension phase key that maps to its own entries, S8b on a `Published` transition, S8c when every phase key in the domain is `●`/`—` and neither of the others applied. A domain tracking a work order through its lifecycle keys reaches closure via S8c, which is the only path for a domain that was already `Published` before that work order arrived.
-- The root `## Domain Summary Board` is always exactly 18 rows — no insertions, no deletions.
+- This command never inserts or deletes rows in the root `## Domain Summary Board` — it only updates an existing row in place. Adding a row for a newly ratified capability domain is `arch-lead`'s job. If the parsed `domain` has no row on the board, stop and report it rather than creating one.
 - State symbols in tables must always be wrapped in backticks: `` `○` ``, `` `◐` ``, `` `●` ``, `` `⚑` ``.
 - Active Work and Blocked tables use the exact column headers shown above — never alter them.
 - Both Changelogs are append-only — never edit or remove existing entries.
 - The commented `<!-- Format when active: ... -->` blocks are documentation — leave them untouched.
-- Root Overall Progress counts must always sum to 18 after every call.
+- Root Overall Progress counts must always sum to the current Domain Summary Board row count after every call — re-count the rows on every run rather than carrying a remembered total.
 - Sub-map Overall Progress `● Done` counts must always equal the number of `●` task rows in that phase section.

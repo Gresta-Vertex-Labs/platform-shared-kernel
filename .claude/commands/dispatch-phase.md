@@ -82,6 +82,9 @@ Group the remaining (unblocked) pending phases by their **Domain** field.
 | 15.Integration | 15 | `integration-arch-planner` |
 | 16.Testing | 16 | `testing-arch-planner` |
 | 17.Workflows | 17 | `workflow-arch-planner` |
+| 18.Idempotency | 18 | `idempotency-arch-planner` |
+| 19.Scheduling | 19 | `scheduling-arch-planner` |
+| 20.Reporting | 20 | `reporting-arch-planner` |
 
 Split the grouped domains into two lists:
 - **Dispatch list**: domains with a registered agent → ordered by domain number ascending.

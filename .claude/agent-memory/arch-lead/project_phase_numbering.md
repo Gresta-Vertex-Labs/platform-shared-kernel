@@ -5,9 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-08-24, the last NEW phases written to `state-map.md` Phase Backlog are **P-433–P-438** (under WO-065, all `○` Pending — 02.Caching fintech-security review; see [[project_wo065_caching_security_review]]). Between WO-062 and WO-065, WO-063 used P-411–P-420 (14.Presentation same-day follow-up) and WO-064 used P-421–P-432 (15.Integration gold-standard/big-fintech review).
+As of 2026-08-26, the last NEW phases written to `state-map.md` Phase Backlog are **P-439–P-453** (under WO-066/WO-067/WO-068/WO-069, all `○` Pending — batch 1/3 of a new missing-packages architecture review; see [[project_wo066_069_new_capabilities_batch1]]). Two more batches are expected from the same review (batch 2/3, batch 3/3) — read that memory file's numbering note for the confirmed starting point before assigning batch-2 IDs, but always re-verify against the live file per the "How to apply" note below.
 
-Next new phase must be **P-439**. Next new Work Order must be **WO-066**.
+Next new phase must be **P-454**. Next new Work Order must be **WO-070**.
+
+As of 2026-08-24 (superseded above): last NEW phases were **P-433–P-438** (under WO-065, 02.Caching fintech-security review; see [[project_wo065_caching_security_review]]). Between WO-062 and WO-065, WO-063 used P-411–P-420 (14.Presentation same-day follow-up) and WO-064 used P-421–P-432 (15.Integration gold-standard/big-fintech review).
 
 As of 2026-08-20 (superseded above): last NEW phases were P-402–P-410 (under WO-062, 14.Presentation gold-standard/big-fintech review; see [[project_wo062_presentation_goldstandard_review]]). WO-061 before that used P-393–P-401 (13.ServiceDefaults gold-standard/fintech review).
 

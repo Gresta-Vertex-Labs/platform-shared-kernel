@@ -72,6 +72,9 @@ Look up the domain in this registry:
 | 15.Integration | `implement-phase-integration` |
 | 16.Testing | `implement-phase-testing` |
 | 17.Workflows | `implement-phase-workflow` |
+| 18.Idempotency | `implement-phase-idempotency` |
+| 19.Scheduling | `implement-phase-scheduling` |
+| 20.Reporting | `implement-phase-reporting` |
 
 If the domain is **not in the registry**, output:
 ```

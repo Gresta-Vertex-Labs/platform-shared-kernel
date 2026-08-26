@@ -38,6 +38,9 @@ Use this path-prefix table. The first matching prefix wins.
 | `15.Integration/` | integration |
 | `16.Testing/` | testing |
 | `17.Workflows/` | workflows |
+| `18.Idempotency/` | idempotency |
+| `19.Scheduling/` | scheduling |
+| `20.Reporting/` | reporting |
 | `.claude/` | tooling |
 | Root-level files (`*.md`, `*.slnx`, `*.json`) | root |
 
