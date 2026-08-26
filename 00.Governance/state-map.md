@@ -72,6 +72,10 @@
 | `SK.00.CorrelationIdValidationGuard` | Governance: Mechanically Lock the Correlation-ID Caller-Input Validation Default | All tasks in Phase SK.00.CorrelationIdValidationGuard are `●` | P-420 |
 | `SK.00.WebhookSsrfGuardLock` | Governance: Mechanically Lock the SSRF-Safe Outbound Webhook Delivery Default | All tasks in Phase SK.00.WebhookSsrfGuardLock are `●` | P-432 |
 | `SK.00.CacheEncryptionAndRedisValidationLock` | Governance: Mechanically Lock Cache-Encryption Ordering and Redis Secure-Transport Defaults | All tasks in Phase SK.00.CacheEncryptionAndRedisValidationLock are `●` | P-437 |
+| `SK.00.MapperEnforcement` | Governance: Endorse Mapperly, Forbid Reflection-Based Object Mapping | All tasks in Phase SK.00.MapperEnforcement are `●` | P-486 |
+| `SK.00.MoneyCurrencyAdvisory` | Governance: Advisory Rule Against Hand-Rolled Amount+Currency Pairs | All tasks in Phase SK.00.MoneyCurrencyAdvisory are `●` | P-442 |
+| `SK.00.DataPrivacyLoggingGuard` | Governance: Flag an Unmasked Classified Member at a Logging Call Site | All tasks in Phase SK.00.DataPrivacyLoggingGuard are `●` | P-476 |
+| `SK.00.GrpcErrorMappingGuard` | Governance: Mechanically Lock the gRPC Server Error-Mapping Path | All tasks in Phase SK.00.GrpcErrorMappingGuard are `●` | P-469 |
 
 ---
 
@@ -4135,6 +4139,290 @@ None. This phase consumes no new SK ID — both techniques are real-assembly reg
 
 ---
 
+## Phase SK.00.MapperEnforcement — Governance: Endorse Mapperly, Forbid Reflection-Based Object Mapping <!-- phase-key: SK.00.MapperEnforcement -->
+
+### Goal
+
+`arch-lead` closed out the mapping-capability question (WO-079/P-486) with a REDIRECT, not a straight accept: it declined to ship a `SharedKernel.Mapping` package — wrapping Mapperly, a compile-time source generator, behind a kernel-owned runtime interface would defeat the entire reason to choose it over AutoMapper — and asked this domain to mechanize only the genuinely shared-kernel-appropriate half of the decision: a platform-wide prohibition on reflection-based mapping libraries. Root `CLAUDE.md`'s "What Goes Where" table already carries the corresponding guidance row (added by the dispatching pass), naming Mapperly and hand-written mapping as the sanctioned choices — this phase is purely the mechanical enforcement half.
+
+This is the first phase in this file whose motivating capability is a DECLINED package, not a pending or shipped one — there is no `SharedKernel.Mapping` state-map to track a dependency against, and none will ever exist.
+
+### Scope
+
+- Package(s) affected: `SharedKernel.Analyzers`, `SharedKernel.Analyzers.Tests`.
+- New files: `SharedKernel.Analyzers/ReflectionBasedObjectMapperUsageAnalyzer.cs`; `SharedKernel.Analyzers.Tests/ReflectionBasedObjectMapperUsageAnalyzerTests.cs`.
+- Modified files: `SharedKernel.Analyzers.Tests.csproj` (new test-only `PackageReference`s — `AutoMapper`, and `Riok.Mapperly` for a realistic pass-path fixture); `00.Governance/CLAUDE.md` (Diagnostic Rule Registry SK0033 entry, Implementation Rules bullet, Changelog — already applied by this planning pass); `00.Governance/state-map.md` (this phase).
+- Deleted files: none.
+
+### Diagnostic Registry Changes (analyzers only)
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0033 | ReflectionBasedObjectMapperUsage | Usage | Warning | AutoMapper `Profile` subclass / `IMapperConfigurationExpression` usage / `.AddAutoMapper(...)` call, each resolved by exact `ContainingAssembly.Name == "AutoMapper"` semantic-model match — never a syntax-only simple-name check, since "Profile" collides with legitimate unrelated types elsewhere in consuming services |
+
+### Implementation Rules
+
+1. All three trigger shapes require semantic-model resolution to the real `AutoMapper` assembly (mirrors SK0025's `ContainingAssembly.Name` exact-match technique) — a syntax-only `BaseList` name check on `"Profile"` would misfire against unrelated user-defined `Profile` types.
+2. Mapster is DELIBERATELY NOT enforced. Its runtime-adapter and source-generated-adapter call syntax (`.Adapt<T>()`/`.BuildAdapter()`) is identical regardless of whether `Mapster.SourceGenerator` is installed — there is no reliable syntactic or semantic-model discriminator between the two modes. Ship AutoMapper-only rather than a rule with an uncontrolled false-positive rate against a legitimate Mapster source-generated consumer. Document this scope limit prominently in the diagnostic's `Limitation` field (already applied in `00.Governance/CLAUDE.md`).
+3. Fires globally — no suppression namespace. AutoMapper has no legitimate call site anywhere on this platform (its `Profile`/`IMapperConfigurationExpression`/`AddAutoMapper` API has no owning `SharedKernel.*` package the way `SharedKernel.Communication.Rest` legitimately owns `HttpClient` construction for SK0013).
+4. No new `SharedKernel.ArchitectureTests` artifact — a per-compilation-unit source-level pattern the Roslyn analyzer resolves completely on its own, mirroring SK0030's "no architecture-test counterpart by design" precedent.
+5. Fully ungated — needs no compiled reference to any not-yet-shipped SharedKernel package. `SharedKernel.Analyzers` itself takes zero new NuGet dependency (Roslyn analyzers detect third-party assembly identity via `Compilation.GetTypeByMetadataName`, no compile-time reference needed); only `SharedKernel.Analyzers.Tests` needs a test-only `PackageReference` to the real `AutoMapper` package (and, for a realistic pass-path fixture proving Mapperly composition explicitly does not trigger, `Riok.Mapperly`) for fixture compilation.
+6. Confirm no `Directory.Packages.props` entry for `AutoMapper`/`Mapster`/`Riok.Mapperly` exists anywhere in this repo before implementation — verified clean at this phase's authoring (2026-08-26); if a future session finds one, treat it as a signal to re-open this design, not silently proceed.
+
+### File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Analyzers/ReflectionBasedObjectMapperUsageAnalyzer.cs` | SharedKernel.Analyzers | Create | SK0033 — three-shape AutoMapper detection |
+| `SharedKernel.Analyzers.Tests/ReflectionBasedObjectMapperUsageAnalyzerTests.cs` | SharedKernel.Analyzers.Tests | Create | Fire-path (×3 shapes) and pass-path (×2: Mapperly, hand-written) tests |
+| `SharedKernel.Analyzers.Tests.csproj` | SharedKernel.Analyzers.Tests | Modify | New test-only `PackageReference`s: `AutoMapper`, `Riok.Mapperly` |
+| `00.Governance/CLAUDE.md` | — | Modify | SK0033 diagnostic entry, Implementation Rules bullet, Changelog (already applied) |
+
+### Acceptance Criteria
+
+- [ ] Analyzer flags an AutoMapper `Profile` subclass, `IMapperConfigurationExpression` usage, or `.AddAutoMapper(...)` call anywhere in a production project
+- [ ] Analyzer does not flag Mapster's adapter API in either mode — documented as an intentional scope limit, not an oversight
+- [ ] A real-assembly test proves the rule fires against a contrived offending sample referencing the real `AutoMapper` package
+- [ ] Diagnostic message names Mapperly and hand-written mapping as the sanctioned alternatives
+- [ ] No new `SharedKernel.Mapping`/`.Mapper` package exists anywhere in this repo as a result of this phase
+
+### Dependencies
+
+- Requires: none — fully ungated, per Implementation Rule 5.
+- Unblocks: nothing structurally; closes WO-079/P-486 end to end together with `arch-lead`'s own root `CLAUDE.md` "What Goes Where" row (already applied by the dispatching pass, not this phase's own scope).
+
+### Tooling Version Notes
+
+- `AutoMapper`: test-only `PackageReference`, any current version (v12+, since AutoMapper merged its DI extension into the core package) — pin the exact version at implementation time.
+- `Riok.Mapperly`: optional test-only `PackageReference` for a realistic pass-path fixture — never a production dependency of any `SharedKernel.*` package.
+- Target framework: `netstandard2.0` (`SharedKernel.Analyzers`) / `net10.0` (`SharedKernel.Analyzers.Tests`).
+
+### SK.00.MapperEnforcement — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-77 | Define SK0033's three-shape plan (Profile subclass / IMapperConfigurationExpression / AddAutoMapper, all via `ContainingAssembly.Name == "AutoMapper"`); document the Mapster non-enforcement rationale; confirm SK0033 is the next available sequential ID | SharedKernel.Analyzers | `○` |
+| C-138 | Implement `ReflectionBasedObjectMapperUsageAnalyzer` — semantic-model, three trigger shapes under one diagnostic ID, fires globally | SharedKernel.Analyzers | `○` |
+| T-341 | Fire-path test — an `AutoMapper.Profile` subclass triggers SK0033 | SharedKernel.Analyzers.Tests | `○` |
+| T-342 | Fire-path test — a `.AddAutoMapper(...)` DI registration call triggers SK0033 | SharedKernel.Analyzers.Tests | `○` |
+| T-343 | Fire-path test — an `IMapperConfigurationExpression`-typed parameter usage triggers SK0033 | SharedKernel.Analyzers.Tests | `○` |
+| T-344 | Pass-path test — a `Riok.Mapperly` `[Mapper]` partial class does not trigger SK0033 | SharedKernel.Analyzers.Tests | `○` |
+| T-345 | Pass-path test — a plain hand-written static mapping method does not trigger SK0033 | SharedKernel.Analyzers.Tests | `○` |
+| DO-49 | Document SK0033 in `00.Governance/CLAUDE.md`'s Diagnostic Registry and Implementation Rules (already applied by this planning pass); closeout Changelog entry once implemented | SharedKernel.Analyzers | `○` |
+
+---
+
+## Phase SK.00.MoneyCurrencyAdvisory — Governance: Advisory Rule Against Hand-Rolled Amount+Currency Pairs <!-- phase-key: SK.00.MoneyCurrencyAdvisory -->
+
+### Goal
+
+`03.Domain`'s new `Money` value object (P-439/WO-066, design-locked) gives the platform a canonical currency-aware monetary type for the first time. Following the platform's established habit of adding a guardrail against regressing to the pattern a new canonical type replaces (the hand-rolled-hashing ban after `SharedKernel.Cryptography` shipped, the raw-`HttpClient` ban after typed clients shipped), this phase nudges toward `Money` whenever a type declares a raw `decimal`-shaped monetary property alongside a raw `string`-shaped currency-code property.
+
+Unlike every prior enforcement rule in this registry, this one is EXPLICITLY advisory and permanently so — it introduces the registry's first ADVISORY category, with no escalation path to Error, ever. The phase input itself frames the rule as inherently heuristic (a decimal+string co-occurrence cannot be detected with zero false positives) and asks for an advisory-only shape with a documented suppression path — this is a considered judgment call to ship a narrowly-scoped, empirically-validated heuristic, not a default assumption that every proposed rule ships. The detection technique (same-type co-occurrence of a closed suffix list on each side, syntax-only) is judged narrow enough to be worth shipping, distinct from the four capabilities `arch-lead` already declined this session on non-mechanical-detectability grounds — see Implementation Rules for the empirical-validation contingency that keeps this judgment honest rather than merely asserted.
+
+### Scope
+
+- Package(s) affected: `SharedKernel.Analyzers`, `SharedKernel.Analyzers.Tests`.
+- New files: `SharedKernel.Analyzers/AmountCurrencyPairAdvisoryAnalyzer.cs`; `SharedKernel.Analyzers.Tests/AmountCurrencyPairAdvisoryAnalyzerTests.cs`.
+- Modified files: `00.Governance/CLAUDE.md` (Diagnostic Rule Registry SK0034 entry — first Advisory category, Implementation Rules bullet, Changelog — already applied by this planning pass); `00.Governance/state-map.md` (this phase).
+- Deleted files: none.
+
+### Diagnostic Registry Changes (analyzers only)
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0034 | AmountCurrencyPairCoupling | Advisory (NEW — no escalation path to Error, ever) | Warning | Same type declares a `decimal`/`decimal?` member ending in `Amount`/`Price`/`Total`/`Balance` AND a `string`/`string?` member ending in `Currency`/`CurrencyCode`; self-exempt when the type is literally named `Money` |
+
+### Implementation Rules
+
+1. Syntax-only detection (`PredefinedTypeSyntax`/`NullableTypeSyntax` wrapping the `decimal`/`string` keyword) — no `SemanticModel` needed, since these are BCL keyword types resolvable from syntax alone.
+2. Scan only DIRECT (non-inherited) `PropertyDeclarationSyntax`/`FieldDeclarationSyntax` members of a `class`/`record`/`struct` declaration — never `interface` (contract-only signatures generate excessive, low-value noise) and never inherited members (a base-type property shouldn't cause every derived type to re-flag).
+3. Suffix lists are CLOSED and exactly as specified in the phase input: decimal side — `Amount`, `Price`, `Total`, `Balance`; string side — `Currency`, `CurrencyCode`. Case-sensitive PascalCase suffix match.
+4. Self-exemption: a type whose own identifier is exactly `Money` never fires, regardless of its members — defensive hygiene even though `03.Domain`'s real `Money` type's `Currency` property is typed `Currency` (a value object), not `string`, so it would not structurally trigger anyway.
+5. This rule's ADVISORY category is new to this registry and MUST NOT be treated as a stepping stone to Error severity in any future phase without a fresh design review — its detection technique cannot meet the near-zero false-positive bar every Error-severity rule on this platform requires. Document this explicitly wherever the rule is referenced.
+6. MANDATORY empirical validation (T-350, Acceptance Criteria): before closing the Tests phase, run the analyzer against every already-shipped `SharedKernel.*` production assembly's source and record the raw hit list in the Docs phase. If that scan surfaces a genuine false positive (a decimal+string pair that is clearly not an amount/currency concept), narrow the suffix list — e.g. drop `Total`/`Balance`, keeping only `Amount`/`Price` + `Currency`/`CurrencyCode` — and re-run before shipping, rather than accepting the broader list on the strength of design-time reasoning alone. This scan can and should run NOW, before `03.Domain`'s `Money` ships — it validates against CURRENT sources, which by definition predate `Money` and therefore cannot contain a "correct" match to exclude.
+7. Suppression is the standard built-in Roslyn mechanism (`#pragma warning disable SK0034` / a `.editorconfig` severity override) — no bespoke suppression attribute is needed; document this explicitly as satisfying the phase input's "documented suppression mechanism" acceptance criterion.
+8. No new `SharedKernel.ArchitectureTests` artifact — a per-compilation-unit source-level heuristic, mirroring SK0030's/SK0033's "no architecture-test counterpart by design" precedent.
+
+### File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Analyzers/AmountCurrencyPairAdvisoryAnalyzer.cs` | SharedKernel.Analyzers | Create | SK0034 — syntax-only same-type suffix co-occurrence heuristic |
+| `SharedKernel.Analyzers.Tests/AmountCurrencyPairAdvisoryAnalyzerTests.cs` | SharedKernel.Analyzers.Tests | Create | Fire-path, pass-path, self-exemption, and real-source false-positive validation tests |
+| `00.Governance/CLAUDE.md` | — | Modify | SK0034 diagnostic entry (Advisory category), Implementation Rules bullet, Changelog (already applied) |
+
+### Acceptance Criteria
+
+- [ ] Analyzer ships as warning-severity, not error-severity, with a documented suppression mechanism
+- [ ] False-positive rate validated against this repo's own codebase and at least one representative sample project before shipping (T-350)
+- [ ] Rule is documented as advisory in `00.Governance/CLAUDE.md`, explicitly distinguished from the platform's error-level "prohibited" rules
+
+### Dependencies
+
+- Requires: none for the analyzer's own detection logic, which references no compiled `SharedKernel.Domain` type. Depends on `03.Domain` P-439 (`Money`) only so the diagnostic's remediation message can name a real, shipped type by the time this ships — verify `03.Domain/state-map.md` directly at implementation time rather than assuming either way, per this domain's now well-established re-verify discipline.
+- Unblocks: nothing structurally; a terminal advisory nudge, mirroring this file's other "boundary/regression rule" phases' own closure shape.
+
+### Tooling Version Notes
+
+- No new NuGet dependency — syntax-only detection against BCL keyword types.
+- Target framework: `netstandard2.0` (`SharedKernel.Analyzers`) / `net10.0` (`SharedKernel.Analyzers.Tests`).
+
+### SK.00.MoneyCurrencyAdvisory — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-78 | Define SK0034's plan — closed suffix lists, same-type co-occurrence requirement, syntax-only detection, first-ever Advisory category (no Error escalation path), self-exemption for a type named `Money`; document the empirical-narrowing contingency | SharedKernel.Analyzers | `○` |
+| C-139 | Implement `AmountCurrencyPairAdvisoryAnalyzer` — syntax-only, scans direct class/record/struct members | SharedKernel.Analyzers | `○` |
+| T-346 | Fire-path test — `decimal Amount` + `string Currency` on the same type triggers SK0034 | SharedKernel.Analyzers.Tests | `○` |
+| T-347 | Fire-path test — a suffix-family match (e.g. `decimal TotalPrice` + `string CurrencyCode`) triggers SK0034, proving suffix-family matching beyond the exact `Amount`/`Currency` pair | SharedKernel.Analyzers.Tests | `○` |
+| T-348 | Pass-path test — a decimal `Amount`-shaped property with no currency-shaped sibling does not trigger | SharedKernel.Analyzers.Tests | `○` |
+| T-349 | Pass-path test — a type literally named `Money` is self-exempt even with a currency-shaped string sibling | SharedKernel.Analyzers.Tests | `○` |
+| T-350 | Real-source false-positive validation — run SK0034 against every already-shipped `SharedKernel.*` production assembly's source; record the raw hit list; narrow the suffix list and re-run if any hit is a genuine false positive | SharedKernel.Analyzers.Tests | `○` |
+| DO-50 | Document SK0034 in `00.Governance/CLAUDE.md` as the first Advisory-category rule (already applied by this planning pass); record T-350's false-positive validation outcome; closeout Changelog entry once implemented | SharedKernel.Analyzers | `○` |
+
+---
+
+## Phase SK.00.DataPrivacyLoggingGuard — Governance: Flag an Unmasked Classified Member at a Logging Call Site <!-- phase-key: SK.00.DataPrivacyLoggingGuard -->
+
+### Goal
+
+`01.Core`'s new `SharedKernel.DataPrivacy` package (P-474/WO-076, design-locked) ships `[DataClassification]`/`[SensitiveDataCategory]` marker attributes and pure `PiiMasking.*` helpers — metadata whose SOLE sanctioned compile-time consumer is this domain's own governance tooling, per that package's own design ("never read via reflection in production code — sole sanctioned consumer is 00.Governance's compile-time analyzer and human documentation"). This phase is that consumer: a semantic-model analyzer flagging a classified member reaching a `[LoggerMessage]` call-site argument (or a whole classified-bearing type passed for `{@Param}`-style destructuring) without first passing through a `PiiMasking.*` call.
+
+This is deliberately the ONE piece of the data-privacy story this domain mechanically enforces. The rest of the convention (classification taxonomy correctness, masking-helper correctness, data-subject-request handling) stays a documented convention rather than a mechanically-enforced rule, per this domain's established "decline unenforceable rules rather than ship weak ones" precedent — the same judgment `arch-lead` applied when it declined four other capabilities this session on non-mechanical-detectability grounds. This one earns real enforcement because it is a static attribute cross-referenced against a static call-site shape — genuinely, mechanically Roslyn-detectable with a controlled false-positive surface, unlike (for example) a fully general PII-leakage data-flow analysis would be.
+
+### Scope
+
+- Package(s) affected: `SharedKernel.Analyzers`, `SharedKernel.Analyzers.Tests`.
+- New files: `SharedKernel.Analyzers/UnmaskedClassifiedDataLoggingAnalyzer.cs`; `SharedKernel.Analyzers.Tests/UnmaskedClassifiedDataLoggingAnalyzerTests.cs`.
+- Modified files: `00.Governance/CLAUDE.md` (Diagnostic Rule Registry SK0035 entry, Implementation Rules bullet, Changelog — already applied by this planning pass); `00.Governance/state-map.md` (this phase, Cross-Domain Dependencies).
+- Deleted files: none.
+
+### Diagnostic Registry Changes (analyzers only)
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0035 | UnmaskedClassifiedDataAtLoggingCallSite | Security | Warning | A `[LoggerMessage]`-attributed method call's argument resolves to a member carrying `DataClassification(Restricted)`/`SensitiveDataCategory(...)`, not wrapped in a `SharedKernel.DataPrivacy.PiiMasking.*` call first — resolved by fully-qualified metadata name, not a compiled reference |
+
+### Implementation Rules
+
+1. Trigger: an `InvocationExpressionSyntax` whose resolved method symbol carries `Microsoft.Extensions.Logging.LoggerMessageAttribute` (the platform's sole sanctioned logging authoring shape, SK0020/SK0021). For each non-special argument (excluding `this ILogger`/`LogLevel`/`Exception`), resolve the argument expression via `SemanticModel.GetSymbolInfo`; if it resolves to a property/field symbol carrying `SharedKernel.DataPrivacy.DataClassificationAttribute` (Classification == Restricted) or `SharedKernel.DataPrivacy.SensitiveDataCategoryAttribute` (any category), AND the argument is not itself an invocation of a method whose `ContainingType` is exactly `SharedKernel.DataPrivacy.PiiMasking`, report the diagnostic.
+2. Additionally cover the whole-object `{@ParamName}` destructuring shape: an argument whose STATIC TYPE declares any member carrying either attribute, passed directly with no masking call — this generalizes Rule 1 to catch passing an entire classified-bearing DTO/entity, not only a single classified property reference.
+3. Resolve `DataClassificationAttribute`/`SensitiveDataCategoryAttribute`/`PiiMasking` by FULLY-QUALIFIED METADATA NAME (`Compilation.GetTypeByMetadataName("SharedKernel.DataPrivacy.DataClassificationAttribute")`, etc.), NOT via a compiled `ProjectReference` — the same technique WO-040/P-248's marker-interface rules (SK0017–SK0019) established. This means Design/Core/contrived-fixture Tests proceed NOW: a test fixture declares its OWN fixture-local `SharedKernel.DataPrivacy` namespace with matching type names inside the same test compilation, requiring no `ProjectReference` to the not-yet-shipped real package.
+4. A REAL-ASSEMBLY re-verification test — re-pointing the metadata-name resolution at the actual compiled `SharedKernel.DataPrivacy` package and real `SharedKernel.*` production log call sites — is GATING but genuinely deferred, tracked as a new Cross-Domain Dependencies entry below, not force-failed or silently skipped. Per this domain's now nine-times-repeated experience, the implementer MUST re-verify against `01.Core/state-map.md` directly at implementation time rather than trusting this note's "not yet implemented" framing.
+5. Scope limit (documented, intentional, mirrors SK0028/`HealthCheckTagIntegrityRules`'s "pattern/presence check, not full data-flow analysis" convention): only a DIRECT member reference or a direct `PiiMasking.*` wrapper call is recognized. An intermediate local variable or a helper method that internally reads a classified member and returns it unmasked is not traced across that boundary.
+6. No new `SharedKernel.ArchitectureTests` artifact for the analyzer itself — a per-compilation-unit source-level check the Roslyn analyzer resolves completely on its own once the real assembly exists for re-verification.
+
+### File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Analyzers/UnmaskedClassifiedDataLoggingAnalyzer.cs` | SharedKernel.Analyzers | Create | SK0035 — classified-member-to-logging-argument provenance check |
+| `SharedKernel.Analyzers.Tests/UnmaskedClassifiedDataLoggingAnalyzerTests.cs` | SharedKernel.Analyzers.Tests | Create | Fire-path, pass-path (masked), and pass-path (unclassified) contrived-fixture tests now; real-assembly test added once `01.Core`'s P-474 ships past Design into Core |
+| `00.Governance/CLAUDE.md` | — | Modify | SK0035 diagnostic entry, Implementation Rules bullet, Changelog (already applied) |
+
+### Acceptance Criteria
+
+- [ ] Analyzer flags a classified member reaching a `[LoggerMessage]` placeholder or `{@Object}` destructuring without passing through a `PiiMasking.*` call first
+- [ ] A real-assembly test proves the rule fires against a contrived offending sample and passes when the value is masked first
+- [ ] Diagnostic message names the sanctioned `PiiMasking.*` helper, mirroring SK0022's remediation-message style
+
+### Dependencies
+
+- Requires: none for design/Core/contrived-fixture Tests — proceeds immediately via the fully-qualified-metadata-name technique (Rule 3), fully unblocked. Requires `01.Core`'s P-474 shipped past Design into Core before the real-assembly re-verification test can be written — tracked below under Cross-Domain Dependencies. **IMPLEMENTATION-ORDER NOTE:** re-verify against `01.Core/state-map.md` directly rather than trusting this note's "not yet implemented" framing, per this domain's now-repeated experience that a stated dependency has often already shipped by implementation time.
+- Unblocks: nothing structurally; a terminal, self-contained rule mirroring this file's other single-analyzer phases' own closure shape.
+
+### Tooling Version Notes
+
+- No new NuGet dependency — fully-qualified metadata-name resolution needs no compile-time package reference; the eventual real-assembly test needs a test-only `ProjectReference` (`PrivateAssets="all"`) to `SharedKernel.DataPrivacy` once it exists.
+- Target framework: `netstandard2.0` (`SharedKernel.Analyzers`) / `net10.0` (`SharedKernel.Analyzers.Tests`).
+
+### SK.00.DataPrivacyLoggingGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-79 | Define SK0035's plan — classified-member-to-`[LoggerMessage]`-argument and whole-object-destructuring shapes, fully-qualified-metadata-name resolution technique (no ProjectReference needed for contrived tests), real-assembly verification tracked as GATING Cross-Domain Dependency | SharedKernel.Analyzers | `○` |
+| C-140 | Implement `UnmaskedClassifiedDataLoggingAnalyzer` — semantic-model, matches `[LoggerMessage]`-attributed method invocations, inspects each non-special argument for an unmasked classified-member source plus the whole-object-destructuring case | SharedKernel.Analyzers | `○` |
+| T-351 | Fire-path test (fixture-local `SharedKernel.DataPrivacy.DataClassificationAttribute`/`[LoggerMessage]` method) — a classified property passed directly as a message-template argument triggers SK0035 | SharedKernel.Analyzers.Tests | `○` |
+| T-352 | Fire-path test — a `SensitiveDataCategory`-classified field passed directly triggers SK0035 | SharedKernel.Analyzers.Tests | `○` |
+| T-353 | Pass-path test — the same classified property passed through a fixture-local `PiiMasking.Email(...)`-shaped call first does not trigger | SharedKernel.Analyzers.Tests | `○` |
+| T-354 | Pass-path test — an unclassified property passed directly does not trigger | SharedKernel.Analyzers.Tests | `○` |
+| T-355 | Real-assembly verification (GATING, deferred) — re-point the fully-qualified-metadata-name resolution at the real, compiled `SharedKernel.DataPrivacy` assembly once `01.Core`'s P-474 ships past Design into Core; verified non-vacuous via a temporary sanity-check mutation, confirmed to fail, then reverted before commit | SharedKernel.Analyzers.Tests | `○` |
+| DO-51 | Document SK0035 in `00.Governance/CLAUDE.md` (already applied by this planning pass); cross-reference SK0022/SK0020/SK0021's technique lineage; record T-355's real-assembly status; closeout Changelog entry once implemented | SharedKernel.Analyzers | `○` |
+
+---
+
+## Phase SK.00.GrpcErrorMappingGuard — Governance: Mechanically Lock the gRPC Server Error-Mapping Path <!-- phase-key: SK.00.GrpcErrorMappingGuard -->
+
+### Goal
+
+`14.Presentation`'s new `SharedKernel.Presentation.Grpc` package (P-468/WO-074, design-locked, Core not yet started) ships a canonical `Result<T>`-to-`RpcException` mapping path (`GrpcResultExtensions`/`GrpcStatusCodeMap`). This phase mechanically locks that path the same way SK0013 locked typed-client construction and P-199 locked `ProblemDetails` construction: forbidding a hand-constructed `new RpcException(new Status(...))`/`throw new RpcException(...)` at any gRPC service-method call site outside `SharedKernel.Presentation.Grpc` itself.
+
+Re-verified directly against `14.Presentation/state-map.md` (rather than trusting the root state-map's "Depends on: P-468" framing at face value) per this domain's now nine-times-repeated "confirm, never assume a stated dependency actually blocks this phase's own work" discipline (`SK.00.SenderConstrainedCredentialGuard` through `SK.00.CacheEncryptionAndRedisValidationLock`): this analyzer needs no compiled reference to `SharedKernel.Presentation.Grpc` at all — only the standalone, already-available `Grpc.Core.Api` NuGet package. Unlike every phase in the `SecureDefaultsAssertion`-lock family, this one is genuinely, fully ungated from the start, not merely found-to-be-already-shipped at implementation time.
+
+### Scope
+
+- Package(s) affected: `SharedKernel.Analyzers`, `SharedKernel.Analyzers.Tests`.
+- New files: `SharedKernel.Analyzers/RawRpcExceptionConstructionAnalyzer.cs`; `SharedKernel.Analyzers.Tests/RawRpcExceptionConstructionAnalyzerTests.cs`.
+- Modified files: `SharedKernel.Analyzers.Tests.csproj` (new test-only `PackageReference` to `Grpc.Core.Api`); `00.Governance/CLAUDE.md` (Diagnostic Rule Registry SK0036 entry, Implementation Rules bullet, Changelog — already applied by this planning pass); `00.Governance/state-map.md` (this phase).
+- Deleted files: none.
+
+### Diagnostic Registry Changes (analyzers only)
+
+| ID | Rule Name | Category | Severity | Trigger Summary |
+|----|-----------|----------|----------|-----------------|
+| SK0036 | RawRpcExceptionConstruction | Usage | Warning | `new RpcException(...)`/`new Status(...)` resolved by exact semantic-model type match to `Grpc.Core.RpcException`/`Grpc.Core.Status`, outside the `SharedKernel.Presentation.Grpc` namespace |
+
+### Implementation Rules
+
+1. Semantic-model exact-type resolution (`SemanticModel.GetSymbolInfo`/`GetTypeInfo` on `ObjectCreationExpressionSyntax`) — NOT a syntax-only simple-name match. "Status" is a dangerously generic simple name (order/application status enums, etc.) elsewhere on this platform and in consuming services — the exact lesson SK0026 already recorded for "Kernel." SK0013's "HttpClient is unique enough to match syntactically" precedent does not transfer here.
+2. Flag BOTH `new RpcException(...)` AND standalone `new Status(...)` construction (a bare `Status` may be built for later use, e.g. assigning to a trailer, without being immediately wrapped) — two constructed-type checks under one diagnostic ID, mirroring SK0022's/SK0024's multi-shape-one-ID precedent.
+3. Single shared exemption namespace prefix `SharedKernel.Presentation.Grpc` (mirrors SK0029's one-owning-package shape, not SK0026's per-client-type mapping — 14.Presentation's gRPC capability is one owning package).
+4. Fires globally outside that namespace — no "must be inside a gRPC service method" scoping needed structurally, since `RpcException`/`Status` are gRPC-specific types by construction; any code constructing them is gRPC-adjacent code by definition.
+5. Diagnostic message names the sanctioned `Result<T>`-to-`RpcException` extension (`GrpcResultExtensions`, backed by `GrpcStatusCodeMap.Resolve`) by name, mirroring SK0022's remediation-message style.
+6. UNGATED: `SharedKernel.Analyzers` itself needs no compiled reference to `SharedKernel.Presentation.Grpc` (a namespace-string exemption match needs no `ProjectReference`) and no dependency on `Grpc.AspNetCore`. Only `SharedKernel.Analyzers.Tests` needs a test-only `PackageReference` to the lightweight, standalone `Grpc.Core.Api` package (containing solely `RpcException`/`Status`/`StatusCode`, not the full server hosting stack) for fixture compilation — this package is already independently available and does NOT require `14.Presentation`'s P-468 to have shipped.
+7. Pass-path fixture for "the sanctioned extension path does not trigger" (Acceptance Criteria) uses a PLAIN method-invocation shape (no direct `new RpcException`/`new Status` in the fixture) — this also needs no real `SharedKernel.Presentation.Grpc` reference, keeping the entire phase's test suite fully self-contained.
+8. No new `SharedKernel.ArchitectureTests` artifact, mirroring SK0013's own shape (a construction-path prohibition needs no companion IL-level regression lock beyond the Roslyn analyzer itself).
+
+### File-Level Plan
+
+| File | Package | Action | Purpose |
+|------|---------|--------|---------|
+| `SharedKernel.Analyzers/RawRpcExceptionConstructionAnalyzer.cs` | SharedKernel.Analyzers | Create | SK0036 — RpcException/Status construction-path prohibition |
+| `SharedKernel.Analyzers.Tests/RawRpcExceptionConstructionAnalyzerTests.cs` | SharedKernel.Analyzers.Tests | Create | Fire-path (×2), pass-path (exemption + sanctioned extension) tests |
+| `SharedKernel.Analyzers.Tests.csproj` | SharedKernel.Analyzers.Tests | Modify | New test-only `PackageReference`: `Grpc.Core.Api` |
+| `00.Governance/CLAUDE.md` | — | Modify | SK0036 diagnostic entry, Implementation Rules bullet, Changelog (already applied) |
+
+### Acceptance Criteria
+
+- [ ] Analyzer flags `new RpcException(...)`/`new Status(...)` construction inside a project referencing `Grpc.AspNetCore` server hosting, outside `SharedKernel.Presentation.Grpc` itself
+- [ ] A real-assembly test proves the rule fires against a contrived offending sample and passes for the sanctioned `Result<T>` extension path
+- [ ] Diagnostic message points to the sanctioned `Result<T>`-to-`RpcException` extension, mirroring SK0022's remediation-message style
+
+### Dependencies
+
+- Requires: none — fully ungated per Implementation Rule 6/7; re-verified directly against `14.Presentation/state-map.md`, confirming this analyzer needs neither `SharedKernel.Presentation.Grpc` nor its own Core-phase completion.
+- Unblocks: nothing structurally; closes WO-074's governance half (P-469) independently of `14.Presentation`'s own P-468/P-470 timeline.
+
+### Tooling Version Notes
+
+- `Grpc.Core.Api`: test-only `PackageReference`, pin the same major version `14.Presentation`'s own `SharedKernel.Presentation.Grpc` eventually pins for `Grpc.AspNetCore`, once known — not a blocker for this phase, since `Grpc.Core.Api`'s `RpcException`/`Status` types are stable across recent major versions.
+- Target framework: `netstandard2.0` (`SharedKernel.Analyzers`) / `net10.0` (`SharedKernel.Analyzers.Tests`).
+
+### SK.00.GrpcErrorMappingGuard — Task Rows
+
+| ID | Task | Package(s) | State |
+|----|------|-----------|:-----:|
+| D-80 | Define SK0036's plan — exact-type semantic-model resolution of `Grpc.Core.RpcException`/`Grpc.Core.Status` (avoiding SK0026's "generic simple name" pitfall), single exemption namespace `SharedKernel.Presentation.Grpc`; confirm this rule is NOT gated on 14.Presentation's P-468, needs only the standalone `Grpc.Core.Api` package | SharedKernel.Analyzers | `○` |
+| C-141 | Implement `RawRpcExceptionConstructionAnalyzer` — semantic-model, flags `new RpcException(...)`/`new Status(...)` construction outside the exempt namespace | SharedKernel.Analyzers | `○` |
+| T-356 | Fire-path test — `new RpcException(new Status(...))` outside `SharedKernel.Presentation.Grpc` triggers SK0036 | SharedKernel.Analyzers.Tests | `○` |
+| T-357 | Fire-path test — bare `new Status(...)` construction (not immediately wrapped) outside the exempt namespace also triggers SK0036 | SharedKernel.Analyzers.Tests | `○` |
+| T-358 | Pass-path test — the identical construction inside a fixture-local `SharedKernel.Presentation.Grpc` namespace does not trigger (exemption proof) | SharedKernel.Analyzers.Tests | `○` |
+| T-359 | Pass-path test — a plain sanctioned-extension-shaped method invocation (no direct `new RpcException`/`new Status`) does not trigger | SharedKernel.Analyzers.Tests | `○` |
+| DO-52 | Document SK0036 in `00.Governance/CLAUDE.md` (already applied by this planning pass); cross-reference SK0013/SK0020/P-199 enforcement-precedent lineage and SK0026's "generic simple name" lesson; record that this rule is ungated; closeout Changelog entry once implemented | SharedKernel.Analyzers | `○` |
+
+---
+
 ## Cross-Domain Dependencies
 
 _No active cross-domain dependencies for prior phases. `00.Governance` references nothing in production code._
@@ -4246,6 +4534,12 @@ _No active cross-domain dependencies for prior phases. `00.Governance` reference
 | `SK.00.CacheEncryptionAndRedisValidationLock` | `02.Caching` (P-433, its own Phase 42) | `AddCacheEncryption()`'s composed compression+encryption pipeline implemented and shipped inside `SharedKernel.Caching.*` (Core phase, not merely Design/planned), so Technique A's executed behavioral test can be pointed at the real, compiled pipeline | `●` Resolved — confirmed on disk: `SharedKernel.Caching.FusionCache` ships real `CacheEncryptionSerializer`/`CacheEncryptionCachingBuilderExtensions`/`BrotliCompressionExtensions`. Real-assembly wiring is IMPLEMENTED (not just unblocked) — `SecureDefaultsAssertionTests.CacheEncryptionPipeline_RealAddCacheEncryption_CompressesBeforeEncrypting` (T-337), verified non-vacuous via a temporary sanity check (an inverted size expectation, confirmed to fail — pipeline output was 95 bytes against a required >16498 — then reverted before commit) |
 | `SK.00.CacheEncryptionAndRedisValidationLock` | `02.Caching` (P-436, its own Phase 45) | `AddRedisConnection`'s options-validation wiring (`RedisConnectionOptions` + `.ValidateOnStart()` or equivalent) implemented and shipped inside `SharedKernel.Caching.Redis.Core` (Core phase, not merely Design/planned), so Technique B (`AssertMethodBodyInvokesMethod`) can be re-pointed at the real, compiled registration method | `●` Resolved — confirmed on disk: `RedisConnectionCoreExtensions.AddRedisConnection` genuinely calls `.ValidateDataAnnotations().ValidateOnStart()` directly in its own IL body. **Design/reality correction found**: Rule 6 named `calleeDeclaringType` as `Microsoft.Extensions.Options.OptionsBuilderExtensions` — the real extension method resolves as `Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions.ValidateOnStart` instead (same NuGet package, different namespace); corrected in Rule 6/T-340's text before writing the test. Real-assembly wiring is IMPLEMENTED (not just unblocked) — `SecureDefaultsAssertionTests.AssertMethodBodyInvokesMethod_RealAddRedisConnection_ValidateOnStartCallSiteHolds` (T-340), verified non-vacuous via a temporary deliberately-wrong-callee sanity check, confirmed to fail, then reverted before commit |
 
+`SK.00.DataPrivacyLoggingGuard` depends on `01.Core` for **real-assembly verification only** (Design/Core/contrived-fixture Tests proceed now via fully-qualified-metadata-name resolution, per WO-040/P-248's established technique — no ProjectReference needed for those):
+
+| This Phase Key | Needs From Domain | What | Status |
+|---------------|------------------|------|--------|
+| `SK.00.DataPrivacyLoggingGuard` | `01.Core` (P-474) | `SharedKernel.DataPrivacy` (`DataClassificationAttribute`/`SensitiveDataCategoryAttribute`/`PiiMasking`) shipped past Design into Core as a real, compiled assembly, so the real-assembly re-verification test can be re-pointed at it | `○` Pending (P-474 not yet implemented as of this phase's authoring — 2026-08-26) |
+
 <!--
 Format when active:
 | This Phase Key | Needs From Domain | What | Status |
@@ -4256,7 +4550,7 @@ Format when active:
 
 ## Overall Progress
 
-> Counts updated whenever a task state changes. Total tasks: 640 (WO-048 removed T-215, a Milvus-only fire-path test for SK0026, since `SharedKernel.AI.Milvus` was permanently retracted before ever being built; SK.00.WorkflowTopology's own task table has always held 27 rows, one more than its "26 tasks" prose claimed — corrected at closeout, see that phase's own task-count-correction note; SK.00.ResultDiscardGuard adds 21 new tasks — D-66 [1] + C-123 [1] + T-253–T-270 [18] + DO-38 [1]; SK.00.EfPropertyUsageGuard adds 7 new tasks — D-67 [1] + C-124 [1] + T-271–T-274 [4] + DO-39 [1]; SK.00.EventEnvelopeConstructionGuard adds 9 new tasks — D-68 [1] + C-125 [1] + T-275–T-280 [6] + DO-40 [1]; SK.00.SecurityContextGuard adds 16 new tasks — D-69 [1] + C-126–C-128 [3] + T-281–T-291 [11] + DO-41 [1]; SK.00.SenderConstrainedCredentialGuard adds 13 new tasks — D-70 [1] + C-129–C-130 [2] + T-292–T-300 [9] + DO-42 [1]; SK.00.SecureDefaultsLock adds 14 new tasks — D-71 [1] + C-131–C-132 [2] + T-301–T-310 [10] + DO-43 [1]; SK.00.TenantAndMtlsBoundaryLock adds 12 new tasks — D-72 [1] + C-133–C-134 [2] + T-311–T-318 [8] + DO-44 [1]; SK.00.CorsWildcardCredentialsGuard adds 14 new tasks — D-73 [1] + C-135–C-136 [2] + T-319–T-328 [10] + DO-45 [1]; SK.00.CorrelationIdValidationGuard adds 5 new tasks — D-74 [1] + T-329–T-331 [3] + DO-46 [1], the first phase in this family to add zero new `C-` production-code task, since it reuses `AssertMethodBodyInvokesMethod`/`AssertMethodBodyThrowsExceptionType` unchanged; SK.00.WebhookSsrfGuardLock adds 8 new tasks — D-75 [1] + C-137 [1] + T-332–T-336 [5] + DO-47 [1], the first phase in this family to lock TWO independent facts (a DI-registration-presence structural check via a new `SecureDefaultsAssertion` method, Technique A, and a genuinely EXECUTED range-behavior check outside that class entirely, Technique B) rather than one; SK.00.CacheEncryptionAndRedisValidationLock adds 6 new tasks — D-76 [1] + T-337–T-340 [4] + DO-48 [1], the second phase in this family to add zero new `C-` production-code task (after SK.00.CorrelationIdValidationGuard) and the second to feature a genuinely EXECUTED real-assembly test (after SK.00.WebhookSsrfGuardLock's Technique B) — total now 640).
+> Counts updated whenever a task state changes. Total tasks: 640 (WO-048 removed T-215, a Milvus-only fire-path test for SK0026, since `SharedKernel.AI.Milvus` was permanently retracted before ever being built; SK.00.WorkflowTopology's own task table has always held 27 rows, one more than its "26 tasks" prose claimed — corrected at closeout, see that phase's own task-count-correction note; SK.00.ResultDiscardGuard adds 21 new tasks — D-66 [1] + C-123 [1] + T-253–T-270 [18] + DO-38 [1]; SK.00.EfPropertyUsageGuard adds 7 new tasks — D-67 [1] + C-124 [1] + T-271–T-274 [4] + DO-39 [1]; SK.00.EventEnvelopeConstructionGuard adds 9 new tasks — D-68 [1] + C-125 [1] + T-275–T-280 [6] + DO-40 [1]; SK.00.SecurityContextGuard adds 16 new tasks — D-69 [1] + C-126–C-128 [3] + T-281–T-291 [11] + DO-41 [1]; SK.00.SenderConstrainedCredentialGuard adds 13 new tasks — D-70 [1] + C-129–C-130 [2] + T-292–T-300 [9] + DO-42 [1]; SK.00.SecureDefaultsLock adds 14 new tasks — D-71 [1] + C-131–C-132 [2] + T-301–T-310 [10] + DO-43 [1]; SK.00.TenantAndMtlsBoundaryLock adds 12 new tasks — D-72 [1] + C-133–C-134 [2] + T-311–T-318 [8] + DO-44 [1]; SK.00.CorsWildcardCredentialsGuard adds 14 new tasks — D-73 [1] + C-135–C-136 [2] + T-319–T-328 [10] + DO-45 [1]; SK.00.CorrelationIdValidationGuard adds 5 new tasks — D-74 [1] + T-329–T-331 [3] + DO-46 [1], the first phase in this family to add zero new `C-` production-code task, since it reuses `AssertMethodBodyInvokesMethod`/`AssertMethodBodyThrowsExceptionType` unchanged; SK.00.WebhookSsrfGuardLock adds 8 new tasks — D-75 [1] + C-137 [1] + T-332–T-336 [5] + DO-47 [1], the first phase in this family to lock TWO independent facts (a DI-registration-presence structural check via a new `SecureDefaultsAssertion` method, Technique A, and a genuinely EXECUTED range-behavior check outside that class entirely, Technique B) rather than one; SK.00.CacheEncryptionAndRedisValidationLock adds 6 new tasks — D-76 [1] + T-337–T-340 [4] + DO-48 [1], the second phase in this family to add zero new `C-` production-code task (after SK.00.CorrelationIdValidationGuard) and the second to feature a genuinely EXECUTED real-assembly test (after SK.00.WebhookSsrfGuardLock's Technique B) — total 640; SK.00.MapperEnforcement adds 8 new tasks — D-77 [1] + C-138 [1] + T-341–T-345 [5] + DO-49 [1], the first phase whose motivating capability is a DECLINED package rather than a pending or shipped one; SK.00.MoneyCurrencyAdvisory adds 8 new tasks — D-78 [1] + C-139 [1] + T-346–T-350 [5] + DO-50 [1], introducing the registry's first ADVISORY diagnostic category (SK0034, no escalation path to Error, ever); SK.00.DataPrivacyLoggingGuard adds 8 new tasks — D-79 [1] + C-140 [1] + T-351–T-355 [5] + DO-51 [1], the ninth "designed ahead of a pending dependency" phase in this file, using WO-040/P-248's fully-qualified-metadata-name technique so only its real-assembly test (T-355) is gated; SK.00.GrpcErrorMappingGuard adds 7 new tasks — D-80 [1] + C-141 [1] + T-356–T-359 [4] + DO-52 [1], the first phase in the "lock a not-yet-shipped guard" lineage confirmed FULLY ungated from the start rather than found-already-shipped at implementation time — total now 671).
 
 | Phase Key | Phase | Total | ● Done | ○ Pending | State |
 |-----------|-------|:-----:|:------:|:---------:|:-----:|
@@ -4308,6 +4602,10 @@ Format when active:
 | `SK.00.CorrelationIdValidationGuard` | Governance: Mechanically Lock the Correlation-ID Caller-Input Validation Default | 5 | 5 | 0 | `●` |
 | `SK.00.WebhookSsrfGuardLock` | Governance: Mechanically Lock the SSRF-Safe Delivery Default | 8 | 8 | 0 | `●` |
 | `SK.00.CacheEncryptionAndRedisValidationLock` | Governance: Mechanically Lock Cache-Encryption Ordering and Redis Secure-Transport Defaults | 6 | 6 | 0 | `●` |
+| `SK.00.MapperEnforcement` | Governance: Endorse Mapperly, Forbid Reflection-Based Object Mapping | 8 | 0 | 8 | `○` |
+| `SK.00.MoneyCurrencyAdvisory` | Governance: Advisory Rule Against Hand-Rolled Amount+Currency Pairs | 8 | 0 | 8 | `○` |
+| `SK.00.DataPrivacyLoggingGuard` | Governance: Flag an Unmasked Classified Member at a Logging Call Site | 8 | 0 | 8 | `○` |
+| `SK.00.GrpcErrorMappingGuard` | Governance: Mechanically Lock the gRPC Server Error-Mapping Path | 7 | 0 | 7 | `○` |
 
 ---
 
@@ -4410,3 +4708,7 @@ Format when active:
 - [2026-08-21] D-75, C-137, T-332–T-336, DO-47 → ● in SK.00.WebhookSsrfGuardLock — all 8 tasks complete. `AssertMethodBodyRegistersSingleton` implemented as the seventh method on the EXISTING `SecureDefaultsAssertion` class, proven via three contrived fixtures (T-332 pass-path, T-333 fire-path/registration-removed, T-334 fire-path/boundary-different-implementation). **STALE-DEPENDENCY CORRECTION confirmed (verified against real disk state, not assumed, per this phase's own re-verify instruction — the sixth occurrence of this exact finding class in this file):** `15.Integration` had already shipped `IWebhookUrlValidator`/`PrivateNetworkWebhookUrlValidator` and their default registration inside `AddSharedKernelWebhooks` before this implementation session began. Both real-assembly GATING tests (T-335, T-336) were therefore implemented directly rather than deferred. **GENUINE DESIGN/REALITY DRIFT found and handled from the start, not patched after the fact:** the real registration uses `services.TryAddSingleton<IWebhookUrlValidator, PrivateNetworkWebhookUrlValidator>()`, not the plain `AddSingleton` this phase's own Implementation Rule 3 assumed — `AssertMethodBodyRegistersSingleton` accepts both `"AddSingleton"` and `"TryAddSingleton"` method names by design, confirmed against real source before the method was written. Confirmed `WithUrlValidator<T>()`'s own `AddSingleton<IWebhookUrlValidator, TValidator>()` call site can never accidentally satisfy a check pointed at `AddSharedKernelWebhooks` — it is scoped to a different named method, and its second generic argument is the open generic parameter `TValidator`, not a closed implementation type. Both real-assembly tests verified NON-VACUOUS via temporary sanity-check mutations, confirmed to fail, then reverted before commit — T-335: a deliberately-wrong implementation type (`typeof(object)`); T-336: all four expected accept/reject outcomes inverted, confirmed all four `[Theory]` cases fail. `SharedKernel.ArchitectureTests.Tests.csproj` gained one new test-only `ProjectReference` (`PrivateAssets="all"`) to `SharedKernel.Integration.Webhooks`; the shared `CompileInMemory` fixture helper gained one new reference (`Microsoft.Extensions.DependencyInjection.Abstractions`, confirmed via binary inspection to host both `AddSingleton` and `TryAddSingleton` extension classes in one assembly) for T-332–T-334's fixture source. 8 new architecture tests (T-336 a `[Theory]` covering 4 cases) — 237/237 `SharedKernel.ArchitectureTests.Tests` pass (229 baseline + 8), 0 build warnings/errors introduced by this phase's own code. No new SK diagnostic ID — SK0033 remains next-available, unconsumed. This is the last `○` phase key — every phase key in `00.Governance/state-map.md` is now `●`. Promoted to root `state-map.md` (Phase Backlog P-432 closed to `●` Complete) (state-map-phase, governance-phase-implementer)
 - [2026-08-24] Phase SK.00.CacheEncryptionAndRedisValidationLock added — 6 tasks: D-76, T-337–T-340, DO-48; WO-065 (P-437), depends on `02.Caching` P-433 (its own Phase 42, `AddCacheEncryption()` compress-then-encrypt ordering) and P-436 (its own Phase 45, `AddRedisConnection` options-validation eagerness) for real-assembly verification only — both dispatched to `caching-arch-planner` in the same run immediately before this phase and, per the dispatcher's own explicit note, confirmed `○` planned only in `02.Caching/state-map.md` (Phases 42/45), not yet dispatched for implementation. Applies this review cycle's now-eight-times-repeated "a security- or correctness-relevant default documented and tested only inside its own producing domain drifts" lesson to `02.Caching` for the first time, and BROADENS the family beyond pure security to a correctness/efficiency regression: reversing compress-then-encrypt ordering silently defeats compression's size benefit, mirroring the identical ordering contract `07.Messaging`'s own payload transform already documents (P-346). Locks TWO independent facts with two different techniques, mirroring `SK.00.WebhookSsrfGuardLock`'s own two-technique shape: Technique A (composition ordering) is the SECOND genuinely EXECUTED real-assembly test in this file (after `SK.00.WebhookSsrfGuardLock`'s Technique B) — deliberately NOT a new `SecureDefaultsAssertion` method, since ordering is a computed behavior of two composed pipeline stages no IL technique can honestly prove without assuming a not-yet-fixed decorator shape; it builds the real pipeline, serializes a highly-compressible payload, and asserts the stored-byte output is meaningfully smaller than an encrypt-only baseline (a black-box, representation-agnostic size-ratio technique, plus a round-trip-correctness precondition). Technique B (redis validation eagerness) reuses the EXISTING `AssertMethodBodyInvokesMethod` unchanged — zero new production code, the SECOND phase in this family to need none (after `SK.00.CorrelationIdValidationGuard`) — re-pointed at `AddRedisConnection`, asserting a call to `Microsoft.Extensions.Options.OptionsBuilderExtensions.ValidateOnStart`, the correct way to distinguish genuine eager startup validation from inert `DataAnnotations` attributes or a lazily-validated `IValidateOptions<T>`. No new SK diagnostic ID — SK0033 remains the next available sequential Roslyn-analyzer ID, not consumed here. Design and Technique B's contrived fire/pass-path fixture tests (T-338/T-339) proceed now (Technique A has no static contrived-fixture substitute, per Rule 1); both real-assembly GATING tests (T-337, T-340) are tracked as a new Cross-Domain Dependencies block — per this domain's now-eight-times-repeated experience, the implementer must re-verify against `02.Caching/state-map.md` directly rather than trusting this note's "not yet implemented" framing. Ten new implementation rules added; Overall Progress total-tasks count updated to 640; one new Cross-Domain Dependencies block added (two rows) — WO-065 P-437, depends on 02.Caching P-433/P-436 (governance-arch-planner)
 - [2026-08-24] D-76, T-337–T-340, DO-48 → ● in SK.00.CacheEncryptionAndRedisValidationLock — all 6 tasks complete. **STALE-DEPENDENCY CORRECTION confirmed (verified against real disk state, not assumed, per this phase's own re-verify instruction — the ninth occurrence of this exact finding class in this file):** `02.Caching` had already shipped its full Phase 42 (`AddCacheEncryption()`)/Phase 45 (`AddRedisConnection` validation) scope, WO-065, before this implementation session began — both real-assembly GATING tests (T-337, T-340) were therefore implemented directly rather than deferred. Technique A (T-337): the SECOND genuinely EXECUTED real-assembly test in this file (after `SK.00.WebhookSsrfGuardLock`'s Technique B) — builds the real composed `AddBrotliCompression()`+`AddCacheEncryption()` pipeline via a minimal `IServiceCollection` (a local `FixtureEncryptionKeyProvider` seeds a fresh 32-byte AES key), serializes an 8192-character highly-compressible payload, and asserts the stored byte length (95 bytes) is meaningfully smaller than an encrypt-only baseline built from the SAME inner-serializer bytes (16498 bytes) via `ISymmetricEncryptionService` directly, plus a round-trip-correctness precondition. Lives directly in `SecureDefaultsAssertionTests.cs`, not as a new `SecureDefaultsAssertion` method, per Rule 1. Technique B (T-338/T-339 contrived fixtures, T-340 real-assembly): reuses the EXISTING `AssertMethodBodyInvokesMethod` completely unchanged — zero new production code, the second phase in this family to need none (after `SK.00.CorrelationIdValidationGuard`). **GENUINE DESIGN/REALITY DRIFT found and corrected, not patched after the fact:** Rule 6 named `calleeDeclaringType` as `Microsoft.Extensions.Options.OptionsBuilderExtensions` — confirmed WRONG by direct inspection of the real, shipped `RedisConnectionCoreExtensions.AddRedisConnection` before writing the test: the real `ValidateOnStart<TOptions>` extension resolves under the `Microsoft.Extensions.DependencyInjection` namespace instead (same `Microsoft.Extensions.Options` NuGet package, different namespace) — Rule 6 and T-340's own design-time text in `state-map.md` were corrected in place to match, mirroring this family's now-repeated "confirm, never assume" discipline. `SharedKernel.Caching.Redis.Core` needed no new `ProjectReference` (already present for `RedisTopologyRulesTests`); two new test-only `ProjectReference`s added (`SharedKernel.Caching.FusionCache`, `SharedKernel.Cryptography`) plus `PackageReference Microsoft.Extensions.Options` (pinned `10.0.9` — `10.0.0` triggered an NU1605 downgrade error against `SharedKernel.Search.Meilisearch`'s own floor) for Technique A/B's fixture compilation; the shared `CompileInMemory` helper gained one new reference (`Microsoft.Extensions.DependencyInjection.OptionsBuilderExtensions`'s hosting assembly) for T-338/T-339's fixture source. Five new `using` directives added to the top of `SecureDefaultsAssertionTests.cs` (`Microsoft.Extensions.DependencyInjection`, `SharedKernel.Caching.FusionCache.Extensions`, `SharedKernel.Cryptography.Symmetric`, `ZiggyCreatures.Caching.Fusion.Serialization`, `.SystemTextJson`) — the first departure from this file's prior "fully-qualify everything, no new usings" convention, needed because Technique A chains several DI-builder extension methods that would otherwise require unreadably verbose static-call syntax; every pre-existing fully-qualified reference in the file remains unaffected (redundant qualification is always legal). Both real-assembly tests verified NON-VACUOUS via temporary sanity-check mutations, confirmed to fail, then reverted before commit — T-337: an inverted size expectation (`BeGreaterThan` instead of `BeLessThan`, confirmed to fail with actual 95 bytes vs. a required >16498); T-340: a deliberately-wrong callee method name (`"ValidateOnStartXyzSanityCheck"`), confirmed to fail. 4 new architecture tests — 241/241 `SharedKernel.ArchitectureTests.Tests` pass (237 baseline + 4), 0 build warnings/errors introduced by this phase's own code. No new SK diagnostic ID — SK0033 remains next-available, unconsumed. This is the last `○` phase key — every phase key in `00.Governance/state-map.md` is now `●`. Promoted to root `state-map.md` (Phase Backlog P-437 closed to `●` Complete) (state-map-phase, governance-phase-implementer)
+- [2026-08-26] Phase SK.00.MapperEnforcement added — 8 tasks: D-77, C-138, T-341–T-345, DO-49; WO-079 (P-486). REDIRECT, not a straight accept — `arch-lead` declined the proposed `SharedKernel.Mapping` package (wrapping Mapperly, a compile-time source generator, behind a kernel-owned runtime interface would defeat the point of choosing it over AutoMapper) and dispatched only the platform-wide prohibition half here. SK0033 `ReflectionBasedObjectMapperUsageAnalyzer` — three semantic-model-resolved shapes (`AutoMapper.Profile` subclass, `IMapperConfigurationExpression` usage, `.AddAutoMapper(...)` call), all requiring exact `ContainingAssembly.Name == "AutoMapper"` resolution (SK0025's technique, not a syntax-only simple-name match — "Profile" collides with legitimate unrelated types). Mapster deliberately left unenforced — its runtime and source-generated adapter call syntax is indistinguishable, so this scopes to AutoMapper only rather than ship an uncontrolled false-positive rate, per this domain's established narrow-scope convention. Confirmed zero `AutoMapper`/`Mapster`/`Riok.Mapperly` pin exists in `Directory.Packages.props` today. Fully ungated — no compiled reference to any not-yet-shipped SharedKernel package needed, only a test-only `PackageReference` to the real `AutoMapper`/`Riok.Mapperly` packages for fixture compilation. No `SharedKernel.ArchitectureTests` counterpart. Overall Progress total-tasks count updated to 648 (governance-arch-planner)
+- [2026-08-26] Phase SK.00.MoneyCurrencyAdvisory added — 8 tasks: D-78, C-139, T-346–T-350, DO-50; WO-066 (P-442), depends on `03.Domain` P-439 (`Money`) for its remediation message only, not its detection logic. Introduces this registry's first ADVISORY-ONLY diagnostic category (SK0034 `AmountCurrencyPairCoupling`) — no escalation path to Error, ever, by design, distinct from SK0006/SK0007's "Warning pending future escalation" shape. A syntax-only (no SemanticModel — BCL keyword types resolvable from syntax alone), closed-suffix-list, same-type co-occurrence heuristic (decimal `Amount`/`Price`/`Total`/`Balance` + string `Currency`/`CurrencyCode`), self-exempt for a type literally named `Money`. Judged narrow enough to ship rather than decline, distinct from the four capabilities `arch-lead` declined this session on non-mechanical-detectability grounds — but the judgment is kept honest by a MANDATORY empirical false-positive validation task (T-350) against this repo's own already-shipped production sources, with a documented suffix-list-narrowing contingency if a genuine false positive surfaces, rather than trusting design-time reasoning alone. That scan can run today, before `Money` ships, since it validates against current sources that by definition predate `Money`. No `SharedKernel.ArchitectureTests` counterpart. Overall Progress total-tasks count updated to 656 (governance-arch-planner)
+- [2026-08-26] Phase SK.00.DataPrivacyLoggingGuard added — 8 tasks: D-79, C-140, T-351–T-355, DO-51; WO-076 (P-476), depends on `01.Core` P-474 (`SharedKernel.DataPrivacy`) for real-assembly verification only — confirmed `○` Pending (not yet implemented) as of this phase's authoring. The one mechanically-enforceable piece of the new data-privacy story — the rest (classification-taxonomy/masking-helper correctness/data-subject-request handling) deliberately stays convention-only, mirroring this domain's "decline unenforceable rules rather than ship weak ones" precedent. SK0035 `UnmaskedClassifiedDataAtLoggingCallSite` resolves `DataClassificationAttribute`/`SensitiveDataCategoryAttribute`/`PiiMasking` by FULLY-QUALIFIED METADATA NAME (WO-040/P-248's marker-interface technique), so Design/Core/contrived-fixture Tests proceed now via a fixture-local `SharedKernel.DataPrivacy` namespace — no `ProjectReference` to the not-yet-shipped real package needed for those; only the real-assembly re-verification test (T-355) is GATING, tracked as a new Cross-Domain Dependencies entry. Composes with, but is structurally distinct from, SK0022 (unrelated call-site family) and SK0020/SK0021 (police the logging call's own shape, not the data flowing into it) — the first rule in this registry to inspect argument provenance at a logging call site. No `SharedKernel.ArchitectureTests` counterpart. Overall Progress total-tasks count updated to 664; one new Cross-Domain Dependencies entry added — WO-076 P-476, depends on 01.Core P-474 (governance-arch-planner)
+- [2026-08-26] Phase SK.00.GrpcErrorMappingGuard added — 7 tasks: D-80, C-141, T-356–T-359, DO-52; WO-074 (P-469). Re-verified directly against `14.Presentation/state-map.md` rather than trusting the root state-map's "Depends on: P-468" framing at face value, per this domain's now nine-times-repeated "confirm, never assume" discipline — found this analyzer is genuinely, FULLY ungated from the start (not merely found-already-shipped at implementation time, unlike every prior phase in the `SecureDefaultsAssertion`-lock family): SK0036 `RawRpcExceptionConstructionAnalyzer` needs only the standalone, already-available `Grpc.Core.Api` NuGet package (containing solely `RpcException`/`Status`, not the full `Grpc.AspNetCore` hosting stack `SharedKernel.Presentation.Grpc` will eventually pin), not a compiled reference to that package itself. Semantic-model exact-type resolution of `Grpc.Core.RpcException`/`Grpc.Core.Status` — deliberately NOT a syntax-only simple-name match, since "Status" is exactly the kind of dangerously generic simple name SK0026's "Kernel" lesson warned against defaulting to syntax-only for (SK0013's "HttpClient is unique enough" precedent does not transfer). Single shared exemption namespace `SharedKernel.Presentation.Grpc`, mirroring SK0029's one-owning-package shape. No `SharedKernel.ArchitectureTests` counterpart, mirroring SK0013's own shape. No new Cross-Domain Dependencies entry — there is genuinely nothing pending. Overall Progress total-tasks count updated to 671; mirrors the platform's raw-`HttpClient`/inline-`ProblemDetails`/ad hoc-logging enforcement precedents for `14.Presentation`'s new gRPC error-mapping surface (governance-arch-planner)
