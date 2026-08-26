@@ -366,6 +366,18 @@ BusinessRuleExtensions
     .And(this IBusinessRule, IBusinessRule)                → AndBusinessRule
     .Or(this IBusinessRule, IBusinessRule)                 → OrBusinessRule
     .Not(this IBusinessRule)                               → NotBusinessRule
+
+CurrencyMismatchRule  (sealed, implements IBusinessRule)   (WO-066/P-439)
+    constructor: CurrencyMismatchRule(Currency expected, Currency actual)
+    .IsBroken()                                            → bool  (= !expected.Equals(actual))
+    .Message                                                → string  ($"Currency mismatch: expected '{expected.Code}' but was '{actual.Code}'.")
+    NOTE: Public, top-level, reusable rule — sibling to AndBusinessRule/OrBusinessRule/NotBusinessRule,
+          not nested inside Money — so a consuming service can reuse it independently of Money
+          construction (e.g. validating an incoming payment DTO's currency before ever constructing
+          a Money instance). Money's cross-currency arithmetic (see Money system below) calls
+          ValueObject.CheckRule(new CurrencyMismatchRule(...)) — reusing the already-shipped
+          BusinessRuleViolationException / ErrorType.BusinessRule → HTTP 422 pipeline. No new
+          exception type was introduced for Money's cross-currency rejection.
 ```
 
 #### Domain service base (`DomainServices/`)
@@ -563,6 +575,115 @@ SpecificationExtensions
     .Not<T>(this Specification<T>)                         → NotSpecification<T>
 ```
 
+#### Money system (`ValueObjects/Money/`)  (WO-066/P-439)
+
+```text
+RoundingPolicy  (enum)
+    BankersRounding   — default; maps to MidpointRounding.ToEven. Platform default because it
+                         introduces no systematic rounding bias across a large volume of
+                         transactions — the standard choice for financial ledgers.
+    AwayFromZero      — maps to MidpointRounding.AwayFromZero. Explicit opt-in for
+                         jurisdictions/contracts that require it.
+
+CurrencyCatalog  (static class)
+    .TryGetMinorUnitDigits(string code, out int digits)     → bool
+    .IsKnownCode(string code)                               → bool
+    NOTE: Backed by a fixed static Dictionary<string, int> covering every active ISO 4217
+          alpha-3 code. Default is 2 digits; documented exceptions: zero-decimal currencies
+          (JPY, KRW, VND, ISK, CLP, PYG, UGX, RWF, XOF, XAF, XPF, KMF, GNF, DJF, VUV) at 0
+          digits, three-decimal currencies (BHD, KWD, OMR, JOD, TND, LYD, IQD) at 3 digits.
+          This is a fixed dataset — not I/O-backed, not refreshed at runtime. A currency
+          addition/deprecation requires a new package version, not a runtime config change.
+
+Currency  (sealed class, extends SingleValueObject<string>)
+    .Code                                                   → string  (= Value; ISO 4217 alpha-3, always uppercase)
+    .MinorUnitDigits                                        → int  (derived, non-equality-participating —
+                                                                     computed via CurrencyCatalog.TryGetMinorUnitDigits(Code, ...))
+    protected override .Validate()                          → checks Code is exactly 3 uppercase ASCII
+                                                                letters AND a known CurrencyCatalog code
+    public static .Create(string code)                      → Result<Currency>
+        Via ValueObject.TryCreate(() => new Currency(code.Trim().ToUpperInvariant())) — the same
+        SingleValueObject<TValue>/ValueObject.TryCreate<T> pattern already documented above.
+    Well-known static convenience instances: Currency.Usd, .Eur, .Gbp, .Jpy (at minimum) — a DX
+    convenience only, NOT an exhaustive currency list. Create(...) remains the general-purpose
+    path covering the full ISO 4217 catalog via CurrencyCatalog.
+
+Money  (sealed class, extends ValueObject — NOT SingleValueObject<TValue>, since it has two
+        independent components rather than one)
+    .Amount                                                 → decimal  (get-only; ALWAYS already rounded
+                                                                          to Currency.MinorUnitDigits — see below)
+    .Currency                                                → Currency  (get-only)
+    NOTE: Amount and Currency are both assigned via field initializers in the private constructor
+          BEFORE the base ValueObject constructor invokes Validate() — the same construction-order-
+          safe technique already documented for SingleValueObject<TValue>.Value. Amount's field
+          initializer applies the RoundingPolicy rounding helper against Currency.MinorUnitDigits,
+          so a constructed Money's Amount is unconditionally rounded — there is no separate "reject
+          excess precision" validation path.
+    .GetEqualityComponents()                                → IEnumerable<object?>  (returns [Amount, Currency])
+    protected override .Validate()                          → guards currency for null via
+        Guard.Throw.Null (mirrors the AggregateRoot<TId> clock-parameter precedent, WO-051/P-311);
+        otherwise returns null (no further invariant beyond an already-validated Currency and an
+        always-rounded Amount).
+    public static .Create(decimal amount, Currency currency, RoundingPolicy roundingPolicy = RoundingPolicy.BankersRounding)
+                                                              → Result<Money>
+        Via ValueObject.TryCreate(() => new Money(amount, currency, roundingPolicy)).
+    public static .Zero(Currency currency)                   → Money  (Amount = 0m; cannot fail, no Result wrapper)
+
+    Arithmetic / comparison — every cross-currency path below calls
+    CheckRule(new CurrencyMismatchRule(this.Currency, other.Currency)) first, throwing
+    BusinessRuleViolationException (ErrorType.BusinessRule → HTTP 422) on mismatch:
+        .Add(Money other)                                    → Money
+        .Subtract(Money other)                                → Money
+        .Negate()                                             → Money  (no currency to mismatch)
+        .Multiply(decimal factor, RoundingPolicy roundingPolicy = RoundingPolicy.BankersRounding)
+                                                                → Money  (scalar — no currency to mismatch;
+                                                                          re-rounds the product to Currency.MinorUnitDigits)
+        .CompareTo(Money other)                               → int  (implements IComparable<Money>;
+                                                                        cross-currency comparison is exactly
+                                                                        as invalid as cross-currency addition)
+    operator +(Money, Money)              → left.Add(right)
+    operator -(Money, Money)              → left.Subtract(right)
+    operator -(Money)                     → money.Negate()
+    operator *(Money, decimal)            → money.Multiply(factor)
+    operator <, <=, >, >=                 → delegate to CompareTo
+    NOTE: Add/Subtract/Multiply/Negate construct the result Money directly (not re-validated
+          through Create/TryCreate) — both operands are already-valid, same-currency instances,
+          so no new failure mode is introduced by combining them. Equals/GetHashCode/
+          IEquatable<ValueObject> are inherited unchanged from ValueObject.
+
+    Allocation:
+        .Allocate(int numberOfParts)                          → IReadOnlyList<Money>
+        .Allocate(IReadOnlyList<int> ratios)                  → IReadOnlyList<Money>  (weighted split)
+        Algorithm: largest-remainder / Hare–Niemeyer method — converts Amount to an exact integer
+        count of minor units, integer-divides proportionally to each ratio's share (floor
+        division), then distributes the leftover minor units one-by-one, largest-remainder-first.
+        Guarantees Sum(result) == this exactly, and no part differs from another by more than one
+        minor unit. Worked example: splitting $10.00 three ways produces [3.33, 3.33, 3.34] —
+        never [3.33, 3.33, 3.33] (loses a cent) or [3.34, 3.34, 3.34] (invents two cents).
+        Guards: numberOfParts < 1 → ArgumentOutOfRangeException; empty/negative/all-zero ratios
+        → ArgumentException.
+
+IExchangeRateProvider  (pure interface — zero implementation in this package)
+    .GetExchangeRateAsync(Currency source, Currency target, CancellationToken cancellationToken)
+                                                              → Task<Result<decimal>>
+    NOTE: An async, Task-returning domain port — the same shape precedent as the already-shipped
+          IDomainEventDispatcher.DispatchAsync (WO-014/P-081), which proves an async member on a
+          pure-contract interface is accepted in this zero-I/O package: the INTERFACE performs no
+          I/O itself — only a consuming service's real implementation does. 03.Domain ships no
+          implementation, no hardcoded rate table, no embedded HttpClient/SDK call.
+
+MoneyExtensions  (static class)
+    .ConvertAsync(this Money money, Currency targetCurrency, IExchangeRateProvider rateProvider,
+                  RoundingPolicy roundingPolicy, CancellationToken cancellationToken)
+                                                              → Task<Result<Money>>
+    NOTE: An extension method, not an instance member on Money — keeps the synchronous, pure
+          ValueObject free of async members. Composes the rate lookup with Money.Create as the
+          ergonomic conversion entry point consuming services use.
+```
+
+**Explicitly out of scope for this phase:** percentage/interest-calculation helpers. Flagged as a
+documented future extension only if a real consumer need materializes — not speculatively added now.
+
 ---
 
 ## Implementation Rules
@@ -615,6 +736,12 @@ SpecificationExtensions
 - **`Entity<TId>` and `ValueObject` implement `IEquatable<T>`** (WO-051/P-311) — `Equals(T? other)` delegates to the existing `Equals(object?)` override; this is a boxing/virtual-dispatch-avoidance addition for generic-collection consumers (`List<T>.Contains`, `Dictionary` keys, LINQ `Distinct`/`Except`), not a behavior change. `Entity<TId>`'s `Equals(object?)`/`GetHashCode()` remain `sealed override`.
 - **`IPolicy<T>.Explain` is a default interface member, not a required override** (WO-051/P-312) — this is the mechanism that makes the addition zero-breaking-change: any pre-existing `IPolicy<T>` implementor that only ever declared `IsCompliant` continues to compile unmodified. Composite policies (`AndPolicy<T>`, `OrPolicy<T>`, `NotPolicy<T>`) override `Explain` to aggregate/synthesize a meaningful message rather than relying on the generic DIM default.
 - **`Specification<T>.Create(criteria)` is for one-off filters only** (WO-051/P-313) — it does not relax the existing constructor-only/no-fluent-chaining builder-method rule for named, reusable specifications. A domain concept that will be referenced from more than one call site must still be its own dedicated `Specification<T>` subclass.
+- **`Money.Amount` is unconditionally rounded at construction** (WO-066/P-439) — there is no "reject excess precision" validation path. `Money.Create(10.005m, Usd)` does not throw; it silently rounds to the currency's minor-unit precision per the supplied `RoundingPolicy`. Callers that need to detect precision loss must compare the input against the constructed `Money.Amount` themselves before calling `Create`.
+- **Cross-currency `Money` operations are a `BusinessRuleViolationException`, not a silent coercion or a separate exception type** (WO-066/P-439) — `Add`, `Subtract`, and `CompareTo` (and by extension the `+`/`-`/`<`/`<=`/`>`/`>=` operators) all call the existing `ValueObject.CheckRule` (WO-051/P-310) with a `CurrencyMismatchRule`. This reuses the already-shipped `BusinessRuleViolationException`/`ErrorType.BusinessRule` → HTTP 422 pipeline exactly as every other domain rule violation does — no new exception hierarchy was introduced for `Money`.
+- **`CurrencyCatalog` is a fixed, compile-time dataset — never I/O-backed** (WO-066/P-439) — a currency's minor-unit exponent is looked up from a static in-memory table, never fetched from an external service or configuration at runtime. Adding, removing, or correcting a currency's exponent requires a new `SharedKernel.Domain` package version.
+- **`Money.Allocate` must never lose or invent a minor unit** (WO-066/P-439) — the largest-remainder (Hare–Niemeyer) algorithm is a hard correctness requirement, not an implementation detail: `Sum(money.Allocate(n)) == money` must hold for every valid `n`/ratio set. A naive equal-division-with-truncation implementation is a defect, not an acceptable approximation.
+- **`IExchangeRateProvider` is a pure, zero-I/O domain port** (WO-066/P-439) — `03.Domain` ships the interface and the `MoneyExtensions.ConvertAsync` composition helper only. No implementation, no hardcoded rate table, and no embedded `HttpClient`/SDK call may ever be added to this package — the consuming service supplies the real adapter (typically bridged via `11.Communication`) at its own composition root, mirroring the `IDomainEventDispatcher` opt-in-implementation pattern.
+- **Percentage/interest-calculation helpers are explicitly out of scope** (WO-066/P-439) — do not add them speculatively. They are a documented future extension, to be added only if a real consumer need materializes.
 
 ---
 
@@ -669,6 +796,12 @@ Reasons for rejection:
 - `DomainEventVersionHelper.GetVersion(Type)`'s `ConcurrentDictionary<Type, int>` cache (WO-051/P-311) adds no new AOT concern — `ConcurrentDictionary<TKey,TValue>` is a standard BCL generic collection; the underlying `GetCustomAttribute<T>()` reflection call remains the same class of startup/first-use-time, type-inspection-only reflection already accepted for this helper.
 - `IPolicy<T>.Explain` (WO-051/P-312) is a C# default interface member — default interface methods are resolved at compile/JIT time via the interface's vtable slot, not via reflection; fully AOT-safe, no `[RequiresUnreferencedCode]` needed.
 - `Specification<T>.Create(criteria)` and the internal `CriteriaSpecification<T>` (WO-051/P-313) are a plain static factory method and a sealed class wrapping an `Expression<Func<T,bool>>` via the existing `AddCriteria` builder — no reflection, AOT-safe, identical reasoning to `AllSpecification<T>`/`EmptySpecification<T>`.
+- `RoundingPolicy` (WO-066/P-439) is a plain `enum`; the rounding helper is a static method calling `Math.Round` — no reflection, AOT-safe.
+- `CurrencyCatalog` (WO-066/P-439) is a static `Dictionary<string, int>` lookup — a standard BCL generic collection, no reflection, AOT-safe.
+- `Currency` (WO-066/P-439) extends `SingleValueObject<string>` — already-proven AOT-safe base; `MinorUnitDigits`'s derived-property lookup is a plain dictionary read, no reflection.
+- `Money` (WO-066/P-439) extends `ValueObject` — already-proven AOT-safe base. `GetEqualityComponents()`, arithmetic/comparison members, and `Allocate` are all plain arithmetic and BCL collection operations — no reflection, no `Activator.CreateInstance`, no `Expression.Compile()`.
+- `CurrencyMismatchRule` (WO-066/P-439) is a plain sealed class implementing `IBusinessRule` — identical reasoning to `AndBusinessRule`/`OrBusinessRule`/`NotBusinessRule` — no reflection, AOT-safe.
+- `IExchangeRateProvider`/`MoneyExtensions.ConvertAsync` (WO-066/P-439) is a plain interface plus a `Task`-returning extension method — no reflection, no generic type discovery, AOT-safe; identical reasoning to `IDomainEventDispatcher`. Implementations live outside this package; their AOT compatibility is a consumer concern.
 
 ---
 
@@ -712,6 +845,14 @@ Reasons for rejection:
 - `DomainEventVersionHelper` caching (WO-051/P-311): reflection (`GetCustomAttribute`) invoked at most once per distinct `Type` across repeated `GetVersion(Type)` calls. `Entity<TId>`/`ValueObject` `IEquatable<T>` (WO-051/P-311): `entity is IEquatable<Entity<TId>>` / `valueObject is IEquatable<ValueObject>` both `true`; typed `Equals(T? other)` matches `Equals(object?)` for equal/unequal/`null` inputs; all existing equality tests continue to pass unmodified.
 - `IPolicy<T>.Explain` (WO-051/P-312): a concrete test policy demonstrates both `IsCompliant` and `Explain` returning consistent results; a policy implementing only `IsCompliant` still compiles and returns the default DIM explanation (zero-breaking-change proof); `AndPolicy<T>.Explain` aggregates non-compliant sub-policy explanations with `"; "`; `OrPolicy<T>.Explain` (both non-compliant) aggregates both; `NotPolicy<T>.Explain` (inner unexpectedly compliant) returns the fixed generic message.
 - `Specification<T>.Create(criteria)` (WO-051/P-313): `IsSatisfiedBy` and expression-tree behavior identical to an equivalent named `Specification<T>` subclass; composes correctly via `.And()`/`.Or()`/`.Not()` against both another ad hoc spec and a named subclass; every non-criteria member defaults to its empty/false baseline.
+- `RoundingPolicy` (WO-066/P-439): `Math.Round` delegation verified for both policies at 0/2/3-digit precisions; a midpoint value rounds differently under each policy.
+- `CurrencyCatalog` (WO-066/P-439): `TryGetMinorUnitDigits` returns the correct digit count for a default-precision, zero-decimal, and three-decimal code each; returns `false` for an unknown code; `IsKnownCode` mirrors the same set.
+- `Currency` (WO-066/P-439): `Create` normalizes casing and succeeds for a well-formed known code; fails for a wrong-length or well-formed-but-unknown code; equality by `Code`; `MinorUnitDigits` reflects the catalog value; well-known statics construct successfully.
+- `CurrencyMismatchRule` (WO-066/P-439): `IsBroken()`/`Message` correctness, exercised standalone (independent of `Money`), proving the reuse claim.
+- `Money` construction/rounding/equality (WO-066/P-439): rounding is unconditional and visible in the constructed `Amount` for both `RoundingPolicy` values; structural equality by `Amount`+`Currency`; `Zero(currency).Amount == 0m`.
+- `Money` arithmetic/comparison (WO-066/P-439): same-currency `Add`/`Subtract`/`Multiply`/`Negate`/`CompareTo` produce correct results; every cross-currency path (`Add`, `Subtract`, `CompareTo`, and their operator equivalents) throws `BusinessRuleViolationException` carrying a `CurrencyMismatchRule` with `ErrorType.BusinessRule`.
+- `Money.Allocate` (WO-066/P-439): `Sum(result) == original` for both the equal-split and weighted-ratio overloads, across odd/even amounts; guard exceptions for `numberOfParts < 1` and invalid `ratios`.
+- `IExchangeRateProvider`/`MoneyExtensions.ConvertAsync` (WO-066/P-439): a hand-rolled test-project double proves `ConvertAsync` composes the returned rate with `Money.Create` correctly, and that a provider `Result<decimal>.Failure` short-circuits to `Result<Money>.Failure` without constructing a `Money`.
 
 ---
 
@@ -737,3 +878,5 @@ Reasons for rejection:
 - [2026-07-30] SK.03.Core closed — C-38..C-46 (WO-051/P-307..P-313) implemented: Include/StringInclude union-propagation fix in And/Or/NotSpecification; `IHasAggregateId<TId>`; `ValueObject.TryCreate<T>`/`CheckRule`; Guards adoption; `DomainEventVersionHelper` caching + `IEquatable<T>` on `Entity<TId>`/`ValueObject`; `IPolicy<T>.Explain` DIM; `Specification<T>.Create(criteria)`. **Corrected `KeysetSpecification<T, TKey>`'s constraint during implementation** — D-35's `where TKey : IComparable<TKey>` does not compile as designed; empirically confirmed the compiler erases `TKey?` to plain `TKey` for value-type closures absent a `struct` constraint, which would have silently broken the "null = first page" cursor contract for the design's own `DateTimeOffset` example. Shipped constraint is `struct, IComparable<TKey>`, narrowing `KeysetSpecification<T, TKey>` to value-typed sort keys only (documented in the Specification system section and Implementation Rules). All 46 Core tasks now `●`; 316/316 tests green (33 new), 0 build warnings (domain-phase-implementer)
 - [2026-07-30] SK.03.Docs closed — DO-30..DO-36 (WO-051/P-307..P-313) independently re-verified against shipped `.cs` files (not re-trusted from the WO-051 arch-planner changelog claim alone): `AndSpecification<T>`/`OrSpecification<T>`/`NotSpecification<T>`'s `Includes`/`StringIncludes` union propagation, `KeysetSpecification<T, TKey>`'s constructor/guards/`struct` constraint, `ISpecification<T>.AsSplitQuery` + composite propagation, `IHasAggregateId<TId>`, `ValueObject.TryCreate<T>`/`CheckRule` (including the rewritten `Money.Create` `<example>`), the `SharedKernel.Guards` `ProjectReference` plus `AggregateRoot<TId>`/`StronglyTypedId<TValue>`/`SingleValueObject<TValue>` guard sites and `Entity<TId>.id`'s deliberate unguarded exception, `DomainEventVersionHelper`'s `ConcurrentDictionary` caching, `Entity<TId>`/`ValueObject`'s `IEquatable<T>` additions, `IPolicy<T>.Explain` DIM with `AndPolicy<T>`/`OrPolicy<T>`/`NotPolicy<T>` aggregation, and `Specification<T>.Create(criteria)`/`CriteriaSpecification<T>` — all confirmed to match this brain's existing content exactly, with zero discrepancies. No content edits required; only this changelog line added. 317/317 tests green (Release). All 36 Docs tasks now `●`; SK.03.Docs phase → `●` (domain-phase-implementer)
 - [2026-07-30] SK.03.Published complete (P-11) — SharedKernel.Domain 1.7.0 packed and verified; manifest deps: Primitives + Core + Guards only (zero external NuGet); consumer-verify extended with 10 new tests confirming `KeysetSpecification<T,TKey>`, `AsSplitQuery`, `IHasAggregateId<TId>`, `ValueObject.TryCreate<T>`, `IPolicy<T>.Explain`, `Specification<T>.Create(criteria)`, and the P-307 composite Include/StringInclude union-propagation fix are all exported and functioning through a real PackageReference resolution (28/28 consumer tests green, 317/317 domain tests green); all 6 phases of 03.Domain (Design, Scaffold, Core, Tests, Docs, Published) now ● complete — WO-051 v1.7.0 cycle closed end to end; no new architectural signals beyond what Core/Docs already documented (domain-phase-implementer)
+
+- [2026-08-26] WO-066/P-439 — CLAUDE.md refreshed for `Money`, this platform's most conspicuous pre-WO-066 gap given how fintech-grade the recent work orders (WO-058 step-up auth, WO-060 FAPI 2.0 hardening) had already become. Added a new "Money system" Interface Contracts subsection: `RoundingPolicy` (`BankersRounding` default / `AwayFromZero`); `CurrencyCatalog` (fixed static ISO 4217 minor-unit-exponent table, correctly distinguishing the zero-decimal and three-decimal exceptions from the 2-digit default); `Currency` (`SingleValueObject<string>` with a derived `MinorUnitDigits`, well-known static convenience instances); `Money` (`ValueObject`, not `SingleValueObject<TValue>` — two independent components — with unconditional construction-order-safe rounding, no separate excess-precision rejection path); the full arithmetic/comparison surface plus a largest-remainder-method `Allocate` proven to conserve minor units exactly; and a zero-I/O `IExchangeRateProvider` port plus `MoneyExtensions.ConvertAsync`, mirroring `IDomainEventDispatcher`'s already-shipped async-on-a-pure-interface precedent. Added `CurrencyMismatchRule` to the Business rule system section — a public, top-level, reusable `IBusinessRule` sibling to `AndBusinessRule`/`OrBusinessRule`/`NotBusinessRule`, deliberately reusing the already-shipped `ValueObject.CheckRule`/`BusinessRuleViolationException`/`ErrorType.BusinessRule` → HTTP 422 pipeline rather than inventing a new exception type for cross-currency rejection. Implementation Rules, AOT Compatibility, and Test Rules sections all extended accordingly. Purely additive — zero new NuGet dependency, zero new `ProjectReference` (still exactly `SharedKernel.Primitives` + `SharedKernel.Core` + `SharedKernel.Guards`), zero breaking change to existing public surface. Percentage/interest-calculation helpers explicitly declared out of scope (future extension only, on real consumer need). `samples/OrderApi/Domain/Money.cs`'s evaluation-for-replacement is explicitly flagged as outside this domain's jurisdiction — a cross-cutting follow-up for `arch-lead`/root `state-map.md`, never an action `03.Domain` takes itself. Also noted: per the root `CLAUDE.md`'s 2026-08-25 versioning switch, the Published phase for this work order no longer bumps a per-package `PackageVersion`/`PackageReleaseNotes` — MinVer now derives the shipped version repo-wide from the next `git tag`. 30 new tasks recorded in state-map.md across all 6 phases (domain-arch-planner, WO-066)
