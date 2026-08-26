@@ -2,7 +2,7 @@
 
 ## What This Domain Is
 
-The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships seven independent packages covering: functional primitives (`Result<T>`, `Error`), exception-boundary and multi-result-aggregation railway extensions (`ResultTry`, `ResultCombine`), system abstractions (`IClock` — internally `TimeProvider`-backed since P-295 — SmartEnums, base exceptions, BCL extensions), a time-ordered identifier generator (`IIdGenerator`, UUIDv7-backed), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction (including weighted-variant/gradual-rollout evaluation), dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random generation, and non-secret content fingerprinting via `IContentHasher`), a dependency-free payload compression primitive (`SharedKernel.Compression`, Brotli-default/GZip-keyed), the platform-wide `LoggingEventIdRanges` registry — a compile-time constant reserving each folder-map domain's `EventId` numbering block for the `[LoggerMessage]` logging convention enforced repo-wide — and the `WellKnownHeaders` / `WellKnownBaggageKeys` / `WellKnownTagKeys` registries, the platform-wide source of cross-service propagation identifier literals (HTTP/gRPC header names, `Activity` baggage keys, and `Activity` tag/attribute keys) that every domain touching correlation-id, tenant-id, or error-classification propagation must reference instead of redeclaring locally.
+The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships seven **published** packages today, plus five more **design-locked, implementation-pending** packages (P-443/P-444/P-447/P-474/P-482, WO-067/WO-068/WO-076/WO-078), covering: functional primitives (`Result<T>`, `Error`), exception-boundary and multi-result-aggregation railway extensions (`ResultTry`, `ResultCombine`), system abstractions (`IClock` — internally `TimeProvider`-backed since P-295 — SmartEnums, base exceptions, BCL extensions), a time-ordered identifier generator (`IIdGenerator`, UUIDv7-backed), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction (including weighted-variant/gradual-rollout evaluation), dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random generation, non-secret content fingerprinting via `IContentHasher`, and — design-locked, pending — an async KMS-capable `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`/`CachedEncryptionKeyProvider` seam plus RFC 6238/4226 TOTP/HOTP second-factor primitives), a dependency-free payload compression primitive (`SharedKernel.Compression`, Brotli-default/GZip-keyed), the platform-wide `LoggingEventIdRanges` registry — a compile-time constant reserving each folder-map domain's `EventId` numbering block for the `[LoggerMessage]` logging convention enforced repo-wide, now spanning 00 through 20 (P-485) — and the `WellKnownHeaders` / `WellKnownBaggageKeys` / `WellKnownTagKeys` registries, the platform-wide source of cross-service propagation identifier literals (HTTP/gRPC header names, `Activity` baggage keys, and `Activity` tag/attribute keys) that every domain touching correlation-id, tenant-id, or error-classification propagation must reference instead of redeclaring locally. The five design-locked packages add: culture-independent financial/identity format validation (`SharedKernel.Validation` + a `.FluentValidation` rule adapter), a vendor-backed KMS key provider (`SharedKernel.Cryptography.KeyVault.Azure`), PII/data-classification taxonomy and masking (`SharedKernel.DataPrivacy`), and a culture-keyed error-message catalog seam (`SharedKernel.Localization`).
 
 Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Railway-oriented.**
 
@@ -19,10 +19,15 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) | `SharedKernel.Primitives`, `SharedKernel.Core` |
 | `SharedKernel.Configuration` | Options-pattern validation, `AddValidatedOptions` DI extension | `SharedKernel.Primitives` |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction (boolean + weighted-variant evaluation) + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
-| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation, non-secret content fingerprinting (`IContentHasher`) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
+| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation, non-secret content fingerprinting (`IContentHasher`); **design-locked, implementation pending:** async KMS-capable `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`/`CachedEncryptionKeyProvider` (P-446, breaking), RFC 6238/4226 TOTP/HOTP + `ITotpReplayGuard`/`TotpVerifier`/`RecoveryCodeGenerator` (P-451, additive) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
+| `SharedKernel.Validation` *(design-locked, P-443/WO-067, not yet shipped)* | Culture-independent format validators: IBAN, BIC, PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164, VAT baseline, pluggable per-country `INationalIdValidator` registry (TCKN default); dual-mode standalone `Result`/bool + `Guard.Against.*` extensions | `SharedKernel.Primitives`, `SharedKernel.Guards` |
+| `SharedKernel.Validation.FluentValidation` *(design-locked, P-444/WO-067, not yet shipped)* | `IRuleBuilder<T,string>` rule adapter for every `SharedKernel.Validation` validator | `SharedKernel.Validation`, `FluentValidation` (NuGet) |
+| `SharedKernel.Cryptography.KeyVault.Azure` *(design-locked, P-447/WO-068, not yet shipped)* | Azure Key Vault Keys implementation of `IEncryptionKeyProvider` + `IEnvelopeEncryptionProvider` | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Identity` (NuGet) |
+| `SharedKernel.DataPrivacy` *(design-locked, P-474/WO-076, not yet shipped)* | `DataClassification`/`SensitiveDataCategory` marker attributes, `PiiMasking.*` pure helpers, `IDataSubjectRequestHandler` | `SharedKernel.Primitives` |
+| `SharedKernel.Localization` *(design-locked, P-482/WO-078, not yet shipped)* | `ILocalizationCatalog` keyed by `(code, CultureInfo)`; `InMemoryLocalizationCatalog` default + `StringLocalizerLocalizationCatalog` resx-composition path | `SharedKernel.Primitives`, `Microsoft.Extensions.Localization.Abstractions` (NuGet) |
 
-All seven target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
+Seven of the twelve packages listed above are published; the remaining five (`SharedKernel.Validation`, `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.DataPrivacy`, `SharedKernel.Localization`) are design-locked with implementation pending a future pass — see `01.Core/state-map.md` phases `SK.01.P443`/`SK.01.P444`/`SK.01.P447`/`SK.01.P474`/`SK.01.P482`. All twelve target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
 ---
 
@@ -39,6 +44,12 @@ All seven target `net10.0`. Test sub-folders live inside each project folder (ne
 | Payload compression | Pure BCL `System.IO.Compression` only — `BrotliStream` (default), `GZipStream` (keyed alternate). Zero third-party NuGet dependencies. |
 | Identifier generation | Pure BCL — `Guid.CreateVersion7()` (RFC 9562 UUID v7). Zero third-party NuGet dependencies. |
 | Time abstraction | Pure BCL — `System.TimeProvider` (shipped since .NET 8) backs `SystemClock` internally; `IClock` remains the only source of time exposed to domain/application code. |
+| Format validation *(P-443, design-locked)* | Pure C# 13 — no NuGet dependencies; IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT checks are hand-rolled, not delegated to a third-party validation library |
+| FluentValidation adapter *(P-444, design-locked)* | `FluentValidation` (NuGet) — confined to `SharedKernel.Validation.FluentValidation`; never a dependency of `SharedKernel.Validation` itself |
+| KMS key management *(P-447, design-locked)* | `Azure.Security.KeyVault.Keys` + `Azure.Identity` (NuGet) — confined to `SharedKernel.Cryptography.KeyVault.Azure`; never a transitive dependency of `SharedKernel.Cryptography` itself |
+| TOTP/HOTP second factor *(P-451, design-locked)* | Pure BCL `System.Security.Cryptography` (`HMACSHA1`/`HMACSHA256`/`HMACSHA512`) — RFC 6238/4226. Zero third-party NuGet dependencies. |
+| Data privacy taxonomy *(P-474, design-locked)* | Pure C# 13 — no NuGet dependencies; attributes are pure metadata, never reflected over at runtime |
+| Localization *(P-482, design-locked)* | `Microsoft.Extensions.Localization.Abstractions` (NuGet, first-party Microsoft) — wraps `IStringLocalizer`/`IStringLocalizerFactory`, never a bespoke resx pipeline |
 
 ---
 
@@ -500,11 +511,35 @@ AesGcmEncryptionService  (sealed class, implements ISymmetricEncryptionService)
     — AES-256-GCM via System.Security.Cryptography.AesGcm; authenticated (tamper-evident) encryption only —
       never an unauthenticated mode such as CBC/ECB
 
-IEncryptionKeyProvider
+IEncryptionKeyProvider  (CURRENT SHAPE — still shipping until P-446/WO-068 lands, design-locked/pending)
     GetCurrentKey()                                             → CryptographicKey        (used for every new Encrypt call)
     GetKey(string keyId)                                        → CryptographicKey?       (used to Decrypt older payloads; null if the key was retired/unknown)
     — implemented by the consuming service (Key Vault, environment config, secret store); SharedKernel.Cryptography
       ships no default implementation and holds no key material itself
+    — TARGET SHAPE (P-446/WO-068, BREAKING — design-locked, implementation pending): the two synchronous
+      members above are REMOVED (not kept as an additive overload) and replaced with
+      `GetCurrentKeyAsync(CancellationToken ct = default) → ValueTask<CryptographicKey>` and
+      `GetKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<CryptographicKey?>` — a genuine
+      KMS/HSM-backed implementer (Azure Key Vault, AWS KMS, Vault) cannot honor a synchronous signature
+      without a blocking-on-async anti-pattern. Every existing implementer must migrate. `ISymmetricEncryptionService`
+      gains additive `EncryptAsync`/`DecryptAsync`/`EncryptToStringAsync`/`DecryptToStringAsync` overloads at
+      the same time; its existing sync `Encrypt`/`Decrypt`/`EncryptToString`/`DecryptToString` (below) are
+      RETAINED and bridge internally via `.GetAwaiter().GetResult()` on the async provider call — genuinely
+      non-blocking when the provider resolves synchronously (config-based default, or a `CachedEncryptionKeyProvider`
+      cache hit), but BLOCKS A REAL THREAD when the provider is genuinely network-bound on a cache miss — every
+      retained sync member's XML docs must say this IN CAPITALS and direct hot-path callers to the new
+      `*Async` overloads instead. Two new additive contracts land alongside: `IEnvelopeEncryptionProvider`
+      (`GenerateDataKeyAsync(CancellationToken ct = default) → ValueTask<EnvelopeDataKey>`,
+      `UnwrapDataKeyAsync(byte[] wrappedDataKey, string masterKeyId, CancellationToken ct = default) →
+      ValueTask<Result<byte[]>>`; `EnvelopeDataKey` sealed record: `.PlaintextKey → byte[]` use-then-discard,
+      never persist; `.WrappedKey → byte[]` persist this; `.MasterKeyId → string`) — a provider may implement
+      both `IEncryptionKeyProvider` and `IEnvelopeEncryptionProvider`; and `CachedEncryptionKeyProvider` (sealed,
+      implements `IEncryptionKeyProvider`, decorator — `ctor(IEncryptionKeyProvider inner, TimeProvider
+      timeProvider, TimeSpan ttl)`, bounded-TTL, single-flight-per-key refresh, never serves past TTL, an
+      inner-provider failure during refresh propagates directly to every waiting caller, no package-owned DI
+      extension — plain composition at the consumer's own composition root, mirroring the `IIdGenerator`/
+      `SystemClock(TimeProvider)` no-extension precedent). Fail-closed is structural throughout: an unreachable
+      KMS always propagates as a thrown exception, never a silent no-encryption fallback
 
 CryptographicKey  (sealed record)
     .Id                                                         → string
@@ -566,6 +601,55 @@ Sha256ContentHasher  (sealed class, implements IContentHasher)
       algorithm-swappable by construction — a future second digest implementation could register a second
       IContentHasher without changing this contract; only SHA-256 ships in this phase
 
+Base32  (static class — NEW, P-451/WO-069, design-locked, implementation pending)
+    Encode(byte[] data)                                         → string                  (RFC 4648 Base32, unpadded — matches authenticator-app expectations)
+    Decode(string base32Text)                                   → Result<byte[]>          (never throws on malformed input, mirrors Decrypt/Decompress's "expected failure surfaces as Result" shape)
+
+IHotpGenerator  (NEW, P-451/WO-069, design-locked, implementation pending)
+    GenerateCode(byte[] secret, long counter, int digits = 6, HotpAlgorithm algorithm = Sha1)   → string
+    ValidateCode(byte[] secret, string code, long counter, int digits = 6, HotpAlgorithm algorithm = Sha1) → bool
+    — RFC 4226 core; dynamic truncation per §5.3
+
+HotpAlgorithm  (enum — NEW, P-451/WO-069)
+    Sha1 (default, per RFC 4226) | Sha256 | Sha512
+
+HotpGenerator  (sealed class, implements IHotpGenerator — NEW, P-451/WO-069)
+    — backed by HMACSHA1/HMACSHA256/HMACSHA512 depending on HotpAlgorithm
+
+ITotpGenerator  (NEW, P-451/WO-069, design-locked, implementation pending)
+    GenerateCode(byte[] secret, int digits = 6, int stepSeconds = 30, HotpAlgorithm algorithm = Sha1)  → string  (uses IClock for "now")
+    GenerateCode(byte[] secret, DateTimeOffset timestamp, int digits = 6, int stepSeconds = 30, HotpAlgorithm algorithm = Sha1) → string  (explicit-timestamp overload, for testability)
+    ValidateCode(byte[] secret, string code, int digits = 6, int stepSeconds = 30, int driftWindow = 1, HotpAlgorithm algorithm = Sha1) → bool
+    — RFC 6238; composes IHotpGenerator internally via counter = floor(unixSeconds / stepSeconds); driftWindow
+      is the number of steps before/after the current step to accept; time source is IClock — NEVER DateTime.UtcNow
+
+TotpGenerator  (sealed class, implements ITotpGenerator — NEW, P-451/WO-069)
+
+TotpProvisioningUri  (static class — NEW, P-451/WO-069, design-locked, implementation pending)
+    Build(string issuer, string accountName, byte[] secret, int digits = 6, int stepSeconds = 30, HotpAlgorithm algorithm = Sha1) → Uri
+    — produces the otpauth://totp/{Issuer}:{AccountName}?secret=...&issuer=...&digits=...&period=...&algorithm=...
+      "Key Uri Format" authenticator apps (Google Authenticator and compatible) consume for enrollment
+
+ITotpReplayGuard  (NEW, P-451/WO-069, design-locked, implementation pending)
+    HasBeenUsedAsync(string identityKey, string code, CancellationToken ct = default)          → ValueTask<bool>
+    MarkUsedAsync(string identityKey, string code, TimeSpan validityWindow, CancellationToken ct = default) → ValueTask
+    — implemented by the consuming service (in-memory for single-instance dev, Redis-backed for production
+      multi-replica); mirrors 12.Security.Oidc's DPoP replay-check seam — never a direct 02.Caching reference
+      from this package; SharedKernel.Cryptography ships no default implementation
+
+TotpVerifier  (sealed class — NEW, P-451/WO-069, design-locked, implementation pending)
+    VerifyAsync(string identityKey, byte[] secret, string code, CancellationToken ct = default) → ValueTask<bool>
+    — composes ITotpGenerator.ValidateCode + ITotpReplayGuard; returns false on an invalid code OR a code
+      already used within its validity window; calls MarkUsedAsync only after a fresh valid code, before
+      returning true — this is the type that actually prevents double-acceptance of one code, not ValidateCode
+      itself (which stays pure/stateless by design)
+
+RecoveryCodeGenerator  (sealed class — NEW, P-451/WO-069, design-locked, implementation pending)
+    GenerateCodes(int count = 10, int lengthBytes = 5)          → IReadOnlyList<string>   (via ISecureRandomGenerator)
+    — generates plaintext backup codes shown once to the user; NEVER persists or hashes them itself — hashing
+      at rest via the existing IOneWayHasher before persistence is the consuming service's responsibility,
+      exactly like any other secret
+
 CryptographyOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
     .Pbkdf2Iterations                                           → int                     (default 600_000)
     .DefaultSigningKeyId                                        → string?
@@ -573,7 +657,9 @@ CryptographyOptions  (bound via IOptions<T>; validated via SharedKernel.Configur
 AddSharedKernelCryptography(IConfiguration configuration)
     → registers CryptographyOptions (validated, ValidateOnStart), IOneWayHasher, ISymmetricEncryptionService,
       IAsymmetricSignatureService, IHmacSigner, ISecureRandomGenerator, and (as of P-296/WO-049)
-      IContentHasher as singletons (all are stateless and thread-safe)
+      IContentHasher as singletons (all are stateless and thread-safe); TARGET SHAPE (P-451/WO-069, design-locked,
+      implementation pending) additionally registers IHotpGenerator, ITotpGenerator, and TotpVerifier as
+      singletons — ITotpReplayGuard is NEVER registered by this package, the consuming service supplies its own
     — IAsymmetricSignatureService has two concrete implementations sharing one interface: RsaSignatureService
       is registered as the unkeyed default; both RsaSignatureService and EcdsaSignatureService are additionally
       registered as .NET 8+ keyed singletons via CryptographyServiceCollectionExtensions.RsaSignatureServiceKey
@@ -637,6 +723,178 @@ AddSharedKernelCompression(IConfiguration configuration)
       ("Brotli") keyed singleton; registers GZipPayloadCompressor as the GZipPayloadCompressorKey ("GZip")
       keyed singleton only. Resolve GZip explicitly via
       provider.GetRequiredKeyedService<IPayloadCompressor>(GZipPayloadCompressorKey).
+```
+
+### `SharedKernel.Validation` — public surface (P-443/WO-067, design-locked, implementation pending — new eighth package)
+
+```
+IbanValidator / BicValidator / PanValidator / IsoCurrencyValidator / IsoCountryValidator / E164PhoneValidator / VatValidator  (static classes)
+    IsValid(string? value)                                      → bool
+    Validate(string? value)                                     → Result   (non-generic — format checks carry no typed value payload)
+    — IbanValidator uses mod-97 + a per-country length table (not a fixed-length assumption)
+    — PanValidator additionally exposes DetectNetwork(string value) → CardNetwork
+    — VatValidator is a baseline cross-jurisdiction format check — XML docs must state VAT format varies
+      enormously per country and this is not an exhaustive per-country validator
+
+CardNetwork  (plain enum — not a SmartEnum, since BIN-range detection carries no per-value behavior beyond the name)
+    Unknown | Visa | Mastercard | Amex | Discover
+
+INationalIdValidator
+    .CountryCode                                                → string   (ISO 3166 alpha-2)
+    IsValid(string idNumber)                                    → bool
+
+INationalIdValidatorRegistry
+    TryGetValidator(string countryCode, out INationalIdValidator? validator) → bool
+
+NationalIdValidatorRegistry  (sealed class, implements INationalIdValidatorRegistry)
+    — ConcurrentDictionary-backed, thread-safe, pre-seeded with TckNationalIdValidator at "TR"
+
+TckNationalIdValidator  (sealed class, implements INationalIdValidator)
+    — Turkey's 11-digit TCKN checksum algorithm; the built-in default given this platform's primary market
+
+ValidationErrorCodes  (static class — package-local nested string-constant catalog, mirrors ErrorCodes's shape
+    but NEVER added to SharedKernel.Primitives.ErrorCodes)
+    ValidationErrorCodes.Iban.InvalidFormat / .InvalidCheckDigit / .InvalidLength
+    ValidationErrorCodes.Bic.InvalidFormat
+    ValidationErrorCodes.Pan.FailedLuhnCheck / .UnknownNetwork
+    ValidationErrorCodes.Currency.UnknownCode
+    ValidationErrorCodes.Country.UnknownCode
+    ValidationErrorCodes.Phone.InvalidFormat
+    ValidationErrorCodes.Vat.InvalidFormat
+    ValidationErrorCodes.NationalId.UnknownCountry / .InvalidChecksum
+
+GuardValidationExtensions  (static class — Guard.Against.* extensions on IGuardClause, functional path only;
+    Guard.Throw.* parity is intentionally out of scope — SharedKernel.Guards' Throw nested class is hardcoded
+    and cannot be extended from an outside package)
+    InvalidIban(this IGuardClause, string? value)               → Error?
+    InvalidBic(this IGuardClause, string? value)                → Error?
+    InvalidPan(this IGuardClause, string? value)                → Error?
+    InvalidCurrencyCode(this IGuardClause, string? value)       → Error?
+    InvalidCountryCode(this IGuardClause, string? value)        → Error?
+    InvalidPhoneNumber(this IGuardClause, string? value)        → Error?
+    InvalidVatNumber(this IGuardClause, string? value)          → Error?
+    InvalidNationalId(this IGuardClause, string? value, string countryCode, INationalIdValidatorRegistry registry) → Error?
+    — the one guard requiring an explicit registry instance parameter, since national-ID validation is
+      registry-based rather than compile-time-generic like InvalidSmartEnum
+
+AddSharedKernelValidation()
+    → registers INationalIdValidatorRegistry as a singleton (pre-seeded default); exposes a chained
+      .AddNationalIdValidator<TValidator>() extension for a consuming service to register additional countries
+```
+
+### `SharedKernel.Validation.FluentValidation` — public surface (P-444/WO-067, design-locked, implementation pending — new ninth package, depends on P-443)
+
+```
+ValidationRuleBuilderExtensions  (static class — IRuleBuilder<T, string> extensions)
+    MustBeValidIban<T>(this IRuleBuilder<T, string>)             → IRuleBuilder<T, string>
+    MustBeValidBic<T>(this IRuleBuilder<T, string>)              → IRuleBuilder<T, string>
+    MustBeValidPan<T>(this IRuleBuilder<T, string>)              → IRuleBuilder<T, string>
+    MustBeValidCurrencyCode<T>(this IRuleBuilder<T, string>)     → IRuleBuilder<T, string>
+    MustBeValidCountryCode<T>(this IRuleBuilder<T, string>)      → IRuleBuilder<T, string>
+    MustBeValidPhoneNumber<T>(this IRuleBuilder<T, string>)      → IRuleBuilder<T, string>
+    MustBeValidVatNumber<T>(this IRuleBuilder<T, string>)        → IRuleBuilder<T, string>
+    MustBeValidNationalId<T>(this IRuleBuilder<T, string>, Func<T, string> countryCodeSelector, INationalIdValidatorRegistry registry) → IRuleBuilder<T, string>
+    — every rule delegates to the matching SharedKernel.Validation static validator and, on failure, sets the
+      FluentValidation error code to the matching ValidationErrorCodes constant — a failure surfaces the
+      identical code whether reached via the standalone SharedKernel.Validation call or this adapter
+    — documented composition recipe with 05.Application.Behaviors' ValidationBehavior: an AbstractValidator<T>
+      calling .MustBeValidIban() inside a rule already wired into that pipeline behavior, no extra plumbing
+```
+
+### `SharedKernel.Cryptography.KeyVault.Azure` — public surface (P-447/WO-068, design-locked, implementation pending — new tenth package, depends on P-446)
+
+```
+AzureKeyVaultEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider + IEnvelopeEncryptionProvider)
+    — direct-retrieval mode (IEncryptionKeyProvider) is built INTERNALLY ON TOP OF the envelope-wrap mode
+      (IEnvelopeEncryptionProvider): GetCurrentKeyAsync generates/caches a local AES-256 data key via
+      GenerateDataKeyAsync, exposing only the already-in-memory plaintext data key as CryptographicKey.Material
+      — never a second, parallel raw-export code path (Azure Key Vault Keys does not export raw HSM-protected
+      key material by default). The vault's own master key material never crosses the process boundary either way
+    — envelope-wrap mode (IEnvelopeEncryptionProvider) is the vendor-idiomatic path, backed by
+      CryptographyClient.WrapKeyAsync/UnwrapKeyAsync (RSA-OAEP or AES-KW depending on key type)
+    — fails closed: any Azure SDK exception (unreachable vault, RequestFailedException for permission/auth
+      failure) propagates directly from every member — no silent fallback
+    — ships ZERO caching of its own — composes with SharedKernel.Cryptography's CachedEncryptionKeyProvider
+      (P-446) externally rather than duplicating it; two independent caches with different TTL semantics
+      must never both wrap the same provider
+
+AzureKeyVaultCryptographyOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
+    .VaultUri                                                   → Uri
+    .KeyNames                                                   → IReadOnlyDictionary<string, string>   (keyId → Azure Key Vault key name)
+    .Credential                                                 → TokenCredential?   (defaults to Azure.Identity.DefaultAzureCredential when null)
+
+AddSharedKernelAzureKeyVaultCryptography(IConfiguration configuration)
+    → registers AzureKeyVaultCryptographyOptions (validated, ValidateOnStart) and AzureKeyVaultEncryptionKeyProvider
+      as both IEncryptionKeyProvider and IEnvelopeEncryptionProvider (same singleton instance, two service-type
+      registrations); does NOT register any caching decorator
+```
+
+### `SharedKernel.DataPrivacy` — public surface (P-474/WO-076, design-locked, implementation pending — new eleventh package)
+
+```
+DataClassification  (enum)
+    Public | Internal | Confidential | Restricted
+
+DataClassificationAttribute  (sealed class : Attribute, [AttributeUsage(Property | Field)])
+    .Classification                                             → DataClassification
+    — pure metadata; NEVER read via reflection in production code — sole sanctioned consumer is
+      00.Governance's compile-time analyzer (P-476) and human documentation
+
+SensitiveDataCategory  (enum)
+    Pii | PaymentCard | Credential | Health
+
+SensitiveDataCategoryAttribute  (sealed class : Attribute, [AttributeUsage(Property | Field)])
+    .Category                                                   → SensitiveDataCategory
+    — same "metadata only, never reflected over in production" constraint as DataClassificationAttribute
+
+PiiMasking  (static class — pure, allocation-minimal, deterministic, null/empty-safe functions; zero reflection)
+    Email(string? email)                                        → string   (e.g. "j.doe@example.com" → "j***@example.com")
+    Phone(string? phoneNumber)                                  → string   (keeps last 2–4 digits)
+    Pan(string? cardNumber)                                     → string   (keeps last 4 digits only)
+    Suppress(string? value)                                     → string   (fixed sentinel regardless of input — for fields with no safe partial reveal)
+
+IDataSubjectRequestHandler  (no default/reflection-based implementation ships — consuming service implements
+    against its own data)
+    ExportDataAsync(string subjectId, CancellationToken ct = default)      → Task<Result<DataSubjectExportBundle>>
+    RequestErasureAsync(string subjectId, CancellationToken ct = default)  → Task<Result<DataSubjectErasureReceipt>>
+    — cross-service erasure orchestration is explicitly out of scope for this package
+
+DataSubjectExportBundle  (sealed record)
+    .SubjectId                                                  → string
+    .ExportedAtUtc                                              → DateTimeOffset
+    .Data                                                       → IReadOnlyDictionary<string, object?>
+
+DataSubjectErasureReceipt  (sealed record)
+    .SubjectId                                                  → string
+    .ErasedAtUtc                                                → DateTimeOffset
+    .RecordsAffected                                            → int
+```
+
+### `SharedKernel.Localization` — public surface (P-482/WO-078, design-locked, implementation pending — new twelfth package)
+
+```
+ILocalizationCatalog
+    TryGetString(string code, CultureInfo culture, out string? value)      → bool
+    — keyed on the same `code` string 01.Core.Primitives.Error's factories already require; returns false and
+      out value is null on an unregistered/untranslated lookup — NEVER throws, NEVER returns a blank string.
+      The caller (14.Presentation's Error.ToProblemDetails(), P-484) owns the fallback-to-throw-site-message
+      behavior — this contract only ever signals "not found"
+
+InMemoryLocalizationCatalog  (sealed class, implements ILocalizationCatalog)
+    AddTranslation(string code, CultureInfo culture, string value)         → InMemoryLocalizationCatalog  (chained builder)
+    — dictionary-backed, keyed by (code, CultureInfo.Name); the zero-config default for a service with a
+      handful of translated codes
+
+StringLocalizerLocalizationCatalog  (sealed class, implements ILocalizationCatalog)
+    — wraps a caller-supplied Microsoft.Extensions.Localization.IStringLocalizerFactory + a resource type/name;
+      resolves TryGetString by checking the returned LocalizedString.ResourceNotFound; lets a service with full
+      .resx-file tooling compose behind the same seam without a second bespoke pipeline
+
+LocalizationServiceCollectionExtensions
+    AddInMemoryLocalizationCatalog(...)                         — registers InMemoryLocalizationCatalog as ILocalizationCatalog
+    AddStringLocalizerCatalog<TResource>()                      — registers StringLocalizerLocalizationCatalog as ILocalizationCatalog
+    — two independent, mutually-exclusive opt-in registrations; deliberately NEVER named AddSharedKernelLocalization()
+      — that name is reserved for 13.ServiceDefaults's separate culture-resolution middleware entry point (P-483)
 ```
 
 ---
@@ -706,6 +964,27 @@ AddSharedKernelCompression(IConfiguration configuration)
 - Compression must always happen **before** encryption when both are applied to the same payload, never the reverse — compressing already-encrypted/high-entropy ciphertext wastes CPU for no size benefit. This ordering rule must be stated in `IPayloadCompressor`'s XML docs, not just this brain.
 - `SharedKernel.Compression` ships no `.Abstractions`/`.{Provider}` sibling-package split — a single package with a keyed-DI algorithm choice (`BrotliPayloadCompressor` unkeyed default + "Brotli"/"GZip"-keyed singletons), mirroring `SharedKernel.Cryptography`'s `IAsymmetricSignatureService` RSA/ECDSA keyed-singleton precedent rather than sibling `.Brotli`/`.GZip` packages — the algorithm set is small, closed, and purely-BCL, exactly the condition under which that precedent applies.
 - No static mutable state anywhere in this domain.
+- **(P-443/WO-067, design-locked, implementation pending)** `SharedKernel.Validation` must never be folded into `SharedKernel.Guards` — Guards' value is deliberate minimalism (a generic precondition/argument-guard surface with no topic-specific catalog); a whole country/format-algorithm catalog belongs in its own package. `Guard.Against.*` extension methods for format validators live in `SharedKernel.Validation` (extending `IGuardClause` from the referencing side), never inside `SharedKernel.Guards` itself.
+- **(P-443/WO-067)** `Guard.Throw.*` parity is intentionally never added for format-validator guards — `SharedKernel.Guards`' `Guard.Throw` nested class is hand-enumerated and hardcoded inside that package; adding to it requires modifying `SharedKernel.Guards` itself, out of `SharedKernel.Validation`'s reach and never requested by WO-067's acceptance criteria (functional `Against.*` path only).
+- **(P-443/WO-067)** `ValidationErrorCodes` is a package-local nested-static-class string-constant catalog living entirely inside `SharedKernel.Validation` — it must never be added as a new nested category under `SharedKernel.Primitives.ErrorCodes`. `ErrorCodes`'s own documented rule ("consuming packages may add local constants without forking the SharedKernel") already covers this; a whole country-algorithm error-code catalog must never bloat the platform's most-depended-upon primitives package.
+- **(P-443/WO-067)** `CardNetwork` is a plain `enum`, not a `SmartEnum<TEnum,TValue>` — BIN-range network detection carries no per-value behavior beyond the name, so the `SmartEnum` machinery would be pure ceremony here.
+- **(P-446/WO-068, design-locked, implementation pending, BREAKING)** `IEncryptionKeyProvider`'s two members must become `GetCurrentKeyAsync`/`GetKeyAsync` (`ValueTask`-returning, `CancellationToken`-aware) — the synchronous members are **removed**, never kept as a parallel additive overload; a KMS-backed implementer must never be allowed to silently offer a thread-blocking synchronous path alongside the async one.
+- **(P-446/WO-068)** `ISymmetricEncryptionService`'s existing synchronous `Encrypt`/`Decrypt`/`EncryptToString`/`DecryptToString` members must be **retained**, never removed, and must bridge to the async `IEncryptionKeyProvider` via `.GetAwaiter().GetResult()` — every one of their XML docs must state IN CAPITALS that this blocks a real thread when the registered provider is genuinely network-bound, and must direct hot-path/high-throughput callers to the new `*Async` overloads instead. This is what keeps `06.Persistence`'s structurally-synchronous-only EF Core `ValueConverter` pipeline solvable in its own follow-on phase rather than forcing every downstream domain (`02.Caching`, `06.Persistence`, `07.Messaging`, `15.Integration`, `17.Workflows`) into a simultaneous breaking cascade from this one phase.
+- **(P-446/WO-068)** `IEnvelopeEncryptionProvider`/`EnvelopeDataKey` are additive and distinct from `IEncryptionKeyProvider` — a provider may implement both, but neither interface may be collapsed into the other. `EnvelopeDataKey.PlaintextKey` must never be persisted by any caller; only `.WrappedKey` is safe to persist.
+- **(P-446/WO-068)** `CachedEncryptionKeyProvider` must never serve a cached key past its configured TTL bound under any condition, including a concurrent inner-provider failure during refresh — a failed refresh must propagate to every caller awaiting that single-flight resolution, never fall back to the expired cached value. It ships with no package-owned DI extension, consistent with the `IIdGenerator`/`SystemClock(TimeProvider)` no-extension precedent.
+- **(P-446/WO-068)** Fail-closed on an unreachable KMS is structural, not a documented convention: `GetCurrentKeyAsync`/`GetKeyAsync`/`GenerateDataKeyAsync`/`UnwrapDataKeyAsync` must propagate a thrown exception on an unreachable provider — there must be no code path that silently proceeds with a placeholder/no-op key.
+- **(P-447/WO-068, design-locked, implementation pending)** `SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider` must implement direct-retrieval mode (`IEncryptionKeyProvider`) internally on top of its own envelope-wrap mode (`IEnvelopeEncryptionProvider`) — never as two independent, divergent code paths. This is a deliberate design resolution to Azure Key Vault Keys not exporting raw HSM-protected key material by default; a future maintainer must not "fix" this into two separate paths.
+- **(P-447/WO-068)** `SharedKernel.Cryptography.KeyVault.Azure` must ship **zero caching of its own** — it composes with `SharedKernel.Cryptography`'s `CachedEncryptionKeyProvider` (P-446) externally. Two independent caches with different TTL semantics must never both wrap the same provider instance.
+- **(P-447/WO-068)** `Azure.Security.KeyVault.Keys` and `Azure.Identity` must never leak as a transitive dependency of `SharedKernel.Cryptography` itself — they are confined to `SharedKernel.Cryptography.KeyVault.Azure`.
+- **(P-451/WO-069, design-locked, implementation pending)** `ITotpGenerator`/`IHotpGenerator`'s `ValidateCode` members must stay pure and stateless — no replay awareness. Replay protection is composed one layer up, in `TotpVerifier`, so the RFC implementation remains independently testable and the replay-guard orchestration remains an independently swappable concern.
+- **(P-451/WO-069)** `ITotpReplayGuard` must live in the same package as `ITotpGenerator`/`TotpVerifier` — never split into a separate package. `TotpVerifier` needs the replay guard internally to reject a reused code; splitting it out would create a circular dependency between the two halves.
+- **(P-451/WO-069)** `TotpGenerator`/`HotpGenerator` must source "now" from `IClock` — never `DateTime.UtcNow` — consistent with this domain's platform-wide `IClock`-only rule (SK0001).
+- **(P-451/WO-069)** `RecoveryCodeGenerator` must never persist or hash the codes it generates — hashing at rest via the existing `IOneWayHasher` before persistence is the consuming service's responsibility, exactly like any other secret.
+- **(P-474/WO-076, design-locked, implementation pending)** `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` must never be read via reflection in production code — they are pure compile-time/documentation metadata whose sole sanctioned consumer is `00.Governance`'s analyzer (P-476) and human documentation. A reflection-based runtime read of either attribute anywhere in production code is exactly the pattern this domain already prohibits for logging (root `CLAUDE.md`'s "never a reflection-based property walk" rule) and would directly contradict the rule these attributes exist to support.
+- **(P-474/WO-076)** `PiiMasking.*` functions must be pure, allocation-minimal, deterministic, and null/empty-safe — never throw on null or empty input, never perform I/O, never carry hidden state.
+- **(P-474/WO-076)** `IDataSubjectRequestHandler` must ship with no default or reflection-based implementation — each consuming service implements it against its own data. `SharedKernel.DataPrivacy` must never grow a cross-service erasure orchestrator; that composition, if it ever exists, belongs to a future `19.Scheduling`/`17.Workflows` phase, not this package.
+- **(P-482/WO-078, design-locked, implementation pending)** `ILocalizationCatalog.TryGetString` must never throw and must never return a blank/empty string on an unregistered or untranslated lookup — it returns `false` and a `null` out value; the caller owns the fallback-to-original-message behavior. `01.Core.Primitives.Error` must remain completely unchanged by this package — no new property, no breaking change.
+- **(P-482/WO-078)** This package's own DI registration extensions (`AddInMemoryLocalizationCatalog`, `.AddStringLocalizerCatalog<TResource>()`) must never be named `AddSharedKernelLocalization()` — that name is reserved for `13.ServiceDefaults`'s separate culture-resolution middleware entry point (P-483). The two are genuinely distinct concerns (a message-lookup contract here vs. request-culture-resolution middleware there) and must never share one ambiguous name across domains.
 
 ---
 
@@ -745,6 +1024,39 @@ services.AddSingleton<IEncryptionKeyProvider, MyKeyVaultBackedKeyProvider>();
 services.AddSharedKernelCompression(configuration);
 var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
     CompressionServiceCollectionExtensions.GZipPayloadCompressorKey);
+
+// ---- The registrations below are DESIGN-LOCKED, IMPLEMENTATION PENDING (P-443/P-444/P-446/P-447/P-451/P-482) ----
+
+// Validation (P-443) — registers INationalIdValidatorRegistry pre-seeded with TckNationalIdValidator ("TR").
+// Format validators themselves (IbanValidator, PanValidator, etc.) are static — no DI registration needed.
+services.AddSharedKernelValidation()
+    .AddNationalIdValidator<MySecondCountryNationalIdValidator>();
+
+// Cryptography — async key provider (P-446, BREAKING target shape). Config-supplied keys remain the default;
+// a consuming service wanting bounded-TTL caching composes CachedEncryptionKeyProvider explicitly.
+services.AddSharedKernelCryptography(configuration);
+services.AddSingleton<IEncryptionKeyProvider>(sp =>
+    new CachedEncryptionKeyProvider(new MyKmsBackedKeyProvider(...), TimeProvider.System, TimeSpan.FromMinutes(5)));
+
+// Cryptography.KeyVault.Azure (P-447) — implements both IEncryptionKeyProvider and IEnvelopeEncryptionProvider;
+// wrap in CachedEncryptionKeyProvider (above) if caching is desired — this package ships none of its own.
+services.AddSharedKernelAzureKeyVaultCryptography(configuration);
+
+// Cryptography — TOTP/HOTP (P-451, additive target shape). ITotpReplayGuard is never registered by this
+// package — supply your own (in-memory for dev, Redis-backed for production multi-replica).
+services.AddSharedKernelCryptography(configuration);   // also registers IHotpGenerator, ITotpGenerator, TotpVerifier
+services.AddSingleton<ITotpReplayGuard, MyRedisBackedTotpReplayGuard>();
+
+// DataPrivacy (P-474) — no DI extension: DataClassificationAttribute/SensitiveDataCategoryAttribute are pure
+// metadata (applied directly on types), and PiiMasking is a static class. IDataSubjectRequestHandler is
+// registered by the consuming service against its own implementation, like any other application-owned contract.
+services.AddSingleton<IDataSubjectRequestHandler, MyServiceDataSubjectRequestHandler>();
+
+// Localization (P-482) — exactly one of the two, never both against the same ILocalizationCatalog service type.
+services.AddInMemoryLocalizationCatalog(catalog => catalog
+    .AddTranslation("validation.iban.invalid_format", CultureInfo.GetCultureInfo("tr-TR"), "Geçersiz IBAN formatı"));
+// — or —
+services.AddStringLocalizerCatalog<MyResourceMarker>();
 ```
 
 `SharedKernel.Core` and `SharedKernel.Guards` ship **no DI extensions** — they are pure libraries with no `Microsoft.Extensions.DependencyInjection.Abstractions` reference at all. `SharedKernel.Primitives` is not fully dependency-free of that package, however: it already carries one package-owned extension, `ClockExtensions.AddClock()` (registering `SystemClock` as `IClock`), which is why it references `Microsoft.Extensions.DependencyInjection.Abstractions` in the first place. `IIdGenerator` and `SystemClock`'s `TimeProvider` overload deliberately do **not** get an equivalent `AddX()` extension — both are registered with a plain `services.AddSingleton<...>()` call at the consumer's own composition root. This is a per-abstraction design choice (each new abstraction in this package is evaluated on its own merits for whether a convenience extension pulls its weight), not evidence that the package avoids the DI abstractions package altogether.
@@ -760,7 +1072,7 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 - `Result<T>`, `Result`, `Error`, `ValidationResult`, `ValidationResult<T>` are sealed classes/records — no reflection, fully AOT-safe.
 - `ErrorCodes` is a static class of string constants — no runtime lookup, fully AOT-safe.
 - `SmartEnum` base uses a static `IReadOnlyList<TEnum>` built at type-initialization — no reflection in value lookup.
-- `LoggingEventIdRanges` is a static class of compile-time `const int` values — no reflection, no runtime computation, fully AOT-safe, and directly usable as a `[LoggerMessage(EventId = ...)]` attribute argument (which itself requires a compile-time constant expression).
+- `LoggingEventIdRanges` is a static class of compile-time `const int` values — no reflection, no runtime computation, fully AOT-safe, and directly usable as a `[LoggerMessage(EventId = ...)]` attribute argument (which itself requires a compile-time constant expression). **(P-485, design-locked, implementation pending)** three additional fields (`Idempotency = 18000`, `Scheduling = 19000`, `Reporting = 20000`) are locked to be added the same way — pure additive `const int`, no AOT-safety change.
 - `WellKnownHeaders`, `WellKnownBaggageKeys`, and `WellKnownTagKeys` are static classes of compile-time `const string` values — no reflection, no runtime computation, fully AOT-safe; directly usable as header-name literals in `HttpRequestMessage.Headers`, gRPC `Metadata` entries, `Activity.AddBaggage(key, value)`, or `Activity.SetTag(key, value)` calls without any allocation beyond the string constant itself.
 - `IIdGenerator`/`UuidV7IdGenerator` calls `Guid.CreateVersion7()` directly — a static BCL method, no reflection, fully AOT-safe.
 - `SystemClock`'s `TimeProvider`-backed internals (P-295) call `TimeProvider.GetUtcNow()` directly — no reflection, fully AOT-safe; `TimeProvider` itself has shipped in the BCL since .NET 8 and requires no NuGet reference.
@@ -776,6 +1088,13 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 - `Pbkdf2OneWayHasher`, `AesGcmEncryptionService`, `RsaSignatureService`, `EcdsaSignatureService`, `HmacSha256Signer`, `CryptoRandomGenerator`, and `Sha256ContentHasher` (P-296) are sealed classes calling directly into BCL `System.Security.Cryptography` types (`Rfc2898DeriveBytes`, `AesGcm`, `RSA`, `ECDsa`, `HMACSHA256`, `RandomNumberGenerator`, `SHA256`) — no reflection, fully AOT-safe.
 - `CryptographyOptions` binds via `Microsoft.Extensions.Options`, the same AOT-compatible (.NET 8+) path used by `SharedKernel.Configuration`.
 - `BrotliPayloadCompressor` and `GZipPayloadCompressor` (P-297) are sealed classes calling directly into BCL `System.IO.Compression` types (`BrotliStream`, `GZipStream`) — no reflection, fully AOT-safe. `CompressionOptions` binds via the same `Microsoft.Extensions.Options` AOT-compatible path.
+- **(P-443/WO-067, design-locked, implementation pending)** All `SharedKernel.Validation` static validators, `NationalIdValidatorRegistry` (`ConcurrentDictionary`-backed, no reflection), and `GuardValidationExtensions` are AOT-safe by construction — no reflection anywhere; the pluggable-registry lookup is a plain dictionary keyed by a `string` country code, not a type-based/reflective lookup.
+- **(P-444/WO-067, design-locked, implementation pending)** `ValidationRuleBuilderExtensions` are ordinary `IRuleBuilder<T,string>` extension methods — AOT-safety here is bounded by `FluentValidation`'s own AOT status, which must be verified on each version upgrade (mirrors the existing `Microsoft.FeatureManagement` verify-on-upgrade posture).
+- **(P-446/WO-068, design-locked, implementation pending)** The async `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` members and `CachedEncryptionKeyProvider`'s single-flight-per-key logic use ordinary `ValueTask`/`Task` continuation patterns — no reflection, fully AOT-safe. The sync-to-async bridge (`.GetAwaiter().GetResult()`) is a plain BCL call, AOT-safe but a runtime blocking concern (documented in Implementation Rules), not an AOT concern.
+- **(P-447/WO-068, design-locked, implementation pending)** `AzureKeyVaultEncryptionKeyProvider`'s AOT status is bounded by the Azure SDK's (`Azure.Security.KeyVault.Keys`, `Azure.Identity`) own AOT compatibility — must be verified on each version upgrade, mirroring the `Microsoft.FeatureManagement` precedent; confined entirely to this one package, never propagating an AOT concern into `SharedKernel.Cryptography` itself.
+- **(P-451/WO-069, design-locked, implementation pending)** `Base32`, `HotpGenerator`, `TotpGenerator`, `TotpProvisioningUri`, and `RecoveryCodeGenerator` call directly into BCL `System.Security.Cryptography` types (`HMACSHA1`/`HMACSHA256`/`HMACSHA512`) and plain string/byte manipulation — no reflection, fully AOT-safe. `TotpVerifier`'s composition of `ITotpGenerator` + `ITotpReplayGuard` is ordinary interface dispatch, AOT-safe.
+- **(P-474/WO-076, design-locked, implementation pending)** `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` are plain `Attribute` subclasses — attribute *application* is always AOT-safe; the hard constraint (Implementation Rules) is that this domain never reads them back via reflection at runtime, which would be the actual AOT/trimming hazard. `PiiMasking.*` are pure static string functions — AOT-safe by default.
+- **(P-482/WO-078, design-locked, implementation pending)** `InMemoryLocalizationCatalog` is a plain dictionary — AOT-safe. `StringLocalizerLocalizationCatalog`'s AOT status is bounded by `Microsoft.Extensions.Localization.Abstractions`'s own AOT compatibility (AOT-compatible as of .NET 8+, same family as `Microsoft.Extensions.Options` — verify on each upgrade).
 
 ---
 
@@ -795,6 +1114,14 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 - Guard tests must cover **both paths independently**: functional `Against.*` (assert returned `Error?`) and throw `Throw.*` (assert `DomainException` thrown on violation, no exception on pass).
 - Numeric and string-length guard tests must use `[Theory]` with `[InlineData]` for boundary conditions (exactly at limit, one below, one above).
 - Collection guard tests must verify single enumeration — use a counting stub/wrapper `IEnumerable<T>` that increments a counter on `GetEnumerator()` calls.
+- **(P-443/WO-067, design-locked, implementation pending)** `SharedKernel.Validation.Tests/` — every format validator's valid/invalid cases including boundary theories (IBAN per-country length table across at least 3 differing-length countries, PAN Luhn pass/fail plus at least Visa/Mastercard/Amex network detection, ISO 4217/3166 known-good and unknown-code cases, E.164 valid/invalid, VAT baseline); `NationalIdValidatorRegistry` (`TckNationalIdValidator` resolves for `"TR"` with correct checksum pass/fail; an unregistered country returns `false`, never throws; a consumer-registered second country resolves after `.AddNationalIdValidator<TValidator>()`); `Guard.Against.*` validation extensions (`null` on pass, matching `ValidationErrorCodes` constant on fail); DI registration sanity for `AddSharedKernelValidation()`.
+- **(P-444/WO-067, design-locked, implementation pending)** `SharedKernel.Validation.FluentValidation.Tests/` — each `.MustBeValid*()` rule (valid input passes, invalid input fails with the matching `ValidationErrorCodes` code attached); an end-to-end `AbstractValidator<T>` composition test proving interop with `05.Application.Behaviors`'s `ValidationBehavior` shape (constructed directly in-test, no live cross-domain reference).
+- **(P-446/WO-068, design-locked, implementation pending)** `SharedKernel.Cryptography.Tests/` gains: sync `Encrypt`/`Decrypt` bridging proven genuinely non-blocking under a synchronously-completing `IEncryptionKeyProvider`, and correctness-identical to the pre-migration sync-provider behavior; `*Async` overloads byte-identical to their sync counterparts; `CachedEncryptionKeyProvider` — a cache hit never calls the inner provider, an expired entry always re-fetches, **a tested proof that a revoked/rotated key is never served past its configured TTL bound**, a concurrent single-flight refresh calls the inner provider exactly once for N simultaneous callers past expiry, an inner-provider failure during refresh propagates to every waiting caller rather than falling back to a stale value; `IEnvelopeEncryptionProvider` round-trip via a test double; full regression of every pre-existing `SharedKernel.Cryptography.Tests` case against the migrated async contract.
+- **(P-447/WO-068, design-locked, implementation pending)** `SharedKernel.Cryptography.KeyVault.Azure.Tests/` — integration-style (Azure Key Vault emulator or a skip-if-unavailable-gated dev-tenant vault, mirroring this platform's existing external-dependency test posture): `GenerateDataKeyAsync`→`UnwrapDataKeyAsync` round-trip, `GetCurrentKeyAsync`/`GetKeyAsync` direct-retrieval round-trip built atop the same envelope path, an unreachable vault/permission-denied identity surfacing as a thrown exception.
+- **(P-451/WO-069, design-locked, implementation pending)** `SharedKernel.Cryptography.Tests/` gains: `Base32` round-trip; `HotpGenerator` against RFC 4226 Appendix D's published test vectors; `TotpGenerator` against RFC 6238 Appendix B's published test vectors (SHA-1/256/512); clock-drift-window accept/reject via a `FakeTimeProvider`-backed `IClock` (never real wall-clock sleeping); `TotpProvisioningUri.Build` output matching the Key Uri Format field-for-field; **`TotpVerifier` — a test submitting the same valid code twice, asserting the second call is rejected via `ITotpReplayGuard`** (the phase's headline acceptance criterion); `RecoveryCodeGenerator` output count/length correctness and statistical non-repetition.
+- **(P-474/WO-076, design-locked, implementation pending)** `SharedKernel.DataPrivacy.Tests/` — `PiiMasking.*` deterministic output for known inputs, null/empty-input never throws, a reflection-absence assertion (no reflection anywhere in the package); attribute-application mechanics for `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` (a test-only reflective read proving mechanics, never a production-code claim); confirmation `IDataSubjectRequestHandler` has no default implementation registered anywhere in this package.
+- **(P-482/WO-078, design-locked, implementation pending)** `SharedKernel.Localization.Tests/` — `InMemoryLocalizationCatalog` (registered pair resolves correctly, unregistered pair returns `false`/`null` and never throws/blanks, `AddTranslation` chaining); `StringLocalizerLocalizationCatalog` (wraps a test-double `IStringLocalizerFactory`, correctly resolves a found key and correctly signals `false` for `ResourceNotFound`); DI registration sanity for both extensions, including a compile-time/reflection-based guard confirming neither is named `AddSharedKernelLocalization`.
+- **(P-485, design-locked, implementation pending)** `LoggingEventIdRangesTests` extended so the pairwise-uniqueness/multiple-of-1000/folder-number-to-value theory cases cover all 21 domain base constants (00 through 20), with regression confirmation the 18 pre-existing constants are byte-for-byte unchanged.
 
 ---
 
@@ -832,3 +1159,4 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 - [2026-07-27] P-297 closed (WO-049) — seventh package `SharedKernel.Compression` shipped in full: `IPayloadCompressor`/`BrotliPayloadCompressor`/`GZipPayloadCompressor`/`CompressionOptions`/`AddSharedKernelCompression` implemented exactly per the locked D-38→D-40 design, with two empirically-verified corrections to that design's assumed BCL behavior (both now reflected in the Interface Contracts and Implementation Rules sections above): (1) `BrotliStream`'s decoder throws `InvalidOperationException`, not `InvalidDataException`, for corrupt input — both compressors now catch `InvalidDataException or InvalidOperationException`; (2) neither `BrotliStream` nor `GZipStream` reliably detects suffix-only truncation as an error (confirmed BCL characteristic — `GZipStream` never validates its trailing CRC32/ISIZE footer on read, `BrotliStream` has no magic-number header at all), so `SharedKernel.Compression.Tests` asserts truncation-detection per-algorithm rather than as one shared contract test. 46/46 `SharedKernel.Compression.Tests` + 46/46 `SharedKernel.Consumer.Tests` passing, 0 build warnings under `GenerateDocumentationFile`; packed to `./nupkgs` at `1.0.0`. `01.Core/README.md` gained a "SharedKernel.Compression" usage section including a "note on truncation detection". `SK.01.P297` now fully `●` (11/11) (core-phase-implementer)
 - [2026-07-28] P-298 closed (WO-049) — `FeatureVariant` (with the named `Unassigned` deterministic-fallback sentinel), `FeatureVariantDefinition`, and `IFeatureManager.GetVariantAsync`/`GetVariantAsync<TContext>` implemented in `SharedKernel.FeatureManagement` exactly per the locked D-41 design, via a `MicrosoftFeatureManagerAdapter` rewrite onto `Microsoft.FeatureManagement.IVariantFeatureManager` — confirmed by reflection against the real `4.5.0` assembly to be a strict superset of the previously-injected `Microsoft.FeatureManagement.IFeatureManager`, carrying both the boolean and variant members, so one injected dependency now serves the whole adapter with no additional DI registration needed (Microsoft's own `AddFeatureManagement(...)` already registers its concrete `FeatureManager` against both interfaces). Found and fixed a real, previously-shipped defect during implementation, confirmed via a throwaway console harness against the real package rather than assumed from prose: `AddSharedKernelFeatureManagement` was passing `configuration.GetSection("FeatureManagement")` into `Microsoft.FeatureManagement`'s own `AddFeatureManagement`, which silently made the variant/allocation configuration schema (`feature_management:feature_flags`, a *different*, unscoped, snake_case root key per Microsoft's own schema) completely unreachable — plain boolean flags resolved fine regardless, which is exactly why this went unnoticed. Fixed by passing the root `IConfiguration` instead; zero consumer-visible signature change, fully backward compatible. Also confirmed empirically: `GetVariantAsync<TContext>` has no generic per-`TContext` contextual-filter equivalent in `Microsoft.FeatureManagement` — the variant API is fixed to a concrete `ITargetingContext` (UserId+Groups); `MicrosoftFeatureManagerAdapter` bridges this via `context?.ToString()`, documented explicitly. The two pre-existing `IsEnabledAsync` members deliberately keep discarding `ct` exactly as before, even though the newly-injected interface now technically accepts one, to guarantee byte-for-byte-unchanged behavior per this phase's hard rule. Interface Contracts, Implementation Rules, DI Registration, AOT Compatibility, and Test Rules sections all updated with these findings. 29/29 `SharedKernel.FeatureManagement.Tests` passing (9 pre-existing + 20 new); `SK.01.P298` now fully `●` (5/5) — every WO-049 phase inside `01.Core`'s own jurisdiction (P-292→P-298) is complete (core-phase-implementer)
 - [2026-08-14] P-384 processed (WO-059) — locked design for `ErrorType.Forbidden` (next sequential enum value after `BusinessRule = 6`) and `Error.Forbidden(string code, string message)` on `SharedKernel.Primitives`'s `Error`/`ErrorType`, mirroring `BusinessRule`'s exact shape and XML-doc style (P-042/WO-010 precedent). Motivation: two already-dispatched, already-designed WO-058 phases — `05.Application`'s `DualApprovalBehavior` maker-checker short-circuit (P-380, blocking `SK.05.Core` at 77/81 with C-78 `⚑` Blocked) and `14.Presentation`'s `[RequireRole]`/`[RequirePermission]` endpoint attributes (P-381, whose own C-24 already carries the companion HTTP 403 status-code mapping in its own scope) — each independently found this gap by reading shipped source and correctly declined to substitute `Error.Unauthorized(...)`: `Unauthorized` means not-permitted-to-attempt-at-all (HTTP 401), while both consumers need permitted-in-general-but-this-instance-not-satisfied (HTTP 403), a materially different meaning. No `ErrorCodes` companion constant added, unlike `BusinessRule`'s `ErrorCodes.Domain.RuleViolated` — no consuming phase asked for a shared code constant, so none is speculatively added. Purely additive — no existing `ErrorType` member's numeric value changes, no existing `Error` factory's signature changes. Release-notes risk flagged explicitly for the repack: a downstream consumer with an exhaustive `switch`/`switch` expression over `ErrorType` carrying no `discard`/`default` arm will need a source-level update to keep compiling (compile-time signal, not a runtime break) once this ships. Interface Contracts (`Error`/`ErrorType`) updated in this pass. 10 tasks added (D-42/D-43, C-55/C-56, T-43→T-46, DO-24, P-16); D-42/D-43 marked `●` (design locked now), the rest `○` pending a future implementation pass, mirroring the P-292→P-298 (WO-049) precedent (core-arch-planner, WO-059)
+- [2026-08-26] Seven phases across four work orders (WO-067/068/069/076/078) plus one cross-cutting housekeeping item processed in a single pass, all design-locked, all implementation pending a future pass — mirroring the P-292→P-298/P-384 "lock design ahead of implementation" precedent throughout. Domain summary paragraph, Packages table, and Technology Stack table updated to reflect twelve total packages (seven published, five design-locked): **P-443** locks a new eighth package, `SharedKernel.Validation` (references `SharedKernel.Primitives` + `SharedKernel.Guards`) — IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT format validators, a pluggable per-country `INationalIdValidatorRegistry` (TCKN default), and `Guard.Against.*` extensions (functional path only — `Guard.Throw.*` parity declined since that nested class is hardcoded inside `SharedKernel.Guards` and cannot be extended from an outside package); `ValidationErrorCodes` is a new package-local constants class, deliberately never added to `SharedKernel.Primitives.ErrorCodes`. **P-444** locks a new ninth package, `SharedKernel.Validation.FluentValidation` (depends on P-443) — a thin `IRuleBuilder<T,string>` rule adapter, keeping `FluentValidation` out of `SharedKernel.Validation` itself. **P-446** locks a **breaking** change to `IEncryptionKeyProvider` (`GetCurrentKey()`/`GetKey(string)` → `GetCurrentKeyAsync`/`GetKeyAsync`, sync members removed outright) plus additive `ISymmetricEncryptionService.*Async` overloads (existing sync members retained, bridging via `.GetAwaiter().GetResult()`, documented IN CAPITALS as thread-blocking for a genuinely network-bound provider), a new additive `IEnvelopeEncryptionProvider`/`EnvelopeDataKey` contract, and a new additive `CachedEncryptionKeyProvider` bounded-TTL decorator — a deliberate design choice that keeps `06.Persistence`'s structurally-synchronous EF Core `ValueConverter` pipeline problem solvable in that domain's own follow-on phase (P-448, out of jurisdiction) rather than forcing a platform-wide breaking cascade across five downstream domains from this one phase. **P-447** locks a new tenth package, `SharedKernel.Cryptography.KeyVault.Azure` (depends on P-446) — `AzureKeyVaultEncryptionKeyProvider` implementing both `IEncryptionKeyProvider` and `IEnvelopeEncryptionProvider`, with direct-retrieval mode deliberately built internally atop the envelope-wrap mode (Azure Key Vault Keys does not export raw HSM-protected key material by default) — a real design tension resolved explicitly rather than left implicit. **P-451** locks an additive extension to the existing `SharedKernel.Cryptography` package (no new package) — RFC 6238/4226 TOTP/HOTP generation/verification (`Base32`, `IHotpGenerator`, `ITotpGenerator`, `TotpProvisioningUri`), a pluggable `ITotpReplayGuard` composed by `TotpVerifier` (the type that actually prevents double-acceptance of one code — `ValidateCode` itself stays pure/stateless), and `RecoveryCodeGenerator`; the replay guard must live in this same package since `TotpVerifier` needs it internally, never split out. **P-474** locks a new eleventh package, `SharedKernel.DataPrivacy` (references `SharedKernel.Primitives` only) — `DataClassification`/`SensitiveDataCategory` pure-metadata marker attributes (never read via reflection in production — sole sanctioned consumer is `00.Governance`'s P-476 analyzer), `PiiMasking.*` pure helpers, and `IDataSubjectRequestHandler` (no default implementation; cross-service erasure orchestration explicitly out of scope). **P-482** locks a new twelfth package, `SharedKernel.Localization` (references `SharedKernel.Primitives` + `Microsoft.Extensions.Localization.Abstractions`) — `ILocalizationCatalog.TryGetString(code, culture, out value)` keyed on `Error`'s existing `code` string, never throwing/blanking on a miss; `01.Core.Primitives.Error` itself is completely unchanged (the load-bearing design decision — localization happens entirely at `14.Presentation`'s boundary, P-484, out of jurisdiction); this package's own DI extensions are deliberately never named `AddSharedKernelLocalization()`, reserving that name for `13.ServiceDefaults`'s separate middleware (P-483). **P-485** (cross-cutting, no work order, direct arch-lead directive) locks three additive `LoggingEventIdRanges` domain-base constants — `Idempotency = 18000`, `Scheduling = 19000`, `Reporting = 20000` — unblocking the three capability domains ratified this session from authoring their first `[LoggerMessage]` method; zero breaking impact. Interface Contracts, Implementation Rules, DI Registration, AOT Compatibility, and Test Rules sections all updated across every phase above. 88 tasks added across 8 new phase keys (`SK.01.P443`/`P444`/`P446`/`P447`/`P451`/`P474`/`P482`/`P485`); every phase's `D-*` design tasks marked `●` this pass, all `S-*`/`C-*`/`T-*`/`DO-*`/`P-*` tasks `○` pending a future implementation pass (core-arch-planner, WO-067/WO-068/WO-069/WO-076/WO-078)
