@@ -8,14 +8,16 @@ Philosophy: **Abstraction-first. Provider-swappable. Specification-driven. Inter
 
 > **Outbox scope:** The outbox pattern is owned entirely by `07.Messaging` via MassTransit's `UseEntityFrameworkOutbox`. No outbox types (`OutboxMessage`, `IOutboxWriter`, `OutboxInterceptor`) exist in this domain. Introducing any such type here is a hard violation — it creates competing infrastructure with no clear owner.
 
+> **Design-locked, implementation pending (four phases, all design-complete, no code yet):** EF Core value-conversion support for `03.Domain`'s `Money` value object (`CurrencyValueConverter`/`MoneyEntityTypeBuilderExtensions.OwnsMoney`, P-440/WO-066 — itself blocked on `03.Domain`'s own `Money` shipping, P-439); migration of this domain's `IEncryptionKeyProvider` consumers onto `01.Core`'s new async contract, which REMOVES `EncryptedValueConverter`'s direct `IEncryptionKeyProvider` dependency entirely rather than blocking on async anywhere in this pipeline (P-448/WO-068, breaking — itself blocked on `01.Core`'s own async migration shipping, P-446); and a new append-only, hash-chained audit-trail capability split across `IAuditTrailWriter`/`IAuditQueryService`/`AuditRecord`/`IAuditActorContext` in `.Abstractions` (P-456/WO-071) plus their `SharedKernel.Persistence.EfCore` implementation, `AuditRecordImmutabilityInterceptor`, and `.WithAuditTrail()` (P-457/WO-071) — distinct from the existing `AuditInterceptor`, which stamps mutable `CreatedBy`/`UpdatedAt` columns and preserves no history. See `state-map.md` phase keys `D-104`..`D-125` for full design detail.
+
 ---
 
 ## Packages
 
 | Package | Role | References |
 | --- | --- | --- |
-| `SharedKernel.Persistence.Abstractions` | `IRepository<T,TId>`, `IReadRepository<T,TId>` (gains `GetByIdsChunkedAsync`, WO-051/P-323), `IUnitOfWork`, `ITransactionalUnitOfWork` (gains `ExecuteInTransactionAsync`, WO-051/P-320), `IDbConnectionFactory`, `ISpecificationEvaluator<T>` (gains `GetKeysetQuery<TKey>`, WO-051/P-317), `ByIdSpecification<T,TId>`, `KeysetPage<TAggregate,TKey>` (WO-051/P-317), `IRestorableRepository<TAggregate,TId>` (WO-053/P-337 — single-entity soft-delete restore) — pure interface library; no outbox types | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` (added P-080 — required for `PagedList<T>` in `IReadRepository.ListPagedAsync`) |
-| `SharedKernel.Persistence.EfCore` | EF Core implementation: `EfRepository<T,TId>` (gains `RestoreAsync`, WO-053/P-337), `EfReadRepository<T,TId>` (gains `ListKeysetAsync<TKey>`, WO-051/P-317; gains `GetByIdsChunkedAsync`, WO-051/P-323; gains an optional `IReadReplicaContextAccessor<TContext>?` constructor parameter, WO-053/P-338), `EfUnitOfWork` (implements both `SharedKernel.Persistence.Abstractions.IUnitOfWork` and, opt-in, `SharedKernel.Application.Behaviors.IUnitOfWork`), `SharedKernelDbContext` (gains `CurrentUserContext`/`RefreshUserContext`, WO-051/P-322), `SpecificationEvaluator<T>` (auto-`TagWith`, `AsSplitQuery`, keyset seek predicate — WO-051/P-317-319), interceptors (Audit, SoftDelete, Concurrency — no OutboxInterceptor; `ConcurrencyInterceptor` gains a Warning `[LoggerMessage]` log, WO-053/P-333), `TenantedDbContext` (gains `RefreshRequestContext` + pooling-safe/model-cache-safe filter rebuild, WO-051/P-322), `EfCorePersistenceBuilder` (gains `.WithTransientFaultRetry()`, WO-051/P-320; gains `.WithDbContextPooling()`, WO-051/P-322; gains `.WithEncryption(IConfiguration,...)`/`.WithServiceName(IConfiguration)` config-binding overloads, WO-053/P-334; gains `.WithCommandTimeout(int)`, WO-053/P-337; gains `.WithReadReplica(Action<DbContextOptionsBuilder>)`, WO-053/P-338), `IReadReplicaContextAccessor<TContext>` (internal, WO-053/P-338), `PersistenceActivitySource`/`PersistenceTagKeys` (WO-051/P-319), `EncryptionKeyByteCache` (internal, WO-051/P-323), `PersistenceLogEvents`-style `[LoggerMessage]` partial methods across `ConcurrencyInterceptor`/`MigrationAndSeedHostedService`/the transient-retry diagnostic bridge/`EncryptionRotationService` (EventIds `6000-6099`, WO-053/P-333), `EncryptionOptions.SectionName`/`PersistenceServiceOptions.SectionName` (WO-053/P-334) | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Cryptography` (01.Core, added P-227 — `EncryptedValueConverter` delegates AES-256-GCM to `ISymmetricEncryptionService`), `SharedKernel.Application.Behaviors` (05.Application, added P-228 — `EfUnitOfWork` dual-interface bridge), `Microsoft.EntityFrameworkCore` 10.0.5, `Microsoft.EntityFrameworkCore.Relational` 10.0.5, `Microsoft.Extensions.DependencyInjection.Abstractions` 10.0.5 (must match EFCore transitive — NU1605 fires if pinned lower), `Microsoft.Extensions.Logging.Abstractions` (added WO-053/P-333 — `[LoggerMessage]` source generator), `Microsoft.Extensions.Options.ConfigurationExtensions` (added WO-053/P-334 — `OptionsBuilder<T>.Bind(IConfiguration)`), `Microsoft.Extensions.DependencyInjection` — the concrete package, not merely `.Abstractions` (added WO-053/P-338 — `ActivatorUtilities.CreateInstance<T>` for the read-replica context) |
+| `SharedKernel.Persistence.Abstractions` | `IRepository<T,TId>`, `IReadRepository<T,TId>` (gains `GetByIdsChunkedAsync`, WO-051/P-323), `IUnitOfWork`, `ITransactionalUnitOfWork` (gains `ExecuteInTransactionAsync`, WO-051/P-320), `IDbConnectionFactory`, `ISpecificationEvaluator<T>` (gains `GetKeysetQuery<TKey>`, WO-051/P-317), `ByIdSpecification<T,TId>`, `KeysetPage<TAggregate,TKey>` (WO-051/P-317), `IRestorableRepository<TAggregate,TId>` (WO-053/P-337 — single-entity soft-delete restore) — pure interface library; no outbox types; **design-locked, implementation pending:** `IAuditTrailWriter`/`IAuditQueryService`/`AuditRecord`/`AuditEntry`/`IAuditActorContext`/`AuditResourceHistorySpecification`/`AuditActorActionsSpecification`/`AuditChainVerificationResult` (P-456/WO-071 — append-only, hash-chained audit trail, no update/delete member on the writer contract at all) | `SharedKernel.Primitives`, `SharedKernel.Domain`, `SharedKernel.Contracts` (added P-080 — required for `PagedList<T>` in `IReadRepository.ListPagedAsync`) |
+| `SharedKernel.Persistence.EfCore` | EF Core implementation: `EfRepository<T,TId>` (gains `RestoreAsync`, WO-053/P-337), `EfReadRepository<T,TId>` (gains `ListKeysetAsync<TKey>`, WO-051/P-317; gains `GetByIdsChunkedAsync`, WO-051/P-323; gains an optional `IReadReplicaContextAccessor<TContext>?` constructor parameter, WO-053/P-338), `EfUnitOfWork` (implements both `SharedKernel.Persistence.Abstractions.IUnitOfWork` and, opt-in, `SharedKernel.Application.Behaviors.IUnitOfWork`), `SharedKernelDbContext` (gains `CurrentUserContext`/`RefreshUserContext`, WO-051/P-322), `SpecificationEvaluator<T>` (auto-`TagWith`, `AsSplitQuery`, keyset seek predicate — WO-051/P-317-319), interceptors (Audit, SoftDelete, Concurrency — no OutboxInterceptor; `ConcurrencyInterceptor` gains a Warning `[LoggerMessage]` log, WO-053/P-333), `TenantedDbContext` (gains `RefreshRequestContext` + pooling-safe/model-cache-safe filter rebuild, WO-051/P-322), `EfCorePersistenceBuilder` (gains `.WithTransientFaultRetry()`, WO-051/P-320; gains `.WithDbContextPooling()`, WO-051/P-322; gains `.WithEncryption(IConfiguration,...)`/`.WithServiceName(IConfiguration)` config-binding overloads, WO-053/P-334; gains `.WithCommandTimeout(int)`, WO-053/P-337; gains `.WithReadReplica(Action<DbContextOptionsBuilder>)`, WO-053/P-338), `IReadReplicaContextAccessor<TContext>` (internal, WO-053/P-338), `PersistenceActivitySource`/`PersistenceTagKeys` (WO-051/P-319), `EncryptionKeyByteCache` (internal, WO-051/P-323), `PersistenceLogEvents`-style `[LoggerMessage]` partial methods across `ConcurrencyInterceptor`/`MigrationAndSeedHostedService`/the transient-retry diagnostic bridge/`EncryptionRotationService` (EventIds `6000-6099`, WO-053/P-333), `EncryptionOptions.SectionName`/`PersistenceServiceOptions.SectionName` (WO-053/P-334); **design-locked, implementation pending:** `CurrencyValueConverter`/`MoneyEntityTypeBuilderExtensions.OwnsMoney<TEntity>` (P-440/WO-066), an async-contract migration REMOVING `EncryptedValueConverter`'s/`EncryptionModelConvention`'s direct `IEncryptionKeyProvider` dependency entirely and migrating `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` to `GetCurrentKeyAsync`/`GetKeyAsync` (P-448/WO-068, breaking), and a fourth interceptor `AuditRecordImmutabilityInterceptor` plus `EfAuditTrailWriter`/`EfAuditQueryService`/`EfCoreAuditActorContext`/`EfCorePersistenceBuilder.WithAuditTrail()` (P-457/WO-071) | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Domain`, `SharedKernel.Cryptography` (01.Core, added P-227 — `EncryptedValueConverter` delegates AES-256-GCM to `ISymmetricEncryptionService`; also the source of `IContentHasher`, consumed by the pending P-457 audit-trail hash chain), `SharedKernel.Application.Behaviors` (05.Application, added P-228 — `EfUnitOfWork` dual-interface bridge), `Microsoft.EntityFrameworkCore` 10.0.5, `Microsoft.EntityFrameworkCore.Relational` 10.0.5, `Microsoft.Extensions.DependencyInjection.Abstractions` 10.0.5 (must match EFCore transitive — NU1605 fires if pinned lower), `Microsoft.Extensions.Logging.Abstractions` (added WO-053/P-333 — `[LoggerMessage]` source generator), `Microsoft.Extensions.Options.ConfigurationExtensions` (added WO-053/P-334 — `OptionsBuilder<T>.Bind(IConfiguration)`), `Microsoft.Extensions.DependencyInjection` — the concrete package, not merely `.Abstractions` (added WO-053/P-338 — `ActivatorUtilities.CreateInstance<T>` for the read-replica context) |
 | `SharedKernel.Persistence.PostgreSQL` | PostgreSQL-specific conventions: `SnakeCaseNamingConvention`, `XminConcurrencyTokenConvention`/`XminRowVersionValueConverter` (WO-051/P-315 — the genuine, working `IHasConcurrency` mechanism), `UsePostgreSQL()` DI extension (gains opt-in `EnableRetryOnFailure` parameters, WO-051/P-320), JSONB column support (`HasJsonbColumn`, `JsonbColumnAttribute`), pgvector support (`HasVectorColumn`, `VectorColumnAttribute`; gains query-side `VectorDistanceMetric`/`VectorOrderingExpressions.ByDistance<TAggregate>(...)` nearest-neighbor ordering helper, WO-053/P-339), `NpgsqlConnectionFactory`, `AddSharedKernelPostgreSQL()` DI extension | `SharedKernel.Persistence.EfCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x, `Pgvector.EntityFrameworkCore` |
 | `SharedKernel.Persistence.Dapper` | Dapper micro-ORM read-side: `StronglyTypedIdTypeHandler<TStronglyTypedId,TValue>`, `SmartEnumTypeHandler<TEnum,TValue>`, `DapperTypeHandlers` (idempotent `Register()`), `DapperReadService` base (gains multi-mapping `QueryAsync`/`QueryMultipleAsync`/protected `ConnectionFactory`, WO-051/P-321), `AddSharedKernelDapper()` DI extension | `SharedKernel.Persistence.Abstractions`, `SharedKernel.Persistence.PostgreSQL` (for `NpgsqlConnectionFactory`), `Dapper` |
 
@@ -30,7 +32,7 @@ All packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Tes
 | Repository pattern | Pure C# 13 interfaces in `.Abstractions` — no ORM dependency |
 | Unit of work | Pure C# 13 interface (`IUnitOfWork`) — provider-agnostic |
 | EF Core ORM | `Microsoft.EntityFrameworkCore` 10.x |
-| EF Core interceptors | `ISaveChangesInterceptor` — Audit, SoftDelete, Concurrency (three total; no OutboxInterceptor) |
+| EF Core interceptors | `ISaveChangesInterceptor` — Audit, SoftDelete, Concurrency (three always-registered; no OutboxInterceptor); a fourth, OPT-IN-only `AuditRecordImmutabilityInterceptor` is design-locked, implementation pending (P-457/WO-071) |
 | Specification evaluation | Custom `SpecificationEvaluator<T>` translating `ISpecification<T>` to `IQueryable<T>` |
 | PostgreSQL provider | `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x |
 | JSONB | Npgsql built-in JSON column support with STJ serialization |
@@ -262,6 +264,81 @@ KeysetPage<TAggregate, TKey>  (sealed record)  where TKey : IComparable<TKey>   
           Zero ORM dependency — BCL types plus the already-referenced SharedKernel.Domain type
           KeysetSpecification<T,TKey>.
 ```
+
+#### Auditing (`Auditing/`) — P-456/WO-071, design-locked, implementation pending
+
+Append-only, tamper-evident audit-trail contracts. Distinct from `AuditInterceptor` (EfCore), which only stamps mutable `CreatedBy`/`UpdatedBy`/`UpdatedAt` columns that the next edit overwrites — this capability preserves full history and proves it hasn't been tampered with via a hash chain.
+
+```text
+AuditRecord  (sealed record — NEW, design-locked, implementation pending)
+    .Id                  → Guid            (assigned by the writer, e.g. Guid.CreateVersion7())
+    .TenantId             → Guid            (Guid.Empty sentinel — mirrors ITenantProvider's existing convention)
+    .ActorId              → string          (REUSES AuditInterceptor's existing audit-string-format convention:
+                                              userId.ToString("D") or a service-name fallback — no new actor-identity shape)
+    .Action                → string          (caller-defined verb/code)
+    .ResourceType          → string
+    .ResourceId            → string          (caller stringifies — aggregate PK types vary: Guid, StronglyTypedId<T>, int)
+    .OccurredOn            → DateTimeOffset  (IClock-sourced by the WRITER — never caller-supplied, prevents forged timestamps)
+    .BeforeSnapshot        → string?         (OPAQUE — caller pre-serializes; this package never parses/diffs it)
+    .AfterSnapshot         → string?         (OPAQUE, same rule)
+    .CorrelationId         → string?
+    .ApprovalId            → string?         (optional maker-checker linkage to IRequiresDualApproval/P-380)
+    .RecordHash            → string          (hex SHA-256 via 01.Core's IContentHasher, computed by the writer)
+    .PreviousRecordHash    → string?         (null only for the first record in its (TenantId,ResourceType) chain)
+    NOTE: ALL properties init-only — no update/delete surface anywhere on the type, structurally not conventionally.
+          Deliberately does NOT implement IAggregateRoot<Guid> — that interface extends IHasDomainEvents, and
+          forcing an always-empty domain-events collection onto a plain infrastructure record purely to satisfy
+          IReadRepository<T,TId>'s generic constraint is an unjustified stretch. EfAuditQueryService (EfCore)
+          instead builds directly on the unconstrained ISpecificationEvaluator<AuditRecord>.
+
+AuditEntry  (sealed record — NEW, design-locked, implementation pending)
+    .Action, .ResourceType, .ResourceId, .BeforeSnapshot, .AfterSnapshot, .CorrelationId, .ApprovalId
+    NOTE: The CALLER-SUPPLIED input to IAuditTrailWriter.RecordAsync — deliberately SMALLER than AuditRecord.
+          Id/TenantId/ActorId/OccurredOn/RecordHash/PreviousRecordHash are ALL resolved/computed by the writer,
+          never caller-supplied — closes off "a caller fabricates its own audit trail" structurally.
+
+IAuditTrailWriter  (interface — NEW, design-locked, implementation pending)
+    RecordAsync(AuditEntry entry, CancellationToken ct = default) → Task<AuditRecord>
+    NOTE: The SOLE member. No update/delete member exists on this interface AT ALL. Actor/tenant identity
+          resolved internally via IAuditActorContext; hash chaining scoped per (TenantId, ResourceType)
+          partition — never globally.
+
+IAuditActorContext  (interface — NEW, local seam, design-locked, implementation pending)
+    .ActorId              → string   (same audit-string-format convention as AuditRecord.ActorId)
+    .TenantId              → Guid     (Guid.Empty sentinel)
+    NOTE: A package-local seam, NOT a direct SharedKernel.Security.Abstractions reference — see
+          "IAuditActorContext vs. the P-078 exception" below for exactly why, given this package's sibling
+          SharedKernel.Persistence.EfCore already holds an approved Security.Abstractions reference.
+
+IAuditQueryService  (interface — NEW, design-locked, implementation pending)
+    GetResourceHistoryAsync(AuditResourceHistorySpecification spec, CancellationToken ct = default)
+        → Task<IReadOnlyList<AuditRecord>>
+    GetActorActionsAsync(AuditActorActionsSpecification spec, CancellationToken ct = default)
+        → Task<IReadOnlyList<AuditRecord>>
+    VerifyChainIntegrityAsync(Guid tenantId, string resourceType, DateTimeOffset from, DateTimeOffset to,
+                               CancellationToken ct = default) → Task<AuditChainVerificationResult>
+    NOTE: The two named access patterns the phase requires — "history of this resource" and "actions by this
+          actor" — both paginated via KeysetSpecification<T,TKey> (P-308/WO-051), never a third paging model.
+
+AuditResourceHistorySpecification  (sealed class, extends KeysetSpecification<AuditRecord,DateTimeOffset>)
+    constructor(Guid tenantId, string resourceType, string resourceId, DateTimeOffset? afterKey,
+                Guid? afterId, bool descending, int take)
+    NOTE: Criteria = r => r.TenantId == tenantId && r.ResourceType == resourceType && r.ResourceId == resourceId.
+          keySelector: r => r.OccurredOn; idSelector: r => r.Id (mandatory tiebreaker, inherited automatically).
+
+AuditActorActionsSpecification  (sealed class, extends KeysetSpecification<AuditRecord,DateTimeOffset>)
+    constructor(Guid tenantId, string actorId, DateTimeOffset? afterKey, Guid? afterId, bool descending, int take)
+    NOTE: Criteria = r => r.TenantId == tenantId && r.ActorId == actorId. Same key/tiebreaker shape as above.
+
+AuditChainVerificationResult  (sealed record — NEW, design-locked, implementation pending)
+    .IsIntact             → bool
+    .BrokenAtRecordId      → Guid?   (null when intact)
+    .RecordsChecked        → int
+```
+
+**`IAuditActorContext` vs. the P-078 exception:** `06.Persistence` already holds an approved, narrowly-scoped exception referencing `SharedKernel.Security.Abstractions` directly (P-078/WO-014, see the EfCore section below) — but that grant is scoped to `SharedKernel.Persistence.EfCore` specifically, **not** to `SharedKernel.Persistence.Abstractions`, where `IAuditTrailWriter`/`IAuditQueryService`/`IAuditActorContext` live. Extending the EfCore-only exception to Abstractions would be an unrecorded widening of a narrowly-granted exception — hence `IAuditActorContext` is a fresh local seam here, mirroring `05.Application`'s `IAuthorizationContext` bridge pattern in *shape* even though the two packages differ in *why* they need one (`05.Application` has zero `Security.Abstractions` access of any kind; `06.Persistence.Abstractions` specifically has never been granted the exception its own `.EfCore` sibling already has). `SharedKernel.Persistence.EfCore`'s implementation (P-457) MAY ship a default `IAuditActorContext` bridging the already-approved `IUserContext`/`ITenantProvider` — see `EfCoreAuditActorContext` below — an ergonomic advantage `05.Application`'s `IAuthorizationContext` structurally cannot offer, since that package has no comparable exception at all.
+
+Retention/archival policy is explicitly out of scope for this capability — documented as a deferred follow-up, not silently unaddressed.
 
 ---
 
@@ -625,8 +702,19 @@ ConcurrencyInterceptor  (sealed class, implements ISaveChangesInterceptor)
     — Does NOT retry — conflict resolution is the application layer's responsibility.
     — Non-concurrency exceptions propagate unchanged.
 
-NOTE: Exactly three interceptors exist in this package. No OutboxInterceptor — MassTransit's
-      UseEntityFrameworkOutbox is the outbox infrastructure owner at 07.Messaging.
+NOTE: Exactly three interceptors are ALWAYS registered by this package. No OutboxInterceptor —
+      MassTransit's UseEntityFrameworkOutbox is the outbox infrastructure owner at 07.Messaging.
+
+AuditRecordImmutabilityInterceptor  (sealed class, implements ISaveChangesInterceptor — NEW, P-457/WO-071,
+                                      design-locked, implementation pending)
+    — A FOURTH interceptor, registered ONLY when the audit-trail capability is opted into via
+      EfCorePersistenceBuilder.WithAuditTrail() — never registered by default, unlike the platform three above.
+    — On SavingChanges/SavingChangesAsync: inspects ChangeTracker.Entries<AuditRecord>() and THROWS a new
+      AuditRecordImmutableException (extends SharedKernelException) if ANY entry's EntityState is Modified
+      or Deleted. This is the audit-trail capability's LOAD-BEARING piece — structural immutability enforced
+      at the ORM boundary, not left to convention.
+    — XML docs additionally recommend, IN CAPITALS, a DB-level REVOKE UPDATE, DELETE grant on the underlying
+      table as defense-in-depth, mirroring this package's existing encryption/soft-delete documentation style.
 ```
 
 #### IUserContext injection pattern and audit string format
@@ -680,6 +768,40 @@ StronglyTypedIdValueConverter<TStronglyTypedId, TValue>  (sealed class, extends 
     — Uses implicit operator TValue for to-provider direction — no Activator.CreateInstance, no reflection.
     — Companion ModelConfigurationBuilder extension auto-registers the converter for all IStronglyTypedId<TValue>
       types, eliminating per-aggregate manual converter registration.
+
+CurrencyValueConverter  (sealed class, extends ValueConverter<Currency, string> — NEW, P-440/WO-066,
+                          design-locked, implementation pending)
+    — Converts 03.Domain's Currency (a SingleValueObject<string>) to/from its ISO 4217 code string.
+    — To-provider: Currency's existing implicit operator to string — (string)currency, zero reflection.
+    — From-provider: the PUBLIC Currency.Create(code) → Result<Currency> factory (P-310), unwrapping .Value —
+      NEVER StronglyTypedIdValueConverter's reflection-located-constructor technique, which exists only
+      because StronglyTypedId<TValue> (a different base hierarchy) has no public Create factory. A stored,
+      unreconstructible code throws InvalidOperationException (data assumed already-validated at write time).
+
+MoneyEntityTypeBuilderExtensions.OwnsMoney<TEntity>(EntityTypeBuilder<TEntity> builder,
+    Expression<Func<TEntity,Money>> propertyExpression, string? amountColumnName = null,
+    string? currencyColumnName = null)  (static extension — NEW, P-440/WO-066, design-locked,
+                                          implementation pending)
+    — Configures a Money-typed property as an EF Core OWNED TYPE with two independently queryable/filterable
+      columns: Amount (decimal(19,4) default — a single fixed precision/scale wide enough for every ISO 4217
+      minor-unit case, since Money's own construction-time rounding already guarantees no more than
+      Currency.MinorUnitDigits significant fractional digits) and Currency (string, HasMaxLength(3), mapped
+      via CurrencyValueConverter above). Column names default from the property name, overridable.
+    — Chosen over a single packed-string column specifically so Amount/Currency stay independently
+      filterable/aggregable in SQL (WHERE Currency = 'USD' AND Amount > ..., SUM(Amount) WHERE Currency = 'USD')
+      — a near-universal requirement for monetary data a packed-string encoding would foreclose.
+    — MATERIALIZATION RISK (flagged, not yet resolved against the real shipped Money type): Money's private
+      constructor takes (decimal amount, Currency currency, RoundingPolicy roundingPolicy), but only
+      Amount/Currency are EF-Core-mapped — RoundingPolicy has no column. PREFERRED resolution: mirror
+      StronglyTypedIdValueConverter's own reflection-located-constructor + compiled-Expression.New technique
+      to explicitly supply RoundingPolicy.BankersRounding as a literal third argument (idempotent — re-rounding
+      an already-rounded value to the same precision is a no-op). FALLBACK ONLY if that proves unworkable:
+      collapse to a single packed-string ValueConverter<Money,string>, at the documented cost of losing
+      independent SQL-level filtering on Amount/Currency.
+    — ValueObjectOwnershipBuilder's generic IValueObject scan EXCLUDES Money-typed properties — a Money
+      property must always be configured explicitly via .OwnsMoney(...), never silently auto-owned with a
+      wrong-precision default decimal column (mirrors the "precision/security-sensitive is opt-in-only"
+      philosophy already applied to .Encrypt()).
 ```
 
 #### Conventions (`Conventions/`)
@@ -733,9 +855,25 @@ PersistenceServiceOptions  (options POCO, section "SharedKernel:Persistence")
           now fires against a config-bound value exactly as it already fires against a code-supplied one.
 
 EncryptedValueConverter  (sealed class, extends ValueConverter<string, string>)
-    constructor: EncryptedValueConverter(IOptionsMonitor<EncryptionOptions> optionsMonitor,
-                                          ISymmetricEncryptionService symmetricEncryptionService,
-                                          IEncryptionVersionOverride? versionOverride = null)
+    constructor (CURRENT, shipped shape — corrected here; this doc had drifted out of sync with the real
+                 source, which still carries a fourth parameter this section previously omitted):
+        EncryptedValueConverter(IOptionsMonitor<EncryptionOptions> optionsMonitor,
+                                 ISymmetricEncryptionService symmetricEncryptionService,
+                                 IEncryptionKeyProvider keyProvider,
+                                 IEncryptionVersionOverride? versionOverride = null)
+    PENDING (P-448/WO-068, design-locked, breaking, not yet shipped): the constructor DROPS the
+        IEncryptionKeyProvider keyProvider parameter entirely — SOURCE-VERIFIED redundant with
+        ISymmetricEncryptionService.Decrypt's own Result<byte[]> failure surface, which already
+        distinguishes CryptographyErrorCodes.UnknownKeyId (unresolvable key) from
+        CryptographyErrorCodes.DecryptionFailed (tamper/wrong-key) — exactly the distinction the
+        pre-check (below) exists to preserve. Post-P-448, Decrypt calls symmetricEncryptionService.Decrypt
+        directly and maps result.Error?.Code == CryptographyErrorCodes.UnknownKeyId →
+        EncryptionKeyNotFoundException(version); any other failure → the existing generic
+        CryptographicException. This means the EF Core ValueConverter pipeline NEVER touches
+        IEncryptionKeyProvider — sync or async — again, which is how 01.Core's own P-446 design (async
+        IEncryptionKeyProvider, GetCurrentKeyAsync/GetKeyAsync) stays solvable here WITHOUT blocking on
+        async anywhere in this package. EncryptionModelConvention's constructor correspondingly drops its
+        own IEncryptionKeyProvider? parameter and resolution. See "What Goes Where" / state-map.md D-108.
     NOTE: Non-generic — operates on string columns only.
           CRYPTOGRAPHY DELEGATION (P-227, supersedes the original WO-019 hand-rolled AesGcm design):
           all AES-256-GCM cryptographic operations (nonce generation, encrypt, tag-append, decrypt,
@@ -762,6 +900,15 @@ EncryptedValueConverter  (sealed class, extends ValueConverter<string, string>)
           Result.Failure here (tamper / auth-tag mismatch) propagates as the documented
           ISymmetricEncryptionService failure mode (Error.Unexpected) — this converter does not invent
           a new tamper-specific exception type.
+          PENDING (P-448/WO-068, design-locked, breaking, not yet shipped): the "FIRST calls
+          EncryptionOptionsKeyProvider.GetKey(parsedVersion) directly" pre-check above is REMOVED —
+          it is redundant with symmetricEncryptionService.Decrypt's own Result<byte[]> failure surface,
+          which already carries CryptographyErrorCodes.UnknownKeyId as a distinct code from
+          CryptographyErrorCodes.DecryptionFailed. Post-P-448, Decrypt calls
+          symmetricEncryptionService.Decrypt(payload) unconditionally and maps
+          result.Error?.Code == CryptographyErrorCodes.UnknownKeyId → EncryptionKeyNotFoundException,
+          any other failure → the unchanged generic tamper exception. The observable exception behavior
+          is IDENTICAL to today — only the code path producing it changes.
           Legacy plaintext (no "v" prefix): returned as-is — safe migration path from unencrypted data.
           Enabled == false: pass-through in both directions, no ISymmetricEncryptionService calls made.
           Holds IOptionsMonitor<EncryptionOptions> — hot-reload of CurrentVersion and key changes
@@ -779,10 +926,23 @@ EncryptedValueConverter  (sealed class, extends ValueConverter<string, string>)
           naming AddSharedKernelCryptography() if it is missing.
 
 EncryptionOptionsKeyProvider  (internal sealed class, implements SharedKernel.Cryptography.IEncryptionKeyProvider)
-    constructor: EncryptionOptionsKeyProvider(IOptionsMonitor<EncryptionOptions> optionsMonitor,
-                                               IEncryptionVersionOverride versionOverride)
-    .GetCurrentKey()                                            → CryptographicKey
-    .GetKey(string keyId)                                       → CryptographicKey?
+    constructor (CURRENT): EncryptionOptionsKeyProvider(IOptionsMonitor<EncryptionOptions> optionsMonitor,
+                                               IEncryptionVersionOverride versionOverride,
+                                               EncryptionKeyByteCache keyByteCache)
+    .GetCurrentKey()                                            → CryptographicKey    (CURRENT, sync)
+    .GetKey(string keyId)                                       → CryptographicKey?   (CURRENT, sync)
+    PENDING (P-448/WO-068, design-locked, breaking, not yet shipped): both members migrate to
+        .GetCurrentKeyAsync(CancellationToken ct = default)     → ValueTask<CryptographicKey>
+        .GetKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<CryptographicKey?>
+      per 01.Core's P-446 async IEncryptionKeyProvider contract. SOURCE-VERIFIED this implementation
+      performs ZERO genuine I/O today (reads an already-loaded IOptionsMonitor.CurrentValue plus the
+      already-synchronous EncryptionKeyByteCache decode-once cache — pure in-memory/CPU work), so both
+      wrap trivially in an ALREADY-COMPLETED ValueTask.FromResult(...). UNLIKE a genuinely network-bound
+      provider (e.g. the future SharedKernel.Cryptography.KeyVault.Azure, P-447), AesGcmEncryptionService's
+      internal .GetAwaiter().GetResult() bridge (01.Core's own documented cost) NEVER actually blocks a
+      thread on real I/O when THIS config-based provider is registered. NullEncryptionKeyProvider's
+      GetCurrentKeyAsync still throws its InvalidOperationException synchronously, before constructing
+      any ValueTask — behavior-preserving relative to today's sync GetCurrentKey().
     NOTE: P-227. Bridges EncryptionOptions (this domain's existing options POCO) to
           SharedKernel.Cryptography.IEncryptionKeyProvider (the seam ISymmetricEncryptionService
           requires for key resolution). This is the ONLY IEncryptionKeyProvider implementation this
@@ -1870,6 +2030,13 @@ DapperReadService  (abstract class)
 - Routing an `IReadRepository<TAggregate,TId>` read to the configured replica connection while an EF Core transaction is active on the primary (`Database.CurrentTransaction != null`) — `IReadReplicaContextAccessor<TContext>.GetEffectiveContext` unconditionally returns the primary context in that case; bypassing or short-circuiting this check reintroduces a read-your-own-write consistency hazard the design specifically closes (WO-053/P-338).
 - Caching or reusing the result of `IReadReplicaContextAccessor<TContext>.GetEffectiveContext` across multiple calls on the same `EfReadRepository` instance — it must be resolved fresh on every call, since transaction state can legitimately change between two read calls issued against the same injected repository (WO-053/P-338).
 - Using `Type.GetMethod`/`MakeGenericMethod` to resolve `Pgvector.EntityFrameworkCore.VectorDbFunctionsExtensions.CosineDistance`/`.L2Distance`'s `MethodInfo` inside `VectorOrderingExpressions.ByDistance` — use the statically-typed delegate-cast `.Method` property (`((Func<Vector,Vector,double>)VectorDbFunctionsExtensions.CosineDistance).Method`), resolved entirely by the compiler via reference-type delegate contravariance against the real `(object,object)`-parameter method — never `Type.GetMethod`/`MakeGenericMethod` at runtime (WO-053/P-339).
+- **(P-440/WO-066, design-locked, implementation pending)** Configuring a `Money`-typed property via the generic `ValueObjectOwnershipBuilder` auto-owned scan instead of the dedicated `.OwnsMoney(...)` extension — `Money` is deliberately EXCLUDED from that scan precisely to prevent a silent, wrong-precision default `decimal` column from ever being applied to monetary data.
+- **(P-440/WO-066, design-locked, implementation pending)** Reconstructing a `Currency` value from a stored column via reflection (a located constructor + `Expression.New`, mirroring `StronglyTypedIdValueConverter`) instead of the public `Currency.Create(code)` factory — `Currency`/`Money` derive from `ValueObject`/`SingleValueObject<TValue>`, which already expose a public `Create` factory (03.Domain P-310); the reflection technique exists only for `StronglyTypedId<TValue>`, a different base hierarchy with no such factory.
+- **(P-448/WO-068, design-locked, implementation pending, BREAKING)** Reintroducing a direct `IEncryptionKeyProvider` call — sync or `.GetAwaiter().GetResult()`-bridged — anywhere inside `EncryptedValueConverter`/`EncryptionModelConvention` or any other EF Core `ValueConverter`/model-finalizing convention in this package. The migrated design removes the dependency entirely rather than blocking on it; a future maintainer reaching for `IEncryptionKeyProvider` inside this package's synchronous pipeline has mis-diagnosed the problem — the fix is almost always to inspect `ISymmetricEncryptionService`'s `Result<T>.Error.Code` instead (see `EncryptedValueConverter`'s Decrypt path above).
+- **(P-456/P-457, WO-071, design-locked, implementation pending)** Any update or delete code path reaching an `AuditRecord` row — through `IAuditTrailWriter` (no such member exists on the interface), through `IRepository<AuditRecord,...>`/`IUnitOfWork` (this type is never routed through the general write-side aggregate pipeline), or through a raw `DbSet<AuditRecord>` call bypassing `AuditRecordImmutabilityInterceptor`. The interceptor is the load-bearing structural guarantee — an audit contract that is only "immutable by convention" is not meaningfully different from the mutable `AuditInterceptor` columns this capability exists to replace.
+- **(P-456, WO-071, design-locked, implementation pending)** Parsing, diffing, or otherwise inspecting `AuditRecord.BeforeSnapshot`/`AfterSnapshot` inside `SharedKernel.Persistence.Abstractions` or `SharedKernel.Persistence.EfCore` — these fields are OPAQUE, caller-pre-serialized values (mirrors `IIdempotencyResponseStore`'s "store persists what it's handed" pattern); this package's job is to store and hash-chain them, never to understand their content.
+- **(P-456, WO-071, design-locked, implementation pending)** Referencing `SharedKernel.Security.Abstractions.IUserContext` directly from `SharedKernel.Persistence.Abstractions` to resolve `IAuditActorContext`'s default behavior — the P-078 exception is scoped to `SharedKernel.Persistence.EfCore` only; `.Abstractions` gets a fresh local seam instead (see the Auditing contract block above).
+- **(P-457, WO-071, design-locked, implementation pending)** Making `AuditRecord` implement `IAggregateRoot<Guid>` so `EfAuditQueryService` can reuse `IReadRepository<AuditRecord,Guid>` — forces an always-empty `IHasDomainEvents` collection onto a plain infrastructure record for no benefit; build directly on the unconstrained `ISpecificationEvaluator<AuditRecord>` instead.
 
 ### Specification evaluator ordering (canonical)
 
@@ -2204,6 +2371,39 @@ public sealed class NearestProductsSpecification : Specification<Product>
     }
 }
 var nearest = await productReadRepository.ListAsync(new NearestProductsSpecification(queryVector, topK: 10), ct);
+
+// Money EF Core mapping (P-440/WO-066, design-locked, implementation pending)
+public sealed class InvoiceConfiguration : EntityTypeConfigurationBase<Invoice, InvoiceId>
+{
+    public override void Configure(EntityTypeBuilder<Invoice> builder)
+    {
+        base.Configure(builder);
+        builder.OwnsMoney(x => x.Total);   // Amount/Currency columns, decimal(19,4) default precision
+    }
+}
+
+// Append-only audit trail (P-456/P-457, WO-071, design-locked, implementation pending) — opt-in;
+// omitting .WithAuditTrail() leaves IAuditTrailWriter/IAuditQueryService unregistered.
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options =>
+        options.UseNpgsql(connectionString))
+    .WithAuditTrail()   // registers EfAuditTrailWriter, EfAuditQueryService, AuditRecordImmutabilityInterceptor,
+                         // and a default IAuditActorContext bridging the already-registered IUserContext/ITenantProvider
+    .Build();
+
+// A consuming service MAY override the default IAuditActorContext (last-registration-wins, mirroring
+// the IUserContext/ITenantProvider placeholder-override pattern above) — optional, not required.
+services.AddScoped<IAuditActorContext, MyCustomAuditActorContext>();
+
+var record = await auditTrailWriter.RecordAsync(new AuditEntry
+{
+    Action = "CustomerLimitChanged",
+    ResourceType = nameof(Customer),
+    ResourceId = customer.Id.ToString(),
+    BeforeSnapshot = JsonSerializer.Serialize(beforeState),
+    AfterSnapshot = JsonSerializer.Serialize(afterState),
+    ApprovalId = approvalRecord?.Id.ToString(),
+}, ct);
 ```
 
 `SharedKernel.Persistence.Abstractions` ships **no DI extensions** — it is a pure interface library.
@@ -2258,6 +2458,9 @@ var nearest = await productReadRepository.ListAsync(new NearestProductsSpecifica
 - `EfRepository<TAggregate,TId>.RestoreAsync` (WO-053/P-337) uses only the already-AOT-safe `ChangeTracker.Entry(entity).CurrentValues[propertyName]` shadow-property-style access (identical reasoning already established for `AuditInterceptor`/`SoftDeleteInterceptor`) plus a plain `is ISoftDeletable` runtime type check — no reflection. `EfCorePersistenceBuilder.WithCommandTimeout` (WO-053/P-337) is a plain method call on `DbContextOptionsBuilder` — AOT-safe.
 - `EfCorePersistenceBuilder.WithReadReplica`/`IReadReplicaContextAccessor<TContext>` (WO-053/P-338) use `ActivatorUtilities.CreateInstance<TContext>(serviceProvider, replicaOptions)` — a `Microsoft.Extensions.DependencyInjection` API that DOES use reflection internally to match `TContext`'s constructor against DI-resolvable services, the same well-established ASP.NET Core "construct via DI with one overridden argument" idiom used platform-wide for typed-client/handler construction; invoked ONCE per DI scope (lazy, cached thereafter), never per-call — a startup/first-access-time cost, not a hot-path one, the same class of accepted exception already documented for `ValueObjectOwnershipBuilder`/`EncryptedEntityBatchProcessorRegistry`.
 - `VectorOrderingExpressions.ByDistance<TAggregate>` (WO-053/P-339) builds an `Expression<Func<TAggregate,object>>` via `Expression.Call` referencing `Pgvector.EntityFrameworkCore.VectorExtensions.CosineDistance`/`.L2Distance`'s `MethodInfo` through a statically-typed delegate cast (`((Func<Vector,Vector,double>)VectorExtensions.CosineDistance).Method`) — resolved entirely by the C# compiler at compile time, zero `Type.GetMethod`/`MakeGenericMethod` at runtime. Expression trees on `IQueryable` are AOT-safe, the same reasoning already established for every other specification ordering expression on this platform.
+- **(P-440/WO-066, design-locked, implementation pending)** `CurrencyValueConverter` uses `Currency`'s `implicit operator string` (to-provider) and the public `Currency.Create(code)` factory (from-provider) — zero reflection, same class of AOT-safety as `StronglyTypedIdValueConverter`'s implicit-operator direction, but with NO reflection-located-constructor step at all on the from-provider side (an improvement, not merely parity). `MoneyEntityTypeBuilderExtensions.OwnsMoney` configures `OwnsOne` at model-build time (not a hot path); IF the preferred materialization path (D-106) is chosen, its reflection-located-constructor + compiled `Expression.New` is the SAME already-accepted, already-documented startup-time-only pattern `StronglyTypedIdValueConverter.IdFactory.BuildFactory` uses — compiled once per closed type, cached for the converter's lifetime.
+- **(P-448/WO-068, design-locked, implementation pending, BREAKING)** `EncryptionOptionsKeyProvider`'s migrated `GetCurrentKeyAsync`/`GetKeyAsync` wrap the existing synchronous, reflection-free logic (`IOptionsMonitor.CurrentValue` property read, `Dictionary` lookup, `EncryptionKeyByteCache.GetOrDecode`) in `ValueTask.FromResult(...)` — ordinary BCL async plumbing, zero reflection, AOT-safe. `EncryptedValueConverter`'s simplified `Decrypt` inspects `Result<byte[]>.Error?.Code` (a plain property read/equality comparison against `CryptographyErrorCodes.UnknownKeyId`) — no reflection, AOT-safe.
+- **(P-456/P-457, WO-071, design-locked, implementation pending)** `AuditRecord`/`AuditEntry`/`AuditChainVerificationResult` are plain `sealed record`s with BCL-typed (`Guid`/`string`/`DateTimeOffset`/`int`/`bool`) properties — AOT-safe by definition. `AuditResourceHistorySpecification`/`AuditActorActionsSpecification` build their `Criteria`/keyset key-selector expressions the SAME way every other `KeysetSpecification<T,TKey>` subclass on this platform already does — `Expression<Func<T,...>>` construction via ordinary C# lambda syntax, compiled by the C# compiler, no runtime reflection. `EfAuditTrailWriter`'s hash computation calls `01.Core`'s `IContentHasher.ComputeHashHex` (already AOT-documented in `01.Core/CLAUDE.md` as BCL `SHA256.HashData`-backed) over a canonical byte serialization built from ordinary string/byte operations — no reflection. `AuditRecordImmutabilityInterceptor` inspects `ChangeTracker.Entries<AuditRecord>()`'s `EntityState` — a generic, AOT-safe EF Core API, the same class already established for `EfUnitOfWork`'s domain-event dispatch. `Guid.CreateVersion7()` is a plain BCL static method — AOT-safe.
 
 ---
 
@@ -2344,6 +2547,9 @@ var nearest = await productReadRepository.ListAsync(new NearestProductsSpecifica
 - pgvector nearest-neighbor tests (WO-053/P-339) require a real PostgreSQL Testcontainer with the pgvector extension enabled and rows seeded at manually-computed KNOWN distances from a fixed query vector — asserting "some order" is not sufficient; the expected order must be independently computed and compared exactly, and captured SQL command text must confirm a server-side `<=>`/`<->` operator, never client-side evaluation.
 - **Testing an `internal` `[LoggerMessage]` emitter from a SIBLING package's test project with no `InternalsVisibleTo` grant (WO-053 Tests-phase, T-100):** `PersistenceRetryDiagnosticListener` is `internal` to `SharedKernel.Persistence.EfCore`, which grants `InternalsVisibleTo` only to `SharedKernel.Persistence.EfCore.Tests` — `SharedKernel.Persistence.PostgreSQL.Tests` cannot reference the type by name to construct an `InMemoryLogger<PersistenceRetryDiagnosticListener>` directly (a compile error), yet T-100 requires proving its `6007`/`6008` logging against a REAL PostgreSQL Testcontainer, which only the PostgreSQL test project can provide. Resolved without widening `InternalsVisibleTo` and without referencing the internal type at all: register `16.Testing`'s `AddInMemoryLoggerFactory()` (which wires `ILoggerFactory` → `InMemoryLoggerFactory` plus the open-generic BCL `Logger<>` → `ILogger<>` mapping — the exact mechanism `AddLogging()` itself uses) into the same `ServiceCollection` as `AddSharedKernelEfCore<TContext>(...).WithTransientFaultRetry().Build()`; resolve the listener purely through its PUBLIC `IHostedService` surface (`provider.GetServices<IHostedService>()`, calling `StartAsync`/`StopAsync` manually since no full `IHost` is built) so the type name is never needed; read its captured records back via `InMemoryLoggerFactory.GetLogger(categoryName)` using the internal type's own `.FullName` as a STRING LITERAL (`"SharedKernel.Persistence.EfCore.Diagnostics.PersistenceRetryDiagnosticListener"`) — a category name is public information (it appears in real log output), so naming it as a string carries none of the accessibility restriction naming the `Type` itself would. Public types needing the same proof (e.g. `EfUnitOfWork`'s `6008` exhaustion log) can instead use `typeof(EfUnitOfWork).FullName!` directly. Reusable for any future cross-package internal-logger assertion in this domain.
 - **`CREATE EXTENSION IF NOT EXISTS vector` must run on a THROWAWAY connection before the EF Core-managed Npgsql connection pool opens its first connection (WO-053 Tests-phase, T-118/T-119):** Npgsql resolves the `vector` PostgreSQL type's OID once per `NpgsqlDataSource`/connection-pool lifetime, at first connection open, using whatever is in `pg_type`/`pg_extension` at that moment. Issuing `CREATE EXTENSION IF NOT EXISTS vector` as the pool's own FIRST command (e.g. via `ctx.Database.ExecuteSqlRawAsync(...)` on a freshly-constructed `DbContext` whose options already call `UsePostgreSQL(...)`) opens that same pool's first connection before the extension exists, permanently poisoning its cached type mapping for the rest of that pool's lifetime — every subsequent `Pgvector.Vector`-typed parameter write then fails with `System.NotSupportedException: Cannot resolve 'vector' to a fully qualified datatype name`, even though the extension now genuinely exists in the database. Fix: run `CREATE EXTENSION IF NOT EXISTS vector` on a separate, throwaway `NpgsqlDataSourceBuilder(connectionString).Build()` connection FIRST, then construct the EF Core `DbContext`/pool — mirrors `PostgreSQLIntegrationTests`' own pre-existing raw-ADO.NET precedent, which happened to avoid this failure mode only because it never uses a `Vector`-typed ADO.NET parameter (it casts a string literal via `'[1,2,3]'::vector` instead).
+- **(P-440/WO-066, design-locked, implementation pending)** Money round-trip tests must cover a REPRESENTATIVE set of minor-unit-digit cases, not just the two-decimal default — at minimum one zero-decimal currency (JPY), one two-decimal currency (USD), and one three-decimal currency (BHD) — since the whole point of `CurrencyValueConverter`/`OwnsMoney` is correctly handling the cases a naive single-precision implementation gets wrong. Assert `Amount`/`Currency` are independently queryable post-round-trip (a raw `WHERE`-shaped assertion), not merely that the aggregate reloads without throwing.
+- **(P-448/WO-068, design-locked, implementation pending, BREAKING)** The full pre-existing `EncryptionDelegationTests`/`EncryptionKeyCachingTests`/`EncryptionModelConventionTests`/`EncryptionModelConventionExtendedTests`/`EncryptionRotationServiceTests`/`EncryptionRotationExtendedTests` suites must pass UNMODIFIED against the migrated shape — this migration's entire point is that observable behavior (which exception type surfaces for which failure) stays identical while the internal code path and `IEncryptionKeyProvider` signature change; any test needing behavioral (not merely signature) adjustment is a signal the migration introduced an unintended regression.
+- **(P-456/P-457, WO-071, design-locked, implementation pending)** The `AuditRecordImmutabilityInterceptor` throw-on-Modified/Deleted test is the GATING test for this capability — an audit contract that is only "immutable by convention" (i.e., this test is skipped or weakened) is not meaningfully different from the mutable `AuditInterceptor` columns this capability exists to replace. Hash-chain tamper-detection tests must mutate a historical record via RAW SQL (bypassing the interceptor entirely, simulating a DBA-level bypass or a missing `REVOKE` grant) — mutating through EF Core's own change tracker would just re-trigger the interceptor's own guard and prove nothing about the hash chain's independent detection capability. Two different `(TenantId, ResourceType)` partitions must be proven to chain INDEPENDENTLY (breaking one partition's chain must not affect `VerifyChainIntegrityAsync`'s result for an unrelated partition) — this is the test that actually proves the phase's "never globally" chaining-scope claim, not merely a documentation assertion.
 
 ---
 
@@ -2374,3 +2580,5 @@ var nearest = await productReadRepository.ListAsync(new NearestProductsSpecifica
 - [2026-08-03] SK.06.Scaffold closed (18/18) — S-17 completed the T-106..T-108 PostgreSQL Testcontainers fixture migration in the same session (`PostgreSQL.Tests`/`Dapper.Tests` onto `16.Testing`'s `PostgreSqlContainerFixture`); Test Rules' P-336 bullet corrected in place — only three of four `PostgreSQL.Tests` classes join the shared fixture (`PostgreSQLIntegrationTests` keeps its own dedicated pgvector-enabled container, since the shared fixture's plain `postgres:16.4` image cannot run its `CREATE EXTENSION vector` test) — plus a new bullet documenting two genuine, implementation-discovered gotchas: `EnsureCreatedAsync()`'s coarse `HasTables()` check requires per-class uniquely-named databases when sharing one Testcontainer across differently-shaped `DbContext` models, and `DROP TABLE` ordering becomes load-bearing (child-before-parent) once a database persists across xUnit test methods via `IClassFixture<T>`. `dotnet test` green (33/33 PostgreSQL.Tests, 15/15 Dapper.Tests) against a real Docker daemon (persistence-phase-implementer)
 - [2026-08-03] SK.06.Core closed (145/145) — implemented all 17 remaining WO-053 Core tasks (C-129..C-145) exactly per the already-reconciled Design-phase docs above, zero further drift found: `[LoggerMessage]` logging (EventIds 6000-6010) across `ConcurrencyInterceptor`/`MigrationAndSeedHostedService`/a new `PersistenceRetryDiagnosticListener`/`EfUnitOfWork`+`EfTransactionalUnitOfWork`/`EncryptionRotationService`; `RepositoryTracing` wrap for `GetByIdAsync`/`ExistsAsync`; `EncryptionOptions`/`PersistenceServiceOptions.SectionName` + `IConfiguration`-binding `WithEncryption`/`WithServiceName` overloads; `IRestorableRepository<TAggregate,TId>`/`EfRepository.RestoreAsync`; `WithCommandTimeout`; `IReadReplicaContextAccessor<TContext>`/`WithReadReplica`/`EfReadRepository` replica routing; `VectorDistanceMetric`/`VectorOrderingExpressions.ByDistance` in `SharedKernel.Persistence.PostgreSQL`. One genuine cross-test bug found and fixed during Tests-phase implementation (folded into this same session): `PersistenceRetryDiagnosticListener`'s process-wide `DiagnosticListener.AllListeners` subscription caused count-inflation between concurrently-running test classes forcing genuine EF Core retries via the same fixture technique — fixed via a shared xUnit collection, documented as a new Test Rules bullet (the `DiagnosticListener` analogue of the existing `ActivitySource` cross-test-isolation bullet). 92 new tests added; full suites green (EfCore 353/353, PostgreSQL 41/41 against a real Docker daemon). WO-053's Tests/Docs phases still carry pending tasks (T-98..T-121/DO-53..DO-64 beyond what this session's tests satisfied — a future session reconciles state-map coverage) (persistence-phase-implementer)
 - [2026-08-04] SK.06.Tests closed for WO-053 (T-98..T-105, T-110..T-121, 20/20) — verified each task file-by-file against the 92 tests the prior Core-phase session had already written: 10 of 20 were already fully satisfied verbatim (T-102/T-103/T-110/T-111/T-115 exactly; T-98/T-99/T-101 functionally covered, strengthened with explicit exact-count/`RowsInBatch`/`BatchNumber`/full-negative-scan assertions the task text specifically called for). Ten genuine gaps closed with new tests: T-100 (PostgreSQL Testcontainers `6007`/`6008` retry logging — the two SQLite-based Core-phase tests proved the logging mechanism but never against real Npgsql; resolved the internal `PersistenceRetryDiagnosticListener`'s lack of an `InternalsVisibleTo` grant to `SharedKernel.Persistence.PostgreSQL.Tests` by exercising it purely through its public `IHostedService`/`ILogger<T>` surface via `16.Testing`'s `InMemoryLoggerFactory` category-string lookup — a new, reusable pattern for testing internal `[LoggerMessage]` emitters from a sibling package's test project without widening `InternalsVisibleTo`); T-104/T-105 (configuration-binding composition-precedence and validator-registered-exactly-once tests); T-112 (bulk restore pattern proof — no new production method, per its own documented "usage pattern" framing); T-113 (real `pg_sleep(...)` command-timeout enforcement, distinct from the existing SQLite metadata-only test); T-114/T-116 (a new two-independent-Testcontainer `IClassFixture` proving read-replica routing at the connection level, not just the API surface); T-117 (replica-instance reference-equality-across-two-calls, added to the existing SQLite suite); T-118/T-119/T-120 (real pgvector nearest-neighbor correctness/composability — see the GATING defect below); T-121 (a repeated-calls/split-timing behavioral proxy for the zero-reflection claim, pure unit test, no container). **GATING genuine production defect found and fixed while writing T-118/T-119** — `VectorOrderingExpressions.ByDistance` (C-145, WO-053 Core phase) had never been executed against a real database before this session: passing `queryVector` as a bare `Expression.Constant(queryVector, typeof(Vector))` produces a genuine `PostgresException` ("42601: syntax error at or near '['") the moment the query actually runs, because EF Core's query pipeline treats an already-bare `ConstantExpression` as an inline SQL literal rendered via `Vector.ToString()` ("[1,2,3]") with no quoting/cast — `Pgvector.EntityFrameworkCore`'s distance-function translator does not attach a `vector` `RelationalTypeMapping` to an inline constant the way it does for a genuine ADO.NET parameter. Fixed by wrapping the value in a private single-property holder accessed via `Expression.Property(Expression.Constant(holder), nameof(holder.Value))` — reproducing the exact shape the C# compiler emits for a captured local variable inside an ordinary LINQ closure, which EF Core's parameter-extraction visitor recognizes and promotes to a real query parameter (confirmed via the generated SQL changing from `ORDER BY p.embedding <=> [1,0,0]` to `ORDER BY p.embedding <=> @Value`). Zero change to the method's public signature, its zero-reflection `MethodInfo`-capture technique, or its boxed-`object` return shape. The "Query-side pgvector ergonomics" CLAUDE.md section above is corrected in place with the full before/after, and two independently-stale `AddOrderBy(...)` usage-example/prose references (the real shipped method is `ApplyOrderBy`) are corrected alongside it — neither was caught by the Design-phase or Core-phase reconciliation passes, since neither ever compiled/ran the usage example. A second, independent genuine defect (Npgsql's own "vector" type OID resolving as unknown, `NotSupportedException: Cannot resolve 'vector' to a fully qualified datatype name") surfaced purely in TEST SETUP, not production code: `CREATE EXTENSION IF NOT EXISTS vector` must run on a throwaway connection BEFORE the EF Core-managed Npgsql connection pool opens its first connection — Npgsql resolves the "vector" type OID once per data-source lifetime (at first connection open), so issuing the `CREATE EXTENSION` as the pool's own first command permanently poisons that pool's type cache for its entire lifetime, even though the extension now exists. Full suites green: EfCore 358/358 (was 353 — 5 net new/strengthened tests), PostgreSQL 53/53 (was 41 — 12 net new tests: 3 retry-logging + 2 command-timeout + 2 replica-routing + 1 replica-reference-equality + 3 vector-correctness/composability + 1 vector-behavioral-proxy, some existing methods also gained assertions without adding new `[Fact]`s), both against a real Docker daemon. This closes every remaining WO-053 task in this domain's own state-map (persistence-phase-implementer)
+
+- [2026-08-26] Four pending phase definitions processed from root `state-map.md`'s Phase Backlog, in dependency order: P-440/WO-066 (EF Core value-conversion support for `03.Domain`'s `Money`), P-448/WO-068 (migrate this domain's `IEncryptionKeyProvider` consumers onto `01.Core`'s new async contract, breaking), P-456/WO-071 (append-only audit-trail contracts in `.Abstractions`), P-457/WO-071 (EfCore immutable audit-trail + hash-chain implementation). All four design-locked this pass; no implementation yet — see `state-map.md`'s new `D-104`..`D-125` (design, all `●`) and `S-19`..`S-22`/`C-146`..`C-165`/`T-122`..`T-138`/`DO-65`..`DO-68`/`P-09`..`P-12` (all `○`, pending). Key decisions: (1) `CurrencyValueConverter`'s from-provider direction uses the public `Currency.Create` factory, never `StronglyTypedIdValueConverter`'s reflection-located-constructor technique — `ValueObject`/`SingleValueObject<TValue>` already expose that factory (03.Domain P-310), so the heavier technique was never needed; `Money`'s owned-type materialization against its private 3-arg constructor is flagged as a genuine open risk with a preferred/fallback resolution recorded for Core-phase, pending `Money`'s own implementation. (2) P-448's "central design problem" (EF Core's `ValueConverter` pipeline is synchronous) is resolved by REMOVING `EncryptedValueConverter`'s direct `IEncryptionKeyProvider` dependency entirely — source-verified the existing decrypt-path pre-check is redundant with `ISymmetricEncryptionService.Decrypt`'s own `CryptographyErrorCodes.UnknownKeyId`-vs-`DecryptionFailed` distinction — rather than by blocking on async anywhere in this domain; corrected a pre-existing, unrelated doc/code drift discovered along the way (this file's `EncryptedValueConverter` constructor doc had already dropped the `IEncryptionKeyProvider keyProvider` parameter that the real shipped source still carries). (3) P-456's `IAuditActorContext` corrects an imprecision in its own root phase text: this domain already holds an approved `SharedKernel.Security.Abstractions` exception (P-078/WO-014), but it's scoped to `.EfCore` only, never `.Abstractions` — exactly why a fresh local seam belongs in Abstractions regardless, and exactly why `.EfCore`'s implementation (P-457) CAN ship a default `IAuditActorContext` bridging the already-approved `IUserContext`/`ITenantProvider`, an ergonomic advantage `05.Application`'s `IAuthorizationContext` structurally cannot offer. (4) Refined P-457's own "implement via `IReadRepository<T,TId>`" suggestion: `AuditRecord` deliberately does not implement `IAggregateRoot<Guid>` (would force an always-empty domain-events collection onto a plain infrastructure record); `EfAuditQueryService` builds directly on the unconstrained `ISpecificationEvaluator<AuditRecord>` instead. `AuditRecordImmutabilityInterceptor` (a new, opt-in-only fourth interceptor) is the load-bearing structural guarantee; `EfAuditTrailWriter.RecordAsync` is self-contained and calls `SaveChangesAsync` itself rather than staging into the ambient unit of work. Domain summary, Packages table, Technology Stack, Interface Contracts (new Auditing subsection in Abstractions; Money conversion + fourth interceptor + corrected/annotated Encryption section in EfCore), Implementation Rules (7 new hard violations), DI Registration (Money + `.WithAuditTrail()` examples), AOT Compatibility, and Test Rules all updated (persistence-arch-planner)
