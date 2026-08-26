@@ -105,6 +105,9 @@ Format when blocked:
 | 15 | [Integration](15.Integration/state-map.md) | Published | `●` | WO-064 gold-standard hardening pass (P-421–P-429) shipped end to end — SK.15.WO064 (H-01–H-38) `●` 38/38: resilience-handler options wiring, SSRF guard (`IWebhookUrlValidator`), per-delivery `X-Webhook-Delivery-Id` header, `"SharedKernel.Integration"` `ActivitySource`, multi-secret signing rotation, custom per-subscription headers, opt-in AES-GCM payload encryption, structured delivery-outcome logging (EventIds 15001–15003), and `SendTestDeliveryAsync` ping delivery; 109/109 tests passing. | P-430 (`13.ServiceDefaults` `WithIntegrationTelemetry`) can now proceed, unblocked by this domain's new `ActivitySource`. |
 | 16 | [Testing](16.Testing/state-map.md) | Published | `●` | **`SK.16.Core`/`SK.16.Tests` closed for WO-065/P-438 (127/127, 88/88), both promoted to root — all six `SK.16.*` phase keys are `●` again.** The blocker on `02.Caching`'s `ITenantCacheService`/`AddCacheEncryption()` (Phase 44/P-435, Phase 42/P-433) was re-verified directly on disk at the start of this Core-phase pass and found cleared — both had shipped in the interim, with `ITenantCacheService` carrying zero drift from the designed 5-member/mandatory-`tenantId` shape. Implemented `Caching/FakeTenantCacheService.cs` (composite `(TenantId, Entity, Id)` backing store, tenant-scoped tag index) and `AddFakeTenantCacheService()`; `Caching/FakeTenantCacheServiceTests.cs` (9 facts) and `Caching/CacheEncryptionFakeCryptographyInteropTests.cs` (2 facts, via a new scoped `ProjectReference` from `SharedKernel.Testing.SelfTests.csproj` to `SharedKernel.Caching.FusionCache`). Full regression `dotnet test SharedKernel.Testing.SelfTests.csproj --configuration Release` passes 1034/1034, zero regressions. | `P-382`/`P-391` still await a jurisdiction/dependency-aware review before closing (unrelated to WO-065). |
 | 17 | [Workflows](17.Workflows/state-map.md) | Published | `●` | SK.17.Published complete (7/7) — all six phase keys (Design/Scaffold/Core/Tests/Docs/Published) now `●`, 81/81 tasks done. Docs-phase NuGet metadata re-verified genuinely complete (no `08.Storage`-style `PackageReadmeFile` gap); `dotnet pack` clean, zero `NU5039`/`NU5128`. New `17.Workflows/consumer-verify` harness (four surfaces, real `Host.CreateApplicationBuilder()` → `IHost.StartAsync()`, never `BuildServiceProvider()`) proves `.AsClientOnly()` resolves the dispatch surface with zero DI exceptions and no `IHostedService`; a worker-hosting composition against a real `WorkflowEnvironment` registers the hosted worker service and completes a full start→activity→result round trip; and config misconfiguration fails loudly via a genuine two-tier mechanism — an entirely-absent key throws `InvalidOperationException` synchronously at `.Build()` (before any `IHost` exists), a present-but-invalid value throws `OptionsValidationException` at `IHost.StartAsync()` naming the property. 158/158 tests still passing. Root Phase Backlog **P-287 (WO-046) closed**. | — |
+| 18 | [Idempotency](18.Idempotency/state-map.md) | Design | `○` | — | New domain, added 2026-08-26 (WO-070/P-454–P-455): production-grade Redis- and EF Core-backed implementations of the platform's three already-declared, never-shipped idempotency contracts (`05.Application.Behaviors.IIdempotencyKeyStore`/`IIdempotencyResponseStore`, `07.Messaging.Abstractions.IIdempotencyStore`). Positioned above both owning domains specifically to resolve a layering deadlock neither `05` nor `07` could legally resolve on its own — see root `CLAUDE.md`'s Folder Map entry for the full rationale. |
+| 19 | [Scheduling](19.Scheduling/state-map.md) | Design | `○` | — | New domain, added 2026-08-26 (WO-073/P-464–P-467): lightweight cron/recurring/one-shot deferred job dispatch (`SharedKernel.Scheduling`), distinct from `17.Workflows`'s durable multi-step orchestration — see root `CLAUDE.md`'s "What Goes Where" boundary rule between the two. Carries a new, separately-named `13.ServiceDefaults` readiness-probe grant (P-466), independent of and never widening the existing `17.Workflows` grant. |
+| 20 | [Reporting](20.Reporting/state-map.md) | Design | `○` | — | New domain, added 2026-08-26 (WO-077/P-477–P-481): provider-neutral, streaming, memory-bounded report/data-export (`SharedKernel.Reporting.Abstractions` + `.Csv`/`.Spreadsheet`/`.Pdf`), composing with `06.Persistence`'s `IAsyncEnumerable`/`KeysetSpecification<T,TKey>` streaming reads and `08.Storage`'s `IFileStorage`/`IBlobUriGenerator` delivery rather than duplicating either. Needs no `13.ServiceDefaults` readiness-probe grant — stateless, no persistent connection, same class as `01.Core.Compression`/`.Cryptography`. |
 
 ---
 
@@ -152,7 +155,9 @@ Format when active:
 | ● Scaffold | 0 |
 | ◐ In Progress | 0 |
 | ⚑ Blocked | 0 |
-| ○ Not Started | 0 |
+| ○ Not Started | 3 |
+
+> **Board size note (2026-08-26, updated same day):** the Domain Summary Board now totals **21** rows, not 18 — `18.Idempotency`, `19.Scheduling` (WO-070/WO-073, batch 2) and `20.Reporting` (WO-077, batch 3) were added by this review series. The `state-map-phase` command previously hardcoded 'always exactly 18 rows' and a `domain: 00-17` parse range, which is why those three rows were first maintained by hand. **That limitation is now fixed:** the command derives the expected total by counting the board rows on every run, accepts any two-digit domain present on the board, and refuses to invent a row for a domain that has none (adding a row remains `arch-lead`'s job). Rows 18-20 can therefore be promoted through their phase lifecycle normally.
 
 > **WO-054 is effectively closed.** `00.Governance` is fully complete — `SK.00.EventEnvelopeConstructionGuard` (P-350, 9/9 tasks) closed 2026-08-07. `07.Messaging` is fully complete — all 10 phase keys (`SK.07.EnvelopeTenancy`/P-340 through `SK.07.PackagingRecipes`/P-349), 99/99 tasks, shipped 2026-08-07. `13.ServiceDefaults` is now fully complete too — P-351 (the sole remaining `13.ServiceDefaults` item, gated on `07.Messaging` P-347) closed 2026-08-07; only a `devops-lead` SemVer-major repack remains outstanding for that domain, not further implementation work. `16.Testing`'s former `◐`/`⚑` entry is resolved — WO-055/P-355 closed 2026-08-12 and all six of its phases are `●` again; the count line above previously still carried that stale row (`● Published 12` / `● Docs 2`) and was corrected in the same pass. **As of 2026-08-12 there were no `◐` In Progress domains and no `◐` Dispatched phases — every one of the 18 domains was `●`.** **UPDATE 2026-08-13:** `16.Testing` regressed to `◐` In Progress — a new WO-057 phase (P-374) added `Security/FakeUserContext` members tracking `12.Security`'s `IUserContext` expansion; `SK.16.Core` closed same-day, but `SK.16.Tests`/`SK.16.Docs` (T-78/DO-38) remain open, so the domain's `State` is `◐` while its `Current Phase` stays `Published` (never regressed) per this file's own established precedent. `11.Communication` was the last, and closed when PB-06 (the first-ever NuGet publish of all four `SharedKernel.Communication.*` packages) was **retracted by explicit user decision** rather than completed: the platform is not publishing that domain to a feed at this time. PB-06 is archived `—` (N/A / Skipped) in `11.Communication/state-map.md` and root Phase Backlog **P-363 is `⊘` Retracted**, with its three delivered criteria ticked and only the publish criterion withdrawn — so neither surfaces to `/implement-next-phase` or `/dispatch-phase` as actionable. Nothing was un-built: the packages remain release-ready and are consumed in-repo by `ProjectReference`. **Two non-phase items remain outstanding, both `devops-lead` publish-pass concerns rather than implementation work:** `13.ServiceDefaults` needs a SemVer-major repack (WO-054/P-351 removed two public extension methods outright), and reinstating `11.Communication`'s publish would mean reopening PB-06/P-363 rather than authoring new phases. New implementation work now requires a fresh architecture review to queue phases. **UPDATE 2026-08-14:** `05.Application` regressed to `◐` In Progress — WO-058/P-380's `SK.05.Design` phase key closed (D-72..D-80, 9/9) as a verification-only pass (the dual-control/maker-checker design was already fully written by the same-day `application-arch-planner` dispatch), but `SK.05.Scaffold`/`Core`/`Tests`/`Docs`/`Published` for WO-058 remain open, with Core genuinely cross-domain-blocked on `01.Core` shipping `Error.Forbidden(...)` — so the domain's `State` is `◐` while its `Current Phase` stays `Docs` (never regressed) per the same established precedent `16.Testing` set on 2026-08-13. **UPDATE 2026-08-14 (later same day):** `01.Core` shipped `Error.Forbidden(...)` (P-384/WO-059), clearing `05.Application`'s blocker; `SK.05.Core` (C-76..C-81) closed same-day. `05.Application` remains `◐` In Progress — `SK.05.Tests`/`Docs`/`Published` for WO-058 are still open, now unblocked and actionable rather than cross-domain-blocked. **UPDATE 2026-08-17:** `SK.05.Tests` (closed 2026-08-14, 73/73) and now `SK.05.Docs` (DO-25..DO-27, 27/27) are both `●` — `05.Application`'s `Current Phase` is `Docs`/`●`, so the domain is removed from Active Work/`◐ In Progress` per this file's established phase-key-promotion convention, even though `SK.05.Published` (P-23..P-26) has not yet started (all `○`) and root Phase Backlog `P-380` remains deliberately `◐` Dispatched pending the still-undispatched `16.Testing` `IDualApprovalStore` fake — a real, tracked gap, not a false "done" signal. **UPDATE 2026-08-17 (later same day):** `16.Testing` regressed to `◐` In Progress a second time — WO-058's companion `IDualApprovalStore` item and WO-060 (P-391) both closed `SK.16.Core` (122/122) and, this pass, `SK.16.Tests` (85/85 — `SecurityTestContextBuilder`/`DpopTestProofBuilder`/`MtlsTestCertificateBuilder`/`FakeDualApprovalStore` all proven, 996/996 full regression), but `SK.16.Docs` (DO-39–DO-44, 6 tasks) remains open — `State` corrected `●`→`◐` while `Current Phase` stays `Published` (never regressed), the same established precedent this domain itself set 2026-08-13. Root Phase Backlog `P-382`/`P-391` remain `◐` Dispatched, deliberately not closed — each still needs `SK.16.Docs`' CLAUDE.md-update criteria, and `P-391` additionally needs the still-undispatched `12.Security` `ApiKeyRotationComparer` for its full interop-half criterion. **UPDATE 2026-08-18:** `12.Security` regressed to `◐` In Progress — WO-060 (P-385/P-386/P-387/P-388/P-389/P-392)'s `SK.12.Design` closed (D-35–D-44, 44/44), but `SK.12.Scaffold`/`Core`/`Tests`/`Docs`/`Published` for WO-060 remain open, so the domain's `State` is `◐` while its `Current Phase` stays `Published` (never regressed), mirroring the `16.Testing`/`05.Application` precedent. **UPDATE 2026-08-18 (later same day):** `SK.12.Scaffold` (30/30) and now `SK.12.Core` (48/48) both closed same session — `12.Security` remains `◐` In Progress; only `SK.12.Tests`/`Docs`/`Published` for WO-060 are still open. **UPDATE 2026-08-18 (later still):** `SK.12.Tests` (39/39) also closed same session — `12.Security` remains `◐` In Progress; only `SK.12.Docs`/`Published` for WO-060 are still open. **UPDATE 2026-08-18 (later still, again):** `SK.12.Docs` (19/19, DOC-14–DOC-19) closed — docs-only session, zero `.cs` files touched. `12.Security` remains `◐` In Progress; only `SK.12.Published` (PUB-17–PUB-19) for WO-060 is still open. **UPDATE 2026-08-20:** `14.Presentation` closed — WO-062's `SK.14.Published` (P-09–P-16, 16/16) shipped, promoting all six `SK.14.*` phase keys back to `●`. `SharedKernel.Presentation.WebApi` re-packed to `1.2.0`, `SharedKernel.Presentation.SignalR` to `1.0.2`; `consumer-verify` now exercises 10 surfaces, all PASS with zero DI exceptions. `14.Presentation` is removed from Active Work/`◐ In Progress` — **as of this update there are no `◐` In Progress domains and no `⚑` Blocked domains; every one of the 18 domains is `●`.** **UPDATE 2026-08-20 (later same day):** `14.Presentation` regressed to `◐` In Progress — WO-063 (P-411–P-418)'s `SK.14.Design` closed (D-46–D-66, 66/66) as a verification-only pass (the contract shapes were already fully written into `CLAUDE.md`'s "Design-locked" sections by the same-WO `presentation-arch-planner` dispatch; this pass cross-checked them against the state-map's own task text and found no drift), but `SK.14.Scaffold`/`Core`/`Tests`/`Docs`/`Published` for WO-063 remain open, so the domain's `State` is `◐` while its `Current Phase` stays `Published` (never regressed), mirroring the `12.Security`/`16.Testing`/`05.Application` precedent. Root Phase Backlog `P-411`–`P-418` are not yet closed — `SK.14.Design` maps to a standard lifecycle phase key, not a dedicated extension key, so individual backlog entries wait for domain-wide closure at `SK.14.Published`. **UPDATE 2026-08-21:** `14.Presentation` closed a second time — WO-063's `SK.14.Published` (P-17–P-24, 24/24) shipped, promoting all six `SK.14.*` phase keys back to `●`. The `consumer-verify` `NU1903`/`Microsoft.OpenApi` 2.0.0 build blocker flagged by the prior Tests-phase session is RESOLVED (not suppressed) by bumping `Microsoft.AspNetCore.OpenApi` to `10.0.11`, which pins the patched `Microsoft.OpenApi` `2.7.5`. `SharedKernel.Presentation.WebApi` re-packed `1.2.0` → `1.3.0`, `SharedKernel.Presentation.SignalR` `1.0.2` → `1.1.0`; `consumer-verify` now exercises 12 surfaces, all PASS with zero DI exceptions and zero build warnings. `14.Presentation` is removed from Active Work/`◐ In Progress` — **as of this update there are no `◐` In Progress domains and no `⚑` Blocked domains; every one of the 18 domains is `●`.** **UPDATE 2026-08-21 (later same day):** `13.ServiceDefaults` regressed to `◐` In Progress — WO-063/P-419's `SK.13.Tests` closed (68/68, T-67/T-68: a genuine `WebApplication`/`TestServer` proof of the corrected `AddSharedKernelRateLimiting()` `OnRejected` recipe via a **test-only** cross-domain `ProjectReference` to `14.Presentation/SharedKernel.Presentation.WebApi`, never a production reference), but `SK.13.Docs` (DO-23 — the corrected `README.md`/XML-doc/`CLAUDE.md` recipe) remains open, so the domain's `State` is `◐` while its `Current Phase` advances to `Tests` (never regressed), mirroring the `12.Security`/`16.Testing`/`05.Application`/`14.Presentation` precedent. `SharedKernel.ServiceDefaults.Tests` 173/173 passing, `SharedKernel.MultiTenancy.Tests` 51/51 passing, 0 regressions. This recount also corrected two stale bucket counts unrelated to this change: `● Docs` (previously 0, should have been 1 while `13.ServiceDefaults` sat at Docs/●) and `● Tests` (previously 1 with no domain actually at that bucket) — both now accurate at 0 following `13.ServiceDefaults`'s move out of Docs and into the `◐ In Progress` bucket. **UPDATE 2026-08-21 (later still):** `13.ServiceDefaults` closed — WO-063/P-419's `SK.13.Docs` (23/23, DO-23) shipped, promoting all six `SK.13.*` phase keys back to `●`. `README.md`'s "Rate limiting" `OnRejected` recipe now calls the real `14.Presentation.WebApi` `RateLimitRejectionProblemDetails.Create(...)` helper (never hand-rolling a raw `ProblemDetails`), with `Retry-After` documented as round-tripping; `RateLimitingExtensions.AddSharedKernelRateLimiting`'s XML `<remarks>` and `13.ServiceDefaults/CLAUDE.md` both corrected to match, naming the helper in prose only — no compiled reference added to the production `.csproj`. `13.ServiceDefaults` is removed from Active Work/`◐ In Progress` — **as of this update there are no `◐` In Progress domains and no `⚑` Blocked domains; every one of the 18 domains is `●`.** **UPDATE 2026-08-21 (later still, again):** `00.Governance` closed WO-063/P-420 (`SK.00.CorrelationIdValidationGuard`) — the phase's own "re-verify rather than trust the note's framing" instruction confirmed `14.Presentation`'s WO-063 had shipped end to end before this implementation session began, and the real, shipped `CorrelationIdMiddleware.ResolveCorrelationId` matched the phase's design exactly (a conditional check-then-substitute, never a throw), so the already-shipped `AssertMethodBodyInvokesMethod` was re-pointed at it directly — zero new production code, zero new SK ID. This closes WO-063 (P-411–P-420) entirely across both `14.Presentation` and `00.Governance`. `00.Governance` was already `●` and stays `●` — no bucket-count change beyond the "Current Phase" label rename reflected above. **UPDATE 2026-08-24:** `16.Testing` regressed to `◐` In Progress — WO-065/P-438's `SK.16.Design` phase key closed (D-209–D-212, 212/212), designing `Caching/FakeTenantCacheService`/`AddFakeTenantCacheService()` against `02.Caching`'s planned `ITenantCacheService` (Phase 44/P-435, re-verified `⚑` genuinely blocked — no `ITenantCacheService.cs` exists) and confirming a fake-encryption-seam requirement (Phase 42/P-433) is already satisfied by the shipped `Cryptography/FakeSymmetricEncryptionService` with zero new code; `SK.16.Scaffold`/`Core`/`Tests`/`Docs` for WO-065 remain open (Core/Tests each carry 2 `⚑` Blocked tasks pending `02.Caching`), so the domain's `State` is `◐` while its `Current Phase` stays `Published` (never regressed), mirroring the `12.Security`/`05.Application`/`14.Presentation` precedent this domain itself set on 2026-08-13/2026-08-17. **UPDATE 2026-08-24 (later same day):** `16.Testing` closed — `02.Caching` shipped Phase 44 (`ITenantCacheService`) and Phase 42 (`AddCacheEncryption()`) in the interim, re-verified directly on disk with zero drift from the designed shape, clearing `SK.16.Core`'s C-126/C-127 and `SK.16.Tests`' T-87/T-88; both phase keys closed same-day (127/127, 88/88), promoting all six `SK.16.*` phase keys back to `●`. Full regression `dotnet test SharedKernel.Testing.SelfTests.csproj --configuration Release` passes 1034/1034. `16.Testing` is removed from Active Work/`◐ In Progress` — **as of this update there are no `◐` In Progress domains and no `⚑` Blocked domains; every one of the 18 domains is `●`.**
 
@@ -195,7 +200,993 @@ Rules:
 - Never remove or edit entries — only update **Status** from `○` to `◐` or `●`.
 -->
 
+---
+### P-439 — Domain: `Money` — Currency-Aware Monetary Value Object
 
+**Status:** `◐` Dispatched
+**Work Order:** WO-066
+**Domain:** 03.Domain
+**Depends on:** None
+
+#### What is needed
+A repo-wide grep confirms `Money` exists in this platform only as an XML-doc illustration on `ValueObject` (`03.Domain/SharedKernel.Domain/ValueObjects/ValueObject.cs:70`), private test-fixture classes in two `SharedKernel.Domain` test projects, and a sample under `samples/OrderApi/Domain/Money.cs` — no shipped type exists anywhere in the kernel, despite a run of recent work orders (WO-058 step-up auth, WO-060 FAPI 2.0 hardening) that are explicitly fintech-grade. A new `Money`-shaped value object, built on the existing `ValueObject`/`SingleValueObject<TValue>` infrastructure (equality, `TryCreate`/`CheckRule` validation per P-310), gains: (1) currency identity via an ISO 4217 currency catalog carrying the correct minor-unit exponent per code — including the zero-decimal (JPY, KRW) and three-decimal (BHD, KWD, OMR) currencies naive implementations get wrong; (2) arithmetic operators that throw/reject rather than silently coerce across two different currencies; (3) an explicit, selectable `RoundingPolicy` (banker's/half-even as the default, half-away-from-zero as the documented alternate) rather than leaning on `decimal`'s own implicit rounding; (4) an allocation/distribution operation that splits an amount across N parts or a weighted ratio set without losing or inventing minor units (the classic "split $10.00 three ways" problem — 3.33/3.33/3.34, not 3.33/3.33/3.33 or 3.34/3.34/3.34); and (5) a domain-owned `IExchangeRateProvider` port — a pure contract with zero I/O of its own, implemented by whichever infrastructure the consuming service chooses (typically bridged at its own composition root via `11.Communication`), never a hardcoded rate table or an embedded HTTP call inside `03.Domain`. Percentage/interest-calculation helpers are explicitly OUT of scope for this phase — flag as a documented future extension if a real consumer need materializes, not spun up speculatively now.
+
+#### Why this is needed
+This is the single most conspicuous absence in a kernel whose most recent work orders are explicitly FAPI 2.0/Open-Banking-grade. `Money` is domain vocabulary — an immutable, structurally-equal, self-validating value type — exactly the shape `03.Domain`'s `ValueObject`/`SingleValueObject<TValue>` machinery already exists to support, and the platform's own WO-034 precedent (declining to keep auth-domain vocabulary like `IPasswordHasher` inside dependency-free `01.Core`) argues by the same logic that business/domain vocabulary like `Money` does not belong in `01.Core` either — it belongs where `ValueObject` and tenanted aggregates already live. Placing it in `03.Domain` costs nothing structurally: `04.Contracts`, `05.Application`, `06.Persistence`, and every layer above already may reference `03.Domain`.
+
+#### Acceptance criteria
+- [ ] `Money` is built on the existing `ValueObject`/`SingleValueObject<TValue>` base, not a hand-rolled equality/validation implementation
+- [ ] Currency minor-unit exponents are correct for zero-decimal and three-decimal currencies, not just the two-decimal default case
+- [ ] Cross-currency arithmetic fails (`Result<T>` failure or a dedicated exception — domain planner's call) rather than silently coercing
+- [ ] Rounding policy is explicit and selectable, defaulting to banker's/half-even
+- [ ] The allocation/distribution operation is proven not to lose or invent minor units across a representative set of odd-division cases
+- [ ] `IExchangeRateProvider` is a pure, zero-I/O domain contract — `03.Domain` ships no implementation, no hardcoded rate table, no embedded HTTP call
+- [ ] No new `.Abstractions` package — this ships inside the existing `SharedKernel.Domain` package, consistent with how `KeysetSpecification`/`IHasAggregateId`/`SingleValueObject.TryCreate` were added additively in WO-051
+- [ ] `samples/OrderApi/Domain/Money.cs` is evaluated for replacement with the shipped type (or explicitly left as a pre-existing sample, documented either way)
+---
+
+---
+### P-440 — Persistence: EF Core Value-Conversion Support for `Money`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-066
+**Domain:** 06.Persistence
+**Depends on:** P-439
+
+#### What is needed
+An EF Core value-conversion/column-mapping story for `03.Domain`'s new `Money` type, mirroring the existing `StronglyTypedIdValueConverter<TId, TValue>` precedent — a composable converter (or owned/complex-type mapping) that persists a `Money` value as its constituent minor-units-integer-or-decimal amount plus its ISO 4217 currency code, and reconstructs the value object on read without a hand-rolled configuration at every call site.
+
+#### Why this is needed
+A currency-aware value object with no first-party EF Core mapping story forces every consuming service to hand-roll the same two-column conversion `06.Persistence` already solves once for strongly-typed IDs — exactly the duplication this kernel exists to eliminate.
+
+#### Acceptance criteria
+- [ ] A `Money` EF Core value-conversion path exists, usable from `IEntityTypeConfiguration<TEntity>` with a small, consistent call shape
+- [ ] Round-trips minor-unit-sensitive currencies (zero-decimal, three-decimal) correctly
+- [ ] Documented in `06.Persistence/CLAUDE.md`'s "What Goes Where"-style guidance
+---
+
+---
+### P-441 — Testing: `Money` Faker/Builder and Assertion Helpers
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-066
+**Domain:** 16.Testing
+**Depends on:** P-439
+
+#### What is needed
+A Bogus-integrated faker/builder for generating deterministic `Money` test values across a representative currency set (including at least one zero-decimal and one three-decimal currency), plus assertion helpers for currency-aware equality/near-equality checks in test suites, mirroring the existing domain-primitive faker precedent (P-035).
+
+#### Why this is needed
+Every other domain primitive shipped by `03.Domain` has a `16.Testing` faker counterpart; `Money`, given its minor-unit and currency-mismatch edge cases, is exactly the kind of type where hand-rolled test data is most likely to accidentally paper over a real bug.
+
+#### Acceptance criteria
+- [ ] A `Money` faker/builder ships in `SharedKernel.Testing`, referencing only `SharedKernel.Domain`
+- [ ] Covers at least one zero-decimal and one three-decimal currency in its default generation set
+- [ ] A deterministic `IExchangeRateProvider` test double ships alongside it for services that need to test currency-conversion flows without a real rate feed
+---
+
+---
+### P-442 — Governance: Advisory Rule Against Hand-Rolled Amount+Currency Pairs
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-066
+**Domain:** 00.Governance
+**Depends on:** P-439
+
+#### What is needed
+An opt-in, warning-level (not error-level) analyzer flagging a type that declares both a `decimal`-shaped monetary-looking property (name matching a documented pattern such as `*Amount`/`*Price`/`*Total`/`*Balance`) and a sibling `string`-shaped currency-code-looking property (`*Currency`/`*CurrencyCode`) on the same declaration — nudging toward the new `Money` value object instead of a raw decimal-plus-string pair that can drift out of sync or silently mix currencies.
+
+#### Why this is needed
+Once a canonical `Money` type exists, the platform's established habit is to add a guardrail preventing regression to the pattern it replaces (mirroring the hand-rolled-hashing ban after `SharedKernel.Cryptography` shipped, and the raw-`HttpClient` ban after typed clients shipped). This one is inherently heuristic — unlike a specific banned method call, "a decimal and a string co-located on a type" cannot be detected with zero false positives — so it ships as an advisory warning with a documented suppression path, not a build-breaking rule.
+
+#### Acceptance criteria
+- [ ] Analyzer ships as warning-severity, not error-severity, with a documented suppression mechanism
+- [ ] False-positive rate validated against this repo's own codebase and at least one representative sample project before shipping
+- [ ] Rule is documented as advisory in `00.Governance/CLAUDE.md`, explicitly distinguished from the platform's error-level "prohibited" rules
+---
+
+---
+### P-443 — Core: `SharedKernel.Validation` — Culture-Independent Format Validators
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-067
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A new, dependency-light `01.Core` sibling package (alongside `SharedKernel.Guards`/`SharedKernel.Cryptography`/`SharedKernel.Compression`) providing reusable, allocation-conscious, culture-independent validators every financial/identity-handling service currently re-implements: IBAN (mod-97 check digit, per-country length table), BIC/SWIFT format, payment-card PAN (Luhn check plus card-network detection), ISO 4217 currency codes, ISO 3166 country codes, E.164 phone numbers, and VAT/tax identifiers. National identity numbers are handled via a pluggable-per-country registry (`INationalIdValidator`-shaped, keyed by ISO 3166 country code) rather than one hardcoded algorithm — shipping Turkey's TCKN checksum algorithm as the built-in default given this platform's primary market, with the extension point documented for any other country a consuming service needs. Every validator is usable two ways from this package alone: as a standalone `Result`/bool-returning call, and as a `Guard`-clause-shaped extension (composing with, not merged into, the existing `SharedKernel.Guards` package — see the Acceptance criteria below on why `SharedKernel.Guards` itself stays minimal). A third mode — FluentValidation rule extensions — is deliberately NOT in this package; see P-444.
+
+#### Why this is needed
+`FluentValidation` already drives `05.Application.Behaviors`' `ValidationBehavior`, and `01.Core/SharedKernel.Guards` already provides generic argument guards — but neither offers the specific, easy-to-get-wrong algorithms (mod-97, Luhn, per-country ID checksums) that show up independently reimplemented across every financial/identity-handling service on this platform. `SharedKernel.Guards` should NOT gain these: Guards' value is its minimalism (a precondition/argument-guard surface with no topic-specific catalog), and folding a whole country-algorithm catalog into it would bloat a package this platform has deliberately kept small. A dedicated package, zero-dependency the same way `SharedKernel.Cryptography`/`SharedKernel.Compression` are, is the correct shape — and matches this platform's stated preference that dependency-freedom in `01.Core` packages is a virtue, not an accident.
+
+#### Acceptance criteria
+- [ ] IBAN validation includes the per-country length table, not a fixed-length assumption
+- [ ] PAN validation includes both Luhn check and card-network detection (Visa/Mastercard/Amex ranges at minimum)
+- [ ] National identity number validation is pluggable per country via a registry/factory keyed by ISO 3166 code, shipping TCKN as the built-in default
+- [ ] Every validator is usable as both a standalone `Result`/bool call and a `Guard`-clause-shaped extension, with zero FluentValidation dependency in this package
+- [ ] Zero or minimal third-party NuGet dependency, consistent with `SharedKernel.Cryptography`/`SharedKernel.Compression`'s existing posture
+- [ ] Root `CLAUDE.md`'s "What Goes Where" table gains a row for format validators, explicitly noting `SharedKernel.Guards` was evaluated and declined as the host
+---
+
+---
+### P-444 — Core: `SharedKernel.Validation.FluentValidation` — FluentValidation Rule Adapter
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-067
+**Domain:** 01.Core
+**Depends on:** P-443
+
+#### What is needed
+A thin sibling package adapting every validator from `SharedKernel.Validation` (P-443) as a FluentValidation `RuleFor(...)`-composable extension method set, so a service already using `05.Application.Behaviors`' `ValidationBehavior` can validate an IBAN/PAN/national-ID field with the same fluent syntax as every other rule in the same validator class.
+
+#### Why this is needed
+Keeping the FluentValidation dependency out of `SharedKernel.Validation` itself means a service that only wants the standalone `Result`/`Guard` surface (e.g. a Temporal activity or a lightweight worker with no MediatR pipeline) never pulls in FluentValidation transitively — mirroring this platform's existing "keep the core dependency-free, split the framework adapter" instinct.
+
+#### Acceptance criteria
+- [ ] Every validator from `SharedKernel.Validation` has a corresponding FluentValidation rule extension
+- [ ] `SharedKernel.Validation` itself gains no new dependency as a result of this package's existence
+- [ ] Documented recipe showing composition with `05.Application.Behaviors`' existing `ValidationBehavior`
+---
+
+---
+### P-445 — Testing: Valid/Invalid Sample Generators for Format Validators
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-067
+**Domain:** 16.Testing
+**Depends on:** P-443
+
+#### What is needed
+Bogus-integrated generators producing structurally-valid (checksum-correct) and deliberately-invalid sample values for every validator shipped in P-443 — a valid IBAN for a given country, a Luhn-correct PAN on a chosen network, a checksum-correct TCKN, and their corresponding broken counterparts — so consuming-service test suites can seed realistic fixtures without hand-computing check digits.
+
+#### Why this is needed
+Check-digit algorithms are exactly the kind of thing a developer gets right once, in the validator, and then wrong every time afterward when hand-typing "valid-looking" test fixtures. A generator that guarantees checksum correctness closes that gap the same way `16.Testing`'s other faker precedents do for domain primitives.
+
+#### Acceptance criteria
+- [ ] A generator exists for every validator shipped in P-443, producing both valid and deliberately-invalid samples
+- [ ] References only `SharedKernel.Validation` (P-443), not the FluentValidation adapter (P-444)
+---
+
+---
+### P-446 — Core: Async-Capable `IEncryptionKeyProvider` + Envelope-Encryption and Key-Caching Seam
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-068
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+**Source correction to the originating request:** `IEncryptionKeyProvider` does NOT live internally inside `06.Persistence.EfCore` — it is already a public contract in `01.Core/SharedKernel.Cryptography/Symmetric/IEncryptionKeyProvider.cs`, already consumed across `06.Persistence.EfCore` (`EncryptionOptionsKeyProvider`, `NullEncryptionKeyProvider`), `15.Integration.Webhooks`, `16.Testing` (`FakeEncryptionKeyProvider`), and `17.Workflows.Temporal`'s payload codec. The seam this platform needs already exists and is already shared. The real, source-verified gap is narrower and more specific: `IEncryptionKeyProvider.GetCurrentKey()`/`GetKey(string)` are **synchronous**, and `CryptographicKey.Material` exposes raw key bytes directly. A genuine KMS/HSM-backed provider (Azure Key Vault Keys, AWS KMS, HashiCorp Vault) requires real network I/O to resolve a key — a synchronous contract structurally forces either a blocking-on-async anti-pattern or an unsafe fire-and-forget shortcut. This phase converts both members to an async, `CancellationToken`-aware shape; adds an additive envelope-encryption seam (wrap/unwrap a generated data key against a KMS-held master key, so master key material never has to leave the KMS boundary — distinct from today's direct-retrieval-only shape); and adds a bounded-TTL caching decorator over `IEncryptionKeyProvider` so a slow KMS call is not repeated on every encrypt/decrypt, with an explicit, tested fail-closed behavior — an unreachable KMS must surface as a failure on the encrypt/decrypt path, and a cached key entry must never be served past its TTL bound (never "revoked but still trusted because the cache didn't expire yet").
+
+#### Why this is needed
+Every AES-GCM feature this platform has shipped (`02.Caching`'s cache-value encryption P-433, `06.Persistence`'s column encryption, `07.Messaging`'s payload transform P-346, `15.Integration`'s webhook payload encryption P-427) ultimately bottoms out in whatever `IEncryptionKeyProvider` a consuming service registers — today that is exclusively a synchronous, configuration-supplied key. A PCI-DSS/SOC 2 assessor will flag plaintext key material in configuration with no KMS/HSM path available at all, and the synchronous method signature is a structural, not cosmetic, blocker to adding one: no correctly-written Azure Key Vault or AWS KMS client can honor a synchronous `CryptographicKey GetCurrentKey()` without blocking a thread on network I/O.
+
+#### Acceptance criteria
+- [ ] `IEncryptionKeyProvider`'s members are async and `CancellationToken`-aware
+- [ ] Every existing implementer (config-based/null providers in `06.Persistence.EfCore`, test doubles in `16.Testing`/`15.Integration.Webhooks`/`01.Core` itself) is migrated in the same phase — trivial for all of them except the EF Core case flagged in P-449
+- [ ] A new, additive envelope-encryption contract exists (wrap/unwrap a data key against a KMS-held master key), distinct from and non-breaking to direct-retrieval consumers that don't need it
+- [ ] A bounded-TTL caching decorator ships, with a tested proof that a revoked/rotated key is never served past its TTL bound
+- [ ] An unreachable KMS surfaces as a documented failure path, never a silent no-encryption fallback
+- [ ] `SharedKernel.Cryptography`'s version is bumped as breaking; the breaking change and migration path are documented in its README/CHANGELOG
+- [ ] Config-supplied keys remain fully supported and remain the default — nothing breaks for a service that never opts into a KMS provider
+---
+
+---
+### P-447 — Core: `SharedKernel.Cryptography.KeyVault.Azure` — Azure Key Vault Keys Provider
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-068
+**Domain:** 01.Core
+**Depends on:** P-446
+
+#### What is needed
+A new sibling package implementing the now-async `IEncryptionKeyProvider` and the new envelope-encryption seam (P-446) against Azure Key Vault Keys (`Azure.Security.KeyVault.Keys`), supporting both envelope-wrap and direct-key-retrieval modes, with fail-closed behavior when the vault is unreachable. Azure is the first vendor given this platform's existing Azure-credential precedents (`12.Security.Oidc` targets Azure B2C; `13.ServiceDefaults` P-398 already wires Azure Key Vault as an `IConfiguration` source — a distinct, separate concern from this key-management contract, not to be confused with it). This ships as a new package rather than folding into the zero-third-party-dependency `SharedKernel.Cryptography` core, because it pulls in a real vendor SDK — the same reasoning that puts `SharedKernel.Storage.S3`/`.Obs` in their own packages rather than inside a dependency-free abstractions core, and explicitly NOT the same case as WO-034's declined RSA/ECDSA split (that was one BCL provider selectable by keyed DI; this is a genuine external vendor system reached over the network).
+
+#### Why this is needed
+Without a real vendor implementation, the async-capable seam from P-446 is a contract with no production-grade tenant — closing the gap this whole work order exists to address.
+
+#### Acceptance criteria
+- [ ] Implements both envelope-wrap and direct-retrieval modes against Azure Key Vault Keys
+- [ ] Fails closed (documented, tested) when the vault is unreachable or the identity lacks permission
+- [ ] Composes with P-446's TTL-bounded caching decorator without its own redundant caching
+- [ ] Package pulls in `Azure.Security.KeyVault.Keys` only in this package, never leaking as a transitive dependency of `SharedKernel.Cryptography` itself
+---
+
+---
+### P-448 — Persistence: Migrate EF Core's Key-Provider Consumers onto the Async Contract
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-068
+**Domain:** 06.Persistence
+**Depends on:** P-446
+
+#### What is needed
+Update `06.Persistence.EfCore`'s existing `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` to the new async `IEncryptionKeyProvider` contract from P-446, and resolve the one genuine architectural wrinkle this domain has that no other consumer does: `EncryptedValueConverter` runs inside EF Core's own `ValueConverter<TModel,TProvider>` pipeline, which is a synchronous API by EF Core's own design. The domain planner determines the concrete mechanism (a leading candidate is a resolved-key cache populated ahead of the synchronous conversion call, refreshed by the existing `IEncryptionRotationJob`), but the phase must not silently reintroduce a blocking-on-async call inside the EF Core pipeline.
+
+#### Why this is needed
+This is the one consumer of `IEncryptionKeyProvider` where "just await it" is not available, because the surface it plugs into (EF Core's value-conversion pipeline) is itself synchronous — this needs to be solved deliberately, not discovered as a build break after P-446 ships.
+
+#### Acceptance criteria
+- [ ] `06.Persistence.EfCore`'s key-provider consumers compile and pass against the new async contract
+- [ ] No blocking-on-async (`.Result`/`.GetAwaiter().GetResult()`) call is introduced inside the EF Core value-conversion pipeline
+- [ ] `IEncryptionRotationJob` continues to compose correctly with whatever caching mechanism is chosen
+- [ ] Documented as a breaking change to `SharedKernel.Persistence.EfCore`, cascading from P-446's breaking change — not from the interface having moved, since it never lived here
+---
+
+---
+### P-449 — ServiceDefaults: Azure Key Vault Key-Management Composition-Root Wiring + Readiness Probe
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-068
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-447
+
+#### What is needed
+A new registration helper distinct from the existing `AddSharedKernelKeyVaultConfiguration()` (P-398, which wires Key Vault as an `IConfiguration` source) — this one registers P-447's Azure Key Vault Keys provider as the platform's `IEncryptionKeyProvider`, plus a readiness-probe primitive wired into `AddHealthChecks()`, mirroring the established `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows` probe-primitive split (provider exposes the probe, `13.ServiceDefaults` wires it — no `IHealthCheck` implementation ships from `01.Core` itself).
+
+#### Why this is needed
+Every other infrastructure-provider capability this platform has shipped gets its readiness surfaced at the composition root; a KMS-backed encryption-key provider that silently fails is at least as operationally dangerous as a database or cache that does, since its failure mode is "every encrypt/decrypt call starts failing," not a slow degradation.
+
+#### Acceptance criteria
+- [ ] A distinctly-named registration helper from the existing Key Vault configuration-source helper, to avoid the two being confused
+- [ ] Readiness probe wired into `AddHealthChecks()`, following the existing probe-primitive split (provider exposes, `13.ServiceDefaults` wires)
+- [ ] `13.ServiceDefaults/CLAUDE.md` cross-references and explicitly distinguishes this from P-398's configuration-source helper
+---
+
+---
+### P-450 — Testing: Async-Capable Fakes for `IEncryptionKeyProvider` and the Envelope-Encryption Seam
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-068
+**Domain:** 16.Testing
+**Depends on:** P-446
+
+#### What is needed
+Update the existing `FakeEncryptionKeyProvider` (`16.Testing/SharedKernel.Testing/Cryptography/FakeEncryptionKeyProvider.cs`) for the new async contract from P-446, and add a fake for the new envelope-encryption seam, mirroring the same precedent this fake already established for the synchronous contract.
+
+#### Why this is needed
+`16.Testing` already has this fake — it needs to keep compiling and behaving correctly once P-446 ships, not be rediscovered as a break in a downstream consumer's test suite.
+
+#### Acceptance criteria
+- [ ] `FakeEncryptionKeyProvider` compiles and passes against the new async contract
+- [ ] A fake for the envelope-encryption seam ships alongside it
+- [ ] Every existing consumer of the old fake (across `06.Persistence`/`15.Integration`/`17.Workflows` test suites) is confirmed still green
+---
+
+---
+### P-451 — Core: RFC 6238 TOTP / RFC 4226 HOTP Generation, Verification, and Replay Guard
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-069
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+An additive capability inside the existing `SharedKernel.Cryptography` package (no new package — this is a pure cryptographic primitive with no identity-stack dependency, the same reasoning that keeps password hashing and AES-GCM here rather than in `12.Security`): RFC 6238 TOTP and RFC 4226 HOTP secret generation (via the existing `ISecureRandomGenerator` — never `System.Random`/`Guid.NewGuid()`, per the platform-wide prohibition), Base32 secret encoding/decoding, `otpauth://` provisioning-URI generation for authenticator-app enrollment, code verification with a configurable clock-drift window, and a pluggable replay-guard contract (mirroring `12.Security.Oidc`'s DPoP replay-check seam pattern — never a direct `02.Caching` reference from this package) so a code cannot be accepted twice inside its validity window. Recovery/backup codes are generated via `ISecureRandomGenerator` and hashed at rest via the existing `IOneWayHasher` rather than a new primitive. All time reads go through `01.Core`'s `IClock`/`TimeProvider`, never `DateTime.UtcNow`.
+
+#### Why this is needed
+A repo-wide grep finds zero matches for TOTP/HOTP/one-time-password anywhere in this platform. `12.Security` shipped the surface to *read and gate on* a second-factor signal in WO-058 (`IUserContext.AuthenticationMethods`/`.AuthContextClassReference`/`.AuthTime`/`WasAuthenticatedWith`) and WO-062 (`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]`), but nothing on the platform can actually *perform* a second factor — a half-built capability. The replay-guard seam must live alongside the generator/verifier, not be split into a separate package, because the verifier needs it internally to reject a reused code — splitting it would create a circular dependency between the two halves.
+
+#### Acceptance criteria
+- [ ] Secret generation uses `ISecureRandomGenerator` exclusively
+- [ ] Base32 encode/decode round-trips correctly
+- [ ] Provisioning-URI generation matches the Key Uri Format authenticator apps expect
+- [ ] Verification honors a configurable clock-drift window and uses `IClock`/`TimeProvider`, never `DateTime.UtcNow`
+- [ ] A code accepted once cannot be accepted again inside its validity window, proven by a test that submits the same valid code twice
+- [ ] Recovery/backup codes are generated via `ISecureRandomGenerator` and hashed at rest via `IOneWayHasher`
+- [ ] No new `01.Core` package — ships inside the existing `SharedKernel.Cryptography` package
+---
+
+---
+### P-452 — Security: `SharedKernel.Security.Totp` — ASP.NET Core Enrollment, Challenge, and Step-Up Wiring
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-069
+**Domain:** 12.Security
+**Depends on:** P-451
+
+#### What is needed
+A fifth sibling provider package alongside `.Oidc`/`.ApiKey`/`.Mtls`, composing P-451's generator/verifier with `12.Security.Abstractions`'s `IUserContext`: enrollment (generate and return a provisioning payload for authenticator-app setup), a challenge/verification path, and — critically — on successful verification, asserting the already-shipped step-up context (`WasAuthenticatedWith`-shaped AMR signal) so `14.Presentation`'s existing `[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` attributes (WO-062, P-406) work against a TOTP-satisfied second factor with zero changes needed on the `14.Presentation` side.
+
+#### Why this is needed
+This is the half of the capability that is genuinely identity-stack-shaped — it owns the step-up surface `12.Security` already shipped, and closes WO-058/WO-062's half-built second-factor story without duplicating any of the algorithm work done in P-451.
+
+#### Acceptance criteria
+- [ ] References `01.Core/SharedKernel.Cryptography` (P-451) and `12.Security.Abstractions` only, consistent with the other three sibling providers' layering
+- [ ] A successful TOTP verification is observable through the existing `IUserContext.WasAuthenticatedWith`/AMR surface with no changes required in `14.Presentation`
+- [ ] No new `14.Presentation` phase is needed — verified against the existing `[RequireAuthenticationMethod]` attribute's generic AMR-string matching before this phase is marked closed
+- [ ] Enrollment and challenge paths are documented with a recipe for wiring backup/recovery codes from P-451
+---
+
+---
+### P-453 — Testing: Fakes for TOTP/HOTP Generation and the Replay Guard
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-069
+**Domain:** 16.Testing
+**Depends on:** P-451, P-452
+
+#### What is needed
+Deterministic, clock-controllable fakes for the TOTP/HOTP generator/verifier and the replay-guard seam from P-451, plus a fake enrollment/challenge flow for P-452, mirroring the existing `InMemoryEncryptionKeyProvider`/`FakeEncryptionKeyProvider` precedent so consuming-service test suites can simulate a full second-factor flow without real clock-drift complexity or a real authenticator app.
+
+#### Why this is needed
+Every other pluggable seam this platform has shipped (idempotency stores, tenant-context accessors, DPoP replay checks) gets a `16.Testing` double; a second-factor flow that consuming services cannot test deterministically will get skipped in test suites, defeating the point of shipping it.
+
+#### Acceptance criteria
+- [ ] A deterministic TOTP/HOTP fake exists, driven by a controllable clock rather than real wall-clock time
+- [ ] A fake replay-guard exists, exercising both the "reject a reused code" and "allow a fresh code" paths
+- [ ] References only `SharedKernel.Cryptography` (P-451) and `SharedKernel.Security.Totp` (P-452)
+---
+
+### P-454 — Idempotency: `SharedKernel.Idempotency.Redis` — Atomic Redis-Backed Key/Response/Message Stores
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-070
+**Domain:** 18.Idempotency
+**Depends on:** None
+
+#### What is needed
+A concrete Redis-backed implementation of all three idempotency contracts the platform already declares but never ships: `05.Application.Behaviors`'s `IIdempotencyKeyStore`/`IIdempotencyResponseStore` and `07.Messaging.Abstractions`'s `IIdempotencyStore`. One package, three store classes sharing internal key-building/tenant-scoping/connection infrastructure built on `02.Caching.Redis.Core`. The critical requirement is **true atomicity**: the public contracts expose separate `HasProcessedAsync`/`MarkProcessedAsync` calls (a check-then-act shape at the interface level), so the implementation must internally close the race itself — `HasProcessedAsync` performs an atomic conditional reservation (`SET key value NX PX <shortTtl>`, or a Lua script for the response-replay path) that doubles as an in-flight lock, and `MarkProcessedAsync` extends that reservation to the full retention window. If the reservation is never confirmed (the caller crashed or faulted before `MarkProcessedAsync`), it expires and the key becomes available again — which is exactly what the existing fault-vs-failure semantics documented on `IIdempotencyKeyStore.MarkProcessedAsync` already require (a thrown exception must not consume the key; only a `next()` return, success or business failure, does). Every key is tenant-scoped by construction (composing a tenant-key-prefix seam, never leaving tenant-scoping to caller discipline) and the response-replay path (`IIdempotencyResponseStore`) persists the caller-supplied serialized string opaquely, exactly as documented. Store-unavailability behavior is an explicit, non-accidental choice: **fail-closed by default** (a Redis exception propagates, blocking the guarded command/consumer from running rather than risking an unprotected duplicate execution) with an opt-in `AllowExecutionOnStoreUnavailable` flag for services where availability outweighs duplicate risk — mirroring the platform's conservative-default convention (deny-by-default CORS, fail-closed tenant cache scoping, WO-060's revocation-check-caching bias toward safety).
+
+#### Why this is needed
+Three idempotency contracts are declared platform-wide and zero shippable implementations exist — the only concrete types anywhere in the repo are `16.Testing`'s fakes and two implementations buried inside other domains' own test suites. Every consuming microservice is left to hand-roll duplicate-suppression from scratch, which is exactly the per-service reinvention this kernel exists to prevent, and a correctness-critical one to get wrong in a payments context. No implementation could legally exist until now: `07.Messaging` may reference only `01–04` and is under a hard rule forbidding any `SharedKernel.Caching.*` reference; `05.Application` may never reference a concrete infrastructure package; and no layer below `07.Messaging` may reference upward into it to implement its interface. A new domain positioned above both `05` and `07` is the only legal home for a concrete store — see the domain-level rationale recorded against `18.Idempotency`'s addition to the Folder Map and Layering Rules.
+
+#### Acceptance criteria
+- [ ] Implements `IIdempotencyKeyStore` and `IIdempotencyResponseStore` (`05.Application.Behaviors`) and `IIdempotencyStore` (`07.Messaging.Abstractions`) in one package, three focused store classes
+- [ ] `HasProcessedAsync` performs an atomic conditional reservation — proven by a test that fires two concurrent calls with the same key and asserts exactly one observes `false`
+- [ ] An unconfirmed reservation (no `MarkProcessedAsync` call) expires and the key becomes retryable — proven by a test that lets the short in-flight TTL elapse
+- [ ] Every key is tenant-scoped through a composed seam, never left to caller-supplied string convention
+- [ ] Store-unavailability behavior defaults to fail-closed; opting into fail-open is a single explicit flag, documented in capitals as increasing duplicate-execution risk
+- [ ] References only `01.Core`, `02.Caching.Redis.Core` (and siblings as needed), `05.Application.Behaviors`, `07.Messaging.Abstractions` — no reference to `06.Persistence`
+---
+
+### P-455 — Idempotency: `SharedKernel.Idempotency.EfCore` — Atomic PostgreSQL-Backed Key/Response/Message Stores
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-070
+**Domain:** 18.Idempotency
+**Depends on:** None
+
+#### What is needed
+The EF Core/PostgreSQL sibling to P-454, implementing the identical three contracts (`IIdempotencyKeyStore`/`IIdempotencyResponseStore` from `05.Application.Behaviors`, `IIdempotencyStore` from `07.Messaging.Abstractions`) for services that already run PostgreSQL and would rather not stand up Redis solely for deduplication. Atomicity here comes from a unique constraint on `(TenantId, Key)`/`(TenantId, MessageId)` plus `INSERT ... ON CONFLICT DO NOTHING` (Npgsql), never a `SELECT`-then-`INSERT` pattern. Same fail-closed-by-default posture as P-454. Expiry is enforced via a `ExpiresAtUtc` column and a documented recommendation for a periodic cleanup job (a `IHostedService` the consuming service registers, or a scheduled job once `19.Scheduling`, Capability 8 of this same review, ships) — this package does not silently grow an unbounded table on its own.
+
+#### Why this is needed
+Same underlying gap as P-454. Shipping only a Redis-backed store would force every PostgreSQL-only service (no Redis in its stack) to either add a Redis dependency purely for deduplication or keep hand-rolling — the exact reinvention this capability exists to end. Mirrors the platform's established pattern of shipping sibling provider packages for a capability with more than one plausible backend (`08.Storage`'s `.S3`/`.Obs`, `09.Search`'s `.Meilisearch`/`.ElasticSearch`).
+
+#### Acceptance criteria
+- [ ] Implements the same three interfaces as P-454
+- [ ] Atomic reservation via a unique-constraint `INSERT ... ON CONFLICT DO NOTHING`, proven by a concurrent-insert test
+- [ ] `ExpiresAtUtc` column present; expired rows are excluded from `HasProcessedAsync` reads; cleanup is a documented recipe, not a hidden background loop this package starts on its own
+- [ ] Every row is tenant-scoped via a mandatory `TenantId` column, never a composite string key alone
+- [ ] Store-unavailability (connection failure) behavior defaults to fail-closed, matching P-454
+- [ ] References only `01.Core`, `06.Persistence.EfCore`/`.PostgreSQL`, `05.Application.Behaviors`, `07.Messaging.Abstractions` — never `02.Caching`
+---
+
+### P-456 — Persistence: Append-Only Audit Trail Contracts (`SharedKernel.Persistence.Abstractions`)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-071
+**Domain:** 06.Persistence
+**Depends on:** None
+
+#### What is needed
+A provider-neutral audit-trail contract living alongside the existing repository/UoW abstractions: an immutable `AuditRecord` shape (actor identity, action, resource type + identifier, tenant, `IClock`-sourced timestamp, before/after values for changed fields as an opaque serialized snapshot pair, correlation id, optional approval-linkage id), an `IAuditTrailWriter` (append-only — no update/delete member exists on the contract at all, structurally, not just by convention) and an `IAuditQueryService` covering the two named access patterns: "history of this resource" and "actions by this actor," both paginated (reusing the existing `PagedSpecification<T>`/`KeysetSpecification<T,TKey>` shapes rather than inventing a third paging model). Actor identity is resolved through a new local `IAuditActorContext` seam (mirroring `IAuthorizationContext`'s established bridge pattern) — never a direct `12.Security.Abstractions` reference, since `06.Persistence`'s layering ceiling does not include `12.Security`. Each `AuditRecord` carries a `RecordHash`/`PreviousRecordHash` pair for hash-chain tamper-evidence, computed via `01.Core/SharedKernel.Cryptography`'s existing `IContentHasher` (SHA-256, already shipped for exactly this class of non-secret fingerprinting) — chaining each record to its immediate predecessor within the same tenant+resource-type partition. `IAuditQueryService` also exposes a `VerifyChainIntegrityAsync` covering a given range.
+
+#### Why this is needed
+Zero matches repo-wide for an append-only audit-log contract. What exists today — `06.Persistence`'s `AuditInterceptor` — stamps mutable `CreatedBy`/`UpdatedBy`/`UpdatedAt` columns that the next edit overwrites, preserving no history at all, and `14.Presentation`/`15.Integration`'s `[LoggerMessage]` audit *logging* is a telemetry sink, not a queryable, retained, tamper-evident record. There is no way today to answer "who changed this customer's limit, when, from what to what, and under whose approval" — a near-universal financial-regulatory requirement, and one the platform's own maker-checker capability (`IRequiresDualApproval`, P-380/WO-058) implicitly promises but does not persist. Hash-chaining is accepted as in-scope rather than declined as gold-plating specifically because it is nearly free here: `IContentHasher` already exists, already shipped for this exact purpose (non-secret content fingerprinting), and turns "we have an audit log" into "we can prove the audit log was not tampered with" for the cost of two extra columns and one extra hash call per write.
+
+#### Acceptance criteria
+- [ ] `AuditRecord` has no update or delete surface anywhere in this package — immutability is structural, not a documented convention
+- [ ] `IAuditTrailWriter.RecordAsync` is the sole write path; before/after values are opaque, pre-serialized by the caller (mirrors `IIdempotencyResponseStore`'s "store persists what it's handed" pattern) — no reflection-based diffing inside this package
+- [ ] `IAuditQueryService` covers both named access patterns (by-resource history, by-actor actions), both paginated via existing `03.Domain` paging shapes
+- [ ] `RecordHash`/`PreviousRecordHash` computed via `IContentHasher`; `VerifyChainIntegrityAsync` detects a mutated or missing link in a given range
+- [ ] `IAuditActorContext` is a local seam owned by this package, never a direct `12.Security.Abstractions` reference
+- [ ] Retention/archival policy is explicitly out of scope for this phase — documented as a deferred follow-up, not silently unaddressed
+---
+
+### P-457 — Persistence: EF Core Immutable Audit Trail + Hash-Chain Implementation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-071
+**Domain:** 06.Persistence
+**Depends on:** P-456
+
+#### What is needed
+The `SharedKernel.Persistence.EfCore` implementation of P-456's contracts: a dedicated append-only table, a `SaveChanges`-time guard that throws if any tracked `AuditRecord` entity is ever observed in `EntityState.Modified` or `EntityState.Deleted` — structural immutability enforced at the ORM boundary, not left to database permissions alone (though the XML docs must additionally recommend a DB-level `REVOKE UPDATE, DELETE` grant on the underlying table as defense-in-depth, mirroring the encryption/soft-delete documentation style already used in this package). `IAuditQueryService` is implemented via the existing `IReadRepository<T,TId>` surface plus the `KeysetSpecification<T,TKey>` shape (P-308/WO-051) for the resource-history access pattern, since audit history is exactly the "large, actively-written, time-ordered result set" that specification exists for. Hash-chain computation happens inside `IAuditTrailWriter.RecordAsync`, chained per (`TenantId`, `ResourceType`) partition — never globally, so unrelated resources' audit streams don't serialize against each other.
+
+#### Why this is needed
+P-456 defines the shape; this phase makes it real for the platform's primary persistence provider. The `SaveChanges`-time guard is the load-bearing piece — an audit contract that is only "immutable by convention" is not meaningfully different from the mutable `AuditInterceptor` columns this capability exists to replace.
+
+#### Acceptance criteria
+- [ ] A test proves `SaveChangesAsync` throws when an `AuditRecord` is attached as `Modified` or `Deleted`, never silently succeeds
+- [ ] Hash-chain verification test: mutating one historical record's stored fields is detected by `VerifyChainIntegrityAsync` for that (tenant, resource-type) partition
+- [ ] Resource-history queries use `KeysetSpecification<T,TKey>`, not offset paging, proven by a query-plan/tag assertion consistent with P-319's `.TagWith(...)` convention
+- [ ] XML docs state the recommended DB-level `REVOKE UPDATE, DELETE` grant in capitals, mirroring the existing encryption-attribute-prohibition documentation style
+- [ ] The existing `AuditInterceptor` is left entirely unchanged — this phase does not wire it to feed audit records automatically (see WO-071's explicit decision recorded in root `CLAUDE.md`)
+---
+
+### P-458 — Application: Opt-In `AuditingBehavior<TRequest,TResponse>` and Local Audit-Writer Seam
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-071
+**Domain:** 05.Application
+**Depends on:** P-456
+
+#### What is needed
+A new opt-in pipeline behavior mirroring `IRequiresDualApproval`/`IIdempotentRequest`'s exact shape: a `IAuditableRequest` marker interface a command implements to opt in, and `AuditingBehavior<TRequest,TResponse>` that calls a **local** `IAuditTrailWriter` seam (a minimal interface owned by `SharedKernel.Application.Behaviors` itself, mirroring `IAuthorizationContext`/`IUnitOfWork`'s bridge pattern — never a direct reference to `06.Persistence.Abstractions`'s richer P-456 contract, since `05.Application`'s layering ceiling is `01–04`). The request supplies its own before/after snapshot via a self-supplied field surface (mirroring `ILoggableRequest<TResponse>`'s existing pattern — never a reflection-based property walk over an arbitrary `TRequest`). When the same request also implements `IRequiresDualApproval`, the recorded audit entry carries the approval id, linking the two capabilities without either depending on the other's package. A request that does not opt in behaves identically to today — no audit record, no overhead.
+
+#### Why this is needed
+Automatic, hidden audit writing off the existing `AuditInterceptor` was considered and declined (see P-457's rationale) because it would make every `SaveChanges` call silently produce a compliance record with no application-layer visibility into what "before/after" means for that specific aggregate — the platform's established convention (WO-045's Domain Invariant #5, opt-in everywhere) is that consequential side effects are always an explicit act, never automatic. An opt-in marker + behavior is the platform's own ratified shape for exactly this kind of cross-cutting, per-command capability.
+
+#### Acceptance criteria
+- [ ] `IAuditableRequest` marker + self-supplied snapshot surface, no reflection-based diffing
+- [ ] `AuditingBehavior` calls the local `IAuditTrailWriter` seam only — zero compiled reference to `06.Persistence`
+- [ ] A request implementing both `IAuditableRequest` and `IRequiresDualApproval` produces one linked audit record carrying the approval id
+- [ ] A request that does not implement `IAuditableRequest` is entirely unaffected — proven by a test asserting zero calls to the seam
+- [ ] Pipeline placement documented relative to the existing seven-step order (Logging → Metrics → Validation → Authorization → Caching → Idempotency → Transaction) — auditing records the outcome, so it sits just inside Transaction, after the result is known but before/alongside commit
+---
+
+### P-459 — Testing: Fakes for the Audit Trail Contracts
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-071
+**Domain:** 16.Testing
+**Depends on:** P-457, P-458
+
+#### What is needed
+In-memory, dictionary-backed fakes for both audit seams introduced in this work order: `06.Persistence.Abstractions`'s `IAuditTrailWriter`/`IAuditQueryService` (P-456) and `05.Application.Behaviors`'s local `IAuditTrailWriter` seam (P-458), with assertion helpers (`ShouldHaveAuditedAsync`-shaped) mirroring the `InMemoryMessageBus`/`InMemoryWebhookDispatcher` precedent. The fake enforces the same immutability invariant as the real EF Core store (an attempted overwrite of an existing record throws) so tests exercising the guard don't require a real database.
+
+#### Why this is needed
+Every pluggable seam this platform ships gets a `16.Testing` double — without one, consuming services either skip testing their audit-producing commands or reach for a real database in unit tests, both bad outcomes this domain exists to prevent.
+
+#### Acceptance criteria
+- [ ] Fake for `06.Persistence.Abstractions.IAuditTrailWriter`/`IAuditQueryService`, referencing only `SharedKernel.Persistence.Abstractions`
+- [ ] Fake for `05.Application.Behaviors`'s local seam, referencing only `SharedKernel.Application.Behaviors`
+- [ ] Both fakes reject an attempted mutation of an already-recorded entry, matching the real implementations' structural immutability
+- [ ] Assertion helpers exist for "was this resource audited" and "did this actor's action get recorded"
+---
+
+### P-460 — Integration: `SharedKernel.Integration.Notifications.Abstractions` — Provider-Neutral Email/SMS Contract
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-072
+**Domain:** 15.Integration
+**Depends on:** None
+
+#### What is needed
+A neutral outbound human-notification contract, sibling to the existing `SharedKernel.Integration.Webhooks` package under the same domain: `INotificationSender`, a `NotificationMessage` model (recipient, `Channel` enum starting with `Email`/`Sms`, `TemplateId`, an optional `Locale` for future localization composition, a strongly-typed model object for the named template — never string concatenation at the call site), a per-send `NotificationDeliveryId` (mirroring `15.Integration`'s existing `X-Webhook-Delivery-Id` pattern) that the provider is required to use for its own dedup/idempotency-key mechanism so a retry never double-sends, `INotificationDeliveryObserver` (mirroring `IWebhookDeliveryObserver`), per-tenant sender-identity/reply-to resolved through a local seam (bridged at the consuming service's composition root, the same bridge shape used throughout `05.Application`/`13.ServiceDefaults`), attachment references expressed as `08.Storage.Abstractions` object keys (never inlined byte arrays) — a new, ordinary downward reference `15.Integration → 08.Storage.Abstractions` since `08 < 15`, and rate/quota policy options consumed by each provider's own resilience wiring. Templating stays provider-delegated by default (SendGrid Dynamic Templates and Twilio's Content API both natively bind a named template + JSON model) rather than adding a new local templating-engine dependency. Recipient PII (email address, phone number, template model values) must never appear as a `[LoggerMessage]` message-template placeholder, mirroring `10.Intelligence`'s "prompt/completion text is never a log-message parameter" precedent.
+
+#### Why this is needed
+`15.Integration` ships only machine-to-machine webhook delivery. There is no email/SMS/push capability anywhere in the repo, and `Directory.Packages.props` pins no notification-provider dependency — a service on this kernel cannot send a customer a statement, a one-time passcode, or a transaction alert. This lands as a sibling package inside `15.Integration` rather than a new numbered domain because the domain's real identity is "outbound delivery to a destination outside our control, with resilience/signing/retry/observer discipline" — human notifications and webhooks share that identity even though their payloads differ; the domain's Folder Map description is broadened accordingly from "Outbound Webhook dispatcher" to "Outbound integration (webhooks, human-facing notifications)". Push notification support (FCM/APNs) is explicitly declined for this phase — device-token registration and platform-specific payload shaping is materially more scope than text delivery and is better proposed as its own follow-up once this seam is proven. Bounce/complaint handling is also declined — it requires an *inbound* webhook receiver from the provider, a capability that does not exist anywhere on this platform yet and is out of scope here.
+
+#### Acceptance criteria
+- [ ] `INotificationSender`/`NotificationMessage`/`INotificationDeliveryObserver` defined; `Channel` covers `Email` and `Sms` only — no `Push` member yet
+- [ ] Attachments are expressed via `SharedKernel.Storage.Abstractions` object references; no byte-array attachment overload exists
+- [ ] `NotificationDeliveryId` is mandatory on every send and is documented as the required provider-side dedup key
+- [ ] Per-tenant sender identity/reply-to resolved via a local seam, never a direct persistence/config reference from this package
+- [ ] `Locale` is present on `NotificationMessage` as a forward-compatible seam; no localization logic is implemented in this phase
+- [ ] XML docs state in capitals that recipient/template-model values must never be passed as a logging placeholder
+- [ ] Emits spans on the same `"SharedKernel.Integration"` `ActivitySource` name `15.Integration.Webhooks` already uses (already wired into OTel by `13.ServiceDefaults`'s existing `WithIntegrationTelemetry`, P-430) — no new `13.ServiceDefaults` phase required
+---
+
+### P-461 — Integration: `SharedKernel.Integration.Notifications.Email.SendGrid`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-072
+**Domain:** 15.Integration
+**Depends on:** P-460
+
+#### What is needed
+The first shipping email provider: a SendGrid REST-API-backed `INotificationSender` implementation. SendGrid is chosen deliberately over AWS SES or Azure Communication Services: this platform already carries cloud-vendor-leaning choices where the vendor coupling is *specific to the vertical* (`12.Security.Oidc` → Azure B2C for identity, `08.Storage.S3` → the de facto S3 API standard for object storage), but notifications have no equivalent technical-standard or identity-specific argument — committing the first provider to either cloud's native email service would entangle this domain in the platform's cloud-choice politics for no technical reason. SendGrid is a cloud-neutral, REST-based SaaS provider usable identically regardless of which cloud a consuming service otherwise runs on.
+
+#### Why this is needed
+P-460 ships zero I/O; this is the first real send path, proving the abstraction against a real provider's dynamic-templating and dedup-key support.
+
+#### Acceptance criteria
+- [ ] Implements `INotificationSender` for `Channel.Email` only
+- [ ] `TemplateId` + model bind to SendGrid's Dynamic Templates API
+- [ ] `NotificationDeliveryId` is propagated as SendGrid's own idempotency/dedup mechanism
+- [ ] Attachment object keys are resolved through `08.Storage.Abstractions.IFileStorage` and streamed, never fully buffered in memory for large attachments
+- [ ] Resilience/rate-limit handling reuses `01.Core`/Polly patterns already established in `11.Communication.Rest`, not a bespoke retry loop
+---
+
+### P-462 — Integration: `SharedKernel.Integration.Notifications.Sms.Twilio`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-072
+**Domain:** 15.Integration
+**Depends on:** P-460
+
+#### What is needed
+The first shipping SMS provider: a Twilio REST-API-backed `INotificationSender` implementation, chosen for the same cloud-neutrality reasoning as P-461's SendGrid choice.
+
+#### Why this is needed
+Sibling to P-461 — SMS is the second channel explicitly in scope (one-time passcodes, transaction alerts), and batch 1's TOTP capability (WO-069) has no delivery transport for SMS-delivered codes without this.
+
+#### Acceptance criteria
+- [ ] Implements `INotificationSender` for `Channel.Sms` only
+- [ ] `NotificationDeliveryId` is propagated as Twilio's own dedup mechanism (`Idempotency-Key` header on the Messages API)
+- [ ] Rate/quota options respect Twilio's per-account throughput limits via the shared resilience pattern from P-461
+- [ ] No template model is required to carry HTML — a plain-text rendering path is mandatory for this channel
+---
+
+### P-463 — Testing: In-Process Fakes for Notifications
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-072
+**Domain:** 16.Testing
+**Depends on:** P-460
+
+#### What is needed
+`InMemoryNotificationSender`/`InMemoryNotificationDeliveryObserver`, mirroring the `InMemoryWebhookDispatcher`/`InMemoryWebhookDeliveryObserver` precedent (P-431): records every send with `ShouldHaveSent<TChannel>()`-shaped assertion helpers, requires no real network/provider credentials.
+
+#### Why this is needed
+Same rationale as every other `16.Testing` double on this platform — a consuming service must be able to assert "did we send this customer their statement" without a real SendGrid/Twilio account in CI.
+
+#### Acceptance criteria
+- [ ] References only `SharedKernel.Integration.Notifications.Abstractions`
+- [ ] Assertion helpers cover both channels and both success/failure delivery outcomes
+- [ ] No network access, no provider SDK dependency
+---
+
+### P-464 — Scheduling: `SharedKernel.Scheduling` — Cron/Recurring/Deferred Job Dispatch
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-073
+**Domain:** 19.Scheduling
+**Depends on:** None
+
+#### What is needed
+A single package (no `.Abstractions` split — exactly one provider ships today, the same documented single-provider convention already used for `SharedKernel.Cryptography`/`SharedKernel.Compression`/`SharedKernel.Guards`; a split is reconsidered if a second backend is ever proposed) providing: `IScheduledJobRegistry` for registering a recurring (cron-expression) or one-shot deferred job at startup; `ScheduledCommandJob<TCommand>`, the scheduling-side counterpart to `17.Workflows`'s `CommandActivity<TCommand>` bridge, dispatching a MediatR command via `ISender` on each fire; cron-expression parsing and next-fire-time computation via Quartz's standalone `CronExpression` class (already a transitive dependency through the pinned `MassTransit.Quartz` package — reused rather than adding a new dependency; Quartz's full `IScheduler`/clustered `JobStore` machinery is deliberately NOT adopted, since it would stand up a second, competing persistence story alongside `06.Persistence`); cross-replica single-execution guaranteed via an optional `02.Caching.Redis.DistributedLocking` `IFencedLock` acquisition at each tick (omitting it is allowed for single-replica/dev use and logs a startup `Warning`, mirroring `11.Communication.Internal`'s static-resolver precedent); an explicit `MisfirePolicy` (`FireOnce` / `Skip` / `RunImmediatelyThenReschedule`) and `OverlapPolicy` (`Skip` default / `Queue` / `Allow`) per job registration — never a silently-assumed default; and `ISchedulerServiceProbe`/`SchedulerServiceHealth`, the readiness-probe primitive mirroring the `06`/`07`/`08`/`09`/`10`/`17` precedent. `ActivitySource`("SharedKernel.Scheduling") and a companion `Meter` cover every fire/skip/misfire/overlap event. A registered job's `TenantScope` is **nullable, not mandatory** — a deliberate, documented deviation from the platform's mandatory-non-defaulted-tenant-scope convention (`09.Search`/`10.Intelligence`/`17.Workflows`/`18.Idempotency`): a scheduled job is registered once, at startup, as a system-level actor; a genuinely per-tenant recurring job (e.g. "send each active tenant's weekly digest") iterates its own tenant directory inside the job body rather than the scheduler spawning N tenant-scoped executions itself.
+
+#### Why this is needed
+`Directory.Packages.props` pins `MassTransit.Quartz`, but that is `07.Messaging`'s internal scheduled-message transport, not a general-purpose scheduler any service can reach for. `17.Workflows` is the durable-orchestration answer, and its own brain records Hangfire/Elsa/Dapr Workflow/MassTransit sagas as evaluated and rejected — but that evaluation concerned *durable, multi-step, replay-safe business processes*, not "run reconciliation nightly at 02:00." Requiring a full Temporal worker for a single cron tick is real overkill teams will route around by hand-rolling an incorrect `BackgroundService` with a timer, which is silently wrong across N replicas (duplicate execution, no misfire handling). A lightweight scheduler built on already-owned primitives (`IFencedLock`, `IClock`, the `CommandActivity`-style MediatR bridge) closes that gap without duplicating `17.Workflows`'s determinism/replay machinery it does not need.
+
+#### Boundary rule (added to root `CLAUDE.md`'s "What Goes Where")
+`19.Scheduling` is for firing a single unit of work on a time-based trigger (cron or one-shot deferred), where "did it fire, exactly once, across replicas" is the only durability question. `17.Workflows` is for a business process with multiple steps, signals/queries, or that must survive partial completion across a deploy or crash mid-step. A recurring trigger that *starts* a multi-step Temporal workflow is a legitimate composition of both — `19.Scheduling` fires the trigger, `17.Workflows` owns everything after that.
+
+#### Acceptance criteria
+- [ ] `CronExpression`-based parsing/next-fire-time computation, never a hand-rolled cron parser
+- [ ] No raw Quartz `IScheduler`/`ITrigger`/`IJobDetail` type is ever exposed to application code
+- [ ] `ScheduledCommandJob<TCommand>` dispatches via `ISender`, closed generic per command, zero reflection
+- [ ] Two concurrent replicas registering the same job fire it exactly once per tick when `IFencedLock` is configured — proven by a multi-instance test
+- [ ] Omitting the distributed lock logs a startup `Warning` naming the single-replica-only caveat
+- [ ] `MisfirePolicy`/`OverlapPolicy` are both mandatory, non-defaulted parameters on registration
+- [ ] `TenantScope` is nullable on the job-definition type; XML docs state the per-tenant-fan-out rationale above
+- [ ] `ISchedulerServiceProbe` reports whether the hosted scheduling loop is running and how many jobs are registered, with zero I/O beyond in-process state
+---
+
+### P-465 — ServiceDefaults: `WithSchedulingTelemetry` OTel Entry Point
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-073
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-464
+
+#### What is needed
+`WithSchedulingTelemetry`, joining the existing `WithXTelemetry` family, registering `"SharedKernel.Scheduling"` with `.AddSource(...)`/`.AddMeter(...)` by name only.
+
+#### Why this is needed
+Mirrors `WithIntegrationTelemetry`/`WithWorkflowTelemetry`'s exact shape: `AddSource`/`AddMeter` take a bare string, so wiring a higher-numbered domain's telemetry into OTel requires **no compiled reference** and therefore **no new layering grant** — unlike the readiness-probe wiring in P-466, which does require one. Keeping these as two separate phases makes that distinction explicit rather than bundling a grant-requiring change in with one that needs none.
+
+#### Acceptance criteria
+- [ ] `WithSchedulingTelemetry` calls `.AddSource("SharedKernel.Scheduling")` and `.AddMeter("SharedKernel.Scheduling")` by string only
+- [ ] No `ProjectReference`/compiled dependency from `13.ServiceDefaults` to `19.Scheduling` is introduced by this phase
+- [ ] Documented alongside the existing `WithXTelemetry` family in this domain's own brain
+---
+
+### P-466 — ServiceDefaults: `AddSchedulerReadinessCheck` (New Named Layering Grant for 19.Scheduling)
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-073
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-464
+
+#### What is needed
+`AddSchedulerReadinessCheck`, wiring `19.Scheduling`'s `ISchedulerServiceProbe`/`SchedulerServiceHealth` into `AddHealthChecks()`, mirroring `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`'s readiness-probe wiring exactly. Because `19 > 13`, this requires its own explicitly-named addition to root `CLAUDE.md`'s Hard rules — a **new, separately-named grant**, never a widening of the existing `17.Workflows` grant from WO-047 (which that section is emphatic must never be reasoned about by analogy). The grant text: `13.ServiceDefaults` may take a `ProjectReference` to `SharedKernel.Scheduling` (`19.Scheduling`) **solely** to resolve `ISchedulerServiceProbe`/`SchedulerServiceHealth` for `AddSchedulerReadinessCheck`. No other `19.Scheduling` type may be reached through this exception.
+
+#### Why this is needed
+`19.Scheduling` ships no lower-numbered `.Abstractions` companion to reference instead (P-464 ratified the single-package shape), so the probe primitive itself is the one seam a composition-root health check must reach — the identical justification WO-047 used for `17.Workflows`, now independently earned by a second domain rather than inherited from the first.
+
+#### Acceptance criteria
+- [ ] Root `CLAUDE.md` Hard rules gains a new bullet, textually parallel to the existing `17.Workflows` grant, naming only `ISchedulerServiceProbe`/`SchedulerServiceHealth`
+- [ ] `AddSchedulerReadinessCheck` queries the real, already-registered scheduler instance — never an independently constructed one
+- [ ] No other `19.Scheduling` type is reachable from `13.ServiceDefaults` through this reference — enforced by a `00.Governance` architecture-test assertion mirroring the existing `17.Workflows` grant's own test, added as an acceptance item on this phase rather than a separate governance phase (the assertion is a one-line addition to the existing rule, not a new rule)
+---
+
+### P-467 — Testing: In-Process Fake for `IScheduledJobRegistry`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-073
+**Domain:** 16.Testing
+**Depends on:** P-464
+
+#### What is needed
+`InMemoryScheduledJobRegistry`, letting a consuming service's test suite register a job and then manually advance a fake clock/trigger a tick deterministically, asserting the wrapped `ScheduledCommandJob<TCommand>` dispatched the expected command exactly once per simulated fire — mirroring the `InMemoryWorkflowDispatcher`/`InMemorySearchIndex<TDocument>` precedent.
+
+#### Why this is needed
+A scheduled job that fires on a real wall-clock cron cannot be tested deterministically in CI; every other pluggable dispatch surface on this platform gets a controllable, clock-driven double for exactly this reason.
+
+#### Acceptance criteria
+- [ ] References only `SharedKernel.Scheduling`
+- [ ] Ticks are triggered manually by the test, never by real elapsed wall-clock time
+- [ ] Assertion helpers cover fire, skip (overlap), and misfire paths
+---
+
+### P-468 — Presentation: `SharedKernel.Presentation.Grpc` — Server-Side Exception/`Result<T>` Mapping and Inbound Correlation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-074
+**Domain:** 14.Presentation
+**Depends on:** None
+
+#### What is needed
+A third `14.Presentation` sibling package, `SharedKernel.Presentation.Grpc`, giving gRPC server endpoints the same inbound-boundary story `SharedKernel.Presentation.WebApi` already gives HTTP: a server interceptor mapping unhandled exceptions to `RpcException`/`Status` (the counterpart to the existing global `IExceptionHandler`), a `GrpcStatusCodeMap` keyed off `01.Core`'s `ErrorType` enum (a sibling to, never a merge with, `ErrorTypeStatusCodeMap` — see rationale below) plus `Result<T>`-to-`RpcException`-throwing extension methods so a service method stops branching on `IsSuccess` inline, a server interceptor extracting correlation-id/tenant-id from inbound gRPC metadata (the receiving half of what `SharedKernel.Communication.Grpc`'s client-side `CorrelationTracingInterceptor`/`TenantIdInterceptor` already send), declarative `[RequireRole]`/`[RequirePermission]`/`[RequireFreshAuthentication]` service-method attributes evaluated by the same `IUserContext.HasRole`/`HasPermission`/`WasAuthenticatedWith` surface `SharedKernel.Presentation.WebApi`'s equivalents already use — one authorization dialect, not two — and an inbound max-message-size default mirroring `PayloadLimitsOptions`' intent for the HTTP side.
+
+#### Why this is needed
+Source-verified: `SharedKernel.Communication.Grpc`'s entire `Interceptors/` folder is two client interceptors (`CorrelationTracingInterceptor.cs`, `TenantIdInterceptor.cs`) attached to the channel factory; there is no server-side story anywhere in the repo, and zero repo-wide matches exist for any `Result<T>`→gRPC status mapping. `11.Communication`'s charter is outbound service-to-service calling; `14.Presentation`'s is the inbound API boundary — server-side gRPC is architecturally an inbound-boundary concern on that reading, so it belongs beside `SharedKernel.Presentation.WebApi`/`.SignalR`, not folded into `SharedKernel.Communication.Grpc`. `ErrorTypeStatusCodeMap` is deliberately NOT generalized into one shared cross-protocol table: HTTP status codes and gRPC `StatusCode` are different target enums with no clean 1:1 correspondence (e.g. HTTP's 422 has no gRPC analogue; gRPC's `FAILED_PRECONDITION` covers ground HTTP splits across 409/412/422) — the generalization point is that both maps key off the same `01.Core.ErrorType` enum, which is where the shared vocabulary already lives. Duplicating the *pattern* (an `ErrorType`-keyed static map) across protocols is correct; merging the two *value* tables would force a false equivalence.
+
+#### Acceptance criteria
+- [ ] `GrpcStatusCodeMap` covers every `ErrorType` member with a status code, mirroring `ErrorTypeStatusCodeMapTests`' exhaustiveness-test shape
+- [ ] A `Result<T>` extension throws the mapped `RpcException` on failure and returns the unwrapped value on success — no service method branches on `IsSuccess` by hand
+- [ ] Server interceptor reads the same correlation-id/tenant-id metadata keys the client interceptors write (`SharedKernel.Communication.Grpc`), proven by a round-trip test
+- [ ] `[RequireRole]`/`[RequirePermission]`/`[RequireFreshAuthentication]` evaluate identically to their `SharedKernel.Presentation.WebApi` counterparts — same `IUserContext` surface, same rejection semantics
+- [ ] `SharedKernel.Presentation.Grpc` never references `04.Contracts`, mirroring `SharedKernel.Communication.Grpc`'s existing P-163 rule — protobuf messages are the wire contract, not `04.Contracts` DTOs; this is a named exception to `14.Presentation`'s otherwise-permitted `04.Contracts` reference, recorded in root `CLAUDE.md`'s Hard rules, not inferred by analogy
+- [ ] No new `13.ServiceDefaults` telemetry phase — ASP.NET Core's existing server-side instrumentation already traces the Kestrel/HTTP2 pipeline gRPC rides on; documented explicitly so a future session does not assume one is missing
+---
+
+### P-469 — Governance: Mechanically Lock the gRPC Server Error-Mapping Path
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-074
+**Domain:** 00.Governance
+**Depends on:** P-468
+
+#### What is needed
+A Roslyn analyzer forbidding a hand-constructed `new RpcException(new Status(...))`/`throw new RpcException(...)` at a gRPC service-method call site outside `SharedKernel.Presentation.Grpc` itself, mirroring the raw-`HttpClient` (P-159), inline-`ProblemDetails` (P-199), and ad hoc-logging (P-250) enforcement precedents.
+
+#### Why this is needed
+Without a mechanical lock, individual service methods will hand-roll `Status` construction the same way HTTP endpoints hand-rolled `ProblemDetails` before P-199 — inconsistent status codes and messages across the platform's gRPC surface, defeating the point of shipping a canonical mapping.
+
+#### Acceptance criteria
+- [ ] Analyzer flags `new RpcException(...)`/`new Status(...)` construction inside a project referencing `Grpc.AspNetCore` server hosting, outside `SharedKernel.Presentation.Grpc` itself
+- [ ] A real-assembly test proves the rule fires against a contrived offending sample and passes for the sanctioned `Result<T>` extension path
+- [ ] Diagnostic message points to the sanctioned `Result<T>`-to-`RpcException` extension, mirroring SK0022's remediation-message style
+---
+
+### P-470 — Testing: gRPC Server Interceptor Test Harness
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-074
+**Domain:** 16.Testing
+**Depends on:** P-468
+
+#### What is needed
+A minimal, constructible `ServerCallContext` test double (or a thin `TestServerCallContext.Create(...)` builder wrapping the real gRPC testing primitives) pre-populated with controllable inbound metadata, so a consuming service can unit-test its own interceptor composition/authorization attributes against `SharedKernel.Presentation.Grpc` without standing up a real `Grpc.AspNetCore` host.
+
+#### Why this is needed
+Every other pluggable interceptor/pipeline surface on this platform (`05.Application`'s behavior pipeline, `07.Messaging`'s consumer pipeline) has a `16.Testing`-provided harness; gRPC server interceptors would otherwise be the one surface a consuming service can only test via a real `TestServer`, which is disproportionate ceremony for asserting "this call with no `Authorization` metadata gets rejected."
+
+#### Acceptance criteria
+- [ ] References only `SharedKernel.Presentation.Grpc` (and `Grpc.Core.Api`, already a transitive necessity)
+- [ ] Supports injecting inbound metadata (correlation-id, tenant-id, authorization) and reading the resulting trailers/status after interceptor execution
+- [ ] No real network/`Grpc.AspNetCore` `TestServer` bootstrap required
+---
+
+### P-471 — ServiceDefaults: `ITenantCatalog` Contract, `TenantDescriptor`, and `ITenantStatusValidator` Reconciliation
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-075
+**Domain:** 13.ServiceDefaults
+**Depends on:** None
+
+#### What is needed
+Added to `SharedKernel.MultiTenancy` (no `.Abstractions`/`.Provider` split — this package already carries multiple resolution-strategy implementations in one package, the same single-package shape as `17.Workflows`/`19.Scheduling`): a `TenantDescriptor` record (`TenantId`, display name, `TenantStatus` — `Active`/`Suspended`/`Offboarded` — an isolation-mode marker, a `DefaultCulture` field anticipating WO-078's localization composition, and an extensible `IReadOnlyDictionary<string,string>` settings/feature bag) and an `ITenantCatalog` abstraction (`GetByIdAsync`, `GetByResolutionKeyAsync` — host/claim-value/header-value lookup, mirroring the existing `StrategyOrder` resolution shapes). `ITenantStatusValidator` (P-400/WO-061) gains a default implementation, `CatalogTenantStatusValidator`, backed by `ITenantCatalog` — the seam that shipped with no deliverable path to a real implementation now has one. Tenant provisioning/onboarding (creating a new tenant) is explicitly out of scope — this is a read/lookup contract only; a consuming service's own tenant-management surface owns writes.
+
+#### Why this is needed
+Source-verified: `ITenantStatusValidator.cs:34` and `DatabaseTenantResolutionStrategy` both assume a tenant directory exists, but nothing on the platform defines what a tenant *is* — no descriptor, no catalog, no store. The platform already carries four tenant-adjacent contracts (`ITenantProvider` resolves identity/who; `ICurrentTenantService`, a `06.Persistence`-local seam, and `ITenantCacheService`, `02.Caching.Abstractions`, both just consume a bare `TenantId` Guid and need no descriptor) — none of them own "what/status." Placement in `13.ServiceDefaults/SharedKernel.MultiTenancy` rather than a lower layer: neither `02.Caching` nor `06.Persistence` actually needs the full descriptor (both operate on a bare `TenantId`), so the "must sit low enough for those domains" premise does not hold on inspection — only `13.ServiceDefaults`'s own `ITenantStatusValidator` and consuming-service tenant-directory logic need it, and `13.ServiceDefaults` already owns tenant *resolution*; owning tenant *metadata* is the same identity, not a new one.
+
+#### Acceptance criteria
+- [ ] `TenantDescriptor` and `ITenantCatalog` added to `SharedKernel.MultiTenancy`, no new package
+- [ ] `CatalogTenantStatusValidator` implements `ITenantStatusValidator` purely in terms of `ITenantCatalog.GetByIdAsync(...).Status`
+- [ ] `ITenantProvider` (`12.Security.Abstractions`), `ICurrentTenantService` (`06.Persistence`), `ITenantCacheService` (`02.Caching.Abstractions`) are all unchanged — this phase adds a fifth contract, it does not touch the other four
+- [ ] XML docs state tenant provisioning/onboarding is out of scope; this is read-only lookup
+- [ ] `DefaultCulture` is present on `TenantDescriptor` as a forward-compatible field for WO-078; no localization logic exists in this phase
+---
+
+### P-472 — ServiceDefaults: `DatabaseTenantCatalog` and `CachedTenantCatalog`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-075
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-471
+
+#### What is needed
+The first real `ITenantCatalog` implementation, `DatabaseTenantCatalog`, reusing the same `IDbConnectionFactory`/Dapper pattern `DatabaseTenantResolutionStrategy` already established — not a second, independently-invented data-access path. A decorator, `CachedTenantCatalog`, wraps any `ITenantCatalog` with a bounded default TTL (short — mirroring `K8sServiceDiscoveryOptions.EndpointCacheTtlSeconds`'s 30s default reasoning, since a suspended tenant with an unbounded cache entry is a correctness bug, not a perf tradeoff) plus an explicit `InvalidateTenantAsync(tenantId)` a consuming service calls immediately after changing tenant status. `CachedTenantCatalog` optionally broadcasts invalidation across replicas via `02.Caching.Redis.PubSub`'s already-shipped `ICacheInvalidationBus` — a direct, compiled reference, not a bridged local seam, since `13.ServiceDefaults`'s layering ceiling already legally covers `02.Caching` (unlike `05.Application`/`07.Messaging`, which must bridge).
+
+#### Why this is needed
+P-471 ships zero I/O; this makes the catalog real against the platform's primary persistence pattern, and closes the "suspension must take effect promptly" correctness requirement the gap analysis called out — an unbounded or purely-TTL-based cache would let a suspended tenant keep operating until the TTL expires, which is unacceptable for a fintech-grade platform.
+
+#### Acceptance criteria
+- [ ] `DatabaseTenantCatalog` reuses the existing `IDbConnectionFactory` pattern; no new connection-management code
+- [ ] `CachedTenantCatalog`'s default TTL is short and documented; `InvalidateTenantAsync` bypasses the TTL immediately, proven by a test
+- [ ] Cross-instance invalidation via `ICacheInvalidationBus` is opt-in (`.WithCrossInstanceInvalidation()`), disabled by default, and never a hard `02.Caching.Redis.PubSub` package dependency for consumers who don't opt in
+- [ ] `CatalogTenantStatusValidator` (P-471) composes with `CachedTenantCatalog` with no code changes — proven by a test using the decorator directly
+---
+
+### P-473 — Testing: `InMemoryTenantCatalog` Fake
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-075
+**Domain:** 16.Testing
+**Depends on:** P-471
+
+#### What is needed
+`InMemoryTenantCatalog`, a dictionary-backed `ITenantCatalog` double letting a consuming service's test suite register tenants with a given status/descriptor and exercise `ITenantStatusValidator`/tenant-resolution flows without a real database, mirroring the `InMemoryMessageBus`/`InMemoryFileStorage` precedent.
+
+#### Why this is needed
+Every pluggable lookup seam on this platform gets a `16.Testing` double; `ITenantCatalog` is no different, and it directly unblocks testing the suspended-tenant-rejection path `ITenantStatusValidator` exists for.
+
+#### Acceptance criteria
+- [ ] References only `SharedKernel.MultiTenancy`
+- [ ] Supports seeding a tenant by id and by resolution key (host/claim/header value)
+- [ ] Supports mutating a seeded tenant's status mid-test to exercise suspension/offboarding paths
+---
+
+### P-474 — Core: `SharedKernel.DataPrivacy` — Classification Taxonomy, Masking Helpers, Data-Subject-Request Contract
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-076
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+An eighth `01.Core` package, zero third-party dependency, same single-package reasoning as `SharedKernel.Cryptography`/`.Compression`/`.Guards`: a declarative `DataClassification` (`Public`/`Internal`/`Confidential`/`Restricted`) and `SensitiveDataCategory` (`Pii`/`PaymentCard`/`Credential`/`Health`) marker attribute pair, usable on any type in any layer including `03.Domain`/`04.Contracts` (both logging-free, dependency-minimal by rule — a pure metadata attribute violates neither); a set of pure, allocation-minimal static masking functions per field kind (`PiiMasking.Email`, `.Phone`, `.Pan`, `.Suppress`) — no reflection, called explicitly by the type author, never walked automatically; and a minimal `IDataSubjectRequestHandler` contract (`ExportDataAsync(subjectId)` → a structured export bundle, `RequestErasureAsync(subjectId)` → an erasure receipt) that a consuming service implements against its own data. The classification attribute is metadata only — it is never read via reflection in a production hot path; its consumer is `00.Governance`'s new analyzer (P-476), which inspects it at compile time, and human documentation, not a runtime service.
+
+#### Why this is needed
+Zero repo-wide matches for any PII/classification contract. Root `CLAUDE.md` already states the *rule* in prose ("logging a structured payload... requires a self-supplied loggable-field surface... never a reflection-based property walk") but provides no shared vocabulary for what makes a field sensitive and no reusable masking, so every service invents its own. A source-generated or self-supplied shape is mandatory here, not optional — the platform already bans reflection-based property walks for logging and enforces adjacent rules mechanically; a classification mechanism that requires runtime reflection to be useful would contradict the very rule it exists to support. A full cross-service erasure orchestrator is explicitly out of scope — this ships the contract each service implements against its own data, not a coordinator that calls every service; that coordination is a plausible future `19.Scheduling`/`17.Workflows` composition once multiple services have real handlers to call.
+
+#### Acceptance criteria
+- [ ] `DataClassification`/`SensitiveDataCategory` attributes compile onto types in `03.Domain` and `04.Contracts` with no new dependency introduced into either
+- [ ] Masking helpers are pure functions with unit-testable, deterministic output (e.g. `Email("j.doe@example.com")` → `"j***@example.com"`); no reflection anywhere in this package
+- [ ] `IDataSubjectRequestHandler` has no default/reflection-based implementation — a consuming service must supply one
+- [ ] XML docs cross-reference `06.Persistence`'s audit trail (P-456/WO-071): before/after snapshots passed to `IAuditTrailWriter.RecordAsync` are opaque and caller-serialized, so a caller handling classified fields should mask via this package before serializing — documented guidance, not a new dependency from `06.Persistence` onto this package
+- [ ] Cross-service erasure orchestration is explicitly documented as out of scope
+---
+
+### P-475 — Testing: Fakes for `SharedKernel.DataPrivacy`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-076
+**Domain:** 16.Testing
+**Depends on:** P-474
+
+#### What is needed
+A `RecordingDataSubjectRequestHandler` fake recording every export/erasure call for assertion, plus masking-assertion helpers (`ShouldBeMasked(value)`-shaped) that a consuming service's own tests can use to prove a logging/audit surface applied masking correctly.
+
+#### Why this is needed
+Same rationale as every other `16.Testing` double — a consuming service must be able to prove "we masked this field" and "we recorded this erasure request" without real subject data or a real downstream system in CI.
+
+#### Acceptance criteria
+- [ ] References only `SharedKernel.DataPrivacy`
+- [ ] `RecordingDataSubjectRequestHandler` supports both success and failure outcomes per request
+- [ ] Masking-assertion helpers cover all shipped masking functions (Email/Phone/Pan/Suppress)
+---
+
+### P-476 — Governance: Flag an Unmasked Classified Member at a Logging Call Site
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-076
+**Domain:** 00.Governance
+**Depends on:** P-474
+
+#### What is needed
+A Roslyn analyzer cross-referencing `SharedKernel.DataPrivacy`'s `[DataClassification(Restricted)]`/`[SensitiveDataCategory(Pii, ...)]` attribute on a referenced member against every `[LoggerMessage]` message-template argument and every `{@Object}`-shaped destructuring call site (the same call-site shapes SK0022 already recognizes), flagging a direct, unmasked pass-through.
+
+#### Why this is needed
+This is the one PII-related invariant that is genuinely, mechanically Roslyn-detectable (a static attribute cross-referenced against a static call-site shape) — the platform's own convention (declining unenforceable rules rather than shipping weak ones, per WO-054's/WO-070-073's precedent) means most of the data-privacy story stays a convention, but this one piece earns real enforcement.
+
+#### Acceptance criteria
+- [ ] Analyzer flags a classified member reaching a `[LoggerMessage]` placeholder or `{@Object}` destructuring without passing through a `PiiMasking.*` call first
+- [ ] A real-assembly test proves the rule fires against a contrived offending sample and passes when the value is masked first
+- [ ] Diagnostic message names the sanctioned `PiiMasking.*` helper, mirroring SK0022's remediation-message style
+---
+
+### P-477 — Reporting: `SharedKernel.Reporting.Abstractions` — Streaming, Provider-Neutral Export Contract
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-077
+**Domain:** 20.Reporting
+**Depends on:** None
+
+#### What is needed
+A new capability domain, `20.Reporting` (this session's third new numbered domain, after `18.Idempotency`/`19.Scheduling`), holding `SharedKernel.Reporting.Abstractions`: an `IReportExporter<TRow>` contract accepting an `IAsyncEnumerable<TRow>` row source (composing with, never duplicating, `06.Persistence`'s already-shipped `IAsyncEnumerable` streaming reads and `KeysetSpecification<T,TKey>` cursor pagination — the caller supplies the stream, this package never touches persistence directly), a column/field-definition model (name, ordinal, a per-column formatter accepting a `CultureInfo` — no dependency on any localization package; formatting numbers/dates/currency by `CultureInfo` is a BCL capability, not a translation concern), and a delivery-composition path writing through `08.Storage.Abstractions.IFileStorage` with a presigned URL returned via `IBlobUriGenerator` — never buffering a full synthesized file back through an HTTP response. `20.Reporting` may reference `01.Core` and `08.Storage.Abstractions` only; it needs no `12.Security`/`13.ServiceDefaults` readiness-probe grant — unlike `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows`/`19.Scheduling`, this domain holds no persistent connection to be "ready" or "not ready," the same stateless-library class as `01.Core.Compression`/`.Cryptography`.
+
+#### Why this is needed
+No CSV/Excel/PDF capability exists and `Directory.Packages.props` pins nothing for any of them, so every service currently either materializes a full result set into memory (the failure mode that matters for statement generation/regulatory reporting at scale) or hand-rolls its own. This is a genuinely new, standalone capability domain rather than a sibling under an existing one — it is not persistence (distinct engineering surface: column/field definitions, format encoding), not storage (generic blob I/O, unrelated to structured tabular generation), and not integration (delivery to a controlled internal destination via presigned URL, not outbound delivery to a third-party endpoint outside our control). Long-running exports composing with `19.Scheduling`/`17.Workflows` need no layering grant in either direction: the composition happens entirely inside a consuming service's own job body/activity, which can reference any package regardless of number — the platform's downward-only numbering constrains *SharedKernel packages referencing each other*, not consumer code referencing multiple SharedKernel packages.
+
+#### Acceptance criteria
+- [ ] `IReportExporter<TRow>` accepts `IAsyncEnumerable<TRow>` — no overload materializing a full `IEnumerable<TRow>`/`List<TRow>` exists on the primary contract
+- [ ] Delivery composes with `IFileStorage`/`IBlobUriGenerator`; no code path returns a fully-buffered byte array as the sole option
+- [ ] Column formatting accepts `CultureInfo`; this package takes no dependency on `SharedKernel.Localization` (WO-078) or any translation catalog
+- [ ] XML docs explicitly rule tenant provisioning/data-classification/scheduling out of scope for this package, cross-referencing where each lives (`13.ServiceDefaults`/`01.Core.DataPrivacy`/`19.Scheduling`)
+- [ ] No `13.ServiceDefaults` readiness-probe phase is queued for this domain; rationale recorded so a future session does not assume one is missing
+---
+
+### P-478 — Reporting: `SharedKernel.Reporting.Csv`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-077
+**Domain:** 20.Reporting
+**Depends on:** P-477
+
+#### What is needed
+The dependency-free provider: a streaming, RFC 4180-compliant CSV writer implementing `IReportExporter<TRow>` — hand-rolled, no third-party CSV library, mirroring `SharedKernel.Cryptography`/`.Compression`'s zero-dependency reasoning for the one format simple enough to justify it.
+
+#### Why this is needed
+CSV is the dependency-free baseline every consuming service can use with zero new licensing/dependency surface, and proves the streaming contract end-to-end before the two provider packages that do carry a third-party dependency.
+
+#### Acceptance criteria
+- [ ] Correctly escapes embedded delimiters/quotes/newlines per RFC 4180
+- [ ] Constant, bounded memory usage proven by a test streaming a row count large enough to fail an accidental full-materialization regression
+- [ ] Zero third-party `PackageReference`
+---
+
+### P-479 — Reporting: `SharedKernel.Reporting.Spreadsheet`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-077
+**Domain:** 20.Reporting
+**Depends on:** P-477
+
+#### What is needed
+An `.xlsx` provider implementing `IReportExporter<TRow>` via **ClosedXML (MIT-licensed)** — chosen deliberately over EPPlus (PolyForm Noncommercial for this platform's for-profit, multi-team usage — unacceptable) and over raw `DocumentFormat.OpenXml` (correct license but materially lower-level/more implementation risk for equivalent value). Licensing is ruled on explicitly here, not left to the domain planner, because this platform ships to "hundreds of services across multiple teams" of unknown individual revenue — any revenue-gated or copyleft license is a platform-wide liability, not a per-service judgment call.
+
+#### Why this is needed
+Spreadsheet export (statements, regulatory extracts) is the second most common export shape after CSV; ClosedXML is the only evaluated option combining an unconditional commercial-use-safe license with a maintained, ergonomic API.
+
+#### Acceptance criteria
+- [ ] Implements `IReportExporter<TRow>` for `.xlsx`; streams rows rather than building the entire workbook in memory before writing where ClosedXML's API allows it, with any unavoidable buffering constraint documented in capitals
+- [ ] `PackageReference` is ClosedXML only; license (MIT) recorded in this package's own `README.md`
+---
+
+### P-480 — Reporting: `SharedKernel.Reporting.Pdf`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-077
+**Domain:** 20.Reporting
+**Depends on:** P-477
+
+#### What is needed
+A PDF provider implementing `IReportExporter<TRow>` via **PdfSharp + MigraDoc (both MIT-licensed, unconditionally)** — chosen deliberately over QuestPDF (Community license free only under $1M annual gross revenue, Professional/Enterprise paid above that — a revenue gate this platform cannot assume every consuming company clears) and over iText7 (AGPL/commercial dual license — copyleft). This phase is explicitly scoped to simple tabular/statement-style report layouts, the class of document MigraDoc's document-object model handles well; complex desktop-publishing-grade layout is out of scope and documented as such rather than silently attempted with an underpowered tool.
+
+#### Why this is needed
+PDF is a near-universal requirement for regulatory statements/receipts in this platform's target vertical. The licensing constraint the user flagged is real and load-bearing: QuestPDF and iText7, the two most ergonomic options, are both unsuitable for unconditional platform-wide shipping, so PdfSharp/MigraDoc is accepted as the correct tradeoff — less polished output for genuinely free, unconditional commercial use.
+
+#### Acceptance criteria
+- [ ] Implements `IReportExporter<TRow>` for simple tabular/statement layouts only; XML docs state the scope boundary in capitals and name QuestPDF/iText7 as declined options with the licensing reason
+- [ ] `PackageReference` is PdfSharp + MigraDoc only; licenses (both MIT) recorded in this package's own `README.md`
+- [ ] A test proves output renders a multi-page table (page-break handling), the case most likely to silently break with a lower-level PDF library
+---
+
+### P-481 — Testing: In-Memory `IReportExporter<TRow>` Fake
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-077
+**Domain:** 16.Testing
+**Depends on:** P-477
+
+#### What is needed
+`InMemoryReportExporter<TRow>`, capturing the rows it was asked to export (materialized only inside the test double, never implying the real providers should) plus the delivery call made against `IFileStorage`/`IBlobUriGenerator`, with `ShouldHaveExported<TRow>()`-shaped assertion helpers.
+
+#### Why this is needed
+Same rationale as every other `16.Testing` double — a consuming service must be able to assert "we generated and delivered this export" without a real CSV/spreadsheet/PDF library or real object storage in CI.
+
+#### Acceptance criteria
+- [ ] References only `SharedKernel.Reporting.Abstractions`
+- [ ] Captures the row source and the resulting storage delivery reference for assertion
+- [ ] No dependency on any of `.Csv`/`.Spreadsheet`/`.Pdf`
+---
+
+### P-482 — Core: `SharedKernel.Localization` — Culture-Keyed Message Catalog Contract
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-078
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A ninth `01.Core` package wrapping the BCL-standard `Microsoft.Extensions.Localization.Abstractions` (`IStringLocalizer`/`IStringLocalizerFactory`) behind a thin `ILocalizationCatalog` seam (`TryGetString(code, culture, out value)`) keyed on the same `code` string `01.Core.Primitives.Error`'s factories already require on every call — never inventing a bespoke resource-storage/resx pipeline when a first-party, AOT-tolerant one already exists. A default in-memory/dictionary-backed catalog implementation ships for services that don't need full resx tooling; resx-file-backed usage composes with the wrapped `IStringLocalizerFactory` directly.
+
+#### Why this is needed
+Zero repo-wide matches for `IStringLocalizer`/`CultureInfo`-based resource lookup. **The load-bearing design decision, ratified as proposed:** `Error` (`01.Core.Primitives`) already carries a `code` alongside `message` — the natural localization key — so localization happens entirely at the `14.Presentation` boundary (P-484) by looking up `error.Code`, **without any change to `Error` itself**. This avoids a breaking change to the platform's single most-depended-upon type, which sits beneath every other package including the logging-free `03.Domain`/`04.Contracts`. The message baked in at the throw site becomes the fallback when no translation is registered or found — never a blank string — matching the platform's established opt-in convention (an un-translated error today behaves identically to an un-translated error after this ships).
+
+#### Acceptance criteria
+- [ ] `ILocalizationCatalog` keyed by `(code, CultureInfo)`; unregistered/untranslated lookups return "not found," never throw and never a blank string
+- [ ] `01.Core.Primitives.Error` is unchanged — no new property, no breaking change
+- [ ] Default in-memory catalog ships; resx-backed usage documented as a direct `IStringLocalizerFactory` composition, not a second bespoke pipeline
+- [ ] XML docs state the fallback contract in capitals: "AN UNTRANSLATED ERROR MESSAGE FALLS BACK TO THE ORIGINAL THROW-SITE STRING, IT IS NEVER BLANK"
+---
+
+### P-483 — ServiceDefaults: `AddSharedKernelLocalization()` — Precedence-Ordered Culture Resolution
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-078
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-482, P-471
+
+#### What is needed
+A composition-root entry point wrapping ASP.NET Core's own `RequestLocalizationMiddleware` with a `StrategyOrder`-shaped precedence list mirroring `TenantResolutionOptions.StrategyOrder`'s exact pattern: authenticated user's explicit preference claim (via `12.Security.Abstractions.IUserContext`) → tenant default culture (via P-471's `ITenantCatalog.GetByIdAsync(...).DefaultCulture`, optional — skipped cleanly if no catalog is registered) → `Accept-Language` header, in that order. The precedence is deliberately signed-signal-before-unsigned-header, citing WO-061's corrected `[Claim, Header, Database]` tenant-resolution order explicitly in the XML docs so this does not repeat that mistake: an authenticated user's own stored preference must outrank a browser's `Accept-Language` default the same way a signed JWT tenant claim outranks an unsigned `X-Tenant-Id` header.
+
+#### Why this is needed
+Every consuming service currently either hardcodes a culture or reinvents this precedence question independently; the platform already has one gold-standard precedent (`StrategyOrder`) for exactly this shape of "which of several signals wins," and reusing it here keeps the two resolution stories (tenant, culture) legible to the same mental model.
+
+#### Acceptance criteria
+- [ ] `StrategyOrder` default is `[UserPreference, TenantDefault, AcceptLanguageHeader]`; XML docs cite WO-061's claim-before-header lesson explicitly
+- [ ] Tenant-default-culture step degrades cleanly (skips, does not throw) when no `ITenantCatalog` is registered
+- [ ] Wraps, does not reimplement, `RequestLocalizationMiddleware`
+- [ ] A startup-time `Warning` log fires if no strategy in the configured order can ever resolve a culture (e.g. `ITenantCatalog` never registered and `UserPreference` claim type never configured), mirroring the platform's existing "misconfiguration surfaces at startup, not silently" convention
+---
+
+### P-484 — Presentation: Localized `Error.ToProblemDetails()`
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-078
+**Domain:** 14.Presentation
+**Depends on:** P-482
+
+#### What is needed
+`Error.ToProblemDetails()`/`ErrorProblemDetailsExtensions` (and the multi-field validation path, P-402/WO-062) gain an optional localization step: when an `ILocalizationCatalog` is registered, look up `error.Code` against `CultureInfo.CurrentUICulture` (set by P-483's middleware when adopted) and use the translated string as `ProblemDetails.Detail`, falling back to `error.Message` verbatim when no catalog is registered or no translation exists for that code/culture. A service that does not opt into `SharedKernel.Localization` behaves identically to today.
+
+#### Why this is needed
+This is the one piece that makes P-482's ratified design real: `Error.Code` becomes an actual translation key at the one place errors cross into a client-facing response, with zero change to `01.Core.Primitives.Error` and zero behavior change for services that don't opt in — the platform's established opt-in convention applied to its most fundamental type without touching it.
+
+#### Acceptance criteria
+- [ ] Localization step is skipped entirely (identical output to today) when no `ILocalizationCatalog` is registered — proven by a test with zero DI registration
+- [ ] Falls back to `error.Message` when a catalog is registered but has no entry for `(error.Code, CurrentUICulture)` — never blank
+- [ ] Applies to both the single-`Error` path and the multi-field validation path (P-402)
+- [ ] Still routes exclusively through `Error.ToProblemDetails()`/`ResultHttpExtensions` — no new inline `ProblemDetails` construction path introduced
+---
+
+### P-485 — Testing: `ILocalizationCatalog` Fake and Culture-Context Test Helper
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-078
+**Domain:** 16.Testing
+**Depends on:** P-482
+
+#### What is needed
+An `InMemoryLocalizationCatalog` fake (seed a `(code, culture) → string` map directly, no resx files) plus a small helper for scoping `CultureInfo.CurrentUICulture` for the duration of a test, so a consuming service can assert a `ProblemDetails` response localizes correctly without real resource files or a real HTTP culture-resolution pipeline.
+
+#### Why this is needed
+Same rationale as every other `16.Testing` double — proving P-484's fallback and translated paths in a consuming service's own tests should not require standing up real resx resources.
+
+#### Acceptance criteria
+- [ ] References only `SharedKernel.Localization`
+- [ ] Culture-context helper restores the ambient culture after the test, even on failure/exception (proven by a test)
+- [ ] Covers both the "translation found" and "falls back to original message" cases
+---
+
+### P-486 — Governance: Endorse Mapperly, Forbid Reflection-Based Object Mapping
+
+**Status:** `◐` Dispatched
+**Work Order:** WO-079
+**Domain:** 00.Governance
+**Depends on:** None
+
+#### What is needed
+**No new package.** A Roslyn analyzer detecting reflection-based mapping-library usage in production code — AutoMapper's `Profile` base class, `IMapperConfigurationExpression`, and `.AddAutoMapper(...)` DI registration calls; Mapster's runtime (non-source-generated) adapter calls — flagged platform-wide, mirroring the raw-`HttpClient`/inline-`ProblemDetails`/ad hoc-logging enforcement precedents. A new "What Goes Where" row in root `CLAUDE.md` records the standing guidance: entity↔DTO/domain↔read-model mapping should use either hand-written mapping code or **Mapperly** (`[Mapper]` partial class, Riok.Mapperly — compile-time source-generated, zero runtime reflection, AOT-clean) colocated in whichever package/service owns the mapping direction; the kernel deliberately never wraps a mapper behind its own interface/abstraction.
+
+#### Why this is needed
+**Real verdict, not a courtesy accept — this is a redirect, not a straight ACCEPT.** The proposal-as-posed ("should the kernel ship a mapping capability") is declined: wrapping Mapperly — a compile-time source generator — behind a kernel-owned runtime interface would defeat the entire reason to choose it over AutoMapper, and hand-written mapping is explicit, debuggable, AOT-safe, and adds no dependency, consistent with this platform's demonstrated preference (`SharedKernel.Cryptography`/`.Compression` are both zero-third-party-dependency by deliberate choice) and its AOT-preferring charter. What genuinely is a shared-kernel concern is the platform-wide **prohibition** on reflection-based mapping, which is real, cross-cutting, and mechanically enforceable — the same shape as every other "convention, not package" decision this platform has already made (e.g. WO-034's declined `SharedKernel.Cryptography` abstraction split). DECLINE-with-recorded-guidance was seriously considered and was a fully acceptable outcome per the brief; UPGRADE is chosen instead because there is a genuine, shippable, narrowly-scoped deliverable (the analyzer) where a bare DECLINE would leave the platform-wide reflection-mapper risk unenforced.
+
+#### Acceptance criteria
+- [ ] Analyzer flags an AutoMapper `Profile` subclass, `IMapperConfigurationExpression` usage, or `.AddAutoMapper(...)` call anywhere in a production project
+- [ ] Analyzer flags Mapster's runtime/reflection adapter API (not its source-generated mode, if distinguishable) — documented if the two cannot be reliably distinguished syntactically, narrowing scope to AutoMapper-only rather than shipping a rule with false positives
+- [ ] A real-assembly test proves the rule fires against a contrived offending sample
+- [ ] Diagnostic message names Mapperly and hand-written mapping as the sanctioned alternatives
+- [ ] No new `SharedKernel.Mapping`/`.Mapper` package exists anywhere in this repo as a result of this phase
+---
 
 ### Closed phase index
 
@@ -1546,3 +2537,16 @@ Rules:
 - [2026-08-24] Phase Backlog P-431, P-438 → ● Complete — every 16.Testing phase key is now ●/— (state-map-phase)
 - [2026-08-24] Caching → Published (●) — promoted from SK.02.RedisTransportHardening (10/10); every `02.Caching` phase key is now ●, closing WO-065 end to end (state-map-phase)
 - [2026-08-24] Phase Backlog P-436 → ● Complete — SK.02.RedisTransportHardening done (state-map-phase)
+- [2026-08-26] Phase(s) P-439 dispatched to domain-arch-planner for 03.Domain (dispatch-phase)
+- [2026-08-26] Phase(s) P-443, P-444, P-446, P-447, P-451, P-474, P-482 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-08-26] Phase(s) P-454, P-455 dispatched to idempotency-arch-planner for 18.Idempotency (dispatch-phase)
+- [2026-08-26] Phase(s) P-464 dispatched to scheduling-arch-planner for 19.Scheduling (dispatch-phase)
+- [2026-08-26] Phase(s) P-477, P-478, P-479, P-480 dispatched to reporting-arch-planner for 20.Reporting (dispatch-phase)
+- [2026-08-26] Phase(s) P-460, P-461, P-462 dispatched to integration-arch-planner for 15.Integration (dispatch-phase)
+- [2026-08-26] Phase(s) P-440, P-448, P-456, P-457 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-08-26] Phase(s) P-458 dispatched to application-arch-planner for 05.Application (dispatch-phase)
+- [2026-08-26] Phase(s) P-452 dispatched to security-arch-planner for 12.Security (dispatch-phase)
+- [2026-08-26] Phase(s) P-468, P-484 dispatched to presentation-arch-planner for 14.Presentation (dispatch-phase)
+- [2026-08-26] Phase(s) P-449, P-465, P-466, P-471, P-472, P-483 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-08-26] Phase(s) P-442, P-469, P-476, P-486 dispatched to governance-arch-planner for 00.Governance (dispatch-phase)
+- [2026-08-26] Phase(s) P-441, P-445, P-450, P-453, P-459, P-463, P-467, P-470, P-473, P-475, P-481, P-485 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
