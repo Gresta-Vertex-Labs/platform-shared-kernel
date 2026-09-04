@@ -248,7 +248,7 @@ A currency-aware value object with no first-party EF Core mapping story forces e
 ---
 ### P-441 — Testing: `Money` Faker/Builder and Assertion Helpers
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-066
 **Domain:** 16.Testing
 **Depends on:** P-439
@@ -268,7 +268,7 @@ Every other domain primitive shipped by `03.Domain` has a `16.Testing` faker cou
 ---
 ### P-442 — Governance: Advisory Rule Against Hand-Rolled Amount+Currency Pairs
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-066
 **Domain:** 00.Governance
 **Depends on:** P-439
@@ -331,7 +331,7 @@ Keeping the FluentValidation dependency out of `SharedKernel.Validation` itself 
 ---
 ### P-445 — Testing: Valid/Invalid Sample Generators for Format Validators
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-067
 **Domain:** 16.Testing
 **Depends on:** P-443
@@ -428,9 +428,9 @@ A new registration helper distinct from the existing `AddSharedKernelKeyVaultCon
 Every other infrastructure-provider capability this platform has shipped gets its readiness surfaced at the composition root; a KMS-backed encryption-key provider that silently fails is at least as operationally dangerous as a database or cache that does, since its failure mode is "every encrypt/decrypt call starts failing," not a slow degradation.
 
 #### Acceptance criteria
-- [ ] A distinctly-named registration helper from the existing Key Vault configuration-source helper, to avoid the two being confused
-- [ ] Readiness probe wired into `AddHealthChecks()`, following the existing probe-primitive split (provider exposes, `13.ServiceDefaults` wires)
-- [ ] `13.ServiceDefaults/CLAUDE.md` cross-references and explicitly distinguishes this from P-398's configuration-source helper
+- [x] A distinctly-named registration helper from the existing Key Vault configuration-source helper, to avoid the two being confused — `AddSharedKernelKeyVaultKeyProvider(IHostApplicationBuilder)` shipped 2026-09-04
+- [ ] Readiness probe wired into `AddHealthChecks()`, following the existing probe-primitive split (provider exposes, `13.ServiceDefaults` wires) — **BLOCKED, and not by this domain.** The split requires the provider to expose the probe; `01.Core/SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider` ships no `ProbeAsync`-shaped member at all (verified on disk 2026-09-04: its only public members are `GetCurrentKeyAsync`/`GetKeyAsync`/`GenerateDataKeyAsync`/`UnwrapDataKeyAsync`). P-447 shipped without the probe primitive every other probe-exposing domain provides, so there is nothing for `13.ServiceDefaults` to wire. Closing this needs a NEW `01.Core` phase adding that primitive — `arch-lead`/`core-arch-planner` work, not a phase-implementer's to invent
+- [x] `13.ServiceDefaults/CLAUDE.md` cross-references and explicitly distinguishes this from P-398's configuration-source helper
 ---
 
 ---
@@ -480,7 +480,7 @@ A repo-wide grep finds zero matches for TOTP/HOTP/one-time-password anywhere in 
 ---
 ### P-452 — Security: `SharedKernel.Security.Totp` — ASP.NET Core Enrollment, Challenge, and Step-Up Wiring
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-069
 **Domain:** 12.Security
 **Depends on:** P-451
@@ -501,7 +501,7 @@ This is the half of the capability that is genuinely identity-stack-shaped — i
 ---
 ### P-453 — Testing: Fakes for TOTP/HOTP Generation and the Replay Guard
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-069
 **Domain:** 16.Testing
 **Depends on:** P-451, P-452
@@ -520,7 +520,7 @@ Every other pluggable seam this platform has shipped (idempotency stores, tenant
 
 ### P-454 — Idempotency: `SharedKernel.Idempotency.Redis` — Atomic Redis-Backed Key/Response/Message Stores
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-070
 **Domain:** 18.Idempotency
 **Depends on:** None
@@ -542,7 +542,7 @@ Three idempotency contracts are declared platform-wide and zero shippable implem
 
 ### P-455 — Idempotency: `SharedKernel.Idempotency.EfCore` — Atomic PostgreSQL-Backed Key/Response/Message Stores
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-070
 **Domain:** 18.Idempotency
 **Depends on:** None
@@ -607,7 +607,7 @@ P-456 defines the shape; this phase makes it real for the platform's primary per
 
 ### P-458 — Application: Opt-In `AuditingBehavior<TRequest,TResponse>` and Local Audit-Writer Seam
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-071
 **Domain:** 05.Application
 **Depends on:** P-456
@@ -628,7 +628,7 @@ Automatic, hidden audit writing off the existing `AuditInterceptor` was consider
 
 ### P-459 — Testing: Fakes for the Audit Trail Contracts
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-071
 **Domain:** 16.Testing
 **Depends on:** P-457, P-458
@@ -712,7 +712,7 @@ Sibling to P-461 — SMS is the second channel explicitly in scope (one-time pas
 
 ### P-463 — Testing: In-Process Fakes for Notifications
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-072
 **Domain:** 16.Testing
 **Depends on:** P-460
@@ -731,7 +731,7 @@ Same rationale as every other `16.Testing` double on this platform — a consumi
 
 ### P-464 — Scheduling: `SharedKernel.Scheduling` — Cron/Recurring/Deferred Job Dispatch
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-073
 **Domain:** 19.Scheduling
 **Depends on:** None
@@ -758,7 +758,7 @@ A single package (no `.Abstractions` split — exactly one provider ships today,
 
 ### P-465 — ServiceDefaults: `WithSchedulingTelemetry` OTel Entry Point
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-073
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-464
@@ -777,7 +777,7 @@ Mirrors `WithIntegrationTelemetry`/`WithWorkflowTelemetry`'s exact shape: `AddSo
 
 ### P-466 — ServiceDefaults: `AddSchedulerReadinessCheck` (New Named Layering Grant for 19.Scheduling)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-073
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-464
@@ -796,7 +796,7 @@ Mirrors `WithIntegrationTelemetry`/`WithWorkflowTelemetry`'s exact shape: `AddSo
 
 ### P-467 — Testing: In-Process Fake for `IScheduledJobRegistry`
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-073
 **Domain:** 16.Testing
 **Depends on:** P-464
@@ -815,7 +815,7 @@ A scheduled job that fires on a real wall-clock cron cannot be tested determinis
 
 ### P-468 — Presentation: `SharedKernel.Presentation.Grpc` — Server-Side Exception/`Result<T>` Mapping and Inbound Correlation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-074
 **Domain:** 14.Presentation
 **Depends on:** None
@@ -837,7 +837,7 @@ Source-verified: `SharedKernel.Communication.Grpc`'s entire `Interceptors/` fold
 
 ### P-469 — Governance: Mechanically Lock the gRPC Server Error-Mapping Path
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-074
 **Domain:** 00.Governance
 **Depends on:** P-468
@@ -856,7 +856,7 @@ Without a mechanical lock, individual service methods will hand-roll `Status` co
 
 ### P-470 — Testing: gRPC Server Interceptor Test Harness
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-074
 **Domain:** 16.Testing
 **Depends on:** P-468
@@ -875,7 +875,7 @@ Every other pluggable interceptor/pipeline surface on this platform (`05.Applica
 
 ### P-471 — ServiceDefaults: `ITenantCatalog` Contract, `TenantDescriptor`, and `ITenantStatusValidator` Reconciliation
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-075
 **Domain:** 13.ServiceDefaults
 **Depends on:** None
@@ -896,7 +896,7 @@ Source-verified: `ITenantStatusValidator.cs:34` and `DatabaseTenantResolutionStr
 
 ### P-472 — ServiceDefaults: `DatabaseTenantCatalog` and `CachedTenantCatalog`
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-075
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-471
@@ -916,7 +916,7 @@ P-471 ships zero I/O; this makes the catalog real against the platform's primary
 
 ### P-473 — Testing: `InMemoryTenantCatalog` Fake
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-075
 **Domain:** 16.Testing
 **Depends on:** P-471
@@ -956,7 +956,7 @@ Zero repo-wide matches for any PII/classification contract. Root `CLAUDE.md` alr
 
 ### P-475 — Testing: Fakes for `SharedKernel.DataPrivacy`
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-076
 **Domain:** 16.Testing
 **Depends on:** P-474
@@ -975,7 +975,7 @@ Same rationale as every other `16.Testing` double — a consuming service must b
 
 ### P-476 — Governance: Flag an Unmasked Classified Member at a Logging Call Site
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-076
 **Domain:** 00.Governance
 **Depends on:** P-474
@@ -994,7 +994,7 @@ This is the one PII-related invariant that is genuinely, mechanically Roslyn-det
 
 ### P-477 — Reporting: `SharedKernel.Reporting.Abstractions` — Streaming, Provider-Neutral Export Contract
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-077
 **Domain:** 20.Reporting
 **Depends on:** None
@@ -1015,7 +1015,7 @@ No CSV/Excel/PDF capability exists and `Directory.Packages.props` pins nothing f
 
 ### P-478 — Reporting: `SharedKernel.Reporting.Csv`
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-077
 **Domain:** 20.Reporting
 **Depends on:** P-477
@@ -1034,7 +1034,7 @@ CSV is the dependency-free baseline every consuming service can use with zero ne
 
 ### P-479 — Reporting: `SharedKernel.Reporting.Spreadsheet`
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-077
 **Domain:** 20.Reporting
 **Depends on:** P-477
@@ -1052,7 +1052,7 @@ Spreadsheet export (statements, regulatory extracts) is the second most common e
 
 ### P-480 — Reporting: `SharedKernel.Reporting.Pdf`
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-077
 **Domain:** 20.Reporting
 **Depends on:** P-477
@@ -1071,7 +1071,7 @@ PDF is a near-universal requirement for regulatory statements/receipts in this p
 
 ### P-481 — Testing: In-Memory `IReportExporter<TRow>` Fake
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-077
 **Domain:** 16.Testing
 **Depends on:** P-477
@@ -1110,7 +1110,7 @@ Zero repo-wide matches for `IStringLocalizer`/`CultureInfo`-based resource looku
 
 ### P-483 — ServiceDefaults: `AddSharedKernelLocalization()` — Precedence-Ordered Culture Resolution
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-078
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-482, P-471
@@ -1130,7 +1130,7 @@ Every consuming service currently either hardcodes a culture or reinvents this p
 
 ### P-484 — Presentation: Localized `Error.ToProblemDetails()`
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-078
 **Domain:** 14.Presentation
 **Depends on:** P-482
@@ -1150,7 +1150,7 @@ This is the one piece that makes P-482's ratified design real: `Error.Code` beco
 
 ### P-485 — Testing: `ILocalizationCatalog` Fake and Culture-Context Test Helper
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-078
 **Domain:** 16.Testing
 **Depends on:** P-482
@@ -1169,7 +1169,7 @@ Same rationale as every other `16.Testing` double — proving P-484's fallback a
 
 ### P-486 — Governance: Endorse Mapperly, Forbid Reflection-Based Object Mapping
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-079
 **Domain:** 00.Governance
 **Depends on:** None
@@ -2581,3 +2581,5 @@ Same rationale as every other `16.Testing` double — proving P-484's fallback a
 - [2026-09-03] 15.Integration → Published (`●`) — promoted from SK.15.WO072: WO072Notifications (N-01–N-26) implemented and shipped end to end — three new packages (`SharedKernel.Integration.Notifications.Abstractions`/`.Email.SendGrid`/`.Sms.Twilio`) delivering human-facing email/SMS, `SharedKernel.Integration.Webhooks` unchanged; 35 new tests (144/144 domain-wide, zero regressions); `dotnet pack` clean for all three (state-map-phase)
 - [2026-09-03] Phase Backlog P-460, P-461, P-462 → ● Complete — SK.15.WO072 done; also closed an unowned build breakage (async `IEncryptionKeyProvider` migration cascading from P-446) in `SharedKernel.Integration.Webhooks.Tests`, tracked domain-locally as `SK.15.CryptoAsyncMigration` since no root Phase Backlog entry was ever dispatched for it (state-map-phase)
 - [2026-09-04] Phase Backlog P-450 → `●` Complete — closed the last unmet criterion (3: every existing consumer of the old fake still green). P-446's breaking sync-to-async `IEncryptionKeyProvider` migration had left four stale synchronous test-local fakes behind, breaking the solution build with 8 CS0535 errors: `02.Caching.FusionCache.Tests`' `InMemoryEncryptionKeyProvider`, `17.Workflows.Temporal.Tests`' `FakeEncryptionKeyProvider` (x2 — Codec + RealEnvironment), and `00.Governance.ArchitectureTests.Tests`' `FixtureEncryptionKeyProvider`. All four migrated mechanically to `GetCurrentKeyAsync`/`GetKeyAsync` returning already-completed `ValueTask`s, matching `01.Core`'s own `InMemoryEncryptionKeyProvider` reference shape — no behavioral change, no production code touched. Verified: full-solution build 0 errors; `00.Governance.ArchitectureTests.Tests` 241/241 (required baseline, unchanged), `06.Persistence.EfCore.Tests` 415/415, `17.Workflows.Temporal.Tests` 158/158, `15.Integration.Webhooks.Tests` 109/109, `02.Caching.FusionCache.Tests` encryption-serializer 16/16, `01.Core` Cryptography 235/235 + Validation 129/129 + DataPrivacy 56/56 + Localization 43/43, `03.Domain` 423/423. Also widened `global.json`'s `rollForward` `latestPatch` → `latestFeature` — the 10.0.3xx-band pin could not resolve against a 10.0.400-only machine, blocking every build locally (dev-environment fix, no behavioral effect on CI's pinned runner)
+- [2026-09-04] Phase Backlog P-441/442/445/452/453/454/455/458/459/463/464/465/466/467/468/469/470/471/472/473/475/476/477/478/479/480/481/483/484/485/486 → COMPLETE — 31 of the 32 phases dispatched in the 2026-08-26 batch, implemented across nine domain implementers in one coordinated pass. Three new domains went from docs-only to shipped: `18.Idempotency` (Redis + EF Core stores for all three pre-existing idempotency contracts, no fourth vocabulary), `19.Scheduling` (`SharedKernel.Scheduling`), `20.Reporting` (`.Abstractions` + `.Csv`/`.Spreadsheet`/`.Pdf`). Two new sibling packages: `SharedKernel.Security.Totp`, `SharedKernel.Presentation.Grpc`. `Platform.SharedKernel.slnx` 129 → 149 projects; full-solution build 0 errors. FOUR GENUINE DEFECTS were found and fixed against the ratified designs rather than implemented as written: (1) `19.Scheduling`'s per-tick job-name-keyed lock allowed cross-replica duplicate firing — a second replica evaluating the same due occurrence slightly later re-acquires the released lock; now keyed per occurrence and held to TTL; (2) `18.Idempotency`'s EF Core reclaim did not clear `response`, letting a stale response resurface after a key was reclaimed; (3) `00.Governance`'s P-476 spec assumed `SharedKernel.DataPrivacy` types sat one namespace level shallower than they ship, which would have produced an analyzer that never fires; (4) `05.Application`'s `AuditingBehavior` had to register AFTER `TransactionBehavior`, not before — MediatR makes the first-registered behavior outermost, so the canonical step numbering does not translate to DI order. A FIFTH, PRE-EXISTING defect was found in already-shipped WO-036 code and deliberately left unfixed as out of scope: `CacheInvalidationBehavior` evicts before `IUnitOfWork.SaveChangesAsync` commits, contradicting its own documented "evicts only after a confirmed commit" invariant — flagged in `05.Application/CLAUDE.md`, needs its own work order. Two structural gaps closed beyond the specs: `SharedKernel.Presentation.Grpc` reaches `04.Contracts` transitively through its deliberate `.WebApi` reference, so `PresentationLayeringRules.GrpcNeverReferencesContracts` now enforces the hard rule mechanically (NetArchTest inspects real type dependencies, not the assembly-reference list, so it ignores mere reachability and fires only on genuine usage); and the new `13→19` readiness-probe grant is asserted as its own rule, never generalized with the `17.Workflows` grant. Docker was unavailable throughout, so every Testcontainers-backed proof is written-but-unexecuted and is recorded as such, never as passing — this covers `18.Idempotency`'s 10 concurrency/tenant-isolation proofs, `19.Scheduling`'s multi-replica single-execution proof (the very test that would demonstrate defect 1's fix), and `16.Testing`'s 26 container fixtures (state-map-phase, coordinated pass)
+- [2026-09-04] Phase Backlog P-449 → remains `◐` Dispatched, HALF shipped — `AddSharedKernelKeyVaultKeyProvider()` is done, but the readiness-probe half is blocked on an upstream gap, not on `13.ServiceDefaults`. `01.Core/SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider` exposes no `ProbeAsync`-shaped member (verified on disk), so the established provider-exposes/`13.ServiceDefaults`-wires split has nothing to wire. P-447 shipped without the probe primitive that `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`07.Messaging`/`17.Workflows`/`19.Scheduling` all provide. Closing it needs a NEW `01.Core` phase — `arch-lead`/`core-arch-planner` scope, deliberately not invented by an implementer (state-map-phase, coordinated pass)
