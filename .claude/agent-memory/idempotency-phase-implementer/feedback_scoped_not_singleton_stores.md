@@ -1,0 +1,13 @@
+---
+name: feedback_scoped_not_singleton_stores
+description: 18.Idempotency's original work order (WO-070/D-09) said the Redis store classes should be registered as "the same singleton instance" — this is wrong and was corrected to Scoped, because ITenantContextAccessor is conventionally Scoped platform-wide.
+type: feedback
+---
+
+`18.Idempotency/state-map.md`'s D-09 design task literally says: "registering `RedisIdempotencyKeyStore` as both `IIdempotencyKeyStore` and `IIdempotencyResponseStore` (same singleton instance)". This is a documented design decision from the arch-planner phase, but it does not actually work.
+
+**Why it's wrong:** `SharedKernel.Messaging.Abstractions.TenantContext.ITenantContextAccessor` — the seam both `.Redis` and `.EfCore` store classes constructor-inject to resolve tenant identity — is registered `Scoped` everywhere it already has a real implementation on this platform (`SharedKernel.Messaging.MassTransit.MessagingBusBuilder.WithTenantContext<TAccessor>()` calls `services.AddScoped<ITenantContextAccessor, TAccessor>()`). A singleton service cannot constructor-inject a scoped dependency under a DI container built with `ValidateScopes = true` (the ASP.NET Core / generic host default in `Development`, and the correct posture everywhere) — it throws at resolution time.
+
+**The fix, applied in code:** all four store classes (`RedisIdempotencyKeyStore`, `RedisIdempotencyMessageStore`, `EfCoreIdempotencyKeyStore`, `EfCoreIdempotencyMessageStore`) are registered `Scoped`, not singleton, in both `Add*Idempotency` DI extension methods. `.EfCore`'s classes were always going to be `Scoped` regardless — a plain EF Core `DbContext` is itself `Scoped` and unsafe to capture into a singleton — so the correction is specific to `.Redis`. The underlying `IConnectionMultiplexer` (registered by `02.Caching.Redis.Core`'s `AddRedisConnection`) remains a genuine singleton underneath the thin `Scoped` store wrapper — only the store class itself moved.
+
+**How to apply:** this correction is recorded in `18.Idempotency/CLAUDE.md`'s Technology table and in the `RedisIdempotencyKeyStore`/`RedisIdempotencyMessageStore` XML doc remarks. If a future arch-planner phase for this domain (or any domain wiring a store/behavior class against `ITenantContextAccessor`) proposes singleton lifetime again, check whether it also depends on `ITenantContextAccessor` (or any other conventionally-Scoped seam) before accepting that framing — "singleton" in a design doc is a starting assumption, not a constraint that survives contact with this platform's actual DI lifetime conventions.

@@ -35,3 +35,16 @@ each closed a WO-042 sub-phase in one session) found zero corresponding root `CL
 any of them; only the domain's own `CLAUDE.md` picked up the DO-08-style doc update. Root `CLAUDE.md`
 gets a new entry only when the *work order as a whole* closes (all its P-NNN phases across all
 domains), authored by arch-lead, not per-domain-phase.
+
+**EXCEPTION — concurrent multi-domain dispatch, explicit user override (WO-074/WO-078,
+2026-09-04):** When the dispatching prompt explicitly states other domain implementers are running
+concurrently and instructs "do NOT edit the root state-map.md / root CLAUDE.md — your own domain's
+are yours," honor that literally even though it contradicts step (2) above and even though every
+task row for the phase key is genuinely `●`. Update only the sub-map (`14.Presentation/state-map.md`)
+— task rows, Package Board, Cross-Domain Dependencies rows, changelog — and do NOT call
+`state-map-phase` (root mode) or edit root `state-map.md`/`CLAUDE.md` yourself. State this explicitly
+in the final report so the coordinating session/dispatcher knows root propagation is still
+outstanding and by design, not an oversight. This override exists because a root-file edit from N
+concurrently-running domain sessions racing on the same file is exactly the kind of conflict the
+"shared-file protocol" instruction exists to prevent — the coordinator consolidates root updates
+afterward, once all concurrent domains have reported back.

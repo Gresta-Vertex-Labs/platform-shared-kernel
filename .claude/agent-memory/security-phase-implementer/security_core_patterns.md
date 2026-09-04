@@ -397,3 +397,90 @@ build output for `error CS` (not just `error`) isolates genuine compile errors f
   *\bIUserContext\b`) again caught every implementer correctly — **this rule is now confirmed reliable across
   two independent interface-breaking sessions; keep using it (re-derive fresh each time, never trust a prior
   session's list as still-exhaustive) whenever `IUserContext` or `ITenantProvider` gains a member.**
+
+## WO-069/P-452 — SharedKernel.Security.Totp, fifth sibling provider (SHIPPED 2026-09-04)
+
+**Package shape**: `TotpEnrollment` (record)/`TotpEnrollmentService` (enrollment — composes `01.Core`'s
+`ISecureRandomGenerator`/`Base32`/`TotpProvisioningUri`/`RecoveryCodeGenerator`, never persists), a
+`RecoveryCodeGenerator` is constructed locally inside `TotpEnrollmentService`'s constructor
+(`new RecoveryCodeGenerator(randomGenerator)`) rather than DI-registered — `01.Core`'s
+`AddSharedKernelCryptography` does NOT register `RecoveryCodeGenerator` itself (confirmed by reading
+`CryptographyServiceCollectionExtensions.cs`), so don't assume it's resolvable from the container.
+`ITotpChallengeStore`/`TotpChallengeService` (challenge verification — composes `01.Core`'s
+`TotpVerifier.VerifyAsync`, which is `ValueTask<bool>`; this package normalizes to `Task<bool>`/`Task`
+at its own public boundary, a deliberate signature choice not a functional difference).
+`TotpStepUpOptions`/`TotpStepUpClaimsTransformation` (`IClaimsTransformation`) is the ASP.NET Core-facing
+step-up wiring — see the dedicated pattern below.
+
+**FrameworkReference vs PackageReference — verify every time, trust neither direction.** `.Mtls`
+(WO-058) found `Microsoft.AspNetCore.Authentication.Certificate` was WRONGLY assumed
+framework-provided (needed a real `PackageReference`). `.Totp` (WO-069) found the opposite:
+`Microsoft.AspNetCore.Authentication.IClaimsTransformation` genuinely IS reachable via a bare
+`<FrameworkReference Include="Microsoft.AspNetCore.App" />` alone — confirmed by listing the installed
+shared-framework directory for the assembly that declares the type
+(`Microsoft.AspNetCore.Authentication.Abstractions.dll`, same assembly `AuthenticationHandler<TOptions>`
+already ships from for `.ApiKey`). Two data points, opposite outcomes — the only safe rule is: always
+check the real installed SDK directory before writing the csproj, regardless of what "framework-provided"
+assumption a design doc states, and regardless of which way a *previous* case in this same domain went.
+
+**Claims-transformation "never mutate the original identity" pattern.** To add a claim to an
+already-authenticated `ClaimsPrincipal` without mutating anything the caller still holds a reference to,
+use the BCL's `new ClaimsIdentity(principal.Identity, [newClaim])` constructor overload — NOT
+`principal.AddIdentity(...)`. This overload deep-clones every existing claim onto the new identity
+(`Claim.Clone(this)` internally) and copies `AuthenticationType`/`NameClaimType`/`RoleClaimType`/`Label`/
+`BootstrapContext`/`Actor` from the source identity, then appends the new claims — wrap the result in a
+`new ClaimsPrincipal(newIdentity)` and re-attach any OTHER identities from `principal.Identities` that
+weren't the primary one. `principal.AddIdentity(...)` by contrast mutates the SAME principal instance's
+`Identities` collection in place — wrong when a test (or downstream code) asserts the original principal
+object is untouched. Proven by a dedicated test asserting `Assert.Same(originalIdentity, principal.Identity)`
+after calling `TransformAsync` on `principal` — the input is provably unchanged, only the returned
+principal carries the new claim. Reusable pattern for any future claims-augmenting component.
+
+**A sibling provider that augments rather than authenticates.** `.ApiKey`/`.Mtls` each authenticate a NEW
+primary identity and use the `ServiceDescriptor`-capture decorator trick to compose `IUserContext`
+alongside whatever was already registered. `.Totp` is structurally different — it never authenticates
+anything; it only adds a claim to an ALREADY-authenticated principal via `IClaimsTransformation`, which
+ASP.NET Core invokes for every scheme during `AuthenticateAsync`, before any `IUserContext` DI factory
+resolves. Because of this, `.Oidc`'s existing defensive `amr`-claim reader (`OidcUserContext`, shipped
+WO-058) picks up the stamped claim with ZERO code change in `.Oidc` — the SAME "stamp now, read later"
+mechanism already established for DPoP's `IsSenderConstrained` (a `JwtBearerEvents.OnTokenValidated` hook,
+`.Oidc`-only), but via a scheme-agnostic framework hook instead. `AddTotpStepUp<TChallengeStore>()` is
+therefore a plain `IServiceCollection` extension, NOT chained onto `.Oidc`'s `SecurityAuthenticationBuilder`
+(that type is `.Oidc`-owned; sibling packages never reference each other) — registers
+`ITotpChallengeStore`/`TotpStepUpOptions`/`IClaimsTransformation`/`TotpChallengeService` (scoped) and
+`TotpEnrollmentService` (singleton, stateless).
+
+**Guid.Empty guard placement.** Both `TotpChallengeService.VerifyAsync`/`.RecordStepUpAsync` and
+`TotpStepUpClaimsTransformation.TransformAsync` hard-reject before ANY store/verifier call — proven via a
+call-counting `ITotpChallengeStore` test double (`RecordCallCount`/`TryGetCallCount` both stay 0). This is
+also what structurally excludes `.ApiKey`/`.Mtls` identities (always `UserId = Guid.Empty`) from ever
+triggering a lookup — no `IdentityKind` special-casing needed, the empty-Guid check alone does the job.
+
+**Cross-package interop testing — a deliberate, documented exception.** `SharedKernel.Security.Totp.Tests`
+(the TEST project, not the main library) references `SharedKernel.Security.Oidc` for exactly ONE test
+(T-46): building a `ClaimsPrincipal` via `TotpStepUpClaimsTransformation`, then feeding it into the REAL
+`OidcUserContext` constructor and asserting `WasAuthenticatedWith("otp") == true`. This proves the
+zero-`.Oidc`-code-change claim against actual shipped source, not an assumption. The main
+`SharedKernel.Security.Totp.csproj` itself never takes this reference — only the `.Tests.csproj` does,
+mirroring how `.Oidc.Tests` already references `16.Testing` for a cross-cutting concern the main `.Oidc`
+project doesn't need. This is the established, reusable pattern whenever a future phase needs to prove a
+cross-sibling-package composition claim with real code instead of a hand-typed assumption.
+
+**Zero `IUserContext` interface change → zero cross-domain fallout.** Unlike WO-057 (`IdentityKind`,
+`Permissions`), WO-058 (six step-up members), WO-069 added no `IUserContext`/`ITenantProvider` member at
+all — `SecurityClaimTypes.AuthenticationMethod` is a new `const string` on an unrelated static class. The
+repo-wide-grep-for-implementers rule from WO-057/WO-058 simply did not apply this round — confirm before
+running that grep that an interface actually changed; don't run it reflexively every session.
+
+**Shared-file protocol during concurrent multi-domain sessions.** When told other domain implementers are
+running concurrently: (1) `Platform.SharedKernel.slnx` and root `state-map.md`/`CLAUDE.md` are OFF LIMITS
+— build/test the new project directly via its own `.csproj` path, a project builds fine without solution
+membership; leave solution registration as an explicitly-flagged open item for the orchestrator. (2) A
+`16.Testing` (or any other domain's) build failure encountered mid-session, on an UNTRACKED file
+(`git status --porcelain` shows `??`), is very likely another agent's own in-flight, uncommitted work —
+not a real regression to fix. Retry the build once after doing other useful work (writing docs, etc.); it
+resolved itself within minutes in this session. Never "fix" another domain's in-progress file. (3) When
+updating your own domain's `state-map.md`, promoting a phase key to root per the standard
+`state-map-phase` workflow requires editing root `state-map.md` — under this protocol, SKIP that
+propagation step entirely, update only your own domain's file, and clearly flag in both the state-map
+changelog and the final report that root propagation is pending and whose job it is (the orchestrator).

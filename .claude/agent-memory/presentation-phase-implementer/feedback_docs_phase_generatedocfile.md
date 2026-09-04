@@ -1,24 +1,28 @@
 ---
 name: docs-phase-generatedocfile
-description: GenerateDocumentationFile must be explicitly enabled to validate XML doc comments — Core-phase "complete" docs can still hide unresolved cref warnings until the Docs phase turns the flag on
+description: GenerateDocumentationFile is now centralized repo-wide in Directory.Build.targets — no longer a per-project Docs-phase gotcha, but XML-doc/cref completeness is still validated on every build, every phase
 type: feedback
 ---
 
-When a Docs phase task says "complete XML doc comments... zero CS1591 warnings," check whether the
-`.csproj` actually has `<GenerateDocumentationFile>true</GenerateDocumentationFile>` set. Without it,
-the compiler does not validate `///` comments at all — CS1591 (missing doc) and CS1574/CS1580
-(unresolved `cref`) warnings are silently skipped, even though prose-complete comments already
-exist from the Core phase.
+**UPDATED 2026-09-04 (WO-074/P-468 session):** As of some point after this memory was first
+written, `devops-lead` centralized `<GenerateDocumentationFile>` in the root
+`Directory.Build.targets` (`PropertyGroup Condition="'$(IsTestProject)' != 'true' and
+'$(OutputType)' != 'Exe' and '$(GenerateDocumentationFile)' == ''"` → sets it `true`). Verified by
+reading `Directory.Build.targets` directly and by observing that a brand-new package
+(`SharedKernel.Presentation.Grpc`, scaffolded from scratch this session with no explicit
+`<GenerateDocumentationFile>` in its own `.csproj`) built 0 warnings/0 errors on the very first
+`dotnet build` — CS1591/CS1574 validation was active from the start, no separate "Docs phase" flag
+flip was needed or possible to demonstrate.
 
-**Why:** In WO-031's `14.Presentation` Docs phase, all public types/members already had full XML
-doc prose written during Core phase — no stubs were found. But the flag wasn't set yet, so the
-"zero CS1591" acceptance criterion was unverified. Turning it on surfaced 4 real unresolved-`cref`
-warnings (`IHostEnvironment.IsDevelopment()`, `MapOpenApi(IEndpointRouteBuilder, string)`,
-`HubOptions.HubFilters`, and an ambiguous `HttpContext` lacking a `using`) that had been sitting
-invisible since Core.
+**Old guidance (superseded, kept for historical context):** In WO-031's `14.Presentation` Docs
+phase (before centralization), the flag had to be added per-project and turning it on for the
+first time surfaced 4 real unresolved-`cref` warnings that had been sitting invisible since Core.
 
-**How to apply:** In any Docs-phase task, add `<GenerateDocumentationFile>true</GenerateDocumentationFile>`
-to the PropertyGroup first, then rebuild — don't assume "the comments look complete" satisfies the
-acceptance criterion. Fix unresolved crefs with `<c>plain text</c>` or fully-qualified cref paths
-rather than adding new `using` directives that pull unrelated types into scope just to make a cref
-resolve.
+**How to apply now:** Do not add `<GenerateDocumentationFile>` to a new `.csproj` — it is already
+on by default for every non-test, non-`Exe` project via `Directory.Build.targets`. This means XML
+doc completeness (CS1591) and `cref` resolution (CS1574/CS1580) are validated on the FIRST build of
+new production code, not deferred to a later phase — write complete `///` docs from the start,
+since "zero warnings" is a Core-phase expectation now, not a Docs-phase discovery. If a future
+session sees CS1591/CS1574 warnings pass silently, first check whether `IsTestProject`/`OutputType`
+detection in `Directory.Build.props` is misclassifying the project, rather than assuming the flag
+needs adding by hand.
