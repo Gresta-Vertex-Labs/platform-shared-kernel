@@ -436,7 +436,7 @@ Every other infrastructure-provider capability this platform has shipped gets it
 ---
 ### P-450 — Testing: Async-Capable Fakes for `IEncryptionKeyProvider` and the Envelope-Encryption Seam
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-068
 **Domain:** 16.Testing
 **Depends on:** P-446
@@ -448,9 +448,9 @@ Update the existing `FakeEncryptionKeyProvider` (`16.Testing/SharedKernel.Testin
 `16.Testing` already has this fake — it needs to keep compiling and behaving correctly once P-446 ships, not be rediscovered as a break in a downstream consumer's test suite.
 
 #### Acceptance criteria
-- [ ] `FakeEncryptionKeyProvider` compiles and passes against the new async contract
-- [ ] A fake for the envelope-encryption seam ships alongside it
-- [ ] Every existing consumer of the old fake (across `06.Persistence`/`15.Integration`/`17.Workflows` test suites) is confirmed still green
+- [x] `FakeEncryptionKeyProvider` compiles and passes against the new async contract
+- [x] A fake for the envelope-encryption seam ships alongside it (`Cryptography/FakeEnvelopeEncryptionProvider.cs`)
+- [x] Every existing consumer of the old fake (across `06.Persistence`/`15.Integration`/`17.Workflows` test suites) is confirmed still green — the four remaining stale sync fakes (`02.Caching.FusionCache.Tests`, `17.Workflows.Temporal.Tests` x2, `00.Governance.ArchitectureTests.Tests`) were migrated 2026-09-04, restoring a 0-error solution build
 ---
 
 ---
@@ -2580,3 +2580,4 @@ Same rationale as every other `16.Testing` double — proving P-484's fallback a
 - [2026-09-03] Phase Backlog P-456, P-457 → ● Complete — re-checked independently against their own criteria: structural `AuditRecord` immutability (no update/delete surface, T-129), `IAuditActorContext` as a local seam never referencing `12.Security.Abstractions`, hash-chain via `IContentHasher` with per-(tenant,resource-type)-partition independence (T-136), `SaveChangesAsync` guard tested for both `Modified`/`Deleted` (T-131/T-132), `REVOKE UPDATE, DELETE` documented in caps in `AuditRecordImmutabilityInterceptor.cs` — all criteria met. Note: T-133/T-134/T-135 carry a documented CAVEAT (proven via a second-DbContext bypass and expression-tree inspection rather than literal raw SQL/captured-SQL text, because Docker/Testcontainers was unavailable when those tests were authored) with an explicit "re-verify once Docker is available" note; Docker WAS available this session but re-verifying those three was out of this session's scope (T-125..T-128 only) — left as a flagged opportunity for a future session, not silently dropped (state-map-phase)
 - [2026-09-03] 15.Integration → Published (`●`) — promoted from SK.15.WO072: WO072Notifications (N-01–N-26) implemented and shipped end to end — three new packages (`SharedKernel.Integration.Notifications.Abstractions`/`.Email.SendGrid`/`.Sms.Twilio`) delivering human-facing email/SMS, `SharedKernel.Integration.Webhooks` unchanged; 35 new tests (144/144 domain-wide, zero regressions); `dotnet pack` clean for all three (state-map-phase)
 - [2026-09-03] Phase Backlog P-460, P-461, P-462 → ● Complete — SK.15.WO072 done; also closed an unowned build breakage (async `IEncryptionKeyProvider` migration cascading from P-446) in `SharedKernel.Integration.Webhooks.Tests`, tracked domain-locally as `SK.15.CryptoAsyncMigration` since no root Phase Backlog entry was ever dispatched for it (state-map-phase)
+- [2026-09-04] Phase Backlog P-450 → `●` Complete — closed the last unmet criterion (3: every existing consumer of the old fake still green). P-446's breaking sync-to-async `IEncryptionKeyProvider` migration had left four stale synchronous test-local fakes behind, breaking the solution build with 8 CS0535 errors: `02.Caching.FusionCache.Tests`' `InMemoryEncryptionKeyProvider`, `17.Workflows.Temporal.Tests`' `FakeEncryptionKeyProvider` (x2 — Codec + RealEnvironment), and `00.Governance.ArchitectureTests.Tests`' `FixtureEncryptionKeyProvider`. All four migrated mechanically to `GetCurrentKeyAsync`/`GetKeyAsync` returning already-completed `ValueTask`s, matching `01.Core`'s own `InMemoryEncryptionKeyProvider` reference shape — no behavioral change, no production code touched. Verified: full-solution build 0 errors; `00.Governance.ArchitectureTests.Tests` 241/241 (required baseline, unchanged), `06.Persistence.EfCore.Tests` 415/415, `17.Workflows.Temporal.Tests` 158/158, `15.Integration.Webhooks.Tests` 109/109, `02.Caching.FusionCache.Tests` encryption-serializer 16/16, `01.Core` Cryptography 235/235 + Validation 129/129 + DataPrivacy 56/56 + Localization 43/43, `03.Domain` 423/423. Also widened `global.json`'s `rollForward` `latestPatch` → `latestFeature` — the 10.0.3xx-band pin could not resolve against a 10.0.400-only machine, blocking every build locally (dev-environment fix, no behavioral effect on CI's pinned runner)
