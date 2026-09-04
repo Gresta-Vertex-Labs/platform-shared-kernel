@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Not shipped — verification harness only -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Reporting.Abstractions\SharedKernel.Reporting.Abstractions.csproj" />
+    <ProjectReference Include="..\SharedKernel.Reporting.Csv\SharedKernel.Reporting.Csv.csproj" />
+    <ProjectReference Include="..\SharedKernel.Reporting.Spreadsheet\SharedKernel.Reporting.Spreadsheet.csproj" />
+    <ProjectReference Include="..\SharedKernel.Reporting.Pdf\SharedKernel.Reporting.Pdf.csproj" />
+    <ProjectReference Include="..\..\08.Storage\SharedKernel.Storage.Abstractions\SharedKernel.Storage.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Generic host — lets this harness exercise the real IHost.StartAsync() eager
+         ValidateOnStart() path, not just BuildServiceProvider(). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>
