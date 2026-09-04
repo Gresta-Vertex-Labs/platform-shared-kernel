@@ -7,10 +7,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Domain;
+using SharedKernel.Persistence.Abstractions.Auditing;
 using SharedKernel.Persistence.Abstractions.Specifications;
 using SharedKernel.Persistence.Abstractions.UnitOfWork;
+using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.EfCore.Context;
 using SharedKernel.Persistence.EfCore.Diagnostics;
 using SharedKernel.Persistence.EfCore.Encryption;
@@ -102,6 +105,7 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _applicationTransactionBehaviorEnabled;
     private bool _registerFactory;
     private bool _registerEncryption;
+    private bool _auditTrailEnabled;
     private bool _serviceNameValidationRegistered;
     private bool _migrationsOnStartup;
     private bool _dbContextPoolingEnabled;
@@ -381,8 +385,11 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
         // P-227: Register EncryptionOptionsKeyProvider as scoped IEncryptionKeyProvider.
         // Scoped lifetime matches IEncryptionVersionOverride's existing scoped lifetime.
-        // This is the IEncryptionKeyProvider that backs EncryptedValueConverter's ISymmetricEncryptionService
-        // for the persistence layer specifically.
+        // D-108/P-448: EncryptedValueConverter itself no longer resolves IEncryptionKeyProvider
+        // directly — this registration is still required because 01.Core's AesGcmEncryptionService
+        // (the concrete ISymmetricEncryptionService EncryptedValueConverter calls) resolves
+        // IEncryptionKeyProvider from DI internally to bridge its synchronous Encrypt/Decrypt members
+        // onto the now-asynchronous IEncryptionKeyProvider contract.
         _services.AddScoped<IEncryptionKeyProvider, EncryptionOptionsKeyProvider>();
     }
 
@@ -443,6 +450,53 @@ public sealed class EfCorePersistenceBuilder<TContext>
 
         _services.AddSingleton<IValidateOptions<PersistenceServiceOptions>, PersistenceServiceOptionsValidator>();
         _services.AddOptions<PersistenceServiceOptions>().ValidateOnStart();
+    }
+
+    /// <summary>
+    /// Opts in to the append-only, hash-chained audit-trail capability
+    /// (<see cref="IAuditTrailWriter"/>/<see cref="IAuditQueryService"/>).
+    /// </summary>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// WO-071/P-457/D-125. Registers:
+    /// <list type="bullet">
+    ///   <item><description><see cref="AuditTrailFeatureMarker"/> (singleton) — see its own remarks for why this is required for <typeparamref name="TContext"/> to pick up <see cref="AuditRecordEntityConfiguration"/>.</description></item>
+    ///   <item><description><see cref="AuditRecordImmutabilityInterceptor"/>, via the same <see cref="AddInterceptor{TInterceptor}"/> pipeline any consumer-supplied interceptor uses.</description></item>
+    ///   <item><description><see cref="IAuditTrailWriter"/> → <see cref="EfAuditTrailWriter"/> (scoped).</description></item>
+    ///   <item><description><see cref="IAuditQueryService"/> → <see cref="EfAuditQueryService"/> (scoped).</description></item>
+    ///   <item><description>A DEFAULT <see cref="IAuditActorContext"/> → <see cref="EfCoreAuditActorContext"/>, registered at <see cref="Build"/> time ONLY when the consumer has not already registered their own — mirroring the existing no-op <c>IUserContext</c>/<c>ITenantProvider</c> placeholder pattern.</description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <strong>REQUIRES two things the consumer must supply themselves:</strong> (1) the downstream
+    /// <typeparamref name="TContext"/>'s own constructor must declare an
+    /// <see cref="AuditTrailFeatureMarker"/><c>?</c> parameter and forward it to <c>base(...)</c> —
+    /// see <see cref="AuditTrailFeatureMarker"/>'s remarks for why a DI-resolved marker type,
+    /// mirroring the existing <c>ISymmetricEncryptionService?</c>/<c>IEncryptionKeyProvider?</c>
+    /// pattern, is used instead of a raw <see langword="bool"/>; (2) <c>AddSharedKernelCryptography()</c>
+    /// (<c>01.Core/SharedKernel.Cryptography</c>) must have been called so
+    /// <see cref="SharedKernel.Cryptography.Hashing.IContentHasher"/> resolves — mirroring
+    /// <see cref="WithEncryption(Action{EncryptionOptions}?)"/>'s existing requirement for
+    /// <c>ISymmetricEncryptionService</c>.
+    /// </para>
+    /// <para>Optional. Omitting this call leaves all existing behavior unchanged — no <c>AuditRecord</c> table, no audit services registered.</para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithAuditTrail()
+    {
+        if (_auditTrailEnabled)
+            return this;
+
+        _auditTrailEnabled = true;
+
+        _services.AddSingleton<AuditTrailFeatureMarker>();
+
+        AddInterceptor<AuditRecordImmutabilityInterceptor>();
+
+        _services.AddScoped<IAuditTrailWriter, EfAuditTrailWriter>();
+        _services.AddScoped<IAuditQueryService, EfAuditQueryService>();
+
+        return this;
     }
 
     /// <summary>
@@ -793,6 +847,13 @@ public sealed class EfCorePersistenceBuilder<TContext>
         if (!_services.Any(sd => sd.ServiceType == typeof(IUserContext)))
         {
             _services.AddScoped<IUserContext, NoOpUserContext>();
+        }
+
+        // WO-071/P-457: default IAuditActorContext — registered only when .WithAuditTrail() was
+        // called AND the consumer has not already registered their own IAuditActorContext.
+        if (_auditTrailEnabled && !_services.Any(sd => sd.ServiceType == typeof(IAuditActorContext)))
+        {
+            _services.AddScoped<IAuditActorContext, EfCoreAuditActorContext>();
         }
 
         // IDomainEventDispatcher is optional — consuming services opt in by registering it.

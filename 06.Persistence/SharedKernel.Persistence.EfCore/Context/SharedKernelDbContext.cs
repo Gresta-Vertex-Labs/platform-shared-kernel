@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Persistence.EfCore.Auditing;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Interceptors;
 using SharedKernel.Persistence.EfCore.Options;
@@ -48,7 +49,7 @@ public abstract class SharedKernelDbContext : DbContext
     private readonly IOptionsMonitor<EncryptionOptions> _encryptionOptions;
     private readonly IEncryptionVersionOverride _encryptionVersionOverride;
     private readonly ISymmetricEncryptionService? _symmetricEncryptionService;
-    private readonly IEncryptionKeyProvider? _encryptionKeyProvider;
+    private readonly bool _auditTrailEnabled;
 
     /// <summary>
     /// Initialises a new <see cref="SharedKernelDbContext"/> and registers the three
@@ -81,10 +82,25 @@ public abstract class SharedKernelDbContext : DbContext
     /// in disabled pass-through mode.
     /// </param>
     /// <param name="encryptionKeyProvider">
-    /// Optional key provider bridging <see cref="EncryptionOptions"/> to
-    /// <see cref="IEncryptionKeyProvider"/> (P-227). Registered as scoped by
-    /// <c>EfCorePersistenceBuilder.WithEncryption()</c>. When <see langword="null"/>, the converter
-    /// operates in disabled pass-through mode.
+    /// Retained for constructor source-compatibility only (D-109/P-448) — as of P-448 this value is
+    /// no longer forwarded to <see cref="EncryptionModelConvention"/>, which stopped needing an
+    /// <see cref="IEncryptionKeyProvider"/> directly (D-108). Downstream contexts may keep declaring
+    /// and forwarding this parameter without any behavior change; <c>01.Core</c>'s
+    /// <c>AesGcmEncryptionService</c> still resolves <see cref="IEncryptionKeyProvider"/> from DI on
+    /// its own.
+    /// </param>
+    /// <param name="auditTrailMarker">
+    /// WO-071/P-457. Optional marker resolved from DI — present only when
+    /// <c>EfCorePersistenceBuilder.WithAuditTrail()</c> registered <see cref="AuditTrailFeatureMarker"/>.
+    /// When non-<see langword="null"/>, <see cref="OnModelCreating"/> applies
+    /// <see cref="AuditRecordEntityConfiguration"/> so <c>AuditRecord</c> becomes part of this
+    /// context's model. A downstream context that wants the audit trail must declare this parameter
+    /// in its own constructor and forward it to <c>base(...)</c>, exactly like
+    /// <paramref name="symmetricEncryptionService"/>/<paramref name="encryptionKeyProvider"/> already
+    /// require for <c>.WithEncryption()</c>. Defaults to <see langword="null"/> — every existing
+    /// downstream context is unaffected. See <see cref="AuditTrailFeatureMarker"/>'s remarks for why
+    /// a marker type is used instead of a raw <see langword="bool"/> (DI cannot resolve a primitive
+    /// constructor parameter automatically).
     /// </param>
     protected SharedKernelDbContext(
         DbContextOptions options,
@@ -95,7 +111,8 @@ public abstract class SharedKernelDbContext : DbContext
         IOptionsMonitor<EncryptionOptions>? encryptionOptions = null,
         IEncryptionVersionOverride? encryptionVersionOverride = null,
         ISymmetricEncryptionService? symmetricEncryptionService = null,
-        IEncryptionKeyProvider? encryptionKeyProvider = null)
+        IEncryptionKeyProvider? encryptionKeyProvider = null,
+        AuditTrailFeatureMarker? auditTrailMarker = null)
         : base(options)
     {
         _auditInterceptor = auditInterceptor;
@@ -105,7 +122,9 @@ public abstract class SharedKernelDbContext : DbContext
         _encryptionOptions = encryptionOptions ?? NullOptionsMonitor<EncryptionOptions>.Instance;
         _encryptionVersionOverride = encryptionVersionOverride ?? EncryptionVersionOverride.NoOp;
         _symmetricEncryptionService = symmetricEncryptionService;
-        _encryptionKeyProvider = encryptionKeyProvider;
+        // D-109/P-448: encryptionKeyProvider is intentionally not stored — it is retained on this
+        // constructor's signature only for source-compatibility (see the parameter's XML docs above).
+        _auditTrailEnabled = auditTrailMarker is not null;
 
         // WO-051/P-322: initialised from AuditInterceptor's own constructor-captured IUserContext —
         // deliberately NOT a new constructor parameter on this class (auditInterceptor is already
@@ -222,6 +241,14 @@ public abstract class SharedKernelDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(GetType().Assembly);
+
+        // WO-071/P-457: AuditRecordEntityConfiguration lives in THIS assembly
+        // (SharedKernel.Persistence.EfCore), not the downstream concrete context's assembly, so the
+        // ApplyConfigurationsFromAssembly(GetType().Assembly) scan above never discovers it — applied
+        // explicitly here, and only when WithAuditTrail() opted in.
+        if (_auditTrailEnabled)
+            modelBuilder.ApplyConfiguration(new AuditRecordEntityConfiguration());
+
         base.OnModelCreating(modelBuilder);
     }
 
@@ -271,13 +298,13 @@ public abstract class SharedKernelDbContext : DbContext
     /// <inheritdoc />
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        // P-227: Pass ISymmetricEncryptionService and IEncryptionKeyProvider to the convention
-        // so EncryptedValueConverter uses the delegated crypto path.
+        // P-227: Pass ISymmetricEncryptionService to the convention so EncryptedValueConverter uses
+        // the delegated crypto path. D-109/P-448: IEncryptionKeyProvider is no longer forwarded here
+        // — EncryptionModelConvention/EncryptedValueConverter stopped needing it directly (D-108).
         configurationBuilder.Conventions.Add(
             _ => new EncryptionModelConvention(
                 _encryptionOptions,
                 _symmetricEncryptionService,
-                _encryptionKeyProvider,
                 _encryptionVersionOverride));
 
         base.ConfigureConventions(configurationBuilder);
