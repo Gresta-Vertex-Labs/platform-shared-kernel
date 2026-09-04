@@ -100,3 +100,4 @@
 - [2026-09-03] 01.Core: SharedKernel.Localization (WO-078/P-482) shipped, 12th package; P-483/P-484 halves still queued in 13/14 (sync-brain)
 - [2026-09-03] 06.Persistence: WO-068/P-448 (async IEncryptionKeyProvider migration) shipped; test run still gated on 16.Testing/P-450 (sync-brain)
 - [2026-09-03] 15.Integration: Notifications.Abstractions/.Email.SendGrid/.Sms.Twilio (WO-072/P-460–P-462) shipped, 3 new packages (sync-brain)
+- [2026-09-04] Queued WO-080 (P-487/488/489/490) into brain: KMS-probe row, Hard-rules enforcement-gap note, P-449 status update (sync-brain)

@@ -5,7 +5,11 @@ metadata:
   type: project
 ---
 
-As of 2026-08-26, the last NEW phases written to `state-map.md` Phase Backlog are **P-439–P-453** (under WO-066/WO-067/WO-068/WO-069, all `○` Pending — batch 1/3 of a new missing-packages architecture review; see [[project_wo066_069_new_capabilities_batch1]]). Two more batches are expected from the same review (batch 2/3, batch 3/3) — read that memory file's numbering note for the confirmed starting point before assigning batch-2 IDs, but always re-verify against the live file per the "How to apply" note below.
+As of 2026-09-04, the last NEW phases written to `state-map.md` Phase Backlog are **P-487–P-490** (under WO-080, three coordinated-pass findings — 01.Core KMS-probe primitive, 05.Application `CacheInvalidationBehavior` ordering-defect fix, 00.Governance mechanical locks x2; see [[project_wo080_kv_probe_cacheinvalidation_layeringgap]]). All four target domains were already `●` Published, so backlog-only, no `state-map-phase` calls.
+
+Next new phase must be **P-491**. Next new Work Order must be **WO-081**.
+
+As of 2026-08-26 (superseded above): last NEW phases were **P-439–P-453** (under WO-066/WO-067/WO-068/WO-069, all `○` Pending — batch 1/3 of a new missing-packages architecture review; see [[project_wo066_069_new_capabilities_batch1]]). Two more batches are expected from the same review (batch 2/3, batch 3/3) — read that memory file's numbering note for the confirmed starting point before assigning batch-2 IDs, but always re-verify against the live file per the "How to apply" note below.
 
 Next new phase must be **P-454**. Next new Work Order must be **WO-070**.
 

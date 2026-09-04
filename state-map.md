@@ -419,7 +419,7 @@ This is the one consumer of `IEncryptionKeyProvider` where "just await it" is no
 **Status:** `◐` Dispatched
 **Work Order:** WO-068
 **Domain:** 13.ServiceDefaults
-**Depends on:** P-447
+**Depends on:** P-447, P-487
 
 #### What is needed
 A new registration helper distinct from the existing `AddSharedKernelKeyVaultConfiguration()` (P-398, which wires Key Vault as an `IConfiguration` source) — this one registers P-447's Azure Key Vault Keys provider as the platform's `IEncryptionKeyProvider`, plus a readiness-probe primitive wired into `AddHealthChecks()`, mirroring the established `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`17.Workflows` probe-primitive split (provider exposes the probe, `13.ServiceDefaults` wires it — no `IHealthCheck` implementation ships from `01.Core` itself).
@@ -1186,6 +1186,89 @@ Same rationale as every other `16.Testing` double — proving P-484's fallback a
 - [ ] A real-assembly test proves the rule fires against a contrived offending sample
 - [ ] Diagnostic message names Mapperly and hand-written mapping as the sanctioned alternatives
 - [ ] No new `SharedKernel.Mapping`/`.Mapper` package exists anywhere in this repo as a result of this phase
+---
+
+---
+### P-487 — Core: Readiness-Probe Primitive for `SharedKernel.Cryptography.KeyVault.Azure`
+
+**Status:** `○` Pending
+**Work Order:** WO-080
+**Domain:** 01.Core
+**Depends on:** P-447
+
+#### What is needed
+An optional readiness-probe companion contract for `IEncryptionKeyProvider` implementations that have a real external dependency worth checking — living in `SharedKernel.Cryptography` alongside the existing `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` contracts, mirroring the shape `07.Messaging`'s `IMessageBusProbe`/`MessageBusHealth` already established (an abstraction-level probe contract, implemented by the provider that has something real to probe) rather than an `IHealthCheck` itself — `01.Core` ships no `IHealthCheck`, matching every existing probe-primitive precedent (`06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`07.Messaging`/`17.Workflows`/`19.Scheduling`). `AzureKeyVaultEncryptionKeyProvider` (`SharedKernel.Cryptography.KeyVault.Azure`) implements it via a cheap, side-effect-free reachability check against Azure Key Vault (e.g. a key-metadata read) — explicitly never a cryptographic operation (wrap/unwrap/sign/verify) that would register as genuine key usage in Key Vault's own audit trail. The config-based `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` are not required to implement it — they have nothing external to probe. Closes the blocker recorded inline against root Phase Backlog P-449.
+
+#### Why this is needed
+Every other infrastructure-provider capability this platform has shipped exposes a readiness-probe primitive for the same reason: a KMS-backed key provider that silently fails is at least as operationally dangerous as a failing database or cache, since its failure mode is "every encrypt/decrypt call starts failing," not slow degradation. This is deliberately **not** treated the same as `10.Intelligence`'s LLM-orchestration probe retraction (P-291/WO-047): that retraction turned on the only honest reachability signal for an LLM being a real, billed, rate-limited generative call — exactly the hidden/automatic behavior `10.Intelligence`'s own Domain Invariant #5 forbids. A Key Vault key-metadata read is the same class of operation as `06.Persistence`'s lightweight DB round-trip or `08.Storage`'s connectivity probe: cheap, non-generative, no meaningful per-call cost or rate-limit exposure. The LLM precedent does not transfer, so this phase proceeds as an ACCEPT, not a retraction.
+
+#### Acceptance criteria
+- [ ] A probe contract exists in `SharedKernel.Cryptography`, distinct from `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`, implemented only by providers with a real external dependency to check
+- [ ] `AzureKeyVaultEncryptionKeyProvider` implements it via a read-only, non-cryptographic Key Vault call — never a wrap/unwrap/sign/verify operation
+- [ ] The config-based/null providers are unaffected — no forced implementation where there is nothing to probe
+- [ ] Root Phase Backlog P-449's `Depends on` is updated to include this phase, and its readiness-probe acceptance criterion is unblocked for dispatch
+---
+
+---
+### P-488 — Application: Fix `CacheInvalidationBehavior` Pre-Commit Eviction Ordering Defect
+
+**Status:** `○` Pending
+**Work Order:** WO-080
+**Domain:** 05.Application
+**Depends on:** None
+
+#### What is needed
+Correct the default pipeline registration order in `ApplicationBehaviorsBuilder` so `CacheInvalidationBehavior`'s post-handler eviction executes after `TransactionBehavior`'s commit, not before it. Today `TransactionBehavior` is registered outermost and `CacheInvalidationBehavior` innermost, so MediatR's onion-wrapping runs eviction before the commit — the opposite of what `CacheInvalidationBehavior`'s own XML doc already promises ("a confirmed commit, never a speculative one"). `AuditingBehavior`'s existing position (inside `TransactionBehavior`, so its staged writes land inside the same atomic `SaveChangesAsync`) is correct as-is and must not be disturbed by this fix — this is specifically about `CacheInvalidationBehavior` needing to sit outside `TransactionBehavior` rather than inside it, because eviction is a real external I/O side effect against the cache, not a staged DB write like auditing's. A pipeline-order regression test must prove the corrected relative ordering against a real composed pipeline, not an isolated unit test of either behavior alone.
+
+#### Why this is needed
+A concurrent read repopulating the cache from pre-commit state inside the window between eviction and commit leaves the cache permanently stale, with nothing left to invalidate it — a strictly worse failure mode than never evicting at all, and a direct contradiction of this behavior's own documented invariant. Left unfixed, every consuming service inherits it silently: `05.Application`'s state-map currently shows this phase's originating work (WO-036) as fully `●` Complete, so nothing today signals this as open work.
+
+#### Acceptance criteria
+- [ ] `CacheInvalidationBehavior`'s eviction call is proven, by a real composed-pipeline test rather than an isolated unit test, to execute after `TransactionBehavior`'s commit for every registration path that includes both behaviors
+- [ ] `AuditingBehavior`'s existing inside-Transaction position is unchanged and still proven correct by existing tests
+- [ ] `CacheInvalidationBehavior`'s XML doc claim about commit-confirmed eviction is true by construction, not merely by documentation
+- [ ] `ApplicationBehaviorsBuilder`'s XML docs/ordering comments are corrected to state the true DI-registration-order-to-onion-order relationship explicitly, since this defect's root cause was exactly that relationship going unstated
+---
+
+---
+### P-489 — Governance: Mechanically Lock `CacheInvalidationBehavior`'s Post-Commit Eviction Ordering
+
+**Status:** `○` Pending
+**Work Order:** WO-080
+**Domain:** 00.Governance
+**Depends on:** P-488
+
+#### What is needed
+A real-assembly architecture test proving, against the actual composed `ApplicationBehaviorsBuilder` pipeline, that `CacheInvalidationBehavior`'s cache eviction executes only after `TransactionBehavior`'s commit — mirroring `00.Governance`'s existing `SK.00.CacheEncryptionAndRedisValidationLock` technique (a real, executed pipeline proving one documented ordering fact end to end), not a static namespace/type-reference check.
+
+#### Why this is needed
+This exact defect class — a design document's canonical step numbering silently failing to match DI registration order — has now surfaced twice in this platform's history (`AuditingBehavior` during P-458, `CacheInvalidationBehavior` here) and was invisible both times until an implementer hit it empirically. `05.Application`'s own state-map showed every phase key `●` Complete while this defect sat unshipped and untracked; a mechanical, real-pipeline-executed lock is the only guard that survives a future well-intentioned reordering of `ApplicationBehaviorsBuilder`'s registration calls.
+
+#### Acceptance criteria
+- [ ] Test executes the real, composed `ApplicationBehaviorsBuilder` pipeline end to end — never a hand-rolled substitute
+- [ ] Test is verified non-vacuous: a temporary reintroduction of the defect (moving `CacheInvalidationBehavior` back inside `TransactionBehavior`) is proven to fail the test, then reverted before commit
+- [ ] Passes cleanly against the corrected P-488 code with zero new build warnings
+---
+
+---
+### P-490 — Governance: Mechanically Enforce the `13.ServiceDefaults` → `17.Workflows` Readiness-Probe-Only Layering Grant
+
+**Status:** `○` Pending
+**Work Order:** WO-080
+**Domain:** 00.Governance
+**Depends on:** None
+
+#### What is needed
+A new architecture-test rule constraining what `13.ServiceDefaults` may reach into `17.Workflows` — the direction root `CLAUDE.md`'s Hard rules grant narrowly (`IWorkflowServiceProbe`/`WorkflowServiceHealth` only, for `AddWorkflowReadinessCheck`) but which has no mechanical enforcement today, unlike the sibling `19.Scheduling` grant (`ServiceDefaultsSchedulingLayeringRules.OnlyReachesSchedulerProbeTypes`, already shipped). A genuinely separate rule, never a shared/parameterized helper with the Scheduling rule — root `CLAUDE.md` explicitly states the two grants must never be reasoned about by analogy or merged. The `19.Scheduling` rule needed an exact-type-name predicate (its two permitted types share a namespace with an internal implementation type, so a namespace-level ban would be either too loose or too tight) and had to walk compiler-generated nested types (the real consumption site is `async`, so the probe call lives inside the compiler-generated state-machine type, invisible on the outer type); this rule's design must check for both conditions rather than assume the `17.Workflows` surface avoids them.
+
+#### Why this is needed
+The older of the platform's two probe-only layering grants is the unenforced one — an inversion of the order in which they were made, and a gap that has sat open since the grant was first written (WO-047). Every other narrowly-scoped, individually-recorded layering exception on this platform is backed by a real architecture test; this one currently relies entirely on the Hard rules' prose plus a doc-comment mention in `WorkflowTopologyRules.cs`, neither of which fails a build.
+
+#### Acceptance criteria
+- [ ] A `SharedKernel.ArchitectureTests` rule fails if `13.ServiceDefaults` references any `17.Workflows` type other than the two permitted probe types, including through a compiler-generated nested/state-machine type
+- [ ] The rule is independent of `ServiceDefaultsSchedulingLayeringRules`/`OnlyReachesSchedulerProbeTypes` — no shared parameterized helper introduced between the two grants
+- [ ] Verified non-vacuous: a temporary reintroduction of a forbidden reference (e.g. `TemporalOptions`, `ITemporalClient`) is proven to fail the rule, then reverted before commit
+- [ ] `WorkflowTopologyRules.cs`'s existing doc-comment mention of the grant is updated to reference the new enforcing rule by name
 ---
 
 ### Closed phase index
@@ -2584,3 +2667,4 @@ Same rationale as every other `16.Testing` double — proving P-484's fallback a
 - [2026-09-04] Phase Backlog P-441/442/445/452/453/454/455/458/459/463/464/465/466/467/468/469/470/471/472/473/475/476/477/478/479/480/481/483/484/485/486 → COMPLETE — 31 of the 32 phases dispatched in the 2026-08-26 batch, implemented across nine domain implementers in one coordinated pass. Three new domains went from docs-only to shipped: `18.Idempotency` (Redis + EF Core stores for all three pre-existing idempotency contracts, no fourth vocabulary), `19.Scheduling` (`SharedKernel.Scheduling`), `20.Reporting` (`.Abstractions` + `.Csv`/`.Spreadsheet`/`.Pdf`). Two new sibling packages: `SharedKernel.Security.Totp`, `SharedKernel.Presentation.Grpc`. `Platform.SharedKernel.slnx` 129 → 149 projects; full-solution build 0 errors. FOUR GENUINE DEFECTS were found and fixed against the ratified designs rather than implemented as written: (1) `19.Scheduling`'s per-tick job-name-keyed lock allowed cross-replica duplicate firing — a second replica evaluating the same due occurrence slightly later re-acquires the released lock; now keyed per occurrence and held to TTL; (2) `18.Idempotency`'s EF Core reclaim did not clear `response`, letting a stale response resurface after a key was reclaimed; (3) `00.Governance`'s P-476 spec assumed `SharedKernel.DataPrivacy` types sat one namespace level shallower than they ship, which would have produced an analyzer that never fires; (4) `05.Application`'s `AuditingBehavior` had to register AFTER `TransactionBehavior`, not before — MediatR makes the first-registered behavior outermost, so the canonical step numbering does not translate to DI order. A FIFTH, PRE-EXISTING defect was found in already-shipped WO-036 code and deliberately left unfixed as out of scope: `CacheInvalidationBehavior` evicts before `IUnitOfWork.SaveChangesAsync` commits, contradicting its own documented "evicts only after a confirmed commit" invariant — flagged in `05.Application/CLAUDE.md`, needs its own work order. Two structural gaps closed beyond the specs: `SharedKernel.Presentation.Grpc` reaches `04.Contracts` transitively through its deliberate `.WebApi` reference, so `PresentationLayeringRules.GrpcNeverReferencesContracts` now enforces the hard rule mechanically (NetArchTest inspects real type dependencies, not the assembly-reference list, so it ignores mere reachability and fires only on genuine usage); and the new `13→19` readiness-probe grant is asserted as its own rule, never generalized with the `17.Workflows` grant. Docker was unavailable throughout, so every Testcontainers-backed proof is written-but-unexecuted and is recorded as such, never as passing — this covers `18.Idempotency`'s 10 concurrency/tenant-isolation proofs, `19.Scheduling`'s multi-replica single-execution proof (the very test that would demonstrate defect 1's fix), and `16.Testing`'s 26 container fixtures (state-map-phase, coordinated pass)
 - [2026-09-04] Phase Backlog P-449 → remains `◐` Dispatched, HALF shipped — `AddSharedKernelKeyVaultKeyProvider()` is done, but the readiness-probe half is blocked on an upstream gap, not on `13.ServiceDefaults`. `01.Core/SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider` exposes no `ProbeAsync`-shaped member (verified on disk), so the established provider-exposes/`13.ServiceDefaults`-wires split has nothing to wire. P-447 shipped without the probe primitive that `06.Persistence`/`08.Storage`/`09.Search`/`10.Intelligence`/`07.Messaging`/`17.Workflows`/`19.Scheduling` all provide. Closing it needs a NEW `01.Core` phase — `arch-lead`/`core-arch-planner` scope, deliberately not invented by an implementer (state-map-phase, coordinated pass)
 - [2026-09-04] DOCKER GAP CLOSED, same day — the Docker daemon became available after the coordinated pass completed, so every Testcontainers-backed proof recorded above as written-but-unexecuted has now genuinely RUN and PASSED. Supersedes that caveat in the preceding entry. Verified: `SharedKernel.Idempotency.Redis.Tests` 25/25 and `SharedKernel.Idempotency.EfCore.Tests` 25/25 (50/50 total — the 10 concurrent-reservation/tenant-isolation/expiry-reclaim proofs now execute against real Redis and real PostgreSQL, not a mock); `SharedKernel.Scheduling.Tests` 35/35, which INCLUDES `MultiReplicaSingleExecutionTests` — the proof that P-464's per-occurrence lock fix actually closes the cross-replica duplicate-firing window, previously the one defect fix asserted by reasoning rather than demonstrated; `SharedKernel.Testing.SelfTests` 1242/1242 with zero exclusions (1216 plus the 26 `Containers/*` fixtures). Also re-verified post-merge: `SharedKernel.ArchitectureTests.Tests` 247/247, `SharedKernel.Analyzers.Tests` 267/267, full-solution build 0 errors across all 149 registered projects (state-map-phase, coordinated pass)
+- [2026-09-04] arch-lead: three coordinated-pass findings evaluated, all three ACCEPTED, four new phases written to root Phase Backlog under WO-080 — **P-487** (01.Core: readiness-probe primitive for `SharedKernel.Cryptography.KeyVault.Azure`, closing P-449's blocker; explicitly distinguished from `10.Intelligence`'s P-291/WO-047 LLM-probe retraction since a Key Vault key-metadata read is cheap/non-generative, unlike a billed LLM completion — P-449's `Depends on` updated to `P-447, P-487`), **P-488** (05.Application: fix `CacheInvalidationBehavior`'s pre-commit eviction ordering defect, flagged unfixed-and-untracked in the prior pass's changelog), **P-489** (00.Governance: mechanically lock the corrected ordering, mirroring `SK.00.CacheEncryptionAndRedisValidationLock`'s real-executed-pipeline technique), **P-490** (00.Governance: mechanically enforce the previously-unenforced `13.ServiceDefaults`→`17.Workflows` readiness-probe-only layering grant, as a deliberately separate rule from the sibling `19.Scheduling` grant's `OnlyReachesSchedulerProbeTypes`, per root `CLAUDE.md`'s explicit no-analogy/no-merge instruction). All four target domains (01.Core, 05.Application, 00.Governance) were already `●` Published on the Domain Summary Board, so no `state-map-phase` calls were made per the board-state gate — dispatch is left to `/dispatch-phase`. No `sync-brain` call made this pass — all three findings close gaps in already-documented mechanisms (the established probe-primitive split, the already-documented `CacheInvalidationBehavior` invariant, the already-recorded `17.Workflows` layering grant); none introduces a new technology, package, or "What Goes Where" row (arch-lead)
