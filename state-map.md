@@ -1233,7 +1233,7 @@ A concurrent read repopulating the cache from pre-commit state inside the window
 ---
 ### P-489 — Governance: Mechanically Lock `CacheInvalidationBehavior`'s Post-Commit Eviction Ordering
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-080
 **Domain:** 00.Governance
 **Depends on:** P-488
