@@ -46,4 +46,7 @@ public static class HealthCheckTags
 
     /// <summary>Dependency-category tag for workflow-service connectivity checks.</summary>
     public const string Workflows = "workflows";
+
+    /// <summary>Dependency-category tag for scheduler-loop liveness checks.</summary>
+    public const string Scheduler = "scheduler";
 }

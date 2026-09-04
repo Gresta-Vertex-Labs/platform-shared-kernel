@@ -70,4 +70,16 @@ internal static partial class ServiceDefaultsLog
         Level = LogLevel.Warning,
         Message = "MtlsForwardedHeaderMiddleware has no configured TrustedNetworks allowlist for header '{HeaderName}' — any network path reaching this host directly can forge this header.")]
     public static partial void ForwardedHeaderTrustBoundaryUnconfigured(ILogger logger, string headerName);
+
+    /// <summary>
+    /// Logged once at startup by <see cref="Localization.LocalizationExtensions.AddSharedKernelLocalization"/>
+    /// when neither the <c>UserPreference</c> nor the <c>TenantDefault</c> culture-resolution step
+    /// can ever resolve a culture — <c>LocalizationResolutionOptions.UserPreferenceClaimType</c> is
+    /// unconfigured AND no <c>ITenantCatalog</c> is registered in DI.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 13004,
+        Level = LogLevel.Warning,
+        Message = "AddSharedKernelLocalization: neither UserPreferenceClaimType nor a registered ITenantCatalog is configured — the UserPreference and TenantDefault culture-resolution steps can never resolve a culture.")]
+    public static partial void LocalizationNoDynamicStrategyCanResolve(ILogger logger);
 }

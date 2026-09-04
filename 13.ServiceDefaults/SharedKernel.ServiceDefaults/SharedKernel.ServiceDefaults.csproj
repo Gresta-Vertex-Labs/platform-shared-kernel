@@ -43,6 +43,37 @@
       13.ServiceDefaults never reimplements X.509 chain/revocation validation itself.
     -->
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Mtls\SharedKernel.Security.Mtls.csproj" />
+    <!--
+      WO-068/P-449 (S-22): referenced solely so AddSharedKernelKeyVaultKeyProvider (Core phase,
+      C-65) can call SharedKernel.Cryptography.KeyVault.Azure's
+      AddSharedKernelAzureKeyVaultCryptography(IConfiguration). 01.Core is already inside this
+      domain's granted 01-12 composition-root range, so no separate named layering exception is
+      required (unlike the 17.Workflows/19.Scheduling grants). The readiness-probe half of this
+      capability (AddKeyVaultKeyProviderReadinessCheck, D-33) remains blocked on a genuine
+      upstream design gap in 01.Core's own ratified Interface Contracts — see state-map.md's
+      Blocked table — and is NOT touched by this reference.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography.KeyVault.Azure\SharedKernel.Cryptography.KeyVault.Azure.csproj" />
+    <!--
+      WO-078/P-483 (S-24): the first-ever intra-domain reference from SharedKernel.ServiceDefaults
+      to its own sibling package SharedKernel.MultiTenancy — previously fully independent,
+      composed only side-by-side at a consumer's own Program.cs. Needed solely so
+      AddSharedKernelLocalization (Core phase, C-69) can resolve ITenantCatalog's type for the
+      optional TenantDefault culture-resolution step. A deliberate design decision (D-36), not an
+      oversight.
+    -->
+    <ProjectReference Include="..\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" />
+    <!--
+      WO-073/P-466 (S-23): a new, INDEPENDENTLY-EARNED 13->19 layering grant (root CLAUDE.md's
+      Layering Rules -> Hard rules) — referenced solely so AddSchedulerReadinessCheck (Core phase,
+      C-68) can resolve ISchedulerServiceProbe/SchedulerServiceHealth. No other 19.Scheduling type
+      (IScheduledJobRegistry, ScheduledCommandJob<TCommand>, SchedulingOptions,
+      MisfirePolicy/OverlapPolicy, ...) may be referenced through this ProjectReference. This grant
+      is NEVER a widening of, and must never be reasoned about by analogy to, the 17.Workflows/
+      WO-047 grant above — the two are independently earned and independently scoped, per root
+      CLAUDE.md's explicit instruction.
+    -->
+    <ProjectReference Include="..\..\19.Scheduling\SharedKernel.Scheduling\SharedKernel.Scheduling.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />

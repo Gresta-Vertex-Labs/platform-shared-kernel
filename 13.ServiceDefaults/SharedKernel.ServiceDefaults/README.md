@@ -26,10 +26,11 @@ Each wraps the probe primitive owned by that capability domain. `13.ServiceDefau
 | `AddSearchReadinessCheck()` | Search index |
 | `AddVectorStoreReadinessCheck()` | Vector collection |
 | `AddWorkflowReadinessCheck()` | Temporal workflow service |
+| `AddSchedulerReadinessCheck()` | `19.Scheduling`'s hosted scheduling loop (in-process, zero I/O) |
 
 ### Telemetry activation — opt in per domain
 
-`WithApplicationTelemetry` · `WithCachingTelemetry` · `WithCommunicationTelemetry` · `WithIntegrationTelemetry` · `WithIntelligenceTelemetry` · `WithMessagingTelemetry` · `WithPersistenceTelemetry` · `WithSearchTelemetry` · `WithWorkflowTelemetry`
+`WithApplicationTelemetry` · `WithCachingTelemetry` · `WithCommunicationTelemetry` · `WithIntegrationTelemetry` · `WithIntelligenceTelemetry` · `WithMessagingTelemetry` · `WithPersistenceTelemetry` · `WithSchedulingTelemetry` · `WithSearchTelemetry` · `WithWorkflowTelemetry`
 
 Each registers that domain's `ActivitySource` and/or `Meter` with the host providers.
 
@@ -38,9 +39,11 @@ Each registers that domain's `ActivitySource` and/or `Meter` with the host provi
 | Method | Purpose |
 |---|---|
 | `AddSharedKernelRateLimiting()` | BCL `Microsoft.AspNetCore.RateLimiting` with conservative defaults |
-| `AddSharedKernelKeyVaultConfiguration()` | Azure Key Vault as an `IConfiguration` source |
+| `AddSharedKernelKeyVaultConfiguration()` | Azure Key Vault as an `IConfiguration` **source** |
+| `AddSharedKernelKeyVaultKeyProvider()` | Azure Key Vault Keys as the `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` **key provider** — distinct from the row above; see below |
 | `AddMtlsClientCertificate()` | Kestrel client-certificate negotiation |
 | `AddMtlsForwardedHeaderCertificate()` | Forwarded mTLS certificate header, restricted to trusted networks |
+| `AddSharedKernelLocalization()` | Precedence-ordered request-culture resolution; see below |
 
 ## Quick Start
 
@@ -65,6 +68,48 @@ app.Run();
 `MapDefaultHealthCheckEndpoints()` maps unauthenticated endpoints by default, because Kubernetes probes cannot present credentials. Readiness output can disclose dependency topology.
 
 Pass `requireAuthorization: true`, or keep these endpoints off your public ingress and restrict them with a `NetworkPolicy`. Do not expose readiness publicly on an internet-facing service.
+
+## Key Vault: two independent, easily-confused methods
+
+`AddSharedKernelKeyVaultConfiguration()` and `AddSharedKernelKeyVaultKeyProvider()` both talk to Azure Key Vault, but for entirely different reasons — a service may use either, both, or neither:
+
+```csharp
+// Wires Key Vault SECRETS as an additional IConfiguration source.
+builder.AddSharedKernelKeyVaultConfiguration(new Uri("https://my-vault.vault.azure.net/"));
+
+// Registers Key Vault KEYS as the platform's IEncryptionKeyProvider/IEnvelopeEncryptionProvider
+// (e.g. for 06.Persistence's EncryptedValueConverter, 02.Caching's cache-value encryption).
+builder.AddSharedKernelKeyVaultKeyProvider();
+```
+
+`AddSharedKernelKeyVaultKeyProvider()` is a thin call-through to `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure` — configure `AzureKeyVaultCryptographyOptions` under the `SharedKernel:Cryptography:KeyVault:Azure` configuration section (see that package's own README for the full shape: `VaultUri`, `CurrentKeyId`, `KeyNames`). It is idempotent — calling it more than once registers the provider exactly once.
+
+> **Not yet available:** a readiness probe for the Key Vault key provider (`AddKeyVaultKeyProviderReadinessCheck`) is blocked on a genuine upstream design gap — `01.Core`'s own ratified design does not yet declare a probe primitive for this package. Track this in `state-map.md`.
+
+## Culture resolution (`AddSharedKernelLocalization`)
+
+Precedence-ordered request-culture resolution, composed on top of ASP.NET Core's own `RequestLocalizationMiddleware` — never a reimplementation. Resolves *precedence* only; it does not translate anything (pair it with `01.Core`'s `SharedKernel.Localization`/`ILocalizationCatalog` for that).
+
+```csharp
+builder.AddServiceDefaults();
+builder.Services.AddSharedKernelMultiTenancy();
+builder.Services.AddScoped<ITenantCatalog>(sp => /* see SharedKernel.MultiTenancy's README */);
+
+builder.AddSharedKernelLocalization(o => o.UserPreferenceClaimType = "preferred_culture");
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseMiddleware<TenantResolutionMiddleware>(); // populates the ambient tenant id
+app.UseRequestLocalization(); // the real BCL call — this package never wires it for you
+```
+
+Default resolution order — deliberately signed-signal-before-unsigned-header, mirroring the `SharedKernel.MultiTenancy` `StrategyOrder` security lesson:
+
+1. **`UserPreference`** — an authenticated user's own stored preference claim (`IUserContext.Claims[UserPreferenceClaimType]`). Skipped cleanly when `UserPreferenceClaimType` is left unconfigured.
+2. **`TenantDefault`** — the current tenant's `TenantDescriptor.DefaultCulture`, via an optionally-registered `ITenantCatalog`. Skipped cleanly (never throws) when no `ITenantCatalog` is registered.
+3. **`AcceptLanguageHeader`** — the real BCL `AcceptLanguageHeaderRequestCultureProvider`.
+
+A one-time startup warning fires when neither `UserPreferenceClaimType` nor an `ITenantCatalog` is configured — both dynamic steps are structurally dead, and you are almost certainly resolving culture from `Accept-Language` alone by accident rather than by design.
 
 ## Rate limiting and ProblemDetails
 

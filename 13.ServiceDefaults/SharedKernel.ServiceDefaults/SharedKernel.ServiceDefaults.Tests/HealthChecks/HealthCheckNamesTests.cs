@@ -4,6 +4,7 @@ using NSubstitute;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Messaging.Abstractions.MessageBus;
+using SharedKernel.Scheduling.Probes;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
@@ -126,6 +127,18 @@ public sealed class HealthCheckNamesTests
         services.AddHealthChecks().AddWorkflowReadinessCheck();
 
         var registration = GetRegistration(services, HealthCheckNames.Workflows);
+        Assert.NotNull(registration);
+    }
+
+    [Fact]
+    public void AddSchedulerReadinessCheck_DefaultName_MatchesHealthCheckNamesScheduler()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ISchedulerServiceProbe>());
+
+        services.AddHealthChecks().AddSchedulerReadinessCheck();
+
+        var registration = GetRegistration(services, HealthCheckNames.Scheduler);
         Assert.NotNull(registration);
     }
 

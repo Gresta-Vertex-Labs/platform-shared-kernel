@@ -4,6 +4,7 @@ using NSubstitute;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Messaging.Abstractions.MessageBus;
+using SharedKernel.Scheduling.Probes;
 using SharedKernel.Search.Abstractions.Abstractions;
 using SharedKernel.ServiceDefaults.HealthChecks;
 using SharedKernel.Storage.Abstractions.Abstractions;
@@ -168,6 +169,22 @@ public sealed class HealthCheckTagTests
 
         Assert.Contains(HealthCheckTags.Ready, registration.Tags);
         Assert.Contains(HealthCheckTags.Workflows, registration.Tags);
+        Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
+    }
+
+    [Fact]
+    public void AddSchedulerReadinessCheck_RegistersWithReadySchedulerTags_NeverLive()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ISchedulerServiceProbe>());
+
+        services.AddHealthChecks().AddSchedulerReadinessCheck();
+
+        var registrations = GetRegistrations(services);
+        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.Scheduler);
+
+        Assert.Contains(HealthCheckTags.Ready, registration.Tags);
+        Assert.Contains(HealthCheckTags.Scheduler, registration.Tags);
         Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
     }
 

@@ -45,6 +45,51 @@ public class OrderService(ITenantProvider tenants)
 }
 ```
 
+## Tenant catalog (read-only metadata lookup)
+
+**`ITenantCatalog`** — read-only tenant metadata lookup by id or by a resolution-strategy-supplied raw value (host, claim value, header value). Ships lookup only — tenant provisioning/onboarding is a consuming service's own concern.
+
+**`DatabaseTenantCatalog`** — queries a consumer-owned tenant directory table via `IDbConnectionFactory`, reusing `DatabaseTenantResolutionStrategy`'s exact parameterized-query pattern.
+
+**`CachedTenantCatalog`** — a short (30s default), bounded-TTL in-memory decorator over any `ITenantCatalog`. Call `InvalidateTenantAsync` immediately after changing a tenant's status — do not rely on the TTL alone for a suspended/offboarded tenant.
+
+**`CatalogTenantStatusValidator`** — the first real default implementation of `ITenantStatusValidator` above, backed by `ITenantCatalog`. Fails closed: a tenant absent from the catalog is treated identically to `Suspended`/`Offboarded`.
+
+Worked composition example:
+
+```csharp
+// Program.cs
+builder.Services.AddScoped<IDbConnectionFactory, NpgsqlConnectionFactory>();
+
+builder.Services.AddScoped<ITenantCatalog>(sp =>
+{
+    var database = new DatabaseTenantCatalog(sp.GetRequiredService<IDbConnectionFactory>());
+    return new CachedTenantCatalog(database); // 30s default TTL
+});
+
+builder.Services.AddScoped<ITenantStatusValidator, CatalogTenantStatusValidator>();
+```
+
+Opt-in cross-instance cache invalidation (so a status change on one replica evicts every replica's cached copy, not just the one that made the change):
+
+```csharp
+builder.Services.AddScoped<ITenantCatalog>(sp =>
+{
+    var database = new DatabaseTenantCatalog(sp.GetRequiredService<IDbConnectionFactory>());
+    var cached = new CachedTenantCatalog(database)
+        .WithCrossInstanceInvalidation(sp.GetRequiredService<ICacheInvalidationBus>());
+    return cached;
+});
+
+// Elsewhere, wherever you already wire your own Redis Pub/Sub subscription
+// (ICacheInvalidationBus itself is publish-only — this is the consumer-side receive half):
+await channelService.SubscribeAsync("your-tenant-invalidation-channel", async message =>
+{
+    var tenantId = ParseTenantId(message);
+    cachedTenantCatalog.HandleCrossInstanceInvalidationSignal(tenantId);
+});
+```
+
 ## Security note — strategy order matters
 
 The default order is **`Claim` → `Header` → `Database`**, and it is deliberate.

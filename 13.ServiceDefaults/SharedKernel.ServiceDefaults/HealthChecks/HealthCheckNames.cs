@@ -39,4 +39,7 @@ public static class HealthCheckNames
 
     /// <summary>Default registration name for workflow-service connectivity checks.</summary>
     public const string Workflows = "workflows";
+
+    /// <summary>Default registration name for scheduler-loop liveness checks.</summary>
+    public const string Scheduler = "scheduler";
 }

@@ -19,6 +19,14 @@
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Oidc\SharedKernel.Security.Oidc.csproj" />
     <ProjectReference Include="..\..\06.Persistence\SharedKernel.Persistence.Abstractions\SharedKernel.Persistence.Abstractions.csproj" />
+    <!--
+      WO-075/P-472 (S-21): needed only for CachedTenantCatalog.WithCrossInstanceInvalidation
+      (ICacheInvalidationBus) — interface-only, never the concrete .Redis.PubSub package, so a
+      consumer who never calls .WithCrossInstanceInvalidation() pulls in no Redis surface.
+      DatabaseTenantCatalog itself needs no new reference: IDbConnectionFactory is already
+      available via the SharedKernel.Persistence.Abstractions reference above.
+    -->
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" />
