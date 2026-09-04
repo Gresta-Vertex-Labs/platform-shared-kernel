@@ -1,0 +1,10 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>PII/data-classification taxonomy and masking helpers for the SharedKernel: DataClassificationAttribute/SensitiveDataCategoryAttribute pure-metadata marker attributes (never read via reflection in production code — compile-time/analyzer and documentation use only), a PiiMasking static class (Email/Phone/Pan/Suppress — pure, allocation-minimal, null-safe, deterministic), and the IDataSubjectRequestHandler export/erasure contract (implemented by each consuming service against its own data; no default or reflection-based implementation ships, and no cross-service erasure orchestrator is provided). Zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives only.</Description>
+    <PackageTags>shared-kernel;privacy;pii;gdpr;kvkk;data-classification;masking;data-subject-request;aot</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+  </ItemGroup>
+</Project>
