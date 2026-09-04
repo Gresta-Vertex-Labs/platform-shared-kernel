@@ -7,9 +7,25 @@ namespace SharedKernel.Testing.Communication;
 /// interceptors and service implementations in isolation, without a live channel.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Wraps <see cref="Grpc.Core.Testing.TestServerCallContext"/>. After the call completes, inspect
 /// <see cref="Grpc.Core.Testing.TestServerCallContext.ResponseTrailers"/> /
 /// <see cref="Grpc.Core.Testing.TestServerCallContext.Status"/> for post-execution metadata.
+/// </para>
+/// <para>
+/// <b>NAMESPACE NOTE (added P-470/WO-074):</b> every reference to the third-party <c>Grpc.Core</c>
+/// namespace in this file is fully qualified as <c>global::Grpc.Core</c> — this package's own
+/// sibling folder <c>Grpc/</c> (mapped to <c>SharedKernel.Testing.Grpc</c>) makes the bare
+/// <c>Grpc.Core</c> reference ambiguous from ANY file under <c>SharedKernel.Testing.*</c>, not only
+/// files inside the <c>Grpc/</c> folder itself — C#'s namespace lookup walks up the CURRENT file's
+/// own namespace chain (here, <c>SharedKernel.Testing.Communication</c> → <c>SharedKernel.Testing</c>)
+/// checking for a nested <c>Grpc</c> namespace at each level before falling back to the global one,
+/// and <c>SharedKernel.Testing.Grpc</c> now matches at the <c>SharedKernel.Testing</c> level. This
+/// is a project-wide gotcha, not specific to this file — any FUTURE file anywhere under
+/// <c>SharedKernel.Testing.*</c> that references <c>Grpc.Core</c>/<c>Grpc.Core.Testing</c> unqualified
+/// must use <c>global::Grpc.Core</c> instead, exactly like the pre-existing <c>GreenDonut</c>
+/// <c>Result&lt;T&gt;</c>/<c>Error</c> ambiguity this project already documents.
+/// </para>
 /// </remarks>
 public static class TestServerCallContext
 {
@@ -28,7 +44,7 @@ public static class TestServerCallContext
         string host = "localhost",
         DateTime? deadline = null,
         CancellationToken cancellationToken = default) =>
-        Grpc.Core.Testing.TestServerCallContext.Create(
+        global::Grpc.Core.Testing.TestServerCallContext.Create(
             method: method,
             host: host,
             deadline: deadline ?? DateTime.MaxValue,

@@ -138,6 +138,68 @@
       mapped 1:1 to 15.Integration, references SharedKernel.Integration.Webhooks only.
     -->
     <ProjectReference Include="..\..\15.Integration\SharedKernel.Integration.Webhooks\SharedKernel.Integration.Webhooks.csproj" />
+    <!--
+      Money faker/exchange-rate double (S-54, P-441/WO-066): Domain/MoneyFaker, Domain/
+      FakeExchangeRateProvider (IExchangeRateProvider). No new reference needed —
+      SharedKernel.Domain is already referenced above (S-02); Money/Currency/IExchangeRateProvider
+      resolve automatically from that same package now that 03.Domain has shipped them (P-439).
+    -->
+    <!--
+      Validation sample generators (S-55, P-445/WO-067): Validation/ValidationSampleGenerator
+      (checksum-correct valid/invalid IBAN/BIC/PAN/currency/country/E.164/VAT/TCKN samples).
+      References SharedKernel.Validation only, never its FluentValidation adapter sibling.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Validation\SharedKernel.Validation.csproj" />
+    <!--
+      Notification in-memory doubles (S-59, P-463/WO-072): Notifications/InMemoryNotificationSender
+      (INotificationSender, keyed by NotificationChannel), Notifications/
+      InMemoryNotificationDeliveryObserver (INotificationDeliveryObserver). Second ProjectReference
+      from 16.Testing to 15.Integration — the new Notifications/ capability folder, mapped 1:1 to
+      SharedKernel.Integration.Notifications.Abstractions only, never either concrete provider
+      package.
+    -->
+    <ProjectReference Include="..\..\15.Integration\SharedKernel.Integration.Notifications.Abstractions\SharedKernel.Integration.Notifications.Abstractions.csproj" />
+    <!--
+      Data-privacy fakes (S-63, P-475/WO-076): DataPrivacy/RecordingDataSubjectRequestHandler
+      (IDataSubjectRequestHandler), DataPrivacy/PiiMaskingAssertions (re-invokes the real
+      PiiMasking.* functions, never reimplements them).
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.DataPrivacy\SharedKernel.DataPrivacy.csproj" />
+    <!--
+      Culture-context test helper (S-65, P-485/WO-078): Localization/CultureScope. Pure BCL
+      System.Globalization scoping — takes NO ProjectReference to SharedKernel.Localization; a
+      consuming test composes this helper with that package's own InMemoryLocalizationCatalog
+      directly.
+    -->
+    <!--
+      TOTP challenge-freshness fake (S-57 partial, P-453/WO-069): Security/FakeTotpChallengeStore
+      (ITotpChallengeStore). Cryptography/FakeTotpReplayGuard needs no new reference —
+      SharedKernel.Cryptography is already referenced above (S-37). NOT yet a member of
+      Platform.SharedKernel.slnx as of this reference (12.Security's own scaffold pass registers it
+      centrally) — a ProjectReference by path builds fine regardless of solution membership.
+    -->
+    <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Totp\SharedKernel.Security.Totp.csproj" />
+    <!--
+      gRPC server interceptor test harness (P-470/WO-074): Grpc/TestServerCallContext. First
+      ProjectReference from 16.Testing to 14.Presentation — the new Grpc/ capability folder, mapped
+      1:1 to SharedKernel.Presentation.Grpc. Also brings Microsoft.AspNetCore.App transitively (via
+      that project's own FrameworkReference), which is how DefaultHttpContext/IServiceCollection
+      resolve here with no additional direct PackageReference. NOT yet a Platform.SharedKernel.slnx
+      member as of this reference — a ProjectReference by path builds fine regardless.
+    -->
+    <ProjectReference Include="..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" />
+    <!--
+      Tenant catalog fake (P-473/WO-075): ServiceDefaults/InMemoryTenantCatalog (ITenantCatalog).
+      SCOPE-LOCK REVISION, narrow and named (D-230): the ONE reference this domain takes to
+      SharedKernel.MultiTenancy — StaticTenantProvider/FakeTenantResolutionStrategy in the same
+      ServiceDefaults/ folder remain duck-typed/reference-free against it, per the original
+      P-187/WO-029 scope lock.
+    -->
+    <ProjectReference Include="..\..\13.ServiceDefaults\SharedKernel.MultiTenancy\SharedKernel.MultiTenancy.csproj" />
+    <!-- Reporting fake (P-481/WO-077): Reporting/InMemoryReportExporter<TRow> (IReportExporter<TRow>). -->
+    <ProjectReference Include="..\..\20.Reporting\SharedKernel.Reporting.Abstractions\SharedKernel.Reporting.Abstractions.csproj" />
+    <!-- Scheduling fake (P-467/WO-073): Scheduling/InMemoryScheduledJobRegistry (IScheduledJobRegistry). -->
+    <ProjectReference Include="..\..\19.Scheduling\SharedKernel.Scheduling\SharedKernel.Scheduling.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!--
