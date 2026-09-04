@@ -1,6 +1,6 @@
 # 01.Core
 
-Foundational building blocks for the Platform.SharedKernel ecosystem. Seven independently publishable NuGet packages with zero infrastructure dependencies.
+Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve independently publishable NuGet packages — every one but `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, and `SharedKernel.Localization` (a first-party Microsoft dependency, not a third-party one) has zero third-party NuGet dependencies.
 
 | Package | Purpose |
 |---------|---------|
@@ -11,6 +11,11 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Seven inde
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) |
 | `SharedKernel.Cryptography` | Password hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate |
+| `SharedKernel.Validation` | Culture-independent IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT validators + pluggable national-ID registry |
+| `SharedKernel.Validation.FluentValidation` | `IRuleBuilder<T,string>` adapter over `SharedKernel.Validation` (a third-party dependency — `FluentValidation`) |
+| `SharedKernel.Cryptography.KeyVault.Azure` | Azure Key Vault Keys implementation of `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` (a third-party dependency — `Azure.Security.KeyVault.Keys` + `Azure.Identity`) |
+| `SharedKernel.DataPrivacy` | `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` pure-metadata markers, `PiiMasking.*` deterministic masking helpers, `IDataSubjectRequestHandler` export/erasure contract |
+| `SharedKernel.Localization` | `ILocalizationCatalog`, keyed on the same `code` string every `Error` factory requires (a first-party dependency — `Microsoft.Extensions.Localization.Abstractions`) |
 
 All packages target `net10.0` and are AOT-compatible.
 
@@ -304,7 +309,7 @@ if (result.IsValid)
 
 ### LoggingEventIdRanges — EventId Registry
 
-`LoggingEventIdRanges` is a compile-time `const int` registry reserving a contiguous 1000-wide `EventId` block per root folder-map domain (00.Governance through 17.Workflows). Every package anywhere in the repo that authors `[LoggerMessage]` methods must derive its `EventId` values from this registry — never an ad hoc numeric literal.
+`LoggingEventIdRanges` is a compile-time `const int` registry reserving a contiguous 1000-wide `EventId` block per root folder-map domain (00.Governance through 20.Reporting). Every package anywhere in the repo that authors `[LoggerMessage]` methods must derive its `EventId` values from this registry — never an ad hoc numeric literal.
 
 ```csharp
 using Microsoft.Extensions.Logging;
@@ -1161,45 +1166,152 @@ public sealed class BlobUploadExample(IContentHasher contentHasher)
 
 `ISymmetricEncryptionService` is for general-purpose encryption of arbitrary payloads outside an EF Core column — before publishing to a queue, writing to blob storage, or returning from an API. It is distinct from `06.Persistence`'s `EncryptedValueConverter`, which remains the dedicated path for transparent EF Core column-level encryption.
 
+`IEncryptionKeyProvider` resolves the key material. Both of its members are asynchronous and `CancellationToken`-aware, so a genuine network-bound KMS/HSM implementation (Azure Key Vault, AWS KMS, HashiCorp Vault) never needs a blocking-on-async anti-pattern:
+
 ```csharp
 // Consuming service supplies key material — SharedKernel.Cryptography holds none of its own.
-public sealed class MyKeyVaultBackedKeyProvider : IEncryptionKeyProvider
+// A synchronous/config-backed provider can still complete synchronously by returning an
+// already-completed ValueTask, exactly like this one does:
+public sealed class MyConfigBackedKeyProvider : IEncryptionKeyProvider
 {
-    public CryptographicKey GetCurrentKey() =>
-        new("key-v2", LoadKeyMaterialFromVault("key-v2")); // 32 bytes for AES-256
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+        new(new CryptographicKey("key-v2", LoadKeyMaterialFromConfig("key-v2"))); // 32 bytes for AES-256
 
-    public CryptographicKey? GetKey(string keyId) =>
-        TryLoadKeyMaterialFromVault(keyId, out byte[] material) ? new(keyId, material) : null;
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(TryLoadKeyMaterialFromConfig(keyId, out byte[] material) ? new CryptographicKey(keyId, material) : null);
 }
 
 public sealed class PayloadEncryptionExample(ISymmetricEncryptionService encryption)
 {
-    public EncryptedPayload EncryptForQueue(byte[] plaintext) =>
-        encryption.Encrypt(plaintext); // fresh random nonce every call — never reused
+    // Prefer the *Async overloads on hot/high-throughput paths — they never block a thread
+    // while resolving the key, regardless of whether the provider completes synchronously
+    // or asynchronously.
+    public ValueTask<EncryptedPayload> EncryptForQueueAsync(byte[] plaintext, CancellationToken ct) =>
+        encryption.EncryptAsync(plaintext, ct); // fresh random nonce every call — never reused
 
-    public Result<byte[]> DecryptFromQueue(EncryptedPayload payload) =>
-        encryption.Decrypt(payload); // Result<byte[]> — never throws CryptographicException directly
+    public ValueTask<Result<byte[]>> DecryptFromQueueAsync(EncryptedPayload payload, CancellationToken ct) =>
+        encryption.DecryptAsync(payload, ct); // Result<byte[]> — never throws CryptographicException directly
 
-    // Convenience string overloads for simple cases (e.g., a connection string or API token):
+    // The synchronous members are retained for call sites that cannot easily become async
+    // (e.g. a synchronous EF Core ValueConverter). They bridge onto the async key provider via
+    // .GetAwaiter().GetResult() — GENUINELY NON-BLOCKING when the provider resolves
+    // synchronously (as above, or a CachedEncryptionKeyProvider cache hit), but BLOCKS A REAL
+    // THREAD when the provider is genuinely network-bound on a cache miss.
     public string EncryptSecret(string plaintext) => encryption.EncryptToString(plaintext);
 
     public Result<string> DecryptSecret(string encoded) => encryption.DecryptToString(encoded);
 }
 ```
 
-Handling tamper/wrong-key failures via the railway pattern:
+Handling tamper/wrong-key failures:
 
 ```csharp
-Result<byte[]> decrypted = encryption.Decrypt(payload);
+Result<byte[]> decrypted = await encryption.DecryptAsync(payload, ct);
 
-decrypted.Match(
-    onSuccess: plaintext => ProcessPlaintext(plaintext),
-    onFailure: error => logger.LogWarning(
-        "Decryption failed: {Code} — {Message}", error.Code, error.Message));
+if (decrypted.IsSuccess)
+{
+    ProcessPlaintext(decrypted.Value);
+}
+else
+{
+    logger.LogWarning("Decryption failed: {Code} — {Message}", decrypted.Error.Code, decrypted.Error.Message);
+}
 // error.Code is one of CryptographyErrorCodes.DecryptionFailed, .UnknownKeyId, or .MalformedPayload
 ```
 
 `ISymmetricEncryptionService` always uses an AEAD cipher (AES-GCM) — never an unauthenticated mode such as CBC/ECB.
+
+#### Migrating a custom `IEncryptionKeyProvider` implementer (P-446/WO-068, breaking)
+
+`IEncryptionKeyProvider`'s synchronous `GetCurrentKey()`/`GetKey(string)` members were **removed outright** — not kept as a parallel overload. Every implementer must migrate to the asynchronous shape:
+
+| Before (removed) | After |
+|---|---|
+| `CryptographicKey GetCurrentKey()` | `ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default)` |
+| `CryptographicKey? GetKey(string keyId)` | `ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default)` |
+
+A synchronous/config-backed implementer migrates mechanically — wrap the existing return value in `new ValueTask<CryptographicKey>(...)` (or `new ValueTask<CryptographicKey?>(...)`), exactly as shown in `MyConfigBackedKeyProvider` above. No behavioral change is required for that class of implementer, and **config-supplied keys remain the fully-supported default requiring no consumer-side opt-in.** A genuinely network-bound implementer (a real KMS/HSM call) can now `await` its SDK call directly instead of blocking a thread.
+
+`ISymmetricEncryptionService`'s own public surface did **not** break — `Encrypt`/`Decrypt`/`EncryptToString`/`DecryptToString` are unchanged in signature and behavior; only their *internal* key resolution now goes through the async provider via a bridge. The four new `*Async` overloads are purely additive.
+
+### Envelope Encryption
+
+`IEnvelopeEncryptionProvider` is an additive, KMS-idiomatic alternative to `IEncryptionKeyProvider`'s direct-retrieval shape: ask the KMS to generate-and-wrap a fresh data key (`GenerateDataKeyAsync`), use the plaintext key locally, persist only the wrapped form, and later ask the KMS to unwrap it (`UnwrapDataKeyAsync`) — the KMS's own master key material never leaves its boundary. A single provider (e.g. an Azure Key Vault-backed one) may implement both `IEncryptionKeyProvider` and `IEnvelopeEncryptionProvider`.
+
+```csharp
+public sealed class EnvelopeEncryptionExample(IEnvelopeEncryptionProvider envelope)
+{
+    public async Task<(byte[] Ciphertext, byte[] WrappedKey, string MasterKeyId)> EncryptLargePayloadAsync(
+        byte[] plaintext, CancellationToken ct)
+    {
+        EnvelopeDataKey dataKey = await envelope.GenerateDataKeyAsync(ct);
+
+        // Use dataKey.PlaintextKey immediately (e.g. seed a local AesGcm/ISymmetricEncryptionService
+        // call) and then let it go out of scope — NEVER persist it anywhere.
+        byte[] ciphertext = EncryptLocally(plaintext, dataKey.PlaintextKey);
+
+        // Only the wrapped form is safe to persist alongside the ciphertext.
+        return (ciphertext, dataKey.WrappedKey, dataKey.MasterKeyId);
+    }
+
+    public async Task<Result<byte[]>> DecryptLargePayloadAsync(
+        byte[] ciphertext, byte[] wrappedKey, string masterKeyId, CancellationToken ct)
+    {
+        Result<byte[]> unwrapped = await envelope.UnwrapDataKeyAsync(wrappedKey, masterKeyId, ct);
+        return unwrapped.Map(plaintextKey => DecryptLocally(ciphertext, plaintextKey));
+    }
+}
+```
+
+`SharedKernel.Cryptography` ships no default `IEnvelopeEncryptionProvider` implementation — like `IEncryptionKeyProvider`, the consuming service supplies its own (e.g. a real KMS-backed one, or `SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider` once shipped).
+
+### CachedEncryptionKeyProvider — Bounded-TTL Key Caching
+
+`CachedEncryptionKeyProvider` is a decorator over any `IEncryptionKeyProvider` that avoids re-resolving key material (e.g. a network-bound KMS call) on every operation. It never serves an entry past its configured TTL, and a single-flight refresh ensures N concurrent callers past expiry trigger exactly one call to the inner provider rather than a thundering herd. It ships with **no package-owned DI extension** — compose it explicitly, mirroring the `IIdGenerator`/`SystemClock(TimeProvider)` no-extension precedent:
+
+```csharp
+// Program.cs — config-supplied keys remain the default and need no caching at all. Caching is
+// an explicit opt-in for a provider whose resolution is genuinely expensive (a real KMS call).
+builder.Services.AddSingleton<IEncryptionKeyProvider>(sp =>
+    new CachedEncryptionKeyProvider(
+        inner: new MyKmsBackedKeyProvider(sp.GetRequiredService<IMyKmsClient>()),
+        timeProvider: TimeProvider.System,
+        ttl: TimeSpan.FromMinutes(5)));
+```
+
+A failed refresh (an unreachable KMS) propagates the thrown exception to every caller awaiting that single-flight resolution — it never falls back to a stale cached value, matching this whole seam's structural fail-closed posture.
+
+### Azure Key Vault Key Provider — `SharedKernel.Cryptography.KeyVault.Azure`
+
+`AzureKeyVaultEncryptionKeyProvider` (from the sibling `SharedKernel.Cryptography.KeyVault.Azure` package) implements both `IEncryptionKeyProvider` and `IEnvelopeEncryptionProvider` against a real Azure Key Vault. It is the one `01.Core` package with a genuine third-party vendor SDK dependency (`Azure.Security.KeyVault.Keys` + `Azure.Identity`) — kept out of this package so `SharedKernel.Cryptography` itself stays dependency-free.
+
+```csharp
+// appsettings.json
+// {
+//   "SharedKernel": { "Cryptography": { "KeyVault": { "Azure": {
+//     "VaultUri": "https://my-vault.vault.azure.net/",
+//     "CurrentKeyId": "primary",
+//     "KeyNames": { "primary": "tenant-data-key" }
+//   } } } }
+// }
+
+builder.Services.AddSharedKernelAzureKeyVaultCryptography(builder.Configuration);
+// Credential defaults to DefaultAzureCredential; supply your own via:
+// builder.Services.PostConfigure<AzureKeyVaultCryptographyOptions>(o => o.Credential = myCredential);
+
+// Optional: bounded-TTL caching, composed explicitly — this package ships none of its own.
+builder.Services.AddSingleton<IEncryptionKeyProvider>(sp =>
+    new CachedEncryptionKeyProvider(
+        sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>(),
+        TimeProvider.System,
+        TimeSpan.FromMinutes(5)));
+```
+
+**Design decision — direct retrieval is built on envelope wrapping, not a second code path.** Azure Key Vault Keys does not export raw HSM-protected key material by default — the vendor-idiomatic operation is `CryptographyClient.WrapKeyAsync`/`UnwrapKeyAsync`, exactly `IEnvelopeEncryptionProvider`'s shape. `GetCurrentKeyAsync` therefore generates (or returns a process-lifetime-cached) local AES-256 data key via `GenerateDataKeyAsync`, exposing only the already-in-memory plaintext data key as `CryptographicKey.Material` — the vault's own master key material never crosses the process boundary either way, whether reached through `IEncryptionKeyProvider` or `IEnvelopeEncryptionProvider`. `GetKeyAsync` mirrors this by decoding the wrapped data key packed into the requested `keyId` string and unwrapping it via the same internal path. This is a deliberate, permanent design choice — see `AzureKeyVaultEncryptionKeyProvider`'s XML docs for the full reasoning; it must never be "fixed" into two divergent code paths.
+
+**Fail-closed**, matching every other provider in this seam: any genuine Azure SDK exception (unreachable vault, `RequestFailedException` for permission/auth failure, or the vault itself rejecting a wrapped key as tampered) propagates directly — never a silent fallback. The one narrow exception is `UnwrapDataKeyAsync`'s `Result<byte[]>` failure path, returned only when the supplied `masterKeyId` fails *local* well-formedness validation (it is not a recognized Azure Key Vault key identifier URI) before any call ever reaches Azure.
+
+**Ships zero caching of its own** beyond the single process-lifetime "current data key" slot needed to keep `CryptographicKey.Id` stable across repeated `GetCurrentKeyAsync` calls — it never applies a bounded TTL or re-resolves an already-unwrapped historical key. Compose `CachedEncryptionKeyProvider` externally, as shown above, if bounded-TTL caching is desired; two independent caches with different TTL semantics must never both wrap the same provider instance.
 
 ### Asymmetric Signing (RSA / ECDSA)
 
@@ -1261,6 +1373,90 @@ public sealed class TokenIssuanceExample(ISecureRandomGenerator randomGenerator)
 
     public byte[] GenerateNewEncryptionKeyMaterial() =>
         randomGenerator.NextBytes(32); // raw bytes — e.g., seeding a new AES-256 key for rotation
+}
+```
+
+### TOTP/HOTP — Second-Factor Codes
+
+RFC 6238 TOTP (and the RFC 4226 HOTP core it is built on) generates and verifies time-based
+one-time passcodes — the same kind of second-factor code produced by Google Authenticator,
+Microsoft Authenticator, and similar apps. `AddSharedKernelCryptography` registers
+`IHotpGenerator`, `ITotpGenerator`, and `TotpVerifier` as singletons. Unlike the services above,
+`ITotpGenerator` additionally requires an `IClock` registration (`services.AddClock()`, from
+`SharedKernel.Primitives`) and `TotpVerifier` additionally requires a consumer-supplied
+`ITotpReplayGuard` — this package ships no default replay-guard implementation, since a real one
+inherently needs a backing store this dependency-free package cannot own.
+
+**Enrollment — provisioning URI:**
+
+```csharp
+public sealed class TotpEnrollmentService(ISecureRandomGenerator randomGenerator)
+{
+    public (byte[] Secret, Uri ProvisioningUri) BeginEnrollment(string accountEmail)
+    {
+        byte[] secret = randomGenerator.NextBytes(20); // 160 bits — the RFC 4226/6238 default SHA-1 secret length
+
+        Uri provisioningUri = TotpProvisioningUri.Build(
+            issuer: "Contoso",
+            accountName: accountEmail,
+            secret: secret);
+
+        // Persist `secret` (encrypted at rest, e.g. via ISymmetricEncryptionService) against the
+        // user's account, then render `provisioningUri` as a QR code for the user to scan.
+        return (secret, provisioningUri);
+    }
+}
+```
+
+**Challenge — generating a code:**
+
+```csharp
+public sealed class TotpChallengeService(ITotpGenerator totpGenerator)
+{
+    public string CurrentCode(byte[] secret) => totpGenerator.GenerateCode(secret);
+}
+```
+
+**Verification — end to end, with a consumer-supplied `ITotpReplayGuard`:**
+
+```csharp
+public sealed class InMemoryTotpReplayGuard : ITotpReplayGuard
+{
+    private readonly ConcurrentDictionary<string, byte> _used = new();
+
+    public ValueTask<bool> HasBeenUsedAsync(string identityKey, string code, CancellationToken ct = default) =>
+        ValueTask.FromResult(_used.ContainsKey($"{identityKey}:{code}"));
+
+    public ValueTask MarkUsedAsync(string identityKey, string code, TimeSpan validityWindow, CancellationToken ct = default)
+    {
+        // A real implementation persists to a store (e.g. distributed cache) with an expiry of
+        // `validityWindow`, so the entry never grows unbounded — omitted here for brevity.
+        _used[$"{identityKey}:{code}"] = 0;
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class TotpLoginStepUpHandler(TotpVerifier totpVerifier)
+{
+    public async Task<bool> VerifySecondFactorAsync(string userId, byte[] secret, string submittedCode, CancellationToken ct) =>
+        await totpVerifier.VerifyAsync(userId, secret, submittedCode, ct);
+}
+```
+
+**Recovery codes:**
+
+```csharp
+public sealed class RecoveryCodeIssuanceService(RecoveryCodeGenerator recoveryCodeGenerator, IOneWayHasher hasher)
+{
+    public (IReadOnlyList<string> PlaintextCodesToShowOnce, IReadOnlyList<string> HashesToPersist) IssueRecoveryCodes()
+    {
+        IReadOnlyList<string> codes = recoveryCodeGenerator.GenerateCodes();
+        List<string> hashes = codes.Select(hasher.Hash).ToList();
+
+        // Show `PlaintextCodesToShowOnce` to the user now — this is the only time the plaintext
+        // is ever available. Persist only `HashesToPersist`.
+        return (codes, hashes);
+    }
 }
 ```
 
@@ -1345,6 +1541,242 @@ IPayloadCompressor gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 
 ---
 
+## SharedKernel.Validation — Culture-Independent Format Validators
+
+`SharedKernel.Validation` provides culture-independent financial and identity format validators: IBAN (per-country length table + ISO 13616 mod-97 check digit), BIC/SWIFT, payment-card PAN (Luhn + card-network detection), ISO 4217 currency codes, ISO 3166-1 country codes, E.164 phone numbers, a baseline VAT/tax-identifier format check, and a pluggable per-country national-identity-number registry (`TckNationalIdValidator` — Turkey's TCKN — ships as the built-in default). Zero third-party NuGet dependencies. References `SharedKernel.Primitives` (for `Result`/`Error`) and `SharedKernel.Guards` (extending `Guard.Against` with new members via extension methods — `SharedKernel.Guards` itself is never modified).
+
+Every validator is dual-mode: a standalone `IsValid`/`Validate` call, and a `Guard.Against.*` extension. Both paths share the same underlying algorithm and the same `ValidationErrorCodes` constants — a failure surfaces an identical code whichever path reached it.
+
+```csharp
+using SharedKernel.Guards; // Guard.Against entry point
+using SharedKernel.Validation.Validators;
+using SharedKernel.Validation.Guards; // brings the Guard.Against.Invalid* extensions into scope
+
+// Standalone Result call
+Result validationResult = IbanValidator.Validate(request.Iban);
+if (validationResult.IsFailure)
+{
+    return Result<Account>.Failure(validationResult.Error); // e.g. ValidationErrorCodes.Iban.InvalidCheckDigit
+}
+
+// Guard.Against.* extension — same validator, same error codes, chains with the rest of Guard.Against
+Error? error = Guard.Against.InvalidIban(request.Iban);
+if (error is not null)
+{
+    return Result<Account>.Failure(error);
+}
+```
+
+**`Guard.Throw.*` parity is intentionally out of scope for this package.** `SharedKernel.Guards`' `Guard.Throw` nested class is a hand-enumerated static class hardcoded inside `SharedKernel.Guards` itself — a package outside `SharedKernel.Guards` cannot add a member to it without modifying that package, which is out of `SharedKernel.Validation`'s jurisdiction. Only the functional `Guard.Against.*` path is provided here.
+
+### National ID registry
+
+```csharp
+// Register (Program.cs) — pre-seeded with TckNationalIdValidator ("TR")
+builder.Services.AddSharedKernelValidation()
+    .AddNationalIdValidator<MySecondCountryNationalIdValidator>();
+
+public sealed class KycService(INationalIdValidatorRegistry registry)
+{
+    public Error? ValidateNationalId(string idNumber, string countryCode) =>
+        Guard.Against.InvalidNationalId(idNumber, countryCode, registry);
+}
+```
+
+`INationalIdValidatorRegistry.TryGetValidator` never throws for an unregistered country code — it returns `false`.
+
+### `ValidationErrorCodes` is package-local
+
+Format-validator error codes (`ValidationErrorCodes.Iban.*`, `.Pan.*`, `.NationalId.*`, etc.) live in a package-local static class inside `SharedKernel.Validation` itself — they are **never** added as a new nested category under `SharedKernel.Primitives.ErrorCodes`. `ErrorCodes`'s own documented rule already permits this ("consuming packages may add local constants without forking the SharedKernel"), and a whole country-algorithm error-code catalog does not belong bloating the platform's most-depended-upon primitives package.
+
+### A note on `VatValidator`
+
+`VatValidator` is a **baseline, non-exhaustive** cross-jurisdiction format check only — it confirms a value looks like a 2-letter country prefix followed by 2-12 alphanumeric characters, and performs **no** per-country checksum validation. VAT/tax-identifier formats vary enormously by country. A passing result is not proof of a real, registered VAT identifier.
+
+---
+
+## SharedKernel.Validation.FluentValidation — FluentValidation Rule Adapter
+
+`SharedKernel.Validation.FluentValidation` is a thin `IRuleBuilder<T, string>` extension-method adapter over every `SharedKernel.Validation` static format validator: `.MustBeValidIban()`, `.MustBeValidBic()`, `.MustBeValidPan()`, `.MustBeValidCurrencyCode()`, `.MustBeValidCountryCode()`, `.MustBeValidPhoneNumber()`, `.MustBeValidVatNumber()`, and `.MustBeValidNationalId(countryCodeSelector, registry)`. It is a **separate package from `SharedKernel.Validation` on purpose** — a service that only wants the standalone `Result`/`Guard` surface (a Temporal activity, a lightweight worker with no MediatR pipeline) never pulls FluentValidation in transitively.
+
+Each rule delegates to the matching validator's `Validate(string?)` and, on failure, attaches a single `FluentValidation.Results.ValidationFailure` whose `ErrorCode` is the *exact* `ValidationErrorCodes` constant the validator produced — never a single rule-fixed code. This matters for validators like `IbanValidator`, which can fail with three distinct codes (`InvalidFormat` / `InvalidCheckDigit` / `InvalidLength`) depending on what is wrong with the value:
+
+```csharp
+using FluentValidation;
+using SharedKernel.Validation.FluentValidation;
+using SharedKernel.Validation.NationalId;
+
+public sealed class CreatePaymentCommandValidator : AbstractValidator<CreatePaymentCommand>
+{
+    public CreatePaymentCommandValidator(INationalIdValidatorRegistry nationalIdRegistry)
+    {
+        RuleFor(x => x.Iban).MustBeValidIban();
+        RuleFor(x => x.Bic).MustBeValidBic();
+        RuleFor(x => x.CurrencyCode).MustBeValidCurrencyCode();
+        RuleFor(x => x.PayerNationalId)
+            .MustBeValidNationalId(x => x.PayerCountryCode, nationalIdRegistry);
+    }
+}
+```
+
+Because every rule is built on FluentValidation's `Custom(...)` extension (it needs to inspect *which* code the underlying validator returned, not just pass/fail), chaining `.WithMessage(...)` or `.WithErrorCode(...)` afterward has **no effect** — the message and error code always come from the `SharedKernel.Validation` validator. `.When(...)`/`.Unless(...)` and other rule-level conditions still work normally.
+
+### Composing with `05.Application.Behaviors`'s `ValidationBehavior`
+
+No extra plumbing is required: `ValidationBehavior<TRequest,TResponse>` already runs every registered `IValidator<TRequest>` and aggregates every `ValidationFailure` it finds, regardless of how each rule was built. A validator using `.MustBeValidIban()` inside an `AbstractValidator<TCommand>` that is already resolved by that pipeline behavior participates automatically.
+
+One nuance worth knowing: as of this writing, `ValidationBehavior` projects each failure via `Error.Validation(failure.PropertyName, failure.ErrorMessage)` — the FluentValidation **property name** becomes the downstream `Error.Code`, not `failure.ErrorCode`. The finer-grained `ValidationErrorCodes` constant this package attaches is still there on the raw `ValidationFailure.ErrorCode` — a consuming service (or a future `ValidationBehavior` revision) that wants it on the outward-facing `Error` instead of the property name reads `failure.ErrorCode` directly.
+
+---
+
+## SharedKernel.DataPrivacy — Classification Taxonomy, Masking, Data-Subject Requests
+
+`SharedKernel.DataPrivacy` ships three independent, composable pieces: a pure-metadata classification taxonomy, deterministic PII masking helpers, and the `IDataSubjectRequestHandler` GDPR/KVKK export/erasure contract. It depends on `SharedKernel.Primitives` only (for `Result<T>`/`Error` on the request-handler contract) — the same single-package, zero-third-party-dependency reasoning as `SharedKernel.Cryptography`/`.Compression`/`.Guards`.
+
+### Classification attributes — metadata only, never reflected over at runtime
+
+```csharp
+using SharedKernel.DataPrivacy.Classification;
+
+public sealed class CustomerProfile
+{
+    [DataClassification(DataClassification.Public)]
+    public string DisplayName { get; init; } = string.Empty;
+
+    [DataClassification(DataClassification.Restricted)]
+    [SensitiveDataCategory(SensitiveDataCategory.Pii)]
+    public string NationalId { get; init; } = string.Empty;
+}
+```
+
+`DataClassificationAttribute`/`SensitiveDataCategoryAttribute` are **never read via reflection in production code** — their sole sanctioned consumers are a compile-time `00.Governance` analyzer and human documentation/code review. This is a hard design constraint, not a style preference: the platform already bans reflection-based property walks for structured logging, and a classification mechanism that itself needed runtime reflection to be useful would contradict the rule it exists to support. Usable on any type in any layer, including `03.Domain`/`04.Contracts`.
+
+### PiiMasking — deterministic masking helpers
+
+```csharp
+using SharedKernel.DataPrivacy.Masking;
+
+PiiMasking.Email("j.doe@example.com");   // "j***@example.com"
+PiiMasking.Phone("+1 (555) 123-4567");   // "+* (***) ***-4567" — separators preserved, only digits masked
+PiiMasking.Pan("4111-1111-1111-1111");   // "****-****-****-1111" — always exactly the last 4 digits
+PiiMasking.Suppress("12345678901");      // "[REDACTED]" — the fixed sentinel, regardless of input
+```
+
+Every member is null/empty-safe and never throws — `null`/`""`/whitespace-only input returns `string.Empty` for `Email`/`Phone`/`Pan`, while `Suppress` returns its fixed sentinel for every input, including `null`. No member uses reflection.
+
+### IDataSubjectRequestHandler — implemented by each service against its own data
+
+```csharp
+using SharedKernel.DataPrivacy.DataSubjectRequests;
+using SharedKernel.Primitives.Errors;
+using SharedKernel.Primitives.Results;
+
+public sealed class CustomerDataSubjectRequestHandler(ICustomerRepository customers, IClock clock)
+    : IDataSubjectRequestHandler
+{
+    public async Task<Result<DataSubjectExportBundle>> ExportDataAsync(string subjectId, CancellationToken ct = default)
+    {
+        Customer? customer = await customers.FindByIdAsync(subjectId, ct);
+        if (customer is null)
+        {
+            return Error.NotFound("customer.not_found", $"No customer found for subject '{subjectId}'.");
+        }
+
+        var data = new Dictionary<string, object?>
+        {
+            ["email"] = customer.Email,
+            ["displayName"] = customer.DisplayName,
+        };
+
+        return new DataSubjectExportBundle(subjectId, clock.UtcNow, data);
+    }
+
+    public async Task<Result<DataSubjectErasureReceipt>> RequestErasureAsync(string subjectId, CancellationToken ct = default)
+    {
+        int affected = await customers.AnonymizeBySubjectIdAsync(subjectId, ct);
+        return new DataSubjectErasureReceipt(subjectId, clock.UtcNow, affected);
+    }
+}
+```
+
+This package ships no default implementation — there is no honest generic way to export or erase "everything about a subject" without knowing what a given service actually stores — and **no cross-service erasure orchestrator**. Coordinating a single data-subject request across every service that might hold data about that subject is explicitly out of scope; it is a plausible future composition (a `19.Scheduling` job or a `17.Workflows` durable workflow) built on top of this contract once real per-service handlers exist.
+
+### Composing with `06.Persistence`'s audit trail
+
+`06.Persistence`'s append-only audit trail (`IAuditTrailWriter`, P-456/WO-071) persists opaque, caller-serialized before/after snapshots with no knowledge of which fields are sensitive. Mask a classified field with `PiiMasking.*` before handing it to that writer:
+
+```csharp
+var auditSnapshot = new
+{
+    Email = PiiMasking.Email(customer.Email),
+    CardNumber = PiiMasking.Pan(customer.CardNumber),
+};
+
+await auditTrailWriter.WriteAsync(entry with { After = auditSnapshot }, ct);
+```
+
+This is documentation guidance only — neither package takes a dependency on the other.
+
+See [`SharedKernel.DataPrivacy`'s own README](SharedKernel.DataPrivacy/README.md) for the full usage guide.
+
+---
+
+## SharedKernel.Localization — Culture-Keyed Message Catalog
+
+`SharedKernel.Localization` ships `ILocalizationCatalog`, keyed on the same `code` string every `Error` factory in `SharedKernel.Primitives` already requires. It depends on `SharedKernel.Primitives` and the first-party `Microsoft.Extensions.Localization.Abstractions` NuGet package only — never a bespoke `.resx` pipeline.
+
+### The fallback contract
+
+**AN UNTRANSLATED ERROR MESSAGE FALLS BACK TO THE ORIGINAL THROW-SITE STRING, IT IS NEVER BLANK.** `ILocalizationCatalog.TryGetString` only ever returns `false`/`null` for an unregistered or untranslated `(code, culture)` pair — never throws for that outcome, never returns an empty string. Applying the throw-site-message fallback when a lookup misses is entirely the caller's responsibility — in practice `14.Presentation`'s `Error.ToProblemDetails()` (P-484, out of this package's jurisdiction). `01.Core.Primitives.Error` itself is completely unchanged by this package's existence — no new property, no breaking change to the platform's single most-depended-upon type.
+
+```csharp
+using SharedKernel.Localization;
+using System.Globalization;
+
+ILocalizationCatalog catalog = new InMemoryLocalizationCatalog()
+    .AddTranslation("user.not_found", CultureInfo.GetCultureInfo("tr"), "Kullanıcı bulunamadı.");
+
+string throwSiteMessage = "User not found.";
+string resolvedMessage = catalog.TryGetString("user.not_found", CultureInfo.GetCultureInfo("tr-TR"), out string? translated)
+    ? translated!
+    : throwSiteMessage; // never blank — this is the fallback 14.Presentation applies
+```
+
+### InMemoryLocalizationCatalog — dictionary-backed default, with parent-culture fallback
+
+`InMemoryLocalizationCatalog` is keyed by `(code, CultureInfo.Name)`, seeded via a chained `AddTranslation(...)` builder. A lookup for a specific culture (e.g. `tr-TR`) that has no exact entry falls back through each parent culture (`tr`) and finally `CultureInfo.InvariantCulture`, mirroring standard `ResourceManager`/`IStringLocalizer` resource-fallback behavior — the single most likely real-world case a bare `(code, CultureInfo.Name)` key alone leaves unspecified. Seed a translation under `CultureInfo.InvariantCulture` for a universal default reached by every culture with no more specific entry of its own. Code lookup is case-sensitive (ordinal), consistent with how `Error.Code` is compared everywhere else on the platform.
+
+```csharp
+var catalog = new InMemoryLocalizationCatalog()
+    .AddTranslation("generic.error", CultureInfo.InvariantCulture, "Something went wrong.")
+    .AddTranslation("generic.error", CultureInfo.GetCultureInfo("tr"), "Bir şeyler yanlış gitti.");
+
+catalog.TryGetString("generic.error", CultureInfo.GetCultureInfo("tr-TR"), out string? v1); // "Bir şeyler yanlış gitti." — tr, not invariant
+catalog.TryGetString("generic.error", CultureInfo.GetCultureInfo("fr-FR"), out string? v2); // "Something went wrong." — falls to invariant
+```
+
+### StringLocalizerLocalizationCatalog — composing with `.resx` tooling
+
+Wraps a caller-supplied `IStringLocalizerFactory` so a service with full `.resx` tooling composes behind the same seam. It never blindly forwards `LocalizedString.Value` — a missing resource key returns a `LocalizedString` whose `Value` falls back to the key itself with `ResourceNotFound = true`; `TryGetString` checks `ResourceNotFound` first and returns `false`/`null` whenever it is `true`, rather than surfacing the raw error code as if it were a translation.
+
+```csharp
+using Microsoft.Extensions.Localization;
+using SharedKernel.Localization;
+
+public sealed class ErrorMessages; // marker type — matches ErrorMessages.resx / ErrorMessages.tr.resx
+
+services.AddLocalization(options => options.ResourcesPath = "Resources");
+services.AddStringLocalizerCatalog<ErrorMessages>();
+```
+
+### Naming — deliberately not `AddSharedKernelLocalization`
+
+Registration is `AddInMemoryLocalizationCatalog(...)` / `AddStringLocalizerCatalog<TResource>()` — never `AddSharedKernelLocalization()`, which name is reserved for `13.ServiceDefaults`'s culture-*resolution* middleware entry point (P-483, out of this package's jurisdiction): resolving which culture a request is in, not looking up a translated message for an already-known `(code, culture)` pair.
+
+See [`SharedKernel.Localization`'s own README](SharedKernel.Localization/README.md) for the full usage guide.
+
+---
+
 ## Dependency Graph
 
 ```
@@ -1353,14 +1785,24 @@ SharedKernel.Primitives              (no dependencies)
        +──► SharedKernel.Core           (BCL extensions, railway extensions, exceptions)
        |       |
        |       +──► SharedKernel.Guards  (Guard.Against / Guard.Throw two-path guard system)
+       |               |
+       |               +──► SharedKernel.Validation  (IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT + national-ID registry)
+       |                       |
+       |                       +──► SharedKernel.Validation.FluentValidation  (IRuleBuilder<T,string> adapter; also pulls in the third-party FluentValidation package)
        |
        +──► SharedKernel.Configuration  (Options pattern + startup validation)
        |       |
        |       +──► SharedKernel.Cryptography  (one-way hashing, AES-GCM, RSA/ECDSA, HMAC, secure random)
+       |       |       |
+       |       |       +──► SharedKernel.Cryptography.KeyVault.Azure  (Azure Key Vault Keys provider; also pulls in the third-party Azure.Security.KeyVault.Keys + Azure.Identity packages)
        |       |
        |       +──► SharedKernel.Compression   (IPayloadCompressor: Brotli default, GZip keyed alternate)
        |
        +──► SharedKernel.FeatureManagement  (IFeatureManager + Microsoft.FeatureManagement adapter)
+       |
+       +──► SharedKernel.DataPrivacy  (DataClassification/SensitiveDataCategory attributes, PiiMasking, IDataSubjectRequestHandler)
+       |
+       +──► SharedKernel.Localization  (ILocalizationCatalog; also pulls in the first-party Microsoft.Extensions.Localization.Abstractions package)
 ```
 
-All seven packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed.
+All twelve packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, and `SharedKernel.Localization` are the three exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected.
