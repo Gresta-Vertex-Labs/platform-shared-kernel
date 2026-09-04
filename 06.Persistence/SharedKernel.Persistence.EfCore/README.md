@@ -16,6 +16,8 @@ EF Core 10 implementation of `SharedKernel.Persistence.Abstractions` for Platfor
 - `EncryptedValueConverter`, `.Encrypt()` extension, `EncryptionModelConvention` — transparent field-level AES-256-GCM column encryption
 - `IRestorableRepository<TAggregate,TId>` / `EfRepository.RestoreAsync` — single-entity soft-delete restore (stages only, same save boundary as every other write)
 - `IReadReplicaContextAccessor<TContext>` / `.WithReadReplica(...)` — opt-in read-replica routing for `IReadRepository`
+- `EfAuditTrailWriter` / `EfAuditQueryService` / `EfCoreAuditActorContext` / `AuditRecordImmutabilityInterceptor` / `.WithAuditTrail()` — opt-in, append-only, hash-chained audit trail implementing `SharedKernel.Persistence.Abstractions`'s `IAuditTrailWriter`/`IAuditQueryService`
+- `CurrencyValueConverter` / `MoneyValueConverter` / `.OwnsMoney(...)` / `ConfigureMoney()` — `03.Domain`'s `Money`/`Currency` value objects mapped to a single packed column
 - `[LoggerMessage]`-based structured logging (EventIds `6000-6010`) across `ConcurrencyInterceptor`, `MigrationAndSeedHostedService`, transient-retry diagnostics, and `EncryptionRotationService` — never a key byte or plaintext/ciphertext value
 - `EfCorePersistenceBuilder<TContext>` — fluent DI builder (`AddSharedKernelEfCore<TContext>(...)`)
 
@@ -126,6 +128,82 @@ services
 ```
 
 `IReadRepository` reads are routed to the replica connection; `IRepository` writes always target the primary. **READ-AFTER-WRITE CONSISTENCY BECOMES THE CALLER'S RESPONSIBILITY ONCE ENABLED** — a handler that writes then immediately reads via `IReadRepository` in the same logical operation MAY OBSERVE STALE DATA under replication lag. A read issued inside an active transaction is NEVER routed to the replica, even when this is configured.
+
+## Mapping `Money` (opt-in, requires `ConfigureMoney()`)
+
+`03.Domain`'s `Money`/`Currency` value objects map to a **single packed `"{amount}:{currencyCode}"` string column** (`HasMaxLength(40)`), not two independently-queryable columns — `Amount` and `Currency` are **NOT filterable or aggregatable in SQL** through this mapping (no `WHERE Currency = 'USD'`, no `ORDER BY Amount`, no `SUM(Amount)`). A service that needs that must map its own separate scalar `decimal`/`string` shadow columns instead. See [06.Persistence/CLAUDE.md](../CLAUDE.md) for the full D-105/D-106 rationale (a genuine two-column owned-type mapping is unreachable through any public EF Core 10 API).
+
+`ConfigureMoney()` **must** be called from `ConfigureConventions()` before `.OwnsMoney(...)` is used anywhere in the model — omitting it fails model building, because EF Core's automatic navigation discovery walks `Money` (and transitively `Currency`) as candidate entity types before `OnModelCreating` ever runs:
+
+```csharp
+using SharedKernel.Persistence.EfCore.Conversions;
+
+public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options, /* ... */)
+    : SharedKernelDbContext(options, /* ... */)
+{
+    // Required once per DbContext — registers the Currency/Money conversions globally, before
+    // OnModelCreating's automatic navigation discovery ever walks a Money-typed property.
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.ConfigureMoney();
+        base.ConfigureConventions(configurationBuilder);
+    }
+}
+
+// Applied automatically by SharedKernelDbContext.OnModelCreating via
+// ModelBuilder.ApplyConfigurationsFromAssembly — no manual registration needed.
+internal sealed class OrderEntityConfiguration : EntityTypeConfigurationBase<Order, OrderId>
+{
+    public override void Configure(EntityTypeBuilder<Order> builder)
+    {
+        base.Configure(builder);
+
+        builder.OwnsMoney(x => x.Total);                                        // packed column "Total"
+        builder.OwnsMoney(x => x.ShippingFee, columnName: "shipping_fee_amount");
+    }
+}
+```
+
+A `Money` property is deliberately excluded from `ValueObjectOwnershipBuilder`'s generic auto-owned scan — it must always be configured explicitly via `.OwnsMoney(...)`.
+
+## Append-only audit trail (opt-in)
+
+`.WithAuditTrail()` registers an append-only, hash-chained audit trail implementing `SharedKernel.Persistence.Abstractions`'s `IAuditTrailWriter`/`IAuditQueryService` — distinct from `AuditInterceptor` above, which only stamps mutable `CreatedBy`/`ModifiedBy`/`ModifiedOn` columns that the next edit overwrites. Omitting `.WithAuditTrail()` leaves `IAuditTrailWriter`/`IAuditQueryService` unregistered and no `AuditRecord` table in the model.
+
+```csharp
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
+    .WithAuditTrail()   // registers EfAuditTrailWriter, EfAuditQueryService, AuditRecordImmutabilityInterceptor,
+                         // AuditTrailFeatureMarker (singleton), and a default IAuditActorContext bridging the
+                         // already-registered IUserContext/ITenantProvider
+    .Build();
+
+// AuditTrailFeatureMarker? must be declared on the DbContext's OWN constructor and forwarded to base(...) —
+// the same pattern .WithEncryption() already requires for ISymmetricEncryptionService?/IEncryptionKeyProvider?.
+// A raw bool flag cannot do this: DI cannot auto-resolve a primitive constructor parameter, only a registered type.
+public sealed class OrderDbContext : SharedKernelDbContext
+{
+    public OrderDbContext(
+        DbContextOptions<OrderDbContext> options,
+        AuditInterceptor audit, SoftDeleteInterceptor softDelete, ConcurrencyInterceptor concurrency,
+        IEnumerable<ISaveChangesInterceptor>? additionalInterceptors,
+        AuditTrailFeatureMarker? auditTrailMarker)   // <-- required for AuditRecord to join this context's model
+        : base(options, audit, softDelete, concurrency, additionalInterceptors, auditTrailMarker: auditTrailMarker)
+    { }
+}
+
+var record = await auditTrailWriter.RecordAsync(new AuditEntry
+{
+    Action = "CustomerLimitChanged",
+    ResourceType = nameof(Customer),
+    ResourceId = customer.Id.ToString(),
+    BeforeSnapshot = JsonSerializer.Serialize(beforeState),
+    AfterSnapshot = JsonSerializer.Serialize(afterState),
+    ApprovalId = approvalRecord?.Id.ToString(),
+}, ct);
+```
+
+`AuditRecordImmutabilityInterceptor` (the fourth, opt-in-only interceptor `.WithAuditTrail()` registers) throws if any `AuditRecord` entry is `Modified` or `Deleted` — the load-bearing structural guarantee. **THIS IS AN APPLICATION-LEVEL GUARD ONLY — IT CANNOT STOP A DBA-LEVEL OR DIRECT-SQL MUTATION.** For real defense-in-depth, ALSO ISSUE A DATABASE-LEVEL `REVOKE UPDATE, DELETE` GRANT ON THE UNDERLYING `AuditRecord` TABLE FOR THE APPLICATION'S DATABASE ROLE. `IAuditQueryService.VerifyChainIntegrityAsync` detects a tampered record's hash mismatch after the fact — it proves tampering occurred, it does not prevent it.
 
 ## Explicit transactions, bulk mutation, streaming, keyset pagination
 
