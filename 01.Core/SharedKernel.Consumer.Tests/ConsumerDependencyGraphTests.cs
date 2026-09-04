@@ -1,7 +1,11 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
+using System.IO.Compression;
+using System.Xml.Linq;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Options;
 using SharedKernel.Compression;
 using SharedKernel.Compression.Extensions;
@@ -9,18 +13,32 @@ using SharedKernel.Configuration.Extensions;
 using SharedKernel.Core.Extensions;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Hashing;
+using SharedKernel.Cryptography.KeyVault.Azure;
+using SharedKernel.Cryptography.KeyVault.Azure.Extensions;
+using SharedKernel.Cryptography.KeyVault.Azure.Options;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.DataPrivacy.Classification;
+using SharedKernel.DataPrivacy.DataSubjectRequests;
+using SharedKernel.DataPrivacy.Masking;
 using SharedKernel.FeatureManagement.Abstractions;
 using SharedKernel.FeatureManagement.Extensions;
 using SharedKernel.Guards;
 using SharedKernel.Guards.Clauses;
+using SharedKernel.Localization;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Enums;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
+using SharedKernel.Validation.Errors;
+using SharedKernel.Validation.Extensions;
+using SharedKernel.Validation.FluentValidation;
+using SharedKernel.Validation.Guards;
+using SharedKernel.Validation.NationalId;
+using SharedKernel.Validation.Validators;
 using Xunit;
+using FluentValidationLib = FluentValidation;
 
 namespace SharedKernel.Consumer.Tests;
 
@@ -557,6 +575,54 @@ public sealed class ConsumerDependencyGraphTests
         Assert.Equal("plaintext-from-consumer", System.Text.Encoding.UTF8.GetString(decrypted.Value));
     }
 
+    [Fact]
+    public async Task Cryptography_SymmetricEncryption_AsyncEncryptDecryptRoundtrip_ResolvedFromPackage()
+    {
+        // P-446/WO-068: proves the async IEncryptionKeyProvider contract and
+        // ISymmetricEncryptionService's additive *Async overloads resolve correctly end-to-end
+        // through the packed (not project-referenced) SharedKernel.Cryptography assembly.
+        using ServiceProvider provider = BuildCryptographyServiceProvider();
+        var keyProvider = new ConsumerEncryptionKeyProvider();
+        var encryption = new AesGcmEncryptionService(keyProvider);
+
+        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-from-consumer-async"u8.ToArray());
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload);
+
+        Assert.True(decrypted.IsSuccess);
+        Assert.Equal("plaintext-from-consumer-async", System.Text.Encoding.UTF8.GetString(decrypted.Value));
+    }
+
+    [Fact]
+    public async Task Cryptography_CachedEncryptionKeyProvider_ComposesOverInnerProvider_ResolvedFromPackage()
+    {
+        // P-446/WO-068: CachedEncryptionKeyProvider ships with no package-owned DI extension —
+        // this proves the documented plain-composition recipe resolves and functions correctly
+        // against the packed assembly.
+        var keyProvider = new CachedEncryptionKeyProvider(
+            new ConsumerEncryptionKeyProvider(), TimeProvider.System, TimeSpan.FromMinutes(5));
+        var encryption = new AesGcmEncryptionService(keyProvider);
+
+        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-via-cached-provider"u8.ToArray());
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload);
+
+        Assert.True(decrypted.IsSuccess);
+        Assert.Equal("plaintext-via-cached-provider", System.Text.Encoding.UTF8.GetString(decrypted.Value));
+    }
+
+    [Fact]
+    public async Task Cryptography_EnvelopeEncryptionProvider_ContractResolvesFromPackage()
+    {
+        // P-446/WO-068: proves IEnvelopeEncryptionProvider/EnvelopeDataKey resolve correctly
+        // against the packed assembly, via a minimal in-memory test double.
+        IEnvelopeEncryptionProvider envelope = new ConsumerEnvelopeEncryptionProvider();
+
+        EnvelopeDataKey dataKey = await envelope.GenerateDataKeyAsync();
+        Result<byte[]> unwrapped = await envelope.UnwrapDataKeyAsync(dataKey.WrappedKey, dataKey.MasterKeyId);
+
+        Assert.True(unwrapped.IsSuccess);
+        Assert.Equal(dataKey.PlaintextKey, unwrapped.Value);
+    }
+
     private static ServiceProvider BuildCryptographyServiceProvider()
     {
         IServiceCollection services = new ServiceCollection();
@@ -649,6 +715,422 @@ public sealed class ConsumerDependencyGraphTests
         services.AddSharedKernelCompression(configuration);
         return services.BuildServiceProvider();
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Validation — verifies the package resolves from the local
+    // feed and that its transitive dependencies (Primitives + Guards) resolve
+    // without conflict, end-to-end through DI registration (P-19/WO-067).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validation_IbanValidator_KnownGoodIban_ResolvedFromPackage()
+    {
+        Assert.True(IbanValidator.IsValid("DE89370400440532013000"));
+
+        var result = IbanValidator.Validate("not-an-iban");
+        Assert.True(result.IsFailure);
+        Assert.Equal(ValidationErrorCodes.Iban.InvalidFormat, result.Error.Code);
+    }
+
+    [Fact]
+    public void Validation_PanValidator_LuhnAndNetworkDetection_ResolvedFromPackage()
+    {
+        Assert.True(PanValidator.IsValid("4242424242424242"));
+        Assert.Equal(CardNetwork.Visa, PanValidator.DetectNetwork("4242424242424242"));
+    }
+
+    [Fact]
+    public void Validation_GuardAgainst_InvalidIban_ResolvedFromPackage()
+    {
+        Error? error = Guard.Against.InvalidIban("not-an-iban");
+
+        Assert.NotNull(error);
+        Assert.Equal(ValidationErrorCodes.Iban.InvalidFormat, error!.Code);
+    }
+
+    [Fact]
+    public async Task Validation_AddSharedKernelValidation_NationalIdRegistryResolves_ResolvedFromPackage()
+    {
+        IHost host = Host.CreateDefaultBuilder()
+            .ConfigureServices((_, services) => services
+                .AddSharedKernelValidation()
+                .AddNationalIdValidator<ConsumerUsNationalIdValidator>())
+            .Build();
+
+        await host.StartAsync();
+
+        INationalIdValidatorRegistry registry = host.Services.GetRequiredService<INationalIdValidatorRegistry>();
+
+        Assert.True(registry.TryGetValidator("TR", out INationalIdValidator? trValidator));
+        Assert.IsType<TckNationalIdValidator>(trValidator);
+
+        Assert.True(registry.TryGetValidator("US", out INationalIdValidator? usValidator));
+        Assert.IsType<ConsumerUsNationalIdValidator>(usValidator);
+
+        await host.StopAsync();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Validation.FluentValidation — verifies the package resolves
+    // from the local feed and that its transitive dependency chain (Validation
+    // → Primitives + Guards) plus the third-party FluentValidation package
+    // resolve without conflict, end-to-end through an AbstractValidator<T>
+    // (P-22/WO-067).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ValidationFluentValidation_MustBeValidIban_ValidValue_Passes()
+    {
+        var validator = new ConsumerPaymentValidator();
+
+        FluentValidationLib.Results.ValidationResult result = validator.Validate(
+            new ConsumerPaymentCommand("DE89370400440532013000", "USD"));
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidationFluentValidation_MustBeValidIban_InvalidValue_FailsWithMatchingErrorCode_ResolvedFromPackage()
+    {
+        var validator = new ConsumerPaymentValidator();
+
+        FluentValidationLib.Results.ValidationResult result = validator.Validate(
+            new ConsumerPaymentCommand("not-an-iban", "USD"));
+
+        Assert.False(result.IsValid);
+        FluentValidationLib.Results.ValidationFailure failure = Assert.Single(result.Errors);
+        Assert.Equal(ValidationErrorCodes.Iban.InvalidFormat, failure.ErrorCode);
+
+        // Cross-package parity: the packaged adapter surfaces the identical code the packaged
+        // standalone SharedKernel.Validation validator produces for the same input.
+        Result standalone = IbanValidator.Validate("not-an-iban");
+        Assert.Equal(standalone.Error.Code, failure.ErrorCode);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Cryptography.KeyVault.Azure — verifies the package resolves
+    // from the local feed and that its transitive dependency chain (Cryptography
+    // + Configuration, plus the third-party Azure.Security.KeyVault.Keys and
+    // Azure.Identity packages) resolves without conflict, end-to-end through DI
+    // registration; also directly inspects the packed SharedKernel.Cryptography
+    // .nuspec to prove neither Azure package leaks as one of ITS dependencies
+    // (P-26/WO-068).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void CryptographyKeyVaultAzure_AddSharedKernelAzureKeyVaultCryptography_RegistersSameSingletonInstance_ResolvedFromPackage()
+    {
+        IServiceCollection services = new ServiceCollection();
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SharedKernel:Cryptography:KeyVault:Azure:VaultUri"] = "https://consumer-verify.vault.azure.net/",
+                ["SharedKernel:Cryptography:KeyVault:Azure:CurrentKeyId"] = "primary",
+                ["SharedKernel:Cryptography:KeyVault:Azure:KeyNames:primary"] = "tenant-data-key",
+            })
+            .Build();
+
+        services.AddSharedKernelAzureKeyVaultCryptography(configuration);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        var asKeyProvider = provider.GetRequiredService<IEncryptionKeyProvider>();
+        var asEnvelopeProvider = provider.GetRequiredService<IEnvelopeEncryptionProvider>();
+
+        Assert.IsType<AzureKeyVaultEncryptionKeyProvider>(asKeyProvider);
+        Assert.Same(asKeyProvider, asEnvelopeProvider);
+    }
+
+    [Fact]
+    public async Task CryptographyKeyVaultAzure_MissingRequiredOptions_ThrowsAtHostStartup_ResolvedFromPackage()
+    {
+        IConfiguration invalidConfiguration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        using IHost host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services => services.AddSharedKernelAzureKeyVaultCryptography(invalidConfiguration))
+            .Build();
+
+        await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+    }
+
+    [Fact]
+    public void CryptographyKeyVaultAzure_UnwrapDataKeyAsync_LocalValidation_ResolvedFromPackage()
+    {
+        // Exercises AzureKeyVaultEncryptionKeyProvider's purely-local masterKeyId validation
+        // branch against the PACKED assembly — no reachable vault needed for this specific path.
+        var provider = new AzureKeyVaultEncryptionKeyProvider(
+            Microsoft.Extensions.Options.Options.Create(new AzureKeyVaultCryptographyOptions
+            {
+                VaultUri = new Uri("https://consumer-verify.vault.azure.net/"),
+                CurrentKeyId = "primary",
+                KeyNames = new Dictionary<string, string> { ["primary"] = "tenant-data-key" },
+            }),
+            new CryptoRandomGenerator());
+
+        Result<byte[]> result = provider.UnwrapDataKeyAsync([1, 2, 3], "not-a-valid-key-vault-uri").AsTask().GetAwaiter().GetResult();
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AzureKeyVaultCryptographyErrorCodes.MalformedMasterKeyId, result.Error.Code);
+    }
+
+    [Fact]
+    public void CryptographyKeyVaultAzure_AzureDependenciesDoNotLeakIntoSharedKernelCryptographyNuspec()
+    {
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string cryptographyNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Cryptography.*.nupkg",
+            // Exclude the sibling KeyVault.Azure package, which legitimately shares the
+            // "SharedKernel.Cryptography." filename prefix.
+            candidate => !Path.GetFileName(candidate).StartsWith("SharedKernel.Cryptography.KeyVault.Azure.", StringComparison.OrdinalIgnoreCase));
+
+        XDocument nuspec = XDocument.Parse(cryptographyNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)];
+
+        Assert.DoesNotContain(dependencyIds, id => id.StartsWith("Azure.", StringComparison.OrdinalIgnoreCase));
+        // Sanity check the assertion above is actually meaningful (not vacuously true because the
+        // dependency list came back empty or the nuspec wasn't the one we think it is).
+        Assert.Contains("SharedKernel.Primitives", dependencyIds);
+        Assert.Contains("SharedKernel.Configuration", dependencyIds);
+    }
+
+    [Fact]
+    public void CryptographyKeyVaultAzure_NuspecDeclaresBothAzureDependencies()
+    {
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string keyVaultNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Cryptography.KeyVault.Azure.*.nupkg", _ => true);
+
+        XDocument nuspec = XDocument.Parse(keyVaultNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)];
+
+        Assert.Contains("Azure.Security.KeyVault.Keys", dependencyIds);
+        Assert.Contains("Azure.Identity", dependencyIds);
+        Assert.Contains("SharedKernel.Cryptography", dependencyIds);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.DataPrivacy — verifies the package resolves from the local feed and
+    // that its transitive dependency chain resolves to SharedKernel.Primitives ONLY (zero
+    // third-party NuGet dependency), end-to-end against the packed assembly (P-30/WO-076).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void DataPrivacy_PiiMasking_Email_ResolvedFromPackage()
+    {
+        Assert.Equal("j***@example.com", PiiMasking.Email("j.doe@example.com"));
+    }
+
+    [Fact]
+    public void DataPrivacy_PiiMasking_Pan_KeepsOnlyLastFourDigits_ResolvedFromPackage()
+    {
+        Assert.Equal("****-****-****-1111", PiiMasking.Pan("4111-1111-1111-1111"));
+    }
+
+    [Fact]
+    public void DataPrivacy_PiiMasking_Suppress_ReturnsFixedSentinel_ResolvedFromPackage()
+    {
+        Assert.Equal(PiiMasking.RedactedSentinel, PiiMasking.Suppress("anything"));
+    }
+
+    [Fact]
+    public void DataPrivacy_ClassificationAttributes_ApplyToMember_ResolvedFromPackage()
+    {
+        System.Reflection.PropertyInfo property =
+            typeof(ConsumerClassifiedProfile).GetProperty(nameof(ConsumerClassifiedProfile.NationalId))!;
+
+        var classification = (DataClassificationAttribute?)Attribute.GetCustomAttribute(
+            property, typeof(DataClassificationAttribute));
+        var category = (SensitiveDataCategoryAttribute?)Attribute.GetCustomAttribute(
+            property, typeof(SensitiveDataCategoryAttribute));
+
+        Assert.Equal(DataClassification.Restricted, classification!.Classification);
+        Assert.Equal(SensitiveDataCategory.Pii, category!.Category);
+    }
+
+    [Fact]
+    public async Task DataPrivacy_IDataSubjectRequestHandler_ExportAndErasure_ResolvedFromPackage()
+    {
+        IDataSubjectRequestHandler handler = new ConsumerDataSubjectRequestHandler();
+
+        Result<DataSubjectExportBundle> export = await handler.ExportDataAsync("subject-1");
+        Result<DataSubjectErasureReceipt> erasure = await handler.RequestErasureAsync("subject-1");
+
+        Assert.True(export.IsSuccess);
+        Assert.Equal("subject-1", export.Value.SubjectId);
+        Assert.True(erasure.IsSuccess);
+        Assert.Equal(1, erasure.Value.RecordsAffected);
+    }
+
+    [Fact]
+    public void DataPrivacy_NuspecDeclaresOnlyPrimitivesAsDependency_NoThirdPartyNuGetPackage_ResolvedFromPackage()
+    {
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string dataPrivacyNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.DataPrivacy.*.nupkg", _ => true);
+
+        XDocument nuspec = XDocument.Parse(dataPrivacyNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)];
+
+        // The one and only dependency this package's architectural claim rests on.
+        Assert.Single(dependencyIds);
+        Assert.Contains("SharedKernel.Primitives", dependencyIds);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Localization — verifies the package resolves from the local feed and that
+    // its transitive dependency chain resolves to SharedKernel.Primitives + the first-party
+    // Microsoft.Extensions.Localization.Abstractions package ONLY, end-to-end against the packed
+    // assembly (P-33/WO-078).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Localization_InMemoryLocalizationCatalog_RegisteredTranslation_ResolvedFromPackage()
+    {
+        ILocalizationCatalog catalog = new InMemoryLocalizationCatalog()
+            .AddTranslation("consumer.code", CultureInfo.GetCultureInfo("en-US"), "Consumer translation.");
+
+        bool found = catalog.TryGetString("consumer.code", CultureInfo.GetCultureInfo("en-US"), out string? value);
+
+        Assert.True(found);
+        Assert.Equal("Consumer translation.", value);
+    }
+
+    [Fact]
+    public void Localization_InMemoryLocalizationCatalog_UnregisteredCode_NeverThrows_ResolvedFromPackage()
+    {
+        var catalog = new InMemoryLocalizationCatalog();
+
+        bool found = catalog.TryGetString("nothing.registered", CultureInfo.GetCultureInfo("en-US"), out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void Localization_StringLocalizerLocalizationCatalog_ResourceNotFound_ReturnsFalse_ResolvedFromPackage()
+    {
+        IStringLocalizer localizer = new ConsumerAlwaysMissingStringLocalizer();
+        IStringLocalizerFactory factory = new ConsumerStringLocalizerFactory(localizer);
+
+        var catalog = new StringLocalizerLocalizationCatalog(factory, typeof(ConsumerErrorMessages));
+
+        bool found = catalog.TryGetString("consumer.code", CultureInfo.GetCultureInfo("en-US"), out string? value);
+
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void Localization_ServiceCollectionExtensions_AddInMemoryLocalizationCatalog_ResolvedFromPackage()
+    {
+        var services = new ServiceCollection();
+
+        services.AddInMemoryLocalizationCatalog(catalog =>
+            catalog.AddTranslation("consumer.code", CultureInfo.GetCultureInfo("en-US"), "Consumer translation."));
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
+
+        catalog.TryGetString("consumer.code", CultureInfo.GetCultureInfo("en-US"), out string? value);
+
+        Assert.Equal("Consumer translation.", value);
+    }
+
+    [Fact]
+    public void Localization_NuspecDeclaresOnlyPrimitivesAndLocalizationAbstractions_ResolvedFromPackage()
+    {
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string localizationNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Localization.*.nupkg", _ => true);
+
+        XDocument nuspec = XDocument.Parse(localizationNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)];
+
+        Assert.Equal(2, dependencyIds.Count);
+        Assert.Contains("SharedKernel.Primitives", dependencyIds);
+        Assert.Contains("Microsoft.Extensions.Localization.Abstractions", dependencyIds);
+    }
+
+    /// <summary>
+    /// Walks upward from the test assembly's own output directory looking for the repo-root
+    /// <c>nupkgs/</c> local feed directory (NuGet.Config's <c>local-shared-kernel</c> source) —
+    /// there is no other reliable way for a test running from
+    /// <c>.../SharedKernel.Consumer.Tests/bin/Release/net10.0/</c> to locate it.
+    /// </summary>
+    private static string FindNupkgsDirectory()
+    {
+        DirectoryInfo? current = new(AppContext.BaseDirectory);
+        for (int i = 0; i < 10 && current is not null; i++, current = current.Parent)
+        {
+            string candidate = Path.Combine(current.FullName, "nupkgs");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new DirectoryNotFoundException(
+            $"Could not locate the repo-root 'nupkgs' directory by walking up from '{AppContext.BaseDirectory}'.");
+    }
+
+    private static string ReadNuspecXml(string nupkgsDirectory, string searchPattern, Func<string, bool> filter)
+    {
+        string nupkgPath = Directory.GetFiles(nupkgsDirectory, searchPattern)
+            .Where(filter)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault()
+            ?? throw new FileNotFoundException(
+                $"No file matching '{searchPattern}' found in '{nupkgsDirectory}'.");
+
+        using ZipArchive archive = ZipFile.OpenRead(nupkgPath);
+        ZipArchiveEntry nuspecEntry = archive.Entries.First(e => e.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
+
+        using Stream entryStream = nuspecEntry.Open();
+        using var reader = new StreamReader(entryStream);
+        return reader.ReadToEnd();
+    }
+}
+
+/// <summary>
+/// Minimal consumer-supplied FluentValidation validator for consumer-verification purposes only —
+/// proves <c>ValidationRuleBuilderExtensions</c> resolves against the packed
+/// SharedKernel.Validation.FluentValidation assembly (and, transitively, the packed
+/// SharedKernel.Validation and third-party FluentValidation assemblies).
+/// </summary>
+internal sealed record ConsumerPaymentCommand(string Iban, string CurrencyCode);
+
+internal sealed class ConsumerPaymentValidator : FluentValidationLib.AbstractValidator<ConsumerPaymentCommand>
+{
+    public ConsumerPaymentValidator()
+    {
+        RuleFor(x => x.Iban).MustBeValidIban();
+        RuleFor(x => x.CurrencyCode).MustBeValidCurrencyCode();
+    }
+}
+
+/// <summary>
+/// Minimal consumer-supplied <see cref="INationalIdValidator"/> for consumer-verification
+/// purposes only — proves the pluggable-registry DI extension resolves against the packed
+/// SharedKernel.Validation assembly.
+/// </summary>
+internal sealed class ConsumerUsNationalIdValidator : INationalIdValidator
+{
+    public string CountryCode => "US";
+
+    public bool IsValid(string idNumber) => idNumber.Length == 9;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -670,6 +1152,71 @@ internal sealed class ConsumerOptions
 }
 
 /// <summary>
+/// Minimal consumer-supplied type carrying both DataPrivacy classification attributes at once,
+/// proving <see cref="DataClassificationAttribute"/>/<see cref="SensitiveDataCategoryAttribute"/>
+/// resolve and apply correctly against the packed SharedKernel.DataPrivacy assembly.
+/// </summary>
+internal sealed class ConsumerClassifiedProfile
+{
+    [DataClassification(DataClassification.Restricted)]
+    [SensitiveDataCategory(SensitiveDataCategory.Pii)]
+    public string NationalId { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Minimal in-memory <see cref="IDataSubjectRequestHandler"/> for consumer-verification purposes
+/// only, proving the contract shape (and <see cref="DataSubjectExportBundle"/>/
+/// <see cref="DataSubjectErasureReceipt"/>) resolves against the packed SharedKernel.DataPrivacy
+/// assembly. A real implementation acts against a service's own persisted data.
+/// </summary>
+internal sealed class ConsumerDataSubjectRequestHandler : IDataSubjectRequestHandler
+{
+    public Task<Result<DataSubjectExportBundle>> ExportDataAsync(string subjectId, CancellationToken ct = default) =>
+        Task.FromResult(Result<DataSubjectExportBundle>.Success(
+            new DataSubjectExportBundle(subjectId, DateTimeOffset.UtcNow, new Dictionary<string, object?>
+            {
+                ["email"] = "consumer@example.com",
+            })));
+
+    public Task<Result<DataSubjectErasureReceipt>> RequestErasureAsync(string subjectId, CancellationToken ct = default) =>
+        Task.FromResult(Result<DataSubjectErasureReceipt>.Success(
+            new DataSubjectErasureReceipt(subjectId, DateTimeOffset.UtcNow, RecordsAffected: 1)));
+}
+
+/// <summary>
+/// Marker resource type for <see cref="StringLocalizerLocalizationCatalog"/> consumer-verification
+/// purposes only — mirrors a real service's own <c>.resx</c>-backed resource class.
+/// </summary>
+internal sealed class ConsumerErrorMessages;
+
+/// <summary>
+/// Minimal consumer-supplied <see cref="IStringLocalizer"/> that always reports
+/// <see cref="LocalizedString.ResourceNotFound"/>, proving
+/// <see cref="StringLocalizerLocalizationCatalog"/> correctly returns <see langword="false"/>
+/// rather than forwarding the raw key as a "translation" — against the packed
+/// SharedKernel.Localization assembly.
+/// </summary>
+internal sealed class ConsumerAlwaysMissingStringLocalizer : IStringLocalizer
+{
+    public LocalizedString this[string name] => new(name, name, resourceNotFound: true);
+
+    public LocalizedString this[string name, params object[] arguments] => new(name, name, resourceNotFound: true);
+
+    public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures) => [];
+}
+
+/// <summary>
+/// Minimal consumer-supplied <see cref="IStringLocalizerFactory"/> returning a fixed
+/// <see cref="IStringLocalizer"/> instance, for consumer-verification purposes only.
+/// </summary>
+internal sealed class ConsumerStringLocalizerFactory(IStringLocalizer localizer) : IStringLocalizerFactory
+{
+    public IStringLocalizer Create(Type resourceSource) => localizer;
+
+    public IStringLocalizer Create(string baseName, string location) => localizer;
+}
+
+/// <summary>
 /// Minimal in-memory <see cref="IEncryptionKeyProvider"/> for consumer-verification purposes only.
 /// Production services must resolve key material from Key Vault, environment config, or a secret
 /// store — never hardcode it as done here for test convenience.
@@ -678,9 +1225,47 @@ internal sealed class ConsumerEncryptionKeyProvider : IEncryptionKeyProvider
 {
     private static readonly CryptographicKey CurrentKey = new("consumer-key-v1", new byte[32]);
 
-    public CryptographicKey GetCurrentKey() => CurrentKey;
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) => new(CurrentKey);
 
-    public CryptographicKey? GetKey(string keyId) => keyId == CurrentKey.Id ? CurrentKey : null;
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(keyId == CurrentKey.Id ? CurrentKey : null);
+}
+
+/// <summary>
+/// Minimal in-memory <see cref="IEnvelopeEncryptionProvider"/> for consumer-verification purposes
+/// only — proves the contract shape resolves against the packed assembly. Production services
+/// must resolve this against a real KMS (e.g. Azure Key Vault) — never a process-local master key
+/// as done here for test convenience.
+/// </summary>
+internal sealed class ConsumerEnvelopeEncryptionProvider : IEnvelopeEncryptionProvider
+{
+    private const string MasterKeyId = "consumer-master-key-v1";
+    private static readonly byte[] MasterKey = new byte[32];
+
+    public ValueTask<EnvelopeDataKey> GenerateDataKeyAsync(CancellationToken ct = default)
+    {
+        byte[] plaintextKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        byte[] wrappedKey = Xor(plaintextKey, MasterKey);
+        return new(new EnvelopeDataKey(plaintextKey, wrappedKey, MasterKeyId));
+    }
+
+    public ValueTask<Result<byte[]>> UnwrapDataKeyAsync(byte[] wrappedDataKey, string masterKeyId, CancellationToken ct = default) =>
+        masterKeyId == MasterKeyId
+            ? new(Result<byte[]>.Success(Xor(wrappedDataKey, MasterKey)))
+            : new(Result<byte[]>.Failure(Error.Unexpected("consumer.envelope.unknown_master_key", "Unknown master key.")));
+
+    // A minimal, deliberately non-production "wrap" (XOR against a fixed key) — sufficient to
+    // prove the round-trip contract shape; a real provider wraps via a genuine KMS operation.
+    private static byte[] Xor(byte[] data, byte[] key)
+    {
+        byte[] result = new byte[data.Length];
+        for (int i = 0; i < data.Length; i++)
+        {
+            result[i] = (byte)(data[i] ^ key[i % key.Length]);
+        }
+
+        return result;
+    }
 }
 
 /// <summary>

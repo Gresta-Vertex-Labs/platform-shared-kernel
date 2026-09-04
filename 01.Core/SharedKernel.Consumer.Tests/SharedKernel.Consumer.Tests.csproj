@@ -9,6 +9,19 @@
     Primitives → Core → Configuration → FeatureManagement chain verified here.
     Cryptography → Primitives + Configuration transitive chain also verified here.
     Compression → Primitives + Configuration transitive chain also verified here.
+    Validation → Primitives + Guards transitive chain also verified here (P-19/WO-067).
+    Validation.FluentValidation → Validation (→ Primitives + Guards) transitive chain plus the
+    third-party FluentValidation package also verified here (P-22/WO-067).
+    Cryptography.KeyVault.Azure → Cryptography + Configuration transitive chain plus the
+    third-party Azure.Security.KeyVault.Keys/Azure.Identity packages also verified here
+    (P-26/WO-068) — including a direct .nuspec inspection proving neither Azure package leaks
+    as a transitive dependency of SharedKernel.Cryptography itself.
+    DataPrivacy → Primitives-only transitive chain (zero third-party NuGet dependency) also
+    verified here (P-30/WO-076) — including a direct .nuspec inspection proving SharedKernel.
+    Primitives is the package's only dependency.
+    Localization → Primitives + the first-party Microsoft.Extensions.Localization.Abstractions
+    transitive chain also verified here (P-33/WO-078) — including a direct .nuspec inspection
+    proving those are the package's only two dependencies.
   -->
   <ItemGroup>
     <PackageReference Include="SharedKernel.Primitives" />
@@ -18,6 +31,11 @@
     <PackageReference Include="SharedKernel.Guards" />
     <PackageReference Include="SharedKernel.Cryptography" />
     <PackageReference Include="SharedKernel.Compression" />
+    <PackageReference Include="SharedKernel.Validation" />
+    <PackageReference Include="SharedKernel.Validation.FluentValidation" />
+    <PackageReference Include="SharedKernel.Cryptography.KeyVault.Azure" />
+    <PackageReference Include="SharedKernel.DataPrivacy" />
+    <PackageReference Include="SharedKernel.Localization" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
