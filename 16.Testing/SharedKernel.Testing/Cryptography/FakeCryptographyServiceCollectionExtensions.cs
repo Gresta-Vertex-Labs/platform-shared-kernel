@@ -33,15 +33,18 @@ public static class FakeCryptographyServiceCollectionExtensions
     /// singletons), <see cref="IHmacSigner"/> → <see cref="FakeHmacSigner"/>,
     /// <see cref="ISecureRandomGenerator"/> → <see cref="FakeSecureRandomGenerator"/> (non-seeded
     /// constructor — genuinely random by default; register a seeded instance manually for
-    /// deterministic tokens), and <see cref="IContentHasher"/> → <see cref="FakeContentHasher"/>.
+    /// deterministic tokens), <see cref="IContentHasher"/> → <see cref="FakeContentHasher"/>, and
+    /// <see cref="IEnvelopeEncryptionProvider"/> → <see cref="FakeEnvelopeEncryptionProvider"/>
+    /// (P-450/WO-068).
     /// </summary>
     /// <remarks>
     /// Deliberately diverges from
     /// <see cref="CryptographyServiceCollectionExtensions.AddSharedKernelCryptography"/>: production
     /// intentionally does NOT register <see cref="IEncryptionKeyProvider"/>/
-    /// <see cref="IAsymmetricKeyProvider"/> (consumer-supplied by design) — this fake bundle DOES,
-    /// since a test wanting <see cref="AddFakeCryptography"/> to work end-to-end with zero extra
-    /// wiring needs some functioning key material.
+    /// <see cref="IAsymmetricKeyProvider"/>/<see cref="IEnvelopeEncryptionProvider"/>
+    /// (consumer-supplied by design) — this fake bundle DOES, since a test wanting
+    /// <see cref="AddFakeCryptography"/> to work end-to-end with zero extra wiring needs some
+    /// functioning key material.
     /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
@@ -56,6 +59,7 @@ public static class FakeCryptographyServiceCollectionExtensions
         services.AddSingleton<IHmacSigner, FakeHmacSigner>();
         services.AddSingleton<ISecureRandomGenerator, FakeSecureRandomGenerator>();
         services.AddSingleton<IContentHasher, FakeContentHasher>();
+        services.AddSingleton<IEnvelopeEncryptionProvider, FakeEnvelopeEncryptionProvider>();
 
         services.AddSingleton<IAsymmetricSignatureService, FakeAsymmetricSignatureService>();
         services.AddKeyedSingleton<IAsymmetricSignatureService, FakeAsymmetricSignatureService>(

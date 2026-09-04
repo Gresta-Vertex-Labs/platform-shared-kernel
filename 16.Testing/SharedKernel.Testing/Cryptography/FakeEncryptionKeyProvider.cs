@@ -22,6 +22,15 @@ namespace SharedKernel.Testing.Cryptography;
 /// Key Vault/HSM-backed hardening — wiring this into a production DI container would silently
 /// discard every key on process restart.
 /// </para>
+/// <para>
+/// <b>BREAKING CHANGE (P-450/WO-068):</b> migrated onto <c>IEncryptionKeyProvider</c>'s async
+/// contract (P-446/WO-068) — the former synchronous <c>GetCurrentKey()</c>/<c>GetKey(string)</c>
+/// members are replaced outright by <see cref="GetCurrentKeyAsync(CancellationToken)"/>/
+/// <see cref="GetKeyAsync(string, CancellationToken)"/>, mirroring the real interface's own
+/// breaking shape. <see cref="AddKey(string)"/>, <see cref="SetCurrentKey(string)"/>, and
+/// <see cref="RemoveKey(string)"/> are this fake's own additive test-control surface — not part
+/// of the interface — and are unchanged.
+/// </para>
 /// </remarks>
 public sealed class FakeEncryptionKeyProvider : IEncryptionKeyProvider
 {
@@ -66,7 +75,12 @@ public sealed class FakeEncryptionKeyProvider : IEncryptionKeyProvider
     public void RemoveKey(string keyId) => _keys.TryRemove(keyId, out _);
 
     /// <inheritdoc />
-    public CryptographicKey GetCurrentKey()
+    /// <remarks>
+    /// Completes synchronously via an already-completed <see cref="ValueTask{TResult}"/> — this
+    /// fake performs no real I/O, mirroring a configuration-based production implementation of
+    /// <see cref="IEncryptionKeyProvider"/>.
+    /// </remarks>
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default)
     {
         string currentKeyId;
         lock (_gate)
@@ -74,9 +88,14 @@ public sealed class FakeEncryptionKeyProvider : IEncryptionKeyProvider
             currentKeyId = _currentKeyId;
         }
 
-        return _keys[currentKeyId];
+        return new ValueTask<CryptographicKey>(_keys[currentKeyId]);
     }
 
     /// <inheritdoc />
-    public CryptographicKey? GetKey(string keyId) => _keys.GetValueOrDefault(keyId);
+    /// <remarks>
+    /// Completes synchronously via an already-completed <see cref="ValueTask{TResult}"/> — see
+    /// <see cref="GetCurrentKeyAsync(CancellationToken)"/>'s remarks.
+    /// </remarks>
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(_keys.GetValueOrDefault(keyId));
 }
