@@ -1,0 +1,46 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!--
+      MAX_PATH workaround: this project's default nested obj/bin path (under
+      15.Integration/SharedKernel.Integration.Notifications.Abstractions/...Tests/obj/Release/net10.0/)
+      exceeds Windows' 260-character path limit once combined with generated build-artifact
+      filenames (.deps.json, .GeneratedMSBuildEditorConfig.editorconfig, etc.), which causes the
+      Copy task to report a spurious MSB3030 "file not found" for a file that genuinely exists —
+      confirmed by measuring the exact path length, not assumed. A relative "../../../..." redirect
+      does NOT help: MSBuild's own too-long-path check runs against the raw, unresolved string
+      before normalization, so a relative override can end up longer than the default. Using an
+      absolute path rooted at the OS temp directory keeps every generated path safely under the
+      limit regardless of how deep this project sits in the repo tree. This is purely a transient
+      build-cache location (never packed — PackageOutputPath is set independently in the root
+      Directory.Build.props) and a project-local override — it does not touch the shared root
+      Directory.Build.props. MSBuild warns (MSB3539) that changing BaseIntermediateOutputPath this
+      late means NuGet restore keeps writing project.assets.json/.nuget.g.props to the DEFAULT obj/
+      path rather than following this override — that is fine and expected here: those
+      restore-generated files have short, fixed names that never approached the 260-character
+      limit on their own; only the long compiler-generated output filenames did. Suppressed below
+      since it is a known, understood consequence of this specific workaround, not a real problem.
+    -->
+    <BaseIntermediateOutputPath>$([System.IO.Path]::GetTempPath())sk-build\obj\SharedKernel.Integration.Notifications.Abstractions.Tests\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$([System.IO.Path]::GetTempPath())sk-build\bin\SharedKernel.Integration.Notifications.Abstractions.Tests\</BaseOutputPath>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3539</MSBuildWarningsAsMessages>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Integration.Notifications.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+</Project>
