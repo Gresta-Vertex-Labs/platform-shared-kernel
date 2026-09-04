@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Lightweight cron/recurring and one-shot deferred background job dispatch for Platform.SharedKernel microservices: IScheduledJobRegistry (startup-time registration surface), ScheduledCommandJob&lt;TCommand&gt; (the sole 05.Application MediatR bridge, mirroring 17.Workflows' CommandActivity&lt;TCommand&gt;), MisfirePolicy/OverlapPolicy (mandatory, non-defaulted registration parameters), IFencedLock-guarded (optional) cross-replica single execution, and ISchedulerServiceProbe (a zero-I/O readiness-probe primitive). Cron parsing goes exclusively through Quartz's standalone CronExpression class — never Quartz's IScheduler/JobStore machinery. A deliberate single package: no SharedKernel.Scheduling.Abstractions split exists, matching the single-provider convention already used by SharedKernel.Cryptography/.Compression/.Guards.</Description>
+    <PackageTags>scheduling;cron;background-jobs;recurring;quartz;shared-kernel</PackageTags>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      Layering ceiling for SharedKernel.Scheduling is 01.Core, 02.Caching (IFencedLock only,
+      optional), 05.Application (19.Scheduling/CLAUDE.md).
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+    <!--
+      SharedKernel.Caching.Abstractions ONLY — never SharedKernel.Caching.Redis.DistributedLocking.
+      IDistributedLockService/IFencedLock live in the zero-infrastructure .Abstractions package (no
+      RedLock.net/StackExchange.Redis transitive dependency); the concrete Redis-backed
+      implementation is composed by the CONSUMING service at its own composition root alongside
+      AddSharedKernelScheduling(). Optional dependency: IDistributedLockService is resolved via
+      GetService (nullable), never GetRequiredService — see SchedulingHostedService.
+    -->
+    <ProjectReference Include="..\..\02.Caching\SharedKernel.Caching.Abstractions\SharedKernel.Caching.Abstractions.csproj" />
+    <!--
+      SharedKernel.Application is the SOLE justification for this reference — it exists only so
+      ScheduledCommandJob<TCommand> can resolve MediatR's ISender and constrain against ICommand.
+      Mirrors 17.Workflows' CommandActivity<TCommand> reference-justification comment verbatim.
+    -->
+    <ProjectReference Include="..\..\05.Application\SharedKernel.Application\SharedKernel.Application.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Quartz's standalone CronExpression class ONLY (Invariant 1/2) — IScheduler/ITrigger/
+      IJobDetail/JobStore are never referenced. Directly pinned in root Directory.Packages.props
+      rather than riding 07.Messaging's MassTransit.Quartz transitive edge (D-06, WO-073).
+    -->
+    <PackageReference Include="Quartz" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Allows the nested test project to white-box test internal implementation details
+      (SchedulingHostedService's tick loop, ScheduledJobRegistry, policy enforcement) without
+      expanding the public API surface — mirrors the 06.Persistence.EfCore/13.ServiceDefaults/
+      15.Integration.Webhooks/09.Search/17.Workflows precedent.
+    -->
+    <InternalsVisibleTo Include="SharedKernel.Scheduling.Tests" />
+  </ItemGroup>
+</Project>
