@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Logging, Metrics, Tracing, Validation, Authorization, DualApproval (maker-checker), Caching, Resilience, Idempotency (with opt-in response replay), Transaction, and CacheInvalidation, composed in a fixed canonical order via ApplicationBehaviorsBuilder — plus opt-in fire-and-forget command dispatch infrastructure and opt-in structured request/response payload logging (ILoggableRequest&lt;TResponse&gt;). References SharedKernel.Application, SharedKernel.Caching.Abstractions, MediatR, FluentValidation, and Polly.Core.</Description>
-    <PackageTags>cqrs;mediatr;pipeline-behavior;validation;logging;metrics;tracing;caching;resilience;transaction;authorization;dual-approval;idempotency;shared-kernel</PackageTags>
+    <Description>Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Logging, Metrics, Tracing, Validation, Authorization, DualApproval (maker-checker), Caching, Resilience, Idempotency (with opt-in response replay), Auditing (append-only audit-trail write via a local IAuditTrailWriter seam), Transaction, and CacheInvalidation, composed in a fixed canonical order via ApplicationBehaviorsBuilder — plus opt-in fire-and-forget command dispatch infrastructure and opt-in structured request/response payload logging (ILoggableRequest&lt;TResponse&gt;). References SharedKernel.Application, SharedKernel.Caching.Abstractions, MediatR, FluentValidation, and Polly.Core.</Description>
+    <PackageTags>cqrs;mediatr;pipeline-behavior;validation;logging;metrics;tracing;caching;resilience;transaction;authorization;dual-approval;idempotency;auditing;shared-kernel</PackageTags>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>

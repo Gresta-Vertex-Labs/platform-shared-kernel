@@ -9,6 +9,7 @@ using NSubstitute;
 using Polly;
 using Polly.Registry;
 using Polly.Retry;
+using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
@@ -689,5 +690,148 @@ public sealed class ConsumerVerifyTests
 
         result.IsSuccess.Should().BeTrue();
         handler.InvocationCount.Should().Be(1);
+    }
+
+    // ---- P-29 (WO-071): the auditing flow end to end through the real DI-registered pipeline — a
+    // plain audited command records exactly one entry via a spy IAuditTrailWriter; a dual-approval-
+    // linked audited command's recorded entry carries the approval key; a non-audited command
+    // triggers zero calls to the seam. ----
+
+    private sealed record UpdateCustomerAddressCommand(Guid CustomerId, string NewAddress, string OldAddress)
+        : ICommand, IAuditableRequest<Result>
+    {
+        public string Action => "customer.address.update";
+        public string ResourceType => "Customer";
+        public string ResourceId => CustomerId.ToString("D");
+        public string? BeforeSnapshot => OldAddress;
+        public string? GetAfterSnapshot(Result response) => response.IsSuccess ? NewAddress : null;
+    }
+
+    private sealed class UpdateCustomerAddressCommandHandler : IRequestHandler<UpdateCustomerAddressCommand, Result>
+    {
+        public Task<Result> Handle(UpdateCustomerAddressCommand request, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+    }
+
+    private sealed record RotateSigningKeyCommand(Guid KeyId)
+        : ICommand, IRequiresDualApproval, IAuditableRequest<Result>
+    {
+        public string ApprovalKey => $"rotate-signing-key:{KeyId:D}";
+        public string Action => "signing-key.rotate";
+        public string ResourceType => "SigningKey";
+        public string ResourceId => KeyId.ToString("D");
+        public string? BeforeSnapshot => null;
+        public string? GetAfterSnapshot(Result response) => response.IsSuccess ? "rotated" : "rejected";
+    }
+
+    private sealed class RotateSigningKeyCommandHandler : IRequestHandler<RotateSigningKeyCommand, Result>
+    {
+        public Task<Result> Handle(RotateSigningKeyCommand request, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+    }
+
+    private sealed record PlainNonAuditedCommand : ICommand;
+
+    private sealed class PlainNonAuditedCommandHandler : IRequestHandler<PlainNonAuditedCommand, Result>
+    {
+        public Task<Result> Handle(PlainNonAuditedCommand request, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+    }
+
+    private static ServiceProvider BuildAuditingPipelineProvider(
+        IAuditTrailWriter auditTrailWriter,
+        IUnitOfWork unitOfWork,
+        IAuthorizationContext? authorizationContext,
+        IDualApprovalStore? dualApprovalStore)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(auditTrailWriter);
+        services.AddSingleton(unitOfWork);
+        if (authorizationContext is not null)
+            services.AddSingleton(authorizationContext);
+        if (dualApprovalStore is not null)
+            services.AddSingleton(dualApprovalStore);
+        services.AddSingleton<UpdateCustomerAddressCommandHandler>();
+        services.AddSingleton<IRequestHandler<UpdateCustomerAddressCommand, Result>>(
+            sp => sp.GetRequiredService<UpdateCustomerAddressCommandHandler>());
+        services.AddSingleton<RotateSigningKeyCommandHandler>();
+        services.AddSingleton<IRequestHandler<RotateSigningKeyCommand, Result>>(
+            sp => sp.GetRequiredService<RotateSigningKeyCommandHandler>());
+        services.AddSingleton<PlainNonAuditedCommandHandler>();
+        services.AddSingleton<IRequestHandler<PlainNonAuditedCommand, Result>>(
+            sp => sp.GetRequiredService<PlainNonAuditedCommandHandler>());
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<ConsumerVerifyTests>());
+
+        var builder = services.AddSharedKernelApplicationBehaviors()
+            .AddLoggingBehavior()
+            .AddAuditingBehavior()
+            .AddTransactionBehavior();
+        if (authorizationContext is not null && dualApprovalStore is not null)
+            builder.AddDualApprovalBehavior();
+        builder.Build();
+
+        return services.BuildServiceProvider();
+    }
+
+    [Fact]
+    public async Task AuditingBehavior_PlainAuditedCommand_RecordsExactlyOneEntry_ThroughRealDIRegisteredPipeline()
+    {
+        var writer = Substitute.For<IAuditTrailWriter>();
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+
+        using var provider = BuildAuditingPipelineProvider(writer, unitOfWork, null, null);
+        var sender = provider.GetRequiredService<ISender>();
+        var customerId = Guid.NewGuid();
+
+        var result = await sender.Send(new UpdateCustomerAddressCommand(customerId, "new-address", "old-address"));
+
+        result.IsSuccess.Should().BeTrue();
+        await writer.Received(1).RecordAsync(
+            Arg.Is<AuditEntry>(e =>
+                e.Action == "customer.address.update" &&
+                e.ResourceId == customerId.ToString("D") &&
+                e.AfterSnapshot == "new-address" &&
+                e.ApprovalId == null),
+            Arg.Any<CancellationToken>());
+        await unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AuditingBehavior_DualApprovalLinkedCommand_RecordedEntryCarriesApprovalKey_ThroughRealDIRegisteredPipeline()
+    {
+        var writer = Substitute.For<IAuditTrailWriter>();
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+        var authContext = CreateIdentityCapableContext("maker");
+        var keyId = Guid.NewGuid();
+        var approvalKey = $"rotate-signing-key:{keyId:D}";
+        var store = Substitute.For<IDualApprovalStore>();
+        store.TryGetApprovalAsync(approvalKey, Arg.Any<CancellationToken>()).Returns("checker");
+
+        using var provider = BuildAuditingPipelineProvider(writer, unitOfWork, authContext, store);
+        var sender = provider.GetRequiredService<ISender>();
+
+        var result = await sender.Send(new RotateSigningKeyCommand(keyId));
+
+        result.IsSuccess.Should().BeTrue();
+        await writer.Received(1).RecordAsync(
+            Arg.Is<AuditEntry>(e => e.ApprovalId == approvalKey),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AuditingBehavior_NonAuditedCommand_TriggersZeroCallsToTheSeam_ThroughRealDIRegisteredPipeline()
+    {
+        var writer = Substitute.For<IAuditTrailWriter>();
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+
+        using var provider = BuildAuditingPipelineProvider(writer, unitOfWork, null, null);
+        var sender = provider.GetRequiredService<ISender>();
+
+        var result = await sender.Send(new PlainNonAuditedCommand());
+
+        result.IsSuccess.Should().BeTrue();
+        await writer.DidNotReceiveWithAnyArgs().RecordAsync(default!, default);
+        await unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 }

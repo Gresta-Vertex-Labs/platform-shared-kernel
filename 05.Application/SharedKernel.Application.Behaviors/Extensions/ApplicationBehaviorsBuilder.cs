@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Polly.Registry;
+using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
@@ -28,9 +29,9 @@ namespace SharedKernel.Application.Behaviors.Extensions;
 /// <remarks>
 /// Use <c>.AddXBehavior()</c> methods to opt in to individual behaviors, then call
 /// <see cref="Build"/> to register them. Registration order is always the fixed canonical
-/// eleven-named-slot order (Logging → Metrics → Tracing → Validation → Authorization →
-/// DualApproval → Caching → Resilience → Idempotency → Transaction → CacheInvalidation)
-/// regardless of the order in which <c>.AddXBehavior()</c> methods were called.
+/// twelve-named-slot order (Logging → Metrics → Tracing → Validation → Authorization →
+/// DualApproval → Caching → Resilience → Idempotency → Auditing → Transaction →
+/// CacheInvalidation) regardless of the order in which <c>.AddXBehavior()</c> methods were called.
 /// </remarks>
 public sealed class ApplicationBehaviorsBuilder
 {
@@ -44,6 +45,7 @@ public sealed class ApplicationBehaviorsBuilder
     private bool _caching;
     private bool _resilience;
     private bool _idempotency;
+    private bool _auditing;
     private bool _transaction;
     private bool _cacheInvalidation;
     private bool _fireAndForget;
@@ -201,6 +203,21 @@ public sealed class ApplicationBehaviorsBuilder
         return this;
     }
 
+    /// <summary>
+    /// Opts in to <see cref="AuditingBehavior{TRequest,TResponse}"/>.
+    /// </summary>
+    /// <returns>This builder, for chaining.</returns>
+    /// <remarks>
+    /// <see cref="Build"/> throws <see cref="InvalidOperationException"/> if
+    /// <see cref="IAuditTrailWriter"/> is not registered in the service collection when this was
+    /// called.
+    /// </remarks>
+    public ApplicationBehaviorsBuilder AddAuditingBehavior()
+    {
+        _auditing = true;
+        return this;
+    }
+
     /// <summary>Opts in to <see cref="TransactionBehavior{TRequest,TResponse}"/>.</summary>
     /// <returns>This builder, for chaining.</returns>
     /// <remarks>
@@ -317,9 +334,10 @@ public sealed class ApplicationBehaviorsBuilder
     /// without <see cref="IAuthorizationContext"/> registered, when
     /// <see cref="AddDualApprovalBehavior"/> was opted into without <see cref="IDualApprovalStore"/>
     /// registered, when <see cref="AddIdempotencyBehavior"/> was opted into without
-    /// <see cref="IIdempotencyKeyStore"/> registered, or when <see cref="AddResilienceBehavior"/>
-    /// was opted into without <see cref="ResiliencePipelineProvider{TKey}"/> of
-    /// <see cref="string"/> registered.
+    /// <see cref="IIdempotencyKeyStore"/> registered, when <see cref="AddAuditingBehavior"/> was
+    /// opted into without <see cref="IAuditTrailWriter"/> registered, or when
+    /// <see cref="AddResilienceBehavior"/> was opted into without
+    /// <see cref="ResiliencePipelineProvider{TKey}"/> of <see cref="string"/> registered.
     /// </exception>
     /// <remarks>
     /// Does not call <c>services.AddMediatR(...)</c> — the consuming service already registers
@@ -360,9 +378,27 @@ public sealed class ApplicationBehaviorsBuilder
                 "AddResilienceBehavior() requires Polly.Registry.ResiliencePipelineProvider<string> " +
                 "to be registered in the service collection. Register one before calling Build().");
 
+        if (_auditing && !IsRegistered<IAuditTrailWriter>())
+            throw new InvalidOperationException(
+                "AddAuditingBehavior() requires SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter " +
+                "to be registered in the service collection. Register an implementation before calling Build().");
+
         // Fixed canonical unary order — never configurable:
         // Logging -> Metrics -> Tracing -> Validation -> Authorization -> DualApproval -> Caching ->
-        // Resilience -> Idempotency -> Transaction -> CacheInvalidation
+        // Resilience -> Idempotency -> Auditing -> Transaction -> CacheInvalidation
+        //
+        // NOTE ON PHYSICAL REGISTRATION ORDER vs. the CANONICAL STEP ORDER ABOVE: MediatR wraps
+        // IPipelineBehavior<,> instances so that the FIRST-registered behavior is OUTERMOST (its
+        // post-`next()` code runs LAST, after every later-registered/more-inner behavior's
+        // post-`next()` code has already run). Auditing's write must observably complete BEFORE
+        // Transaction's own commit executes ("just inside Transaction" — see AuditingBehavior's
+        // remarks), which requires AuditingBehavior to be registered AFTER (closer to the handler
+        // than) TransactionBehavior below, even though Auditing is step 10 and Transaction is step
+        // 11 in the canonical numbering above. This is the same inverted-registration-order
+        // technique already applied for CacheInvalidationBehavior's post-commit-only positioning,
+        // used here in the opposite temporal direction. Verified via a real, empirical pipeline
+        // dispatch (state-map.md T-77) — never assume registration-list order equals execution
+        // order for a post-`next()` side effect.
         if (_logging)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 
@@ -392,6 +428,11 @@ public sealed class ApplicationBehaviorsBuilder
 
         if (_transaction)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
+
+        // Registered AFTER TransactionBehavior (physically inner to it) so RecordAsync fires
+        // before SaveChangesAsync — see the "NOTE ON PHYSICAL REGISTRATION ORDER" comment above.
+        if (_auditing)
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditingBehavior<,>));
 
         if (_cacheInvalidation)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));

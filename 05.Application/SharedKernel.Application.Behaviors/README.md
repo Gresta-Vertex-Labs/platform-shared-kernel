@@ -4,7 +4,7 @@ Opt-in MediatR pipeline behaviors for Platform.SharedKernel microservices: Loggi
 
 This package ships **no MediatR registration of its own** — the consuming service already registers MediatR; `ApplicationBehaviorsBuilder` only appends behaviors to the already-registered pipeline.
 
-## Canonical pipeline order (non-negotiable, eleven named slots)
+## Canonical pipeline order (non-negotiable, twelve named slots)
 
 ```text
 1.  LoggingBehavior            ← outermost; logs the full pipeline, including validation/auth/approval/resilience failures
@@ -14,17 +14,20 @@ This package ships **no MediatR registration of its own** — the consuming serv
 5.  AuthorizationBehavior       ← commands AND queries (IAuthorizeRequest)
 6.  DualApprovalBehavior        ← commands only (ICommandBase, IRequiresDualApproval); rejects before cache/mutation
 7.  CachingBehavior              ← queries only (ICacheableQuery<TResponse>)
-8.  ResilienceBehavior          ← commands only in practice (IRetryableRequest); wraps Idempotency + Transaction
+8.  ResilienceBehavior          ← commands only in practice (IRetryableRequest); wraps Idempotency + Auditing + Transaction
 9.  IdempotentCommandBehavior   ← commands only (ICommandBase, IIdempotentRequest)
-10. TransactionBehavior         ← commands only (ICommandBase); wraps handler + commit
-11. CacheInvalidationBehavior   ← commands only (ICommandBase, IInvalidatesCache); innermost — after commit
+10. AuditingBehavior            ← commands only (ICommandBase, IAuditableRequest<TResponse>); writes just inside Transaction, before its commit
+11. TransactionBehavior         ← commands only (ICommandBase); wraps handler + commit
+12. CacheInvalidationBehavior   ← commands only (ICommandBase, IInvalidatesCache); innermost — after commit
 ```
 
-`ApplicationBehaviorsBuilder.Build()` always registers behaviors in this order, regardless of the order `.AddXBehavior()` was called in. Step 6 and step 7 are mutually exclusive with each other and with {8, 9, 10, 11} at the request-type level — a query never satisfies `ICommandBase`, and a command never satisfies `ICacheableQuery<TResponse>` — so a single request only ever actually traverses one of {7} or {6, 8, 9, 10, 11}. `DualApprovalBehavior` (step 6) is distinct from `AuthorizationBehavior` (step 5): Authorization answers "is this identity permitted to attempt this kind of action at all" (a static permission/policy question); DualApproval answers "has a second, distinct identity signed off on this exact pending instance of the action" (a per-instance maker-checker gate). The two are orthogonal and independently opt-in.
+`ApplicationBehaviorsBuilder.Build()` always registers behaviors so this canonical temporal order results, regardless of the order `.AddXBehavior()` was called in. Step 6 and step 7 are mutually exclusive with each other and with {8, 9, 10, 11, 12} at the request-type level — a query never satisfies `ICommandBase`, and a command never satisfies `ICacheableQuery<TResponse>` — so a single request only ever actually traverses one of {7} or {6, 8, 9, 10, 11, 12}. `DualApprovalBehavior` (step 6) is distinct from `AuthorizationBehavior` (step 5): Authorization answers "is this identity permitted to attempt this kind of action at all" (a static permission/policy question); DualApproval answers "has a second, distinct identity signed off on this exact pending instance of the action" (a per-instance maker-checker gate). The two are orthogonal and independently opt-in.
+
+> **Physical DI registration order vs. the canonical step order above.** MediatR wraps `IPipelineBehavior<,>` instances so the *first-registered* behavior is outermost — its post-`next()` code runs *last*, after every later-registered (more-inner) behavior's post-`next()` code has already run. `AuditingBehavior`'s write must observably complete *before* `TransactionBehavior`'s own commit executes ("just inside Transaction"), which requires `AuditingBehavior` to be registered internally *after* `TransactionBehavior` — even though Auditing is step 10 and Transaction is step 11 above. This is the same inverted-registration-order technique the pipeline already needs for `CacheInvalidationBehavior`'s post-commit-only positioning, applied here in the opposite temporal direction. `ApplicationBehaviorsBuilder` handles this internally — callers only ever see the twelve-step temporal order documented above, never the underlying registration-list order.
 
 ## The local-seam bridging pattern
 
-`TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), `IdempotentCommandBehavior` (`IIdempotencyKeyStore`), and `DualApprovalBehavior` (`IDualApprovalStore`, plus `IAuthorizationContextIdentity` as an additive sibling capability on `IAuthorizationContext`) each define a **minimal interface owned by this package** — never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging` respectively, none of which this package may reference). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied four times, not four different patterns.
+`TransactionBehavior` (`IUnitOfWork`), `AuthorizationBehavior` (`IAuthorizationContext`), `IdempotentCommandBehavior` (`IIdempotencyKeyStore`), `DualApprovalBehavior` (`IDualApprovalStore`, plus `IAuthorizationContextIdentity` as an additive sibling capability on `IAuthorizationContext`), and `AuditingBehavior` (`IAuditTrailWriter`) each define a **minimal interface owned by this package** — never a direct reference to the "real" infrastructure (`06.Persistence`, `12.Security`, `07.Messaging`, `06.Persistence` respectively, none of which this package may reference). The consuming service bridges each local seam to its real implementation at the composition root. This is the same pattern applied five times, not five different patterns.
 
 ## Install
 
@@ -50,7 +53,7 @@ services
 
 This is provably equivalent to calling `.AddLoggingBehavior().AddMetricsBehavior().AddTracingBehavior().AddValidationBehavior()` individually — it is a convenience preset, not a different code path. Every other behavior below requires its own registered local-seam/infrastructure bridge and remains a deliberate, individual opt-in; none may ever be folded into this preset.
 
-## Quick Start — full eleven-named-slot registration
+## Quick Start — full twelve-named-slot registration
 
 ```csharp
 services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
@@ -71,13 +74,14 @@ services
     .AddCacheInvalidationBehavior() // reuses the ICacheService guard above
     .AddResilienceBehavior()        // requires a ResiliencePipelineProvider registered
     .AddIdempotencyBehavior()       // requires IIdempotencyKeyStore registered (see below)
+    .AddAuditingBehavior()          // requires SharedKernel.Application.Behaviors.IAuditTrailWriter registered (see below)
     .AddTransactionBehavior()       // requires SharedKernel.Application.Behaviors.IUnitOfWork registered (see below)
     .AddFireAndForgetDispatch(opts => opts.Capacity = 500)  // opt-in; see Fire-and-forget dispatch below
     .AddStreamingBehaviors()        // opt-in; see Streaming behaviors below
     .Build();
 ```
 
-`Build()` throws `InvalidOperationException` at registration time if `.AddTransactionBehavior()`, `.AddCachingBehavior()`/`.AddCacheInvalidationBehavior()`, `.AddAuthorizationBehavior()`, `.AddDualApprovalBehavior()`, `.AddIdempotencyBehavior()`, or `.AddResilienceBehavior()` was called without its required dependency already registered in `IServiceCollection`. `.AddDualApprovalBehavior()` is this package's first **two**-dependency guard — it throws a distinct message naming whichever of `IAuthorizationContext`/`IDualApprovalStore` is missing (or both).
+`Build()` throws `InvalidOperationException` at registration time if `.AddTransactionBehavior()`, `.AddCachingBehavior()`/`.AddCacheInvalidationBehavior()`, `.AddAuthorizationBehavior()`, `.AddDualApprovalBehavior()`, `.AddIdempotencyBehavior()`, `.AddAuditingBehavior()`, or `.AddResilienceBehavior()` was called without its required dependency already registered in `IServiceCollection`. `.AddDualApprovalBehavior()` is this package's first **two**-dependency guard — it throws a distinct message naming whichever of `IAuthorizationContext`/`IDualApprovalStore` is missing (or both).
 
 ## Bridging the local seams at the composition root
 
@@ -108,6 +112,28 @@ services.AddScoped<SharedKernel.Application.Behaviors.IDualApprovalStore, SqlDua
 // or a dedicated table/cache key). Never a 07.Messaging reference from this package.
 // Additionally implementing IIdempotencyResponseStore opts the store in to response replay (see below).
 services.AddScoped<SharedKernel.Application.Behaviors.IIdempotencyKeyStore, RedisIdempotencyKeyStore>();
+
+// IAuditTrailWriter — bridge this package's minimal local interface to 06.Persistence's real,
+// richer IAuditTrailWriter (SharedKernel.Persistence.Abstractions). Never reference
+// 06.Persistence directly from inside SharedKernel.Application.Behaviors itself.
+services.AddScoped<SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter>(sp =>
+    new PersistenceAuditTrailWriterAdapter(
+        sp.GetRequiredService<SharedKernel.Persistence.Abstractions.IAuditTrailWriter>()));
+// public sealed class PersistenceAuditTrailWriterAdapter(
+//     SharedKernel.Persistence.Abstractions.IAuditTrailWriter realWriter)
+//     : SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter
+// {
+//     public async Task RecordAsync(
+//         SharedKernel.Application.Behaviors.Auditing.AuditEntry entry, CancellationToken ct = default)
+//     {
+//         // Actor identity, tenant identity, timestamp, and hash-chain linkage are all resolved
+//         // internally by the real writer — this adapter only maps the smaller local shape onto the
+//         // richer one, and discards the returned persisted record (this local seam never needs it back).
+//         await realWriter.RecordAsync(new SharedKernel.Persistence.Abstractions.AuditEntry(
+//             entry.Action, entry.ResourceType, entry.ResourceId,
+//             entry.BeforeSnapshot, entry.AfterSnapshot, CorrelationId: null, entry.ApprovalId), ct);
+//     }
+// }
 ```
 
 ## Declaring requests that opt into a behavior
@@ -203,6 +229,44 @@ The retry-after-approval flow:
 
 `DualApprovalBehavior` never calls `next()` unless BOTH "an approval record exists" AND "the recorded approver differs from the current initiator" hold — and it never throws for the awaiting-approval or self-approval cases, since both are foreseeable, expected outcomes (the same never-throw contract `AuthorizationBehavior` follows). It also never clears, consumes, or expires the approval record itself — that lifecycle (one-time-use invalidation, expiry, re-approval-on-command-change) is the consuming service's own approval-recording workflow's responsibility.
 
+## Explicit audit-trail writes — `IAuditableRequest<TResponse>` + `IAuditTrailWriter`
+
+Auditing is **never** fed automatically off `SaveChanges`/the existing EF Core `AuditInterceptor` — it is always an explicit, opt-in act. A command opts in by implementing `IAuditableRequest<TResponse>`, mirroring `ILoggableRequest<TResponse>`'s exact self-supplied-field shape:
+
+```csharp
+// A plain audited command — no dual-approval — records exactly one entry, ApprovalId always null:
+public sealed record UpdateCustomerAddressCommand(Guid CustomerId, string NewAddress, string OldAddressSnapshot)
+    : ICommand, IAuditableRequest<Result>
+{
+    public string Action => "customer.address.update";
+    public string ResourceType => "Customer";
+    public string ResourceId => CustomerId.ToString("D");
+    public string? BeforeSnapshot => OldAddressSnapshot; // caller pre-serializes; this package never parses it
+    public string? GetAfterSnapshot(Result response) => response.IsSuccess ? NewAddress : null;
+}
+
+// A command combining BOTH capabilities — the recorded audit entry's ApprovalId is automatically
+// populated from IRequiresDualApproval.ApprovalKey, linking the two without either interface
+// referencing the other:
+public sealed record RotateSigningKeyCommand(Guid KeyId)
+    : ICommand, IRequiresDualApproval, IAuditableRequest<Result>
+{
+    public string ApprovalKey => $"rotate-signing-key:{KeyId}";
+    public string Action => "signing-key.rotate";
+    public string ResourceType => "SigningKey";
+    public string ResourceId => KeyId.ToString("D");
+    public string? BeforeSnapshot => null; // no meaningful "before" state for a key rotation
+    public string? GetAfterSnapshot(Result response) => response.IsSuccess ? "rotated" : "rejected";
+}
+// The recorded AuditEntry for a successful dispatch of RotateSigningKeyCommand carries
+// ApprovalId == "rotate-signing-key:{KeyId}" — AuditingBehavior populates it automatically via an
+// `is IRequiresDualApproval` check, never a manual field the command author has to remember to set.
+```
+
+`AuditingBehavior<TRequest,TResponse>` calls `next()` first, then unconditionally calls `IAuditTrailWriter.RecordAsync(...)` for BOTH a `Result.Success` and a `Result.Failure` outcome — a rejected high-risk attempt is itself often the compliance-relevant event, not just a successful one — but never on a thrown exception (there is no response to project). It never catches an exception thrown by `RecordAsync` itself: a failed audit write propagates and blocks `TransactionBehavior`'s own commit (fail closed), consistent with this package's "log/audit failures are never silently swallowed" convention.
+
+`IAuditTrailWriter` (`Auditing/IAuditTrailWriter.cs`) is a local seam deliberately smaller than the real, richer `06.Persistence.Abstractions.IAuditTrailWriter` — it never resolves actor identity, tenant identity, timestamp, or hash-chain linkage; the composition-root bridge maps this package's `AuditEntry` onto the real contract (see "Bridging the local seams" above). This is the fifth instance of the local-seam-bridging pattern in this package, not a sixth different one.
+
 ## Fire-and-forget dispatch
 
 ```csharp
@@ -241,6 +305,7 @@ services
 | `CachingBehavior` | Materialising an `IAsyncEnumerable<TResponse>` to cache it defeats the constant-memory streaming guarantee. |
 | `CacheInvalidationBehavior` | Constrained to `ICommandBase`; there is no streaming command shape to invalidate a cache from. |
 | `IdempotentCommandBehavior` | Constrained to `ICommandBase`; duplicate-submission protection has no meaning for a read-only stream. |
+| `AuditingBehavior` | Constrained to `ICommandBase`; there is no streaming command shape to audit a mutation from. |
 | `ResilienceBehavior` | Retrying a partially-consumed stream has undefined semantics — the stream position cannot be rewound. |
 
 ## Idempotency response replay (opt-in)

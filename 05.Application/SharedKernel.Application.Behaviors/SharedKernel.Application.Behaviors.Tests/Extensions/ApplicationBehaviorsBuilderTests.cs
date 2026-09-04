@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Polly.Registry;
+using SharedKernel.Application.Behaviors.Auditing;
 using SharedKernel.Application.Behaviors.Authorization;
 using SharedKernel.Application.Behaviors.CacheInvalidation;
 using SharedKernel.Application.Behaviors.Caching;
@@ -183,6 +184,30 @@ public sealed class ApplicationBehaviorsBuilderTests
         act.Should().NotThrow();
     }
 
+    // ---- WO-071, T-76: AddAuditingBehavior() Build()-time guard ----
+
+    [Fact]
+    public void Build_AuditingBehaviorWithoutIAuditTrailWriter_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddAuditingBehavior().Build();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAuditTrailWriter*");
+    }
+
+    [Fact]
+    public void Build_AuditingBehaviorWithIAuditTrailWriterRegistered_DoesNotThrow()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IAuditTrailWriter>());
+
+        var act = () => services.AddSharedKernelApplicationBehaviors().AddAuditingBehavior().Build();
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void Build_NeverCallsAddMediatR()
     {
@@ -208,6 +233,7 @@ public sealed class ApplicationBehaviorsBuilderTests
         services.AddSingleton(Substitute.For<ICacheService>());
         services.AddSingleton(Substitute.For<IAuthorizationContext>());
         services.AddSingleton(Substitute.For<IIdempotencyKeyStore>());
+        services.AddSingleton(Substitute.For<IAuditTrailWriter>());
         services.AddSingleton(Substitute.For<ResiliencePipelineProvider<string>>());
 
         var builder = services.AddSharedKernelApplicationBehaviors();
@@ -219,6 +245,12 @@ public sealed class ApplicationBehaviorsBuilderTests
             .Select(d => d.ImplementationType!.GetGenericTypeDefinition())
             .ToList();
 
+        // Physical DI registration order — NOT the same as the canonical step-numbering order
+        // (Auditing is step 10, Transaction step 11): AuditingBehavior is registered AFTER
+        // TransactionBehavior (physically inner to it) so its RecordAsync write is observably
+        // called before TransactionBehavior's own SaveChangesAsync commit — the inverted-
+        // registration-order technique, proven empirically by AuditingTransactionOrderingTests
+        // (T-77), mirroring CacheInvalidationBehavior's existing post-commit-only positioning.
         registeredBehaviorTypes.Should().Equal(
             typeof(LoggingBehavior<,>),
             typeof(MetricsBehavior<,>),
@@ -229,6 +261,7 @@ public sealed class ApplicationBehaviorsBuilderTests
             typeof(ResilienceBehavior<,>),
             typeof(IdempotentCommandBehavior<,>),
             typeof(TransactionBehavior<,>),
+            typeof(AuditingBehavior<,>),
             typeof(CacheInvalidationBehavior<,>));
     }
 
@@ -238,13 +271,16 @@ public sealed class ApplicationBehaviorsBuilderTests
         {
             b => b.AddLoggingBehavior().AddMetricsBehavior().AddTracingBehavior().AddValidationBehavior()
                   .AddAuthorizationBehavior().AddCachingBehavior().AddResilienceBehavior()
-                  .AddIdempotencyBehavior().AddTransactionBehavior().AddCacheInvalidationBehavior(),
-            b => b.AddCacheInvalidationBehavior().AddTransactionBehavior().AddIdempotencyBehavior()
-                  .AddResilienceBehavior().AddCachingBehavior().AddAuthorizationBehavior()
-                  .AddValidationBehavior().AddTracingBehavior().AddMetricsBehavior().AddLoggingBehavior(),
+                  .AddIdempotencyBehavior().AddAuditingBehavior().AddTransactionBehavior()
+                  .AddCacheInvalidationBehavior(),
+            b => b.AddCacheInvalidationBehavior().AddTransactionBehavior().AddAuditingBehavior()
+                  .AddIdempotencyBehavior().AddResilienceBehavior().AddCachingBehavior()
+                  .AddAuthorizationBehavior().AddValidationBehavior().AddTracingBehavior()
+                  .AddMetricsBehavior().AddLoggingBehavior(),
             b => b.AddCachingBehavior().AddLoggingBehavior().AddTransactionBehavior().AddTracingBehavior()
-                  .AddValidationBehavior().AddIdempotencyBehavior().AddCacheInvalidationBehavior()
-                  .AddMetricsBehavior().AddAuthorizationBehavior().AddResilienceBehavior(),
+                  .AddValidationBehavior().AddIdempotencyBehavior().AddAuditingBehavior()
+                  .AddCacheInvalidationBehavior().AddMetricsBehavior().AddAuthorizationBehavior()
+                  .AddResilienceBehavior(),
         };
     }
 
