@@ -11,14 +11,14 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>GetCurrentKey() precedence (P-227, preserved from P-147):</strong>
+/// <strong>GetCurrentKeyAsync() precedence (P-227, preserved from P-147):</strong>
 /// The target version is resolved as <c>versionOverride.OverrideVersion ?? optionsMonitor.CurrentValue.CurrentVersion</c>
 /// — identical to the rule that previously lived inside <c>EncryptedValueConverter.Encrypt</c>.
 /// This is how <see cref="EncryptionVersionOverride"/> (the rotation seam from P-147) continues to
 /// direct which key a rotation batch encrypts with, without mutating <see cref="EncryptionOptions.CurrentVersion"/>.
 /// </para>
 /// <para>
-/// <strong>GetKey(keyId) deliberately ignores <see cref="IEncryptionVersionOverride"/>:</strong>
+/// <strong>GetKeyAsync(keyId, ct) deliberately ignores <see cref="IEncryptionVersionOverride"/>:</strong>
 /// Decryption always targets the exact <c>KeyId</c> recorded in the stored ciphertext's version prefix
 /// — never the current or override version. Returns <see langword="null"/> (not a throw) when the
 /// requested <paramref name="keyId"/> is absent from <see cref="EncryptionOptions.Keys"/>, per the
@@ -28,6 +28,18 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// <strong>Hot-reload safe:</strong> Both methods call <c>optionsMonitor.CurrentValue</c> on every
 /// invocation — never a captured snapshot — so changes to <see cref="EncryptionOptions.Keys"/> or
 /// <see cref="EncryptionOptions.CurrentVersion"/> take effect on the next call without a service restart.
+/// </para>
+/// <para>
+/// <strong>D-110/P-448 (breaking, cascading from <c>01.Core</c>'s P-446):</strong> this provider
+/// performs no genuine I/O — it reads an already-loaded <see cref="IOptionsMonitor{T}.CurrentValue"/>
+/// plus the synchronous, in-memory <see cref="EncryptionKeyByteCache"/> decode-once cache. Both
+/// members below therefore return an ALREADY-COMPLETED <see cref="ValueTask{TResult}"/>
+/// (<c>IsCompletedSuccessfully == true</c>) via <c>new ValueTask&lt;T&gt;(value)</c> — never a
+/// genuinely suspended one. Consequently <c>AesGcmEncryptionService</c>'s internal
+/// <c>.GetAwaiter().GetResult()</c> bridge NEVER actually blocks a thread on real I/O when THIS
+/// config-based provider is registered, in contrast with a genuinely network-bound provider (e.g. a
+/// future <c>SharedKernel.Cryptography.KeyVault.Azure</c>, P-447) where the same bridge would block
+/// a real thread on a cache miss.
 /// </para>
 /// <para>
 /// <strong>Registration:</strong> Registered as scoped (matching <see cref="IEncryptionVersionOverride"/>'s
@@ -66,30 +78,33 @@ internal sealed class EncryptionOptionsKeyProvider : IEncryptionKeyProvider
     /// Resolves the target version as <c>versionOverride.OverrideVersion ?? CurrentVersion</c>,
     /// then resolves the decoded key bytes via <see cref="EncryptionKeyByteCache.GetOrDecode"/>
     /// (WO-051/P-323 — previously called <see cref="Convert.FromBase64String(string)"/> directly on
-    /// every call).
+    /// every call). All work is synchronous/in-memory (D-110/P-448) — the returned
+    /// <see cref="ValueTask{TResult}"/> is always already completed.
     /// </remarks>
-    public CryptographicKey GetCurrentKey()
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default)
     {
         var options = _optionsMonitor.CurrentValue;
         var version = _versionOverride.OverrideVersion ?? options.CurrentVersion;
         var keyBytes = _keyByteCache.GetOrDecode(version, options.Keys[version]);
-        return new CryptographicKey(version, keyBytes);
+        return new ValueTask<CryptographicKey>(new CryptographicKey(version, keyBytes));
     }
 
     /// <inheritdoc />
     /// <remarks>
     /// Ignores <see cref="IEncryptionVersionOverride"/> — decryption always targets the exact
     /// <paramref name="keyId"/> from the stored ciphertext. Returns <see langword="null"/> when
-    /// <paramref name="keyId"/> is absent from <see cref="EncryptionOptions.Keys"/>.
+    /// <paramref name="keyId"/> is absent from <see cref="EncryptionOptions.Keys"/>. All work is
+    /// synchronous/in-memory (D-110/P-448) — the returned <see cref="ValueTask{TResult}"/> is
+    /// always already completed.
     /// </remarks>
-    public CryptographicKey? GetKey(string keyId)
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default)
     {
         var options = _optionsMonitor.CurrentValue;
         if (options.Keys.TryGetValue(keyId, out var base64Key))
         {
             var keyBytes = _keyByteCache.GetOrDecode(keyId, base64Key);
-            return new CryptographicKey(keyId, keyBytes);
+            return new ValueTask<CryptographicKey?>(new CryptographicKey(keyId, keyBytes));
         }
-        return null;
+        return new ValueTask<CryptographicKey?>((CryptographicKey?)null);
     }
 }

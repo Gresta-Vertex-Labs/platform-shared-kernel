@@ -10,7 +10,7 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// </summary>
 /// <remarks>
 /// <para>
-/// WO-051/P-323 — <see cref="EncryptionOptionsKeyProvider.GetCurrentKey"/>/<see cref="EncryptionOptionsKeyProvider.GetKey"/>
+/// WO-051/P-323 — <see cref="EncryptionOptionsKeyProvider.GetCurrentKeyAsync"/>/<see cref="EncryptionOptionsKeyProvider.GetKeyAsync"/>
 /// previously called <see cref="Convert.FromBase64String(string)"/> on every invocation, even though
 /// the underlying Base64 string for a given key version is immutable until the next config/rotation
 /// reload.

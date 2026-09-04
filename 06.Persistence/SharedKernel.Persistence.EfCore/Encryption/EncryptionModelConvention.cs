@@ -27,10 +27,12 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// Properties without the <c>"SharedKernel:Encrypt"</c> annotation are untouched.
 /// </para>
 /// <para>
-/// <strong>P-227:</strong> This convention resolves <see cref="ISymmetricEncryptionService"/>
-/// and <see cref="IEncryptionKeyProvider"/> from DI alongside the existing
-/// <see cref="IEncryptionVersionOverride"/>, and passes all three to each
-/// <see cref="EncryptedValueConverter"/> it constructs.
+/// <strong>P-227, simplified per D-109/P-448:</strong> This convention resolves
+/// <see cref="ISymmetricEncryptionService"/> from DI alongside the existing
+/// <see cref="IEncryptionVersionOverride"/>, and passes both to each
+/// <see cref="EncryptedValueConverter"/> it constructs. It no longer resolves
+/// <see cref="IEncryptionKeyProvider"/> at all — <see cref="EncryptedValueConverter"/> stopped
+/// needing one directly (D-108).
 /// </para>
 /// </remarks>
 public sealed class EncryptionModelConvention : IModelFinalizingConvention
@@ -38,7 +40,6 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
     private readonly IEncryptionVersionOverride _versionOverride;
     private readonly ISymmetricEncryptionService? _symmetricEncryptionService;
-    private readonly IEncryptionKeyProvider? _keyProvider;
 
     /// <summary>
     /// Initialises a new <see cref="EncryptionModelConvention"/>.
@@ -49,25 +50,22 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
     /// (P-227). May be <see langword="null"/> when <c>.WithEncryption()</c> was not called and the
     /// converter operates in disabled pass-through mode.
     /// </param>
-    /// <param name="keyProvider">
-    /// The key provider bridging <see cref="EncryptionOptions"/> to <see cref="IEncryptionKeyProvider"/>
-    /// (P-227). Used by the converter for pre-check lookups on the decrypt path. May be
-    /// <see langword="null"/> when <c>.WithEncryption()</c> was not called.
-    /// </param>
     /// <param name="versionOverride">
     /// Scoped rotation-target-version accessor, resolved via DI, or the shared no-op instance when
     /// <c>.WithEncryption()</c> was not called. Passed to every <see cref="EncryptedValueConverter"/>
     /// this convention constructs.
     /// </param>
+    /// <remarks>
+    /// <strong>D-109/P-448 (breaking):</strong> this constructor no longer takes an
+    /// <see cref="IEncryptionKeyProvider"/> parameter.
+    /// </remarks>
     public EncryptionModelConvention(
         IOptionsMonitor<EncryptionOptions> optionsMonitor,
         ISymmetricEncryptionService? symmetricEncryptionService = null,
-        IEncryptionKeyProvider? keyProvider = null,
         IEncryptionVersionOverride? versionOverride = null)
     {
         _optionsMonitor = optionsMonitor;
         _symmetricEncryptionService = symmetricEncryptionService;
-        _keyProvider = keyProvider;
         _versionOverride = versionOverride ?? EncryptionVersionOverride.NoOp;
     }
 
@@ -93,13 +91,12 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                 }
 
                 ValueConverter converter;
-                if (_symmetricEncryptionService is not null && _keyProvider is not null)
+                if (_symmetricEncryptionService is not null)
                 {
-                    // P-227: full delegation to ISymmetricEncryptionService.
+                    // P-227, simplified per D-109: full delegation to ISymmetricEncryptionService.
                     converter = new EncryptedValueConverter(
                         _optionsMonitor,
                         _symmetricEncryptionService,
-                        _keyProvider,
                         _versionOverride);
                 }
                 else
@@ -110,7 +107,6 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                     converter = new EncryptedValueConverter(
                         _optionsMonitor,
                         NullSymmetricEncryptionService.Instance,
-                        NullEncryptionKeyProvider.Instance,
                         _versionOverride);
                 }
 

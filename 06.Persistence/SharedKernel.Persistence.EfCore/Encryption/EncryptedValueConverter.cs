@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Options;
 
@@ -30,12 +31,19 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// (e.g., <c>"v1"</c>).
 /// </para>
 /// <para>
-/// <strong>Decryption:</strong> Parses the version prefix. FIRST calls
-/// <see cref="IEncryptionKeyProvider.GetKey(string)"/> on the injected key provider — if
-/// <see langword="null"/> (version absent from <see cref="EncryptionOptions.Keys"/>), throws
-/// <see cref="EncryptionKeyNotFoundException"/> immediately without invoking Decrypt. Otherwise
-/// reconstructs an <see cref="EncryptedPayload"/> and calls
-/// <c>symmetricEncryptionService.Decrypt(payload)</c>.
+/// <strong>Decryption (D-108/P-448):</strong> Parses the version prefix, reconstructs an
+/// <see cref="EncryptedPayload"/>, and calls <c>symmetricEncryptionService.Decrypt(payload)</c>
+/// directly — this converter no longer resolves keys itself, sync or async. A failed
+/// <see cref="SharedKernel.Primitives.Results.Result{T}"/> whose
+/// <c>Error.Code == CryptographyErrorCodes.UnknownKeyId</c> (the stored version is absent from
+/// <see cref="EncryptionOptions.Keys"/>) is mapped to <see cref="EncryptionKeyNotFoundException"/>;
+/// any other failure (auth-tag mismatch, tamper, wrong key) is mapped to the existing generic
+/// <see cref="System.Security.Cryptography.CryptographicException"/>. This distinction was
+/// previously made by a direct pre-check call to <see cref="IEncryptionKeyProvider.GetKey(string)"/>
+/// before <c>01.Core</c>'s P-446 made that member asynchronous — <c>AesGcmEncryptionService</c>
+/// already surfaced the same two error codes on its own <c>Result{T}</c>, so the pre-check was
+/// redundant and removing it keeps this converter's pipeline synchronous without ever touching the
+/// (now async-only) <see cref="IEncryptionKeyProvider"/> directly.
 /// </para>
 /// <para>
 /// <strong>Legacy plaintext:</strong> Stored values without a <c>"v"</c> prefix are returned
@@ -61,32 +69,35 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
     private const int TagSizeBytes = 16;
 
     /// <summary>
-    /// Initialises a new <see cref="EncryptedValueConverter"/> with cryptography delegation (P-227).
+    /// Initialises a new <see cref="EncryptedValueConverter"/> with cryptography delegation (P-227,
+    /// simplified per D-108/P-448).
     /// </summary>
     /// <param name="optionsMonitor">Live options monitor for pass-through gating and hot-reload support.</param>
     /// <param name="symmetricEncryptionService">
     /// The cryptographic service that performs AES-256-GCM encrypt/decrypt operations.
     /// Registered by the consuming service via <c>AddSharedKernelCryptography()</c>.
     /// </param>
-    /// <param name="keyProvider">
-    /// The key provider bridging <see cref="EncryptionOptions"/> to <see cref="IEncryptionKeyProvider"/>.
-    /// Used for the pre-check on the decrypt path (unknown version → immediate
-    /// <see cref="EncryptionKeyNotFoundException"/> without calling Decrypt).
-    /// </param>
     /// <param name="versionOverride">
     /// Optional scoped accessor allowing <see cref="EncryptionRotationService{TContext}"/> to direct
     /// this converter to encrypt with a specific target key version for the duration of a rotation
-    /// batch. The override precedence rule <c>OverrideVersion ?? CurrentVersion</c> is now resolved
-    /// inside <see cref="EncryptionOptionsKeyProvider.GetCurrentKey()"/> via <paramref name="keyProvider"/>.
+    /// batch. The override precedence rule <c>OverrideVersion ?? CurrentVersion</c> is resolved
+    /// inside <see cref="EncryptionOptionsKeyProvider.GetCurrentKeyAsync"/>, which
+    /// <paramref name="symmetricEncryptionService"/> consults internally.
     /// </param>
+    /// <remarks>
+    /// <strong>D-108/P-448 (breaking):</strong> this constructor no longer takes an
+    /// <see cref="IEncryptionKeyProvider"/> parameter — this converter never resolves keys itself,
+    /// it only calls <paramref name="symmetricEncryptionService"/>'s synchronous members, which
+    /// resolve keys internally (bridging onto the now-asynchronous <see cref="IEncryptionKeyProvider"/>
+    /// via <c>.GetAwaiter().GetResult()</c> — see <c>01.Core</c>'s own documented cost).
+    /// </remarks>
     public EncryptedValueConverter(
         IOptionsMonitor<EncryptionOptions> optionsMonitor,
         ISymmetricEncryptionService symmetricEncryptionService,
-        IEncryptionKeyProvider keyProvider,
         IEncryptionVersionOverride? versionOverride = null)
         : base(
             value => Encrypt(value, optionsMonitor.CurrentValue, symmetricEncryptionService),
-            stored => Decrypt(stored, optionsMonitor.CurrentValue, symmetricEncryptionService, keyProvider))
+            stored => Decrypt(stored, optionsMonitor.CurrentValue, symmetricEncryptionService))
     {
     }
 
@@ -115,8 +126,7 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
     private static string Decrypt(
         string stored,
         EncryptionOptions options,
-        ISymmetricEncryptionService symmetricEncryptionService,
-        IEncryptionKeyProvider keyProvider)
+        ISymmetricEncryptionService symmetricEncryptionService)
     {
         if (!options.Enabled)
         {
@@ -139,13 +149,6 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
         var version = stored[1..colonIndex]; // Strip the leading 'v'
         var base64Payload = stored[(colonIndex + 1)..];
 
-        // Pre-check: fail fast with EncryptionKeyNotFoundException if the version is unknown.
-        // This distinguishes "key removed" from "tamper/auth-tag mismatch" before calling Decrypt.
-        if (keyProvider.GetKey(version) is null)
-        {
-            throw new EncryptionKeyNotFoundException(version);
-        }
-
         var combined = Convert.FromBase64String(base64Payload);
 
         if (combined.Length < NonceSizeBytes + TagSizeBytes)
@@ -160,10 +163,19 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
         var ciphertext = combined[NonceSizeBytes..^TagSizeBytes];
 
         var payload = new EncryptedPayload(version, nonce, ciphertext, tag);
+
+        // D-108/P-448: no more direct pre-check against IEncryptionKeyProvider — the underlying
+        // ISymmetricEncryptionService.Decrypt() call already distinguishes "unknown key id" from
+        // "tamper/wrong key" via its own Result<T> error code.
         var result = symmetricEncryptionService.Decrypt(payload);
 
         if (result.IsFailure)
         {
+            if (result.Error?.Code == CryptographyErrorCodes.UnknownKeyId)
+            {
+                throw new EncryptionKeyNotFoundException(version);
+            }
+
             // Auth-tag mismatch, tamper, or other crypto failure.
             throw new System.Security.Cryptography.CryptographicException(
                 $"Decryption failed for ciphertext version '{version}': {result.Error?.Message}");
