@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Second-factor (TOTP) enrollment and challenge orchestration for SharedKernel security, plus the ASP.NET Core-facing step-up wiring (TotpStepUpClaimsTransformation) that makes a successful TOTP verification observable through IUserContext.WasAuthenticatedWith/AuthenticationMethods with zero changes to SharedKernel.Security.Oidc or 14.Presentation's [RequireAuthenticationMethod]. A fifth sibling provider package, never OIDC, never references .Oidc/.ApiKey/.Mtls. Delegates every RFC 6238/4226 primitive to 01.Core/SharedKernel.Cryptography's ITotpGenerator/TotpVerifier/Base32/TotpProvisioningUri/RecoveryCodeGenerator — never reimplements the algorithm. References only SharedKernel.Security.Abstractions and SharedKernel.Cryptography.</Description>
+    <PackageTags>shared-kernel;security;totp;hotp;mfa;second-factor;step-up;identity</PackageTags>
+    <PackageReleaseNotes>1.0.0 (first release): TotpEnrollment/TotpEnrollmentService (secret + recovery-code generation, composing 01.Core's ISecureRandomGenerator/Base32/TotpProvisioningUri/RecoveryCodeGenerator), ITotpChallengeStore (consumer-supplied challenge-freshness seam)/TotpChallengeService (composes 01.Core's TotpVerifier), TotpStepUpOptions/TotpStepUpClaimsTransformation (IClaimsTransformation-based step-up wiring), AddTotpStepUp&lt;TChallengeStore&gt; DI extension. See WO-069 (P-452).</PackageReleaseNotes>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Microsoft.AspNetCore.App shared framework: supplies Microsoft.AspNetCore.Authentication.Abstractions
+      (IClaimsTransformation, same assembly AuthenticationHandler<TOptions> ships from for
+      SharedKernel.Security.ApiKey) and Microsoft.Extensions.Logging.Abstractions ([LoggerMessage]).
+      A FrameworkReference, not a NuGet PackageReference — VERIFIED directly against the installed
+      shared-framework directory (Microsoft.AspNetCore.Authentication.Abstractions.dll is present there),
+      mirroring SharedKernel.Security.ApiKey's identical "framework-provided, not a NuGet dependency"
+      precedent. Unlike SharedKernel.Security.Mtls's Microsoft.AspNetCore.Authentication.Certificate
+      correction, IClaimsTransformation genuinely IS framework-provided — no separate PackageReference
+      needed here (SC-31, WO-069/P-452).
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Grants SharedKernel.Security.Totp.Tests direct access to internal types (TotpIdentityKeyFormatter)
+      so the shared Guid->identityKey formatting helper reused by both TotpChallengeService (writer) and
+      TotpStepUpClaimsTransformation (reader) can be proven directly — mirrors SharedKernel.Security
+      .ApiKey's/.Mtls's identical InternalsVisibleTo grant pattern.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SharedKernel.Security.Totp.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

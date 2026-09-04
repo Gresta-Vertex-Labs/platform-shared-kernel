@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SharedKernel.Security.Abstractions.Claims;
 using SharedKernel.Security.Oidc.Options;
 using Xunit;
 
@@ -123,5 +124,25 @@ public sealed class SecurityOptionsTests
     {
         var options = new SecurityOptions();
         Assert.Equal("scope", options.ClaimMapping.PermissionClaimType);
+    }
+
+    // ---- ClaimMapping.AmrClaimType harmonization (WO-069, P-452, D-46) ----
+
+    [Fact]
+    public void ClaimMapping_DefaultAmrClaimType_IsAmr()
+    {
+        var options = new SecurityOptions();
+        Assert.Equal("amr", options.ClaimMapping.AmrClaimType);
+    }
+
+    [Fact]
+    public void ClaimMapping_DefaultAmrClaimType_ReferencesTheSharedSecurityClaimTypesConstant()
+    {
+        var options = new SecurityOptions();
+
+        // Proves the default is sourced from SecurityClaimTypes.AuthenticationMethod rather than an
+        // independently-duplicated literal — the same claim type SharedKernel.Security.Totp's
+        // step-up wiring stamps can never silently drift from what OidcUserContext reads.
+        Assert.Equal(SecurityClaimTypes.AuthenticationMethod, options.ClaimMapping.AmrClaimType);
     }
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SharedKernel.Security.Abstractions.Claims;
 
 namespace SharedKernel.Security.Oidc.Options;
 
@@ -72,13 +73,16 @@ public sealed class ClaimMappingOptions
     /// <c>"amr"</c> — Authentication Method Reference — claim).
     /// </summary>
     /// <remarks>
-    /// Defaults to <c>"amr"</c> — the standard OIDC claim name, already a short form. Resolution is
-    /// defensive to both real-world shapes: one <see cref="System.Security.Claims.Claim"/> per method, or
-    /// a single claim whose value is space-delimited (mirrors the <see cref="RoleClaimType"/> reader
-    /// exactly) (WO-058, P-375).
+    /// Defaults to <see cref="SecurityClaimTypes.AuthenticationMethod"/> (<c>"amr"</c>) — the standard
+    /// OIDC claim name, already a short form. Resolution is defensive to both real-world shapes: one
+    /// <see cref="System.Security.Claims.Claim"/> per method, or a single claim whose value is
+    /// space-delimited (mirrors the <see cref="RoleClaimType"/> reader exactly) (WO-058, P-375).
+    /// Harmonized to reference the shared constant instead of an independently-duplicated literal
+    /// (WO-069, P-452, D-46) — same string value, zero behavior change; this is also the exact claim
+    /// type <c>SharedKernel.Security.Totp</c>'s step-up wiring stamps.
     /// </remarks>
     [Required(AllowEmptyStrings = false)]
-    public string AmrClaimType { get; set; } = "amr";
+    public string AmrClaimType { get; set; } = SecurityClaimTypes.AuthenticationMethod;
 
     /// <summary>
     /// Gets or sets the claim type <c>IUserContext.AuthContextClassReference</c> is resolved from (the

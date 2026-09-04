@@ -29,4 +29,10 @@ public sealed class SecurityClaimTypesTests
     {
         Assert.Equal(ClaimTypes.Role, SecurityClaimTypes.Role);
     }
+
+    [Fact]
+    public void AuthenticationMethod_IsAmrClaim()
+    {
+        Assert.Equal("amr", SecurityClaimTypes.AuthenticationMethod);
+    }
 }

@@ -53,4 +53,19 @@ public static class SecurityClaimTypes
     /// for the full rationale — the same reasoning applies here.
     /// </remarks>
     public const string Role = ClaimTypes.Role;
+
+    /// <summary>
+    /// The OIDC Authentication Method Reference claim (<c>amr</c>) — the standard, already-short-form
+    /// claim name naming which method(s) were used to authenticate the current session (e.g.
+    /// <c>"pwd"</c>, <c>"otp"</c>, <c>"mfa"</c>, <c>"hwk"</c>).
+    /// </summary>
+    /// <remarks>
+    /// Added WO-069 (P-452) as the single source of truth for the <c>"amr"</c> literal: closes a
+    /// pre-existing duplicate-literal gap — <c>SharedKernel.Security.Oidc</c>'s
+    /// <c>ClaimMappingOptions.AmrClaimType</c> default (shipped WO-058) and
+    /// <c>SharedKernel.Security.Totp</c>'s <c>TotpStepUpOptions.AmrClaimType</c> default both reference
+    /// this constant, so the claim type the TOTP step-up wiring stamps and the claim type
+    /// <c>OidcUserContext</c>'s defensive <c>amr</c> reader consumes can never silently drift apart.
+    /// </remarks>
+    public const string AuthenticationMethod = "amr";
 }
