@@ -21,6 +21,11 @@
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!--
+      WO-071/P-457: audit-trail tests only — see Directory.Packages.props for why SQLite cannot
+      be used to test AuditRecord's DateTimeOffset-ordered hash-chain/keyset queries.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="NSubstitute" />
   </ItemGroup>
 </Project>

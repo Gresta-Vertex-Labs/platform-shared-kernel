@@ -123,11 +123,12 @@ public sealed class EncryptionKeyCachingTests
     }
 
     // -------------------------------------------------------------------------
-    // EncryptionOptionsKeyProvider.GetCurrentKey()/GetKey() — repeated calls reuse the cached bytes.
+    // EncryptionOptionsKeyProvider.GetCurrentKeyAsync()/GetKeyAsync() — repeated calls reuse the
+    // cached bytes (D-110/P-448: migrated to the async IEncryptionKeyProvider shape).
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void GetCurrentKey_RepeatedCalls_ReturnsSameCachedKeyBytesInstance()
+    public async Task GetCurrentKeyAsync_RepeatedCalls_ReturnsSameCachedKeyBytesInstance()
     {
         var opts = new EncryptionOptions
         {
@@ -139,17 +140,17 @@ public sealed class EncryptionKeyCachingTests
         var byteCache = new EncryptionKeyByteCache(monitor);
         var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, byteCache);
 
-        var key1 = provider.GetCurrentKey();
-        var key2 = provider.GetCurrentKey();
+        var key1 = await provider.GetCurrentKeyAsync();
+        var key2 = await provider.GetCurrentKeyAsync();
 
         key1.Id.Should().Be("v1");
         ReferenceEquals(key1.Material, key2.Material).Should().BeTrue(
-            "repeated GetCurrentKey calls for the same version must reuse the cached decoded key bytes, " +
+            "repeated GetCurrentKeyAsync calls for the same version must reuse the cached decoded key bytes, " +
             "not re-decode Base64 on every call");
     }
 
     [Fact]
-    public void GetKey_RepeatedCalls_ReturnsSameCachedKeyBytesInstance()
+    public async Task GetKeyAsync_RepeatedCalls_ReturnsSameCachedKeyBytesInstance()
     {
         var opts = new EncryptionOptions
         {
@@ -165,20 +166,20 @@ public sealed class EncryptionKeyCachingTests
         var byteCache = new EncryptionKeyByteCache(monitor);
         var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, byteCache);
 
-        var key1 = provider.GetKey("v2");
-        var key2 = provider.GetKey("v2");
+        var key1 = await provider.GetKeyAsync("v2");
+        var key2 = await provider.GetKeyAsync("v2");
 
         key1.Should().NotBeNull();
         key2.Should().NotBeNull();
         ReferenceEquals(key1!.Material, key2!.Material).Should().BeTrue(
-            "repeated GetKey calls for the same version must reuse the cached decoded key bytes");
+            "repeated GetKeyAsync calls for the same version must reuse the cached decoded key bytes");
     }
 
     [Fact]
-    public void GetCurrentKey_AfterSimulatedRotationReload_ReflectsNewKeyVersion()
+    public async Task GetCurrentKeyAsync_AfterSimulatedRotationReload_ReflectsNewKeyVersion()
     {
         // A rotation adding a new key version and switching CurrentVersion must be reflected on the
-        // next GetCurrentKey call — proving the cache clear does not stale-lock key resolution.
+        // next GetCurrentKeyAsync call — proving the cache clear does not stale-lock key resolution.
         var opts = new EncryptionOptions
         {
             Enabled = true,
@@ -189,7 +190,7 @@ public sealed class EncryptionKeyCachingTests
         var byteCache = new EncryptionKeyByteCache(monitor);
         var provider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, byteCache);
 
-        var before = provider.GetCurrentKey();
+        var before = await provider.GetCurrentKeyAsync();
         before.Id.Should().Be("v1");
 
         var reloaded = new EncryptionOptions
@@ -204,7 +205,7 @@ public sealed class EncryptionKeyCachingTests
         };
         monitor.SimulateReload(reloaded);
 
-        var after = provider.GetCurrentKey();
+        var after = await provider.GetCurrentKeyAsync();
         after.Id.Should().Be("v2");
         after.Material.Should().Equal(MakeKeyBytes(0x22));
     }

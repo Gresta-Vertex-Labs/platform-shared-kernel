@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using SharedKernel.Cryptography;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Options;
@@ -62,7 +63,7 @@ public sealed class EncryptionDelegationTests
         var monitor = MakeMonitor(opts);
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
         var encService = new AesGcmEncryptionService(keyProvider);
-        return new EncryptedValueConverter(monitor, encService, keyProvider, versionOverride);
+        return new EncryptedValueConverter(monitor, encService, versionOverride);
     }
 
     // ===========================================================================
@@ -102,8 +103,7 @@ public sealed class EncryptionDelegationTests
         var disabledOpts = new EncryptionOptions { Enabled = false };
         var monitor = MakeMonitor(disabledOpts);
         var cryptoSvc = Substitute.For<ISymmetricEncryptionService>();
-        var keyProvider = Substitute.For<IEncryptionKeyProvider>();
-        var converter = new EncryptedValueConverter(monitor, cryptoSvc, keyProvider);
+        var converter = new EncryptedValueConverter(monitor, cryptoSvc);
 
         const string val = "plaintext";
         var encrypted = converter.ConvertToProviderExpression.Compile()(val);
@@ -145,62 +145,62 @@ public sealed class EncryptionDelegationTests
     // ===========================================================================
 
     [Fact]
-    public void T56_GetCurrentKey_Returns_CurrentVersion_Key_When_NoOverride()
+    public async Task T56_GetCurrentKeyAsync_Returns_CurrentVersion_Key_When_NoOverride()
     {
-        // GetCurrentKey() should return key for CurrentVersion when OverrideVersion is null.
+        // GetCurrentKeyAsync() should return key for CurrentVersion when OverrideVersion is null.
         var v1Bytes = new byte[32]; Array.Fill(v1Bytes, (byte)0x11);
         var opts = EnabledOptions("v1", 0x11);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride(); // OverrideVersion = null
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
-        var key = keyProvider.GetCurrentKey();
+        var key = await keyProvider.GetCurrentKeyAsync();
 
         key.Id.Should().Be("v1");
         key.Material.Should().Equal(v1Bytes);
     }
 
     [Fact]
-    public void T56_GetCurrentKey_Returns_OverrideVersion_Key_When_OverrideSet()
+    public async Task T56_GetCurrentKeyAsync_Returns_OverrideVersion_Key_When_OverrideSet()
     {
-        // GetCurrentKey() respects OverrideVersion ?? CurrentVersion precedence.
+        // GetCurrentKeyAsync() respects OverrideVersion ?? CurrentVersion precedence.
         var v2Bytes = new byte[32]; Array.Fill(v2Bytes, (byte)0x22);
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride { OverrideVersion = "v2" };
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
-        var key = keyProvider.GetCurrentKey();
+        var key = await keyProvider.GetCurrentKeyAsync();
 
         key.Id.Should().Be("v2");
         key.Material.Should().Equal(v2Bytes);
     }
 
     [Fact]
-    public void T56_GetCurrentKey_Precedence_Does_Not_Mutate_CurrentVersion()
+    public async Task T56_GetCurrentKeyAsync_Precedence_Does_Not_Mutate_CurrentVersion()
     {
-        // Setting OverrideVersion changes what GetCurrentKey returns,
+        // Setting OverrideVersion changes what GetCurrentKeyAsync returns,
         // but does NOT mutate EncryptionOptions.CurrentVersion.
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride { OverrideVersion = "v2" };
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
-        _ = keyProvider.GetCurrentKey(); // resolve override
+        _ = await keyProvider.GetCurrentKeyAsync(); // resolve override
 
         monitor.CurrentValue.CurrentVersion.Should().Be("v1",
             "EncryptionOptions.CurrentVersion must never be mutated by override resolution");
     }
 
     [Fact]
-    public void T56_GetKey_Returns_Correct_Key_For_Known_Version()
+    public async Task T56_GetKeyAsync_Returns_Correct_Key_For_Known_Version()
     {
         var v2Bytes = new byte[32]; Array.Fill(v2Bytes, (byte)0x22);
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
 
-        var key = keyProvider.GetKey("v2");
+        var key = await keyProvider.GetKeyAsync("v2");
 
         key.Should().NotBeNull();
         key!.Id.Should().Be("v2");
@@ -208,34 +208,34 @@ public sealed class EncryptionDelegationTests
     }
 
     [Fact]
-    public void T56_GetKey_Returns_Null_Not_Throw_For_Unknown_Version()
+    public async Task T56_GetKeyAsync_Returns_Null_Not_Throw_For_Unknown_Version()
     {
         var opts = EnabledOptions("v1");
         var monitor = MakeMonitor(opts);
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
 
-        var key = keyProvider.GetKey("v99-not-registered");
+        var key = await keyProvider.GetKeyAsync("v99-not-registered");
 
-        key.Should().BeNull("IEncryptionKeyProvider.GetKey must return null, not throw, for unknown versions");
+        key.Should().BeNull("IEncryptionKeyProvider.GetKeyAsync must return null, not throw, for unknown versions");
     }
 
     [Fact]
-    public void T56_GetKey_Ignores_VersionOverride_Always_Uses_Requested_KeyId()
+    public async Task T56_GetKeyAsync_Ignores_VersionOverride_Always_Uses_Requested_KeyId()
     {
-        // Decryption always targets the stored KeyId — override has no effect on GetKey.
+        // Decryption always targets the stored KeyId — override has no effect on GetKeyAsync.
         var opts = EnabledOptions("v1", 0x11, [("v2", 0x22)]);
         var monitor = MakeMonitor(opts);
         var versionOverride = new EncryptionVersionOverride { OverrideVersion = "v2" };
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride, new EncryptionKeyByteCache(monitor));
 
-        var key = keyProvider.GetKey("v1"); // explicit lookup, ignores override
+        var key = await keyProvider.GetKeyAsync("v1"); // explicit lookup, ignores override
 
-        key.Should().NotBeNull("GetKey always ignores OverrideVersion — uses the supplied keyId directly");
+        key.Should().NotBeNull("GetKeyAsync always ignores OverrideVersion — uses the supplied keyId directly");
         key!.Id.Should().Be("v1");
     }
 
     [Fact]
-    public void T56_HotReload_GetCurrentKey_Reflects_Updated_CurrentVersion()
+    public async Task T56_HotReload_GetCurrentKeyAsync_Reflects_Updated_CurrentVersion()
     {
         // Hot-reload: changing CurrentValue between calls is reflected immediately.
         var opts = new EncryptionOptions { Enabled = true, CurrentVersion = "v1" };
@@ -247,13 +247,32 @@ public sealed class EncryptionDelegationTests
         var mutableMonitor = new MutableOptionsMonitor(opts);
         var keyProvider = new EncryptionOptionsKeyProvider(mutableMonitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(mutableMonitor));
 
-        var key1 = keyProvider.GetCurrentKey();
+        var key1 = await keyProvider.GetCurrentKeyAsync();
         key1.Id.Should().Be("v1");
 
         // Simulate hot-reload: update CurrentVersion in options
         mutableMonitor.CurrentValue.CurrentVersion = "v2";
-        var key2 = keyProvider.GetCurrentKey();
-        key2.Id.Should().Be("v2", "hot-reload: GetCurrentKey reads CurrentValue fresh every call");
+        var key2 = await keyProvider.GetCurrentKeyAsync();
+        key2.Id.Should().Be("v2", "hot-reload: GetCurrentKeyAsync reads CurrentValue fresh every call");
+    }
+
+    [Fact]
+    public void T56_GetCurrentKeyAsync_And_GetKeyAsync_Complete_Synchronously()
+    {
+        // D-110/P-448: the config-based provider performs no genuine I/O — both members must return
+        // an already-completed ValueTask, proving AesGcmEncryptionService's internal
+        // .GetAwaiter().GetResult() bridge never blocks a thread on real I/O for this provider.
+        var opts = EnabledOptions("v1", 0x11);
+        var monitor = MakeMonitor(opts);
+        var keyProvider = new EncryptionOptionsKeyProvider(monitor, EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
+
+        var currentKeyTask = keyProvider.GetCurrentKeyAsync();
+        var keyTask = keyProvider.GetKeyAsync("v1");
+
+        currentKeyTask.IsCompletedSuccessfully.Should().BeTrue(
+            "the config-based provider resolves synchronously, in-memory");
+        keyTask.IsCompletedSuccessfully.Should().BeTrue(
+            "the config-based provider resolves synchronously, in-memory");
     }
 
     private sealed class MutableOptionsMonitor(EncryptionOptions value) : IOptionsMonitor<EncryptionOptions>
@@ -268,11 +287,11 @@ public sealed class EncryptionDelegationTests
     // ===========================================================================
 
     [Fact]
-    public void T57_DecryptWithUnknownVersion_ThrowsEncryptionKeyNotFoundException_Without_Calling_Decrypt()
+    public void T57_DecryptWithUnknownVersion_ThrowsEncryptionKeyNotFoundException_ViaDecryptResultCode()
     {
-        // The pre-check in EncryptedValueConverter must call GetKey(parsedVersion) BEFORE calling
-        // ISymmetricEncryptionService.Decrypt. If the key is absent, throw EncryptionKeyNotFoundException
-        // without ever calling Decrypt.
+        // D-108/P-448: there is no more direct pre-check against IEncryptionKeyProvider — the
+        // converter calls ISymmetricEncryptionService.Decrypt directly, and maps a failure whose
+        // Error.Code == CryptographyErrorCodes.UnknownKeyId to EncryptionKeyNotFoundException.
         var opts = new EncryptionOptions
         {
             Enabled = true,
@@ -281,21 +300,24 @@ public sealed class EncryptionDelegationTests
         };
         var monitor = MakeMonitor(opts);
         var cryptoSvc = Substitute.For<ISymmetricEncryptionService>();
-        // Set up a fake GetKey that returns null for "v1" (unknown version)
-        var keyProvider = Substitute.For<IEncryptionKeyProvider>();
-        keyProvider.GetKey("v1").Returns((CryptographicKey?)null);
+        cryptoSvc.Decrypt(Arg.Any<EncryptedPayload>()).Returns(
+            SharedKernel.Primitives.Errors.Error.Unexpected(
+                CryptographyErrorCodes.UnknownKeyId,
+                "No encryption key registered for key id 'v1'."));
 
-        var converter = new EncryptedValueConverter(monitor, cryptoSvc, keyProvider);
+        var converter = new EncryptedValueConverter(monitor, cryptoSvc);
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
-        // "vv1:AAAA" — version "v1" is not in Keys
-        var act = () => fromProvider("vv1:AAAA");
+        // Version "v1" is not in Keys. Payload must be well-formed length (>= 28 bytes) so the
+        // converter's own length guard doesn't short-circuit before ever calling Decrypt.
+        var stored = "vv1:" + Convert.ToBase64String(new byte[28]);
+        var act = () => fromProvider(stored);
 
         act.Should().Throw<EncryptionKeyNotFoundException>()
             .Which.Version.Should().Be("v1");
 
-        // The critical assertion: Decrypt was NEVER called
-        cryptoSvc.DidNotReceiveWithAnyArgs().Decrypt(default!);
+        // The converter DOES delegate to Decrypt now — the distinction comes from the result code.
+        cryptoSvc.Received(1).Decrypt(Arg.Any<EncryptedPayload>());
     }
 
     [Fact]
@@ -342,7 +364,7 @@ public sealed class EncryptionDelegationTests
         var override_ = new EncryptionVersionOverride { OverrideVersion = "v2" };
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, override_, new EncryptionKeyByteCache(monitor));
         var encService = new AesGcmEncryptionService(keyProvider);
-        var converter = new EncryptedValueConverter(monitor, encService, keyProvider, override_);
+        var converter = new EncryptedValueConverter(monitor, encService, override_);
         var toProvider = converter.ConvertToProviderExpression.Compile();
 
         _ = toProvider("some-value"); // force encryption with override

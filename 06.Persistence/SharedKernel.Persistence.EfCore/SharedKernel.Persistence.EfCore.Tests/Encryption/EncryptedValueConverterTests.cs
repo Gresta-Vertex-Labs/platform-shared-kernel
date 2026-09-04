@@ -49,7 +49,7 @@ public sealed class EncryptedValueConverterTests
         var monitor = MakeMonitor(options);
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
         var encryptionService = new AesGcmEncryptionService(keyProvider);
-        return new EncryptedValueConverter(monitor, encryptionService, keyProvider, versionOverride);
+        return new EncryptedValueConverter(monitor, encryptionService, versionOverride);
     }
 
     [Fact]
@@ -148,9 +148,13 @@ public sealed class EncryptedValueConverterTests
         var converter = MakeConverter(options);
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
-        // A ciphertext that was created with "v1" (which is now removed)
-        // Format: "v{version}:{payload}" — version "v1" would be stored as "vv1:..."
-        var storedWithV1 = "vv1:AAAA"; // malformed payload but version prefix is correct
+        // A ciphertext that was created with "v1" (which is now removed).
+        // Format: "v{version}:{payload}" — version "v1" would be stored as "vv1:...".
+        // D-108/P-448: there is no more pre-check short-circuiting before length validation, so the
+        // payload must be a well-formed length (>= 12-byte nonce + 16-byte tag = 28 bytes) — the
+        // converter must actually reach ISymmetricEncryptionService.Decrypt for this to prove the
+        // Error.Code == CryptographyErrorCodes.UnknownKeyId mapping, not merely the length guard.
+        var storedWithV1 = "vv1:" + Convert.ToBase64String(new byte[28]);
 
         // Act
         var act = () => fromProvider(storedWithV1);
@@ -180,8 +184,14 @@ public sealed class EncryptedValueConverterTests
         // Act
         var act = () => fromProvider(tampered);
 
-        // Assert — AES-GCM authentication tag failure propagates as CryptographicException
-        act.Should().Throw<Exception>("tampered ciphertext fails AES-GCM authentication tag check");
+        // Assert (T-126) — a tamper/wrong-key decrypt failure (Error.Code != UnknownKeyId) still
+        // surfaces as the existing generic CryptographicException, unchanged from before D-108 —
+        // asserted against the concrete type, not merely `Exception`, so this test actually proves
+        // the "still the generic CryptographicException" claim rather than any thrown exception.
+        act.Should().Throw<System.Security.Cryptography.CryptographicException>(
+            "tampered ciphertext fails AES-GCM authentication tag check and the key id IS known " +
+            "(only the auth tag is corrupted), so the converter must map this to the generic " +
+            "CryptographicException path, not EncryptionKeyNotFoundException");
     }
 
     [Fact]
