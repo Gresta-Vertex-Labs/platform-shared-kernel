@@ -2903,14 +2903,15 @@ FakeSecureRandomGenerator  (sealed class, implements ISecureRandomGenerator)  �
           secure and never acceptable outside deterministic test assertions (e.g. snapshot-testing a
           generated token value).
 
-FakeEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider)  — implemented C-87/SK.16.Core
+FakeEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider)  — implemented C-87/SK.16.Core;
+    ASYNC-MIGRATED C-131/SK.16.Core (P-450/WO-068, 2026-09-03)
     constructor(string currentKeyId = "v1")                (seeds one key immediately)
     AddKey(string keyId)                                   → CryptographicKey  (fresh 32-byte material via
                                                               RandomNumberGenerator.Fill)
     SetCurrentKey(string keyId)                             → void
     RemoveKey(string keyId)                                 → void
-    GetCurrentKey()                                         → CryptographicKey
-    GetKey(string keyId)                                    → CryptographicKey?
+    GetCurrentKeyAsync(CancellationToken ct = default)      → ValueTask<CryptographicKey>
+    GetKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<CryptographicKey?>
     NOTE: promoted verbatim from SharedKernel.Cryptography.Tests' existing INTERNAL
           InMemoryEncryptionKeyProvider (01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.Tests/
           Symmetric/InMemoryEncryptionKeyProvider.cs, read directly, zero drift) into this package's public,
@@ -2919,6 +2920,12 @@ FakeEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider)  �
           Decrypt-of-an-older-payload scenario exactly like a real Key Vault-backed provider would. 01.Core's
           own test suite adopting this shared type in place of its private copy is a documented cross-domain
           follow-up, never performed by this domain.
+    NOTE (C-131, P-450/WO-068): migrated onto IEncryptionKeyProvider's async contract (01.Core P-446) —
+          the former sync GetCurrentKey()/GetKey(string) members are REMOVED OUTRIGHT, not kept as a
+          parallel overload, mirroring the real interface's own breaking shape. AddKey/SetCurrentKey/
+          RemoveKey are this fake's own additive test-control surface — not part of the interface — and
+          are unchanged. Both async members complete synchronously via an already-completed
+          ValueTask<T>, since this fake performs no real I/O.
 
 FakeAsymmetricKeyProvider  (sealed class, implements IAsymmetricKeyProvider, IDisposable)  — implemented C-88/SK.16.Core
     GetRsaKey(string keyId)                                → RSA  (lazily generates+caches a 2048-bit key
@@ -2932,7 +2939,8 @@ FakeAsymmetricKeyProvider  (sealed class, implements IAsymmetricKeyProvider, IDi
           InMemoryAsymmetricKeyProvider (.../Signing/InMemoryAsymmetricKeyProvider.cs, read directly, zero
           drift) — same promotion rationale as FakeEncryptionKeyProvider above.
 
-FakeSymmetricEncryptionService  (sealed class, implements ISymmetricEncryptionService)  — implemented C-89/SK.16.Core
+FakeSymmetricEncryptionService  (sealed class, implements ISymmetricEncryptionService)  — implemented C-89/SK.16.Core;
+    GAINED THE NEW ASYNC MEMBERS BELOW alongside C-131/SK.16.Core (P-450/WO-068, 2026-09-03)
     constructor(IEncryptionKeyProvider? keyProvider = null)  (defaults to an internally-owned
                                                               FakeEncryptionKeyProvider when omitted — zero-
                                                               config convenience; accepts any
@@ -2940,19 +2948,36 @@ FakeSymmetricEncryptionService  (sealed class, implements ISymmetricEncryptionSe
                                                               when supplied — mirrors AesGcmEncryptionService's
                                                               exact constructor shape for DI-swap parity)
     Encrypt(byte[] plaintext)                              → EncryptedPayload
+    EncryptAsync(byte[] plaintext, CancellationToken ct = default)  → ValueTask<EncryptedPayload>
     Decrypt(EncryptedPayload payload)                      → Result<byte[]>
+    DecryptAsync(EncryptedPayload payload, CancellationToken ct = default) → ValueTask<Result<byte[]>>
     EncryptToString(string plaintext)                      → string
+    EncryptToStringAsync(string plaintext, CancellationToken ct = default) → ValueTask<string>
     DecryptToString(string encoded)                        → Result<string>
+    DecryptToStringAsync(string encoded, CancellationToken ct = default) → ValueTask<Result<string>>
     .SimulateDecryptFailure                                → bool  (settable, default false — forces
-                                                              Decrypt/DecryptToString to unconditionally
+                                                              Decrypt/DecryptToString (and their async
+                                                              counterparts) to unconditionally
                                                               return the same Error.Unexpected/
                                                               CryptographyErrorCodes.DecryptionFailed shape
                                                               as a real tamper/wrong-key failure, without
                                                               needing to hand-corrupt bytes)
     .EncryptedPayloads                                     → IReadOnlyList<EncryptedPayload>  (every payload
-                                                              ever produced by Encrypt/EncryptToString,
+                                                              ever produced by Encrypt/EncryptToString (and
+                                                              their async counterparts),
                                                               append-only, mirroring InMemoryFileStorage's
                                                               UploadedKeys introspection convention)
+    NOTE (C-131, P-450/WO-068): ISymmetricEncryptionService gained the four async members above,
+          ADDITIVE to (not replacing) the retained sync ones — since IEncryptionKeyProvider itself
+          became async-only in the same shipment (01.Core P-446), the sync Encrypt/Decrypt now bridge
+          onto GetCurrentKeyAsync/GetKeyAsync via .GetAwaiter().GetResult(), mirroring
+          AesGcmEncryptionService's exact bridging pattern — genuinely non-blocking against this fake's
+          own synchronously-completing FakeEncryptionKeyProvider (or any other synchronously-resolving
+          IEncryptionKeyProvider). Sync and async members share one pure EncryptCore/DecryptCore-shaped
+          private helper so both call shapes stay byte-identical, the same discipline
+          AesGcmEncryptionService itself uses. Any future fake whose owning interface gains async
+          members additive to existing sync ones should follow this same bridging pattern rather than
+          duplicating logic.
     NOTE: uses a deterministic, NON-cryptographic reversible transform (e.g. byte-XOR repeating the resolved
           key's material across the plaintext length) instead of real AES-GCM — XML-doc-flagged IN CAPITALS
           as NEVER SECURE, test-only, never a substitute for AesGcmEncryptionService in anything
@@ -3008,26 +3033,28 @@ FakeContentHasher  (sealed class, implements IContentHasher — 01.Core P-296)
           production's genuinely constant-memory streaming — test payloads are never blob-scale.
 
 FakeCryptographyServiceCollectionExtensions.AddFakeCryptography(this IServiceCollection)
-    — implemented C-93/SK.16.Core
+    — implemented C-93/SK.16.Core; GAINED IEnvelopeEncryptionProvider registration alongside
+    C-131/C-132/SK.16.Core (P-450/WO-068, 2026-09-03)
     NOTE: registers, as singletons: IOneWayHasher→FakeOneWayHasher, IEncryptionKeyProvider→
           FakeEncryptionKeyProvider, ISymmetricEncryptionService→FakeSymmetricEncryptionService,
           IAsymmetricKeyProvider→FakeAsymmetricKeyProvider, IAsymmetricSignatureService→
           FakeAsymmetricSignatureService (unkeyed default + both RsaSignatureServiceKey/
           EcdsaSignatureServiceKey-keyed singletons), IHmacSigner→FakeHmacSigner,
           ISecureRandomGenerator→FakeSecureRandomGenerator (non-seeded constructor — genuinely random by
-          default), IContentHasher→FakeContentHasher. Named class deliberately distinct from the real
+          default), IContentHasher→FakeContentHasher, IEnvelopeEncryptionProvider→
+          FakeEnvelopeEncryptionProvider (ninth registration, added P-450/WO-068). Named class
+          deliberately distinct from the real
           SharedKernel.Cryptography.Extensions.CryptographyServiceCollectionExtensions
           (FakeCryptographyServiceCollectionExtensions, not the same simple name) to avoid any
           static-member ambiguity given this folder deliberately reuses the REAL RsaSignatureServiceKey/
           EcdsaSignatureServiceKey constants. DELIBERATE DIVERGENCE from AddSharedKernelCryptography():
-          production intentionally does NOT register IEncryptionKeyProvider/IAsymmetricKeyProvider
-          (consumer-supplied by design); this fake bundle DOES, since a test wanting AddFakeCryptography()
-          to work end-to-end with zero extra wiring needs SOME functioning key material — mirrors the
-          Application/AddFakeApplicationBehaviorServices() precedent of satisfying a dependency production
-          deliberately leaves to the consumer. Manual per-type services.AddSingleton<IX, FakeX>()
-          registration remains valid for a subset, mirroring AddFakeCachingServices()'s documented
-          manual-alternative precedent — this is how a caller obtains the 7 already-available fakes TODAY,
-          ahead of this composite method unblocking.
+          production intentionally does NOT register IEncryptionKeyProvider/IAsymmetricKeyProvider/
+          IEnvelopeEncryptionProvider (consumer-supplied by design); this fake bundle DOES, since a test
+          wanting AddFakeCryptography() to work end-to-end with zero extra wiring needs SOME functioning
+          key material — mirrors the Application/AddFakeApplicationBehaviorServices() precedent of
+          satisfying a dependency production deliberately leaves to the consumer. Manual per-type
+          services.AddSingleton<IX, FakeX>() registration remains valid for a subset, mirroring
+          AddFakeCachingServices()'s documented manual-alternative precedent.
 
 BLOCKER-CLEARANCE VERIFICATION (P-300/WO-049 — the FIFTH design-ahead-of-schedule occurrence in this
     domain's history, and the FIRST *partial* one): `01.Core/SharedKernel.Cryptography` is already fully
@@ -3061,30 +3088,28 @@ DOCS-PHASE COMPLETION (DO-27/DO-28, 2026-07-28): all eight `Cryptography/` fakes
     documented from the Core-phase pass with no further change needed.
 ```
 
-**[STATUS: Planned, BREAKING — P-450/WO-068]** target shape for the ASYNC migration of `FakeEncryptionKeyProvider` plus the new `FakeEnvelopeEncryptionProvider`, sourced from `01.Core/CLAUDE.md`'s ratified "TARGET SHAPE (P-446/WO-068, BREAKING)" prose — `01.Core`'s async `IEncryptionKeyProvider` contract has not shipped yet:
+**IMPLEMENTED (C-131/C-132/SK.16.Core, P-450/WO-068, 2026-09-03).** `01.Core`'s async `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` contract shipped (P-446) — the `FakeEncryptionKeyProvider` async migration is documented in place above (see its own entry earlier in this section); `FakeEnvelopeEncryptionProvider` is documented below. This block previously carried a `[STATUS: Planned, BREAKING]` target shape drafted before either contract existed — that draft's `.SeedKey(CryptographicKey key)` member on `FakeEncryptionKeyProvider` was never real (the fake's actual additive surface has always been `AddKey`/`SetCurrentKey`/`RemoveKey`) and `FakeEnvelopeEncryptionProvider`'s draft omitted the produced-keys registry the real implementation needs to satisfy "never a plausible-looking-but-wrong unwrap" — both corrected below against the real, compiled implementation rather than carried forward.
 
 ```text
-FakeEncryptionKeyProvider  (sealed class, implements the TARGET async IEncryptionKeyProvider)
-    .SeedKey(CryptographicKey key)                                  → void  (unchanged from today)
-    GetCurrentKeyAsync(CancellationToken ct = default)              → ValueTask<CryptographicKey>
-    GetKeyAsync(string keyId, CancellationToken ct = default)       → ValueTask<CryptographicKey?>
-    .SimulateFailure                                                 → bool  (unchanged from today)
-    NOTE: BREAKING change to THIS FAKE's own public surface — GetCurrentKey()/GetKey(string) are
-          REMOVED, not kept as an additive overload, mirroring the real interface's own breaking
-          shape. Every existing consumer across 06.Persistence/15.Integration/17.Workflows test
-          suites must update call sites to `await GetCurrentKeyAsync()`/`await GetKeyAsync(...)` —
-          that migration is each consuming domain's own future work. Both members complete
-          synchronously via ValueTask.FromResult since this fake performs no real I/O.
-
-FakeEnvelopeEncryptionProvider  (sealed class, implements IEnvelopeEncryptionProvider)
-    GenerateDataKeyAsync(ct = default)                              → ValueTask<EnvelopeDataKey>
-    UnwrapDataKeyAsync(byte[] wrappedDataKey, string masterKeyId, ct = default)  → ValueTask<Result<byte[]>>
-    .SimulateFailure                                                 → bool
-    NOTE: A deterministic, NON-cryptographic 32-byte data key — "wrap" is a trivial reversible
-          transform (e.g. XOR against a fixed test key), mirroring FakeSymmetricEncryptionService's
-          own non-cryptographic-internals precedent. UnwrapDataKeyAsync fails for a
-          wrappedDataKey/masterKeyId pair this fake did not itself produce — never a
-          plausible-looking-but-wrong unwrap. TEST-ONLY — never real envelope encryption.
+FakeEnvelopeEncryptionProvider  (sealed class, implements IEnvelopeEncryptionProvider)  — implemented C-132/SK.16.Core
+    constructor(int dataKeyLength = 32, string masterKeyId = "fake-master-v1")
+    GenerateDataKeyAsync(CancellationToken ct = default)            → ValueTask<EnvelopeDataKey>
+    UnwrapDataKeyAsync(byte[] wrappedDataKey, string masterKeyId, CancellationToken ct = default)
+                                                                     → ValueTask<Result<byte[]>>
+    .SimulateFailure                                                → bool  (settable, default false — forces
+                                                                     UnwrapDataKeyAsync to unconditionally
+                                                                     fail with CryptographyErrorCodes.
+                                                                     DecryptionFailed)
+    NOTE: a deterministic, NON-cryptographic reversible transform (byte-XOR repeating a fixed,
+          per-instance 32-byte "wrap key" across the data key's length) wraps/unwraps the data key,
+          mirroring FakeSymmetricEncryptionService's own non-cryptographic-internals precedent — PLUS
+          an internal registry (keyed by Convert.ToBase64String(wrappedKey)) of every wrapped key this
+          instance has itself produced via GenerateDataKeyAsync. UnwrapDataKeyAsync checks masterKeyId
+          match AND registry membership before returning success — the XOR transform alone cannot
+          distinguish valid from unknown ciphertext, so the registry is what actually supplies "never a
+          plausible-looking-but-wrong unwrap" (CryptographyErrorCodes.UnknownKeyId on a miss). TEST-ONLY
+          — never real envelope encryption; no master key material ever leaves this process (there is
+          no KMS boundary to protect).
 ```
 
 **[STATUS: Planned — P-453/WO-069]** target shape for `FakeTotpReplayGuard`, sourced from `01.Core/CLAUDE.md`'s ratified TOTP/HOTP Interface Contracts — not yet on disk:
@@ -3523,10 +3548,11 @@ services.AddInMemorySemanticKernel();
 // scoped IWorkflowDispatcher registration, mirroring the Messaging/Search/Intelligence precedent
 services.AddInMemoryWorkflowDispatcher();
 
-// Cryptography fakes (P-300/WO-049, implemented C-85–C-93/SK.16.Core) — one call registers all
-// eight as singletons (IOneWayHasher, IEncryptionKeyProvider, ISymmetricEncryptionService,
-// IAsymmetricKeyProvider, IAsymmetricSignatureService (+ both Rsa/Ecdsa keyed slots), IHmacSigner,
-// ISecureRandomGenerator, IContentHasher)
+// Cryptography fakes (P-300/WO-049, implemented C-85–C-93/SK.16.Core; gained IEnvelopeEncryptionProvider
+// P-450/WO-068, C-131/C-132/SK.16.Core) — one call registers all nine as singletons (IOneWayHasher,
+// IEncryptionKeyProvider, ISymmetricEncryptionService, IAsymmetricKeyProvider, IAsymmetricSignatureService
+// (+ both Rsa/Ecdsa keyed slots), IHmacSigner, ISecureRandomGenerator, IContentHasher,
+// IEnvelopeEncryptionProvider)
 services.AddFakeCryptography();
 
 // Cryptography fakes — manual per-type alternative remains valid, mirroring AddFakeCachingServices()'s
@@ -3539,6 +3565,7 @@ services.AddSingleton<IAsymmetricSignatureService, FakeAsymmetricSignatureServic
 services.AddSingleton<IHmacSigner, FakeHmacSigner>();
 services.AddSingleton<ISecureRandomGenerator, FakeSecureRandomGenerator>();
 services.AddSingleton<IContentHasher, FakeContentHasher>();
+services.AddSingleton<IEnvelopeEncryptionProvider, FakeEnvelopeEncryptionProvider>();
 
 // Feature-flag fake (P-300/WO-049, implemented C-94/C-95/SK.16.Core) — registers
 // IFeatureManager → FakeFeatureManager (IsEnabledAsync + GetVariantAsync/GetVariantAsync<TContext>)
@@ -3581,10 +3608,6 @@ services.AddFakeCryptography();
 services.AddLogging();                    // required transitively by FusionCacheService's ctor
 // cachingBuilder.AddCacheEncryption();
 
-// [STATUS: Planned] Async migration + envelope encryption fake (P-450/WO-068) — same AddFakeCryptography()
-// bundle, once 01.Core ships the async IEncryptionKeyProvider/IEnvelopeEncryptionProvider contract
-// services.AddFakeCryptography();   // will also register FakeEnvelopeEncryptionProvider as IEnvelopeEncryptionProvider
-
 // [STATUS: Planned] Notification sender/observer doubles (P-463/WO-072) — KEYED per channel, mirroring
 // the real AddKeyedScoped<INotificationSender, TSender>(channel) production shape
 // services.AddInMemoryNotificationSender(NotificationChannel.Email);
@@ -3592,7 +3615,7 @@ services.AddLogging();                    // required transitively by FusionCach
 // services.AddInMemoryNotificationDeliveryObserver();
 ```
 
-Fakes in `Security/` (outside `SecurityTestContextBuilder`, which is a directly `new`-able builder — see below), `Persistence/`, `Clocks/` (outside `AddFakeDomainServices()`'s narrow `IClock` registration), `Contracts/`, `Communication/`, and `ServiceDefaults/` are intentionally **not** wrapped in `Add*` DI extensions — they are simple `new`-able classes or static helpers with test-controlled constructor parameters, and registering them via DI adds indirection most unit tests don't need. Only doubles that exist specifically to be swapped in for a production DI registration (caching, messaging, the single `IClock` registration in `AddFakeDomainServices()`, `Application/`'s three-fake bundle plus the new standalone `AddFakeDualApprovalStore()` call, `Storage/`'s two-fake bundle, `Search/`'s per-index call plus its provisioning bundle, `Intelligence/`'s per-embedding-generator call, per-collection call, vector-provisioning bundle, and semantic-kernel bundle, `Workflows/`'s single dispatcher call, `Cryptography/`'s eight-fake `AddFakeCryptography()` bundle, `FeatureManagement/`'s single `AddFakeFeatureManagement()` call, `Caching/`'s extended `AddFakeCachingServices()` bundle plus the per-`T` `AddFakeTypedHashStore<T>()` and per-strategy `AddFakeCacheWarmupStrategy()` calls, and now the new standalone `AddFakeTenantCacheService()` call) ship a convenience extension — justified for the two newest folders because their real production counterparts (`AddSharedKernelCryptography()`, `AddSharedKernelFeatureManagement()`) are themselves `Add*`-registered, unlike `Security/`'s `IUserContext`/`ITenantProvider`, which production never registers via a single bundled call either; justified for the three new `Caching/` extensions because their real production counterparts (`AddRedisChannelService`, `AddRedisHashService`, `AddTypedHashStore<T>`, `AddCacheWarmup<TStrategy>`) are likewise all `Add*`-registered in `02.Caching`; justified for `AddFakeDualApprovalStore()` because dual-control is an opt-in capability, exactly mirroring why `FakeIdempotencyResponseStore` requires manual registration rather than bundling; justified for `AddInMemoryWebhookDispatcher()`/`AddInMemoryWebhookDeliveryObserver()` (P-431/WO-064) because their real production counterparts (`AddSharedKernelWebhooks()`, `WithDeliveryObserver<TObserver>()`) are themselves `Add*`-registered in `15.Integration`; justified for `AddFakeTenantCacheService()` (P-438/WO-065) because its real production counterpart, `AddTenantCacheService(this ICachingBuilder)` (`02.Caching` Phase 44/P-435), is itself `Add*`-registered and explicitly additive to `AddTenantCacheKeyProvider()` rather than folded into it — this fake's standalone shape mirrors that exact relationship. `AddFakeContractsServices()` is explicitly **deferred** (P-064/WO-012) — none of the `Contracts/` helpers currently need DI registration; add it only if a concrete need surfaces. `SecurityTestContextBuilder` (`Security/`, P-382/WO-058) is deliberately **not** DI-registered — a directly `new`-able fluent builder, consistent with `SpecificationTestBuilder<T>`/`ProjectionSpecificationBuilder<TAggregate,TResult>`/`ApplicationPipelineTestHarness`'s existing convention for builder-shaped types. `ApplicationPipelineTestHarness` (`Application/`) is deliberately **not** DI-registered — it is a directly `new`-able builder/harness type, consistent with `SpecificationTestBuilder<T>`/`ProjectionSpecificationBuilder<TAggregate,TResult>`'s existing convention for builder-shaped types. `Containers/MinioContainerFixture`/`MeilisearchContainerFixture`/`ElasticsearchContainerFixture` are likewise never DI-registered — container fixtures are consumed via xUnit `ICollectionFixture<T>`, never a DI container, consistent with `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture`. **`[STATUS: Planned]` additions from the twelve-phase batch (2026-08-26):** `Domain/MoneyFaker`/`FakeExchangeRateProvider`, `Validation/ValidationSampleGenerator`, `Scheduling/InMemoryScheduledJobRegistry`, `Grpc/TestServerCallContext`, `DataPrivacy/RecordingDataSubjectRequestHandler`/`PiiMaskingAssertions`, `Reporting/InMemoryReportExporter<TRow>`, `Localization/CultureScope`, `Persistence/FakeAuditTrailWriter`/`FakeAuditQueryService`, and `Application/FakeAuditTrailWriter` are ALL directly `new`-able — none of the twelve new fakes swap in for a single-call production DI registration the way `Notifications/`'s keyed `INotificationSender`/`INotificationDeliveryObserver` do (see the `Notifications/` `Add*` entries above), so none needs an `Add*` extension, continuing this section's established convention.
+Fakes in `Security/` (outside `SecurityTestContextBuilder`, which is a directly `new`-able builder — see below), `Persistence/`, `Clocks/` (outside `AddFakeDomainServices()`'s narrow `IClock` registration), `Contracts/`, `Communication/`, and `ServiceDefaults/` are intentionally **not** wrapped in `Add*` DI extensions — they are simple `new`-able classes or static helpers with test-controlled constructor parameters, and registering them via DI adds indirection most unit tests don't need. Only doubles that exist specifically to be swapped in for a production DI registration (caching, messaging, the single `IClock` registration in `AddFakeDomainServices()`, `Application/`'s three-fake bundle plus the new standalone `AddFakeDualApprovalStore()` call, `Storage/`'s two-fake bundle, `Search/`'s per-index call plus its provisioning bundle, `Intelligence/`'s per-embedding-generator call, per-collection call, vector-provisioning bundle, and semantic-kernel bundle, `Workflows/`'s single dispatcher call, `Cryptography/`'s nine-fake `AddFakeCryptography()` bundle, `FeatureManagement/`'s single `AddFakeFeatureManagement()` call, `Caching/`'s extended `AddFakeCachingServices()` bundle plus the per-`T` `AddFakeTypedHashStore<T>()` and per-strategy `AddFakeCacheWarmupStrategy()` calls, and now the new standalone `AddFakeTenantCacheService()` call) ship a convenience extension — justified for the two newest folders because their real production counterparts (`AddSharedKernelCryptography()`, `AddSharedKernelFeatureManagement()`) are themselves `Add*`-registered, unlike `Security/`'s `IUserContext`/`ITenantProvider`, which production never registers via a single bundled call either; justified for the three new `Caching/` extensions because their real production counterparts (`AddRedisChannelService`, `AddRedisHashService`, `AddTypedHashStore<T>`, `AddCacheWarmup<TStrategy>`) are likewise all `Add*`-registered in `02.Caching`; justified for `AddFakeDualApprovalStore()` because dual-control is an opt-in capability, exactly mirroring why `FakeIdempotencyResponseStore` requires manual registration rather than bundling; justified for `AddInMemoryWebhookDispatcher()`/`AddInMemoryWebhookDeliveryObserver()` (P-431/WO-064) because their real production counterparts (`AddSharedKernelWebhooks()`, `WithDeliveryObserver<TObserver>()`) are themselves `Add*`-registered in `15.Integration`; justified for `AddFakeTenantCacheService()` (P-438/WO-065) because its real production counterpart, `AddTenantCacheService(this ICachingBuilder)` (`02.Caching` Phase 44/P-435), is itself `Add*`-registered and explicitly additive to `AddTenantCacheKeyProvider()` rather than folded into it — this fake's standalone shape mirrors that exact relationship. `AddFakeContractsServices()` is explicitly **deferred** (P-064/WO-012) — none of the `Contracts/` helpers currently need DI registration; add it only if a concrete need surfaces. `SecurityTestContextBuilder` (`Security/`, P-382/WO-058) is deliberately **not** DI-registered — a directly `new`-able fluent builder, consistent with `SpecificationTestBuilder<T>`/`ProjectionSpecificationBuilder<TAggregate,TResult>`/`ApplicationPipelineTestHarness`'s existing convention for builder-shaped types. `ApplicationPipelineTestHarness` (`Application/`) is deliberately **not** DI-registered — it is a directly `new`-able builder/harness type, consistent with `SpecificationTestBuilder<T>`/`ProjectionSpecificationBuilder<TAggregate,TResult>`'s existing convention for builder-shaped types. `Containers/MinioContainerFixture`/`MeilisearchContainerFixture`/`ElasticsearchContainerFixture` are likewise never DI-registered — container fixtures are consumed via xUnit `ICollectionFixture<T>`, never a DI container, consistent with `PostgreSqlContainerFixture`/`RedisContainerFixture`/`RabbitMqContainerFixture`. **`[STATUS: Planned]` additions from the twelve-phase batch (2026-08-26):** `Domain/MoneyFaker`/`FakeExchangeRateProvider`, `Validation/ValidationSampleGenerator`, `Scheduling/InMemoryScheduledJobRegistry`, `Grpc/TestServerCallContext`, `DataPrivacy/RecordingDataSubjectRequestHandler`/`PiiMaskingAssertions`, `Reporting/InMemoryReportExporter<TRow>`, `Localization/CultureScope`, `Persistence/FakeAuditTrailWriter`/`FakeAuditQueryService`, and `Application/FakeAuditTrailWriter` are ALL directly `new`-able — none of the twelve new fakes swap in for a single-call production DI registration the way `Notifications/`'s keyed `INotificationSender`/`INotificationDeliveryObserver` do (see the `Notifications/` `Add*` entries above), so none needs an `Add*` extension, continuing this section's established convention.
 
 ---
 
@@ -3721,3 +3744,4 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - [2026-08-24] `SK.16.Scaffold` (S-53) and `SK.16.Docs` (DO-46) closed for P-438/WO-065 by testing-phase-implementer. S-53 (state-verification only): re-verified `16.Testing/SharedKernel.Testing/SharedKernel.Testing.csproj` directly on disk a second time — the `SharedKernel.Caching.Abstractions` `ProjectReference` is already present; no edit made, none required; `dotnet build` clean, 0 errors. DO-46 (documentation-only): audited this file directly before writing anything and found every sub-requirement already present, written by `testing-arch-planner` at the same Design-phase dispatch pass that added D-209–D-212 — the `Caching/` Interface Contracts block already carries `FakeTenantCacheService`/`AddFakeTenantCacheService()` marked `[STATUS: Planned — P-435/WO-065]`, the D-211 audit-finding blockquote already records the `services.AddFakeCryptography()`-before-`.AddCacheEncryption()` composition recipe as a documentation-only cross-reference, the `## DI Registration` code sample already includes both the `AddFakeTenantCacheService()` call and the fake-encryption-seam comment plus a narrative justification, and the Folder/Namespace Map `Caching/` row already names both new members and their blocked status. Zero drift found; no content changed beyond this changelog entry. Both `[STATUS: Planned]` markers deliberately left in place — `FakeTenantCacheService`/`AddFakeTenantCacheService()` remain unimplemented, still genuinely `⚑` Blocked on `02.Caching`'s planned `ITenantCacheService` (Phase 44/P-435); only `SK.16.Core`/`SK.16.Tests` (C-126/C-127, T-87/T-88) remain open in the whole `16.Testing` domain as of this entry.
 - [2026-08-24] `SK.16.Core`/`SK.16.Tests` closed for P-438/WO-065 by testing-phase-implementer — the blocker recorded above was re-verified directly on disk (not `02.Caching/CLAUDE.md` prose) and found STALE: `02.Caching/SharedKernel.Caching.Abstractions/ITenantCacheService.cs` and `02.Caching/SharedKernel.Caching.FusionCache/Extensions/CacheEncryptionCachingBuilderExtensions.cs` both now exist as real, compiled code with zero drift from the designed shapes. Implemented `Caching/FakeTenantCacheService.cs`/`AddFakeTenantCacheService()` and their proof suites (`Caching/FakeTenantCacheServiceTests.cs`, 9 facts; `Caching/CacheEncryptionFakeCryptographyInteropTests.cs`, 2 facts — the latter needing a new scoped `ProjectReference` from `SharedKernel.Testing.SelfTests.csproj` to `SharedKernel.Caching.FusionCache`, this project only). Both `[STATUS: Planned]` markers removed throughout this file (Interface Contracts block, Folder/Namespace Map row, DI Registration section, Implementation Rules bullet, Test Rules bullet); the D-211 audit-finding blockquote updated to name the shipped `AddCacheEncryption()` and the discovered `services.AddLogging()` transitive requirement (needed by `FusionCacheService`'s constructor, not called out in the original design). Also checked, per this pass's own brief: `Caching/FakeDistributedLockService.cs`'s `FakeRenewableLock.FencingToken` shim (added out-of-jurisdiction alongside `02.Caching` Phase 43/P-434) remains a settable `long` with no auto-increment on `RenewAsync` — adequate for compile-time `IFencedLock`/`IRenewableLock` conformance but not behaviorally faithful; left as-is (no task tracks fixing it), flagged for a future phase. `dotnet build` clean on both projects; full regression `dotnet test SharedKernel.Testing.SelfTests.csproj --configuration Release` passes 1034/1034, zero regressions. This closes WO-065 in full — every `SK.16.*` phase key is `●` again.
 - [2026-08-26] Twelve-phase batch dispatch processed in one pass (testing-arch-planner) — the final domain processed in a thirteen-domain, one-session cross-domain dispatch run: P-441/WO-066 (`03.Domain` Money), P-445/WO-067 (`01.Core` Validation), P-450/WO-068 (`01.Core` async `IEncryptionKeyProvider` + envelope encryption, BREAKING), P-453/WO-069 (`01.Core`+`12.Security` TOTP/HOTP + replay guard + challenge store), P-459/WO-071 (`06.Persistence`+`05.Application` Auditing), P-463/WO-072 (`15.Integration` Notifications), P-467/WO-073 (`19.Scheduling`), P-470/WO-074 (`14.Presentation` gRPC), P-473/WO-075 (`13.ServiceDefaults` `ITenantCatalog`), P-475/WO-076 (`01.Core` DataPrivacy), P-481/WO-077 (`20.Reporting`), P-485/WO-078 (`01.Core` Localization). Every one of the twelve target contracts was designed by its OWNING domain's own planner THIS SAME SESSION — read `16.Testing/CLAUDE.md` in full first, then read all twelve owning domains' `CLAUDE.md` files in full before designing anything; every target interface signature written into the new Interface Contracts blocks below is sourced verbatim from the owning domain's own freshly-ratified prose, never guessed. Independently re-verified every target package's actual on-disk state via direct `Glob` sweeps before marking any `[STATUS]` — never trusted a "design-locked"/"`○` Pending" self-report alone. Six brand-new capability folders added: `Validation/`, `Notifications/`, `Scheduling/`, `Grpc/`, `DataPrivacy/`, `Localization/`. Six existing folders extended: `Domain/` (`MoneyFaker`/`FakeExchangeRateProvider`), `Cryptography/` (async `FakeEncryptionKeyProvider` migration + `FakeEnvelopeEncryptionProvider`, BREAKING to this fake's own surface; `FakeTotpReplayGuard`), `Security/` (`FakeTotpChallengeStore`), `Persistence/` and `Application/` (each gaining its OWN, differently-scoped `FakeAuditTrailWriter` — same name, different type, targeting the two genuinely distinct `IAuditTrailWriter` contracts `06.Persistence.Abstractions`/`05.Application.Behaviors` independently declare, cross-referenced by full namespace, mirroring the `FakeUnitOfWork`/`FakeUnitOfWork` naming-collision precedent), `ServiceDefaults/` (`InMemoryTenantCatalog`). Explicitly honored sibling-capability-folder isolation: `Persistence/FakeAuditTrailWriter`'s hash chain is a deliberately non-cryptographic, self-contained deterministic hash, NOT a dependency on the already-shipped `Cryptography/FakeContentHasher`, even though the latter ships exactly the algorithm the former could reuse. **A genuine scope-lock conflict was found and resolved, not silently overridden**: the pre-existing P-187/WO-029 SCOPE LOCK forbids this package from ever referencing `SharedKernel.MultiTenancy`, but P-473's own acceptance criteria explicitly require `InMemoryTenantCatalog` to implement the REAL `ITenantCatalog` interface. Resolved via a narrow, named revision recorded in both `state-map.md` (D-230) and this file (the `ServiceDefaults/` Interface Contracts block's SCOPE-LOCK REVISION note): `InMemoryTenantCatalog` alone may take the new `ProjectReference`; `StaticTenantProvider`/`FakeTenantResolutionStrategy` are unaffected and remain duck-typed/reference-free. One phase (P-485) resolved as an AUDIT FINDING rather than a fresh fake: `01.Core/SharedKernel.Localization`'s own planned default catalog, `InMemoryLocalizationCatalog`, already IS the seedable test double this phase's first requirement describes, so this package does not duplicate a second, colliding-named type — the genuinely net-new deliverable, `CultureScope`, is pure BCL with zero dependency on `SharedKernel.Localization` at all, making it the ONE fully-unblocked-from-day-one phase among all twelve (mirroring P-391/WO-060's zero-blocker precedent). Blocker taxonomy: seven target packages (`SharedKernel.Validation`, `.Security.Totp`, `.Integration.Notifications.Abstractions`, `.Presentation.Grpc`, `.Scheduling`, `.DataPrivacy`, `.Reporting.Abstractions`) have NO `.csproj` on disk at all — a harder blocker than this domain's historical "empty placeholder csproj" pattern, so even the Scaffold `ProjectReference` task is blocked; four (`SharedKernel.Domain`, `.Cryptography`, `.Persistence.Abstractions`, `.Application.Behaviors`) are member-level gaps on already-mature, already-referenced packages (Scaffold unblocked, Core/Tests/Docs wait); `SharedKernel.MultiTenancy` is the scope-lock-revision case above. 79 new tasks added to `state-map.md` (D-213–D-236, S-54–S-65, C-128–C-145, T-89–T-101, DO-47–DO-58; total 528→607). This file updated in full: Folder/Namespace Map (six new rows, six extended-folder narrative updates, one consolidated twelve-phase batch paragraph), six new Interface Contracts blocks plus additions to `Domain/`/`Cryptography/`/`Security/`/`Persistence/`/`Application/`/`ServiceDefaults/`'s existing blocks, two Implementation Rules bullets updated (sibling-isolation folder list, the `ServiceDefaults/` structural-compatibility rule), DI Registration section (forward-looking `[STATUS: Planned]` entries, a new narrative sentence naming which of the twelve new types are directly `new`-able), Test Rules (one consolidated routing bullet for all twelve fakes, since none has any possible owning-domain suite to anchor against), and the `SharedKernel.Testing` Packages-table row. `state-map.md`'s `## Blocked` section, Package Board, Cross-Domain Dependencies table (twelve new rows), and Overall Progress all updated in the same pass (testing-arch-planner).
+- [2026-09-03] C-131/C-132/SK.16.Core (P-450/WO-068) implemented by testing-phase-implementer, scoped to only these two of the twelve-phase batch's seventeen `⚑` `SK.16.Core` tasks — the recorded blocker was STALE, re-verified directly on disk: `01.Core/SharedKernel.Cryptography/Symmetric/IEncryptionKeyProvider.cs`/`IEnvelopeEncryptionProvider.cs`/`EnvelopeDataKey.cs` had already shipped (P-446/WO-068) earlier in this same run. Migrated `Cryptography/FakeEncryptionKeyProvider.cs` onto the async contract (`GetCurrentKeyAsync`/`GetKeyAsync`, sync members removed outright; `AddKey`/`SetCurrentKey`/`RemoveKey` unchanged). Added scope beyond C-131's literal text, required to compile: `01.Core`'s same shipment gave `ISymmetricEncryptionService` new additive async members (`EncryptAsync`/`DecryptAsync`/`EncryptToStringAsync`/`DecryptToStringAsync`), so `Cryptography/FakeSymmetricEncryptionService.cs` implements all four and its sync `Encrypt`/`Decrypt` now bridge onto the async key provider via `.GetAwaiter().GetResult()`, mirroring `AesGcmEncryptionService`'s own bridging pattern. Implemented new `Cryptography/FakeEnvelopeEncryptionProvider.cs` (C-132) — deterministic XOR wrap plus an internal produced-keys registry so `UnwrapDataKeyAsync` structurally fails on an unrecognized `wrappedDataKey`/`masterKeyId` pair — and registered it in `AddFakeCryptography()` (ninth fake in the bundle). **Corrected the stale `[STATUS: Planned, BREAKING]` target-shape block against the real implementation**: its `FakeEncryptionKeyProvider` draft named a `.SeedKey(CryptographicKey key)` member and a `.SimulateFailure` bool that never existed on the real fake (whose actual additive surface has always been `AddKey`/`SetCurrentKey`/`RemoveKey`); its `FakeEnvelopeEncryptionProvider` draft omitted the produced-keys registry the real implementation needs — both merged into the real, correct documentation in place of the stale draft. Updated the one `SharedKernel.Testing.SelfTests` consumer with direct sync call sites, `Cryptography/FakeEncryptionKeyProviderTests.cs`, to `await` the async members. `dotnet build SharedKernel.Testing.csproj -c Release` 0 errors; `dotnet test SharedKernel.Testing.SelfTests.csproj -c Release` (real Docker) 1034/1034. Read-only cross-domain check: `06.Persistence/SharedKernel.Persistence.EfCore.Tests.csproj` — previously blocked on this exact fake pair — now builds 0 errors; that domain's own T-125..T-128 are genuinely unblocked but re-verifying/closing them is that domain's own future session's work. The remaining fifteen `⚑` `SK.16.Core` tasks in this batch (C-128–C-130, C-133–C-144) plus the already-`○`-Pending C-145 were deliberately NOT touched, per this session's explicit scope instruction (testing-phase-implementer).
