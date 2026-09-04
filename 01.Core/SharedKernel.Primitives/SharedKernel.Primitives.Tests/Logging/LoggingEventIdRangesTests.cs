@@ -5,7 +5,7 @@ namespace SharedKernel.Primitives.Tests.Logging;
 
 public sealed class LoggingEventIdRangesTests
 {
-    // T-33: name-to-folder-number table matching the root CLAUDE.md folder map (00 through 17).
+    // T-33/T-62: name-to-folder-number table matching the root CLAUDE.md folder map (00 through 20).
     public static IEnumerable<object[]> DomainNameToFolderNumber()
     {
         yield return new object[] { "Governance", 0 };
@@ -26,6 +26,9 @@ public sealed class LoggingEventIdRangesTests
         yield return new object[] { "Integration", 15 };
         yield return new object[] { "Testing", 16 };
         yield return new object[] { "Workflows", 17 };
+        yield return new object[] { "Idempotency", 18 };
+        yield return new object[] { "Scheduling", 19 };
+        yield return new object[] { "Reporting", 20 };
     }
 
     private static readonly IReadOnlyDictionary<string, int> AllDomainValues = new Dictionary<string, int>
@@ -48,6 +51,9 @@ public sealed class LoggingEventIdRangesTests
         ["Integration"] = LoggingEventIdRanges.Integration,
         ["Testing"] = LoggingEventIdRanges.Testing,
         ["Workflows"] = LoggingEventIdRanges.Workflows,
+        ["Idempotency"] = LoggingEventIdRanges.Idempotency,
+        ["Scheduling"] = LoggingEventIdRanges.Scheduling,
+        ["Reporting"] = LoggingEventIdRanges.Reporting,
     };
 
     [Fact]
@@ -57,12 +63,56 @@ public sealed class LoggingEventIdRangesTests
     public void PackageSubBlockWidth_Equals100() => Assert.Equal(100, LoggingEventIdRanges.PackageSubBlockWidth);
 
     [Fact]
-    public void AllEighteenDomainConstants_ArePairwiseUnique()
+    public void AllTwentyOneDomainConstants_ArePairwiseUnique()
     {
         var values = AllDomainValues.Values.ToArray();
 
-        Assert.Equal(18, values.Length);
+        Assert.Equal(21, values.Length);
         Assert.Equal(values.Length, values.Distinct().Count());
+    }
+
+    /// <summary>
+    /// T-62 regression guard: every one of the 18 pre-existing domain base constants (shipped
+    /// under P-249/WO-041) must remain byte-for-byte unchanged now that Idempotency/Scheduling/
+    /// Reporting have been added. Each expected value is hardcoded here (never derived from the
+    /// same folder-number table the theory cases use) so that if two existing constants were
+    /// accidentally swapped — a transposition the pairwise-uniqueness and modulo checks would NOT
+    /// catch, since both would still be unique multiples of 1000 — this test fails. A changed base
+    /// would silently reassign every already-shipped EventId in that domain's logs.
+    /// </summary>
+    [Fact]
+    public void PreExistingEighteenDomainConstants_AreByteForByteUnchanged()
+    {
+        Assert.Equal(0, LoggingEventIdRanges.Governance);
+        Assert.Equal(1000, LoggingEventIdRanges.Core);
+        Assert.Equal(2000, LoggingEventIdRanges.Caching);
+        Assert.Equal(3000, LoggingEventIdRanges.Domain);
+        Assert.Equal(4000, LoggingEventIdRanges.Contracts);
+        Assert.Equal(5000, LoggingEventIdRanges.Application);
+        Assert.Equal(6000, LoggingEventIdRanges.Persistence);
+        Assert.Equal(7000, LoggingEventIdRanges.Messaging);
+        Assert.Equal(8000, LoggingEventIdRanges.Storage);
+        Assert.Equal(9000, LoggingEventIdRanges.Search);
+        Assert.Equal(10000, LoggingEventIdRanges.Intelligence);
+        Assert.Equal(11000, LoggingEventIdRanges.Communication);
+        Assert.Equal(12000, LoggingEventIdRanges.Security);
+        Assert.Equal(13000, LoggingEventIdRanges.ServiceDefaults);
+        Assert.Equal(14000, LoggingEventIdRanges.Presentation);
+        Assert.Equal(15000, LoggingEventIdRanges.Integration);
+        Assert.Equal(16000, LoggingEventIdRanges.Testing);
+        Assert.Equal(17000, LoggingEventIdRanges.Workflows);
+    }
+
+    /// <summary>
+    /// T-62: the three new domain base constants introduced this phase, matching the root
+    /// CLAUDE.md folder map's 18.Idempotency/19.Scheduling/20.Reporting entries exactly.
+    /// </summary>
+    [Fact]
+    public void NewDomainConstants_MatchRootFolderMap()
+    {
+        Assert.Equal(18000, LoggingEventIdRanges.Idempotency);
+        Assert.Equal(19000, LoggingEventIdRanges.Scheduling);
+        Assert.Equal(20000, LoggingEventIdRanges.Reporting);
     }
 
     [Theory]

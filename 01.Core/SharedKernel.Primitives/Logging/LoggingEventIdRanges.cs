@@ -2,7 +2,7 @@ namespace SharedKernel.Primitives.Logging;
 
 /// <summary>
 /// Compile-time constant registry reserving a contiguous <c>Microsoft.Extensions.Logging</c>
-/// <c>EventId</c> numeric range for every capability domain in the root folder map (00 through 17).
+/// <c>EventId</c> numeric range for every capability domain in the root folder map (00 through 20).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,7 +36,7 @@ namespace SharedKernel.Primitives.Logging;
 /// governance tooling can mechanically catch once every package follows the sub-block convention.
 /// </para>
 /// <para>
-/// Adding a new folder-map domain (00-17 today) means adding exactly one new <c>const int</c>
+/// Adding a new folder-map domain (00-20 today) means adding exactly one new <c>const int</c>
 /// field here — never renumbering or reassigning an existing domain's base value, which would
 /// silently invalidate every already-shipped <c>EventId</c> in that domain.
 /// </para>
@@ -118,4 +118,13 @@ public static class LoggingEventIdRanges
 
     /// <summary>Reserved <c>EventId</c> block base for <c>17.Workflows</c> (17000-17999).</summary>
     public const int Workflows = 17000;
+
+    /// <summary>Reserved <c>EventId</c> block base for <c>18.Idempotency</c> (18000-18999).</summary>
+    public const int Idempotency = 18000;
+
+    /// <summary>Reserved <c>EventId</c> block base for <c>19.Scheduling</c> (19000-19999).</summary>
+    public const int Scheduling = 19000;
+
+    /// <summary>Reserved <c>EventId</c> block base for <c>20.Reporting</c> (20000-20999).</summary>
+    public const int Reporting = 20000;
 }
