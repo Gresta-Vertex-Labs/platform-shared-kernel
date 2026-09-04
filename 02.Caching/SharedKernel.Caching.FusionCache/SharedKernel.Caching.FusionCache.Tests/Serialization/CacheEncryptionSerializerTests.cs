@@ -36,9 +36,11 @@ internal sealed class InMemoryEncryptionKeyProvider : IEncryptionKeyProvider
         _key = new CryptographicKey(keyId, material);
     }
 
-    public CryptographicKey GetCurrentKey() => _key;
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+        new(_key);
 
-    public CryptographicKey? GetKey(string keyId) => keyId == _key.Id ? _key : null;
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(keyId == _key.Id ? _key : null);
 }
 
 /// <summary>

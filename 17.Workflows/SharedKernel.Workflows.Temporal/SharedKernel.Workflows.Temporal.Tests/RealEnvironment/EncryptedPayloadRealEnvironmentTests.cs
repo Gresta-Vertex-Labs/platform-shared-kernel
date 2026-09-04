@@ -32,9 +32,11 @@ public sealed class EncryptedPayloadRealEnvironmentTests(TemporalTestFixture fix
     {
         private readonly CryptographicKey _key = new("v1", Enumerable.Repeat((byte)7, 32).ToArray());
 
-        public CryptographicKey GetCurrentKey() => _key;
+        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+            new(_key);
 
-        public CryptographicKey? GetKey(string keyId) => keyId == _key.Id ? _key : null;
+        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+            new(keyId == _key.Id ? _key : null);
     }
 
     private ServiceProvider? _encryptedProvider;

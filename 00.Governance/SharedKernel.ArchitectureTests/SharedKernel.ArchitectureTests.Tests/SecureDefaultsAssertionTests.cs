@@ -1884,10 +1884,11 @@ public class SecureDefaultsAssertionTests
             _key = new CryptographicKey("secure-defaults-fixture-key", material);
         }
 
-        public CryptographicKey GetCurrentKey() => _key;
+        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+            new(_key);
 
-        public CryptographicKey? GetKey(string keyId) =>
-            string.Equals(keyId, _key.Id, StringComparison.Ordinal) ? _key : null;
+        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+            new(string.Equals(keyId, _key.Id, StringComparison.Ordinal) ? _key : null);
     }
 
     // ---------------------------------------------------------------------------

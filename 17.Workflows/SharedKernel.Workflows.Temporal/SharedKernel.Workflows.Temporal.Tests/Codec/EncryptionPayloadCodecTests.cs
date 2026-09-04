@@ -36,9 +36,11 @@ public sealed class EncryptionPayloadCodecTests
             }
         }
 
-        public CryptographicKey GetCurrentKey() => _keys[_currentKeyId];
+        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+            new(_keys[_currentKeyId]);
 
-        public CryptographicKey? GetKey(string keyId) => _keys.GetValueOrDefault(keyId);
+        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+            new(_keys.GetValueOrDefault(keyId));
     }
 
     private static byte[] NewAes256Key(byte seed) => Enumerable.Repeat(seed, 32).ToArray();
