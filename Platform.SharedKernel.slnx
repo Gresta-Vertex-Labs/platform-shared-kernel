@@ -16,12 +16,22 @@
     <Project Path="01.Core/SharedKernel.Core/SharedKernel.Core.Tests/SharedKernel.Core.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.Tests/SharedKernel.Cryptography.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.csproj" />
+    <Project Path="01.Core/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.Tests/SharedKernel.Cryptography.KeyVault.Azure.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.csproj" />
+    <Project Path="01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.Tests/SharedKernel.DataPrivacy.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.csproj" />
     <Project Path="01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.Tests/SharedKernel.FeatureManagement.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Guards/SharedKernel.Guards.csproj" />
     <Project Path="01.Core/SharedKernel.Guards/SharedKernel.Guards.Tests/SharedKernel.Guards.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.Localization/SharedKernel.Localization.csproj" />
+    <Project Path="01.Core/SharedKernel.Localization/SharedKernel.Localization.Tests/SharedKernel.Localization.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Primitives/SharedKernel.Primitives.csproj" />
     <Project Path="01.Core/SharedKernel.Primitives/SharedKernel.Primitives.Tests/SharedKernel.Primitives.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.Validation/SharedKernel.Validation.csproj" />
+    <Project Path="01.Core/SharedKernel.Validation/SharedKernel.Validation.Tests/SharedKernel.Validation.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.Validation.FluentValidation/SharedKernel.Validation.FluentValidation.csproj" />
+    <Project Path="01.Core/SharedKernel.Validation.FluentValidation/SharedKernel.Validation.FluentValidation.Tests/SharedKernel.Validation.FluentValidation.Tests.csproj" />
   </Folder>
   <Folder Name="/02.Caching/">
     <Project Path="02.Caching/SharedKernel.Caching.Abstractions/SharedKernel.Caching.Abstractions.csproj" />
@@ -137,6 +147,12 @@
   <Folder Name="/15.Integration/">
     <Project Path="15.Integration/SharedKernel.Integration.Webhooks/SharedKernel.Integration.Webhooks.csproj" />
     <Project Path="15.Integration/SharedKernel.Integration.Webhooks/SharedKernel.Integration.Webhooks.Tests/SharedKernel.Integration.Webhooks.Tests.csproj" />
+    <Project Path="15.Integration/SharedKernel.Integration.Notifications.Abstractions/SharedKernel.Integration.Notifications.Abstractions.csproj" />
+    <Project Path="15.Integration/SharedKernel.Integration.Notifications.Abstractions/SharedKernel.Integration.Notifications.Abstractions.Tests/SharedKernel.Integration.Notifications.Abstractions.Tests.csproj" />
+    <Project Path="15.Integration/SharedKernel.Integration.Notifications.Email.SendGrid/SharedKernel.Integration.Notifications.Email.SendGrid.csproj" />
+    <Project Path="15.Integration/SharedKernel.Integration.Notifications.Email.SendGrid/SharedKernel.Integration.Notifications.Email.SendGrid.Tests/SharedKernel.Integration.Notifications.Email.SendGrid.Tests.csproj" />
+    <Project Path="15.Integration/SharedKernel.Integration.Notifications.Sms.Twilio/SharedKernel.Integration.Notifications.Sms.Twilio.csproj" />
+    <Project Path="15.Integration/SharedKernel.Integration.Notifications.Sms.Twilio/SharedKernel.Integration.Notifications.Sms.Twilio.Tests/SharedKernel.Integration.Notifications.Sms.Twilio.Tests.csproj" />
     <Project Path="15.Integration/consumer-verify/consumer-verify.csproj" />
   </Folder>
   <Folder Name="/16.Testing/">

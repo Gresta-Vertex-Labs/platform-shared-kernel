@@ -77,6 +77,7 @@
     <PackageVersion Include="AWSSDK.S3" Version="4.0.101.1" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.7.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
@@ -113,6 +114,17 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" Version="1.1.2" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
+    <!--
+      WO-071/P-457: test-only. SQLite's EF Core provider refuses to translate ORDER BY on a
+      DateTimeOffset expression at all (a provider-level LINQ-translation restriction, not a
+      SQL-level one — confirmed empirically) — a hard blocker for testing AuditRecord's
+      OccurredOn-ordered hash-chain/keyset queries, which SQLite-backed tests elsewhere in this
+      package avoid by choosing a `long` sort key instead (see KeysetTestAggregate). AuditRecord's
+      OccurredOn is fixed at DateTimeOffset per the shipped design (D-113) — production targets
+      PostgreSQL, which orders by timestamptz without issue. Used ONLY by
+      SharedKernel.Persistence.EfCore.Tests' Auditing/ test fixtures.
+    -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
@@ -124,6 +136,14 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.9" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
+    <!-- P-482/WO-078: SharedKernel.Localization's sole NuGet dependency (first-party Microsoft package, never a bespoke resx pipeline). -->
+    <PackageVersion Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.11" />
+    <!--
+      Test-only: SharedKernel.Localization.Tests uses the concrete AddLocalization()/.resx-provider
+      package solely to compile-verify its README's StringLocalizerLocalizationCatalog composition-
+      root sample end to end. SharedKernel.Localization itself never references this — only .Abstractions.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.Localization" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.11" />
@@ -182,13 +202,18 @@
     <PackageVersion Include="SharedKernel.Configuration" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Core" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Cryptography" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Cryptography.KeyVault.Azure" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.DataPrivacy" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Domain" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.FeatureManagement" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Guards" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Linter" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Localization" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Primitives" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Presentation.WebApi" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.ServiceDefaults" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Validation" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Validation.FluentValidation" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
     <PackageVersion Include="System.ClientModel" Version="1.10.0" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
