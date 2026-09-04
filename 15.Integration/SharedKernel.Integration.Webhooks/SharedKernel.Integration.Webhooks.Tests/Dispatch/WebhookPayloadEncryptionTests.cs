@@ -5,6 +5,7 @@ using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Integration.Webhooks.Signing;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Integration.Webhooks.Tests.TestSupport;
+using SharedKernel.Testing.Cryptography;
 
 namespace SharedKernel.Integration.Webhooks.Tests.Dispatch;
 
@@ -23,7 +24,7 @@ public sealed class WebhookPayloadEncryptionTests
         const string secret = "signing-secret";
         var subscription = Subscription(secret);
         var store = new FakeWebhookSubscriptionStore([subscription]);
-        var encryptionService = new AesGcmEncryptionService(new InMemoryEncryptionKeyProvider());
+        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
 
         string? capturedWireBody = null;
         string? capturedSignature = null;
