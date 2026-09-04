@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Culture-independent financial and identity format validators for the SharedKernel: IBAN (mod-97 + per-country length table), BIC/SWIFT, payment-card PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164 phone numbers, a baseline VAT/tax-identifier format check, and a pluggable per-country national-identity-number registry (Turkey's TCKN ships as the built-in default). Every validator is dual-mode: a standalone IsValid/Validate call and a Guard.Against.* extension. Zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Guards.</Description>
+    <PackageTags>shared-kernel;validation;iban;bic;pan;luhn;iso4217;iso3166;e164;vat;national-id;aot</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <ProjectReference Include="..\SharedKernel.Guards\SharedKernel.Guards.csproj" />
+  </ItemGroup>
+</Project>
