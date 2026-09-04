@@ -74,12 +74,23 @@
     <PackageVersion Include="Asp.Versioning.Http" Version="10.0.0" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
+    <!-- Test-only, SharedKernel.Analyzers.Tests (SK0033/WO-079/P-486): fixture compilation proving
+         the reflection-based-mapper-usage analyzer fires against the real AutoMapper assembly.
+         Never a production PackageReference of any SharedKernel.* package. -->
+    <PackageVersion Include="AutoMapper" Version="15.1.1" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.101.1" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.7.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
+    <!--
+      SharedKernel.Reporting.Spreadsheet (20.Reporting/WO-077, P-479): unconditional MIT, verified
+      directly against the published nuspec on nuget.org before pinning (20.Reporting/CLAUDE.md's
+      ratified licensing table). No incremental/streaming write path exists in this library — see
+      that package's own docs for the accepted, documented memory-model limitation.
+    -->
+    <PackageVersion Include="ClosedXML" Version="0.105.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Dapper" Version="2.1.79" />
     <PackageVersion Include="Elastic.Clients.Elasticsearch" Version="9.4.2" />
@@ -169,10 +180,37 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
     <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
+    <!--
+      SharedKernel.Reporting.Pdf (20.Reporting/WO-077, P-480): unconditional MIT, verified directly
+      against the published nuspecs on nuget.org before pinning. NOTE — the domain's Design phase
+      (D-09/D-10) assumed three separate package IDs ("PdfSharp" + "MigraDoc.DocumentObjectModel" +
+      "MigraDoc.Rendering"), reflecting the pre-6.x PDFsharp/MigraDoc package split. That three-way
+      split package no longer exists on nuget.org — verified via the NuGet flat-container/search API
+      2026-09-04, not assumed. The current, actively-maintained PDFsharp team packages are exactly
+      two IDs: "PDFsharp" (core PDF primitives) and "PDFsharp-MigraDoc" (bundles the
+      MigraDoc.DocumentObjectModel/MigraDoc.Rendering namespaces this domain's design already
+      names, plus a PDFsharp dependency pinned to the identical version) — both MIT, both from the
+      same upstream project (docs.pdfsharp.net), so this is a corrected package-ID mapping onto the
+      same licence-ratified technology, never a substitution of a different library.
+    -->
+    <PackageVersion Include="PDFsharp" Version="6.2.4" />
+    <PackageVersion Include="PDFsharp-MigraDoc" Version="6.2.4" />
     <PackageVersion Include="Polly.Core" Version="8.7.0" />
     <PackageVersion Include="Polly.Extensions" Version="8.7.0" />
     <PackageVersion Include="Qdrant.Client" Version="1.18.1" />
+    <!--
+      Direct pin, not a transitive ride: SharedKernel.Scheduling (19.Scheduling) needs
+      Quartz.CronExpression at compile time, independent of 07.Messaging's MassTransit.Quartz
+      reference above (which currently resolves this same 3.18.1 transitively). Pinning directly
+      means 07.Messaging bumping/dropping MassTransit.Quartz can never silently break this domain's
+      build (19.Scheduling/state-map.md D-06, WO-073/P-464).
+    -->
+    <PackageVersion Include="Quartz" Version="3.18.1" />
     <PackageVersion Include="RedLock.net" Version="2.3.2" />
+    <!-- Test-only, SharedKernel.Analyzers.Tests (SK0033/WO-079/P-486): fixture compilation proving
+         a Riok.Mapperly [Mapper] partial class does NOT trigger the AutoMapper-scoped analyzer.
+         Never a production PackageReference of any SharedKernel.* package. -->
+    <PackageVersion Include="Riok.Mapperly" Version="3.6.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.16.5" />
     <!--
       In-repo SharedKernel packages, consumed by the PackageReference-based consumer-verify
