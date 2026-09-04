@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using SharedKernel.Domain.Abstractions;
+using SharedKernel.Domain.ValueObjects.Money;
 
 namespace SharedKernel.Persistence.EfCore.Conventions;
 
@@ -73,6 +74,32 @@ public static class ValueObjectOwnershipBuilder
 
                 // Skip if not IValueObject.
                 if (!typeof(IValueObject).IsAssignableFrom(propType))
+                    continue;
+
+                // Skip Money (WO-066/P-440/D-107): a Money property must always be configured
+                // explicitly via MoneyEntityTypeBuilderExtensions.OwnsMoney(...), never silently
+                // auto-owned here — EF Core cannot bind Money's private, three-argument
+                // constructor automatically, and Money's own precision/currency semantics are
+                // exactly the kind of precision/security-sensitive concern this package already
+                // treats as opt-in-only (mirroring PropertyBuilder<T>.Encrypt()'s philosophy).
+                if (propType == typeof(Money))
+                    continue;
+
+                // Skip any property ALREADY mapped as a scalar EF property (T-122/T-123 fix,
+                // 2026-09-02) — most commonly a globally-registered value converter applied via
+                // ConfigureConventions (e.g. ModelConfigurationBuilderExtensions.ConfigureMoney's
+                // `Properties<Currency>().HaveConversion<CurrencyValueConverter>()`), which runs
+                // before entity-type/navigation discovery and so has already turned this CLR
+                // property into a scalar column by the time this method's reflection-based scan
+                // reaches it. The Money-specific skip above predates this general check and is
+                // kept for its explanatory value, but was never sufficient on its own: any OTHER
+                // IValueObject type globally converted the same way (Currency, standalone —
+                // confirmed empirically: a bare Currency-typed property combined with
+                // ConfigureMoney() + this method crashed model building with "property or
+                // navigation ... already exists" before this fix) hit the identical conflict.
+                // Checking "is this CLR property already a scalar EF property" generalises the
+                // fix to any current or future globally-converted IValueObject, not just Money.
+                if (entityType.FindProperty(clrProperty.Name) is not null)
                     continue;
 
                 // Skip if already configured as an owned navigation under this owner.
