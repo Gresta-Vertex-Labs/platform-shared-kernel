@@ -11,39 +11,39 @@ namespace SharedKernel.Testing.SelfTests.Cryptography;
 public sealed class FakeEncryptionKeyProviderTests
 {
     [Fact]
-    public void Constructor_SeedsCurrentKey_Immediately()
+    public async Task Constructor_SeedsCurrentKey_Immediately()
     {
         var provider = new FakeEncryptionKeyProvider();
 
-        var current = provider.GetCurrentKey();
+        var current = await provider.GetCurrentKeyAsync();
 
         Assert.Equal("v1", current.Id);
         Assert.Equal(32, current.Material.Length);
     }
 
     [Fact]
-    public void Constructor_WithCustomCurrentKeyId_SeedsThatKeyInstead()
+    public async Task Constructor_WithCustomCurrentKeyId_SeedsThatKeyInstead()
     {
         var provider = new FakeEncryptionKeyProvider(currentKeyId: "custom");
 
-        Assert.Equal("custom", provider.GetCurrentKey().Id);
+        Assert.Equal("custom", (await provider.GetCurrentKeyAsync()).Id);
     }
 
     [Fact]
-    public void AddKey_RegistersAdditionalKeyVersion_ResolvableViaGetKey()
+    public async Task AddKey_RegistersAdditionalKeyVersion_ResolvableViaGetKeyAsync()
     {
         var provider = new FakeEncryptionKeyProvider();
 
         var added = provider.AddKey("v2");
 
-        Assert.Equal(added, provider.GetKey("v2"));
+        Assert.Equal(added, await provider.GetKeyAsync("v2"));
     }
 
     [Fact]
-    public void AddKey_GeneratesFreshMaterial_DifferentAcrossKeyVersions()
+    public async Task AddKey_GeneratesFreshMaterial_DifferentAcrossKeyVersions()
     {
         var provider = new FakeEncryptionKeyProvider();
-        var v1 = provider.GetCurrentKey();
+        var v1 = await provider.GetCurrentKeyAsync();
 
         var v2 = provider.AddKey("v2");
 
@@ -51,38 +51,38 @@ public sealed class FakeEncryptionKeyProviderTests
     }
 
     [Fact]
-    public void SetCurrentKey_SwitchesWhichKeyIsCurrent()
+    public async Task SetCurrentKey_SwitchesWhichKeyIsCurrent()
     {
         var provider = new FakeEncryptionKeyProvider();
         var v2 = provider.AddKey("v2");
 
         provider.SetCurrentKey("v2");
 
-        Assert.Equal(v2, provider.GetCurrentKey());
+        Assert.Equal(v2, await provider.GetCurrentKeyAsync());
     }
 
     [Fact]
-    public void MultiKeyRotation_OlderKeyVersionRemainsResolvable_AfterCurrentKeySwitches()
+    public async Task MultiKeyRotation_OlderKeyVersionRemainsResolvable_AfterCurrentKeySwitches()
     {
         var provider = new FakeEncryptionKeyProvider();
-        var v1 = provider.GetCurrentKey();
+        var v1 = await provider.GetCurrentKeyAsync();
         provider.AddKey("v2");
 
         provider.SetCurrentKey("v2");
 
-        Assert.Equal(v1, provider.GetKey("v1"));
-        Assert.Equal("v2", provider.GetCurrentKey().Id);
+        Assert.Equal(v1, await provider.GetKeyAsync("v1"));
+        Assert.Equal("v2", (await provider.GetCurrentKeyAsync()).Id);
     }
 
     [Fact]
-    public void RemoveKey_MakesItUnresolvable()
+    public async Task RemoveKey_MakesItUnresolvable()
     {
         var provider = new FakeEncryptionKeyProvider();
         provider.AddKey("v2");
 
         provider.RemoveKey("v1");
 
-        Assert.Null(provider.GetKey("v1"));
+        Assert.Null(await provider.GetKeyAsync("v1"));
     }
 
     [Fact]
@@ -96,6 +96,6 @@ public sealed class FakeEncryptionKeyProviderTests
     }
 
     [Fact]
-    public void GetKey_UnknownKeyId_ReturnsNull() =>
-        Assert.Null(new FakeEncryptionKeyProvider().GetKey("does-not-exist"));
+    public async Task GetKeyAsync_UnknownKeyId_ReturnsNull() =>
+        Assert.Null(await new FakeEncryptionKeyProvider().GetKeyAsync("does-not-exist"));
 }
