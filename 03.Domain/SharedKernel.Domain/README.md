@@ -36,39 +36,95 @@ After persisting, the infrastructure dispatch layer calls `order.ClearDomainEven
 ## Value Object with Validate() Hook
 
 ```csharp
-public sealed class Money : ValueObject
+public sealed class Coordinates : ValueObject
 {
-    public decimal Amount { get; }
-    public string Currency { get; }
+    public double Latitude { get; }
+    public double Longitude { get; }
 
-    public Money(decimal amount, string currency)
+    public Coordinates(double latitude, double longitude)
     {
-        Amount = amount;
-        Currency = currency;
+        Latitude = latitude;
+        Longitude = longitude;
         // Base constructor calls Validate() automatically — do NOT call it here
     }
 
     protected override IEnumerable<object?> GetEqualityComponents()
     {
-        yield return Amount;
-        yield return Currency;
+        yield return Latitude;
+        yield return Longitude;
     }
 
     // Return null (or empty) for valid; yield Error instances to fail construction
     protected override IEnumerable<Error>? Validate()
     {
-        if (Amount < 0)
-            yield return Error.Validation("Money.NegativeAmount", "Amount must be non-negative.");
-        if (string.IsNullOrWhiteSpace(Currency))
-            yield return Error.Validation("Money.InvalidCurrency", "Currency code is required.");
+        if (Latitude is < -90 or > 90)
+            yield return Error.Validation("Coordinates.InvalidLatitude", "Latitude must be between -90 and 90.");
+        if (Longitude is < -180 or > 180)
+            yield return Error.Validation("Coordinates.InvalidLongitude", "Longitude must be between -180 and 180.");
     }
 }
 
 // Usage — throws ValidationException if invariants are violated
-var price = new Money(9.99m, "USD");
-var free  = new Money(0m, "USD");
-Console.WriteLine(price == free); // false — structural equality on Amount + Currency
+var origin       = new Coordinates(0, 0);
+var sanFrancisco = new Coordinates(37.7749, -122.4194);
+Console.WriteLine(origin == sanFrancisco); // false — structural equality on Latitude + Longitude
 ```
+
+---
+
+## Money — Currency-Aware Monetary Value Object
+
+`Money` (`ValueObjects/Money/`) is a shipped, production-ready value object — not a pattern to
+reimplement per service. It pairs a `decimal` amount with a validated ISO 4217 `Currency`, rounds
+unconditionally to the currency's minor-unit precision (`RoundingPolicy.BankersRounding` by
+default), and rejects cross-currency arithmetic via the existing business-rule pipeline.
+
+```csharp
+// Create — validates the currency and unconditionally rounds the amount to its minor-unit
+// precision (2 places for USD). Returns Result<Money>, never throws on excess precision.
+Result<Money> priceResult = Money.Create(19.995m, Currency.Usd);
+if (priceResult.IsFailure)
+    throw new InvalidOperationException(priceResult.Error.Message);
+
+Money price    = priceResult.Value;                    // 20.00 USD (rounded via BankersRounding)
+Money shipping = Money.Create(4.99m, Currency.Usd).Value;
+
+// Arithmetic — same-currency only. A mismatched currency throws BusinessRuleViolationException
+// (ErrorType.BusinessRule -> HTTP 422), carrying a CurrencyMismatchRule.
+Money total      = price + shipping;                   // 24.99 USD
+Money discounted = total * 0.9m;                        // 22.49 USD — Multiply re-rounds the product
+
+// Comparison
+if (total > Money.Zero(Currency.Usd))
+    Console.WriteLine("Order total is positive.");
+
+// Allocate — largest-remainder (Hare-Niemeyer) split that conserves the total exactly.
+IReadOnlyList<Money> splitThreeWays = Money.Create(10.00m, Currency.Usd).Value.Allocate(3);
+// [3.33, 3.33, 3.34] USD — never [3.33, 3.33, 3.33] (loses a cent) or [3.34, 3.34, 3.34] (invents two)
+
+IReadOnlyList<Money> weightedSplit = total.Allocate(ratios: [2, 1, 1]); // 50% / 25% / 25%
+
+// Cross-currency conversion — SharedKernel.Domain ships only the IExchangeRateProvider port and
+// the ConvertAsync composition helper; the consuming service supplies the real rate lookup
+// (typically bridged via 11.Communication) at its own composition root.
+Result<Money> converted = await price.ConvertAsync(
+    Currency.Eur, rateProvider, cancellationToken: cancellationToken);
+```
+
+```csharp
+// A minimal test/demo IExchangeRateProvider — production code bridges to a real rate source.
+public sealed class FixedRateProvider(decimal rate) : IExchangeRateProvider
+{
+    public Task<Result<decimal>> GetExchangeRateAsync(
+        Currency source, Currency target, CancellationToken cancellationToken) =>
+        Task.FromResult(Result<decimal>.Success(rate));
+}
+```
+
+`Currency.Create("try")` normalizes casing/whitespace and validates against a fixed, compile-time
+ISO 4217 catalog (`CurrencyCatalog`) — correctly distinguishing zero-decimal currencies (e.g. JPY)
+and three-decimal currencies (e.g. BHD) from the 2-digit default. `Currency.Usd`/`.Eur`/`.Gbp`/`.Jpy`
+are DX-convenience statics only, not an exhaustive currency list — use `Create` for any other code.
 
 ---
 
@@ -177,3 +233,4 @@ if (policy.IsCompliant(order))
 - Audit properties (`CreatedBy`, `CreatedOn`, etc.) are populated by EF Core interceptors in `06.Persistence`, never by domain code.
 - `ClearDomainEvents()` is called only by infrastructure after successful dispatch — never by an aggregate.
 - STJ serialization of strongly-typed IDs requires a custom `JsonConverter` in the consuming service — this package ships none.
+- `Money`/`Currency` perform no I/O — `IExchangeRateProvider` is a pure port; the consuming service supplies the real rate-lookup implementation, never this package.
