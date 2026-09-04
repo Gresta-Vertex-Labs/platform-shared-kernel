@@ -3,6 +3,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Scheduling.Probes;
 using SharedKernel.Search.Abstractions.Abstractions;
@@ -139,6 +140,18 @@ public sealed class HealthCheckNamesTests
         services.AddHealthChecks().AddSchedulerReadinessCheck();
 
         var registration = GetRegistration(services, HealthCheckNames.Scheduler);
+        Assert.NotNull(registration);
+    }
+
+    [Fact]
+    public void AddKeyVaultKeyProviderReadinessCheck_DefaultName_MatchesHealthCheckNamesEncryptionKeyProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IEncryptionKeyProviderProbe>());
+
+        services.AddHealthChecks().AddKeyVaultKeyProviderReadinessCheck();
+
+        var registration = GetRegistration(services, HealthCheckNames.EncryptionKeyProvider);
         Assert.NotNull(registration);
     }
 

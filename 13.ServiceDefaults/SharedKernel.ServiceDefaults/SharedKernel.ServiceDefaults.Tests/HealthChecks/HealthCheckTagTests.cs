@@ -3,6 +3,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NSubstitute;
 using SharedKernel.AI.Abstractions.Abstractions;
 using SharedKernel.Caching.Abstractions;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Messaging.Abstractions.MessageBus;
 using SharedKernel.Scheduling.Probes;
 using SharedKernel.Search.Abstractions.Abstractions;
@@ -185,6 +186,22 @@ public sealed class HealthCheckTagTests
 
         Assert.Contains(HealthCheckTags.Ready, registration.Tags);
         Assert.Contains(HealthCheckTags.Scheduler, registration.Tags);
+        Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
+    }
+
+    [Fact]
+    public void AddKeyVaultKeyProviderReadinessCheck_RegistersWithReadyEncryptionKeyProviderTags_NeverLive()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<IEncryptionKeyProviderProbe>());
+
+        services.AddHealthChecks().AddKeyVaultKeyProviderReadinessCheck();
+
+        var registrations = GetRegistrations(services);
+        var registration = Assert.Single(registrations, r => r.Name == HealthCheckNames.EncryptionKeyProvider);
+
+        Assert.Contains(HealthCheckTags.Ready, registration.Tags);
+        Assert.Contains(HealthCheckTags.EncryptionKeyProvider, registration.Tags);
         Assert.DoesNotContain(HealthCheckTags.Live, registration.Tags);
     }
 

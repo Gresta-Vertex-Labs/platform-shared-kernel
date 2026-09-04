@@ -42,4 +42,7 @@ public static class HealthCheckNames
 
     /// <summary>Default registration name for scheduler-loop liveness checks.</summary>
     public const string Scheduler = "scheduler";
+
+    /// <summary>Default registration name for encryption-key-provider (KMS) reachability checks.</summary>
+    public const string EncryptionKeyProvider = "encryption-key-provider";
 }

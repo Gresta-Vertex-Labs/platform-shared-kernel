@@ -27,6 +27,7 @@ Each wraps the probe primitive owned by that capability domain. `13.ServiceDefau
 | `AddVectorStoreReadinessCheck()` | Vector collection |
 | `AddWorkflowReadinessCheck()` | Temporal workflow service |
 | `AddSchedulerReadinessCheck()` | `19.Scheduling`'s hosted scheduling loop (in-process, zero I/O) |
+| `AddKeyVaultKeyProviderReadinessCheck()` | The registered `IEncryptionKeyProvider`'s backing KMS/HSM (e.g. Azure Key Vault); requires `AddSharedKernelKeyVaultKeyProvider()` to have been called first |
 
 ### Telemetry activation — opt in per domain
 
@@ -84,7 +85,16 @@ builder.AddSharedKernelKeyVaultKeyProvider();
 
 `AddSharedKernelKeyVaultKeyProvider()` is a thin call-through to `01.Core`'s `SharedKernel.Cryptography.KeyVault.Azure` — configure `AzureKeyVaultCryptographyOptions` under the `SharedKernel:Cryptography:KeyVault:Azure` configuration section (see that package's own README for the full shape: `VaultUri`, `CurrentKeyId`, `KeyNames`). It is idempotent — calling it more than once registers the provider exactly once.
 
-> **Not yet available:** a readiness probe for the Key Vault key provider (`AddKeyVaultKeyProviderReadinessCheck`) is blocked on a genuine upstream design gap — `01.Core`'s own ratified design does not yet declare a probe primitive for this package. Track this in `state-map.md`.
+Pair it with a readiness check so an unreachable vault shows up on `/health/ready`:
+
+```csharp
+builder.AddSharedKernelKeyVaultKeyProvider();
+
+builder.Services.AddSharedKernelHealthChecks()
+    .AddKeyVaultKeyProviderReadinessCheck();
+```
+
+`AddKeyVaultKeyProviderReadinessCheck()` resolves `01.Core`'s `IEncryptionKeyProviderProbe` (already registered as a byproduct of `AddSharedKernelKeyVaultKeyProvider()`) and reports `Unhealthy` — never `Degraded` — when the backing KMS/HSM is unreachable; no fail-safe/graceful-degradation layer sits in front of raw key-provider connectivity. Unlike `AddWorkflowReadinessCheck`/`AddSchedulerReadinessCheck`, this needed no new layering grant — `01.Core` is already inside this domain's `01`–`12` composition-root range.
 
 ## Culture resolution (`AddSharedKernelLocalization`)
 

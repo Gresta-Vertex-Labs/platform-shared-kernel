@@ -49,4 +49,7 @@ public static class HealthCheckTags
 
     /// <summary>Dependency-category tag for scheduler-loop liveness checks.</summary>
     public const string Scheduler = "scheduler";
+
+    /// <summary>Dependency-category tag for encryption-key-provider (KMS) reachability checks.</summary>
+    public const string EncryptionKeyProvider = "encryption-key-provider";
 }
