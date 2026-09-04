@@ -183,5 +183,15 @@
          directly here for compile-time clarity, matching this project's own "reference every type
          used directly in test code" convention. -->
     <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" PrivateAssets="all" />
+    <!-- Required to resolve the real SharedKernel.Presentation.Grpc assembly in
+         PresentationLayeringRulesTests.GrpcNeverReferencesContracts's real-assembly pass-path test
+         (WO-074, coordinator-directed extension folded into P-469) — 14.Presentation shipped P-468
+         (SharedKernel.Presentation.Grpc, real package on disk) before this phase's implementation
+         session, mirroring the CommunicationLayeringRulesTests.GrpcNeverReferencesContracts_
+         RealGrpcAssembly_RulePasses (T-128) precedent for the sibling 11.Communication package.
+         Not yet registered in Platform.SharedKernel.slnx as of this reference (the coordinator is
+         registering it centrally) — an unregistered project still builds and resolves fine via a
+         direct ProjectReference by path. -->
+    <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" PrivateAssets="all" />
   </ItemGroup>
 </Project>

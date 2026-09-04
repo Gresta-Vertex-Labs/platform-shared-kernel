@@ -155,4 +155,67 @@ public static class PresentationLayeringRules
             .HaveNameStartingWith(string.Empty)
             .Should()
             .MeetCustomRule(new NoInlineResultBranchBeforeHttpResultPredicate());
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that no type in
+    /// <c>SharedKernel.Presentation.Grpc</c> has any dependency on <c>SharedKernel.Contracts</c>.
+    /// </summary>
+    /// <param name="grpcAssembly">The <c>SharedKernel.Presentation.Grpc</c> assembly.</param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> ready for assertion via
+    /// <c>result.IsSuccessful.Should().BeTrue()</c>.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// Mechanizes the root <c>CLAUDE.md</c> Hard rule "<c>SharedKernel.Presentation.Grpc</c> must
+    /// never reference <c>04.Contracts</c>" — mirroring
+    /// <see cref="CommunicationLayeringRules.GrpcNeverReferencesContracts"/>'s identical shape and
+    /// rationale for the sibling <c>11.Communication</c> gRPC package: protobuf-generated messages
+    /// are this package's only wire-contract surface, never <c>SharedKernel.Contracts</c> DTOs.
+    /// </para>
+    /// <para>
+    /// <strong>Why this closes a real, not merely theoretical, gap.</strong>
+    /// <c>SharedKernel.Presentation.Grpc</c> takes a deliberate <c>ProjectReference</c> on
+    /// <c>SharedKernel.Presentation.WebApi</c> (to reuse
+    /// <c>RequireRoleAttribute</c>/<c>RequirePermissionAttribute</c>/
+    /// <c>RequireFreshAuthenticationAttribute</c>/<c>RequireAuthenticationMethodAttribute</c>
+    /// verbatim — D-73/D-74, see <c>14.Presentation/CLAUDE.md</c>, "Why .Grpc references .WebApi"),
+    /// and <c>SharedKernel.Presentation.WebApi</c> itself references <c>04.Contracts</c>. .NET
+    /// project references flow transitively, so <c>SharedKernel.Contracts.dll</c> is genuinely
+    /// present in <c>SharedKernel.Presentation.Grpc</c>'s own build output and reference closure —
+    /// a developer CAN write <c>using SharedKernel.Contracts;</c> inside a gRPC service method and
+    /// it will compile. The Hard rule as stated ("never reference <c>04.Contracts</c>") was
+    /// satisfied only at the direct-<c>ProjectReference</c> level, not the reachable-type level,
+    /// before this rule existed.
+    /// </para>
+    /// <para>
+    /// <strong>Why <c>NotHaveDependencyOn</c> is the correct, sufficient mechanism despite that
+    /// transitive reference.</strong> NetArchTest's <c>NotHaveDependencyOn(term)</c> inspects each
+    /// scanned type's ACTUAL Mono.Cecil-observed dependency namespaces (fields, method
+    /// parameters/return types/bodies) — never the assembly-level reference list a
+    /// <c>ProjectReference</c> populates. A type merely being reachable via the reference closure
+    /// (because the compiler needs <c>SharedKernel.Presentation.WebApi</c>'s own transitive
+    /// dependencies resolvable) does not, by itself, fail this check — only an actual
+    /// <c>SharedKernel.Contracts.*</c> type USE inside a <c>SharedKernel.Presentation.Grpc</c> type
+    /// does. This is confirmed empirically by <c>GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses</c>
+    /// in the companion test file: the real, shipped assembly passes today (no such use exists yet)
+    /// while remaining fully able to catch the violation the moment one is introduced — exactly the
+    /// "rule the structure cannot enforce" case this domain exists for.
+    /// </para>
+    /// <para>
+    /// No exemption is permitted for this rule, mirroring
+    /// <see cref="CommunicationLayeringRules.GrpcNeverReferencesContracts"/>'s own "no exemption"
+    /// precedent. Introduced WO-074 (coordinator-directed extension to P-469, evaluated and
+    /// accepted by this domain rather than deferred to a separately-planned phase — the mechanism
+    /// and rationale are a direct, near-zero-novelty copy of an already-ratified sibling-domain
+    /// rule).
+    /// </para>
+    /// </remarks>
+    public static ConditionList GrpcNeverReferencesContracts(Assembly grpcAssembly) =>
+        Types
+            .InAssembly(grpcAssembly)
+            .That()
+            .HaveNameStartingWith(string.Empty) // select all types
+            .Should()
+            .NotHaveDependencyOn("SharedKernel.Contracts");
 }

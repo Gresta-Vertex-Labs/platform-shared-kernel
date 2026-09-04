@@ -9,8 +9,23 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing.XUnit" />
     <!-- Pin Roslyn to same version used by SharedKernel.Analyzers to avoid version conflict -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <!-- SK0033 (WO-079/P-486): test-only fixture compilation packages, never a production
+         dependency of any SharedKernel.* package. -->
+    <PackageReference Include="AutoMapper" />
+    <PackageReference Include="Riok.Mapperly" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- SK0036 (WO-074/P-469): test-only fixture compilation against the real, lightweight
+         Grpc.Core.Api package (RpcException/Status/StatusCode only, not the full Grpc.AspNetCore
+         server hosting stack) — never a production dependency of any SharedKernel.* package. -->
+    <PackageReference Include="Grpc.Core.Api" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Analyzers.csproj" />
+    <!-- SK0035 (WO-076/P-476) T-355: real-assembly re-verification only — never a shipped/packed
+         dependency of SharedKernel.Analyzers itself, hence PrivateAssets="all". -->
+    <ProjectReference
+      Include="..\..\..\01.Core\SharedKernel.DataPrivacy\SharedKernel.DataPrivacy.csproj"
+      PrivateAssets="all"
+    />
   </ItemGroup>
 </Project>

@@ -25,6 +25,16 @@ public abstract class AnalyzerBase : DiagnosticAnalyzer
     /// </summary>
     protected const string Security = "Security";
 
+    /// <summary>
+    /// Category constant for the platform's first ADVISORY-ONLY diagnostic category (SK0034).
+    /// Unlike every other Warning-severity category in this registry — which is either already
+    /// enforced at Warning pending a future escalation to Error, or a permanent platform-wide
+    /// prohibition deliberately kept at Warning — a rule in this category has NO escalation path to
+    /// Error, ever: it is a heuristic nudge toward a better pattern, not a prohibition of a bad one.
+    /// Introduced WO-066/P-442.
+    /// </summary>
+    protected const string Advisory = "Advisory";
+
     private const string HelpLinkBase =
         "https://github.com/gresta-vertex-labs/platform-shared-kernel/blob/main/00.Governance/README.md";
 

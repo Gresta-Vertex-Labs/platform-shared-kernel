@@ -389,6 +389,94 @@ public class PresentationLayeringRulesTests
     }
 
     // ---------------------------------------------------------------------------
+    // T-360 — Fire path: contrived assembly shaped like SharedKernel.Presentation.Grpc
+    // references SharedKernel.Contracts
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-360 (coordinator-directed extension, WO-074, folded into P-469): a contrived assembly
+    /// shaped like <c>SharedKernel.Presentation.Grpc</c> whose type references
+    /// <c>SharedKernel.Contracts</c> must fail
+    /// <see cref="PresentationLayeringRules.GrpcNeverReferencesContracts"/> — mirrors
+    /// <c>CommunicationLayeringRulesTests.GrpcNeverReferencesContracts_ContractsReference_RuleFails</c>
+    /// (T-127) for the sibling <c>11.Communication</c> rule.
+    /// </summary>
+    [Fact]
+    public void GrpcNeverReferencesContracts_ContractsReference_RuleFails()
+    {
+        const string contractsStubSource = """
+            namespace SharedKernel.Contracts
+            {
+                public class PagedList<T> { }
+            }
+            """;
+
+        const string grpcSource = """
+            namespace SharedKernel.Presentation.Grpc
+            {
+                public class GrpcResponseMapper
+                {
+                    // Violation: a direct use of SharedKernel.Contracts, exactly the gap this
+                    // rule closes despite SharedKernel.Presentation.Grpc's legitimate transitive
+                    // reference chain through SharedKernel.Presentation.WebApi.
+                    private readonly SharedKernel.Contracts.PagedList<object> _paged;
+
+                    public GrpcResponseMapper(SharedKernel.Contracts.PagedList<object> paged)
+                    {
+                        _paged = paged;
+                    }
+                }
+            }
+            """;
+
+        var contractsAssembly = CompileInMemory(
+            "Fixture.PresentationGrpcContracts.SharedKernel.Contracts.Stub",
+            contractsStubSource);
+
+        var grpcAssembly = CompileInMemory(
+            "Fixture.PresentationGrpcContracts.ViolatingGrpc",
+            grpcSource,
+            extraReferences: new[] { contractsAssembly });
+
+        var result = PresentationLayeringRules
+            .GrpcNeverReferencesContracts(grpcAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "GrpcResponseMapper depends on SharedKernel.Contracts — forbidden for " +
+                     "SharedKernel.Presentation.Grpc per the root CLAUDE.md Hard rule");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-361 — Pass path: the real SharedKernel.Presentation.Grpc assembly
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-361 (coordinator-directed extension, WO-074, folded into P-469): the real, currently-built
+    /// <c>SharedKernel.Presentation.Grpc</c> assembly must pass
+    /// <see cref="PresentationLayeringRules.GrpcNeverReferencesContracts"/> with zero violations —
+    /// this is the empirical proof that NetArchTest's <c>NotHaveDependencyOn</c> correctly
+    /// distinguishes "reachable via the reference closure" (true today, because of the deliberate
+    /// <c>SharedKernel.Presentation.WebApi</c> reference) from "actually used by a type in this
+    /// assembly" (false today — no type does), so this rule is a sufficient mechanical lock without
+    /// requiring the <c>SharedKernel.Presentation.WebApi</c> reference itself to be removed.
+    /// </summary>
+    [Fact]
+    public void GrpcNeverReferencesContracts_RealGrpcAssembly_RulePasses()
+    {
+        var grpcAssembly = typeof(SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions).Assembly;
+
+        var result = PresentationLayeringRules
+            .GrpcNeverReferencesContracts(grpcAssembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "no type in the real SharedKernel.Presentation.Grpc assembly actually uses a " +
+                     "SharedKernel.Contracts type today, despite the assembly's transitive " +
+                     "reference chain through SharedKernel.Presentation.WebApi");
+    }
+
+    // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
 
@@ -397,7 +485,10 @@ public class PresentationLayeringRulesTests
     /// Follows the established pattern from <c>RedisTopologyRulesTests</c> and
     /// <c>HealthCheckConstantsUsageRulesTests</c>.
     /// </summary>
-    private static Assembly CompileInMemory(string assemblyName, string source)
+    private static Assembly CompileInMemory(
+        string assemblyName,
+        string source,
+        Assembly[]? extraReferences = null)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
@@ -407,6 +498,17 @@ public class PresentationLayeringRulesTests
             MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location),
             MetadataReference.CreateFromFile(Assembly.Load("System.Console").Location),
         };
+
+        if (extraReferences is not null)
+        {
+            foreach (var extraReference in extraReferences)
+            {
+                references.Add(
+                    MetadataReference.CreateFromImage(
+                        System.Collections.Immutable.ImmutableArray.Create(
+                            File.ReadAllBytes(extraReference.Location))));
+            }
+        }
 
         var compilation = CSharpCompilation.Create(
             assemblyName,
