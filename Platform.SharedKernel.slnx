@@ -129,6 +129,8 @@
     <Project Path="12.Security/SharedKernel.Security.ApiKey/SharedKernel.Security.ApiKey.Tests/SharedKernel.Security.ApiKey.Tests.csproj" />
     <Project Path="12.Security/SharedKernel.Security.Mtls/SharedKernel.Security.Mtls.csproj" />
     <Project Path="12.Security/SharedKernel.Security.Mtls/SharedKernel.Security.Mtls.Tests/SharedKernel.Security.Mtls.Tests.csproj" />
+    <Project Path="12.Security/SharedKernel.Security.Totp/SharedKernel.Security.Totp.csproj" />
+    <Project Path="12.Security/SharedKernel.Security.Totp/SharedKernel.Security.Totp.Tests/SharedKernel.Security.Totp.Tests.csproj" />
   </Folder>
   <Folder Name="/13.ServiceDefaults/">
     <Project Path="13.ServiceDefaults/SharedKernel.MultiTenancy/SharedKernel.MultiTenancy.csproj" />
@@ -140,6 +142,8 @@
   <Folder Name="/14.Presentation/">
     <Project Path="14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/SharedKernel.Presentation.SignalR.Tests.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.csproj" />
+    <Project Path="14.Presentation/SharedKernel.Presentation.Grpc/SharedKernel.Presentation.Grpc.Tests/SharedKernel.Presentation.Grpc.Tests.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.csproj" />
     <Project Path="14.Presentation/SharedKernel.Presentation.WebApi/SharedKernel.Presentation.WebApi.Tests/SharedKernel.Presentation.WebApi.Tests.csproj" />
     <Project Path="14.Presentation/consumer-verify/consumer-verify.csproj" />
@@ -163,5 +167,27 @@
     <Project Path="17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.csproj" />
     <Project Path="17.Workflows/SharedKernel.Workflows.Temporal/SharedKernel.Workflows.Temporal.Tests/SharedKernel.Workflows.Temporal.Tests.csproj" />
     <Project Path="17.Workflows/consumer-verify/consumer-verify.csproj" />
+  </Folder>
+  <Folder Name="/18.Idempotency/">
+    <Project Path="18.Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.csproj" />
+    <Project Path="18.Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.Tests/SharedKernel.Idempotency.Redis.Tests.csproj" />
+    <Project Path="18.Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.csproj" />
+    <Project Path="18.Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.Tests/SharedKernel.Idempotency.EfCore.Tests.csproj" />
+  </Folder>
+  <Folder Name="/19.Scheduling/">
+    <Project Path="19.Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.csproj" />
+    <Project Path="19.Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.Tests/SharedKernel.Scheduling.Tests.csproj" />
+    <Project Path="19.Scheduling/consumer-verify/consumer-verify.csproj" />
+  </Folder>
+  <Folder Name="/20.Reporting/">
+    <Project Path="20.Reporting/SharedKernel.Reporting.Abstractions/SharedKernel.Reporting.Abstractions.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Abstractions/SharedKernel.Reporting.Abstractions.Tests/SharedKernel.Reporting.Abstractions.Tests.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Csv/SharedKernel.Reporting.Csv.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Csv/SharedKernel.Reporting.Csv.Tests/SharedKernel.Reporting.Csv.Tests.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Spreadsheet/SharedKernel.Reporting.Spreadsheet.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Spreadsheet/SharedKernel.Reporting.Spreadsheet.Tests/SharedKernel.Reporting.Spreadsheet.Tests.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Pdf/SharedKernel.Reporting.Pdf.csproj" />
+    <Project Path="20.Reporting/SharedKernel.Reporting.Pdf/SharedKernel.Reporting.Pdf.Tests/SharedKernel.Reporting.Pdf.Tests.csproj" />
+    <Project Path="20.Reporting/consumer-verify/consumer-verify.csproj" />
   </Folder>
 </Solution>
