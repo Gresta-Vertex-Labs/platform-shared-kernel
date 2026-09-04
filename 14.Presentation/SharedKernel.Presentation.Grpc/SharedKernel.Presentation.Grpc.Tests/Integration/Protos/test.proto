@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+option csharp_namespace = "SharedKernel.Presentation.Grpc.Tests.Integration";
+
+package grpctest;
+
+// Minimal, test-only service used exclusively by this package's real-host integration tests
+// (T-70 through T-73, WO-074/P-468). Not a production contract.
+service TestService {
+  rpc Echo (EchoRequest) returns (EchoReply);
+  rpc ThrowKnown (EchoRequest) returns (EchoReply);
+  rpc ThrowUnknown (EchoRequest) returns (EchoReply);
+  rpc StreamThrowKnown (EchoRequest) returns (stream EchoReply);
+  rpc GetContext (EchoRequest) returns (ContextReply);
+  rpc RequireRoleMethod (EchoRequest) returns (EchoReply);
+  rpc RequireFreshAuthMethod (EchoRequest) returns (EchoReply);
+  rpc RequireAuthMethodMethod (EchoRequest) returns (EchoReply);
+}
+
+message EchoRequest {
+  string value = 1;
+}
+
+message EchoReply {
+  string value = 1;
+}
+
+message ContextReply {
+  string correlation_id = 1;
+  string tenant_id = 2;
+}

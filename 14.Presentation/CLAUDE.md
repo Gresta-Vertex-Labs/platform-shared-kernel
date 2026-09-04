@@ -16,7 +16,7 @@ Philosophy: **Thin. Convention-over-configuration. RFC-compliant. AOT-Preferred 
 | --- | --- | --- |
 | `SharedKernel.Presentation.WebApi` | RFC 9457 `ProblemDetails` error mapping, global `IExceptionHandler`, API versioning (`Asp.Versioning`), native OpenAPI document generation + Scalar interactive UI, inbound correlation-id middleware, `Result<T>` → `IResult`/`ActionResult` HTTP-boundary extensions | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Contracts`, `SharedKernel.Security.Abstractions`, `Asp.Versioning.Http`, `Asp.Versioning.Mvc.ApiExplorer`, `Microsoft.AspNetCore.OpenApi`, `Scalar.AspNetCore` |
 | `SharedKernel.Presentation.SignalR` | `IHubFilter` implementations (tenant context attachment, exception-to-`HubException` mapping), Redis-backed scale-out backplane wiring, tenant-group naming convention, `AddSharedKernelSignalR` DI builder | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Security.Abstractions`, `Microsoft.AspNetCore.SignalR.StackExchangeRedis` |
-| `SharedKernel.Presentation.Grpc` (`○` Pending, WO-074/P-468 — Design phase queued, not yet implemented) | Server-side gRPC conventions: `GrpcStatusCodeMap` (`ErrorType`→`StatusCode`, a sibling to `ErrorTypeStatusCodeMap`, never merged), `GrpcResultExtensions` (`Result<T>`→`RpcException`-throwing extensions), a global `GrpcExceptionInterceptor` (the gRPC counterpart to `IExceptionHandler`/`SharedKernelExceptionHandler`), `GrpcCorrelationInterceptor`/`GrpcTenantContextInterceptor` (inbound correlation-id/tenant metadata extraction, mirroring `CorrelationIdMiddleware`/`TenantContextHubFilter`), `GrpcAuthorizationInterceptor` (reuses `.WebApi`'s `[RequireRole]`/`[RequirePermission]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` verbatim), `AddSharedKernelGrpc` DI builder | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Security.Abstractions`, `SharedKernel.Presentation.WebApi` (intra-domain — `Authorization/` attribute reuse only), server-side gRPC hosting NuGet (pin verified at Scaffold phase) — **never `SharedKernel.Contracts`/`04.Contracts`**, a named Hard-rule exception mirroring `SharedKernel.Communication.Grpc`'s P-163 rule |
+| `SharedKernel.Presentation.Grpc` (`●` Shipped, WO-074/P-468) | Server-side gRPC conventions: `GrpcStatusCodeMap` (`ErrorType`→`StatusCode`, a sibling to `ErrorTypeStatusCodeMap`, never merged), `GrpcResultExtensions` (`Result<T>`→`RpcException`-throwing extensions), a global `GrpcExceptionInterceptor` (the gRPC counterpart to `IExceptionHandler`/`SharedKernelExceptionHandler`), `GrpcCorrelationInterceptor`/`GrpcTenantContextInterceptor` (inbound correlation-id/tenant metadata extraction, mirroring `CorrelationIdMiddleware`/`TenantContextHubFilter`), `GrpcAuthorizationInterceptor` (reuses `.WebApi`'s `[RequireRole]`/`[RequirePermission]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` verbatim, confirmed via real endpoint-metadata proof — no reflection fallback needed), `AddSharedKernelGrpc` DI builder | `SharedKernel.Primitives`, `SharedKernel.Core`, `SharedKernel.Security.Abstractions`, `SharedKernel.Presentation.WebApi` (intra-domain — `Authorization/` attribute reuse only), `Grpc.AspNetCore` `2.80.0` — **never `SharedKernel.Contracts`/`04.Contracts`**, a named Hard-rule exception mirroring `SharedKernel.Communication.Grpc`'s P-163 rule |
 
 All three packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enabled. Test sub-folders live inside each project folder (never in a top-level `tests/`). None of the three packages has an `.Abstractions` sibling — unlike `02.Caching`/`06.Persistence`, they are not interchangeable providers of one capability; they are distinct API surfaces (HTTP, real-time, gRPC) that happen to share the same domain folder. `.Grpc` is the one exception to this domain's usual sibling-package independence: it deliberately takes a `ProjectReference` on `.WebApi` for `Authorization/` attribute reuse (see "Why `.Grpc` references `.WebApi`" below) — `.SignalR` still takes none, and that decision stands unchanged.
 
@@ -35,7 +35,7 @@ All three packages target `net10.0`, `ImplicitUsings` enabled, `Nullable` enable
 | Real-time hub | `Microsoft.AspNetCore.SignalR` (built-in) | shared framework | `.SignalR` |
 | Real-time scale-out backplane | `Microsoft.AspNetCore.SignalR.StackExchangeRedis` | `10.0.9` | `.SignalR` |
 | Hub pipeline extensibility | `IHubFilter` (built-in, .NET 7+) | shared framework | `.SignalR` |
-| Server-side gRPC hosting | ASP.NET Core gRPC server hosting NuGet (`○` Pending, WO-074/P-468 — exact package/version to be verified via NuGet flat-container listing at Scaffold phase, not assumed) | TBD at Scaffold | `.Grpc` |
+| Server-side gRPC hosting | `Grpc.AspNetCore` — confirmed `net10.0`-compatible via direct NuGet flat-container listing at Scaffold phase (WO-074/P-468, shipped); transitively pulls `Grpc.AspNetCore.Server.ClientFactory`, `Google.Protobuf` `3.31.1`, `Grpc.Tools` `2.80.0` | `2.80.0` | `.Grpc` |
 
 > Versions pinned at Scaffold (SK.14.Scaffold, 2026-06-25). All three NuGet packages confirmed compatible with `net10.0` at pin time via direct NuGet flat-container version listing (not assumed from documentation). Re-verify AOT status on any future version bump per the AOT notes below — none of the three are BCL.
 >
@@ -54,7 +54,7 @@ A microservice may legitimately depend on both packages simultaneously for entir
 
 ### Why server-side gRPC lives in `14.Presentation`, not `11.Communication.Grpc`
 
-> **`○` Pending (WO-074, P-468).** Recorded here at Design-lock time so the placement decision is never re-litigated during Core-phase implementation.
+> **`●` Shipped (WO-074, P-468).** Recorded here at Design-lock time so the placement decision would never be re-litigated during Core-phase implementation — it wasn't; Core-phase implementation confirms every claim below.
 
 `11.Communication.Grpc`'s entire `Interceptors/` folder is two *client* interceptors (`CorrelationTracingInterceptor`, `TenantIdInterceptor`) attached to an outbound channel factory — confirmed via direct source read at WO-074's requirement analysis. `11.Communication`'s charter is outbound service-to-service calling. Server-side gRPC — receiving a call, mapping its own exceptions/`Result<T>` failures to a client-safe response, extracting inbound correlation/tenant identity, gating access declaratively — is architecturally an *inbound API boundary* concern, the same category HTTP already falls into for this domain. It therefore belongs beside `SharedKernel.Presentation.WebApi`/`.SignalR`, not folded into `11.Communication.Grpc`, mirroring the inbound/outbound split this domain and `11.Communication.Rest` already draw for HTTP.
 
@@ -66,7 +66,7 @@ A microservice may legitimately depend on both packages simultaneously for entir
 
 ## Interface Contracts
 
-> **Status: Design-locked (WO-031, P-192).** Every contract below is the confirmed, signed-off public API shape for both packages — not a draft. Implementation (Scaffold/Core) follows these signatures exactly; any deviation discovered during Core-phase implementation must come back through a Design amendment, not a silent change.
+> **Status: Design-locked (WO-031, P-192) for `.WebApi`/`.SignalR`; shipped (WO-074, P-468) for `.Grpc`.** Every contract below is the confirmed, signed-off public API shape — not a draft. Implementation (Scaffold/Core) follows these signatures exactly; any deviation discovered during Core-phase implementation must come back through a Design amendment, not a silent change.
 
 ### `SharedKernel.Presentation.WebApi` — confirmed public surface
 
@@ -90,10 +90,19 @@ ErrorTypeStatusCodeMap  (static class)
 
 ErrorProblemDetailsExtensions  (static class)
     .ToProblemDetails(this Error error, HttpContext? context = null) → ProblemDetails
-    NOTE: Title = error.Code; Detail = error.Description; Status = ErrorTypeStatusCodeMap.Resolve(error.Type);
+    NOTE: Title = error.Code; Detail = error.Message — CORRECTED, a prior revision of this note
+          claimed "Detail = error.Description", but Error (SharedKernel.Primitives.Errors) has
+          never carried a Description member, only Code/Message/Type; verified directly against
+          the real Error.cs and ErrorProblemDetailsExtensions.cs source. As of P-484/WO-078
+          (shipped), Detail is the LOCALIZEDDETAILRESOLVER-mediated value: when context is
+          non-null and an ILocalizationCatalog is registered in context.RequestServices AND has a
+          translation for (error.Code, CultureInfo.CurrentUICulture), that translated string is
+          used instead of error.Message — never blank, error.Message remains the mandatory
+          fallback. Status = ErrorTypeStatusCodeMap.Resolve(error.Type);
           Type = RFC 9457 URI for the resolved status (e.g. "https://httpstatuses.io/404");
           Extensions["errorCode"] = error.Code; Extensions["traceId"] = Activity.Current?.Id
-          ?? context?.TraceIdentifier. Pure mapping — no logging, no I/O.
+          ?? context?.TraceIdentifier. Otherwise pure mapping — no logging, no I/O beyond the
+          optional DI resolution.
 ```
 
 #### `Result<T>` → HTTP boundary (`Results/`)
@@ -324,19 +333,23 @@ SharedKernelExceptionHandler  (extended)
 
 #### Localized `ProblemDetails.Detail` (`Errors/`)
 
-> **Status: Design-locked (WO-078, P-484) — blocked on `01.Core` shipping `SharedKernel.Localization`/`ILocalizationCatalog` (P-482, design-locked in `01.Core/CLAUDE.md` but not yet implemented as of this writing). Core-phase implementation has not started.** Extends `ErrorProblemDetailsExtensions`/`ValidationProblemDetailsExtensions` (never a new, parallel `ProblemDetails`-construction path) so `error.Code` — the same `code` string every `Error` factory already requires — doubles as a translation key at the one place an `Error` crosses into a client-facing response, with **zero change to `01.Core.Primitives.Error` itself**.
+> **Status: Shipped (WO-078, P-484, `SK.14.Core` C-85–C-87 complete).** `01.Core` shipped the real `SharedKernel.Localization`/`ILocalizationCatalog` package (P-482) — this phase was no longer blocked as of this session and was implemented and tested end to end, 192/192 `SharedKernel.Presentation.WebApi.Tests` green (185 pre-existing + 7 new `LocalizedProblemDetailsTests`, zero regressions). Extends `ErrorProblemDetailsExtensions`/`ValidationProblemDetailsExtensions` (never a new, parallel `ProblemDetails`-construction path) so `error.Code` — the same `code` string every `Error` factory already requires — doubles as a translation key at the one place an `Error` crosses into a client-facing response, with **zero change to `01.Core.Primitives.Error` itself**. Implemented as a new internal `Errors/LocalizedDetailResolver.cs` helper shared by both extension methods, rather than duplicating the resolution logic in each.
 
 ```text
 ErrorProblemDetailsExtensions.ToProblemDetails(this Error, HttpContext? context = null)  (extended)
-    NOTE: When context is non-null, resolves ILocalizationCatalog via
-          context.RequestServices.GetService<ILocalizationCatalog>() — GetService, never
-          GetRequiredService, so an unregistered catalog resolves to null gracefully. When a
-          catalog IS resolved, looks up (error.Code, CultureInfo.CurrentUICulture); the translated
-          string becomes Detail. Falls back to error.Message verbatim — NEVER blank — when no
-          catalog is registered, context is null, or no translation exists for that (code, culture)
-          pair. Title/Status/Type/Extensions["errorCode"]/Extensions["traceId"] are completely
-          unchanged by this capability — only Detail's value source becomes localizable. A service
-          that never registers ILocalizationCatalog sees byte-identical output to today.
+    NOTE: Resolves ILocalizationCatalog via context?.RequestServices?.GetService<ILocalizationCatalog>()
+          — GetService, never GetRequiredService, and BOTH null-checks matter: context itself may
+          be null (the parameter's existing default), and a real DefaultHttpContext constructed
+          with no RequestServices assigned also returns null from that property (confirmed by a
+          real NullReferenceException hit during Tests-phase authoring when only the outer context
+          null was guarded — fixed by chaining ?. on RequestServices too). When a catalog IS
+          resolved, looks up (error.Code, CultureInfo.CurrentUICulture); the translated string
+          becomes Detail. Falls back to error.Message verbatim — NEVER blank — when no catalog is
+          registered, context/RequestServices is null, or no translation exists for that
+          (code, culture) pair. Title/Status/Type/Extensions["errorCode"]/Extensions["traceId"] are
+          completely unchanged by this capability — only Detail's value source becomes
+          localizable. A service that never registers ILocalizationCatalog sees byte-identical
+          output to today (proven by LocalizedProblemDetailsTests, T-76).
 
 ValidationProblemDetailsExtensions.ToProblemDetails(this ValidationException, HttpContext? context = null)  (extended)
     NOTE: Applies the same lookup/fallback independently to every entry grouped into
@@ -345,9 +358,10 @@ ValidationProblemDetailsExtensions.ToProblemDetails(this ValidationException, Ht
 
 CULTURE RESOLUTION IS NOT THIS PACKAGE'S CONCERN. CultureInfo.CurrentUICulture is read as an
 ambient value only — set by 13.ServiceDefaults's AddSharedKernelLocalization() middleware (P-483,
-also (Pending) as of this writing) when a consuming service adopts it. A service that never adopts
-that middleware still has a well-defined (if unlocalized) CurrentUICulture; this package never
-resolves, sets, or throws over its absence.
+still `○` Pending as of this session — a separate domain's own phase, not part of this shipment)
+when a consuming service adopts it. A service that never adopts that middleware still has a
+well-defined (if unlocalized) CurrentUICulture; this package never resolves, sets, or throws over
+its absence.
 ```
 
 Confirmed as a deliberate design decision (not a blocker): this capability's `ILocalizationCatalog` resolution DOES take a new `ProjectReference` from `SharedKernel.Presentation.WebApi` to `01.Core/SharedKernel.Localization` — unlike `OpenApiSecuritySchemesOptions.ApiKeyHeaderName` (P-412), which deliberately stayed a plain configurable string to avoid a `SharedKernel.Security.ApiKey`/`.Mtls` reference, `ILocalizationCatalog` is itself a `01.Core` abstraction (the same layer this package already depends on for `Result<T>`/`Error`), not a concrete provider package — referencing it does not violate this domain's "no concrete-provider reference" posture.
@@ -852,9 +866,9 @@ to get a CORS integration point.
 
 A worked "hub plus CORS composition" example (`endpoints.MapHub<THub>().RequireCors(CorsPolicyNames.Default)`, composing the WebApi package's own named policy constant by reference/documentation only, zero code coupling) is added to `SharedKernel.Presentation.SignalR/README.md`.
 
-### `SharedKernel.Presentation.Grpc` — design-locked public surface
+### `SharedKernel.Presentation.Grpc` — shipped public surface
 
-> **Status: Design-locked (WO-074, P-468) — Core-phase implementation not yet started.** Every contract below is the confirmed shape this package's Core phase must implement exactly; any deviation discovered during Core-phase implementation must come back through a Design amendment (mirroring how `.WebApi`/`.SignalR`'s own design-lock banner works), not a silent change. See "Why server-side gRPC lives in `14.Presentation`" and "Why `.Grpc` references `.WebApi`" above for the placement/coupling rationale.
+> **Status: Shipped (WO-074, P-468, `SK.14.Core` C-75–C-84 complete).** Every contract below is the real, implemented public surface — verified by a genuine gRPC-over-HTTP2 in-process test server (never a mocked `ServerCallContext`), 36/36 tests green. Two open design questions from the original design lock are now resolved by direct empirical proof rather than assumption: (1) `ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata` DOES surface attributes applied directly to a gRPC service implementation method — confirmed by 8 passing `GrpcAuthorizationInterceptorIntegrationTests` exercising `[RequireRole]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` applied to real service methods against a real host; the reflection fallback contemplated in the original design was never needed. (2) `Grpc.Core.ServerCallContextExtensions.GetHttpContext(this ServerCallContext)` is confirmed present and correctly wired in the installed `Grpc.AspNetCore.Server` `2.80.0`/`net10.0`. `error.Description` referenced in an earlier design draft was never a real `Error` member — the real, shipped mapping uses `Error.Message` throughout, consistent with `ErrorProblemDetailsExtensions`. See "Why server-side gRPC lives in `14.Presentation`" and "Why `.Grpc` references `.WebApi`" above for the placement/coupling rationale.
 
 #### Error → `RpcException` mapping (`Errors/`)
 
@@ -887,7 +901,7 @@ GrpcResultExtensions  (static class)
     .ToGrpcResult(this Result result) → void
     .ToGrpcResult<T>(this Result<T> result) → T
     NOTE: Failure always routes through GrpcStatusCodeMap.Resolve(error.Type) →
-          new RpcException(new Status(code, error.Description)) — never a hand-rolled
+          new RpcException(new Status(code, error.Message)) — never a hand-rolled
           RpcException at a service-method call site. The gRPC-boundary sibling to
           ResultHttpExtensions; explicitly distinct from 04.Contracts' Result<T>↔Envelope<T>
           wire mapping — this package never references 04.Contracts at all (see below).
@@ -902,7 +916,7 @@ GrpcExceptionInterceptor  (sealed class : Grpc.Core.Interceptors.Interceptor)
           DuplexStreamingServerHandler — never unary-only; unlike single-request/response HTTP,
           gRPC has three streaming call shapes that equally need exception mapping. Known
           SharedKernelException subtypes (01.Core) map via Error → GrpcStatusCodeMap.Resolve →
-          RpcException(new Status(code, error.Description)) — caller-safe, no stack trace, no
+          RpcException(new Status(code, error.Message)) — caller-safe, no stack trace, no
           internal type names. Unknown exceptions map to Internal with detail suppressed outside
           IHostEnvironment.IsDevelopment(), logged at LogLevel.Error before the exception
           surfaces — the direct structural counterpart to SharedKernelExceptionHandler/
@@ -914,24 +928,37 @@ GrpcExceptionInterceptor  (sealed class : Grpc.Core.Interceptors.Interceptor)
 ```text
 GrpcCorrelationInterceptor  (sealed class : Interceptor)
     NOTE: Reads the inbound correlation-id gRPC metadata key from ServerCallContext.RequestHeaders;
-          generates one when absent (mirrors CorrelationIdMiddleware). The exact metadata key name
-          MUST be verified at Core-phase against SharedKernel.Communication.Grpc's real client-side
-          interceptor source (direct read, not assumed) so both sides agree byte-for-byte. The
-          key's literal value is sourced from 01.Core's WellKnownHeaders.CorrelationId /
-          WellKnownBaggageKeys.CorrelationId — never an independently retyped literal, mirroring
-          CorrelationIdMiddleware.HeaderName/.BaggageKey's forwarding-alias precedent (D-14/C-19).
-          Sets Activity.SetBaggage identically to the HTTP middleware so 13.ServiceDefaults's
-          BaggageLogRecordProcessor covers gRPC too, with zero ProjectReference on
-          SharedKernel.ServiceDefaults.
+          generates one when absent (mirrors CorrelationIdMiddleware). CONFIRMED at Core-phase by
+          direct source read of SharedKernel.Communication.Grpc.Interceptors
+          .CorrelationTracingInterceptor.CorrelationIdKey — both sides source the identical
+          01.Core WellKnownHeaders.CorrelationId ("X-Correlation-Id") literal; proven byte-for-byte
+          by a real round-trip integration test (GrpcCorrelationTenantRoundTripTests) using the
+          real client interceptor via AddSharedKernelGrpcCommunication().AddGrpcClient<T>(), not a
+          hand-rolled metadata stand-in. Grpc.Core.Metadata normalizes key casing internally
+          (confirmed empirically — Metadata.Add("X-Correlation-Id", ...) round-trips through
+          Metadata.GetValue with either casing), so the uppercase-hyphenated literal is safe on
+          both the read and write side. Sets Activity.SetBaggage identically to the HTTP
+          middleware so 13.ServiceDefaults's BaggageLogRecordProcessor covers gRPC too, with zero
+          ProjectReference on SharedKernel.ServiceDefaults.
 
 GrpcTenantContextInterceptor  (sealed class : Interceptor)
     NOTE: Mirrors TenantContextHubFilter's exact shape (call-scoped tenant attachment,
           non-rejecting). Resolves ITenantProvider (12.Security.Abstractions) via
-          ServerCallContext.GetHttpContext()?.RequestServices — this accessor's availability on
-          the installed net10.0 gRPC hosting package must be verified at Core-phase, not assumed.
-          Stores the resolved TenantId in ServerCallContext.UserState for the call's lifetime (the
-          gRPC per-call analogue of Context.Items/HttpContext.Items). Does not reject calls with
-          no resolvable tenant.
+          ServerCallContext.GetHttpContext()?.RequestServices — Grpc.Core.ServerCallContextExtensions
+          .GetHttpContext(this ServerCallContext) CONFIRMED present in the installed
+          Grpc.AspNetCore.Server 2.80.0/net10.0 assembly (verified via reflection over the real
+          installed DLL, then proven functionally by GrpcTenantContextInterceptor's own passing
+          integration tests). Stores the resolved TenantId in ServerCallContext.UserState for the
+          call's lifetime (the gRPC per-call analogue of Context.Items/HttpContext.Items). Does
+          not reject calls with no resolvable tenant. IMPORTANT DESIGN NOTE (proven by the T-71
+          round-trip test): this interceptor NEVER reads gRPC metadata directly — it only ever
+          resolves ITenantProvider, exactly like TenantContextHubFilter. A consuming service that
+          wants the client-forwarded x-tenant-id metadata (written by SharedKernel.Communication
+          .Grpc's TenantIdInterceptor) to actually populate the tenant seen here must supply its
+          own ITenantProvider implementation that reads that header — this package deliberately
+          does not do that itself, mirroring the same "no direct metadata coupling" boundary this
+          domain already draws for HTTP (CorrelationIdMiddleware reads a header directly, but
+          tenant resolution is always via ITenantProvider, never a header read inside this domain).
 ```
 
 #### Declarative authorization reuse (`Interceptors/`)
@@ -941,18 +968,24 @@ GrpcAuthorizationInterceptor  (sealed class : Interceptor)
     NOTE: Reuses RequireRoleAttribute/RequirePermissionAttribute/RequireFreshAuthenticationAttribute/
           RequireAuthenticationMethodAttribute VERBATIM from SharedKernel.Presentation.WebApi's
           Authorization/ namespace — one authorization dialect, not two (see "Why .Grpc references
-          .WebApi" above). At Core-phase, verify whether a gRPC service method's custom attributes
-          surface via ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata (the same
-          endpoint-metadata mechanism AuthorizationRequirementEndpointFilter already reads for
-          Minimal API/MVC, since ASP.NET Core's gRPC hosting integrates with the same endpoint
-          routing system); if confirmed, the identical AND-across/OR-within composition and
-          IUserContext.HasRole/HasPermission/IsAuthenticationFresherThan/WasAuthenticatedWith
-          evaluation applies unchanged. If that mechanism does not surface for gRPC service
-          methods, fall back to direct reflection over the invoked method — record whichever
-          mechanism actually works, per this domain's "verify real API shapes" discipline.
-          Rejection throws RpcException mapped from Error.Forbidden(...) through
+          .WebApi" above). CONFIRMED at Core-phase (no reflection fallback needed): a gRPC service
+          method's custom attributes DO surface via
+          ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata — the same endpoint-metadata
+          mechanism AuthorizationRequirementEndpointFilter already reads for Minimal API/MVC, since
+          ASP.NET Core's gRPC hosting (Grpc.AspNetCore.Server) integrates with the same endpoint
+          routing system and reads a service class/method's attributes into
+          Endpoint.Metadata/EndpointMetadata the same way MVC does. Proof: 8/8 passing
+          GrpcAuthorizationInterceptorIntegrationTests exercise [RequireRole]/
+          [RequireFreshAuthentication]/[RequireAuthenticationMethod] applied directly to a real
+          TestService.TestServiceBase override method against a real gRPC-over-HTTP2 host — allow,
+          deny, anonymous-caller, fresh/stale-auth, and matching/non-matching-method paths all pass.
+          The identical AND-across/OR-within composition and IUserContext.HasRole/HasPermission/
+          IsAuthenticationFresherThan/WasAuthenticatedWith evaluation applies unchanged from the
+          HTTP side. Rejection throws RpcException mapped from Error.Forbidden(...) through
           GrpcStatusCodeMap (→ PermissionDenied) — the gRPC-boundary sibling to the HTTP path's
-          Error.Forbidden(...).ToProblemDetails().
+          Error.Forbidden(...).ToProblemDetails(). An endpoint with none of the four attributes
+          never resolves IUserContext at all (proven by Echo_NoAuthorizationAttribute_
+          NeverResolvesIUserContext with IUserContext deliberately unregistered).
 ```
 
 #### DI extensions (`Extensions/`)
@@ -975,7 +1008,7 @@ AddSharedKernelGrpc(this IServiceCollection, Action<GrpcServiceOptions>? configu
           callback runs, so it remains fully overridable.
 ```
 
-Never references `04.Contracts` — protobuf-generated messages are this package's only wire-contract surface, a named Hard-rule exception mirroring `SharedKernel.Communication.Grpc`'s existing P-163 rule. No new `13.ServiceDefaults` telemetry entry point is planned or needed — ASP.NET Core's existing server-side OpenTelemetry instrumentation already traces the Kestrel/HTTP2 pipeline gRPC calls ride on, the same pipeline HTTP/1.1 endpoints are already traced through with no `14.Presentation`-specific `WithXTelemetry` entry.
+Never references `04.Contracts` — protobuf-generated messages are this package's only wire-contract surface, a named Hard-rule exception mirroring `SharedKernel.Communication.Grpc`'s existing P-163 rule; verified: no file under this package's production source imports `SharedKernel.Contracts`. No new `13.ServiceDefaults` telemetry entry point is planned or needed — ASP.NET Core's existing server-side OpenTelemetry instrumentation already traces the Kestrel/HTTP2 pipeline gRPC calls ride on, the same pipeline HTTP/1.1 endpoints are already traced through with no `14.Presentation`-specific `WithXTelemetry` entry. `MaxReceiveMessageSize` platform default is `4 * 1024 * 1024` (4 MiB), applied before the caller's `configure` callback. `EventId`s are assigned in the newly-declared `14200`–`14299` sub-block (third `14.Presentation` package, after `.WebApi` = `14000`–`14099` and `.SignalR` = `14100`–`14199`): `GrpcExceptionInterceptor.Log.UnhandledGrpcException` = `14200`, `GrpcAuthorizationInterceptor.Log.AuthorizationRequirementRejected` = `14201` — both pinned by reflection-based regression tests (`LoggerMessageEventIdTests`), never triggering the log call at runtime, mirroring `.WebApi`'s established T-11 technique.
 
 ---
 
@@ -988,7 +1021,7 @@ Never references `04.Contracts` — protobuf-generated messages are this package
 - `SharedKernelExceptionHandler` must never leak exception messages or stack traces outside `IHostEnvironment.IsDevelopment()`.
 - `ProblemDetails.Extensions["traceId"]` must always be populated when `Activity.Current` is non-null — this is the platform's primary "give support this ID" field surfaced to API consumers.
 - **Multi-field validation errors (WO-062, P-402 — shipped):** `ValidationException` is the one case where a single `Error` is insufficient — `ValidationProblemDetailsExtensions.ToProblemDetails(ValidationException, ...)` must be used instead of the single-`Error` path, grouping every failing field's `Error` by `Code` into `Extensions["errors"]`. Every other `SharedKernelException` subtype continues through the single-`Error` `ErrorProblemDetailsExtensions.ToProblemDetails(Error)` path unchanged — this is a narrow, `ValidationException`-specific exception to the "one `Error`, one body" model, not a general precedent for other exception types to grow their own bespoke body shape.
-- **Localized `Detail` (WO-078, P-484 — design-locked, blocked on `01.Core` P-482, not yet implemented) never introduces a second `ProblemDetails`-construction path.** `Error.ToProblemDetails()`/`ValidationProblemDetailsExtensions` remain the sole entry points; localization only changes where `Detail`'s string value comes from (an optional `ILocalizationCatalog` lookup keyed by `error.Code`), never `Title`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]`, and never the `ErrorType`→status mapping. `error.Message` remains the mandatory, never-blank fallback for an unregistered catalog or an untranslated code — an un-translated error must behave exactly as it does today. See the "Localized `ProblemDetails.Detail`" contract above.
+- **Localized `Detail` (WO-078, P-484 — shipped) never introduces a second `ProblemDetails`-construction path.** `Error.ToProblemDetails()`/`ValidationProblemDetailsExtensions` remain the sole entry points; localization only changes where `Detail`'s string value comes from (an optional `ILocalizationCatalog` lookup keyed by `error.Code`), never `Title`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]`, and never the `ErrorType`→status mapping. `error.Message` remains the mandatory, never-blank fallback for an unregistered catalog or an untranslated code — an un-translated error must behave exactly as it does today. See the "Localized `ProblemDetails.Detail`" contract above.
 - **HTTP protocol-level outcomes that never originate as a domain `Error` (WO-062, P-407/P-408 — shipped) are never routed through `Error`/`ErrorType`.** A 412 Precondition Failed (`If-Match` mismatch) and a 429 Too Many Requests (rate-limit rejection) are both HTTP-boundary-native outcomes with no corresponding `Result<T>` failure ever produced deeper in the stack — unlike `NotFound`/`Conflict`/`Validation`/etc., which represent application/domain failure categories translated to HTTP as a deliberate mapping step. These two outcomes are built via a small shared internal RFC 9457 shaping helper (extracted from `ErrorProblemDetailsExtensions`'s existing `Type`-URI/`traceId` construction pattern) instead of growing the `ErrorType` enum for outcomes that were never an `Error` to begin with. Do not propose a new `ErrorType` member for a future HTTP-protocol-native outcome without first asking whether it is genuinely a domain/application failure category (belongs in `ErrorType`) or a pure HTTP-boundary concern (belongs in this shared shaping helper instead).
 
 ### `Result<T>` HTTP boundary rules
@@ -1136,16 +1169,16 @@ Never references `04.Contracts` — protobuf-generated messages are this package
 - Per-endpoint override args on `RequireValidatedUploadAttribute` take precedence over the global `UploadValidationOptions` defaults when supplied; an endpoint carrying no attribute performs zero validation (fully opt-in).
 - No third-party MIME-detection library is added — a small, locally-maintained, extensible magic-byte signature table is the sanctioned mechanism.
 
-### `SharedKernel.Presentation.Grpc` rules (WO-074, P-468 — design-locked, Core-phase implementation not yet started)
+### `SharedKernel.Presentation.Grpc` rules (WO-074, P-468 — shipped)
 
 - `GrpcStatusCodeMap` is a **sibling to, never a merge with**, `ErrorTypeStatusCodeMap` — both key off `01.Core`'s `ErrorType`, but HTTP status codes and gRPC `StatusCode` do not correspond 1:1 (e.g. HTTP's 422 has no gRPC analogue; gRPC's `FailedPrecondition` covers ground HTTP splits across 409/412/422). `GrpcStatusCodeMap.Resolve` is the single source of truth for `ErrorType`→gRPC-status mapping — an inline switch duplicating it anywhere else is a platform violation, mirroring `ErrorTypeStatusCodeMap`'s own rule.
 - `GrpcResultExtensions` are the only permitted `Result<T>`→gRPC conversion — no service method branches on `IsSuccess` by hand. Explicitly distinct from `04.Contracts`' `Result<T>`↔`Envelope<T>` wire mapping, mirroring `ResultHttpExtensions`'s own distinctness rule.
-- `GrpcExceptionInterceptor` MUST override all four `Grpc.Core.Interceptors.Interceptor` server methods (`UnaryServerHandler`/`ClientStreamingServerHandler`/`ServerStreamingServerHandler`/`DuplexStreamingServerHandler`) — an interceptor overriding only `UnaryServerHandler` silently leaves every streaming call unmapped, unlike HTTP where one request/response shape covers everything.
+- `GrpcExceptionInterceptor` MUST override all four `Grpc.Core.Interceptors.Interceptor` server methods (`UnaryServerHandler`/`ClientStreamingServerHandler`/`ServerStreamingServerHandler`/`DuplexStreamingServerHandler`) — an interceptor overriding only `UnaryServerHandler` silently leaves every streaming call unmapped, unlike HTTP where one request/response shape covers everything. Proven by `GrpcExceptionInterceptorIntegrationTests.ServerStreamingCall_KnownException_MapsToExpectedRpcException`, exercising the server-streaming override specifically, not just unary.
 - `GrpcExceptionInterceptor` must never leak exception messages or stack traces outside `IHostEnvironment.IsDevelopment()` — identical discipline to `SharedKernelExceptionHandler`/`HubExceptionMappingFilter`.
-- `GrpcCorrelationInterceptor`'s metadata key and `GrpcTenantContextInterceptor`'s `HttpContext` accessor are both **verify-before-use** items, not assumptions — the correlation key must match `SharedKernel.Communication.Grpc`'s real client-interceptor source byte-for-byte (proven by a round-trip test, not merely documented), and the `HttpContext` accessor's availability must be confirmed against the installed `net10.0` gRPC hosting package.
-- `GrpcAuthorizationInterceptor` reuses `.WebApi`'s four `Authorization/` attribute types VERBATIM — never a second, gRPC-specific attribute vocabulary. This package takes a deliberate `ProjectReference` on `SharedKernel.Presentation.WebApi` for exactly this reuse (see "Why `.Grpc` references `.WebApi`" above) — do not add a second reason to lean on that reference; if a future capability needs more from `.WebApi` than these four attribute types, treat that as a fresh design question, not an assumed extension of this one.
+- `GrpcCorrelationInterceptor`'s metadata key (`WellKnownHeaders.CorrelationId`) is CONFIRMED to match `SharedKernel.Communication.Grpc`'s real client-interceptor source byte-for-byte, proven by a real round-trip integration test using the real client interceptor type (never a hand-rolled metadata stand-in). `GrpcTenantContextInterceptor` NEVER reads gRPC metadata itself — it only ever resolves `ITenantProvider` (mirrors `TenantContextHubFilter` exactly); a consuming service that wants client-forwarded `x-tenant-id` metadata to actually populate the tenant must supply its own `ITenantProvider` reading that header — do not add metadata-reading to this interceptor by analogy to the correlation interceptor, that would break the "mirrors `TenantContextHubFilter`" contract.
+- `GrpcAuthorizationInterceptor` reuses `.WebApi`'s four `Authorization/` attribute types VERBATIM — never a second, gRPC-specific attribute vocabulary. This package takes a deliberate `ProjectReference` on `SharedKernel.Presentation.WebApi` for exactly this reuse (see "Why `.Grpc` references `.WebApi`" above) — do not add a second reason to lean on that reference; if a future capability needs more from `.WebApi` than these four attribute types, treat that as a fresh design question, not an assumed extension of this one. CONFIRMED: attributes applied directly to a gRPC service implementation method surface via `ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata` — no reflection fallback exists in the shipped code, and none is needed.
 - This package never references `04.Contracts` — a named Hard-rule exception to `14.Presentation`'s otherwise-permitted `04.Contracts` reference, mirroring `SharedKernel.Communication.Grpc`'s existing P-163 rule: protobuf messages are the wire contract for a gRPC service method, not `04.Contracts` DTOs.
-- No new `13.ServiceDefaults` telemetry entry point (`WithXTelemetry`) is planned for this capability — ASP.NET Core's own server-side OpenTelemetry instrumentation already covers the Kestrel/HTTP2 pipeline gRPC rides on. Do not propose one without first re-confirming this gap genuinely reopened.
+- No new `13.ServiceDefaults` telemetry entry point (`WithXTelemetry`) exists for this capability — ASP.NET Core's own server-side OpenTelemetry instrumentation already covers the Kestrel/HTTP2 pipeline gRPC rides on. Do not propose one without first re-confirming this gap genuinely reopened.
 
 ### AOT notes
 
@@ -1153,11 +1186,11 @@ Never references `04.Contracts` — protobuf-generated messages are this package
 - `Asp.Versioning.*` and `Scalar.AspNetCore` AOT status must be re-verified on every major version bump — these are third-party packages, not BCL.
 - `Microsoft.AspNetCore.SignalR.StackExchangeRedis` is not fully AOT-verified as of this writing — confirm on adoption and wrap behind `WithRedisBackplane` (already an abstraction seam) if a swap is ever needed.
 - `System.Threading.RateLimiting` (WO-063, P-417 — shipped) ships transitively via the existing `FrameworkReference Microsoft.AspNetCore.App` on `net10.0` — confirmed via a real build probe at Scaffold phase (S-27: a scratch `.cs` file referencing `RateLimiter`/`TokenBucketRateLimiter` compiled with zero new `PackageReference`). AOT status of the namespace itself must still be re-verified on any future SDK major-version bump, per this domain's general AOT-preferred posture.
-- The server-side gRPC hosting NuGet pinned for `SharedKernel.Presentation.Grpc` (WO-074, P-468 — `○` Pending) must have its AOT status verified at Scaffold/Core phase before pinning, per this domain's general posture — not assumed from `Grpc.Net.Client`'s (the client-side package's) AOT story, which is a separate package with separate guarantees.
+- `Grpc.AspNetCore` `2.80.0` (server hosting, `SharedKernel.Presentation.Grpc`, WO-074/P-468 — shipped) is NOT independently claimed AOT-clean by this session — confirmed `net10.0`-compatible via NuGet flat-container listing only, not confirmed trim/AOT-safe. Re-verify AOT status on any future version bump before assuming it, per this domain's general posture; do not assume it inherits `Grpc.Net.Client`'s (the client-side package's) AOT story — that is a separate package with separate guarantees.
 
 ---
 
-## DI Registration (planned shape)
+## DI Registration (shipped shape — every example below builds)
 
 ```csharp
 // WebApi — minimal setup (ProblemDetails + exception handling only)
@@ -1322,8 +1355,8 @@ builder.Services.AddSharedKernelSignalR(configureRateLimit: o =>
 app.MapHub<OrdersHub>("/hubs/orders").RequireCors(CorsPolicyNames.Default);
 // omitting .RequireCors(...) on a mapped hub triggers a startup Warning log (EventId 14102), not a thrown exception.
 
-// Grpc — server-side conventions (WO-074/P-468 — design-locked, Core-phase implementation not yet started;
-// shape shown here is the confirmed target, not yet buildable)
+// Grpc — server-side conventions (WO-074/P-468 — shipped; this example builds and is exercised
+// end-to-end by SharedKernel.Presentation.Grpc.Tests.Integration)
 builder.Services.AddSharedKernelGrpc(o => o.MaxReceiveMessageSize = 4 * 1024 * 1024);
 // ... service implementation, reusing the exact same attributes as an HTTP endpoint:
 [RequireRole("Admin", "OrdersManager")]
@@ -1336,8 +1369,8 @@ public override async Task<GetOrderReply> GetOrder(GetOrderRequest request, Serv
                                                // protobuf-projection, never a 04.Contracts type
 }
 
-// WebApi — localized ProblemDetails.Detail (WO-078/P-484 — design-locked, blocked on 01.Core P-482,
-// not yet implemented; shape shown here is the confirmed target, not yet buildable)
+// WebApi — localized ProblemDetails.Detail (WO-078/P-484 — shipped; this example builds and is
+// exercised end-to-end by LocalizedProblemDetailsTests)
 builder.Services.AddSharedKernelLocalization(...);   // 01.Core/13.ServiceDefaults concern — this
                                                        // package never registers or resolves a
                                                        // culture, only ever reads CurrentUICulture
@@ -1403,21 +1436,23 @@ builder.Services.AddSharedKernelLocalization(...);   // 01.Core/13.ServiceDefaul
 - SignalR invocation rate limiting: a per-connection-throttled-while-other-connections-unaffected test (two independently-created `HubInvocationContext`s, each with its own `HubCallerContext.Items` dictionary via `Substitute.For<HubCallerContext>().Items.Returns(new Dictionary<object, object?>())`); **the composition-hazard regression test** — a real two-filter pipeline (`HubExceptionMappingFilter.InvokeMethodAsync` wrapping `HubInvocationRateLimitFilter.InvokeMethodAsync` wrapping the target delegate, mirroring `AddSharedKernelSignalR`'s actual registration order) proving a rate-limit-rejected invocation's `HubException` message reaches the caller with its specific text intact, never the generic redacted fallback; an argument-payload-validation-rejects-before-method-body-executes test (a `bool targetInvoked` flag proves the delegate never ran); a `configureRateLimit`-omitted-means-no-op regression test (default-constructed `HubInvocationRateLimitOptions`, 20 invocations with a 100 KB string argument, zero rejections) plus a full existing-suite regression run.
 - **SignalR CORS diagnostic — also an `internal` type, tested via a real `TestServer` host (T-64/T-65):** `SignalRCorsStartupDiagnostic` is an `IHostedService` registered by `AddSharedKernelSignalR`; its scan runs on `IHostApplicationLifetime.ApplicationStarted`, which fires synchronously as part of the generic host's own startup sequence — `hostBuilder.Start()` (not `StartAsync()`, to keep the test method synchronous where possible) is sufficient, no extra `Task.Delay` orchestration required, though a short bounded poll loop is a reasonable defensive habit against scheduling variance. Same `AddInMemoryLoggerFactory()` + explicit `ILoggerFactory` substitution technique as the CORS validator above; the category-name string is `"SharedKernel.Presentation.SignalR.Extensions.SignalRCorsStartupDiagnostic"`. Confirms D-65's decision (no `ProjectReference` to the WebApi package, diagnostic-only) is the actually-shipped shape — no negotiate-endpoint CORS-integration point exists to test, so T-66 has no test code, only this confirmation.
 
-### `SharedKernel.Presentation.Grpc` test plan (WO-074, P-468 — design-locked, Core-phase implementation not yet started)
+### `SharedKernel.Presentation.Grpc` test plan (WO-074, P-468 — shipped, 36/36 tests green)
 
-- `GrpcStatusCodeMap`: every `ErrorType` mapping (including `Forbidden`) plus the unmapped-falls-back-to-`Unknown` case, mirroring `ErrorTypeStatusCodeMapTests`' exhaustiveness shape.
-- `GrpcExceptionInterceptor`: integration tests over a REAL gRPC-over-HTTP2 test server (never a mocked `ServerCallContext`, per this domain's established "real host" discipline) — known/unknown exception mapping proven for unary AND at least one streaming call shape, to prove all four interceptor overrides are genuinely wired.
-- `GrpcCorrelationInterceptor`/`GrpcTenantContextInterceptor`: a round-trip test using the REAL `SharedKernel.Communication.Grpc` client-side interceptors (not a hand-rolled metadata stand-in) — the acceptance criteria's explicit proof requirement.
-- `GrpcAuthorizationInterceptor`: reuses the exact test techniques `AuthorizationRequirementEndpointFilterTests` already established (`IsAuthenticatedGuardUserContext` for the anonymous-rejection-via-ordinary-false-path proof, the empty-container/never-registered-service technique for the `IClock`-not-resolved-absent-`[RequireFreshAuthentication]` proof) — a new gRPC-specific double set must not be invented where the existing HTTP one already proves the same contract.
-- `SharedKernel.Presentation.Grpc.Tests` references `SharedKernel.Testing`, mirroring both sibling packages' test-project convention.
+- `GrpcStatusCodeMap` (`GrpcStatusCodeMapTests`, 9 tests): every `ErrorType` mapping (including `Forbidden`) plus the `None`/unmapped-falls-back-to-`Unknown` cases, plus an exhaustiveness loop over every declared `ErrorType` member, mirroring `ErrorTypeStatusCodeMapTests`' shape.
+- `GrpcResultExtensions` (`GrpcResultExtensionsTests`, 5 tests): unit tests, no host needed — success paths (void-return and unwrapped-value), failure paths asserting the thrown `RpcException`'s `StatusCode`/`Status.Detail` route through `GrpcStatusCodeMap`.
+- `GrpcExceptionInterceptor` (`GrpcExceptionInterceptorIntegrationTests`, 4 tests): a REAL gRPC-over-HTTP2 in-process `WebApplicationFactory`/`TestServer` host (never a mocked `ServerCallContext`) — known-exception mapping, unknown-exception mapping in Development (unsuppressed detail) and outside Development (suppressed to the generic message) via `WithWebHostBuilder(...).UseEnvironment(...)`, and a server-streaming-shape proof (`StreamThrowKnown`) confirming all four interceptor overrides are genuinely wired, not just `UnaryServerHandler`.
+- `GrpcCorrelationInterceptor`/`GrpcTenantContextInterceptor` (`GrpcCorrelationTenantRoundTripTests`, 2 tests): a round-trip test using the REAL `SharedKernel.Communication.Grpc` client-side interceptors via `AddSharedKernelGrpcCommunication().AddGrpcClient<TClient>()` (never a hand-rolled metadata stand-in) — the acceptance criteria's explicit proof requirement. Discovered during authoring: `GrpcTenantContextInterceptor` never reads gRPC metadata itself (only `ITenantProvider`, per D-72), so the round-trip test's server-side composition uses a test-only `HeaderTenantProvider : ITenantProvider` reading the raw `x-tenant-id` header — a realistic simulation of what a consuming service's own `ITenantProvider` implementation would do, proving byte-for-byte metadata-key agreement end to end without this package's contract itself needing to read metadata.
+- `GrpcAuthorizationInterceptor` (`GrpcAuthorizationInterceptorIntegrationTests`, 8 tests): a real host with `[RequireRole]`/`[RequireFreshAuthentication]`/`[RequireAuthenticationMethod]` applied directly to `TestServiceImpl` override methods — allow/deny/anonymous-caller/fresh-vs-stale-auth/matching-vs-non-matching-method paths, plus a no-attribute endpoint proving `IUserContext` is never resolved when no attribute is present (via `services.RemoveAll<IUserContext>()`). This is the empirical proof that `ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata` surfaces gRPC-service-method attributes — the reflection fallback contemplated in the original design was never needed.
+- `LoggerMessageEventIdTests` (3 tests): reflection-based `EventId` regression pins for the `14200`-`14299` sub-block, mirroring `.WebApi`'s T-11 technique.
+- `SharedKernel.Presentation.Grpc.Tests` references `SharedKernel.Testing` (fakes) and, test-only, `SharedKernel.Communication.Grpc` (gating-proof-only, mirrors `13.ServiceDefaults.Tests`' T-43/WO-056 and D-28/WO-063 precedents — never referenced by the production `.Grpc.csproj`). A hand-written `test.proto` (`Grpc.Tools`, transitively pulled by `Grpc.AspNetCore`, compiles it — no separate `Grpc.Tools` `PackageVersion` entry was needed in `Directory.Packages.props`) backs a trivial `TestServiceImpl`; `GrpcTestWebApplicationFactory`/`ResponseVersionHandler` mirror `SharedKernel.ServiceDefaults.Tests`' identical T-43/WO-056 in-memory-`TestServer`-for-gRPC fixture shape verbatim.
 
-### Localized `ProblemDetails.Detail` test plan (WO-078, P-484 — design-locked, blocked on `01.Core` P-482, not yet implemented)
+### Localized `ProblemDetails.Detail` test plan (WO-078, P-484 — shipped, part of 192/192 `SharedKernel.Presentation.WebApi.Tests`)
 
-- Zero-registration regression: a test with NO `ILocalizationCatalog` registered anywhere proves byte-identical `ProblemDetails` output to pre-P-484 behavior — the acceptance criteria's central backward-compatibility guarantee, provable, not merely asserted.
-- Fallback proof: a registered catalog with no entry for `(error.Code, CurrentUICulture)` falls back to `error.Message` — never blank, never throws.
-- Translation proof: a registered catalog WITH a matching entry, proven against at least two distinct `CultureInfo` values for the same `error.Code`.
-- Multi-field independence: the P-402 validation path applies localization/fallback per field independently — one field translated, a sibling field falling back, in the same response.
-- Regression: `Title`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]` and `ErrorTypeStatusCodeMap`'s mapping are unchanged; the full existing `SharedKernel.Presentation.WebApi.Tests` suite stays green.
+- `LocalizedProblemDetailsTests` (7 tests): Zero-registration regression — a test with NO `ILocalizationCatalog` registered anywhere (an empty `ServiceCollection`-backed `HttpContext.RequestServices`, distinct from the `context = null` case) proves byte-identical `ProblemDetails.Detail` output to the no-`HttpContext`-at-all call — the acceptance criteria's central backward-compatibility guarantee, provable, not merely asserted. Discovered during authoring: a `DefaultHttpContext` with no `RequestServices` assigned returns `null` from that property rather than throwing, so `LocalizedDetailResolver` chains `context?.RequestServices?.GetService<...>()` — both `?.`s are load-bearing, not defensive-only.
+- Fallback proof: a registered `InMemoryLocalizationCatalog` with no entry for `(error.Code, CurrentUICulture)` falls back to `error.Message` — never blank, never throws.
+- Translation proof: a registered catalog WITH a matching entry, proven against two distinct `CultureInfo` values (`tr-TR`/`de-DE`) for the same `error.Code`, restoring the ambient `CultureInfo.CurrentUICulture` in a `finally` block.
+- Multi-field independence: `ValidationToProblemDetails_AppliesLocalizationIndependentlyPerField` proves the P-402 validation path applies localization/fallback per field independently — one field translated, a sibling field falling back, in the same response `Extensions["errors"]` dictionary.
+- Regression: `ToProblemDetails_Localization_NeverChangesTitleStatusTypeOrExtensions` plus the full pre-existing 185-test `SharedKernel.Presentation.WebApi.Tests` suite staying green (192/192 total, zero regressions) confirms `Title`/`Status`/`Type`/`Extensions["errorCode"]` and `ErrorTypeStatusCodeMap`'s mapping are unchanged.
 
 ### Documentation build enforcement (confirmed at Docs phase)
 
@@ -1454,4 +1489,5 @@ builder.Services.AddSharedKernelLocalization(...);   // 01.Core/13.ServiceDefaul
 - [2026-08-20] WO-063 `SK.14.Core` shipped (C-51–C-74) — all eight P-411–P-418 status banners and Implementation Rules headers flipped from "Design-locked" to "Shipped end to end"; documented two genuine `Microsoft.OpenApi` 2.0.0 API-shape discoveries (no `mutualTLS` enum member, requiring a `SerializeAsV31`-overriding subclass; `OpenApiSecuritySchemeReference` needs `document.RegisterComponents()` or it serializes as `{}`); documented the deliberate decision NOT to drive Asp.Versioning's own `Policies.Sunset`/`DefaultApiVersionReporter` surface for RFC 8594 headers (a real round trip showed it never fires for an empty-named policy within session time) in favor of an independent `ApiVersionLifecycleOptions` registry + self-inserting `IStartupFilter`; documented the real `ICorsMetadata`/`NegotiateMetadata`/`HubMetadata` reflection findings for the SignalR CORS diagnostic; documented that `HubExceptionMappingFilter`'s `catch (HubException) { throw; }` branch was already present since WO-031 (D-64's "hazard" was a stale read, not a real gap — no code changed for C-71); added a new standing rule requiring every newly-DI-logging-enabled type's `ILogger<T>` constructor parameter to be optional (`? logger = null`, falling back to `NullLogger<T>.Instance`) after a required-parameter version broke `consumer-verify`'s own bare-`ServiceCollection` negative-path test; corrected two DI Registration examples that no longer matched the shipped API shape (`ApiVersionLifecycleOptions.AddSunset(...)` → `.Configure(...)`; `RequireValidatedUpload`'s named-`params`-argument syntax → positional); corrected the AOT notes' `System.Threading.RateLimiting` entry from "not yet confirmed" to "confirmed transitively available" (S-27 had already proven this at Scaffold phase but the brain was never updated). `SharedKernel.Presentation.WebApi.Tests` 134/134 green, `SharedKernel.Presentation.SignalR.Tests` 14/14 green, `consumer-verify` all 10 surfaces PASS — zero regression (presentation-phase-implementer, sync-brain)
 - [2026-08-21] WO-063 `SK.14.Tests` shipped (T-44–T-67, 24/24) — 63 net-new tests across both packages (52 WebApi + 11 SignalR), zero production code touched, confirming the Core phase's shipped surface was already correct on the first pass. The "WO-063 test additions" Test Rules subsection rewritten from "design-locked; queued" to "confirmed — shipped," with three genuine test-construction discoveries preserved for future sessions: (1) a `Content-Length`-declared oversized body is rejected by Kestrel at the connection level with an empty response body, before the exception-handling middleware ever runs — the 413-with-handler-never-reached proof requires chunked transfer encoding instead, forcing Kestrel to read incrementally and throw `BadHttpRequestException` from inside the running pipeline; (2) `CorsPolicyOptionsValidator` and `SignalRCorsStartupDiagnostic` are both `internal`, so their logging is proven indirectly via a real `IHost`/`TestServer` plus `16.Testing`'s `AddInMemoryLoggerFactory()` with an explicit `ILoggerFactory` substitution registered afterward (last-registration-wins), retrieving records via a hardcoded full-type-name category string since `typeof()` cannot reach an internal type across the assembly boundary; (3) `Activity.Current` is reliably non-null in a plain unit test via `new Activity(name).Start()` with no `ActivityListener` registration required (unlike `ActivitySource.StartActivity`, which does require one) — used to prove the correlation-id validator's rejected-value-never-reaches-baggage acceptance criterion. `SharedKernel.Presentation.WebApi.Tests` now 186/186 green (134 + 52 new), `SharedKernel.Presentation.SignalR.Tests` now 25/25 green (14 + 11 new). **Flagged, not fixed:** `consumer-verify`'s own build now fails via `TreatWarningsAsErrors=true` tripping on a pre-existing `Microsoft.OpenApi` 2.0.0 `NU1903` advisory (a consequence of the already-shipped Core phase's `MutualTlsSecurityScheme`, not this Tests phase) — all 10 harness surfaces confirmed logically PASS via a `-p:NoWarn=NU1903` override; the build-gate fix itself is `devops-lead`/Core-phase-session jurisdiction (presentation-phase-implementer, state-map-phase, sync-brain)
 - [2026-08-21] WO-063 `SK.14.Published` shipped (P-17–P-24, 24/24) — closes WO-063 (P-411–P-418) and all six `SK.14.*` phase keys end to end. **The prior session's flagged `consumer-verify` build blocker is resolved, not suppressed:** investigated per the three-path instruction — a patched `Microsoft.OpenApi` version exists (`2.7.5`+ on the 2.x line, per the GitHub Advisory API for `GHSA-v5pm-xwqc-g5wc`/`CVE-2026-49451`), and `Microsoft.AspNetCore.OpenApi` `10.0.11`'s own `.nuspec` (confirmed via direct inspection, not `10.0.9`/`10.0.10`, which both still hard-pin `Microsoft.OpenApi` `2.0.0`) declares the patched range — so `SharedKernel.Presentation.WebApi`'s `Microsoft.AspNetCore.OpenApi` reference was bumped `10.0.9` → `10.0.11` (Technology Stack table updated above), resolving `Microsoft.OpenApi` to `2.7.5` transitively. `consumer-verify` now builds and runs with zero `NoWarn`/`WarningsNotAsErrors` overrides of any kind, closing out every prior session's documented workaround (WO-041/WO-042/WO-058/WO-062 all separately worked around the same advisory locally without fixing it). `consumer-verify/Program.cs` gained the two phase-mandated new permanent surfaces: **Surface 11** (P-18) — a real listening-Kestrel-host round trip generating the actual OpenAPI document with a non-default `Bearer`+`ApiKey`+`MutualTls` scheme combination, asserting on the response body rather than DI resolution alone; **Surface 12** (P-22) — `AddSharedKernelUploadValidation()` DI composition mirroring Surface 9's shape. All 12 surfaces PASS with zero DI exceptions and zero build warnings. `SharedKernel.Presentation.WebApi` re-packed once, `1.2.0` → `1.3.0`; `SharedKernel.Presentation.SignalR` re-packed once, `1.0.2` → `1.1.0` — both single coherent minor bumps per the WO-062 precedent, `Description`/`PackageTags` extended for both. Both `dotnet pack` runs: 0 warnings, 0 errors. Full regression: `SharedKernel.Presentation.WebApi.Tests` 186/186 green, `SharedKernel.Presentation.SignalR.Tests` 25/25 green (presentation-phase-implementer, state-map-phase, sync-brain)
+- [2026-09-04] **WO-074/P-468 and WO-078/P-484 both shipped end to end** (Scaffold through Docs, all six phase keys' remaining tasks for these two phases complete). **WO-074/P-468:** `SharedKernel.Presentation.Grpc` created and implemented in full — `Grpc.AspNetCore` `2.80.0` pinned (already present in `Directory.Packages.props`, no new entry needed; `Grpc.Tools` compiles the test project's `.proto` transitively with no separate pin). All five design questions the Design-lock phase left open are now closed by direct empirical proof, not assumption: `Grpc.Core.ServerCallContextExtensions.GetHttpContext` confirmed present via reflection over the real installed assembly; `ServerCallContext.GetHttpContext()?.GetEndpoint()?.Metadata` CONFIRMED to surface attributes applied directly to a gRPC service method (8/8 `GrpcAuthorizationInterceptorIntegrationTests` pass against a real host — the reflection fallback was never needed); the correlation metadata key round-trips byte-for-byte against `SharedKernel.Communication.Grpc`'s real client interceptor (proven, not merely documented); and a genuine design gap was discovered and resolved during Tests-phase authoring — `GrpcTenantContextInterceptor` never reads gRPC metadata itself (only `ITenantProvider`, exactly mirroring `TenantContextHubFilter`), so the round-trip test's server composition needed a test-only `HeaderTenantProvider` reading the raw header, which is now documented as the correct integration pattern for a consuming service, not a gap in this package. `error.Description`, referenced in the original design draft (and in a pre-existing, now-fixed stale note on `ErrorProblemDetailsExtensions` itself, unrelated to this phase but corrected in passing), was never a real `Error` member — `Error.Message` is used throughout, matching the real `SharedKernel.Primitives.Errors.Error` shape. 36/36 tests green across five test files (`GrpcStatusCodeMapTests`, `GrpcResultExtensionsTests`, `LoggerMessageEventIdTests`, and three real-host integration-test classes under `Integration/`), zero warnings, zero errors. `EventId`s `14200`/`14201` assigned and pinned. A `README.md` was authored for the new package; `CONFIGURATION.md` gained a full `SharedKernel.Presentation.Grpc` section. **WO-078/P-484:** `01.Core` had already shipped the real `SharedKernel.Localization` package by this session (confirmed on disk, not from a stale CLAUDE.md claim) — the phase's blocker was cleared. `ErrorProblemDetailsExtensions.ToProblemDetails`/`ValidationProblemDetailsExtensions.ToProblemDetails` extended via a new internal `Errors/LocalizedDetailResolver.cs` helper; `SharedKernel.Presentation.WebApi.csproj` gained a `ProjectReference` on `01.Core/SharedKernel.Localization`. One implementation bug caught and fixed during Tests-phase authoring: `context?.RequestServices.GetService<...>()` threw `ArgumentNullException` against several pre-existing tests that construct a bare `DefaultHttpContext` with no `RequestServices` assigned (that property returns `null`, it does not throw) — fixed to `context?.RequestServices?.GetService<...>()`, both `?.`s load-bearing. `SharedKernel.Presentation.WebApi.Tests` now 192/192 green (185 pre-existing + 7 new `LocalizedProblemDetailsTests`), zero regressions. `CONFIGURATION.md` gained a new "`Error.ToProblemDetails()` optional localization" section documenting the "activates automatically, no `AddSharedKernelXxx()` call" behavior per DO-34. Every "design-locked"/"○ Pending"/"blocked" status marker for both phases across this file (Packages table, Technology Stack table, both Interface Contracts subsections, both Implementation Rules subsections, AOT notes, DI Registration examples, both Test Rules subsections) updated to reflect shipped status — the design content itself needed only the corrections noted above, confirming the original design-lock (WO-074) and design amendment (WO-078) were both substantially correct on the first pass (presentation-phase-implementer, per-domain `state-map-phase` and `sync-brain` still to run this session). Prior entry below (2026-08-26, design-lock) preserved unedited for history.
 - [2026-08-26] Two new phases design-locked from the root `state-map.md` Phase Backlog (WO-074/P-468, WO-078/P-484), processed in dependency order. **WO-074/P-468:** a new third `14.Presentation` sibling package, `SharedKernel.Presentation.Grpc` — server-side gRPC's inbound-API-boundary counterpart to `.WebApi`'s HTTP story, added to the Packages table, Technology Stack table, and a new full Interface Contracts subsection (`GrpcStatusCodeMap` as a sibling to, never a merge with, `ErrorTypeStatusCodeMap`; `GrpcResultExtensions`; a four-call-shape `GrpcExceptionInterceptor`; `GrpcCorrelationInterceptor`/`GrpcTenantContextInterceptor`; `GrpcAuthorizationInterceptor` reusing `.WebApi`'s four `Authorization/` attributes verbatim via a new, deliberate intra-domain `ProjectReference`; `AddSharedKernelGrpc`). Two new explanatory subsections added under "Packages" — "Why server-side gRPC lives in `14.Presentation`, not `11.Communication.Grpc`" and "Why `.Grpc` references `.WebApi`" (the latter explicitly distinguished from `.SignalR`'s declined identical-shaped reference for CORS, P-418/D-65 — different, both-correct reasoning, not to be conflated). Never references `04.Contracts` (named Hard-rule exception, mirrors `SharedKernel.Communication.Grpc`'s P-163 rule); no new `13.ServiceDefaults` telemetry entry point needed. **WO-078/P-484:** `Error.ToProblemDetails()`/`ValidationProblemDetailsExtensions` gain an optional localization step (new "Localized `ProblemDetails.Detail`" Interface Contracts subsection, a new ProblemDetails-rules bullet) — an `ILocalizationCatalog` (`01.Core/SharedKernel.Localization`, P-482) lookup keyed by `(error.Code, CultureInfo.CurrentUICulture)`, falling back to `error.Message` verbatim, never blank; `01.Core.Primitives.Error` itself untouched; this package takes a new `ProjectReference` on `01.Core/SharedKernel.Localization` (a deliberate decision, distinguished from `ApiKeyHeaderName`'s declined-reference precedent, P-412 — `ILocalizationCatalog` is a `01.Core` abstraction, not a concrete provider). Both phases are `○` Pending, Design-locked only — Core-phase implementation has not started for either; WO-078's Scaffold/Core/Tests/Docs/Published work is additionally recorded-but-blocked on `01.Core` shipping the real `SharedKernel.Localization` package (P-482). New gRPC and localization subsections added under Implementation Rules, AOT notes, DI Registration, and Test Rules. `state-map.md` gained 65 new `○` task rows across all six phase keys (P-468: D-67–D-79/S-29–S-34/C-75–C-84/T-68–T-75/DO-27–DO-32/P-25–P-27; P-484: D-80–D-86/S-35/C-85–C-87/T-76–T-80/DO-33–DO-34/P-28), a new Package Board row for `.Grpc`, and a new Cross-Domain Dependencies row (`SK.14.Core` → `01.Core`, `Pending`, for P-484). Zero regression to the prior 243/243 WO-062+WO-063 closure — none of that work was reopened or altered (presentation-arch-planner)

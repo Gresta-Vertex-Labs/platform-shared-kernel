@@ -190,6 +190,36 @@ registered. No options. Groups `ValidationException.Errors` by `Error.Code` into
 `ProblemDetails` (`Title`/`Detail`/`Status`/`Type`/`Extensions["errorCode"]`/`Extensions["traceId"]`)
 resolves identically to the single-`Error` path applied to the exception's first error.
 
+### `Error.ToProblemDetails()` optional localization (P-484/WO-078 — no DI extension method)
+
+Unlike every other opt-in capability in this domain, this one activates **automatically** once a
+consuming service registers `SharedKernel.Localization`'s `ILocalizationCatalog` — there is no
+`AddSharedKernelXxx()` call to make. `ErrorProblemDetailsExtensions.ToProblemDetails(this Error,
+HttpContext? context = null)` resolves `ILocalizationCatalog` via `context?.RequestServices
+.GetService<ILocalizationCatalog>()` (never `GetRequiredService`) and, when a translation exists
+for `(error.Code, CultureInfo.CurrentUICulture)`, uses it as `Detail` instead of `Error.Message`.
+
+```csharp
+// A service that wants localized ProblemDetails.Detail values registers a catalog — nothing else:
+builder.Services.AddSingleton<ILocalizationCatalog>(new InMemoryLocalizationCatalog()
+    .AddTranslation("order.not_found", new CultureInfo("tr-TR"), "Sipariş bulunamadı."));
+
+// A service that never registers ILocalizationCatalog sees byte-identical output to before P-484.
+```
+
+| Condition | `ProblemDetails.Detail` |
+| --- | --- |
+| No `ILocalizationCatalog` registered | `Error.Message` (unchanged pre-P-484 behavior) |
+| Catalog registered, no entry for `(error.Code, CurrentUICulture)` | `Error.Message` (fallback — never blank) |
+| Catalog registered, entry found | The translated string |
+
+`CultureInfo.CurrentUICulture` is read as an ambient value only — this package never resolves or
+sets culture itself; that is `13.ServiceDefaults`'s `AddSharedKernelLocalization()` middleware's
+job (P-483) when a consuming service opts in. `Title`/`Status`/`Type`/`Extensions["errorCode"]`/
+`Extensions["traceId"]` are never affected. The multi-field `ValidationProblemDetailsExtensions`
+path (above) applies this same localization/fallback independently per failing field's
+`Error.Code` — one field may translate while a sibling falls back in the same response body.
+
 ### `UseSharedKernelSecurityHeaders(this IApplicationBuilder, Action<SecurityHeadersOptions>? configure = null)`
 
 | Parameter | Required | Default | Effect |
@@ -431,11 +461,98 @@ elsewhere in a consuming service.
 
 ---
 
+## `SharedKernel.Presentation.Grpc`
+
+### `AddSharedKernelGrpc(this IServiceCollection, Action<GrpcServiceOptions>? configure = null)`
+
+| Parameter | Required | Default | Effect |
+| --- | --- | --- | --- |
+| `configure` | no | `null` | Runs after the platform defaults below — always wins |
+
+Registers `Grpc.AspNetCore`'s `AddGrpc(...)` plus four global server interceptors — applied to
+**every** mapped gRPC service automatically via `GrpcServiceOptions.Interceptors.Add<T>()`, the
+gRPC-native equivalent of `HubOptions.AddFilter<T>()`. Unlike HTTP's
+`AuthorizationRequirementEndpointFilter` (which needs a per-route/group
+`.AddEndpointFilter<T>()` call), this needs zero further per-service wiring.
+
+Registration order (outermost → innermost): `GrpcExceptionInterceptor` →
+`GrpcCorrelationInterceptor` → `GrpcTenantContextInterceptor` → `GrpcAuthorizationInterceptor` —
+mirrors HTTP's conceptual pipeline ordering (exception handling outermost, authorization closest
+to the handler).
+
+| `GrpcServiceOptions` member | Platform default | Overridable via |
+| --- | --- | --- |
+| `MaxReceiveMessageSize` | `4 * 1024 * 1024` (4 MiB) | `configure` callback |
+
+### `GrpcExceptionInterceptor` (registered by `AddSharedKernelGrpc`, no separate call)
+
+No options — constructor-injects `ILogger<GrpcExceptionInterceptor>` and `IHostEnvironment` from
+DI. Behavior is environment-gated, mirroring `SharedKernelExceptionHandler` exactly:
+
+| Environment | Unknown-exception `Status.Detail` |
+| --- | --- |
+| `IHostEnvironment.IsDevelopment() == true` | Full exception message |
+| Otherwise | `"An unexpected error occurred."` (constant) |
+
+Known `SharedKernelException` subtypes always map through `GrpcStatusCodeMap` using the carried
+`Error`'s message, regardless of environment. Overrides all four server interceptor methods
+(`UnaryServerHandler`/`ClientStreamingServerHandler`/`ServerStreamingServerHandler`/
+`DuplexStreamingServerHandler`) — every gRPC call shape is covered, not unary-only.
+
+### `GrpcCorrelationInterceptor` (registered by `AddSharedKernelGrpc`, no separate call)
+
+Not configurable. Reads the `X-Correlation-Id` gRPC metadata key (`GrpcCorrelationInterceptor
+.MetadataKey`) — the same key `SharedKernel.Communication.Grpc`'s client-side
+`CorrelationTracingInterceptor` writes — generating `Guid.NewGuid("N")` when absent or whitespace.
+Stores the resolved value in `ServerCallContext.UserState["CorrelationId"]` and calls
+`Activity.Current?.SetBaggage(WellKnownBaggageKeys.CorrelationId, value)`.
+
+### `GrpcTenantContextInterceptor` (registered by `AddSharedKernelGrpc`, no separate call)
+
+Not configurable. Resolves `ITenantProvider` (`12.Security.Abstractions`) from the call's
+`HttpContext.RequestServices` and stores the resolved `TenantId` in
+`ServerCallContext.UserState["TenantId"]`. Mirrors `TenantContextHubFilter`'s policy exactly:
+`Guid.Empty` when no `ITenantProvider` resolves a tenant — never rejects the call itself.
+
+### `GrpcAuthorizationInterceptor` (registered by `AddSharedKernelGrpc`, no separate call)
+
+Reuses `SharedKernel.Presentation.WebApi.Authorization`'s four attributes **verbatim** — apply
+them directly to a gRPC service implementation class or method, exactly as you would on an MVC
+controller action:
+
+| Attribute | Evaluated against | Rejection |
+| --- | --- | --- |
+| `RequireRoleAttribute` | `IUserContext.HasRole(string)` — roles within one instance OR'd; stacked instances AND'd | `Error.Forbidden(...)` → `StatusCode.PermissionDenied` |
+| `RequirePermissionAttribute` | `IUserContext.HasPermission(string)` | `Error.Forbidden(...)` → `StatusCode.PermissionDenied` |
+| `RequireFreshAuthenticationAttribute` | `IUserContext.IsAuthenticationFresherThan(TimeSpan, DateTimeOffset)` — `DateTimeOffset` supplied by `IClock`, resolved lazily only when this attribute is present | `Error.Forbidden(...)` → `StatusCode.PermissionDenied` |
+| `RequireAuthenticationMethodAttribute` | `IUserContext.WasAuthenticatedWith(string)` — OR across the supplied methods | `Error.Forbidden(...)` → `StatusCode.PermissionDenied` |
+
+An endpoint with none of the four attributes never resolves `IUserContext` at all — safe to
+register unconditionally.
+
+### `GrpcStatusCodeMap.Resolve(ErrorType)` / `GrpcResultExtensions.ToGrpcResult()` (no DI registration — pure static helpers)
+
+See the package `README.md` for the full `ErrorType → StatusCode` table. `Result.ToGrpcResult()`
+(non-generic) and `Result<T>.ToGrpcResult()` throw the mapped `RpcException` on failure; the
+generic overload returns the unwrapped value on success. Never hand-construct
+`new RpcException(new Status(...))` at a gRPC service-method call site.
+
+### `ServerCallContext.UserState` keys (for reading inside gRPC service methods)
+
+| Key | Set by | Type | Notes |
+| --- | --- | --- | --- |
+| `GrpcCorrelationInterceptor.ItemsKey` (`"CorrelationId"`) | `GrpcCorrelationInterceptor` | `string` | Always non-empty — generated when the inbound metadata key was absent |
+| `GrpcTenantContextInterceptor.ItemsKey` (`"TenantId"`) | `GrpcTenantContextInterceptor` | `Guid` | `Guid.Empty` when no `ITenantProvider` resolves a tenant — interceptor never rejects the call itself |
+
+---
+
 ## Cross-cutting notes
 
-- Neither package requires a `ProjectReference` outside `01.Core`, `04.Contracts` (WebApi only),
-  and `12.Security.Abstractions`. Both are fully self-contained with respect to `13.ServiceDefaults`
-  — the correlation-id baggage key is this domain's own contract (see CLAUDE.md P-192).
-- No configuration option in either package accepts environment-variable-style string toggles;
-  all configuration is via strongly-typed C# (`Action<TOptions>` callbacks), consistent with the
+- None of the three packages requires a `ProjectReference` outside `01.Core`,
+  `04.Contracts` (`.WebApi` only — never `.Grpc`, never `.SignalR`), `12.Security.Abstractions`,
+  and (for `.Grpc` only, a deliberate intra-domain exception) `.WebApi` itself. All three are
+  fully self-contained with respect to `13.ServiceDefaults` — the correlation-id baggage key is
+  this domain's own contract (see CLAUDE.md P-192).
+- No configuration option in any of the three packages accepts environment-variable-style string
+  toggles; all configuration is via strongly-typed C# (`Action<TOptions>` callbacks), consistent with the
   rest of the platform's Options-pattern conventions.

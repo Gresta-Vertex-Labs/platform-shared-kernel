@@ -25,15 +25,21 @@ public static class ErrorProblemDetailsExtensions
     /// </param>
     /// <returns>
     /// A <see cref="ProblemDetails"/> with <c>Title</c> set to <see cref="Error.Code"/>,
-    /// <c>Detail</c> set to <see cref="Error.Message"/>, <c>Status</c> resolved via
-    /// <see cref="ErrorTypeStatusCodeMap.Resolve"/>, <c>Type</c> as an RFC 9457 status URI, and
-    /// <c>Extensions["errorCode"]</c>/<c>Extensions["traceId"]</c> populated. Pure mapping — no
-    /// logging, no I/O.
+    /// <c>Detail</c> set to <see cref="Error.Message"/> — or, when an
+    /// <see cref="SharedKernel.Localization.ILocalizationCatalog"/> is registered in
+    /// <paramref name="context"/>'s <c>RequestServices</c> and has a translation for
+    /// <c>(error.Code, System.Globalization.CultureInfo.CurrentUICulture)</c>, that translated
+    /// string instead (P-484/WO-078; see <see cref="LocalizedDetailResolver"/>) — <c>Status</c>
+    /// resolved via <see cref="ErrorTypeStatusCodeMap.Resolve"/>, <c>Type</c> as an RFC 9457
+    /// status URI, and <c>Extensions["errorCode"]</c>/<c>Extensions["traceId"]</c> populated.
+    /// Localization is optional and additive: a service that never registers a catalog produces
+    /// byte-identical output to before P-484. Pure mapping — no logging, no I/O.
     /// </returns>
     public static ProblemDetails ToProblemDetails(this Error error, HttpContext? context = null)
     {
         var status = ErrorTypeStatusCodeMap.Resolve(error.Type);
-        var problemDetails = ProblemDetailsShaping.Create(status, error.Code, error.Message, context);
+        var detail = LocalizedDetailResolver.ResolveDetail(error, context);
+        var problemDetails = ProblemDetailsShaping.Create(status, error.Code, detail, context);
 
         problemDetails.Extensions["errorCode"] = error.Code;
 

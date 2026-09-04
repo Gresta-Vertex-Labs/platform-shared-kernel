@@ -16,6 +16,14 @@
     -->
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
+    <!--
+      SharedKernel.Localization is a 01.Core abstraction (ILocalizationCatalog), the same layer
+      this package already depends on for Result<T>/Error — referencing it does not violate this
+      domain's "no concrete-provider reference" posture (P-484/WO-078, D-81). Used exclusively to
+      optionally localize Error.ToProblemDetails()'s Detail value; never a hard requirement — see
+      Errors/LocalizedDetailResolver.cs.
+    -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" />
     <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" />
     <ProjectReference Include="..\..\12.Security\SharedKernel.Security.Abstractions\SharedKernel.Security.Abstractions.csproj" />
   </ItemGroup>

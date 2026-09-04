@@ -29,6 +29,13 @@ namespace SharedKernel.Presentation.WebApi.Errors;
 /// built-in <see cref="ValidationProblemDetails.Errors"/> shape so client tooling that already
 /// understands that convention (form-binding libraries, generated SDKs) works unmodified.
 /// </para>
+/// <para>
+/// Each field's message is independently subject to the same optional localization step as
+/// <see cref="ErrorProblemDetailsExtensions.ToProblemDetails(SharedKernel.Primitives.Errors.Error, HttpContext?)"/>
+/// (P-484/WO-078, see <see cref="LocalizedDetailResolver"/>) — one field may translate while a
+/// sibling field falls back to its raw message in the same response body; this is never an
+/// all-or-nothing decision for the whole body.
+/// </para>
 /// </remarks>
 public static class ValidationProblemDetailsExtensions
 {
@@ -56,11 +63,14 @@ public static class ValidationProblemDetailsExtensions
 
         var problemDetails = exception.Error.ToProblemDetails(context);
 
+        // Each field's message is localized/falls back independently (P-484/WO-078, D-82) — one
+        // field may translate while a sibling field falls back to its raw message in the same
+        // response body; this is never an all-or-nothing decision.
         problemDetails.Extensions["errors"] = exception.Errors
             .GroupBy(error => error.Code, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
-                group => group.Select(error => error.Message).ToArray(),
+                group => group.Select(error => LocalizedDetailResolver.ResolveDetail(error, context)).ToArray(),
                 StringComparer.Ordinal);
 
         return problemDetails;
