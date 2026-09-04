@@ -27,11 +27,25 @@ namespace SharedKernel.Application.Behaviors.Extensions;
 /// Builds the opt-in MediatR pipeline behavior registration for <c>SharedKernel.Application.Behaviors</c>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Use <c>.AddXBehavior()</c> methods to opt in to individual behaviors, then call
-/// <see cref="Build"/> to register them. Registration order is always the fixed canonical
-/// twelve-named-slot order (Logging → Metrics → Tracing → Validation → Authorization →
-/// DualApproval → Caching → Resilience → Idempotency → Auditing → Transaction →
-/// CacheInvalidation) regardless of the order in which <c>.AddXBehavior()</c> methods were called.
+/// <see cref="Build"/> to register them. The observable TEMPORAL execution order is always the
+/// fixed canonical twelve-named-slot order (Logging → Metrics → Tracing → Validation →
+/// Authorization → DualApproval → Caching → Resilience → Idempotency → Auditing → Transaction →
+/// CacheInvalidation — see <c>05.Application/CLAUDE.md</c>'s "Pipeline composition" section)
+/// regardless of the order in which <c>.AddXBehavior()</c> methods were called.
+/// </para>
+/// <para>
+/// <b>This is the temporal step order, not necessarily the literal top-to-bottom order of
+/// <c>_services.AddTransient(...)</c> calls inside <see cref="Build"/>.</b> MediatR makes the
+/// first-registered <see cref="IPipelineBehavior{TRequest,TResponse}"/> outermost, so a behavior
+/// whose only observable side effect runs AFTER <c>next()</c> returns (e.g. a commit, an audit
+/// write, a cache eviction) is registered CLOSER to the desired temporal position of the OTHER
+/// post-`next()` behavior it must run before, not further from it — see the detailed comment
+/// immediately above the registration calls inside <see cref="Build"/> for the exact rule and the
+/// two pairs (Auditing/Transaction, Transaction/CacheInvalidation) that currently invert relative
+/// to the canonical numbering above.
+/// </para>
 /// </remarks>
 public sealed class ApplicationBehaviorsBuilder
 {
@@ -383,22 +397,46 @@ public sealed class ApplicationBehaviorsBuilder
                 "AddAuditingBehavior() requires SharedKernel.Application.Behaviors.Auditing.IAuditTrailWriter " +
                 "to be registered in the service collection. Register an implementation before calling Build().");
 
-        // Fixed canonical unary order — never configurable:
+        // Fixed canonical unary order (the TEMPORAL step numbering documented in
+        // 05.Application/CLAUDE.md's "Pipeline composition" section) — never configurable:
         // Logging -> Metrics -> Tracing -> Validation -> Authorization -> DualApproval -> Caching ->
         // Resilience -> Idempotency -> Auditing -> Transaction -> CacheInvalidation
         //
-        // NOTE ON PHYSICAL REGISTRATION ORDER vs. the CANONICAL STEP ORDER ABOVE: MediatR wraps
-        // IPipelineBehavior<,> instances so that the FIRST-registered behavior is OUTERMOST (its
-        // post-`next()` code runs LAST, after every later-registered/more-inner behavior's
-        // post-`next()` code has already run). Auditing's write must observably complete BEFORE
-        // Transaction's own commit executes ("just inside Transaction" — see AuditingBehavior's
-        // remarks), which requires AuditingBehavior to be registered AFTER (closer to the handler
-        // than) TransactionBehavior below, even though Auditing is step 10 and Transaction is step
-        // 11 in the canonical numbering above. This is the same inverted-registration-order
-        // technique already applied for CacheInvalidationBehavior's post-commit-only positioning,
-        // used here in the opposite temporal direction. Verified via a real, empirical pipeline
-        // dispatch (state-map.md T-77) — never assume registration-list order equals execution
-        // order for a post-`next()` side effect.
+        // *** DI-REGISTRATION-ORDER-TO-ONION-ORDER RELATIONSHIP (READ BEFORE REORDERING ANYTHING
+        // BELOW) ***
+        //
+        // MediatR wraps IPipelineBehavior<,> instances so that the FIRST-registered behavior is
+        // OUTERMOST:
+        //   - An outermost behavior's PRE-`next()` code runs FIRST (before every later-registered/
+        //     more-inner behavior's pre-`next()` code).
+        //   - An outermost behavior's POST-`next()` code runs LAST (after every later-registered/
+        //     more-inner behavior's post-`next()` code has already run and unwound).
+        // Equivalently: for any two behaviors whose only observable side effect is POST-`next()`
+        // code (i.e. code that runs after `await next()` returns), the one registered EARLIER
+        // observes its own side effect LATER in wall-clock time than the one registered LATER.
+        // Physical top-to-bottom registration order therefore equals the desired TEMPORAL order of
+        // post-`next()` side effects only when read BOTTOM-TO-TOP (earliest side effect = last
+        // registered).
+        //
+        // This governs two deliberately-inverted pairs below, relative to the canonical step
+        // numbers in the comment above:
+        //   - AuditingBehavior (step 10) is registered AFTER TransactionBehavior (step 11) — i.e.
+        //     physically INNER to it — so AuditingBehavior's post-`next()` audit write is observed
+        //     BEFORE TransactionBehavior's post-`next()` SaveChangesAsync commit. Verified via a
+        //     real, empirical pipeline dispatch: AuditingTransactionOrderingTests (state-map.md
+        //     T-77, WO-071/P-458).
+        //   - CacheInvalidationBehavior (step 12) is registered BEFORE TransactionBehavior (step
+        //     11) — i.e. physically OUTER to it — so CacheInvalidationBehavior's post-`next()`
+        //     eviction is observed AFTER TransactionBehavior's post-`next()` SaveChangesAsync
+        //     commit. Verified via a real, empirical pipeline dispatch:
+        //     CacheInvalidationTransactionOrderingTests (state-map.md, WO-080/P-488 — this fixed a
+        //     confirmed defect where CacheInvalidationBehavior was previously registered AFTER
+        //     TransactionBehavior, causing eviction to run BEFORE the commit it was documented to
+        //     follow).
+        //
+        // Never assume physical registration-list order equals temporal execution order for a
+        // post-`next()` side effect — verify empirically via a real composed-pipeline dispatch test
+        // for any new/changed pairing, the same way both pairs above were proven.
         if (_logging)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 
@@ -426,16 +464,20 @@ public sealed class ApplicationBehaviorsBuilder
         if (_idempotency)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(IdempotentCommandBehavior<,>));
 
+        // Registered BEFORE TransactionBehavior (physically OUTER to it) so eviction fires AFTER
+        // SaveChangesAsync — see the "DI-REGISTRATION-ORDER-TO-ONION-ORDER RELATIONSHIP" comment
+        // above (WO-080, P-488).
+        if (_cacheInvalidation)
+            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
+
         if (_transaction)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 
-        // Registered AFTER TransactionBehavior (physically inner to it) so RecordAsync fires
-        // before SaveChangesAsync — see the "NOTE ON PHYSICAL REGISTRATION ORDER" comment above.
+        // Registered AFTER TransactionBehavior (physically INNER to it) so RecordAsync fires
+        // before SaveChangesAsync — see the "DI-REGISTRATION-ORDER-TO-ONION-ORDER RELATIONSHIP"
+        // comment above.
         if (_auditing)
             _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(AuditingBehavior<,>));
-
-        if (_cacheInvalidation)
-            _services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CacheInvalidationBehavior<,>));
 
         // Fire-and-forget infrastructure (opt-in — registered as a unit).
         if (_fireAndForget)

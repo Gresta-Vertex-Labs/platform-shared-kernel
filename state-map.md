@@ -1212,7 +1212,7 @@ Every other infrastructure-provider capability this platform has shipped exposes
 ---
 ### P-488 — Application: Fix `CacheInvalidationBehavior` Pre-Commit Eviction Ordering Defect
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-080
 **Domain:** 05.Application
 **Depends on:** None

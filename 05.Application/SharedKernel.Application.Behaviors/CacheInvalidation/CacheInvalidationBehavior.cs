@@ -23,9 +23,20 @@ namespace SharedKernel.Application.Behaviors.CacheInvalidation;
 /// <see cref="IInvalidatesCache.CacheKeysToInvalidate"/> entry (and/or
 /// <see cref="ICacheService.RemoveByTagAsync"/> per declared tag). Never calls removal on a thrown
 /// exception — a faulted handler mutated nothing (or its mutation never committed, since this
-/// behavior runs after <c>TransactionBehavior</c>), so there is nothing to evict. Positioned
-/// innermost, immediately after <c>TransactionBehavior</c> — eviction must follow a confirmed
-/// commit, never a speculative one.
+/// behavior's eviction is ordered to observably follow <c>TransactionBehavior</c>'s commit), so
+/// there is nothing to evict.
+/// </para>
+/// <para>
+/// <b>Ordered relative to <c>TransactionBehavior</c> (WO-080, P-488):</b> registered OUTER to
+/// (i.e. BEFORE, in <c>ApplicationBehaviorsBuilder.Build()</c>) <c>TransactionBehavior</c>, so this
+/// behavior's post-<c>next()</c> eviction call is observed strictly AFTER
+/// <c>TransactionBehavior</c>'s own post-<c>next()</c> <c>IUnitOfWork.SaveChangesAsync</c>
+/// commit has completed — never before it. Do not read "outer" here as "further from the handler
+/// in call order" — MediatR's first-registered-is-outermost rule means an outer behavior's
+/// post-<c>next()</c> code runs LAST, after every inner behavior (including
+/// <c>TransactionBehavior</c> and, inside it, <c>AuditingBehavior</c>) has already fully unwound.
+/// Eviction must follow a confirmed commit, never a speculative one — proven by a real composed
+/// pipeline dispatch, not merely asserted here (<c>CacheInvalidationTransactionOrderingTests</c>).
 /// </para>
 /// <para>
 /// <b>Default stance — always invalidate on non-throw (documented, not an oversight):</b>

@@ -246,11 +246,18 @@ public sealed class ApplicationBehaviorsBuilderTests
             .ToList();
 
         // Physical DI registration order — NOT the same as the canonical step-numbering order
-        // (Auditing is step 10, Transaction step 11): AuditingBehavior is registered AFTER
-        // TransactionBehavior (physically inner to it) so its RecordAsync write is observably
-        // called before TransactionBehavior's own SaveChangesAsync commit — the inverted-
-        // registration-order technique, proven empirically by AuditingTransactionOrderingTests
-        // (T-77), mirroring CacheInvalidationBehavior's existing post-commit-only positioning.
+        // (Auditing is step 10, Transaction step 11, CacheInvalidation step 12). Two pairs invert
+        // relative to that numbering because each behavior's meaningful side effect runs AFTER
+        // `next()` returns:
+        //   - AuditingBehavior is registered AFTER TransactionBehavior (physically inner to it) so
+        //     its RecordAsync write is observably called BEFORE TransactionBehavior's own
+        //     SaveChangesAsync commit — proven empirically by AuditingTransactionOrderingTests
+        //     (T-77, WO-071/P-458).
+        //   - CacheInvalidationBehavior is registered BEFORE TransactionBehavior (physically outer
+        //     to it) so its eviction call is observably called AFTER TransactionBehavior's own
+        //     SaveChangesAsync commit — proven empirically by
+        //     CacheInvalidationTransactionOrderingTests (WO-080/P-488; this is the fix for a
+        //     confirmed defect where the prior physical order made eviction run BEFORE the commit).
         registeredBehaviorTypes.Should().Equal(
             typeof(LoggingBehavior<,>),
             typeof(MetricsBehavior<,>),
@@ -260,9 +267,9 @@ public sealed class ApplicationBehaviorsBuilderTests
             typeof(CachingBehavior<,>),
             typeof(ResilienceBehavior<,>),
             typeof(IdempotentCommandBehavior<,>),
+            typeof(CacheInvalidationBehavior<,>),
             typeof(TransactionBehavior<,>),
-            typeof(AuditingBehavior<,>),
-            typeof(CacheInvalidationBehavior<,>));
+            typeof(AuditingBehavior<,>));
     }
 
     public static TheoryData<Action<ApplicationBehaviorsBuilder>> AllCallOrderPermutations()

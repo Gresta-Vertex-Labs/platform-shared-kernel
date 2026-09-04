@@ -151,6 +151,10 @@ public sealed class RealAssemblyArchitectureRulesTests
             .AddCacheInvalidationBehavior()
             .Build();
 
+        // Physical DI registration order — CacheInvalidationBehavior is registered BEFORE
+        // TransactionBehavior (physically outer to it) so eviction observably follows the commit;
+        // see ApplicationBehaviorsBuilder.Build()'s own "DI-registration-order-to-onion-order
+        // relationship" comment (WO-080, P-488).
         var act = () => PipelineOrderAssertion.AssertRegistrationOrder(
             services,
             typeof(LoggingBehavior<,>),
@@ -161,13 +165,15 @@ public sealed class RealAssemblyArchitectureRulesTests
             typeof(CachingBehavior<,>),
             typeof(ResilienceBehavior<,>),
             typeof(IdempotentCommandBehavior<,>),
-            typeof(TransactionBehavior<,>),
-            typeof(CacheInvalidationBehavior<,>));
+            typeof(CacheInvalidationBehavior<,>),
+            typeof(TransactionBehavior<,>));
 
         act.Should().NotThrow(
-            "ApplicationBehaviorsBuilder.Build() must register all ten unary behaviors in the "
-            + "fixed canonical order: Logging -> Metrics -> Tracing -> Validation -> Authorization "
-            + "-> Caching -> Resilience -> Idempotency -> Transaction -> CacheInvalidation");
+            "ApplicationBehaviorsBuilder.Build() must register all ten unary behaviors so their "
+            + "TEMPORAL execution order is Logging -> Metrics -> Tracing -> Validation -> "
+            + "Authorization -> Caching -> Resilience -> Idempotency -> Transaction -> "
+            + "CacheInvalidation — the physical registration order pins CacheInvalidationBehavior "
+            + "before TransactionBehavior so its post-commit eviction is observed last");
     }
 
     // ---- T-72 (WO-058): the new eleven-step canonical order, DualApprovalBehavior at position 6 ----
@@ -197,6 +203,10 @@ public sealed class RealAssemblyArchitectureRulesTests
             .AddCacheInvalidationBehavior()
             .Build();
 
+        // Physical DI registration order — CacheInvalidationBehavior is registered BEFORE
+        // TransactionBehavior (physically outer to it) so eviction observably follows the commit;
+        // see ApplicationBehaviorsBuilder.Build()'s own "DI-registration-order-to-onion-order
+        // relationship" comment (WO-080, P-488).
         var act = () => PipelineOrderAssertion.AssertRegistrationOrder(
             services,
             typeof(LoggingBehavior<,>),
@@ -208,14 +218,17 @@ public sealed class RealAssemblyArchitectureRulesTests
             typeof(CachingBehavior<,>),
             typeof(ResilienceBehavior<,>),
             typeof(IdempotentCommandBehavior<,>),
-            typeof(TransactionBehavior<,>),
-            typeof(CacheInvalidationBehavior<,>));
+            typeof(CacheInvalidationBehavior<,>),
+            typeof(TransactionBehavior<,>));
 
         act.Should().NotThrow(
-            "ApplicationBehaviorsBuilder.Build() must register all eleven unary behaviors in the "
-            + "fixed canonical order: Logging -> Metrics -> Tracing -> Validation -> Authorization "
-            + "-> DualApproval -> Caching -> Resilience -> Idempotency -> Transaction -> CacheInvalidation, "
-            + "with DualApprovalBehavior at canonical position 6 regardless of .AddXBehavior() call order");
+            "ApplicationBehaviorsBuilder.Build() must register all eleven unary behaviors so their "
+            + "TEMPORAL execution order is Logging -> Metrics -> Tracing -> Validation -> "
+            + "Authorization -> DualApproval -> Caching -> Resilience -> Idempotency -> Transaction "
+            + "-> CacheInvalidation, with DualApprovalBehavior at canonical position 6 regardless of "
+            + ".AddXBehavior() call order — the physical registration order pins "
+            + "CacheInvalidationBehavior before TransactionBehavior so its post-commit eviction is "
+            + "observed last");
     }
 
     [Fact]
