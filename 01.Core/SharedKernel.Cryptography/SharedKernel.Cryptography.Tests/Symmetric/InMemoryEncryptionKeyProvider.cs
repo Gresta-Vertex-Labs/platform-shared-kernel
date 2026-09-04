@@ -4,7 +4,10 @@ namespace SharedKernel.Cryptography.Tests.Symmetric;
 
 /// <summary>
 /// Minimal in-memory <see cref="IEncryptionKeyProvider"/> test double — multiple key versions,
-/// one designated as current.
+/// one designated as current. Both interface members complete synchronously (an already-completed
+/// <see cref="ValueTask{TResult}"/>) — exactly the shape a configuration-based provider takes in
+/// production, and the shape that makes <c>ISymmetricEncryptionService</c>'s sync-to-async bridge
+/// genuinely non-blocking.
 /// </summary>
 internal sealed class InMemoryEncryptionKeyProvider : IEncryptionKeyProvider
 {
@@ -30,7 +33,9 @@ internal sealed class InMemoryEncryptionKeyProvider : IEncryptionKeyProvider
 
     public void RemoveKey(string keyId) => _keys.Remove(keyId);
 
-    public CryptographicKey GetCurrentKey() => _keys[_currentKeyId];
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+        new(_keys[_currentKeyId]);
 
-    public CryptographicKey? GetKey(string keyId) => _keys.GetValueOrDefault(keyId);
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(_keys.GetValueOrDefault(keyId));
 }
