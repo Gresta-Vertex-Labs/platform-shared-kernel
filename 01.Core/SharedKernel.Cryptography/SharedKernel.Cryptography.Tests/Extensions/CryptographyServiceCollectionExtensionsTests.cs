@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.Random;
@@ -9,6 +10,8 @@ using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Cryptography.Tests.Signing;
 using SharedKernel.Cryptography.Tests.Symmetric;
+using SharedKernel.Cryptography.Totp;
+using SharedKernel.Primitives.Clocks;
 using Xunit;
 
 namespace SharedKernel.Cryptography.Tests.Extensions;
@@ -129,6 +132,59 @@ public sealed class CryptographyServiceCollectionExtensionsTests
         using ServiceProvider provider = services.BuildServiceProvider();
 
         Assert.Null(provider.GetService<IEncryptionKeyProvider>());
+    }
+
+    [Fact]
+    public void AddSharedKernelCryptography_RegistersHotpGenerator()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+        services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.IsType<HotpGenerator>(provider.GetRequiredService<IHotpGenerator>());
+    }
+
+    [Fact]
+    public void AddSharedKernelCryptography_RegistersTotpGenerator_GivenAnIClockIsAlsoRegistered()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+        services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+        services.AddSingleton<IClock>(new SystemClock());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.IsType<TotpGenerator>(provider.GetRequiredService<ITotpGenerator>());
+    }
+
+    [Fact]
+    public void AddSharedKernelCryptography_DoesNotRegisterTotpReplayGuard()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.Null(provider.GetService<ITotpReplayGuard>());
+    }
+
+    [Fact]
+    public void AddSharedKernelCryptography_RegistersTotpVerifier_GivenIClockAndReplayGuardAreAlsoRegistered()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+        services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+        services.AddSingleton<IClock>(new SystemClock());
+        services.AddSingleton(Substitute.For<ITotpReplayGuard>());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.IsType<TotpVerifier>(provider.GetRequiredService<TotpVerifier>());
     }
 
     [Fact]

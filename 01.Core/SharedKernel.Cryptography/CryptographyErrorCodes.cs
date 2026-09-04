@@ -17,4 +17,7 @@ public static class CryptographyErrorCodes
 
     /// <summary>The supplied encoded string was not a valid self-describing payload produced by this service.</summary>
     public const string MalformedPayload = "cryptography.malformed_payload";
+
+    /// <summary>The supplied text is not valid unpadded RFC 4648 Base32 (invalid character or invalid length).</summary>
+    public const string InvalidBase32Encoding = "cryptography.invalid_base32_encoding";
 }

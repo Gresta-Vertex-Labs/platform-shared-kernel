@@ -6,6 +6,7 @@ using SharedKernel.Cryptography.Options;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
+using SharedKernel.Cryptography.Totp;
 
 namespace SharedKernel.Cryptography.Extensions;
 
@@ -28,11 +29,12 @@ public static class CryptographyServiceCollectionExtensions
 
     /// <summary>
     /// Registers <see cref="CryptographyOptions"/> (validated, eagerly checked at startup via
-    /// <c>ValidateOnStart()</c>) and the six stateless, thread-safe cryptographic services —
+    /// <c>ValidateOnStart()</c>) and the nine stateless, thread-safe cryptographic services —
     /// <see cref="IOneWayHasher"/>, <see cref="ISymmetricEncryptionService"/>,
     /// <see cref="IAsymmetricSignatureService"/> (both RSA and ECDSA variants, see remarks),
-    /// <see cref="IHmacSigner"/>, <see cref="ISecureRandomGenerator"/>, and
-    /// <see cref="IContentHasher"/> — as singletons.
+    /// <see cref="IHmacSigner"/>, <see cref="ISecureRandomGenerator"/>,
+    /// <see cref="IContentHasher"/>, <see cref="IHotpGenerator"/>, <see cref="ITotpGenerator"/>,
+    /// and <see cref="TotpVerifier"/> — as singletons.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configuration">
@@ -56,6 +58,16 @@ public static class CryptographyServiceCollectionExtensions
     /// environment configuration, certificate store, etc.) before resolving
     /// <see cref="ISymmetricEncryptionService"/> or <see cref="IAsymmetricSignatureService"/>.
     /// </para>
+    /// <para>
+    /// This method also does <b>not</b> register <c>SharedKernel.Primitives.Clocks.IClock</c> —
+    /// required by <see cref="ITotpGenerator"/> — or <see cref="ITotpReplayGuard"/> — required by
+    /// <see cref="TotpVerifier"/>. The consuming service must separately register an
+    /// <c>IClock</c> (e.g. via <c>services.AddClock()</c>) and its own
+    /// <see cref="ITotpReplayGuard"/> implementation before resolving <see cref="ITotpGenerator"/>
+    /// or <see cref="TotpVerifier"/> respectively; this package ships no default
+    /// <see cref="ITotpReplayGuard"/> at all (it inherently requires a backing store this
+    /// dependency-free package cannot own).
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelCryptography(
         this IServiceCollection services,
@@ -76,6 +88,10 @@ public static class CryptographyServiceCollectionExtensions
         services.AddSingleton<IAsymmetricSignatureService, RsaSignatureService>();
         services.AddKeyedSingleton<IAsymmetricSignatureService, RsaSignatureService>(RsaSignatureServiceKey);
         services.AddKeyedSingleton<IAsymmetricSignatureService, EcdsaSignatureService>(EcdsaSignatureServiceKey);
+
+        services.AddSingleton<IHotpGenerator, HotpGenerator>();
+        services.AddSingleton<ITotpGenerator, TotpGenerator>();
+        services.AddSingleton<TotpVerifier>();
 
         return services;
     }
