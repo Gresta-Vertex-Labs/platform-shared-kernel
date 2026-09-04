@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Culture-keyed message catalog contract for the SharedKernel: ILocalizationCatalog.TryGetString(code, culture) is keyed on the same code string every SharedKernel.Primitives Error factory already requires, never throws for an unregistered/untranslated lookup, never returns a blank string, and never applies the throw-site-message fallback itself (that stays the caller's responsibility, e.g. 14.Presentation's Error.ToProblemDetails()). InMemoryLocalizationCatalog is the dictionary-backed zero-config default, with parent-culture-chain fallback down to CultureInfo.InvariantCulture. StringLocalizerLocalizationCatalog wraps a caller-supplied Microsoft.Extensions.Localization.IStringLocalizerFactory so a service with full .resx tooling composes behind the same seam without a second bespoke resource pipeline. AOT-compatible. Depends on SharedKernel.Primitives and the first-party Microsoft.Extensions.Localization.Abstractions package only.</Description>
+    <PackageTags>shared-kernel;localization;i18n;culture;resx;error-messages;aot</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Localization.Abstractions" />
+  </ItemGroup>
+</Project>
