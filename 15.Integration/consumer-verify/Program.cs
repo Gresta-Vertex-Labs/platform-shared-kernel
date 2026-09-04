@@ -7,11 +7,22 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SharedKernel.Contracts.Events;
+using SharedKernel.Integration.Notifications.Abstractions.Extensions;
+using SharedKernel.Integration.Notifications.Abstractions.Notifications;
+using SharedKernel.Integration.Notifications.Abstractions.Observability;
+using SharedKernel.Integration.Notifications.Email.SendGrid;
+using SharedKernel.Integration.Notifications.Email.SendGrid.Extensions;
+using SharedKernel.Integration.Notifications.Sms.Twilio;
+using SharedKernel.Integration.Notifications.Sms.Twilio.Extensions;
 using SharedKernel.Integration.Webhooks.Dispatch;
 using SharedKernel.Integration.Webhooks.Extensions;
 using SharedKernel.Integration.Webhooks.Observability;
 using SharedKernel.Integration.Webhooks.Subscriptions;
 using SharedKernel.Messaging.Abstractions.EventPublisher;
+using SharedKernel.Primitives.Results;
+using SharedKernel.Storage.Abstractions.Abstractions;
+using SharedKernel.Storage.Abstractions.Errors;
+using SharedKernel.Storage.Abstractions.Models;
 
 // ── Surface 1: AddSharedKernelWebhooks() + a registered IWebhookSubscriptionStore ──────────────
 {
@@ -80,6 +91,69 @@ Console.WriteLine("Surface 1 PASS: AddSharedKernelWebhooks() + registered IWebho
 
 Console.WriteLine("Surface 2 PASS: omitting IWebhookSubscriptionStore produces a clear, actionable DI resolution failure at first use");
 
+// ── Surface 3 (WO-072): both Notifications providers registered together — unambiguous keyed-DI
+// resolution proves the sibling-provider-package split composes cleanly in one container. ─────────
+{
+    var services = new ServiceCollection();
+    services.AddLogging();
+    services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+    services.AddSingleton<IFileStorage, NoOpFileStorage>();
+    services.AddScoped<INotificationSenderIdentityResolver, NoOpSenderIdentityResolver>();
+
+    services.AddSharedKernelNotifications();
+    services.AddSendGridEmailNotifications(o => o.ApiKey = "consumer-verify-key");
+    services.AddTwilioSmsNotifications(o =>
+    {
+        o.AccountSid = "ACconsumerverify";
+        o.AuthToken = "consumer-verify-token";
+        o.From = "+15005550006";
+    });
+
+    using var provider = services.BuildServiceProvider();
+    using var scope = provider.CreateScope();
+
+    var emailSender = scope.ServiceProvider.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email);
+    var smsSender = scope.ServiceProvider.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Sms);
+
+    Verify(emailSender is SendGridEmailNotificationSender, "NotificationChannel.Email resolves the SendGrid sender");
+    Verify(smsSender is TwilioSmsNotificationSender, "NotificationChannel.Sms resolves the Twilio sender");
+    Verify(!ReferenceEquals(emailSender, smsSender), "The two keyed registrations resolve distinct sender instances — no ambiguity");
+}
+
+Console.WriteLine("Surface 3 PASS: both Notifications providers registered together resolve unambiguously by NotificationChannel");
+
+// ── Surface 4 (WO-072): omitting INotificationSenderIdentityResolver — clear, actionable DI
+// failure at first resolution of the SendGrid sender, mirroring Surface 2's shape. ─────────────────
+{
+    var services = new ServiceCollection();
+    services.AddLogging();
+    services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+    services.AddSingleton<IFileStorage, NoOpFileStorage>();
+    services.AddSharedKernelNotifications();
+    services.AddSendGridEmailNotifications(o => o.ApiKey = "consumer-verify-key");
+    // Deliberately no INotificationSenderIdentityResolver registration.
+
+    using var provider = services.BuildServiceProvider();
+    using var scope = provider.CreateScope();
+
+    InvalidOperationException? caught = null;
+    try
+    {
+        scope.ServiceProvider.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email);
+    }
+    catch (InvalidOperationException ex)
+    {
+        caught = ex;
+    }
+
+    Verify(caught is not null, "Resolving the SendGrid sender throws InvalidOperationException, not a silent null/no-op, when INotificationSenderIdentityResolver is unregistered");
+    Verify(
+        caught!.Message.Contains(nameof(INotificationSenderIdentityResolver), StringComparison.Ordinal),
+        "The DI resolution failure message names INotificationSenderIdentityResolver — actionable, not generic");
+}
+
+Console.WriteLine("Surface 4 PASS: omitting INotificationSenderIdentityResolver produces a clear, actionable DI resolution failure at first use");
+
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
 
@@ -112,4 +186,44 @@ internal sealed class NoOpEventPublisher : IEventPublisher
     public Task PublishAsync<TEvent>(TEvent integrationEvent, Action<PublishContext> configure, CancellationToken ct)
         where TEvent : class
         => Task.CompletedTask;
+}
+
+// ── WO-072: minimal IFileStorage stand-in — Surfaces 3/4 only prove DI composition/keyed
+// resolution, never actually download an attachment, so every member throws if ever invoked. ──────
+internal sealed class NoOpFileStorage : IFileStorage
+{
+    public Task<Result<FileReference>> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public Task<Result<FileDownload>> DownloadAsync(string bucket, string key, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public Task<Result> DeleteAsync(string bucket, string key, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public Task<Result<bool>> ExistsAsync(string bucket, string key, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public Task<Result<FileMetadata>> GetMetadataAsync(string bucket, string key, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public Task<Result<FileReference>> CopyAsync(string sourceBucket, string sourceKey, string destinationBucket, string destinationKey, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public Task<Result<IReadOnlyList<FileDeleteOutcome>>> DeleteManyAsync(string bucket, IReadOnlyCollection<string> keys, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public IAsyncEnumerable<FileMetadata> ListAsync(string bucket, string prefix, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+
+    public Task<Result> CheckHealthAsync(string bucket, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("consumer-verify's NoOpFileStorage is never exercised beyond DI composition.");
+}
+
+// ── WO-072: minimal INotificationSenderIdentityResolver stand-in for Surface 3 (Surface 4
+// deliberately omits registering this at all). ──────────────────────────────────────────────────
+internal sealed class NoOpSenderIdentityResolver : INotificationSenderIdentityResolver
+{
+    public Task<NotificationSenderIdentity> ResolveAsync(NotificationChannel channel, CancellationToken ct) =>
+        Task.FromResult(new NotificationSenderIdentity("no-reply@example.test"));
 }
