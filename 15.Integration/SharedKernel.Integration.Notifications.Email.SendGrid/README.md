@@ -1,0 +1,84 @@
+# SharedKernel.Integration.Notifications.Email.SendGrid
+
+First shipping email provider for `SharedKernel.Integration.Notifications.Abstractions` — calls
+SendGrid's v3 Mail Send REST API directly through `IHttpClientFactory` +
+`Microsoft.Extensions.Http.Resilience`. No `SendGrid` vendor NuGet SDK dependency.
+
+---
+
+## Setup
+
+```csharp
+// Program.cs — after AddSharedKernelNotifications() and your own INotificationSenderIdentityResolver
+builder.Services.AddSendGridEmailNotifications(options =>
+{
+    options.ApiKey = builder.Configuration["SendGrid:ApiKey"]!;
+});
+
+// This provider also needs IFileStorage registered (08.Storage) if any message carries attachments.
+builder.Services.AddSharedKernelS3Storage(builder.Configuration);
+```
+
+`AddSendGridEmailNotifications()` registers:
+
+- `SendGridNotificationOptions`, validated eagerly at startup (`ValidateOnStart()`).
+- A named `HttpClient` (`"SharedKernel.Integration.Notifications.Email.SendGrid"`) wired with the
+  standard resilience handler, configured from the shared `NotificationDeliveryOptions` — the same
+  field-mapping formula `SharedKernel.Integration.Webhooks` already uses.
+- The keyed `INotificationSender` for `NotificationChannel.Email`.
+
+It does **not** register `INotificationSenderIdentityResolver` or `IFileStorage` — both must already
+be registered by the consuming service.
+
+---
+
+## Sending a templated email
+
+```csharp
+var sender = serviceProvider.GetRequiredKeyedService<INotificationSender>(NotificationChannel.Email);
+
+var result = await sender.SendAsync(
+    new NotificationMessage<OrderReceiptTemplateModel>
+    {
+        NotificationDeliveryId = order.ReceiptDeliveryId,
+        Channel = NotificationChannel.Email,
+        Recipient = order.CustomerEmail,
+        TemplateId = "d-order-receipt", // a SendGrid Dynamic Template ID
+        TemplateModel = new OrderReceiptTemplateModel(order.Number, order.Total.ToString()),
+        Attachments = [new NotificationAttachment
+        {
+            FileReference = invoiceFileReference,
+            FileName = "invoice.pdf",
+            ContentType = "application/pdf",
+        }],
+    },
+    ct);
+```
+
+`TemplateModel` is serialized into SendGrid's `personalizations[0].dynamic_template_data` field.
+Attachments are resolved via `IFileStorage.DownloadAsync` and base64-encoded by streaming through a
+`CryptoStream`/`ToBase64Transform` pair — the raw attachment bytes are never held as a single
+contiguous `byte[]` (SendGrid's Mail Send API has no true streaming-upload path, so the base64
+*text* is still assembled as one JSON string field, which is an unavoidable consequence of that
+API's request shape, not of this provider's own implementation choice).
+
+---
+
+## `NotificationDeliveryId` — correlation only, not a request-level dedup guarantee
+
+`NotificationDeliveryId` is propagated via SendGrid's `custom_args` field
+(`personalizations[0]`... actually top-level `custom_args`), which SendGrid treats as opaque
+metadata attached to the send for correlating with SendGrid's own event webhooks — **not** a
+request-level idempotency key the way Twilio's `Idempotency-Key` header is
+(`SharedKernel.Integration.Notifications.Sms.Twilio`). True duplicate-send prevention for email
+remains the caller's own outbox-level responsibility (e.g. checking whether a
+`NotificationDeliveryId` was already recorded as sent before calling `SendAsync` again).
+
+---
+
+## Never throws for a provider-level failure
+
+A non-2xx response, timeout, transport exception, or an unresolvable attachment `FileReference`
+all surface as a `NotificationDeliveryResult` with `IsSuccess == false` — this sender never throws
+for those cases, mirroring `IWebhookDispatcher`'s established convention. Only invalid input (a
+null `message`) throws.

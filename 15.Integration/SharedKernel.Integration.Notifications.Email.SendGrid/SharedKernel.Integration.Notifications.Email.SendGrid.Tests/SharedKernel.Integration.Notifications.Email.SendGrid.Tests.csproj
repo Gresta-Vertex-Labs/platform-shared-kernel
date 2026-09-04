@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!--
+      MAX_PATH workaround (see SharedKernel.Integration.Notifications.Abstractions.Tests.csproj for
+      the full explanation): this project's default nested obj/bin path exceeds Windows' 260-char
+      limit once combined with generated build-artifact filenames, causing a spurious MSB3030
+      "file not found" from the Copy task. Redirecting to an absolute, short, OS-temp-rooted path
+      keeps every generated path safely under the limit. Project-local override only — does not
+      touch the shared root Directory.Build.props.
+    -->
+    <BaseIntermediateOutputPath>$([System.IO.Path]::GetTempPath())sk-build\obj\SharedKernel.Integration.Notifications.Email.SendGrid.Tests\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$([System.IO.Path]::GetTempPath())sk-build\bin\SharedKernel.Integration.Notifications.Email.SendGrid.Tests\</BaseOutputPath>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3539</MSBuildWarningsAsMessages>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Integration.Notifications.Email.SendGrid.csproj" />
+    <ProjectReference Include="..\..\..\16.Testing\SharedKernel.Testing\SharedKernel.Testing.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+</Project>
