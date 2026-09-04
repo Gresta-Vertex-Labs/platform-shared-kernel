@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Azure Key Vault Keys implementation of SharedKernel.Cryptography's IEncryptionKeyProvider and IEnvelopeEncryptionProvider. AzureKeyVaultEncryptionKeyProvider's direct-retrieval mode (IEncryptionKeyProvider) is built internally on top of its own envelope-wrap mode (IEnvelopeEncryptionProvider, backed by CryptographyClient.WrapKeyAsync/UnwrapKeyAsync) — Azure Key Vault Keys does not export raw HSM-protected key material by default, so the vault's own master key material never crosses the process boundary either way. Fails closed: any Azure SDK exception propagates directly, never a silent fallback. Ships zero caching of its own — compose with SharedKernel.Cryptography's CachedEncryptionKeyProvider externally if bounded-TTL caching is desired. The one 01.Core package with a genuine third-party vendor SDK dependency (Azure.Security.KeyVault.Keys + Azure.Identity), kept out of the zero-third-party-dependency SharedKernel.Cryptography core — mirrors why SharedKernel.Storage.S3/.Obs are separate packages from SharedKernel.Storage.Abstractions.</Description>
+    <PackageTags>shared-kernel;cryptography;azure;key-vault;keyvault;kms;envelope-encryption;encryption-key-provider</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.Security.KeyVault.Keys" />
+    <PackageReference Include="Azure.Identity" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <ProjectReference Include="..\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+</Project>
