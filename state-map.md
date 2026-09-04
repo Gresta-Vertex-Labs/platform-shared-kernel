@@ -1253,7 +1253,7 @@ This exact defect class — a design document's canonical step numbering silentl
 ---
 ### P-490 — Governance: Mechanically Enforce the `13.ServiceDefaults` → `17.Workflows` Readiness-Probe-Only Layering Grant
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-080
 **Domain:** 00.Governance
 **Depends on:** None

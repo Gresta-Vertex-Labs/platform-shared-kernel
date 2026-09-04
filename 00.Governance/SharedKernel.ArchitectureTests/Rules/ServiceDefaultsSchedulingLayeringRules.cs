@@ -23,10 +23,9 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// grant is independently justified (each donor domain ships no lower-numbered
 /// <c>.Abstractions</c> companion to reference instead) and each must stay a distinct, narrowly-
 /// named rule. See <see cref="ServiceDefaultsOnlyReachesSchedulerProbeTypesPredicate"/>'s own
-/// remarks for the full rationale. As of this class's introduction, no equivalent mechanical lock
-/// yet exists for the Workflows grant in this file — do not treat this class's existence as
-/// license to retrofit one by generalizing this class; a Workflows-scoped lock, if ever added,
-/// must be its own independent predicate and rule, designed on its own terms.
+/// remarks for the full rationale. The equivalent mechanical lock for the Workflows grant
+/// (P-490/WO-080) is <see cref="ServiceDefaultsWorkflowLayeringRules"/> — its own independent
+/// predicate and rule, designed on its own terms, never derived from this class.
 /// </para>
 /// </remarks>
 public static class ServiceDefaultsSchedulingLayeringRules

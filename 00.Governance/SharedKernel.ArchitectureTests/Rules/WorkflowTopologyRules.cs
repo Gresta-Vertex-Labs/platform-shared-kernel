@@ -120,7 +120,13 @@ public static class WorkflowTopologyRules
     /// <c>ProbeAsync</c> returning <c>Result&lt;WorkflowServiceHealth&gt;</c> is the primitive; the
     /// adapter is <c>13.ServiceDefaults</c>'s responsibility" — mirroring the
     /// <c>06.Persistence</c>/<c>08.Storage</c>/<c>09.Search</c>/<c>10.Intelligence</c>
-    /// readiness-probe split precedent.
+    /// readiness-probe split precedent. The corresponding root <c>CLAUDE.md</c> Hard rule granting
+    /// <c>13.ServiceDefaults</c> a narrow <c>ProjectReference</c> back into this package solely to
+    /// resolve that same <c>IWorkflowServiceProbe</c>/<c>WorkflowServiceHealth</c> pair (WO-047/P-291)
+    /// is mechanically enforced from the <c>13.ServiceDefaults</c> side by
+    /// <see cref="ServiceDefaultsWorkflowLayeringRules.OnlyReachesWorkflowProbeTypes"/>
+    /// (P-490/WO-080) — this class enforces what <c>17.Workflows</c> may not depend on; that one
+    /// enforces what <c>13.ServiceDefaults</c> may not reach into here.
     /// </para>
     /// </remarks>
     /// <param name="workflowsAssembly">
