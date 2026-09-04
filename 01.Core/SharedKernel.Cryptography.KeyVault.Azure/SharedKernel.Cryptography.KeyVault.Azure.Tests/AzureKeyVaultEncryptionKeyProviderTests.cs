@@ -1,5 +1,6 @@
 using SharedKernel.Cryptography.KeyVault.Azure.Options;
 using SharedKernel.Cryptography.Random;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Results;
 using Xunit;
 using MsOptions = Microsoft.Extensions.Options.Options;
@@ -59,6 +60,14 @@ public sealed class AzureKeyVaultEncryptionKeyProviderTests
         var exception = Record.Exception(CreateProvider);
 
         Assert.Null(exception);
+    }
+
+    [Fact]
+    public void ImplementsIEncryptionKeyProviderProbe()
+    {
+        AzureKeyVaultEncryptionKeyProvider provider = CreateProvider();
+
+        Assert.IsAssignableFrom<IEncryptionKeyProviderProbe>(provider);
     }
 
     [Fact]

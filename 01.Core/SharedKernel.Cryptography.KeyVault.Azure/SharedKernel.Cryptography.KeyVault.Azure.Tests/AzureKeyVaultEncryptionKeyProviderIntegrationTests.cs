@@ -10,7 +10,7 @@ using MsOptions = Microsoft.Extensions.Options.Options;
 namespace SharedKernel.Cryptography.KeyVault.Azure.Tests;
 
 /// <summary>
-/// T-54 integration coverage against real Azure SDK network calls.
+/// T-54/T-65 integration coverage against real Azure SDK network calls.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +26,12 @@ namespace SharedKernel.Cryptography.KeyVault.Azure.Tests;
 /// TCP connection to a loopback address nothing listens on (mirrors the exact technique
 /// <c>13.ServiceDefaults</c>'s <c>KeyVaultConfigurationExtensionsTests</c> already uses for the
 /// same class of "unreachable dependency" proof — a connection-refused failure, not a slow DNS
-/// timeout). No mocking of any Azure SDK type is involved anywhere in this file.
+/// timeout). No mocking of any Azure SDK type is involved anywhere in this file. Also genuinely
+/// executed: <see cref="AzureKeyVaultEncryptionKeyProvider.ProbeAsync"/>'s <em>opposite</em>
+/// contract against the same unreachable vault — it must catch the identical connection failure
+/// and report <see cref="EncryptionKeyProviderHealth.IsHealthy"/> <see langword="false"/> rather
+/// than letting it propagate, proving the one deliberate carve-out from this class's fail-closed
+/// rule actually holds.
 /// </item>
 /// <item>
 /// <b>NOT exercised in this environment — genuinely untested here:</b> the successful
@@ -77,6 +82,20 @@ public sealed class AzureKeyVaultEncryptionKeyProviderIntegrationTests(ITestOutp
     }
 
     [Fact]
+    public async Task ProbeAsync_UnreachableVault_ReturnsUnhealthy_RatherThanThrowing()
+    {
+        // Unlike every other member of this class, ProbeAsync must never let the Azure SDK
+        // exception propagate — it is the one deliberate, narrow exception to this class's
+        // otherwise-universal fail-closed-via-exception contract. See ProbeAsync's own XML docs.
+        AzureKeyVaultEncryptionKeyProvider provider = CreateUnreachableProvider();
+
+        EncryptionKeyProviderHealth health = await provider.ProbeAsync();
+
+        Assert.False(health.IsHealthy);
+        Assert.False(string.IsNullOrWhiteSpace(health.Description));
+    }
+
+    [Fact]
     public async Task UnwrapDataKeyAsync_WellFormedMasterKeyId_UnreachableVault_ThrowsRatherThanReturningResultFailure()
     {
         // A syntactically well-formed masterKeyId (passes the local check) pointed at the same
@@ -123,6 +142,10 @@ public sealed class AzureKeyVaultEncryptionKeyProviderIntegrationTests(ITestOutp
 
         Assert.NotNull(retrieved);
         Assert.Equal(current.Material, retrieved!.Material);
+
+        EncryptionKeyProviderHealth health = await provider.ProbeAsync();
+        Assert.True(health.IsHealthy);
+        Assert.Null(health.Description);
     }
 
     private static (Uri VaultUri, string KeyName)? TryGetRealVaultConfiguration()

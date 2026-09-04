@@ -6,9 +6,19 @@ Azure Key Vault Keys implementation of [`SharedKernel.Cryptography`](../SharedKe
 
 | Type | Purpose |
 |---|---|
-| `AzureKeyVaultEncryptionKeyProvider` | Implements both `IEncryptionKeyProvider` (direct retrieval) and `IEnvelopeEncryptionProvider` (wrap/unwrap) — see design note below |
+| `AzureKeyVaultEncryptionKeyProvider` | Implements `IEncryptionKeyProvider` (direct retrieval), `IEnvelopeEncryptionProvider` (wrap/unwrap), and `IEncryptionKeyProviderProbe` (readiness) — see design note below |
 | `AzureKeyVaultCryptographyOptions` | `.VaultUri`, `.CurrentKeyId`, `.KeyNames` (keyId → Azure key name), `.Credential` (defaults to `DefaultAzureCredential`) |
-| `AddSharedKernelAzureKeyVaultCryptography(configuration)` | Registers the options (validated) and the provider as both service types — same singleton instance |
+| `AddSharedKernelAzureKeyVaultCryptography(configuration)` | Registers the options (validated) and the provider as all three service types — same singleton instance |
+
+## Readiness probe
+
+`AzureKeyVaultEncryptionKeyProvider` implements `SharedKernel.Cryptography`'s `IEncryptionKeyProviderProbe`. `ProbeAsync` performs exactly one read-only, non-cryptographic call — a key-metadata lookup, never a wrap/unwrap/sign/verify — and never throws for an ordinary reachability failure: it reports `EncryptionKeyProviderHealth.IsHealthy = false` with a `Description` instead. This is a deliberate, narrow carve-out from every other member of this class, all of which fail closed via a thrown exception — see `ProbeAsync`'s own XML docs. `01.Core` ships this probe primitive only; wiring it into `AddHealthChecks()` is `13.ServiceDefaults`'s concern.
+
+```csharp
+IEncryptionKeyProviderProbe probe = provider.GetRequiredService<IEncryptionKeyProviderProbe>();
+EncryptionKeyProviderHealth health = await probe.ProbeAsync();
+// health.IsHealthy / health.Description
+```
 
 ## Design note: direct retrieval is built on envelope wrapping, not a second code path
 

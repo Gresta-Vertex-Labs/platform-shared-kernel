@@ -19,11 +19,11 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) | `SharedKernel.Primitives`, `SharedKernel.Core` |
 | `SharedKernel.Configuration` | Options-pattern validation, `AddValidatedOptions` DI extension | `SharedKernel.Primitives` |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction (boolean + weighted-variant evaluation) + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
-| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption (sync + async `*Async` overloads), async KMS-capable `IEncryptionKeyProvider`, additive `IEnvelopeEncryptionProvider`/`CachedEncryptionKeyProvider` (P-446/WO-068, shipped, breaking), RSA/ECDSA + HMAC signing, secure random/token generation, non-secret content fingerprinting (`IContentHasher`), RFC 6238/4226 TOTP/HOTP + `Base32`/`TotpProvisioningUri`/`ITotpReplayGuard`/`TotpVerifier`/`RecoveryCodeGenerator` (P-451/WO-069, shipped, additive) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
+| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption (sync + async `*Async` overloads), async KMS-capable `IEncryptionKeyProvider`, additive `IEnvelopeEncryptionProvider`/`CachedEncryptionKeyProvider` (P-446/WO-068, shipped, breaking), RSA/ECDSA + HMAC signing, secure random/token generation, non-secret content fingerprinting (`IContentHasher`), RFC 6238/4226 TOTP/HOTP + `Base32`/`TotpProvisioningUri`/`ITotpReplayGuard`/`TotpVerifier`/`RecoveryCodeGenerator` (P-451/WO-069, shipped, additive), opt-in `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` readiness-probe primitive (P-487/WO-080, shipped, additive) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 | `SharedKernel.Validation` *(shipped, P-443/WO-067)* | Culture-independent format validators: IBAN, BIC, PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164, VAT baseline, pluggable per-country `INationalIdValidator` registry (TCKN default); dual-mode standalone `Result`/bool + `Guard.Against.*` extensions | `SharedKernel.Primitives`, `SharedKernel.Guards` |
 | `SharedKernel.Validation.FluentValidation` *(shipped, P-444/WO-067)* | `IRuleBuilder<T,string>` rule adapter for every `SharedKernel.Validation` validator — the domain's only package with a third-party NuGet dependency | `SharedKernel.Validation`, `FluentValidation` (NuGet) |
-| `SharedKernel.Cryptography.KeyVault.Azure` *(shipped, P-447/WO-068)* | Azure Key Vault Keys implementation of `IEncryptionKeyProvider` + `IEnvelopeEncryptionProvider` | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Identity` (NuGet) |
+| `SharedKernel.Cryptography.KeyVault.Azure` *(shipped, P-447/WO-068; probe added P-487/WO-080)* | Azure Key Vault Keys implementation of `IEncryptionKeyProvider` + `IEnvelopeEncryptionProvider` + `IEncryptionKeyProviderProbe` | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Identity` (NuGet) |
 | `SharedKernel.DataPrivacy` *(shipped, P-474/WO-076)* | `DataClassification`/`SensitiveDataCategory` marker attributes, `PiiMasking.*` pure helpers, `IDataSubjectRequestHandler` | `SharedKernel.Primitives` |
 | `SharedKernel.Localization` *(shipped, P-482/WO-078)* | `ILocalizationCatalog` keyed by `(code, CultureInfo)`; `InMemoryLocalizationCatalog` default (with parent-culture-chain fallback down to `CultureInfo.InvariantCulture`) + `StringLocalizerLocalizationCatalog` resx-composition path | `SharedKernel.Primitives`, `Microsoft.Extensions.Localization.Abstractions` (NuGet) |
 
@@ -562,6 +562,26 @@ CachedEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider �
       no package-owned DI extension — mirrors the IIdGenerator/SystemClock(TimeProvider) no-extension
       precedent; composed explicitly at the consumer's own composition root
 
+IEncryptionKeyProviderProbe  (P-487/WO-080, shipped — additive, opt-in, distinct from IEncryptionKeyProvider/IEnvelopeEncryptionProvider)
+    ProbeAsync(CancellationToken ct = default)                  → Task<EncryptionKeyProviderHealth>
+    — mirrors 07.Messaging's IMessageBusProbe/MessageBusHealth shape exactly (plain Task<THealth>, never
+      ValueTask, never Result<T>) — chosen over 17.Workflows's Task<Result<WorkflowServiceHealth>> and
+      19.Scheduling's zero-I/O bare Task<T> because this probe is genuinely I/O-bound and must never throw
+      for an ordinary reachability failure. Implemented only by a provider with a real external dependency
+      worth checking (e.g. a KMS) — a config-based/null provider has nothing to probe and is never required
+      to implement this. Ships no default implementation — same "consumer implements" shape as
+      IEncryptionKeyProvider. The implementation MUST NOT perform a cryptographic operation (wrap/unwrap/
+      sign/verify) — those register as real key usage in a KMS's own audit trail — a cheap read-only
+      metadata call is the correct shape. Unlike IEncryptionKeyProvider/IEnvelopeEncryptionProvider, an
+      ordinary reachability failure must NOT propagate as a thrown exception — it is reported as
+      EncryptionKeyProviderHealth.IsHealthy = false instead, mirroring every other readiness-probe primitive
+      on this platform. 01.Core ships this probe primitive only, never an IHealthCheck — wiring into
+      AddHealthChecks() is 13.ServiceDefaults's concern (root Phase Backlog P-449)
+
+EncryptionKeyProviderHealth  (sealed record — P-487/WO-080, shipped)
+    .IsHealthy                                                  → bool
+    .Description                                                → string?                 (null when healthy)
+
 CryptographicKey  (sealed record)
     .Id                                                         → string
     .Material                                                   → byte[]                  (32 bytes for AES-256)
@@ -846,7 +866,7 @@ ValidationRuleBuilderExtensions  (static class — IRuleBuilder<T, string> exten
 ### `SharedKernel.Cryptography.KeyVault.Azure` — public surface (P-447/WO-068, SHIPPED — tenth published package, depends on P-446)
 
 ```
-AzureKeyVaultEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider + IEnvelopeEncryptionProvider)
+AzureKeyVaultEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider + IEnvelopeEncryptionProvider + IEncryptionKeyProviderProbe)
     — direct-retrieval mode (IEncryptionKeyProvider) is built INTERNALLY ON TOP OF the envelope-wrap mode
       (IEnvelopeEncryptionProvider): GetCurrentKeyAsync generates/caches a local AES-256 data key via
       GenerateDataKeyAsync, exposing only the already-in-memory plaintext data key as CryptographicKey.Material
@@ -855,10 +875,16 @@ AzureKeyVaultEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProv
     — envelope-wrap mode (IEnvelopeEncryptionProvider) is the vendor-idiomatic path, backed by
       CryptographyClient.WrapKeyAsync/UnwrapKeyAsync (RSA-OAEP or AES-KW depending on key type)
     — fails closed: any Azure SDK exception (unreachable vault, RequestFailedException for permission/auth
-      failure) propagates directly from every member — no silent fallback
+      failure) propagates directly from every member EXCEPT ProbeAsync — no silent fallback
     — ships ZERO caching of its own — composes with SharedKernel.Cryptography's CachedEncryptionKeyProvider
       (P-446) externally rather than duplicating it; two independent caches with different TTL semantics
       must never both wrap the same provider
+    — ProbeAsync (IEncryptionKeyProviderProbe, P-487/WO-080, shipped) performs exactly one read-only
+      key-metadata call (KeyClient.GetKeyAsync — the same call GenerateDataKeyAsync makes before it ever
+      wraps anything), never a wrap/unwrap/sign/verify. This is the ONE deliberate, narrow exception to this
+      class's fail-closed-via-exception contract: it catches every non-OperationCanceledException exception
+      and returns EncryptionKeyProviderHealth.IsHealthy = false with .Description set from the exception
+      message, rather than propagating
 
 AzureKeyVaultCryptographyOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
     .VaultUri                                                   → Uri
@@ -867,8 +893,8 @@ AzureKeyVaultCryptographyOptions  (bound via IOptions<T>; validated via SharedKe
 
 AddSharedKernelAzureKeyVaultCryptography(IConfiguration configuration)
     → registers AzureKeyVaultCryptographyOptions (validated, ValidateOnStart) and AzureKeyVaultEncryptionKeyProvider
-      as both IEncryptionKeyProvider and IEnvelopeEncryptionProvider (same singleton instance, two service-type
-      registrations); does NOT register any caching decorator
+      as IEncryptionKeyProvider, IEnvelopeEncryptionProvider, and IEncryptionKeyProviderProbe (same singleton
+      instance, three service-type registrations); does NOT register any caching decorator
 ```
 
 ### `SharedKernel.DataPrivacy` — public surface (P-474/WO-076, SHIPPED — eleventh published package)
@@ -1125,9 +1151,10 @@ var gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 services.AddSharedKernelValidation()
     .AddNationalIdValidator<MySecondCountryNationalIdValidator>();
 
-// Cryptography.KeyVault.Azure (P-447, shipped) — implements both IEncryptionKeyProvider and
-// IEnvelopeEncryptionProvider (same singleton, two service-type registrations); wrap in
-// CachedEncryptionKeyProvider (above) if caching is desired — this package ships none of its own.
+// Cryptography.KeyVault.Azure (P-447, shipped; probe added P-487/WO-080) — implements
+// IEncryptionKeyProvider, IEnvelopeEncryptionProvider, and IEncryptionKeyProviderProbe (same singleton,
+// three service-type registrations); wrap in CachedEncryptionKeyProvider (above) if caching is desired —
+// this package ships none of its own.
 services.AddSharedKernelAzureKeyVaultCryptography(configuration);
 
 // Cryptography — TOTP/HOTP (P-451/WO-069, shipped, additive). AddSharedKernelCryptography (above) also
@@ -1262,3 +1289,4 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - [2026-09-03] P-474 implemented and closed (WO-076) — `SharedKernel.DataPrivacy` shipped as the eleventh published package (references `SharedKernel.Primitives` only, zero third-party NuGet dependency): `DataClassificationAttribute`/`DataClassification`, `SensitiveDataCategoryAttribute`/`SensitiveDataCategory` (pure metadata, never reflected over in production); `PiiMasking.Email`/`.Phone`/`.Pan`/`.Suppress`, with every threshold the design left ambiguous (exact digit-count reveal windows, no-`@`/multi-`@` email handling, sub-4-digit PAN behavior) resolved explicitly and locked by literal-value tests; `IDataSubjectRequestHandler`/`DataSubjectExportBundle`/`DataSubjectErasureReceipt` (no default implementation ships anywhere in the package). T-58's "no reflection anywhere" claim is backed by a compiled-assembly `System.Reflection.Metadata`/`PEReader` scan of the production DLL's `TypeReference` table rather than a source grep — a reusable pattern for future "no reflection" claims elsewhere in this domain. Packages/Technology Stack/Interface Contracts/Implementation Rules/DI Registration/Test Rules sections updated from design-locked to shipped; package count now 11 published/1 design-locked. 56/56 `SharedKernel.DataPrivacy.Tests` passing. Packed to the local feed; the produced `.nuspec` directly inspected and confirmed to declare exactly one dependency, `SharedKernel.Primitives` — the zero-third-party claim verified against real packed output. `SharedKernel.Consumer.Tests` extended 67/67 (up from 61/61), including a `.nuspec` dependency-count assertion. Every README code sample (both `01.Core/README.md`'s new section and the package's own `README.md`) compile-verified in a throwaway scratch file before publishing, catching one accessibility mismatch since fixed. `SK.01.P474` fully `●`; root Phase Backlog P-474 closed (core-phase-implementer)
 - [2026-09-03] P-482 implemented and closed (WO-078) — `SharedKernel.Localization` shipped as the twelfth published package (references `SharedKernel.Primitives` + the first-party `Microsoft.Extensions.Localization.Abstractions`, this domain's third first-party/third-party-dependency exception): `ILocalizationCatalog.TryGetString(code, culture, out value)` keyed on the same `code` `Error` factories require, never throwing/blanking on a miss — the throw-site fallback stays `14.Presentation`'s job (P-484); `InMemoryLocalizationCatalog` resolves the design's one unspecified edge, parent-culture fallback (`tr-TR`→`tr`→`CultureInfo.InvariantCulture`, mirroring `ResourceManager`/`IStringLocalizer` semantics — a deliberate implementation-level decision, not an interface requirement); `StringLocalizerLocalizationCatalog` guards against blindly forwarding `LocalizedString.Value` on `ResourceNotFound` (would otherwise surface the raw error code as a fake translation) and temporarily swaps ambient `CultureInfo.CurrentUICulture` since `IStringLocalizer` carries no per-call culture parameter in this framework version (confirmed by reflecting over the installed 10.0.11 assembly — no `WithCulture` member exists); `LocalizationServiceCollectionExtensions`' two registrations are proven, via a real reflection-based assembly scan, to never collide with `13.ServiceDefaults`'s reserved `AddSharedKernelLocalization()` name (P-483). Packages/Technology Stack/Interface Contracts/Implementation Rules/DI Registration/AOT/Test Rules sections updated from design-locked to shipped; package count now 12 published/0 design-locked. 43/43 `SharedKernel.Localization.Tests` passing, including a `ReadmeSampleCompileTests.cs`. Packed to the local feed; the produced `.nuspec` directly inspected and confirmed to declare exactly two dependencies, `SharedKernel.Primitives` + `Microsoft.Extensions.Localization.Abstractions`. `SharedKernel.Consumer.Tests` extended 72/72 (up from 67/67), including a `.nuspec` dependency-count assertion. `SK.01.P482` fully `●`; root Phase Backlog P-482 closed (core-phase-implementer)
 - [2026-09-03] SK.01.LoggingRangesNewDomains implemented and closed (cross-cutting, no work order) — `LoggingEventIdRanges` gained `Idempotency = 18000`, `Scheduling = 19000`, `Reporting = 20000`, matching the root folder map exactly; zero breaking impact, no existing base value changed. `LoggingEventIdRangesTests` extended to all 21 domains plus a dedicated byte-for-byte regression fact hardcoding the 18 pre-existing values independently of the shared theory table (catches an accidental transposition the pairwise-uniqueness/modulo checks alone would not). Interface Contracts and Implementation Rules sections updated from "00 through 17"/"design-locked, implementation pending" to shipped/"00 through 20". `01.Core/README.md`'s registry usage section updated to match. 146/146 `SharedKernel.Primitives.Tests` passing; `SharedKernel.Consumer.Tests` re-confirmed 72/72, zero regression. This was `01.Core`'s last open phase key — every phase key in `01.Core/state-map.md` is now `●`, the domain has no further queued work (core-phase-implementer)
+- [2026-09-04] P-487 implemented and closed (WO-080) — `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` shipped additively in `SharedKernel.Cryptography` (mirrors `07.Messaging`'s `IMessageBusProbe`/`MessageBusHealth` shape — plain `Task<THealth>`, chosen over `17.Workflows`'s `Task<Result<T>>` and `19.Scheduling`'s zero-I/O bare `Task<T>` — per the dispatching spec's explicit instruction). `AzureKeyVaultEncryptionKeyProvider` now additionally implements it: `ProbeAsync` performs one read-only Key Vault key-metadata call, never a wrap/unwrap/sign/verify, and is the one deliberate, documented carve-out from that class's fail-closed-via-exception contract — it catches every non-cancellation exception and reports `IsHealthy = false` instead of propagating. `AddSharedKernelAzureKeyVaultCryptography` now registers the probe as a third service type from the same singleton. Config-based `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` (`06.Persistence.EfCore`) confirmed unaffected — never required to implement this opt-in contract. Closes the blocker root Phase Backlog P-449 was waiting on. Packages/Interface Contracts sections updated. 239/239 `SharedKernel.Cryptography.Tests` (up from 235), 36/36 `SharedKernel.Cryptography.KeyVault.Azure.Tests` (up from 33). Both packages repacked to the local feed. `SharedKernel.Consumer.Tests` skipped — pre-existing, unrelated NU1101 restore failure (missing `SharedKernel.DataPrivacy`/`SharedKernel.Localization` nupkgs). `SK.01.P487` fully `●` (core-phase-implementer)

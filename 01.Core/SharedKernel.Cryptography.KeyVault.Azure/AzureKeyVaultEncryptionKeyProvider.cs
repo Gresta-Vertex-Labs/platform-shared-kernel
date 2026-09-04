@@ -68,8 +68,18 @@ namespace SharedKernel.Cryptography.KeyVault.Azure;
 /// <c>CachedEncryptionKeyProvider</c> externally: two independent caches with different TTL
 /// semantics must never both wrap the same provider instance.
 /// </para>
+/// <para>
+/// <b>Also implements <see cref="IEncryptionKeyProviderProbe"/>.</b> <see cref="ProbeAsync"/>
+/// resolves only the current key's metadata (<see cref="KeyClient.GetKeyAsync(string, string?, System.Threading.CancellationToken)"/>)
+/// — the exact same read-only call <see cref="GenerateDataKeyAsync"/> makes before it ever wraps
+/// anything — and never reaches <see cref="CryptographyClient.WrapKeyAsync(KeyWrapAlgorithm, byte[], System.Threading.CancellationToken)"/>
+/// or any other cryptographic operation. Unlike every other member of this class, it never lets an
+/// Azure SDK exception propagate: see <see cref="ProbeAsync"/>'s own remarks for why this one
+/// member is a deliberate, narrow exception to this class's fail-closed-via-exception contract.
+/// </para>
 /// </remarks>
-public sealed class AzureKeyVaultEncryptionKeyProvider : IEncryptionKeyProvider, IEnvelopeEncryptionProvider
+public sealed class AzureKeyVaultEncryptionKeyProvider :
+    IEncryptionKeyProvider, IEnvelopeEncryptionProvider, IEncryptionKeyProviderProbe
 {
     // AES-256 data key size.
     private const int DataKeySizeBytes = 32;
@@ -247,6 +257,41 @@ public sealed class AzureKeyVaultEncryptionKeyProvider : IEncryptionKeyProvider,
             .ConfigureAwait(false);
 
         return unwrapResult.Key;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// Performs exactly one Azure SDK call — a read-only key-metadata lookup for
+    /// <see cref="AzureKeyVaultCryptographyOptions.CurrentKeyId"/>'s configured Azure key name,
+    /// the same call <see cref="GenerateDataKeyAsync"/> makes before it ever wraps anything. This
+    /// is deliberately never a wrap/unwrap/sign/verify operation: those register as genuine key
+    /// usage in Key Vault's own audit trail, which a readiness probe must not generate as a side
+    /// effect.
+    /// </para>
+    /// <para>
+    /// <b>Never throws for an ordinary reachability failure</b> — every Azure SDK exception other
+    /// than <see cref="OperationCanceledException"/> is caught here and reported as
+    /// <see cref="EncryptionKeyProviderHealth.IsHealthy"/> <see langword="false"/> with
+    /// <see cref="EncryptionKeyProviderHealth.Description"/> set from the exception's message.
+    /// This is the one deliberate, narrow exception to this class's otherwise-universal
+    /// fail-closed-via-exception contract (see the class-level "Fail-closed" remarks) — a
+    /// readiness probe's purpose is to report status to a health-check pipeline, not to gate a
+    /// cryptographic operation.
+    /// </para>
+    /// </remarks>
+    public async Task<EncryptionKeyProviderHealth> ProbeAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            string azureKeyName = ResolveAzureKeyName(_options.CurrentKeyId!);
+            await _keyClient.GetKeyAsync(azureKeyName, version: null, ct).ConfigureAwait(false);
+            return new EncryptionKeyProviderHealth(IsHealthy: true, Description: null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new EncryptionKeyProviderHealth(IsHealthy: false, Description: exception.Message);
+        }
     }
 
     private async Task<CryptographicKey> GenerateCurrentKeyCoreAsync(CancellationToken ct)

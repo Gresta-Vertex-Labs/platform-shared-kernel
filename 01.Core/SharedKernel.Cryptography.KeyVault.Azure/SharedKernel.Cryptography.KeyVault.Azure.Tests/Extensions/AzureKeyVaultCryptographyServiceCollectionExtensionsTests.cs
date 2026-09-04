@@ -55,6 +55,21 @@ public sealed class AzureKeyVaultCryptographyServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void ValidConfiguration_RegistersSameSingletonInstance_ForProbeServiceType()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelAzureKeyVaultCryptography(ValidConfiguration());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        var asKeyProvider = provider.GetRequiredService<IEncryptionKeyProvider>();
+        var asProbe = provider.GetRequiredService<IEncryptionKeyProviderProbe>();
+
+        Assert.IsType<AzureKeyVaultEncryptionKeyProvider>(asProbe);
+        Assert.Same(asKeyProvider, asProbe);
+    }
+
+    [Fact]
     public void ValidConfiguration_SelfRegistersSecureRandomGenerator_WhenNotAlreadyRegistered()
     {
         var services = new ServiceCollection();

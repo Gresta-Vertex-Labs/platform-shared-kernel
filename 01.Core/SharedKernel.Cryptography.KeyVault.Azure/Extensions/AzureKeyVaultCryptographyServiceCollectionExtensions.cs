@@ -18,9 +18,10 @@ public static class AzureKeyVaultCryptographyServiceCollectionExtensions
     /// Registers <see cref="AzureKeyVaultCryptographyOptions"/> (validated — Data Annotations
     /// plus <see cref="AzureKeyVaultCryptographyOptionsValidator"/>'s cross-field checks, both
     /// eagerly evaluated at startup via <c>ValidateOnStart()</c>) and
-    /// <see cref="AzureKeyVaultEncryptionKeyProvider"/> as <b>both</b>
-    /// <see cref="IEncryptionKeyProvider"/> and <see cref="IEnvelopeEncryptionProvider"/> — the
-    /// same singleton instance, resolvable through either service type.
+    /// <see cref="AzureKeyVaultEncryptionKeyProvider"/> as <b>all three</b>
+    /// <see cref="IEncryptionKeyProvider"/>, <see cref="IEnvelopeEncryptionProvider"/>, and
+    /// <see cref="IEncryptionKeyProviderProbe"/> — the same singleton instance, resolvable
+    /// through any of the three service types.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configuration">
@@ -66,6 +67,8 @@ public static class AzureKeyVaultCryptographyServiceCollectionExtensions
         services.AddSingleton<IEncryptionKeyProvider>(sp =>
             sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
         services.AddSingleton<IEnvelopeEncryptionProvider>(sp =>
+            sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
+        services.AddSingleton<IEncryptionKeyProviderProbe>(sp =>
             sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
 
         return services;

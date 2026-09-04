@@ -1283,7 +1283,7 @@ A failed refresh (an unreachable KMS) propagates the thrown exception to every c
 
 ### Azure Key Vault Key Provider — `SharedKernel.Cryptography.KeyVault.Azure`
 
-`AzureKeyVaultEncryptionKeyProvider` (from the sibling `SharedKernel.Cryptography.KeyVault.Azure` package) implements both `IEncryptionKeyProvider` and `IEnvelopeEncryptionProvider` against a real Azure Key Vault. It is the one `01.Core` package with a genuine third-party vendor SDK dependency (`Azure.Security.KeyVault.Keys` + `Azure.Identity`) — kept out of this package so `SharedKernel.Cryptography` itself stays dependency-free.
+`AzureKeyVaultEncryptionKeyProvider` (from the sibling `SharedKernel.Cryptography.KeyVault.Azure` package) implements `IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider`, and `IEncryptionKeyProviderProbe` against a real Azure Key Vault. It is the one `01.Core` package with a genuine third-party vendor SDK dependency (`Azure.Security.KeyVault.Keys` + `Azure.Identity`) — kept out of this package so `SharedKernel.Cryptography` itself stays dependency-free.
 
 ```csharp
 // appsettings.json
@@ -1312,6 +1312,14 @@ builder.Services.AddSingleton<IEncryptionKeyProvider>(sp =>
 **Fail-closed**, matching every other provider in this seam: any genuine Azure SDK exception (unreachable vault, `RequestFailedException` for permission/auth failure, or the vault itself rejecting a wrapped key as tampered) propagates directly — never a silent fallback. The one narrow exception is `UnwrapDataKeyAsync`'s `Result<byte[]>` failure path, returned only when the supplied `masterKeyId` fails *local* well-formedness validation (it is not a recognized Azure Key Vault key identifier URI) before any call ever reaches Azure.
 
 **Ships zero caching of its own** beyond the single process-lifetime "current data key" slot needed to keep `CryptographicKey.Id` stable across repeated `GetCurrentKeyAsync` calls — it never applies a bounded TTL or re-resolves an already-unwrapped historical key. Compose `CachedEncryptionKeyProvider` externally, as shown above, if bounded-TTL caching is desired; two independent caches with different TTL semantics must never both wrap the same provider instance.
+
+**Readiness probe** — `AzureKeyVaultEncryptionKeyProvider` also implements `IEncryptionKeyProviderProbe`. Unlike every other member of this class, `ProbeAsync` never lets an Azure SDK exception propagate: it performs one read-only key-metadata call (never a wrap/unwrap/sign/verify) and reports `EncryptionKeyProviderHealth.IsHealthy = false` with a `Description` instead of throwing. This mirrors `07.Messaging`'s `IMessageBusProbe`/`MessageBusHealth` shape. `01.Core` ships this probe primitive only, never an `IHealthCheck` — wiring it into `AddHealthChecks()` is `13.ServiceDefaults`'s concern.
+
+```csharp
+IEncryptionKeyProviderProbe probe = provider.GetRequiredService<IEncryptionKeyProviderProbe>();
+EncryptionKeyProviderHealth health = await probe.ProbeAsync();
+// health.IsHealthy / health.Description
+```
 
 ### Asymmetric Signing (RSA / ECDSA)
 

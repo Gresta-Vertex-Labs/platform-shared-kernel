@@ -1191,7 +1191,7 @@ Same rationale as every other `16.Testing` double — proving P-484's fallback a
 ---
 ### P-487 — Core: Readiness-Probe Primitive for `SharedKernel.Cryptography.KeyVault.Azure`
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-080
 **Domain:** 01.Core
 **Depends on:** P-447
