@@ -1273,7 +1273,7 @@ The older of the platform's two probe-only layering grants is the unenforced one
 
 ### P-491 — Core: Associated Data (AAD) on `ISymmetricEncryptionService` (BREAKING)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 01.Core
 **Depends on:** None
@@ -1294,7 +1294,7 @@ Column-level (and cache/message/webhook/workflow-payload) ciphertext today carri
 
 ### P-492 — Core: Gate Synchronous `Encrypt`/`Decrypt` Behind a Synchronous-Provider Capability (BREAKING)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 01.Core
 **Depends on:** P-491
@@ -1315,7 +1315,7 @@ F1's root cause is generic, not EF-Core-specific — any code path anywhere on t
 
 ### P-493 — Core: `IAsymmetricKeyProvider`/`IAsymmetricSignatureService` Go Async; Fix Key Ownership and Verify Parity (BREAKING)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 01.Core
 **Depends on:** P-492
@@ -1336,7 +1336,7 @@ F9 — the exact defect WO-068 fixed on the symmetric side still exists on the s
 
 ### P-494 — Core: Azure Key Vault Keys Remote-Signing `IAsymmetricKeyProvider` Implementation
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 01.Core
 **Depends on:** P-493
@@ -1356,7 +1356,7 @@ F9 — Key Vault's primary real-world purpose is signing, and today the package 
 
 ### P-495 — Core: `SharedKernel.Cryptography.Argon2` Sibling Package
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 01.Core
 **Depends on:** None
@@ -1377,7 +1377,7 @@ Ratified decision 2. Argon2id is the modern OWASP-preferred KDF where FIPS-mode 
 
 ### P-496 — Core: Azure Key Vault Provider Hardening — Connection Reuse, Compact Key Identifiers, a Real Rotation Story
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 01.Core
 **Depends on:** P-494
@@ -1398,7 +1398,7 @@ F2 — per-call `CryptographyClient` construction risks socket exhaustion under 
 
 ### P-497 — Caching: Migrate `CacheEncryptionSerializer` to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 02.Caching
 **Depends on:** P-491, P-492
@@ -1418,7 +1418,7 @@ Direct consequence of P-491 (AAD is now required) and P-492 (a genuinely network
 
 ### P-498 — Persistence: Close the Sync-Over-Async KMS Materializer Defect in `EncryptedValueConverter` (SEVERE)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 06.Persistence
 **Depends on:** P-491, P-492
@@ -1439,7 +1439,7 @@ F1, SEVERE — with `AzureKeyVaultEncryptionKeyProvider` registered (already wir
 
 ### P-499 — Messaging: Migrate Payload-Transform Encryption to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 07.Messaging
 **Depends on:** P-491, P-492
@@ -1459,7 +1459,7 @@ Direct consequence of P-491/P-492, mirroring P-497/P-500/P-501's identical migra
 
 ### P-500 — Integration: Migrate Webhook Payload Encryption to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 15.Integration
 **Depends on:** P-491, P-492
@@ -1479,7 +1479,7 @@ Direct consequence of P-491/P-492, mirroring P-497/P-499/P-501.
 
 ### P-501 — Workflows: Migrate `EncryptionPayloadCodec` to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 17.Workflows
 **Depends on:** P-491, P-492
@@ -1498,7 +1498,7 @@ Direct consequence of P-491/P-492, mirroring P-497/P-499/P-500. This is the one 
 
 ### P-502 — Testing: Migrate Cryptography Fakes to AAD/Async Signatures; Add an `IAsymmetricKeyProvider` Fake (BREAKING cascade)
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 16.Testing
 **Depends on:** P-491, P-492, P-493
@@ -1518,7 +1518,7 @@ Direct consequence of P-491/P-492/P-493 — every downstream domain's own test s
 
 ### P-503 — ServiceDefaults: Verify and Close the `CachedEncryptionKeyProvider` Default-Wiring Gap
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 13.ServiceDefaults
 **Depends on:** P-496
@@ -1538,7 +1538,7 @@ F2's practical impact depends entirely on whether the caching primitive 01.Core 
 
 ### P-504 — Governance: Mechanically Lock the Synchronous-Encryption Gate and Argon2 Dependency Confinement
 
-**Status:** `○` Pending
+**Status:** `◐` Dispatched
 **Work Order:** WO-081
 **Domain:** 00.Governance
 **Depends on:** P-492, P-495
@@ -3409,3 +3409,12 @@ Not "maybe someday." Revisit only if a THIRD, genuinely independent domain needs
 - [2026-09-04] Phase Backlog P-449 → `●` Complete, and WO-080 closed end to end (P-487/P-488/P-489/P-490). P-449 had been `◐` half-shipped since the coordinated pass, blocked on `01.Core` shipping no probe primitive for its Azure Key Vault provider. P-487 added `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` (plain `Task<THealth>` mirroring `07.Messaging`'s `IMessageBusProbe`, chosen over `17.Workflows`' `Task<Result<T>>` because the probe is genuinely I/O-bound and must never throw for ordinary unreachability; its Key Vault implementation issues a read-only key-metadata call, never a wrap/unwrap/sign/verify that would register as key usage in Key Vault's own audit trail), and `13.ServiceDefaults` then wired `KeyVaultKeyProviderReadinessHealthCheck`/`AddKeyVaultKeyProviderReadinessCheck()` — no layering grant needed, `01.Core` already sits inside the permitted `01-12` range. P-488 fixed the pre-commit cache-eviction defect in shipped WO-036 code by registering `CacheInvalidationBehavior` OUTSIDE `TransactionBehavior` while leaving `AuditingBehavior` inside it, so both opposing invariants now hold at once. P-489 and P-490 locked, respectively, that behavior ordering (via a real executed MediatR pipeline, since the ordering is an emergent runtime property no IL walk can honestly prove) and the previously-unenforced `13.ServiceDefaults`→`17.Workflows` probe grant — the older grant having been the unenforced one while the newer `19.Scheduling` grant was already locked. Every lock in this work order was proven NON-VACUOUS by temporarily mutating real production code, confirming the test went red, then reverting to a verified-clean `git diff` — never by a contrived fixture alone. Test movement: `SharedKernel.ArchitectureTests.Tests` 247→253, `SharedKernel.ServiceDefaults.Tests` 201→207, `SharedKernel.Application.Behaviors.Tests` 183→187, `SharedKernel.Cryptography.Tests` 235→239, `SharedKernel.Cryptography.KeyVault.Azure.Tests` 33→36. NO phase remains open on this board (state-map-phase, coordinated pass)
 - [2026-09-04] arch-lead: deep source-level `01.Core` gold-standard audit (12 packages, ~181 files) evaluated — 20 source-verified findings plus 4 ratified user decisions (full symmetric/asymmetric-signing breaking wave, `SharedKernel.Cryptography.Argon2` sibling, Azure-KMS-provider-first fix scope, `SharedKernel.Guards`→`SharedKernel.Core` merge) turned into 33 phases, P-491–P-523, split across THREE new work orders rather than one — the scope genuinely spans three independent blast radii (a breaking crypto/KMS wave with a six-domain cascade, a separate breaking package-consolidation with its own narrow four-file blast radius found by direct grep rather than the audit's estimated "~20 dependents," and a batch of non-breaking correctness/hygiene fixes) that would only be conflated by sharing one WO id. **WO-081** (P-491–P-504, Cryptography Breaking Wave): AAD becomes a required parameter on `ISymmetricEncryptionService` (P-491); sync `Encrypt`/`Decrypt` gated behind a new synchronous-provider marker instead of silently blocking (P-492); `IAsymmetricKeyProvider` AND `IAsymmetricSignatureService` both go async, an ARCH-LEAD-IDENTIFIED gap beyond the user's own decision — leaving only the key provider async would have forced `RsaSignatureService`/`EcdsaSignatureService` into the exact block-on-async anti-pattern F1 flagged, so `IAsymmetricSignatureService` gains `SignAsync`/`VerifyAsync` on the same P-446 shape, plus fixes the key-disposal bug and the `Verify`/`Sign` minimum-key-size asymmetry (P-493); a new Azure Key Vault remote-signing `IAsymmetricKeyProvider` closes F9's "no KMS-backed signing provider at all" gap, accepted as in-scope under decision 3 (fixing the existing Azure family, not adding a cloud) (P-494); `SharedKernel.Cryptography.Argon2` ships (P-495); `AzureKeyVaultEncryptionKeyProvider` is redesigned around a short stable key-version registry instead of encoding the full wrapped-DEK into every `KeyId` — fixing connection pooling, ~470-byte row bloat, unbounded cache growth, and giving the provider an actual rotation story from one root-cause fix (P-496); cascading migrations dispatched exactly to the six domains the user named (02.Caching P-497, 06.Persistence P-498 — the SEVERE thread-pool-starvation fix, 07.Messaging P-499, 15.Integration P-500, 17.Workflows P-501, 16.Testing P-502); plus two phases the user's list didn't name but the fix chain requires: 13.ServiceDefaults verifying/closing whether `AddSharedKernelKeyVaultKeyProvider` (P-449) actually wires the caching decorator P-496 assumes (P-503), and a 00.Governance mechanical lock on the new sync-gate + Argon2 confinement (P-504). **WO-082** (P-505–P-509, Guards→Core Merge): merges `SharedKernel.Guards` into `SharedKernel.Core` while deliberately PRESERVING the `SharedKernel.Guards` C# namespace — an UPGRADE on the bare "merge" instruction so every consumer's fix is a one-line `PackageReference` swap, never a source edit (P-505); direct grep found only four real in-repo dependents (not ~20) — `SharedKernel.Validation` (P-506), `SharedKernel.Consumer.Tests` (P-507), `00.Governance`'s `SharedKernel.ArchitectureTests`+`GuardPurityRules` re-scoping (P-508), `03.Domain` (P-509). **WO-083** (P-510–P-523, Correctness & Hygiene): `ResultTry` exception-message redaction + `OperationCanceledException` passthrough, SEVERE (P-510); single-flight cancellation-token leak (P-511); PBKDF2 iteration floor/ceiling (P-512); `CryptographicKey.Material` length validation (P-513); atomic TOTP replay try-mark — flagged breaking but zero-blast-radius since no domain has shipped an `ITotpReplayGuard` consumer yet (P-514); `SmartEnum` static-init trap (P-515); thread-safe/freezable `InMemoryLocalizationCatalog` (P-516); corrected "zero dependencies" claims, choosing to fix the docs rather than remove the live `AddClock()` API (P-517); `TryAdd`/`TryAddEnumerable` DI convention + fixing the confirmed `AddSharedKernelCryptography()` double-registration bug (P-518); additive source-generator options-validation path (P-519); stale package metadata + `01.Core`'s own Package Board correction (P-520); versioned/dated IBAN/ISO reference tables + opt-in mod-97 fallback (P-521); bounded format-guard regex cache, sequenced after the Guards merge (P-522); governance lock for the TryAdd convention (P-523). **DECLINED/DEFERRED, no phase written:** F16 (`TreatWarningsAsErrors`) and F17 (`EnablePackageValidation`) are `Directory.Build.props`/build-configuration concerns routed to `devops-lead`, not domain phases — the arch-lead phase-backlog model has no domain for build tooling; key-material zeroization and a crypto-period/max-ops-per-key policy are noted as genuine future gaps but not blocking (P-496's key-version registry partially addresses the latter); a structured `Error` metadata bag for RFC 9457 extension members and new fintech validators (LEI/ABA/SEPA) are deferred to their own future work orders; a FIPS 140-3 posture statement is documentation-only, folded into this `sync-brain` pass rather than a phase. **CORRECTED, not a new finding:** the audit's "P-476 is marked complete, verify it covers `[LoggerMessage]`/`{@Object}`" gap is already resolved — `00.Governance`'s own state-map shows `SK.00.DataPrivacyLoggingGuard` shipped 8/8 with a real-assembly-verified `SK0035` analyzer (2026-08-26); the STALE claim is root `CLAUDE.md`'s own "P-476, not yet shipped" line, a documented case of root-propagation being deliberately withheld during a concurrent multi-implementer session and never later corrected — fixed via `sync-brain` in this same pass, not a new phase. All fourteen touched domains (01.Core, 02.Caching, 03.Domain, 06.Persistence, 07.Messaging, 13.ServiceDefaults, 15.Integration, 16.Testing, 17.Workflows, 00.Governance) were already `●` Published on the Domain Summary Board, so no `state-map-phase` calls were made per the board-state gate — dispatch is left to `/dispatch-phase` (arch-lead)
 - [2026-09-04] arch-lead: coordinator flagged 4 "IDENTIFIED GAPS" from the WO-081/082/083 audit as dropped without a recorded ruling (crypto-period enforcement was already settled on the record in P-496's rationale — no action needed there). Ruled on all four, none renumbering/reopening P-491–P-523: **ACCEPT** key-material zeroization, narrowed to buffers 01.Core genuinely owns (P-524, WO-083) — explicitly declines an `IDisposable CryptographicKey` (use-after-dispose hazard against `CachedEncryptionKeyProvider`'s shared cache) and `ReadOnlySpan<char>` `IOneWayHasher` overloads (the realistic caller already holds an immutable `string` by the time it reaches this API) within that same phase's own rationale, rather than as separate declines; **ACCEPT** LEI/ABA-routing-number/SEPA-creditor-identifier validators (P-525, WO-083) — same shape, same package, no architectural question, pure catalog completeness; **ACCEPT** a dedicated FIPS 140-3 posture statement (P-526, WO-083, docs-only, zero code diff) — surfaces a real, previously-undocumented gap the coordinator's own framing caught: TOTP/HOTP's RFC-mandated default `HotpAlgorithm.Sha1` is not FIPS-approved, and no guidance existed anywhere to steer a FIPS-constrained consumer to `.Sha256`/`.Sha512`; **DECLINE** a structured metadata bag on `Error` — recorded as its own `### DECLINED` entry (not a Phase Backlog phase, no P-ID consumed) rather than a changelog-only note, specifically so a future audit finds the ruling before re-raising it. Reasoning: `Error` is the platform's most-depended-upon type, a generic bag breaks its `sealed record` equality contract and raises AOT/cross-process-serialization questions no other change to this type has had to answer, and — decisively — the two concrete needs that motivated the ask (multi-field validation errors, a retry-after hint) were already solved twice, independently, at the `ProblemDetails`-construction boundary (P-402, P-408) without touching `Error` at all, proving the boundary-extension pattern is sufficient. Revisit trigger recorded: a third independent domain hitting a need that pattern genuinely cannot express, not speculative RFC 9457 vocabulary coverage. All three accepted phases target 01.Core, already `●` Published — no `state-map-phase` call made (arch-lead)
+- [2026-09-08] Phase(s) P-491, P-492, P-493, P-494, P-495, P-496 dispatched to core-arch-planner for 01.Core (dispatch-phase)
+- [2026-09-08] Phase(s) P-497 dispatched to caching-arch-planner for 02.Caching (dispatch-phase)
+- [2026-09-08] Phase(s) P-498 dispatched to persistence-arch-planner for 06.Persistence (dispatch-phase)
+- [2026-09-08] Phase(s) P-499 dispatched to messaging-arch-planner for 07.Messaging (dispatch-phase)
+- [2026-09-08] Phase(s) P-503 dispatched to servicedefaults-arch-planner for 13.ServiceDefaults (dispatch-phase)
+- [2026-09-08] Phase(s) P-500 dispatched to integration-arch-planner for 15.Integration (dispatch-phase)
+- [2026-09-08] Phase(s) P-502 dispatched to testing-arch-planner for 16.Testing (dispatch-phase)
+- [2026-09-08] Phase(s) P-501 dispatched to workflow-arch-planner for 17.Workflows (dispatch-phase)
+- [2026-09-08] Phase(s) P-504 dispatched to governance-arch-planner for 00.Governance (dispatch-phase). NOTE: dispatched LAST, overriding /dispatch-phase Step 3's domain-number-ascending sort, because P-504 depends on P-492/P-495 in 01.Core — the sort's stated assumption ("a dependency in the current batch is dispatched first because its domain number is lower") is false for a 00.Governance phase depending on 01.Core.

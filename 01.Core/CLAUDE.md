@@ -2,7 +2,7 @@
 
 ## What This Domain Is
 
-The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships twelve **published** packages today, covering: functional primitives (`Result<T>`, `Error`), exception-boundary and multi-result-aggregation railway extensions (`ResultTry`, `ResultCombine`), system abstractions (`IClock` — internally `TimeProvider`-backed since P-295 — SmartEnums, base exceptions, BCL extensions), a time-ordered identifier generator (`IIdGenerator`, UUIDv7-backed), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction (including weighted-variant/gradual-rollout evaluation), dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption — both sync and async, with an additive envelope-encryption seam via `IEnvelopeEncryptionProvider` and a bounded-TTL caching decorator via `CachedEncryptionKeyProvider` (P-446/WO-068, shipped) — RSA/ECDSA + HMAC signing, secure random generation, non-secret content fingerprinting via `IContentHasher`, and RFC 6238/4226 TOTP/HOTP second-factor primitives (`Base32`, `IHotpGenerator`, `ITotpGenerator`, `TotpProvisioningUri`, `ITotpReplayGuard`/`TotpVerifier`, `RecoveryCodeGenerator` — P-451/WO-069, shipped), a dependency-free payload compression primitive (`SharedKernel.Compression`, Brotli-default/GZip-keyed), culture-independent financial/identity format validation (`SharedKernel.Validation` — IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT + a pluggable national-ID registry, P-443/WO-067, shipped) plus its `FluentValidation` rule adapter (`SharedKernel.Validation.FluentValidation` — a third-party NuGet dependency, P-444/WO-067, shipped), a vendor-backed KMS key provider (`SharedKernel.Cryptography.KeyVault.Azure` — Azure Key Vault Keys, a package with a third-party NuGet dependency, P-447/WO-068, shipped), the platform-wide `LoggingEventIdRanges` registry — a compile-time constant reserving each folder-map domain's `EventId` numbering block for the `[LoggerMessage]` logging convention enforced repo-wide, now spanning 00 through 20 (`Idempotency`/`Scheduling`/`Reporting` bases added via `SK.01.LoggingRangesNewDomains`, shipped) — and the `WellKnownHeaders` / `WellKnownBaggageKeys` / `WellKnownTagKeys` registries, the platform-wide source of cross-service propagation identifier literals (HTTP/gRPC header names, `Activity` baggage keys, and `Activity` tag/attribute keys) that every domain touching correlation-id, tenant-id, or error-classification propagation must reference instead of redeclaring locally, PII/data-classification taxonomy and masking (`SharedKernel.DataPrivacy` — `DataClassification`/`SensitiveDataCategory` marker attributes, `PiiMasking.*` deterministic helpers, `IDataSubjectRequestHandler`, P-474/WO-076, shipped), and a culture-keyed error-message catalog seam (`SharedKernel.Localization` — `ILocalizationCatalog`/`InMemoryLocalizationCatalog`/`StringLocalizerLocalizationCatalog`, a package with a first-party Microsoft NuGet dependency, P-482/WO-078, shipped).
+The foundational building blocks domain. Every other domain in the shared kernel depends on this layer, so it must reference nothing from outside `01.Core`. It ships twelve **published** packages today, covering: functional primitives (`Result<T>`, `Error`), exception-boundary and multi-result-aggregation railway extensions (`ResultTry`, `ResultCombine`), system abstractions (`IClock` — internally `TimeProvider`-backed since P-295 — SmartEnums, base exceptions, BCL extensions), a time-ordered identifier generator (`IIdGenerator`, UUIDv7-backed), a two-path guard system (`Guard.Against` / `Guard.Throw`), Options-pattern validation, a Feature Flag abstraction (including weighted-variant/gradual-rollout evaluation), dependency-free cryptographic primitives (secret-agnostic one-way hashing, AES-GCM symmetric encryption — both sync and async, with an additive envelope-encryption seam via `IEnvelopeEncryptionProvider` and a bounded-TTL caching decorator via `CachedEncryptionKeyProvider` (P-446/WO-068, shipped) — RSA/ECDSA + HMAC signing, secure random generation, non-secret content fingerprinting via `IContentHasher`, and RFC 6238/4226 TOTP/HOTP second-factor primitives (`Base32`, `IHotpGenerator`, `ITotpGenerator`, `TotpProvisioningUri`, `ITotpReplayGuard`/`TotpVerifier`, `RecoveryCodeGenerator` — P-451/WO-069, shipped), a dependency-free payload compression primitive (`SharedKernel.Compression`, Brotli-default/GZip-keyed), culture-independent financial/identity format validation (`SharedKernel.Validation` — IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT + a pluggable national-ID registry, P-443/WO-067, shipped) plus its `FluentValidation` rule adapter (`SharedKernel.Validation.FluentValidation` — a third-party NuGet dependency, P-444/WO-067, shipped), a vendor-backed KMS key provider (`SharedKernel.Cryptography.KeyVault.Azure` — Azure Key Vault Keys, a package with a third-party NuGet dependency, P-447/WO-068, shipped), the platform-wide `LoggingEventIdRanges` registry — a compile-time constant reserving each folder-map domain's `EventId` numbering block for the `[LoggerMessage]` logging convention enforced repo-wide, now spanning 00 through 20 (`Idempotency`/`Scheduling`/`Reporting` bases added via `SK.01.LoggingRangesNewDomains`, shipped) — and the `WellKnownHeaders` / `WellKnownBaggageKeys` / `WellKnownTagKeys` registries, the platform-wide source of cross-service propagation identifier literals (HTTP/gRPC header names, `Activity` baggage keys, and `Activity` tag/attribute keys) that every domain touching correlation-id, tenant-id, or error-classification propagation must reference instead of redeclaring locally, PII/data-classification taxonomy and masking (`SharedKernel.DataPrivacy` — `DataClassification`/`SensitiveDataCategory` marker attributes, `PiiMasking.*` deterministic helpers, `IDataSubjectRequestHandler`, P-474/WO-076, shipped), and a culture-keyed error-message catalog seam (`SharedKernel.Localization` — `ILocalizationCatalog`/`InMemoryLocalizationCatalog`/`StringLocalizerLocalizationCatalog`, a package with a first-party Microsoft NuGet dependency, P-482/WO-078, shipped). WO-081 (P-491→P-496, all six design-locked, implementation pending) is a coordinated, `01.Core`-first breaking wave that seven other domains' own planners dispatch against once it ships: required associated-data (AAD) on every `ISymmetricEncryptionService` member (P-491, breaking); a `ISynchronousEncryptionKeyProvider` capability marker replacing the retained sync `Encrypt`/`Decrypt` members' silent thread-blocking hazard with a structural `NotSupportedException` (P-492); `IAsymmetricKeyProvider`/`IAsymmetricSignatureService` going async, a key-disposal-ownership fix, and `Verify`/`Sign` minimum-key-size parity (P-493, breaking); an Azure Key Vault Keys remote-signing `IAsymmetricKeyProvider` implementation (P-494); a thirteenth package, `SharedKernel.Cryptography.Argon2` (`Argon2idOneWayHasher`, a keyed OWASP-preferred alternative to the unkeyed PBKDF2 default, P-495); and Azure Key Vault provider hardening — per-key-name `CryptographyClient` connection reuse, short durable rotating key-version tags backed by a new Key-Vault-Secrets registry, and an explicitly-callable `MintNewVersionAsync` rotation story (P-496).
 
 Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Railway-oriented.**
 
@@ -19,15 +19,16 @@ Philosophy: **Zero external dependencies for Primitives. Pure C#. AOT-first. Rai
 | `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) | `SharedKernel.Primitives`, `SharedKernel.Core` |
 | `SharedKernel.Configuration` | Options-pattern validation, `AddValidatedOptions` DI extension | `SharedKernel.Primitives` |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction (boolean + weighted-variant evaluation) + `Microsoft.FeatureManagement` adapter | `SharedKernel.Primitives` |
-| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption (sync + async `*Async` overloads), async KMS-capable `IEncryptionKeyProvider`, additive `IEnvelopeEncryptionProvider`/`CachedEncryptionKeyProvider` (P-446/WO-068, shipped, breaking), RSA/ECDSA + HMAC signing, secure random/token generation, non-secret content fingerprinting (`IContentHasher`), RFC 6238/4226 TOTP/HOTP + `Base32`/`TotpProvisioningUri`/`ITotpReplayGuard`/`TotpVerifier`/`RecoveryCodeGenerator` (P-451/WO-069, shipped, additive), opt-in `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` readiness-probe primitive (P-487/WO-080, shipped, additive) | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
+| `SharedKernel.Cryptography` | Secret-agnostic one-way hashing, AES-256-GCM symmetric encryption (sync + async `*Async` overloads), async KMS-capable `IEncryptionKeyProvider`, additive `IEnvelopeEncryptionProvider`/`CachedEncryptionKeyProvider` (P-446/WO-068, shipped, breaking), RSA/ECDSA + HMAC signing, secure random/token generation, non-secret content fingerprinting (`IContentHasher`), RFC 6238/4226 TOTP/HOTP + `Base32`/`TotpProvisioningUri`/`ITotpReplayGuard`/`TotpVerifier`/`RecoveryCodeGenerator` (P-451/WO-069, shipped, additive), opt-in `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` readiness-probe primitive (P-487/WO-080, shipped, additive) — required associated-data (AAD) on `ISymmetricEncryptionService` (P-491/WO-081, **design-locked, breaking**), a `ISynchronousEncryptionKeyProvider` capability-marker gate on the retained sync `Encrypt`/`Decrypt` members (P-492/WO-081, **design-locked**), and `IAsymmetricKeyProvider`/`IAsymmetricSignatureService` going async + a key-disposal-ownership fix + `Verify`/`Sign` parity (P-493/WO-081, **design-locked, breaking, depends on P-492**) are all queued, implementation pending | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate | `SharedKernel.Primitives`, `SharedKernel.Configuration` |
 | `SharedKernel.Validation` *(shipped, P-443/WO-067)* | Culture-independent format validators: IBAN, BIC, PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164, VAT baseline, pluggable per-country `INationalIdValidator` registry (TCKN default); dual-mode standalone `Result`/bool + `Guard.Against.*` extensions | `SharedKernel.Primitives`, `SharedKernel.Guards` |
 | `SharedKernel.Validation.FluentValidation` *(shipped, P-444/WO-067)* | `IRuleBuilder<T,string>` rule adapter for every `SharedKernel.Validation` validator — the domain's only package with a third-party NuGet dependency | `SharedKernel.Validation`, `FluentValidation` (NuGet) |
-| `SharedKernel.Cryptography.KeyVault.Azure` *(shipped, P-447/WO-068; probe added P-487/WO-080)* | Azure Key Vault Keys implementation of `IEncryptionKeyProvider` + `IEnvelopeEncryptionProvider` + `IEncryptionKeyProviderProbe` | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Identity` (NuGet) |
+| `SharedKernel.Cryptography.KeyVault.Azure` *(shipped, P-447/WO-068; probe added P-487/WO-080)* | Azure Key Vault Keys implementation of `IEncryptionKeyProvider` + `IEnvelopeEncryptionProvider` + `IEncryptionKeyProviderProbe` — a remote-signing `IAsymmetricKeyProvider` implementation (`AzureKeyVaultAsymmetricKeyProvider`, P-494/WO-081, **design-locked, depends on P-493**) and connection-reuse/compact-key-identifier/rotation hardening to `AzureKeyVaultEncryptionKeyProvider` (P-496/WO-081, **design-locked, depends on P-494**) are queued, implementation pending | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Azure.Security.KeyVault.Keys`, `Azure.Identity` (NuGet; `Azure.Security.KeyVault.Secrets` additionally queued by P-496) |
 | `SharedKernel.DataPrivacy` *(shipped, P-474/WO-076)* | `DataClassification`/`SensitiveDataCategory` marker attributes, `PiiMasking.*` pure helpers, `IDataSubjectRequestHandler` | `SharedKernel.Primitives` |
 | `SharedKernel.Localization` *(shipped, P-482/WO-078)* | `ILocalizationCatalog` keyed by `(code, CultureInfo)`; `InMemoryLocalizationCatalog` default (with parent-culture-chain fallback down to `CultureInfo.InvariantCulture`) + `StringLocalizerLocalizationCatalog` resx-composition path | `SharedKernel.Primitives`, `Microsoft.Extensions.Localization.Abstractions` (NuGet) |
+| `SharedKernel.Cryptography.Argon2` *(design-locked, P-495/WO-081, implementation pending)* | `Argon2idOneWayHasher` — a `"Argon2id"`-keyed `IOneWayHasher` alternative to the unkeyed PBKDF2 default, self-describing PHC-string output | `SharedKernel.Cryptography`, `SharedKernel.Configuration`, `Konscious.Security.Cryptography.Argon2` (NuGet) |
 
-All twelve packages listed above are published. `SharedKernel.Validation` (P-443/WO-067), `SharedKernel.Validation.FluentValidation` (P-444/WO-067), `SharedKernel.Cryptography.KeyVault.Azure` (P-447/WO-068), `SharedKernel.DataPrivacy` (P-474/WO-076), and `SharedKernel.Localization` (P-482/WO-078) shipped as the eighth, ninth, tenth, eleventh, and twelfth published packages — see `SK.01.P443`/`SK.01.P444`/`SK.01.P447`/`SK.01.P474`/`SK.01.P482`. All twelve target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
+Twelve of the thirteen packages listed above are published; `SharedKernel.Cryptography.Argon2` is design-locked pending implementation. `SharedKernel.Validation` (P-443/WO-067), `SharedKernel.Validation.FluentValidation` (P-444/WO-067), `SharedKernel.Cryptography.KeyVault.Azure` (P-447/WO-068), `SharedKernel.DataPrivacy` (P-474/WO-076), and `SharedKernel.Localization` (P-482/WO-078) shipped as the eighth, ninth, tenth, eleventh, and twelfth published packages — see `SK.01.P443`/`SK.01.P444`/`SK.01.P447`/`SK.01.P474`/`SK.01.P482`. `SharedKernel.Cryptography.Argon2` is design-locked as the thirteenth package (P-495/WO-081, `SK.01.P495`) — see WO-081 below for the full six-phase design-locked batch (P-491→P-496) touching `SharedKernel.Cryptography` and `SharedKernel.Cryptography.KeyVault.Azure` as well. All thirteen target `net10.0`. Test sub-folders live inside each project folder (never in a top-level `tests/`).
 
 ---
 
@@ -50,6 +51,8 @@ All twelve packages listed above are published. `SharedKernel.Validation` (P-443
 | TOTP/HOTP second factor *(P-451, shipped)* | Pure BCL `System.Security.Cryptography` (`HMACSHA1`/`HMACSHA256`/`HMACSHA512`) — RFC 6238/4226. Zero third-party NuGet dependencies. |
 | Data privacy taxonomy *(P-474, design-locked)* | Pure C# 13 — no NuGet dependencies; attributes are pure metadata, never reflected over at runtime |
 | Localization *(P-482, shipped)* | `Microsoft.Extensions.Localization.Abstractions` (NuGet, first-party Microsoft) — wraps `IStringLocalizer`/`IStringLocalizerFactory`, never a bespoke resx pipeline |
+| Argon2id one-way hashing *(P-495/WO-081, design-locked)* | `Konscious.Security.Cryptography.Argon2` (NuGet) — pure-managed, no native/P-Invoke binding; confined to `SharedKernel.Cryptography.Argon2`; never a transitive dependency of `SharedKernel.Cryptography` core |
+| Key Vault Secrets (rotation registry) *(P-496/WO-081, design-locked)* | `Azure.Security.KeyVault.Secrets` (NuGet) — confined to `SharedKernel.Cryptography.KeyVault.Azure`, a second Azure SDK family alongside the existing `Azure.Security.KeyVault.Keys` |
 
 ---
 
@@ -498,20 +501,37 @@ Pbkdf2OneWayHasher  (sealed class, implements IOneWayHasher)
       parameter (secret, not password) — the PBKDF2 algorithm, output format, and rehash-detection
       behavior are unchanged
 
-ISymmetricEncryptionService
-    Encrypt(byte[] plaintext)                                   → EncryptedPayload        (always encrypts with the provider's current key; blocks a real thread if the registered IEncryptionKeyProvider is genuinely network-bound — see EncryptAsync)
-    EncryptAsync(byte[] plaintext, CancellationToken ct = default) → ValueTask<EncryptedPayload>   (P-446/WO-068, shipped — never blocks a thread; prefer this on hot/high-throughput paths)
-    Decrypt(EncryptedPayload payload)                           → Result<byte[]>          (failure: Error.Unexpected — tamper, wrong key, or unknown KeyId; never throws CryptographicException directly; same thread-blocking caveat as Encrypt)
-    DecryptAsync(EncryptedPayload payload, CancellationToken ct = default) → ValueTask<Result<byte[]>>   (P-446/WO-068, shipped — async counterpart of Decrypt)
-    EncryptToString(string plaintext)                           → string                  (convenience: UTF-8 → Encrypt → single self-describing Base64 string, KeyId+Nonce+Ciphertext+Tag packed together)
-    EncryptToStringAsync(string plaintext, CancellationToken ct = default) → ValueTask<string>   (P-446/WO-068, shipped)
-    DecryptToString(string encoded)                             → Result<string>          (convenience inverse of EncryptToString)
-    DecryptToStringAsync(string encoded, CancellationToken ct = default) → ValueTask<Result<string>>   (P-446/WO-068, shipped)
-    — the four sync members are RETAINED (not removed) and bridge internally onto the async
-      `IEncryptionKeyProvider` via `.GetAwaiter().GetResult()` — genuinely non-blocking when the provider
-      resolves synchronously (the config-based default, or a `CachedEncryptionKeyProvider` cache hit), but
-      BLOCKS A REAL THREAD when the provider is genuinely network-bound on a cache miss; every retained sync
-      member's XML docs state this IN CAPITALS and direct hot-path callers to the `*Async` overloads instead.
+ISymmetricEncryptionService  (BREAKING as of P-491/WO-081, design-locked, implementation pending — every member gains a required associatedData parameter)
+    Encrypt(byte[] plaintext, byte[] associatedData)            → EncryptedPayload        (always encrypts with the provider's current key; throws NotSupportedException instead of blocking when the registered IEncryptionKeyProvider is not marked ISynchronousEncryptionKeyProvider — see P-492 below; see EncryptAsync for the non-gated path)
+    EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default) → ValueTask<EncryptedPayload>   (P-446/WO-068, shipped — never blocks a thread; prefer this on hot/high-throughput paths)
+    Decrypt(EncryptedPayload payload, byte[] associatedData)    → Result<byte[]>          (failure: Error.Unexpected — tamper, wrong key, unknown KeyId, OR mismatched associatedData; never throws CryptographicException directly; same sync-gating caveat as Encrypt)
+    DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default) → ValueTask<Result<byte[]>>   (P-446/WO-068, shipped — async counterpart of Decrypt)
+    EncryptToString(string plaintext, byte[] associatedData)    → string                  (convenience: UTF-8 → Encrypt → single self-describing Base64 string, KeyId+Nonce+Ciphertext+Tag packed together — associatedData is NEVER packed into this string)
+    EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default) → ValueTask<string>   (P-446/WO-068, shipped)
+    DecryptToString(string encoded, byte[] associatedData)      → Result<string>          (convenience inverse of EncryptToString)
+    DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default) → ValueTask<Result<string>>   (P-446/WO-068, shipped)
+    — associatedData (P-491/WO-081, design-locked, BREAKING): authenticated-but-never-encrypted data bound into
+      the AES-GCM tag, passed straight through to AesGcm.Encrypt/.Decrypt's own associatedData parameter — a
+      BCL AEAD capability already present, simply unused until this phase. NEVER persisted inside
+      EncryptedPayload (no new field) and NEVER defaulted — every call site supplies it explicitly;
+      `Array.Empty<byte>()` is an acceptable explicit no-context-binding value, an implicit default is not.
+      The caller must be able to reproduce byte-identical associatedData at decrypt time from context already
+      available then (a row's own primary key, a cache key, a message type, a subscription id) — mismatched
+      associatedData fails authentication exactly like a flipped ciphertext/tag byte, surfacing as the same
+      Result<byte[]>.Failure(Error.Unexpected(...)) shape, no new ErrorCodes constant. Six cascading
+      consuming domains (02.Caching's CacheEncryptionSerializer, 06.Persistence's EncryptedValueConverter<T>
+      — the hardest case, no direct row-PK access inside a vanilla EF Core ValueConverter — 07.Messaging's
+      payload-transform trio, 15.Integration's webhook encryption, 17.Workflows's EncryptionPayloadCodec,
+      16.Testing's AddFakeCryptography fake) each carry their own WO-081 follow-on phase to supply a real
+      AAD derivation; the inventory itself lives in `01.Core/state-map.md`'s SK.01.P491 phase notes.
+    — the four sync members are RETAINED (not removed). As of P-446/WO-068 they bridged onto the async
+      `IEncryptionKeyProvider` via `.GetAwaiter().GetResult()` unconditionally; as of P-492/WO-081
+      (design-locked, implementation pending), that bridge is GATED behind
+      `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(provider)` — computed once at
+      `AesGcmEncryptionService` construction and cached — throwing a structural `NotSupportedException`
+      directing the caller to the `*Async` overloads instead of ever silently blocking a thread when the
+      registered provider is not asserted synchronous-safe. Behavior is byte-for-byte unchanged for the
+      common config-backed default, which implements the new `ISynchronousEncryptionKeyProvider` marker.
       `AesGcmEncryptionService` shares one pure, synchronous `EncryptCore`/`DecryptCore` pair between the sync
       and async members so both call shapes are guaranteed byte-identical for the same input
 
@@ -552,6 +572,7 @@ EnvelopeDataKey  (sealed record — P-446/WO-068, shipped)
 
 CachedEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider — P-446/WO-068, shipped, additive)
     ctor(IEncryptionKeyProvider inner, TimeProvider timeProvider, TimeSpan ttl)
+    .Inner                                                       → IEncryptionKeyProvider  (P-492/WO-081, design-locked, additive — public read-only, exposes the wrapped instance)
     — bounded-TTL decorator over any IEncryptionKeyProvider: a cache hit inside the TTL window never calls
       the inner provider; an expired/missing entry always re-fetches. Single-flight per cache key (the
       current key, or one specific keyId): N concurrent callers past expiry trigger exactly one inner-provider
@@ -561,6 +582,28 @@ CachedEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider �
       failed slot is discarded so the next call retries rather than staying permanently poisoned. Ships with
       no package-owned DI extension — mirrors the IIdGenerator/SystemClock(TimeProvider) no-extension
       precedent; composed explicitly at the consumer's own composition root
+    — .Inner (P-492/WO-081) exists specifically so EncryptionKeyProviderCapabilities.IsGenuinelySynchronous
+      can see through this decorator to the true leaf provider — CachedEncryptionKeyProvider itself NEVER
+      directly implements ISynchronousEncryptionKeyProvider, because a cache hit is always fast regardless of
+      what it wraps but a cache miss re-enters the inner provider, and if that inner genuinely blocks on
+      network I/O, so does this decorator on that path. Naively treating this type as always-synchronous
+      because it caches would be exactly the "decorator's best-case behavior" the capability check must
+      never trust
+
+ISynchronousEncryptionKeyProvider : IEncryptionKeyProvider  (zero-member marker interface — P-492/WO-081, design-locked, implementation pending)
+    — implemented ONLY by a provider that can genuinely guarantee GetCurrentKeyAsync/GetKeyAsync never
+      perform a blocking network/IPC round trip (the config/environment-backed default). A KMS/HSM-backed
+      provider must NEVER implement this marker — implementing it is an explicit, author-asserted safety
+      claim, never inferred by this package
+
+EncryptionKeyProviderCapabilities  (static class — P-492/WO-081, design-locked, implementation pending)
+    IsGenuinelySynchronous(IEncryptionKeyProvider provider)      → bool
+      — true when provider implements ISynchronousEncryptionKeyProvider directly, OR provider is a
+        CachedEncryptionKeyProvider whose .Inner also (recursively) satisfies this same check; false for
+        every other case, including any unrecognized third-party decorator type — the check fails toward
+        requiring the *Async overloads, never toward silently blocking. Computed once, at
+        AesGcmEncryptionService construction time, and cached (the registered provider instance is immutable
+        for the service's lifetime) — never re-evaluated per call
 
 IEncryptionKeyProviderProbe  (P-487/WO-080, shipped — additive, opt-in, distinct from IEncryptionKeyProvider/IEnvelopeEncryptionProvider)
     ProbeAsync(CancellationToken ct = default)                  → Task<EncryptionKeyProviderHealth>
@@ -586,23 +629,57 @@ CryptographicKey  (sealed record)
     .Id                                                         → string
     .Material                                                   → byte[]                  (32 bytes for AES-256)
 
-IAsymmetricSignatureService
-    Sign(byte[] data, string keyId)                             → byte[]
-    Verify(byte[] data, byte[] signature, string keyId)         → bool
+IAsymmetricSignatureService  (BREAKING as of P-493/WO-081, design-locked, implementation pending — gains async members, retained sync members newly gated)
+    Sign(byte[] data, string keyId)                             → byte[]                  (RETAINED; gated by AsymmetricKeyProviderCapabilities.IsGenuinelySynchronous — throws NotSupportedException, directing to SignAsync, when the registered IAsymmetricKeyProvider is not marked ISynchronousAsymmetricKeyProvider. BLOCKS A REAL THREAD via .GetAwaiter().GetResult() when the check passes but the provider is genuinely network-bound — this can only happen if a provider author incorrectly self-asserts the marker)
+    Verify(byte[] data, byte[] signature, string keyId)         → bool                    (RETAINED; same gating as Sign; now applies the same EnsureMinimumKeySize check Sign already applied — P-493 closes a prior silent accept-anything gap on the more security-sensitive operation)
+    SignAsync(byte[] data, string keyId, CancellationToken ct = default)           → ValueTask<byte[]>   (P-493/WO-081, design-locked, additive)
+    VerifyAsync(byte[] data, byte[] signature, string keyId, CancellationToken ct = default) → ValueTask<bool>   (P-493/WO-081, design-locked, additive)
+    — a genuine BCL limitation, recorded explicitly rather than glossed over: System.Security.Cryptography.
+      RSA/ECDsa's SignData/VerifyData have NO async overload anywhere in the BCL — so even inside SignAsync/
+      VerifyAsync, once the (now-async) key resolution completes, the actual cryptographic sign/verify call
+      against the returned RSA/ECDsa instance is inherently synchronous. For a remote-KMS-backed key
+      (SharedKernel.Cryptography.KeyVault.Azure, P-494), that means the sign/verify call itself still performs
+      a real, unavoidable blocking network round trip internally — P-493 makes KEY RESOLUTION async, never the
+      signing primitive itself. Do not assume SignAsync/VerifyAsync are fully non-blocking end to end for
+      every provider
 
 RsaSignatureService  (sealed class, implements IAsymmetricSignatureService)
     — RSA, 2048-bit minimum, PSS padding, SHA-256
+    — P-493/WO-081 (design-locked): stops disposing the RSA instance IAsymmetricKeyProvider hands back — the
+      `using` around it is removed; the instance is NOT caller-owned. Fixes a latent defect (a using-scoped
+      RSA disposes a key instance the provider may still hold and reuse — an immediate ObjectDisposedException
+      on the very next call under any sensible caching/pooling provider) invisible until P-494 makes it reachable
 
 EcdsaSignatureService  (sealed class, implements IAsymmetricSignatureService)
     — ECDSA on the P-256 curve, SHA-256
+    — P-493/WO-081 (design-locked): same disposal-ownership fix as RsaSignatureService
 
-IAsymmetricKeyProvider
-    GetRsaKey(string keyId)                                     → RSA                     (throws KeyNotFoundException if unknown)
-    GetEcdsaKey(string keyId)                                   → ECDsa                   (throws KeyNotFoundException if unknown)
+IAsymmetricKeyProvider  (BREAKING as of P-493/WO-081, design-locked, implementation pending — the prior synchronous shape is removed outright)
+    GetRsaKeyAsync(string keyId, CancellationToken ct = default)   → ValueTask<RSA>        (throws KeyNotFoundException, propagated through the ValueTask, if unknown — unchanged failure shape from the removed sync member)
+    GetEcdsaKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<ECDsa>      (same KeyNotFoundException shape)
     — implemented by the consuming service (Key Vault, certificate store, environment config); mirrors IEncryptionKeyProvider
       for the asymmetric-signing case. SharedKernel.Cryptography ships no default implementation and holds no key material.
       Introduced during P-207 implementation — required because IAsymmetricSignatureService.Sign/Verify take only a `keyId`
       string with no resolution mechanism defined; this is the resolver RsaSignatureService/EcdsaSignatureService depend on.
+    — the prior synchronous GetRsaKey(string)/GetEcdsaKey(string) members were REMOVED OUTRIGHT (P-493/WO-081,
+      design-locked) — not kept as a parallel overload, mirroring P-446's IEncryptionKeyProvider precedent
+      exactly. A synchronous/config/certificate-backed implementer migrates mechanically by returning an
+      already-completed `new ValueTask<RSA>(...)`/`new ValueTask<ECDsa>(...)`, matching P-446's precedent
+    — the returned RSA/ECDsa instance is NOT caller-owned (P-493/WO-081) — RsaSignatureService/
+      EcdsaSignatureService never call Dispose on it
+
+ISynchronousAsymmetricKeyProvider : IAsymmetricKeyProvider  (zero-member marker interface — P-493/WO-081, design-locked, implementation pending)
+    — the asymmetric-signing analog of ISynchronousEncryptionKeyProvider; implemented ONLY by a provider that
+      can genuinely guarantee GetRsaKeyAsync/GetEcdsaKeyAsync never perform a blocking network/IPC round trip.
+      SharedKernel.Cryptography.KeyVault.Azure's AzureKeyVaultAsymmetricKeyProvider (P-494) NEVER implements
+      this — it always performs genuine network I/O
+
+AsymmetricKeyProviderCapabilities  (static class — P-493/WO-081, design-locked, implementation pending)
+    IsGenuinelySynchronous(IAsymmetricKeyProvider provider)      → bool
+      — a DIRECT marker check only in this phase (`provider is ISynchronousAsymmetricKeyProvider`) — no
+        decorator-unwrapping logic yet, since no caching decorator exists for IAsymmetricKeyProvider. A future
+        decorator, if ever added, must extend this helper the same recursive-unwrap way P-492 extended
+        EncryptionKeyProviderCapabilities for CachedEncryptionKeyProvider
 
 IHmacSigner
     Sign(byte[] data, byte[] secret)                            → byte[]
@@ -895,7 +972,125 @@ AddSharedKernelAzureKeyVaultCryptography(IConfiguration configuration)
     → registers AzureKeyVaultCryptographyOptions (validated, ValidateOnStart) and AzureKeyVaultEncryptionKeyProvider
       as IEncryptionKeyProvider, IEnvelopeEncryptionProvider, and IEncryptionKeyProviderProbe (same singleton
       instance, three service-type registrations); does NOT register any caching decorator
+    — P-494/WO-081 (design-locked, implementation pending): additionally registers a NEW, DISTINCT singleton,
+      AzureKeyVaultAsymmetricKeyProvider, as IAsymmetricKeyProvider — never the same instance as
+      AzureKeyVaultEncryptionKeyProvider
+
+AzureKeyVaultAsymmetricKeyProvider  (sealed class, implements IAsymmetricKeyProvider only — P-494/WO-081, design-locked, implementation pending, depends on P-493)
+    — deliberately a SEPARATE class from AzureKeyVaultEncryptionKeyProvider: signing keys (used directly for
+      sign/verify) and wrap/unwrap keys are a different Key Vault key usage pattern even when both live in the
+      same vault. Reuses the existing AzureKeyVaultCryptographyOptions.VaultUri/.KeyNames/.Credential — no new
+      options type
+    — GetRsaKeyAsync/GetEcdsaKeyAsync back Azure Key Vault Keys' REMOTE sign/verify operations
+      (CryptographyClient.SignData/VerifyData) rather than exporting private key material Key Vault does not
+      release. Caches one CryptographyClient PER DISTINCT Azure key name (a ConcurrentDictionary<string,
+      CryptographyClient>, created at most once, never per call) from its very first implementation —
+      deliberately baking in the connection-reuse pattern P-496 has to retroactively apply to the older
+      AzureKeyVaultEncryptionKeyProvider, rather than repeating that defect twice
+    — NEVER implements ISynchronousAsymmetricKeyProvider — always performs genuine network I/O
+
+KeyVaultRsaKey : RSA / KeyVaultEcdsaKey : ECDsa  (internal sealed — P-494/WO-081, design-locked, implementation pending)
+    — thin subclasses returned by GetRsaKeyAsync/GetEcdsaKeyAsync; SignData/VerifyData overrides delegate to
+      CryptographyClient's real SYNCHRONOUS SignData/VerifyData methods (not a .GetAwaiter().GetResult() bridge
+      over the async ones — RSA/ECDsa's BCL surface gives this class no async entry point to bridge from in
+      the first place), so RsaSignatureService/EcdsaSignatureService (P-493) consume it through the EXACT SAME
+      contract as a local key, with ZERO changes to those two classes beyond what P-493 already introduced
+    — maps the fixed (HashAlgorithmName, RSASignaturePadding)/(HashAlgorithmName) combination each signature
+      service actually requests to the matching Azure SignatureAlgorithm — PS256 for RSA+SHA-256+PSS (matching
+      RsaSignatureService's fixed choice), ES256 for ECDSA+SHA-256 on the P-256 curve (matching
+      EcdsaSignatureService's fixed choice) — throwing NotSupportedException for any other combination; this is
+      NOT a general-purpose algorithm-negotiation surface
+    — ExportParameters/ImportParameters throw NotSupportedException on both — private key material NEVER
+      crosses the process boundary
+    — XML docs state IN CAPITALS that SignData/VerifyData perform a real, unavoidable blocking network call —
+      carrying forward IAsymmetricSignatureService's own P-493 BCL-limitation warning at the exact point it
+      becomes concretely observable
+
+AzureKeyVaultEncryptionKeyProvider — hardening (P-496/WO-081, design-locked, implementation pending, depends on P-494)
+    — (1) Connection reuse: gains the SAME per-Azure-key-name CryptographyClient cache
+      AzureKeyVaultAsymmetricKeyProvider (P-494) already established — no CryptographyClient is ever
+      constructed inside a per-call code path
+    — (2) Compact, durable, rotating key identifiers, correcting a real, previously-undocumented gap in the
+      original P-447 shipment: today's "process-lifetime cached current data key" means every process/pod/
+      replica silently mints its OWN unique local AES-256 data key on first use, with no genuine rotation
+      intent and no sharing across replicas of the same service — "current key" was never actually a shared,
+      stable concept, just a per-process accident. CryptographicKey.Id becomes a short opaque version tag
+      ("v1", "v2", …) instead of the previous self-decodable ~470-byte envelope, backed by a NEW durable,
+      Key-Vault-Secrets-backed version registry (a new Azure.Security.KeyVault.Secrets client, confined to
+      this package): each version's wrapped-DEK bytes + originating Azure master-key id are stored as a Key
+      Vault secret named by its short tag, plus a single "current version" pointer secret every replica reads
+      — "current" becomes a genuinely shared, deliberately-minted concept. A ConcurrentDictionary<string,
+      byte[]> memoizes an already-resolved version tag's plaintext data key for the remainder of the process's
+      lifetime — a second decrypt citing an already-seen tag costs zero further Key Vault calls
+    — GetKeyAsync stays BACKWARD-READ-COMPATIBLE: it first attempts the new short-tag registry lookup; if the
+      supplied keyId does not match the new tag format, it falls back to the LEGACY self-decodable envelope
+      parsing path the original P-447 shipment used — any already-persisted row encrypted under the pre-P-496
+      shape remains decryptable indefinitely with NO forced data migration. GetCurrentKeyAsync (new encryption
+      only, going forward) always mints/returns the new short-tag shape. Because reads stay backward-compatible
+      and no public member's signature changes, this phase ships as an ADDITIVE/MINOR repack, not a breaking
+      one — a deliberate design choice recorded explicitly, rejecting the alternative of a breaking repack that
+      would mandate a data migration for every service with existing encrypted rows
+    — (3) MintNewVersionAsync(CancellationToken ct = default) → ValueTask<string> — a NEW public method, NOT
+      part of IEncryptionKeyProvider/IEnvelopeEncryptionProvider (a provider-specific operational surface,
+      mirroring 06.Persistence's IEncryptionRotationJob precedent of leaving scheduling to the caller). Mints a
+      fresh local AES-256 data key, wraps it, stores it as a new version secret, atomically repoints the
+      "current version" secret to the new tag; every previously-minted version's secret is left untouched and
+      remains resolvable via GetKeyAsync(oldTag) indefinitely. Automatic/policy-driven rotation SCHEDULING is
+      explicitly out of scope — callable only, from an ops script, a hosted job, or a future 19.Scheduling job
+    — EnvelopeDataKey.MasterKeyId simplification (envelope-wrap path, DISTINCT from the direct-retrieval path
+      above): since UnwrapDataKeyAsync's caller already supplies the actual WrappedKey bytes directly (never
+      round-tripped through this provider's own durable store), MasterKeyId never needed the oversized
+      self-decodable envelope shape at all — it becomes the real (short) Azure key name + version identifier.
+      Requires NO new durable registry — unlike the direct-retrieval path, the envelope path's CALLER is
+      already the durable store for the wrapped bytes
+    — CachedEncryptionKeyProvider's working set is now genuinely bounded: every replica resolving "current"
+      down to the same shared, deliberately-minted tag (rather than one unique tag per process restart) is
+      what actually bounds a wrapping CachedEncryptionKeyProvider's dictionary by live-key-version count (a
+      small, deliberate, ops-driven number) instead of by pod-restart count (unbounded over a service's whole
+      operational history)
 ```
+
+### `SharedKernel.Cryptography.Argon2` — public surface (P-495/WO-081, design-locked, implementation pending — thirteenth package)
+
+```
+Argon2idOneWayHasher  (sealed class, implements IOneWayHasher)
+    Hash(string secret)                                         → string   (generates a cryptographically random salt via ISecureRandomGenerator; emits the PHC string format below)
+    Verify(string hash, string secret)                          → HashVerificationResult
+    — self-describing output uses the REAL, INTEROPERABLE PHC string format —
+      $argon2id$v=19$m=<memoryKb>,t=<iterations>,p=<parallelism>$<base64 salt>$<base64 subkey> — the
+      industry-standard Argon2 hash-storage shape, deliberately NOT a bespoke encoding the way
+      Pbkdf2OneWayHasher's format is (PBKDF2 has no equivalently universal standard string format; Argon2
+      does, and departing from it would forfeit interoperability for no benefit)
+    — Verify parses the PHC string, recomputes under the SAME parsed parameters, constant-time-compares the
+      subkey (CryptographicOperations.FixedTimeEquals, never ==/SequenceEqual), and returns
+      HashVerificationResult.SuccessRehashNeeded when the parsed m/t/p differ from the CURRENTLY-configured
+      Argon2CryptographyOptions — the same rehash-on-parameter-change shape Pbkdf2OneWayHasher already uses.
+      A malformed/foreign-algorithm string returns Failed, NEVER throws
+
+Argon2CryptographyOptions  (bound via IOptions<T>; validated via SharedKernel.Configuration's AddValidatedOptions)
+    .MemorySizeKb                                                → int   (default 19456 = 19 MiB)
+    .Iterations                                                  → int   (default 2)
+    .DegreeOfParallelism                                         → int   (default 1)
+    — defaults cite OWASP Password Storage Cheat Sheet's CURRENT minimum recommended Argon2id configuration
+      explicitly, mirroring Pbkdf2Iterations's "600,000 (OWASP 2023+ guidance)" precedent
+
+AddSharedKernelArgon2Cryptography(IConfiguration configuration)
+    → registers Argon2CryptographyOptions (validated, ValidateOnStart) and Argon2idOneWayHasher as a
+      KEYED-ONLY singleton — Argon2CryptographyServiceCollectionExtensions.Argon2idOneWayHasherKey = "Argon2id"
+      — NEVER as the unkeyed IOneWayHasher default, mirroring GZipPayloadCompressor's keyed-only-no-unkeyed-
+      registration precedent exactly. Pbkdf2OneWayHasher (registered by SharedKernel.Cryptography's own
+      AddSharedKernelCryptography) remains the sole unkeyed IOneWayHasher default and the FIPS-mode choice —
+      completely untouched by this package
+```
+
+**FIPS-mode is the deciding factor** between Argon2id and PBKDF2 on this platform: PBKDF2 stays in
+FIPS-approved-algorithm territory (and remains the unkeyed default for exactly this reason); Argon2id is the
+OWASP-preferred choice everywhere FIPS is not a hard constraint. The package README documents this explicitly.
+Third-party dependency: `Konscious.Security.Cryptography.Argon2` — a maintained, pure-managed .NET
+implementation, chosen over a native/libsodium-backed binding to avoid compounding this platform's
+AOT-preferred posture with a P/Invoke dependency on top of an already-third-party choice; AOT status flagged,
+not blocked on, mirroring the FluentValidation/Azure SDK precedent. Confined entirely to this package,
+verified via the established `.nuspec`-inspection technique in `SharedKernel.Consumer.Tests`.
 
 ### `SharedKernel.DataPrivacy` — public surface (P-474/WO-076, SHIPPED — eleventh published package)
 
@@ -1096,6 +1291,21 @@ LocalizationServiceCollectionExtensions
 - **(P-482/WO-078, shipped)** This package's own DI registration extensions (`AddInMemoryLocalizationCatalog`, `.AddStringLocalizerCatalog<TResource>()`) must never be named `AddSharedKernelLocalization()` — that name is reserved for `13.ServiceDefaults`'s separate culture-resolution middleware entry point (P-483). The two are genuinely distinct concerns (a message-lookup contract here vs. request-culture-resolution middleware there) and must never share one ambiguous name across domains. Enforced by a reflection-based test scanning every public static method this assembly declares.
 - **(P-482/WO-078, shipped)** `InMemoryLocalizationCatalog`'s parent-culture-chain fallback (a lookup for `tr-TR` walks `tr` then `CultureInfo.InvariantCulture`) is specific to that implementation, never a requirement `ILocalizationCatalog` itself imposes — a different implementation is free to require an exact `(code, culture)` match only. Do not assume every `ILocalizationCatalog` performs fallback.
 - **(P-482/WO-078, shipped)** `StringLocalizerLocalizationCatalog.TryGetString` must always check `LocalizedString.ResourceNotFound` before using `.Value` — never forward `.Value` unconditionally. On a miss, `IStringLocalizer` returns the requested key itself as `.Value`, so an unconditional forward would report a "found" translation that is really just the error code echoed back.
+- **(P-491/WO-081, design-locked, BREAKING)** Every `ISymmetricEncryptionService` member's `associatedData` parameter is mandatory — no overload may default it to `null`/`Array.Empty<byte>()`. A caller with nothing to bind must pass `Array.Empty<byte>()` explicitly. `associatedData` must never be persisted inside `EncryptedPayload` or the packed `EncryptToString`/`DecryptToString` string — it must always be re-derivable by the caller from context available at decrypt time.
+- **(P-491/WO-081, design-locked)** A mismatched `associatedData` at decrypt time must surface as `Result<byte[]>.Failure(Error.Unexpected(...))` — the identical failure shape as tamper/wrong-key/unknown-KeyId — never a new `ErrorCodes` constant and never a thrown `CryptographicException`.
+- **(P-492/WO-081, design-locked)** `ISynchronousEncryptionKeyProvider` is opt-in and author-asserted only — it must never be inferred from a provider's shape (e.g. "it doesn't obviously call a network API") and a KMS/HSM-backed provider must never implement it. `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous` must fail toward `false` (requiring `*Async`) for any provider type it does not specifically recognize — never toward `true`.
+- **(P-492/WO-081, design-locked)** `CachedEncryptionKeyProvider` must never itself implement `ISynchronousEncryptionKeyProvider` directly — its synchronous-safety is entirely a function of what its `.Inner` wraps, checked recursively by `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous`, never assumed from the decorator's own best-case (cache-hit) behavior.
+- **(P-492/WO-081, design-locked)** The sync-vs-async capability gate must be evaluated once, at construction time, and cached — never re-evaluated per call. This keeps the gate cheap enough that it introduces no measurable overhead on the hot synchronous path for the common config-backed provider.
+- **(P-493/WO-081, design-locked, BREAKING)** `IAsymmetricKeyProvider`'s two members are `GetRsaKeyAsync`/`GetEcdsaKeyAsync` (`ValueTask`-returning, `CancellationToken`-aware) — the prior synchronous members were **removed**, never kept as a parallel additive overload, mirroring `IEncryptionKeyProvider`'s P-446 precedent exactly.
+- **(P-493/WO-081, design-locked)** `RsaSignatureService`/`EcdsaSignatureService` must never call `Dispose` on an `RSA`/`ECDsa` instance returned by `IAsymmetricKeyProvider` — that instance is never caller-owned. `Verify` must apply the identical `EnsureMinimumKeySize` check `Sign` applies, for both algorithms, unless a future phase documents a deliberate, stated reason for divergence.
+- **(P-493/WO-081, design-locked)** `IAsymmetricSignatureService.SignAsync`/`VerifyAsync` make **key resolution** non-blocking only — they must never be documented or assumed to make the underlying cryptographic sign/verify call itself non-blocking, since `RSA`/`ECDsa` expose no async `SignData`/`VerifyData` in the BCL. Every provider whose signing call performs real I/O (P-494's Azure Key Vault provider included) must state this limitation in its own XML docs, not rely on this rule being remembered from `01.Core`.
+- **(P-494/WO-081, design-locked)** `AzureKeyVaultAsymmetricKeyProvider` must never implement `ISynchronousAsymmetricKeyProvider` — it always performs genuine network I/O, unlike a config/certificate-backed implementer. `KeyVaultRsaKey`/`KeyVaultEcdsaKey` must never export private key material via `ExportParameters`/`ImportParameters` — both throw `NotSupportedException` structurally, mirroring `AzureKeyVaultEncryptionKeyProvider`'s existing "vault master key material never crosses the process boundary" invariant.
+- **(P-494/WO-081, design-locked)** `AzureKeyVaultAsymmetricKeyProvider` must cache one `CryptographyClient` per distinct Azure key name from its first implementation — never construct one per call. This is deliberately not deferred to a later hardening pass the way `AzureKeyVaultEncryptionKeyProvider`'s equivalent defect was (P-496) — a defect known in advance must never be shipped a second time in a sibling class.
+- **(P-495/WO-081, design-locked)** `SharedKernel.Cryptography.Argon2`'s `Argon2idOneWayHasher` must be registered ONLY as a `"Argon2id"`-keyed singleton — never as the unkeyed `IOneWayHasher` default. `Pbkdf2OneWayHasher` remains the sole unkeyed default and the FIPS-mode-compatible choice; nothing in this package may alter that.
+- **(P-495/WO-081, design-locked)** `Argon2idOneWayHasher`'s stored-hash format must be the standard PHC string format, never a bespoke encoding — this is the one deliberate departure from `Pbkdf2OneWayHasher`'s own custom-format precedent, justified because Argon2 (unlike PBKDF2) has a genuine, widely-interoperable standard string format worth preserving.
+- **(P-496/WO-081, design-locked)** `AzureKeyVaultEncryptionKeyProvider.GetKeyAsync` must remain backward-read-compatible with the pre-P-496 self-decodable envelope `keyId` shape for any `keyId` that does not match the new short-tag format — a service with existing encrypted rows must never be forced into a data migration by this hardening pass. `GetCurrentKeyAsync` always mints/returns the new short-tag shape for new encryption going forward; the two shapes are never mixed within one minted version.
+- **(P-496/WO-081, design-locked)** `MintNewVersionAsync` must never be invoked automatically by this package on any schedule, timer, or startup hook — it is a callable-only operational surface. Automatic/policy-driven rotation scheduling remains explicitly out of scope for `01.Core`, mirroring `SharedKernel.DataPrivacy`'s declined cross-service erasure orchestrator and `06.Persistence`'s `IEncryptionRotationJob` precedent of leaving scheduling to the caller.
+- **(P-496/WO-081, design-locked)** Every previously-minted key version's Key Vault secret must remain untouched and resolvable via `GetKeyAsync(oldTag)` indefinitely after a `MintNewVersionAsync` call — minting a new "current" version must never delete, overwrite, or otherwise disturb any prior version's stored wrapped-DEK secret.
 
 ---
 
@@ -1137,6 +1347,44 @@ services.AddSingleton<IEncryptionKeyProvider, MyAsyncKeyVaultBackedKeyProvider>(
 // expensive (a real KMS call). No package-owned DI extension — plain composition, as shown here.
 services.AddSingleton<IEncryptionKeyProvider>(sp =>
     new CachedEncryptionKeyProvider(new MyKmsBackedKeyProvider(...), TimeProvider.System, TimeSpan.FromMinutes(5)));
+
+// Cryptography — associated data (AAD) on every ISymmetricEncryptionService call (P-491/WO-081,
+// design-locked, BREAKING). No new registration — every existing call site must add an explicit
+// associatedData argument. Derive it deterministically from context available at both encrypt and decrypt
+// time; Array.Empty<byte>() is the explicit "no context binding" choice, never an implicit default.
+var aad = Encoding.UTF8.GetBytes($"cache-key:{cacheKey}"); // or a row id, message type, subscription id, etc.
+var payload = symmetricEncryptionService.Encrypt(plaintext, aad);
+var roundTrip = symmetricEncryptionService.Decrypt(payload, aad); // wrong aad => Result.Failure(Error.Unexpected)
+
+// Cryptography — marking a custom IEncryptionKeyProvider as genuinely synchronous (P-492/WO-081,
+// design-locked). Only implement ISynchronousEncryptionKeyProvider when GetCurrentKeyAsync/GetKeyAsync
+// truly never perform a blocking network/IPC round trip — a KMS-backed provider must NEVER implement this.
+// An unmarked provider makes the sync Encrypt/Decrypt/EncryptToString/DecryptToString members throw
+// NotSupportedException instead of silently blocking a thread; use the *Async overloads against it instead.
+public sealed class MySynchronousConfigKeyProvider : IEncryptionKeyProvider, ISynchronousEncryptionKeyProvider
+{
+    // GetCurrentKeyAsync/GetKeyAsync return an already-completed ValueTask — genuinely non-blocking.
+}
+
+// Cryptography — Argon2id, a keyed OWASP-preferred alternative to the unkeyed PBKDF2 default
+// (P-495/WO-081, design-locked, new thirteenth package). Never replaces the unkeyed IOneWayHasher default —
+// resolve it explicitly via the "Argon2id" key. Choose Argon2id unless a FIPS-mode requirement mandates PBKDF2.
+services.AddSharedKernelArgon2Cryptography(configuration);
+var argon2 = provider.GetRequiredKeyedService<IOneWayHasher>(
+    Argon2CryptographyServiceCollectionExtensions.Argon2idOneWayHasherKey);
+
+// Cryptography — asymmetric signing goes async (P-493/WO-081, design-locked, BREAKING); a synchronous/
+// config/certificate-backed IAsymmetricKeyProvider implementer migrates mechanically by returning an
+// already-completed ValueTask, matching P-446's IEncryptionKeyProvider precedent exactly.
+services.AddSingleton<IAsymmetricKeyProvider, MyAsyncKeyVaultBackedAsymmetricKeyProvider>();
+var signature = await signatureService.SignAsync(data, keyId, ct); // never disposes the resolved RSA/ECDsa
+
+// Cryptography.KeyVault.Azure — remote signing (P-494/WO-081, design-locked) additionally registers
+// AzureKeyVaultAsymmetricKeyProvider as IAsymmetricKeyProvider (a DISTINCT singleton from
+// AzureKeyVaultEncryptionKeyProvider); rotation hardening (P-496/WO-081, design-locked) adds a callable
+// MintNewVersionAsync — never invoked automatically by this package.
+services.AddSharedKernelAzureKeyVaultCryptography(configuration);
+var newVersionTag = await azureKeyVaultEncryptionKeyProvider.MintNewVersionAsync(ct); // e.g. "v3"
 
 // Compression (P-297) — registers BrotliPayloadCompressor as both the unkeyed IPayloadCompressor default
 // and the "Brotli"-keyed singleton, plus GZipPayloadCompressor as the "GZip"-keyed singleton only.
@@ -1216,6 +1464,12 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - **(P-451/WO-069, shipped)** `Base32`, `HotpGenerator`, `TotpGenerator`, `TotpProvisioningUri`, and `RecoveryCodeGenerator` call directly into BCL `System.Security.Cryptography` types (`HMACSHA1`/`HMACSHA256`/`HMACSHA512`) and plain string/byte manipulation — no reflection, fully AOT-safe. `TotpVerifier`'s composition of `ITotpGenerator` + `ITotpReplayGuard` is ordinary interface dispatch, AOT-safe.
 - **(P-474/WO-076, design-locked, implementation pending)** `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` are plain `Attribute` subclasses — attribute *application* is always AOT-safe; the hard constraint (Implementation Rules) is that this domain never reads them back via reflection at runtime, which would be the actual AOT/trimming hazard. `PiiMasking.*` are pure static string functions — AOT-safe by default.
 - **(P-482/WO-078, shipped)** `InMemoryLocalizationCatalog` is a plain dictionary with a `CultureInfo.Parent`-walking loop — no reflection, AOT-safe. `StringLocalizerLocalizationCatalog`'s AOT status is bounded by `Microsoft.Extensions.Localization.Abstractions`'s own AOT compatibility (AOT-compatible as of .NET 8+, same family as `Microsoft.Extensions.Options` — verify on each upgrade); its ambient `CultureInfo.CurrentUICulture` swap is a plain property set/restore, no reflection.
+- **(P-491/WO-081, design-locked, implementation pending)** The `associatedData` parameter is a plain `byte[]` passed straight through to `AesGcm.Encrypt`/`.Decrypt` — no reflection, no new AOT surface whatsoever; this phase changes a method signature only.
+- **(P-492/WO-081, design-locked, implementation pending)** `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous` is a plain `is`-pattern-match chain (interface check, then a type check against `CachedEncryptionKeyProvider` with a recursive call on `.Inner`) — static IL `isinst`/`castclass` instructions only, no reflection, fully AOT-safe.
+- **(P-493/WO-081, design-locked, implementation pending)** `AsymmetricKeyProviderCapabilities.IsGenuinelySynchronous` is the same AOT-safe `is`-pattern-match shape as `EncryptionKeyProviderCapabilities`. `SignAsync`/`VerifyAsync` are ordinary `ValueTask`-returning async methods — no reflection.
+- **(P-494/WO-081, design-locked, implementation pending)** `KeyVaultRsaKey`/`KeyVaultEcdsaKey`'s AOT status is bounded by the Azure SDK's (`Azure.Security.KeyVault.Keys`) own AOT compatibility, mirroring the existing `AzureKeyVaultEncryptionKeyProvider` precedent — confined entirely to `SharedKernel.Cryptography.KeyVault.Azure`, never propagating into `SharedKernel.Cryptography` itself. Subclassing the abstract `RSA`/`ECDsa` BCL types and overriding `SignData`/`VerifyData`/`ExportParameters`/`ImportParameters` is ordinary virtual-method override dispatch — no reflection.
+- **(P-495/WO-081, design-locked, implementation pending)** `Argon2idOneWayHasher`'s AOT status is bounded by `Konscious.Security.Cryptography.Argon2`'s own AOT compatibility — must be verified on each version upgrade, mirroring the `FluentValidation`/Azure SDK precedent; confined entirely to `SharedKernel.Cryptography.Argon2`, never propagating into `SharedKernel.Cryptography` core. The PHC-string parse/format logic itself is plain string/byte manipulation, no reflection.
+- **(P-496/WO-081, design-locked, implementation pending)** The new `Azure.Security.KeyVault.Secrets` client's AOT status is bounded the same way as the existing `Azure.Security.KeyVault.Keys` dependency — verify on each upgrade, confined to `SharedKernel.Cryptography.KeyVault.Azure`. The version-tag registry (`ConcurrentDictionary`-backed) and `GetKeyAsync`'s dual-shape (new-tag-then-legacy-envelope) parsing are plain string/byte-array logic, no reflection.
 
 ---
 
@@ -1243,6 +1497,12 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - **(P-474/WO-076, shipped)** `SharedKernel.DataPrivacy.Tests/` (56/56 passing) — `PiiMasking.*` deterministic output for known inputs (email local-part masking incl. 1-char/empty/no-`@`/multi-`@` edge cases, phone digit-count-dependent reveal windows with separator preservation, PAN fixed-last-4 incl. 19-digit and sub-4-digit inputs, `Suppress`'s fixed sentinel), null/empty-input never throws; a compiled-assembly `System.Reflection.Metadata`/`PEReader` scan of the production DLL's `TypeReference` table proving no reflection-invocation type is referenced (not a source grep — see the public-surface block above), plus a companion test proving the attribute-exclusion branch is actually exercised; attribute-application mechanics for `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` (a test-only reflective read proving mechanics, never a production-code claim); confirmation `IDataSubjectRequestHandler` has no default implementation registered anywhere in this package. `SharedKernel.Consumer.Tests` gained 6 tests including a `.nuspec` dependency-count assertion proving zero third-party NuGet dependency (67/67 passing, up from 61/61).
 - **(P-482/WO-078, shipped)** `SharedKernel.Localization.Tests/` (43/43 passing) — `InMemoryLocalizationCatalog` (registered pair resolves correctly, unregistered pair returns `false`/`null` and never throws/blanks, `AddTranslation` chaining, parent-culture-chain fallback down to `CultureInfo.InvariantCulture`, case-sensitive `code` lookup); `StringLocalizerLocalizationCatalog` (wraps an NSubstitute-doubled `IStringLocalizerFactory`, correctly resolves a found key, correctly signals `false` for `ResourceNotFound` despite `LocalizedString.Value` carrying the raw key, and proves the ambient `CultureInfo.CurrentUICulture` swap is set during the call and restored afterward — including on a thrown exception); DI registration sanity for both extensions, including a reflection-based scan over every public static method this assembly declares confirming none is named `AddSharedKernelLocalization`, with a companion non-vacuous-check test; a `ReadmeSampleCompileTests.cs` compiling every README code sample verbatim. `SharedKernel.Consumer.Tests` gained 5 tests including a `.nuspec` dependency-count assertion proving exactly two dependencies (72/72 passing, up from 67/67).
 - **(SK.01.LoggingRangesNewDomains, shipped)** `LoggingEventIdRangesTests` extended so the pairwise-uniqueness/multiple-of-1000/folder-number-to-value theory cases cover all 21 domain base constants (00 through 20), with a dedicated `PreExistingEighteenDomainConstants_AreByteForByteUnchanged` fact hardcoding all 18 prior expected values independently of the shared theory table — a transposition between two existing constants would still pass the pairwise-uniqueness/modulo checks alone (both remain unique multiples of 1000), so only this independent hardcoding catches it. 146/146 `SharedKernel.Primitives.Tests` passing.
+- **(P-491/WO-081, design-locked, implementation pending)** `SharedKernel.Cryptography.Tests/` gains: round-trip with matching `associatedData` succeeds; round-trip with mismatched `associatedData` at decrypt fails with `Result.Failure(Error.Unexpected)`, proven by a test that swaps AAD between two otherwise-identical payloads (the phase's headline acceptance criterion); `Array.Empty<byte>()` is a valid, always-succeeding no-context-binding AAD choice; every pre-existing sync/async `Encrypt`/`Decrypt` test updated to pass explicit AAD and re-verified green.
+- **(P-492/WO-081, design-locked, implementation pending)** `SharedKernel.Cryptography.Tests/` gains: a provider marked `ISynchronousEncryptionKeyProvider` — sync `Encrypt`/`Decrypt` behave exactly as before; an unmarked provider — sync `Encrypt`/`Decrypt` throw `NotSupportedException` without attempting the bridge; `CachedEncryptionKeyProvider` wrapping a marked inner reports `IsGenuinelySynchronous = true`, wrapping an unmarked inner reports `false`; a nested `CachedEncryptionKeyProvider`-wrapping-`CachedEncryptionKeyProvider` resolves recursively to the true leaf provider's marking; regression of P-446's thread-pool-starvation guard against a now-explicitly-marked provider.
+- **(P-493/WO-081, design-locked, implementation pending)** `SharedKernel.Cryptography.Tests/` gains: `SignAsync`/`VerifyAsync` byte-identical to `Sign`/`Verify` for the same input under a synchronously-marked provider; sync `Sign`/`Verify` throw `NotSupportedException` against an unmarked provider; wrong-key/tampered-data failure cases for both RSA and ECDSA via the async members; a test double proving `RsaSignatureService`/`EcdsaSignatureService` never call `Dispose` on the RSA/ECDsa instance they are handed (a double that throws if `Dispose` is invoked); `Verify` rejecting a below-minimum-size key exactly like `Sign` does, for both algorithms.
+- **(P-494/WO-081, design-locked, implementation pending)** `SharedKernel.Cryptography.KeyVault.Azure.Tests/` gains (mirroring T-54's/T-65's existing skip-if-unavailable-gated real-vault posture): `GetRsaKeyAsync`/`GetEcdsaKeyAsync` round-trip via `RsaSignatureService.SignAsync`/`VerifyAsync` and `EcdsaSignatureService.SignAsync`/`VerifyAsync` against a real (or env-gated dev-tenant) Key Vault key, without ever exporting private key material; `ExportParameters`/`ImportParameters` throw `NotSupportedException`; a structural/compile-time proof `RsaSignatureService`/`EcdsaSignatureService` require zero code changes beyond P-493 to consume this provider.
+- **(P-495/WO-081, design-locked, implementation pending)** `SharedKernel.Cryptography.Argon2.Tests/` — `Hash`→`Verify` round trip (`Success`); a tampered/incorrect secret (`Failed`); a hash produced under prior options resolves `SuccessRehashNeeded` after `Argon2CryptographyOptions` changes; a malformed/foreign-algorithm PHC string returns `Failed` rather than throwing; DI registration sanity confirming `Argon2idOneWayHasher` resolves only via the `"Argon2id"` keyed lookup, and the unkeyed `IOneWayHasher` still resolves to `Pbkdf2OneWayHasher` when `AddSharedKernelCryptography` is also registered.
+- **(P-496/WO-081, design-locked, implementation pending)** `SharedKernel.Cryptography.KeyVault.Azure.Tests/` gains: decrypting a payload tagged with a previously-current, now-superseded version succeeds after `MintNewVersionAsync` mints a new one; a second decrypt of an already-resolved tag within the same process performs zero additional Key Vault calls (a call-counting test double, not a live-network assertion); two independently-constructed `AzureKeyVaultEncryptionKeyProvider` instances (simulating two replicas) resolve `GetCurrentKeyAsync` to the SAME version tag against the same simulated vault state; a legacy-shape `keyId` (pre-P-496 self-decodable envelope) still resolves correctly via `GetKeyAsync`'s fallback path; a real-vault-gated integration test for the full mint→encrypt-under-new-current→decrypt-under-old-tag lifecycle, plus a length assertion confirming newly-minted `CryptographicKey.Id`/`EnvelopeDataKey.MasterKeyId` values are short (well under the previous ~470-byte envelope shape).
 
 ---
 
@@ -1290,3 +1550,4 @@ services.AddStringLocalizerCatalog<MyResourceMarker>();
 - [2026-09-03] P-482 implemented and closed (WO-078) — `SharedKernel.Localization` shipped as the twelfth published package (references `SharedKernel.Primitives` + the first-party `Microsoft.Extensions.Localization.Abstractions`, this domain's third first-party/third-party-dependency exception): `ILocalizationCatalog.TryGetString(code, culture, out value)` keyed on the same `code` `Error` factories require, never throwing/blanking on a miss — the throw-site fallback stays `14.Presentation`'s job (P-484); `InMemoryLocalizationCatalog` resolves the design's one unspecified edge, parent-culture fallback (`tr-TR`→`tr`→`CultureInfo.InvariantCulture`, mirroring `ResourceManager`/`IStringLocalizer` semantics — a deliberate implementation-level decision, not an interface requirement); `StringLocalizerLocalizationCatalog` guards against blindly forwarding `LocalizedString.Value` on `ResourceNotFound` (would otherwise surface the raw error code as a fake translation) and temporarily swaps ambient `CultureInfo.CurrentUICulture` since `IStringLocalizer` carries no per-call culture parameter in this framework version (confirmed by reflecting over the installed 10.0.11 assembly — no `WithCulture` member exists); `LocalizationServiceCollectionExtensions`' two registrations are proven, via a real reflection-based assembly scan, to never collide with `13.ServiceDefaults`'s reserved `AddSharedKernelLocalization()` name (P-483). Packages/Technology Stack/Interface Contracts/Implementation Rules/DI Registration/AOT/Test Rules sections updated from design-locked to shipped; package count now 12 published/0 design-locked. 43/43 `SharedKernel.Localization.Tests` passing, including a `ReadmeSampleCompileTests.cs`. Packed to the local feed; the produced `.nuspec` directly inspected and confirmed to declare exactly two dependencies, `SharedKernel.Primitives` + `Microsoft.Extensions.Localization.Abstractions`. `SharedKernel.Consumer.Tests` extended 72/72 (up from 67/67), including a `.nuspec` dependency-count assertion. `SK.01.P482` fully `●`; root Phase Backlog P-482 closed (core-phase-implementer)
 - [2026-09-03] SK.01.LoggingRangesNewDomains implemented and closed (cross-cutting, no work order) — `LoggingEventIdRanges` gained `Idempotency = 18000`, `Scheduling = 19000`, `Reporting = 20000`, matching the root folder map exactly; zero breaking impact, no existing base value changed. `LoggingEventIdRangesTests` extended to all 21 domains plus a dedicated byte-for-byte regression fact hardcoding the 18 pre-existing values independently of the shared theory table (catches an accidental transposition the pairwise-uniqueness/modulo checks alone would not). Interface Contracts and Implementation Rules sections updated from "00 through 17"/"design-locked, implementation pending" to shipped/"00 through 20". `01.Core/README.md`'s registry usage section updated to match. 146/146 `SharedKernel.Primitives.Tests` passing; `SharedKernel.Consumer.Tests` re-confirmed 72/72, zero regression. This was `01.Core`'s last open phase key — every phase key in `01.Core/state-map.md` is now `●`, the domain has no further queued work (core-phase-implementer)
 - [2026-09-04] P-487 implemented and closed (WO-080) — `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` shipped additively in `SharedKernel.Cryptography` (mirrors `07.Messaging`'s `IMessageBusProbe`/`MessageBusHealth` shape — plain `Task<THealth>`, chosen over `17.Workflows`'s `Task<Result<T>>` and `19.Scheduling`'s zero-I/O bare `Task<T>` — per the dispatching spec's explicit instruction). `AzureKeyVaultEncryptionKeyProvider` now additionally implements it: `ProbeAsync` performs one read-only Key Vault key-metadata call, never a wrap/unwrap/sign/verify, and is the one deliberate, documented carve-out from that class's fail-closed-via-exception contract — it catches every non-cancellation exception and reports `IsHealthy = false` instead of propagating. `AddSharedKernelAzureKeyVaultCryptography` now registers the probe as a third service type from the same singleton. Config-based `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` (`06.Persistence.EfCore`) confirmed unaffected — never required to implement this opt-in contract. Closes the blocker root Phase Backlog P-449 was waiting on. Packages/Interface Contracts sections updated. 239/239 `SharedKernel.Cryptography.Tests` (up from 235), 36/36 `SharedKernel.Cryptography.KeyVault.Azure.Tests` (up from 33). Both packages repacked to the local feed. `SharedKernel.Consumer.Tests` skipped — pre-existing, unrelated NU1101 restore failure (missing `SharedKernel.DataPrivacy`/`SharedKernel.Localization` nupkgs). `SK.01.P487` fully `●` (core-phase-implementer)
+- [2026-09-08] Six phases processed in a single pass for WO-081 (P-491→P-496) — a coordinated, `01.Core`-first breaking wave whose contracts seven other domains' own planners (`02.Caching`/`06.Persistence`/`07.Messaging`/`15.Integration`/`17.Workflows`/`16.Testing`/`13.ServiceDefaults`, plus `00.Governance`) dispatch against once this brain is read. All six design-locked (`D-*` tasks `●`); implementation (`S-*`/`C-*`/`T-*`/`DO-*`/`P-*`) left `○`, mirroring the WO-067/068/069/076/078 precedent. **P-491** (breaking) — required `associatedData` (AAD) on every `ISymmetricEncryptionService` member, passed through to `AesGcm`'s own `associatedData` parameter; `EncryptedPayload` gains no new field, AAD is never persisted; a mismatch fails authentication as `Result.Failure(Error.Unexpected)`, the same shape as any other tamper case. A full six-domain call-site inventory (with `06.Persistence`'s `EncryptedValueConverter<T>` flagged as the hardest — no direct row-PK access inside a vanilla EF Core `ValueConverter`) is recorded in `01.Core/state-map.md`'s `SK.01.P491` notes, satisfying that phase's own named acceptance criterion. **P-492** — `ISynchronousEncryptionKeyProvider` capability marker + `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous`, replacing the retained sync `Encrypt`/`Decrypt`/`EncryptToString`/`DecryptToString` members' silent `.GetAwaiter().GetResult()` thread-blocking hazard with a structural `NotSupportedException`; `CachedEncryptionKeyProvider` gains a public `.Inner` property so the check recursively unwraps to the true leaf provider — the decorator itself deliberately never implements the marker directly, so its own best-case (cache-hit) behavior can never be mistaken for a guarantee. **P-493** (breaking, depends on P-492) — `IAsymmetricKeyProvider.GetRsaKey`/`GetEcdsaKey` become `GetRsaKeyAsync`/`GetEcdsaKeyAsync` (sync members removed outright, not retained); `IAsymmetricSignatureService` gains `SignAsync`/`VerifyAsync`, its retained sync `Sign`/`Verify` gated by an analogous new `ISynchronousAsymmetricKeyProvider`/`AsymmetricKeyProviderCapabilities` pair; `RsaSignatureService`/`EcdsaSignatureService` stop disposing the provider-returned key (a latent `ObjectDisposedException` hazard invisible until P-494 makes it reachable) and `Verify` gains the same `EnsureMinimumKeySize` check `Sign` already had. Recorded explicitly rather than glossed over: `RSA`/`ECDsa` expose no async `SignData`/`VerifyData` anywhere in the BCL, so `SignAsync`/`VerifyAsync` make only **key resolution** non-blocking — the cryptographic call itself against a remote-KMS-backed key remains genuinely synchronous, a limitation P-494 carries forward at the exact point it becomes observable. **P-494** (depends on P-493) — a new `AzureKeyVaultAsymmetricKeyProvider` (deliberately separate from `AzureKeyVaultEncryptionKeyProvider`) backing `GetRsaKeyAsync`/`GetEcdsaKeyAsync` via `CryptographyClient.SignData`/`VerifyData` through thin `KeyVaultRsaKey : RSA`/`KeyVaultEcdsaKey : ECDsa` subclasses (`ExportParameters`/`ImportParameters` throw `NotSupportedException`); caches one `CryptographyClient` per Azure key name from its first implementation specifically so P-496 never has to fix the same connection-pooling defect twice. **P-495** (independent of every other WO-081 phase) — a new, **thirteenth `01.Core` package**, `SharedKernel.Cryptography.Argon2` (`Konscious.Security.Cryptography.Argon2`, pure-managed): `Argon2idOneWayHasher` emitting the real, interoperable PHC string format rather than a bespoke encoding, registered as a `"Argon2id"`-keyed-only singleton — `Pbkdf2OneWayHasher` stays the sole unkeyed default and the FIPS-mode choice, completely untouched; `Argon2CryptographyOptions` defaults (19 MiB memory, 2 iterations, parallelism 1) cite OWASP's current Argon2id minimum explicitly. **P-496** (depends on P-494) — three `AzureKeyVaultEncryptionKeyProvider` redesigns: the same per-key-name `CryptographyClient` reuse P-494 established; `CryptographicKey.Id` becomes a short durable version tag backed by a new `Azure.Security.KeyVault.Secrets`-persisted registry plus a shared `"current version"` pointer secret every replica reads — correcting a real, previously-undocumented P-447 gap where every process/pod silently minted its own unique "current" key with no cross-replica sharing; `GetKeyAsync` stays backward-read-compatible via a dual-shape fallback (new tag first, legacy self-decodable envelope second), so this ships as an **additive MINOR repack, not a breaking one** — a deliberate, explicitly-recorded choice rejecting a forced-data-migration alternative; a new callable-only `MintNewVersionAsync` gives the provider its first real rotation story, every prior version staying resolvable indefinitely. Packages/Technology Stack/Interface Contracts/Implementation Rules/DI Registration/AOT/Test Rules sections all updated across every phase above; package count now 12 published/1 design-locked (`SharedKernel.Cryptography.Argon2`, the thirteenth). 58 tasks added across six new phase keys (`SK.01.P491`→`SK.01.P496`; D-65→D-83, S-25, C-81→C-95, T-66→T-74, DO-34→DO-39, P-35→P-42); `01.Core/state-map.md` total tasks now 365 (core-arch-planner, WO-081)

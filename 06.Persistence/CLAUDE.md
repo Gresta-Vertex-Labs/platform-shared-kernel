@@ -13,6 +13,8 @@ Philosophy: **Abstraction-first. Provider-swappable. Specification-driven. Inter
 > **Shipped 2026-09-03 (Scaffold/Core, P-448/WO-068, BREAKING):** the async-contract migration cascading from `01.Core`'s P-446 (`IEncryptionKeyProvider.GetCurrentKey()`/`GetKey(string)` removed outright, replaced by `GetCurrentKeyAsync`/`GetKeyAsync`). `EncryptedValueConverter`'s constructor DROPPED its `IEncryptionKeyProvider keyProvider` parameter entirely (D-108) — it now calls `ISymmetricEncryptionService.Decrypt` directly and maps `result.Error?.Code == CryptographyErrorCodes.UnknownKeyId` → `EncryptionKeyNotFoundException`, any other failure → the existing generic tamper `CryptographicException`; observable exception behavior is unchanged, only the code path producing it. `EncryptionModelConvention`'s constructor correspondingly dropped its `IEncryptionKeyProvider?` parameter (D-109) — construction now branches on `_symmetricEncryptionService is not null` alone. `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` migrated to the async shape (D-110) — both return an ALREADY-COMPLETED `ValueTask<T>` (`IsCompletedSuccessfully == true`), since neither performs genuine I/O; `NullEncryptionKeyProvider.GetCurrentKeyAsync` still throws synchronously, before constructing any `ValueTask`. `01.Core`'s `ISymmetricEncryptionService` also gained async members (`EncryptAsync`/`DecryptAsync`/`EncryptToStringAsync`/`DecryptToStringAsync`) as part of the same P-446 shipment — this package's `NullSymmetricEncryptionService` stub had to implement them too (an incidental, not-separately-work-ordered fix required for the domain to compile at all). `SharedKernelDbContext`'s constructor KEEPS its `IEncryptionKeyProvider? encryptionKeyProvider` parameter for source-compatibility (downstream contexts still forward it to `base(...)` unchanged) but no longer stores or forwards it anywhere — `01.Core`'s `AesGcmEncryptionService` resolves `IEncryptionKeyProvider` from DI on its own. See "Encryption" below for the full picture and `state-map.md` D-108..D-112.
 >
 > **Fully shipped, no remaining blockers (2026-09-03, Tests phase, P-448/WO-068 closed end to end):** `16.Testing`/P-450 shipped, migrating `FakeEncryptionKeyProvider`/`FakeSymmetricEncryptionService` onto the async contracts and clearing the compile blocker that had forced the prior session onto a standalone throwaway harness. T-125..T-128 now run and pass inside the REAL `SharedKernel.Persistence.EfCore.Tests` project: 415/415 green, `dotnet pack` clean. Re-verifying in the real project (rather than trusting the harness's 33/33) surfaced two genuine test-quality gaps, both fixed test-only (no production code changed): `EncryptedValueConverterTests.Encrypt_ThenTamper_ThrowsCryptographicException` asserted only `Throw<Exception>()` — tightened to the concrete `CryptographicException` type T-126 requires; `NullEncryptionKeyProvider` (the no-op provider used when `.WithEncryption()` is never called) had zero test coverage anywhere — added `NullEncryptionKeyProviderTests.cs` (5 tests: synchronous pre-`ValueTask` throw, awaited-throw path, `GetKeyAsync` never throws, `GetKeyAsync` completes synchronously, singleton identity). All six `SK.06.*` phase keys are now `●` — this domain's entire tracked scope (WO-008 through WO-071) is complete end to end.
+>
+> **Design-locked, implementation pending (2026-09-08, P-498/WO-081, SEVERE — the single defect motivating this coordinated cross-domain wave):** `EncryptedValueConverter` closes a thread-pool-starvation hazard that becomes reachable the moment a KMS-backed `IEncryptionKeyProvider` (e.g. `01.Core`'s `AzureKeyVaultEncryptionKeyProvider`) is wired anywhere near this package's encryption pipeline — EF Core 10's `ValueConverter` has no async path, so every encrypted-column read/write today calls `ISymmetricEncryptionService`'s SYNC `Encrypt`/`Decrypt`, which (per `01.Core`'s already-design-locked `SK.01.P491`/`SK.01.P492`) either blocks a real thread per call or, once P-492 ships, throws `NotSupportedException` outright against any non-"genuinely synchronous" provider — cache-warm or not, since that gate is a static provider-identity check, never a per-call one. **The phase input's own literal premise (a `SavingChangesAsync`-only pre-warm hook) was evaluated and found unsound — see D-126's refutation record** — it cannot cover the READ path at all (queries never call `SaveChangesAsync`) and, even for writes, a `CachedEncryptionKeyProvider`-wrapped KMS provider can never satisfy `IsGenuinelySynchronous` regardless of cache warmth. The corrected design: `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` gain the `ISynchronousEncryptionKeyProvider` marker directly (closing what would otherwise be a hard regression for every EXISTING config-backed user); a new, HONESTLY-marked `PreWarmedEncryptionKeyProvider` serves exclusively from an in-memory cache warmed by a NEW dual-hook `EncryptionKeyPreWarmingInterceptor` (`ISaveChangesInterceptor` for writes, `IDbCommandInterceptor.ReaderExecutingAsync` — EF Core's genuine async pre-materialization extension point — for reads); and `.WithEncryption()` gains a structural, keyed-DI isolation fix (`.WithExternalEncryptionKeyProvider<TProvider>()`) that makes the defect's actual root cause — this package's `IEncryptionKeyProvider` registration silently colliding, by DI registration order, with an unrelated ambient one such as `13.ServiceDefaults`'s `AddSharedKernelKeyVaultKeyProvider` — structurally unreachable rather than merely fail-fast-detected. Also resolves `01.Core`'s own D-67 "hardest of the six" open question: `EncryptedValueConverter`'s new required associated-data parameter (`SK.01.P491`) is derived from the property's own stable table+column storage identity, computed once per property at model-finalization time — no row-PK access needed. All nine new Design tasks (D-126..D-134) are `●`; eighteen Core/Tests/Docs/Published tasks remain `○`, pending `01.Core`'s `SK.01.P491`/`SK.01.P492` shipping past design-lock into Core (this package cannot compile against the new `ISymmetricEncryptionService` shape otherwise). See "Encryption" below and `state-map.md` D-126..D-134.
 
 ---
 
@@ -734,6 +736,18 @@ AuditRecordImmutabilityInterceptor  (sealed class, implements ISaveChangesInterc
       at the ORM boundary, not left to convention.
     — XML docs additionally recommend, IN CAPITALS, a DB-level REVOKE UPDATE, DELETE grant on the underlying
       table as defense-in-depth, mirroring this package's existing encryption/soft-delete documentation style.
+
+EncryptionKeyPreWarmingInterceptor  (sealed class, implements ISaveChangesInterceptor, IDbCommandInterceptor
+                                      — DESIGN-LOCKED, P-498/WO-081, D-130, implementation pending)
+    — A FIFTH interceptor, registered ONLY by EfCorePersistenceBuilder.WithExternalEncryptionKeyProvider
+      <TProvider>() (the KMS/external-provider encryption mode) — never present in the default
+      config-backed .WithEncryption() path.
+    — Full contract documented under "Encryption" below. In summary: warms PreWarmedEncryptionKeyProvider's
+      in-memory key cache via TWO async hooks — SavingChangesAsync (writes, before ConvertToProviderExpression
+      runs) and IDbCommandInterceptor.ReaderExecutingAsync (reads, before row materialization begins) — so
+      the synchronous ISymmetricEncryptionService.Encrypt/Decrypt calls EncryptedValueConverter must make
+      (EF Core's ValueConverter has no async path) land on an already-warm cache entry in the overwhelming
+      common case, closing the F1 SEVERE thread-pool-starvation defect for both the write AND read paths.
 ```
 
 #### IUserContext injection pattern and audit string format
@@ -1002,6 +1016,26 @@ PersistenceServiceOptions  (options POCO, section "SharedKernel:Persistence")
           now fires against a config-bound value exactly as it already fires against a code-supplied one.
 
 EncryptedValueConverter  (sealed class, extends ValueConverter<string, string>)
+    constructor (NEXT, design-locked 2026-09-08 per D-128/P-498, BREAKING vs. the shape below — depends on
+                 01.Core's SK.01.P491 shipping Core, implementation pending):
+        EncryptedValueConverter(IOptionsMonitor<EncryptionOptions> optionsMonitor,
+                                 ISymmetricEncryptionService symmetricEncryptionService,
+                                 byte[] associatedData,
+                                 IEncryptionVersionOverride? versionOverride = null)
+        DESIGN-LOCKED (P-498/WO-081, D-128): gains a required byte[] associatedData parameter — the AAD
+        01.Core's P-491 now requires on every Encrypt/Decrypt call. Computed ONCE by
+        EncryptionModelConvention at model-finalization time per annotated property, as
+        UTF8Bytes("{schema ?? "public"}.{table}.{column}") (or the caller-supplied
+        associatedDataOverride string — see .Encrypt() below) — reproducible at decrypt time by
+        construction, since one converter instance already exists per property and always supplies the
+        SAME bytes; no row-PK access needed, closing 01.Core's own D-67 "hardest of the six" open
+        question. Passed straight through to symmetricEncryptionService.Encrypt(plaintextBytes,
+        associatedData)/.Decrypt(payload, associatedData). A mismatched AAD (e.g. a ciphertext value
+        spliced from a DIFFERENT column into this one) fails authentication and flows through the
+        EXISTING generic CryptographicException path — no new failure shape. RENAME HAZARD, documented
+        IN CAPITALS on the type itself: renaming the table/column a property is stored under changes its
+        derived AAD and makes every EXISTING row's ciphertext for that property permanently
+        undecryptable; supply a stable associatedDataOverride BEFORE renaming if this is a concern.
     constructor (CURRENT, shipped 2026-09-03 per D-108/P-448, BREAKING vs. the pre-P-448 shape):
         EncryptedValueConverter(IOptionsMonitor<EncryptionOptions> optionsMonitor,
                                  ISymmetricEncryptionService symmetricEncryptionService,
@@ -1074,6 +1108,14 @@ EncryptedValueConverter  (sealed class, extends ValueConverter<string, string>)
           naming AddSharedKernelCryptography() if it is missing.
 
 EncryptionOptionsKeyProvider  (internal sealed class, implements SharedKernel.Cryptography.IEncryptionKeyProvider)
+    DESIGN-LOCKED NEXT (P-498/WO-081, D-127, depends on 01.Core's SK.01.P492 shipping Core): gains
+        ", SharedKernel.Cryptography.ISynchronousEncryptionKeyProvider" to its interface list — a
+        zero-member marker, an HONEST claim since this type is SOURCE-VERIFIED zero-I/O already (reads an
+        already-loaded IOptionsMonitor.CurrentValue plus the already-synchronous EncryptionKeyByteCache).
+        THE SINGLE MOST LOAD-BEARING TASK IN P-498: without it, 01.Core's P-492 repack makes every
+        EXISTING config-backed .WithEncryption() user's sync Encrypt/Decrypt calls throw
+        NotSupportedException the moment it is picked up. NullEncryptionKeyProvider gains the same marker
+        for the same reason (it throws synchronously, before constructing any ValueTask — never blocks).
     constructor (CURRENT): EncryptionOptionsKeyProvider(IOptionsMonitor<EncryptionOptions> optionsMonitor,
                                                IEncryptionVersionOverride versionOverride,
                                                EncryptionKeyByteCache keyByteCache)
@@ -1152,13 +1194,19 @@ IEncryptionVersionOverride  (interface) / EncryptionVersionOverride  (sealed cla
           Concurrent unrelated scoped DbContext instances are unaffected — each resolves its own
           scoped IEncryptionVersionOverride, defaulting to null (i.e., CurrentVersion).
 
-.Encrypt(bool? enabled = true)  (extension method on PropertyBuilder<T>)
+.Encrypt(bool? enabled = true, string? associatedDataOverride = null)  (extension method on PropertyBuilder<T>)
     NOTE: Writes annotation "SharedKernel:Encrypt" = true/false on the property.
           This is the ONLY permitted way to mark a property for encryption.
           Called inside IEntityTypeConfiguration<TEntity>.Configure(builder):
               builder.Property(x => x.Email).HasMaxLength(255).Encrypt().IsRequired();
           Passing false explicitly opts the property out even if future bulk-annotation approaches are added.
           The method returns the builder for fluent chaining.
+    DESIGN-LOCKED NEXT (P-498/WO-081, D-128, additive/non-breaking — an optional parameter, existing
+          callers unaffected): associatedDataOverride, when supplied, writes a second annotation
+          ("SharedKernel:EncryptAad") that EncryptionModelConvention uses AS the property's associated
+          data (UTF8-encoded) INSTEAD OF the derived "{schema}.{table}.{column}" default — a stable,
+          caller-chosen identity that survives a physical table/column rename. Omitting it preserves
+          today's derived-from-storage-identity default exactly.
 
 EncryptionModelConvention  (sealed class, implements IModelFinalizingConvention)
     constructor (CURRENT, shipped 2026-09-03 per D-109/P-448, BREAKING vs. the pre-P-448 shape — the
@@ -1252,6 +1300,68 @@ EncryptedEntityBatchProcessorRegistry  (sealed class — Encryption/Rotation/)
           reworded to match THIS type's own accurate framing ("a justified, model-build-time exception
           to the reflection-elimination rule") rather than claiming zero reflection ever occurs. No
           runtime behavior changed — this is a documentation-only correction.
+
+PreWarmedEncryptionKeyProvider  (internal sealed class — Encryption/, DESIGN-LOCKED P-498/WO-081, D-129,
+                                  implementation pending)
+    implements SharedKernel.Cryptography.IEncryptionKeyProvider, ISynchronousEncryptionKeyProvider
+    constructor: PreWarmedEncryptionKeyProvider(IEncryptionKeyProvider inner,
+                                                  IEncryptionVersionOverride versionOverride)
+    .GetCurrentKeyAsync(CancellationToken ct = default)         → ValueTask<CryptographicKey>
+    .GetKeyAsync(string keyId, CancellationToken ct = default)  → ValueTask<CryptographicKey?>
+    NOTE: The 06.Persistence-owned provider that makes external/KMS-backed column encryption viable at
+          all under 01.Core's P-492 gate — wraps a consumer-supplied IEncryptionKeyProvider (e.g.
+          AzureKeyVaultEncryptionKeyProvider, optionally already CachedEncryptionKeyProvider-wrapped —
+          irrelevant to this type, which only ever calls the wrapped instance's ASYNC members, and only
+          from its own async warm methods below). Backed by a ConcurrentDictionary<string,byte[]>
+          (_warmCache) + a volatile _currentVersionTag.
+          GetCurrentKeyAsync/GetKeyAsync serve EXCLUSIVELY from _warmCache — NEVER touch inner. This is
+          what makes the ISynchronousEncryptionKeyProvider claim HONEST (P-492's "author-asserted, never
+          inferred" rule): the never-blocks guarantee is enforced BY CONSTRUCTION, not by cache-hit
+          probability. GetCurrentKeyAsync resolves the target tag as
+          versionOverride.OverrideVersion ?? _currentVersionTag; if that tag is unwarmed (including
+          _currentVersionTag itself being null, i.e. never warmed at all), throws
+          InvalidOperationException SYNCHRONOUSLY, before constructing any ValueTask — mirrors
+          NullEncryptionKeyProvider's existing synchronous-throw precedent. GetKeyAsync on a cache MISS
+          returns an already-completed ValueTask wrapping null (never throws), per
+          IEncryptionKeyProvider's documented contract — an unwarmed historical key version surfaces
+          EXACTLY like today's unknown/removed-key case, flowing through the existing
+          EncryptionKeyNotFoundException path unchanged.
+          WarmCurrentAsync(CancellationToken ct) → ValueTask  (internal — the ONLY method permitted to
+          call inner): awaits inner.GetCurrentKeyAsync(ct), populates _warmCache[key.Id] = key.Material,
+          sets _currentVersionTag = key.Id; no-op if already warm for the resolved tag.
+          WarmVersionAsync(string keyId, CancellationToken ct) → ValueTask  (internal): awaits
+          inner.GetKeyAsync(keyId, ct), populates _warmCache[keyId] if found; no-op if already warm.
+          Called EXCLUSIVELY from EncryptionKeyPreWarmingInterceptor's two async hooks and from
+          .WithExternalEncryptionKeyProvider<TProvider>()'s one-time startup warm-up gate — never from
+          anywhere on the synchronous ValueConverter pipeline.
+
+EncryptionKeyPreWarmingInterceptor  (internal sealed class — Interceptors/, DESIGN-LOCKED P-498/WO-081,
+                                      D-130, implementation pending)
+    implements ISaveChangesInterceptor, IDbCommandInterceptor
+    constructor: EncryptionKeyPreWarmingInterceptor(PreWarmedEncryptionKeyProvider provider,
+                                                       IEncryptionVersionOverride versionOverride)
+    NOTE: A FIFTH interceptor (see "Interceptors" below) — registered ONLY by
+          .WithExternalEncryptionKeyProvider<TProvider>(), never present in the default config-backed
+          path (where PreWarmedEncryptionKeyProvider is never constructed at all).
+          SavingChangesAsync(...): if ChangeTracker.Entries() contains ≥1 Added/Modified entry whose
+          entity type carries the "SharedKernel:Encrypt" annotation on ≥1 property (the SAME
+          model-metadata scan EncryptionRotationService/EncryptedEntityBatchProcessorRegistry already
+          use — zero reflection over CLR members), awaits provider.WarmCurrentAsync(ct) BEFORE calling
+          base.SavingChangesAsync(...) — genuinely runs before EF Core builds the command batches that
+          invoke ConvertToProviderExpression (the sync Encrypt call site). Closes the WRITE half of the
+          F1 defect.
+          ReaderExecutingAsync(...): if eventData.Context's model carries the "SharedKernel:Encrypt"
+          annotation on ≥1 property anywhere (checked once per DbContext CLR type, cached — a coarse,
+          whole-model gate, not per-query), awaits provider.WarmCurrentAsync(ct) BEFORE calling
+          base.ReaderExecutingAsync(...) — EF Core's genuine ASYNC pre-materialization extension point,
+          firing before ExecuteReaderAsync returns a DbDataReader, strictly before any row's
+          ConvertFromProviderExpression/sync Decrypt call. THIS is the hook that actually closes the F1
+          defect's literal scenario ("every READ... 100 rows means 200 blocking Key Vault calls") — a
+          write-only SavingChangesAsync hook alone cannot, since a query never calls SaveChangesAsync
+          (see D-126's refutation record). Coarse-grained by design: warms whenever the model has ANY
+          encrypted property, regardless of whether THIS query touches one — acceptable, since a warm
+          no-op call is an O(1) dictionary check inside PreWarmedEncryptionKeyProvider, never a KMS round
+          trip.
 ```
 
 ### EF Core 10 API correction (P-147, superseding original WO-024 spec text)
@@ -1279,12 +1389,59 @@ This correction must be reflected in C-82/C-83 (Core phase) and T-47 (Tests phas
       resolves IEncryptionKeyProvider from DI internally, to bridge its retained-synchronous
       Encrypt/Decrypt members onto the now-asynchronous IEncryptionKeyProvider contract. The
       registration itself is UNCHANGED — only WHY it is needed changed.
+      SUPERSEDED NEXT (P-498/WO-081, D-131, design-locked, implementation pending — depends on 01.Core's
+      SK.01.P491/SK.01.P492 shipping Core): this registration STOPS being unkeyed. `.WithEncryption()`
+      constructs its OWN persistence-scoped `ISymmetricEncryptionService` instance (mirroring `01.Core`'s
+      own `AddSharedKernelCryptography()` wiring — same `AesGcmEncryptionService` concrete type,
+      substituting only the `IEncryptionKeyProvider` argument) backed by `EncryptionOptionsKeyProvider`,
+      registered under a package-INTERNAL keyed-DI slot (never a public/cross-domain constant — this is
+      not a wire contract). `EncryptionModelConvention`'s own DI registration is rewired to resolve THIS
+      keyed instance exclusively. **ROOT-CAUSE FIX, not a documentation-only change:** today's unkeyed
+      registration collides, by DI registration ORDER (whichever call happens last in `Program.cs` wins,
+      globally, for every consumer of the shared `AesGcmEncryptionService` singleton), with any OTHER
+      `IEncryptionKeyProvider` registration elsewhere in the same container — e.g. `13.ServiceDefaults`'s
+      `AddSharedKernelKeyVaultKeyProvider` (P-449) registering `AzureKeyVaultEncryptionKeyProvider` — this
+      IS the SEVERE F1 defect's actual root cause, not merely a symptom of it. `EncryptedValueConverter`'s
+      public constructor shape is UNCHANGED by this — only the DI WIRING that supplies its
+      `ISymmetricEncryptionService` argument changes; direct construction/resolution of that argument was
+      already forbidden (SK0304), so no legitimate consumer observes a behavior difference.
     — Registers an eager startup check (P-227) that SharedKernel.Cryptography.ISymmetricEncryptionService
       is resolvable from DI; throws an actionable InvalidOperationException naming
       AddSharedKernelCryptography() if it is not — the consuming service must call
       AddSharedKernelCryptography() itself (this domain does not call it).
+      SUPERSEDED NEXT (P-498/WO-081, D-132): since this package no longer resolves the ambient unkeyed
+      `ISymmetricEncryptionService`, the check instead verifies the individual dependencies the
+      persistence-scoped instance needs (e.g. `ISecureRandomGenerator`) are resolvable — still naming
+      `AddSharedKernelCryptography()` in the failure message. Also extended to assert
+      `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(...)` against whichever
+      `IEncryptionKeyProvider` this package is about to wire in — defense-in-depth; D-127/D-129 make this
+      unreachable-false on every path this package itself constructs.
     — Sets flag: .Build() registers IEncryptionRotationJob → EncryptionRotationService (scoped).
     — Optional. Omitting leaves all existing behavior unchanged (Enabled == false by default).
+
+.WithExternalEncryptionKeyProvider<TProvider>() where TProvider : class, IEncryptionKeyProvider
+    (DESIGN-LOCKED, P-498/WO-081, D-131, implementation pending — depends on 01.Core's SK.01.P491/
+     SK.01.P492 shipping Core)
+    — MUST be called after .WithEncryption(...) — throws InvalidOperationException at .Build() time
+      otherwise, mirroring the existing pooling+encryption/pooling+factory ordering guards.
+    — Resolves TProvider from the AMBIENT (unkeyed) container — e.g. a KMS-backed provider such as
+      01.Core's AzureKeyVaultEncryptionKeyProvider that a consuming service separately registers for its
+      OWN general-purpose crypto needs, optionally already CachedEncryptionKeyProvider-wrapped (does not
+      matter to this method — only the provider's ASYNC members are ever called).
+    — Wraps it in a new PreWarmedEncryptionKeyProvider (D-129), registers THAT as the keyed
+      IEncryptionKeyProvider backing this package's own keyed ISymmetricEncryptionService instance
+      (see .WithEncryption()'s SUPERSEDED note above).
+    — Registers EncryptionKeyPreWarmingInterceptor (D-130) on SharedKernelDbContext.
+    — Registers a blocking, ONE-TIME, boot-only startup warm-up (D-133) — an IHostedService gating host
+      readiness until PreWarmedEncryptionKeyProvider's current-version cache is populated, mirroring
+      WithMigrationsOnStartup()'s existing "block readiness until done" shape.
+    — This is the SANCTIONED way to point column-level encryption at a KMS/HSM-backed provider. A
+      hand-rolled IEncryptionKeyProvider registered any other way is caught by the D-132 startup guard
+      above, not silently accepted.
+    — NON-GOAL (D-134): IEncryptionRotationJob/EncryptionRotationService remains config-backed-only
+      (EncryptionOptions.Keys-driven) in this mode — KMS-backed rotation orchestration is explicitly out
+      of scope for this phase; an unwarmed historical version during rotation surfaces as the existing
+      EncryptionKeyNotFoundException per-row failure path, not a crash or a block.
 
 .WithEncryption(IConfiguration configuration, Action<EncryptionOptions>? configure = null)   (WO-053/P-334)
     — Genuine config-binding overload, closing a confirmed doc/code mismatch (EncryptionOptions' own XML
@@ -2206,6 +2363,11 @@ DapperReadService  (abstract class)
 - **(P-456, WO-071, shipped)** Parsing, diffing, or otherwise inspecting `AuditRecord.BeforeSnapshot`/`AfterSnapshot` inside `SharedKernel.Persistence.Abstractions` or `SharedKernel.Persistence.EfCore` — these fields are OPAQUE, caller-pre-serialized values (mirrors `IIdempotencyResponseStore`'s "store persists what it's handed" pattern); this package's job is to store and hash-chain them, never to understand their content.
 - **(P-456, WO-071, shipped)** Referencing `SharedKernel.Security.Abstractions.IUserContext` directly from `SharedKernel.Persistence.Abstractions` to resolve `IAuditActorContext`'s default behavior — the P-078 exception is scoped to `SharedKernel.Persistence.EfCore` only; `.Abstractions` gets a fresh local seam instead (see the Auditing contract block above).
 - **(P-457, WO-071, shipped)** Making `AuditRecord` implement `IAggregateRoot<Guid>` so `EfAuditQueryService` can reuse `IReadRepository<AuditRecord,Guid>` — forces an always-empty `IHasDomainEvents` collection onto a plain infrastructure record for no benefit; build directly on the unconstrained `ISpecificationEvaluator<AuditRecord>` instead. Also: calling `ISpecificationEvaluator<AuditRecord>.GetQuery(...)` instead of `.GetKeysetQuery(...)` for `AuditResourceHistorySpecification`/`AuditActorActionsSpecification` — `GetQuery` silently ignores the cursor and always returns the first page.
+- **(P-498/WO-081, DESIGN-LOCKED, implementation pending)** Registering a hand-rolled `IEncryptionKeyProvider` for `.WithEncryption()`'s use that neither implements `ISynchronousEncryptionKeyProvider` (an honest, author-asserted, zero-I/O claim) NOR is wired via `.WithExternalEncryptionKeyProvider<TProvider>()` — this is caught by the D-132 startup fail-fast guard, but the correct fix is always to use one of the two sanctioned paths, never to bypass the builder to reach the ambient container directly.
+- **(P-498/WO-081, DESIGN-LOCKED, implementation pending)** Assuming `CachedEncryptionKeyProvider` (`01.Core`, bounded-TTL decorator) is sufficient, on its own, to make a KMS-backed `IEncryptionKeyProvider` safe for `EncryptedValueConverter`'s synchronous pipeline — it is NOT: `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous` recursively unwraps to the true leaf provider, and a KMS provider can never honestly assert the marker regardless of cache warmth. `PreWarmedEncryptionKeyProvider` (D-129) — a DIFFERENT, `06.Persistence`-owned type — is what actually earns the marker, by never touching its wrapped provider from its own synchronous-contract members at all.
+- **(P-498/WO-081, DESIGN-LOCKED, implementation pending)** Deriving `EncryptedValueConverter`'s associated data from mutable row content (a primary key value, a timestamp, any per-row field) instead of the property's own stable table+column storage identity (or an explicit `.Encrypt(associatedDataOverride:)` string) — AAD must be reproducible at decrypt time from context available then, and a vanilla EF Core `ValueConverter` has no row-level access at all; deriving it from anything per-row is not merely a style preference, it does not compile against the available API surface.
+- **(P-498/WO-081, DESIGN-LOCKED, implementation pending)** Calling `PreWarmedEncryptionKeyProvider.WarmCurrentAsync`/`WarmVersionAsync` from anywhere other than `EncryptionKeyPreWarmingInterceptor`'s two hooks or `.WithExternalEncryptionKeyProvider<TProvider>()`'s one-time startup gate — in particular, never from inside `GetCurrentKeyAsync`/`GetKeyAsync` themselves (that would reintroduce the exact blocking-on-cache-miss hazard this type exists to structurally rule out) and never from a per-request/per-query code path (warming belongs on the two coarse-grained hooks, not scattered ad hoc).
+- **(P-498/WO-081, DESIGN-LOCKED, implementation pending)** Assuming a consuming service can resolve the ambient, unkeyed `SharedKernel.Cryptography.IEncryptionKeyProvider`/`ISymmetricEncryptionService` and expect it to be the SAME instance `.WithEncryption()` uses internally — as of this phase, `.WithEncryption()` never touches the unkeyed slot; its own instance is always resolved via a package-internal keyed-DI registration. This is the deliberate structural fix that makes the SEVERE F1 defect's DI-collision root cause unreachable.
 
 ### Specification evaluator ordering (canonical)
 
@@ -2242,6 +2404,10 @@ Step 2c note: `spec.AsSplitQuery` defaults `false` — a single-query plan is ne
 **Platform-wide impact:** every `KeysetSpecification<T,TKey>` (P-308/WO-051) mandates `Id` as the secondary sort-key tiebreaker for rows sharing an identical primary sort-key value. Any consumer whose `Id` is a `Guid.CreateVersion7()` value AND whose primary sort key can tie at millisecond resolution (e.g. `AuditRecord.OccurredOn` under bursty/high-throughput writes) inherits this same-millisecond ordering unreliability. `EfAuditTrailWriter`'s own "find the latest record in this partition" lookup is one concrete instance — documented in its own XML remarks. The hash chain itself stays internally CONSISTENT even when this happens (every `PreviousRecordHash` still points to a real, correctly-hashed prior record — `VerifyChainIntegrityAsync` still reports it intact); only the wall-clock "latest" selection is approximate in this narrow window.
 
 **Not fixed, out of scope for a single package:** closing this fully means not relying on `Guid` comparison for chronological tiebreaking anywhere two rows can tie at millisecond resolution — either a monotonic-counter UUID variant or an explicit strictly-increasing sequence column, a bigger design change than any one consumer of `KeysetSpecification<T,TKey>` can make locally. Recorded here so a future arch-planner session investigating keyset-tiebreak reliability does not have to rediscover this from scratch.
+
+### Known limitation: unwarmed historical key versions in external-provider mode (P-498/WO-081, DESIGN-LOCKED, implementation pending)
+
+`EncryptionKeyPreWarmingInterceptor`'s `ReaderExecutingAsync` hook is deliberately COARSE: it warms only the CURRENT encryption version before a query executes, since `01.Core`'s `IEncryptionKeyProvider` contract exposes no way to enumerate every version a KMS-backed provider might ever have minted. A row encrypted under an OLDER version that has never been explicitly warmed in this process (via `WarmVersionAsync`, called only from a rotation-aware caller) will surface as the existing, already-handled `EncryptionKeyNotFoundException` per-row failure path on decrypt — a correct, non-blocking, non-corrupting failure mode, but a genuine functional gap relative to the config-backed default (where every version in `EncryptionOptions.Keys` is always resolvable). This is an accepted, explicitly-documented trade-off, not an oversight: the alternative (proactively warming every historical version on every query) is not achievable against the current `IEncryptionKeyProvider` contract surface, and exhaustive pre-warming would defeat the entire point of not touching the KMS on the hot path. Services that need reliable historical-version decryption under active rotation in external-provider mode should explicitly call `WarmVersionAsync` for the versions they know are in play (e.g. from a rotation-aware background job) before relying on it.
 
 ### Interceptor-only save mutation rule
 
@@ -2788,3 +2954,4 @@ var record = await auditTrailWriter.RecordAsync(new AuditEntry
 - [2026-09-02] WO-066/WO-071 Tests-phase pass (T-122, T-123, T-129..T-138, 12/16 remaining SK.06.Tests tasks) — T-122 REWRITTEN in `state-map.md` after independently re-verifying (reflection against the real EF Core 10.0.10 assembly, not merely trusted from the Core-phase session's prose) that `ITypeBase.ConstructorBinding` has no public setter anywhere and no `HasConstructorBinding(...)`-shaped builder method exists outside `Metadata.Internal`/`Metadata.Runtime` — the packed-string `Money` mapping is genuinely forced, so T-122 now asserts full round-trip fidelity across JPY/USD/BHD plus a companion test making the Amount/Currency non-queryability capability loss concrete and observable, rather than the originally-specified (infeasible) two-column SQL assertion. **GATING regression found and fixed while writing T-123**: `ValueObjectOwnershipBuilder`'s Money-only skip (D-107) was insufficient — a standalone `Currency` property crashed model building identically; generalised the skip to any CLR property already mapped as a scalar EF property (see this file's Money/ValueObjectOwnershipBuilder section for the full note). T-125..T-128 (WO-068/P-448) remain blocked — `01.Core` P-446 still not shipped, re-confirmed by reading the real `IEncryptionKeyProvider.cs` this session. T-133/T-134/T-135 satisfied with documented backend-availability caveats (no Docker daemon this session; `AuditRecord` requires the InMemory provider, which generates no SQL) — T-134/T-135 proven via LINQ expression-tree inspection instead of captured-SQL/`.TagWith(...)` text. `SharedKernel.Persistence.EfCore.Tests` 409/409 green (13 new), `SharedKernel.Persistence.Abstractions.Tests` 63/63 green (12 new, new `Auditing/AuditingContractTests.cs`). SK.06.Tests now 134/138 `◐` — not promoted (persistence-phase-implementer)
 - [2026-09-03] WO-068/P-448 SHIPPED (S-20, C-149..C-152, DO-66, P-10) — `01.Core`'s P-446 (async `IEncryptionKeyProvider`) landed, clearing the blocker; verified the real shipped `01.Core` source (sync `Encrypt`/`Decrypt` retained on `ISymmetricEncryptionService`, bridging via `.GetAwaiter().GetResult()`) before relying on it. `EncryptedValueConverter`/`EncryptionModelConvention` constructors both DROP `IEncryptionKeyProvider` (D-108/D-109, breaking); `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` migrated to `GetCurrentKeyAsync`/`GetKeyAsync` (D-110). Incidental fix required for the package to compile at all: `01.Core`'s `ISymmetricEncryptionService` also gained async members as part of P-446 — `NullSymmetricEncryptionService` needed them implemented too. `SharedKernelDbContext` keeps its `encryptionKeyProvider` constructor parameter for downstream source-compatibility but no longer stores/forwards it. `dotnet build`/`dotnet pack` both clean on `SharedKernel.Persistence.EfCore`. Migrated `EncryptedValueConverterTests`/`EncryptionDelegationTests`/`EncryptionKeyCachingTests` onto the async shape; **could not run inside the real `SharedKernel.Persistence.EfCore.Tests`** — it references `16.Testing`, which is itself broken pending `16.Testing`'s own P-450 (out of this domain's control) — independently verified via a standalone throwaway harness project (no `16.Testing` dependency): 33/33 pass. That harness caught and fixed one genuine test-fixture bug (not production): a too-short `"vv1:AAAA"` fixture relied on the OLD pre-check's early-exit; D-108 removing that pre-check meant the fixture needed a properly-sized (≥28-byte) payload to actually reach `Decrypt`. `06.Persistence/CLAUDE.md` fully migrated off "design-locked/pending" language for P-448 across the domain summary, Packages table, Encryption interface-contracts section, DI-registration section, AOT Compatibility, Test Rules, and Implementation Rules. SK.06.Scaffold/Core/Docs/Published all promoted to `●`; SK.06.Tests remains `◐` (134/138) — blocked on `16.Testing`/P-450, not `01.Core`/P-446 (persistence-phase-implementer)
 - [2026-09-03] WO-068/P-448 CLOSED (T-125..T-128) — `16.Testing`/P-450 shipped, clearing the blocker; re-verified in the REAL `SharedKernel.Persistence.EfCore.Tests` project (415/415 green, `dotnet pack` clean), not the prior harness. Found and fixed two test-only gaps: a loose `Throw<Exception>()` tightened to the concrete `CryptographicException` (T-126); `NullEncryptionKeyProvider` had zero coverage — added `NullEncryptionKeyProviderTests.cs` (5 tests). SK.06.Tests now 138/138 `●` — all six `SK.06.*` phase keys `●`, this domain's tracked scope is complete end to end; stale "still blocked" callout at the top of this file corrected. Root Phase Backlog P-448 closed; P-440/P-456/P-457 independently re-verified against their own acceptance criteria and also closed (persistence-phase-implementer)
+- [2026-09-08] P-498 (WO-081, SEVERE) processed — this domain's phase in the coordinated cross-domain breaking wave whose `01.Core` foundation (`SK.01.P491` associated-data-required `ISymmetricEncryptionService`, `SK.01.P492` the `ISynchronousEncryptionKeyProvider` capability gate) was design-locked earlier the same session by `core-arch-planner`. **Refuted the phase input's own literal premise** (D-126, same discipline `02.Caching`/P-497 applied against its own phase input this session): a `SavingChangesAsync`-only pre-warming hook cannot close this defect — it never fires for a query (the read path is what the motivating F1 scenario actually describes), and even for writes, wrapping a KMS provider in `01.Core`'s `CachedEncryptionKeyProvider` does not satisfy `IsGenuinelySynchronous` regardless of cache warmth, since that check is a static provider-identity test a KMS provider can never honestly pass. Redesigned around: (1) marking the existing config-backed `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` genuinely synchronous, closing what would otherwise be a silent regression for every existing user the moment `01.Core`'s P-492 ships; (2) a new, honestly-marked `PreWarmedEncryptionKeyProvider` that never touches its wrapped provider from its own synchronous-contract members, serving only from an explicitly-warmed in-memory cache; (3) a dual-hook `EncryptionKeyPreWarmingInterceptor` — `SavingChangesAsync` for writes, `IDbCommandInterceptor.ReaderExecutingAsync` (EF Core's genuine async pre-materialization extension point) for reads — closing both halves of the defect, not just the write half the input text focused on; (4) a structural, keyed-DI isolation fix (`.WithExternalEncryptionKeyProvider<TProvider>()`, replacing `.WithEncryption()`'s prior unkeyed `IEncryptionKeyProvider` registration) that makes the SEVERE bug's actual root cause — an accidental DI-registration-order collision with an unrelated ambient KMS provider registration, e.g. `13.ServiceDefaults`'s `AddSharedKernelKeyVaultKeyProvider` — structurally unreachable, not merely fail-fast-detected. Also resolved `01.Core`'s own D-67 "hardest of the six" AAD-derivation open question: associated data is bound to each property's stable table+column storage identity, computed once at model-finalization time — no row-level access needed, with an optional `associatedDataOverride` escape hatch for rename-safety, documented as a hazard otherwise. Nine new Design tasks (D-126..D-134, all `●`, design-locked); eighteen `○` Core/Tests/Docs/Published tasks depend on `01.Core`'s `SK.01.P491`/`SK.01.P492` shipping past design-lock into Core before this package can compile against the new `ISymmetricEncryptionService` shape. `SK.06.Design` now 134/134 `●` (still promotable); `SK.06.Core`/`SK.06.Tests`/`SK.06.Docs`/`SK.06.Published` all moved from `●` to `◐` — none promoted. No root `state-map.md`, root `CLAUDE.md`, or `.slnx` changes made (out of jurisdiction) (persistence-arch-planner)

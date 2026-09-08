@@ -17,6 +17,17 @@ Occurrences so far (phase key — domain — WO/P):
 4. SK.00.CorrelationIdValidationGuard — 14.Presentation — WO-063/P-420 (zero new code, reused call-presence)
 5. SK.00.WebhookSsrfGuardLock — 15.Integration — WO-064/P-432 (DI-registration-presence + 1st EXECUTED test)
 6. SK.00.CacheEncryptionAndRedisValidationLock — 02.Caching — WO-065/P-437 (2nd EXECUTED test + 2nd zero-new-code)
+7. SK.00.SyncCryptoGateAndArgon2ConfinementLock — 01.Core — WO-081/P-504 (3rd zero-new-code Technique A [call-presence+throw-presence,
+   reused] PAIRED with a genuinely NEW `CryptoIsolationRules` ConditionList method, Technique B — first occurrence where the phase's TWO
+   techniques have OPPOSITE gating status under the SAME WO "Depends on" line: Technique A is honestly UNVERIFIABLE (the upstream 01.Core
+   domain itself — not a downstream consumer — had shipped nothing past Design, one level further removed than every prior "not yet
+   shipped" occurrence, verified by 16.Testing directly on disk); Technique B is FULLY UNGATED despite the WO naming a dependency for it,
+   because it targets an ALREADY-SHIPPED assembly (SharedKernel.Cryptography core) and proves its regression case via a TEMPORARY
+   PackageReference mutation (add Konscious.Security.Cryptography.Argon2 to the target's own .csproj, confirm the rule fails, revert)
+   rather than a contrived fixture or a wait for the dependency. LESSON: never assume a phase's techniques share one gating status just
+   because they cite the same WO dependency line — evaluate each independently. Also: a dependency-confinement check (assembly must NOT
+   reference NuGet package X) can be proven non-vacuously TODAY even before X's own consuming sibling package exists, via a temporary
+   reintroduced reference — this is a reusable trick for any future "lock a not-yet-shipped confinement invariant" phase.
 
 **Technique-selection rule** (apply this before picking an approach for the next occurrence):
 - If the fact is STRUCTURAL (a property's default value, a call site's presence/absence, a throw's
