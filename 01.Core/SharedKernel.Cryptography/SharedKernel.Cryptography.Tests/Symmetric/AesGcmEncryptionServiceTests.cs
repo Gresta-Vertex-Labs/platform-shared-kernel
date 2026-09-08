@@ -239,4 +239,119 @@ public sealed class AesGcmEncryptionServiceTests
 
         Assert.Throws<ArgumentNullException>(() => service.Decrypt(payload, null!));
     }
+
+    // --- P-492/WO-081: ISynchronousEncryptionKeyProvider capability gate ---
+
+    [Fact]
+    public void Encrypt_MarkedProvider_BehavesExactlyAsBeforeTheGate()
+    {
+        // InMemoryEncryptionKeyProvider implements ISynchronousEncryptionKeyProvider — the sync
+        // path must be byte-for-byte unchanged.
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        var service = new AesGcmEncryptionService(keyProvider);
+        byte[] plaintext = Encoding.UTF8.GetBytes("unaffected by the gate");
+
+        EncryptedPayload payload = service.Encrypt(plaintext, []);
+        Result<byte[]> result = service.Decrypt(payload, []);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(plaintext, result.Value);
+    }
+
+    [Fact]
+    public void Encrypt_UnmarkedProvider_ThrowsNotSupportedException_WithoutAttemptingTheBridge()
+    {
+        var keyProvider = new ControllableEncryptionKeyProvider(new CryptographicKey("v1", new byte[32]));
+        var service = new AesGcmEncryptionService(keyProvider);
+
+        Assert.Throws<NotSupportedException>(() => service.Encrypt(Encoding.UTF8.GetBytes("secret"), []));
+        Assert.Equal(0, keyProvider.CurrentKeyCallCount);
+    }
+
+    [Fact]
+    public void Decrypt_UnmarkedProvider_ThrowsNotSupportedException_WithoutAttemptingTheBridge()
+    {
+        var key = new CryptographicKey("v1", new byte[32]);
+        var keyProvider = new ControllableEncryptionKeyProvider(key);
+        var service = new AesGcmEncryptionService(keyProvider);
+        var payload = new EncryptedPayload("v1", new byte[12], [], new byte[16]);
+
+        Assert.Throws<NotSupportedException>(() => service.Decrypt(payload, []));
+        Assert.Equal(0, keyProvider.GetKeyCallCount);
+    }
+
+    [Fact]
+    public void EncryptToString_UnmarkedProvider_ThrowsNotSupportedException_WithoutAttemptingTheBridge()
+    {
+        var keyProvider = new ControllableEncryptionKeyProvider(new CryptographicKey("v1", new byte[32]));
+        var service = new AesGcmEncryptionService(keyProvider);
+
+        Assert.Throws<NotSupportedException>(() => service.EncryptToString("secret", []));
+        Assert.Equal(0, keyProvider.CurrentKeyCallCount);
+    }
+
+    [Fact]
+    public void DecryptToString_UnmarkedProvider_ThrowsNotSupportedException_WithoutAttemptingTheBridge()
+    {
+        // Encode a syntactically valid payload with a synchronous provider first so the gate,
+        // not TryUnpack, is what's under test — then swap in the unmarked provider.
+        var syncProvider = new InMemoryEncryptionKeyProvider();
+        var syncService = new AesGcmEncryptionService(syncProvider);
+        string encoded = syncService.EncryptToString("secret", []);
+
+        var keyProvider = new ControllableEncryptionKeyProvider(new CryptographicKey("v1", new byte[32]));
+        var service = new AesGcmEncryptionService(keyProvider);
+
+        Assert.Throws<NotSupportedException>(() => service.DecryptToString(encoded, []));
+        Assert.Equal(0, keyProvider.GetKeyCallCount);
+    }
+
+    [Fact]
+    public void Encrypt_UnmarkedProvider_ExceptionMessage_DirectsCallerToAsyncOverload()
+    {
+        var keyProvider = new ControllableEncryptionKeyProvider(new CryptographicKey("v1", new byte[32]));
+        var service = new AesGcmEncryptionService(keyProvider);
+
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(
+            () => service.Encrypt(Encoding.UTF8.GetBytes("secret"), []));
+
+        Assert.Contains(nameof(ISymmetricEncryptionService.EncryptAsync), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Decrypt_UnmarkedProvider_ExceptionMessage_DirectsCallerToAsyncOverload()
+    {
+        var keyProvider = new ControllableEncryptionKeyProvider(new CryptographicKey("v1", new byte[32]));
+        var service = new AesGcmEncryptionService(keyProvider);
+        var payload = new EncryptedPayload("v1", new byte[12], [], new byte[16]);
+
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() => service.Decrypt(payload, []));
+
+        Assert.Contains(nameof(ISymmetricEncryptionService.DecryptAsync), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CachedProvider_WrappingMarkedInner_AllowsSyncMembers()
+    {
+        var inner = new InMemoryEncryptionKeyProvider();
+        var cached = new CachedEncryptionKeyProvider(inner, TimeProvider.System, TimeSpan.FromMinutes(5));
+        var service = new AesGcmEncryptionService(cached);
+        byte[] plaintext = Encoding.UTF8.GetBytes("cached, genuinely synchronous inner");
+
+        EncryptedPayload payload = service.Encrypt(plaintext, []);
+        Result<byte[]> result = service.Decrypt(payload, []);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(plaintext, result.Value);
+    }
+
+    [Fact]
+    public void CachedProvider_WrappingUnmarkedInner_ThrowsOnSyncMembers()
+    {
+        var inner = new ControllableEncryptionKeyProvider(new CryptographicKey("v1", new byte[32]));
+        var cached = new CachedEncryptionKeyProvider(inner, TimeProvider.System, TimeSpan.FromMinutes(5));
+        var service = new AesGcmEncryptionService(cached);
+
+        Assert.Throws<NotSupportedException>(() => service.Encrypt(Encoding.UTF8.GetBytes("secret"), []));
+    }
 }

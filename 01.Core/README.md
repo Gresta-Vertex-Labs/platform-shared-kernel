@@ -1171,8 +1171,12 @@ public sealed class BlobUploadExample(IContentHasher contentHasher)
 ```csharp
 // Consuming service supplies key material — SharedKernel.Cryptography holds none of its own.
 // A synchronous/config-backed provider can still complete synchronously by returning an
-// already-completed ValueTask, exactly like this one does:
-public sealed class MyConfigBackedKeyProvider : IEncryptionKeyProvider
+// already-completed ValueTask, exactly like this one does. It ALSO implements
+// ISynchronousEncryptionKeyProvider (P-492/WO-081) instead of the plain IEncryptionKeyProvider —
+// an explicit, author-asserted claim that neither member ever performs blocking I/O — which is
+// what makes the retained sync Encrypt/Decrypt/EncryptToString/DecryptToString members usable
+// against this provider at all. See "Gating the synchronous members" below.
+public sealed class MyConfigBackedKeyProvider : ISynchronousEncryptionKeyProvider
 {
     public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
         new(new CryptographicKey("key-v2", LoadKeyMaterialFromConfig("key-v2"))); // 32 bytes for AES-256
@@ -1199,9 +1203,10 @@ public sealed class PayloadEncryptionExample(ISymmetricEncryptionService encrypt
 
     // The synchronous members are retained for call sites that cannot easily become async
     // (e.g. a synchronous EF Core ValueConverter). They bridge onto the async key provider via
-    // .GetAwaiter().GetResult() — GENUINELY NON-BLOCKING when the provider resolves
-    // synchronously (as above, or a CachedEncryptionKeyProvider cache hit), but BLOCKS A REAL
-    // THREAD when the provider is genuinely network-bound on a cache miss.
+    // .GetAwaiter().GetResult() — but ONLY when the registered IEncryptionKeyProvider genuinely
+    // never blocks (see "Gating the synchronous members" below). Against an unmarked provider —
+    // notably any raw KMS/HSM provider — these members throw NotSupportedException instead of
+    // silently blocking a thread.
     public string EncryptSecret(string plaintext) => encryption.EncryptToString(plaintext, Array.Empty<byte>());
 
     public Result<string> DecryptSecret(string encoded) => encryption.DecryptToString(encoded, Array.Empty<byte>());
@@ -1275,6 +1280,58 @@ A mismatched (or omitted, when one was originally supplied) `associatedData` at 
 
 `IEncryptionKeyProvider` itself is **unaffected** by this change — only `ISymmetricEncryptionService`'s eight members gained the new parameter.
 
+### Gating the synchronous members (P-492/WO-081, breaking behavior change)
+
+`AesGcmEncryptionService`'s retained synchronous members — `Encrypt`, `Decrypt`, `EncryptToString`, `DecryptToString` — used to bridge onto the async `IEncryptionKeyProvider` via an unconditional `.GetAwaiter().GetResult()`. That was genuinely non-blocking against a config-backed provider, but silently blocked a real thread the moment the registered provider was a raw KMS/HSM call. This phase replaces the silent hazard with a structural gate.
+
+`ISynchronousEncryptionKeyProvider` is a zero-member marker interface extending `IEncryptionKeyProvider`:
+
+```csharp
+public interface ISynchronousEncryptionKeyProvider : IEncryptionKeyProvider;
+```
+
+Implementing it is **an explicit, author-asserted safety claim — never inferred.** **A KMS/HSM-backed provider (Azure Key Vault, AWS KMS, HashiCorp Vault, or any other network-bound key resolution) must never implement this marker** — see `MyConfigBackedKeyProvider` above for a provider that honestly earns it (key material is already resolved from configuration, so every code path is genuinely synchronous).
+
+`EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(IEncryptionKeyProvider)` is the single check both `AesGcmEncryptionService` and any consuming domain can use to answer "is this provider safe to call from a sync path":
+
+```csharp
+bool IsGenuinelySynchronous(IEncryptionKeyProvider provider) =>
+    provider switch
+    {
+        ISynchronousEncryptionKeyProvider => true,
+        CachedEncryptionKeyProvider cached => IsGenuinelySynchronous(cached.Inner), // recursive unwrap
+        _ => false,
+    };
+```
+
+This is a **static, provider-identity check** — evaluated once, at `AesGcmEncryptionService` construction time, and cached for the instance's lifetime. It is never re-evaluated per call, and it is never a per-call cache-warmth test: a `CachedEncryptionKeyProvider` wrapping a KMS-backed inner provider always reports `false`, even on a call that would in fact hit a warm cache entry, because the next call could just as easily miss. `CachedEncryptionKeyProvider` itself never directly implements `ISynchronousEncryptionKeyProvider` — it exposes a new `Inner` property specifically so the check can see through the decorator to the real leaf provider, unwrapping through any depth of nested `CachedEncryptionKeyProvider`s.
+
+```csharp
+// Safe — InMemory/config-backed leaf provider, direct or cached:
+EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(new MyConfigBackedKeyProvider());                    // true
+EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(
+    new CachedEncryptionKeyProvider(new MyConfigBackedKeyProvider(), TimeProvider.System, ttl));              // true
+
+// Unsafe — a raw KMS call, direct or cached (a cache miss still re-enters the inner provider):
+EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(new AzureKeyVaultEncryptionKeyProvider(...));         // false
+EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(
+    new CachedEncryptionKeyProvider(new AzureKeyVaultEncryptionKeyProvider(...), TimeProvider.System, ttl));  // false
+```
+
+When the registered provider is **not** genuinely synchronous, `Encrypt`/`Decrypt`/`EncryptToString`/`DecryptToString` throw `NotSupportedException` immediately — before attempting any bridge — directing the caller to the corresponding `*Async` overload:
+
+```csharp
+var service = new AesGcmEncryptionService(new AzureKeyVaultEncryptionKeyProvider(...));
+
+service.Encrypt(plaintext, aad);
+// throws NotSupportedException: "The registered IEncryptionKeyProvider does not implement
+// ISynchronousEncryptionKeyProvider, ... Call EncryptAsync instead."
+
+await service.EncryptAsync(plaintext, aad, ct); // always usable, regardless of provider marking
+```
+
+**This is a real, narrow breaking *behavior* change** — distinct from a compile-time API break, since no method signature changed. Any existing custom `IEncryptionKeyProvider` implementer that relied on the sync members silently blocking a thread against a network-bound provider now gets an immediate, structural `NotSupportedException` instead. There is **zero behavior change** for any provider that is genuinely synchronous and marks itself accordingly (or is wrapped in a `CachedEncryptionKeyProvider` over one) — those call sites are byte-for-byte unaffected. `SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider` deliberately does **not** implement `ISynchronousEncryptionKeyProvider` — every call is a real Azure SDK round trip — so registering it directly (or wrapping it in `CachedEncryptionKeyProvider`) means the sync members are structurally unusable against it; use the `*Async` members.
+
 ### Envelope Encryption
 
 `IEnvelopeEncryptionProvider` is an additive, KMS-idiomatic alternative to `IEncryptionKeyProvider`'s direct-retrieval shape: ask the KMS to generate-and-wrap a fresh data key (`GenerateDataKeyAsync`), use the plaintext key locally, persist only the wrapped form, and later ask the KMS to unwrap it (`UnwrapDataKeyAsync`) — the KMS's own master key material never leaves its boundary. A single provider (e.g. an Azure Key Vault-backed one) may implement both `IEncryptionKeyProvider` and `IEnvelopeEncryptionProvider`.
@@ -1321,6 +1378,8 @@ builder.Services.AddSingleton<IEncryptionKeyProvider>(sp =>
 ```
 
 A failed refresh (an unreachable KMS) propagates the thrown exception to every caller awaiting that single-flight resolution — it never falls back to a stale cached value, matching this whole seam's structural fail-closed posture.
+
+`CachedEncryptionKeyProvider` never itself implements `ISynchronousEncryptionKeyProvider` (P-492/WO-081) — its `Inner` property (the wrapped provider) is what `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous` recurses into. Wrapping a KMS-backed provider like this still leaves `AesGcmEncryptionService`'s sync members structurally unusable — a cache hit is fast, but a cache miss re-enters `Inner`, so nothing here ever "earns" the marker on the KMS provider's behalf. See "Gating the synchronous members" above.
 
 ### Azure Key Vault Key Provider — `SharedKernel.Cryptography.KeyVault.Azure`
 

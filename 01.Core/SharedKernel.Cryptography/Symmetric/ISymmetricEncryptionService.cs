@@ -28,14 +28,23 @@ public interface ISymmetricEncryptionService
     /// so a call site is never silently unbound by omission.
     /// </param>
     /// <returns>An <see cref="EncryptedPayload"/> carrying everything needed to later decrypt it.</returns>
+    /// <exception cref="NotSupportedException">
+    /// The registered <see cref="IEncryptionKeyProvider"/> was not confirmed genuinely
+    /// synchronous — via <see cref="ISynchronousEncryptionKeyProvider"/> — at construction time.
+    /// See <see cref="EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(IEncryptionKeyProvider)"/>.
+    /// Call <see cref="EncryptAsync(byte[], byte[], CancellationToken)"/> instead.
+    /// </exception>
     /// <remarks>
-    /// THIS METHOD BLOCKS THE CALLING THREAD WHILE RESOLVING THE ENCRYPTION KEY: it bridges onto
-    /// the asynchronous <see cref="IEncryptionKeyProvider.GetCurrentKeyAsync(CancellationToken)"/>
-    /// via <c>.GetAwaiter().GetResult()</c>. THIS IS GENUINELY NON-BLOCKING when the registered
-    /// <see cref="IEncryptionKeyProvider"/> resolves synchronously — the configuration-based
-    /// default, or a <see cref="CachedEncryptionKeyProvider"/> cache hit — BUT IT BLOCKS A REAL
-    /// THREAD when the registered provider is genuinely network-bound (a raw KMS call on a cache
-    /// miss). Hot-path/high-throughput callers should prefer
+    /// <b>(P-492/WO-081)</b> This member is gated behind a one-time, construction-time capability
+    /// check. When the registered <see cref="IEncryptionKeyProvider"/> genuinely never blocks
+    /// (implements <see cref="ISynchronousEncryptionKeyProvider"/>, directly or transitively
+    /// through <see cref="CachedEncryptionKeyProvider.Inner"/>), this method bridges onto
+    /// <see cref="IEncryptionKeyProvider.GetCurrentKeyAsync(CancellationToken)"/> via
+    /// <c>.GetAwaiter().GetResult()</c>, which observes an already-completed
+    /// <see cref="ValueTask{TResult}"/> and is genuinely non-blocking. Otherwise this method
+    /// throws <see cref="NotSupportedException"/> immediately, without attempting the bridge —
+    /// it never silently blocks a real thread on a network/IPC round trip. Hot-path/high-throughput
+    /// callers, and any caller registering a KMS/HSM-backed provider, should always prefer
     /// <see cref="EncryptAsync(byte[], byte[], CancellationToken)"/> instead.
     /// </remarks>
     EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData);
@@ -83,15 +92,20 @@ public interface ISymmetricEncryptionService
     /// unknown. This method never lets <see cref="System.Security.Cryptography.CryptographicException"/>
     /// propagate uncaught.
     /// </returns>
+    /// <exception cref="NotSupportedException">
+    /// The registered <see cref="IEncryptionKeyProvider"/> was not confirmed genuinely
+    /// synchronous — via <see cref="ISynchronousEncryptionKeyProvider"/> — at construction time.
+    /// See <see cref="EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(IEncryptionKeyProvider)"/>.
+    /// Call <see cref="DecryptAsync(EncryptedPayload, byte[], CancellationToken)"/> instead.
+    /// </exception>
     /// <remarks>
-    /// THIS METHOD BLOCKS THE CALLING THREAD WHILE RESOLVING THE DECRYPTION KEY: it bridges onto
-    /// the asynchronous <see cref="IEncryptionKeyProvider.GetKeyAsync(string, CancellationToken)"/>
-    /// via <c>.GetAwaiter().GetResult()</c>. THIS IS GENUINELY NON-BLOCKING when the registered
-    /// <see cref="IEncryptionKeyProvider"/> resolves synchronously — the configuration-based
-    /// default, or a <see cref="CachedEncryptionKeyProvider"/> cache hit — BUT IT BLOCKS A REAL
-    /// THREAD when the registered provider is genuinely network-bound (a raw KMS call on a cache
-    /// miss). Hot-path/high-throughput callers should prefer
-    /// <see cref="DecryptAsync(EncryptedPayload, byte[], CancellationToken)"/> instead.
+    /// <b>(P-492/WO-081)</b> This member is gated behind a one-time, construction-time capability
+    /// check — see <see cref="Encrypt(byte[], byte[])"/>'s remarks for the full explanation; the
+    /// same contract applies here, bridging onto
+    /// <see cref="IEncryptionKeyProvider.GetKeyAsync(string, CancellationToken)"/>. Hot-path/
+    /// high-throughput callers, and any caller registering a KMS/HSM-backed provider, should
+    /// always prefer <see cref="DecryptAsync(EncryptedPayload, byte[], CancellationToken)"/>
+    /// instead.
     /// </remarks>
     Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData);
 
@@ -134,10 +148,16 @@ public interface ISymmetricEncryptionService
     /// when no natural context binding exists.
     /// </param>
     /// <returns>A single self-describing Base64-encoded string.</returns>
+    /// <exception cref="NotSupportedException">
+    /// The registered <see cref="IEncryptionKeyProvider"/> was not confirmed genuinely
+    /// synchronous — via <see cref="ISynchronousEncryptionKeyProvider"/> — at construction time.
+    /// Call <see cref="EncryptToStringAsync(string, byte[], CancellationToken)"/> instead.
+    /// </exception>
     /// <remarks>
-    /// THIS METHOD BLOCKS THE CALLING THREAD WHILE RESOLVING THE ENCRYPTION KEY — see
-    /// <see cref="Encrypt(byte[], byte[])"/>'s remarks; the same caveat applies here. Prefer
-    /// <see cref="EncryptToStringAsync(string, byte[], CancellationToken)"/> on hot paths.
+    /// <b>(P-492/WO-081)</b> Gated behind the same construction-time capability check as
+    /// <see cref="Encrypt(byte[], byte[])"/> — see its remarks. Prefer
+    /// <see cref="EncryptToStringAsync(string, byte[], CancellationToken)"/> on hot paths, and
+    /// always when registering a KMS/HSM-backed provider.
     /// </remarks>
     string EncryptToString(string plaintext, byte[] associatedData);
 
@@ -169,10 +189,16 @@ public interface ISymmetricEncryptionService
     /// call used no AAD.
     /// </param>
     /// <returns>A successful <see cref="Result{T}"/> containing the decrypted UTF-8 string, or a failed result on tamper/wrong-key/mismatched-AAD/malformed input.</returns>
+    /// <exception cref="NotSupportedException">
+    /// The registered <see cref="IEncryptionKeyProvider"/> was not confirmed genuinely
+    /// synchronous — via <see cref="ISynchronousEncryptionKeyProvider"/> — at construction time.
+    /// Call <see cref="DecryptToStringAsync(string, byte[], CancellationToken)"/> instead.
+    /// </exception>
     /// <remarks>
-    /// THIS METHOD BLOCKS THE CALLING THREAD WHILE RESOLVING THE DECRYPTION KEY — see
-    /// <see cref="Decrypt(EncryptedPayload, byte[])"/>'s remarks; the same caveat applies here.
-    /// Prefer <see cref="DecryptToStringAsync(string, byte[], CancellationToken)"/> on hot paths.
+    /// <b>(P-492/WO-081)</b> Gated behind the same construction-time capability check as
+    /// <see cref="Decrypt(EncryptedPayload, byte[])"/> — see its remarks. Prefer
+    /// <see cref="DecryptToStringAsync(string, byte[], CancellationToken)"/> on hot paths, and
+    /// always when registering a KMS/HSM-backed provider.
     /// </remarks>
     Result<string> DecryptToString(string encoded, byte[] associatedData);
 

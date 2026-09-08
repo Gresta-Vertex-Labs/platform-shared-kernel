@@ -576,6 +576,23 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     [Fact]
+    public void Cryptography_SynchronousProviderCapabilityGate_ResolvesFromPackage()
+    {
+        // P-492/WO-081: proves ISynchronousEncryptionKeyProvider/EncryptionKeyProviderCapabilities
+        // resolve correctly against the packed (not project-referenced) SharedKernel.Cryptography
+        // assembly, and that AesGcmEncryptionService's sync members are genuinely gated by it —
+        // not merely gated in the project-referenced test suite.
+        var markedProvider = new ConsumerEncryptionKeyProvider();
+        Assert.True(EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(markedProvider));
+
+        var unmarkedProvider = new ConsumerUnmarkedEncryptionKeyProvider();
+        Assert.False(EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(unmarkedProvider));
+
+        var gatedEncryption = new AesGcmEncryptionService(unmarkedProvider);
+        Assert.Throws<NotSupportedException>(() => gatedEncryption.Encrypt("blocked"u8.ToArray(), []));
+    }
+
+    [Fact]
     public async Task Cryptography_SymmetricEncryption_AsyncEncryptDecryptRoundtrip_ResolvedFromPackage()
     {
         // P-446/WO-068: proves the async IEncryptionKeyProvider contract and
@@ -1219,11 +1236,32 @@ internal sealed class ConsumerStringLocalizerFactory(IStringLocalizer localizer)
 /// <summary>
 /// Minimal in-memory <see cref="IEncryptionKeyProvider"/> for consumer-verification purposes only.
 /// Production services must resolve key material from Key Vault, environment config, or a secret
-/// store — never hardcode it as done here for test convenience.
+/// store — never hardcode it as done here for test convenience. Implements
+/// <see cref="ISynchronousEncryptionKeyProvider"/> (P-492/WO-081) — this double genuinely never
+/// performs blocking I/O, so it honestly earns the marker; that marking is what allows this
+/// project's sync <c>Encrypt</c>/<c>Decrypt</c> consumer test below to call the packed
+/// <c>AesGcmEncryptionService</c> at all instead of observing <see cref="NotSupportedException"/>.
 /// </summary>
-internal sealed class ConsumerEncryptionKeyProvider : IEncryptionKeyProvider
+internal sealed class ConsumerEncryptionKeyProvider : ISynchronousEncryptionKeyProvider
 {
     private static readonly CryptographicKey CurrentKey = new("consumer-key-v1", new byte[32]);
+
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) => new(CurrentKey);
+
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(keyId == CurrentKey.Id ? CurrentKey : null);
+}
+
+/// <summary>
+/// A plain <see cref="IEncryptionKeyProvider"/> (deliberately NOT
+/// <see cref="ISynchronousEncryptionKeyProvider"/>) for consumer-verification purposes only — a
+/// stand-in for a raw KMS/HSM-backed provider that must never claim the marker. Proves that
+/// <see cref="AesGcmEncryptionService"/>'s sync members throw <see cref="NotSupportedException"/>
+/// against an unmarked provider resolved from the packed assembly, not merely in-project.
+/// </summary>
+internal sealed class ConsumerUnmarkedEncryptionKeyProvider : IEncryptionKeyProvider
+{
+    private static readonly CryptographicKey CurrentKey = new("consumer-unmarked-key-v1", new byte[32]);
 
     public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) => new(CurrentKey);
 

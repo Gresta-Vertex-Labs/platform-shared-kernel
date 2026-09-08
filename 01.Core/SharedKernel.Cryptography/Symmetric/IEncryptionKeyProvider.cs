@@ -16,9 +16,15 @@ namespace SharedKernel.Cryptography.Symmetric;
 /// written without a blocking-on-async anti-pattern. A configuration-based or in-memory
 /// implementation may still complete synchronously — return an already-completed
 /// <see cref="ValueTask{TResult}"/> (e.g. <c>new(value)</c>) — this contract permits asynchronous
-/// I/O, it does not require it. <see cref="ISymmetricEncryptionService"/>'s retained synchronous
-/// members bridge onto this contract via <c>.GetAwaiter().GetResult()</c>, which is genuinely
-/// non-blocking precisely when an implementation resolves synchronously like this.
+/// I/O, it does not require it. An implementation that genuinely never performs blocking I/O may
+/// additionally implement <see cref="ISynchronousEncryptionKeyProvider"/> to opt into
+/// <see cref="ISymmetricEncryptionService"/>'s retained synchronous members
+/// (<c>Encrypt</c>/<c>Decrypt</c>/<c>EncryptToString</c>/<c>DecryptToString</c>), which bridge
+/// onto this contract via <c>.GetAwaiter().GetResult()</c> — see
+/// <see cref="ISynchronousEncryptionKeyProvider"/> and
+/// <see cref="EncryptionKeyProviderCapabilities"/> for the full opt-in contract (P-492/WO-081). A
+/// provider that does not implement that marker causes those synchronous members to throw
+/// <see cref="NotSupportedException"/> instead of attempting the bridge.
 /// </para>
 /// <para>
 /// <b>BREAKING CHANGE (P-446/WO-068):</b> this interface previously exposed synchronous

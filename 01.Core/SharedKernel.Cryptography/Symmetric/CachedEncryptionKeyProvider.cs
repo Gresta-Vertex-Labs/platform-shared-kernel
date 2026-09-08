@@ -48,6 +48,18 @@ public sealed class CachedEncryptionKeyProvider : IEncryptionKeyProvider
     private readonly TimeSpan _ttl;
     private readonly ConcurrentDictionary<string, CacheSlot> _slots = new();
 
+    /// <summary>
+    /// The wrapped provider whose results this decorator caches.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so <see cref="EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(IEncryptionKeyProvider)"/>
+    /// can see through this decorator: a <see cref="CachedEncryptionKeyProvider"/> never directly
+    /// implements <see cref="ISynchronousEncryptionKeyProvider"/> itself — a cache hit is fast
+    /// regardless of what is wrapped, but a cache miss re-enters <see cref="Inner"/>, so this
+    /// type's true synchronous-safety is entirely a function of what it wraps.
+    /// </remarks>
+    public IEncryptionKeyProvider Inner => _inner;
+
     /// <summary>Creates a new <see cref="CachedEncryptionKeyProvider"/>.</summary>
     /// <param name="inner">The provider whose results are cached.</param>
     /// <param name="timeProvider">The time source used to compute cache-entry expiry.</param>

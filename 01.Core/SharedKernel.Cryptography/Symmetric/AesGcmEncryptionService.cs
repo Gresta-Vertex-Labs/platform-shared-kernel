@@ -13,12 +13,28 @@ namespace SharedKernel.Cryptography.Symmetric;
 /// encrypt call and is never reused.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The synchronous <see cref="Encrypt(byte[], byte[])"/>/<see cref="Decrypt(EncryptedPayload, byte[])"/>/
 /// <see cref="EncryptToString(string, byte[])"/>/<see cref="DecryptToString(string, byte[])"/> members and their
 /// asynchronous counterparts share the exact same cryptographic core (<c>EncryptCore</c>/
 /// <c>DecryptCore</c>) — the only difference between a sync and an async call is how the
 /// <see cref="IEncryptionKeyProvider"/> result is awaited. This guarantees byte-identical
 /// ciphertext/plaintext behavior between the two call shapes for the same input.
+/// </para>
+/// <para>
+/// <b>(P-492/WO-081)</b> Whether those four synchronous members are usable at all is decided
+/// exactly once, at construction time: <see cref="EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(IEncryptionKeyProvider)"/>
+/// is evaluated against the supplied <see cref="IEncryptionKeyProvider"/> and cached for the
+/// lifetime of this instance. When it reports <see langword="true"/>, every sync member bridges
+/// onto the provider via <c>.GetAwaiter().GetResult()</c>, which is genuinely non-blocking. When
+/// it reports <see langword="false"/> — the registered provider is not known to be safe, e.g. a
+/// raw KMS/HSM-backed <see cref="IEncryptionKeyProvider"/> — every sync member throws
+/// <see cref="NotSupportedException"/> immediately instead of silently blocking a real thread;
+/// the caller must use the corresponding <c>*Async</c> member. The async members
+/// (<see cref="EncryptAsync(byte[], byte[], CancellationToken)"/>,
+/// <see cref="DecryptAsync(EncryptedPayload, byte[], CancellationToken)"/>, and their
+/// string-convenience counterparts) are always usable regardless of this check.
+/// </para>
 /// </remarks>
 public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
 {
@@ -26,6 +42,7 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     private const int TagSize = 16; // 128 bits
 
     private readonly IEncryptionKeyProvider _keyProvider;
+    private readonly bool _isKeyProviderGenuinelySynchronous;
 
     /// <summary>Creates a new <see cref="AesGcmEncryptionService"/>.</summary>
     /// <param name="keyProvider">Resolves the current and historical key material.</param>
@@ -33,16 +50,24 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     {
         ArgumentNullException.ThrowIfNull(keyProvider);
         _keyProvider = keyProvider;
+
+        // Computed once, here, and cached for the lifetime of this instance — never re-evaluated
+        // per call. See EncryptionKeyProviderCapabilities.IsGenuinelySynchronous: this is a
+        // static provider-identity check, not a per-call cache-warmth test.
+        _isKeyProviderGenuinelySynchronous = EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(keyProvider);
     }
 
     /// <inheritdoc />
     public EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData)
     {
+        ThrowIfNotGenuinelySynchronous(nameof(EncryptAsync));
         ArgumentNullException.ThrowIfNull(plaintext);
         ArgumentNullException.ThrowIfNull(associatedData);
 
-        // GENUINELY NON-BLOCKING when the provider resolves synchronously; blocks a real thread
-        // when the provider is a network-bound KMS call — see the interface XML docs.
+        // GENUINELY NON-BLOCKING: the registered IEncryptionKeyProvider was confirmed genuinely
+        // synchronous at construction time (see _isKeyProviderGenuinelySynchronous) — this
+        // GetAwaiter().GetResult() observes an already-completed ValueTask, it never schedules or
+        // waits on a continuation.
         CryptographicKey key = _keyProvider.GetCurrentKeyAsync().GetAwaiter().GetResult();
         return EncryptCore(plaintext, associatedData, key);
     }
@@ -60,11 +85,14 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     /// <inheritdoc />
     public Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData)
     {
+        ThrowIfNotGenuinelySynchronous(nameof(DecryptAsync));
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(associatedData);
 
-        // GENUINELY NON-BLOCKING when the provider resolves synchronously; blocks a real thread
-        // when the provider is a network-bound KMS call — see the interface XML docs.
+        // GENUINELY NON-BLOCKING: the registered IEncryptionKeyProvider was confirmed genuinely
+        // synchronous at construction time (see _isKeyProviderGenuinelySynchronous) — this
+        // GetAwaiter().GetResult() observes an already-completed ValueTask, it never schedules or
+        // waits on a continuation.
         CryptographicKey? key = _keyProvider.GetKeyAsync(payload.KeyId).GetAwaiter().GetResult();
         return DecryptCore(payload, associatedData, key);
     }
@@ -82,6 +110,7 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     /// <inheritdoc />
     public string EncryptToString(string plaintext, byte[] associatedData)
     {
+        ThrowIfNotGenuinelySynchronous(nameof(EncryptToStringAsync));
         ArgumentNullException.ThrowIfNull(plaintext);
         ArgumentNullException.ThrowIfNull(associatedData);
 
@@ -102,6 +131,7 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     /// <inheritdoc />
     public Result<string> DecryptToString(string encoded, byte[] associatedData)
     {
+        ThrowIfNotGenuinelySynchronous(nameof(DecryptToStringAsync));
         ArgumentNullException.ThrowIfNull(encoded);
         ArgumentNullException.ThrowIfNull(associatedData);
 
@@ -135,6 +165,27 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
         return result.IsSuccess
             ? Encoding.UTF8.GetString(result.Value)
             : result.Error;
+    }
+
+    /// <summary>
+    /// Guards a retained synchronous member: throws when the registered
+    /// <see cref="IEncryptionKeyProvider"/> was not confirmed genuinely synchronous at
+    /// construction time (<see cref="EncryptionKeyProviderCapabilities.IsGenuinelySynchronous(IEncryptionKeyProvider)"/>),
+    /// instead of silently bridging onto it via <c>.GetAwaiter().GetResult()</c>.
+    /// </summary>
+    /// <param name="asyncMemberName">
+    /// The name of this member's <c>*Async</c> counterpart, surfaced in the exception message.
+    /// </param>
+    private void ThrowIfNotGenuinelySynchronous(string asyncMemberName)
+    {
+        if (!_isKeyProviderGenuinelySynchronous)
+        {
+            throw new NotSupportedException(
+                $"The registered {nameof(IEncryptionKeyProvider)} does not implement " +
+                $"{nameof(ISynchronousEncryptionKeyProvider)}, so it cannot be trusted never to " +
+                "block the calling thread on a network/IPC round trip. Call " +
+                $"{asyncMemberName} instead.");
+        }
     }
 
     /// <summary>

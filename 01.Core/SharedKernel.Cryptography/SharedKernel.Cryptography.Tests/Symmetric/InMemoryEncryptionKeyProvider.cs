@@ -7,9 +7,10 @@ namespace SharedKernel.Cryptography.Tests.Symmetric;
 /// one designated as current. Both interface members complete synchronously (an already-completed
 /// <see cref="ValueTask{TResult}"/>) — exactly the shape a configuration-based provider takes in
 /// production, and the shape that makes <c>ISymmetricEncryptionService</c>'s sync-to-async bridge
-/// genuinely non-blocking.
+/// genuinely non-blocking. Implements <see cref="ISynchronousEncryptionKeyProvider"/> (P-492/
+/// WO-081) — this double genuinely never performs blocking I/O, so it honestly earns the marker.
 /// </summary>
-internal sealed class InMemoryEncryptionKeyProvider : IEncryptionKeyProvider
+internal sealed class InMemoryEncryptionKeyProvider : ISynchronousEncryptionKeyProvider
 {
     private readonly Dictionary<string, CryptographicKey> _keys = [];
     private string _currentKeyId;
