@@ -119,3 +119,39 @@ the record" — write the decline itself into `state-map.md` as a discoverable, 
 mistaken for actionable work), not just a changelog line. A changelog entry alone would have been exactly the
 kind of "dropped without a recorded ruling" gap the coordinator was already complaining about — changelog
 entries scroll off; a section under Phase Backlog stays discoverable to the next audit.
+
+**WO-081 dispatch reconciliation (2026-09-08):** all 14 phases dispatched across 9 domain planners; every one
+of the 8 domains whose phase text prescribed a concrete mechanism (P-493, P-496, P-497, P-498, P-499, P-501,
+P-503, P-504) found and corrected a factual error in what I wrote — the underlying diagnosis (F1/F2/F4/F9 etc.)
+held up every time, but the prescribed FIX mechanism didn't survive contact with the real, compiled contracts.
+Amended all eight entries in place (no renumbering/reopening, `Status: ◐ Dispatched` untouched) to match each
+domain's own corrected, source-verified design. Root causes of my own errors, worth remembering for next time:
+- **I designed against an interface's declared shape, not its real, reflected behavior.** `IFusionCacheSerializer`
+  doesn't receive the cache key (P-497); `MassTransit.Abstractions` 9.1.2's serializer contracts are hard-sync
+  with no async overload anywhere despite the async-friendly name "IMessageSerializer" suggesting otherwise
+  (P-499); `Temporalio`'s `IPayloadCodec`/`ISerializationContext` carry no `RunId` at all (P-501). None of these
+  were discoverable from documentation or my own prior knowledge of the libraries — they required a domain
+  planner actually reading or reflecting against the installed package. **Lesson: when I prescribe a specific
+  mechanism against a third-party library's contract (not just "make X async," but "receive Y and derive Z from
+  it"), that prescription is a hypothesis, not a fact, until a planner verifies it against the real compiled
+  assembly — phrase it that way ("intended design, verify against real source") rather than asserting it as
+  settled.**
+- **I underestimated my own cross-cutting mechanisms' edge cases.** P-492's `IsGenuinelySynchronous` marker was
+  MY OWN design from the same audit — and I still got its implication wrong two phases later (P-498), asserting
+  wrapping in `CachedEncryptionKeyProvider` would satisfy a check I myself specified as a static, non-recursive-
+  through-a-decorator identity check. **Lesson: when a later phase's acceptance criteria depends on an earlier
+  phase's mechanism, re-derive the implication from that mechanism's actual specified behavior, don't just
+  assert the intuitive-sounding outcome.**
+- **A dependency line can be wrong in a way that isn't caught by "does the domain number make sense."** P-504's
+  `Depends on: P-492, P-495` looked reasonable (both are 01.Core phases this Governance phase's rules concern)
+  but was wrong on both ends — needed P-493 instead of P-495 (the asymmetric gate, since the phase's own text
+  named `IAsymmetricSignatureService`), and didn't need P-495 at all (the confinement rule targets the
+  already-shipped assembly, not the not-yet-shipped Argon2 package). **Lesson: verify a `Depends on` line
+  against what the phase's OWN "What is needed" text actually names, not against which upstream phases are
+  topically adjacent.**
+- Every correction was found by the domain planner reading the design (mine, or an upstream sibling's, e.g.
+  P-498 finding P-492's true behavior, P-503 independently confirming P-498's DI-collision finding) against
+  real source — never by guessing or by re-deriving from the commissioning brief's own prose. This is the
+  platform's own established discipline (root CLAUDE.md's repeated "verify against real source, not assumed"
+  instruction) working exactly as intended, one layer up from where it usually gets applied — against MY text,
+  not just against shipped code.
