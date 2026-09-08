@@ -101,3 +101,5 @@
 - [2026-09-03] 06.Persistence: WO-068/P-448 (async IEncryptionKeyProvider migration) shipped; test run still gated on 16.Testing/P-450 (sync-brain)
 - [2026-09-03] 15.Integration: Notifications.Abstractions/.Email.SendGrid/.Sms.Twilio (WO-072/P-460–P-462) shipped, 3 new packages (sync-brain)
 - [2026-09-04] Queued WO-080 (P-487/488/489/490) into brain: KMS-probe row, Hard-rules enforcement-gap note, P-449 status update (sync-brain)
+- [2026-09-04] Corrected stale WO-080/P-487/P-490/P-476 "not yet shipped" claims to shipped; queued WO-081/082/083 (P-491-P-523) into 01.Core row + FIPS posture note (sync-brain)
+- [2026-09-04] 01.Core row extended to P-526 (P-524/525/526 queued); added declined-Error-metadata-bag row to What Goes Where (sync-brain)

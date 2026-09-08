@@ -1271,6 +1271,744 @@ The older of the platform's two probe-only layering grants is the unenforced one
 - [ ] `WorkflowTopologyRules.cs`'s existing doc-comment mention of the grant is updated to reference the new enforcing rule by name
 ---
 
+### P-491 — Core: Associated Data (AAD) on `ISymmetricEncryptionService` (BREAKING)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Every `ISymmetricEncryptionService` member (`Encrypt`/`EncryptAsync`/`Decrypt`/`DecryptAsync`/`EncryptToString(Async)`/`DecryptToString(Async)`) gains a required associated-data parameter — explicit at every call site, never a silently-defaulted optional. `AesGcmEncryptionService`'s shared `EncryptCore`/`DecryptCore` pass this through to `AesGcm`'s own `associatedData` parameter, a BCL capability already present and simply unused today. Associated data is authenticated but never encrypted, and it is never itself persisted inside `EncryptedPayload` — callers derive it deterministically from data already available at decrypt time (a row's own primary key, a cache key, a message type, a subscription id) so ciphertext moved to a different context fails authentication instead of decrypting cleanly.
+
+#### Why this is needed
+Column-level (and cache/message/webhook/workflow-payload) ciphertext today carries no binding to the context it came from — a ciphertext blob copied between rows/contexts decrypts cleanly, the canonical AEAD-substitution defect and a PCI/PSD2 review finding. AAD is the BCL-native fix already available in `AesGcm` and costs nothing extra to wire through once the interface accepts it.
+
+#### Acceptance criteria
+- [ ] Every `ISymmetricEncryptionService` member requires an explicit associated-data argument; no overload silently defaults it to null/empty
+- [ ] `AesGcmEncryptionService` passes associated data through to `AesGcm`'s own `associatedData` parameter on both encrypt and decrypt paths
+- [ ] Decrypting with different associated data than was used to encrypt fails authentication (`Result.Failure`), proven by a test that swaps AAD between two otherwise-identical payloads
+- [ ] `EncryptedPayload` gains no new field — AAD is never persisted; XML docs state the caller must be able to reproduce the same AAD bytes at decrypt time
+- [ ] Every existing production call site across the six cascading domains is inventoried in this phase's own notes (the per-domain fix itself ships as P-497–P-501)
+---
+
+### P-492 — Core: Gate Synchronous `Encrypt`/`Decrypt` Behind a Synchronous-Provider Capability (BREAKING)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 01.Core
+**Depends on:** P-491
+
+#### What is needed
+A capability marker (e.g. `ISynchronousEncryptionKeyProvider : IEncryptionKeyProvider`) that a provider implements only when it can genuinely resolve keys without a blocking network/IPC round trip (the config/environment-backed default). `ISymmetricEncryptionService`'s four retained synchronous members check the registered `IEncryptionKeyProvider` for this marker before bridging via `GetAwaiter().GetResult()`; when absent, they throw a clear, structural `NotSupportedException` directing the caller to the `*Async` overloads instead of silently blocking a thread-pool thread. This same gate is reused by P-493 once `IAsymmetricSignatureService` grows its own sync/async pair.
+
+#### Why this is needed
+F1's root cause is generic, not EF-Core-specific — any code path anywhere on the platform calling the sync `Encrypt`/`Decrypt` against a KMS-backed provider silently becomes a thread-pool-starvation hazard with no compiler or runtime signal. Today's XML-doc-only "BLOCKS A REAL THREAD" warning is advisory; this phase makes the hazard structurally impossible to trigger by accident.
+
+#### Acceptance criteria
+- [ ] A capability marker distinguishes a provider that resolves without blocking from one that does not
+- [ ] `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` implement the marker; a hand-rolled KMS-backed provider does not unless the author explicitly asserts synchronous safety
+- [ ] Calling a sync `ISymmetricEncryptionService` member against a non-marked provider throws a clear, documented exception instead of blocking
+- [ ] Calling a sync member against a marked provider behaves exactly as today (zero behavior change for the common config-backed case)
+- [ ] `CachedEncryptionKeyProvider`'s relationship to the marker is explicitly decided and documented — the check must reflect the INNER provider's true nature, never the decorator's best-case behavior
+---
+
+### P-493 — Core: `IAsymmetricKeyProvider`/`IAsymmetricSignatureService` Go Async; Fix Key Ownership and Verify Parity (BREAKING)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 01.Core
+**Depends on:** P-492
+
+#### What is needed
+`IAsymmetricKeyProvider.GetRsaKey`/`GetEcdsaKey` become `GetRsaKeyAsync`/`GetEcdsaKeyAsync` (`ValueTask`-returning, `CancellationToken`-aware), mirroring `IEncryptionKeyProvider`'s P-446 shape. `IAsymmetricSignatureService` grows `SignAsync`/`VerifyAsync` on the same pattern: the existing synchronous `Sign`/`Verify` are retained and bridge via `GetAwaiter().GetResult()`, gated by P-492's marker, with the same IN-CAPITALS blocking-thread documentation. `RsaSignatureService`/`EcdsaSignatureService` stop disposing the RSA/ECDsa instance the provider hands back (remove the `using` — the contract documents the returned instance as NOT owned by the caller), and `Verify` applies the same `EnsureMinimumKeySize` check `Sign` already applies.
+
+#### Why this is needed
+F9 — the exact defect WO-068 fixed on the symmetric side still exists on the signing side, and signing is Key Vault's primary real-world use case; today there is no way to back JWT/document signing with a real KMS without a blocking-on-async anti-pattern. F8 — `using RSA rsa = provider.GetRsaKey(...)` disposes a key the provider may still own, throwing `ObjectDisposedException` on the next call under any sensible caching implementation — a latent defect P-494/P-496 are about to make reachable. F8's second half (`Verify` skipping the minimum-key-size check `Sign` applies) is a silent accept-anything gap on the more security-sensitive operation.
+
+#### Acceptance criteria
+- [ ] `IAsymmetricKeyProvider`'s members are `ValueTask`-returning and `CancellationToken`-aware; the prior synchronous members are removed outright, not kept as a parallel overload
+- [ ] `IAsymmetricSignatureService` gains `SignAsync`/`VerifyAsync`; the retained sync `Sign`/`Verify` are gated by P-492's marker and documented IN CAPITALS as blocking when ungated
+- [ ] `RsaSignatureService`/`EcdsaSignatureService` never call `Dispose` on a key instance returned by `IAsymmetricKeyProvider`; XML docs state the instance is not caller-owned
+- [ ] `Verify` applies the same `EnsureMinimumKeySize` check `Sign` applies, or the asymmetry is deliberately documented with a stated reason
+- [ ] A config/certificate-backed synchronous implementer migrates mechanically (wraps in an already-completed `ValueTask`), matching P-446's precedent
+---
+
+### P-494 — Core: Azure Key Vault Keys Remote-Signing `IAsymmetricKeyProvider` Implementation
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 01.Core
+**Depends on:** P-493
+
+#### What is needed
+`SharedKernel.Cryptography.KeyVault.Azure` gains an implementation of the now-async `IAsymmetricKeyProvider`, backing `GetRsaKeyAsync`/`GetEcdsaKeyAsync` with Azure Key Vault Keys' remote sign/verify operations (`CryptographyClient.SignDataAsync`/`VerifyDataAsync`) rather than exporting private key material Key Vault does not release. The returned RSA/ECDsa instance is a thin subclass whose `SignData`/`VerifyData` override delegates to the remote call, so `RsaSignatureService`/`EcdsaSignatureService` (P-493) consume it through the exact same contract as a local key, with zero changes to those two classes. This completes the existing Azure provider family's capability set (it already implements `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`) rather than adding a new cloud provider.
+
+#### Why this is needed
+F9 — Key Vault's primary real-world purpose is signing, and today the package bearing its name cannot back a single signing call. Ratified decision 3 authorizes fixing the existing Azure provider first; this closes the one capability gap the audit found in that provider family, without touching the deferred AWS KMS / HashiCorp Vault scope.
+
+#### Acceptance criteria
+- [ ] `GetRsaKeyAsync`/`GetEcdsaKeyAsync` return a working RSA/ECDsa instance whose sign/verify path round-trips correctly against a real (or Testcontainers-equivalent) Key Vault key, without ever exporting private key material
+- [ ] `RsaSignatureService`/`EcdsaSignatureService` require zero code changes beyond what P-493 already introduced to consume this provider
+- [ ] `Azure.Security.KeyVault.Keys`/`Azure.Identity` remain confined to this package — reverified via the existing `.nuspec`-inspection technique in `SharedKernel.Consumer.Tests`
+- [ ] No AWS KMS or HashiCorp Vault provider is introduced in this phase or this work order
+---
+
+### P-495 — Core: `SharedKernel.Cryptography.Argon2` Sibling Package
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A new package, `SharedKernel.Cryptography.Argon2`, mirroring the `SharedKernel.Cryptography.KeyVault.Azure`/`SharedKernel.Validation.FluentValidation` sibling-with-third-party-dependency precedent: a keyed `IOneWayHasher` implementation (`Argon2idOneWayHasher`) using a maintained Argon2id NuGet package, self-describing output (algorithm id + parameters + salt + subkey, the same rehash-on-parameter-change shape `Pbkdf2OneWayHasher` already uses), registered as a keyed alternative alongside the unkeyed PBKDF2 default via `AddSharedKernelArgon2Cryptography()`. `SharedKernel.Cryptography` core stays zero-third-party-dependency; `Pbkdf2OneWayHasher` remains the unkeyed default and the FIPS-mode option — nothing here removes or deprecates it.
+
+#### Why this is needed
+Ratified decision 2. Argon2id is the modern OWASP-preferred KDF where FIPS-mode is not a hard constraint; PBKDF2 remains necessary for services that must stay in FIPS-approved-algorithm territory. Shipping both as an explicit choice avoids relitigating F6/FIPS posture in the same phase.
+
+#### Acceptance criteria
+- [ ] `Argon2idOneWayHasher` implements `IOneWayHasher` with self-describing output and correct `HashVerificationResult.SuccessRehashNeeded` detection on a parameter change
+- [ ] Registered as a keyed singleton (never replacing the unkeyed PBKDF2 default) via `AddSharedKernelArgon2Cryptography()`
+- [ ] The chosen third-party Argon2 NuGet dependency is confined to this package, verified via the same `.nuspec`-inspection technique used for `SharedKernel.Cryptography.KeyVault.Azure`
+- [ ] `Pbkdf2OneWayHasher`/`CryptographyOptions.Pbkdf2Iterations` are unchanged by this phase
+- [ ] Package README documents when to choose Argon2id vs. PBKDF2 (FIPS-mode requirement is the deciding factor)
+---
+
+### P-496 — Core: Azure Key Vault Provider Hardening — Connection Reuse, Compact Key Identifiers, a Real Rotation Story
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 01.Core
+**Depends on:** P-494
+
+#### What is needed
+Three related redesigns to the already-shipped `AzureKeyVaultEncryptionKeyProvider`: (1) a single, shared `CryptographyClient` per master key rather than constructing one per call, restoring HTTP connection pooling; (2) `CryptographicKey.Id`/`EnvelopeDataKey.MasterKeyId` stop encoding the full wrapped-DEK bytes — the provider maintains a small in-memory registry of known key versions (short, stable identifiers, e.g. `"v1"`/`"v2"`) each mapped internally to its wrapped-DEK+masterKeyId, so persisted rows carry a short stable tag instead of ~470 bytes of wrapped-key material; (3) that same version registry gives the provider an actual rotation story — a new version can be minted and become current while every prior version stays resolvable for decrypt, and `GetKeyAsync` no longer needs two Azure calls for every historical-key decrypt once the version is already known locally. This also removes `CachedEncryptionKeyProvider`'s unbounded cache-growth failure mode, since a stable short tag is reused across process restarts instead of a value freshly minted per process/TTL-expiry.
+
+#### Why this is needed
+F2 — per-call `CryptographyClient` construction risks socket exhaustion under Key Vault's aggressive RSA-operation throttling; the current `KeyId` design bloats every encrypted row by ~470 bytes and causes `CachedEncryptionKeyProvider`'s dictionary to grow without bound across pod restarts/TTL expiries; and there is today no way to rotate the data-encryption key at all. A version-registry redesign fixes all three from one root cause. Automatic, policy-driven rotation scheduling (crypto-period enforcement) is deliberately out of scope — closer to `19.Scheduling` territory, mirroring how `SharedKernel.DataPrivacy`'s cross-service erasure orchestrator was left out of P-474 — this phase makes rotation possible and cheap to call, not automatic.
+
+#### Acceptance criteria
+- [ ] No `CryptographyClient` is constructed per encrypt/decrypt/wrap/unwrap call — one client per master key, reused
+- [ ] `CryptographicKey.Id`/`EnvelopeDataKey.MasterKeyId` are short, stable version tags, never the wrapped-DEK bytes themselves
+- [ ] Decrypting a payload encrypted under a previously-current, now-superseded version succeeds without re-fetching Key Vault metadata for a version already known locally
+- [ ] A documented, callable path exists to mint a new current version while every previously-issued version remains decryptable
+- [ ] `CachedEncryptionKeyProvider`'s dictionary cardinality is bounded by the number of live key versions, not by pod restart count
+---
+
+### P-497 — Caching: Migrate `CacheEncryptionSerializer` to Async Cryptography Contracts with AAD (BREAKING cascade)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 02.Caching
+**Depends on:** P-491, P-492
+
+#### What is needed
+`CacheEncryptionSerializer` (P-433/WO-065) moves off any synchronous `ISymmetricEncryptionService` call onto the `*Async` overloads (FusionCache's serializer pipeline supports async serialization), and supplies associated data bound to the cache entry's own key/tag set, so a ciphertext value can never be replayed under a different cache key and decrypt successfully.
+
+#### Why this is needed
+Direct consequence of P-491 (AAD is now required) and P-492 (a genuinely network-bound key provider must not be called from a sync path). Closes F4 for the caching layer, using the same context-binding principle 06.Persistence/07.Messaging/15.Integration/17.Workflows apply to their own payloads.
+
+#### Acceptance criteria
+- [ ] `CacheEncryptionSerializer` no longer calls a synchronous `ISymmetricEncryptionService` member
+- [ ] Associated data is derived deterministically from the cache key/tag set, not a constant or omitted value
+- [ ] A ciphertext value written under one cache key fails to decrypt if replayed under a different key (proven by a test)
+- [ ] `AddCacheEncryption()`'s existing opt-in/compress-then-encrypt-ordering behavior is otherwise unchanged
+---
+
+### P-498 — Persistence: Close the Sync-Over-Async KMS Materializer Defect in `EncryptedValueConverter` (SEVERE)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 06.Persistence
+**Depends on:** P-491, P-492
+
+#### What is needed
+`EncryptedValueConverter` stops being able to silently become a thread-pool-starvation hazard when a KMS-backed `IEncryptionKeyProvider` is registered. Concretely: (1) `EfCorePersistenceBuilder.WithEncryption()` requires, via a startup-time fail-fast check rather than documentation alone, that a provider not carrying P-492's synchronous marker be wrapped in `CachedEncryptionKeyProvider`; (2) a `SavingChangesAsync`-time hook proactively resolves (warms) the current key — and, for updates to already-encrypted historical values, the specific historical keys needed — before EF Core's synchronous `ConvertToProviderExpression`/`ConvertFromProviderExpression` pipeline runs, so the converter's own call lands on an already-warm cache entry in the overwhelming common case; (3) `EncryptedValueConverter` passes the AAD P-491 now requires, bound to the entity's own key/column identity.
+
+#### Why this is needed
+F1, SEVERE — with `AzureKeyVaultEncryptionKeyProvider` registered (already wired by 13.ServiceDefaults's `AddSharedKernelKeyVaultKeyProvider`, P-449), every read of an encrypted column becomes a blocking, sync-over-async, network-bound call on a thread-pool thread — reading 100 rows means 200 blocking Key Vault calls. EF Core's `ValueConverter` API has no async path as of EF Core 10, so this requires pre-warming from an interceptor that runs before the synchronous materialization phase, plus a structural guard that refuses to start rather than silently degrading under load.
+
+#### Acceptance criteria
+- [ ] `WithEncryption()` fails fast at startup if the registered `IEncryptionKeyProvider` is neither P-492-marked-synchronous nor wrapped in `CachedEncryptionKeyProvider`
+- [ ] A `SaveChanges` cycle touching encrypted columns against a KMS-backed provider does not block a thread-pool thread on a cache-cold Key Vault call under normal operation
+- [ ] `EncryptedValueConverter` supplies non-trivial, entity-bound associated data on every encrypt/decrypt call
+- [ ] A load-style test (many rows, warm cache) demonstrates zero additional Key Vault calls beyond the initial warm-up
+- [ ] Existing config-backed (non-KMS) encryption users see zero behavior change
+---
+
+### P-499 — Messaging: Migrate Payload-Transform Encryption to Async Cryptography Contracts with AAD (BREAKING cascade)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 07.Messaging
+**Depends on:** P-491, P-492
+
+#### What is needed
+The `ISerializerFactory`/`IMessageSerializer`/`IMessageDeserializer` payload-transform decorator trio (P-346/WO-054) moves onto `ISymmetricEncryptionService`'s `*Async` overloads and supplies associated data bound to the message's own identity (message type + a stable envelope field) so a captured ciphertext cannot be replayed as a different message type and decrypt successfully.
+
+#### Why this is needed
+Direct consequence of P-491/P-492, mirroring P-497/P-500/P-501's identical migration shape for this domain's own opt-in payload encryption.
+
+#### Acceptance criteria
+- [ ] The payload-transform pipeline no longer calls a synchronous `ISymmetricEncryptionService` member
+- [ ] Associated data is bound to message identity, not a constant or omitted value
+- [ ] Compress-then-encrypt ordering (already enforced) is unaffected
+- [ ] Opt-in/default-off behavior of `WithPayloadTransform()` is unchanged
+---
+
+### P-500 — Integration: Migrate Webhook Payload Encryption to Async Cryptography Contracts with AAD (BREAKING cascade)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 15.Integration
+**Depends on:** P-491, P-492
+
+#### What is needed
+`WebhookDeliveryOptions.EncryptPayload`'s encrypt-then-sign path (P-427/WO-064) moves onto `ISymmetricEncryptionService`'s `*Async` overloads and supplies associated data bound to the delivery's own identity (subscription id + the existing `X-Webhook-Delivery-Id`) so a captured ciphertext cannot be replayed against a different subscription.
+
+#### Why this is needed
+Direct consequence of P-491/P-492, mirroring P-497/P-499/P-501.
+
+#### Acceptance criteria
+- [ ] The webhook payload-encryption path no longer calls a synchronous `ISymmetricEncryptionService` member
+- [ ] Associated data is bound to subscription/delivery identity, not a constant or omitted value
+- [ ] Encrypt-then-sign ordering (already enforced) is unaffected
+- [ ] Opt-in/default-off behavior of `EncryptPayload` is unchanged
+---
+
+### P-501 — Workflows: Migrate `EncryptionPayloadCodec` to Async Cryptography Contracts with AAD (BREAKING cascade)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 17.Workflows
+**Depends on:** P-491, P-492
+
+#### What is needed
+`EncryptionPayloadCodec`'s AES-256-GCM payload encryption moves onto `ISymmetricEncryptionService`'s `*Async` overloads — Temporal's own `IPayloadCodec.EncodeAsync`/`DecodeAsync` contract is already natively async, so this removes what was likely an unnecessary sync bridge — and supplies associated data bound to the workflow's own identity (workflow id + run id) so a captured ciphertext cannot be replayed against a different workflow execution.
+
+#### Why this is needed
+Direct consequence of P-491/P-492, mirroring P-497/P-499/P-500. This is the one consuming domain where the async migration is pure upside with no sync-bridging tradeoff.
+
+#### Acceptance criteria
+- [ ] `EncryptionPayloadCodec` calls only the `*Async` `ISymmetricEncryptionService` members
+- [ ] Associated data is bound to workflow id + run id, not a constant or omitted value
+- [ ] Existing `Result<T>`-to-Temporal-failure mapping for a decrypt failure is unchanged
+---
+
+### P-502 — Testing: Migrate Cryptography Fakes to AAD/Async Signatures; Add an `IAsymmetricKeyProvider` Fake (BREAKING cascade)
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 16.Testing
+**Depends on:** P-491, P-492, P-493
+
+#### What is needed
+`AddFakeCryptography()`'s existing in-memory `ISymmetricEncryptionService` fake (P-300/WO-049) is updated to the AAD-bearing, async-gated signatures from P-491/P-492, including exercising the P-492 marker so a test can force the blocking-gate path deliberately. A new fake `IAsymmetricKeyProvider` is added alongside it, since P-493 makes this contract real infrastructure for the first time with no in-memory double available today; the existing `IAsymmetricSignatureService` fake (if any) is updated for its new `SignAsync`/`VerifyAsync` members.
+
+#### Why this is needed
+Direct consequence of P-491/P-492/P-493 — every downstream domain's own test suite (02.Caching, 06.Persistence, 07.Messaging, 15.Integration, 17.Workflows, plus 01.Core's own) depends on these fakes staying in sync; this is the one domain whose migration gates every other domain's test suite compiling at all.
+
+#### Acceptance criteria
+- [ ] The fake `ISymmetricEncryptionService` accepts and validates associated data exactly like the real `AesGcmEncryptionService` (mismatched AAD fails decrypt)
+- [ ] A fake provider can be configured to simulate both the P-492-marked-synchronous and genuinely-async cases
+- [ ] A new fake `IAsymmetricKeyProvider` exists, deterministic and dependency-free (no real RSA/ECDsa key generation cost per test)
+- [ ] All six cascading domains' test suites (02/06/07/15/16/17) compile and pass against these updated fakes
+---
+
+### P-503 — ServiceDefaults: Verify and Close the `CachedEncryptionKeyProvider` Default-Wiring Gap
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 13.ServiceDefaults
+**Depends on:** P-496
+
+#### What is needed
+Verify against the real, shipped `AddSharedKernelKeyVaultKeyProvider(IHostApplicationBuilder)` (P-449) whether it registers `AzureKeyVaultEncryptionKeyProvider` directly or wraps it in `CachedEncryptionKeyProvider`. If it registers the provider directly with no caching by default, close the gap: either wrap it in `CachedEncryptionKeyProvider` with a sensible default TTL, or — if an unconditional wrap is wrong for this composition-root method — require an explicit choice (e.g. a mandatory TTL parameter) rather than silently shipping an uncached KMS-backed provider to every service calling this one-line extension.
+
+#### Why this is needed
+F2's practical impact depends entirely on whether the caching primitive 01.Core already ships is actually reachable through the one DI extension most services will call. P-498's 06.Persistence fix explicitly assumes a KMS-backed provider is either P-492-marked-synchronous or cache-wrapped — this phase makes that assumption true for every service using the standard composition-root entry point.
+
+#### Acceptance criteria
+- [ ] `AddSharedKernelKeyVaultKeyProvider`'s actual current wiring (cached or not) is confirmed against the real source, not assumed
+- [ ] If uncached, the gap is closed — either a default cache wrap or a mandatory explicit choice, never a silent uncached default
+- [ ] The fix is compatible with P-498's 06.Persistence startup fail-fast check (a service using this extension satisfies that check without extra manual wiring)
+- [ ] 13.ServiceDefaults/CLAUDE.md's description of P-449 is corrected to match the real, now-verified behavior
+---
+
+### P-504 — Governance: Mechanically Lock the Synchronous-Encryption Gate and Argon2 Dependency Confinement
+
+**Status:** `○` Pending
+**Work Order:** WO-081
+**Domain:** 00.Governance
+**Depends on:** P-492, P-495
+
+#### What is needed
+An architecture-test/analyzer pair mirroring this platform's existing mechanical-lock precedents (P-401, P-410, P-432, P-489, P-490): (1) a rule verifying P-492's synchronous-provider gate is actually reachable from every sync `ISymmetricEncryptionService`/`IAsymmetricSignatureService` member — the gate cannot be silently bypassed by a future edit; (2) a rule confirming `SharedKernel.Cryptography.Argon2`'s third-party dependency never leaks transitively into `SharedKernel.Cryptography` itself, mirroring the existing KeyVault.Azure confinement precedent as a structural, repeatable check.
+
+#### Why this is needed
+Every other corrected default or new structural boundary on this platform gets a mechanical lock rather than relying on prose — the synchronous-encryption gate is exactly the kind of "one silent regression away from reintroducing a thread-pool-starvation outage" rule that belongs here.
+
+#### Acceptance criteria
+- [ ] A reverted/reintroduced ungated sync call is proven to fail the new rule before the fix is committed (non-vacuous, mirroring P-490's own verification step)
+- [ ] A deliberately-reintroduced Argon2 reference inside `SharedKernel.Cryptography`'s own `.csproj` is proven to fail the confinement rule
+- [ ] Both rules are added to `SharedKernel.ArchitectureTests` following this domain's existing rule-organization convention
+---
+
+### P-505 — Core: Merge `SharedKernel.Guards` into `SharedKernel.Core` (BREAKING)
+
+**Status:** `○` Pending
+**Work Order:** WO-082
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`SharedKernel.Guards`' source (`Guard`, `Guard.Throw`, every `Against.*` extension, `GuardDescriptions`) moves into the `SharedKernel.Core` project, preserving the `SharedKernel.Guards` C# namespace unchanged — only the physical package/assembly changes, never the namespace consumers already write `using SharedKernel.Guards;`/`Guard.Against...` against. `SharedKernel.Guards.csproj` and its nested test project are retired; their tests move into `SharedKernel.Core`'s own test project. This is a deliberate UPGRADE on a bare "merge the packages" instruction: keeping the namespace stable means every consumer's required change is a one-line `PackageReference` swap, never a source edit.
+
+#### Why this is needed
+Ratified decision 4. The user's own stated reasoning is package-count reduction; preserving the namespace during the merge honors that intent while minimizing the blast radius the user themselves flagged as a concern worth its own migration phases.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Guards.csproj` no longer exists as a separately packed/published project
+- [ ] Every type previously in `SharedKernel.Guards` compiles unchanged inside `SharedKernel.Core` under the same namespace
+- [ ] `SharedKernel.Core`'s own existing public surface (base exceptions, BCL extensions, railway extensions) is untouched by this move
+- [ ] All of `SharedKernel.Guards`' existing tests pass unchanged inside their new home
+- [ ] 01.Core's published package count and package table reflect eleven packages, not twelve
+---
+
+### P-506 — Core: Re-point `SharedKernel.Validation` from `SharedKernel.Guards` to `SharedKernel.Core`
+
+**Status:** `○` Pending
+**Work Order:** WO-082
+**Domain:** 01.Core
+**Depends on:** P-505
+
+#### What is needed
+`SharedKernel.Validation.csproj`'s `ProjectReference` to `SharedKernel.Guards` is replaced with `SharedKernel.Core`. `GuardValidationExtensions.cs`'s extension methods (authored against the `IGuardClause` marker interface from the referencing side) require no source change since the namespace is unchanged.
+
+#### Why this is needed
+`SharedKernel.Validation` is the one production consumer of `SharedKernel.Guards` in this repo today; it must not be left referencing a package that no longer exists.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Validation.csproj` references `SharedKernel.Core`, not `SharedKernel.Guards`
+- [ ] `SharedKernel.Validation` builds and its full test suite passes with zero source changes to `GuardValidationExtensions.cs`
+- [ ] `SharedKernel.Validation`'s own "references" documentation is updated to name `SharedKernel.Core`
+---
+
+### P-507 — Core: Update `SharedKernel.Consumer.Tests` for the Merged Package
+
+**Status:** `○` Pending
+**Work Order:** WO-082
+**Domain:** 01.Core
+**Depends on:** P-505
+
+#### What is needed
+`ConsumerDependencyGraphTests.cs`'s assertions about 01.Core's package/dependency shape are updated to reflect `SharedKernel.Guards` no longer existing as an independent node and `SharedKernel.Core` now carrying that surface — including re-verifying (mirroring the existing `.nuspec`-inspection precedent) that the merge did not accidentally pull a new transitive dependency into `SharedKernel.Core`.
+
+#### Why this is needed
+This is the platform's existing safety net for exactly this class of change — a package-shape regression unit tests alone would not catch. It must be updated in the same phase as the merge, not left stale.
+
+#### Acceptance criteria
+- [ ] `ConsumerDependencyGraphTests.cs` no longer asserts anything about a standalone `SharedKernel.Guards` package
+- [ ] A new or updated assertion confirms `SharedKernel.Core`'s dependency graph is unchanged beyond absorbing Guards' own (zero) third-party dependencies
+- [ ] The full `SharedKernel.Consumer.Tests` suite passes
+---
+
+### P-508 — Governance: Re-point Architecture/Analyzer Tests from `SharedKernel.Guards` to `SharedKernel.Core`
+
+**Status:** `○` Pending
+**Work Order:** WO-082
+**Domain:** 00.Governance
+**Depends on:** P-505
+
+#### What is needed
+`SharedKernel.ArchitectureTests.csproj`, `SharedKernel.ArchitectureTests.Tests.csproj`, and `SharedKernel.Analyzers.Tests`' SK0006 test all currently reference or target `SharedKernel.Guards` directly; their `ProjectReference`s move to `SharedKernel.Core`. `GuardPurityRules.cs` needs re-scoping, not a blind retarget: its purity assertions were written against "the whole `SharedKernel.Guards` assembly," safe only because that assembly contained nothing else. Once Guard types live inside `SharedKernel.Core` (which also holds base exceptions, BCL extensions, railway extensions), an assembly-wide rule would be too broad; it must be re-scoped to the `SharedKernel.Guards` namespace specifically, using the same fully-qualified-metadata-name technique already established elsewhere in this domain (e.g. SK0035) for exactly this "assert something about specific types regardless of which assembly currently holds them" problem.
+
+#### Why this is needed
+These are the only production references to `SharedKernel.Guards` in this repo outside 01.Core/03.Domain; left unfixed, they either fail to compile or — worse — silently stop checking anything meaningful if the retarget is a blind assembly-swap rather than a namespace-scoped rule.
+
+#### Acceptance criteria
+- [ ] Both `SharedKernel.ArchitectureTests` projects reference `SharedKernel.Core`, not `SharedKernel.Guards`
+- [ ] `GuardPurityRules.cs`'s assertions are re-scoped to the `SharedKernel.Guards` namespace within `SharedKernel.Core`, proven non-vacuous (a deliberately-introduced violation inside that namespace still fails the rule; a violation elsewhere in `SharedKernel.Core` does not falsely fail it)
+- [ ] `SK0006_GuardClauseThrowAnalyzerTests.cs` passes against the new project location with no change to what it actually verifies
+- [ ] Full 00.Governance test suite passes
+---
+
+### P-509 — Domain: Re-point `SharedKernel.Domain` from `SharedKernel.Guards` to `SharedKernel.Core`
+
+**Status:** `○` Pending
+**Work Order:** WO-082
+**Domain:** 03.Domain
+**Depends on:** P-505
+
+#### What is needed
+`SharedKernel.Domain.csproj`'s `ProjectReference` to `SharedKernel.Guards` is replaced with `SharedKernel.Core` (already permitted per the root layering table: "03.Domain may reference 01.Core"). `AggregateRoot.cs` and `Money.cs`'s existing `Guard.Against.*` call sites require no source change since the namespace is unchanged.
+
+#### Why this is needed
+`SharedKernel.Domain` is the other in-repo production consumer of `SharedKernel.Guards` found by direct source inspection; it must not be left referencing a retired package.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Domain.csproj` references `SharedKernel.Core`, not `SharedKernel.Guards`
+- [ ] `SharedKernel.Domain` builds and its full test suite passes with zero changes to `AggregateRoot.cs`/`Money.cs` beyond the project reference
+- [ ] No wider surface of `SharedKernel.Core` becomes reachable from 03.Domain than the Guard types it already used — confirmed by re-running 00.Governance's existing 03.Domain layering rules
+---
+
+### P-510 — Core: `ResultTry` Exception-Message Redaction and Cancellation Passthrough (SEVERE)
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`ResultTry.Try`/`TryAsync` stop building `Error.Message` from the raw `$"{ExceptionType}: {ExceptionMessage}"` unconditionally — that text is exactly what `SharedKernelExceptionHandler` already redacts outside Development, and `ResultTry` currently has no equivalent control because its `Error` travels through ordinary `Result<T>` plumbing straight to `Error.ToProblemDetails()` with nothing downstream aware it originated from a caught exception. The fix stays inside 01.Core's own boundary: `ResultTry`'s default `onException` mapping produces an `Error` whose `Message` is safe-by-default; the raw exception text remains available for logging/telemetry (not externally exposed), just not folded into `Error.Message` unconditionally. Separately, `catch (Exception)` at every `ResultTry` call site is narrowed to exclude `OperationCanceledException` — a caller's own cancellation must propagate, not convert into `Error.Unexpected`.
+
+#### Why this is needed
+F3, SEVERE — a `ResultTry.Try(() => db.Call())` failure today can publish a raw driver exception message (e.g. a Postgres error string embedding a username) straight to an external HTTP caller via `Error.ToProblemDetails()`, bypassing the redaction control 14.Presentation's own exception-handling path already enforces for thrown exceptions. Swallowing `OperationCanceledException` converts a client disconnect into a spurious 500.
+
+#### Acceptance criteria
+- [ ] `ResultTry`'s default (no custom `onException`) `Error.Message` no longer contains the raw caught exception's message; the original exception type/message remains available via a channel that never reaches `Error`
+- [ ] A caller supplying its own `onException` mapper is unaffected — this only changes `ResultTry`'s own default
+- [ ] `OperationCanceledException` thrown inside the delegate propagates instead of being caught and converted
+- [ ] `AggregateException` flattening behavior (existing) is unchanged
+- [ ] Existing `ResultTry` consumers relying on the old default message content are identified and confirmed unaffected or deliberately updated
+---
+
+### P-511 — Core: Fix Cancellation-Token Leak in Single-Flight Key-Resolution Caches
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`CachedEncryptionKeyProvider`'s single-flight `Lazy<Task<T>>` and `AzureKeyVaultEncryptionKeyProvider`'s equivalent "current key" slot must not let the FIRST caller's `CancellationToken` govern a resolution shared by every OTHER concurrent caller. The fix uses a token genuinely detached from any individual caller for the shared inner resolution, while each awaiting caller's own token still governs how long THEY wait, not whether the shared resolution itself is cancelled.
+
+#### Why this is needed
+F5 — a correctness bug in exactly the single-flight mechanism P-446/P-487 introduced to prevent redundant KMS calls under concurrency; as shipped, caller A cancelling can cancel or fail caller B's legitimate, still-in-flight request — for the Azure provider's process-lifetime slot, this poisons it far more durably than the bounded-TTL cache does.
+
+#### Acceptance criteria
+- [ ] Caller A cancelling its own await does not cancel or fail caller B's concurrent await of the same shared resolution in either `CachedEncryptionKeyProvider` or `AzureKeyVaultEncryptionKeyProvider`
+- [ ] The underlying inner-provider call is still cancellable when there are zero remaining awaiting callers (no orphaned unbounded work)
+- [ ] Existing single-flight/failure-propagation/no-stale-fallback behavior (P-446's Implementation Rules) is otherwise unchanged
+- [ ] A concurrency test with staggered caller cancellation proves the fix
+---
+
+### P-512 — Core: PBKDF2 Iteration Floor and Verify-Time Ceiling
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`CryptographyOptions.Pbkdf2Iterations` gains a real validated floor (well below the 600,000 default, well above "1") enforced by the existing `AddValidatedOptions`/`ValidateOnStart` path — `[Range(1, int.MaxValue)]` alone does not express OWASP's actual floor. `Pbkdf2OneWayHasher.Verify` stops trusting `storedIterations` (and the derived subkey length) from the persisted hash blob without a ceiling — a verify call caps the iteration count and subkey length it will honor from a stored value, so a row an attacker can write cannot force unbounded CPU burn on every subsequent verify attempt.
+
+#### Why this is needed
+F6 — `Pbkdf2Iterations: 1` currently passes startup validation cleanly, defeating the purpose of a slow KDF; `Verify`'s unconditional trust of the stored iteration count turns "anyone who can write a hash row" into "anyone who can force unbounded CPU burn on this service."
+
+#### Acceptance criteria
+- [ ] `Pbkdf2Iterations` below the documented floor fails startup validation
+- [ ] `Verify` rejects (or caps and logs) a stored iteration count above a documented ceiling, rather than honoring it unconditionally
+- [ ] `Verify` rejects a stored subkey length outside the expected bound for the declared algorithm
+- [ ] Existing valid hashes at the current 600,000-iteration default continue to verify correctly
+---
+
+### P-513 — Core: Validate `CryptographicKey.Material` Length Against the Declared Algorithm
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`AesGcmEncryptionService` validates key material length against what AES-256-GCM actually requires (32 bytes) before use, failing loudly at the point of use rather than silently constructing a valid AES-128-GCM cipher from a shorter key.
+
+#### Why this is needed
+F7 — every doc, XML comment, and NuGet description promises AES-256; a 16-byte key today silently produces AES-128 with no signal that the real security margin is half of what every artifact claims.
+
+#### Acceptance criteria
+- [ ] A `CryptographicKey.Material` shorter (or longer) than 32 bytes is rejected at the point `AesGcmEncryptionService` uses it, with a clear error identifying the expected length
+- [ ] The rejection happens before any cryptographic operation is attempted
+- [ ] A test proves a 16-byte key is rejected rather than silently accepted
+---
+
+### P-514 — Core: Atomic TOTP Replay Guard, Attempt-Throttling Seam, and Config-Consistent Replay Window (BREAKING, zero blast radius)
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`ITotpReplayGuard`'s two-step `HasBeenUsedAsync`/`MarkUsedAsync` check is replaced with a single atomic try-mark member (e.g. `TryMarkUsedAsync` returning `bool`), the same compare-and-set shape `18.Idempotency` already uses, so two concurrent submissions of the same valid code cannot both pass. `TotpVerifier` uses the atomic member instead of its current check-then-act sequence. `TotpVerifier` also stops hardcoding `DefaultStepSeconds`/`DefaultDriftWindow` for its replay-window calculation and instead derives the window from whatever step/drift parameters the caller's `ITotpGenerator.ValidateCode` call actually used. A documented attempt-throttling seam (an interface, mirroring `ITotpReplayGuard`'s own no-default-implementation shape) is added so a consuming service can enforce RFC 4226 §7.3's rate limiting.
+
+#### Why this is needed
+F10 — the current Has-then-Mark sequence is a textbook TOCTOU: two concurrent requests both check "not yet used" before either marks it used, so both pass — a real authentication-bypass-adjacent defect. Since no domain has yet shipped a consumer of `ITotpReplayGuard` (12.Security.Totp, P-452, remains queued), this is a breaking interface change with zero real migration cost — not part of WO-081's cascading-migration list.
+
+#### Acceptance criteria
+- [ ] Two concurrent `VerifyAsync` calls presenting the same valid code result in exactly one success and one rejection, proven by a concurrency test
+- [ ] `TotpVerifier`'s replay window is derived from the actual step/drift parameters used for that verification, not a hardcoded default, proven by a test using non-default parameters
+- [ ] A documented attempt-throttling seam exists with no default implementation shipped
+- [ ] `ITotpReplayGuard`'s shape change is called out explicitly as breaking in this package's changelog, even though no in-repo consumer is affected today
+---
+
+### P-515 — Core: Fix `SmartEnum` Static-Initialization Trap
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`SmartEnum<TEnum,TValue>.FromValue`/`FromName`/`List` are inherited static members, so calling them through the base type does not reliably trigger `TEnum`'s own static type initializer — `_list` can observably be empty the first time a derived enum is touched only through an inherited call. `List` already self-heals via a `_readOnlyList = null` invalidation path; `_byValue`/`_byName`'s one-shot `Lazy<>` construction has no equivalent and, once built early against an empty `_list`, stays wrong for the process lifetime. Fix via a deliberate, documented mechanism that forces `TEnum`'s static constructor to run before any lookup is served (e.g. `RuntimeHelpers.RunClassConstructor` with the correct trim/AOT annotation), not by making `_byValue`/`_byName` re-checkable on every call.
+
+#### Why this is needed
+F11 — a real, if narrow, correctness trap: a derived `SmartEnum` whose first-ever touch is an inherited static call can permanently poison its own value/name lookup for the process. `List`'s existing self-heal proves the domain already knows this problem class exists; `_byValue`/`_byName` were simply never given the same treatment.
+
+#### Acceptance criteria
+- [ ] A test that touches a derived `SmartEnum` exclusively through inherited static members (never referencing one of its own named static instances first) proves `FromValue`/`FromName`/`List` all resolve correctly
+- [ ] The fix does not reintroduce reflection into the hot lookup path
+- [ ] The chosen mechanism's AOT/trim implications are documented and verified against this package's existing AOT-compatibility bar
+---
+
+### P-516 — Core: Thread-Safe, Freezable `InMemoryLocalizationCatalog`
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`InMemoryLocalizationCatalog`, registered as a singleton over a plain `Dictionary` with a public `AddTranslation` mutator, gains either (a) genuine thread-safe reads/writes if runtime mutation after startup is a real, intended use case, or (b) an explicit freeze/seal step after startup-time seeding beyond which `AddTranslation` throws — whichever better matches how this type is meant to be used. The decision and its rationale are recorded in this package's Implementation Rules.
+
+#### Why this is needed
+F12 — a singleton with an unsynchronized public mutator is a data race waiting to happen the moment any code calls `AddTranslation` after startup while a request thread is concurrently reading.
+
+#### Acceptance criteria
+- [ ] Concurrent reads during a concurrent `AddTranslation` call (if mutation-after-seeding remains supported) never throw or return corrupted state, proven by a concurrency test
+- [ ] If the freeze/seal design is chosen instead, a post-freeze `AddTranslation` call fails clearly rather than silently succeeding or silently no-op-ing
+- [ ] `StringLocalizerLocalizationCatalog` is unaffected (it has no equivalent mutator)
+---
+
+### P-517 — Core: Correct `SharedKernel.Primitives`' "Zero Dependencies" Claims
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`SharedKernel.Primitives` carries a `Microsoft.Extensions.DependencyInjection.Abstractions` reference solely for `ClockExtensions.AddClock()` — a legitimate, already-documented per-abstraction design choice. The false claim is external: the root CLAUDE.md packages table and this package's own shipped NuGet `<Description>` both state "zero external dependencies," which is factually wrong on nuget.org today. Fix the claim, not the dependency — removing `AddClock()` (mirroring `IIdGenerator`'s no-extension precedent) is considered and declined: it is a live, widely-referenced convenience method throughout this domain's own DI Registration examples, and removing shipped public API to fix a documentation problem is the wrong trade when correcting the documentation costs nothing.
+
+#### Why this is needed
+F13 — a shipped NuGet package description is public and external-facing, and it currently makes an untrue claim about itself — a trust problem independent of whether the one dependency it carries is architecturally justified (it is).
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Primitives`' `<Description>` accurately states it carries one first-party `Microsoft.Extensions` dependency for its optional DI convenience extension, not "zero dependencies"
+- [ ] Root CLAUDE.md's packages table entry for `SharedKernel.Primitives` is corrected to match (via `sync-brain`)
+- [ ] `AddClock()` itself is unchanged — this phase is documentation-only
+---
+
+### P-518 — Core: Standardize DI Registration Idiom to `TryAdd`/`TryAddEnumerable`; Fix Double-Registration
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Every DI extension method in 01.Core (`AddSharedKernelCryptography`, `AddSharedKernelCompression`, `AddSharedKernelValidation`, `AddSharedKernelFeatureManagement`, `AddValidatedOptions`'s internal registrations, `AddInMemoryLocalizationCatalog`/`AddStringLocalizerCatalog`, `AddSharedKernelAzureKeyVaultCryptography`, the new Argon2 extension from P-495, etc.) is audited and converted to `TryAdd*`/`TryAddEnumerable` for its own registrations, standardizing on the idiom already used in three places today against the ad hoc `Add*` used in roughly fifteen others — directly fixing the confirmed bug that calling `AddSharedKernelCryptography()` twice today double-registers all nine services.
+
+#### Why this is needed
+F14 — `TryAdd*` is the standard library-authoring convention because library code cannot know whether it is the first or the Nth thing configuring a given service type in a given host; the current mixed idiom is both an internal inconsistency and a live, reproducible bug, and it silently inverts override semantics — a consumer wanting to substitute their own implementation must currently register after the platform call rather than winning by registering first.
+
+#### Acceptance criteria
+- [ ] `AddSharedKernelCryptography()` called twice registers each service exactly once
+- [ ] A consumer-supplied registration of any of these service types, made before calling the platform's `AddX()` method, wins over the platform's own default — proven by a test
+- [ ] Every DI extension method across all eleven (post-merge) 01.Core packages uses `TryAdd*`/`TryAddEnumerable` consistently for its own registrations
+- [ ] No existing consumer relying on the old "always re-registers" behavior is left silently broken
+---
+
+### P-519 — Core: Additive Source-Generator-Based Options-Validation Path
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`AddValidatedOptions` gains an additive overload/companion path built on the in-box `[OptionsValidator]` source generator (or a caller-supplied `IValidateOptions<T>`), alongside — never replacing — the existing reflection-based `.Bind(section).ValidateDataAnnotations()` path. A consuming service wanting a fully AOT-clean options-validation story can opt in; every existing DataAnnotations consumer keeps working unchanged.
+
+#### Why this is needed
+F15 — `AddValidatedOptions` is the platform-wide options-validation entry point on an AOT-preferred platform, yet its only path today is reflection-based, with no source-generated alternative offered despite one shipping in the BCL.
+
+#### Acceptance criteria
+- [ ] A new opt-in overload/registration path validates options via an `[OptionsValidator]`-generated validator or a caller-supplied `IValidateOptions<T>`, with zero reflection at validation time
+- [ ] The existing DataAnnotations-based `AddValidatedOptions<TOptions>(section)` overload is unchanged in behavior and remains the default
+- [ ] `.ValidateOnStart()` semantics apply to both paths equally
+---
+
+### P-520 — Core: Correct Stale Shipped Package Metadata and the 01.Core Package Board
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+`SharedKernel.Primitives`' `PackageReleaseNotes` (still describing "1.1.0" after the lockstep-versioning switch) and `SharedKernel.Cryptography`'s `<Description>` (still describing P-446 as a future breaking release that has already shipped) are corrected to present tense / accurate history. `01.Core/state-map.md`'s own Package Board — which shows every package at `○ Not started` despite the domain being fully `●` Published — is corrected to match reality.
+
+#### Why this is needed
+F18 — shipped, externally-visible NuGet metadata describing an already-completed change as still-pending misleads any consumer reading it on nuget.org; a domain's own internal tracking board showing the opposite of its real state undermines this platform's own tracking discipline (mirrors the P-476 root-CLAUDE.md staleness this same audit independently surfaced — see this Work Order's cover notes).
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Primitives`' `PackageReleaseNotes` reflects the lockstep-versioning reality, not a stale per-package version number
+- [ ] `SharedKernel.Cryptography`'s `<Description>` describes P-446 as shipped, not pending
+- [ ] `01.Core/state-map.md`'s Package Board matches the domain's actual, fully-Published state
+- [ ] A brief pass confirms no other 01.Core package carries an equivalently stale description before closing this phase
+---
+
+### P-521 — Core: Versioned, Dated Reference Tables with an Opt-In Fallback Mode
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+The hardcoded IBAN country/length table (78 entries) and the ISO 4217/ISO 3166 data `SharedKernel.Validation` ships each gain a documented as-of/registry-version constant and a stated refresh-cadence expectation. `IbanValidator` gains an opt-in mode (never default) that falls back to mod-97-only validation for a country code the table does not recognize, rather than hard-rejecting an otherwise-plausible IBAN purely because the local table has not been updated for a newly-added ISO member.
+
+#### Why this is needed
+F19 — these registries drift over time; a stale table silently rejecting a genuinely valid instrument is a real operational failure mode on a platform shipping into "hundreds of services," and today there is no way to tell how current the shipped table is or to degrade gracefully.
+
+#### Acceptance criteria
+- [ ] `IbanValidator`, and the ISO 4217/ISO 3166 lookups, each expose a documented as-of/version identifier
+- [ ] An unrecognized-country IBAN is rejected by default (unchanged behavior) unless the new opt-in mod-97-only fallback is explicitly enabled
+- [ ] The fallback mode's XML docs state it trades country-specific length/structure checking for acceptance of a country the table does not yet know about
+- [ ] This package's README documents the intended refresh cadence
+---
+
+### P-522 — Core: Bound the Compiled-Regex Cache Used by Format/Email Guards
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** P-505
+
+#### What is needed
+The `ConcurrentDictionary<string, Regex>` backing `InvalidFormat`/`Email` (living in the Guards surface merged into `SharedKernel.Core` by P-505) is given a bounded size — an eviction policy (e.g. a capacity cap with oldest/least-recently-used removal) rather than unbounded growth keyed on every distinct caller-supplied pattern ever seen.
+
+#### Why this is needed
+F20 — low risk today because every current call site passes a literal pattern known at compile time, but the dictionary's key is caller-supplied and `RegexOptions.Compiled`-backed; if any future call site ever derives a pattern from configuration or user input, this becomes an unbounded-memory and JIT-compilation-cost vector with no cap in place. ReDoS itself is already mitigated (the existing 250ms timeout); this closes the adjacent, currently-open vector.
+
+#### Acceptance criteria
+- [ ] The pattern-keyed Regex cache has a documented, enforced maximum size
+- [ ] Exceeding the cap evicts rather than growing further or failing
+- [ ] Every existing literal-pattern call site's performance (compiled-once, reused) is unaffected in the common case
+- [ ] A test proves the cache does not grow past its bound under a workload presenting many distinct patterns
+---
+
+### P-523 — Governance: Mechanically Lock the `TryAdd`/`TryAddEnumerable` DI-Registration Convention
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 00.Governance
+**Depends on:** P-518
+
+#### What is needed
+An architecture-test/analyzer rule verifying every DI extension method in 01.Core uses `TryAdd*`/`TryAddEnumerable` rather than plain `Add*` for its own service registrations — closing the door on this convention silently drifting back to inconsistent the next time someone adds a registration line. Scoped to 01.Core's own extensions for this phase; extending to other domains is a documented future follow-up, not attempted here.
+
+#### Why this is needed
+Mirrors this platform's established pattern of following a corrected default with a structural lock (P-401, P-410, P-432, P-489, P-490) rather than leaving the fix to hold only as long as everyone remembers the convention.
+
+#### Acceptance criteria
+- [ ] A deliberately-reintroduced plain `services.AddSingleton<...>()` call inside one of 01.Core's own `AddX()` extension methods is proven to fail the rule before the fix is committed
+- [ ] The rule is scoped to 01.Core's own DI extension methods for this phase — no attempt to retrofit every other domain's DI extensions in the same pass
+- [ ] Rule is added to `SharedKernel.ArchitectureTests` following this domain's existing organization convention
+---
+### P-524 — Core: Zero Internally-Owned Key Material After Use; Decline Broader Secret-Handle Redesign
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Every `byte[]` buffer this package allocates and fully controls the lifetime of during a cryptographic operation — derived PBKDF2 subkeys, HMAC working buffers, decrypted plaintext scratch buffers inside `AesGcmEncryptionService`, and any other intermediate key/secret material this package itself creates rather than merely receives — is zeroed via `CryptographicOperations.ZeroMemory` immediately after its last use, before the buffer becomes eligible for garbage collection.
+
+This phase deliberately narrows the broader "key-material zeroization" ask (an identified gap from the 01.Core audit) to only the material 01.Core genuinely owns and controls, and rules on the two broader redesigns the audit asked this phase to weigh:
+- **Declined — `IDisposable` key handle on `CryptographicKey`.** `CryptographicKey` is a `sealed record` held inside `CachedEncryptionKeyProvider`'s process-lifetime, multi-reader cache. Disposing a cached value while other concurrent callers may still hold a reference to it is a use-after-dispose hazard, and `IDisposable` is a poor fit for a value that is shared-by-design. The point at which a key's lifetime genuinely ends is the CACHE's own eviction, not any individual caller's read — a future "erase evicted key material" story belongs to `CachedEncryptionKeyProvider`'s own eviction path if ever justified, not to `CryptographicKey` itself.
+- **Declined — `ReadOnlySpan<char>`/`char[]` secret overloads on `IOneWayHasher`.** The realistic caller (a request DTO field, an `IConfiguration` value) already holds the secret as an immutable, already-allocated `string` by the time it reaches this API — a `Span` overload cannot un-happen that upstream allocation. .NET's own guidance has moved away from `SecureString`/manual string-zeroing as a supported secret-hygiene pattern. Genuine secret-lifetime minimization is upstream-of-this-package guidance (documented in the README), not an API-surface change here.
+
+#### Why this is needed
+Nothing in `SharedKernel.Cryptography` today calls `CryptographicOperations.ZeroMemory` anywhere, even on buffers the package itself allocates and fully owns — a real, low-risk-to-fix gap, distinct from the two broader redesigns this phase deliberately declines as the wrong trade for a managed-runtime shared kernel.
+
+#### Acceptance criteria
+- [ ] Every `byte[]` working buffer allocated and exclusively owned by `Pbkdf2OneWayHasher`, `AesGcmEncryptionService`, `HmacSha256Signer`, and `Argon2idOneWayHasher` (once P-495 ships) is zeroed via `CryptographicOperations.ZeroMemory` immediately after its last use
+- [ ] No behavior change to any public API — this phase is purely internal-buffer hygiene
+- [ ] This package's README documents the declined scope (no `IDisposable CryptographicKey`, no `Span<char>` secret overloads) and the reasoning, plus guidance for a consumer wanting to minimize secret-as-string lifetime upstream of this package
+- [ ] A test confirms a representative internal buffer is zeroed post-use
+---
+
+### P-525 — Core: LEI, ABA Routing Number, and SEPA Creditor Identifier Validators
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+Three new format validators in `SharedKernel.Validation`, following the exact shape every existing validator in this package already uses (dual-mode standalone `Result`/bool + `Guard.Against.*` extension, zero FluentValidation dependency, real-published-source-verified test vectors per this package's own P-443 precedent): **LEI** (ISO 17442, a 20-character alphanumeric identifier with a mod-97-10 checksum over its final two check digits), a **US ABA routing number** (9-digit, weighted checksum), and a **SEPA creditor identifier** (country code + check digits + business code + national identifier, composing an `IbanValidator`-style checksum approach).
+
+#### Why this is needed
+`SharedKernel.Validation` already ships IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT — these three are the identical shape (a published checksum algorithm over a structured identifier) in the identical package; the domain simply had not yet needed them. No architectural gap, purely catalog completeness for a platform whose stated market includes payments/fintech services.
+
+#### Acceptance criteria
+- [ ] `LeiValidator`, `AbaRoutingNumberValidator`, and `SepaCreditorIdentifierValidator` each expose the same dual-mode (`Result`/bool) + `Guard.Against.*` shape every existing validator in this package uses
+- [ ] Every test vector is verified against a real published source (ISO 17442 registry examples, a published ABA routing-number checksum reference, a published SEPA creditor-identifier example) — never a hand-constructed "valid" example, mirroring this package's own P-443 precedent
+- [ ] `ValidationErrorCodes` gains the three validators' new codes as package-local nested constants, never added to `SharedKernel.Primitives.ErrorCodes`
+- [ ] `SharedKernel.Validation.FluentValidation` gains matching `MustBeValid*` rule-builder extensions for all three, following the existing `Custom(...)`-based (never `Must(predicate).WithErrorCode(fixedCode)`) pattern
+---
+
+### P-526 — Core: FIPS 140-3 / Approved-Algorithm Posture Statement (docs-only)
+
+**Status:** `○` Pending
+**Work Order:** WO-083
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A dedicated FIPS 140-3 posture statement in `SharedKernel.Cryptography`'s own README and this domain's `CLAUDE.md` — beyond the one-line cross-domain note already added to root `CLAUDE.md`'s 01.Core row during this audit — enumerating explicitly which shipped primitives are FIPS-approved (PBKDF2-HMACSHA256, AES-256-GCM, RSA/ECDSA at their documented minimum key sizes, HMACSHA256, SHA-256) and which are NOT (Argon2id, once P-495 ships; and — the gap this phase exists specifically to surface — the RFC 4226/6238 default `HotpAlgorithm.Sha1` used by `HotpGenerator`/`TotpGenerator` unless the caller explicitly selects `HotpAlgorithm.Sha256`/`Sha512`). Explicit, actionable guidance is added for a service operating under a FIPS-enforced-mode compliance requirement: use PBKDF2 (never Argon2id), and explicitly pass `HotpAlgorithm.Sha256` or `.Sha512` to every TOTP/HOTP call rather than relying on the RFC-default `Sha1` parameter value. Zero code or public-API change — this is a documentation-only phase.
+
+#### Why this is needed
+No FIPS posture statement exists anywhere in this domain's brain today, and the one primitive most likely to trip up a FIPS-constrained consumer — TOTP/HOTP's RFC-mandated default of HMAC-SHA1 — is exactly the kind of gap a posture-statement audit exists to catch before a consuming service discovers it during their own compliance review.
+
+#### Acceptance criteria
+- [ ] `SharedKernel.Cryptography`'s README states, per primitive, whether it is FIPS 140-3 approved as shipped
+- [ ] The HOTP/TOTP default-algorithm (`HmacSha1`) FIPS gap is explicitly called out, with the `Sha256`/`Sha512` opt-out documented as the FIPS-compliant choice
+- [ ] `01.Core/CLAUDE.md`'s Implementation Rules gains a one-line cross-reference to the new posture statement so a future domain planner does not have to rediscover it from the README alone
+- [ ] No `.cs` file changes — verified by this phase's own acceptance that no production code diff exists beyond documentation
+---
+
+### DECLINED — Structured Metadata Bag on `Error`
+
+**Ruling date:** 2026-09-04
+**Raised by:** 01.Core gold-standard audit (WO-081/082/083 cover notes), "IDENTIFIED GAPS"
+**Status:** `⊘` Declined — no phase written, no Phase ID consumed
+
+#### The ask
+Add a structured metadata bag to `Error` (currently `(Code, Message, Type)` only) so RFC 9457 `ProblemDetails` extension members — offending field path, retry-after hint, remediation link — have somewhere to live, rather than being encoded into `Message` or worked around at the HTTP boundary.
+
+#### Ruling: DECLINE
+`Error` is the single most-depended-upon type on this platform, referenced from every one of the twenty-one folder-map domains. A generic metadata bag is not a small addition to a type this central:
+- **Equality semantics break silently.** `Error` is a `sealed record`; record equality is member-wise by default. A `Dictionary<string, object>`/similar bag has no structural equality, so adding one either breaks `Error`'s existing value-equality contract or requires a hand-rolled `Equals`/`GetHashCode` override — a correctness-sensitive change to a type every domain's tests already assert equality against.
+- **AOT/serialization exposure is unclear.** `object`-typed dictionary values are exactly the shape STJ source-generation and AOT trimming handle worst; `Error` crosses process boundaries today (07.Messaging envelopes, 14.Presentation `ProblemDetails`), so this is not a purely in-process concern.
+- **The two concrete needs that motivated this ask have already been solved without touching `Error`.** P-402 (14.Presentation) added multi-field validation-error grouping entirely at the `ProblemDetails`-construction boundary. P-408 (14.Presentation) added a `Retry-After`-hint-carrying `RateLimitRejectionProblemDetails` helper, also entirely at the boundary, never touching `Error`. Two independent domains have now proven the "extend at the ProblemDetails boundary, not at `Error` itself" pattern is sufficient for every concrete need raised so far — a generic bag on `Error` would be solving an already-solved problem at a much higher blast radius.
+
+#### Revisit trigger
+Not "maybe someday." Revisit only if a THIRD, genuinely independent domain needs to attach extra structured context to an `Error`-derived response and the ProblemDetails-boundary-extension pattern (P-402/P-408's shape) demonstrably cannot express that need — at that point the repeated pattern itself is the signal, not speculation about RFC 9457's full extension-member vocabulary.
+---
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
@@ -2669,3 +3407,5 @@ The older of the platform's two probe-only layering grants is the unenforced one
 - [2026-09-04] DOCKER GAP CLOSED, same day — the Docker daemon became available after the coordinated pass completed, so every Testcontainers-backed proof recorded above as written-but-unexecuted has now genuinely RUN and PASSED. Supersedes that caveat in the preceding entry. Verified: `SharedKernel.Idempotency.Redis.Tests` 25/25 and `SharedKernel.Idempotency.EfCore.Tests` 25/25 (50/50 total — the 10 concurrent-reservation/tenant-isolation/expiry-reclaim proofs now execute against real Redis and real PostgreSQL, not a mock); `SharedKernel.Scheduling.Tests` 35/35, which INCLUDES `MultiReplicaSingleExecutionTests` — the proof that P-464's per-occurrence lock fix actually closes the cross-replica duplicate-firing window, previously the one defect fix asserted by reasoning rather than demonstrated; `SharedKernel.Testing.SelfTests` 1242/1242 with zero exclusions (1216 plus the 26 `Containers/*` fixtures). Also re-verified post-merge: `SharedKernel.ArchitectureTests.Tests` 247/247, `SharedKernel.Analyzers.Tests` 267/267, full-solution build 0 errors across all 149 registered projects (state-map-phase, coordinated pass)
 - [2026-09-04] arch-lead: three coordinated-pass findings evaluated, all three ACCEPTED, four new phases written to root Phase Backlog under WO-080 — **P-487** (01.Core: readiness-probe primitive for `SharedKernel.Cryptography.KeyVault.Azure`, closing P-449's blocker; explicitly distinguished from `10.Intelligence`'s P-291/WO-047 LLM-probe retraction since a Key Vault key-metadata read is cheap/non-generative, unlike a billed LLM completion — P-449's `Depends on` updated to `P-447, P-487`), **P-488** (05.Application: fix `CacheInvalidationBehavior`'s pre-commit eviction ordering defect, flagged unfixed-and-untracked in the prior pass's changelog), **P-489** (00.Governance: mechanically lock the corrected ordering, mirroring `SK.00.CacheEncryptionAndRedisValidationLock`'s real-executed-pipeline technique), **P-490** (00.Governance: mechanically enforce the previously-unenforced `13.ServiceDefaults`→`17.Workflows` readiness-probe-only layering grant, as a deliberately separate rule from the sibling `19.Scheduling` grant's `OnlyReachesSchedulerProbeTypes`, per root `CLAUDE.md`'s explicit no-analogy/no-merge instruction). All four target domains (01.Core, 05.Application, 00.Governance) were already `●` Published on the Domain Summary Board, so no `state-map-phase` calls were made per the board-state gate — dispatch is left to `/dispatch-phase`. No `sync-brain` call made this pass — all three findings close gaps in already-documented mechanisms (the established probe-primitive split, the already-documented `CacheInvalidationBehavior` invariant, the already-recorded `17.Workflows` layering grant); none introduces a new technology, package, or "What Goes Where" row (arch-lead)
 - [2026-09-04] Phase Backlog P-449 → `●` Complete, and WO-080 closed end to end (P-487/P-488/P-489/P-490). P-449 had been `◐` half-shipped since the coordinated pass, blocked on `01.Core` shipping no probe primitive for its Azure Key Vault provider. P-487 added `IEncryptionKeyProviderProbe`/`EncryptionKeyProviderHealth` (plain `Task<THealth>` mirroring `07.Messaging`'s `IMessageBusProbe`, chosen over `17.Workflows`' `Task<Result<T>>` because the probe is genuinely I/O-bound and must never throw for ordinary unreachability; its Key Vault implementation issues a read-only key-metadata call, never a wrap/unwrap/sign/verify that would register as key usage in Key Vault's own audit trail), and `13.ServiceDefaults` then wired `KeyVaultKeyProviderReadinessHealthCheck`/`AddKeyVaultKeyProviderReadinessCheck()` — no layering grant needed, `01.Core` already sits inside the permitted `01-12` range. P-488 fixed the pre-commit cache-eviction defect in shipped WO-036 code by registering `CacheInvalidationBehavior` OUTSIDE `TransactionBehavior` while leaving `AuditingBehavior` inside it, so both opposing invariants now hold at once. P-489 and P-490 locked, respectively, that behavior ordering (via a real executed MediatR pipeline, since the ordering is an emergent runtime property no IL walk can honestly prove) and the previously-unenforced `13.ServiceDefaults`→`17.Workflows` probe grant — the older grant having been the unenforced one while the newer `19.Scheduling` grant was already locked. Every lock in this work order was proven NON-VACUOUS by temporarily mutating real production code, confirming the test went red, then reverting to a verified-clean `git diff` — never by a contrived fixture alone. Test movement: `SharedKernel.ArchitectureTests.Tests` 247→253, `SharedKernel.ServiceDefaults.Tests` 201→207, `SharedKernel.Application.Behaviors.Tests` 183→187, `SharedKernel.Cryptography.Tests` 235→239, `SharedKernel.Cryptography.KeyVault.Azure.Tests` 33→36. NO phase remains open on this board (state-map-phase, coordinated pass)
+- [2026-09-04] arch-lead: deep source-level `01.Core` gold-standard audit (12 packages, ~181 files) evaluated — 20 source-verified findings plus 4 ratified user decisions (full symmetric/asymmetric-signing breaking wave, `SharedKernel.Cryptography.Argon2` sibling, Azure-KMS-provider-first fix scope, `SharedKernel.Guards`→`SharedKernel.Core` merge) turned into 33 phases, P-491–P-523, split across THREE new work orders rather than one — the scope genuinely spans three independent blast radii (a breaking crypto/KMS wave with a six-domain cascade, a separate breaking package-consolidation with its own narrow four-file blast radius found by direct grep rather than the audit's estimated "~20 dependents," and a batch of non-breaking correctness/hygiene fixes) that would only be conflated by sharing one WO id. **WO-081** (P-491–P-504, Cryptography Breaking Wave): AAD becomes a required parameter on `ISymmetricEncryptionService` (P-491); sync `Encrypt`/`Decrypt` gated behind a new synchronous-provider marker instead of silently blocking (P-492); `IAsymmetricKeyProvider` AND `IAsymmetricSignatureService` both go async, an ARCH-LEAD-IDENTIFIED gap beyond the user's own decision — leaving only the key provider async would have forced `RsaSignatureService`/`EcdsaSignatureService` into the exact block-on-async anti-pattern F1 flagged, so `IAsymmetricSignatureService` gains `SignAsync`/`VerifyAsync` on the same P-446 shape, plus fixes the key-disposal bug and the `Verify`/`Sign` minimum-key-size asymmetry (P-493); a new Azure Key Vault remote-signing `IAsymmetricKeyProvider` closes F9's "no KMS-backed signing provider at all" gap, accepted as in-scope under decision 3 (fixing the existing Azure family, not adding a cloud) (P-494); `SharedKernel.Cryptography.Argon2` ships (P-495); `AzureKeyVaultEncryptionKeyProvider` is redesigned around a short stable key-version registry instead of encoding the full wrapped-DEK into every `KeyId` — fixing connection pooling, ~470-byte row bloat, unbounded cache growth, and giving the provider an actual rotation story from one root-cause fix (P-496); cascading migrations dispatched exactly to the six domains the user named (02.Caching P-497, 06.Persistence P-498 — the SEVERE thread-pool-starvation fix, 07.Messaging P-499, 15.Integration P-500, 17.Workflows P-501, 16.Testing P-502); plus two phases the user's list didn't name but the fix chain requires: 13.ServiceDefaults verifying/closing whether `AddSharedKernelKeyVaultKeyProvider` (P-449) actually wires the caching decorator P-496 assumes (P-503), and a 00.Governance mechanical lock on the new sync-gate + Argon2 confinement (P-504). **WO-082** (P-505–P-509, Guards→Core Merge): merges `SharedKernel.Guards` into `SharedKernel.Core` while deliberately PRESERVING the `SharedKernel.Guards` C# namespace — an UPGRADE on the bare "merge" instruction so every consumer's fix is a one-line `PackageReference` swap, never a source edit (P-505); direct grep found only four real in-repo dependents (not ~20) — `SharedKernel.Validation` (P-506), `SharedKernel.Consumer.Tests` (P-507), `00.Governance`'s `SharedKernel.ArchitectureTests`+`GuardPurityRules` re-scoping (P-508), `03.Domain` (P-509). **WO-083** (P-510–P-523, Correctness & Hygiene): `ResultTry` exception-message redaction + `OperationCanceledException` passthrough, SEVERE (P-510); single-flight cancellation-token leak (P-511); PBKDF2 iteration floor/ceiling (P-512); `CryptographicKey.Material` length validation (P-513); atomic TOTP replay try-mark — flagged breaking but zero-blast-radius since no domain has shipped an `ITotpReplayGuard` consumer yet (P-514); `SmartEnum` static-init trap (P-515); thread-safe/freezable `InMemoryLocalizationCatalog` (P-516); corrected "zero dependencies" claims, choosing to fix the docs rather than remove the live `AddClock()` API (P-517); `TryAdd`/`TryAddEnumerable` DI convention + fixing the confirmed `AddSharedKernelCryptography()` double-registration bug (P-518); additive source-generator options-validation path (P-519); stale package metadata + `01.Core`'s own Package Board correction (P-520); versioned/dated IBAN/ISO reference tables + opt-in mod-97 fallback (P-521); bounded format-guard regex cache, sequenced after the Guards merge (P-522); governance lock for the TryAdd convention (P-523). **DECLINED/DEFERRED, no phase written:** F16 (`TreatWarningsAsErrors`) and F17 (`EnablePackageValidation`) are `Directory.Build.props`/build-configuration concerns routed to `devops-lead`, not domain phases — the arch-lead phase-backlog model has no domain for build tooling; key-material zeroization and a crypto-period/max-ops-per-key policy are noted as genuine future gaps but not blocking (P-496's key-version registry partially addresses the latter); a structured `Error` metadata bag for RFC 9457 extension members and new fintech validators (LEI/ABA/SEPA) are deferred to their own future work orders; a FIPS 140-3 posture statement is documentation-only, folded into this `sync-brain` pass rather than a phase. **CORRECTED, not a new finding:** the audit's "P-476 is marked complete, verify it covers `[LoggerMessage]`/`{@Object}`" gap is already resolved — `00.Governance`'s own state-map shows `SK.00.DataPrivacyLoggingGuard` shipped 8/8 with a real-assembly-verified `SK0035` analyzer (2026-08-26); the STALE claim is root `CLAUDE.md`'s own "P-476, not yet shipped" line, a documented case of root-propagation being deliberately withheld during a concurrent multi-implementer session and never later corrected — fixed via `sync-brain` in this same pass, not a new phase. All fourteen touched domains (01.Core, 02.Caching, 03.Domain, 06.Persistence, 07.Messaging, 13.ServiceDefaults, 15.Integration, 16.Testing, 17.Workflows, 00.Governance) were already `●` Published on the Domain Summary Board, so no `state-map-phase` calls were made per the board-state gate — dispatch is left to `/dispatch-phase` (arch-lead)
+- [2026-09-04] arch-lead: coordinator flagged 4 "IDENTIFIED GAPS" from the WO-081/082/083 audit as dropped without a recorded ruling (crypto-period enforcement was already settled on the record in P-496's rationale — no action needed there). Ruled on all four, none renumbering/reopening P-491–P-523: **ACCEPT** key-material zeroization, narrowed to buffers 01.Core genuinely owns (P-524, WO-083) — explicitly declines an `IDisposable CryptographicKey` (use-after-dispose hazard against `CachedEncryptionKeyProvider`'s shared cache) and `ReadOnlySpan<char>` `IOneWayHasher` overloads (the realistic caller already holds an immutable `string` by the time it reaches this API) within that same phase's own rationale, rather than as separate declines; **ACCEPT** LEI/ABA-routing-number/SEPA-creditor-identifier validators (P-525, WO-083) — same shape, same package, no architectural question, pure catalog completeness; **ACCEPT** a dedicated FIPS 140-3 posture statement (P-526, WO-083, docs-only, zero code diff) — surfaces a real, previously-undocumented gap the coordinator's own framing caught: TOTP/HOTP's RFC-mandated default `HotpAlgorithm.Sha1` is not FIPS-approved, and no guidance existed anywhere to steer a FIPS-constrained consumer to `.Sha256`/`.Sha512`; **DECLINE** a structured metadata bag on `Error` — recorded as its own `### DECLINED` entry (not a Phase Backlog phase, no P-ID consumed) rather than a changelog-only note, specifically so a future audit finds the ruling before re-raising it. Reasoning: `Error` is the platform's most-depended-upon type, a generic bag breaks its `sealed record` equality contract and raises AOT/cross-process-serialization questions no other change to this type has had to answer, and — decisively — the two concrete needs that motivated the ask (multi-field validation errors, a retry-after hint) were already solved twice, independently, at the `ProblemDetails`-construction boundary (P-402, P-408) without touching `Error` at all, proving the boundary-extension pattern is sufficient. Revisit trigger recorded: a third independent domain hitting a need that pattern genuinely cannot express, not speculative RFC 9457 vocabulary coverage. All three accepted phases target 01.Core, already `●` Published — no `state-map-phase` call made (arch-lead)
