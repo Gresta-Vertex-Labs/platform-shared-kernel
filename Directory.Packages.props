@@ -105,6 +105,14 @@
     <PackageVersion Include="Grpc.Net.ClientFactory" Version="2.80.0" />
     <PackageVersion Include="HotChocolate.AspNetCore" Version="16.1.4" />
     <PackageVersion Include="HotChocolate.Data" Version="16.1.4" />
+    <!--
+      SharedKernel.Cryptography.Argon2 (01.Core/WO-081, P-495): pure-managed MIT Argon2id, chosen
+      over a libsodium binding specifically to avoid a native/P-Invoke asset that would complicate
+      AOT and container builds. Confined to that one package — SharedKernel.Cryptography itself
+      stays zero-third-party-dependency, proven by a .nuspec-inspection test in
+      SharedKernel.Consumer.Tests.
+    -->
+    <PackageVersion Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
     <PackageVersion Include="MassTransit" Version="9.1.2" />
     <PackageVersion Include="MassTransit.Azure.ServiceBus.Core" Version="9.1.2" />
     <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="9.1.2" />
@@ -240,6 +248,7 @@
     <PackageVersion Include="SharedKernel.Configuration" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Core" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Cryptography" Version="$(SharedKernelPackageVersion)" />
+    <PackageVersion Include="SharedKernel.Cryptography.Argon2" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Cryptography.KeyVault.Azure" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.DataPrivacy" Version="$(SharedKernelPackageVersion)" />
     <PackageVersion Include="SharedKernel.Domain" Version="$(SharedKernelPackageVersion)" />

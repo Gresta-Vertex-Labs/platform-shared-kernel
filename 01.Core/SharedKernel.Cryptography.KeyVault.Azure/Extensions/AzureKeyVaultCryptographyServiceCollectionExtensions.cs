@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Cryptography.KeyVault.Azure.Options;
 using SharedKernel.Cryptography.Random;
+using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
 
 namespace SharedKernel.Cryptography.KeyVault.Azure.Extensions;
@@ -17,11 +18,14 @@ public static class AzureKeyVaultCryptographyServiceCollectionExtensions
     /// <summary>
     /// Registers <see cref="AzureKeyVaultCryptographyOptions"/> (validated — Data Annotations
     /// plus <see cref="AzureKeyVaultCryptographyOptionsValidator"/>'s cross-field checks, both
-    /// eagerly evaluated at startup via <c>ValidateOnStart()</c>) and
-    /// <see cref="AzureKeyVaultEncryptionKeyProvider"/> as <b>all three</b>
-    /// <see cref="IEncryptionKeyProvider"/>, <see cref="IEnvelopeEncryptionProvider"/>, and
-    /// <see cref="IEncryptionKeyProviderProbe"/> — the same singleton instance, resolvable
-    /// through any of the three service types.
+    /// eagerly evaluated at startup via <c>ValidateOnStart()</c>), <see cref="AzureKeyVaultEncryptionKeyProvider"/>
+    /// as <b>all three</b> <see cref="IEncryptionKeyProvider"/>, <see cref="IEnvelopeEncryptionProvider"/>,
+    /// and <see cref="IEncryptionKeyProviderProbe"/> — the same singleton instance, resolvable
+    /// through any of the three service types — and <see cref="AzureKeyVaultAsymmetricKeyProvider"/>
+    /// as <see cref="IAsymmetricKeyProvider"/> (P-494/WO-081) — a <b>distinct</b> singleton, never
+    /// the same instance as <see cref="AzureKeyVaultEncryptionKeyProvider"/>, since wrap/unwrap
+    /// keys and signing keys are a different Key Vault key usage pattern even when configured in
+    /// the same vault.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <param name="configuration">
@@ -70,6 +74,13 @@ public static class AzureKeyVaultCryptographyServiceCollectionExtensions
             sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
         services.AddSingleton<IEncryptionKeyProviderProbe>(sp =>
             sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
+
+        // A DISTINCT singleton from AzureKeyVaultEncryptionKeyProvider — never resolved through
+        // it. See AzureKeyVaultAsymmetricKeyProvider's class-level remarks for why signing keys
+        // and wrap/unwrap keys are never shared through one class.
+        services.AddSingleton<AzureKeyVaultAsymmetricKeyProvider>();
+        services.AddSingleton<IAsymmetricKeyProvider>(sp =>
+            sp.GetRequiredService<AzureKeyVaultAsymmetricKeyProvider>());
 
         return services;
     }

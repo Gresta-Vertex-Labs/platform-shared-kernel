@@ -16,6 +16,8 @@
     <Project Path="01.Core/SharedKernel.Core/SharedKernel.Core.Tests/SharedKernel.Core.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography/SharedKernel.Cryptography.Tests/SharedKernel.Cryptography.Tests.csproj" />
+    <Project Path="01.Core/SharedKernel.Cryptography.Argon2/SharedKernel.Cryptography.Argon2.csproj" />
+    <Project Path="01.Core/SharedKernel.Cryptography.Argon2/SharedKernel.Cryptography.Argon2.Tests/SharedKernel.Cryptography.Argon2.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.csproj" />
     <Project Path="01.Core/SharedKernel.Cryptography.KeyVault.Azure/SharedKernel.Cryptography.KeyVault.Azure.Tests/SharedKernel.Cryptography.KeyVault.Azure.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.csproj" />

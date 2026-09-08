@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- NuGet packaging metadata -->
+    <Description>Argon2id implementation of SharedKernel.Cryptography's IOneWayHasher, registered as a keyed ("Argon2id") alternative alongside the unkeyed PBKDF2 default — never replacing it. Self-describing output using the real, interoperable PHC string format ($argon2id$v=19$m=...,t=...,p=...$salt$subkey), so raising cost parameters later does not invalidate already-stored hashes; Verify reports HashVerificationResult.SuccessRehashNeeded when the stored parameters differ from the currently configured ones. The one 01.Core package with a genuine third-party Argon2id dependency (Konscious.Security.Cryptography.Argon2, a pure-managed implementation — no native/P-Invoke binding), kept out of the zero-third-party-dependency SharedKernel.Cryptography core, mirroring why SharedKernel.Cryptography.KeyVault.Azure and SharedKernel.Validation.FluentValidation are separate packages. Choose Argon2id over the unkeyed PBKDF2 default everywhere FIPS 140-3 compliance is not a hard constraint — PBKDF2 remains the FIPS-approved-algorithm-territory choice for exactly that reason.</Description>
+    <PackageTags>shared-kernel;cryptography;argon2;argon2id;password-hashing;owasp;one-way-hasher</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
+    <ProjectReference Include="..\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
+  </ItemGroup>
+</Project>

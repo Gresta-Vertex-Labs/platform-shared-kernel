@@ -1,6 +1,6 @@
 # 01.Core
 
-Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve independently publishable NuGet packages — every one but `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, and `SharedKernel.Localization` (a first-party Microsoft dependency, not a third-party one) has zero third-party NuGet dependencies.
+Foundational building blocks for the Platform.SharedKernel ecosystem. Thirteen independently publishable NuGet packages — every one but `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` (a first-party Microsoft dependency, not a third-party one) has zero third-party NuGet dependencies.
 
 | Package | Purpose |
 |---------|---------|
@@ -13,7 +13,8 @@ Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve ind
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate |
 | `SharedKernel.Validation` | Culture-independent IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT validators + pluggable national-ID registry |
 | `SharedKernel.Validation.FluentValidation` | `IRuleBuilder<T,string>` adapter over `SharedKernel.Validation` (a third-party dependency — `FluentValidation`) |
-| `SharedKernel.Cryptography.KeyVault.Azure` | Azure Key Vault Keys implementation of `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` (a third-party dependency — `Azure.Security.KeyVault.Keys` + `Azure.Identity`) |
+| `SharedKernel.Cryptography.KeyVault.Azure` | Azure Key Vault Keys implementation of `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` and (P-494/WO-081) remote-signing `IAsymmetricKeyProvider` (a third-party dependency — `Azure.Security.KeyVault.Keys` + `Azure.Identity`) |
+| `SharedKernel.Cryptography.Argon2` | Argon2id implementation of `IOneWayHasher`, registered as a keyed alternative alongside the unkeyed PBKDF2 default (a third-party dependency — `Konscious.Security.Cryptography.Argon2`) |
 | `SharedKernel.DataPrivacy` | `DataClassificationAttribute`/`SensitiveDataCategoryAttribute` pure-metadata markers, `PiiMasking.*` deterministic masking helpers, `IDataSubjectRequestHandler` export/erasure contract |
 | `SharedKernel.Localization` | `ILocalizationCatalog`, keyed on the same `code` string every `Error` factory requires (a first-party dependency — `Microsoft.Extensions.Localization.Abstractions`) |
 
@@ -1134,6 +1135,28 @@ public sealed class ApiKeyService(IOneWayHasher hasher)
 
 Never hash passwords, API keys, recovery codes, or any other one-way secret with raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IOneWayHasher`.
 
+### Argon2id Password Hashing — `SharedKernel.Cryptography.Argon2`
+
+`Argon2idOneWayHasher` (from the sibling `SharedKernel.Cryptography.Argon2` package) implements the same `IOneWayHasher` contract above, using Argon2id (RFC 9106) via the pure-managed `Konscious.Security.Cryptography.Argon2` package — no native/P-Invoke dependency. It is the one `01.Core` package with a genuine third-party Argon2id dependency, kept out of this package for the identical reason `SharedKernel.Cryptography.KeyVault.Azure` keeps the Azure SDK out.
+
+Registered as a **keyed** singleton ("Argon2id") — `Pbkdf2OneWayHasher` above remains the unkeyed default. **FIPS-mode is the deciding factor**: PBKDF2 is FIPS 140-3 approved and Argon2id is not, so PBKDF2 stays the default for FIPS-constrained deployments; choose Argon2id everywhere FIPS-mode is not a hard requirement — it is OWASP's current top recommendation for new password-storage designs.
+
+```csharp
+builder.Services.AddSharedKernelCryptography(builder.Configuration);       // unkeyed default: Pbkdf2OneWayHasher
+builder.Services.AddSharedKernelArgon2Cryptography(builder.Configuration); // keyed "Argon2id": Argon2idOneWayHasher
+
+IOneWayHasher argon2 = provider.GetRequiredKeyedService<IOneWayHasher>(
+    Argon2CryptographyServiceCollectionExtensions.Argon2idOneWayHasherKey);
+
+string hash = argon2.Hash(plaintextPassword);
+HashVerificationResult result = argon2.Verify(hash, suppliedPassword);
+// result == SuccessRehashNeeded when the stored $argon2id$v=19$m=...,t=...,p=... parameters
+// differ from the currently configured Argon2CryptographyOptions — same rehash contract as
+// Pbkdf2OneWayHasher, over the real, interoperable PHC string format instead of a bespoke encoding.
+```
+
+`Argon2CryptographyOptions` (`.MemorySizeKb` default 19456, `.Iterations` default 2, `.DegreeOfParallelism` default 1 — OWASP's current default row) carries a real `[Range]` floor and ceiling on every property, deliberately unlike `CryptographyOptions.Pbkdf2Iterations`'s original `[Range(1, int.MaxValue)]` nominal floor. See the [package README](SharedKernel.Cryptography.Argon2/README.md) for the full Argon2id-vs-PBKDF2 comparison table.
+
 ### IContentHasher — Non-Secret Content Fingerprinting
 
 `IContentHasher` is the deliberate architectural opposite of `IOneWayHasher` above: a fast, non-salted, non-iterated SHA-256 digest for **non-secret** content-fingerprinting — object-storage ETags/checksums, content-addressable deduplication keys, and cache-key derivation from a payload body. `IOneWayHasher` is intentionally slow (600,000 PBKDF2 iterations) to resist brute-force attacks on secrets — exactly the wrong tool, both performance-wise and semantically, for hashing a 50MB upload to compute its ETag.
@@ -1420,6 +1443,20 @@ IEncryptionKeyProviderProbe probe = provider.GetRequiredService<IEncryptionKeyPr
 EncryptionKeyProviderHealth health = await probe.ProbeAsync();
 // health.IsHealthy / health.Description
 ```
+
+**Remote signing (P-494/WO-081)** — the same `AddSharedKernelAzureKeyVaultCryptography(configuration)` call also registers `AzureKeyVaultAsymmetricKeyProvider` as `IAsymmetricKeyProvider`, a **distinct** singleton from `AzureKeyVaultEncryptionKeyProvider` (signing keys and wrap/unwrap keys are a different Key Vault key usage pattern even in the same vault), reusing the identical `AzureKeyVaultCryptographyOptions.KeyNames` map:
+
+```csharp
+builder.Services.AddSharedKernelAzureKeyVaultCryptography(builder.Configuration);
+builder.Services.AddSharedKernelCryptography(builder.Configuration); // RsaSignatureService/EcdsaSignatureService
+
+IAsymmetricSignatureService rsa = provider.GetRequiredKeyedService<IAsymmetricSignatureService>(
+    CryptographyServiceCollectionExtensions.RsaSignatureServiceKey);
+byte[] signature = await rsa.SignAsync(data, "primary", ct); // any KeyNames entry works as a signing keyId
+bool isValid = await rsa.VerifyAsync(data, signature, "primary", ct);
+```
+
+`GetRsaKeyAsync`/`GetEcdsaKeyAsync` return a thin `RSA`/`ECDsa` subclass whose `SignHash`/`VerifyHash` overrides — the real overridable BCL extension points, since `RSA.SignData`/`ECDsa.SignData` are non-virtual convenience methods that hash locally and call `SignHash`/`VerifyHash` internally — delegate to Azure's genuine synchronous `CryptographyClient.Sign`/`Verify`. `RsaSignatureService`/`EcdsaSignatureService` need **zero code changes** beyond what P-493 already introduced to consume this provider. `ExportParameters`/`ImportParameters` always throw `NotSupportedException` — private key material never crosses the process boundary. The provider **never** implements `ISynchronousAsymmetricKeyProvider` (every call is a real network round trip), so always use `SignAsync`/`VerifyAsync`; only key *resolution* is genuinely asynchronous, not the cryptographic call itself (see "Gating the synchronous members" below). One `CryptographyClient` is cached per distinct Azure key name from the first call — never constructed per call. See [`SharedKernel.Cryptography.KeyVault.Azure/README.md`](SharedKernel.Cryptography.KeyVault.Azure/README.md#remote-signing-p-494wo-081) for the full worked example.
 
 ### Asymmetric Signing (RSA / ECDSA)
 
@@ -1960,6 +1997,8 @@ SharedKernel.Primitives              (no dependencies)
        |       +──► SharedKernel.Cryptography  (one-way hashing, AES-GCM, RSA/ECDSA, HMAC, secure random)
        |       |       |
        |       |       +──► SharedKernel.Cryptography.KeyVault.Azure  (Azure Key Vault Keys provider; also pulls in the third-party Azure.Security.KeyVault.Keys + Azure.Identity packages)
+       |       |       |
+       |       |       +──► SharedKernel.Cryptography.Argon2  (keyed Argon2id IOneWayHasher; also pulls in the third-party Konscious.Security.Cryptography.Argon2 package)
        |       |
        |       +──► SharedKernel.Compression   (IPayloadCompressor: Brotli default, GZip keyed alternate)
        |
@@ -1970,4 +2009,4 @@ SharedKernel.Primitives              (no dependencies)
        +──► SharedKernel.Localization  (ILocalizationCatalog; also pulls in the first-party Microsoft.Extensions.Localization.Abstractions package)
 ```
 
-All twelve packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, and `SharedKernel.Localization` are the three exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected.
+All thirteen packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` are the four exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `.Argon2` depends on `SharedKernel.Cryptography` plus the third-party `Konscious.Security.Cryptography.Argon2` package (a pure-managed implementation, no native/P-Invoke binding), deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason again; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected.

@@ -16,6 +16,10 @@
     third-party Azure.Security.KeyVault.Keys/Azure.Identity packages also verified here
     (P-26/WO-068) — including a direct .nuspec inspection proving neither Azure package leaks
     as a transitive dependency of SharedKernel.Cryptography itself.
+    Cryptography.Argon2 → Cryptography + Configuration transitive chain plus the third-party
+    Konscious.Security.Cryptography.Argon2 package also verified here (P-39/WO-081) — including
+    a direct .nuspec inspection proving it never leaks as a transitive dependency of
+    SharedKernel.Cryptography itself.
     DataPrivacy → Primitives-only transitive chain (zero third-party NuGet dependency) also
     verified here (P-30/WO-076) — including a direct .nuspec inspection proving SharedKernel.
     Primitives is the package's only dependency.
@@ -34,6 +38,7 @@
     <PackageReference Include="SharedKernel.Validation" />
     <PackageReference Include="SharedKernel.Validation.FluentValidation" />
     <PackageReference Include="SharedKernel.Cryptography.KeyVault.Azure" />
+    <PackageReference Include="SharedKernel.Cryptography.Argon2" />
     <PackageReference Include="SharedKernel.DataPrivacy" />
     <PackageReference Include="SharedKernel.Localization" />
   </ItemGroup>

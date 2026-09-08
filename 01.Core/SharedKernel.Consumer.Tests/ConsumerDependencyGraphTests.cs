@@ -11,6 +11,8 @@ using SharedKernel.Compression;
 using SharedKernel.Compression.Extensions;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Core.Extensions;
+using SharedKernel.Cryptography.Argon2;
+using SharedKernel.Cryptography.Argon2.Extensions;
 using SharedKernel.Cryptography.Extensions;
 using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.KeyVault.Azure;
@@ -930,6 +932,100 @@ public sealed class ConsumerDependencyGraphTests
         Assert.Contains("Azure.Security.KeyVault.Keys", dependencyIds);
         Assert.Contains("Azure.Identity", dependencyIds);
         Assert.Contains("SharedKernel.Cryptography", dependencyIds);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SharedKernel.Cryptography.Argon2 — verifies the package resolves from the local feed
+    // and that its transitive dependency chain (Cryptography + Configuration, plus the
+    // third-party Konscious.Security.Cryptography.Argon2 package) resolves without conflict,
+    // end-to-end through DI registration; also directly inspects the packed
+    // SharedKernel.Cryptography .nuspec to prove Konscious never leaks as one of ITS
+    // dependencies (P-39/WO-081), mirroring the KeyVault.Azure precedent above.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CryptographyArgon2_AddSharedKernelArgon2Cryptography_RegistersKeyedHasherOnly_ResolvedFromPackage()
+    {
+        IHost host = Host.CreateDefaultBuilder()
+            .ConfigureAppConfiguration(cfg => cfg.AddInMemoryCollection(new Dictionary<string, string?>()))
+            .ConfigureServices((ctx, services) =>
+            {
+                services.AddSharedKernelCryptography(ctx.Configuration);
+                services.AddSharedKernelArgon2Cryptography(ctx.Configuration);
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        Assert.IsType<Pbkdf2OneWayHasher>(host.Services.GetRequiredService<IOneWayHasher>());
+        Assert.IsType<Argon2idOneWayHasher>(host.Services.GetRequiredKeyedService<IOneWayHasher>(
+            Argon2CryptographyServiceCollectionExtensions.Argon2idOneWayHasherKey));
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public void CryptographyArgon2_HashAndVerifyRoundtrip_ProducesRealPhcStringFormat_ResolvedFromPackage()
+    {
+        IServiceCollection services = new ServiceCollection();
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        services.AddSharedKernelArgon2Cryptography(configuration);
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        IOneWayHasher hasher = provider.GetRequiredKeyedService<IOneWayHasher>(
+            Argon2CryptographyServiceCollectionExtensions.Argon2idOneWayHasherKey);
+
+        string hash = hasher.Hash("correct-horse-battery-staple");
+
+        Assert.StartsWith("$argon2id$v=19$m=19456,t=2,p=1$", hash, StringComparison.Ordinal);
+        Assert.Equal(HashVerificationResult.Success, hasher.Verify(hash, "correct-horse-battery-staple"));
+        Assert.Equal(HashVerificationResult.Failed, hasher.Verify(hash, "wrong-secret"));
+    }
+
+    [Fact]
+    public void CryptographyArgon2_KonsciousDoesNotLeakIntoSharedKernelCryptographyNuspec()
+    {
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string cryptographyNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Cryptography.*.nupkg",
+            // Exclude the sibling packages, which legitimately share the
+            // "SharedKernel.Cryptography." filename prefix.
+            candidate =>
+                !Path.GetFileName(candidate).StartsWith("SharedKernel.Cryptography.KeyVault.Azure.", StringComparison.OrdinalIgnoreCase) &&
+                !Path.GetFileName(candidate).StartsWith("SharedKernel.Cryptography.Argon2.", StringComparison.OrdinalIgnoreCase));
+
+        XDocument nuspec = XDocument.Parse(cryptographyNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)];
+
+        Assert.DoesNotContain(dependencyIds, id => id.Contains("Konscious", StringComparison.OrdinalIgnoreCase));
+        // Sanity check the assertion above is actually meaningful (not vacuously true because the
+        // dependency list came back empty or the nuspec wasn't the one we think it is).
+        Assert.Contains("SharedKernel.Primitives", dependencyIds);
+        Assert.Contains("SharedKernel.Configuration", dependencyIds);
+    }
+
+    [Fact]
+    public void CryptographyArgon2_NuspecDeclaresKonsciousDependency()
+    {
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string argon2Nuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Cryptography.Argon2.*.nupkg", _ => true);
+
+        XDocument nuspec = XDocument.Parse(argon2Nuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)];
+
+        Assert.Contains("Konscious.Security.Cryptography.Argon2", dependencyIds);
+        Assert.Contains("SharedKernel.Cryptography", dependencyIds);
+        Assert.Contains("SharedKernel.Configuration", dependencyIds);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

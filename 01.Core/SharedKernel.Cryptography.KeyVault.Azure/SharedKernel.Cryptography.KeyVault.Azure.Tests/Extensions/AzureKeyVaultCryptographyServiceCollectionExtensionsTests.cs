@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SharedKernel.Cryptography.KeyVault.Azure.Extensions;
 using SharedKernel.Cryptography.Random;
+using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
 using Xunit;
 
@@ -67,6 +68,35 @@ public sealed class AzureKeyVaultCryptographyServiceCollectionExtensionsTests
 
         Assert.IsType<AzureKeyVaultEncryptionKeyProvider>(asProbe);
         Assert.Same(asKeyProvider, asProbe);
+    }
+
+    [Fact]
+    public void ValidConfiguration_RegistersAzureKeyVaultAsymmetricKeyProvider_AsIAsymmetricKeyProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSharedKernelAzureKeyVaultCryptography(ValidConfiguration());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        var asymmetricKeyProvider = provider.GetRequiredService<IAsymmetricKeyProvider>();
+
+        Assert.IsType<AzureKeyVaultAsymmetricKeyProvider>(asymmetricKeyProvider);
+    }
+
+    [Fact]
+    public void AzureKeyVaultAsymmetricKeyProvider_IsADistinctSingleton_FromAzureKeyVaultEncryptionKeyProvider()
+    {
+        // Signing keys and wrap/unwrap keys are a different Key Vault key usage pattern even when
+        // both live in the same vault — these must never resolve to the same instance.
+        var services = new ServiceCollection();
+        services.AddSharedKernelAzureKeyVaultCryptography(ValidConfiguration());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        var encryptionKeyProvider = provider.GetRequiredService<IEncryptionKeyProvider>();
+        var asymmetricKeyProvider = provider.GetRequiredService<IAsymmetricKeyProvider>();
+
+        Assert.NotSame(encryptionKeyProvider, asymmetricKeyProvider);
     }
 
     [Fact]
