@@ -82,6 +82,14 @@
     <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.7.0" />
+    <!--
+      SharedKernel.Cryptography.KeyVault.Azure (01.Core/WO-081, P-496): the durable version registry
+      stores each key version, and the shared "current version" pointer, as Key Vault Secrets — a
+      second Azure SDK family alongside .Keys above. Confined to that one package; a
+      .nuspec-inspection test in SharedKernel.Consumer.Tests proves it never leaks onto
+      SharedKernel.Cryptography itself.
+    -->
+    <PackageVersion Include="Azure.Security.KeyVault.Secrets" Version="4.7.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
     <!--

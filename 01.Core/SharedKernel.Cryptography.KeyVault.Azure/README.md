@@ -1,12 +1,12 @@
 # SharedKernel.Cryptography.KeyVault.Azure
 
-Azure Key Vault Keys implementation of [`SharedKernel.Cryptography`](../SharedKernel.Cryptography/README.md)'s `IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider`, and (as of P-494/WO-081) `IAsymmetricKeyProvider` (remote sign/verify). The one `01.Core` package with a genuine third-party vendor SDK dependency (`Azure.Security.KeyVault.Keys` + `Azure.Identity`), kept out of the zero-third-party-dependency `SharedKernel.Cryptography` core — mirrors why `SharedKernel.Storage.S3`/`.Obs` are separate packages from `SharedKernel.Storage.Abstractions`.
+Azure Key Vault Keys implementation of [`SharedKernel.Cryptography`](../SharedKernel.Cryptography/README.md)'s `IEncryptionKeyProvider`, `IEnvelopeEncryptionProvider`, and (as of P-494/WO-081) `IAsymmetricKeyProvider` (remote sign/verify). The one `01.Core` package with a genuine third-party vendor SDK dependency — `Azure.Security.KeyVault.Keys` + `Azure.Security.KeyVault.Secrets` (added P-496/WO-081, for the durable version registry below) + `Azure.Identity` — kept out of the zero-third-party-dependency `SharedKernel.Cryptography` core — mirrors why `SharedKernel.Storage.S3`/`.Obs` are separate packages from `SharedKernel.Storage.Abstractions`.
 
 ## Included
 
 | Type | Purpose |
 |---|---|
-| `AzureKeyVaultEncryptionKeyProvider` | Implements `IEncryptionKeyProvider` (direct retrieval), `IEnvelopeEncryptionProvider` (wrap/unwrap), and `IEncryptionKeyProviderProbe` (readiness) — see design note below |
+| `AzureKeyVaultEncryptionKeyProvider` | Implements `IEncryptionKeyProvider` (direct retrieval), `IEnvelopeEncryptionProvider` (wrap/unwrap), `IEncryptionKeyProviderProbe` (readiness), and `MintNewVersionAsync` (explicit rotation, P-496/WO-081) — see design note and "Key rotation" below |
 | `AzureKeyVaultAsymmetricKeyProvider` | Implements `IAsymmetricKeyProvider` — **remote** RSA/ECDSA sign/verify against Azure Key Vault Keys; a deliberately separate class/singleton from `AzureKeyVaultEncryptionKeyProvider` — see "Remote Signing" below |
 | `AzureKeyVaultCryptographyOptions` | `.VaultUri`, `.CurrentKeyId`, `.KeyNames` (keyId → Azure key name), `.Credential` (defaults to `DefaultAzureCredential`) — shared by both providers above |
 | `AddSharedKernelAzureKeyVaultCryptography(configuration)` | Registers the options (validated); the encryption provider as all three of `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider`/`IEncryptionKeyProviderProbe` (same singleton instance); and the asymmetric provider as `IAsymmetricKeyProvider` (a **distinct** singleton) |
@@ -23,7 +23,29 @@ EncryptionKeyProviderHealth health = await probe.ProbeAsync();
 
 ## Design note: direct retrieval is built on envelope wrapping, not a second code path
 
-Azure Key Vault Keys does not export raw HSM-protected key material by default — the vendor-idiomatic operation is `CryptographyClient.WrapKeyAsync`/`UnwrapKeyAsync`, exactly `IEnvelopeEncryptionProvider`'s shape. `GetCurrentKeyAsync` therefore generates (or returns a process-lifetime-cached) local AES-256 data key via `GenerateDataKeyAsync`, exposing only the already-in-memory plaintext data key as `CryptographicKey.Material`. The vault's own master key material never crosses the process boundary either way. See `AzureKeyVaultEncryptionKeyProvider`'s XML docs for the full reasoning — this is a deliberate design decision, not an implementation shortcut, and must never be "fixed" into two divergent code paths.
+Azure Key Vault Keys does not export raw HSM-protected key material by default — the vendor-idiomatic operation is `CryptographyClient.WrapKeyAsync`/`UnwrapKeyAsync`, exactly `IEnvelopeEncryptionProvider`'s shape. `GetCurrentKeyAsync`/`GetKeyAsync` are both built atop `GenerateDataKeyAsync`/`UnwrapDataKeyAsync`, exposing only the already-in-memory plaintext data key as `CryptographicKey.Material`. The vault's own master key material never crosses the process boundary either way. See `AzureKeyVaultEncryptionKeyProvider`'s XML docs for the full reasoning — this is a deliberate design decision, not an implementation shortcut, and must never be "fixed" into two divergent code paths.
+
+## Key rotation and the durable version registry (P-496/WO-081)
+
+Prior to P-496, `GetCurrentKeyAsync` cached a single locally-generated data key for the lifetime of the process — meaning every process/pod/replica of a service silently minted its **own** unique AES-256 data key on first use, with no sharing across replicas. `AzureKeyVaultEncryptionKeyProvider` now maintains a durable, **Key-Vault-Secrets-backed** version registry instead: every version is stored as its own Key Vault Secret (a short opaque tag, `"v1"`, `"v2"`, …), and a single shared `"current version"` pointer secret is read live by every replica — so "current" is a genuinely shared, deliberately-minted concept, never a per-process accident. `CryptographicKey.Id` is now that short tag rather than the previous self-decodable ~470-byte envelope.
+
+```csharp
+// Mint the FIRST version once, during initial provisioning — before any traffic reaches this
+// service. GetCurrentKeyAsync deliberately never auto-mints one (see its own XML docs for why).
+AzureKeyVaultEncryptionKeyProvider provider = serviceProvider.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>();
+string firstVersionTag = await provider.MintNewVersionAsync();
+
+// ... later, from an ops script / hosted job / future 19.Scheduling job — never automatic:
+string newVersionTag = await provider.MintNewVersionAsync();
+// Every previously-minted version (including the one just superseded) remains resolvable via
+// GetKeyAsync(oldTag) indefinitely — MintNewVersionAsync never deletes or overwrites anything.
+```
+
+**Rotation is deliberately manual, not automatic.** `MintNewVersionAsync` makes rotation possible and cheap to call — it is never scheduled or policy-driven by this package. Automatic/crypto-period-enforced rotation is out of scope here; that is closer to `19.Scheduling` territory, mirroring how `SharedKernel.DataPrivacy` left its cross-service erasure orchestrator out of scope. `MintNewVersionAsync` is **not** part of `IEncryptionKeyProvider`/`IEnvelopeEncryptionProvider` — it is a provider-specific operational method, resolved by depending on the concrete `AzureKeyVaultEncryptionKeyProvider` type (or your own thin wrapper around it), mirroring `06.Persistence`'s `IEncryptionRotationJob` precedent of leaving scheduling to the caller.
+
+**Backward-read compatibility, no forced data migration.** `GetKeyAsync` first tries the new short-tag registry; if the supplied `keyId` does not match that shape, it falls back to parsing the legacy pre-P-496 self-decodable envelope — any row already encrypted under the old shape stays decryptable indefinitely. This is why P-496 ships as an additive/MINOR repack, not a breaking change.
+
+**A bounded `CachedEncryptionKeyProvider` working set.** Because every replica now converges on the same small, deliberately-minted set of live version tags (rather than one unique tag per pod restart over a service's entire operational history), wrapping this provider in `SharedKernel.Cryptography`'s `CachedEncryptionKeyProvider` now has a genuinely bounded cache size.
 
 ## Quick Start
 
