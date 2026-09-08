@@ -1426,21 +1426,31 @@ EncryptionKeyProviderHealth health = await probe.ProbeAsync();
 `IAsymmetricSignatureService` has two implementations sharing one interface — `RsaSignatureService` and `EcdsaSignatureService`. Both are registered as **keyed singletons**; `RsaSignatureService` is additionally registered as the unkeyed default.
 
 ```csharp
-// Consuming service supplies key material.
-public sealed class MyCertificateStoreKeyProvider : IAsymmetricKeyProvider
+// Consuming service supplies key material. A genuinely synchronous provider (in-memory,
+// resolved once from IConfiguration at startup, etc.) should additionally implement
+// ISynchronousAsymmetricKeyProvider (P-493/WO-081) instead of the plain IAsymmetricKeyProvider —
+// see "Gating the synchronous members" below. A KMS/HSM/certificate-store-backed provider that
+// can genuinely block on I/O must never implement that marker.
+public sealed class MyCertificateStoreKeyProvider : ISynchronousAsymmetricKeyProvider
 {
-    public RSA GetRsaKey(string keyId) => LoadRsaFromCertificateStore(keyId);
-    public ECDsa GetEcdsaKey(string keyId) => LoadEcdsaFromCertificateStore(keyId);
+    public ValueTask<RSA> GetRsaKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(LoadRsaFromCertificateStore(keyId));
+
+    public ValueTask<ECDsa> GetEcdsaKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(LoadEcdsaFromCertificateStore(keyId));
 }
 
 public sealed class TokenSigningExample(
     [FromKeyedServices(CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey)]
         IAsymmetricSignatureService ecdsaSigner)
 {
-    public byte[] SignPayload(byte[] data) => ecdsaSigner.Sign(data, keyId: "signing-key-2026");
+    // Prefer the *Async members on hot paths, and always when the registered
+    // IAsymmetricKeyProvider is not confirmed genuinely synchronous — see below.
+    public ValueTask<byte[]> SignPayloadAsync(byte[] data, CancellationToken ct) =>
+        ecdsaSigner.SignAsync(data, keyId: "signing-key-2026", ct);
 
-    public bool VerifyPayload(byte[] data, byte[] signature) =>
-        ecdsaSigner.Verify(data, signature, keyId: "signing-key-2026");
+    public ValueTask<bool> VerifyPayloadAsync(byte[] data, byte[] signature, CancellationToken ct) =>
+        ecdsaSigner.VerifyAsync(data, signature, keyId: "signing-key-2026", ct);
 }
 
 // Resolving explicitly from IServiceProvider:
@@ -1449,7 +1459,54 @@ IAsymmetricSignatureService ecdsa = provider.GetRequiredKeyedService<IAsymmetric
     CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey);
 ```
 
-RSA uses 2048-bit minimum keys with PSS padding and SHA-256. ECDSA uses the P-256 curve with SHA-256.
+RSA uses 2048-bit minimum keys with PSS padding and SHA-256. ECDSA uses the P-256 curve (256-bit minimum) with SHA-256. Both minimums are now enforced on **both** `Sign`/`SignAsync` and `Verify`/`VerifyAsync` — previously RSA enforced it on `Sign` only, and ECDSA enforced no minimum at all (P-493/WO-081).
+
+**A genuine BCL limitation, not a gap in this package:** `RSA`/`ECDsa`'s `SignData`/`VerifyData` have no async overload anywhere in the BCL. `SignAsync`/`VerifyAsync` make **key resolution** asynchronous (the `IAsymmetricKeyProvider` call); the cryptographic sign/verify call itself remains inherently synchronous once the key is in hand. For a remote-KMS-backed key, that final call can still perform a real blocking network round trip on the calling thread — this phase narrows the blocking surface, it does not eliminate it.
+
+**The RSA/ECDSA instance returned by `IAsymmetricKeyProvider` is not caller-owned.** `RsaSignatureService`/`EcdsaSignatureService` never dispose it — a provider may return the same cached instance across many calls. Lifecycle ownership (including whether and when to dispose) belongs entirely to the provider implementation.
+
+#### Migrating `IAsymmetricKeyProvider`/`IAsymmetricSignatureService` to async (P-493/WO-081, breaking)
+
+| Member | Before | After |
+| --- | --- | --- |
+| `IAsymmetricKeyProvider.GetRsaKey` | `RSA GetRsaKey(string keyId)` | *(removed — replaced by `GetRsaKeyAsync` below)* |
+| `IAsymmetricKeyProvider.GetRsaKeyAsync` | *(did not exist)* | `ValueTask<RSA> GetRsaKeyAsync(string keyId, CancellationToken ct = default)` |
+| `IAsymmetricKeyProvider.GetEcdsaKey` | `ECDsa GetEcdsaKey(string keyId)` | *(removed — replaced by `GetEcdsaKeyAsync` below)* |
+| `IAsymmetricKeyProvider.GetEcdsaKeyAsync` | *(did not exist)* | `ValueTask<ECDsa> GetEcdsaKeyAsync(string keyId, CancellationToken ct = default)` |
+| `IAsymmetricSignatureService.Sign` | `byte[] Sign(byte[] data, string keyId)` | unchanged signature — now gated, see below |
+| `IAsymmetricSignatureService.SignAsync` | *(did not exist)* | `ValueTask<byte[]> SignAsync(byte[] data, string keyId, CancellationToken ct = default)` |
+| `IAsymmetricSignatureService.Verify` | `bool Verify(byte[] data, byte[] signature, string keyId)` | unchanged signature — now gated, see below |
+| `IAsymmetricSignatureService.VerifyAsync` | *(did not exist)* | `ValueTask<bool> VerifyAsync(byte[] data, byte[] signature, string keyId, CancellationToken ct = default)` |
+
+The two `IAsymmetricKeyProvider` synchronous members are **removed outright**, not retained as a parallel overload — mirroring P-446/WO-068's `IEncryptionKeyProvider` precedent exactly. A synchronous, config- or certificate-store-backed implementer migrates mechanically by wrapping its existing return value: `RSA GetRsaKey(string keyId) => Load(keyId);` becomes `ValueTask<RSA> GetRsaKeyAsync(string keyId, CancellationToken ct = default) => new(Load(keyId));` — no behavioral change for that class of implementer. A `KeyNotFoundException` for an unknown `keyId` propagates through the returned `ValueTask` exactly as it did from the prior synchronous member.
+
+#### Gating the synchronous members (P-493/WO-081, breaking behavior change)
+
+This mirrors `ISymmetricEncryptionService`'s P-492 gating exactly, with one deliberate difference (below). `ISynchronousAsymmetricKeyProvider` is a zero-member marker interface extending `IAsymmetricKeyProvider`:
+
+```csharp
+public interface ISynchronousAsymmetricKeyProvider : IAsymmetricKeyProvider;
+```
+
+`AsymmetricKeyProviderCapabilities.IsGenuinelySynchronous(IAsymmetricKeyProvider)` is a **direct marker check only**:
+
+```csharp
+public static bool IsGenuinelySynchronous(IAsymmetricKeyProvider provider) =>
+    provider is ISynchronousAsymmetricKeyProvider;
+```
+
+**Deliberately no decorator-unwrapping logic** — unlike `EncryptionKeyProviderCapabilities`, which recurses through `CachedEncryptionKeyProvider.Inner`. No caching decorator exists for `IAsymmetricKeyProvider` as of this phase, so there is nothing to unwrap.
+
+This check is evaluated once, at `RsaSignatureService`/`EcdsaSignatureService` construction time, and cached for the instance's lifetime — never re-evaluated per call. When the registered provider is not marked, `Sign`/`Verify` throw `NotSupportedException` immediately instead of silently blocking a real thread:
+
+```csharp
+// throws:
+// "The registered IAsymmetricKeyProvider does not implement
+//  ISynchronousAsymmetricKeyProvider, so it cannot be trusted never to
+//  block the calling thread on a network/IPC round trip. Call SignAsync instead."
+```
+
+This is a real, narrow breaking *behavior* change — distinct from a compile-time API break, since neither `Sign` nor `Verify`'s signature changed. Any existing custom `IAsymmetricKeyProvider` implementer that relied on the sync members silently blocking a thread against a network-bound provider (e.g. a certificate store requiring a remote lookup, or a future Key Vault-backed provider) now gets an immediate, structural `NotSupportedException` instead. There is zero behavior change for a provider that is genuinely synchronous and marks itself accordingly — those call sites are byte-for-byte unaffected. `SharedKernel.Cryptography.KeyVault.Azure`'s planned remote-signing `IAsymmetricKeyProvider` implementation (P-494/WO-081) deliberately will not implement `ISynchronousAsymmetricKeyProvider` — every call is a real Azure SDK round trip — so registering it means the sync members are structurally unusable against it; use `SignAsync`/`VerifyAsync`.
 
 ### HMAC Signing
 

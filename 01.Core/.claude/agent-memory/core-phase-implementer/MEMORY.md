@@ -6,3 +6,4 @@
 - [Reflection-absence proof technique](feedback_reflection_absence_proof.md) — PEReader/MetadataReader scan of the compiled DLL beats a source grep; exclude *Attribute TypeRefs (SDK noise), assert the exclusion actually fires
 - [xunit Assert.Throws exactness gotchas](feedback_xunit_throws_exactness.md) — exact-type match trips on ArgumentException.ThrowIfNullOrWhiteSpace's null case; block-bodied lambda fixes a Func<Task> overload trap
 - [IStringLocalizer has no WithCulture](project_istringlocalizer_no_withculture.md) — MS.Ext.Localization.Abstractions 10.0.11 needs a CurrentUICulture swap for per-call culture selection
+- [RSA/ECDsa subclass override points](rsa_ecdsa_subclass_override_points.md) — override SignHash/VerifyHash not SignData/VerifyData (CS0506); dispose-guard/KeySize-override test-double technique

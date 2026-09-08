@@ -5,35 +5,37 @@ namespace SharedKernel.Cryptography.Tests.Signing;
 
 /// <summary>
 /// Minimal in-memory <see cref="IAsymmetricKeyProvider"/> test double backed by freshly
-/// generated RSA/ECDSA key pairs per key id.
+/// generated RSA/ECDSA key pairs per key id. Genuinely never performs I/O, so it implements
+/// <see cref="ISynchronousAsymmetricKeyProvider"/> — this is the default double used by the
+/// sync-member round-trip tests (P-493/WO-081).
 /// </summary>
-internal sealed class InMemoryAsymmetricKeyProvider : IAsymmetricKeyProvider, IDisposable
+internal sealed class InMemoryAsymmetricKeyProvider : ISynchronousAsymmetricKeyProvider, IDisposable
 {
     private readonly Dictionary<string, RSA> _rsaKeys = [];
     private readonly Dictionary<string, ECDsa> _ecdsaKeys = [];
 
-    public RSA GetRsaKey(string keyId)
+    public ValueTask<RSA> GetRsaKeyAsync(string keyId, CancellationToken ct = default)
     {
         if (_rsaKeys.TryGetValue(keyId, out RSA? existing))
         {
-            return RSA.Create(existing.ExportParameters(true));
+            return new ValueTask<RSA>(RSA.Create(existing.ExportParameters(true)));
         }
 
         RSA created = RSA.Create(2048);
         _rsaKeys[keyId] = created;
-        return RSA.Create(created.ExportParameters(true));
+        return new ValueTask<RSA>(RSA.Create(created.ExportParameters(true)));
     }
 
-    public ECDsa GetEcdsaKey(string keyId)
+    public ValueTask<ECDsa> GetEcdsaKeyAsync(string keyId, CancellationToken ct = default)
     {
         if (_ecdsaKeys.TryGetValue(keyId, out ECDsa? existing))
         {
-            return ECDsa.Create(existing.ExportParameters(true));
+            return new ValueTask<ECDsa>(ECDsa.Create(existing.ExportParameters(true)));
         }
 
         ECDsa created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         _ecdsaKeys[keyId] = created;
-        return ECDsa.Create(created.ExportParameters(true));
+        return new ValueTask<ECDsa>(ECDsa.Create(created.ExportParameters(true)));
     }
 
     public void Dispose()

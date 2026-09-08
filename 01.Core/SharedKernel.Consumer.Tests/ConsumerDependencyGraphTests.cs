@@ -1309,9 +1309,10 @@ internal sealed class ConsumerEnvelopeEncryptionProvider : IEnvelopeEncryptionPr
 /// <summary>
 /// Minimal in-memory <see cref="IAsymmetricKeyProvider"/> for consumer-verification purposes only.
 /// Production services must resolve key pairs from Key Vault or a certificate store — never
-/// generate ephemeral keys at resolution time as done here for test convenience.
+/// generate ephemeral keys at resolution time as done here for test convenience. Genuinely never
+/// performs I/O, so it implements <see cref="ISynchronousAsymmetricKeyProvider"/> (P-493/WO-081).
 /// </summary>
-internal sealed class ConsumerAsymmetricKeyProvider : IAsymmetricKeyProvider
+internal sealed class ConsumerAsymmetricKeyProvider : ISynchronousAsymmetricKeyProvider
 {
     private static readonly System.Security.Cryptography.RSA RsaKey =
         System.Security.Cryptography.RSA.Create(2048);
@@ -1319,7 +1320,9 @@ internal sealed class ConsumerAsymmetricKeyProvider : IAsymmetricKeyProvider
     private static readonly System.Security.Cryptography.ECDsa EcdsaKey =
         System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
 
-    public System.Security.Cryptography.RSA GetRsaKey(string keyId) => RsaKey;
+    public ValueTask<System.Security.Cryptography.RSA> GetRsaKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(RsaKey);
 
-    public System.Security.Cryptography.ECDsa GetEcdsaKey(string keyId) => EcdsaKey;
+    public ValueTask<System.Security.Cryptography.ECDsa> GetEcdsaKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(EcdsaKey);
 }
