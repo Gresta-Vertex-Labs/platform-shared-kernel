@@ -38,6 +38,7 @@ public static class FakeCryptographyServiceCollectionExtensions
     /// (P-450/WO-068).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Deliberately diverges from
     /// <see cref="CryptographyServiceCollectionExtensions.AddSharedKernelCryptography"/>: production
     /// intentionally does NOT register <see cref="IEncryptionKeyProvider"/>/
@@ -45,6 +46,20 @@ public static class FakeCryptographyServiceCollectionExtensions
     /// (consumer-supplied by design) — this fake bundle DOES, since a test wanting
     /// <see cref="AddFakeCryptography"/> to work end-to-end with zero extra wiring needs some
     /// functioning key material.
+    /// </para>
+    /// <para>
+    /// <b>(P-502/WO-081)</b> The registrations below are UNCHANGED IN SHAPE by this phase — only the
+    /// backing types' member contracts changed (async migration, required AAD). The default
+    /// <see cref="IEncryptionKeyProvider"/> registration stays the now-marked-synchronous
+    /// <see cref="FakeEncryptionKeyProvider"/>, so every existing consumer of
+    /// <see cref="AddFakeCryptography"/> keeps a provider that satisfies
+    /// <see cref="ISynchronousEncryptionKeyProvider"/> — zero migration burden for the common case.
+    /// <see cref="FakeRemoteEncryptionKeyProvider"/> is DELIBERATELY NOT auto-registered here — a
+    /// KMS-style gated provider is opt-in-only by nature; a test wanting the gated/async-only path
+    /// constructs it directly, mirroring how a test opts into
+    /// <see cref="FakeSymmetricEncryptionService.SimulateDecryptFailure"/> on other fakes in this
+    /// bundle today.
+    /// </para>
     /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same <paramref name="services"/> for chaining.</returns>

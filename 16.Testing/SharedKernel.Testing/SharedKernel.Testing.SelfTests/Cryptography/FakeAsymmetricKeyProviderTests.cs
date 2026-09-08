@@ -5,103 +5,123 @@ namespace SharedKernel.Testing.SelfTests.Cryptography;
 
 /// <summary>
 /// Proves <see cref="FakeAsymmetricKeyProvider"/> against <c>IAsymmetricKeyProvider</c>'s
-/// documented contract. Proven exclusively in <c>SharedKernel.Testing.SelfTests</c> — see
-/// <c>16.Testing/state-map.md</c> T-56.
+/// documented contract, including its non-caller-owned, cached-instance-reuse shape (P-502/WO-081,
+/// D-241). Proven exclusively in <c>SharedKernel.Testing.SelfTests</c> — see
+/// <c>16.Testing/state-map.md</c> T-56/T-104.
 /// </summary>
 public sealed class FakeAsymmetricKeyProviderTests
 {
     [Fact]
-    public void GetRsaKey_SameKeyId_ReturnsDistinctHandles_SharingTheSameKeyMaterial()
+    public async Task GetRsaKeyAsync_SameKeyId_ReturnsTheSameInstance_NeverAClone()
     {
         using var provider = new FakeAsymmetricKeyProvider();
 
-        using var first = provider.GetRsaKey("signing-key");
-        using var second = provider.GetRsaKey("signing-key");
+        var first = await provider.GetRsaKeyAsync("signing-key");
+        var second = await provider.GetRsaKeyAsync("signing-key");
 
-        Assert.NotSame(first, second);
-        Assert.Equal(first.ExportParameters(false).Modulus, second.ExportParameters(false).Modulus);
+        Assert.Same(first, second);
     }
 
     [Fact]
-    public void GetRsaKey_DifferentKeyIds_ProduceDifferentKeyMaterial()
+    public async Task GetRsaKeyAsync_DifferentKeyIds_ProduceDifferentKeyMaterial()
     {
         using var provider = new FakeAsymmetricKeyProvider();
 
-        using var first = provider.GetRsaKey("key-a");
-        using var second = provider.GetRsaKey("key-b");
+        var first = await provider.GetRsaKeyAsync("key-a");
+        var second = await provider.GetRsaKeyAsync("key-b");
 
         Assert.NotEqual(first.ExportParameters(false).Modulus, second.ExportParameters(false).Modulus);
     }
 
     [Fact]
-    public void GetEcdsaKey_SameKeyId_ReturnsDistinctHandles_SharingTheSameKeyMaterial()
+    public async Task GetEcdsaKeyAsync_SameKeyId_ReturnsTheSameInstance_NeverAClone()
     {
         using var provider = new FakeAsymmetricKeyProvider();
 
-        using var first = provider.GetEcdsaKey("signing-key");
-        using var second = provider.GetEcdsaKey("signing-key");
+        var first = await provider.GetEcdsaKeyAsync("signing-key");
+        var second = await provider.GetEcdsaKeyAsync("signing-key");
 
-        Assert.NotSame(first, second);
-        Assert.Equal(first.ExportParameters(false).Q.X, second.ExportParameters(false).Q.X);
-        Assert.Equal(first.ExportParameters(false).Q.Y, second.ExportParameters(false).Q.Y);
+        Assert.Same(first, second);
     }
 
     [Fact]
-    public void GetEcdsaKey_DifferentKeyIds_ProduceDifferentKeyMaterial()
+    public async Task GetEcdsaKeyAsync_DifferentKeyIds_ProduceDifferentKeyMaterial()
     {
         using var provider = new FakeAsymmetricKeyProvider();
 
-        using var first = provider.GetEcdsaKey("key-a");
-        using var second = provider.GetEcdsaKey("key-b");
+        var first = await provider.GetEcdsaKeyAsync("key-a");
+        var second = await provider.GetEcdsaKeyAsync("key-b");
 
         Assert.NotEqual(first.ExportParameters(false).Q.X, second.ExportParameters(false).Q.X);
     }
 
     [Fact]
-    public void GetRsaKey_ReturnedHandle_IsSafeToDispose_WithoutInvalidatingTheCachedOriginal()
+    public async Task GetRsaKeyAsync_DisposingTheReturnedInstance_ThenReusingSameKeyId_SurfacesObjectDisposedException()
     {
-        using var provider = new FakeAsymmetricKeyProvider();
+        // The exact regression-detection scenario D-241's cached-instance-reuse migration exists to
+        // enable: under the OLD fresh-clone-per-call behavior, this would have silently succeeded.
+        var provider = new FakeAsymmetricKeyProvider();
+        var rsa = await provider.GetRsaKeyAsync("signing-key");
 
-        var first = provider.GetRsaKey("signing-key");
-        first.Dispose();
+        rsa.Dispose();
 
-        // A second call for the same keyId must still succeed — proves the caller received a
-        // clone of the cached original, not the original itself.
-        using var second = provider.GetRsaKey("signing-key");
-        Assert.NotNull(second.ExportParameters(false).Modulus);
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            var same = await provider.GetRsaKeyAsync("signing-key");
+            same.ExportParameters(false);
+        });
     }
 
     [Fact]
-    public void GetEcdsaKey_ReturnedHandle_IsSafeToDispose_WithoutInvalidatingTheCachedOriginal()
-    {
-        using var provider = new FakeAsymmetricKeyProvider();
-
-        var first = provider.GetEcdsaKey("signing-key");
-        first.Dispose();
-
-        using var second = provider.GetEcdsaKey("signing-key");
-        Assert.NotNull(second.ExportParameters(false).Q.X);
-    }
-
-    [Fact]
-    public void Dispose_DisposesCachedRsaKeyPairs_SubsequentAccessToSameKeyIdThrows()
+    public async Task GetEcdsaKeyAsync_DisposingTheReturnedInstance_ThenReusingSameKeyId_SurfacesObjectDisposedException()
     {
         var provider = new FakeAsymmetricKeyProvider();
-        provider.GetRsaKey("rsa-key").Dispose();
+        var ecdsa = await provider.GetEcdsaKeyAsync("signing-key");
+
+        ecdsa.Dispose();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            var same = await provider.GetEcdsaKeyAsync("signing-key");
+            same.ExportParameters(false);
+        });
+    }
+
+    [Fact]
+    public async Task Dispose_DisposesEveryCachedRsaKeyPair_ExactlyOnceEach()
+    {
+        var provider = new FakeAsymmetricKeyProvider();
+        var rsa = await provider.GetRsaKeyAsync("rsa-key");
 
         provider.Dispose();
 
-        Assert.Throws<ObjectDisposedException>(() => provider.GetRsaKey("rsa-key"));
+        Assert.Throws<ObjectDisposedException>(() => rsa.ExportParameters(false));
     }
 
     [Fact]
-    public void Dispose_DisposesCachedEcdsaKeyPairs_SubsequentAccessToSameKeyIdThrows()
+    public async Task Dispose_DisposesEveryCachedEcdsaKeyPair_ExactlyOnceEach()
     {
         var provider = new FakeAsymmetricKeyProvider();
-        provider.GetEcdsaKey("ecdsa-key").Dispose();
+        var ecdsa = await provider.GetEcdsaKeyAsync("ecdsa-key");
 
         provider.Dispose();
 
-        Assert.Throws<ObjectDisposedException>(() => provider.GetEcdsaKey("ecdsa-key"));
+        Assert.Throws<ObjectDisposedException>(() => ecdsa.ExportParameters(false));
+    }
+
+    [Fact]
+    public async Task GetRsaKeyAsync_NullKeyId_Throws()
+    {
+        using var provider = new FakeAsymmetricKeyProvider();
+
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await provider.GetRsaKeyAsync(null!));
+    }
+
+    [Fact]
+    public async Task GetEcdsaKeyAsync_NullKeyId_Throws()
+    {
+        using var provider = new FakeAsymmetricKeyProvider();
+
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await provider.GetEcdsaKeyAsync(null!));
     }
 }

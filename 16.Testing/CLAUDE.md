@@ -2956,47 +2956,126 @@ FakeEncryptionKeyProvider  (sealed class, implements IEncryptionKeyProvider)  �
           RemoveKey are this fake's own additive test-control surface — not part of the interface — and
           are unchanged. Both async members complete synchronously via an already-completed
           ValueTask<T>, since this fake performs no real I/O.
+    NOTE (C-147, P-502/WO-081, implemented): additionally implements : ISynchronousEncryptionKeyProvider
+          — an HONEST claim (per 01.Core's own "author-asserted, never inferred" rule), since this fake
+          performs no real I/O and both members already complete via an already-completed ValueTask.
+          Lets a test compose this fake with the REAL 01.Core AesGcmEncryptionService and exercise its
+          retained synchronous Encrypt/Decrypt/EncryptToString/DecryptToString without hitting the
+          P-492 NotSupportedException gate. Contrast with FakeRemoteEncryptionKeyProvider (below), which
+          deliberately never implements this marker.
 
-FakeAsymmetricKeyProvider  (sealed class, implements IAsymmetricKeyProvider, IDisposable)  — implemented C-88/SK.16.Core
-    GetRsaKey(string keyId)                                → RSA  (lazily generates+caches a 2048-bit key
-                                                              pair per keyId; returns a FRESH handle cloned
-                                                              via ExportParameters(true)/RSA.Create(...) so
-                                                              the caller's using/Dispose() never invalidates
-                                                              the cached original)
-    GetEcdsaKey(string keyId)                              → ECDsa  (same pattern, P-256 curve)
-    Dispose()                                               → void  (disposes every cached RSA/ECDsa instance)
+FakeAsymmetricKeyProvider  (sealed class, implements ISynchronousAsymmetricKeyProvider, IDisposable)  —
+    implemented C-88/SK.16.Core; ASYNC-MIGRATED + CACHED-INSTANCE-REUSE C-148/SK.16.Core (P-502/WO-081,
+    2026-09-08)
+    GetRsaKeyAsync(string keyId, CancellationToken ct = default)  → ValueTask<RSA>  (lazily generates+
+                                                              caches a 2048-bit key pair per keyId; returns
+                                                              the SAME cached instance across repeated
+                                                              calls for the same keyId — never a clone)
+    GetEcdsaKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<ECDsa>  (same pattern,
+                                                              P-256 curve)
+    Dispose()                                               → void  (disposes every cached RSA/ECDsa
+                                                              instance, but ONLY at the fake's own
+                                                              end-of-life, never per-call)
     NOTE: promoted verbatim from SharedKernel.Cryptography.Tests' existing INTERNAL
           InMemoryAsymmetricKeyProvider (.../Signing/InMemoryAsymmetricKeyProvider.cs, read directly, zero
           drift) — same promotion rationale as FakeEncryptionKeyProvider above.
+    NOTE (C-148, P-502/WO-081): BREAKING migration onto IAsymmetricKeyProvider's async-only contract
+          (01.Core SK.01.P493) — the former sync GetRsaKey(string)/GetEcdsaKey(string) members are
+          REMOVED OUTRIGHT, replaced by the two async members above, mirroring P-446/WO-068's
+          IEncryptionKeyProvider removal precedent exactly.
+    DESIGN CORRECTION, NOT A STRAIGHT PORT (D-241) — flagged explicitly rather than silently carried
+          forward: the PRE-migration shape (originally shipped C-88) returned a FRESH handle "cloned via
+          ExportParameters(true)/RSA.Create(...) so the caller's using/Dispose() never invalidates the
+          cached original." Under the OLD (pre-P-493) contract, key ownership was never specified, so
+          defensive fresh-cloning was reasonable. Under P-493's new, EXPLICIT "the returned instance is
+          NOT caller-owned" contract, fresh-cloning on every call becomes ACTIVELY HARMFUL to this
+          fake's own test value: it would make a caller-side disposal-then-reuse regression invisible
+          FOREVER, because the next call always hands back a brand-new, never-disposed clone —
+          precisely masking the exact ObjectDisposedException defect SK.01.P493 exists to fix
+          (RsaSignatureService/EcdsaSignatureService no longer dispose the provider-returned instance).
+          The migrated fake instead lazily generates and CACHES ONE RSA/ECDsa instance per keyId; every
+          subsequent call for the SAME keyId returns the SAME cached instance (not a clone) — so a
+          regression that (re-)introduces a using/Dispose() around the returned key anywhere in code
+          under test surfaces immediately as an ObjectDisposedException on the very next
+          signing/verification call against the same key, inside the consuming test itself. Marked
+          ISynchronousAsymmetricKeyProvider — an honest claim, mirroring FakeEncryptionKeyProvider's own
+          (zero real I/O). Proven in SharedKernel.Testing.SelfTests/Cryptography/
+          FakeAsymmetricKeyProviderTests.cs (T-104), including the dispose-then-reuse
+          ObjectDisposedException regression-detection proof.
+
+FakeRemoteEncryptionKeyProvider  (sealed class, NEW, implements IEncryptionKeyProvider ONLY — never
+    ISynchronousEncryptionKeyProvider)  — implemented C-147/SK.16.Core (P-502/WO-081, 2026-09-08)
+    constructor(string currentKeyId = "v1")
+    AddKey(string keyId)                                    → CryptographicKey
+    SetCurrentKey(string keyId)                             → void
+    RemoveKey(string keyId)                                 → void
+    GetCurrentKeyAsync(CancellationToken ct = default)      → ValueTask<CryptographicKey>  (a real
+                                                              `await Task.Yield()` precedes resolution —
+                                                              genuinely asynchronous, never a synchronous
+                                                              body wrapped in an already-completed
+                                                              ValueTask)
+    GetKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<CryptographicKey?>  (same
+                                                              real-yield behavior)
+    NOTE: plausibly represents a KMS/remote-style provider — the shape 01.Core's own future
+          AzureKeyVaultEncryptionKeyProvider (SK.01.P494) will be. Exists SOLELY so a downstream test
+          can (a) wrap it in the REAL, already-shipped 01.Core CachedEncryptionKeyProvider and prove
+          EncryptionKeyProviderCapabilities.IsGenuinelySynchronous recursively resolves to `false`
+          through the `.Inner` unwrap regardless of cache warmth, and (b) construct the REAL
+          AesGcmEncryptionService against it (wrapped or unwrapped) and prove the four retained sync
+          ISymmetricEncryptionService members throw NotSupportedException. NEVER auto-registered by
+          AddFakeCryptography() — a test that wants the gated/async-only path constructs it directly.
+          Proven compositionally in SharedKernel.Testing.SelfTests/Cryptography/
+          CryptographyKeyProviderCapabilityGateCompositionTests.cs (T-103) — the P-492 gate BEHAVIOR
+          itself is deliberately NOT reimplemented inside FakeSymmetricEncryptionService, since the gate
+          belongs to AesGcmEncryptionService (real production code under test in every downstream
+          domain's own suite), not to the abstract ISymmetricEncryptionService contract.
 
 FakeSymmetricEncryptionService  (sealed class, implements ISymmetricEncryptionService)  — implemented C-89/SK.16.Core;
-    GAINED THE NEW ASYNC MEMBERS BELOW alongside C-131/SK.16.Core (P-450/WO-068, 2026-09-03)
+    GAINED THE NEW ASYNC MEMBERS BELOW alongside C-131/SK.16.Core (P-450/WO-068, 2026-09-03);
+    BREAKING AAD MIGRATION C-146/SK.16.Core (P-502/WO-081, 2026-09-08)
     constructor(IEncryptionKeyProvider? keyProvider = null)  (defaults to an internally-owned
                                                               FakeEncryptionKeyProvider when omitted — zero-
                                                               config convenience; accepts any
                                                               IEncryptionKeyProvider, including a real one,
                                                               when supplied — mirrors AesGcmEncryptionService's
                                                               exact constructor shape for DI-swap parity)
-    Encrypt(byte[] plaintext)                              → EncryptedPayload
-    EncryptAsync(byte[] plaintext, CancellationToken ct = default)  → ValueTask<EncryptedPayload>
-    Decrypt(EncryptedPayload payload)                      → Result<byte[]>
-    DecryptAsync(EncryptedPayload payload, CancellationToken ct = default) → ValueTask<Result<byte[]>>
-    EncryptToString(string plaintext)                      → string
-    EncryptToStringAsync(string plaintext, CancellationToken ct = default) → ValueTask<string>
-    DecryptToString(string encoded)                        → Result<string>
-    DecryptToStringAsync(string encoded, CancellationToken ct = default) → ValueTask<Result<string>>
-    .SimulateDecryptFailure                                → bool  (settable, default false — forces
-                                                              Decrypt/DecryptToString (and their async
-                                                              counterparts) to unconditionally
+    Encrypt(byte[] plaintext, byte[] associatedData)                                    → EncryptedPayload
+    EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default) → ValueTask<EncryptedPayload>
+    Decrypt(EncryptedPayload payload, byte[] associatedData)                            → Result<byte[]>
+    DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default) → ValueTask<Result<byte[]>>
+    EncryptToString(string plaintext, byte[] associatedData)                            → string
+    EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default) → ValueTask<string>
+    DecryptToString(string encoded, byte[] associatedData)                              → Result<string>
+    DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default) → ValueTask<Result<string>>
+    .SimulateDecryptFailure                                → bool  (UNCHANGED — settable, default false —
+                                                              forces Decrypt/DecryptToString (and their
+                                                              async counterparts) to unconditionally
                                                               return the same Error.Unexpected/
                                                               CryptographyErrorCodes.DecryptionFailed shape
-                                                              as a real tamper/wrong-key failure, without
-                                                              needing to hand-corrupt bytes)
-    .EncryptedPayloads                                     → IReadOnlyList<EncryptedPayload>  (every payload
-                                                              ever produced by Encrypt/EncryptToString (and
-                                                              their async counterparts),
-                                                              append-only, mirroring InMemoryFileStorage's
-                                                              UploadedKeys introspection convention)
+                                                              as a real tamper/wrong-key failure,
+                                                              independent of AAD correctness)
+    .EncryptedPayloads                                     → IReadOnlyList<(EncryptedPayload Payload,
+                                                              byte[] AssociatedData)>  (WIDENED from a bare
+                                                              IReadOnlyList<EncryptedPayload> — every
+                                                              payload paired with the exact AAD used to
+                                                              produce it)
+    NOTE (C-146, P-502/WO-081): every member now takes a required byte[] associatedData parameter, no
+          default, mirroring 01.Core's own required-AAD ISymmetricEncryptionService shape (SK.01.P491)
+          exactly. AAD is GENUINELY ENFORCED, never accepted-and-ignored — the single most valuable
+          thing this migration does, per this phase's own dispatch brief: an ignoring fake would let
+          every downstream domain's own AAD-binding test pass vacuously. Mechanism: an HMAC-SHA256 tag
+          over `UTF8(KeyId) ++ Nonce ++ Ciphertext ++ AssociatedData`, keyed by the resolved
+          CryptographicKey's own material, stored in the ALREADY-EXISTING EncryptedPayload.Tag field (no
+          new field needed — Tag already exists to carry an authentication value; its length grew from
+          16 bytes, the old placeholder AES-GCM tag size, to 32 bytes, the real HMACSHA256 output size).
+          Decrypt recomputes the same HMAC and compares via CryptographicOperations.FixedTimeEquals; ANY
+          mismatch (flipped ciphertext byte, wrong key, OR mismatched AAD) returns the SAME
+          Result.Failure(Error.Unexpected(...)) shape (CryptographyErrorCodes.DecryptionFailed) —
+          mirroring the real AesGcmEncryptionService's single unified tamper/wrong-key/wrong-AAD failure
+          path, no new CryptographyErrorCodes constant. Array.Empty<byte>() remains a valid,
+          always-succeeding no-context-binding choice. Proven in
+          SharedKernel.Testing.SelfTests/Cryptography/FakeSymmetricEncryptionServiceTests.cs (T-102),
+          including the "swap AAD between two otherwise-identical payloads" cross-mismatch proof.
     NOTE (C-131, P-450/WO-068): ISymmetricEncryptionService gained the four async members above,
           ADDITIVE to (not replacing) the retained sync ones — since IEncryptionKeyProvider itself
           became async-only in the same shipment (01.Core P-446), the sync Encrypt/Decrypt now bridge
@@ -3017,7 +3096,8 @@ FakeSymmetricEncryptionService  (sealed class, implements ISymmetricEncryptionSe
           sibling-folder reference — CryptographyErrorCodes lives in SharedKernel.Cryptography, the single
           abstraction package this whole folder depends on).
 
-FakeAsymmetricSignatureService  (sealed class, implements IAsymmetricSignatureService)  — implemented C-90/SK.16.Core
+FakeAsymmetricSignatureService  (sealed class, implements IAsymmetricSignatureService)  — implemented C-90/SK.16.Core;
+    GAINED SignAsync/VerifyAsync C-149/SK.16.Core (P-502/WO-081, 2026-09-08)
     constructor()                                           (no external dependency — self-contained)
     Sign(byte[] data, string keyId)                        → byte[]  (deterministic HMACSHA256(data) keyed
                                                               by SHA256(UTF8.GetBytes(keyId)) — a stable,
@@ -3025,13 +3105,30 @@ FakeAsymmetricSignatureService  (sealed class, implements IAsymmetricSignatureSe
                                                               real RSA/ECDSA key generation)
     Verify(byte[] data, byte[] signature, string keyId)    → bool  (recomputes the same HMAC, compares via
                                                               CryptographicOperations.FixedTimeEquals)
+    SignAsync(byte[] data, string keyId, CancellationToken ct = default)   → ValueTask<byte[]>  (delegates
+                                                              to Sign — byte-identical result)
+    VerifyAsync(byte[] data, byte[] signature, string keyId, CancellationToken ct = default) → ValueTask<bool>
+                                                              (delegates to Verify — identical result)
     .SignedPayloads                                        → IReadOnlyList<(byte[] Data, string KeyId)>
+                                                              (shared unchanged across sync and async call
+                                                              shapes)
     NOTE: a SINGLE fake instance/type is algorithm-agnostic and works uniformly across the unkeyed-default
           AND both CryptographyServiceCollectionExtensions.RsaSignatureServiceKey("Rsa")/
           EcdsaSignatureServiceKey("Ecdsa") keyed DI slots AddSharedKernelCryptography() establishes —
           AddFakeCryptography() reuses those SAME real constants (never redeclares fake-only key strings) so
           a test resolving GetRequiredKeyedService<IAsymmetricSignatureService>(RsaSignatureServiceKey) gets
           a working fake with zero call-site change from production.
+    NOTE (C-149, P-502/WO-081): SignAsync/VerifyAsync delegate to the exact same internal HMAC computation
+          as the retained sync Sign/Verify, guaranteeing byte-identical results between the sync and async
+          call shapes for the same input, mirroring AesGcmEncryptionService's own shared-core discipline.
+          Proven in SharedKernel.Testing.SelfTests/Cryptography/FakeAsymmetricSignatureServiceTests.cs
+          (T-105).
+    SCOPE NOTE (D-242): this fake is algorithm-agnostic and keyId-derived — it never models a real
+          RSA/ECDSA key or its bit length at all, so it STRUCTURALLY CANNOT represent SK.01.P493's
+          Verify-side EnsureMinimumKeySize parity fix (the closed "an attacker-supplied signature against
+          an undersized key was never rejected" gap). A test wanting to prove THAT specific regression
+          must compose the REAL RsaSignatureService/EcdsaSignatureService against
+          FakeAsymmetricKeyProvider instead of this fake.
 
 FakeHmacSigner  (sealed class, implements IHmacSigner)  — implemented C-91/SK.16.Core
     constructor()                                           (no dependency)
@@ -3064,7 +3161,8 @@ FakeContentHasher  (sealed class, implements IContentHasher — 01.Core P-296)
 
 FakeCryptographyServiceCollectionExtensions.AddFakeCryptography(this IServiceCollection)
     — implemented C-93/SK.16.Core; GAINED IEnvelopeEncryptionProvider registration alongside
-    C-131/C-132/SK.16.Core (P-450/WO-068, 2026-09-03)
+    C-131/C-132/SK.16.Core (P-450/WO-068, 2026-09-03); confirmed UNCHANGED IN SHAPE by C-150/SK.16.Core
+    (P-502/WO-081, 2026-09-08)
     NOTE: registers, as singletons: IOneWayHasher→FakeOneWayHasher, IEncryptionKeyProvider→
           FakeEncryptionKeyProvider, ISymmetricEncryptionService→FakeSymmetricEncryptionService,
           IAsymmetricKeyProvider→FakeAsymmetricKeyProvider, IAsymmetricSignatureService→
@@ -3085,6 +3183,14 @@ FakeCryptographyServiceCollectionExtensions.AddFakeCryptography(this IServiceCol
           satisfying a dependency production deliberately leaves to the consumer. Manual per-type
           services.AddSingleton<IX, FakeX>() registration remains valid for a subset, mirroring
           AddFakeCachingServices()'s documented manual-alternative precedent.
+    NOTE (C-150, P-502/WO-081, D-243): these registrations are UNCHANGED IN SHAPE by this phase — only
+          the backing types' member contracts changed (async migration, required AAD). The default
+          IEncryptionKeyProvider registration stays the now-marked-synchronous FakeEncryptionKeyProvider
+          — ZERO migration burden for the common case, every existing consumer of AddFakeCryptography()
+          keeps a provider that satisfies ISynchronousEncryptionKeyProvider. FakeRemoteEncryptionKeyProvider
+          is DELIBERATELY NOT auto-registered — a KMS-style gated provider is opt-in-only by nature; a
+          test wanting the gated/async-only path constructs it directly, mirroring how a test opts into
+          .SimulateDecryptFailure/.SimulateFailure on other fakes in this bundle today.
 
 BLOCKER-CLEARANCE VERIFICATION (P-300/WO-049 — the FIFTH design-ahead-of-schedule occurrence in this
     domain's history, and the FIRST *partial* one): `01.Core/SharedKernel.Cryptography` is already fully
@@ -3172,140 +3278,35 @@ composition — `TotpEnrollmentService(FakeSecureRandomGenerator)` and
 further fake type was warranted.
 ```
 
-**[STATUS: Planned, BREAKING — P-502/WO-081]** The five types below supersede their entries above
-once `01.Core` ships `SK.01.P491`/`SK.01.P492`/`SK.01.P493` past design-lock into real code (`C-81`,
-`C-82`/`C-83`, `C-84`–`C-87`). Re-verified directly on disk at the time this block was written
-(2026-09-08): `ISymmetricEncryptionService.cs` still has no `associatedData` parameter; no
-`ISynchronousEncryptionKeyProvider`/`EncryptionKeyProviderCapabilities` exists anywhere under
-`01.Core/SharedKernel.Cryptography/`; `IAsymmetricKeyProvider.cs`/`IAsymmetricSignatureService.cs`
-are both still fully synchronous. This domain's own `Cryptography/FakeSymmetricEncryptionService`/
-`FakeEncryptionKeyProvider`/`FakeAsymmetricKeyProvider`/`FakeAsymmetricSignatureService`/
-`AddFakeCryptography()` therefore remain implemented against the PRE-migration shape documented
-above until `01.Core` ships — this block documents the TARGET shape only, never a claim of
-completion.
-
-**This phase's own dispatch brief's AC#4 ("all six cascading domains' test suites (02/06/07/15/16/17)
-compile and pass against these updated fakes") is not achievable within this phase and is not
-attempted as written** — every one of the six domains, including this one, has its own `○`/`⚑`
-implementation work still pending; the achievable form is "shaped so each suite CAN compile once its
-own domain implements its own leg."
-
-```text
-FakeSymmetricEncryptionService  (sealed class, implements ISymmetricEncryptionService)  — target shape,
-    [STATUS: Planned, BREAKING] — supersedes the shipped C-89/C-131 shape above
-    constructor(IEncryptionKeyProvider? keyProvider = null)  (UNCHANGED)
-    Encrypt(byte[] plaintext, byte[] associatedData)                                    → EncryptedPayload
-    EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default) → ValueTask<EncryptedPayload>
-    Decrypt(EncryptedPayload payload, byte[] associatedData)                            → Result<byte[]>
-    DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default) → ValueTask<Result<byte[]>>
-    EncryptToString(string plaintext, byte[] associatedData)                            → string
-    EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default) → ValueTask<string>
-    DecryptToString(string encoded, byte[] associatedData)                              → Result<string>
-    DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default) → ValueTask<Result<string>>
-    .SimulateDecryptFailure                                 → bool  (UNCHANGED — an explicit override,
-                                                              independent of AAD correctness)
-    .EncryptedPayloads                                      → IReadOnlyList<(EncryptedPayload Payload,
-                                                              byte[] AssociatedData)>  (WIDENED from a bare
-                                                              IReadOnlyList<EncryptedPayload> — every payload
-                                                              paired with the AAD used to produce it)
-    NOTE: AAD is GENUINELY ENFORCED, never accepted-and-ignored — the single most valuable thing this
-          migration can do, per this phase's own dispatch brief, since an ignoring fake would let every
-          downstream domain's own AAD-binding test pass vacuously. Mechanism: an HMAC-SHA256 tag over
-          `KeyId ++ Nonce ++ Ciphertext ++ AssociatedData`, keyed by the resolved CryptographicKey's own
-          material, stored in the ALREADY-EXISTING EncryptedPayload.Tag field (no new field needed —
-          Tag already exists to carry an authentication value). Decrypt recomputes the same HMAC and
-          compares via CryptographicOperations.FixedTimeEquals; ANY mismatch (flipped ciphertext byte,
-          wrong key, OR mismatched AAD) returns the SAME Result.Failure(Error.Unexpected(...)) shape,
-          mirroring the real AesGcmEncryptionService's single unified tamper/wrong-key/wrong-AAD failure
-          path — no new CryptographyErrorCodes constant. Array.Empty<byte>() remains a valid,
-          always-reproducible AAD choice.
-
-FakeEncryptionKeyProvider  — target shape, [STATUS: Planned] additive change only
-    ADDS: : ISynchronousEncryptionKeyProvider  (an HONEST claim — this fake performs no real I/O and
-          both members already complete via an already-completed ValueTask today; per 01.Core's own
-          "author-asserted, never inferred" rule for this marker)
-    Everything else UNCHANGED from the shipped C-131 shape above (AddKey/SetCurrentKey/RemoveKey/
-    GetCurrentKeyAsync/GetKeyAsync).
-
-FakeRemoteEncryptionKeyProvider  (sealed class, NEW, implements IEncryptionKeyProvider ONLY — never
-    ISynchronousEncryptionKeyProvider)  — [STATUS: Planned]
-    constructor(string currentKeyId = "v1")
-    AddKey(string keyId)                                    → CryptographicKey
-    SetCurrentKey(string keyId)                             → void
-    GetCurrentKeyAsync(CancellationToken ct = default)      → ValueTask<CryptographicKey>  (a real
-                                                              `await Task.Yield()` precedes resolution —
-                                                              genuinely asynchronous, never a synchronous
-                                                              body wrapped in an already-completed
-                                                              ValueTask)
-    GetKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<CryptographicKey?>  (same
-                                                              real-yield behavior)
-    NOTE: plausibly represents a KMS/remote-style provider — the shape 01.Core's own future
-          AzureKeyVaultEncryptionKeyProvider (SK.01.P494) will be. Exists SOLELY so a downstream test
-          can (a) wrap it in the REAL, already-shipped 01.Core CachedEncryptionKeyProvider and prove
-          EncryptionKeyProviderCapabilities.IsGenuinelySynchronous recursively resolves to `false`
-          through the `.Inner` unwrap regardless of cache warmth, and (b) construct the REAL
-          AesGcmEncryptionService against it (wrapped or unwrapped) and prove the four retained sync
-          ISymmetricEncryptionService members throw NotSupportedException. NEVER auto-registered by
-          AddFakeCryptography() — a test that wants the gated/async-only path constructs it directly.
-    EVALUATION NOTE: the P-492 gate BEHAVIOR itself is deliberately NOT reimplemented inside
-          FakeSymmetricEncryptionService — the gate belongs to AesGcmEncryptionService (real production
-          code under test in every downstream domain's own suite), not to the abstract
-          ISymmetricEncryptionService contract. Proving the gate composes the REAL AesGcmEncryptionService
-          with FakeEncryptionKeyProvider (marked, gate never fires) or FakeRemoteEncryptionKeyProvider
-          (unmarked, gate always fires) — the more faithful test setup, exercising actual production
-          gating logic against a controlled fake dependency, rather than a 16.Testing-owned
-          reimplementation of the exact code under test. FakeSymmetricEncryptionService itself stays a
-          simple, always-non-blocking double for tests that need "some working crypto" without caring
-          about the gate at all.
-
-FakeAsymmetricKeyProvider  — target shape, [STATUS: Planned, BREAKING]
-    GetRsaKeyAsync(string keyId, CancellationToken ct = default)  → ValueTask<RSA>
-    GetEcdsaKeyAsync(string keyId, CancellationToken ct = default) → ValueTask<ECDsa>
-    Dispose()                                               → void  (UNCHANGED — disposes every cached
-                                                              instance, but ONLY at the fake's own
-                                                              end-of-life, never per-call)
-    : ISynchronousAsymmetricKeyProvider  (an honest claim, mirroring FakeEncryptionKeyProvider's own —
-                                                              zero real I/O)
-    DESIGN CORRECTION, NOT A STRAIGHT PORT — flagged explicitly rather than silently carried forward:
-          the shipped C-88 shape (above) returns a FRESH handle "cloned via ExportParameters(true)/
-          RSA.Create(...) so the caller's using/Dispose() never invalidates the cached original." Under
-          the OLD (pre-P-493) contract, key ownership was never specified, so defensive fresh-cloning
-          was reasonable. Under P-493's new, EXPLICIT "the returned instance is NOT caller-owned"
-          contract, fresh-cloning on every call becomes ACTIVELY HARMFUL to this fake's own test value:
-          it would make a caller-side disposal-then-reuse regression invisible FOREVER, because the next
-          call always hands back a brand-new, never-disposed clone — precisely masking the exact
-          ObjectDisposedException defect SK.01.P493 exists to fix (RsaSignatureService/EcdsaSignatureService
-          no longer dispose the provider-returned instance). The migrated fake instead lazily generates
-          and CACHES ONE RSA/ECDsa instance per keyId; every subsequent call for the SAME keyId returns
-          the SAME cached instance (not a clone) — so a regression that (re-)introduces a using/Dispose()
-          around the returned key anywhere in code under test surfaces immediately as an
-          ObjectDisposedException on the very next signing/verification call against the same key, inside
-          the consuming test itself.
-
-FakeAsymmetricSignatureService  — target shape, [STATUS: Planned] additive change only
-    ADDS: SignAsync(byte[] data, string keyId, CancellationToken ct = default)   → ValueTask<byte[]>
-    ADDS: VerifyAsync(byte[] data, byte[] signature, string keyId, CancellationToken ct = default) → ValueTask<bool>
-          both delegate to the exact same internal HMAC-SHA256-keyed-by-SHA256(UTF8(keyId)) computation
-          the existing sync Sign/Verify already use — byte-identical results between sync and async call
-          shapes for the same input, mirroring AesGcmEncryptionService's own EncryptCore/DecryptCore
-          shared-core discipline. .SignedPayloads unchanged, shared across both call shapes.
-    SCOPE NOTE, evaluated and recorded rather than silently omitted: this fake is algorithm-agnostic and
-          keyId-derived — it never models a real RSA/ECDSA key or its bit length at all, so it
-          STRUCTURALLY CANNOT represent SK.01.P493's Verify-side EnsureMinimumKeySize parity fix (the
-          closed "an attacker-supplied signature against an undersized key was never rejected" gap). A
-          test wanting to prove THAT specific regression must compose the REAL RsaSignatureService/
-          EcdsaSignatureService against FakeAsymmetricKeyProvider instead of this fake.
-
-FakeCryptographyServiceCollectionExtensions.AddFakeCryptography()  — target shape, [STATUS: Planned]
-    minimal change: IAsymmetricKeyProvider→FakeAsymmetricKeyProvider and
-    IAsymmetricSignatureService→FakeAsymmetricSignatureService registrations UNCHANGED IN SHAPE (same
-    singletons, same keys) — only the backing types' member contracts changed. IEncryptionKeyProvider's
-    DEFAULT registration remains the now-marked-synchronous FakeEncryptionKeyProvider — ZERO behavior
-    change for the common case. FakeRemoteEncryptionKeyProvider is DELIBERATELY NOT auto-registered —
-    mirrors this method's own pre-existing documented divergence-with-explanation precedent (it already
-    deliberately DOES auto-register IEncryptionKeyProvider/IAsymmetricKeyProvider even though production
-    leaves both consumer-supplied; but a KMS-style gated provider is opt-in-only by nature).
-```
+**IMPLEMENTED (C-146–C-150/SK.16.Core, P-502/WO-081, 2026-09-08).** `01.Core`'s own `SK.01.P491`/
+`SK.01.P492`/`SK.01.P493` shipped past design-lock into real, compiled code the same day this phase
+was dispatched — re-verified directly on disk before writing any code (never trusted the prior
+session's "design-locked" prose alone): `ISymmetricEncryptionService.cs` now declares the required
+`associatedData` parameter on all eight members; `ISynchronousEncryptionKeyProvider`/
+`EncryptionKeyProviderCapabilities`/`ISynchronousAsymmetricKeyProvider`/`AsymmetricKeyProviderCapabilities`
+all exist under `01.Core/SharedKernel.Cryptography/`; `IAsymmetricKeyProvider`/
+`IAsymmetricSignatureService` are both async per `SK.01.P493`. This block previously carried a
+`[STATUS: Planned, BREAKING]` target-shape draft written before any of the three contracts existed —
+that target shape is now documented directly on each type's entry above (see
+`FakeSymmetricEncryptionService`, `FakeEncryptionKeyProvider`, `FakeRemoteEncryptionKeyProvider`,
+`FakeAsymmetricKeyProvider`, `FakeAsymmetricSignatureService`, `AddFakeCryptography()`, all earlier
+in this section), with zero drift from the draft's design — no correction was needed, only
+implementation. This phase's own dispatch brief's AC#4 ("all six cascading domains' test suites
+(02/06/07/15/16/17) compile and pass against these updated fakes") remains, as evaluated at D-237,
+unachievable within this phase alone: `02.Caching`/`06.Persistence`/`07.Messaging`/`15.Integration`/
+`17.Workflows` have not yet shipped their own P-497–P-501 legs migrating their production code onto
+`01.Core`'s new contracts — a full-solution `dotnet build` remains red on their pre-existing,
+out-of-jurisdiction call sites (e.g. `CacheEncryptionSerializer.Encrypt(payload)`,
+`NullSymmetricEncryptionService`'s now-incomplete member set), not on anything in this folder.
+`SharedKernel.Testing.csproj`/`SharedKernel.Testing.SelfTests.csproj` both compile with ZERO errors
+and ZERO warnings when checked in isolation against every file this domain owns (confirmed via a full
+source-level error-attribution sweep of the real `dotnet build` output — every remaining error
+traces to a file outside `16.Testing/`) and via a stale-reference sanity build
+(`-p:BuildProjectReferences=false`) that additionally ran the full `SharedKernel.Testing.SelfTests`
+suite end to end: 115/115 `Cryptography/` tests pass, and only 10 pre-existing `Persistence/` tests
+fail — a `TypeLoadException` artifact of that stale-reference technique itself
+(`06.Persistence.EfCore`'s own not-yet-rebuilt `NullSymmetricEncryptionService`), not a regression in
+any file this domain owns.
 
 ### `FeatureManagement/` — `01.Core`/`SharedKernel.FeatureManagement` fake (P-300/WO-049)
 
@@ -3802,10 +3803,11 @@ services.AddSingleton<ISecureRandomGenerator, FakeSecureRandomGenerator>();
 services.AddSingleton<IContentHasher, FakeContentHasher>();
 services.AddSingleton<IEnvelopeEncryptionProvider, FakeEnvelopeEncryptionProvider>();
 
-// [STATUS: Planned, BREAKING — P-502/WO-081] KMS/remote-style provider for proving the P-492
-// synchronous-provider capability gate — deliberately NOT auto-registered by AddFakeCryptography();
-// a test opts in directly, then either wires it straight into AesGcmEncryptionService or wraps it in
-// the REAL 01.Core CachedEncryptionKeyProvider first to prove the recursive .Inner unwrap
+// FakeRemoteEncryptionKeyProvider (implemented C-147/SK.16.Core, P-502/WO-081) — a KMS/remote-style
+// provider for proving the P-492 synchronous-provider capability gate — deliberately NOT
+// auto-registered by AddFakeCryptography(); a test opts in directly, then either wires it straight
+// into AesGcmEncryptionService or wraps it in the REAL 01.Core CachedEncryptionKeyProvider first to
+// prove the recursive .Inner unwrap
 // var remoteProvider = new FakeRemoteEncryptionKeyProvider();
 // var gatedService = new AesGcmEncryptionService(remoteProvider);   // sync members throw NotSupportedException
 // var cached = new CachedEncryptionKeyProvider(remoteProvider, TimeProvider.System, TimeSpan.FromMinutes(5));
@@ -3996,3 +3998,4 @@ AOT guidance does **not** apply to this domain. `16.Testing` packages are never 
 - [2026-09-03] C-131/C-132/SK.16.Core (P-450/WO-068) implemented by testing-phase-implementer, scoped to only these two of the twelve-phase batch's seventeen `⚑` `SK.16.Core` tasks — the recorded blocker was STALE, re-verified directly on disk: `01.Core/SharedKernel.Cryptography/Symmetric/IEncryptionKeyProvider.cs`/`IEnvelopeEncryptionProvider.cs`/`EnvelopeDataKey.cs` had already shipped (P-446/WO-068) earlier in this same run. Migrated `Cryptography/FakeEncryptionKeyProvider.cs` onto the async contract (`GetCurrentKeyAsync`/`GetKeyAsync`, sync members removed outright; `AddKey`/`SetCurrentKey`/`RemoveKey` unchanged). Added scope beyond C-131's literal text, required to compile: `01.Core`'s same shipment gave `ISymmetricEncryptionService` new additive async members (`EncryptAsync`/`DecryptAsync`/`EncryptToStringAsync`/`DecryptToStringAsync`), so `Cryptography/FakeSymmetricEncryptionService.cs` implements all four and its sync `Encrypt`/`Decrypt` now bridge onto the async key provider via `.GetAwaiter().GetResult()`, mirroring `AesGcmEncryptionService`'s own bridging pattern. Implemented new `Cryptography/FakeEnvelopeEncryptionProvider.cs` (C-132) — deterministic XOR wrap plus an internal produced-keys registry so `UnwrapDataKeyAsync` structurally fails on an unrecognized `wrappedDataKey`/`masterKeyId` pair — and registered it in `AddFakeCryptography()` (ninth fake in the bundle). **Corrected the stale `[STATUS: Planned, BREAKING]` target-shape block against the real implementation**: its `FakeEncryptionKeyProvider` draft named a `.SeedKey(CryptographicKey key)` member and a `.SimulateFailure` bool that never existed on the real fake (whose actual additive surface has always been `AddKey`/`SetCurrentKey`/`RemoveKey`); its `FakeEnvelopeEncryptionProvider` draft omitted the produced-keys registry the real implementation needs — both merged into the real, correct documentation in place of the stale draft. Updated the one `SharedKernel.Testing.SelfTests` consumer with direct sync call sites, `Cryptography/FakeEncryptionKeyProviderTests.cs`, to `await` the async members. `dotnet build SharedKernel.Testing.csproj -c Release` 0 errors; `dotnet test SharedKernel.Testing.SelfTests.csproj -c Release` (real Docker) 1034/1034. Read-only cross-domain check: `06.Persistence/SharedKernel.Persistence.EfCore.Tests.csproj` — previously blocked on this exact fake pair — now builds 0 errors; that domain's own T-125..T-128 are genuinely unblocked but re-verifying/closing them is that domain's own future session's work. The remaining fifteen `⚑` `SK.16.Core` tasks in this batch (C-128–C-130, C-133–C-144) plus the already-`○`-Pending C-145 were deliberately NOT touched, per this session's explicit scope instruction (testing-phase-implementer).
 - [2026-09-04] Four more of the twelve-phase batch CLOSED end to end by testing-phase-implementer, processed as their upstream domains unblocked mid-session and added to this agent's queue one at a time: `ServiceDefaults/InMemoryTenantCatalog` (P-473/WO-075), `Reporting/InMemoryReportExporter<TRow>` (P-481/WO-077), `Scheduling/InMemoryScheduledJobRegistry` (P-467/WO-073), and `Grpc/TestServerCallContext` (P-470/WO-074, previously implemented and proven earlier in this same session but never flipped in this file before a context-window compaction — corrected here alongside the other three). `13.ServiceDefaults/SharedKernel.MultiTenancy` (P-471/P-472), `20.Reporting` (P-477–P-480), `19.Scheduling` (P-464), and `14.Presentation/SharedKernel.Presentation.Grpc` (P-468) all independently re-verified real on disk before any code was written. `SK.16.Core` is now fully `●` (145/145) — every Core-phase task across this whole batch is shipped except the two already handled by the 2026-09-03 pass. `Grpc/`'s and `Scheduling/`'s Interface Contracts blocks were each corrected against their real shipped shape, not just STATUS-flipped: `TestServerCallContext` wraps `Grpc.Core.Testing.TestServerCallContext.Create` plus an `HttpContext` bridge via `UserState["__HttpContext"]` (empirically verified against the real `Grpc.AspNetCore.Server` assemblies) rather than hand-subclassing `Grpc.Core.ServerCallContext` as the original draft proposed; `InMemoryScheduledJobRegistry.TriggerAsync` dispatches directly through the injected `MediatR.ISender` rather than constructing a real `ScheduledCommandJob<TCommand>`, using a closed-generic-per-command internal storage shape (zero reflection) mirroring the real package's own `IScheduledJobDefinition` split, and additionally replicates the real interface's duplicate-job-name/missing-policy registration-time validation. A CS0234 `Grpc` namespace collision — introduced earlier this session by adding the `SharedKernel.Testing.Grpc` namespace, which broke the pre-existing `Communication/TestServerCallContext.cs`'s bare `Grpc.Core.Testing` reference via C#'s qualified-expression namespace lookup — was caught and fixed via `global::` qualification in both files, documented in both mirroring the existing `GreenDonut` ambiguity precedent. Four new `ProjectReference`s added to `SharedKernel.Testing.csproj` (`SharedKernel.MultiTenancy`, `SharedKernel.Reporting.Abstractions`, `SharedKernel.Scheduling`, `SharedKernel.Presentation.Grpc`) plus `Grpc.Core.Api`/`Grpc.Core.Testing` `PackageReference`s. 65 new `SharedKernel.Testing.SelfTests` tests added (16 `ServiceDefaults/InMemoryTenantCatalogTests` incl. a real-`CatalogTenantStatusValidator` composition proof, 15 `Reporting/InMemoryReportExporterTests`, 17 `Scheduling/InMemoryScheduledJobRegistryTests` composing a real MediatR `ISender` via `AddMediatR`, 12 `Grpc/TestServerCallContextTests` proving all four real interceptors end to end) — running total 1103→1216, zero regressions, 26 Docker-gated `Containers/*` tests still excluded (Docker Desktop not running in this environment). `dotnet build SharedKernel.Testing.csproj -c Release` 0 errors, 5 pre-existing unrelated warnings (`Intelligence/`/`Search/`, none introduced); `dotnet build SharedKernel.Testing.SelfTests.csproj -c Release` 0 errors, 0 warnings. `[STATUS: Planned]` markers removed from the `ServiceDefaults/`, `Reporting/`, `Scheduling/`, and `Grpc/` Interface Contracts blocks; Folder/Namespace Map rows updated for all four; DI Registration section's twelve-phase-batch summary corrected to "ALL TWELVE now implemented." Only P-450/WO-068's Tests/Docs half (T-91, DO-49) remains open across the entire twelve-phase batch — never part of this session's assigned queue, deliberately left untouched. Root `Platform.SharedKernel.slnx` and root `state-map.md`/`CLAUDE.md` deliberately left untouched throughout this session, per the launching agent's explicit shared-file protocol — `SK.16.Core`'s full closure is flagged for root-level phase-key propagation by whichever process owns that step next, not performed here (testing-phase-implementer).
 - [2026-09-08] P-502/WO-081 processed (testing-arch-planner) — this domain's leg of a six-domain, `01.Core`-first coordinated breaking wave (WO-081), and the GATE for the other five: `02.Caching`'s P-497, `06.Persistence`'s P-498, `07.Messaging`'s P-499, `15.Integration`'s P-500, and `17.Workflows`'s P-501 all depend on the `Cryptography/` fakes migrated here staying in sync with `01.Core`'s new contracts. Read this file and `state-map.md` in full first, then `01.Core/CLAUDE.md`/`state-map.md`'s `SK.01.P491`/`SK.01.P492`/`SK.01.P493` (design-locked this same session) plus the six consuming domains' own designs before writing anything. **Evaluated rather than rubber-stamped this phase's own literal AC#4** ("all six cascading domains' test suites (02/06/07/15/16/17) compile and pass against these updated fakes"), per the dispatch brief's explicit instruction to apply the same scrutiny six other planners already had this wave — corrected to its only achievable form: shaped so each suite CAN compile once its own domain implements its own leg, not that any does today. Migrates the EXISTING `Cryptography/` folder (no new capability folder) onto `SK.01.P491` (required `associatedData` on `ISymmetricEncryptionService`), `SK.01.P492` (`ISynchronousEncryptionKeyProvider` capability gate), and `SK.01.P493` (async `IAsymmetricKeyProvider`/`IAsymmetricSignatureService`, key-ownership fix). Two design decisions of note: `FakeSymmetricEncryptionService` GENUINELY enforces AAD via an HMAC-SHA256 tag stored in the real `EncryptedPayload.Tag` field (`KeyId ++ Nonce ++ Ciphertext ++ AssociatedData`), never accepting-and-ignoring the parameter — the single most valuable thing this migration can prevent, per the dispatch brief, is every downstream domain's own AAD-binding test passing vacuously against an ignoring fake; and `FakeAsymmetricKeyProvider`'s existing fresh-clone-per-call behavior is REVERSED to cached-instance-reuse, since under P-493's new EXPLICIT "not caller-owned" contract, the old cloning behavior would silently mask the exact `ObjectDisposedException` regression P-493 exists to fix. The P-492 gate itself is deliberately proven by COMPOSING the REAL `01.Core` `AesGcmEncryptionService`/`CachedEncryptionKeyProvider` against a new `FakeRemoteEncryptionKeyProvider` (genuinely async, never marked `ISynchronousEncryptionKeyProvider`) or the existing `FakeEncryptionKeyProvider` (now additionally marked) — never reimplemented inside this package's own fake `ISymmetricEncryptionService`, since the gate is production code under test, not this package's logic to duplicate. `FakeAsymmetricSignatureService` gains `SignAsync`/`VerifyAsync` but is documented as structurally unable to represent P-493's `EnsureMinimumKeySize` parity fix (algorithm-agnostic, no real key-size concept) — a test wanting that regression composes the real `RsaSignatureService`/`EcdsaSignatureService` against `FakeAsymmetricKeyProvider` instead. Re-verified directly on disk before writing any task, never trusted `01.Core/CLAUDE.md`'s "design-locked" prose alone: `ISymmetricEncryptionService.cs`/`IAsymmetricKeyProvider.cs`/`IAsymmetricSignatureService.cs` all still carry their pre-WO-081 shape; no `ISynchronousEncryptionKeyProvider`/`EncryptionKeyProviderCapabilities` exists anywhere under `01.Core/SharedKernel.Cryptography/`. 18 new tasks added to `state-map.md` (D-237–D-243 (7, all `●` — design-locked), S-66 (1, `●`), C-146–C-150 (5, `⚑` Blocked), T-102–T-105 (4, `⚑` Blocked), DO-59 (1, `⚑` Blocked); total 607→625) — the sixth work order in this domain's history to combine "design fully today" with a hard downstream compile blocker on its own Core phase. This file updated: `Cryptography/` Interface Contracts block gains a new `[STATUS: Planned, BREAKING — P-502/WO-081]` sub-block documenting the post-migration target shape for `FakeSymmetricEncryptionService`/`FakeEncryptionKeyProvider`/`FakeRemoteEncryptionKeyProvider` (new)/`FakeAsymmetricKeyProvider`/`FakeAsymmetricSignatureService`/`AddFakeCryptography()`, explicitly superseding the currently-shipped shape once `01.Core` ships past design-lock — the currently-shipped documentation above it is left untouched and accurate; DI Registration section gains a forward-looking `[STATUS: Planned, BREAKING — P-502/WO-081]` commented code sample for `FakeRemoteEncryptionKeyProvider`'s composition-based gate-proving usage. `state-map.md`'s `## Blocked` section, Package Board, Cross-Domain Dependencies table (three new rows), and Overall Progress all updated in the same pass. No file outside `16.Testing/` touched, per this session's shared-file protocol — the root `CLAUDE.md`/`state-map.md` and `Platform.SharedKernel.slnx` are arch-lead's exclusive files (testing-arch-planner).
+- [2026-09-08] C-146–C-150/T-102–T-105/DO-59 (P-502/WO-081) implemented end to end by testing-phase-implementer, closing the eleven previously-`⚑`-Blocked tasks from the same-day dispatch above. **First verified the blocker was actually cleared, directly on disk, per this domain's own repeated discipline** — `01.Core`'s `SK.01.P491`/`SK.01.P492`/`SK.01.P493` had shipped past design-lock the same day: `ISymmetricEncryptionService.cs` now requires `associatedData` on all eight members; `ISynchronousEncryptionKeyProvider`/`EncryptionKeyProviderCapabilities` and `ISynchronousAsymmetricKeyProvider`/`AsymmetricKeyProviderCapabilities` all exist and compile; `IAsymmetricKeyProvider`/`IAsymmetricSignatureService` are async per `SK.01.P493` with the sync `GetRsaKey`/`GetEcdsaKey` members removed outright. Implemented exactly per the already-ratified D-238–D-243 designs, zero drift: `Cryptography/FakeSymmetricEncryptionService.cs` migrated to required AAD with GENUINE HMAC-SHA256 enforcement (`ComputeTag` over `UTF8(KeyId) ++ Nonce ++ Ciphertext ++ AssociatedData`, keyed by the resolved key's own material, stored in `EncryptedPayload.Tag` — grew from the old 16-byte placeholder to a real 32-byte HMACSHA256 output — compared via `CryptographicOperations.FixedTimeEquals`; `.EncryptedPayloads` widened to `IReadOnlyList<(EncryptedPayload, byte[] AssociatedData)>`); `Cryptography/FakeEncryptionKeyProvider.cs` additionally marked `: ISynchronousEncryptionKeyProvider` (also fixed a pre-existing stale `<see cref="GetCurrentKey"/>` XML doc reference to a removed method, left over from the P-450/WO-068 migration — corrected to `GetCurrentKeyAsync`); new `Cryptography/FakeRemoteEncryptionKeyProvider.cs` (genuinely `await Task.Yield()`-async, never marked); `Cryptography/FakeAsymmetricKeyProvider.cs` migrated to async with the D-241 cached-instance-reuse reversal (marked `: ISynchronousAsymmetricKeyProvider`) — REVERSED from the pre-migration fresh-clone-per-call behavior exactly as designed, since cloning would have masked the `ObjectDisposedException` regression `SK.01.P493` exists to catch; `Cryptography/FakeAsymmetricSignatureService.cs` gained `SignAsync`/`VerifyAsync` delegating to the existing `Sign`/`Verify`; `FakeCryptographyServiceCollectionExtensions.AddFakeCryptography()` confirmed unchanged in shape (D-243), only its XML docs updated. **A genuine cross-domain build hazard was found and worked around, not glossed over**: `SharedKernel.Testing.csproj`/`SharedKernel.Testing.SelfTests.csproj` both carry direct `ProjectReference`s (not just `.Abstractions`) to `02.Caching.FusionCache`/`06.Persistence.EfCore`/`07.Messaging.MassTransit`/`15.Integration.Webhooks`/`17.Workflows.Temporal` — none of which have yet shipped their own P-497–P-501 legs migrating onto `01.Core`'s new contracts, so a real `dotnet build` of either project fails today with 13–15 errors, EVERY ONE traced by direct source inspection to a file outside `16.Testing/` (`CacheEncryptionSerializer.Encrypt(payload)`, `NullSymmetricEncryptionService`'s now-incomplete member set, `PayloadTransformMessageSerializer`/`Deserializer`, `WebhookDispatcher.EncryptToString`, `EncryptionPayloadCodec`) — confirmed identical to the pre-existing baseline captured before any change in this session, zero new errors introduced. Verified this domain's own code compiles clean two ways: (1) `dotnet build SharedKernel.Testing.csproj -p:BuildProjectReferences=false` (using already-built, pre-P-491 sibling assemblies alongside the freshly-rebuilt `01.Core/SharedKernel.Cryptography.dll`) succeeds 0 errors, 0 warnings, and the same technique on `SharedKernel.Testing.SelfTests.csproj` also succeeds 0/0; (2) `dotnet test` under that same stale-reference harness passes 115/115 `Cryptography/` tests and 1231/1241 overall, with the sole 10 failures being a `TypeLoadException` artifact of the stale-reference technique itself (`06.Persistence.EfCore`'s own not-yet-rebuilt `NullSymmetricEncryptionService`), not a regression in any file this domain owns — this matches D-237's own AC#4 evaluation exactly: these fakes are shaped to compile once each cascading domain ships its own leg, not that all six already do. 24 new `SharedKernel.Testing.SelfTests` tests: `Cryptography/FakeSymmetricEncryptionServiceTests.cs` migrated to the AAD-required signature plus 9 new AAD-enforcement facts (T-102, including the "swap AAD between two otherwise-identical payloads" cross-mismatch proof); `Cryptography/FakeAsymmetricKeyProviderTests.cs` rewritten for the cached-instance-reuse contract (T-104, including the dispose-then-reuse `ObjectDisposedException` regression-detection proof — the exact opposite assertion from the pre-migration test file, since the old fresh-clone behavior it proved is now gone); `Cryptography/FakeAsymmetricSignatureServiceTests.cs` gained 5 `SignAsync`/`VerifyAsync` facts (T-105); new `Cryptography/CryptographyKeyProviderCapabilityGateCompositionTests.cs` (T-103, 8 facts) proving the P-492 gate compositionally — the REAL `AesGcmEncryptionService` wired to `FakeEncryptionKeyProvider` succeeds on every sync member, wired to `FakeRemoteEncryptionKeyProvider` throws `NotSupportedException` on every sync member, and wrapped in the REAL `CachedEncryptionKeyProvider` still reports `IsGenuinelySynchronous == false` and still throws even after the cache warms from a real async hit. `16.Testing/CLAUDE.md`'s `Cryptography/` Interface Contracts block updated in place (all five migrated/new types' entries corrected from their pre-migration shape to the shipped shape, the D-241 ownership-model correction and D-240 gate-composition-not-reimplementation notes both carried over verbatim from the design), the stale `[STATUS: Planned, BREAKING — P-502/WO-081]` target-shape sub-block removed and replaced with an `IMPLEMENTED` completion note (zero drift between the design and the shipped code — no correction needed), and the DI Registration section's `FakeRemoteEncryptionKeyProvider` code sample's `[STATUS: Planned, BREAKING]` marker flipped. `state-map.md`: D-237–D-243/S-66 (already `●`) unchanged; C-146–C-150/T-102–T-105/DO-59 (11 tasks) corrected `⚑`→`●`; `SK.16.Core`/`SK.16.Tests`/`SK.16.Docs` phase keys and the Cross-Domain Dependencies table's three `01.Core` rows (previously "NOT AVAILABLE") corrected to reflect the cleared dependency, per `state-map-phase`. No file outside `16.Testing/` touched, per this session's shared-file protocol (testing-phase-implementer).

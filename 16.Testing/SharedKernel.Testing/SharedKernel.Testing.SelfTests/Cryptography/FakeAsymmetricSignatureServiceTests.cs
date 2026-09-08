@@ -87,4 +87,65 @@ public sealed class FakeAsymmetricSignatureServiceTests
         Assert.Throws<ArgumentNullException>(() => service.Sign(null!, "key-1"));
         Assert.Throws<ArgumentNullException>(() => service.Sign("data"u8.ToArray(), null!));
     }
+
+    // --- SignAsync/VerifyAsync (T-105, P-502/WO-081) ---
+
+    [Fact]
+    public async Task SignAsync_ProducesByteIdenticalSignature_ToSyncSign_ForTheSameInput()
+    {
+        var service = new FakeAsymmetricSignatureService();
+        var data = "payload"u8.ToArray();
+
+        var syncSignature = service.Sign(data, "key-1");
+        var asyncSignature = await service.SignAsync(data, "key-1");
+
+        Assert.Equal(syncSignature, asyncSignature);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ProducesIdenticalResult_ToSyncVerify_ForTheSameInput()
+    {
+        var service = new FakeAsymmetricSignatureService();
+        var data = "payload"u8.ToArray();
+        var signature = service.Sign(data, "key-1");
+
+        var syncResult = service.Verify(data, signature, "key-1");
+        var asyncResult = await service.VerifyAsync(data, signature, "key-1");
+
+        Assert.Equal(syncResult, asyncResult);
+        Assert.True(asyncResult);
+    }
+
+    [Fact]
+    public async Task SignAsync_ThenVerifyAsync_RoundTrips()
+    {
+        var service = new FakeAsymmetricSignatureService();
+        var data = "payload"u8.ToArray();
+
+        var signature = await service.SignAsync(data, "key-1");
+
+        Assert.True(await service.VerifyAsync(data, signature, "key-1"));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_TamperedData_ReturnsFalse()
+    {
+        var service = new FakeAsymmetricSignatureService();
+        var signature = await service.SignAsync("payload"u8.ToArray(), "key-1");
+
+        Assert.False(await service.VerifyAsync("tampered"u8.ToArray(), signature, "key-1"));
+    }
+
+    [Fact]
+    public async Task SignedPayloads_RecordsCallsFromBothSyncAndAsyncShapes_IntoTheSameList()
+    {
+        var service = new FakeAsymmetricSignatureService();
+
+        service.Sign("a"u8.ToArray(), "key-1");
+        await service.SignAsync("b"u8.ToArray(), "key-2");
+
+        Assert.Equal(2, service.SignedPayloads.Count);
+        Assert.Equal("key-1", service.SignedPayloads[0].KeyId);
+        Assert.Equal("key-2", service.SignedPayloads[1].KeyId);
+    }
 }

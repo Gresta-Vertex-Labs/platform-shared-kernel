@@ -31,8 +31,18 @@ namespace SharedKernel.Testing.Cryptography;
 /// <see cref="RemoveKey(string)"/> are this fake's own additive test-control surface — not part
 /// of the interface — and are unchanged.
 /// </para>
+/// <para>
+/// <b>(P-502/WO-081)</b> Now additionally implements <see cref="ISynchronousEncryptionKeyProvider"/>
+/// — an HONEST claim, not an inferred one: both members below perform no real I/O and always
+/// complete via an already-completed <see cref="ValueTask{TResult}"/>, exactly the safety property
+/// that marker requires. This lets a test compose this fake with the REAL <c>01.Core</c>
+/// <c>AesGcmEncryptionService</c> and exercise its retained synchronous
+/// <c>Encrypt</c>/<c>Decrypt</c>/<c>EncryptToString</c>/<c>DecryptToString</c> members without
+/// hitting the P-492 <see cref="NotSupportedException"/> gate. Contrast with
+/// <see cref="FakeRemoteEncryptionKeyProvider"/>, which deliberately never implements this marker.
+/// </para>
 /// </remarks>
-public sealed class FakeEncryptionKeyProvider : IEncryptionKeyProvider
+public sealed class FakeEncryptionKeyProvider : ISynchronousEncryptionKeyProvider
 {
     private readonly ConcurrentDictionary<string, CryptographicKey> _keys = new();
     private readonly Lock _gate = new();
@@ -60,7 +70,7 @@ public sealed class FakeEncryptionKeyProvider : IEncryptionKeyProvider
         return key;
     }
 
-    /// <summary>Designates <paramref name="keyId"/> as the key returned by <see cref="GetCurrentKey"/>.</summary>
+    /// <summary>Designates <paramref name="keyId"/> as the key returned by <see cref="GetCurrentKeyAsync(CancellationToken)"/>.</summary>
     /// <param name="keyId">The key version identifier to make current.</param>
     public void SetCurrentKey(string keyId)
     {

@@ -23,27 +23,42 @@ namespace SharedKernel.Testing.Cryptography;
 /// payloads trivially reversible by anyone who can see the ciphertext and infer the key length.
 /// </para>
 /// <para>
-/// <b>BREAKING CHANGE (P-450/WO-068):</b> the constructor-injected <see cref="IEncryptionKeyProvider"/>
-/// is now resolved via its async members only (P-446/WO-068). The synchronous
-/// <see cref="Encrypt(byte[])"/>/<see cref="Decrypt(EncryptedPayload)"/> members below bridge onto
-/// <see cref="IEncryptionKeyProvider.GetCurrentKeyAsync(CancellationToken)"/>/
-/// <see cref="IEncryptionKeyProvider.GetKeyAsync(string, CancellationToken)"/> via
-/// <c>.GetAwaiter().GetResult()</c> — genuinely non-blocking against this fake's own
-/// synchronously-completing <c>IEncryptionKeyProvider</c> implementations (e.g.
-/// <see cref="FakeEncryptionKeyProvider"/>), mirroring <c>AesGcmEncryptionService</c>'s exact
-/// bridging pattern. This fake's own public surface is unchanged and additive-only — the new async
-/// members (<see cref="EncryptAsync"/>/<see cref="DecryptAsync"/>/<see cref="EncryptToStringAsync"/>/
-/// <see cref="DecryptToStringAsync"/>) sit alongside the retained synchronous ones, exactly as
-/// <c>ISymmetricEncryptionService</c> itself does.
+/// <b>BREAKING CHANGE (P-502/WO-081):</b> every member now takes a required
+/// <c>byte[] associatedData</c> parameter, mirroring <c>01.Core</c>'s own required-AAD
+/// <see cref="ISymmetricEncryptionService"/> shape (<c>SK.01.P491</c>) exactly. AAD is
+/// <b>GENUINELY ENFORCED, never accepted-and-ignored</b>: every produced <see cref="EncryptedPayload.Tag"/>
+/// is an <c>HMACSHA256</c> authentication tag computed over
+/// <c>UTF8(KeyId) ++ Nonce ++ Ciphertext ++ AssociatedData</c> (in that order), keyed by the
+/// resolved <see cref="CryptographicKey.Material"/> — the same key material used for the XOR
+/// transform. <see cref="Decrypt(EncryptedPayload, byte[])"/>/<see cref="DecryptAsync(EncryptedPayload, byte[], CancellationToken)"/>
+/// recompute that same tag from the supplied <c>associatedData</c> and compare it against
+/// <see cref="EncryptedPayload.Tag"/> via <see cref="CryptographicOperations.FixedTimeEquals(ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>,
+/// failing with the exact same <see cref="CryptographyErrorCodes.DecryptionFailed"/> shape
+/// regardless of whether the ciphertext was tampered with, the wrong key was used, or the supplied
+/// AAD does not match what was used at encryption time — mirroring <c>AesGcmEncryptionService</c>'s
+/// own inability to distinguish those three causes. A fake that instead threaded
+/// <c>associatedData</c> through unused would let every downstream domain's own AAD-binding test
+/// pass vacuously — this is the single most valuable thing this migration prevents.
+/// </para>
+/// <para>
+/// <see cref="EncryptedPayloads"/> widened from a bare payload list to
+/// <c>IReadOnlyList&lt;(EncryptedPayload Payload, byte[] AssociatedData)&gt;</c> so a consuming test
+/// can assert exactly which AAD bytes production code derived and passed for a given payload,
+/// without inspecting ciphertext internals.
+/// </para>
+/// <para>
+/// <see cref="SimulateDecryptFailure"/> is retained UNCHANGED — it forces a decrypt/verification
+/// failure unconditionally, regardless of whether the supplied AAD would otherwise have matched,
+/// coexisting with (and independent of) the new organic AAD-mismatch failure path above.
 /// </para>
 /// </remarks>
 public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
 {
     private const int NonceSize = 12;
-    private const int TagSize = 16;
+    private const int TagSize = 32; // HMAC-SHA256 output size (256 bits).
 
     private readonly IEncryptionKeyProvider _keyProvider;
-    private readonly ConcurrentQueue<EncryptedPayload> _encryptedPayloads = new();
+    private readonly ConcurrentQueue<(EncryptedPayload Payload, byte[] AssociatedData)> _encryptedPayloads = new();
 
     /// <summary>
     /// Initialises a new <see cref="FakeSymmetricEncryptionService"/>.
@@ -66,33 +81,40 @@ public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
     /// </summary>
     public bool SimulateDecryptFailure { get; set; }
 
-    /// <summary>Every payload ever produced by <see cref="Encrypt"/>/<see cref="EncryptToString"/> (and their async counterparts), append-only.</summary>
-    public IReadOnlyList<EncryptedPayload> EncryptedPayloads => _encryptedPayloads.ToArray();
+    /// <summary>
+    /// Every payload ever produced by <see cref="Encrypt"/>/<see cref="EncryptToString"/> (and their
+    /// async counterparts), paired with the exact associated-data bytes used to produce it,
+    /// append-only.
+    /// </summary>
+    public IReadOnlyList<(EncryptedPayload Payload, byte[] AssociatedData)> EncryptedPayloads => _encryptedPayloads.ToArray();
 
     /// <inheritdoc />
-    public EncryptedPayload Encrypt(byte[] plaintext)
+    public EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         // Genuinely non-blocking against this fake's own synchronously-completing
         // IEncryptionKeyProvider implementations — see class remarks.
         CryptographicKey key = _keyProvider.GetCurrentKeyAsync().GetAwaiter().GetResult();
-        return EncryptCore(plaintext, key);
+        return EncryptCore(plaintext, associatedData, key);
     }
 
     /// <inheritdoc />
-    public async ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, CancellationToken ct = default)
+    public async ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         CryptographicKey key = await _keyProvider.GetCurrentKeyAsync(ct).ConfigureAwait(false);
-        return EncryptCore(plaintext, key);
+        return EncryptCore(plaintext, associatedData, key);
     }
 
     /// <inheritdoc />
-    public SharedKernel.Primitives.Results.Result<byte[]> Decrypt(EncryptedPayload payload)
+    public SharedKernel.Primitives.Results.Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         if (SimulateDecryptFailure)
         {
@@ -102,13 +124,14 @@ public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
         // Genuinely non-blocking against this fake's own synchronously-completing
         // IEncryptionKeyProvider implementations — see class remarks.
         CryptographicKey? key = _keyProvider.GetKeyAsync(payload.KeyId).GetAwaiter().GetResult();
-        return DecryptCore(payload, key);
+        return DecryptCore(payload, associatedData, key);
     }
 
     /// <inheritdoc />
-    public async ValueTask<SharedKernel.Primitives.Results.Result<byte[]>> DecryptAsync(EncryptedPayload payload, CancellationToken ct = default)
+    public async ValueTask<SharedKernel.Primitives.Results.Result<byte[]>> DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         if (SimulateDecryptFailure)
         {
@@ -116,31 +139,34 @@ public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
         }
 
         CryptographicKey? key = await _keyProvider.GetKeyAsync(payload.KeyId, ct).ConfigureAwait(false);
-        return DecryptCore(payload, key);
+        return DecryptCore(payload, associatedData, key);
     }
 
     /// <inheritdoc />
-    public string EncryptToString(string plaintext)
+    public string EncryptToString(string plaintext, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
-        EncryptedPayload payload = Encrypt(Encoding.UTF8.GetBytes(plaintext));
+        EncryptedPayload payload = Encrypt(Encoding.UTF8.GetBytes(plaintext), associatedData);
         return Pack(payload);
     }
 
     /// <inheritdoc />
-    public async ValueTask<string> EncryptToStringAsync(string plaintext, CancellationToken ct = default)
+    public async ValueTask<string> EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
-        EncryptedPayload payload = await EncryptAsync(Encoding.UTF8.GetBytes(plaintext), ct).ConfigureAwait(false);
+        EncryptedPayload payload = await EncryptAsync(Encoding.UTF8.GetBytes(plaintext), associatedData, ct).ConfigureAwait(false);
         return Pack(payload);
     }
 
     /// <inheritdoc />
-    public SharedKernel.Primitives.Results.Result<string> DecryptToString(string encoded)
+    public SharedKernel.Primitives.Results.Result<string> DecryptToString(string encoded, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(encoded);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         if (!TryUnpack(encoded, out EncryptedPayload? payload))
         {
@@ -150,16 +176,17 @@ public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
                     "The supplied string is not a valid encrypted payload."));
         }
 
-        SharedKernel.Primitives.Results.Result<byte[]> result = Decrypt(payload);
+        SharedKernel.Primitives.Results.Result<byte[]> result = Decrypt(payload, associatedData);
         return result.IsSuccess
             ? SharedKernel.Primitives.Results.Result<string>.Success(Encoding.UTF8.GetString(result.Value))
             : SharedKernel.Primitives.Results.Result<string>.Failure(result.Error);
     }
 
     /// <inheritdoc />
-    public async ValueTask<SharedKernel.Primitives.Results.Result<string>> DecryptToStringAsync(string encoded, CancellationToken ct = default)
+    public async ValueTask<SharedKernel.Primitives.Results.Result<string>> DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(encoded);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         if (!TryUnpack(encoded, out EncryptedPayload? payload))
         {
@@ -169,24 +196,24 @@ public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
                     "The supplied string is not a valid encrypted payload."));
         }
 
-        SharedKernel.Primitives.Results.Result<byte[]> result = await DecryptAsync(payload, ct).ConfigureAwait(false);
+        SharedKernel.Primitives.Results.Result<byte[]> result = await DecryptAsync(payload, associatedData, ct).ConfigureAwait(false);
         return result.IsSuccess
             ? SharedKernel.Primitives.Results.Result<string>.Success(Encoding.UTF8.GetString(result.Value))
             : SharedKernel.Primitives.Results.Result<string>.Failure(result.Error);
     }
 
-    private EncryptedPayload EncryptCore(byte[] plaintext, CryptographicKey key)
+    private EncryptedPayload EncryptCore(byte[] plaintext, byte[] associatedData, CryptographicKey key)
     {
         byte[] ciphertext = Xor(plaintext, key.Material);
         byte[] nonce = RandomNumberGenerator.GetBytes(NonceSize);
-        byte[] tag = new byte[TagSize];
+        byte[] tag = ComputeTag(key.Id, nonce, ciphertext, associatedData, key.Material);
 
         var payload = new EncryptedPayload(key.Id, nonce, ciphertext, tag);
-        _encryptedPayloads.Enqueue(payload);
+        _encryptedPayloads.Enqueue((payload, associatedData));
         return payload;
     }
 
-    private static SharedKernel.Primitives.Results.Result<byte[]> DecryptCore(EncryptedPayload payload, CryptographicKey? key)
+    private static SharedKernel.Primitives.Results.Result<byte[]> DecryptCore(EncryptedPayload payload, byte[] associatedData, CryptographicKey? key)
     {
         if (key is null)
         {
@@ -194,6 +221,15 @@ public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
                 SharedKernel.Primitives.Errors.Error.Unexpected(
                     CryptographyErrorCodes.UnknownKeyId,
                     $"No encryption key registered for key id '{payload.KeyId}'."));
+        }
+
+        byte[] expectedTag = ComputeTag(payload.KeyId, payload.Nonce, payload.Ciphertext, associatedData, key.Material);
+        if (!CryptographicOperations.FixedTimeEquals(expectedTag, payload.Tag))
+        {
+            return SharedKernel.Primitives.Results.Result<byte[]>.Failure(
+                SharedKernel.Primitives.Errors.Error.Unexpected(
+                    CryptographyErrorCodes.DecryptionFailed,
+                    "Decryption failed: the payload may have been tampered with, the wrong key was used, or the associated data does not match what was supplied at encryption time."));
         }
 
         return SharedKernel.Primitives.Results.Result<byte[]>.Success(Xor(payload.Ciphertext, key.Material));
@@ -204,6 +240,29 @@ public sealed class FakeSymmetricEncryptionService : ISymmetricEncryptionService
             SharedKernel.Primitives.Errors.Error.Unexpected(
                 CryptographyErrorCodes.DecryptionFailed,
                 "Decryption failed: the payload may have been tampered with or the wrong key was used."));
+
+    /// <summary>
+    /// Computes the HMAC-SHA256 authentication tag over
+    /// <c>UTF8(keyId) ++ nonce ++ ciphertext ++ associatedData</c>, keyed by <paramref name="keyMaterial"/>
+    /// — this is what makes AAD a genuine authentication input rather than an accepted-and-ignored
+    /// parameter. See class remarks.
+    /// </summary>
+    private static byte[] ComputeTag(string keyId, byte[] nonce, byte[] ciphertext, byte[] associatedData, byte[] keyMaterial)
+    {
+        byte[] keyIdBytes = Encoding.UTF8.GetBytes(keyId);
+        var buffer = new byte[keyIdBytes.Length + nonce.Length + ciphertext.Length + associatedData.Length];
+        int offset = 0;
+
+        keyIdBytes.CopyTo(buffer, offset);
+        offset += keyIdBytes.Length;
+        nonce.CopyTo(buffer, offset);
+        offset += nonce.Length;
+        ciphertext.CopyTo(buffer, offset);
+        offset += ciphertext.Length;
+        associatedData.CopyTo(buffer, offset);
+
+        return HMACSHA256.HashData(keyMaterial, buffer);
+    }
 
     private static byte[] Xor(byte[] data, byte[] key)
     {
