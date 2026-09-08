@@ -43,9 +43,96 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Reference this class with <c>PrivateAssets="all"</c> so it never becomes a transitive
 /// production dependency.
 /// </para>
+/// <para>
+/// <strong><see cref="CryptographyCoreHasNoThirdPartyDependencies"/> (WO-081/P-504,
+/// <c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>).</strong> A second, independent factory
+/// method added to this class, confirming <c>SharedKernel.Cryptography</c> core carries zero
+/// dependency on <c>Konscious.Security.Cryptography</c> (the future <c>SharedKernel.Cryptography.Argon2</c>
+/// sibling package's third-party dependency, P-495 — not yet shipped as of this method's
+/// introduction) or <c>Azure.Security.KeyVault</c>/<c>Azure.Identity</c> (the already-shipped
+/// <c>SharedKernel.Cryptography.KeyVault.Azure</c> sibling's third-party dependencies, P-447).
+/// Same <c>Types.InAssembly(...).Should().NotHaveDependencyOn(term)</c> multi-term shape as
+/// <see cref="RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies"/> — confirming
+/// a package's zero-third-party-dependency core stays that way as new sibling provider packages
+/// are added around it, never merged into it.
+/// </para>
 /// </remarks>
 public static class CryptoIsolationRules
 {
+    /// <summary>
+    /// The three third-party dependency-family terms that must never appear as a dependency of
+    /// <c>SharedKernel.Cryptography</c> core.
+    /// </summary>
+    /// <remarks>
+    /// <c>"Konscious"</c> covers the future <c>Konscious.Security.Cryptography.Argon2</c> dependency
+    /// <c>SharedKernel.Cryptography.Argon2</c> (P-495) will introduce — this core package must never
+    /// absorb it. <c>"Azure.Security.KeyVault"</c>/<c>"Azure.Identity"</c> cover the already-shipped
+    /// <c>SharedKernel.Cryptography.KeyVault.Azure</c> sibling's dependencies (P-447), previously
+    /// verified only via <c>01.Core</c>'s own <c>.nuspec</c>-inspection technique in
+    /// <c>SharedKernel.Consumer.Tests</c> — a different project, a different technique, outside
+    /// <c>00.Governance</c>'s own jurisdiction until this method existed.
+    /// </remarks>
+    private static readonly string[] CryptographyCoreForbiddenTerms =
+    [
+        "Konscious",
+        "Azure.Security.KeyVault",
+        "Azure.Identity",
+    ];
+
+    /// <summary>
+    /// Returns a <see cref="ConditionList"/> asserting that no type in
+    /// <paramref name="cryptographyAssembly"/> references any of
+    /// <c>Konscious.Security.Cryptography</c>, <c>Azure.Security.KeyVault</c>, or
+    /// <c>Azure.Identity</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Motivation.</strong> <c>SharedKernel.Cryptography</c> core ships with zero
+    /// third-party NuGet dependencies — every sibling provider package
+    /// (<c>SharedKernel.Cryptography.KeyVault.Azure</c> today; <c>SharedKernel.Cryptography.Argon2</c>
+    /// once P-495 ships) confines its own third-party dependency to itself, never leaking it back
+    /// into the core assembly every other domain unconditionally references. This mirrors
+    /// <see cref="RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies"/>'s
+    /// identical purpose for <c>SharedKernel.Caching.Abstractions</c>.
+    /// </para>
+    /// <para>
+    /// <strong>Offending pattern:</strong> a future edit adds
+    /// <c>&lt;PackageReference Include="Konscious.Security.Cryptography.Argon2" .../&gt;</c> (or an
+    /// Azure Key Vault/Identity package reference) directly to
+    /// <c>SharedKernel.Cryptography.csproj</c> instead of to the dedicated sibling package.
+    /// </para>
+    /// <para>
+    /// <strong>Compliant pattern:</strong> a new key-derivation or KMS-backed capability that needs
+    /// a third-party dependency ships as its own sibling package
+    /// (<c>SharedKernel.Cryptography.{Capability}</c>), referencing <c>SharedKernel.Cryptography</c>
+    /// core rather than the other way around.
+    /// </para>
+    /// </remarks>
+    /// <param name="cryptographyAssembly">
+    /// The <c>SharedKernel.Cryptography</c> core assembly under test — supply via
+    /// <c>typeof(SomeTypeInCryptographyCore).Assembly</c>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ConditionList"/> asserting no type in <paramref name="cryptographyAssembly"/>
+    /// depends on any of the forbidden third-party terms.
+    /// </returns>
+    public static ConditionList CryptographyCoreHasNoThirdPartyDependencies(Assembly cryptographyAssembly)
+    {
+        ConditionList conditionList = Types
+            .InAssembly(cryptographyAssembly)
+            .That()
+            .HaveNameStartingWith(string.Empty)
+            .Should()
+            .NotHaveDependencyOn(CryptographyCoreForbiddenTerms[0]);
+
+        for (var i = 1; i < CryptographyCoreForbiddenTerms.Length; i++)
+        {
+            conditionList = conditionList.And().NotHaveDependencyOn(CryptographyCoreForbiddenTerms[i]);
+        }
+
+        return conditionList;
+    }
+
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that no type in any of the supplied
     /// assemblies references <c>System.Security.Cryptography.AesGcm</c>,

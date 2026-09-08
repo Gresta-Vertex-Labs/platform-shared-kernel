@@ -42,6 +42,8 @@ public sealed class EncryptedValueConverterTests
     /// Builds a fully-wired <see cref="EncryptedValueConverter"/> using the real P-227 delegation chain:
     /// EncryptionOptionsKeyProvider → AesGcmEncryptionService → EncryptedValueConverter.
     /// </summary>
+    private static readonly byte[] TestAssociatedData = System.Text.Encoding.UTF8.GetBytes("public.test_table.test_column");
+
     private static EncryptedValueConverter MakeConverter(
         EncryptionOptions options,
         IEncryptionVersionOverride? versionOverride = null)
@@ -49,7 +51,7 @@ public sealed class EncryptedValueConverterTests
         var monitor = MakeMonitor(options);
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
         var encryptionService = new AesGcmEncryptionService(keyProvider);
-        return new EncryptedValueConverter(monitor, encryptionService, versionOverride);
+        return new EncryptedValueConverter(monitor, encryptionService, TestAssociatedData, versionOverride);
     }
 
     [Fact]

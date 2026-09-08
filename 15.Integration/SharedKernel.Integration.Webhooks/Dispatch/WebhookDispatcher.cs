@@ -187,7 +187,10 @@ public sealed partial class WebhookDispatcher : IWebhookDispatcher
                     "WebhookDeliveryOptions.EncryptPayload is enabled but no ISymmetricEncryptionService is " +
                     "registered. Call SharedKernel.Cryptography's AddSharedKernelCryptography() and register " +
                     "an IEncryptionKeyProvider before resolving IWebhookDispatcher.");
-            wireBody = encryptionService.EncryptToString(plainPayloadJson);
+            wireBody = await encryptionService.EncryptToStringAsync(
+                plainPayloadJson,
+                WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, deliveryId),
+                ct).ConfigureAwait(false);
         }
 
         if (subscription.Secrets is not { Count: > 0 })

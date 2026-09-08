@@ -25,15 +25,22 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Google.Protobuf;
+using SharedKernel.Cryptography.Extensions;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Clocks;
 using SharedKernel.Primitives.Results;
 using SharedKernel.Workflows.Temporal.Authoring;
+using SharedKernel.Workflows.Temporal.Codec;
 using SharedKernel.Workflows.Temporal.Dispatch;
 using SharedKernel.Workflows.Temporal.Health;
 using SharedKernel.Workflows.Temporal.Hosting;
 using Temporalio.Activities;
+using Temporalio.Api.Common.V1;
 using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
+using Temporalio.Common;
+using Temporalio.Converters;
 using Temporalio.Testing;
 using Temporalio.Workflows;
 
@@ -41,6 +48,7 @@ await Surface1_AsClientOnlyResolvesWithZeroDiExceptions();
 await Surface2_WorkerHostingRoundTripAgainstWorkflowEnvironment();
 await Surface3_ConfigValidationFailsAtStartupNotFirstDispatch();
 Surface4_BuildTimeCompositionErrorsFailEagerly();
+await Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection();
 
 Console.WriteLine();
 Console.WriteLine("ALL SURFACES VERIFIED — consumer-verify PASSED");
@@ -268,6 +276,122 @@ static void Surface4_BuildTimeCompositionErrorsFailEagerly()
         "never silently polling an empty task queue");
 }
 
+// ── Surface 5: payload encryption opacity + cross-WorkflowId AAD rejection — P-08/WO-081 ────
+static async Task Surface5_PayloadEncryptionOpacityAndCrossWorkflowIdRejection()
+{
+    await using WorkflowEnvironment environment = await WorkflowEnvironment.StartTimeSkippingAsync();
+    const string taskQueue = "consumer-verify-encrypted-queue";
+    const string secretMarker = "consumer-verify-secret-9f3a2b";
+
+    var services = new ServiceCollection();
+    services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+    services.AddSingleton<IClock, SystemClock>();
+
+    IConfiguration configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Workflows:Temporal:TargetHost"] = environment.Client.Connection.Options.TargetHost,
+            ["Workflows:Temporal:Namespace"] = environment.Client.Options.Namespace,
+            ["Workflows:Temporal:EncryptionKeyName"] = "v1",
+        })
+        .Build();
+
+    services.AddSharedKernelCryptography(configuration);
+    services.AddSingleton<IEncryptionKeyProvider, ConsumerVerifyEncryptionKeyProvider>();
+
+    services
+        .AddSharedKernelTemporalWorkflows(configuration)
+        .AddWorkflow<ConsumerVerifyEchoWorkflow>()
+        .AddActivities<ConsumerVerifyEchoActivity>()
+        .WithWorker(taskQueue)
+        .WithPayloadEncryption()
+        .Build();
+
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    List<IHostedService> hostedServices = [.. provider.GetServices<IHostedService>()];
+    foreach (IHostedService hostedService in hostedServices)
+    {
+        await hostedService.StartAsync(CancellationToken.None);
+    }
+
+    Result<IWorkflowHandle<string>> startResult;
+    using (IServiceScope scope = provider.CreateScope())
+    {
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IWorkflowDispatcher>();
+        startResult = await dispatcher.StartAsync<ConsumerVerifyEchoWorkflow, string, string>(
+            secretMarker,
+            new WorkflowStartOptions
+            {
+                TaskQueue = taskQueue,
+                BusinessKey = $"encrypted-{Guid.NewGuid():N}",
+                IdReusePolicy = WorkflowIdReusePolicy.RejectDuplicate,
+                IdConflictPolicy = WorkflowIdConflictPolicy.Fail,
+            },
+            TenantScope.Of("consumer-verify-encrypted-tenant"));
+    }
+
+    Verify(startResult.IsSuccess, "an encrypted workflow starts successfully through the public IWorkflowDispatcher surface");
+    await startResult.Value.GetResultAsync();
+
+    // Fetch the REAL captured history through the raw Temporal client — a public SDK type, exactly
+    // what a downstream consumer could inspect for themselves via the Temporal CLI/Web UI.
+    WorkflowHandle rawHandle = environment.Client.GetWorkflowHandle(startResult.Value.WorkflowId);
+    WorkflowHistory history = await rawHandle.FetchHistoryAsync();
+
+    Payload capturedInputPayload = history.Events
+        .First(e => e.WorkflowExecutionStartedEventAttributes is not null)
+        .WorkflowExecutionStartedEventAttributes.Input.Payloads_[0];
+
+    string capturedAsLatin1 = System.Text.Encoding.Latin1.GetString(capturedInputPayload.ToByteArray());
+    Verify(
+        !capturedAsLatin1.Contains(secretMarker, StringComparison.Ordinal),
+        "the encrypted argument is genuinely opaque in the REAL captured Temporal history — the secret marker never appears as plaintext");
+
+    // Reconstruct the codec directly (internal access — see the production csproj's narrowly-scoped
+    // InternalsVisibleTo grant to this harness) using the SAME ISymmetricEncryptionService this
+    // composition registered, then prove the AAD binding against the REAL captured ciphertext above —
+    // a stronger proof than a synthetic Payload, since it exercises exactly what a real cluster stored.
+    var encryptionService = provider.GetRequiredService<ISymmetricEncryptionService>();
+    var codecLogger = provider.GetRequiredService<ILogger<EncryptionPayloadCodec>>();
+    var baseCodec = new EncryptionPayloadCodec(encryptionService, codecLogger);
+
+    IPayloadCodec codecForTheRealWorkflowId = baseCodec.WithSerializationContext(
+        new ISerializationContext.Workflow(environment.Client.Options.Namespace, startResult.Value.WorkflowId));
+    IReadOnlyCollection<Payload> decodedUnderCorrectId = await codecForTheRealWorkflowId.DecodeAsync([capturedInputPayload]);
+    string decodedText = System.Text.Encoding.UTF8.GetString(decodedUnderCorrectId.Single().Data.ToByteArray());
+    Verify(
+        decodedText.Contains(secretMarker, StringComparison.Ordinal),
+        "the captured ciphertext decodes correctly under a codec bound to the SAME WorkflowId that produced it");
+
+    IPayloadCodec codecForADifferentWorkflowId = baseCodec.WithSerializationContext(
+        new ISerializationContext.Workflow(environment.Client.Options.Namespace, "a-completely-different-workflow-id"));
+
+    InvalidOperationException? crossWorkflowIdFailure = null;
+    try
+    {
+        await codecForADifferentWorkflowId.DecodeAsync([capturedInputPayload]);
+    }
+    catch (InvalidOperationException ex)
+    {
+        crossWorkflowIdFailure = ex;
+    }
+
+    Verify(
+        crossWorkflowIdFailure is not null,
+        "the SAME captured ciphertext genuinely fails to decode under a codec bound to a DIFFERENT WorkflowId — a captured payload can never be replayed against another execution");
+
+    foreach (IHostedService hostedService in hostedServices)
+    {
+        await hostedService.StopAsync(CancellationToken.None);
+    }
+
+    Console.WriteLine(
+        "Surface 5 PASS: an encrypted workflow argument is genuinely opaque in the REAL captured Temporal " +
+        "history, decodes correctly under the codec bound to the WorkflowId that produced it, and genuinely " +
+        "fails to decode under a codec bound to a different WorkflowId — proven against real captured " +
+        "ciphertext, not a synthetic payload");
+}
+
 static void Verify(bool condition, string label)
 {
     if (!condition)
@@ -304,4 +428,16 @@ internal sealed class ConsumerVerifyEchoWorkflow : WorkflowBase
     [WorkflowRun]
     public Task<string> RunAsync(string input) =>
         ExecuteAsync<ConsumerVerifyEchoActivity, string, string>(input);
+}
+
+// A single-key IEncryptionKeyProvider standing in for a real KMS-backed one, used only by Surface 5 —
+// mirrors SharedKernel.Workflows.Temporal.Tests' own EncryptedPayloadRealEnvironmentTests fixture.
+internal sealed class ConsumerVerifyEncryptionKeyProvider : IEncryptionKeyProvider
+{
+    private readonly CryptographicKey _key = new("v1", Enumerable.Repeat((byte)7, 32).ToArray());
+
+    public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) => new(_key);
+
+    public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+        new(keyId == _key.Id ? _key : null);
 }

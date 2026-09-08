@@ -55,15 +55,26 @@ public sealed class WebhookDeliveryOptions : IValidatableObject
 
     /// <summary>
     /// When <see langword="true"/>, the outbound JSON payload is encrypted (AES-GCM, via
-    /// <c>SharedKernel.Cryptography</c>'s <c>ISymmetricEncryptionService</c>) before signing —
-    /// encrypt-then-sign, so the HMAC signature continues to cover exactly the transmitted bytes.
-    /// Defaults to <see langword="false"/>. TLS already provides transport confidentiality; this is
-    /// defense-in-depth for subscribers who want payload-level confidentiality independent of their
+    /// <c>SharedKernel.Cryptography</c>'s <c>ISymmetricEncryptionService.EncryptToStringAsync</c>) before
+    /// signing — encrypt-then-sign, so the HMAC signature continues to cover exactly the transmitted
+    /// bytes. Defaults to <see langword="false"/>. TLS already provides transport confidentiality; this
+    /// is defense-in-depth for subscribers who want payload-level confidentiality independent of their
     /// own TLS termination boundary. Requires an <c>ISymmetricEncryptionService</c> to be registered
     /// (via <c>SharedKernel.Cryptography</c>'s <c>AddSharedKernelCryptography()</c> plus a consumer-supplied
     /// <c>IEncryptionKeyProvider</c>) — enabling this option without registering that service fails
     /// loudly at first delivery, not silently.
     /// </summary>
+    /// <remarks>
+    /// The associated-data (AAD) bound into the AES-GCM authentication tag is always
+    /// <see cref="Signing.WebhookPayloadAssociatedData.Build"/>, applied to the target subscription id
+    /// and the per-delivery id — never a constant, and never derived solely from data transmitted on
+    /// the wire. A subscriber decrypting the payload must derive the identical AAD itself: the
+    /// subscription id is known only out-of-band (the same pre-established channel that already
+    /// carries <see cref="Subscriptions.WebhookSubscription.Secrets"/>), and the delivery id is
+    /// reproducible from the <see cref="Signing.WebhookSignatureHeaders.DeliveryIdHeaderName"/> header
+    /// sent on every attempt. See <see cref="Signing.WebhookPayloadAssociatedData"/> for the full
+    /// reasoning behind why the subscription id is never transmitted as a header.
+    /// </remarks>
     public bool EncryptPayload { get; set; }
 
     /// <inheritdoc />

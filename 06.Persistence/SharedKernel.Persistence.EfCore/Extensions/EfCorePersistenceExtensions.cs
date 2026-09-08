@@ -105,6 +105,8 @@ public sealed class EfCorePersistenceBuilder<TContext>
     private bool _applicationTransactionBehaviorEnabled;
     private bool _registerFactory;
     private bool _registerEncryption;
+    private Type? _externalEncryptionKeyProviderType;
+    private bool _externalEncryptionKeyProviderCalledBeforeEncryption;
     private bool _auditTrailEnabled;
     private bool _serviceNameValidationRegistered;
     private bool _migrationsOnStartup;
@@ -358,6 +360,73 @@ public sealed class EfCorePersistenceBuilder<TContext>
         return this;
     }
 
+    /// <summary>
+    /// Opts field-level encryption into a KMS/HSM-backed <see cref="IEncryptionKeyProvider"/> —
+    /// e.g. <c>SharedKernel.Cryptography.KeyVault.Azure</c>'s <c>AzureKeyVaultEncryptionKeyProvider</c>
+    /// — instead of the config-backed default (D-131/D-129/P-498/WO-081).
+    /// </summary>
+    /// <typeparam name="TProvider">
+    /// The concrete <see cref="IEncryptionKeyProvider"/> implementation. Resolved from whatever
+    /// AMBIENT (unkeyed) registration the consuming service already made for its OWN
+    /// general-purpose crypto needs (e.g. via <c>13.ServiceDefaults</c>'s
+    /// <c>AddSharedKernelKeyVaultKeyProvider</c>) — this package never registers
+    /// <typeparamref name="TProvider"/> itself. May already be wrapped in <c>01.Core</c>'s
+    /// <c>CachedEncryptionKeyProvider</c> by the consumer; it does not matter, since only
+    /// <typeparamref name="TProvider"/>'s ASYNC members are ever called (via
+    /// <see cref="PreWarmedEncryptionKeyProvider"/>'s explicit warm calls).
+    /// </typeparam>
+    /// <returns>The same builder for further chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// MUST be called AFTER <see cref="WithEncryption(Action{EncryptionOptions}?)"/> (or its
+    /// <see cref="IConfiguration"/> overload) — calling it first throws an actionable
+    /// <see cref="InvalidOperationException"/> at <see cref="Build"/> time, mirroring the existing
+    /// pooling+encryption/pooling+factory ordering guards.
+    /// </para>
+    /// <para>
+    /// Wraps <typeparamref name="TProvider"/> in <see cref="PreWarmedEncryptionKeyProvider"/> (a
+    /// singleton — the warm cache is process-lifetime state), re-registers this package's two
+    /// internal keyed-DI slots to resolve through it (superseding the config-backed default's
+    /// registrations — the DI container resolves the LAST registration for a given keyed slot),
+    /// registers <see cref="EncryptionKeyPreWarmingInterceptor"/> (warms before every write AND
+    /// every read that could reach an encrypted property — see its own remarks for why both hooks
+    /// are required), and registers <see cref="EncryptionKeyPreWarmingHostedService"/> (blocks host
+    /// readiness until the current key is warmed at boot — a one-time cost, never a per-request one).
+    /// </para>
+    /// <para>
+    /// Never registers <typeparamref name="TProvider"/> unkeyed, and never reads or writes the
+    /// ambient <see cref="IEncryptionKeyProvider"/>/<see cref="ISymmetricEncryptionService"/> slot —
+    /// this package's own encryption pipeline stays isolated from whatever the consumer registered
+    /// there for unrelated general-purpose crypto.
+    /// </para>
+    /// </remarks>
+    public EfCorePersistenceBuilder<TContext> WithExternalEncryptionKeyProvider<TProvider>()
+        where TProvider : class, IEncryptionKeyProvider
+    {
+        _externalEncryptionKeyProviderCalledBeforeEncryption = !_registerEncryption;
+        _externalEncryptionKeyProviderType = typeof(TProvider);
+
+        _services.AddSingleton(sp =>
+            new PreWarmedEncryptionKeyProvider(
+                sp.GetRequiredService<TProvider>(),
+                sp.GetRequiredService<IEncryptionVersionOverride>()));
+
+        _services.AddKeyedSingleton<IEncryptionKeyProvider>(
+            PersistenceEncryptionKeys.EncryptionKeyProviderKey,
+            (sp, _) => sp.GetRequiredService<PreWarmedEncryptionKeyProvider>());
+
+        _services.AddKeyedScoped<ISymmetricEncryptionService>(
+            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey,
+            (sp, _) => new AesGcmEncryptionService(
+                sp.GetRequiredKeyedService<IEncryptionKeyProvider>(PersistenceEncryptionKeys.EncryptionKeyProviderKey)));
+
+        _services.AddHostedService<EncryptionKeyPreWarmingHostedService>();
+
+        AddInterceptor<EncryptionKeyPreWarmingInterceptor>();
+
+        return this;
+    }
+
     // Registers the encryption infrastructure exactly once regardless of how many .WithEncryption(...)
     // overloads are chained — idempotent-validation-registration guard (WO-053/P-334).
     private void EnsureEncryptionInfrastructureRegistered()
@@ -383,14 +452,31 @@ public sealed class EfCorePersistenceBuilder<TContext>
         // with the config VALUE, not per request.
         _services.AddSingleton<EncryptionKeyByteCache>();
 
-        // P-227: Register EncryptionOptionsKeyProvider as scoped IEncryptionKeyProvider.
-        // Scoped lifetime matches IEncryptionVersionOverride's existing scoped lifetime.
-        // D-108/P-448: EncryptedValueConverter itself no longer resolves IEncryptionKeyProvider
-        // directly — this registration is still required because 01.Core's AesGcmEncryptionService
-        // (the concrete ISymmetricEncryptionService EncryptedValueConverter calls) resolves
-        // IEncryptionKeyProvider from DI internally to bridge its synchronous Encrypt/Decrypt members
-        // onto the now-asynchronous IEncryptionKeyProvider contract.
-        _services.AddScoped<IEncryptionKeyProvider, EncryptionOptionsKeyProvider>();
+        // D-131/P-498/WO-081 (SEVERE fix, corrected design): EncryptionOptionsKeyProvider is
+        // registered as ITSELF (never as the unkeyed IEncryptionKeyProvider — that ambient slot is
+        // NEVER touched by this package again, in either mode). This package builds its OWN
+        // persistence-scoped ISymmetricEncryptionService directly (mirroring 01.Core's own
+        // AddSharedKernelCryptography() wiring — same AesGcmEncryptionService concrete type,
+        // substituting only the IEncryptionKeyProvider argument), registered under a
+        // package-internal keyed-DI slot the same way for BOTH sanctioned paths — the config-backed
+        // default here, and .WithExternalEncryptionKeyProvider<TProvider>()'s KMS-backed
+        // registration (which re-registers under the SAME two keys, last-registered-wins, when
+        // additionally called). This structurally prevents an unrelated ambient
+        // IEncryptionKeyProvider/ISymmetricEncryptionService registration elsewhere in the same
+        // container (e.g. a general-purpose AddSharedKernelCryptography() call, or
+        // 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider) from silently winning or losing
+        // this package's own field-level-encryption wiring by registration order — the actual root
+        // cause of the SEVERE defect this phase closes.
+        _services.AddScoped<EncryptionOptionsKeyProvider>();
+
+        _services.AddKeyedScoped<IEncryptionKeyProvider>(
+            PersistenceEncryptionKeys.EncryptionKeyProviderKey,
+            (sp, _) => sp.GetRequiredService<EncryptionOptionsKeyProvider>());
+
+        _services.AddKeyedScoped<ISymmetricEncryptionService>(
+            PersistenceEncryptionKeys.SymmetricEncryptionServiceKey,
+            (sp, _) => new AesGcmEncryptionService(
+                sp.GetRequiredKeyedService<IEncryptionKeyProvider>(PersistenceEncryptionKeys.EncryptionKeyProviderKey)));
     }
 
     /// <summary>
@@ -646,6 +732,19 @@ public sealed class EfCorePersistenceBuilder<TContext>
                 "IEncryptionVersionOverride's rotation-scoped seam has the identical constructor-" +
                 "capture staleness hazard this method's redesign fixes for user/tenant context, and " +
                 "has not yet been proven safe under pooling. Remove one of the two calls.");
+        }
+
+        // D-131/P-498/WO-081: .WithExternalEncryptionKeyProvider<TProvider>() must be called AFTER
+        // .WithEncryption(...) — it directs this package's persistence-scoped
+        // ISymmetricEncryptionService to a KMS-backed IEncryptionKeyProvider instead of the
+        // config-backed default that .WithEncryption(...) alone wires.
+        if (_externalEncryptionKeyProviderType is not null && _externalEncryptionKeyProviderCalledBeforeEncryption)
+        {
+            throw new InvalidOperationException(
+                "'.WithExternalEncryptionKeyProvider<TProvider>()' must be called AFTER " +
+                "'.WithEncryption(...)' in the builder chain. Call '.WithEncryption(...)' first " +
+                "(it registers the encryption options/validation infrastructure this method builds " +
+                "on), then '.WithExternalEncryptionKeyProvider<TProvider>()'.");
         }
 
         // WO-051/P-320: register the discoverability singleton when WithTransientFaultRetry() was called.

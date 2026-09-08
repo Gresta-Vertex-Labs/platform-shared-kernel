@@ -42,14 +42,29 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// a real thread on a cache miss.
 /// </para>
 /// <para>
-/// <strong>Registration:</strong> Registered as scoped (matching <see cref="IEncryptionVersionOverride"/>'s
-/// existing scoped lifetime) by <c>EfCorePersistenceBuilder.WithEncryption()</c> as
-/// <see cref="IEncryptionKeyProvider"/>. A consuming service that separately uses
-/// <c>SharedKernel.Cryptography</c> for general-purpose encryption and registers its own
-/// <see cref="IEncryptionKeyProvider"/> must be aware both registrations target the same interface type.
+/// <strong>Registration (D-131/P-498/WO-081, corrected):</strong> Registered as ITSELF (the
+/// concrete type), scoped, by <c>EfCorePersistenceBuilder.WithEncryption()</c> — NEVER as the
+/// unkeyed <see cref="IEncryptionKeyProvider"/> anymore. This package constructs its own
+/// persistence-scoped <c>ISymmetricEncryptionService</c> directly from this instance, resolved via
+/// a package-internal keyed-DI slot, so an unrelated ambient <see cref="IEncryptionKeyProvider"/>/
+/// <c>ISymmetricEncryptionService</c> registration elsewhere in the same container (e.g. a
+/// general-purpose <c>AddSharedKernelCryptography()</c> call, or <c>13.ServiceDefaults</c>'s
+/// <c>AddSharedKernelKeyVaultKeyProvider</c>) can never silently win or lose this package's own
+/// field-level-encryption wiring by registration order.
+/// </para>
+/// <para>
+/// <strong>ISynchronousEncryptionKeyProvider (P-492/D-127/WO-081):</strong> this provider HONESTLY
+/// implements <c>ISynchronousEncryptionKeyProvider</c> — both members below are already confirmed
+/// zero-I/O (an already-loaded <see cref="IOptionsMonitor{T}.CurrentValue"/> plus the synchronous,
+/// in-memory <see cref="EncryptionKeyByteCache"/>) — so <c>01.Core</c>'s <c>AesGcmEncryptionService</c>
+/// continues to trust this provider's synchronous <c>Encrypt</c>/<c>Decrypt</c>/<c>EncryptToString</c>/
+/// <c>DecryptToString</c> bridge exactly as before. Marking this class is the single most
+/// load-bearing change in this phase: without it, every EXISTING config-backed
+/// <c>.WithEncryption()</c> user's sync calls would start throwing <see cref="NotSupportedException"/>
+/// the moment <c>01.Core</c>'s P-492 capability gate is in play.
 /// </para>
 /// </remarks>
-internal sealed class EncryptionOptionsKeyProvider : IEncryptionKeyProvider
+internal sealed class EncryptionOptionsKeyProvider : ISynchronousEncryptionKeyProvider
 {
     private readonly IOptionsMonitor<EncryptionOptions> _optionsMonitor;
     private readonly IEncryptionVersionOverride _versionOverride;

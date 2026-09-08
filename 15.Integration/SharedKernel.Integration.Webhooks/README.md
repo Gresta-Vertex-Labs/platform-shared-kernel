@@ -156,11 +156,11 @@ headers are never silently overwritten in either direction.
 ## Opt-in payload encryption
 
 When `WebhookDeliveryOptions.EncryptPayload` is enabled, the outbound JSON payload is encrypted
-(AES-GCM, via `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService`) before signing —
-encrypt-then-sign, so `WebhookSignatureVerifier` continues to detect tampering on exactly the bytes
-that were transmitted. Disabled by default; TLS already provides transport confidentiality — this is
-defense-in-depth for subscribers who want payload-level confidentiality independent of their own TLS
-termination boundary.
+(AES-GCM, via `01.Core/SharedKernel.Cryptography`'s `ISymmetricEncryptionService.EncryptToStringAsync`)
+before signing — encrypt-then-sign, so `WebhookSignatureVerifier` continues to detect tampering on
+exactly the bytes that were transmitted. Disabled by default; TLS already provides transport
+confidentiality — this is defense-in-depth for subscribers who want payload-level confidentiality
+independent of their own TLS termination boundary.
 
 ```csharp
 builder.Services.AddSharedKernelCryptography(); // 01.Core/SharedKernel.Cryptography
@@ -168,6 +168,20 @@ builder.Services.AddSingleton<IEncryptionKeyProvider, YourEncryptionKeyProvider>
 
 builder.Services.AddSharedKernelWebhooks(options => options.EncryptPayload = true);
 ```
+
+### Deriving the associated data (AAD)
+
+Every encrypt call is bound to `WebhookPayloadAssociatedData.Build(subscription.SubscriptionId,
+deliveryId)` — never a constant, and never derived solely from data transmitted on the wire. The two
+components have different reproducibility stories for the subscriber:
+
+- **`deliveryId`** — per-delivery freshness. Reproducible from the `X-Webhook-Delivery-Id` header,
+  sent on every attempt of a given delivery.
+- **`subscriptionId`** — identity binding. Deliberately **never sent as a header** — the subscriber
+  must already know it out-of-band, through the same pre-established channel that already carries
+  `WebhookSubscription.Secrets`. If the subscription id traveled alongside the ciphertext, a captured
+  ciphertext could be replayed with matching AAD supplied by the attacker, defeating the entire point
+  of binding subscription identity into the AAD.
 
 On the subscriber side, decrypt after verifying the signature (verify-then-decrypt — the signature
 covers the ciphertext, so verification must happen first):
@@ -179,8 +193,16 @@ if (!isValid)
     return Results.Unauthorized();
 }
 
-var plaintext = symmetricEncryptionService.DecryptToString(rawBody).Value; // rawBody is the ciphertext
+var deliveryId = Guid.Parse(deliveryIdHeaderValue); // X-Webhook-Delivery-Id
+var associatedData = WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, deliveryId);
+
+var decrypted = await symmetricEncryptionService.DecryptToStringAsync(rawBody, associatedData);
+var plaintext = decrypted.Value; // rawBody is the ciphertext
 ```
+
+A mismatched AAD (wrong subscription id, wrong delivery id, or a captured ciphertext replayed against
+a different subscription) fails authentication exactly like a tampered ciphertext — `decrypted.IsFailure`
+is `true`, never an exception.
 
 Enabling `EncryptPayload` without registering an `ISymmetricEncryptionService` fails loudly with an
 `InvalidOperationException` at first delivery, never silently. This uses only the already-permitted

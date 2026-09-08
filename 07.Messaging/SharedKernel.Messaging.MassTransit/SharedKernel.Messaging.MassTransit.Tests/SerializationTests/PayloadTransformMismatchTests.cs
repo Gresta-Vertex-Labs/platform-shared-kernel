@@ -36,7 +36,7 @@ public sealed class PayloadTransformMismatchTests
 
         byte[] plainBytes = "{\"hello\":\"world\"}"u8.ToArray();
         byte[] compressed = compressor.Compress(plainBytes);
-        EncryptedPayload encrypted = encryptionService.Encrypt(compressed);
+        EncryptedPayload encrypted = encryptionService.Encrypt(compressed, []);
         byte[] wireBytes = EncryptedPayloadWireCodec.Encode(encrypted);
 
         var innerDeserializer = new MtSystemTextJsonMessageSerializerFactory(configure: null).CreateDeserializer();

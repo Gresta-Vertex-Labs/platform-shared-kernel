@@ -63,8 +63,9 @@ Consumer code injects `OrderDbContext` exactly as before — pooling and the per
 
 ## Field-level encryption
 
+**(P-498/WO-081) `.WithEncryption()` now builds its own persistence-scoped `ISymmetricEncryptionService` internally — `AddSharedKernelCryptography()` is NOT required for this config-backed default path.** It never resolves the ambient, unkeyed `IEncryptionKeyProvider`/`ISymmetricEncryptionService` slot, so an unrelated general-purpose `AddSharedKernelCryptography()` call (or a KMS-key-provider registration made for other purposes, e.g. `13.ServiceDefaults`'s `AddSharedKernelKeyVaultKeyProvider`) elsewhere in the same container can never silently win or lose this package's own encryption wiring.
+
 ```csharp
-services.AddSharedKernelCryptography(configuration);   // 01.Core/SharedKernel.Cryptography
 services
     .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
     .WithEncryption(enc =>
@@ -77,7 +78,29 @@ services
 
 // Inside IEntityTypeConfiguration<Customer>.Configure:
 //   builder.Property(x => x.Email).HasMaxLength(255).Encrypt().IsRequired();
+//
+// Rename-safe AAD binding — supply BEFORE ever encrypting a row you anticipate renaming the
+// underlying table/column for:
+//   builder.Property(x => x.Ssn).HasMaxLength(20).Encrypt(associatedDataOverride: "Customer.Ssn").IsRequired();
 ```
+
+### KMS-backed field-level encryption (opt-in, `.WithExternalEncryptionKeyProvider<TProvider>()`)
+
+Directs the SAME field-level encryption pipeline at a KMS/HSM-backed `IEncryptionKeyProvider` (e.g. `SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultEncryptionKeyProvider`) instead of the config-backed default — the ONLY sanctioned way to do so; hand-wiring a raw KMS provider directly would either block a thread per encrypted-column read/write (EF Core's `ValueConverter` has no async path) or throw `NotSupportedException` outright once `01.Core`'s `ISynchronousEncryptionKeyProvider` capability gate is in effect.
+
+```csharp
+// The consumer registers TProvider itself — e.g. via 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider,
+// or any other unkeyed registration. This package resolves it by type, never assumes a specific source.
+services.AddSharedKernelKeyVaultKeyProvider(configuration);   // registers AzureKeyVaultEncryptionKeyProvider
+
+services
+    .AddSharedKernelEfCore<OrderDbContext>(options => options.UseNpgsql(connectionString))
+    .WithEncryption(enc => enc.Enabled = true)                          // MUST come first
+    .WithExternalEncryptionKeyProvider<AzureKeyVaultEncryptionKeyProvider>()
+    .Build();
+```
+
+This additionally registers a startup readiness gate (`EncryptionKeyPreWarmingHostedService`) that warms the current key once, at boot, before the host accepts traffic — never a per-request blocking KMS call — and a fifth interceptor (`EncryptionKeyPreWarmingInterceptor`) that keeps the warm cache current across both writes (`SavingChangesAsync`) and reads (`ReaderExecutingAsync`, EF Core's genuine async pre-materialization hook — the piece that actually protects a query-only/read-replica service, which a write-only pre-warm hook would leave completely uncovered).
 
 ## Configuration-section binding
 

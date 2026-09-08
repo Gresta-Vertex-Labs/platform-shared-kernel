@@ -3,11 +3,11 @@ using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Extensions;
+using SharedKernel.Cryptography.Signing;
 using SharedKernel.Cryptography.Symmetric;
 using Xunit;
-using ZiggyCreatures.Caching.Fusion.Serialization;
-using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
 namespace SharedKernel.ArchitectureTests.Tests;
 
@@ -111,6 +111,20 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// (<c>services.AddOptions&lt;RedisConnectionOptions&gt;().Configure(...).ValidateDataAnnotations().ValidateOnStart()</c>)
 /// lives directly in its own IL body, not inside a lambda closure, so no closure-scanning extension
 /// is exercised by this particular call site.
+/// </para>
+/// <para>
+/// <strong>T-337 RE-LOCKED 2026-09-08</strong> against <c>02.Caching</c>'s
+/// <c>SK.02.CacheEncryptionAadBinding</c> phase (WO-081), which shipped the same day and deleted
+/// <c>CacheEncryptionSerializer</c> entirely — <c>AddCacheEncryption()</c> no longer decorates
+/// <c>IFusionCacheSerializer</c> (which never receives the cache key, so it cannot derive key-bound
+/// AAD); it now wraps <c>ICacheService</c> with a new <c>Encryption.EncryptedCacheService</c>
+/// instead. T-337's original design, still asserting against <c>IFusionCacheSerializer.Serialize</c>
+/// output, had gone VACUOUS: after the <c>02.Caching</c> change that serializer performs compression
+/// only (encryption moved one layer up), so the size-ratio assertion kept passing for the wrong
+/// reason — a compressed-only payload is still trivially smaller than an encrypt-only baseline. This
+/// was found during a routine full-solution build, not by this file's own suite, which stayed green
+/// throughout. T-337 is re-pointed at the real, current architecture — see its own remarks for the
+/// full detail — rather than merely patched to compile against the old one.
 /// </para>
 /// </remarks>
 public class SecureDefaultsAssertionTests
@@ -1555,44 +1569,74 @@ public class SecureDefaultsAssertionTests
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// T-337 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437): builds the real,
-    /// shipped <c>ICachingBuilder.AddBrotliCompression()</c> + <c>.AddCacheEncryption()</c>
-    /// composed pipeline (<c>SharedKernel.Caching.FusionCache</c>) and confirms compression
-    /// genuinely runs before encryption on write.
+    /// T-337 (<c>SK.00.CacheEncryptionAndRedisValidationLock</c>/WO-065/P-437; RE-LOCKED
+    /// 2026-09-08 against <c>02.Caching</c>'s <c>SK.02.CacheEncryptionAadBinding</c> phase, see
+    /// this class's own type-level remarks for the full incident record): builds the real, shipped
+    /// <c>ICachingBuilder.AddBrotliCompression()</c> + <c>.AddCacheEncryption()</c> composed
+    /// pipeline (<c>SharedKernel.Caching.FusionCache</c>) and confirms compression genuinely runs
+    /// before encryption on write.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <strong>Re-pointed at the real, current architecture.</strong>
+    /// <c>SK.02.CacheEncryptionAadBinding</c> deleted <c>CacheEncryptionSerializer</c> entirely:
+    /// <c>IFusionCacheSerializer.Serialize</c>/<c>Deserialize</c> never receive the cache key, so a
+    /// serializer-level decorator is structurally incapable of deriving key-bound associated data
+    /// (AAD). <c>AddCacheEncryption()</c> now wraps <c>ICacheService</c> with a new
+    /// <c>Encryption.EncryptedCacheService</c> instead — the one layer where the cache key is an
+    /// explicit method parameter on every member. This test therefore intercepts at the
+    /// <c>ICacheService</c> layer, not the serializer layer.
+    /// </para>
     /// <para>
     /// <strong>Deliberate departure from this file's IL-only discipline.</strong> Every
     /// <see cref="SecureDefaultsAssertion"/> method proves a STRUCTURAL fact via Mono.Cecil IL
     /// inspection, never executing the assembly under test. "Compression ran before encryption" is
-    /// a COMPUTED BEHAVIOR of two composed <c>IFusionCacheSerializer</c> decorator stages whose
-    /// concrete representation is not something a sound, representation-agnostic static IL
-    /// technique could honestly prove — mirroring <c>SK.00.WebhookSsrfGuardLock</c>'s own T-336
-    /// precedent exactly. This is the SECOND genuinely EXECUTED real-assembly test in this file,
-    /// living directly here rather than as a reusable <see cref="SecureDefaultsAssertion"/> method,
-    /// since it is a one-off assertion tied to one real pipeline.
+    /// a COMPUTED BEHAVIOR of <c>EncryptedCacheService</c>'s own runtime branch
+    /// (<c>_compressionEnabled</c>, captured once at registration time by <c>AddCacheEncryption()</c>
+    /// from whether the PRE-<c>AddCacheEncryption()</c> <c>IFusionCacheSerializer</c> registration was
+    /// a <c>BrotliCacheSerializer</c>) whose concrete representation is not something a sound,
+    /// representation-agnostic static IL technique could honestly prove — mirroring
+    /// <c>SK.00.WebhookSsrfGuardLock</c>'s own T-336 precedent exactly. This remains the SECOND
+    /// genuinely EXECUTED real-assembly test in this file, living directly here rather than as a
+    /// reusable <see cref="SecureDefaultsAssertion"/> method, since it is a one-off assertion tied to
+    /// one real pipeline.
     /// </para>
     /// <para>
-    /// <strong>Black-box, representation-agnostic.</strong> This test makes no assumption about
-    /// <c>CacheEncryptionSerializer</c>'s/<c>BrotliCacheSerializer</c>'s internal class shapes —
-    /// only the public <c>AddCacheEncryption()</c>/<c>AddBrotliCompression()</c> entry points and
-    /// the resulting <c>IFusionCacheSerializer.Serialize</c>/<c>Deserialize</c> round trip. It
-    /// serializes a highly-compressible payload (8192 repeated characters, well above
-    /// <c>CachingOptions.CompressionOptions.L2ThresholdBytes</c>'s 1024-byte default) through the
-    /// composed pipeline and captures the stored-byte length. It separately encrypts the SAME
-    /// serialized payload — resolved from the real inner STJ serializer, so this is byte-for-byte
-    /// what the pipeline itself feeds into compression/encryption — directly via
-    /// <c>ISymmetricEncryptionService</c> (no compression) as a baseline. If the real composition
-    /// order were reversed (encrypt-then-attempt-compress), compressing high-entropy ciphertext
-    /// would yield near-zero size reduction — a well-known property of general-purpose compression
-    /// against high-entropy input — so this assertion correctly fails and catches the exact
-    /// regression this phase exists to prevent.
+    /// <strong>Black-box, representation-agnostic, at the correct layer.</strong> This test makes no
+    /// assumption about <c>EncryptedCacheService</c>'s internal shape beyond the public
+    /// <c>ICachingBuilder.AddBrotliCompression()</c>/<c>.AddCacheEncryption()</c> entry points and
+    /// the resulting <c>ICacheService.SetAsync</c>/<c>GetAsync</c> round trip. Because
+    /// <c>EncryptedCacheService</c> wraps <c>ICacheService</c> rather than the serializer, the test
+    /// registers its own minimal in-memory <c>ICacheService</c> double
+    /// (<see cref="SpyInnerCacheService"/>) BEFORE calling <c>AddSharedKernelCaching()</c> — that
+    /// method registers its own default via <c>TryAddSingleton&lt;ICacheService,
+    /// FusionCacheService&gt;()</c>, a no-op once a registration already exists, so
+    /// <c>AddCacheEncryption()</c>'s "wrap whatever <c>ICacheService</c> is currently registered"
+    /// logic ends up wrapping the double directly — a clean interception point for exactly the
+    /// <c>EncryptedPayload</c> <c>EncryptedCacheService</c> hands to its inner store, with no
+    /// FusionCache/MemoryCache storage semantics in the way.
     /// </para>
     /// <para>
-    /// <strong>Round-trip-correctness precondition</strong> (Implementation Rule 3). Decrypting and
-    /// decompressing the pipeline's stored bytes via its own read path must recover the original
-    /// payload exactly — guarding against the size-reduction assertion accidentally passing against
-    /// corrupted or no-op output rather than genuine compress-then-encrypt behavior.
+    /// It writes a highly-compressible payload (8192 repeated characters) through the composed
+    /// pipeline and captures the intercepted <c>EncryptedPayload</c>'s stored-byte length. It
+    /// separately encrypts the SAME plaintext JSON bytes a bare System.Text.Json serialization step
+    /// would produce — using <c>JsonSerializerDefaults.Web</c>, the exact fallback
+    /// <c>EncryptedCacheService</c> itself uses when no <c>CachingOptions.SerializerContext</c> is
+    /// configured (which this test does not configure) — with the SAME cache-key-derived AAD
+    /// <c>EncryptedCacheService</c> uses, directly via
+    /// <c>ISymmetricEncryptionService.EncryptAsync</c> (no compression), as a baseline. If the real
+    /// composition order were reversed (encrypt-then-attempt-compress) or compression were silently
+    /// dropped from the wiring, compressing already-encrypted high-entropy ciphertext would yield
+    /// near-zero size reduction — a well-known property of general-purpose compression against
+    /// high-entropy input — so this assertion correctly fails and catches the exact regression this
+    /// phase exists to prevent.
+    /// </para>
+    /// <para>
+    /// <strong>Round-trip-correctness precondition</strong> (Implementation Rule 3). Reading the
+    /// same key back through the composed pipeline's own <c>GetAsync</c> path must recover the
+    /// original payload exactly — guarding against the size-reduction assertion accidentally
+    /// passing against corrupted or no-op output rather than genuine compress-then-encrypt
+    /// behavior.
     /// </para>
     /// <para>
     /// <strong>DOCUMENTED LIMITATION</strong> (same class as every other technique in this file): a
@@ -1603,23 +1647,15 @@ public class SecureDefaultsAssertionTests
     /// Compress before Encrypt in every code path."
     /// </para>
     /// <para>
-    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
-    /// tracked <c>02.Caching</c> P-433 (its own Phase 42, <c>CacheEncryptionAtRest</c>) as
-    /// <c>○</c> Not started — CONFIRMED RESOLVED on disk before this phase's implementation session:
-    /// that domain had already shipped its full Phase 42 scope (<c>CacheEncryptionSerializer</c>/
-    /// <c>CacheEncryptionCachingBuilderExtensions</c> both real and shipped inside
-    /// <c>SharedKernel.Caching.FusionCache</c>) before this phase's implementation session began,
-    /// mirroring this file's own now-nine-times-repeated dependency-resolved-before-implementation
-    /// pattern.
-    /// </para>
-    /// <para>
-    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation —
-    /// inverting the expected size relationship (asserting the pipeline output must be LARGER than
-    /// the baseline), confirmed to fail, then reverted before commit.
+    /// <strong>Non-vacuous, re-verified at re-lock time.</strong> Verified by a temporary sanity
+    /// check during this re-lock — removing <c>.AddBrotliCompression()</c> from the chain (so
+    /// <c>EncryptedCacheService</c>'s <c>_compressionEnabled</c> resolves to
+    /// <see langword="false"/>, reproducing "compression silently stopped being wired into the
+    /// pipeline") — confirmed the size assertion then genuinely fails, then reverted before commit.
     /// </para>
     /// </remarks>
     [Fact]
-    public void CacheEncryptionPipeline_RealAddCacheEncryption_CompressesBeforeEncrypting()
+    public async Task CacheEncryptionPipeline_RealAddCacheEncryption_CompressesBeforeEncrypting()
     {
         var services = new ServiceCollection();
 
@@ -1627,47 +1663,149 @@ public class SecureDefaultsAssertionTests
         var encryptionService = new AesGcmEncryptionService(keyProvider);
         services.AddSingleton<ISymmetricEncryptionService>(encryptionService);
 
+        // Registered BEFORE AddSharedKernelCaching() so its own
+        // TryAddSingleton<ICacheService, FusionCacheService>() no-ops — AddCacheEncryption()'s
+        // "wrap whatever ICacheService is currently registered" logic then wraps this double
+        // directly.
+        var spyInnerCache = new SpyInnerCacheService();
+        services.AddSingleton<ICacheService>(spyInnerCache);
+
+        // EncryptedCacheService takes an ILogger<EncryptedCacheService> dependency (used only to
+        // log a decrypt-failure warning — never exercised by this test's happy-path round trip).
+        services.AddLogging();
+
         services
             .AddSharedKernelCaching(o => o.ServiceName = "cache-encryption-ordering-test")
             .AddBrotliCompression()
             .AddCacheEncryption();
 
         using var provider = services.BuildServiceProvider();
-        var serializer = provider.GetRequiredService<IFusionCacheSerializer>();
+        var cache = provider.GetRequiredService<ICacheService>();
 
-        // A highly compressible payload, well above CompressionOptions.L2ThresholdBytes's
-        // 1024-byte default threshold — repeated-character input compresses to a tiny fraction of
+        const string key = "cache-encryption-ordering-test-key";
+
+        // A highly compressible payload — repeated-character input compresses to a tiny fraction of
         // its original size under Brotli, but is incompressible once already AES-GCM encrypted.
         var payload = new string('A', 8192);
 
-        var pipelineOutput = serializer.Serialize(payload);
+        await cache.SetAsync(key, payload, CachePolicy.Default);
+
+        EncryptedPayload? pipelinePayload = spyInnerCache.LastStoredPayload;
+        pipelinePayload.Should().NotBeNull(
+            because: "EncryptedCacheService.SetAsync must hand its inner ICacheService a real " +
+                     "EncryptedPayload");
+
+        var pipelineLength =
+            pipelinePayload!.Nonce.Length
+            + pipelinePayload.Tag.Length
+            + pipelinePayload.Ciphertext.Length
+            + System.Text.Encoding.UTF8.GetByteCount(pipelinePayload.KeyId);
 
         // Round-trip-correctness precondition (Implementation Rule 3).
-        var roundTripped = serializer.Deserialize<string>(pipelineOutput);
+        var roundTripped = await cache.GetAsync<string>(key);
         roundTripped.Should().Be(
             payload,
             because: "the composed pipeline's read path must recover the original payload " +
                      "exactly, guarding against the size assertion below passing against " +
                      "corrupted or no-op output");
 
-        // Baseline: the SAME serialized bytes (resolved from the real inner STJ serializer, so
-        // this is byte-for-byte what the pipeline itself feeds into compression/encryption),
-        // encrypted directly with no compression.
-        var innerSerializer = provider.GetRequiredService<FusionCacheSystemTextJsonSerializer>();
-        var innerBytes = innerSerializer.Serialize(payload);
-        var baseline = encryptionService.Encrypt(innerBytes);
+        // Baseline: the SAME plaintext JSON bytes EncryptedCacheService itself produces when no
+        // CachingOptions.SerializerContext is configured (the JsonSerializerDefaults.Web fallback),
+        // encrypted with the SAME cache-key-derived AAD EncryptedCacheService uses, but with no
+        // compression.
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var plaintextBytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(payload, jsonOptions);
+        var associatedData = System.Text.Encoding.UTF8.GetBytes(key);
+        var baseline = await encryptionService.EncryptAsync(plaintextBytes, associatedData);
         var baselineLength =
             baseline.Nonce.Length
             + baseline.Tag.Length
             + baseline.Ciphertext.Length
             + System.Text.Encoding.UTF8.GetByteCount(baseline.KeyId);
 
-        pipelineOutput.Length.Should().BeLessThan(
+        pipelineLength.Should().BeLessThan(
             baselineLength / 2,
             because: "compress-then-encrypt must produce a meaningfully smaller stored payload " +
-                     "than encrypt-only for a highly compressible input — if the real composition " +
-                     "order were reversed, compressing already-encrypted high-entropy ciphertext " +
-                     "would yield near-zero size reduction (WO-065, P-433)");
+                     "than encrypt-only for a highly compressible input — if EncryptedCacheService's " +
+                     "own compress-before-encrypt branch were reversed or silently disabled, " +
+                     "compressing already-encrypted high-entropy ciphertext would yield near-zero " +
+                     "size reduction (WO-065/P-433, re-locked against WO-081/SK.02.CacheEncryptionAadBinding)");
+    }
+
+    /// <summary>
+    /// Minimal in-memory <see cref="ICacheService"/> double used only by T-337 — stores whatever is
+    /// written under each key and exposes the most recently stored <see cref="EncryptedPayload"/>
+    /// (when the stored value is one) so the test can inspect exactly what
+    /// <c>EncryptedCacheService</c> hands to its wrapped inner cache. Deliberately local to this
+    /// file rather than a shared <c>16.Testing</c> fake, mirroring this file's own established
+    /// "governance test project supplies its own minimal fixture" convention for real-assembly
+    /// checks.
+    /// </summary>
+    private sealed class SpyInnerCacheService : ICacheService
+    {
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, object?> _store = new();
+
+        /// <summary>
+        /// The most recently stored value across any <see cref="SetAsync{T}"/> call whose value was
+        /// an <see cref="EncryptedPayload"/> — <see langword="null"/> until one has been stored.
+        /// </summary>
+        public EncryptedPayload? LastStoredPayload { get; private set; }
+
+        public ValueTask<T?> GetAsync<T>(string key, CancellationToken ct = default) =>
+            new(_store.TryGetValue(key, out object? value) ? (T?)value : default);
+
+        public ValueTask SetAsync<T>(string key, T value, CachePolicy policy, CancellationToken ct = default)
+        {
+            _store[key] = value;
+
+            if (value is EncryptedPayload payload)
+                LastStoredPayload = payload;
+
+            return ValueTask.CompletedTask;
+        }
+
+        public async ValueTask<T> GetOrSetAsync<T>(
+            string key,
+            Func<CancellationToken, ValueTask<T>> factory,
+            CachePolicy policy,
+            CancellationToken ct = default)
+        {
+            if (_store.TryGetValue(key, out object? existing))
+                return (T)existing!;
+
+            T value = await factory(ct).ConfigureAwait(false);
+            await SetAsync(key, value, policy, ct).ConfigureAwait(false);
+            return value;
+        }
+
+        public ValueTask RemoveAsync(string key, CancellationToken ct = default)
+        {
+            _store.TryRemove(key, out _);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default) => ValueTask.CompletedTask;
+
+        public ValueTask<IReadOnlyDictionary<string, T?>> GetManyAsync<T>(
+            IEnumerable<string> keys,
+            CancellationToken ct = default)
+        {
+            IReadOnlyDictionary<string, T?> result = keys.ToDictionary(
+                k => k,
+                k => _store.TryGetValue(k, out object? v) ? (T?)v : default);
+            return new ValueTask<IReadOnlyDictionary<string, T?>>(result);
+        }
+
+        public ValueTask SetManyAsync<T>(
+            IReadOnlyDictionary<string, T> entries,
+            CachePolicy policy,
+            CancellationToken ct = default)
+        {
+            foreach ((string k, T v) in entries)
+                _store[k] = v;
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     // ---------------------------------------------------------------------------
@@ -1864,16 +2002,340 @@ public class SecureDefaultsAssertionTests
     }
 
     // ---------------------------------------------------------------------------
+    // T-360 — AssertMethodBodyInvokesMethod/AssertMethodBodyThrowsExceptionType contrived pass
+    // path: synchronous-provider gate present (WO-081 P-504, Technique A)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-360 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): a fixture shaped
+    /// after the real, shipped <c>AesGcmEncryptionService</c>/<c>RsaSignatureService</c>/
+    /// <c>EcdsaSignatureService</c> synchronous-provider gate (P-492/P-493, confirmed against real
+    /// source before this fixture was written — see remarks) — constructor invokes a stand-in
+    /// capability-check method and caches the result; the gated member delegates to a private guard
+    /// helper that constructs-and-throws <see cref="NotSupportedException"/> — must pass both
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/> and
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>.
+    /// </summary>
+    /// <remarks>
+    /// <strong>Shape corrected against real, shipped source.</strong> This phase's own
+    /// authoring-time Implementation Rule 2 assumed each gated member (<c>Encrypt</c>/<c>Decrypt</c>/
+    /// <c>EncryptToString</c>/<c>DecryptToString</c>/<c>Sign</c>/<c>Verify</c>) constructs-and-throws
+    /// <see cref="NotSupportedException"/> directly. Direct inspection of the real, shipped
+    /// <c>AesGcmEncryptionService</c>/<c>RsaSignatureService</c>/<c>EcdsaSignatureService</c> (all
+    /// three, once <c>01.Core</c>'s P-492/P-493 shipped past Design into Core) found the throw is
+    /// instead centralized in one private <c>ThrowIfNotGenuinelySynchronous(string)</c> helper each
+    /// gated member calls as its first statement — a single-throw-site design shared by every gated
+    /// member on a given type, not an independent throw per member. This fixture mirrors that REAL
+    /// shape rather than the phase's original assumption — see T-362/T-363's own remarks for the
+    /// full real-assembly confirmation.
+    /// </remarks>
+    [Fact]
+    public void SyncGateFixtures_CapabilityCheckAndGuardPresent_BothAssertionsPass()
+    {
+        const string source = """
+            namespace Fixture.SyncCryptoGate
+            {
+                public static class FixtureCapabilityCheck
+                {
+                    public static bool IsGenuinelySynchronous(object provider) => false;
+                }
+
+                // Compliant: mirrors the real AesGcmEncryptionService/RsaSignatureService/
+                // EcdsaSignatureService shape — the constructor evaluates and caches the capability
+                // check, and the gated member delegates to a private guard helper that constructs
+                // and throws NotSupportedException.
+                public sealed class FixtureGatedServicePresent
+                {
+                    private readonly bool _isGenuinelySynchronous;
+
+                    public FixtureGatedServicePresent(object provider)
+                    {
+                        _isGenuinelySynchronous = FixtureCapabilityCheck.IsGenuinelySynchronous(provider);
+                    }
+
+                    public void GatedMember()
+                    {
+                        ThrowIfNotGenuinelySynchronous();
+                    }
+
+                    private void ThrowIfNotGenuinelySynchronous()
+                    {
+                        if (!_isGenuinelySynchronous)
+                        {
+                            throw new System.NotSupportedException("not genuinely synchronous");
+                        }
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SyncCryptoGatePresent", source);
+        var declaringType = assembly.GetType("Fixture.SyncCryptoGate.FixtureGatedServicePresent")!;
+        var capabilityCheckType = assembly.GetType("Fixture.SyncCryptoGate.FixtureCapabilityCheck")!;
+
+        var ctorInvokesCapabilityCheck = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, ".ctor", capabilityCheckType, "IsGenuinelySynchronous");
+
+        ctorInvokesCapabilityCheck.Should().NotThrow(
+            because: "the fixture's constructor genuinely calls " +
+                     "FixtureCapabilityCheck.IsGenuinelySynchronous");
+
+        var gatedMemberInvokesGuard = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, "GatedMember", declaringType, "ThrowIfNotGenuinelySynchronous");
+
+        gatedMemberInvokesGuard.Should().NotThrow(
+            because: "the fixture's GatedMember genuinely calls the ThrowIfNotGenuinelySynchronous " +
+                     "guard helper");
+
+        var guardThrowsNotSupported = () =>
+            SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
+                declaringType, "ThrowIfNotGenuinelySynchronous", typeof(NotSupportedException));
+
+        guardThrowsNotSupported.Should().NotThrow(
+            because: "the fixture's ThrowIfNotGenuinelySynchronous guard genuinely constructs and " +
+                     "throws NotSupportedException");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-361 — AssertMethodBodyInvokesMethod contrived fire path: capability check call removed
+    // (WO-081 P-504, Technique A)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-361 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): an otherwise-
+    /// identical fixture with the constructor's capability-check call removed — reproducing the
+    /// exact "sync gate silently deleted in a future edit, reverting to an unconditional
+    /// <c>.GetAwaiter().GetResult()</c> bridge" regression this check exists to prevent — must fail
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>.
+    /// </summary>
+    [Fact]
+    public void SyncGateFixtures_CapabilityCheckCallRemoved_ThrowsNamingMethod()
+    {
+        const string source = """
+            namespace Fixture.SyncCryptoGate
+            {
+                public static class FixtureCapabilityCheck
+                {
+                    public static bool IsGenuinelySynchronous(object provider) => false;
+                }
+
+                // Violation: the constructor no longer evaluates the capability check at all — a
+                // future well-intentioned refactor could plausibly delete this call while leaving
+                // the guard helper and its call site intact, silently defaulting
+                // _isGenuinelySynchronous to false (the C# default for bool) rather than genuinely
+                // deciding it. The guard still throws unconditionally here, but the point of this
+                // fixture is to prove the ABSENCE of the capability-check call site is itself
+                // detected, independent of whether the guard's own behavior happens to remain safe.
+                public sealed class FixtureGatedServiceCapabilityCheckRemoved
+                {
+                    private readonly bool _isGenuinelySynchronous;
+
+                    public FixtureGatedServiceCapabilityCheckRemoved(object provider)
+                    {
+                    }
+
+                    public void GatedMember()
+                    {
+                        ThrowIfNotGenuinelySynchronous();
+                    }
+
+                    private void ThrowIfNotGenuinelySynchronous()
+                    {
+                        if (!_isGenuinelySynchronous)
+                        {
+                            throw new System.NotSupportedException("not genuinely synchronous");
+                        }
+                    }
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("SyncCryptoGateCapabilityCheckRemoved", source);
+        var declaringType =
+            assembly.GetType("Fixture.SyncCryptoGate.FixtureGatedServiceCapabilityCheckRemoved")!;
+        var capabilityCheckType = assembly.GetType("Fixture.SyncCryptoGate.FixtureCapabilityCheck")!;
+
+        var act = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, ".ctor", capabilityCheckType, "IsGenuinelySynchronous");
+
+        act.Should()
+            .Throw<InvalidOperationException>(
+                because: "the fixture's constructor no longer calls " +
+                         "FixtureCapabilityCheck.IsGenuinelySynchronous — the capability-check call " +
+                         "site was removed")
+            .WithMessage("*.ctor*")
+            .WithMessage("*IsGenuinelySynchronous*");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-362 — Real-assembly verification (GATING): AesGcmEncryptionService's synchronous-provider
+    // gate (WO-081 P-504, Technique A)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-362 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): re-points
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>/
+    /// <see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/> at the real, shipped
+    /// <c>AesGcmEncryptionService</c> and confirms its synchronous-provider gate (P-492/WO-081) is
+    /// genuinely wired end to end: the constructor invokes
+    /// <c>EncryptionKeyProviderCapabilities.IsGenuinelySynchronous</c>, each of the four retained
+    /// synchronous members (<c>Encrypt</c>/<c>Decrypt</c>/<c>EncryptToString</c>/
+    /// <c>DecryptToString</c>) invokes the private <c>ThrowIfNotGenuinelySynchronous</c> guard, and
+    /// that guard genuinely constructs and throws <see cref="NotSupportedException"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Cross-Domain Dependency resolved — earlier than this phase's own authoring
+    /// expected.</strong> This phase's own authoring-time prose recorded Technique A as "genuinely,
+    /// fully UNVERIFIABLE today — one level further removed than every prior 'designed against a
+    /// not-yet-shipped dependency' occurrence," since at authoring time <c>01.Core</c>'s P-492/P-493
+    /// were Design-locked only. CONFIRMED RESOLVED on disk before this test was written:
+    /// <c>01.Core</c> shipped <c>ISynchronousEncryptionKeyProvider</c>/
+    /// <c>EncryptionKeyProviderCapabilities</c> and <c>AesGcmEncryptionService</c>'s gated members
+    /// (the required <c>associatedData</c> parameter on every <c>ISymmetricEncryptionService</c>
+    /// member — P-491 — shipped in the same pass) before this phase's implementation session began,
+    /// mirroring this file's own now-repeated dependency-resolved-before-implementation pattern
+    /// (WO-061 onward). Wired directly here as a GATING test rather than deferred.
+    /// </para>
+    /// <para>
+    /// See T-360's own remarks for why this test proves gate-reachability
+    /// (<see cref="SecureDefaultsAssertion.AssertMethodBodyInvokesMethod"/>, once per gated member)
+    /// plus the guard's own throw
+    /// (<see cref="SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType"/>, once) rather than
+    /// a direct throw-presence check on each gated member — the real shape centralizes the throw in
+    /// one private helper.
+    /// </para>
+    /// <para>
+    /// <strong>Non-vacuous.</strong> Verified by a temporary sanity check during implementation — a
+    /// deliberately-wrong callee/exception-type expectation against each of the real call sites
+    /// below, confirmed to fail, then reverted before commit.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void SyncCryptoGate_RealAesGcmEncryptionService_ConstructionTimeGateGenuinelyWired()
+    {
+        var declaringType = typeof(AesGcmEncryptionService);
+        var capabilitiesType = typeof(EncryptionKeyProviderCapabilities);
+
+        var ctorInvokesCapabilityCheck = () =>
+            SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                declaringType, ".ctor", capabilitiesType, "IsGenuinelySynchronous");
+
+        ctorInvokesCapabilityCheck.Should().NotThrow(
+            because: "AesGcmEncryptionService's constructor must evaluate " +
+                     "EncryptionKeyProviderCapabilities.IsGenuinelySynchronous exactly once and " +
+                     "cache the result (P-492/WO-081)");
+
+        foreach (var gatedMemberName in new[] { "Encrypt", "Decrypt", "EncryptToString", "DecryptToString" })
+        {
+            var gatedMemberInvokesGuard = () =>
+                SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                    declaringType, gatedMemberName, declaringType, "ThrowIfNotGenuinelySynchronous");
+
+            gatedMemberInvokesGuard.Should().NotThrow(
+                because: $"AesGcmEncryptionService.{gatedMemberName} must invoke the " +
+                         "ThrowIfNotGenuinelySynchronous guard before bridging onto the registered " +
+                         "IEncryptionKeyProvider (P-492/WO-081)");
+        }
+
+        var guardThrowsNotSupported = () =>
+            SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
+                declaringType, "ThrowIfNotGenuinelySynchronous", typeof(NotSupportedException));
+
+        guardThrowsNotSupported.Should().NotThrow(
+            because: "the guard must construct and throw NotSupportedException when the " +
+                     "registered IEncryptionKeyProvider was not confirmed genuinely synchronous " +
+                     "(P-492/WO-081)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-363 — Real-assembly verification (GATING): RsaSignatureService/EcdsaSignatureService's
+    // synchronous-provider gate (WO-081 P-504, Technique A)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-363 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): the same technique
+    /// as T-362, re-pointed at the real, shipped <c>RsaSignatureService</c>/
+    /// <c>EcdsaSignatureService</c> — confirms each type's constructor invokes
+    /// <c>AsymmetricKeyProviderCapabilities.IsGenuinelySynchronous</c>, each of its two retained
+    /// synchronous members (<c>Sign</c>/<c>Verify</c>) invokes the private
+    /// <c>ThrowIfNotGenuinelySynchronous</c> guard, and that guard genuinely constructs and throws
+    /// <see cref="NotSupportedException"/>.
+    /// </summary>
+    /// <remarks>
+    /// <strong>Cross-Domain Dependency resolved.</strong> This phase's own authoring-time prose
+    /// additionally corrected WO-081/P-504's own stated "Depends on: P-492, P-495" line — the
+    /// asymmetric half of Technique A needs <c>01.Core</c>'s P-493 (not P-492, which only covers
+    /// <c>ISymmetricEncryptionService</c>). CONFIRMED RESOLVED on disk before this test was written:
+    /// <c>01.Core</c> shipped <c>ISynchronousAsymmetricKeyProvider</c>/
+    /// <c>AsymmetricKeyProviderCapabilities</c> and both <c>RsaSignatureService</c>'s/
+    /// <c>EcdsaSignatureService</c>'s gated members before this phase's implementation session began.
+    /// See T-362's own remarks for the shared non-vacuous-verification note.
+    /// </remarks>
+    [Fact]
+    public void SyncCryptoGate_RealRsaAndEcdsaSignatureServices_ConstructionTimeGateGenuinelyWired()
+    {
+        var capabilitiesType = typeof(AsymmetricKeyProviderCapabilities);
+
+        foreach (var declaringType in new[] { typeof(RsaSignatureService), typeof(EcdsaSignatureService) })
+        {
+            var ctorInvokesCapabilityCheck = () =>
+                SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                    declaringType, ".ctor", capabilitiesType, "IsGenuinelySynchronous");
+
+            ctorInvokesCapabilityCheck.Should().NotThrow(
+                because: $"{declaringType.Name}'s constructor must evaluate " +
+                         "AsymmetricKeyProviderCapabilities.IsGenuinelySynchronous exactly once " +
+                         "and cache the result (P-493/WO-081)");
+
+            foreach (var gatedMemberName in new[] { "Sign", "Verify" })
+            {
+                var gatedMemberInvokesGuard = () =>
+                    SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
+                        declaringType, gatedMemberName, declaringType, "ThrowIfNotGenuinelySynchronous");
+
+                gatedMemberInvokesGuard.Should().NotThrow(
+                    because: $"{declaringType.Name}.{gatedMemberName} must invoke the " +
+                             "ThrowIfNotGenuinelySynchronous guard before bridging onto the " +
+                             "registered IAsymmetricKeyProvider (P-493/WO-081)");
+            }
+
+            var guardThrowsNotSupported = () =>
+                SecureDefaultsAssertion.AssertMethodBodyThrowsExceptionType(
+                    declaringType, "ThrowIfNotGenuinelySynchronous", typeof(NotSupportedException));
+
+            guardThrowsNotSupported.Should().NotThrow(
+                because: $"{declaringType.Name}'s guard must construct and throw " +
+                         "NotSupportedException when the registered IAsymmetricKeyProvider was " +
+                         "not confirmed genuinely synchronous (P-493/WO-081)");
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // T-337 fixture helper
     // ---------------------------------------------------------------------------
 
     /// <summary>
     /// Minimal <see cref="IEncryptionKeyProvider"/> test double for T-337 — seeds one fresh
-    /// 32-byte AES-256 key. Deliberately local to this file rather than a shared
-    /// <c>16.Testing</c> fake, mirroring this file's own established "governance test project
-    /// supplies its own minimal fixture" convention for real-assembly checks.
+    /// 32-byte AES-256 key, held in memory for the lifetime of the instance. Deliberately local to
+    /// this file rather than a shared <c>16.Testing</c> fake, mirroring this file's own established
+    /// "governance test project supplies its own minimal fixture" convention for real-assembly
+    /// checks.
     /// </summary>
-    private sealed class FixtureEncryptionKeyProvider : IEncryptionKeyProvider
+    /// <remarks>
+    /// Implements <see cref="ISynchronousEncryptionKeyProvider"/> (P-492/WO-081) — an honest claim,
+    /// not a default: both members below resolve purely in-memory key material with no I/O of any
+    /// kind, satisfying that marker's "genuinely never performs a blocking network/IPC round trip"
+    /// contract exactly. This fixture no longer calls <c>AesGcmEncryptionService</c>'s synchronous
+    /// members directly (T-337 now uses <c>EncryptAsync</c> exclusively, matching how the real
+    /// <c>EncryptedCacheService</c> it exercises always calls the async crypto surface), but marking
+    /// it correctly keeps the fixture representative rather than silently relying on the sync gate
+    /// never actually being exercised.
+    /// </remarks>
+    private sealed class FixtureEncryptionKeyProvider : ISynchronousEncryptionKeyProvider
     {
         private readonly CryptographicKey _key;
 

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SharedKernel.Caching.Abstractions;
 using SharedKernel.Caching.FusionCache.Implementations;
+using SharedKernel.Caching.FusionCache.Serialization;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
@@ -57,7 +58,8 @@ public static class CachingServiceCollectionExtensions
 
         // Build the JsonSerializerOptions for the FusionCache STJ serializer.
         // When SerializerContext is set, combine it with the internal CacheInvalidationMessage
-        // context so FusionCache's L2 serializer is fully NativeAOT-safe.
+        // context (and, Phase 46/WO-081, EncryptedPayloadJsonContext) so FusionCache's L2
+        // serializer is fully NativeAOT-safe.
         JsonSerializerOptions? resolvedJsonOptions = null;
         if (tempOptions.SerializerContext is not null)
         {
@@ -65,9 +67,18 @@ public static class CachingServiceCollectionExtensions
             {
                 TypeInfoResolver = JsonTypeInfoResolver.Combine(
                     tempOptions.SerializerContext,
-                    CacheInvalidationMessageJsonContext.Default),
+                    CacheInvalidationMessageJsonContext.Default,
+                    EncryptedPayloadJsonContext.Default),
             };
         }
+
+        // Registered unconditionally (Phase 46/WO-081) so Encryption.EncryptedCacheService can
+        // later reuse the exact same JsonSerializerOptions instance for its own T-to-plaintext-bytes
+        // step — see CacheSerializationOptions' remarks — instead of re-deriving a second one.
+        services.TryAddSingleton(new CacheSerializationOptions
+        {
+            Value = resolvedJsonOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web),
+        });
 
         // Register IFusionCacheSerializer in DI (and the concrete type separately) so that
         // AddBrotliCompression can Replace IFusionCacheSerializer with a decorator factory that

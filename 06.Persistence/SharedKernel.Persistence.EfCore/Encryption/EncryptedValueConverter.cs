@@ -46,6 +46,20 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// (now async-only) <see cref="IEncryptionKeyProvider"/> directly.
 /// </para>
 /// <para>
+/// <strong>Associated data / AAD (P-491/D-128/WO-081):</strong> every encrypt/decrypt call this
+/// converter performs binds a fixed <c>associatedData</c> byte array — supplied once at
+/// construction by <see cref="EncryptionModelConvention"/>, computed from the annotated property's
+/// stable table+column storage identity (or an explicit <c>associatedDataOverride</c>) — into the
+/// AES-GCM authentication tag. This closes the column-splicing hazard: a ciphertext copied from one
+/// encrypted column into a DIFFERENT encrypted column now fails authentication instead of silently
+/// "decrypting" into garbage. AAD is bound to the COLUMN's identity, not row content, so a value
+/// copied to another ROW of the SAME column still decrypts — a documented, accepted weaker bound
+/// than full row-level binding. RENAMING a table/column that carries <c>.Encrypt()</c> changes this
+/// value and makes every existing row's ciphertext for that column permanently undecryptable
+/// (surfaces as the existing generic <see cref="System.Security.Cryptography.CryptographicException"/>
+/// path) unless an explicit <c>associatedDataOverride</c> was supplied up front.
+/// </para>
+/// <para>
 /// <strong>Legacy plaintext:</strong> Stored values without a <c>"v"</c> prefix are returned
 /// unchanged — safe migration path from unencrypted columns.
 /// </para>
@@ -77,6 +91,19 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
     /// The cryptographic service that performs AES-256-GCM encrypt/decrypt operations.
     /// Registered by the consuming service via <c>AddSharedKernelCryptography()</c>.
     /// </param>
+    /// <param name="associatedData">
+    /// Additional authenticated data (AAD, P-491/D-128/WO-081) bound into the AES-GCM
+    /// authentication tag for every encrypt/decrypt call this converter instance ever performs —
+    /// computed once by <see cref="EncryptionModelConvention"/> at model-finalization time from the
+    /// annotated property's stable table+column storage identity (or an explicit
+    /// <c>associatedDataOverride</c> supplied to <c>.Encrypt()</c>), and reused unchanged for the
+    /// lifetime of this converter instance. A ciphertext produced by one column's converter fails
+    /// authentication (the existing generic <see cref="System.Security.Cryptography.CryptographicException"/>
+    /// path) if fed through a DIFFERENT column's converter — see this type's class remarks.
+    /// <strong>RENAME HAZARD:</strong> renaming the underlying table/column changes this value and
+    /// makes every existing row's ciphertext for that column permanently undecryptable unless an
+    /// explicit <c>associatedDataOverride</c> was supplied up front.
+    /// </param>
     /// <param name="versionOverride">
     /// Optional scoped accessor allowing <see cref="EncryptionRotationService{TContext}"/> to direct
     /// this converter to encrypt with a specific target key version for the duration of a rotation
@@ -94,17 +121,19 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
     public EncryptedValueConverter(
         IOptionsMonitor<EncryptionOptions> optionsMonitor,
         ISymmetricEncryptionService symmetricEncryptionService,
+        byte[] associatedData,
         IEncryptionVersionOverride? versionOverride = null)
         : base(
-            value => Encrypt(value, optionsMonitor.CurrentValue, symmetricEncryptionService),
-            stored => Decrypt(stored, optionsMonitor.CurrentValue, symmetricEncryptionService))
+            value => Encrypt(value, optionsMonitor.CurrentValue, symmetricEncryptionService, associatedData),
+            stored => Decrypt(stored, optionsMonitor.CurrentValue, symmetricEncryptionService, associatedData))
     {
     }
 
     private static string Encrypt(
         string value,
         EncryptionOptions options,
-        ISymmetricEncryptionService symmetricEncryptionService)
+        ISymmetricEncryptionService symmetricEncryptionService,
+        byte[] associatedData)
     {
         if (!options.Enabled)
         {
@@ -112,7 +141,7 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
         }
 
         var plaintextBytes = System.Text.Encoding.UTF8.GetBytes(value);
-        var payload = symmetricEncryptionService.Encrypt(plaintextBytes);
+        var payload = symmetricEncryptionService.Encrypt(plaintextBytes, associatedData);
 
         // Pack into the on-disk wire format: "v{KeyId}:{Base64(Nonce||Ciphertext||Tag)}"
         var combined = new byte[NonceSizeBytes + payload.Ciphertext.Length + TagSizeBytes];
@@ -126,7 +155,8 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
     private static string Decrypt(
         string stored,
         EncryptionOptions options,
-        ISymmetricEncryptionService symmetricEncryptionService)
+        ISymmetricEncryptionService symmetricEncryptionService,
+        byte[] associatedData)
     {
         if (!options.Enabled)
         {
@@ -167,7 +197,7 @@ public sealed class EncryptedValueConverter : ValueConverter<string, string>
         // D-108/P-448: no more direct pre-check against IEncryptionKeyProvider — the underlying
         // ISymmetricEncryptionService.Decrypt() call already distinguishes "unknown key id" from
         // "tamper/wrong key" via its own Result<T> error code.
-        var result = symmetricEncryptionService.Decrypt(payload);
+        var result = symmetricEncryptionService.Decrypt(payload, associatedData);
 
         if (result.IsFailure)
         {

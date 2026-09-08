@@ -1,3 +1,6 @@
+using System.Text;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -33,6 +36,22 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// <see cref="EncryptedValueConverter"/> it constructs. It no longer resolves
 /// <see cref="IEncryptionKeyProvider"/> at all — <see cref="EncryptedValueConverter"/> stopped
 /// needing one directly (D-108).
+/// </para>
+/// <para>
+/// <strong>Associated data (AAD) derivation, P-491/D-128/WO-081:</strong> for every
+/// <c>.Encrypt()</c>-annotated property, this convention computes a fixed
+/// <c>byte[] associatedData</c> ONCE, here, at model-finalization time — never at row-read/write
+/// time — and passes it into the single <see cref="EncryptedValueConverter"/> instance created for
+/// that property (one instance per property, reused for every row). The default derivation is
+/// <c>UTF8Bytes("{schema}.{table}.{column}")</c>, resolved via the property's relational storage
+/// metadata (<see cref="RelationalPropertyExtensions.GetColumnName(Microsoft.EntityFrameworkCore.Metadata.IReadOnlyProperty)"/>/
+/// <see cref="RelationalEntityTypeExtensions.GetTableName(Microsoft.EntityFrameworkCore.Metadata.IReadOnlyEntityType)"/>/
+/// <see cref="RelationalEntityTypeExtensions.GetSchema(Microsoft.EntityFrameworkCore.Metadata.IReadOnlyEntityType)"/>)
+/// — a fixed, constructor-time byte array requiring NO per-row primary-key access, closing
+/// <c>01.Core</c>'s own D-67 "hardest of the six" AAD-derivation open question. An explicit
+/// <c>associatedDataOverride</c> string supplied to <c>.Encrypt(associatedDataOverride: ...)</c>
+/// is used instead when present, for rename-safety — see
+/// <see cref="PropertyBuilderEncryptExtensions.Encrypt{TProperty}"/>'s remarks.
 /// </para>
 /// </remarks>
 public sealed class EncryptionModelConvention : IModelFinalizingConvention
@@ -90,6 +109,8 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                     continue;
                 }
 
+                var associatedData = ResolveAssociatedData(property);
+
                 ValueConverter converter;
                 if (_symmetricEncryptionService is not null)
                 {
@@ -97,6 +118,7 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                     converter = new EncryptedValueConverter(
                         _optionsMonitor,
                         _symmetricEncryptionService,
+                        associatedData,
                         _versionOverride);
                 }
                 else
@@ -107,11 +129,31 @@ public sealed class EncryptionModelConvention : IModelFinalizingConvention
                     converter = new EncryptedValueConverter(
                         _optionsMonitor,
                         NullSymmetricEncryptionService.Instance,
+                        associatedData,
                         _versionOverride);
                 }
 
                 property.SetValueConverter(converter);
             }
         }
+    }
+
+    // P-491/D-128/WO-081: computes the fixed AAD byte[] for one property, once, at model-finalizing
+    // time — either the caller-supplied associatedDataOverride string (rename-safe escape hatch) or
+    // the property's stable "{schema}.{table}.{column}" storage identity.
+    private static byte[] ResolveAssociatedData(IConventionProperty property)
+    {
+        var overrideAnnotation = property.FindAnnotation(PropertyBuilderEncryptExtensions.AssociatedDataOverrideAnnotationKey);
+        if (overrideAnnotation?.Value is string associatedDataOverride)
+        {
+            return Encoding.UTF8.GetBytes(associatedDataOverride);
+        }
+
+        var entityType = (IConventionEntityType)property.DeclaringType;
+        var schema = entityType.GetSchema() ?? "public";
+        var table = entityType.GetTableName() ?? entityType.ShortName();
+        var column = property.GetColumnName() ?? property.Name;
+
+        return Encoding.UTF8.GetBytes($"{schema}.{table}.{column}");
     }
 }

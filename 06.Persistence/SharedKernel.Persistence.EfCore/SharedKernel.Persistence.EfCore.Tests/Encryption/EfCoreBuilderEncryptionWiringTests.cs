@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Persistence.EfCore.Encryption;
 using SharedKernel.Persistence.EfCore.Encryption.Rotation;
 using SharedKernel.Persistence.EfCore.Extensions;
@@ -151,5 +152,115 @@ public sealed class EfCoreBuilderEncryptionWiringTests
 
         options.Value.ServiceName.Should().Be("system",
             "default PersistenceServiceOptions.ServiceName must be 'system' for backward compatibility");
+    }
+
+    // -------------------------------------------------------------------------
+    // T-146 (P-498/WO-081, D-131): keyed-DI structural isolation — an unrelated ambient (unkeyed)
+    // IEncryptionKeyProvider registration must have ZERO effect on .WithEncryption()'s own resolved
+    // provider, in either mode.
+    // -------------------------------------------------------------------------
+
+    // A stand-in for an unrelated general-purpose provider a consumer might separately register
+    // unkeyed — e.g. simulating 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider, or a plain
+    // AddSharedKernelCryptography() call paired with the consumer's own IEncryptionKeyProvider.
+    private sealed class UnrelatedAmbientProvider : IEncryptionKeyProvider
+    {
+        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+            throw new InvalidOperationException(
+                "UnrelatedAmbientProvider must never be reached by .WithEncryption()'s own " +
+                "persistence-scoped pipeline — if this throws during a test, the keyed-DI " +
+                "isolation this phase adds has regressed.");
+
+        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+            throw new InvalidOperationException(
+                "UnrelatedAmbientProvider must never be reached by .WithEncryption()'s own " +
+                "persistence-scoped pipeline — if this throws during a test, the keyed-DI " +
+                "isolation this phase adds has regressed.");
+    }
+
+    [Fact]
+    public void ConfigBackedDefault_UnrelatedUnkeyedProvider_HasZeroEffect_OnResolvedKeyedProvider()
+    {
+        var services = new ServiceCollection();
+
+        // Simulates an unrelated registration elsewhere in the SAME container — e.g.
+        // 13.ServiceDefaults' AddSharedKernelKeyVaultKeyProvider — registered BEFORE .WithEncryption().
+        services.AddSingleton<IEncryptionKeyProvider, UnrelatedAmbientProvider>();
+        services.AddSingleton<ISymmetricEncryptionService>(sp =>
+            new AesGcmEncryptionService(sp.GetRequiredService<IEncryptionKeyProvider>()));
+
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(enc =>
+            {
+                enc.Enabled = true;
+                enc.CurrentVersion = "v1";
+                enc.Keys["v1"] = ValidBase64Key();
+            })
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+
+        var resolvedKeyProvider = provider.GetRequiredKeyedService<IEncryptionKeyProvider>(
+            PersistenceEncryptionKeys.EncryptionKeyProviderKey);
+
+        resolvedKeyProvider.Should().BeOfType<EncryptionOptionsKeyProvider>(
+            "the config-backed default must resolve EncryptionOptionsKeyProvider under this " +
+            "package's own keyed-DI slot, completely unaffected by the unrelated unkeyed " +
+            "registration made elsewhere in the same container");
+
+        // The ambient unkeyed slot itself is left exactly as the consumer registered it — this
+        // package never touches or overwrites it.
+        provider.GetRequiredService<IEncryptionKeyProvider>().Should().BeOfType<UnrelatedAmbientProvider>();
+    }
+
+    [Fact]
+    public void ExternalProviderMode_UnrelatedUnkeyedProvider_HasZeroEffect_OnResolvedKeyedProvider()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IEncryptionKeyProvider, UnrelatedAmbientProvider>();
+
+        // The consumer's OWN unkeyed registration of the type WithExternalEncryptionKeyProvider will
+        // resolve — deliberately a DIFFERENT concrete type than UnrelatedAmbientProvider, proving
+        // the external path resolves ITS type-argument specifically, not "whatever IEncryptionKeyProvider
+        // happens to be ambient."
+        services.AddSingleton<FakeExternalKmsProvider>();
+
+        services
+            .AddSharedKernelEfCore<TestDbContext>(opts => opts.UseSqlite("DataSource=:memory:").ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning)))
+            .WithEncryption(enc =>
+            {
+                enc.Enabled = true;
+                enc.CurrentVersion = "v1";
+                enc.Keys["v1"] = ValidBase64Key();
+            })
+            .WithExternalEncryptionKeyProvider<FakeExternalKmsProvider>()
+            .Build();
+
+        var provider = services.BuildServiceProvider();
+
+        var resolvedKeyProvider = provider.GetRequiredKeyedService<IEncryptionKeyProvider>(
+            PersistenceEncryptionKeys.EncryptionKeyProviderKey);
+
+        resolvedKeyProvider.Should().BeOfType<PreWarmedEncryptionKeyProvider>(
+            "WithExternalEncryptionKeyProvider<TProvider>() must resolve under the SAME keyed slot, " +
+            "superseding the config-backed default's registration (last-registered-wins) — the " +
+            "unrelated ambient UnrelatedAmbientProvider registration has zero effect either way");
+
+        ((PreWarmedEncryptionKeyProvider)resolvedKeyProvider).Inner.Should().BeOfType<FakeExternalKmsProvider>(
+            "the external mode must wrap the explicitly type-argument-selected TProvider, never the " +
+            "unrelated ambient registration");
+    }
+
+    // A second, distinct fake IEncryptionKeyProvider — genuinely different from UnrelatedAmbientProvider —
+    // standing in for a real KMS-backed provider a consumer registers for WithExternalEncryptionKeyProvider.
+    private sealed class FakeExternalKmsProvider : IEncryptionKeyProvider
+    {
+        public ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default) =>
+            new(new CryptographicKey("v1", new byte[32]));
+
+        public ValueTask<CryptographicKey?> GetKeyAsync(string keyId, CancellationToken ct = default) =>
+            new((CryptographicKey?)null);
     }
 }

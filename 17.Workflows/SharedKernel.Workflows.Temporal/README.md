@@ -365,9 +365,49 @@ Two costs that come with it, stated rather than hidden:
 
 A payload not carrying this codec's own encoding marker passes through unchanged on decode (the
 standard Temporal codec-chain convention, so multiple codecs can coexist). A payload that **does**
-carry the marker but fails to decrypt (tamper, wrong key, unknown key id) throws rather than silently
-passing the ciphertext through as plaintext, or silently returning ciphertext as if it had been
-decoded — `WorkflowErrors.PayloadCodecFailure` surfaces in either failure direction.
+carry the marker but fails to decrypt (tamper, wrong key, unknown key id, or a mismatched
+associated-data binding — see below) throws rather than silently passing the ciphertext through as
+plaintext, or silently returning ciphertext as if it had been decoded —
+`WorkflowErrors.PayloadCodecFailure` surfaces in every one of those failure directions, unchanged
+before and after the associated-data migration described next.
+
+### Associated-data (AAD) binding to the workflow id
+
+Every encrypt/decrypt call binds AES-GCM's associated-data parameter to the resolved Temporal
+`WorkflowId` — the UTF-8 bytes of the id when one is resolvable, an empty array otherwise. A ciphertext
+captured for one workflow execution can never be replayed to decode successfully under a different
+`WorkflowId`'s context: a mismatch fails authentication exactly like a tampered ciphertext or a wrong
+key, not a distinct error shape.
+
+The binding is deliberately **`WorkflowId`-only, never `RunId`** — a corrected acceptance criterion,
+not the originally-considered design. `RunId` is absent from every `Temporalio` 1.17.0
+`ISerializationContext` shape (confirmed by reflecting the real compiled assembly), and binding to it
+would be wrong even if it existed: Temporal's continue-as-new mechanism and workflow retries assign a
+**new** `RunId` to the **same** `WorkflowId` while carrying payload data forward across that boundary,
+so a `RunId`-bound AAD would make a continued or retried execution's carried-forward payloads fail to
+decrypt — a correctness bug wearing a security feature's clothes. `WorkflowId` is this domain's own
+idempotency/addressing unit (see `IWorkflowIdFactory` above) and is the correct, and only, binding
+granularity.
+
+The codec resolves its binding via the SDK's opt-in `IWithSerializationContext<IPayloadCodec>`
+mechanism, which the client and worker SDKs call automatically before start/signal/query calls and
+before activity invocation respectively — no consuming code needs to do anything beyond
+`.WithPayloadEncryption()`. Outside a workflow execution context entirely — CLI/`tctl` inspection, Web
+UI payload display, a standalone data-converter operation — the SDK either never supplies a context at
+all or supplies one whose `WorkflowId` is `null` (the SDK's own documented "standalone activity"
+shape). Either way the codec falls back to an empty associated-data binding rather than throwing or
+rendering the payload permanently undecodable outside that one execution's context.
+
+### Async migration (async members only, never the retained sync bridge)
+
+`EncodeAsync`/`DecodeAsync` call only `ISymmetricEncryptionService.EncryptAsync`/`DecryptAsync` —
+never the retained synchronous `Encrypt`/`Decrypt` members. This was a required fix, not a performance
+nicety: the sync members are gated behind `01.Core`'s `EncryptionKeyProviderCapabilities
+.IsGenuinelySynchronous` check and throw `NotSupportedException` outright against any
+`IEncryptionKeyProvider` not explicitly marked `ISynchronousEncryptionKeyProvider` — which a genuine
+KMS/HSM-backed provider must never claim. Before this migration the codec's `Encode`/`Decode` called
+the sync members wrapped in `Task.FromResult` with no genuine `await`; combined with a KMS-backed key
+provider, that path would fail unconditionally the moment such a provider was registered.
 
 ---
 

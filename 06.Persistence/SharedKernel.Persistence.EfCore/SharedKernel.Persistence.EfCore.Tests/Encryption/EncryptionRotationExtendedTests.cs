@@ -51,9 +51,9 @@ public sealed class EncryptionRotationExtendedTests
             .WithEncryption(configure)
             .WithDbContextFactory()
             .Build();
-        // P-227: register the crypto service (consuming service responsibility in production).
-        services.AddScoped<SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService,
-            SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService>();
+        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
+        // ISymmetricEncryptionService internally, keyed-DI isolated — no consumer-side unkeyed
+        // registration needed or wanted anymore.
         return new RotationExtHost { Provider = services.BuildServiceProvider(), Connection = conn };
     }
 
@@ -69,9 +69,9 @@ public sealed class EncryptionRotationExtendedTests
             .WithEncryption(configure)
             .WithDbContextFactory()
             .Build();
-        // P-227: register the crypto service (consuming service responsibility in production).
-        services.AddScoped<SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService,
-            SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService>();
+        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
+        // ISymmetricEncryptionService internally, keyed-DI isolated — no consumer-side unkeyed
+        // registration needed or wanted anymore.
         return new RotationExtHost { Provider = services.BuildServiceProvider(), Connection = conn };
     }
 

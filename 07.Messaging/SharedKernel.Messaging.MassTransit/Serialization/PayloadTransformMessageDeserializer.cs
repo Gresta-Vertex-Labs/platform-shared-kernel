@@ -1,4 +1,5 @@
 using System.Net.Mime;
+using System.Text;
 using MassTransit;
 using SharedKernel.Compression;
 using SharedKernel.Cryptography.Symmetric;
@@ -16,11 +17,23 @@ namespace SharedKernel.Messaging.MassTransit.Serialization;
 /// transform applied by <see cref="PayloadTransformMessageSerializer"/> before delegating to it.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Fixed ordering: decrypt first, then decompress — the exact reverse of the publish-side
 /// compress-then-encrypt order, never caller-configurable. Any failure while reversing the
 /// transform, or while the inner deserializer parses the resulting bytes, is wrapped in a
 /// <see cref="PayloadTransformMismatchException"/> rather than allowed to surface as a confusing
 /// raw JSON/decryption/decompression exception — see that type's remarks for why.
+/// </para>
+/// <para>
+/// <b>(P-499/WO-081)</b> When decryption is enabled, the associated data (AAD) needed to
+/// authenticate the ciphertext is read back from the <see cref="PayloadTransformHeaders.MessageTypeAad"/>
+/// transport header the publisher set — see <see cref="PayloadTransformMessageSerializer"/>'s
+/// remarks. A missing header (a message from a pre-P-499 producer) falls back to
+/// <see cref="Array.Empty{T}"/>, byte-identical to AES-GCM's own implicit "no AAD" default, so
+/// rolling deploys stay safe old-producer→new-consumer. This still calls the <b>synchronous</b>
+/// <see cref="ISymmetricEncryptionService.Decrypt(EncryptedPayload, byte[])"/> member for the same
+/// structural reason documented on <see cref="PayloadTransformMessageSerializer"/>.
+/// </para>
 /// </remarks>
 internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
 {
@@ -62,7 +75,7 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
         MessageBody transformedBody = body;
 
         if (_options.EnableCompression || _options.EnableEncryption)
-            transformedBody = new BytesMessageBody(ReverseTransform(body.GetBytes()));
+            transformedBody = new BytesMessageBody(ReverseTransform(body.GetBytes(), headers));
 
         try
         {
@@ -81,7 +94,7 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
     /// <inheritdoc />
     public MessageBody GetMessageBody(string text) => _inner.GetMessageBody(text);
 
-    private byte[] ReverseTransform(byte[] bytes)
+    private byte[] ReverseTransform(byte[] bytes, Headers headers)
     {
         try
         {
@@ -89,8 +102,19 @@ internal sealed class PayloadTransformMessageDeserializer : IMessageDeserializer
             // compress-then-encrypt.
             if (_options.EnableEncryption)
             {
+                // PA-03/PA-09 (P-499): reproduce the publisher's AAD from the transport header it
+                // set. Header absent (a message from a pre-PA-* producer) falls back to
+                // Array.Empty<byte>() — byte-identical to AES-GCM's own implicit "no AAD"
+                // semantics every producer used before this phase, so rolling deploys stay safe in
+                // the old-producer/new-consumer direction. The reverse direction (new producer /
+                // old consumer) is a genuine, unavoidable AEAD authentication failure — see
+                // 07.Messaging/CLAUDE.md's payload-transform section for the operational
+                // consequence (consumers must upgrade before producers).
+                string? aad = headers.Get<string>(PayloadTransformHeaders.MessageTypeAad, null);
+                byte[] aadBytes = aad is not null ? Encoding.UTF8.GetBytes(aad) : [];
+
                 EncryptedPayload encrypted = EncryptedPayloadWireCodec.Decode(bytes);
-                Result<byte[]> decrypted = _encryptionService!.Decrypt(encrypted);
+                Result<byte[]> decrypted = _encryptionService!.Decrypt(encrypted, aadBytes);
                 if (decrypted.IsFailure)
                     throw new InvalidOperationException(decrypted.Error.Message);
 

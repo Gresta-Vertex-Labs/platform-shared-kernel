@@ -1,6 +1,3 @@
-using System.Buffers;
-using System.IO.Compression;
-using System.Runtime.CompilerServices;
 using SharedKernel.Caching.FusionCache.Extensions;
 using ZiggyCreatures.Caching.Fusion.Serialization;
 
@@ -13,9 +10,12 @@ namespace SharedKernel.Caching.FusionCache.Serialization;
 /// <remarks>
 /// <para>
 /// Payloads at or above <see cref="CachingOptions.CompressionOptions.L2ThresholdBytes"/> are
-/// compressed with <see cref="BrotliEncoder"/> and prefixed with the two-byte magic marker
-/// <c>0x42 0x52</c> ("BR" in ASCII). On read, the magic prefix is detected and the payload is
-/// decompressed transparently before being forwarded to the inner serializer.
+/// compressed with Brotli and prefixed with the two-byte magic marker <c>0x42 0x52</c> ("BR" in
+/// ASCII). On read, the magic prefix is detected and the payload is decompressed transparently
+/// before being forwarded to the inner serializer. The actual encode/decode mechanics live in
+/// <see cref="BrotliPayloadCodec"/> (Phase 46/WO-081), shared with
+/// <c>Encryption.EncryptedCacheService</c> — this type's own external behavior is unchanged by
+/// that extraction.
 /// </para>
 /// <para>
 /// Payloads below the threshold, and any payloads written before compression was enabled, are
@@ -32,10 +32,6 @@ namespace SharedKernel.Caching.FusionCache.Serialization;
 /// </remarks>
 internal sealed class BrotliCacheSerializer : IFusionCacheSerializer
 {
-    // Magic bytes prepended to every compressed payload: ASCII "BR" (0x42, 0x52).
-    private const byte MagicByte0 = 0x42;
-    private const byte MagicByte1 = 0x52;
-
     private readonly IFusionCacheSerializer _inner;
     private readonly CachingOptions.CompressionOptions _options;
 
@@ -57,17 +53,29 @@ internal sealed class BrotliCacheSerializer : IFusionCacheSerializer
         _options = options;
     }
 
+    /// <summary>
+    /// The wrapped inner serializer this instance decorates.
+    /// </summary>
+    /// <remarks>
+    /// Added Phase 46/WO-081: <c>AddCacheEncryption()</c> uses this to unwrap Brotli compression
+    /// from the registered <see cref="IFusionCacheSerializer"/> when both features are opted in —
+    /// compression duty moves to <c>Encryption.EncryptedCacheService</c> at that point, since
+    /// encryption must see plaintext bytes before compression can safely run. See
+    /// "Cache-value encryption rules" in <c>02.Caching/CLAUDE.md</c>.
+    /// </remarks>
+    public IFusionCacheSerializer Inner => _inner;
+
     /// <inheritdoc />
     public byte[] Serialize<T>(T? obj)
     {
         var payload = _inner.Serialize(obj);
-        return CompressIfAboveThreshold(payload);
+        return BrotliPayloadCodec.Compress(payload, _options.L2ThresholdBytes, _options.Level);
     }
 
     /// <inheritdoc />
     public T? Deserialize<T>(byte[] data)
     {
-        var decompressed = DecompressIfCompressed(data);
+        var decompressed = BrotliPayloadCodec.Decompress(data);
         return _inner.Deserialize<T>(decompressed);
     }
 
@@ -75,92 +83,13 @@ internal sealed class BrotliCacheSerializer : IFusionCacheSerializer
     public async ValueTask<byte[]> SerializeAsync<T>(T? obj, CancellationToken token = default)
     {
         var payload = await _inner.SerializeAsync(obj, token).ConfigureAwait(false);
-        return CompressIfAboveThreshold(payload);
+        return BrotliPayloadCodec.Compress(payload, _options.L2ThresholdBytes, _options.Level);
     }
 
     /// <inheritdoc />
     public async ValueTask<T?> DeserializeAsync<T>(byte[] data, CancellationToken token = default)
     {
-        var decompressed = DecompressIfCompressed(data);
+        var decompressed = BrotliPayloadCodec.Decompress(data);
         return await _inner.DeserializeAsync<T>(decompressed, token).ConfigureAwait(false);
-    }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Maps <see cref="CompressionLevel"/> to a Brotli quality integer (0–11).
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int ToQuality(CompressionLevel level) => level switch
-    {
-        CompressionLevel.NoCompression => 0,
-        CompressionLevel.Fastest => 1,
-        CompressionLevel.Optimal => 11,
-        CompressionLevel.SmallestSize => 11,
-        _ => 1,
-    };
-
-    /// <summary>
-    /// Compresses <paramref name="payload"/> if its length meets the threshold; otherwise
-    /// returns the original byte array unchanged.
-    /// </summary>
-    private byte[] CompressIfAboveThreshold(byte[] payload)
-    {
-        if (payload.Length < _options.L2ThresholdBytes)
-            return payload;
-
-        // Rent a buffer large enough for the magic prefix + worst-case Brotli output.
-        int maxCompressedLength = BrotliEncoder.GetMaxCompressedLength(payload.Length);
-        int rentSize = maxCompressedLength + 2; // +2 for magic bytes
-        byte[] rented = ArrayPool<byte>.Shared.Rent(rentSize);
-
-        try
-        {
-            rented[0] = MagicByte0;
-            rented[1] = MagicByte1;
-
-            bool compressed = BrotliEncoder.TryCompress(
-                payload,
-                rented.AsSpan(2),
-                out int bytesWritten,
-                quality: ToQuality(_options.Level),
-                window: 22); // default Brotli window size
-
-            if (!compressed)
-            {
-                // Compression failed (shouldn't happen for correct buffer sizing) — passthrough.
-                return payload;
-            }
-
-            // Copy only the used portion (magic bytes + compressed data) to a new array.
-            int totalLength = bytesWritten + 2;
-            var result = new byte[totalLength];
-            rented.AsSpan(0, totalLength).CopyTo(result);
-            return result;
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(rented);
-        }
-    }
-
-    /// <summary>
-    /// Detects the magic prefix and decompresses the payload if present; otherwise returns
-    /// the original byte array unchanged so the inner serializer can handle it directly.
-    /// </summary>
-    private static byte[] DecompressIfCompressed(byte[] data)
-    {
-        if (data.Length < 2 || data[0] != MagicByte0 || data[1] != MagicByte1)
-            return data;
-
-        // Decompress using BrotliStream because we don't know the output size ahead of time.
-        using var inputStream = new MemoryStream(data, 2, data.Length - 2, writable: false);
-        using var brotliStream = new BrotliStream(inputStream, CompressionMode.Decompress, leaveOpen: false);
-        using var outputStream = new MemoryStream();
-
-        brotliStream.CopyTo(outputStream);
-        return outputStream.ToArray();
     }
 }

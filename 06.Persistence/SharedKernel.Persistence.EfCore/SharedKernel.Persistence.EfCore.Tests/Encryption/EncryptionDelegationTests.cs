@@ -56,6 +56,8 @@ public sealed class EncryptionDelegationTests
     /// Builds a real converter using the full P-227 delegation chain.
     /// EncryptionOptionsKeyProvider → AesGcmEncryptionService → EncryptedValueConverter.
     /// </summary>
+    private static readonly byte[] TestAssociatedData = System.Text.Encoding.UTF8.GetBytes("public.test_table.test_column");
+
     private static EncryptedValueConverter MakeConverter(
         EncryptionOptions opts,
         IEncryptionVersionOverride? versionOverride = null)
@@ -63,7 +65,7 @@ public sealed class EncryptionDelegationTests
         var monitor = MakeMonitor(opts);
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, versionOverride ?? EncryptionVersionOverride.NoOp, new EncryptionKeyByteCache(monitor));
         var encService = new AesGcmEncryptionService(keyProvider);
-        return new EncryptedValueConverter(monitor, encService, versionOverride);
+        return new EncryptedValueConverter(monitor, encService, TestAssociatedData, versionOverride);
     }
 
     // ===========================================================================
@@ -103,7 +105,7 @@ public sealed class EncryptionDelegationTests
         var disabledOpts = new EncryptionOptions { Enabled = false };
         var monitor = MakeMonitor(disabledOpts);
         var cryptoSvc = Substitute.For<ISymmetricEncryptionService>();
-        var converter = new EncryptedValueConverter(monitor, cryptoSvc);
+        var converter = new EncryptedValueConverter(monitor, cryptoSvc, TestAssociatedData);
 
         const string val = "plaintext";
         var encrypted = converter.ConvertToProviderExpression.Compile()(val);
@@ -111,8 +113,8 @@ public sealed class EncryptionDelegationTests
 
         encrypted.Should().Be(val, "pass-through: encrypt must return input unchanged when Enabled == false");
         decrypted.Should().Be(val, "pass-through: decrypt must return input unchanged when Enabled == false");
-        cryptoSvc.DidNotReceiveWithAnyArgs().Encrypt(default!);
-        cryptoSvc.DidNotReceiveWithAnyArgs().Decrypt(default!);
+        cryptoSvc.DidNotReceiveWithAnyArgs().Encrypt(default!, default!);
+        cryptoSvc.DidNotReceiveWithAnyArgs().Decrypt(default!, default!);
     }
 
     [Fact]
@@ -300,12 +302,12 @@ public sealed class EncryptionDelegationTests
         };
         var monitor = MakeMonitor(opts);
         var cryptoSvc = Substitute.For<ISymmetricEncryptionService>();
-        cryptoSvc.Decrypt(Arg.Any<EncryptedPayload>()).Returns(
+        cryptoSvc.Decrypt(Arg.Any<EncryptedPayload>(), Arg.Any<byte[]>()).Returns(
             SharedKernel.Primitives.Errors.Error.Unexpected(
                 CryptographyErrorCodes.UnknownKeyId,
                 "No encryption key registered for key id 'v1'."));
 
-        var converter = new EncryptedValueConverter(monitor, cryptoSvc);
+        var converter = new EncryptedValueConverter(monitor, cryptoSvc, TestAssociatedData);
         var fromProvider = converter.ConvertFromProviderExpression.Compile();
 
         // Version "v1" is not in Keys. Payload must be well-formed length (>= 28 bytes) so the
@@ -317,7 +319,7 @@ public sealed class EncryptionDelegationTests
             .Which.Version.Should().Be("v1");
 
         // The converter DOES delegate to Decrypt now — the distinction comes from the result code.
-        cryptoSvc.Received(1).Decrypt(Arg.Any<EncryptedPayload>());
+        cryptoSvc.Received(1).Decrypt(Arg.Any<EncryptedPayload>(), Arg.Any<byte[]>());
     }
 
     [Fact]
@@ -364,7 +366,7 @@ public sealed class EncryptionDelegationTests
         var override_ = new EncryptionVersionOverride { OverrideVersion = "v2" };
         var keyProvider = new EncryptionOptionsKeyProvider(monitor, override_, new EncryptionKeyByteCache(monitor));
         var encService = new AesGcmEncryptionService(keyProvider);
-        var converter = new EncryptedValueConverter(monitor, encService, override_);
+        var converter = new EncryptedValueConverter(monitor, encService, TestAssociatedData, override_);
         var toProvider = converter.ConvertToProviderExpression.Compile();
 
         _ = toProvider("some-value"); // force encryption with override

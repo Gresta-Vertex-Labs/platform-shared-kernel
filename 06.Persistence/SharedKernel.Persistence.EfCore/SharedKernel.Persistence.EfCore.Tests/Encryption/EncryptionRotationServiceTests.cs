@@ -65,12 +65,14 @@ public sealed class EncryptionRotationServiceTests
             .WithDbContextFactory()
             .Build();
 
-        // P-227: ISymmetricEncryptionService must be registered (consuming service responsibility).
-        // Tests register AesGcmEncryptionService as scoped (scoped to match the scoped IEncryptionKeyProvider
-        // registered by WithEncryption() as EncryptionOptionsKeyProvider).
-        services.AddScoped<SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService,
-            SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService>();
-
+        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
+        // ISymmetricEncryptionService internally (registered under a package-internal keyed-DI
+        // slot, resolved automatically by SharedKernelDbContext's constructor via
+        // CoreOptionsExtension.ApplicationServiceProvider) — no consumer-side unkeyed registration
+        // is needed (or wanted) anymore. Previously this test had to register
+        // ISymmetricEncryptionService/AesGcmEncryptionService itself; that step is now obsolete and
+        // would actively collide with the fix this phase makes (an ambient unkeyed registration must
+        // never be able to influence this package's own encryption wiring).
         var provider = services.BuildServiceProvider();
         return new RotationTestHost { Provider = provider, Connection = connection };
     }

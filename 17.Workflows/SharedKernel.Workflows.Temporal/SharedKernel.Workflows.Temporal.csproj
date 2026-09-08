@@ -49,5 +49,17 @@
       15.Integration.Webhooks / 09.Search precedent (S-04).
     -->
     <InternalsVisibleTo Include="SharedKernel.Workflows.Temporal.Tests" />
+    <!--
+      P-08/WO-081: a second, deliberately narrow grant to the Published-phase consumer-verify harness
+      — NOT a general relaxation of the internal-type boundary an ordinary downstream consumer has.
+      Surface 5 needs direct access to EncryptionPayloadCodec to prove the AAD cross-WorkflowId
+      rejection against REAL captured Temporal history bytes (not a synthetic Payload, as the unit
+      tests use) — a proof no black-box IWorkflowDispatcher-only consumer could ever construct,
+      precisely because the SDK always resolves the correct WorkflowId context for whichever
+      execution it is decoding. consumer-verify remains "not shipped, verification harness only"
+      (see its own csproj) — this grant exists solely to verify an internal guarantee end to end,
+      never to demonstrate a capability a real consumer is meant to have.
+    -->
+    <InternalsVisibleTo Include="consumer-verify" />
   </ItemGroup>
 </Project>

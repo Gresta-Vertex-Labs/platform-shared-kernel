@@ -16,7 +16,13 @@ namespace SharedKernel.Persistence.EfCore.Encryption;
 /// previous synchronous <c>GetCurrentKey()</c>. <see cref="GetKeyAsync"/> still returns an
 /// already-completed <see langword="null"/> result, unchanged.
 /// </remarks>
-internal sealed class NullEncryptionKeyProvider : IEncryptionKeyProvider
+/// <remarks>
+/// <strong>ISynchronousEncryptionKeyProvider (P-492/D-127/WO-081):</strong> HONESTLY implements the
+/// marker — <see cref="GetCurrentKeyAsync"/> throws before ever constructing a
+/// <see cref="ValueTask{TResult}"/> and <see cref="GetKeyAsync"/> always returns an
+/// already-completed result; neither member performs any I/O.
+/// </remarks>
+internal sealed class NullEncryptionKeyProvider : ISynchronousEncryptionKeyProvider
 {
     /// <summary>Gets the singleton instance.</summary>
     public static readonly NullEncryptionKeyProvider Instance = new();

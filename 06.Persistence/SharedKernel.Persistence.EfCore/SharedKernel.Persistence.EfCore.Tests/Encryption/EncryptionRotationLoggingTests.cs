@@ -58,9 +58,9 @@ public sealed class EncryptionRotationLoggingTests
 
         services.AddSingleton<ILogger<EncryptionRotationService<RotationTestDbContext>>>(logger);
 
-        services.AddScoped<SharedKernel.Cryptography.Symmetric.ISymmetricEncryptionService,
-            SharedKernel.Cryptography.Symmetric.AesGcmEncryptionService>();
-
+        // D-131/P-498/WO-081: .WithEncryption() now builds its own persistence-scoped
+        // ISymmetricEncryptionService internally, keyed-DI isolated — no consumer-side unkeyed
+        // registration needed or wanted anymore.
         var provider = services.BuildServiceProvider();
         return new RotationLoggingTestHost { Provider = provider, Connection = connection };
     }

@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Cryptography.Symmetric;
 using Xunit;
 
 namespace SharedKernel.ArchitectureTests.Tests;
@@ -21,6 +22,35 @@ namespace SharedKernel.ArchitectureTests.Tests;
 ///        cipher/RNG calls inside a SharedKernel.Cryptography-prefixed namespace.
 /// T-160: SK0301 exemption-narrowing regression test — a SharedKernel.Persistence-namespaced type
 ///        calling AesGcm now fails (previously exempt, now correctly flagged).
+/// T-364: <see cref="CryptoIsolationRules.CryptographyCoreHasNoThirdPartyDependencies"/> pass path
+///        (WO-081 P-504, <c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>, Technique B) — the
+///        real, already-shipped <c>SharedKernel.Cryptography</c> core assembly has zero dependency
+///        on <c>Konscious.Security.Cryptography</c>, <c>Azure.Security.KeyVault</c>, or
+///        <c>Azure.Identity</c> today.
+/// T-365: regression proof — a contrived fixture depending on a stand-in
+///        <c>Konscious.Security.Cryptography</c>-namespaced type must fail the same rule.
+///        <strong>Verification technique CORRECTED against a real environmental constraint found
+///        during implementation.</strong> This phase's own Implementation Rule 7 prescribed a real,
+///        temporary <c>Konscious.Security.Cryptography.Argon2</c> <c>PackageReference</c> added
+///        directly to <c>SharedKernel.Cryptography.csproj</c>, confirmed to make the rule fail, then
+///        fully reverted before commit. Attempted during implementation: this repo uses NuGet
+///        Central Package Management (<c>Directory.Packages.props</c>,
+///        <c>ManagePackageVersionsCentrally=true</c>) with per-project <c>VersionOverride</c>
+///        DISABLED platform-wide (confirmed via a real, reverted attempt — <c>error NU1013</c>,
+///        "projects that use central package management are configured to disable this feature").
+///        Adding a central <c>PackageVersion</c> entry for a throwaway sanity check would mean
+///        editing a root build-configuration file outside this domain's own jurisdiction
+///        (<c>devops-lead</c>'s, per this session's own operating instructions) for a package that
+///        will never actually ship there. T-365 is reproduced instead the same way T-154/T-155
+///        already prove <see cref="CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography"/>'s
+///        detection surface: a contrived fixture assembly, compiled in-memory, needing no real NuGet
+///        package or network access. This is not a weaker proof — <c>NetArchTest</c>'s
+///        <c>NotHaveDependencyOn(term)</c> itself works by namespace-prefix matching against a
+///        type's resolved dependencies; it has no way to distinguish "this namespace came from a
+///        real NuGet package" from "this namespace came from a type declared directly in the
+///        fixture source," so the fixture exercises the identical code path a real Argon2 reference
+///        would. Shipped as a standing, permanent <c>[Fact]</c> (unlike a one-off manual check, this
+///        one needs no developer to remember to re-run it by hand on a future change).
 /// </remarks>
 public class CryptoIsolationRulesTests
 {
@@ -309,6 +339,101 @@ public class CryptoIsolationRulesTests
         result.IsSuccessful.Should().BeTrue(
             because: "AesGcmEncryptionService is in SharedKernel.Cryptography — the sole exempt " +
                      "namespace after the SK0301 exemption narrowing in WO-037 P-229");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-364 — Real-assembly verification (GATING, immediate — no upstream dependency):
+    // SharedKernel.Cryptography core has zero third-party dependency (Technique B)
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-364 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): the real,
+    /// already-shipped <c>SharedKernel.Cryptography</c> core assembly must pass
+    /// <see cref="CryptoIsolationRules.CryptographyCoreHasNoThirdPartyDependencies"/> — it carries
+    /// no dependency on <c>Konscious.Security.Cryptography</c> (the future
+    /// <c>SharedKernel.Cryptography.Argon2</c> sibling's dependency, P-495, not yet shipped) or
+    /// <c>Azure.Security.KeyVault</c>/<c>Azure.Identity</c> (the already-shipped
+    /// <c>SharedKernel.Cryptography.KeyVault.Azure</c> sibling's dependencies, P-447 — confined to
+    /// that sibling package, never leaked back into this core assembly).
+    /// </summary>
+    /// <remarks>
+    /// This is FULLY UNGATED — unlike T-362/T-363 (which needed <c>01.Core</c>'s P-492/P-493 to
+    /// ship past Design), this check targets <c>SharedKernel.Cryptography</c> core as it exists
+    /// TODAY and needs no dependency on <c>SharedKernel.Cryptography.Argon2</c> (P-495) ever
+    /// shipping — a correction of WO-081/P-504's own stated "Depends on: P-492, P-495" line, see
+    /// this phase's own <c>state-map.md</c> entry. Non-vacuous verification (T-365) was performed
+    /// as a temporary <c>PackageReference</c> mutation during implementation — see this class's own
+    /// type-level remarks.
+    /// </remarks>
+    [Fact]
+    public void CryptographyCoreHasNoThirdPartyDependencies_RealCryptographyAssembly_RulePasses()
+    {
+        var result = CryptoIsolationRules
+            .CryptographyCoreHasNoThirdPartyDependencies(typeof(AesGcmEncryptionService).Assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeTrue(
+            because: "the real, shipped SharedKernel.Cryptography core assembly has zero " +
+                     "dependency on Konscious.Security.Cryptography, Azure.Security.KeyVault, or " +
+                     "Azure.Identity — every sibling provider package (SharedKernel.Cryptography." +
+                     "KeyVault.Azure today; SharedKernel.Cryptography.Argon2 once P-495 ships) " +
+                     "confines its own third-party dependency to itself (WO-081, P-504)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // T-365 — Regression proof (Technique B): a Konscious-namespaced dependency fails
+    // CryptographyCoreHasNoThirdPartyDependencies
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// T-365 (<c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>/WO-081/P-504): a contrived fixture
+    /// type depending on a stand-in <c>Konscious.Security.Cryptography</c>-namespaced type must fail
+    /// <see cref="CryptoIsolationRules.CryptographyCoreHasNoThirdPartyDependencies"/> — reproducing
+    /// the exact "a future Argon2 dependency leaks into SharedKernel.Cryptography core" regression
+    /// this check exists to prevent. See this class's own type-level remarks for why this fixture
+    /// technique replaces the phase's originally-prescribed real <c>PackageReference</c> mutation.
+    /// </summary>
+    [Fact]
+    public void CryptographyCoreHasNoThirdPartyDependencies_KonsciousNamespacedDependency_RuleFails()
+    {
+        const string source = """
+            namespace Konscious.Security.Cryptography
+            {
+                public sealed class Argon2id
+                {
+                    public byte[] Key { get; set; } = System.Array.Empty<byte>();
+
+                    public byte[] GetBytes(int length) => new byte[length];
+                }
+            }
+
+            namespace Fixture.CryptographyCoreLeak
+            {
+                // Violation: this type — standing in for a hypothetical SharedKernel.Cryptography
+                // core type — references Konscious.Security.Cryptography.Argon2id directly,
+                // reproducing the exact "an Argon2 dependency leaks into the zero-third-party-
+                // dependency core assembly" regression this check exists to prevent. A future real
+                // SharedKernel.Cryptography.Argon2 sibling package (P-495) must own this dependency
+                // instead, mirroring SharedKernel.Cryptography.KeyVault.Azure's existing confinement.
+                public class LeakedArgon2Usage
+                {
+                    private readonly Konscious.Security.Cryptography.Argon2id _argon2 = new();
+
+                    public byte[] DeriveKey() => _argon2.GetBytes(32);
+                }
+            }
+            """;
+
+        var assembly = CompileInMemory("Fixture.CryptoIsolation.KonsciousLeak", source);
+
+        var result = CryptoIsolationRules
+            .CryptographyCoreHasNoThirdPartyDependencies(assembly)
+            .GetResult();
+
+        result.IsSuccessful.Should().BeFalse(
+            because: "LeakedArgon2Usage depends on a Konscious.Security.Cryptography-namespaced " +
+                     "type — reproducing the exact regression " +
+                     "CryptographyCoreHasNoThirdPartyDependencies exists to prevent (WO-081, P-504)");
     }
 
     // ---------------------------------------------------------------------------

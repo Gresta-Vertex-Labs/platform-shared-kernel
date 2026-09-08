@@ -1401,7 +1401,7 @@ F2 — per-call `CryptographyClient` construction risks socket exhaustion under 
 
 ### P-497 — Caching: Migrate `CacheEncryptionSerializer` to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-081
 **Domain:** 02.Caching
 **Depends on:** P-491, P-492
@@ -1422,7 +1422,7 @@ Direct consequence of P-491 (AAD is now required) and P-492 (a genuinely network
 
 ### P-498 — Persistence: Close the Sync-Over-Async KMS Materializer Defect in `EncryptedValueConverter` (SEVERE)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-081
 **Domain:** 06.Persistence
 **Depends on:** P-491, P-492
@@ -1444,7 +1444,7 @@ F1, SEVERE — with `AzureKeyVaultEncryptionKeyProvider` registered (already wir
 
 ### P-499 — Messaging: Migrate Payload-Transform Encryption to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-081
 **Domain:** 07.Messaging
 **Depends on:** P-491, P-492
@@ -1469,7 +1469,7 @@ Direct consequence of P-491 (AAD is now required on every call) and P-492 (the s
 
 ### P-500 — Integration: Migrate Webhook Payload Encryption to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-081
 **Domain:** 15.Integration
 **Depends on:** P-491, P-492
@@ -1489,7 +1489,7 @@ Direct consequence of P-491/P-492, mirroring P-497/P-499/P-501.
 
 ### P-501 — Workflows: Migrate `EncryptionPayloadCodec` to Async Cryptography Contracts with AAD (BREAKING cascade)
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-081
 **Domain:** 17.Workflows
 **Depends on:** P-491, P-492
@@ -1555,7 +1555,7 @@ F2's practical impact depends entirely on whether the caching primitive 01.Core 
 
 ### P-504 — Governance: Mechanically Lock the Synchronous-Encryption Gate and Argon2 Dependency Confinement
 
-**Status:** `◐` Dispatched
+**Status:** `●` Complete
 **Work Order:** WO-081
 **Domain:** 00.Governance
 **Depends on:** P-492, P-493 *(corrected at dispatch — see below; P-495 removed)*
@@ -3445,3 +3445,9 @@ Not "maybe someday." Revisit only if a THIRD, genuinely independent domain needs
 - [2026-09-08] P-492 (WO-081) implemented and closed `●` Complete — `ISynchronousEncryptionKeyProvider` marker, `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous` (static provider-identity check with recursive `CachedEncryptionKeyProvider.Inner` unwrap, fail-closed default), and construction-time gating of the four sync `ISymmetricEncryptionService` members. Independently verified the check is a static identity test, not a per-call warmth test — `06.Persistence` P-498 depends on that exact semantic. `SharedKernel.Cryptography.Tests` 267/267 green. NOTE: root `CLAUDE.md`s `01.Core` folder-map row still describes P-491/P-492 as design-locked and needs a sync-brain pass (implement-phase-core)
 - [2026-09-08] P-493 (WO-081) implemented and closed `●` Complete — `IAsymmetricKeyProvider` async (sync members removed), `ISynchronousAsymmetricKeyProvider`/`AsymmetricKeyProviderCapabilities`, `SignAsync`/`VerifyAsync`, provider-returned keys no longer disposed by the signature services, and `EnsureMinimumKeySize` parity across all four members of both services (the ECDSA check was brand new, not an extension). T-70 mutation-verified by reintroducing the disposal bug and confirming the test failed. `SharedKernel.Cryptography.Tests` 294/294 green. **Implementation discovery propagated into P-494 design notes:** `RSA`/`ECDsa`s `SignData`/`VerifyData` are NOT overridable — a remote-KMS key subclass must override `SignHash`/`VerifyHash` instead, which the P-494 design as written would have failed to compile against. **The 01.Core foundation trio (P-491/P-492/P-493) is complete; the six cascade domains P-497-P-502 are now unblocked.** Root `CLAUDE.md`s `01.Core` row still describes all three as design-locked and needs a sync-brain pass (implement-phase-core)
 - [2026-09-08] P-502 (WO-081) implemented and closed `●` Complete — `16.Testing`s cryptography fakes migrated to the AAD/async/gated contracts. `FakeSymmetricEncryptionService` genuinely enforces AAD via an HMAC-SHA256 tag in the real `EncryptedPayload.Tag` (never accept-and-ignore); `FakeAsymmetricKeyProvider` reversed from clone-per-call to cached-instance-reuse so a dispose-then-reuse bug surfaces; the P-492 gate is proven compositionally against the REAL `AesGcmEncryptionService`/`CachedEncryptionKeyProvider`, never reimplemented in the fake. Stale "NOT AVAILABLE" cross-domain rows corrected. **Sequencing discovery:** `SharedKernel.Testing` transitively compiles the five consuming domains production code, so its own build cannot go green until P-497-P-501 ship — verified: 0 errors in `16.Testing` own files, all 24 are CS7036 missing-`associatedData` in 06/07/15/17. "16.Testing gates the wave" is therefore only half true — its fakes had to exist first, but its build is downstream of the five (implement-phase-testing)
+- [2026-09-08] P-501 (WO-081) implemented and closed `●` Complete — `EncryptionPayloadCodec` migrated to `EncryptAsync`/`DecryptAsync` (the shipped code had been calling sync members wrapped in `Task.FromResult`) and now implements `IWithSerializationContext<IPayloadCodec>`, binding AAD to `WorkflowId` only. `SharedKernel.Workflows.Temporal.Tests` 166/166 (8 new); consumer-verify all 5 surfaces PASS, including a new Surface 5 proving opacity and cross-`WorkflowId` rejection against REAL captured Temporal history rather than a synthetic payload. T-17 proves the async migration structurally via a decorator whose sync members throw unconditionally. A detached/null-`WorkflowId` context falls back to `Array.Empty<byte>()` rather than throwing (T-19). **Two things flagged for review:** a second, narrowly-scoped `InternalsVisibleTo("consumer-verify")` grant was added to a shipped package to let Surface 5 construct the codec against real ciphertext; and a payload encoded under a `WorkflowId` will not decode from an unbound codec, so out-of-SDK tooling (tctl / a Web UI remote codec server) must resolve `WorkflowId` context or payload display will fail (implement-phase-workflow)
+- [2026-09-08] P-500 (WO-081) implemented and closed `●` Complete — all four root acceptance criteria met. `WebhookDispatcher.SendAsync` migrated to `EncryptToStringAsync` with AAD from the new `WebhookPayloadAssociatedData.Build(subscriptionId, deliveryId)`; the identity half stays off the wire (a subscription-id header would let an attacker resupply matching AAD), the freshness half rides the already-shipped `X-Webhook-Delivery-Id`. 110/110 tests green. The anti-cross-subscription-replay test was **mutation-verified**: the dispatch-side AAD derivation was sabotaged with `Guid.Empty`, both encryption tests confirmed failing, then reverted and reconfirmed green. Domain task AA-11 (repack) deliberately left `⚑` — it names a real git tag that is `devops-lead`s call, so the domain phase sits 10/11 while the root phase closes on its own criteria (implement-phase-integration)
+- [2026-09-08] P-499 (WO-081) implemented and closed `●` Complete — payload-transform encryption keeps its (unavoidably synchronous) MassTransit serializer calls and adds AAD derived from `typeof(T).FullName`, carried publish-to-consume in the new `PayloadTransformHeaders.MessageTypeAad` transport header, with header-absent falling back to empty AAD so old-producer/new-consumer stays safe. A `Build()`-time best-effort `ISynchronousEncryptionKeyProvider` guard surfaces the KMS incompatibility at startup rather than at first publish. 187/187 tests (10 new). Two real MassTransit 9.x API behaviours were discovered via failing tests and recorded: `SerializerContext.TryGetMessage<T>` requires `MessageUrn.ForTypeString<T>()`, and `ConsumeContext.Headers` reflects the envelopes pre-mutation snapshot rather than a decorators late header write. The agent correctly waited out a transient cross-domain build breakage caused by a concurrently-running sibling rather than reaching outside its own domain (implement-phase-messaging)
+- [2026-09-08] P-497 (WO-081) implemented and closed `●` Complete — `CacheEncryptionSerializer` **deleted** and replaced by `EncryptedCacheService : ICacheService`, because `IFusionCacheSerializer` never receives the cache key so key-bound AAD is structurally impossible at that layer. AAD = the cache key; composing with `TenantCacheService` therefore tenant-scopes the AAD for free. Compression duty folded into the same decorator via the extracted `BrotliPayloadCodec` (verified: `SharedKernel.Compression` exposes no size threshold, so nothing configurable was lost). 259/259 FusionCache tests and 31/31 Redis tests green, the latter including both encrypt-at-rest cases against real Redis via Testcontainers. Mid-implementation discovery from actually running the container test: FusionCache nests the stored value under a `Value` property in its own wire envelope — the integration assertion was corrected accordingly. **Deploy consequence:** the wire shape changes, so previously-encrypted L2 entries fail to decrypt after deploy and are treated as cache misses — a cold-refill wave, not data loss (implement-phase-caching)
+- [2026-09-08] P-498 (WO-081, SEVERE) implemented and closed `●` Complete — `PreWarmedEncryptionKeyProvider` (honestly marked, never touches its inner provider from sync members), the dual-hook `EncryptionKeyPreWarmingInterceptor` (`SavingChangesAsync` for writes AND `IDbCommandInterceptor.ReaderExecutingAsync` for reads — the read hook is what actually closes the defect), a boot-time pre-warming hosted service, and keyed-DI structural isolation via `.WithExternalEncryptionKeyProvider<TProvider>()`. The AC#5 regression guard landed: `EncryptionOptionsKeyProvider`/`NullEncryptionKeyProvider` carry the synchronous marker, so existing config-backed users are unaffected. 448/448 tests green (implement-phase-persistence)
+- [2026-09-08] P-504 (WO-081) implemented and closed `●` Complete — plus a REGRESSION FOUND BY THE FULL-SOLUTION BUILD and fixed here. `00.Governance` was missing from P-491 own six-domain call-site inventory, and its shipped compress-then-encrypt lock (T-337, WO-065/P-433) had silently gone vacuous: `02.Caching` P-497 deleted `CacheEncryptionSerializer`, so `AddCacheEncryption()` no longer decorates `IFusionCacheSerializer` and the test was measuring compression only while still passing. Re-locked at the correct layer via a `SpyInnerCacheService` double intercepting the real `EncryptedPayload`, and mutation-verified by removing `.AddBrotliCompression()` and confirming genuine failure. P-504 itself: `CryptographyCoreHasNoThirdPartyDependencies` plus GATING real-assembly gate tests; the naive "no sync call" rule was deliberately NOT written (it would false-positive on 07.Messaging legitimate hard-synchronous MassTransit path); the Argon2 confinement mutation proof was found infeasible under this repo Central Package Management (`VersionOverride` disabled, NU1013 confirmed by a real reverted attempt) and substituted with a compiled-in-memory fixture per the T-154/T-155 precedent. 259/259 tests green (implement-phase-governance)

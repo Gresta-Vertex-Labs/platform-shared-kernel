@@ -62,10 +62,58 @@ public sealed class WebhookPayloadEncryptionTests
         var signatureIsValid = WebhookSignatureVerifier.Verify(capturedWireBody, capturedTimestamp, capturedSignature, secret);
         signatureIsValid.Should().BeTrue();
 
-        // ...and decrypting that same ciphertext recovers the original plaintext JSON.
-        var decrypted = encryptionService.DecryptToString(capturedWireBody!);
+        // ...and decrypting that same ciphertext, with the same AAD the dispatcher derived
+        // (subscription id + the delivery id reproducible from the response's own DeliveryId /
+        // the X-Webhook-Delivery-Id header), recovers the original plaintext JSON.
+        var associatedData = WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, result.DeliveryId);
+        var decrypted = await encryptionService.DecryptToStringAsync(capturedWireBody!, associatedData);
         decrypted.IsSuccess.Should().BeTrue();
         decrypted.Value.Should().Contain(integrationEvent.OrderId.ToString());
+    }
+
+    [Fact]
+    public async Task DispatchToSubscriptionAsync_EncryptPayloadEnabled_CiphertextDecryptedAgainstDifferentSubscriptionIdFails()
+    {
+        const string secret = "signing-secret";
+        var subscription = Subscription(secret);
+        var store = new FakeWebhookSubscriptionStore([subscription]);
+        var encryptionService = new AesGcmEncryptionService(new FakeEncryptionKeyProvider());
+
+        string? capturedWireBody = null;
+
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            capturedWireBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        using var harness = new WebhookTestHarness(
+            handler,
+            store,
+            o =>
+            {
+                o.MaxAttempts = 1;
+                o.EncryptPayload = true;
+            },
+            services => services.AddSingleton<ISymmetricEncryptionService>(encryptionService));
+
+        var integrationEvent = new TestOrderShippedEvent(Guid.NewGuid(), DateTimeOffset.UtcNow, Guid.NewGuid());
+
+        var result = await harness.Dispatcher.DispatchToSubscriptionAsync(subscription, integrationEvent, CancellationToken.None);
+        result.IsSuccess.Should().BeTrue();
+
+        // A captured ciphertext decrypted against a DIFFERENT subscription's AAD — same delivery id,
+        // wrong subscription id — must fail authentication. This is the anti-cross-subscription-replay
+        // guarantee the AAD binding exists to provide: an attacker who captured this ciphertext cannot
+        // reuse it against a different subscription's out-of-band-known identity.
+        var wrongSubscriptionAssociatedData = WebhookPayloadAssociatedData.Build(Guid.NewGuid(), result.DeliveryId);
+        var decryptedWithWrongSubscription = await encryptionService.DecryptToStringAsync(capturedWireBody!, wrongSubscriptionAssociatedData);
+        decryptedWithWrongSubscription.IsSuccess.Should().BeFalse();
+
+        // The correct subscription id, paired with the correct delivery id, still succeeds.
+        var correctAssociatedData = WebhookPayloadAssociatedData.Build(subscription.SubscriptionId, result.DeliveryId);
+        var decryptedWithCorrectSubscription = await encryptionService.DecryptToStringAsync(capturedWireBody!, correctAssociatedData);
+        decryptedWithCorrectSubscription.IsSuccess.Should().BeTrue();
     }
 
     [Fact]
