@@ -13,8 +13,8 @@ namespace SharedKernel.Cryptography.Symmetric;
 /// encrypt call and is never reused.
 /// </summary>
 /// <remarks>
-/// The synchronous <see cref="Encrypt(byte[])"/>/<see cref="Decrypt(EncryptedPayload)"/>/
-/// <see cref="EncryptToString(string)"/>/<see cref="DecryptToString(string)"/> members and their
+/// The synchronous <see cref="Encrypt(byte[], byte[])"/>/<see cref="Decrypt(EncryptedPayload, byte[])"/>/
+/// <see cref="EncryptToString(string, byte[])"/>/<see cref="DecryptToString(string, byte[])"/> members and their
 /// asynchronous counterparts share the exact same cryptographic core (<c>EncryptCore</c>/
 /// <c>DecryptCore</c>) — the only difference between a sync and an async call is how the
 /// <see cref="IEncryptionKeyProvider"/> result is awaited. This guarantees byte-identical
@@ -36,67 +36,74 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     }
 
     /// <inheritdoc />
-    public EncryptedPayload Encrypt(byte[] plaintext)
+    public EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         // GENUINELY NON-BLOCKING when the provider resolves synchronously; blocks a real thread
         // when the provider is a network-bound KMS call — see the interface XML docs.
         CryptographicKey key = _keyProvider.GetCurrentKeyAsync().GetAwaiter().GetResult();
-        return EncryptCore(plaintext, key);
+        return EncryptCore(plaintext, associatedData, key);
     }
 
     /// <inheritdoc />
-    public async ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, CancellationToken ct = default)
+    public async ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         CryptographicKey key = await _keyProvider.GetCurrentKeyAsync(ct).ConfigureAwait(false);
-        return EncryptCore(plaintext, key);
+        return EncryptCore(plaintext, associatedData, key);
     }
 
     /// <inheritdoc />
-    public Result<byte[]> Decrypt(EncryptedPayload payload)
+    public Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         // GENUINELY NON-BLOCKING when the provider resolves synchronously; blocks a real thread
         // when the provider is a network-bound KMS call — see the interface XML docs.
         CryptographicKey? key = _keyProvider.GetKeyAsync(payload.KeyId).GetAwaiter().GetResult();
-        return DecryptCore(payload, key);
+        return DecryptCore(payload, associatedData, key);
     }
 
     /// <inheritdoc />
-    public async ValueTask<Result<byte[]>> DecryptAsync(EncryptedPayload payload, CancellationToken ct = default)
+    public async ValueTask<Result<byte[]>> DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         CryptographicKey? key = await _keyProvider.GetKeyAsync(payload.KeyId, ct).ConfigureAwait(false);
-        return DecryptCore(payload, key);
+        return DecryptCore(payload, associatedData, key);
     }
 
     /// <inheritdoc />
-    public string EncryptToString(string plaintext)
+    public string EncryptToString(string plaintext, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
-        EncryptedPayload payload = Encrypt(Encoding.UTF8.GetBytes(plaintext));
+        EncryptedPayload payload = Encrypt(Encoding.UTF8.GetBytes(plaintext), associatedData);
         return Pack(payload);
     }
 
     /// <inheritdoc />
-    public async ValueTask<string> EncryptToStringAsync(string plaintext, CancellationToken ct = default)
+    public async ValueTask<string> EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
-        EncryptedPayload payload = await EncryptAsync(Encoding.UTF8.GetBytes(plaintext), ct).ConfigureAwait(false);
+        EncryptedPayload payload = await EncryptAsync(Encoding.UTF8.GetBytes(plaintext), associatedData, ct).ConfigureAwait(false);
         return Pack(payload);
     }
 
     /// <inheritdoc />
-    public Result<string> DecryptToString(string encoded)
+    public Result<string> DecryptToString(string encoded, byte[] associatedData)
     {
         ArgumentNullException.ThrowIfNull(encoded);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         if (!TryUnpack(encoded, out EncryptedPayload? payload))
         {
@@ -105,16 +112,17 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
                 "The supplied string is not a valid encrypted payload.");
         }
 
-        Result<byte[]> result = Decrypt(payload);
+        Result<byte[]> result = Decrypt(payload, associatedData);
         return result.IsSuccess
             ? Encoding.UTF8.GetString(result.Value)
             : result.Error;
     }
 
     /// <inheritdoc />
-    public async ValueTask<Result<string>> DecryptToStringAsync(string encoded, CancellationToken ct = default)
+    public async ValueTask<Result<string>> DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(encoded);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         if (!TryUnpack(encoded, out EncryptedPayload? payload))
         {
@@ -123,7 +131,7 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
                 "The supplied string is not a valid encrypted payload.");
         }
 
-        Result<byte[]> result = await DecryptAsync(payload, ct).ConfigureAwait(false);
+        Result<byte[]> result = await DecryptAsync(payload, associatedData, ct).ConfigureAwait(false);
         return result.IsSuccess
             ? Encoding.UTF8.GetString(result.Value)
             : result.Error;
@@ -133,14 +141,14 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     /// The pure, synchronous AES-256-GCM encryption core shared by both the sync and async
     /// public members — performs no I/O and no key resolution of its own.
     /// </summary>
-    private static EncryptedPayload EncryptCore(byte[] plaintext, CryptographicKey key)
+    private static EncryptedPayload EncryptCore(byte[] plaintext, byte[] associatedData, CryptographicKey key)
     {
         byte[] nonce = RandomNumberGenerator.GetBytes(NonceSize);
         byte[] ciphertext = new byte[plaintext.Length];
         byte[] tag = new byte[TagSize];
 
         using var aesGcm = new AesGcm(key.Material, TagSize);
-        aesGcm.Encrypt(nonce, plaintext, ciphertext, tag);
+        aesGcm.Encrypt(nonce, plaintext, ciphertext, tag, associatedData);
 
         return new EncryptedPayload(key.Id, nonce, ciphertext, tag);
     }
@@ -149,7 +157,7 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     /// The pure, synchronous AES-256-GCM decryption core shared by both the sync and async
     /// public members — performs no I/O and no key resolution of its own.
     /// </summary>
-    private static Result<byte[]> DecryptCore(EncryptedPayload payload, CryptographicKey? key)
+    private static Result<byte[]> DecryptCore(EncryptedPayload payload, byte[] associatedData, CryptographicKey? key)
     {
         if (key is null)
         {
@@ -163,7 +171,7 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
         try
         {
             using var aesGcm = new AesGcm(key.Material, TagSize);
-            aesGcm.Decrypt(payload.Nonce, payload.Ciphertext, payload.Tag, plaintext);
+            aesGcm.Decrypt(payload.Nonce, payload.Ciphertext, payload.Tag, plaintext, associatedData);
         }
         catch (CryptographicException)
         {

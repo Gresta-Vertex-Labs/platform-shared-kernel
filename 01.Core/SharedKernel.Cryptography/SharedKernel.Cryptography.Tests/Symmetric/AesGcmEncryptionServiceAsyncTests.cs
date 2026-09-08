@@ -19,8 +19,8 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         var service = new AesGcmEncryptionService(keyProvider);
         byte[] plaintext = Encoding.UTF8.GetBytes("secret payload");
 
-        EncryptedPayload payload = await service.EncryptAsync(plaintext);
-        Result<byte[]> result = await service.DecryptAsync(payload);
+        EncryptedPayload payload = await service.EncryptAsync(plaintext, []);
+        Result<byte[]> result = await service.DecryptAsync(payload, []);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(plaintext, result.Value);
@@ -33,8 +33,8 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         var service = new AesGcmEncryptionService(keyProvider);
         byte[] plaintext = Encoding.UTF8.GetBytes("same plaintext");
 
-        EncryptedPayload first = await service.EncryptAsync(plaintext);
-        EncryptedPayload second = await service.EncryptAsync(plaintext);
+        EncryptedPayload first = await service.EncryptAsync(plaintext, []);
+        EncryptedPayload second = await service.EncryptAsync(plaintext, []);
 
         Assert.NotEqual(first.Nonce, second.Nonce);
     }
@@ -44,13 +44,13 @@ public sealed class AesGcmEncryptionServiceAsyncTests
     {
         var keyProvider = new InMemoryEncryptionKeyProvider();
         var service = new AesGcmEncryptionService(keyProvider);
-        EncryptedPayload payload = await service.EncryptAsync(Encoding.UTF8.GetBytes("secret"));
+        EncryptedPayload payload = await service.EncryptAsync(Encoding.UTF8.GetBytes("secret"), []);
 
         byte[] tamperedCiphertext = [.. payload.Ciphertext];
         tamperedCiphertext[0] ^= 0xFF;
         var tampered = new EncryptedPayload(payload.KeyId, payload.Nonce, tamperedCiphertext, payload.Tag);
 
-        Result<byte[]> result = await service.DecryptAsync(tampered);
+        Result<byte[]> result = await service.DecryptAsync(tampered, []);
 
         Assert.True(result.IsFailure);
         Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);
@@ -61,10 +61,10 @@ public sealed class AesGcmEncryptionServiceAsyncTests
     {
         var keyProvider = new InMemoryEncryptionKeyProvider();
         var service = new AesGcmEncryptionService(keyProvider);
-        EncryptedPayload payload = await service.EncryptAsync(Encoding.UTF8.GetBytes("secret"));
+        EncryptedPayload payload = await service.EncryptAsync(Encoding.UTF8.GetBytes("secret"), []);
 
         var withUnknownKey = new EncryptedPayload("retired-key", payload.Nonce, payload.Ciphertext, payload.Tag);
-        Result<byte[]> result = await service.DecryptAsync(withUnknownKey);
+        Result<byte[]> result = await service.DecryptAsync(withUnknownKey, []);
 
         Assert.True(result.IsFailure);
         Assert.Equal(CryptographyErrorCodes.UnknownKeyId, result.Error.Code);
@@ -76,8 +76,8 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         var keyProvider = new InMemoryEncryptionKeyProvider();
         var service = new AesGcmEncryptionService(keyProvider);
 
-        string encoded = await service.EncryptToStringAsync("hello world");
-        Result<string> result = await service.DecryptToStringAsync(encoded);
+        string encoded = await service.EncryptToStringAsync("hello world", []);
+        Result<string> result = await service.DecryptToStringAsync(encoded, []);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("hello world", result.Value);
@@ -89,7 +89,7 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         var keyProvider = new InMemoryEncryptionKeyProvider();
         var service = new AesGcmEncryptionService(keyProvider);
 
-        Result<string> result = await service.DecryptToStringAsync("not-valid-base64-payload-!!!");
+        Result<string> result = await service.DecryptToStringAsync("not-valid-base64-payload-!!!", []);
 
         Assert.True(result.IsFailure);
         Assert.Equal(CryptographyErrorCodes.MalformedPayload, result.Error.Code);
@@ -106,10 +106,10 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         // byte-identical plaintext.
         var keyProvider = new InMemoryEncryptionKeyProvider();
         var service = new AesGcmEncryptionService(keyProvider);
-        EncryptedPayload payload = service.Encrypt(Encoding.UTF8.GetBytes("compare me"));
+        EncryptedPayload payload = service.Encrypt(Encoding.UTF8.GetBytes("compare me"), []);
 
-        Result<byte[]> syncResult = service.Decrypt(payload);
-        Result<byte[]> asyncResult = await service.DecryptAsync(payload);
+        Result<byte[]> syncResult = service.Decrypt(payload, []);
+        Result<byte[]> asyncResult = await service.DecryptAsync(payload, []);
 
         Assert.True(syncResult.IsSuccess);
         Assert.True(asyncResult.IsSuccess);
@@ -123,16 +123,45 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         var service = new AesGcmEncryptionService(keyProvider);
         byte[] plaintext = Encoding.UTF8.GetBytes("cross sync/async round trip");
 
-        EncryptedPayload viaSync = service.Encrypt(plaintext);
-        Result<byte[]> decryptedViaAsync = await service.DecryptAsync(viaSync);
+        EncryptedPayload viaSync = service.Encrypt(plaintext, []);
+        Result<byte[]> decryptedViaAsync = await service.DecryptAsync(viaSync, []);
 
-        EncryptedPayload viaAsync = await service.EncryptAsync(plaintext);
-        Result<byte[]> decryptedViaSync = service.Decrypt(viaAsync);
+        EncryptedPayload viaAsync = await service.EncryptAsync(plaintext, []);
+        Result<byte[]> decryptedViaSync = service.Decrypt(viaAsync, []);
 
         Assert.True(decryptedViaAsync.IsSuccess);
         Assert.Equal(plaintext, decryptedViaAsync.Value);
         Assert.True(decryptedViaSync.IsSuccess);
         Assert.Equal(plaintext, decryptedViaSync.Value);
+    }
+
+    [Fact]
+    public async Task EncryptAsync_ThenDecryptAsync_WithMatchingAssociatedData_RoundTrips()
+    {
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        var service = new AesGcmEncryptionService(keyProvider);
+        byte[] plaintext = Encoding.UTF8.GetBytes("secret payload");
+        byte[] associatedData = Encoding.UTF8.GetBytes("message-type:OrderPlaced");
+
+        EncryptedPayload payload = await service.EncryptAsync(plaintext, associatedData);
+        Result<byte[]> result = await service.DecryptAsync(payload, associatedData);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(plaintext, result.Value);
+    }
+
+    [Fact]
+    public async Task DecryptAsync_WithMismatchedAssociatedData_Fails()
+    {
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        var service = new AesGcmEncryptionService(keyProvider);
+        byte[] plaintext = Encoding.UTF8.GetBytes("secret payload");
+
+        EncryptedPayload payload = await service.EncryptAsync(plaintext, Encoding.UTF8.GetBytes("message-type:OrderPlaced"));
+        Result<byte[]> result = await service.DecryptAsync(payload, Encoding.UTF8.GetBytes("message-type:OrderCancelled"));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(CryptographyErrorCodes.DecryptionFailed, result.Error.Code);
     }
 
     [Fact]
@@ -145,7 +174,7 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => service.EncryptAsync(Encoding.UTF8.GetBytes("payload"), cts.Token).AsTask());
+            () => service.EncryptAsync(Encoding.UTF8.GetBytes("payload"), [], cts.Token).AsTask());
     }
 
     [Fact]
@@ -180,7 +209,7 @@ public sealed class AesGcmEncryptionServiceAsyncTests
             byte[] plaintext = Encoding.UTF8.GetBytes("payload");
 
             Task<EncryptedPayload>[] tasks = [.. Enumerable.Range(0, concurrency)
-                .Select(_ => Task.Run(() => service.Encrypt(plaintext)))];
+                .Select(_ => Task.Run(() => service.Encrypt(plaintext, [])))];
 
             EncryptedPayload[] results = await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -202,13 +231,13 @@ public sealed class AesGcmEncryptionServiceAsyncTests
         {
             var keyProvider = new InMemoryEncryptionKeyProvider();
             var service = new AesGcmEncryptionService(keyProvider);
-            EncryptedPayload payload = service.Encrypt(Encoding.UTF8.GetBytes("payload"));
+            EncryptedPayload payload = service.Encrypt(Encoding.UTF8.GetBytes("payload"), []);
 
             ThreadPool.SetMinThreads(1, 1);
 
             const int concurrency = 200;
             Task<Result<byte[]>>[] tasks = [.. Enumerable.Range(0, concurrency)
-                .Select(_ => Task.Run(() => service.Decrypt(payload)))];
+                .Select(_ => Task.Run(() => service.Decrypt(payload, [])))];
 
             Result<byte[]>[] results = await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5));
 

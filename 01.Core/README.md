@@ -1186,27 +1186,32 @@ public sealed class PayloadEncryptionExample(ISymmetricEncryptionService encrypt
     // Prefer the *Async overloads on hot/high-throughput paths — they never block a thread
     // while resolving the key, regardless of whether the provider completes synchronously
     // or asynchronously.
-    public ValueTask<EncryptedPayload> EncryptForQueueAsync(byte[] plaintext, CancellationToken ct) =>
-        encryption.EncryptAsync(plaintext, ct); // fresh random nonce every call — never reused
+    //
+    // associatedData (AAD) is authenticated but never encrypted and never persisted inside
+    // EncryptedPayload — bind it to context the caller can reproduce byte-identically at
+    // decrypt time (a queue message's type name, here). Pass Array.Empty<byte>() when no
+    // natural context binding exists; there is no default value.
+    public ValueTask<EncryptedPayload> EncryptForQueueAsync(byte[] plaintext, string messageType, CancellationToken ct) =>
+        encryption.EncryptAsync(plaintext, Encoding.UTF8.GetBytes(messageType), ct); // fresh random nonce every call — never reused
 
-    public ValueTask<Result<byte[]>> DecryptFromQueueAsync(EncryptedPayload payload, CancellationToken ct) =>
-        encryption.DecryptAsync(payload, ct); // Result<byte[]> — never throws CryptographicException directly
+    public ValueTask<Result<byte[]>> DecryptFromQueueAsync(EncryptedPayload payload, string messageType, CancellationToken ct) =>
+        encryption.DecryptAsync(payload, Encoding.UTF8.GetBytes(messageType), ct); // Result<byte[]> — never throws CryptographicException directly
 
     // The synchronous members are retained for call sites that cannot easily become async
     // (e.g. a synchronous EF Core ValueConverter). They bridge onto the async key provider via
     // .GetAwaiter().GetResult() — GENUINELY NON-BLOCKING when the provider resolves
     // synchronously (as above, or a CachedEncryptionKeyProvider cache hit), but BLOCKS A REAL
     // THREAD when the provider is genuinely network-bound on a cache miss.
-    public string EncryptSecret(string plaintext) => encryption.EncryptToString(plaintext);
+    public string EncryptSecret(string plaintext) => encryption.EncryptToString(plaintext, Array.Empty<byte>());
 
-    public Result<string> DecryptSecret(string encoded) => encryption.DecryptToString(encoded);
+    public Result<string> DecryptSecret(string encoded) => encryption.DecryptToString(encoded, Array.Empty<byte>());
 }
 ```
 
-Handling tamper/wrong-key failures:
+Handling tamper/wrong-key/mismatched-AAD failures:
 
 ```csharp
-Result<byte[]> decrypted = await encryption.DecryptAsync(payload, ct);
+Result<byte[]> decrypted = await encryption.DecryptAsync(payload, associatedData, ct);
 
 if (decrypted.IsSuccess)
 {
@@ -1216,7 +1221,9 @@ else
 {
     logger.LogWarning("Decryption failed: {Code} — {Message}", decrypted.Error.Code, decrypted.Error.Message);
 }
-// error.Code is one of CryptographyErrorCodes.DecryptionFailed, .UnknownKeyId, or .MalformedPayload
+// error.Code is one of CryptographyErrorCodes.DecryptionFailed, .UnknownKeyId, or .MalformedPayload —
+// a mismatched associatedData surfaces as DecryptionFailed, indistinguishable from a tampered
+// ciphertext/tag or wrong key. There is no separate "AAD mismatch" error code.
 ```
 
 `ISymmetricEncryptionService` always uses an AEAD cipher (AES-GCM) — never an unauthenticated mode such as CBC/ECB.
@@ -1232,7 +1239,41 @@ else
 
 A synchronous/config-backed implementer migrates mechanically — wrap the existing return value in `new ValueTask<CryptographicKey>(...)` (or `new ValueTask<CryptographicKey?>(...)`), exactly as shown in `MyConfigBackedKeyProvider` above. No behavioral change is required for that class of implementer, and **config-supplied keys remain the fully-supported default requiring no consumer-side opt-in.** A genuinely network-bound implementer (a real KMS/HSM call) can now `await` its SDK call directly instead of blocking a thread.
 
-`ISymmetricEncryptionService`'s own public surface did **not** break — `Encrypt`/`Decrypt`/`EncryptToString`/`DecryptToString` are unchanged in signature and behavior; only their *internal* key resolution now goes through the async provider via a bridge. The four new `*Async` overloads are purely additive.
+#### Migrating to associated data (AAD) (P-491/WO-081, breaking)
+
+Every `ISymmetricEncryptionService` member gained a **required** `byte[] associatedData` parameter, positioned immediately after the primary payload parameter and before `CancellationToken ct = default` on the async members. There is **no default value on any overload, ever** — every call site across every consuming domain must add an explicit argument:
+
+| Member | Before (removed) | After |
+| --- | --- | --- |
+| `Encrypt` | `EncryptedPayload Encrypt(byte[] plaintext)` | `EncryptedPayload Encrypt(byte[] plaintext, byte[] associatedData)` |
+| `EncryptAsync` | `ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, CancellationToken ct = default)` | `ValueTask<EncryptedPayload> EncryptAsync(byte[] plaintext, byte[] associatedData, CancellationToken ct = default)` |
+| `Decrypt` | `Result<byte[]> Decrypt(EncryptedPayload payload)` | `Result<byte[]> Decrypt(EncryptedPayload payload, byte[] associatedData)` |
+| `DecryptAsync` | `ValueTask<Result<byte[]>> DecryptAsync(EncryptedPayload payload, CancellationToken ct = default)` | `ValueTask<Result<byte[]>> DecryptAsync(EncryptedPayload payload, byte[] associatedData, CancellationToken ct = default)` |
+| `EncryptToString` | `string EncryptToString(string plaintext)` | `string EncryptToString(string plaintext, byte[] associatedData)` |
+| `EncryptToStringAsync` | `ValueTask<string> EncryptToStringAsync(string plaintext, CancellationToken ct = default)` | `ValueTask<string> EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default)` |
+| `DecryptToString` | `Result<string> DecryptToString(string encoded)` | `Result<string> DecryptToString(string encoded, byte[] associatedData)` |
+| `DecryptToStringAsync` | `ValueTask<Result<string>> DecryptToStringAsync(string encoded, CancellationToken ct = default)` | `ValueTask<Result<string>> DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default)` |
+
+A call site with no natural context binding must pass `Array.Empty<byte>()` explicitly — never rely on an implicit default, because there isn't one. Associated data is authenticated (bound into the AES-GCM tag via `AesGcm.Encrypt`/`.Decrypt`'s own `associatedData` parameter) but **never encrypted and never persisted** inside `EncryptedPayload` — no new field was added, and the packed `EncryptToString`/`DecryptToString` string format never embeds it. The caller alone is responsible for reproducing byte-identical AAD at decrypt time from context already available then:
+
+```csharp
+// Binding a cached value's ciphertext to the exact key it was stored under — a value copied or
+// replayed under a different key fails authentication instead of decrypting cleanly.
+byte[] aad = Encoding.UTF8.GetBytes(cacheKey);
+EncryptedPayload payload = await encryption.EncryptAsync(plaintextBytes, aad, ct);
+// ... later, using the SAME cacheKey ...
+Result<byte[]> decrypted = await encryption.DecryptAsync(payload, aad, ct);
+
+// Other good AAD candidates, by call site: an owning row's primary key (column-level
+// encryption), a message's CLR/CloudEvents type name (message-bus payload encryption), a
+// webhook subscription id (webhook payload encryption), a workflow id (workflow payload
+// encryption). Pick something the caller can always reconstruct without re-reading the
+// ciphertext itself.
+```
+
+A mismatched (or omitted, when one was originally supplied) `associatedData` at decrypt time fails authentication exactly like a tampered ciphertext/tag or a wrong key — `Decrypt`/`DecryptAsync` return `Result.Failure` with `CryptographyErrorCodes.DecryptionFailed`. No new `ErrorCodes` constant was introduced for this case.
+
+`IEncryptionKeyProvider` itself is **unaffected** by this change — only `ISymmetricEncryptionService`'s eight members gained the new parameter.
 
 ### Envelope Encryption
 

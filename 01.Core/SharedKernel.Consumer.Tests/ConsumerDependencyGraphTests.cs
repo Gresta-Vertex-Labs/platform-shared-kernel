@@ -568,8 +568,8 @@ public sealed class ConsumerDependencyGraphTests
         var keyProvider = new ConsumerEncryptionKeyProvider();
         var encryption = new AesGcmEncryptionService(keyProvider);
 
-        EncryptedPayload payload = encryption.Encrypt("plaintext-from-consumer"u8.ToArray());
-        Result<byte[]> decrypted = encryption.Decrypt(payload);
+        EncryptedPayload payload = encryption.Encrypt("plaintext-from-consumer"u8.ToArray(), []);
+        Result<byte[]> decrypted = encryption.Decrypt(payload, []);
 
         Assert.True(decrypted.IsSuccess);
         Assert.Equal("plaintext-from-consumer", System.Text.Encoding.UTF8.GetString(decrypted.Value));
@@ -585,8 +585,8 @@ public sealed class ConsumerDependencyGraphTests
         var keyProvider = new ConsumerEncryptionKeyProvider();
         var encryption = new AesGcmEncryptionService(keyProvider);
 
-        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-from-consumer-async"u8.ToArray());
-        Result<byte[]> decrypted = await encryption.DecryptAsync(payload);
+        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-from-consumer-async"u8.ToArray(), []);
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, []);
 
         Assert.True(decrypted.IsSuccess);
         Assert.Equal("plaintext-from-consumer-async", System.Text.Encoding.UTF8.GetString(decrypted.Value));
@@ -602,8 +602,8 @@ public sealed class ConsumerDependencyGraphTests
             new ConsumerEncryptionKeyProvider(), TimeProvider.System, TimeSpan.FromMinutes(5));
         var encryption = new AesGcmEncryptionService(keyProvider);
 
-        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-via-cached-provider"u8.ToArray());
-        Result<byte[]> decrypted = await encryption.DecryptAsync(payload);
+        EncryptedPayload payload = await encryption.EncryptAsync("plaintext-via-cached-provider"u8.ToArray(), []);
+        Result<byte[]> decrypted = await encryption.DecryptAsync(payload, []);
 
         Assert.True(decrypted.IsSuccess);
         Assert.Equal("plaintext-via-cached-provider", System.Text.Encoding.UTF8.GetString(decrypted.Value));

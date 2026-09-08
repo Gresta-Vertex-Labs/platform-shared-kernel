@@ -1,7 +1,7 @@
 namespace SharedKernel.Cryptography.Symmetric;
 
 /// <summary>
-/// Carries the components produced by <see cref="ISymmetricEncryptionService.Encrypt(byte[])"/>
+/// Carries the components produced by <see cref="ISymmetricEncryptionService.Encrypt(byte[], byte[])"/>
 /// needed to later decrypt the ciphertext.
 /// </summary>
 /// <param name="KeyId">The identifier of the key version that encrypted this payload.</param>

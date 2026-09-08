@@ -39,8 +39,8 @@ public interface IEncryptionKeyProvider
 {
     /// <summary>
     /// Gets the key that should be used for every new
-    /// <see cref="ISymmetricEncryptionService.Encrypt(byte[])"/> /
-    /// <see cref="ISymmetricEncryptionService.EncryptAsync(byte[], CancellationToken)"/> call.
+    /// <see cref="ISymmetricEncryptionService.Encrypt(byte[], byte[])"/> /
+    /// <see cref="ISymmetricEncryptionService.EncryptAsync(byte[], byte[], CancellationToken)"/> call.
     /// </summary>
     /// <param name="ct">A token to observe while resolving the current key.</param>
     ValueTask<CryptographicKey> GetCurrentKeyAsync(CancellationToken ct = default);
