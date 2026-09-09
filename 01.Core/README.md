@@ -1636,7 +1636,10 @@ Microsoft Authenticator, and similar apps. `AddSharedKernelCryptography` registe
 `ITotpGenerator` additionally requires an `IClock` registration (`services.AddClock()`, from
 `SharedKernel.Primitives`) and `TotpVerifier` additionally requires a consumer-supplied
 `ITotpReplayGuard` — this package ships no default replay-guard implementation, since a real one
-inherently needs a backing store this dependency-free package cannot own.
+inherently needs a backing store this dependency-free package cannot own. A standalone
+`ITotpAttemptThrottle` seam is also available for RFC 4226 §7.3 attempt rate-limiting — also
+consumer-implemented, also never registered by this package, and deliberately never wired into
+`TotpVerifier` itself (see "Attempt throttling" below).
 
 **Enrollment — provisioning URI:**
 
@@ -1670,27 +1673,64 @@ public sealed class TotpChallengeService(ITotpGenerator totpGenerator)
 
 **Verification — end to end, with a consumer-supplied `ITotpReplayGuard`:**
 
+> **BREAKING (P-514/WO-083):** `ITotpReplayGuard`'s prior two-step `HasBeenUsedAsync` (check) +
+> `MarkUsedAsync` (mark) shape has been REMOVED. Two concurrent verification calls presenting the
+> same valid code could both observe "not yet used" before either one marked it used, so both
+> would pass — a textbook TOCTOU. It is replaced by one atomic member, `TryMarkUsedAsync`,
+> returning `true` only when THIS call is the first to mark `(identityKey, code)` used and `false`
+> when it was already marked (a replay). **Migration:** collapse any existing
+> `HasBeenUsedAsync`/`MarkUsedAsync` pair into one atomic `TryMarkUsedAsync` — e.g. a single
+> `ConcurrentDictionary<string, byte>.TryAdd` call (shown below), or a store's native atomic
+> reservation primitive (Redis `SET NX PX`, SQL `INSERT ... ON CONFLICT DO NOTHING`). Never
+> reimplement it as a separate check followed by a separate set — that reopens the same TOCTOU.
+> `TotpVerifier.VerifyAsync` also gained new optional `digits`/`stepSeconds`/`driftWindow`/
+> `algorithm` parameters, inserted before the existing trailing `ct` — a caller that passes `ct`
+> *positionally* (not by name) will now bind it to `digits` instead and fail to compile; pass
+> `ct` by name (`ct: ct`), as shown below.
+
 ```csharp
 public sealed class InMemoryTotpReplayGuard : ITotpReplayGuard
 {
     private readonly ConcurrentDictionary<string, byte> _used = new();
 
-    public ValueTask<bool> HasBeenUsedAsync(string identityKey, string code, CancellationToken ct = default) =>
-        ValueTask.FromResult(_used.ContainsKey($"{identityKey}:{code}"));
-
-    public ValueTask MarkUsedAsync(string identityKey, string code, TimeSpan validityWindow, CancellationToken ct = default)
+    public ValueTask<bool> TryMarkUsedAsync(string identityKey, string code, TimeSpan validityWindow, CancellationToken ct = default)
     {
         // A real implementation persists to a store (e.g. distributed cache) with an expiry of
-        // `validityWindow`, so the entry never grows unbounded — omitted here for brevity.
-        _used[$"{identityKey}:{code}"] = 0;
-        return ValueTask.CompletedTask;
+        // `validityWindow`, so the entry never grows unbounded, and relies on the store's own
+        // atomic conditional-write primitive instead of `ConcurrentDictionary.TryAdd` — omitted
+        // here for brevity.
+        return ValueTask.FromResult(_used.TryAdd($"{identityKey}:{code}", 0));
     }
 }
 
 public sealed class TotpLoginStepUpHandler(TotpVerifier totpVerifier)
 {
     public async Task<bool> VerifySecondFactorAsync(string userId, byte[] secret, string submittedCode, CancellationToken ct) =>
-        await totpVerifier.VerifyAsync(userId, secret, submittedCode, ct);
+        await totpVerifier.VerifyAsync(userId, secret, submittedCode, ct: ct);
+}
+```
+
+**Attempt throttling — RFC 4226 §7.3 rate limiting:**
+
+A 6-digit code with a ±1-step drift window is otherwise brute-forceable, so a real deployment
+should rate-limit verification attempts. `ITotpAttemptThrottle` is a standalone seam for this —
+implemented by the consuming service (this package ships no default), and deliberately never
+wired into `TotpVerifier`'s constructor. The caller composes it around `VerifyAsync`:
+
+```csharp
+public sealed class ThrottledTotpLoginHandler(TotpVerifier totpVerifier, ITotpAttemptThrottle attemptThrottle)
+{
+    public async Task<bool> VerifySecondFactorAsync(string userId, byte[] secret, string submittedCode, CancellationToken ct)
+    {
+        if (await attemptThrottle.IsThrottledAsync(userId, ct))
+        {
+            return false; // caller decides lockout response shaping (e.g. HTTP 429)
+        }
+
+        await attemptThrottle.RecordAttemptAsync(userId, ct);
+
+        return await totpVerifier.VerifyAsync(userId, secret, submittedCode, ct: ct);
+    }
 }
 ```
 

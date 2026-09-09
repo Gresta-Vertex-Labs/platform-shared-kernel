@@ -62,22 +62,23 @@ public sealed class ReadmeSampleCompileTests
     {
         private readonly ConcurrentDictionary<string, byte> _used = new();
 
-        public ValueTask<bool> HasBeenUsedAsync(string identityKey, string code, CancellationToken ct = default) =>
-            ValueTask.FromResult(_used.ContainsKey($"{identityKey}:{code}"));
-
-        public ValueTask MarkUsedAsync(string identityKey, string code, TimeSpan validityWindow, CancellationToken ct = default)
+        public ValueTask<bool> TryMarkUsedAsync(string identityKey, string code, TimeSpan validityWindow, CancellationToken ct = default)
         {
             // A real implementation persists to a store (e.g. distributed cache) with an expiry of
-            // `validityWindow`, so the entry never grows unbounded — omitted here for brevity.
-            _used[$"{identityKey}:{code}"] = 0;
-            return ValueTask.CompletedTask;
+            // `validityWindow`, so the entry never grows unbounded, and relies on the store's own
+            // atomic conditional-write primitive (Redis `SET NX PX`, SQL `INSERT ... ON CONFLICT DO
+            // NOTHING`) instead of `ConcurrentDictionary.TryAdd` — omitted here for brevity.
+            return ValueTask.FromResult(_used.TryAdd($"{identityKey}:{code}", 0));
         }
     }
 
     private sealed class TotpLoginStepUpHandler(TotpVerifier totpVerifier)
     {
+        // NOTE: `ct` must be passed by name — `TotpVerifier.VerifyAsync` now takes optional
+        // `digits`/`stepSeconds`/`driftWindow`/`algorithm` parameters before its trailing `ct`, so
+        // a positional 4th argument would bind to `digits`, not `ct`.
         public async Task<bool> VerifySecondFactorAsync(string userId, byte[] secret, string submittedCode, CancellationToken ct) =>
-            await totpVerifier.VerifyAsync(userId, secret, submittedCode, ct);
+            await totpVerifier.VerifyAsync(userId, secret, submittedCode, ct: ct);
     }
 
     [Fact]
