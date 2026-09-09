@@ -155,3 +155,19 @@ domain's own corrected, source-verified design. Root causes of my own errors, wo
   platform's own established discipline (root CLAUDE.md's repeated "verify against real source, not assumed"
   instruction) working exactly as intended, one layer up from where it usually gets applied — against MY text,
   not just against shipped code.
+
+**P-527/P-528 addition (2026-09-09):** a THIRD reconciliation, distinct from the mechanism corrections above —
+P-514's "zero blast radius" claim was itself false. `12.Security.Totp` (P-452) had already shipped by the time
+P-514 was dispatched, contradicting the premise both P-514's text and the dispatch brief repeated; two already-
+shipped `ITotpReplayGuard` implementers (`16.Testing`'s shared fake, `12.Security.Totp`'s own test-local fake)
+broke as a result. Appended P-527 (16.Testing, also upgrades the fake to model genuine atomicity per the P-502
+precedent) and P-528 (12.Security, also independently re-verifies `TotpChallengeService` is unaffected against
+real source rather than inheriting that claim from `01.Core`'s planner). Both `Depends on: P-514`. Made one
+minimal in-place correction to P-514's own "Why this is needed" text (not its Status/Domain/Depends-on/title)
+since leaving a now-disproven claim standing would perpetuate the exact failure this fix addresses. New
+portable memory: [[feedback_verify_blast_radius_at_design_time]] — a stated blast radius is a claim about
+current repo state, not something safe to inherit from prose, and it must be re-verified every time a phase is
+touched, not just once when first written. This is the platform's THIRD confirmed instance this session of
+stale prose (root CLAUDE.md describing a shipped package as still-queued) feeding a false premise downstream —
+worth treating as a pattern, not a coincidence, the next time a "queued"/"not yet shipped" claim appears
+anywhere in phase text I am about to write or dispatch.
