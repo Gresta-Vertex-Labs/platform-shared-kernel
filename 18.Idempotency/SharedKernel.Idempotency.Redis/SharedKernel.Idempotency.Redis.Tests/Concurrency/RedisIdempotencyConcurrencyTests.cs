@@ -102,19 +102,41 @@ public sealed class RedisIdempotencyConcurrencyTests(RedisContainerFixture fixtu
         Assert.False(secondAttempt); // retryable again — the key was never permanently consumed
     }
 
-    // T-03: PEXPIRE (confirm) and the Lua response write must never clobber each other, in either order.
-    [Fact]
-    public async Task ConfirmThenStoreResponse_InEitherOrder_PreservesTheStoredResponse()
+    // T-03: PEXPIRE (confirm) and the Lua response write must never clobber each other, in either
+    // order. Deliberately uses an explicit, generous InFlightTtl rather than CreateKeyStore's own
+    // 300ms fallback (that value exists only to make T-02's self-heal-on-expiry test fast — it has
+    // nothing to do with what T-03 verifies). This test performs 3-4 sequential real network round
+    // trips to the Redis container before its final assertion; on a slow/contended CI runner those
+    // round trips can cumulatively exceed a sub-second TTL, which would silently expire the whole
+    // key (sentinel + response together) between the reserve and the confirm and make the response
+    // vanish with no error — a genuine defect class, but of test sizing, not of the store's atomicity
+    // protocol (verified by deterministic reproduction with an injected delay during diagnosis).
+    // Covers both directions explicitly: the theory data's "confirm-first" branch also matches the
+    // actual, only-sanctioned production call order documented on IIdempotencyResponseStore
+    // ("HasProcessedAsync/MarkProcessedAsync are always called first, regardless of replay support").
+    [Theory]
+    [InlineData(true)] // storeResponseFirst — defensive: the store's own commutativity, not the documented calling contract
+    [InlineData(false)] // confirmFirst — the actual, documented production order
+    public async Task ConfirmThenStoreResponse_InEitherOrder_PreservesTheStoredResponse(bool storeResponseFirst)
     {
         await using var multiplexer = CreateMultiplexer(fixture.ConnectionString);
         var tenantId = Guid.NewGuid();
-        var store = CreateKeyStore(multiplexer, tenantId);
-        var idempotencyKey = $"order-independence-{Guid.NewGuid():N}";
+        var store = CreateKeyStore(multiplexer, tenantId, new RedisIdempotencyOptions());
+        var idempotencyKey = $"order-independence-{storeResponseFirst}-{Guid.NewGuid():N}";
         const string payload = """{"orderId":42,"status":"accepted"}""";
 
         await store.HasProcessedAsync(idempotencyKey, CancellationToken.None);
-        await store.StoreResponseAsync(idempotencyKey, payload, CancellationToken.None);
-        await store.MarkProcessedAsync(idempotencyKey, CancellationToken.None);
+
+        if (storeResponseFirst)
+        {
+            await store.StoreResponseAsync(idempotencyKey, payload, CancellationToken.None);
+            await store.MarkProcessedAsync(idempotencyKey, CancellationToken.None);
+        }
+        else
+        {
+            await store.MarkProcessedAsync(idempotencyKey, CancellationToken.None);
+            await store.StoreResponseAsync(idempotencyKey, payload, CancellationToken.None);
+        }
 
         var stored = await store.TryGetStoredResponseAsync(idempotencyKey, CancellationToken.None);
         Assert.Equal(payload, stored);

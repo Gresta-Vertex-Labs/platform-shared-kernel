@@ -7,3 +7,4 @@
 - [Options namespace shadowing gotcha](feedback_options_namespace_shadowing.md) — `using {Package}.Options;` breaks `Microsoft.Extensions.Options.Options.Create`
 - [Store registration lifetime — Scoped not Singleton](feedback_scoped_not_singleton_stores.md) — corrected the work order's literal framing
 - [Testcontainers fail-open tests don't need Docker](reference_fail_open_tests_no_docker.md) — how to induce store-unavailable without a container
+- [Redis test must not borrow a sibling test's short InFlightTtl default](feedback_redis_test_ttl_must_not_borrow_shared_default.md) — real CI failure, root cause, and the EfCore asymmetry it doesn't share
