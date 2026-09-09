@@ -234,15 +234,20 @@
     -->
     <PackageReference Include="Testcontainers.Elasticsearch" />
     <!--
-      QdrantContainerFixture / MilvusContainerFixture (S-29/S-30, D-124/P-283/WO-045): seventh and
-      eighth Containers/ fixtures. Both are OFFICIAL dedicated Testcontainers modules (no hand-rolled
-      generic-builder fallback needed, unlike Meilisearch) — confirmed on nuget.org 2026-07-21 at
-      latest stable 4.13.0, matching every other Testcontainers.* package here exactly (S-31: no
-      version-alignment bump required elsewhere in Containers/, in contrast to the Elasticsearch
-      addition at S-25–S-27).
+      QdrantContainerFixture (S-29, D-124/P-283/WO-045): seventh Containers/ fixture. An OFFICIAL
+      dedicated Testcontainers module (no hand-rolled generic-builder fallback needed, unlike
+      Meilisearch) — confirmed on nuget.org 2026-07-21 at latest stable 4.13.0, matching every other
+      Testcontainers.* package here exactly (S-31: no version-alignment bump required elsewhere in
+      Containers/, in contrast to the Elasticsearch addition at S-25–S-27).
+
+      MilvusContainerFixture (S-30, D-124/P-283/WO-045) and its Testcontainers.Milvus
+      PackageReference were REMOVED (2026-09-09): SharedKernel.AI.Milvus was retracted in WO-048
+      (Milvus.Client abandoned, root CLAUDE.md) before this fixture ever gained a real consumer, so
+      it was booting a container for a provider package that no longer exists. devops-lead drops the
+      now-unused Testcontainers.Milvus PackageVersion pin from Directory.Packages.props separately —
+      that file is not owned by this project.
     -->
     <PackageReference Include="Testcontainers.Qdrant" />
-    <PackageReference Include="Testcontainers.Milvus" />
     <!--
       xunit.core (S-09): the Xunit.IAsyncLifetime contract ONLY — container fixtures implement
       IAsyncLifetime directly. No test runner, no Xunit.Assert, no xunit.runner.visualstudio.

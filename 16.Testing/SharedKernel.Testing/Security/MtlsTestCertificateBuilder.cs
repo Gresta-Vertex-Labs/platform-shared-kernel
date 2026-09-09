@@ -29,6 +29,20 @@ namespace SharedKernel.Testing.Security;
 /// this package's determinism convention, which governs test-assertion-relevant defaults; the validity
 /// window below defaults to a FIXED, non-real window, never real <see cref="DateTimeOffset.UtcNow"/>.
 /// </para>
+/// <para>
+/// FIXED (2026-09-09): <c>AsRevoked()</c> previously fed the pre-issuance raw random serial bytes
+/// directly into both <c>CertificateRevocationListBuilder.AddEntry</c> and the CRL's own revoked-entry
+/// list. That crashed with <see cref="ArgumentException"/> roughly 1-in-256 runs (whenever the random
+/// draw's leading byte, once reversed to big-endian, was <c>0x00</c>) and, independent of the crash,
+/// could disagree with the certificate's actual embedded serial whenever
+/// <see cref="CertificateRequest.Create(X509Certificate2, DateTimeOffset, DateTimeOffset, byte[])"/>
+/// re-normalized the input during embedding. The fix reads the AUTHORITATIVE serial back from the
+/// issued certificate itself (<see cref="X509Certificate2.GetSerialNumber"/>) and converts it to the
+/// big-endian, zero-leading-byte-free form <c>AddEntry</c> requires
+/// (<see cref="MtlsTestCertificateAuthority.ToCrlEntrySerialNumber"/>) — see that method's remarks for
+/// the full mechanics, confirmed via a throwaway smoke-test program per this package's crypto-fixture
+/// verification discipline.
+/// </para>
 /// </remarks>
 public sealed class MtlsTestCertificateBuilder
 {
@@ -229,10 +243,20 @@ public sealed class MtlsTestCertificateBuilder
                     [new Oid(ClientAuthenticationOid, "Client Authentication")],
                     critical: false));
 
-            serialNumber = RandomNumberGenerator.GetBytes(16);
+            var rawSerialNumber = RandomNumberGenerator.GetBytes(16);
 
-            using var leafPublicOnly = request.Create(Certificate, notBefore, notAfter, serialNumber);
-            return leafPublicOnly.CopyWithPrivateKey(leafKey);
+            using var leafPublicOnly = request.Create(Certificate, notBefore, notAfter, rawSerialNumber);
+            var leaf = leafPublicOnly.CopyWithPrivateKey(leafKey);
+
+            // CertificateRequest.Create does NOT necessarily embed rawSerialNumber byte-for-byte: it
+            // treats the input as a big-endian magnitude and re-normalizes it (stripping genuinely
+            // redundant leading zero bytes, but keeping exactly one 0x00 sign-safety pad when the
+            // normalized leading byte's high bit is set) before DER-encoding it into the certificate.
+            // Read the ACTUAL embedded serial back from the issued certificate itself — never return
+            // the pre-issuance raw draw — so a later CRL entry is built from, and therefore guaranteed
+            // to agree with, the exact serial the certificate really carries.
+            serialNumber = leaf.GetSerialNumber();
+            return leaf;
         }
 
         public void Revoke(byte[] serialNumber) => _revokedSerialNumbers.Add(serialNumber);
@@ -242,7 +266,7 @@ public sealed class MtlsTestCertificateBuilder
             var builder = new CertificateRevocationListBuilder();
             foreach (var serial in _revokedSerialNumbers)
             {
-                builder.AddEntry(serial);
+                builder.AddEntry(ToCrlEntrySerialNumber(serial));
             }
 
             var generator = X509SignatureGenerator.CreateForECDsa(_privateKey);
@@ -258,6 +282,47 @@ public sealed class MtlsTestCertificateBuilder
                 nextUpdate,
                 HashAlgorithmName.SHA256,
                 authorityKeyIdentifier);
+        }
+
+        /// <summary>
+        /// Converts a serial number from the little-endian form <see cref="X509Certificate2.GetSerialNumber"/>
+        /// returns into the big-endian, zero-leading-byte-free form <see cref="CertificateRevocationListBuilder.AddEntry(byte[], DateTimeOffset?)"/>
+        /// requires.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// CONFIRMED VIA A THROWAWAY SMOKE-TEST PROGRAM (never trust this shape from memory or docs
+        /// alone): <see cref="CertificateRevocationListBuilder.AddEntry(byte[], DateTimeOffset?)"/>
+        /// throws <see cref="ArgumentException"/> on ANY leading <c>0x00</c> byte — including the
+        /// legitimate DER sign-safety pad byte that <see cref="X509Certificate2.GetSerialNumber"/>
+        /// itself carries when the serial's most-significant byte has its high bit set — and it never
+        /// re-applies that pad on its own. A raw 16-byte random serial starts with a redundant leading
+        /// zero (once reversed to big-endian) with probability 1/256, which is exactly the
+        /// intermittent <c>~1-in-256</c> CI failure this method fixes.
+        /// </para>
+        /// <para>
+        /// Stripping the pad byte here means a serial whose magnitude's top bit is set is encoded by
+        /// <see cref="CertificateRevocationListBuilder.AddEntry(byte[], DateTimeOffset?)"/> as a
+        /// technically-negative DER <c>INTEGER</c> under strict signed ASN.1 semantics, even though it
+        /// represents an always-positive serial number. This is a confirmed, unavoidable limitation of
+        /// <see cref="CertificateRevocationListBuilder.AddEntry(byte[], DateTimeOffset?)"/> itself, not
+        /// a defect introduced here — see <c>MtlsTestCertificateBuilderTests.CrlContainsSerialNumber</c>,
+        /// which already reads the entry's raw content bytes directly rather than converting through a
+        /// signed <see cref="System.Numerics.BigInteger"/> for exactly this reason.
+        /// </para>
+        /// </remarks>
+        private static byte[] ToCrlEntrySerialNumber(byte[] serialNumberLittleEndian)
+        {
+            var bigEndian = (byte[])serialNumberLittleEndian.Clone();
+            Array.Reverse(bigEndian);
+
+            var firstNonZero = 0;
+            while (firstNonZero < bigEndian.Length - 1 && bigEndian[firstNonZero] == 0x00)
+            {
+                firstNonZero++;
+            }
+
+            return firstNonZero == 0 ? bigEndian : bigEndian[firstNonZero..];
         }
 
         /// <remarks>

@@ -22,9 +22,11 @@ namespace SharedKernel.Testing.Intelligence;
 /// </para>
 /// <para>
 /// <see cref="Intelligence"/> (this namespace, <c>SharedKernel.Testing.Intelligence</c>) references
-/// only <c>SharedKernel.AI.Abstractions</c> -- never <c>SharedKernel.AI.Qdrant</c>/<c>.Milvus</c>/
-/// <c>.SemanticKernel</c> (the concrete provider packages) nor any sibling capability folder in this
-/// package, including <c>Containers/QdrantContainerFixture</c>/<c>.MilvusContainerFixture</c>. This
+/// only <c>SharedKernel.AI.Abstractions</c> -- never <c>SharedKernel.AI.Qdrant</c>/
+/// <c>.SemanticKernel</c> (the concrete provider packages; the third sibling provider,
+/// <c>SharedKernel.AI.Milvus</c>, was retracted in WO-048) nor any sibling capability folder in this
+/// package, including <c>Containers/QdrantContainerFixture</c> (its <c>.MilvusContainerFixture</c>
+/// sibling was removed 2026-09-09 for the same retraction). This
 /// type is also deliberately independent of its five sibling <c>Intelligence/</c> fakes -- see
 /// <see cref="InMemoryVectorCollectionProvisioner"/>'s remarks for the full non-coupling rationale.
 /// </para>
