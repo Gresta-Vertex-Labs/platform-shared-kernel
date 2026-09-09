@@ -54,7 +54,7 @@ public sealed class RabbitMqIntegrationTests : IAsyncLifetime
             await svc.StartAsync(CancellationToken.None);
 
         // Give the bus a moment to connect and bind the queue
-        await Task.Delay(500);
+        await Task.Delay(IntegrationTestTimeouts.BusConnectDelay);
 
         var bus = provider.GetRequiredService<IBus>();
 
@@ -63,8 +63,10 @@ public sealed class RabbitMqIntegrationTests : IAsyncLifetime
         var message = new RabbitTestMessage("end-to-end-payload");
         await bus.Publish(message);
 
-        // Wait up to 10 seconds for the message to be consumed
-        var received = await RabbitIntegrationConsumer.WaitAsync(TimeSpan.FromSeconds(10));
+        // Ceiling CI-multiplies (P-501) — see IntegrationTestTimeouts. This is a bounded wait that
+        // resolves the instant the message arrives, never a fixed sleep, so a generous ceiling costs
+        // nothing on the (common) happy path.
+        var received = await RabbitIntegrationConsumer.WaitAsync(IntegrationTestTimeouts.Fixed(10));
         received.Should().BeTrue("message published to real RabbitMQ should be consumed");
 
         RabbitIntegrationConsumer.LastMessage.Should().NotBeNull();

@@ -56,7 +56,7 @@ public sealed class OrderedDeliveryIntegrationTests : IAsyncLifetime
             await svc.StartAsync(CancellationToken.None);
 
         // Give the bus a moment to connect and bind the queue.
-        await Task.Delay(500);
+        await Task.Delay(IntegrationTestTimeouts.BusConnectDelay);
 
         // IMessageBus is a scoped service — resolve it from an explicit scope, not the root provider.
         await using var scope = provider.CreateAsyncScope();
@@ -77,7 +77,12 @@ public sealed class OrderedDeliveryIntegrationTests : IAsyncLifetime
                 CancellationToken.None);
         }
 
-        var completed = await OdRecordingConsumer.WaitAsync(TimeSpan.FromSeconds(20));
+        // Ceiling scales with message count and CI-multiplies (P-501) — see IntegrationTestTimeouts.
+        // This is a bounded wait that resolves the instant all messages arrive, never a fixed sleep, so
+        // a generous ceiling costs nothing on the (common) happy path.
+        var waitBudget = IntegrationTestTimeouts.ScaledByMessageCount(
+            messageCount: messagesPerKey * 2, baseSeconds: 10, secondsPerMessage: 1.0);
+        var completed = await OdRecordingConsumer.WaitAsync(waitBudget);
         completed.Should().BeTrue("all published messages should be consumed by the real broker");
 
         var keyASequence = OdRecordingConsumer.Received

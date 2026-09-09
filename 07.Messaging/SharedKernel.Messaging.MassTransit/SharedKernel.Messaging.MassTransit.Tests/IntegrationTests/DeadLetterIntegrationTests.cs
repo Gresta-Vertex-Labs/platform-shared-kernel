@@ -77,7 +77,7 @@ public sealed class DeadLetterIntegrationTests : IAsyncLifetime
             await svc.StartAsync(CancellationToken.None);
 
         // Give the bus a moment to connect and bind the queues.
-        await Task.Delay(500);
+        await Task.Delay(IntegrationTestTimeouts.BusConnectDelay);
 
         var bus = provider.GetRequiredService<IBus>();
 
@@ -85,7 +85,10 @@ public sealed class DeadLetterIntegrationTests : IAsyncLifetime
         var message = new DlPoisonMessage("poison-payload");
         await bus.Publish(message);
 
-        var received = await DlTrackingFaultConsumer.WaitAsync(TimeSpan.FromSeconds(15));
+        // Ceiling CI-multiplies (P-501) — see IntegrationTestTimeouts. This is a bounded wait that
+        // resolves the instant the fault consumer observes the message, never a fixed sleep, so a
+        // generous ceiling costs nothing on the (common) happy path.
+        var received = await DlTrackingFaultConsumer.WaitAsync(IntegrationTestTimeouts.Fixed(15));
         received.Should().BeTrue(
             "a message that throws a non-retryable exception must be routed to the dead-letter/fault " +
             "destination — the endpoint reaching this point also proves the configured x-message-ttl " +
