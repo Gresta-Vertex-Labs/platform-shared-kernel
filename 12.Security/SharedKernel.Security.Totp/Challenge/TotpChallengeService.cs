@@ -67,7 +67,7 @@ public sealed class TotpChallengeService
 
         string identityKey = TotpIdentityKeyFormatter.Format(userId);
 
-        bool verified = await _totpVerifier.VerifyAsync(identityKey, secret, code, ct).ConfigureAwait(false);
+        bool verified = await _totpVerifier.VerifyAsync(identityKey, secret, code, ct: ct).ConfigureAwait(false);
         if (!verified)
         {
             SecurityLogEvents.TotpChallengeRejected(_logger, "InvalidOrReplayedCode");
