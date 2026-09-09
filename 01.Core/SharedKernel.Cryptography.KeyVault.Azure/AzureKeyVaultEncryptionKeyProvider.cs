@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
@@ -11,6 +10,7 @@ using Azure.Security.KeyVault.Keys;
 using Azure.Security.KeyVault.Keys.Cryptography;
 using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.KeyVault.Azure.Internal;
 using SharedKernel.Cryptography.KeyVault.Azure.Options;
 using SharedKernel.Cryptography.Random;
 using SharedKernel.Cryptography.Symmetric;
@@ -74,18 +74,19 @@ namespace SharedKernel.Cryptography.KeyVault.Azure;
 /// <b>Per-tag plaintext memoization — <see cref="GetKeyAsync"/>'s own stated acceptance
 /// criterion.</b> Once a version tag has been resolved to its plaintext data key once (via
 /// <see cref="GetCurrentKeyAsync"/> or <see cref="GetKeyAsync"/>), that plaintext key is memoized
-/// in-memory (<c>ConcurrentDictionary&lt;string, byte[]&gt;</c>-shaped) for the remainder of this
-/// instance's lifetime — a second decrypt citing an already-seen tag costs zero further Key Vault
-/// calls. This is what actually bounds a wrapping <c>CachedEncryptionKeyProvider</c>'s working
-/// set now: every replica converges on the same small, deliberately-minted set of live version
-/// tags, rather than accumulating one entry per pod restart over a service's entire operational
-/// history (the old behavior).
+/// in-memory (<c>Internal.SingleFlightCache&lt;string, byte[]&gt;</c>-backed — see P-511/WO-083's
+/// CANCELLATION remarks on that type for the cross-caller-cancellation-safety contract) for the
+/// remainder of this instance's lifetime — a second decrypt citing an already-seen tag costs zero
+/// further Key Vault calls. This is what actually bounds a wrapping <c>CachedEncryptionKeyProvider</c>'s
+/// working set now: every replica converges on the same small, deliberately-minted set of live
+/// version tags, rather than accumulating one entry per pod restart over a service's entire
+/// operational history (the old behavior).
 /// </para>
 /// <para>
 /// <b>Connection reuse.</b> A <see cref="CryptographyClient"/> is resolved at most once per
 /// distinct (Azure key name, key version) pair — never reconstructed inside a per-call code path
-/// — cached in a <see cref="ConcurrentDictionary{TKey,TValue}"/>, mirroring the exact
-/// <see cref="Lazy{T}"/>-per-entry concurrency-safe pattern <see cref="AzureKeyVaultAsymmetricKeyProvider"/>
+/// — cached in an <c>Internal.SingleFlightCache&lt;string, ResolvedAzureKey&gt;</c>, mirroring the
+/// exact per-entry concurrency-safe pattern <see cref="AzureKeyVaultAsymmetricKeyProvider"/>
 /// (P-494) already established. <b>A necessary refinement of that pattern, not a literal copy:</b>
 /// <see cref="AzureKeyVaultAsymmetricKeyProvider"/> caches purely by (unversioned) Azure key name
 /// because it has no "historical version" concept — every signing call always wants whichever
@@ -166,13 +167,13 @@ public sealed class AzureKeyVaultEncryptionKeyProvider :
     // key). These two key shapes never collide: Azure Key Vault key names cannot contain '/'. See
     // class-level "Connection reuse" remarks for why this must key on more than just the
     // unversioned Azure key name, unlike AzureKeyVaultAsymmetricKeyProvider's own cache.
-    private readonly ConcurrentDictionary<string, Lazy<Task<ResolvedAzureKey>>> _resolvedKeysByCacheKey =
+    private readonly SingleFlightCache<string, ResolvedAzureKey> _resolvedKeysByCacheKey =
         new(StringComparer.Ordinal);
 
     // Per-tag plaintext data-key memoization — see class-level "Per-tag plaintext memoization"
     // remarks. A failed resolution attempt is never left permanently cached; the next call
     // retries.
-    private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _plaintextKeysByTag =
+    private readonly SingleFlightCache<string, byte[]> _plaintextKeysByTag =
         new(StringComparer.Ordinal);
 
     /// <summary>Creates a new <see cref="AzureKeyVaultEncryptionKeyProvider"/>.</summary>
@@ -428,7 +429,7 @@ public sealed class AzureKeyVaultEncryptionKeyProvider :
 
         // Memoize locally: this replica already knows the plaintext key it just minted — no
         // reason to force a round trip back through Key Vault Secrets to re-learn it.
-        _plaintextKeysByTag[newTag] = new Lazy<Task<byte[]>>(Task.FromResult(dataKey.PlaintextKey));
+        _plaintextKeysByTag.Seed(newTag, dataKey.PlaintextKey);
 
         return newTag;
     }
@@ -468,31 +469,7 @@ public sealed class AzureKeyVaultEncryptionKeyProvider :
     }
 
     private Task<byte[]> GetOrAddMemoizedPlaintextKeyAsync(string tag, CancellationToken ct)
-    {
-        Lazy<Task<byte[]>> lazy = _plaintextKeysByTag.GetOrAdd(
-            tag,
-            t => new Lazy<Task<byte[]>>(
-                () => ResolvePlaintextKeyForTagCoreAsync(t, ct),
-                LazyThreadSafetyMode.ExecutionAndPublication));
-
-        return AwaitAndUncacheOnFailureAsync(tag, lazy);
-    }
-
-    private async Task<byte[]> AwaitAndUncacheOnFailureAsync(string tag, Lazy<Task<byte[]>> lazy)
-    {
-        try
-        {
-            return await lazy.Value.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Never leave a permanently-poisoned cache entry behind: remove it (only if it is
-            // still the one that just failed — a concurrent successful resolution may already
-            // have replaced it) so the next call retries instead of repeating a stale failure.
-            _plaintextKeysByTag.TryRemove(new KeyValuePair<string, Lazy<Task<byte[]>>>(tag, lazy));
-            throw;
-        }
-    }
+        => _plaintextKeysByTag.GetOrAddAsync(tag, innerCt => ResolvePlaintextKeyForTagCoreAsync(tag, innerCt), ct);
 
     private async Task<byte[]> ResolvePlaintextKeyForTagCoreAsync(string tag, CancellationToken ct)
     {
@@ -535,27 +512,8 @@ public sealed class AzureKeyVaultEncryptionKeyProvider :
         }
     }
 
-    private async Task<ResolvedAzureKey> ResolveAsync(string cacheKey, string azureKeyName, string? version, CancellationToken ct)
-    {
-        Lazy<Task<ResolvedAzureKey>> lazy = _resolvedKeysByCacheKey.GetOrAdd(
-            cacheKey,
-            _ => new Lazy<Task<ResolvedAzureKey>>(
-                () => ResolveCoreAsync(azureKeyName, version, ct),
-                LazyThreadSafetyMode.ExecutionAndPublication));
-
-        try
-        {
-            return await lazy.Value.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Never leave a permanently-poisoned cache entry behind: remove it (only if it is
-            // still the one that just failed — a concurrent successful resolution may already
-            // have replaced it) so the next call retries.
-            _resolvedKeysByCacheKey.TryRemove(new KeyValuePair<string, Lazy<Task<ResolvedAzureKey>>>(cacheKey, lazy));
-            throw;
-        }
-    }
+    private Task<ResolvedAzureKey> ResolveAsync(string cacheKey, string azureKeyName, string? version, CancellationToken ct)
+        => _resolvedKeysByCacheKey.GetOrAddAsync(cacheKey, innerCt => ResolveCoreAsync(azureKeyName, version, innerCt), ct);
 
     private async Task<ResolvedAzureKey> ResolveCoreAsync(string azureKeyName, string? version, CancellationToken ct)
     {

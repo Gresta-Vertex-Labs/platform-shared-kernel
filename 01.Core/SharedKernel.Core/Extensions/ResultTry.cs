@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SharedKernel.Primitives.Errors;
 using SharedKernel.Primitives.Results;
 
@@ -20,16 +21,42 @@ namespace SharedKernel.Core.Extensions;
 /// <see cref="Result{T}.Success(T)"/>. On any thrown exception — never rethrown — the exception is
 /// translated to <see cref="Result{T}.Failure(Error)"/>, either via the caller-supplied
 /// <c>onException</c> mapper, or, when none is supplied, a default mapping that produces
-/// <see cref="Error.Unexpected(string, string)"/> with code <see cref="ErrorCodes.Unexpected.Default"/>
-/// and a message of the form <c>"{ExceptionType}: {ExceptionMessage}"</c>.
+/// <see cref="Error.Unexpected(string, string)"/> with code <see cref="ErrorCodes.Unexpected.Default"/>.
+/// </para>
+/// <para>
+/// <b>
+/// SECURITY (P-510/WO-083): THE DEFAULT MAPPING'S <see cref="Error.Message"/> IS ALWAYS THE FIXED,
+/// SAFE <see cref="DefaultUnexpectedMessage"/> STRING — IT NEVER CONTAINS THE CAUGHT EXCEPTION'S RAW
+/// TYPE NAME OR MESSAGE. A caught exception (e.g. from a database driver or third-party SDK) can carry
+/// sensitive text — connection-string fragments, usernames, internal hostnames — that must never reach
+/// an HTTP response via <c>Error.ToProblemDetails()</c>. The raw exception detail is instead recorded on
+/// the AMBIENT <see cref="Activity"/> via <see cref="Activity.AddException(Exception, in TagList, DateTimeOffset)"/>
+/// (a real .NET 8+ BCL member — no new dependency), the SAME ambient OpenTelemetry trace-context channel
+/// this platform's Logging Conventions already use for CorrelationId/TraceId/SpanId propagation. When
+/// <see cref="Activity.Current"/> is <c>null</c> (no active span), the exception detail is recorded
+/// nowhere — a documented, accepted limitation. A caller wanting a guaranteed capture path must supply
+/// its own <c>onException</c> mapper, which receives the raw exception exactly as before and is entirely
+/// unaffected by this redaction.
+/// </b>
 /// </para>
 /// <para>
 /// An <see cref="AggregateException"/> (e.g., one caught from a <c>Task.Wait()</c>/<c>.Result</c>-style
 /// call, or a <c>Task.WhenAll</c> await) is flattened via <see cref="AggregateException.Flatten"/> before
-/// the default message is constructed, so every inner exception's type and message is represented —
-/// never just the generic outer aggregate message. This flattening applies only to the default mapper; a
-/// caller-supplied <c>onException</c> mapper receives the raw, unflattened exception and is free to apply
-/// its own flattening strategy.
+/// being recorded — one <see cref="Activity.AddException(Exception, in TagList, DateTimeOffset)"/> call
+/// per flattened inner exception, so every inner exception is individually represented on the trace, not
+/// just the generic outer aggregate. This flattening applies only to the default mapper; a caller-supplied
+/// <c>onException</c> mapper receives the raw, unflattened exception and is free to apply its own
+/// flattening strategy.
+/// </para>
+/// <para>
+/// <b>
+/// CANCELLATION (P-510/WO-083): EVERY CATCH CLAUSE ON THIS TYPE — INCLUDING THE CUSTOM-<c>onException</c>
+/// OVERLOADS — EXCLUDES <see cref="OperationCanceledException"/> (AND ITS SUBCLASS
+/// <see cref="TaskCanceledException"/>). A GENUINE CANCELLATION MUST ALWAYS PROPAGATE AS A THROWN
+/// EXCEPTION; IT IS NEVER CONVERTED INTO A <see cref="Result{T}"/> FAILURE, REGARDLESS OF WHICH MAPPER
+/// (DEFAULT OR CALLER-SUPPLIED) WOULD OTHERWISE HANDLE IT. A CLIENT DISCONNECT / REQUEST-ABORT MUST NOT
+/// BECOME A SYNTHESIZED FAILURE RESULT THAT LOOKS LIKE AN ORDINARY 500.
+/// </b>
 /// </para>
 /// <para>
 /// <see cref="TryAsync{T}(Func{Task{T}})"/> is a genuine <c>async</c>/<c>await</c> method — the one
@@ -41,6 +68,12 @@ namespace SharedKernel.Core.Extensions;
 /// </remarks>
 public static class ResultTry
 {
+    /// <summary>
+    /// The fixed, safe <see cref="Error.Message"/> produced by the default exception mapping. Never
+    /// varies with the caught exception's own type or message — see the SECURITY remarks on this type.
+    /// </summary>
+    public const string DefaultUnexpectedMessage = "An unexpected error occurred while executing the operation.";
+
     /// <summary>
     /// Invokes <paramref name="operation"/>, returning <see cref="Result{T}.Success(T)"/> on normal
     /// completion or <see cref="Result{T}.Failure(Error)"/> (via the default exception mapping) if it
@@ -57,7 +90,7 @@ public static class ResultTry
         {
             return Result<T>.Success(operation());
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return Result<T>.Failure(MapException(exception));
         }
@@ -66,13 +99,16 @@ public static class ResultTry
     /// <summary>
     /// Invokes <paramref name="operation"/>, returning <see cref="Result{T}.Success(T)"/> on normal
     /// completion or <see cref="Result{T}.Failure(Error)"/> (via <paramref name="onException"/>) if it
-    /// throws. Never rethrows.
+    /// throws. Never rethrows — except a thrown <see cref="OperationCanceledException"/>, which always
+    /// propagates uncaught, bypassing <paramref name="onException"/> entirely (see the CANCELLATION
+    /// remarks on this type).
     /// </summary>
     /// <typeparam name="T">The success value type.</typeparam>
     /// <param name="operation">The delegate to invoke inside the exception boundary.</param>
     /// <param name="onException">
     /// Maps a thrown exception to an <see cref="Error"/>. Receives the raw exception — including a raw,
-    /// unflattened <see cref="AggregateException"/> when one is thrown.
+    /// unflattened <see cref="AggregateException"/> when one is thrown. Never invoked for a thrown
+    /// <see cref="OperationCanceledException"/>.
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <c>null</c>.
@@ -86,7 +122,7 @@ public static class ResultTry
         {
             return Result<T>.Success(operation());
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return Result<T>.Failure(onException(exception));
         }
@@ -109,7 +145,7 @@ public static class ResultTry
             var value = await operation().ConfigureAwait(false);
             return Result<T>.Success(value);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return Result<T>.Failure(MapException(exception));
         }
@@ -118,13 +154,16 @@ public static class ResultTry
     /// <summary>
     /// Asynchronously invokes <paramref name="operation"/>, returning <see cref="Result{T}.Success(T)"/>
     /// on normal completion or <see cref="Result{T}.Failure(Error)"/> (via <paramref name="onException"/>)
-    /// if it throws or its returned task faults. Never rethrows.
+    /// if it throws or its returned task faults. Never rethrows — except a thrown or faulted-with
+    /// <see cref="OperationCanceledException"/>, which always propagates uncaught, bypassing
+    /// <paramref name="onException"/> entirely (see the CANCELLATION remarks on this type).
     /// </summary>
     /// <typeparam name="T">The success value type.</typeparam>
     /// <param name="operation">The async delegate to invoke inside the exception boundary.</param>
     /// <param name="onException">
     /// Maps a thrown exception to an <see cref="Error"/>. Receives the raw exception — including a raw,
-    /// unflattened <see cref="AggregateException"/> when one is thrown.
+    /// unflattened <see cref="AggregateException"/> when one is thrown. Never invoked for a thrown
+    /// <see cref="OperationCanceledException"/>.
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="operation"/> or <paramref name="onException"/> is <c>null</c>.
@@ -139,7 +178,7 @@ public static class ResultTry
             var value = await operation().ConfigureAwait(false);
             return Result<T>.Success(value);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return Result<T>.Failure(onException(exception));
         }
@@ -147,21 +186,25 @@ public static class ResultTry
 
     /// <summary>
     /// The default exception-to-<see cref="Error"/> mapping used when the caller supplies no custom
-    /// <c>onException</c> delegate. Flattens an <see cref="AggregateException"/> so every inner exception
-    /// is represented in the resulting message.
+    /// <c>onException</c> delegate. The returned <see cref="Error.Message"/> is ALWAYS the fixed
+    /// <see cref="DefaultUnexpectedMessage"/> string — see the SECURITY remarks on this type. Flattens an
+    /// <see cref="AggregateException"/> so every inner exception is individually recorded on the ambient
+    /// <see cref="Activity"/>, not just the generic outer aggregate.
     /// </summary>
     private static Error MapException(Exception exception)
     {
-        var message = exception is AggregateException aggregate
-            ? FormatFlattened(aggregate.Flatten())
-            : FormatSingle(exception);
+        if (exception is AggregateException aggregate)
+        {
+            foreach (var inner in aggregate.Flatten().InnerExceptions)
+            {
+                Activity.Current?.AddException(inner);
+            }
+        }
+        else
+        {
+            Activity.Current?.AddException(exception);
+        }
 
-        return Error.Unexpected(ErrorCodes.Unexpected.Default, message);
+        return Error.Unexpected(ErrorCodes.Unexpected.Default, DefaultUnexpectedMessage);
     }
-
-    private static string FormatFlattened(AggregateException flattened)
-        => string.Join("; ", flattened.InnerExceptions.Select(FormatSingle));
-
-    private static string FormatSingle(Exception exception)
-        => $"{exception.GetType().Name}: {exception.Message}";
 }

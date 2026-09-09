@@ -2,6 +2,10 @@
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
     <Description>Core building blocks for the SharedKernel: base exception hierarchy, Result&lt;T&gt; railway extension methods (Map, Bind, Match, Tap, async), and BCL extension methods (string, IEnumerable&lt;T&gt;, DateTimeOffset, Guid). Depends on SharedKernel.Primitives.</Description>
+    <PackageReleaseNotes>WO-083 / P-510 (BREAKING BEHAVIOR CHANGE — no signature changes):
+- ResultTry.Try/TryAsync's default (no custom onException) exception mapping no longer interpolates the caught exception's raw "{ExceptionType}: {ExceptionMessage}" into Error.Message. Error.Message is now always the fixed, safe ResultTry.DefaultUnexpectedMessage string. A caught exception (e.g. a database driver or third-party SDK error) can carry sensitive text — connection-string fragments, usernames, internal hostnames — that must never reach an HTTP response via Error.ToProblemDetails(). The raw exception detail is now recorded on the ambient System.Diagnostics.Activity via Activity.Current?.AddException(exception) (a .NET 8+ BCL member, zero new dependency) instead — one call per flattened AggregateException inner exception. A caller supplying its own onException mapper is completely unaffected; it still receives the raw exception exactly as before.
+- Every ResultTry catch clause (Try, Try w/ mapper, TryAsync, TryAsync w/ mapper) now excludes OperationCanceledException (and its subclass TaskCanceledException) via `catch (Exception exception) when (exception is not OperationCanceledException)`. A genuine cancellation now always propagates as a thrown exception instead of being silently converted into a Result.Failure — a client disconnect must not become a synthesized failure result that looks like an ordinary error.
+- Honors this same security audit's ratified DECLINED "no metadata bag on Error" ruling: Error stays exactly (Code, Message, Type) — no new field was added to carry exception detail.</PackageReleaseNotes>
     <PackageTags>shared-kernel;railway-oriented;exceptions;extensions;aot</PackageTags>
   </PropertyGroup>
   <ItemGroup>

@@ -35,6 +35,23 @@ public sealed class Pbkdf2OneWayHasher : IOneWayHasher
     private const int SubkeySize = 32;
     private static readonly HashAlgorithmName Algorithm = HashAlgorithmName.SHA256;
 
+    /// <summary>
+    /// The maximum iteration count <see cref="Verify"/> will ever act on (P-512/WO-083) — a
+    /// FIXED CONSTANT, deliberately independent of <see cref="CryptographyOptions.Pbkdf2Iterations"/>'s
+    /// currently-configured value. A stored hash's embedded iteration count is
+    /// attacker-influenceable (anyone who can write a hash row can write an absurd one), so this
+    /// ceiling must never be derived from — or movable via — ordinary configuration: a future
+    /// legitimate increase to the configured default must never require a simultaneous ceiling
+    /// bump. 2,000,000 is generous (over 3x this package's own 600,000 shipped default) — no hash
+    /// ever legitimately produced by <see cref="Hash"/> at any historically-plausible configured
+    /// iteration count is ever rejected — while still bounding the CPU an attacker-supplied hash
+    /// blob can force this method to spend. Checked BEFORE
+    /// <see cref="Rfc2898DeriveBytes.Pbkdf2(string, byte[], int, HashAlgorithmName, int)"/> is
+    /// ever called; checking afterward would defeat the purpose, since the expensive call would
+    /// already have run.
+    /// </summary>
+    private const int MaxVerifiableIterations = 2_000_000;
+
     private readonly IOptionsMonitor<CryptographyOptions> _options;
 
     /// <summary>Creates a new <see cref="Pbkdf2OneWayHasher"/>.</summary>
@@ -58,12 +75,28 @@ public sealed class Pbkdf2OneWayHasher : IOneWayHasher
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <b>
+    /// SECURITY (P-512/WO-083): BEFORE THE EXPENSIVE
+    /// <see cref="Rfc2898DeriveBytes.Pbkdf2(string, byte[], int, HashAlgorithmName, int)"/> CALL
+    /// EVER RUNS, THIS METHOD REJECTS A DECODED <paramref name="hash"/> WHOSE EMBEDDED ITERATION
+    /// COUNT EXCEEDS <see cref="MaxVerifiableIterations"/>, WHOSE SUBKEY LENGTH IS NOT EXACTLY
+    /// <see cref="SubkeySize"/> BYTES, OR WHOSE ITERATION COUNT IS LESS THAN 1 — ALL THREE ARE
+    /// ATTACKER-INFLUENCEABLE CPU/MEMORY-EXHAUSTION OR CRASH VECTORS SINCE <paramref name="hash"/>
+    /// ULTIMATELY ORIGINATES FROM STORED DATA, NOT FROM THIS PROCESS'S OWN CONFIGURATION.
+    /// </b>
+    /// </remarks>
     public HashVerificationResult Verify(string hash, string secret)
     {
         ArgumentNullException.ThrowIfNull(hash);
         ArgumentNullException.ThrowIfNull(secret);
 
         if (!TryDecode(hash, out int storedIterations, out byte[]? salt, out byte[]? expectedSubkey))
+        {
+            return HashVerificationResult.Failed;
+        }
+
+        if (storedIterations < 1 || storedIterations > MaxVerifiableIterations || expectedSubkey.Length != SubkeySize)
         {
             return HashVerificationResult.Failed;
         }

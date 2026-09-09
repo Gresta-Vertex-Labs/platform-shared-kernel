@@ -210,4 +210,94 @@ public sealed class CachedEncryptionKeyProviderTests
                 new FakeTimeProvider(DateTimeOffset.UnixEpoch),
                 TimeSpan.FromSeconds(ttlSeconds)));
     }
+
+    // ---- P-511/WO-083: cross-caller cancellation safety ----
+
+    [Fact]
+    public async Task GetCurrentKeyAsync_OneCallerCancels_NeverCancelsOrFaultsAnotherConcurrentCaller()
+    {
+        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
+
+        inner.Hold();
+
+        using var callerACts = new CancellationTokenSource();
+        Task<CryptographicKey> callerA = cached.GetCurrentKeyAsync(callerACts.Token).AsTask();
+        Task<CryptographicKey> callerB = cached.GetCurrentKeyAsync().AsTask();
+
+        // Let both callers genuinely start and block on the held gate before staggering A's
+        // cancellation — this is what makes the assertions below a real proof rather than a
+        // trivially-passing sequential test.
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+
+        callerACts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => callerA);
+
+        // Caller B must be entirely undisturbed by A's cancellation: still legitimately pending,
+        // not faulted, not cancelled — the shared in-flight resolution is untouched because at
+        // least one caller (B) is still waiting.
+        await Task.Delay(TimeSpan.FromMilliseconds(100));
+        Assert.False(callerB.IsCompleted);
+        Assert.Equal(0, inner.CanceledCallCount);
+
+        inner.Release();
+
+        CryptographicKey resolved = await callerB.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("v1", resolved.Id);
+        Assert.Equal(1, inner.CurrentKeyCallCount);
+        Assert.Equal(0, inner.CanceledCallCount);
+    }
+
+    [Fact]
+    public async Task GetCurrentKeyAsync_LastCallerCancels_GenuinelyAbandonsInnerCallAndEvictsSlot()
+    {
+        var inner = new ControllableEncryptionKeyProvider(NewKey("v1"));
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var cached = new CachedEncryptionKeyProvider(inner, timeProvider, TimeSpan.FromMinutes(5));
+
+        inner.Hold();
+
+        using var soleCallerCts = new CancellationTokenSource();
+        Task<CryptographicKey> soleCaller = cached.GetCurrentKeyAsync(soleCallerCts.Token).AsTask();
+
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+
+        // This caller is the ONLY one currently awaiting the shared slot — cancelling it must
+        // bring the per-slot waiter count to zero, genuinely abandoning the inner factory call
+        // (as opposed to the previous test, where a second caller was still legitimately waiting).
+        soleCallerCts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => soleCaller);
+
+        // The inner call's own await must observe cancellation directly — proving the slot's
+        // owned CancellationTokenSource, not merely Task.WaitAsync's caller-side surfacing, is
+        // what tore down the abandoned in-flight resolution.
+        await WaitUntilAsync(() => inner.CanceledCallCount == 1, TimeSpan.FromSeconds(10));
+
+        // A subsequent call inside the same still-unexpired TTL window must NOT reuse the
+        // abandoned slot (which would otherwise poison every future caller with a spurious
+        // cancellation) — it must evict and start a genuinely fresh resolution.
+        Task<CryptographicKey> nextCaller = cached.GetCurrentKeyAsync().AsTask();
+        await WaitUntilAsync(() => inner.CurrentKeyCallCount == 2, TimeSpan.FromSeconds(10));
+
+        inner.Release();
+        CryptographicKey resolved = await nextCaller.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("v1", resolved.Id);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("Condition was not met within the allotted timeout.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(20));
+        }
+    }
 }

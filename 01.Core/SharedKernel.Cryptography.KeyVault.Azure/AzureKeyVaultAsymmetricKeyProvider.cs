@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Azure;
 using Azure.Core;
@@ -6,6 +5,7 @@ using Azure.Identity;
 using Azure.Security.KeyVault.Keys;
 using Azure.Security.KeyVault.Keys.Cryptography;
 using Microsoft.Extensions.Options;
+using SharedKernel.Cryptography.KeyVault.Azure.Internal;
 using SharedKernel.Cryptography.KeyVault.Azure.Options;
 using SharedKernel.Cryptography.Signing;
 
@@ -46,12 +46,14 @@ namespace SharedKernel.Cryptography.KeyVault.Azure;
 /// </para>
 /// <para>
 /// <b>Connection reuse, baked in from day one.</b> Resolves each distinct Azure key name's
-/// metadata and <see cref="CryptographyClient"/> exactly once, cached in a
-/// <see cref="ConcurrentDictionary{TKey,TValue}"/> keyed by Azure key name — never re-resolved or
-/// reconstructed on a per-call basis. This is the exact connection-reuse pattern P-496 has to
-/// retroactively apply to the older <see cref="AzureKeyVaultEncryptionKeyProvider"/>; this class
-/// bakes it in from its very first implementation instead of repeating that defect a second time.
-/// A failed resolution attempt is never left permanently cached — the next call retries.
+/// metadata and <see cref="CryptographyClient"/> exactly once, cached in an
+/// <c>Internal.SingleFlightCache&lt;string, ResolvedAzureKey&gt;</c> keyed by Azure key name —
+/// never re-resolved or reconstructed on a per-call basis, and cross-caller-cancellation-safe
+/// (P-511/WO-083 — see that type's own CANCELLATION remarks). This is the exact connection-reuse
+/// pattern P-496 has to retroactively apply to the older <see cref="AzureKeyVaultEncryptionKeyProvider"/>;
+/// this class bakes it in from its very first implementation instead of repeating that defect a
+/// second time. A failed resolution attempt is never left permanently cached — the next call
+/// retries.
 /// </para>
 /// <para>
 /// <b>NEVER implements <see cref="ISynchronousAsymmetricKeyProvider"/>.</b> Every call performs a
@@ -77,22 +79,36 @@ public sealed class AzureKeyVaultAsymmetricKeyProvider : IAsymmetricKeyProvider
     private readonly AzureKeyVaultCryptographyOptions _options;
 
     // Resolved exactly once per distinct Azure key name (never per call) — see class-level
-    // "Connection reuse" remarks. Lazy<Task<T>> (rather than a plain ConcurrentDictionary<string,
-    // CryptographyClient>) so two concurrent first-callers for the same Azure key name share one
-    // in-flight resolution instead of racing two independent Azure calls; mirrors
-    // AzureKeyVaultEncryptionKeyProvider's own Lazy<Task<CryptographicKey>> "current key" slot.
-    private readonly ConcurrentDictionary<string, Lazy<Task<ResolvedAzureKey>>> _resolvedKeysByAzureKeyName =
+    // "Connection reuse" remarks. SingleFlightCache (P-511/WO-083) so two concurrent
+    // first-callers for the same Azure key name share one in-flight resolution instead of racing
+    // two independent Azure calls, with one caller's own cancellation never disturbing another's —
+    // the same shared cache implementation AzureKeyVaultEncryptionKeyProvider's two sites use.
+    private readonly SingleFlightCache<string, ResolvedAzureKey> _resolvedKeysByAzureKeyName =
         new(StringComparer.Ordinal);
 
     /// <summary>Creates a new <see cref="AzureKeyVaultAsymmetricKeyProvider"/>.</summary>
     /// <param name="options">The validated Azure Key Vault configuration — the same options type <see cref="AzureKeyVaultEncryptionKeyProvider"/> binds.</param>
     public AzureKeyVaultAsymmetricKeyProvider(IOptions<AzureKeyVaultCryptographyOptions> options)
+        : this(options, keyClient: null)
+    {
+    }
+
+    /// <summary>
+    /// Test-only seam (P-511/WO-083, T-78) enabling a fake/holdable <see cref="KeyClient"/> to be
+    /// substituted so <see cref="_resolvedKeysByAzureKeyName"/>'s cross-caller-cancellation-safety
+    /// can be proven deterministically without a reachable Azure Key Vault — mirrors
+    /// <see cref="AzureKeyVaultEncryptionKeyProvider"/>'s own internal test-seam constructor
+    /// exactly. NEVER used by production DI wiring (which always resolves the public
+    /// single-parameter constructor above); a <see langword="null"/> <paramref name="keyClient"/>
+    /// falls back to the real Azure SDK client, exactly matching the public constructor's behavior.
+    /// </summary>
+    internal AzureKeyVaultAsymmetricKeyProvider(IOptions<AzureKeyVaultCryptographyOptions> options, KeyClient? keyClient)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         _options = options.Value;
         _credential = _options.Credential ?? new DefaultAzureCredential();
-        _keyClient = new KeyClient(_options.VaultUri, _credential);
+        _keyClient = keyClient ?? new KeyClient(_options.VaultUri, _credential);
     }
 
     /// <inheritdoc />
@@ -157,28 +173,8 @@ public sealed class AzureKeyVaultAsymmetricKeyProvider : IAsymmetricKeyProvider
             $"({nameof(AzureKeyVaultCryptographyOptions)}.{nameof(AzureKeyVaultCryptographyOptions.KeyNames)}).");
     }
 
-    private async Task<ResolvedAzureKey> ResolveAsync(string azureKeyName, CancellationToken ct)
-    {
-        Lazy<Task<ResolvedAzureKey>> lazy = _resolvedKeysByAzureKeyName.GetOrAdd(
-            azureKeyName,
-            name => new Lazy<Task<ResolvedAzureKey>>(
-                () => ResolveCoreAsync(name, ct),
-                LazyThreadSafetyMode.ExecutionAndPublication));
-
-        try
-        {
-            return await lazy.Value.ConfigureAwait(false);
-        }
-        catch
-        {
-            // Never leave a permanently-poisoned cache entry behind: remove it (only if it is
-            // still the one that just failed — a concurrent successful resolution may already
-            // have replaced it) so the next call retries instead of repeating a stale failure.
-            _resolvedKeysByAzureKeyName.TryRemove(
-                new KeyValuePair<string, Lazy<Task<ResolvedAzureKey>>>(azureKeyName, lazy));
-            throw;
-        }
-    }
+    private Task<ResolvedAzureKey> ResolveAsync(string azureKeyName, CancellationToken ct)
+        => _resolvedKeysByAzureKeyName.GetOrAddAsync(azureKeyName, innerCt => ResolveCoreAsync(azureKeyName, innerCt), ct);
 
     private async Task<ResolvedAzureKey> ResolveCoreAsync(string azureKeyName, CancellationToken ct)
     {

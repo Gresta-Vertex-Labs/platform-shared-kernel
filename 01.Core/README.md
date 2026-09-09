@@ -504,8 +504,12 @@ Two everyday patterns that otherwise push developers toward hand-rolled code: wr
 
 `ResultTry.Try` / `ResultTry.TryAsync` invoke a delegate and convert any thrown exception into `Result<T>.Failure(...)` instead of letting it propagate. Use this as the sanctioned seam for the one legitimate place Result-oriented code still touches a throwing third-party SDK call or a BCL method with no `Result`-returning equivalent — never hand-roll `try`/`catch`-to-`Result` translation at the call site.
 
+> **Breaking behavior change (P-510/WO-083).** Two narrow behavior changes, no signature changes:
+> 1. **Default message content.** The default (no custom `onException`) mapping's `Error.Message` is now always the fixed, safe string `ResultTry.DefaultUnexpectedMessage` — it no longer interpolates the caught exception's raw `"{ExceptionType}: {ExceptionMessage}"`. A caught exception can carry sensitive text (a connection-string fragment, a username, an internal hostname) that must never reach an HTTP response via `Error.ToProblemDetails()`. A caller relying on the old raw-text message must now read exception detail from the ambient trace instead (see below), or supply its own `onException` mapper — which is completely unaffected by this change and still receives the raw exception.
+> 2. **`OperationCanceledException` (and its subclass `TaskCanceledException`) now propagates uncaught** from all four members (`Try`, `Try` w/ mapper, `TryAsync`, `TryAsync` w/ mapper) instead of being silently converted into a `Result.Failure`. A genuine cancellation — e.g. an HTTP client disconnect — must never be observed as an ordinary failure result; it must always surface as a thrown exception, exactly like every other `async`/`await` call site on this platform. A caller relying on the old swallow-into-`Result` behavior must now catch `OperationCanceledException` itself around the `ResultTry` call.
+
 ```csharp
-// Default mapping: Error.Unexpected(ErrorCodes.Unexpected.Default, "{ExceptionType}: {ExceptionMessage}")
+// Default mapping: Error.Unexpected(ErrorCodes.Unexpected.Default, ResultTry.DefaultUnexpectedMessage)
 Result<Customer> result = ResultTry.Try(() => thirdPartySdk.GetCustomer(customerId));
 
 // Custom mapping — translate a known SDK exception into a more specific Error
@@ -521,7 +525,19 @@ Result<Customer> result = ResultTry.Try(
 Result<Invoice> result = await ResultTry.TryAsync(() => paymentGateway.ChargeAsync(order, ct));
 ```
 
-An `AggregateException` (e.g., caught from a `Task.Wait()`/`.Result`-style call) is flattened via `AggregateException.Flatten()` before the default message is built, so every inner exception's type and message is represented — not just the generic outer aggregate message. `ResultTry` never rethrows.
+An `AggregateException` (e.g., caught from a `Task.Wait()`/`.Result`-style call) is flattened via `AggregateException.Flatten()` before recording, so every inner exception is individually represented — not just the generic outer aggregate. `ResultTry` never rethrows, except for a genuine `OperationCanceledException`/`TaskCanceledException`, which always propagates (see above).
+
+**Reading exception detail from traces.** The default mapping never puts raw exception text into `Error.Message` — instead it calls `Activity.Current?.AddException(exception)` (a .NET 8+ BCL member, zero new dependency) once per (flattened) exception, recording it as a structured OTel-semantic-convention event on the ambient trace span:
+
+```csharp
+Result<Customer> result = ResultTry.Try(() => thirdPartySdk.GetCustomer(customerId));
+// On failure: result.Error.Message == ResultTry.DefaultUnexpectedMessage — no raw exception text.
+// The raw exception (type, message, stack trace) is recorded as an "exception" event on
+// Activity.Current, flowing through the same ambient OTel trace-export pipeline that
+// 13.ServiceDefaults already wires up — never serialized into the HTTP response.
+```
+
+When `Activity.Current` is `null` (no active span), the exception detail is recorded nowhere — a documented, accepted limitation. A caller that needs a guaranteed capture path should supply its own `onException` mapper.
 
 #### ResultCombine — Aggregating Independent Checks
 
@@ -1135,6 +1151,12 @@ public sealed class ApiKeyService(IOneWayHasher hasher)
 
 Never hash passwords, API keys, recovery codes, or any other one-way secret with raw `SHA256`/`SHA512`/`MD5` anywhere in the platform — only through `IOneWayHasher`.
 
+**PBKDF2 iteration floor and verify-time ceiling (P-512/WO-083).** `CryptographyOptions.Pbkdf2Iterations` now carries a `[Range(CryptographyOptions.MinimumPbkdf2Iterations, int.MaxValue)]` — `MinimumPbkdf2Iterations` is `100,000`, enforced entirely through the existing `AddValidatedOptions`/`ValidateOnStart()` path this options type was already wired into. A configured value of `1` (or any value below `100,000`) now fails fast at host startup instead of silently defeating the entire point of a deliberately slow key-derivation function.
+
+This floor applies **only at `Hash()` time**, on newly-configured values — **never retroactively at `Verify` time**. A hash already stored under an older, lower-than-100,000 configuration (this package shipped with no floor at all before this phase) continues to verify exactly as before; `Verify` still reports `SuccessRehashNeeded` so the caller can opportunistically re-hash it under the current configuration on next successful login, but it is never rejected outright by the new floor.
+
+`Pbkdf2OneWayHasher.Verify` separately enforces a fixed `MaxVerifiableIterations` ceiling (`2,000,000`) against the iteration count embedded in the *hash being verified* — deliberately a constant independent of `CryptographyOptions.Pbkdf2Iterations`'s currently-configured value, since a stored hash's embedded iteration count is attacker-influenceable (anyone who can write a hash row can write an absurd one) and a future legitimate increase to the configured default must never require a simultaneous ceiling bump. The check happens **before** the expensive `Rfc2898DeriveBytes.Pbkdf2` call ever runs — checking afterward would defeat the purpose. `Verify` also now rejects a decoded subkey whose length is not exactly 32 bytes and a stored iteration count that is zero or negative — both previously reachable, un-validated inputs from a corrupted or adversarial hash blob. All three checks return `HashVerificationResult.Failed`, never throw.
+
 ### Argon2id Password Hashing — `SharedKernel.Cryptography.Argon2`
 
 `Argon2idOneWayHasher` (from the sibling `SharedKernel.Cryptography.Argon2` package) implements the same `IOneWayHasher` contract above, using Argon2id (RFC 9106) via the pure-managed `Konscious.Security.Cryptography.Argon2` package — no native/P-Invoke dependency. It is the one `01.Core` package with a genuine third-party Argon2id dependency, kept out of this package for the identical reason `SharedKernel.Cryptography.KeyVault.Azure` keeps the Azure SDK out.
@@ -1188,6 +1210,8 @@ public sealed class BlobUploadExample(IContentHasher contentHasher)
 ### Symmetric Encryption (AES-256-GCM)
 
 `ISymmetricEncryptionService` is for general-purpose encryption of arbitrary payloads outside an EF Core column — before publishing to a queue, writing to blob storage, or returning from an API. It is distinct from `06.Persistence`'s `EncryptedValueConverter`, which remains the dedicated path for transparent EF Core column-level encryption.
+
+**The AES-256-only guarantee is now structurally enforced, not merely documented (P-513/WO-083).** `AesGcmEncryptionService` rejects any `CryptographicKey.Material` whose length is not exactly 32 bytes — with a thrown `CryptographicException` naming both the expected and actual length — before any `AesGcm` instance is ever constructed, on every one of `Encrypt`/`EncryptAsync`/`Decrypt`/`DecryptAsync` (their shared `EncryptCore`/`DecryptCore` core enforces it once for all four). Previously, `AesGcm`'s own constructor silently accepted any BCL-legal AES key size — 16 or 24 bytes included — constructing AES-128-GCM or AES-192-GCM from a misconfigured `IEncryptionKeyProvider` with no complaint at all, despite every doc, XML comment, and NuGet package description on this platform promising AES-256. This is an exact-length check, not a minimum: a too-long key (24 bytes/AES-192) is rejected exactly like a too-short one (16 bytes/AES-128) — both are configuration defects, never soft failures. It throws rather than returning a `Result<T>` failure, because a wrong-size key is an infrastructure/provisioning defect the caller did not cause and cannot recover from at the call site — distinct from this class's `Result<T>` failures, which are reserved for genuine runtime/tampered-input conditions (a wrong key, tamper, mismatched associated data).
 
 `IEncryptionKeyProvider` resolves the key material. Both of its members are asynchronous and `CancellationToken`-aware, so a genuine network-bound KMS/HSM implementation (Azure Key Vault, AWS KMS, HashiCorp Vault) never needs a blocking-on-async anti-pattern:
 
@@ -1402,6 +1426,8 @@ builder.Services.AddSingleton<IEncryptionKeyProvider>(sp =>
 
 A failed refresh (an unreachable KMS) propagates the thrown exception to every caller awaiting that single-flight resolution — it never falls back to a stale cached value, matching this whole seam's structural fail-closed posture.
 
+**Cross-caller-cancellation-safe single flight (P-511/WO-083).** When N callers race a shared refresh and one of them cancels its own `CancellationToken`, only THAT caller observes `OperationCanceledException` — every other still-waiting caller's await of the exact same in-flight resolution is completely undisturbed. This is driven by a cache-slot-owned `CancellationTokenSource` (never any individual caller's token) plus `Task.WaitAsync(callerCt)` per caller, with a per-slot waiter reference count: the owned source is cancelled — genuinely abandoning the inner KMS call — only once every currently-awaiting caller has departed, and a slot that did not complete successfully by that point is evicted immediately so a future caller never joins an already-doomed resolution. Prior to this phase, one caller cancelling its own request could fault or cancel every other caller's concurrent, otherwise-perfectly-healthy request against the same key — a real production hazard under any real HTTP-request-scoped cancellation (client disconnect, timeout middleware). The identical fix applies to `SharedKernel.Cryptography.KeyVault.Azure`'s two `AzureKeyVaultEncryptionKeyProvider` caches and its sibling `AzureKeyVaultAsymmetricKeyProvider` — see that package's own section below.
+
 `CachedEncryptionKeyProvider` never itself implements `ISynchronousEncryptionKeyProvider` (P-492/WO-081) — its `Inner` property (the wrapped provider) is what `EncryptionKeyProviderCapabilities.IsGenuinelySynchronous` recurses into. Wrapping a KMS-backed provider like this still leaves `AesGcmEncryptionService`'s sync members structurally unusable — a cache hit is fast, but a cache miss re-enters `Inner`, so nothing here ever "earns" the marker on the KMS provider's behalf. See "Gating the synchronous members" above.
 
 ### Azure Key Vault Key Provider — `SharedKernel.Cryptography.KeyVault.Azure`
@@ -1434,11 +1460,11 @@ builder.Services.AddSingleton<IEncryptionKeyProvider>(sp =>
 
 **Fail-closed**, matching every other provider in this seam: any genuine Azure SDK exception (unreachable vault, `RequestFailedException` for permission/auth failure, or the vault itself rejecting a wrapped key as tampered) propagates directly — never a silent fallback. The one narrow exception is `UnwrapDataKeyAsync`'s `Result<byte[]>` failure path, returned only when the supplied `masterKeyId` fails *local* well-formedness validation before any call ever reaches Azure, and `GetKeyAsync` translating a Key Vault "not found" (HTTP 404) into `null` per its "retired or unknown" contract.
 
-**Connection reuse.** A `CryptographyClient` is resolved at most once per distinct (Azure key name, key version) pair — never constructed inside a per-call code path — cached in a `ConcurrentDictionary`, mirroring `AzureKeyVaultAsymmetricKeyProvider`'s own cache (P-496/WO-081). Unlike that sibling class, this provider keys by (name, version) rather than name alone, because `UnwrapDataKeyAsync` must be able to pin to a specific historical Azure key version, not only "whichever version is current."
+**Connection reuse.** A `CryptographyClient` is resolved at most once per distinct (Azure key name, key version) pair — never constructed inside a per-call code path — cached in a `SingleFlightCache` (P-511/WO-083; the same cross-caller-cancellation-safe single-flight cache this package's two other sites and `CachedEncryptionKeyProvider` itself use — see that type's section above), mirroring `AzureKeyVaultAsymmetricKeyProvider`'s own cache. Unlike that sibling class, this provider keys by (name, version) rather than name alone, because `UnwrapDataKeyAsync` must be able to pin to a specific historical Azure key version, not only "whichever version is current."
 
 **A durable version registry replaced process-lifetime caching (P-496/WO-081).** Before this phase, `GetCurrentKeyAsync` cached a single locally-generated data key for the lifetime of the process — every process/pod/replica silently minted its **own** unique data key on first use, with no sharing across replicas and no genuine rotation intent. `AzureKeyVaultEncryptionKeyProvider` now stores every version it mints as its own Key Vault Secret (a short opaque tag, `"v1"`, `"v2"`, …) plus a single shared `"current version"` pointer secret every replica reads live — see "Key rotation" below. `CryptographicKey.Id` is now that short tag rather than the previous self-decodable ~470-byte envelope; `GetKeyAsync` still transparently decodes the old envelope shape for any already-persisted row (backward-read compatible, no forced migration).
 
-**A `ConcurrentDictionary<string, byte[]>`-shaped memoization** caches a version tag's already-unwrapped plaintext data key for the remainder of the process's lifetime once resolved — a second `GetKeyAsync`/`GetCurrentKeyAsync` call citing an already-seen tag costs zero further Key Vault calls. This is also what actually bounds `CachedEncryptionKeyProvider`'s working set now: every replica converges on the same small, deliberately-minted set of live version tags instead of accumulating one entry per pod restart.
+**A `SingleFlightCache<string, byte[]>`-backed memoization** (P-511/WO-083) caches a version tag's already-unwrapped plaintext data key for the remainder of the process's lifetime once resolved — a second `GetKeyAsync`/`GetCurrentKeyAsync` call citing an already-seen tag costs zero further Key Vault calls, and, like every other single-flight site in this seam, one caller cancelling its own request against a not-yet-resolved tag never disturbs another caller's concurrent request for that same tag. This is also what actually bounds `CachedEncryptionKeyProvider`'s working set now: every replica converges on the same small, deliberately-minted set of live version tags instead of accumulating one entry per pod restart.
 
 **Readiness probe** — `AzureKeyVaultEncryptionKeyProvider` also implements `IEncryptionKeyProviderProbe`. Unlike every other member of this class, `ProbeAsync` never lets an Azure SDK exception propagate: it performs one read-only key-metadata call (never a wrap/unwrap/sign/verify) and reports `EncryptionKeyProviderHealth.IsHealthy = false` with a `Description` instead of throwing. This mirrors `07.Messaging`'s `IMessageBusProbe`/`MessageBusHealth` shape. `01.Core` ships this probe primitive only, never an `IHealthCheck` — wiring it into `AddHealthChecks()` is `13.ServiceDefaults`'s concern.
 

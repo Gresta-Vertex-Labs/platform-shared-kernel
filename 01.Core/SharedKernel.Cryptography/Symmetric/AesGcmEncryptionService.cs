@@ -41,6 +41,19 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     private const int NonceSize = 12; // 96 bits
     private const int TagSize = 16; // 128 bits
 
+    /// <summary>
+    /// The only key length this service accepts (P-513/WO-083) — 32 bytes, i.e. AES-256, exactly
+    /// matching <see cref="CryptographicKey.Material"/>'s own documented "32 bytes for AES-256"
+    /// contract. <see cref="AesGcm"/>'s constructor otherwise silently accepts any BCL-legal AES
+    /// key size (16, 24, or 32 bytes), constructing AES-128-GCM or AES-192-GCM from a
+    /// shorter/differently-sized key with no complaint — while every doc, XML comment, and NuGet
+    /// package description on this platform promises AES-256. An exact-length equality check
+    /// (never a minimum) rejects both a too-short key (the headline AES-128-downgrade risk) and a
+    /// too-long one (equally a configuration defect; <see cref="AesGcm"/> would otherwise also
+    /// silently accept 24 bytes/AES-192).
+    /// </summary>
+    private const int RequiredKeySizeBytes = 32;
+
     private readonly IEncryptionKeyProvider _keyProvider;
     private readonly bool _isKeyProviderGenuinelySynchronous;
 
@@ -194,6 +207,8 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     /// </summary>
     private static EncryptedPayload EncryptCore(byte[] plaintext, byte[] associatedData, CryptographicKey key)
     {
+        EnsureKeySize(key);
+
         byte[] nonce = RandomNumberGenerator.GetBytes(NonceSize);
         byte[] ciphertext = new byte[plaintext.Length];
         byte[] tag = new byte[TagSize];
@@ -217,6 +232,8 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
                 $"No encryption key registered for key id '{payload.KeyId}'.");
         }
 
+        EnsureKeySize(key);
+
         byte[] plaintext = new byte[payload.Ciphertext.Length];
 
         try
@@ -232,6 +249,44 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
         }
 
         return plaintext;
+    }
+
+    /// <summary>
+    /// Rejects any <paramref name="key"/> whose <see cref="CryptographicKey.Material"/> is not
+    /// exactly <see cref="RequiredKeySizeBytes"/> bytes long — called at the very start of both
+    /// <see cref="EncryptCore"/> and <see cref="DecryptCore"/>, before any <see cref="AesGcm"/>
+    /// instance is ever constructed (P-513/WO-083).
+    /// </summary>
+    /// <remarks>
+    /// <b>
+    /// THROWS RATHER THAN RETURNING A <see cref="Result{T}"/> FAILURE: a wrong-size key means the
+    /// registered <see cref="IEncryptionKeyProvider"/>/its backing key material is misconfigured —
+    /// an infrastructure/provisioning defect the caller did not cause and could not have avoided
+    /// (it does not control <see cref="CryptographicKey.Material"/>; that comes from
+    /// <see cref="IEncryptionKeyProvider"/>), not a runtime/tampered-input condition — which is
+    /// what this class's <see cref="Result{T}"/> failures are reserved for (tamper, wrong key,
+    /// unknown key id, mismatched associated data). Mirrors
+    /// <c>AzureKeyVaultEncryptionKeyProvider.ResolveWrapAlgorithm</c>'s existing precedent of
+    /// throwing <see cref="NotSupportedException"/> for an unsupported/misconfigured key type
+    /// rather than returning a soft failure.
+    /// </b>
+    /// </remarks>
+    /// <exception cref="CryptographicException">
+    /// <paramref name="key"/>'s <see cref="CryptographicKey.Material"/> is not exactly
+    /// <see cref="RequiredKeySizeBytes"/> bytes.
+    /// </exception>
+    private static void EnsureKeySize(CryptographicKey key)
+    {
+        if (key.Material.Length != RequiredKeySizeBytes)
+        {
+            throw new CryptographicException(
+                $"Invalid AES key length for key id '{key.Id}': expected exactly " +
+                $"{RequiredKeySizeBytes} bytes (AES-256), but the resolved key material is " +
+                $"{key.Material.Length} bytes. Every key this service is given must be a genuine " +
+                "AES-256 key — a shorter or longer key would silently downgrade to AES-128/AES-192 " +
+                "or be rejected by the BCL for an unsupported size, neither of which this platform " +
+                "permits.");
+        }
     }
 
     /// <summary>

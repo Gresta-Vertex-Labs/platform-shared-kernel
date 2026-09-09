@@ -132,6 +132,106 @@ internal static class AzureKeyVaultCallCountingFakes
         public int UnwrapCallCount;
         public int GetSecretCallCount;
         public int SetSecretCallCount;
+
+        // ---- P-511/WO-083: cross-caller-cancellation-safety test support ----
+
+        /// <summary>
+        /// When set, <see cref="HoldableFakeKeyClient.GetKeyAsync"/> and
+        /// <see cref="HoldableFakeSecretClient.GetSecretAsync"/> block until this is completed —
+        /// mirrors <c>ControllableEncryptionKeyProvider.Hold</c>/<c>.Release</c> in
+        /// <c>SharedKernel.Cryptography.Tests</c>, letting a test force genuine concurrent overlap
+        /// between several in-flight callers.
+        /// </summary>
+        public TaskCompletionSource? Hold;
+
+        /// <summary>
+        /// How many in-flight <see cref="HoldableFakeKeyClient.GetKeyAsync"/> calls observed their
+        /// own <see cref="CancellationToken"/> firing while blocked on <see cref="Hold"/> — i.e.
+        /// were genuinely, directly cancelled (as opposed to a caller merely giving up on a
+        /// still-in-flight call).
+        /// </summary>
+        public int CanceledGetKeyCallCount;
+
+        /// <summary>The <see cref="HoldableFakeSecretClient.GetSecretAsync"/> analogue of <see cref="CanceledGetKeyCallCount"/>.</summary>
+        public int CanceledGetSecretCallCount;
+    }
+
+    /// <summary>
+    /// A holdable/cancellable variant of <see cref="CallCountingFakeKeyClient"/> — backs P-511's
+    /// concurrency tests (T-77, T-78), which need to force genuine concurrent overlap between
+    /// several in-flight callers and then observe whether the underlying Key Vault call itself was
+    /// directly cancelled (see <see cref="SharedVaultState.CanceledGetKeyCallCount"/>).
+    /// </summary>
+    internal sealed class HoldableFakeKeyClient(SharedVaultState state) : KeyClient
+    {
+        public override async Task<Response<KeyVaultKey>> GetKeyAsync(
+            string name,
+            string? version = null,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref state.GetKeyCallCount);
+
+            if (state.Hold is { } hold)
+            {
+                try
+                {
+                    await hold.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref state.CanceledGetKeyCallCount);
+                    throw;
+                }
+            }
+
+            KeyVaultKey key = MakeKeyVaultKey(state.VaultUri, name, version ?? SharedVaultState.FixedAzureKeyVersion);
+            return Wrap(key);
+        }
+    }
+
+    /// <summary>
+    /// A holdable/cancellable variant of <see cref="CallCountingFakeSecretClient"/> — the
+    /// <see cref="HoldableFakeKeyClient"/> analogue for <see cref="SharedVaultState.CanceledGetSecretCallCount"/>.
+    /// </summary>
+    internal sealed class HoldableFakeSecretClient(SharedVaultState state) : SecretClient
+    {
+        public override async Task<Response<KeyVaultSecret>> GetSecretAsync(
+            string name,
+            string? version = null,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref state.GetSecretCallCount);
+
+            if (state.Hold is { } hold)
+            {
+                try
+                {
+                    await hold.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref state.CanceledGetSecretCallCount);
+                    throw;
+                }
+            }
+
+            if (!state.Secrets.TryGetValue(name, out string? value))
+            {
+                throw new RequestFailedException(status: 404, $"Secret '{name}' was not found.");
+            }
+
+            return Wrap(new KeyVaultSecret(name, value));
+        }
+
+        public override Task<Response<KeyVaultSecret>> SetSecretAsync(
+            string name,
+            string value,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref state.SetSecretCallCount);
+            state.Secrets[name] = value;
+            return Task.FromResult(Wrap(new KeyVaultSecret(name, value)));
+        }
     }
 
     internal sealed class CallCountingFakeKeyClient(SharedVaultState state) : KeyClient

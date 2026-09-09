@@ -25,12 +25,29 @@ internal sealed class InMemoryEncryptionKeyProvider : ISynchronousEncryptionKeyP
     {
         byte[] material = new byte[32];
         System.Security.Cryptography.RandomNumberGenerator.Fill(material);
+        return AddKey(keyId, material);
+    }
+
+    /// <summary>
+    /// Adds a key with caller-supplied (possibly deliberately wrong-sized) material — backs
+    /// P-513/WO-083's <c>AesGcmEncryptionService.EnsureKeySize</c> tests, which need a key whose
+    /// length is NOT the required 32 bytes.
+    /// </summary>
+    public CryptographicKey AddKey(string keyId, byte[] material)
+    {
         var key = new CryptographicKey(keyId, material);
         _keys[keyId] = key;
         return key;
     }
 
     public void SetCurrentKey(string keyId) => _currentKeyId = keyId;
+
+    /// <summary>Adds <paramref name="key"/> and immediately designates it current.</summary>
+    public void SetCurrentKey(CryptographicKey key)
+    {
+        _keys[key.Id] = key;
+        _currentKeyId = key.Id;
+    }
 
     public void RemoveKey(string keyId) => _keys.Remove(keyId);
 

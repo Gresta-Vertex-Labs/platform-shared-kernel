@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using SharedKernel.Cryptography.Symmetric;
 using SharedKernel.Primitives.Results;
@@ -353,5 +355,102 @@ public sealed class AesGcmEncryptionServiceTests
         var service = new AesGcmEncryptionService(cached);
 
         Assert.Throws<NotSupportedException>(() => service.Encrypt(Encoding.UTF8.GetBytes("secret"), []));
+    }
+
+    // --- P-513/WO-083: structural AES-256 key-length enforcement ---
+
+    [Theory]
+    [InlineData(16)] // AES-128 downgrade
+    [InlineData(24)] // AES-192 downgrade
+    public void Encrypt_WrongSizeKey_ThrowsCryptographicException_NamingExpectedAndActualLength(int wrongKeySizeBytes)
+    {
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        keyProvider.SetCurrentKey(new CryptographicKey("wrong-size", new byte[wrongKeySizeBytes]));
+        var service = new AesGcmEncryptionService(keyProvider);
+
+        CryptographicException exception = Assert.Throws<CryptographicException>(
+            () => service.Encrypt(Encoding.UTF8.GetBytes("secret"), []));
+
+        Assert.Contains("32", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(wrongKeySizeBytes.ToString(CultureInfo.InvariantCulture), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(24)]
+    public async Task EncryptAsync_WrongSizeKey_ThrowsCryptographicException(int wrongKeySizeBytes)
+    {
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        keyProvider.SetCurrentKey(new CryptographicKey("wrong-size", new byte[wrongKeySizeBytes]));
+        var service = new AesGcmEncryptionService(keyProvider);
+
+        await Assert.ThrowsAsync<CryptographicException>(
+            () => service.EncryptAsync(Encoding.UTF8.GetBytes("secret"), []).AsTask());
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(24)]
+    public void Decrypt_WrongSizeKey_ThrowsCryptographicException_NamingExpectedAndActualLength(int wrongKeySizeBytes)
+    {
+        var goodKeyProvider = new InMemoryEncryptionKeyProvider();
+        var goodService = new AesGcmEncryptionService(goodKeyProvider);
+        EncryptedPayload payload = goodService.Encrypt(Encoding.UTF8.GetBytes("secret"), []);
+
+        var wrongSizeKeyProvider = new InMemoryEncryptionKeyProvider();
+        wrongSizeKeyProvider.AddKey(payload.KeyId, new byte[wrongKeySizeBytes]);
+        var service = new AesGcmEncryptionService(wrongSizeKeyProvider);
+
+        CryptographicException exception = Assert.Throws<CryptographicException>(() => service.Decrypt(payload, []));
+
+        Assert.Contains("32", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(wrongKeySizeBytes.ToString(CultureInfo.InvariantCulture), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(24)]
+    public async Task DecryptAsync_WrongSizeKey_ThrowsCryptographicException(int wrongKeySizeBytes)
+    {
+        var goodKeyProvider = new InMemoryEncryptionKeyProvider();
+        var goodService = new AesGcmEncryptionService(goodKeyProvider);
+        EncryptedPayload payload = goodService.Encrypt(Encoding.UTF8.GetBytes("secret"), []);
+
+        var wrongSizeKeyProvider = new InMemoryEncryptionKeyProvider();
+        wrongSizeKeyProvider.AddKey(payload.KeyId, new byte[wrongKeySizeBytes]);
+        var service = new AesGcmEncryptionService(wrongSizeKeyProvider);
+
+        await Assert.ThrowsAsync<CryptographicException>(() => service.DecryptAsync(payload, []).AsTask());
+    }
+
+    [Fact]
+    public void Encrypt_CorrectSize32ByteKey_IsUnaffected()
+    {
+        // Existing round-trip behavior for a correctly-sized key must be byte-for-byte unchanged.
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        var service = new AesGcmEncryptionService(keyProvider);
+        byte[] plaintext = Encoding.UTF8.GetBytes("unaffected by the length guard");
+
+        EncryptedPayload payload = service.Encrypt(plaintext, []);
+        Result<byte[]> result = service.Decrypt(payload, []);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(plaintext, result.Value);
+    }
+
+    [Fact]
+    public void Encrypt_WrongSizeKey_RejectsBeforeProducingAnyCiphertextOrTagOutput()
+    {
+        // Proves the rejection happens before any AesGcm instance is constructed: no partial
+        // output escapes — the call throws outright rather than returning a payload.
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        keyProvider.SetCurrentKey(new CryptographicKey("wrong-size", new byte[16]));
+        var service = new AesGcmEncryptionService(keyProvider);
+
+        EncryptedPayload? captured = null;
+        var exception = Record.Exception(() => captured = service.Encrypt(Encoding.UTF8.GetBytes("secret"), []));
+
+        Assert.IsType<CryptographicException>(exception);
+        Assert.Null(captured);
     }
 }

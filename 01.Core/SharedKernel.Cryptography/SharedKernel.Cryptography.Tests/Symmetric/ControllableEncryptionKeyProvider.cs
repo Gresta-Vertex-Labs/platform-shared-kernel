@@ -13,6 +13,7 @@ internal sealed class ControllableEncryptionKeyProvider : IEncryptionKeyProvider
 {
     private int _currentKeyCallCount;
     private int _getKeyCallCount;
+    private int _canceledCallCount;
     private CryptographicKey _currentKey;
     private Exception? _nextException;
     private TaskCompletionSource? _hold;
@@ -25,6 +26,14 @@ internal sealed class ControllableEncryptionKeyProvider : IEncryptionKeyProvider
     public int CurrentKeyCallCount => Volatile.Read(ref _currentKeyCallCount);
 
     public int GetKeyCallCount => Volatile.Read(ref _getKeyCallCount);
+
+    /// <summary>
+    /// How many in-flight <see cref="GetCurrentKeyAsync"/> calls observed their own
+    /// <see cref="CancellationToken"/> firing while blocked on <see cref="Hold"/> — i.e. were
+    /// genuinely, directly cancelled, as opposed to merely returning to a caller who stopped
+    /// waiting on a still-in-flight call (P-511/WO-083's cross-caller-cancellation distinction).
+    /// </summary>
+    public int CanceledCallCount => Volatile.Read(ref _canceledCallCount);
 
     public void SetCurrentKey(CryptographicKey key) => _currentKey = key;
 
@@ -47,7 +56,15 @@ internal sealed class ControllableEncryptionKeyProvider : IEncryptionKeyProvider
 
         if (_hold is { } hold)
         {
-            await hold.Task.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await hold.Task.WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref _canceledCallCount);
+                throw;
+            }
         }
 
         if (_nextException is { } exception)

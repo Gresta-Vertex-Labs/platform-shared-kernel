@@ -114,6 +114,19 @@ public sealed class CachedEncryptionKeyProvider : IEncryptionKeyProvider
     /// <see cref="ConcurrentDictionary{TKey,TValue}"/> combined with a <see cref="Lazy{T}"/>
     /// whose factory delegate itself executes at most once even under contention.
     /// </summary>
+    /// <remarks>
+    /// <b>
+    /// CANCELLATION (P-511/WO-083): THE SHARED IN-FLIGHT REFRESH IS DRIVEN BY A
+    /// <see cref="CacheSlot"/>-OWNED <see cref="CancellationTokenSource"/> — NEVER BY ANY
+    /// INDIVIDUAL CALLER'S <paramref name="ct"/>. EACH CALLER OBSERVES ONLY ITS OWN TOKEN VIA
+    /// <see cref="Task.WaitAsync(CancellationToken)"/>, SO ONE CALLER CANCELLING ITS OWN AWAIT
+    /// CAN NEVER CANCEL OR FAULT ANOTHER CALLER'S CONCURRENT AWAIT OF THE SAME SHARED
+    /// RESOLUTION. THE SLOT'S OWNED SOURCE IS CANCELLED — GENUINELY ABANDONING THE INNER
+    /// <paramref name="factory"/> CALL — ONLY ONCE EVERY CALLER CURRENTLY AWAITING THIS SLOT HAS
+    /// DEPARTED (A PER-SLOT REFERENCE COUNT REACHING ZERO), NEVER WHILE AT LEAST ONE CALLER IS
+    /// STILL LEGITIMATELY WAITING.
+    /// </b>
+    /// </remarks>
     private async ValueTask<CryptographicKey?> GetOrRefreshAsync(
         string cacheKey,
         Func<CancellationToken, ValueTask<CryptographicKey?>> factory,
@@ -125,14 +138,10 @@ public sealed class CachedEncryptionKeyProvider : IEncryptionKeyProvider
 
             if (_slots.TryGetValue(cacheKey, out CacheSlot? current) && now < current.ExpiresAt)
             {
-                return await current.Fetch.Value.ConfigureAwait(false);
+                return await current.AwaitAsync(ct, () => EvictIfCurrent(cacheKey, current)).ConfigureAwait(false);
             }
 
-            var candidate = new CacheSlot(
-                new Lazy<Task<CryptographicKey?>>(
-                    () => factory(ct).AsTask(),
-                    LazyThreadSafetyMode.ExecutionAndPublication),
-                now + _ttl);
+            var candidate = new CacheSlot(factory, now + _ttl);
 
             CacheSlot winner;
             if (current is null)
@@ -154,21 +163,101 @@ public sealed class CachedEncryptionKeyProvider : IEncryptionKeyProvider
                 continue;
             }
 
-            try
-            {
-                return await winner.Fetch.Value.ConfigureAwait(false);
-            }
-            catch
-            {
-                // Never leave a permanently-poisoned slot behind: remove it (only if it is
-                // still the entry we installed — a subsequent successful refresh may already
-                // have replaced it) so the next call attempts a fresh resolution, then
-                // propagate the failure to every caller awaiting this single-flight refresh.
-                _slots.TryRemove(new KeyValuePair<string, CacheSlot>(cacheKey, winner));
-                throw;
-            }
+            return await winner.AwaitAsync(ct, () => EvictIfCurrent(cacheKey, winner)).ConfigureAwait(false);
         }
     }
 
-    private sealed record CacheSlot(Lazy<Task<CryptographicKey?>> Fetch, DateTimeOffset ExpiresAt);
+    /// <summary>
+    /// Removes <paramref name="slot"/> from <see cref="_slots"/>, but only if it is still the
+    /// entry stored under <paramref name="cacheKey"/> — a subsequent successful refresh may
+    /// already have replaced it, in which case this is a correct no-op.
+    /// </summary>
+    private void EvictIfCurrent(string cacheKey, CacheSlot slot)
+        => _slots.TryRemove(new KeyValuePair<string, CacheSlot>(cacheKey, slot));
+
+    /// <summary>
+    /// A single cache entry backing a single-flight, cross-caller-cancellation-safe refresh. The
+    /// underlying <see cref="Task{TResult}"/> is created and driven by a
+    /// <see cref="CancellationTokenSource"/> owned by this slot — never derived from, linked to,
+    /// or constructed from any individual caller's token — so exactly one caller's cancellation
+    /// can never disturb another caller's concurrent await of the same in-flight resolution.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>
+    /// CANCELLATION (P-511/WO-083 — the fully-documented reference implementation of this pattern;
+    /// see <c>AzureKeyVaultEncryptionKeyProvider</c> and <c>AzureKeyVaultAsymmetricKeyProvider</c>
+    /// in <c>SharedKernel.Cryptography.KeyVault.Azure</c> for the two other classes (three sites)
+    /// applying the identical shape). EACH CALLER AWAITS THE SHARED <see cref="Task{TResult}"/> VIA
+    /// <see cref="Task.WaitAsync(CancellationToken)"/> WITH ITS OWN TOKEN — <see cref="Task.WaitAsync(CancellationToken)"/>
+    /// NEVER CANCELS THE ORIGINAL TASK, IT ONLY STOPS *THIS CALLER* FROM WAITING ON IT FURTHER. ONE
+    /// CALLER'S OWN CANCELLATION THEREFORE CAN NEVER CANCEL OR FAULT ANOTHER CALLER'S CONCURRENT
+    /// AWAIT OF THE SAME SHARED RESOLUTION.
+    /// </b>
+    /// </para>
+    /// <para>
+    /// A <c>waiterCount</c> reference count, incremented before each <see cref="Task.WaitAsync(CancellationToken)"/>
+    /// and decremented in a <c>finally</c> once that caller's own wait completes (success, fault, or
+    /// that caller's own cancellation), tracks how many callers are currently awaiting this slot.
+    /// Only when this count reaches zero — every caller has departed — is the slot's own
+    /// <see cref="CancellationTokenSource"/> cancelled, genuinely abandoning the inner factory call
+    /// if it is still running. If, at that same moment, the shared task has NOT already completed
+    /// successfully, the caller that brought the count to zero also evicts this slot from the
+    /// owning cache (via the supplied <c>onLastWaiterLeavesUnsuccessfully</c> callback) — a doomed
+    /// (about-to-be-cancelled) or already-faulted slot must never be handed to a future caller that
+    /// arrives after everyone else has abandoned it, while a genuinely successful result is never
+    /// evicted just because its waiters happened to all leave (it stays cached for its full TTL, as
+    /// designed). Cancelling the owned source after the shared task has already completed
+    /// successfully is a harmless no-op — it can never disturb an already-produced result, so the
+    /// ordering race between "last caller leaves" and "operation completes" is safe by construction.
+    /// </para>
+    /// </remarks>
+    private sealed class CacheSlot
+    {
+        private readonly Lazy<Task<CryptographicKey?>> _fetch;
+        private readonly CancellationTokenSource _ownedCts = new();
+        private int _waiterCount;
+
+        public CacheSlot(Func<CancellationToken, ValueTask<CryptographicKey?>> factory, DateTimeOffset expiresAt)
+        {
+            ExpiresAt = expiresAt;
+            _fetch = new Lazy<Task<CryptographicKey?>>(
+                () => factory(_ownedCts.Token).AsTask(),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        public DateTimeOffset ExpiresAt { get; }
+
+        /// <summary>
+        /// Awaits this slot's shared, single-flight resolution. See the type-level CANCELLATION
+        /// remarks for the full cross-caller-cancellation-safety and eviction contract.
+        /// </summary>
+        /// <param name="callerCt">This specific caller's own cancellation token.</param>
+        /// <param name="onLastWaiterLeavesUnsuccessfully">
+        /// Invoked when this caller is the last to depart this slot AND the shared resolution has
+        /// not completed successfully (still pending — now abandoned — or already faulted). Never
+        /// invoked when the shared resolution already completed successfully.
+        /// </param>
+        public async Task<CryptographicKey?> AwaitAsync(
+            CancellationToken callerCt,
+            Action onLastWaiterLeavesUnsuccessfully)
+        {
+            Interlocked.Increment(ref _waiterCount);
+            try
+            {
+                return await _fetch.Value.WaitAsync(callerCt).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (Interlocked.Decrement(ref _waiterCount) == 0)
+                {
+                    _ownedCts.Cancel();
+                    if (!_fetch.Value.IsCompletedSuccessfully)
+                    {
+                        onLastWaiterLeavesUnsuccessfully();
+                    }
+                }
+            }
+        }
+    }
 }

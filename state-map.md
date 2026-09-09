@@ -1677,7 +1677,7 @@ These are the only production references to `SharedKernel.Guards` in this repo o
 
 ### P-510 — Core: `ResultTry` Exception-Message Redaction and Cancellation Passthrough (SEVERE)
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1698,7 +1698,7 @@ F3, SEVERE — a `ResultTry.Try(() => db.Call())` failure today can publish a ra
 
 ### P-511 — Core: Fix Cancellation-Token Leak in Single-Flight Key-Resolution Caches
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1718,7 +1718,7 @@ F5 — a correctness bug in exactly the single-flight mechanism P-446/P-487 intr
 
 ### P-512 — Core: PBKDF2 Iteration Floor and Verify-Time Ceiling
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1738,7 +1738,7 @@ F6 — `Pbkdf2Iterations: 1` currently passes startup validation cleanly, defeat
 
 ### P-513 — Core: Validate `CryptographicKey.Material` Length Against the Declared Algorithm
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -3499,3 +3499,4 @@ Same false-premise correction as P-527 (see that phase's "Why"): `SharedKernel.S
 
 - [2026-09-09] WO-083 security cluster (P-510-P-514) design-locked in `01.Core` by core-arch-planner; implementation tasks `○` pending. **Two scope corrections found during design, both verified on disk by the coordinator:** (1) P-511s named target no longer exists — P-496 replaced `AzureKeyVaultEncryptionKeyProvider`s process-lifetime slot with the durable registry, but the identical cancellation-leak defect is reproduced in P-496s own two new caches AND in `AzureKeyVaultAsymmetricKeyProvider` (P-494), a **fourth site nobody had named**; the phase now fixes all four uniformly. (2) **P-514s "zero blast radius" premise is FALSE** — `12.Security/SharedKernel.Security.Totp` is already shipped (P-452 is `●` Complete in this file, and root `CLAUDE.md` separately still claimed it queued in two places, now corrected), and two already-shipped `ITotpReplayGuard` implementers will fail to compile: `16.Testing/SharedKernel.Testing/Cryptography/FakeTotpReplayGuard.cs` and `12.Security/SharedKernel.Security.Totp/SharedKernel.Security.Totp.Tests/Challenge/FakeTotpReplayGuard.cs`. **WO-083 therefore needs two companion migration phases (16.Testing, 12.Security) that do not yet exist in this backlog** before it can close end to end. P-510 honors the ratified DECLINED ruling on an `Error` metadata bag — raw exception detail routes to `Activity.Current?.AddException(...)` instead (coordinator)
 - [2026-09-09] arch-lead: appended P-527 (16.Testing) and P-528 (12.Security), both WO-083, both `Depends on: P-514` — companion migration phases for P-514's breaking `ITotpReplayGuard` change that the coordinator found missing from the backlog. Root cause: P-514's own text (and the WO-081/083 dispatch brief that repeated it) asserted "zero blast radius" on the premise that `12.Security.Totp` (P-452) was still queued — that premise was FALSE, verified on disk: `12.Security.Totp` shipped (35/35 tests green in the full solution run), and two already-shipped `ITotpReplayGuard` implementers exist outside 01.Core — `16.Testing/SharedKernel.Testing/Cryptography/FakeTotpReplayGuard.cs` (a SHARED, cross-domain test double — P-527 also strengthens it to model genuine atomicity via `ConcurrentDictionary` compare-and-set, mirroring P-502's own "make the fake reproduce the hazard, don't mask it" precedent, rather than a merely-recompiling sequential stub) and `12.Security.Totp`'s own test-local `FakeTotpReplayGuard.cs` (P-528, smaller blast radius, also independently re-verifies against real source — not inherited from 01.Core's planner's summary — that production `TotpChallengeService` is genuinely unaffected, since `TotpVerifier.VerifyAsync`'s public signature is untouched by P-514). Confirmed via direct grep that these are the ONLY two implementers beyond 01.Core's own in-domain test fixture (`ReadmeSampleCompileTests.cs`'s `InMemoryTotpReplayGuard`, already covered by P-514 itself) — no further domains affected. P-514's own text minimally corrected in place (Status/Domain/Depends-on untouched, title left as historical framing) to stop asserting the now-disproven "zero blast radius" claim. **This is the SECOND instance this session of stale prose feeding a false premise into dispatched phase text** — the first was root `CLAUDE.md` describing a shipped package as still-queued in two places (corrected by the coordinator directly, commit `bb02f1e`); the earlier root-CLAUDE.md staleness this arch-lead session itself found and fixed for WO-080/P-476/P-487/P-490 (see the 2026-09-04 entries above) is a third occurrence of the same underlying failure mode. Recorded as its own portable feedback memory (`feedback_verify_blast_radius_at_design_time`), distinct from but companion to the existing `feedback_phase_text_mechanism_is_hypothesis` memory: a phase's stated blast radius is a claim about CURRENT repo state, not something safe to inherit from the commissioning prose — it must be re-verified against real source at design/dispatch time, every time, not just the prescribed mechanism (arch-lead)
+- [2026-09-09] P-510/P-511/P-512/P-513 (WO-083 security cluster) implemented and closed `●` Complete. P-510: `ResultTry`s default `Error.Message` is now a fixed safe constant, with the raw exception routed to `Activity.Current?.AddException(...)` per the ratified no-metadata-bag-on-`Error` ruling, and `OperationCanceledException` excluded from the catch so a client disconnect propagates instead of becoming a 500 — closing the last severe audit finding. P-511: the cancellation-token leak fixed at **all four** sites via a new package-internal `SingleFlightCache<TKey,TValue>` plus a dedicated per-slot CTS and refcounted eviction in `CachedEncryptionKeyProvider` — the fourth site, `AzureKeyVaultAsymmetricKeyProvider`, was introduced by P-494 earlier this session and had copied the defective pattern. P-512: a real `Hash()`-time iteration floor (never applied retroactively at `Verify`, so legacy hashes still verify) plus a fixed verify-time ceiling deliberately decoupled from the configured value. P-513: `EnsureKeySize` structurally rejects any key material that is not exactly 32 bytes before any cryptographic operation, ending the silent AES-128 downgrade that contradicted every doc and NuGet description. Verified independently: `SharedKernel.Core.Tests` 104/104, `SharedKernel.Cryptography.Tests` 314/314, `SharedKernel.Cryptography.KeyVault.Azure.Tests` 69/69, full 151-project solution 0 errors. **P-514 deliberately NOT implemented** — breaking, and its companions P-527/P-528 are queued but unimplemented (implement-phase-core)

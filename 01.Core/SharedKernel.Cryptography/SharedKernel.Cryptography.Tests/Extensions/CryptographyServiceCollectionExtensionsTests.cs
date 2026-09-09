@@ -210,6 +210,31 @@ public sealed class CryptographyServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task Pbkdf2IterationsBelowNewMinimum_ThrowsAtHostStartup()
+    {
+        // P-512/WO-083: a configured value below the new 100,000 floor (but otherwise a
+        // syntactically valid positive integer, unlike the pre-existing "-1" case above) must
+        // also fail startup validation — closing the "iterations=1 passes validation" gap.
+        var belowFloorConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SharedKernel:Cryptography:Pbkdf2Iterations"] = "50000",
+            })
+            .Build();
+
+        using IHost host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSharedKernelCryptography(belowFloorConfig);
+                services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+                services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+            })
+            .Build();
+
+        await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+    }
+
+    [Fact]
     public void NullServices_Throws()
     {
         IServiceCollection? services = null;
