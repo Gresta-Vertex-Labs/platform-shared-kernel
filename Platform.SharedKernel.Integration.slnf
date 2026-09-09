@@ -1,0 +1,25 @@
+{
+  "solution": {
+    "path": "Platform.SharedKernel.slnx",
+    "projects": [
+      "02.Caching/SharedKernel.Caching.Redis.Core/SharedKernel.Caching.Redis.Core.Tests/SharedKernel.Caching.Redis.Core.Tests.csproj",
+      "02.Caching/SharedKernel.Caching.Redis.DistributedLocking/SharedKernel.Caching.Redis.DistributedLocking.Tests/SharedKernel.Caching.Redis.DistributedLocking.Tests.csproj",
+      "02.Caching/SharedKernel.Caching.Redis.HashStore/SharedKernel.Caching.Redis.HashStore.Tests/SharedKernel.Caching.Redis.HashStore.Tests.csproj",
+      "02.Caching/SharedKernel.Caching.Redis.PubSub/SharedKernel.Caching.Redis.PubSub.Tests/SharedKernel.Caching.Redis.PubSub.Tests.csproj",
+      "02.Caching/SharedKernel.Caching.Redis/SharedKernel.Caching.Redis.Tests/SharedKernel.Caching.Redis.Tests.csproj",
+      "06.Persistence/SharedKernel.Persistence.Dapper/SharedKernel.Persistence.Dapper.Tests/SharedKernel.Persistence.Dapper.Tests.csproj",
+      "06.Persistence/SharedKernel.Persistence.PostgreSQL/SharedKernel.Persistence.PostgreSQL.Tests/SharedKernel.Persistence.PostgreSQL.Tests.csproj",
+      "07.Messaging/SharedKernel.Messaging.MassTransit/SharedKernel.Messaging.MassTransit.Tests/SharedKernel.Messaging.MassTransit.Tests.csproj",
+      "08.Storage/SharedKernel.Storage.Obs/SharedKernel.Storage.Obs.Tests/SharedKernel.Storage.Obs.Tests.csproj",
+      "08.Storage/SharedKernel.Storage.S3/SharedKernel.Storage.S3.Tests/SharedKernel.Storage.S3.Tests.csproj",
+      "09.Search/SharedKernel.Search.ElasticSearch/SharedKernel.Search.ElasticSearch.Tests/SharedKernel.Search.ElasticSearch.Tests.csproj",
+      "09.Search/SharedKernel.Search.Meilisearch/SharedKernel.Search.Meilisearch.Tests/SharedKernel.Search.Meilisearch.Tests.csproj",
+      "10.Intelligence/SharedKernel.AI.Qdrant/SharedKernel.AI.Qdrant.Tests/SharedKernel.AI.Qdrant.Tests.csproj",
+      "14.Presentation/SharedKernel.Presentation.SignalR/SharedKernel.Presentation.SignalR.Tests/SharedKernel.Presentation.SignalR.Tests.csproj",
+      "16.Testing/SharedKernel.Testing/SharedKernel.Testing.SelfTests/SharedKernel.Testing.SelfTests.csproj",
+      "18.Idempotency/SharedKernel.Idempotency.EfCore/SharedKernel.Idempotency.EfCore.Tests/SharedKernel.Idempotency.EfCore.Tests.csproj",
+      "18.Idempotency/SharedKernel.Idempotency.Redis/SharedKernel.Idempotency.Redis.Tests/SharedKernel.Idempotency.Redis.Tests.csproj",
+      "19.Scheduling/SharedKernel.Scheduling/SharedKernel.Scheduling.Tests/SharedKernel.Scheduling.Tests.csproj"
+    ]
+  }
+}

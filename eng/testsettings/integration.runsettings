@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Platform.SharedKernel — VSTest run settings for the Testcontainers-backed "integration" test
+  lane (DV-010/DV-011, see PLATFORM.md "CI/CD Pipelines").
+
+  Root cause this file addresses: three consecutive full-solution `dotnet test` runs on a machine
+  far beefier than the ubuntu-latest hosted runner each failed a DIFFERENT set of container-backed
+  tests (PostgreSqlContainerFixture, MilvusContainerFixture, and unrelated flakes), while every
+  failing suite passed cleanly in isolation. That is the signature of resource contention, not a
+  real defect: `dotnet test` against a solution/filter runs one VSTest host per test project, and
+  those hosts execute in parallel by default (bounded by machine core count) — so as many as 18
+  Testcontainers-backed test projects can each try to pull/start a container SIMULTANEOUSLY. A
+  2-core hosted runner starting 18 containers at once is exactly the scenario that times out
+  unpredictably.
+
+  MaxCpuCount caps how many test-project hosts VSTest runs concurrently. Set to 2 to match the
+  actual ubuntu-latest core count (oversubscribing beyond real cores buys nothing and is the
+  mechanism causing the flakiness above) rather than removing parallelism entirely, which would
+  make the already-heavy container lane needlessly slow for a non-required job.
+
+  Applies ONLY to the integration lane (`dotnet test Platform.SharedKernel.Integration.slnf -s
+  eng/testsettings/integration.runsettings`) — the fast/required unit lane
+  (Platform.SharedKernel.Unit.slnf) has no Testcontainers-backed project in it at all and needs no
+  such cap.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <MaxCpuCount>2</MaxCpuCount>
+    <!-- 25 minutes: generous for the slowest container (Elasticsearch/Milvus cold pull + boot)
+         while still failing fast enough to fit inside the job's own timeout-minutes. -->
+    <TestSessionTimeout>1500000</TestSessionTimeout>
+  </RunConfiguration>
+</RunSettings>

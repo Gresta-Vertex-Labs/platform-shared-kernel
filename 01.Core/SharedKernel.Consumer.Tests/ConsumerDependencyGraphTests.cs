@@ -899,9 +899,15 @@ public sealed class ConsumerDependencyGraphTests
         string nupkgsDirectory = FindNupkgsDirectory();
 
         string cryptographyNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Cryptography.*.nupkg",
-            // Exclude the sibling KeyVault.Azure package, which legitimately shares the
-            // "SharedKernel.Cryptography." filename prefix.
-            candidate => !Path.GetFileName(candidate).StartsWith("SharedKernel.Cryptography.KeyVault.Azure.", StringComparison.OrdinalIgnoreCase));
+            // Match ONLY SharedKernel.Cryptography itself, never a sibling that shares the
+            // "SharedKernel.Cryptography." filename prefix (.KeyVault.Azure, .Argon2, and any
+            // future one). The package's own file is always "SharedKernel.Cryptography.{version}",
+            // so the character immediately after the prefix is a version digit; a sibling's is a
+            // letter. Deliberately a positive shape check rather than a blacklist of known
+            // siblings — a blacklist silently reads the WRONG nuspec the moment a new sibling is
+            // added, which is exactly how P-495's SharedKernel.Cryptography.Argon2 broke this
+            // test in CI (caught only by the Assert.Contains sanity check below).
+            IsExactCryptographyPackage);
 
         XDocument nuspec = XDocument.Parse(cryptographyNuspec);
         XNamespace ns = nuspec.Root!.GetDefaultNamespace();
@@ -991,11 +997,8 @@ public sealed class ConsumerDependencyGraphTests
         string nupkgsDirectory = FindNupkgsDirectory();
 
         string cryptographyNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Cryptography.*.nupkg",
-            // Exclude the sibling packages, which legitimately share the
-            // "SharedKernel.Cryptography." filename prefix.
-            candidate =>
-                !Path.GetFileName(candidate).StartsWith("SharedKernel.Cryptography.KeyVault.Azure.", StringComparison.OrdinalIgnoreCase) &&
-                !Path.GetFileName(candidate).StartsWith("SharedKernel.Cryptography.Argon2.", StringComparison.OrdinalIgnoreCase));
+            // Same positive shape check as above — see IsExactCryptographyPackage.
+            IsExactCryptographyPackage);
 
         XDocument nuspec = XDocument.Parse(cryptographyNuspec);
         XNamespace ns = nuspec.Root!.GetDefaultNamespace();
@@ -1183,6 +1186,30 @@ public sealed class ConsumerDependencyGraphTests
     /// there is no other reliable way for a test running from
     /// <c>.../SharedKernel.Consumer.Tests/bin/Release/net10.0/</c> to locate it.
     /// </summary>
+    /// <summary>
+    /// Matches ONLY <c>SharedKernel.Cryptography.{version}.nupkg</c>, never a sibling package that
+    /// shares the <c>SharedKernel.Cryptography.</c> filename prefix (<c>.KeyVault.Azure</c>,
+    /// <c>.Argon2</c>, or any future one).
+    /// </summary>
+    /// <remarks>
+    /// A positive shape check, deliberately not a blacklist of known siblings: the package's own
+    /// file is always the prefix followed by a version, so the next character is a digit, whereas a
+    /// sibling's is a letter. A blacklist silently reads the WRONG nuspec the moment a new sibling
+    /// ships — which is exactly what happened when P-495 added
+    /// <c>SharedKernel.Cryptography.Argon2</c> and one of this file's two identical globs was
+    /// updated while the other was missed, turning CI red. The failure was caught only by the
+    /// callers' <c>Assert.Contains("SharedKernel.Primitives", ...)</c> anti-vacuity guard.
+    /// </remarks>
+    private static bool IsExactCryptographyPackage(string candidatePath)
+    {
+        const string Prefix = "SharedKernel.Cryptography.";
+        string fileName = Path.GetFileName(candidatePath);
+
+        return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            && fileName.Length > Prefix.Length
+            && char.IsAsciiDigit(fileName[Prefix.Length]);
+    }
+
     private static string FindNupkgsDirectory()
     {
         DirectoryInfo? current = new(AppContext.BaseDirectory);

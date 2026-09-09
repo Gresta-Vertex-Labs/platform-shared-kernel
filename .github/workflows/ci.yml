@@ -12,6 +12,27 @@ name: CI
 #     run can leave a partial package set.
 #   - Every third-party action is pinned to a full 40-character commit SHA with a trailing
 #     `# vX.Y.Z` comment. Re-resolve and re-pin on every bump; never float a tag.
+#
+#   - unit-test / integration-test split (DV-010/DV-011): a single "run every test against the
+#     whole solution" job used to be the only required check, and it ran all 18 Testcontainers-
+#     backed test projects (Redis x5, PostgreSQL, Dapper, RabbitMQ, MinIO x2, Meilisearch,
+#     Elasticsearch, Qdrant, SignalR's Redis backplane, 18.Idempotency x2, 19.Scheduling,
+#     16.Testing's own container-fixture self-tests) inline with everything else. On a 2-core
+#     runner that starts as many as 18 containers at once, that job failed a DIFFERENT set of
+#     container tests on every run — confirmed by three consecutive full-suite runs on hardware
+#     far beefier than ubuntu-latest, where every "failing" suite passed cleanly in isolation.
+#     That is resource contention, not a real defect, and it means the required check was
+#     nondeterministically red on pushes that touched nothing related to the failure.
+#     Fix: dotnet build still covers the WHOLE solution (compile correctness for every project,
+#     containers or not, costs nothing extra — Testcontainers packages are ordinary .NET client
+#     libraries at compile time). Only *test execution* is split via two solution filters
+#     (Platform.SharedKernel.Unit.slnf / Platform.SharedKernel.Integration.slnf, both proven
+#     against Platform.SharedKernel.slnx — see PLATFORM.md "Test topology"): unit-test runs the
+#     133 container-free projects and is the required, on-every-push lane; integration-test runs
+#     the 18 Testcontainers-backed projects (with VSTest parallelism capped to the runner's real
+#     core count via eng/testsettings/integration.runsettings) on push-to-main/schedule/manual
+#     dispatch only, and is deliberately NOT in ci-gate's needs so its container flakiness can
+#     never block a merge.
 
 on:
   pull_request:
@@ -25,6 +46,11 @@ on:
     paths-ignore:
       - '**/*.md'
       - '.claude/**'
+  # Integration lane only (see integration-test's own `if:` below) — never runs on pull_request,
+  # so a contributor's PR feedback loop never pays the container-fan-out cost or its flakiness.
+  schedule:
+    - cron: '17 3 * * *' # 03:17 UTC daily — off the top-of-hour to avoid the scheduler thundering herd.
+  workflow_dispatch: {}
 
 permissions: {}
 
@@ -40,14 +66,15 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------------------------
-  # Build + full test suite. Testcontainers-backed suites (Redis, PostgreSQL, RabbitMQ, MinIO,
-  # Qdrant, Elasticsearch, Meilisearch, ...) run in the same job — ubuntu-latest ships a Docker
-  # daemon out of the box, so there is no separate "integration" runner to provision.
+  # Required, fast lane. Builds the WHOLE solution (full compile correctness — no project, tested
+  # or not, is exempt from build errors) but only RUNS the 133 test projects with no Testcontainers
+  # dependency, via Platform.SharedKernel.Unit.slnf. No Docker daemon is needed for this job to
+  # pass; it never boots a container.
   # ---------------------------------------------------------------------------------------------
-  build-test:
-    name: Build & Test
+  unit-test:
+    name: Build & Unit Test
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -61,7 +88,7 @@ jobs:
           # a fully green run would produce correctly-named, wrongly-versioned packages.
           fetch-depth: 0
 
-      # The stock ubuntu-latest image leaves too little free disk to build 119 projects in
+      # The stock ubuntu-latest image leaves too little free disk to build 151 projects in
       # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
       # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
       # SDK install is not the thing that tips it over.
@@ -82,9 +109,9 @@ jobs:
           path: ~/.nuget/packages
           # CPM concentrates every version into Directory.Packages.props, so hashing that one
           # file (plus global.json for the SDK band) is a near-perfect restore cache key —
-          # deliberately NOT setup-dotnet's own cache:true, which requires packages.lock.json
-          # (this repo has none, and generating 119 lock files to churn on every bump is a
-          # worse trade than a slightly coarser cache key).
+          # deliberately NOT setup-dotnet's own cache:true, which requires lock files (this repo
+          # has none, and generating 151 lock files to churn on every bump is a worse trade than
+          # a slightly coarser cache key).
           key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
           restore-keys: |
             nuget-${{ runner.os }}-
@@ -111,17 +138,97 @@ jobs:
           fi
           echo "OK: no csproj declares its own version."
 
+      # Full-solution build: compile correctness is never skipped for the 18 Testcontainers-backed
+      # test projects just because their tests run in a separate job — only test EXECUTION is split.
       - name: Build
         run: dotnet build Platform.SharedKernel.slnx --no-restore --configuration Release
 
-      - name: Test
-        run: dotnet test Platform.SharedKernel.slnx --no-restore --configuration Release --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
+      # Narrowed to the 133 container-free projects. See Platform.SharedKernel.Unit.slnf and the
+      # top-of-file comment for why this split exists.
+      - name: Unit test (no Docker dependency)
+        # No fixed LogFileName: dotnet test spawns one VSTest host per project in the filter, and a
+        # single hardcoded trx name would make every project's run silently overwrite the previous
+        # one's file (confirmed locally — the fixed-name pattern this replaced only ever uploaded
+        # the LAST project's results). Letting the logger auto-name each trx keeps all of them.
+        run: dotnet test Platform.SharedKernel.Unit.slnf --no-build --configuration Release --logger "trx" --results-directory ./TestResults
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-results
+          name: unit-test-results
+          path: TestResults/**/*.trx
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------------------------
+  # Non-required lane. Runs the 18 Testcontainers-backed test projects (Redis x5, PostgreSQL,
+  # Dapper, RabbitMQ, MinIO x2 (S3+OBS), Meilisearch, Elasticsearch, Qdrant, SignalR's Redis
+  # backplane, 18.Idempotency x2, 19.Scheduling, and 16.Testing's own container-fixture self-tests
+  # — including the still-live SharedKernel.AI.Milvus retraction leftover, MilvusContainerFixture;
+  # see PLATFORM.md hand-offs) via Platform.SharedKernel.Integration.slnf, with VSTest parallelism
+  # capped by eng/testsettings/integration.runsettings to the runner's real core count.
+  #
+  # Deliberately NOT in ci-gate's `needs` and deliberately NOT triggered by pull_request/
+  # merge_group (the `if:` below): the whole point of this split is that container-fan-out
+  # flakiness must never block a merge. It still runs — and still reports real pass/fail — on
+  # every push to main, on the nightly schedule, and on demand, so regressions are caught
+  # promptly without gating anyone's PR.
+  # ---------------------------------------------------------------------------------------------
+  integration-test:
+    name: Integration Test (Testcontainers)
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Testcontainers pulls several multi-hundred-MB images (Postgres, Redis, RabbitMQ, MinIO,
+      # Meilisearch, Elasticsearch, Qdrant, Milvus) on top of the build output — free the same
+      # unused preinstalled toolchains as unit-test.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # Restores only the 18-project closure (plus whatever they transitively reference) —
+      # this job does not need the audit-escalation or version-assert steps, which already run
+      # in the required unit-test job against the full solution.
+      - name: Restore
+        run: dotnet restore Platform.SharedKernel.Integration.slnf
+
+      - name: Build
+        run: dotnet build Platform.SharedKernel.Integration.slnf --no-restore --configuration Release
+
+      - name: Integration test (Testcontainers, capped parallelism)
+        # See unit-test's identical comment: no fixed LogFileName, or every project after the
+        # first silently overwrites the previous one's trx.
+        run: dotnet test Platform.SharedKernel.Integration.slnf --no-build --configuration Release -s eng/testsettings/integration.runsettings --logger "trx" --results-directory ./TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-test-results
           path: TestResults/**/*.trx
           retention-days: 14
 
@@ -131,7 +238,10 @@ jobs:
   # AND RUNS the six consumer-verify/*Consumer harnesses that reference those packages via
   # PackageReference (never ProjectReference) against that feed. These six are deliberately
   # excluded from Platform.SharedKernel.slnx (see PLATFORM.md) so a normal `dotnet build` never
-  # touches them — this job is their only execution path.
+  # touches them — this job is their only execution path. Kept in the required path deliberately:
+  # it takes exactly one Testcontainers-Redis dependency (an isolated single-container proof, not
+  # the many-containers-at-once fan-out that caused DV-010's flakiness), and it is the one
+  # mechanism proving packages are actually consumable before a tag can be published.
   # ---------------------------------------------------------------------------------------------
   packaging-verify:
     name: Packaging & Consumer-Verify
@@ -150,7 +260,7 @@ jobs:
           # a fully green run would produce correctly-named, wrongly-versioned packages.
           fetch-depth: 0
 
-      # The stock ubuntu-latest image leaves too little free disk to build 119 projects in
+      # The stock ubuntu-latest image leaves too little free disk to build 151 projects in
       # Release: run #1 and #2 both died with 'No space left on device' mid-build. Reclaim the
       # preinstalled toolchains this repo never uses (~25GB). Runs before Setup .NET so the
       # SDK install is not the thing that tips it over.
@@ -335,12 +445,13 @@ jobs:
   # The only required status check. Runs unconditionally (if: always()) so it produces a result
   # even when an upstream job is skipped by a path filter, cancelled, or fails outright — a
   # path-filtered job that is itself marked required in the branch/tag ruleset would leave a
-  # docs-only PR waiting forever for a check that never ran.
+  # docs-only PR waiting forever for a check that never ran. integration-test is deliberately NOT
+  # listed here — see its own job comment for why.
   # ---------------------------------------------------------------------------------------------
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [build-test, packaging-verify, actionlint, pr-title]
+    needs: [unit-test, packaging-verify, actionlint, pr-title]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
