@@ -69,9 +69,19 @@ public static class ValidationRuleBuilderExtensions
     /// <summary>Adds a rule requiring the property to be a well-formed, checksum-valid IBAN (see <see cref="IbanValidator"/>).</summary>
     /// <typeparam name="T">The type under validation.</typeparam>
     /// <param name="ruleBuilder">The rule builder to extend.</param>
+    /// <param name="allowFallbackForUnknownCountry">
+    /// Forwarded verbatim to <see cref="IbanValidator.Validate(string?, bool)"/>. Defaults to
+    /// <see langword="false"/>, preserving this rule's original behavior exactly: an unrecognized
+    /// country prefix hard-rejects. When explicitly <see langword="true"/>, an unrecognized country
+    /// prefix skips only the country-specific exact-length check and instead falls back to ISO
+    /// 13616's general shape/length bound plus the mod-97 check-digit algorithm alone — see
+    /// <see cref="IbanValidator"/>'s own XML docs for exactly what this trades away.
+    /// </param>
     /// <returns>The same rule builder, for chaining rule-level conditions such as <c>.When(...)</c>.</returns>
-    public static IRuleBuilderOptionsConditions<T, string> MustBeValidIban<T>(this IRuleBuilder<T, string> ruleBuilder) =>
-        Attach(ruleBuilder, IbanValidator.Validate);
+    public static IRuleBuilderOptionsConditions<T, string> MustBeValidIban<T>(
+        this IRuleBuilder<T, string> ruleBuilder,
+        bool allowFallbackForUnknownCountry = false) =>
+        Attach(ruleBuilder, value => IbanValidator.Validate(value, allowFallbackForUnknownCountry));
 
     /// <summary>Adds a rule requiring the property to be a well-formed BIC/SWIFT code (see <see cref="BicValidator"/>).</summary>
     /// <typeparam name="T">The type under validation.</typeparam>
@@ -114,6 +124,27 @@ public static class ValidationRuleBuilderExtensions
     /// <returns>The same rule builder, for chaining rule-level conditions such as <c>.When(...)</c>.</returns>
     public static IRuleBuilderOptionsConditions<T, string> MustBeValidVatNumber<T>(this IRuleBuilder<T, string> ruleBuilder) =>
         Attach(ruleBuilder, VatValidator.Validate);
+
+    /// <summary>Adds a rule requiring the property to be a well-formed, checksum-valid LEI (see <see cref="LeiValidator"/>).</summary>
+    /// <typeparam name="T">The type under validation.</typeparam>
+    /// <param name="ruleBuilder">The rule builder to extend.</param>
+    /// <returns>The same rule builder, for chaining rule-level conditions such as <c>.When(...)</c>.</returns>
+    public static IRuleBuilderOptionsConditions<T, string> MustBeValidLei<T>(this IRuleBuilder<T, string> ruleBuilder) =>
+        Attach(ruleBuilder, LeiValidator.Validate);
+
+    /// <summary>Adds a rule requiring the property to be a well-formed, checksum-valid US ABA routing number (see <see cref="AbaRoutingNumberValidator"/>).</summary>
+    /// <typeparam name="T">The type under validation.</typeparam>
+    /// <param name="ruleBuilder">The rule builder to extend.</param>
+    /// <returns>The same rule builder, for chaining rule-level conditions such as <c>.When(...)</c>.</returns>
+    public static IRuleBuilderOptionsConditions<T, string> MustBeValidAbaRoutingNumber<T>(this IRuleBuilder<T, string> ruleBuilder) =>
+        Attach(ruleBuilder, AbaRoutingNumberValidator.Validate);
+
+    /// <summary>Adds a rule requiring the property to be a well-formed, checksum-valid SEPA Creditor Identifier (see <see cref="SepaCreditorIdentifierValidator"/>).</summary>
+    /// <typeparam name="T">The type under validation.</typeparam>
+    /// <param name="ruleBuilder">The rule builder to extend.</param>
+    /// <returns>The same rule builder, for chaining rule-level conditions such as <c>.When(...)</c>.</returns>
+    public static IRuleBuilderOptionsConditions<T, string> MustBeValidSepaCreditorIdentifier<T>(this IRuleBuilder<T, string> ruleBuilder) =>
+        Attach(ruleBuilder, SepaCreditorIdentifierValidator.Validate);
 
     /// <summary>
     /// Adds a rule requiring the property to pass the national-identity-number checksum registered

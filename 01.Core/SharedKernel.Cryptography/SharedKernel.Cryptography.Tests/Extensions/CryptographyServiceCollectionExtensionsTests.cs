@@ -235,6 +235,62 @@ public sealed class CryptographyServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddSharedKernelCryptography_CalledTwice_RegistersEachServiceExactlyOnce()
+    {
+        // SK.01.P518 headline acceptance criterion: every registration in this method uses
+        // TryAddSingleton/TryAddKeyedSingleton, so calling AddSharedKernelCryptography() twice
+        // (e.g. two consuming packages each calling it) must never double-register any of its
+        // eleven services.
+        var services = new ServiceCollection();
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+        services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+        services.AddSingleton<IClock>(new SystemClock());
+        services.AddSingleton(Substitute.For<ITotpReplayGuard>());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.Single(provider.GetServices<IOneWayHasher>());
+        Assert.Single(provider.GetServices<ISymmetricEncryptionService>());
+        Assert.Single(provider.GetServices<IHmacSigner>());
+        Assert.Single(provider.GetServices<ISecureRandomGenerator>());
+        Assert.Single(provider.GetServices<IContentHasher>());
+        Assert.Single(provider.GetServices<IAsymmetricSignatureService>());
+        Assert.Single(provider.GetServices<IHotpGenerator>());
+        Assert.Single(provider.GetServices<ITotpGenerator>());
+        Assert.Single(provider.GetServices<TotpVerifier>());
+        Assert.Single(provider.GetKeyedServices<IAsymmetricSignatureService>(
+            CryptographyServiceCollectionExtensions.RsaSignatureServiceKey));
+        Assert.Single(provider.GetKeyedServices<IAsymmetricSignatureService>(
+            CryptographyServiceCollectionExtensions.EcdsaSignatureServiceKey));
+    }
+
+    [Fact]
+    public void AddSharedKernelCryptography_ConsumerFakeRegisteredFirst_WinsOverPlatformDefault()
+    {
+        var services = new ServiceCollection();
+        var fake = new FakeOneWayHasher();
+
+        services.AddSingleton<IOneWayHasher>(fake);
+        services.AddSharedKernelCryptography(EmptyConfiguration());
+        services.AddSingleton<IEncryptionKeyProvider>(new InMemoryEncryptionKeyProvider());
+        services.AddSingleton<IAsymmetricKeyProvider>(new InMemoryAsymmetricKeyProvider());
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.Same(fake, provider.GetRequiredService<IOneWayHasher>());
+    }
+
+    private sealed class FakeOneWayHasher : IOneWayHasher
+    {
+        public string Hash(string secret) => secret;
+
+        public HashVerificationResult Verify(string hash, string secret) =>
+            hash == secret ? HashVerificationResult.Success : HashVerificationResult.Failed;
+    }
+
+    [Fact]
     public void NullServices_Throws()
     {
         IServiceCollection? services = null;

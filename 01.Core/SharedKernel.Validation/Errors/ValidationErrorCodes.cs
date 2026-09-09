@@ -82,4 +82,34 @@ public static class ValidationErrorCodes
         /// <summary>The value failed its country's national-identity-number checksum algorithm.</summary>
         public const string InvalidChecksum = "validation.national_id.invalid_checksum";
     }
+
+    /// <summary>Codes for <see cref="Validators.LeiValidator"/> failures.</summary>
+    public static class Lei
+    {
+        /// <summary>The value is not a well-formed 20-character LEI.</summary>
+        public const string InvalidFormat = "validation.lei.invalid_format";
+
+        /// <summary>The value failed the ISO/IEC 7064 MOD 97-10 check-digit validation.</summary>
+        public const string InvalidCheckDigit = "validation.lei.invalid_check_digit";
+    }
+
+    /// <summary>Codes for <see cref="Validators.AbaRoutingNumberValidator"/> failures.</summary>
+    public static class AbaRoutingNumber
+    {
+        /// <summary>The value is not a well-formed 9-digit routing number.</summary>
+        public const string InvalidFormat = "validation.aba_routing_number.invalid_format";
+
+        /// <summary>The value failed the (3, 7, 1)-weighted checksum validation.</summary>
+        public const string FailedChecksum = "validation.aba_routing_number.failed_checksum";
+    }
+
+    /// <summary>Codes for <see cref="Validators.SepaCreditorIdentifierValidator"/> failures.</summary>
+    public static class SepaCreditorIdentifier
+    {
+        /// <summary>The value is not a well-formed SEPA Creditor Identifier, or its embedded country code is not recognized.</summary>
+        public const string InvalidFormat = "validation.sepa_creditor_identifier.invalid_format";
+
+        /// <summary>The value failed the ISO/IEC 7064 MOD 97-10 check-digit validation.</summary>
+        public const string InvalidCheckDigit = "validation.sepa_creditor_identifier.invalid_check_digit";
+    }
 }

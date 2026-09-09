@@ -205,5 +205,18 @@
          registering it centrally) — an unregistered project still builds and resolves fine via a
          direct ProjectReference by path. -->
     <ProjectReference Include="..\..\..\14.Presentation\SharedKernel.Presentation.Grpc\SharedKernel.Presentation.Grpc.csproj" PrivateAssets="all" />
+    <!-- Required for CoreArchitectureRulesTests' real-assembly verification (P-523/WO-083,
+         SK.00.CoreDiRegistrationConventionLock) — every 01.Core package that owns its own DI
+         extension method, so DiExtensionsUseTryAddRegistrationConvention can be re-pointed at the
+         real, shipped assemblies rather than only contrived fixtures.
+         SharedKernel.Cryptography is already referenced above (line 197). -->
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Configuration\SharedKernel.Configuration.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Compression\SharedKernel.Compression.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.FeatureManagement\SharedKernel.FeatureManagement.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Localization\SharedKernel.Localization.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Validation\SharedKernel.Validation.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography.Argon2\SharedKernel.Cryptography.Argon2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\..\01.Core\SharedKernel.Cryptography.KeyVault.Azure\SharedKernel.Cryptography.KeyVault.Azure.csproj" PrivateAssets="all" />
   </ItemGroup>
 </Project>

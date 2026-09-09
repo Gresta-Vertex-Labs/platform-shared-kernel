@@ -453,4 +453,52 @@ public sealed class AesGcmEncryptionServiceTests
         Assert.IsType<CryptographicException>(exception);
         Assert.Null(captured);
     }
+
+    // ---- P-524/WO-083: key-material zeroization ----
+
+    /// <summary>
+    /// Proves — with a genuine runtime check against actual bytes — that
+    /// <see cref="AesGcmEncryptionService.EncryptToString(string, byte[])"/>'s intermediate UTF-8
+    /// plaintext buffer is zeroed in place before the public call returns. Uses the internal,
+    /// test-only capture-before-zeroing overload (gated via <c>InternalsVisibleTo</c>) to grab the
+    /// exact same array reference the production code path zeroes — never the primary
+    /// <c>byte[]</c>-based <see cref="AesGcmEncryptionService.Encrypt(byte[], byte[])"/> overload's
+    /// own caller-owned return value, which this phase must never touch.
+    /// </summary>
+    [Fact]
+    public void EncryptToString_ZeroesTheIntermediateUtf8PlaintextBuffer_BeforeReturning()
+    {
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        var service = new AesGcmEncryptionService(keyProvider);
+        byte[]? capturedPlaintextBytes = null;
+
+        string encoded = service.EncryptToString("hello world", [], buffer => capturedPlaintextBytes = buffer);
+
+        Assert.NotNull(encoded);
+        Assert.NotNull(capturedPlaintextBytes);
+        Assert.NotEmpty(capturedPlaintextBytes);
+        Assert.All(capturedPlaintextBytes, b => Assert.Equal(0, b));
+    }
+
+    /// <summary>
+    /// The primary <c>byte[]</c>-based <see cref="AesGcmEncryptionService.Decrypt(EncryptedPayload, byte[])"/>
+    /// overload's directly-returned plaintext must NEVER be zeroed by this phase — it is the
+    /// caller's own needed output. Proven by decrypting, reading every byte of the result, then
+    /// asserting the array still equals the original plaintext afterward (a zeroed array would
+    /// silently corrupt this comparison).
+    /// </summary>
+    [Fact]
+    public void Decrypt_PrimaryByteArrayOverload_NeverZeroesItsOwnReturnValue()
+    {
+        var keyProvider = new InMemoryEncryptionKeyProvider();
+        var service = new AesGcmEncryptionService(keyProvider);
+        byte[] plaintext = Encoding.UTF8.GetBytes("must remain readable after the call returns");
+
+        EncryptedPayload payload = service.Encrypt(plaintext, []);
+        Result<byte[]> result = service.Decrypt(payload, []);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(plaintext, result.Value);
+        Assert.Equal("must remain readable after the call returns", Encoding.UTF8.GetString(result.Value));
+    }
 }

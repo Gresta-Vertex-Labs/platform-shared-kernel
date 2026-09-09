@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>A thin FluentValidation rule-builder adapter over SharedKernel.Validation's culture-independent format validators: .MustBeValidIban(), .MustBeValidBic(), .MustBeValidPan(), .MustBeValidCurrencyCode(), .MustBeValidCountryCode(), .MustBeValidPhoneNumber(), .MustBeValidVatNumber(), and .MustBeValidNationalId(). Every rule delegates to the matching SharedKernel.Validation static validator and surfaces the identical ValidationErrorCodes constant on failure, whether reached via the standalone call or through this adapter. Kept as a separate package so a FluentValidation-free consumer (a Temporal activity, a MediatR-free worker) never pulls FluentValidation in transitively via SharedKernel.Validation itself.</Description>
-    <PackageTags>shared-kernel;validation;fluentvalidation;iban;bic;pan;iso4217;iso3166;e164;vat;national-id</PackageTags>
+    <Description>A thin FluentValidation rule-builder adapter over SharedKernel.Validation's culture-independent format validators: .MustBeValidIban(), .MustBeValidBic(), .MustBeValidPan(), .MustBeValidCurrencyCode(), .MustBeValidCountryCode(), .MustBeValidPhoneNumber(), .MustBeValidVatNumber(), .MustBeValidNationalId(), .MustBeValidLei(), .MustBeValidAbaRoutingNumber(), and .MustBeValidSepaCreditorIdentifier(). Every rule delegates to the matching SharedKernel.Validation static validator and surfaces the identical ValidationErrorCodes constant on failure, whether reached via the standalone call or through this adapter. Kept as a separate package so a FluentValidation-free consumer (a Temporal activity, a MediatR-free worker) never pulls FluentValidation in transitively via SharedKernel.Validation itself.</Description>
+    <PackageTags>shared-kernel;validation;fluentvalidation;iban;bic;pan;iso4217;iso3166;e164;vat;lei;aba-routing-number;sepa-creditor-identifier;national-id</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="FluentValidation" />

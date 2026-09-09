@@ -34,4 +34,10 @@ public sealed class IsoCurrencyValidatorTests
         Assert.True(result.IsFailure);
         Assert.Equal(ValidationErrorCodes.Currency.UnknownCode, result.Error.Code);
     }
+
+    [Fact]
+    public void RegistryAsOf_IsNonEmpty()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(IsoCurrencyValidator.RegistryAsOf));
+    }
 }

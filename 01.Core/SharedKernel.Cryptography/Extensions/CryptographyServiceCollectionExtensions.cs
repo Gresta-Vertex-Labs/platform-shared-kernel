@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Configuration.Extensions;
 using SharedKernel.Cryptography.Hashing;
 using SharedKernel.Cryptography.Options;
@@ -44,6 +45,11 @@ public static class CryptographyServiceCollectionExtensions
     /// <returns>The same <paramref name="services"/> for chaining.</returns>
     /// <remarks>
     /// <para>
+    /// Every registration uses <c>TryAddSingleton</c>/<c>TryAddKeyedSingleton</c> — calling this
+    /// method more than once never double-registers, and a consumer registration made
+    /// <b>before</b> this call always wins over the platform default.
+    /// </para>
+    /// <para>
     /// Two concrete implementations exist for <see cref="IAsymmetricSignatureService"/>
     /// (<see cref="RsaSignatureService"/> and <see cref="EcdsaSignatureService"/>). Both are
     /// registered as keyed singletons — resolve via
@@ -79,19 +85,19 @@ public static class CryptographyServiceCollectionExtensions
         services.AddValidatedOptions<CryptographyOptions>(
             configuration.GetSection(CryptographyOptions.SectionName));
 
-        services.AddSingleton<IOneWayHasher, Pbkdf2OneWayHasher>();
-        services.AddSingleton<ISymmetricEncryptionService, AesGcmEncryptionService>();
-        services.AddSingleton<IHmacSigner, HmacSha256Signer>();
-        services.AddSingleton<ISecureRandomGenerator, CryptoRandomGenerator>();
-        services.AddSingleton<IContentHasher, Sha256ContentHasher>();
+        services.TryAddSingleton<IOneWayHasher, Pbkdf2OneWayHasher>();
+        services.TryAddSingleton<ISymmetricEncryptionService, AesGcmEncryptionService>();
+        services.TryAddSingleton<IHmacSigner, HmacSha256Signer>();
+        services.TryAddSingleton<ISecureRandomGenerator, CryptoRandomGenerator>();
+        services.TryAddSingleton<IContentHasher, Sha256ContentHasher>();
 
-        services.AddSingleton<IAsymmetricSignatureService, RsaSignatureService>();
-        services.AddKeyedSingleton<IAsymmetricSignatureService, RsaSignatureService>(RsaSignatureServiceKey);
-        services.AddKeyedSingleton<IAsymmetricSignatureService, EcdsaSignatureService>(EcdsaSignatureServiceKey);
+        services.TryAddSingleton<IAsymmetricSignatureService, RsaSignatureService>();
+        services.TryAddKeyedSingleton<IAsymmetricSignatureService, RsaSignatureService>(RsaSignatureServiceKey);
+        services.TryAddKeyedSingleton<IAsymmetricSignatureService, EcdsaSignatureService>(EcdsaSignatureServiceKey);
 
-        services.AddSingleton<IHotpGenerator, HotpGenerator>();
-        services.AddSingleton<ITotpGenerator, TotpGenerator>();
-        services.AddSingleton<TotpVerifier>();
+        services.TryAddSingleton<IHotpGenerator, HotpGenerator>();
+        services.TryAddSingleton<ITotpGenerator, TotpGenerator>();
+        services.TryAddSingleton<TotpVerifier>();
 
         return services;
     }

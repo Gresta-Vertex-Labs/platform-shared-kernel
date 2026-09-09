@@ -33,4 +33,10 @@ public sealed class IsoCountryValidatorTests
         Assert.True(result.IsFailure);
         Assert.Equal(ValidationErrorCodes.Country.UnknownCode, result.Error.Code);
     }
+
+    [Fact]
+    public void RegistryAsOf_IsNonEmpty()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(IsoCountryValidator.RegistryAsOf));
+    }
 }

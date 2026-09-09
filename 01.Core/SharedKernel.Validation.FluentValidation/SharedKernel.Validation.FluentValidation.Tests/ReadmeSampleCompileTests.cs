@@ -67,4 +67,31 @@ public sealed class ReadmeSampleCompileTests
         Assert.False(result.IsValid);
         Assert.Equal(4, result.Errors.Count);
     }
+
+    private sealed record OnboardCounterpartyCommand(string Lei, string AbaRoutingNumber, string SepaCreditorIdentifier);
+
+    private sealed class OnboardCounterpartyCommandValidator : AbstractValidator<OnboardCounterpartyCommand>
+    {
+        public OnboardCounterpartyCommandValidator()
+        {
+            RuleFor(x => x.Lei).MustBeValidLei();
+            RuleFor(x => x.AbaRoutingNumber).MustBeValidAbaRoutingNumber();
+            RuleFor(x => x.SepaCreditorIdentifier).MustBeValidSepaCreditorIdentifier();
+        }
+    }
+
+    [Fact]
+    public void ReadmeSample_LeiAbaRoutingNumberAndSepaCreditorIdentifierRules_AllValid_Passes()
+    {
+        var validator = new OnboardCounterpartyCommandValidator();
+
+        var command = new OnboardCounterpartyCommand(
+            Lei: "506700GE1G29325QX363",
+            AbaRoutingNumber: "111000025",
+            SepaCreditorIdentifier: "DE98ZZZ09999999999");
+
+        ValidationResult result = validator.Validate(command);
+
+        Assert.True(result.IsValid);
+    }
 }

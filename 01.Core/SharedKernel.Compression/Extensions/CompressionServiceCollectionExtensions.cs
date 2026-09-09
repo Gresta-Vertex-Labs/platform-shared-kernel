@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharedKernel.Compression.Options;
 using SharedKernel.Configuration.Extensions;
 
@@ -44,6 +45,11 @@ public static class CompressionServiceCollectionExtensions
     /// This mirrors <c>SharedKernel.Cryptography</c>'s <c>EcdsaSignatureService</c> keyed-only
     /// registration pattern.
     /// </para>
+    /// <para>
+    /// Every registration uses <c>TryAddSingleton</c>/<c>TryAddKeyedSingleton</c> — calling this
+    /// method more than once never double-registers, and a consumer registration made
+    /// <b>before</b> this call always wins over the platform default.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelCompression(
         this IServiceCollection services,
@@ -55,9 +61,9 @@ public static class CompressionServiceCollectionExtensions
         services.AddValidatedOptions<CompressionOptions>(
             configuration.GetSection(CompressionOptions.SectionName));
 
-        services.AddSingleton<IPayloadCompressor, BrotliPayloadCompressor>();
-        services.AddKeyedSingleton<IPayloadCompressor, BrotliPayloadCompressor>(BrotliPayloadCompressorKey);
-        services.AddKeyedSingleton<IPayloadCompressor, GZipPayloadCompressor>(GZipPayloadCompressorKey);
+        services.TryAddSingleton<IPayloadCompressor, BrotliPayloadCompressor>();
+        services.TryAddKeyedSingleton<IPayloadCompressor, BrotliPayloadCompressor>(BrotliPayloadCompressorKey);
+        services.TryAddKeyedSingleton<IPayloadCompressor, GZipPayloadCompressor>(GZipPayloadCompressorKey);
 
         return services;
     }

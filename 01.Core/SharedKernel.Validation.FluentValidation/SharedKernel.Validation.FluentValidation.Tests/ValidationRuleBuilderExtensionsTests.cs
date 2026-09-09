@@ -18,11 +18,20 @@ public sealed class ValidationRuleBuilderExtensionsTests
         string PhoneNumber,
         string VatNumber,
         string NationalId,
-        string NationalIdCountryCode);
+        string NationalIdCountryCode,
+        string Lei,
+        string AbaRoutingNumber,
+        string SepaCreditorIdentifier);
 
     private sealed class IbanValidator : AbstractValidator<Subject>
     {
         public IbanValidator() => RuleFor(x => x.Iban).MustBeValidIban();
+    }
+
+    private sealed class IbanValidatorWithFallback : AbstractValidator<Subject>
+    {
+        public IbanValidatorWithFallback() =>
+            RuleFor(x => x.Iban).MustBeValidIban(allowFallbackForUnknownCountry: true);
     }
 
     private sealed class BicValidator : AbstractValidator<Subject>
@@ -61,6 +70,21 @@ public sealed class ValidationRuleBuilderExtensionsTests
             RuleFor(x => x.NationalId).MustBeValidNationalId(x => x.NationalIdCountryCode, registry);
     }
 
+    private sealed class LeiValidator : AbstractValidator<Subject>
+    {
+        public LeiValidator() => RuleFor(x => x.Lei).MustBeValidLei();
+    }
+
+    private sealed class AbaRoutingNumberValidator : AbstractValidator<Subject>
+    {
+        public AbaRoutingNumberValidator() => RuleFor(x => x.AbaRoutingNumber).MustBeValidAbaRoutingNumber();
+    }
+
+    private sealed class SepaCreditorIdentifierValidator : AbstractValidator<Subject>
+    {
+        public SepaCreditorIdentifierValidator() => RuleFor(x => x.SepaCreditorIdentifier).MustBeValidSepaCreditorIdentifier();
+    }
+
     private static Subject ValidSubject() => new(
         Iban: "DE89370400440532013000",
         Bic: "DEUTDEFF",
@@ -70,7 +94,10 @@ public sealed class ValidationRuleBuilderExtensionsTests
         PhoneNumber: "+14155550100",
         VatNumber: "DE123456789",
         NationalId: "10000000146",
-        NationalIdCountryCode: "TR");
+        NationalIdCountryCode: "TR",
+        Lei: "506700GE1G29325QX363",
+        AbaRoutingNumber: "111000025",
+        SepaCreditorIdentifier: "DE98ZZZ09999999999");
 
     // ---- IBAN -------------------------------------------------------------------------------
 
@@ -111,6 +138,49 @@ public sealed class ValidationRuleBuilderExtensionsTests
     {
         // Same length/shape as a valid German IBAN, but the check digits are wrong.
         ValidationResult result = new IbanValidator().Validate(ValidSubject() with { Iban = "DE00370400440532013000" });
+
+        AssertSingleFailure(result, ValidationErrorCodes.Iban.InvalidCheckDigit);
+    }
+
+    // "ZZ73123456789012345678" is a genuinely mod-97-valid IBAN shape (remainder == 1) under the
+    // unrecognized country prefix "ZZ", independently computed via the standard ISO 13616
+    // rearrange-and-mod-97 algorithm — mirrors SharedKernel.Validation.Tests.IbanValidatorTests'
+    // own vectors exactly, since this adapter must forward the flag with identical behavior.
+    // "ZZ73123456789012345670" breaks the checksum (remainder != 1) while keeping the same shape.
+    private const string Mod97ValidUnknownCountryIban = "ZZ73123456789012345678";
+    private const string Mod97InvalidUnknownCountryIban = "ZZ73123456789012345670";
+
+    [Fact]
+    public void MustBeValidIban_DefaultParameterOmitted_UnrecognizedCountryStillHardRejects()
+    {
+        // Regression coverage for the adapter's own parameterless call shape: MustBeValidIban()
+        // with no argument must keep behaving exactly as it did before the fallback parameter
+        // was added — an unrecognized country prefix hard-rejects even when the value is
+        // otherwise mod-97-valid.
+        ValidationResult result = new IbanValidator().Validate(ValidSubject() with { Iban = Mod97ValidUnknownCountryIban });
+
+        AssertSingleFailure(result, ValidationErrorCodes.Iban.InvalidFormat);
+    }
+
+    [Fact]
+    public void MustBeValidIban_AllowFallbackTrue_Mod97ValidUnknownCountry_Passes()
+    {
+        // Proves the adapter genuinely forwards allowFallbackForUnknownCountry through to
+        // IbanValidator.Validate rather than silently ignoring it (the specific failure mode a
+        // hand-written lambda that dropped the parameter would introduce without breaking the
+        // build).
+        ValidationResult result =
+            new IbanValidatorWithFallback().Validate(ValidSubject() with { Iban = Mod97ValidUnknownCountryIban });
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void MustBeValidIban_AllowFallbackTrue_Mod97InvalidUnknownCountry_StillFails()
+    {
+        // The fallback trades away country-specific length checking, never checksum correctness.
+        ValidationResult result =
+            new IbanValidatorWithFallback().Validate(ValidSubject() with { Iban = Mod97InvalidUnknownCountryIban });
 
         AssertSingleFailure(result, ValidationErrorCodes.Iban.InvalidCheckDigit);
     }
@@ -197,6 +267,73 @@ public sealed class ValidationRuleBuilderExtensionsTests
         ValidationResult result = new VatNumberValidator().Validate(ValidSubject() with { VatNumber = "!" });
 
         AssertSingleFailure(result, ValidationErrorCodes.Vat.InvalidFormat);
+    }
+
+    // ---- LEI ------------------------------------------------------------------------------------
+
+    [Fact]
+    public void MustBeValidLei_ValidValue_Passes() =>
+        Assert.True(new LeiValidator().Validate(ValidSubject()).IsValid);
+
+    [Fact]
+    public void MustBeValidLei_MalformedValue_FailsWithInvalidFormatCode()
+    {
+        ValidationResult result = new LeiValidator().Validate(ValidSubject() with { Lei = "not-an-lei" });
+
+        AssertSingleFailure(result, ValidationErrorCodes.Lei.InvalidFormat);
+    }
+
+    [Fact]
+    public void MustBeValidLei_CorruptedCheckDigits_FailsWithInvalidCheckDigitCode()
+    {
+        ValidationResult result = new LeiValidator().Validate(ValidSubject() with { Lei = "506700GE1G29325QX364" });
+
+        AssertSingleFailure(result, ValidationErrorCodes.Lei.InvalidCheckDigit);
+    }
+
+    // ---- ABA routing number ----------------------------------------------------------------------
+
+    [Fact]
+    public void MustBeValidAbaRoutingNumber_ValidValue_Passes() =>
+        Assert.True(new AbaRoutingNumberValidator().Validate(ValidSubject()).IsValid);
+
+    [Fact]
+    public void MustBeValidAbaRoutingNumber_MalformedValue_FailsWithInvalidFormatCode()
+    {
+        ValidationResult result = new AbaRoutingNumberValidator().Validate(ValidSubject() with { AbaRoutingNumber = "123" });
+
+        AssertSingleFailure(result, ValidationErrorCodes.AbaRoutingNumber.InvalidFormat);
+    }
+
+    [Fact]
+    public void MustBeValidAbaRoutingNumber_CorruptedChecksum_FailsWithFailedChecksumCode()
+    {
+        ValidationResult result = new AbaRoutingNumberValidator().Validate(ValidSubject() with { AbaRoutingNumber = "111000024" });
+
+        AssertSingleFailure(result, ValidationErrorCodes.AbaRoutingNumber.FailedChecksum);
+    }
+
+    // ---- SEPA Creditor Identifier -----------------------------------------------------------------
+
+    [Fact]
+    public void MustBeValidSepaCreditorIdentifier_ValidValue_Passes() =>
+        Assert.True(new SepaCreditorIdentifierValidator().Validate(ValidSubject()).IsValid);
+
+    [Fact]
+    public void MustBeValidSepaCreditorIdentifier_MalformedValue_FailsWithInvalidFormatCode()
+    {
+        ValidationResult result = new SepaCreditorIdentifierValidator().Validate(ValidSubject() with { SepaCreditorIdentifier = "DE98" });
+
+        AssertSingleFailure(result, ValidationErrorCodes.SepaCreditorIdentifier.InvalidFormat);
+    }
+
+    [Fact]
+    public void MustBeValidSepaCreditorIdentifier_CorruptedCheckDigits_FailsWithInvalidCheckDigitCode()
+    {
+        ValidationResult result = new SepaCreditorIdentifierValidator().Validate(
+            ValidSubject() with { SepaCreditorIdentifier = "DE99ZZZ09999999999" });
+
+        AssertSingleFailure(result, ValidationErrorCodes.SepaCreditorIdentifier.InvalidCheckDigit);
     }
 
     // ---- National ID ----------------------------------------------------------------------------

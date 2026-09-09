@@ -134,4 +134,29 @@ public sealed class HmacSha256SignerTests
 
         Assert.Throws<ArgumentNullException>(() => signer.Sign(null!, Secret));
     }
+
+    // ---- P-524/WO-083: key-material zeroization ----
+
+    /// <summary>
+    /// Proves — with a genuine runtime check against actual bytes — that
+    /// <see cref="HmacSha256Signer.Verify(byte[], byte[], byte[])"/>'s internal <c>expected</c>
+    /// comparison buffer is zeroed in place before the public call returns. Uses the internal,
+    /// test-only capture-before-zeroing overload (gated via <c>InternalsVisibleTo</c>) to grab the
+    /// exact same array reference the production code path zeroes.
+    /// </summary>
+    [Fact]
+    public void Verify_ZeroesTheInternalExpectedComparisonBuffer_BeforeReturning()
+    {
+        var signer = new HmacSha256Signer();
+        byte[] data = Encoding.UTF8.GetBytes("data to sign");
+        byte[] signature = signer.Sign(data, Secret);
+        byte[]? capturedExpected = null;
+
+        bool verified = signer.Verify(data, signature, Secret, buffer => capturedExpected = buffer);
+
+        Assert.True(verified);
+        Assert.NotNull(capturedExpected);
+        Assert.NotEmpty(capturedExpected);
+        Assert.All(capturedExpected, b => Assert.Equal(0, b));
+    }
 }

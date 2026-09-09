@@ -9,10 +9,14 @@ namespace SharedKernel.Cryptography.KeyVault.Azure.Options;
 /// <remarks>
 /// Registered by
 /// <see cref="Extensions.AzureKeyVaultCryptographyServiceCollectionExtensions.AddSharedKernelAzureKeyVaultCryptography"/>
-/// via <c>services.AddSingleton&lt;IValidateOptions&lt;AzureKeyVaultCryptographyOptions&gt;, AzureKeyVaultCryptographyOptionsValidator&gt;()</c>,
-/// composing with the Data Annotations pass (<c>[Required]</c> on <see cref="AzureKeyVaultCryptographyOptions.VaultUri"/>/
+/// via <c>services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;IValidateOptions&lt;AzureKeyVaultCryptographyOptions&gt;, AzureKeyVaultCryptographyOptionsValidator&gt;())</c>
+/// — deliberately <c>TryAddEnumerable</c>, never a plain <c>TryAddSingleton</c>, since
+/// <see cref="IValidateOptions{TOptions}"/> is a genuine multi-implementation collection: the
+/// Data Annotations pass (<c>[Required]</c> on <see cref="AzureKeyVaultCryptographyOptions.VaultUri"/>/
 /// <see cref="AzureKeyVaultCryptographyOptions.CurrentKeyId"/>) that <c>SharedKernel.Configuration</c>'s
-/// <c>AddValidatedOptions</c> already applies — both run at startup via <c>ValidateOnStart()</c>.
+/// <c>AddValidatedOptions</c> already applies registers against the identical service type, and
+/// both validators must run at startup via <c>ValidateOnStart()</c> — not just whichever
+/// registered first.
 /// </remarks>
 public sealed class AzureKeyVaultCryptographyOptionsValidator : IValidateOptions<AzureKeyVaultCryptographyOptions>
 {

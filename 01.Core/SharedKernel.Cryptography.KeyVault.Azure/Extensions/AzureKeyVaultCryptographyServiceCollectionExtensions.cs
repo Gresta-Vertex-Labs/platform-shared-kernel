@@ -53,6 +53,28 @@ public static class AzureKeyVaultCryptographyServiceCollectionExtensions
     /// <c>services.PostConfigure&lt;AzureKeyVaultCryptographyOptions&gt;(o =&gt; o.Credential = myCredential)</c>
     /// after calling this method.
     /// </para>
+    /// <para>
+    /// Every registration in this method uses <c>TryAddSingleton</c> — calling this method more
+    /// than once never double-registers, and a consumer registration made <b>before</b> this call
+    /// always wins over the platform default. The one exception is
+    /// <see cref="AzureKeyVaultCryptographyOptionsValidator"/>'s own
+    /// <see cref="IValidateOptions{TOptions}"/> registration below, which — like
+    /// <c>SharedKernel.Validation</c>'s <c>INationalIdValidator</c> — is a genuine,
+    /// intentional multi-implementation collection: the immediately preceding
+    /// <c>SharedKernel.Configuration.Extensions.OptionsExtensions.AddValidatedOptions{TOptions}</c>
+    /// call already registers its own
+    /// <c>DataAnnotationValidateOptions&lt;AzureKeyVaultCryptographyOptions&gt;</c>
+    /// against the identical <see cref="IValidateOptions{TOptions}"/> service type via the BCL's own
+    /// <c>ValidateDataAnnotations()</c>, and the options-validation pipeline is designed to run
+    /// <b>every</b> registered <see cref="IValidateOptions{TOptions}"/> for a type, not just one. A
+    /// plain <c>TryAddSingleton</c> here would see that service type already claimed and silently
+    /// never register this validator's cross-field checks — confirmed as a real regression during
+    /// SK.01.P518 implementation (two host-startup tests stopped throwing). The fix is
+    /// <c>TryAddEnumerable(ServiceDescriptor.Singleton&lt;IValidateOptions&lt;AzureKeyVaultCryptographyOptions&gt;, AzureKeyVaultCryptographyOptionsValidator&gt;())</c>
+    /// — it still prevents this exact (service, implementation) pair from registering twice across
+    /// repeated calls to this method, while never suppressing the DataAnnotations validator
+    /// registered alongside it.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelAzureKeyVaultCryptography(
         this IServiceCollection services,
@@ -63,23 +85,24 @@ public static class AzureKeyVaultCryptographyServiceCollectionExtensions
 
         services.AddValidatedOptions<AzureKeyVaultCryptographyOptions>(
             configuration.GetSection(AzureKeyVaultCryptographyOptions.SectionName));
-        services.AddSingleton<IValidateOptions<AzureKeyVaultCryptographyOptions>, AzureKeyVaultCryptographyOptionsValidator>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<AzureKeyVaultCryptographyOptions>, AzureKeyVaultCryptographyOptionsValidator>());
 
         services.TryAddSingleton<ISecureRandomGenerator, CryptoRandomGenerator>();
 
-        services.AddSingleton<AzureKeyVaultEncryptionKeyProvider>();
-        services.AddSingleton<IEncryptionKeyProvider>(sp =>
+        services.TryAddSingleton<AzureKeyVaultEncryptionKeyProvider>();
+        services.TryAddSingleton<IEncryptionKeyProvider>(sp =>
             sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
-        services.AddSingleton<IEnvelopeEncryptionProvider>(sp =>
+        services.TryAddSingleton<IEnvelopeEncryptionProvider>(sp =>
             sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
-        services.AddSingleton<IEncryptionKeyProviderProbe>(sp =>
+        services.TryAddSingleton<IEncryptionKeyProviderProbe>(sp =>
             sp.GetRequiredService<AzureKeyVaultEncryptionKeyProvider>());
 
         // A DISTINCT singleton from AzureKeyVaultEncryptionKeyProvider — never resolved through
         // it. See AzureKeyVaultAsymmetricKeyProvider's class-level remarks for why signing keys
         // and wrap/unwrap keys are never shared through one class.
-        services.AddSingleton<AzureKeyVaultAsymmetricKeyProvider>();
-        services.AddSingleton<IAsymmetricKeyProvider>(sp =>
+        services.TryAddSingleton<AzureKeyVaultAsymmetricKeyProvider>();
+        services.TryAddSingleton<IAsymmetricKeyProvider>(sp =>
             sp.GetRequiredService<AzureKeyVaultAsymmetricKeyProvider>());
 
         return services;

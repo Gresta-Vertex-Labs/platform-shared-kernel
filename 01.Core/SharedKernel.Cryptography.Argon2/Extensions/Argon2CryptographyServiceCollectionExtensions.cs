@@ -49,6 +49,12 @@ public static class Argon2CryptographyServiceCollectionExtensions
     /// <c>SharedKernel.Cryptography</c>'s own <c>AddSharedKernelCryptography</c>, mirroring
     /// <c>SharedKernel.Cryptography.KeyVault.Azure</c>'s identical self-sufficiency pattern.
     /// </para>
+    /// <para>
+    /// Every registration in this method — including the keyed <see cref="Argon2idOneWayHasher"/>
+    /// registration — uses <c>TryAddSingleton</c>/<c>TryAddKeyedSingleton</c>: calling this method
+    /// more than once never double-registers, and a consumer registration made
+    /// <b>before</b> this call always wins over the platform default.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelArgon2Cryptography(
         this IServiceCollection services,
@@ -62,7 +68,7 @@ public static class Argon2CryptographyServiceCollectionExtensions
 
         services.TryAddSingleton<ISecureRandomGenerator, CryptoRandomGenerator>();
 
-        services.AddKeyedSingleton<IOneWayHasher, Argon2idOneWayHasher>(Argon2idOneWayHasherKey);
+        services.TryAddKeyedSingleton<IOneWayHasher, Argon2idOneWayHasher>(Argon2idOneWayHasherKey);
 
         return services;
     }

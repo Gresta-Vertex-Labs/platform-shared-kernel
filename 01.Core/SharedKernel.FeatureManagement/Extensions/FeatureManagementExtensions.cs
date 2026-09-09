@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using MsftFeatureManagement = Microsoft.FeatureManagement;
 using SharedKernel.FeatureManagement.Abstractions;
 
@@ -37,6 +38,13 @@ public static class FeatureManagementExtensions
     /// which is why this defect was easy to miss. Passing the root configuration here matches this
     /// method's public contract, which has always accepted the application's full
     /// <see cref="IConfiguration"/>, so no consumer-visible signature change is required to fix it.
+    /// <para>
+    /// This method's own <see cref="IFeatureManager"/> registration uses <c>TryAddSingleton</c> —
+    /// calling this method more than once never double-registers it, and a consumer registration
+    /// made <b>before</b> this call always wins over the platform default. The preceding
+    /// third-party <c>Microsoft.FeatureManagement.AddFeatureManagement(...)</c> call is untouched
+    /// and follows its own library's registration semantics, outside this domain's control.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharedKernelFeatureManagement(
         this IServiceCollection services,
@@ -46,7 +54,7 @@ public static class FeatureManagementExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         MsftFeatureManagement.ServiceCollectionExtensions.AddFeatureManagement(services, configuration);
-        services.AddSingleton<IFeatureManager, MicrosoftFeatureManagerAdapter>();
+        services.TryAddSingleton<IFeatureManager, MicrosoftFeatureManagerAdapter>();
 
         return services;
     }

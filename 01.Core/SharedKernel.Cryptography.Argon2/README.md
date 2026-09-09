@@ -61,6 +61,10 @@ A malformed string, a foreign algorithm marker (e.g. `argon2i`/`argon2d`), an un
 
 The audit that started this work order (WO-081) found `CryptographyOptions.Pbkdf2Iterations` carried `[Range(1, int.MaxValue)]` — a floor in name only, since `Pbkdf2Iterations: 1` passed startup validation cleanly. `Argon2CryptographyOptions` does not repeat that mistake: `MemorySizeKb`, `Iterations`, and `DegreeOfParallelism` each carry a real, OWASP-cited `[Range]` — the lower bound of each is the smallest value appearing in any row of OWASP's own Argon2id acceptable-configurations table, not an arbitrary technical minimum. A misconfiguration below that floor fails fast at host startup (`ValidateOnStart()`), never silently.
 
+## FIPS 140-3 posture
+
+Argon2id is **NOT FIPS-approved** — no FIPS 140-3 validated status exists for Argon2 as of this posture statement. A service operating under a FIPS-enforced-mode compliance requirement must not resolve the `"Argon2id"`-keyed `IOneWayHasher` this package registers; use `SharedKernel.Cryptography`'s unkeyed `Pbkdf2OneWayHasher` default instead — see that package's [README](../SharedKernel.Cryptography/README.md#fips-140-3--approved-algorithm-posture) for the full per-primitive FIPS posture statement, including the separate RFC 4226/6238 HOTP/TOTP `HotpAlgorithm.Sha1`-default gap.
+
 ## Package
 
 Part of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel) — see the [01.Core README](../README.md) for the full capability overview.

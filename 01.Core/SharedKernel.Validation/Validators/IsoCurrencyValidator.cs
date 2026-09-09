@@ -15,6 +15,15 @@ namespace SharedKernel.Validation.Validators;
 /// </remarks>
 public static class IsoCurrencyValidator
 {
+    /// <summary>
+    /// A last-reviewed marker for <see cref="Codes"/>, NOT a formal ISO 4217 registry version
+    /// number — the ISO 4217 maintenance agency does not publish a single canonical "version" the
+    /// way software does. States when this table was last verified against published ISO 4217
+    /// currency-code references. Review this table, and update this constant, whenever a work
+    /// order touches <see cref="IsoCurrencyValidator"/>.
+    /// </summary>
+    public const string RegistryAsOf = "Reviewed WO-067/P-443, 2026-09-02";
+
     private static readonly HashSet<string> Codes = new(StringComparer.Ordinal)
     {
         "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN",

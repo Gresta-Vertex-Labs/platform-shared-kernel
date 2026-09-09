@@ -22,6 +22,65 @@ All packages target `net10.0` and are AOT-compatible.
 
 ---
 
+## DI Registration Conventions (SK.01.P518)
+
+Every `AddSharedKernelXxx(...)`/`AddXxx(...)` DI extension method across `01.Core` registers its
+services via `TryAddSingleton`/`TryAddKeyedSingleton` (or `TryAddEnumerable` — see the two named
+exceptions below), never a plain `AddSingleton`/`AddKeyedSingleton`. Two consequences follow from
+this, consistently across every package in this domain:
+
+- **Calling the same `AddSharedKernelXxx(...)` method more than once never double-registers.**
+  A microservice that references two `01.Core` packages which both, transitively, call
+  `AddSharedKernelCryptography()` (for example) gets exactly one registration of each service —
+  not two competing ones racing to be "the" resolved instance.
+- **A consumer registration made *before* the platform's `AddSharedKernelXxx(...)` call always
+  wins.** Register your own fake/override implementation first (e.g. in a test host, or to swap
+  in a bespoke implementation), then call the platform's registration method — `TryAdd*` sees the
+  service type already claimed and leaves your registration alone. This is the idiom every
+  package's own DI extension method documents in its XML remarks; look there for the exact set of
+  services a given method registers.
+
+**Two deliberate, load-bearing exceptions to plain `TryAddSingleton`, both because the underlying
+service type is a genuine, intentional *multi-implementation collection* rather than a
+single-winner service:**
+
+1. **`SharedKernel.Validation`'s `AddNationalIdValidator<TValidator>()`** registers
+   `INationalIdValidator` via `TryAddEnumerable(ServiceDescriptor.Singleton<INationalIdValidator, TValidator>())`,
+   never a plain `TryAddSingleton`. `INationalIdValidatorRegistry` is built by iterating
+   *every* registered `INationalIdValidator` via `IServiceProvider.GetServices<INationalIdValidator>()`
+   — a plain `TryAddSingleton` would collapse that to a single winner and silently drop every
+   country validator registered after the first one ever registered. `TryAddEnumerable` still
+   prevents the identical `(INationalIdValidator, TValidator)` pair from registering twice (e.g.
+   calling `AddNationalIdValidator<T>()` for the same `T` more than once), while preserving the
+   multi-country collection semantics for every distinct `TValidator`.
+2. **`SharedKernel.Cryptography.KeyVault.Azure`'s `AzureKeyVaultCryptographyOptionsValidator`**
+   registers itself against `IValidateOptions<AzureKeyVaultCryptographyOptions>` the same way —
+   `Microsoft.Extensions.Options`' own validation pipeline runs *every* registered
+   `IValidateOptions<T>` for a type, not just one, and the preceding
+   `AddValidatedOptions<AzureKeyVaultCryptographyOptions>(section)` call already registers the
+   BCL's own `DataAnnotationValidateOptions<T>` against that identical service type via
+   `ValidateDataAnnotations()`. A plain `TryAddSingleton` here would see the service type already
+   claimed and silently never register this validator's cross-field checks — a real regression
+   caught during SK.01.P518 implementation (two host-startup tests stopped throwing until fixed).
+
+**One documented, intentional behavior inversion — not a regression, an accepted side effect of
+domain-wide standardization:** `SharedKernel.Localization`'s `AddInMemoryLocalizationCatalog()` and
+`AddStringLocalizerCatalog<TResource>()` are mutually exclusive — both register the single-winner
+`ILocalizationCatalog` via `TryAddSingleton`. Before this standardization, calling both on the same
+`IServiceCollection` left whichever call ran *last* as the resolved implementation (plain
+`AddSingleton`'s natural "last wins" behavior). Now it is whichever call runs *first* — the
+standard `TryAdd` idiom. Call exactly one of the two per service, in whichever order you want to
+win.
+
+If you are adding a new `01.Core` DI extension method: default to `TryAddSingleton`/
+`TryAddKeyedSingleton`. Reach for `TryAddEnumerable` only when the service type is genuinely meant
+to be resolved as a collection (via `IEnumerable<T>`/`GetServices<T>()`) by something else in the
+same package — never as a way to "be extra safe" on an ordinary single-winner service, since it
+changes the double-registration semantics in a way a plain `TryAddSingleton` reader would not
+expect.
+
+---
+
 ## SharedKernel.Primitives
 
 ### Result\<T\> — Operation Outcomes
@@ -266,6 +325,18 @@ foreach (OrderStatus s in OrderStatus.List)
 // ToString() returns the Name
 Console.WriteLine(OrderStatus.Shipped); // "Shipped"
 ```
+
+> **Static-initialization safety (SK.01.P515):** `FromValue`/`TryFromValue`/`FromName`/`List` all
+> resolve correctly even when a `SmartEnum`-derived type is first touched *exclusively* through one
+> of these inherited static members — e.g. calling `OrderStatus.FromValue(2)` as the very first
+> reference to `OrderStatus` anywhere in the process, with no prior reference to
+> `OrderStatus.Pending`/`.Processing`/etc. `SmartEnum<TEnum,TValue>` forces `TEnum`'s own static
+> constructor to run exactly once, as part of `SmartEnum<TEnum,TValue>`'s own static initialization,
+> closing an ECMA-335 static-initialization gap where reaching an inherited static member through a
+> derived type name does not otherwise guarantee the derived type's own field initializers (the ones
+> that populate the member list) have already run. This costs nothing on the hot lookup path — the
+> force happens once per closed generic type, during that type's one-time static initialization,
+> never inside `FromValue`/`TryFromValue`/`FromName` themselves.
 
 ---
 
@@ -731,6 +802,45 @@ Microsoft.Extensions.Options.OptionsValidationException:
   DataAnnotation validation failed for 'EmailOptions' members:
   'SenderEmail' with the error: 'The SenderEmail field is not a valid e-mail address.'.
 ```
+
+### Source-Generated Options Validation (opt-in, AOT-clean)
+
+`AddValidatedOptions<TOptions>` (above) remains the platform **default** — every existing consumer
+already depends on its Data Annotations + reflection-based validation, and this section changes
+nothing about it.
+
+An additive **`AddValidatedOptions<TOptions, TValidator>(IConfiguration section)`** overload is also
+available, where `TValidator : class, IValidateOptions<TOptions>`. It binds the section with **no**
+`.ValidateDataAnnotations()` call — the entire point is avoiding that reflection-based validator —
+registers `TValidator` via `TryAddSingleton<IValidateOptions<TOptions>, TValidator>()`, and still calls
+`.ValidateOnStart()`, so a misconfigured application fails at `IHost.StartAsync()` exactly like the
+Data Annotations path.
+
+`TValidator` is typically a `partial class` annotated with the in-box BCL `[OptionsValidator]` source
+generator (part of the base `Microsoft.Extensions.Options` package, no extra NuGet reference needed).
+The generator reads the same Data Annotations attributes on `TOptions` and emits the `Validate` method
+body at compile time — zero reflection at validation time. Any other hand-written
+`IValidateOptions<TOptions>` works too; this overload only depends on the resulting interface, never on
+the generator itself.
+
+```csharp
+using Microsoft.Extensions.Options;
+
+// Same EmailOptions class as Step 1 above — no changes needed.
+
+[OptionsValidator]
+public partial class EmailOptionsValidator : IValidateOptions<EmailOptions>
+{
+}
+
+// Program.cs — note the second generic argument, TValidator.
+builder.Services.AddValidatedOptions<EmailOptions, EmailOptionsValidator>(
+    builder.Configuration.GetSection("Email"));
+```
+
+Choose this path for a strict AOT/trimming posture, or simply to avoid startup-time reflection; keep
+using the Data Annotations overload otherwise. Both call `.ValidateOnStart()` and fail identically at
+`IHost.StartAsync()`.
 
 ---
 

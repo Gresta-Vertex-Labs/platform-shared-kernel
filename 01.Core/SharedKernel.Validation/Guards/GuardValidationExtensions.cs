@@ -46,6 +46,18 @@ public static class GuardValidationExtensions
     public static Error? InvalidVatNumber(this IGuardClause guard, string? value) =>
         ToGuardError(VatValidator.Validate(value));
 
+    /// <summary>Returns a validation <see cref="Error"/> when <paramref name="value"/> is not a valid LEI; otherwise <see langword="null"/>.</summary>
+    public static Error? InvalidLei(this IGuardClause guard, string? value) =>
+        ToGuardError(LeiValidator.Validate(value));
+
+    /// <summary>Returns a validation <see cref="Error"/> when <paramref name="value"/> is not a valid ABA routing number; otherwise <see langword="null"/>.</summary>
+    public static Error? InvalidAbaRoutingNumber(this IGuardClause guard, string? value) =>
+        ToGuardError(AbaRoutingNumberValidator.Validate(value));
+
+    /// <summary>Returns a validation <see cref="Error"/> when <paramref name="value"/> is not a valid SEPA Creditor Identifier; otherwise <see langword="null"/>.</summary>
+    public static Error? InvalidSepaCreditorIdentifier(this IGuardClause guard, string? value) =>
+        ToGuardError(SepaCreditorIdentifierValidator.Validate(value));
+
     /// <summary>
     /// Returns a validation <see cref="Error"/> when <paramref name="value"/> fails
     /// <paramref name="countryCode"/>'s registered national-identity-number checksum, or when no

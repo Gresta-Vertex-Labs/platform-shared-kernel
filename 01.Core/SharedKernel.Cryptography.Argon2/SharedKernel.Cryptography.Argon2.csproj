@@ -11,4 +11,11 @@
     <ProjectReference Include="..\SharedKernel.Cryptography\SharedKernel.Cryptography.csproj" />
     <ProjectReference Include="..\SharedKernel.Configuration\SharedKernel.Configuration.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Test-only seam (P-524/WO-083): exposes the internal capture-buffer-before-zeroing
+         overload on Argon2idOneWayHasher.Hash to this package's own .Tests project only, never
+         to any other assembly. No public surface change — the internal overload has a
+         same-named public wrapper passing null. -->
+    <InternalsVisibleTo Include="SharedKernel.Cryptography.Argon2.Tests" />
+  </ItemGroup>
 </Project>

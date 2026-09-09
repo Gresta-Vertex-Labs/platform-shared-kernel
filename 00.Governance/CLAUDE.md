@@ -2422,6 +2422,95 @@ NoRawSymmetricCipherOutsideCryptographyPredicate  (class : ICustomRule — inter
     failure message naming the offending type and the cipher/RNG type name. Lives in
     Predicates/ folder. Used by CryptoIsolationRules.NoRawSymmetricCipherOutsideCryptography.
 
+CoreArchitectureRules  (static class — 01.Core-domain conventions; the platform's FIRST
+                        01.Core-domain architecture-rule class; WO-083 P-523)
+    .DiExtensionsUseTryAddRegistrationConvention(params Assembly[])  → ConditionList
+        Asserts that no type in the supplied assemblies contains a Call/Callvirt instruction
+        invoking Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions'
+        plain AddSingleton, AddScoped, or AddTransient — 01.Core's own P-518 (WO-083)
+        standardized every one of its own DI extension methods onto TryAddSingleton/
+        TryAddScoped/TryAddTransient/TryAddEnumerable
+        (Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
+        — a DIFFERENT declaring type) instead. Uses
+        NoPlainServiceCollectionRegistrationPredicate (ICustomRule — see below).
+        Motivating defect (P-518): before that phase, roughly two-thirds of 01.Core's own
+        registration call sites used the plain Add* verb — AddSharedKernelCryptography()
+        called twice silently double-registered all nine services, and a consumer's own
+        pre-registered ISymmetricEncryptionService implementation was silently overwritten
+        instead of honored (the opposite of "first registration wins," the override
+        convention library code is expected to respect). TryAdd* makes both failure modes
+        structurally impossible.
+        Detection precision: AddSingleton/AddScoped/AddTransient and TryAddSingleton/
+        TryAddScoped/TryAddTransient/TryAddEnumerable are entirely disjoint method NAMES — no
+        BCL overload of either family ever shares a name with the other — so a name-only
+        match (mirroring NoSecurityContextSingletonRegistrationPredicate's own "AddSingleton"
+        name-only match, WO-057 P-373) would already be unambiguous. This predicate
+        ADDITIONALLY requires the resolved callee's DeclaringType.FullName to equal
+        "Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions"
+        (confirmed via direct reflection against the platform's pinned
+        Microsoft.Extensions.DependencyInjection(.Abstractions) 10.0.11 at authoring time,
+        not assumed) — costs nothing extra (both facts are on the same resolved
+        MethodReference operand) and forecloses a hypothetical unrelated same-named method
+        appearing in a future 01.Core package.
+        Non-generic-overload coverage note (documented, not a limitation): the non-generic
+        Add(Type,Type)/Add(Type,Func<IServiceProvider,object>) overloads compile to the
+        identical "Call to a MethodReference named AddSingleton" IL shape a closed-generic
+        call's GenericInstanceMethod operand already produces (GenericInstanceMethod's own
+        Name/DeclaringType resolve exactly like the non-generic overload's) — both shapes are
+        already covered without special-casing either.
+        NO EXEMPTION LIST of any kind — verified unnecessary, not merely assumed, by reading
+        the real source directly before writing the rule: (1) a genuine multi-implementation
+        collection registration — SharedKernel.Validation.AddNationalIdValidator<TValidator>()
+        (resolved via sp.GetServices<INationalIdValidator>() — a TryAddSingleton there would
+        silently drop every country validator after the first) and
+        SharedKernel.Cryptography.KeyVault.Azure's IValidateOptions<AzureKeyVaultCryptographyOptions>
+        registration (coexisting with the BCL's own DataAnnotationValidateOptions<T>
+        registered by the preceding AddValidatedOptions call against the same service type —
+        P-518's own implementation session found and fixed a real regression here, a
+        TryAddSingleton silently dropping the custom cross-field validator) — both use
+        TryAddEnumerable, which already passes structurally since it is not in the forbidden
+        name set; this rule asserts absence of the forbidden verbs, never presence of any one
+        particular compliant verb, so it needed no per-service-type exception list to get
+        this right. (2) SharedKernel.FeatureManagement's deliberately-untouched third-party
+        Microsoft.FeatureManagement.ServiceCollectionExtensions.AddFeatureManagement(...) call
+        — a DIFFERENT method name ("AddFeatureManagement", not "AddSingleton"/"AddScoped"/
+        "AddTransient") on a DIFFERENT declaring type than ServiceCollectionServiceExtensions
+        — structurally cannot match either check, so no exemption was needed for it either.
+        Scope (P-523): scoped to 01.Core's own DI extension methods for this phase only — the
+        caller supplies exactly the nine 01.Core assemblies that declare their own DI
+        extension method(s) (SharedKernel.Primitives, .Configuration, .Compression,
+        .Cryptography, .Cryptography.Argon2, .Cryptography.KeyVault.Azure,
+        .FeatureManagement, .Localization, .Validation). Nothing about the predicate itself is
+        01.Core-specific — extending it to another domain's own DI extension methods in a
+        future work order is a drop-in reuse of the same predicate, not a redesign.
+        Non-vacuous verification WITHOUT editing 01.Core (per this session's explicit "do not
+        edit 01.Core" instruction — this family's usual "temporarily-wrong-expectation,
+        confirmed to fail, then reverted" proof does not apply to an absence check with no
+        expected-value argument to perturb): (a) three contrived fixtures (one per forbidden
+        verb) compiled through this exact predicate class prove it genuinely fires; (b) the
+        real, compiled SharedKernel.Cryptography.dll's AddSharedKernelCryptography method body
+        was inspected read-only via a standalone Mono.Cecil script (against the build output,
+        never the source) and confirmed to contain nine genuine TryAddSingleton/
+        TryAddKeyedSingleton calls — proving the real-assembly pass-path test scans
+        substantial real IL, not an empty method body.
+        Failure message names the offending type/method and the forbidden verb.
+        Offending pattern: services.AddSingleton<IOneWayHasher, Pbkdf2OneWayHasher>();
+        Compliant pattern: services.TryAddSingleton<IOneWayHasher, Pbkdf2OneWayHasher>();
+
+    Note: Introduced in WO-083 P-523 (SK.00.CoreDiRegistrationConventionLock). Lives in
+    SharedKernel.ArchitectureTests/Rules/CoreArchitectureRules.cs. Reuses the existing
+    Mono.Cecil >= 0.11.5 and NetArchTest.eNt references — no new NuGet dependency, no new SK
+    diagnostic ID (SK0037 remains next available).
+
+NoPlainServiceCollectionRegistrationPredicate  (class : ICustomRule — internal predicate)
+    For every method body declared on a scanned type, flags a Call/Callvirt instruction
+    whose resolved MethodReference.Name is "AddSingleton", "AddScoped", or "AddTransient"
+    AND whose MethodReference.DeclaringType.FullName equals
+    "Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions". Returns
+    false (rule violated) on the first match, with failure message naming the offending
+    type. Lives in Predicates/ folder. Used by
+    CoreArchitectureRules.DiExtensionsUseTryAddRegistrationConvention.
+
 UnitOfWorkSeamRules  (static class — local-seam interface distinctness guard; WO-037 P-229)
     .UnitOfWorkInterfacesRemainDistinct(Assembly applicationBehaviorsAssembly, Assembly persistenceAbstractionsAssembly)
                                             → ConditionList
@@ -4447,6 +4536,57 @@ invariant helper, not ConditionList/ICustomRule; WO-060 P-390)
     (not-yet-implemented) guard's structure, not a source-level anti-pattern a Roslyn analyzer should
     catch. SK0037 remains the next available sequential Roslyn-analyzer ID, not consumed here.
 
+    Eleventh real-world application/self-repair, 2026-09-09, triggered by `01.Core`'s WO-083 P-524
+    (key-material zeroization) — a SECOND governance lock disturbed by a domain change in the same
+    overall session, after `SK.00.CacheEncryptionAndRedisValidationLock`/T-337's earlier vacuous
+    break. P-524 added `internal string AesGcmEncryptionService.EncryptToString(string, byte[],
+    Action<byte[]>?)` alongside the pre-existing `public EncryptToString(string, byte[])` (a
+    test-only, `InternalsVisibleTo`-gated seam letting a test observe the intermediate plaintext
+    buffer before it is zeroed). This made T-363's own real-assembly test —
+    `SyncCryptoGate_RealAesGcmEncryptionService_ConstructionTimeGateGenuinelyWired` — throw instead
+    of assert: `AssertMethodBodyInvokesMethod`'s name-only resolution now found TWO methods named
+    `EncryptToString` on `AesGcmEncryptionService` and rejected the ambiguity outright ("found 2
+    methods named 'EncryptToString' — ambiguous").
+    FIXED THE HELPER, NOT `01.Core` — a lock that breaks on any overload addition to a locked type is
+    fragile by construction, and renaming `01.Core`'s method to placate a governance helper's
+    limitation would be the tail wagging the dog. Two extensions to `AssertMethodBodyInvokesMethod`
+    itself, both additive/backward-compatible (all fourteen pre-existing positional call sites across
+    this file's own test suite compile and behave identically unchanged):
+    <list type="bullet">
+    <item>
+    A new optional `Type[]? parameterTypes = null` FIFTH parameter. When the method name resolves to
+    more than one method AND `parameterTypes` is supplied, the ambiguity is resolved by an exact
+    positional parameter-type match (via a new `CecilStyleFullName(Type)` helper rendering a
+    reflection `Type` the way Mono.Cecil renders a `TypeReference.FullName` — handles arrays and
+    closed generic types, not just plain types) instead of being rejected outright. Left `null` (the
+    default) for every pre-existing call site, preserving the original ambiguous-name-is-an-error
+    behavior exactly.
+    </item>
+    <item>
+    SAME-DECLARING-TYPE SIBLING-DELEGATION FOLLOW-THROUGH, proven NECESSARY (not merely convenient) by
+    direct inspection of the real, shipped source before writing it: the public
+    `EncryptToString(string, byte[])`'s ENTIRE body is
+    `=> EncryptToString(plaintext, associatedData, captureIntermediatePlaintextForTesting: null)` — it
+    never calls `ThrowIfNotGenuinelySynchronous` directly; only the internal 3-arg overload it
+    forwards to does. Disambiguating to the public overload alone (via the new `parameterTypes`
+    parameter) would therefore have made the check report the guard as unwired even though every real
+    caller of the public entry point genuinely reaches it. `MethodBodyInvokes` now recurses
+    (visited-`HashSet<MethodDefinition>`-guarded against self-/mutual-recursion cycles) into a
+    same-declaring-type sibling method a call site targets when that call site is not itself the
+    target callee — bounded to the SAME declaring type only (never crosses into a different type's
+    implementation, so it can never be satisfied by an unrelated type happening to also call the
+    guard).
+    </item>
+    </list>
+    `SecureDefaultsAssertionTests` re-pointed the ambiguous `EncryptToString` case (and, for
+    consistency, `Encrypt`/`Decrypt`/`DecryptToString` too, even though only `EncryptToString` was
+    actually ambiguous) at the PUBLIC 2-arg overload explicitly via the new parameter. Verified
+    non-vacuous via a temporary deliberately-wrong callee name (`"ThrowIfNotGenuinelySynchronousXXX"`,
+    reverted before commit): the re-pointed assertion still fails loudly, confirming the fix did not
+    accidentally make the check pass vacuously by resolving the internal testing overload instead of
+    genuinely tracing the public one's real call graph. `SharedKernel.ArchitectureTests.Tests`:
+    259/259 pass, 0 build warnings/errors.
+
 ApplicationBehaviorsCacheInvalidationOrderingLockTests  (test class, no production Rules/Predicates class — root Phase Backlog P-489/WO-080, last phase in WO-080)
     Third genuinely EXECUTED real-composed-pipeline test in this project (Technique A shape,
     after T-336/SK.00.WebhookSsrfGuardLock and T-337/SK.00.CacheEncryptionAndRedisValidationLock)
@@ -5506,3 +5646,5 @@ N/A — `00.Governance` is tooling-only. No runtime DI registration.
 - [2026-09-04] Root Phase Backlog P-489/WO-080 implemented — the LAST phase in WO-080, dispatched once `05.Application`'s P-488 shipped the corrected `CacheInvalidationBehavior`/`TransactionBehavior` registration order (confirmed on disk at `ApplicationBehaviorsBuilder.cs` lines 470-474). New `ApplicationBehaviorsCacheInvalidationOrderingLockTests` (see its own Architecture Test Contracts entry above) — a third genuinely EXECUTED real-composed-pipeline test in this project (Technique A shape, after T-336/T-337), proving against the REAL `SharedKernel.Application.Behaviors.dll` that `CacheInvalidationBehavior`'s eviction observably follows `TransactionBehavior`'s commit, AND that `AuditingBehavior`'s write still lands inside that same commit — both invariants proven simultaneously since they pull in opposite registration directions relative to `TransactionBehavior`. Deliberate, INDEPENDENT duplicate of `05.Application`'s own in-domain regression test (`CacheInvalidationTransactionOrderingTests.cs`, P-488) — this lock survives even a future edit that weakens or deletes that domain's own test. New test-only `ProjectReference` to `SharedKernel.Application.Behaviors.csproj` (`PrivateAssets="all"`) added to `SharedKernel.ArchitectureTests.Tests.csproj`. **Verified non-vacuous, coordinator-directed, mirroring P-490's own bar exactly:** `ApplicationBehaviorsBuilder.cs`'s registration order was temporarily reverted in-session to the pre-fix defect, both new tests genuinely failed, then the file was fully reverted (`git diff` confirmed empty, `SharedKernel.Application.Behaviors.Tests` re-confirmed unchanged at 187/187). No `05.Application` production code changed by this phase. No new SK diagnostic ID, no new `Rules/`/`Predicates/` production class. `SharedKernel.ArchitectureTests.Tests`: 253/253 pass (251 baseline + 2). Not tracked under any phase key in `00.Governance/state-map.md` — dispatched and closed directly against a root Phase Backlog entry. ROOT PROPAGATION NOT WITHHELD THIS TIME — the coordinator confirmed P-488/P-489/P-490 are all being flipped to `●` Complete directly at the root by the coordinator itself, closing WO-080 end to end (governance-phase-implementer, state-map-phase)
 - [2026-09-08] Phase `SK.00.SyncCryptoGateAndArgon2ConfinementLock` added — WO-081 (P-504), the LAST phase dispatched in this wave (deliberately, since P-504 depends on `01.Core`'s P-492/P-495 — the dispatcher overrode its own domain-number-ascending sort to respect the real dependency). All eight upstream WO-081 domains are already design-locked this session. Two independent techniques: Technique A reuses `SecureDefaultsAssertion.AssertMethodBodyInvokesMethod`/`.AssertMethodBodyThrowsExceptionType` UNCHANGED (zero new production code — the THIRD phase in this family to do so) against `01.Core`'s not-yet-implemented synchronous-provider gate (`AesGcmEncryptionService`'s P-492 gate, `RsaSignatureService`'s/`EcdsaSignatureService`'s P-493 gate), deliberately scoped to the gate's OWN method bodies so `07.Messaging`'s legitimate hard-synchronous serializer call site (proven by reflection against the installed MassTransit assembly to have no async overload) can never be flagged. Technique B is a genuinely NEW `CryptoIsolationRules.CryptographyCoreHasNoThirdPartyDependencies` method (`SharedKernel.ArchitectureTests/Rules/CryptoIsolationRules.cs`), mirroring `CachingAbstractionsHasNoInfrastructureDependencies`'s multi-term shape, confirming `SharedKernel.Cryptography` never references `Konscious.Security.Cryptography` (P-495, not yet shipped) or `Azure.Security.KeyVault`/`Azure.Identity` (P-447, already shipped — this domain's first independent NetArchTest-level re-check of a guarantee previously verified only via `01.Core`'s own `.nuspec`-inspection technique in `SharedKernel.Consumer.Tests`). **TWO evaluated corrections of WO-081/P-504's own dispatch text, neither a rubber-stamp:** (1) P-504's stated "Depends on: P-492, P-495" is INCOMPLETE for Technique A — the asymmetric half of the gate is `P-493`'s, not `P-492`'s, per the phase's own "every sync `ISymmetricEncryptionService`/`IAsymmetricSignatureService` member" wording; (2) Technique B needs NEITHER stated dependency — it targets the ALREADY-SHIPPED `SharedKernel.Cryptography` core assembly and is proven non-vacuous TODAY via a temporary reintroduced `Konscious.Security.Cryptography.Argon2` `PackageReference`, confirmed to fail, to be reverted before commit — directly satisfying WO-081's own AC#2 with zero dependency on P-495 ever shipping. Technique A is honestly recorded as FULLY UNVERIFIABLE/GATING-DEFERRED, not merely "not yet dispatched" — `16.Testing` confirmed directly on disk that no P-492/P-493 production type exists anywhere in `01.Core/SharedKernel.Cryptography/` yet (every `D-*` task `●`, every `C-*`/`T-*`/`DO-*`/`P-*` task `○`), one level further removed than every prior "designed against a not-yet-shipped dependency" occurrence in this family (where the producing domain had usually already shipped Core by implementation time, a 4-out-of-6-plus rate). Also EVALUATED AND DELIBERATELY DEFERRED, not invented here: a generalized "no blocking-bridge call in any `ISynchronousEncryptionKeyProvider`/`ISynchronousAsymmetricKeyProvider` implementer" marker-honesty guard, suggested by `06.Persistence`'s own P-498 design for `PreWarmedEncryptionKeyProvider` (which "honestly earns" the marker by never touching its inner provider synchronously) — `06.Persistence`'s own T-142/T-143 already behaviorally cover the one shipped example more precisely than a generic IL scan could; recorded as a candidate follow-up phase for a future work order. 9 tasks: D-81, C-142, T-360–T-365, DO-53. No new SK diagnostic ID — SK0037 remains next available (governance-arch-planner)
 - [2026-09-08] SK.00.SyncCryptoGateAndArgon2ConfinementLock shipped end to end — 8/9 tasks (D-81, C-142, T-360–T-365) complete, closed by this DO-53 documentation pass. Technique A's Cross-Domain Dependency on `01.Core` P-492/P-493 turned out RESOLVED, not deferred as authored — `01.Core` had shipped both past Design into Core before this implementation session began; T-362/T-363 wired directly as GATING real-assembly tests. Real, shipped source corrected the design: `AesGcmEncryptionService`/`RsaSignatureService`/`EcdsaSignatureService` each centralize their throw in one private `ThrowIfNotGenuinelySynchronous` guard method every gated member calls, not four/two independent throw sites as Implementation Rule 2 assumed — T-360–T-363 shaped to match. Technique B's `CryptoIsolationRules.CryptographyCoreHasNoThirdPartyDependencies` implemented exactly as designed (T-364, GATING-immediate); T-365's prescribed real `Konscious.Security.Cryptography.Argon2` `PackageReference` mutation was attempted and found genuinely infeasible — this repo's NuGet Central Package Management disables per-project `VersionOverride` platform-wide (`error NU1013`, confirmed via a real, fully-reverted attempt) — reproduced instead as a permanent, shipped compiled-in-memory-fixture test mirroring T-154/T-155's own precedent. **Same session, same domain, before this phase's own work**: the already-`●` `SK.00.CacheEncryptionAndRedisValidationLock`/T-337 was found broken and gone VACUOUS by three same-day WO-081 sibling shipments (01.Core P-491/P-492, 02.Caching's `SK.02.CacheEncryptionAadBinding` deleting `CacheEncryptionSerializer`) — re-locked against the real, current `ICacheService`-level `EncryptedCacheService` architecture rather than merely patched; see that phase's own type-level remarks addendum for the full record. `SharedKernel.ArchitectureTests.Tests`: 259/259 pass (253 baseline + 6 new SyncCryptoGate/CryptoIsolation tests), 0 build warnings/errors. Full-solution build (`Platform.SharedKernel.slnx`, Release) confirmed clean — 0 errors. No new SK diagnostic ID — SK0037 remains next available (governance-phase-implementer, sync-brain)
+- [2026-09-09] `SecureDefaultsAssertion.AssertMethodBodyInvokesMethod`'s Eleventh real-world application/self-repair — `01.Core`'s WO-083 P-524 (key-material zeroization) added an `internal EncryptToString(string, byte[], Action<byte[]>?)` testing overload alongside the pre-existing `public EncryptToString(string, byte[])`, making T-363's real-assembly test throw "found 2 methods named 'EncryptToString' — ambiguous" instead of asserting (the SECOND governance lock disturbed by a domain change this session, after `SK.00.CacheEncryptionAndRedisValidationLock`/T-337). Fixed the HELPER, not `01.Core`: added an optional `Type[]? parameterTypes = null` fifth parameter for exact-signature disambiguation (all fourteen pre-existing positional call sites unaffected), plus same-declaring-type sibling-delegation follow-through in `MethodBodyInvokes` (visited-set-guarded against cycles) — proven NECESSARY, not merely convenient, since the public `EncryptToString(string, byte[])`'s entire body only forwards to the internal 3-arg overload that actually calls the guard; without following that call graph, disambiguating to the public overload alone would have reported the guard as unwired despite every real caller genuinely reaching it. Verified non-vacuous via a temporary deliberately-wrong callee name, reverted before commit. `SharedKernel.ArchitectureTests.Tests`: 259/259 pass (governance-phase-implementer)
+- [2026-09-09] Phase `SK.00.CoreDiRegistrationConventionLock` added and shipped end to end — 11/11 tasks (D-82, C-143, T-366–T-372, DO-54), mechanizing root P-523 (WO-083, depends on `01.Core` P-518, which was CONFIRMED ALREADY SHIPPED on disk before this phase began — direct grep across every production `.cs` file in `01.Core` found zero plain `Add*` registration call sites remaining). New `CoreArchitectureRules` (the platform's FIRST `01.Core`-domain architecture-rule class) + `NoPlainServiceCollectionRegistrationPredicate`, documented above. Root P-523's own naive reading ("always use TryAdd") was corrected before any code was written by reading `01.Core`'s own P-518 design record: `SharedKernel.Validation.AddNationalIdValidator<TValidator>()` and `SharedKernel.Cryptography.KeyVault.Azure`'s `IValidateOptions<T>` registration both deliberately use `TryAddEnumerable`, not `TryAddSingleton` — the rule therefore asserts absence of the forbidden `Add*` verbs only, never presence of one particular compliant verb, needing no per-service-type exemption list. `SharedKernel.FeatureManagement`'s deliberately-untouched third-party `AddFeatureManagement(...)` call was also verified (not assumed) to need no exemption — different method name, different declaring type, structurally unreachable by the predicate. Non-vacuous verification deliberately never touched `01.Core` (per this session's explicit instruction): three contrived fixtures (one per forbidden verb) plus a standalone read-only Mono.Cecil inspection of the real, compiled `SharedKernel.Cryptography.dll` confirming nine genuine `TryAddSingleton`/`TryAddKeyedSingleton` calls in `AddSharedKernelCryptography`'s real IL. `SharedKernel.ArchitectureTests.Tests`: 266/266 pass (259 baseline + 7 new), 0 build warnings/errors. No new SK diagnostic ID — SK0037 remains next available. ROOT PROPAGATION DELIBERATELY WITHHELD per this session's explicit operating instructions — the coordinator owns the root Phase Backlog `### P-523` status flip (governance-phase-implementer, state-map-phase)

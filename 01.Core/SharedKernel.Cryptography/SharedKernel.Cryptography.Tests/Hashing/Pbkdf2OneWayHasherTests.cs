@@ -219,4 +219,28 @@ public sealed class Pbkdf2OneWayHasherTests
         HashVerificationResult upgradedResult = upgradedHasher.Verify(legacyHash, "correct-password");
         Assert.Equal(HashVerificationResult.SuccessRehashNeeded, upgradedResult);
     }
+
+    // ---- P-524/WO-083: key-material zeroization ----
+
+    /// <summary>
+    /// Proves — with a genuine runtime check against actual bytes, never merely that the code
+    /// compiles or references <see cref="System.Security.Cryptography.CryptographicOperations.ZeroMemory"/> —
+    /// that the <c>subkey</c> buffer <see cref="Pbkdf2OneWayHasher.Hash(string)"/> derives is
+    /// zeroed in place before the public call returns. Uses the internal, test-only
+    /// capture-before-zeroing overload (gated via <c>InternalsVisibleTo</c>) to grab the exact
+    /// same array reference the production code path zeroes — a copy would prove nothing.
+    /// </summary>
+    [Fact]
+    public void Hash_ZeroesTheDerivedSubkeyBuffer_BeforeReturning()
+    {
+        var hasher = new Pbkdf2OneWayHasher(CreateOptionsMonitor(1000));
+        byte[]? capturedSubkey = null;
+
+        string hash = hasher.Hash("correct-password", buffer => capturedSubkey = buffer);
+
+        Assert.NotNull(hash);
+        Assert.NotNull(capturedSubkey);
+        Assert.NotEmpty(capturedSubkey);
+        Assert.All(capturedSubkey, b => Assert.Equal(0, b));
+    }
 }

@@ -88,9 +88,58 @@ public sealed class ValidationServiceCollectionExtensionsTests
         await host.StopAsync();
     }
 
+    // ── T-87: TryAddEnumerable regression coverage (SK.01.P518) ────────────────────────────────
+    // AddNationalIdValidator<TValidator>() must register INationalIdValidator via
+    // TryAddEnumerable, never a plain TryAddSingleton — the latter would collapse the genuinely
+    // multi-implementation collection to a single winner and silently drop every other country's
+    // validator after the first one ever registered.
+
+    [Fact]
+    public async Task AddNationalIdValidator_TwoDistinctCountryValidators_BothResolveInTheRegistry()
+    {
+        using IHost host = Host.CreateDefaultBuilder()
+            .ConfigureServices((_, services) => services
+                .AddSharedKernelValidation()
+                .AddNationalIdValidator<FakeUsNationalIdValidator>()
+                .AddNationalIdValidator<FakeCaNationalIdValidator>())
+            .Build();
+
+        await host.StartAsync();
+
+        INationalIdValidatorRegistry registry = host.Services.GetRequiredService<INationalIdValidatorRegistry>();
+
+        Assert.True(registry.TryGetValidator("US", out INationalIdValidator? usValidator));
+        Assert.IsType<FakeUsNationalIdValidator>(usValidator);
+
+        Assert.True(registry.TryGetValidator("CA", out INationalIdValidator? caValidator));
+        Assert.IsType<FakeCaNationalIdValidator>(caValidator);
+
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public void AddNationalIdValidator_SameValidatorRegisteredTwice_RegistersOnlyOnce()
+    {
+        var services = new ServiceCollection();
+
+        services.AddNationalIdValidator<TckNationalIdValidator>();
+        services.AddNationalIdValidator<TckNationalIdValidator>();
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.Single(provider.GetServices<INationalIdValidator>());
+    }
+
     private sealed class FakeUsNationalIdValidator : INationalIdValidator
     {
         public string CountryCode => "US";
+
+        public bool IsValid(string idNumber) => idNumber.Length == 9;
+    }
+
+    private sealed class FakeCaNationalIdValidator : INationalIdValidator
+    {
+        public string CountryCode => "CA";
 
         public bool IsValid(string idNumber) => idNumber.Length == 9;
     }

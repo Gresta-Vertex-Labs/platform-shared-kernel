@@ -14,6 +14,15 @@ namespace SharedKernel.Validation.Validators;
 /// </remarks>
 public static class IsoCountryValidator
 {
+    /// <summary>
+    /// A last-reviewed marker for <see cref="Codes"/>, NOT a formal ISO 3166-1 registry version
+    /// number — the ISO 3166 maintenance agency does not publish a single canonical "version" the
+    /// way software does. States when this table was last verified against published ISO 3166-1
+    /// alpha-2 country-code references. Review this table, and update this constant, whenever a
+    /// work order touches <see cref="IsoCountryValidator"/>.
+    /// </summary>
+    public const string RegistryAsOf = "Reviewed WO-067/P-443, 2026-09-02";
+
     // ISO 3166-1 alpha-2 codes. Also consumed internally by BicValidator to validate a BIC's
     // embedded country-code segment.
     internal static readonly HashSet<string> Codes = new(StringComparer.Ordinal)

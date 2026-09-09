@@ -1777,7 +1777,7 @@ F10 — the current Has-then-Mark sequence is a textbook TOCTOU: two concurrent 
 
 ### P-515 — Core: Fix `SmartEnum` Static-Initialization Trap
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1796,7 +1796,7 @@ F11 — a real, if narrow, correctness trap: a derived `SmartEnum` whose first-e
 
 ### P-516 — Core: Thread-Safe, Freezable `InMemoryLocalizationCatalog`
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1815,7 +1815,7 @@ F12 — a singleton with an unsynchronized public mutator is a data race waiting
 
 ### P-517 — Core: Correct `SharedKernel.Primitives`' "Zero Dependencies" Claims
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1834,7 +1834,7 @@ F13 — a shipped NuGet package description is public and external-facing, and i
 
 ### P-518 — Core: Standardize DI Registration Idiom to `TryAdd`/`TryAddEnumerable`; Fix Double-Registration
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1854,7 +1854,7 @@ F14 — `TryAdd*` is the standard library-authoring convention because library c
 
 ### P-519 — Core: Additive Source-Generator-Based Options-Validation Path
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1873,7 +1873,7 @@ F15 — `AddValidatedOptions` is the platform-wide options-validation entry poin
 
 ### P-520 — Core: Correct Stale Shipped Package Metadata and the 01.Core Package Board
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1893,7 +1893,7 @@ F18 — shipped, externally-visible NuGet metadata describing an already-complet
 
 ### P-521 — Core: Versioned, Dated Reference Tables with an Opt-In Fallback Mode
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1933,7 +1933,7 @@ F20 — low risk today because every current call site passes a literal pattern 
 
 ### P-523 — Governance: Mechanically Lock the `TryAdd`/`TryAddEnumerable` DI-Registration Convention
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 00.Governance
 **Depends on:** P-518
@@ -1951,7 +1951,7 @@ Mirrors this platform's established pattern of following a corrected default wit
 ---
 ### P-524 — Core: Zero Internally-Owned Key Material After Use; Decline Broader Secret-Handle Redesign
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1975,7 +1975,7 @@ Nothing in `SharedKernel.Cryptography` today calls `CryptographicOperations.Zero
 
 ### P-525 — Core: LEI, ABA Routing Number, and SEPA Creditor Identifier Validators
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -1995,7 +1995,7 @@ Three new format validators in `SharedKernel.Validation`, following the exact sh
 
 ### P-526 — Core: FIPS 140-3 / Approved-Algorithm Posture Statement (docs-only)
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** None
@@ -3506,3 +3506,6 @@ Same false-premise correction as P-527 (see that phase's "Why"): `SharedKernel.S
 - [2026-09-09] P-527 and P-528 (WO-083) implemented and closed `●` Complete — the TOTP migration set is done and **the solution is green again**. P-527 migrated `16.Testing`s SHARED `FakeTotpReplayGuard` to a genuine lock-free compare-and-set claim (`TryUpdate` against the read value, `TryAdd` for absent, retry on loss — the initial read only selects which primitive to attempt, never decides), with `Barrier`-synchronized pairwise and 50-way concurrency proofs; a trivially-sequential fake would have let downstream TOCTOU tests pass vacuously against a broken implementation. P-528 fixed all THREE affected consumers: `TotpChallengeService.cs:70` now passes `ct: ct` by name (it was positional, binding to P-514s new `digits` slot, CS1503), the test-local duplicate fake migrated, and a full call-site sweep of `12.Security` confirmed no fourth consumer. Verified independently by the coordinator: full 151-project solution build 0 errors, `SharedKernel.Testing.SelfTests` 1269/1269 (self-verifying for the first time since the wave began), `SharedKernel.Security.Totp.Tests` 35/35 plus all four sibling security suites green (implement-phase-testing + implement-phase-security)
 
 - [2026-09-09] WO-083s remaining eleven `01.Core` phases (P-515-P-522, P-524-P-526) design-locked by core-arch-planner; implementation `○` pending. **Genuine regression caught at design time on P-518:** the phases "standardize DI registration to `TryAdd`" instruction would have silently broken `SharedKernel.Validation` — `AddNationalIdValidator<TValidator>()` registers into a COLLECTION that `AddSharedKernelValidation` resolves via `sp.GetServices<INationalIdValidator>()`, so `TryAddSingleton` would have kept only the first and dropped every other country validator; it needs `TryAddEnumerable`. Verified independently by the coordinator against real source. Real call count is 3 already-`TryAdd*` vs ~27 plain across 8 DI methods in 7 packages — not the handful the phase text implied. Also flagged as intentional: converting `SharedKernel.Localization`s two catalog registrations inverts documented "last wins" to "first wins". Other corrections: P-520s named example was itself stale (the `<Description>` already says "Shipped"; the real leftover is a `"v2.0.0:"` per-package version reference, plus a false "zero NuGet dependencies" assertion in `01.Core/CLAUDE.md`s own Implementation Rules, fixed directly); P-524 narrowed to zeroing only the intermediate scratch buffers inside `EncryptToString`/`DecryptToString`, never the `byte[]` returned to the caller, which zeroing would corrupt; P-522 confirmed the regex cache still lives in `SharedKernel.Guards` (P-505 unshipped) and designs an honest approximate-FIFO bound rather than overclaiming LRU. Root `CLAUDE.md`s stale `IPasswordHasher` reference (renamed `IOneWayHasher` in WO-034) reported by the planner and fixed centrally by the coordinator (coordinator)
+
+- [2026-09-09] WO-083 batch implemented (P-515/516/517/519/520/521/524/525/526 then P-518). **Coordinator verification found three full-suite failures the implementer did not report** — it had only run `01.Core`s own packages, not the consumers P-518 affects. Triage: (1) **REAL REGRESSION** — `00.Governance`s `SecureDefaultsAssertionTests.SyncCryptoGate_RealAesGcmEncryptionService_ConstructionTimeGateGenuinelyWired` fails because P-524 added an `internal EncryptToString(string, byte[], Action<byte[]>?)` testing overload, and `SecureDefaultsAssertion.AssertMethodBodyInvokesMethod` requires a UNIQUELY-named method — so the P-492 gate lock now throws "ambiguous" instead of asserting. This is the second governance lock broken by a domain change this session. (2)/(3) `SharedKernel.Messaging.MassTransit.Tests` and `SharedKernel.Testing.SelfTests` each failed once in the full-solution run but pass in isolation (187/187, and the `MtlsTestCertificateBuilderTests.AsRevoked` case clean) — most likely parallel-execution contention, recorded as a hypothesis not a conclusion. Two genuine regressions were caught by the implementer itself and fixed: P-521s optional `allowFallbackForUnknownCountry` parameter broke method-group conversion in the FluentValidation adapter, and `AzureKeyVaultCryptographyOptionsValidator`s `IValidateOptions<T>` registration — also a multi-implementation collection — had been converted to `TryAddSingleton`, silently dropping the custom cross-field validator alongside the BCLs own `DataAnnotationValidateOptions<T>` (coordinator)
+- [2026-09-09] P-515-P-521 and P-523-P-526 closed `●` Complete — WO-083 is now 16/17. **P-522 stays `○` Pending: it is blocked on P-505 (WO-082s Guards→Core merge), which has not been dispatched, so WO-083 cannot close end to end until WO-082 does.** Governance fixed the lock P-524 broke — `AssertMethodBodyInvokesMethod` gained optional exact-signature disambiguation AND, more importantly, cycle-guarded sibling-delegation follow-through: the public `EncryptToString(string, byte[])` body only forwards to the internal 3-arg overload that actually calls `ThrowIfNotGenuinelySynchronous`, so a direct-call-only check would have reported the guard unwired even though it is genuinely reached. Fixed in the helper, never in `01.Core`. P-523s rule deliberately asserts the ABSENCE of plain `AddSingleton`/`AddScoped`/`AddTransient` rather than the presence of any specific `TryAdd*` verb — because two registrations must legitimately be `TryAddEnumerable` and one third-party call must stay untouched; a presence-rule would have encoded a wrong convention. Coordinator verification: full 151-project build 0 errors; `SharedKernel.ArchitectureTests.Tests` 266/266; `SharedKernel.Cryptography.Tests` 324/324; `SharedKernel.Testing.SelfTests` 1243/1243 excluding container fixtures. **The only full-suite failures are Testcontainers fixtures (PostgreSQL, Milvus) that are NOT tagged `Category=Integration` and fail on Docker resource contention under full-parallel load — a different set failed on each of three consecutive runs, and every code suite passes in isolation.** Two follow-ups worth queueing: tag those container fixtures so they are excludable, and note `16.Testing` still ships a `MilvusContainerFixture` for `SharedKernel.AI.Milvus`, a provider RETRACTED in WO-048 (coordinator)

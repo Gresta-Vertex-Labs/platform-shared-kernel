@@ -47,12 +47,24 @@ public static class ValidationServiceCollectionExtensions
     /// <typeparam name="TValidator">The <see cref="INationalIdValidator"/> implementation to register.</typeparam>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same <paramref name="services"/> for further chaining.</returns>
+    /// <remarks>
+    /// <see cref="INationalIdValidator"/> is a genuine, intentional multi-implementation
+    /// collection — <see cref="INationalIdValidatorRegistry"/> resolves every registered instance
+    /// via <c>IServiceProvider.GetServices&lt;INationalIdValidator&gt;()</c>. This method therefore
+    /// registers <typeparamref name="TValidator"/> via
+    /// <c>TryAddEnumerable(ServiceDescriptor.Singleton&lt;INationalIdValidator, TValidator&gt;())</c>
+    /// — never a plain <c>TryAddSingleton</c>, which would collapse to a single winner and silently
+    /// drop every other country's validator. <c>TryAddEnumerable</c> still prevents the identical
+    /// <c>(INationalIdValidator, TValidator)</c> pair from being registered twice (e.g. calling this
+    /// method twice for the same <typeparamref name="TValidator"/>), while preserving the
+    /// multi-country collection semantics for every distinct <typeparamref name="TValidator"/>.
+    /// </remarks>
     public static IServiceCollection AddNationalIdValidator<TValidator>(this IServiceCollection services)
         where TValidator : class, INationalIdValidator
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<INationalIdValidator, TValidator>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<INationalIdValidator, TValidator>());
 
         return services;
     }

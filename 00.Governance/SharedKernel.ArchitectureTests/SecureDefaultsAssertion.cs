@@ -461,7 +461,8 @@ public static class SecureDefaultsAssertion
 
     /// <summary>
     /// Asserts that <paramref name="declaringType"/>'s method named <paramref name="methodName"/>
-    /// — or a compiler-generated lambda closure it declares — invokes
+    /// — or a compiler-generated lambda closure it declares, or a sibling overload/helper on the
+    /// same <paramref name="declaringType"/> that it delegates to — invokes
     /// <paramref name="calleeDeclaringType"/>'s method named <paramref name="calleeMethodName"/>.
     /// </summary>
     /// <param name="declaringType">
@@ -471,7 +472,8 @@ public static class SecureDefaultsAssertion
     /// <param name="methodName">
     /// The name of the method to inspect (e.g. <c>"AddMtlsForwardedHeaderCertificate"</c>). Must
     /// resolve to exactly one method on <paramref name="declaringType"/> — an overloaded method
-    /// name is rejected as ambiguous rather than silently checking only the first match.
+    /// name is rejected as ambiguous rather than silently checking only the first match, UNLESS
+    /// <paramref name="parameterTypes"/> is supplied to disambiguate (see below).
     /// </param>
     /// <param name="calleeDeclaringType">
     /// The type declaring the expected callee (e.g. <c>typeof(ServiceDefaultsLog)</c>).
@@ -479,47 +481,115 @@ public static class SecureDefaultsAssertion
     /// <param name="calleeMethodName">
     /// The expected callee's method name (e.g. <c>"ForwardedHeaderTrustBoundaryUnconfigured"</c>).
     /// </param>
+    /// <param name="parameterTypes">
+    /// Optional. When <paramref name="methodName"/> resolves to more than one method on
+    /// <paramref name="declaringType"/> (a genuine C#-level overload set — e.g. an
+    /// <see langword="internal"/> testing-only overload added alongside a pre-existing
+    /// <see langword="public"/> one), supply the exact, in-order parameter types of the specific
+    /// overload to inspect and the ambiguity is resolved by an exact positional
+    /// parameter-type match instead of being rejected. Left <see langword="null"/> (the default)
+    /// for every pre-existing call site — a <see langword="null"/> value preserves the original
+    /// name-only resolution, including the original ambiguous-name rejection.
+    /// </param>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="methodName"/> resolves to zero or more than one method on
-    /// <paramref name="declaringType"/>, or when neither the method's own body nor any lambda
-    /// closure it declares contains a <c>Call</c>/<c>Callvirt</c> instruction targeting
+    /// Thrown when <paramref name="methodName"/> resolves to zero methods on
+    /// <paramref name="declaringType"/>; resolves to more than one method and
+    /// <paramref name="parameterTypes"/> is <see langword="null"/>; resolves to more than one
+    /// method and none (or more than one) matches <paramref name="parameterTypes"/> exactly; or
+    /// when neither the resolved method's own body, nor any lambda closure it declares, nor any
+    /// sibling method on <paramref name="declaringType"/> it transitively delegates to, contains a
+    /// <c>Call</c>/<c>Callvirt</c> instruction targeting
     /// <paramref name="calleeDeclaringType"/>.<paramref name="calleeMethodName"/>.
     /// </exception>
+    /// <remarks>
+    /// <b>(P-current)</b> Two extensions beyond the original single-name/single-body design, both
+    /// proven necessary rather than added speculatively:
+    /// <list type="bullet">
+    /// <item>
+    /// <b>Signature disambiguation.</b> Resolving purely by name breaks the moment a locked method
+    /// gains a same-named overload for any reason unrelated to the locked call site (the motivating
+    /// case: <c>AesGcmEncryptionService.EncryptToString(string, byte[], Action&lt;byte[]&gt;?)</c>,
+    /// an <c>internal</c>, <c>InternalsVisibleTo</c>-gated testing seam added by P-524/WO-083
+    /// alongside the pre-existing <c>public EncryptToString(string, byte[])</c>). Renaming the
+    /// locked production method to satisfy this helper would be the tail wagging the dog — the
+    /// helper gained a way to disambiguate instead.
+    /// </item>
+    /// <item>
+    /// <b>Sibling-delegation follow-through.</b> A thin overload that only forwards to a sibling
+    /// overload/helper on the SAME <paramref name="declaringType"/> (e.g. the public
+    /// <c>EncryptToString(string, byte[])</c> above, whose entire body is
+    /// <c>=&gt; EncryptToString(plaintext, associatedData, captureIntermediatePlaintextForTesting: null)</c>)
+    /// never contains the eventual callee's <c>Call</c>/<c>Callvirt</c> instruction directly — only
+    /// the sibling it forwards to does. Without following that call graph, locking the assertion to
+    /// the specific public overload (via <paramref name="parameterTypes"/> above) would report the
+    /// guard as unwired even though every real caller of the public entry point genuinely reaches
+    /// it. The follow-through is bounded to calls whose declaring type is the SAME
+    /// <paramref name="declaringType"/> (never crosses into a different type's implementation, so
+    /// it can never be satisfied by an unrelated type happening to also call the guard) and is
+    /// guarded against infinite recursion via a visited-method set (self- or mutually-recursive
+    /// delegation resolves to "not found" rather than looping).
+    /// </item>
+    /// </list>
+    /// </remarks>
     public static void AssertMethodBodyInvokesMethod(
         Type declaringType,
         string methodName,
         Type calleeDeclaringType,
-        string calleeMethodName)
+        string calleeMethodName,
+        Type[]? parameterTypes = null)
     {
         using var assemblyDefinition = AssemblyDefinition.ReadAssembly(declaringType.Assembly.Location);
         var typeDefinition = ResolveTypeDefinition(assemblyDefinition.MainModule, declaringType);
 
-        var matchingMethods = typeDefinition.Methods.Where(m => m.Name == methodName).ToList();
+        var namedMethods = typeDefinition.Methods.Where(m => m.Name == methodName).ToList();
 
-        if (matchingMethods.Count == 0)
+        if (namedMethods.Count == 0)
         {
             throw new InvalidOperationException(
                 "SecureDefaultsAssertion.AssertMethodBodyInvokesMethod found no method named "
                     + $"'{methodName}' on type '{declaringType.FullName}'.");
         }
 
-        if (matchingMethods.Count > 1)
+        MethodDefinition method;
+
+        if (namedMethods.Count == 1)
+        {
+            method = namedMethods[0];
+        }
+        else if (parameterTypes is null)
         {
             throw new InvalidOperationException(
                 "SecureDefaultsAssertion.AssertMethodBodyInvokesMethod found "
-                    + $"{matchingMethods.Count} methods named '{methodName}' on type "
+                    + $"{namedMethods.Count} methods named '{methodName}' on type "
                     + $"'{declaringType.FullName}' — ambiguous; this helper requires a uniquely "
-                    + "named method.");
+                    + "named method, or an explicit parameterTypes argument to disambiguate.");
+        }
+        else
+        {
+            var signatureMatches = namedMethods.Where(m => ParametersMatch(m, parameterTypes)).ToList();
+
+            if (signatureMatches.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "SecureDefaultsAssertion.AssertMethodBodyInvokesMethod found "
+                        + $"{namedMethods.Count} methods named '{methodName}' on type "
+                        + $"'{declaringType.FullName}', of which {signatureMatches.Count} match the "
+                        + $"supplied parameterTypes ({DescribeParameterTypes(parameterTypes)}) — "
+                        + "expected exactly one match.");
+            }
+
+            method = signatureMatches[0];
         }
 
-        var method = matchingMethods[0];
+        var visited = new HashSet<MethodDefinition>();
 
-        if (MethodBodyInvokes(method, calleeDeclaringType, calleeMethodName))
+        if (MethodBodyInvokes(method, calleeDeclaringType, calleeMethodName, visited))
             return;
 
-        // The direct method body contains no matching call — check every compiler-generated
-        // lambda closure declared inside it. A lambda argument passed to a method call (e.g. the
-        // Action<TOptions,TDep> handed to OptionsBuilder<T>.PostConfigure<TDep>) compiles to a
+        // The direct method body (and any sibling method it transitively delegates to — see
+        // MethodBodyInvokes) contains no matching call — check every compiler-generated lambda
+        // closure declared inside declaringType. A lambda argument passed to a method call (e.g.
+        // the Action<TOptions,TDep> handed to OptionsBuilder<T>.PostConfigure<TDep>) compiles to a
         // method on a nested closure type named "<{methodName}>b__{classIndex}_{lambdaIndex}" —
         // hosted on the shared "<>c" cache type when the lambda captures no outer state, or a
         // per-declaration "<>c__DisplayClassN_M" type when it does. Either way, the enclosing
@@ -534,23 +604,75 @@ public static class SecureDefaultsAssertion
                 if (!candidateMethod.Name.StartsWith(lambdaNamePrefix, StringComparison.Ordinal))
                     continue;
 
-                if (MethodBodyInvokes(candidateMethod, calleeDeclaringType, calleeMethodName))
+                if (MethodBodyInvokes(candidateMethod, calleeDeclaringType, calleeMethodName, visited))
                     return;
             }
         }
 
         throw new InvalidOperationException(
             "SecureDefaultsAssertion.AssertMethodBodyInvokesMethod: "
-                + $"'{declaringType.FullName}.{methodName}' (including any lambda closures it "
-                + $"declares) does not call '{calleeDeclaringType.FullName}.{calleeMethodName}'.");
+                + $"'{declaringType.FullName}.{methodName}' (including any lambda closures or "
+                + "same-type sibling delegation it involves) does not call "
+                + $"'{calleeDeclaringType.FullName}.{calleeMethodName}'.");
+    }
+
+    private static bool ParametersMatch(MethodDefinition method, Type[] parameterTypes)
+    {
+        if (method.Parameters.Count != parameterTypes.Length)
+            return false;
+
+        for (var i = 0; i < parameterTypes.Length; i++)
+        {
+            if (method.Parameters[i].ParameterType.FullName != CecilStyleFullName(parameterTypes[i]))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static string DescribeParameterTypes(Type[] parameterTypes) =>
+        $"[{string.Join(", ", parameterTypes.Select(t => t.Name))}]";
+
+    /// <summary>
+    /// Renders <paramref name="type"/> the way Mono.Cecil renders a
+    /// <see cref="TypeReference.FullName"/> — used to match a reflection <see cref="Type"/>
+    /// supplied by a caller against a Mono.Cecil-resolved parameter type. Handles arrays
+    /// (<c>System.Byte[]</c>) and closed generic types (<c>System.Action`1&lt;System.Byte[]&gt;</c>)
+    /// in addition to the plain-type case a bare <see cref="Type.FullName"/> already covers.
+    /// </summary>
+    private static string CecilStyleFullName(Type type)
+    {
+        if (type.IsArray)
+        {
+            var elementType = type.GetElementType()
+                ?? throw new InvalidOperationException(
+                    $"SecureDefaultsAssertion could not resolve the element type of array type "
+                        + $"'{type}'.");
+
+            return $"{CecilStyleFullName(elementType)}[]";
+        }
+
+        if (type.IsGenericType)
+        {
+            var genericTypeDefinition = type.GetGenericTypeDefinition();
+            var openName = genericTypeDefinition.Namespace is null
+                ? genericTypeDefinition.Name
+                : $"{genericTypeDefinition.Namespace}.{genericTypeDefinition.Name}";
+            var argumentNames = string.Join(",", type.GetGenericArguments().Select(CecilStyleFullName));
+
+            return $"{openName}<{argumentNames}>";
+        }
+
+        return type.FullName ?? type.Name;
     }
 
     private static bool MethodBodyInvokes(
         MethodDefinition method,
         Type calleeDeclaringType,
-        string calleeMethodName)
+        string calleeMethodName,
+        HashSet<MethodDefinition> visited)
     {
-        if (!method.HasBody)
+        if (!method.HasBody || !visited.Add(method))
             return false;
 
         foreach (var instruction in method.Body.Instructions)
@@ -561,11 +683,26 @@ public static class SecureDefaultsAssertion
             if (instruction.Operand is not MethodReference calleeReference)
                 continue;
 
-            if (calleeReference.Name != calleeMethodName)
+            if (calleeReference.Name == calleeMethodName
+                && calleeReference.DeclaringType.FullName == calleeDeclaringType.FullName)
+            {
+                return true;
+            }
+
+            // DELEGATING-OVERLOAD FOLLOW-THROUGH (see this method's caller's XML doc remarks): this
+            // call site is not the target callee itself, but if it targets a sibling method on the
+            // SAME declaring type, that sibling may be the one that actually reaches the target —
+            // resolve and recurse into it. Never crosses into a different type's implementation.
+            if (calleeReference.DeclaringType.FullName != method.DeclaringType.FullName)
                 continue;
 
-            if (calleeReference.DeclaringType.FullName == calleeDeclaringType.FullName)
+            var resolvedSibling = calleeReference.Resolve();
+
+            if (resolvedSibling is not null
+                && MethodBodyInvokes(resolvedSibling, calleeDeclaringType, calleeMethodName, visited))
+            {
                 return true;
+            }
         }
 
         return false;

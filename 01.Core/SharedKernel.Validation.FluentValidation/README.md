@@ -14,6 +14,9 @@ A thin FluentValidation rule-builder adapter over [`SharedKernel.Validation`](..
 | `.MustBeValidPhoneNumber()` | `E164PhoneValidator.Validate` |
 | `.MustBeValidVatNumber()` | `VatValidator.Validate` |
 | `.MustBeValidNationalId(countryCodeSelector, registry)` | the registered `INationalIdValidator` for the resolved country |
+| `.MustBeValidLei()` | `LeiValidator.Validate` |
+| `.MustBeValidAbaRoutingNumber()` | `AbaRoutingNumberValidator.Validate` |
+| `.MustBeValidSepaCreditorIdentifier()` | `SepaCreditorIdentifierValidator.Validate` |
 
 Every rule sets `FluentValidation.Results.ValidationFailure.ErrorCode` to the **exact** `ValidationErrorCodes` constant the underlying validator produced — never a single rule-fixed code. `IbanValidator`, for example, can fail with three distinct codes (`InvalidFormat` / `InvalidCheckDigit` / `InvalidLength`); a failure through this adapter carries whichever one actually applies, identical to the standalone `SharedKernel.Validation` call.
 
@@ -33,6 +36,22 @@ public sealed class CreatePaymentCommandValidator : AbstractValidator<CreatePaym
         RuleFor(x => x.CurrencyCode).MustBeValidCurrencyCode();
         RuleFor(x => x.PayerNationalId)
             .MustBeValidNationalId(x => x.PayerCountryCode, nationalIdRegistry);
+    }
+}
+```
+
+## LEI, ABA Routing Number, and SEPA Creditor Identifier
+
+Same `Custom(...)`-based shape as every other rule in this adapter:
+
+```csharp
+public sealed class OnboardCounterpartyCommandValidator : AbstractValidator<OnboardCounterpartyCommand>
+{
+    public OnboardCounterpartyCommandValidator()
+    {
+        RuleFor(x => x.Lei).MustBeValidLei();
+        RuleFor(x => x.AbaRoutingNumber).MustBeValidAbaRoutingNumber();
+        RuleFor(x => x.SepaCreditorIdentifier).MustBeValidSepaCreditorIdentifier();
     }
 }
 ```

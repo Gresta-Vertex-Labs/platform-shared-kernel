@@ -2229,16 +2229,38 @@ public class SecureDefaultsAssertionTests
                      "EncryptionKeyProviderCapabilities.IsGenuinelySynchronous exactly once and " +
                      "cache the result (P-492/WO-081)");
 
+        // Signature disambiguation (parameterTypes) targets the PUBLIC overload of each gated
+        // member explicitly — in particular the public EncryptToString(string, byte[]), never the
+        // internal EncryptToString(string, byte[], Action<byte[]>?) testing seam P-524/WO-083 added
+        // alongside it (which would otherwise make AssertMethodBodyInvokesMethod's plain name
+        // resolution ambiguous). The public EncryptToString(string, byte[])'s own IL only forwards
+        // to that internal overload — it never calls ThrowIfNotGenuinelySynchronous directly — so
+        // this assertion is only genuinely, non-vacuously satisfied because
+        // AssertMethodBodyInvokesMethod also follows same-type sibling delegation transitively; see
+        // its own XML doc remarks.
+        var gatedMemberParameterTypes = new Dictionary<string, Type[]>
+        {
+            ["Encrypt"] = [typeof(byte[]), typeof(byte[])],
+            ["Decrypt"] = [typeof(EncryptedPayload), typeof(byte[])],
+            ["EncryptToString"] = [typeof(string), typeof(byte[])],
+            ["DecryptToString"] = [typeof(string), typeof(byte[])],
+        };
+
         foreach (var gatedMemberName in new[] { "Encrypt", "Decrypt", "EncryptToString", "DecryptToString" })
         {
             var gatedMemberInvokesGuard = () =>
                 SecureDefaultsAssertion.AssertMethodBodyInvokesMethod(
-                    declaringType, gatedMemberName, declaringType, "ThrowIfNotGenuinelySynchronous");
+                    declaringType,
+                    gatedMemberName,
+                    declaringType,
+                    "ThrowIfNotGenuinelySynchronous",
+                    gatedMemberParameterTypes[gatedMemberName]);
 
             gatedMemberInvokesGuard.Should().NotThrow(
-                because: $"AesGcmEncryptionService.{gatedMemberName} must invoke the " +
-                         "ThrowIfNotGenuinelySynchronous guard before bridging onto the registered " +
-                         "IEncryptionKeyProvider (P-492/WO-081)");
+                because: $"AesGcmEncryptionService.{gatedMemberName}(string, byte[]) must invoke the " +
+                         "ThrowIfNotGenuinelySynchronous guard (directly, or via same-type sibling " +
+                         "delegation) before bridging onto the registered IEncryptionKeyProvider " +
+                         "(P-492/WO-081)");
         }
 
         var guardThrowsNotSupported = () =>

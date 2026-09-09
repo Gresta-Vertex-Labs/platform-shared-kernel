@@ -103,6 +103,43 @@ public sealed class LocalizationServiceCollectionExtensionsTests
         Assert.Throws<ArgumentNullException>(() => services!.AddStringLocalizerCatalog<ConsumerResource>());
     }
 
+    // ── T-88: TryAdd first-call-wins behavior inversion (SK.01.P518) ────────────────────────────
+    // Both AddInMemoryLocalizationCatalog and AddStringLocalizerCatalog<TResource> register
+    // ILocalizationCatalog via TryAddSingleton — standardizing this domain onto the TryAdd idiom
+    // deliberately and knowingly inverted the prior "whichever call runs last wins" behavior to
+    // "whichever call runs first wins."
+
+    [Fact]
+    public void AddInMemoryLocalizationCatalog_ThenAddStringLocalizerCatalog_FirstRegisteredCatalogResolves()
+    {
+        var services = new ServiceCollection();
+
+        services.AddInMemoryLocalizationCatalog();
+        services.AddStringLocalizerCatalog<ConsumerResource>();
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
+
+        Assert.IsType<InMemoryLocalizationCatalog>(catalog);
+    }
+
+    [Fact]
+    public void AddStringLocalizerCatalog_ThenAddInMemoryLocalizationCatalog_FirstRegisteredCatalogResolves()
+    {
+        var services = new ServiceCollection();
+        IStringLocalizerFactory factory = Substitute.For<IStringLocalizerFactory>();
+        factory.Create(typeof(ConsumerResource)).Returns(Substitute.For<IStringLocalizer>());
+        services.AddSingleton(factory);
+
+        services.AddStringLocalizerCatalog<ConsumerResource>();
+        services.AddInMemoryLocalizationCatalog();
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        ILocalizationCatalog catalog = provider.GetRequiredService<ILocalizationCatalog>();
+
+        Assert.IsType<StringLocalizerLocalizationCatalog>(catalog);
+    }
+
     // ── Name-collision guard (T-61) ──────────────────────────────────────────────────────────
     // AddSharedKernelLocalization() is reserved for 13.ServiceDefaults's culture-resolution
     // middleware (P-483) and must never be declared by this package. A reflection-based scan over

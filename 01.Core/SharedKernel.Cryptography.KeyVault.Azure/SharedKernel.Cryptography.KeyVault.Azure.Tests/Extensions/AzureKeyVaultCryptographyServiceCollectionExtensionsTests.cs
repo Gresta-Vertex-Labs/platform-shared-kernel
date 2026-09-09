@@ -40,6 +40,36 @@ public sealed class AzureKeyVaultCryptographyServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task CalledTwice_CrossFieldValidatorStillEnforced()
+    {
+        // SK.01.P518 regression coverage: AzureKeyVaultCryptographyOptionsValidator's own
+        // IValidateOptions<T> registration must use TryAddEnumerable, never a plain
+        // TryAddSingleton — the latter would see the DataAnnotations validator already
+        // registered against the identical service type (by the preceding AddValidatedOptions
+        // call) and silently never register this validator's cross-field checks. Calling this
+        // method twice must not disable that behavior either.
+        var invalidConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SharedKernel:Cryptography:KeyVault:Azure:VaultUri"] = "https://my-vault.vault.azure.net/",
+                ["SharedKernel:Cryptography:KeyVault:Azure:CurrentKeyId"] = "primary",
+                // KeyNames deliberately left empty — only the custom cross-field validator
+                // rejects this; Data Annotations alone would let it through.
+            })
+            .Build();
+
+        using IHost host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSharedKernelAzureKeyVaultCryptography(invalidConfig);
+                services.AddSharedKernelAzureKeyVaultCryptography(invalidConfig);
+            })
+            .Build();
+
+        await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+    }
+
+    [Fact]
     public void ValidConfiguration_RegistersSameSingletonInstance_ForBothServiceTypes()
     {
         var services = new ServiceCollection();

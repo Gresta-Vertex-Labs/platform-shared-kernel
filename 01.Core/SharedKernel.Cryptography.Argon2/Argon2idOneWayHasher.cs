@@ -62,7 +62,27 @@ public sealed class Argon2idOneWayHasher : IOneWayHasher
     }
 
     /// <inheritdoc />
-    public string Hash(string secret)
+    /// <remarks>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): the <c>salt</c> and <c>subkey</c> buffers are
+    /// zeroed via <see cref="CryptographicOperations.ZeroMemory"/> immediately after
+    /// <see cref="Encode"/> has copied their contents into the returned string; the intermediate
+    /// UTF-8 <c>secretBytes</c> buffer computed inside <see cref="ComputeSubkey"/> is zeroed there
+    /// once Argon2id has finished using it — this package fully owns all three buffers' lifetime
+    /// and never hands any of them back to the caller.
+    /// </b>
+    /// </remarks>
+    public string Hash(string secret) => Hash(secret, captureSubkeyForTesting: null);
+
+    /// <summary>
+    /// Test-only seam (P-524/WO-083), gated via <c>InternalsVisibleTo</c> to this package's own
+    /// <c>.Tests</c> project: identical to <see cref="Hash(string)"/>, except a caller-supplied
+    /// callback is invoked with the freshly-derived <c>subkey</c> buffer BEFORE it is zeroed,
+    /// letting a test capture the exact same array reference and assert it is genuinely all-zero
+    /// bytes once this call returns. Never invoked by any production code path — the public
+    /// <see cref="Hash(string)"/> overload always passes <see langword="null"/>.
+    /// </summary>
+    internal string Hash(string secret, Action<byte[]>? captureSubkeyForTesting)
     {
         ArgumentNullException.ThrowIfNull(secret);
 
@@ -70,11 +90,29 @@ public sealed class Argon2idOneWayHasher : IOneWayHasher
         byte[] salt = _random.NextBytes(SaltSize);
         byte[] subkey = ComputeSubkey(
             secret, salt, current.MemorySizeKb, current.Iterations, current.DegreeOfParallelism, SubkeySize);
+        captureSubkeyForTesting?.Invoke(subkey);
 
-        return Encode(current.MemorySizeKb, current.Iterations, current.DegreeOfParallelism, salt, subkey);
+        try
+        {
+            return Encode(current.MemorySizeKb, current.Iterations, current.DegreeOfParallelism, salt, subkey);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(salt);
+            CryptographicOperations.ZeroMemory(subkey);
+        }
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): <c>salt</c>, <c>expectedSubkey</c> (decoded from
+    /// <paramref name="hash"/>), and <c>actualSubkey</c> (freshly derived from
+    /// <paramref name="secret"/>) are all zeroed via <see cref="CryptographicOperations.ZeroMemory"/>
+    /// once the <see cref="CryptographicOperations.FixedTimeEquals(System.ReadOnlySpan{byte}, System.ReadOnlySpan{byte})"/>
+    /// comparison has run — every exit path below, not just the successful one.
+    /// </b>
+    /// </remarks>
     public HashVerificationResult Verify(string hash, string secret)
     {
         ArgumentNullException.ThrowIfNull(hash);
@@ -85,49 +123,74 @@ public sealed class Argon2idOneWayHasher : IOneWayHasher
             return HashVerificationResult.Failed;
         }
 
-        byte[] actualSubkey;
+        byte[]? actualSubkey = null;
         try
         {
-            actualSubkey = ComputeSubkey(secret, salt, memoryKb, iterations, parallelism, expectedSubkey.Length);
+            try
+            {
+                actualSubkey = ComputeSubkey(secret, salt, memoryKb, iterations, parallelism, expectedSubkey.Length);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or ArgumentException)
+            {
+                // The PHC string parsed structurally, but the embedded cost parameters are not a
+                // computable Argon2id configuration (Konscious.Security.Cryptography.Argon2id's own
+                // ValidateParameters rejects, e.g., a memory size under its 4 KiB floor via
+                // InvalidOperationException, or an unreasonable output length via
+                // NotSupportedException). Treat exactly like any other malformed hash: report
+                // failure, never let the exception escape this method.
+                return HashVerificationResult.Failed;
+            }
+
+            bool matches = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
+            if (!matches)
+            {
+                return HashVerificationResult.Failed;
+            }
+
+            Argon2CryptographyOptions currentOptions = _options.CurrentValue;
+            bool matchesCurrentParams =
+                memoryKb == currentOptions.MemorySizeKb &&
+                iterations == currentOptions.Iterations &&
+                parallelism == currentOptions.DegreeOfParallelism;
+
+            return matchesCurrentParams ? HashVerificationResult.Success : HashVerificationResult.SuccessRehashNeeded;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or ArgumentException)
+        finally
         {
-            // The PHC string parsed structurally, but the embedded cost parameters are not a
-            // computable Argon2id configuration (Konscious.Security.Cryptography.Argon2id's own
-            // ValidateParameters rejects, e.g., a memory size under its 4 KiB floor via
-            // InvalidOperationException, or an unreasonable output length via
-            // NotSupportedException). Treat exactly like any other malformed hash: report
-            // failure, never let the exception escape this method.
-            return HashVerificationResult.Failed;
+            CryptographicOperations.ZeroMemory(salt);
+            CryptographicOperations.ZeroMemory(expectedSubkey);
+            if (actualSubkey is not null)
+            {
+                CryptographicOperations.ZeroMemory(actualSubkey);
+            }
         }
-
-        bool matches = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
-        if (!matches)
-        {
-            return HashVerificationResult.Failed;
-        }
-
-        Argon2CryptographyOptions currentOptions = _options.CurrentValue;
-        bool matchesCurrentParams =
-            memoryKb == currentOptions.MemorySizeKb &&
-            iterations == currentOptions.Iterations &&
-            parallelism == currentOptions.DegreeOfParallelism;
-
-        return matchesCurrentParams ? HashVerificationResult.Success : HashVerificationResult.SuccessRehashNeeded;
     }
 
+    /// <summary>
+    /// Computes the Argon2id subkey. The intermediate UTF-8 <c>secretBytes</c> buffer is zeroed
+    /// via <see cref="CryptographicOperations.ZeroMemory"/> once Argon2id has finished reading it
+    /// (P-524/WO-083) — this method fully owns that buffer's lifetime and never hands it back to
+    /// either caller (<see cref="Hash(string, Action{byte[]}?)"/> or <see cref="Verify"/>).
+    /// </summary>
     private static byte[] ComputeSubkey(string secret, byte[] salt, int memoryKb, int iterations, int parallelism, int subkeyLength)
     {
         byte[] secretBytes = Encoding.UTF8.GetBytes(secret);
-        using var argon2Id = new Argon2id(secretBytes)
+        try
         {
-            Salt = salt,
-            DegreeOfParallelism = parallelism,
-            MemorySize = memoryKb,
-            Iterations = iterations,
-        };
+            using var argon2Id = new Argon2id(secretBytes)
+            {
+                Salt = salt,
+                DegreeOfParallelism = parallelism,
+                MemorySize = memoryKb,
+                Iterations = iterations,
+            };
 
-        return argon2Id.GetBytes(subkeyLength);
+            return argon2Id.GetBytes(subkeyLength);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(secretBytes);
+        }
     }
 
     private static string Encode(int memoryKb, int iterations, int parallelism, byte[] salt, byte[] subkey) =>

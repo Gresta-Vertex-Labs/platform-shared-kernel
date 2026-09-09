@@ -155,4 +155,49 @@ public sealed class GuardValidationExtensionsTests
         Assert.NotNull(error);
         Assert.Equal(ValidationErrorCodes.NationalId.InvalidChecksum, error!.Code);
     }
+
+    [Fact]
+    public void InvalidLei_PassesForValidLei()
+    {
+        Assert.Null(Guard.Against.InvalidLei("506700GE1G29325QX363"));
+    }
+
+    [Fact]
+    public void InvalidLei_ReturnsMatchingErrorCode_ForInvalidLei()
+    {
+        var error = Guard.Against.InvalidLei("not-an-lei");
+
+        Assert.NotNull(error);
+        Assert.Equal(ValidationErrorCodes.Lei.InvalidFormat, error!.Code);
+    }
+
+    [Fact]
+    public void InvalidAbaRoutingNumber_PassesForValidRoutingNumber()
+    {
+        Assert.Null(Guard.Against.InvalidAbaRoutingNumber("111000025"));
+    }
+
+    [Fact]
+    public void InvalidAbaRoutingNumber_ReturnsMatchingErrorCode_ForInvalidRoutingNumber()
+    {
+        var error = Guard.Against.InvalidAbaRoutingNumber("111000024");
+
+        Assert.NotNull(error);
+        Assert.Equal(ValidationErrorCodes.AbaRoutingNumber.FailedChecksum, error!.Code);
+    }
+
+    [Fact]
+    public void InvalidSepaCreditorIdentifier_PassesForValidCreditorIdentifier()
+    {
+        Assert.Null(Guard.Against.InvalidSepaCreditorIdentifier("DE98ZZZ09999999999"));
+    }
+
+    [Fact]
+    public void InvalidSepaCreditorIdentifier_ReturnsMatchingErrorCode_ForInvalidCreditorIdentifier()
+    {
+        var error = Guard.Against.InvalidSepaCreditorIdentifier("DE99ZZZ09999999999");
+
+        Assert.NotNull(error);
+        Assert.Equal(ValidationErrorCodes.SepaCreditorIdentifier.InvalidCheckDigit, error!.Code);
+    }
 }

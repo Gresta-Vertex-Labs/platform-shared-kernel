@@ -13,6 +13,9 @@ Culture-independent financial and identity format validators for the Platform.Sh
 | `IsoCountryValidator` | ISO 3166-1 alpha-2 country codes |
 | `E164PhoneValidator` | E.164 phone number format |
 | `VatValidator` | **Baseline, non-exhaustive** cross-jurisdiction VAT/tax-identifier format |
+| `LeiValidator` | ISO 17442 Legal Entity Identifier — ISO/IEC 7064 MOD 97-10 check digits |
+| `AbaRoutingNumberValidator` | US ABA bank routing number — (3, 7, 1)-weighted checksum |
+| `SepaCreditorIdentifierValidator` | SEPA Creditor Identifier ("Gläubiger-ID") — ISO/IEC 7064 MOD 97-10 check digits |
 
 Plus a pluggable, per-country `INationalIdValidatorRegistry` — `TckNationalIdValidator` (Turkey's TCKN checksum) ships as the built-in default at country code `"TR"`.
 
@@ -42,6 +45,51 @@ if (error is not null)
 {
     return Result<Account>.Failure(error);
 }
+```
+
+## Table Refresh Cadence
+
+`IbanValidator`'s per-country length table and the `IsoCurrencyValidator`/`IsoCountryValidator`
+lookups are each fixed, compile-time tables — not a runtime call to any external registry. None
+of ISO 13616, ISO 4217, or ISO 3166 publishes a single canonical "version number" the way software
+does, so each validator instead exposes a `RegistryAsOf` constant stating when its table was last
+verified against published registry references (e.g. `IbanValidator.RegistryAsOf`). These tables
+are reviewed — and `RegistryAsOf` updated — alongside any work order that touches this package;
+last reviewed WO-083/P-521 (2026-09-02).
+
+`IbanValidator.Validate`/`.IsValid` also accept an opt-in `allowFallbackForUnknownCountry`
+parameter (default `false`, preserving the hard-reject-on-unrecognized-country behavior above
+unchanged). When explicitly set to `true`, a country prefix absent from the table skips the
+country-specific length check and instead validates the value against ISO 13616's general shape
+(bounded overall length, alphanumeric BBAN) plus the mod-97 check-digit algorithm alone — trading
+away country-specific length/structure checking, but never checksum correctness:
+
+```csharp
+// Default: hard-rejects unrecognized country prefixes exactly as before.
+Result strict = IbanValidator.Validate(value);
+
+// Opt-in: accepts a mod-97-valid IBAN even under a country the table does not yet know about.
+Result lenient = IbanValidator.Validate(value, allowFallbackForUnknownCountry: true);
+```
+
+## LEI, ABA Routing Number, and SEPA Creditor Identifier
+
+Same dual-mode shape as every other validator in this package:
+
+```csharp
+// LEI (ISO 17442) — a 20-character alphanumeric identifier
+Result lei = LeiValidator.Validate("506700GE1G29325QX363");
+
+// US ABA bank routing number — 9 digits, (3, 7, 1)-weighted checksum
+Result routing = AbaRoutingNumberValidator.Validate("111000025");
+
+// SEPA Creditor Identifier ("Gläubiger-ID") — country + check digits + business code + national ID
+Result creditorId = SepaCreditorIdentifierValidator.Validate("DE98ZZZ09999999999");
+
+// Guard.Against.* extensions
+Error? leiError = Guard.Against.InvalidLei(request.CounterpartyLei);
+Error? routingError = Guard.Against.InvalidAbaRoutingNumber(request.RoutingNumber);
+Error? creditorIdError = Guard.Against.InvalidSepaCreditorIdentifier(request.CreditorId);
 ```
 
 ## National ID Registry

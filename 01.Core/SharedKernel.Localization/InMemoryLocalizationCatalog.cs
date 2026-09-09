@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Threading;
 
 namespace SharedKernel.Localization;
 
@@ -30,10 +31,57 @@ namespace SharedKernel.Localization;
 /// <see cref="CultureInfo.Name"/>, which .NET already normalizes to a canonical casing
 /// (e.g. <c>"tr-TR"</c>) regardless of how the <see cref="CultureInfo"/> was constructed.
 /// </para>
+/// <para>
+/// <b>SEED-ONCE-THEN-IMMUTABLE LIFECYCLE:</b> the backing dictionary is a plain, unsynchronized
+/// <see cref="Dictionary{TKey,TValue}"/> — cheap on the read-hot <see cref="TryGetString"/> path,
+/// but only safe once no further mutation can race a concurrent reader. Call <see cref="Seal"/>
+/// once every <see cref="AddTranslation"/> call has been made; every subsequent
+/// <see cref="AddTranslation"/> call then throws <see cref="InvalidOperationException"/> instead
+/// of silently racing readers, and every <see cref="TryGetString"/> call after that point is
+/// safe to call concurrently from any number of threads with zero lock overhead, because the
+/// dictionary is never touched again. <see cref="AddInMemoryLocalizationCatalog"/> — the one
+/// shipped construction path for this type — already calls <see cref="Seal"/> automatically
+/// immediately after its seeding callback returns, so a consumer using that DI extension needs to
+/// take no action at all to get this guarantee. A consumer who constructs this type directly and
+/// genuinely wants a runtime-mutable catalog simply never calls <see cref="Seal"/> — but is then,
+/// by design, responsible for their own concurrency discipline around <see cref="AddTranslation"/>;
+/// the sanctioned answer for a fully dynamic, runtime-mutable catalog is to implement
+/// <see cref="ILocalizationCatalog"/> directly rather than lean on this type's deliberately
+/// seed-once shape. This lifecycle decision does not affect
+/// <see cref="StringLocalizerLocalizationCatalog"/> — that type has no mutator of its own to
+/// protect; it is a read-only wrapper over <c>IStringLocalizerFactory</c> from construction.
+/// </para>
 /// </remarks>
 public sealed class InMemoryLocalizationCatalog : ILocalizationCatalog
 {
     private readonly Dictionary<(string Code, string CultureName), string> _translations = [];
+
+    // Interlocked-backed rather than merely `volatile` so Seal() reads back a guaranteed
+    // consistent post-write value even if called concurrently — Seal() itself is idempotent by
+    // design, so a torn/racy write here would only ever produce "still sealed", never "unsealed".
+    private int _sealed;
+
+    /// <summary>
+    /// Whether <see cref="Seal"/> has been called on this catalog. Once <see langword="true"/>,
+    /// every <see cref="AddTranslation"/> call throws <see cref="InvalidOperationException"/> and
+    /// every <see cref="TryGetString"/> call is safe to call concurrently from any number of
+    /// threads.
+    /// </summary>
+    public bool IsSealed => Volatile.Read(ref _sealed) != 0;
+
+    /// <summary>
+    /// Freezes this catalog: every subsequent <see cref="AddTranslation"/> call throws
+    /// <see cref="InvalidOperationException"/>, and every subsequent <see cref="TryGetString"/>
+    /// call becomes safe to call concurrently from any number of threads with zero lock overhead,
+    /// because the backing dictionary is never mutated again.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent — calling <see cref="Seal"/> more than once (including concurrently from
+    /// multiple threads) is a harmless no-op after the first call and never throws.
+    /// <see cref="AddInMemoryLocalizationCatalog"/> already calls this automatically once its
+    /// seeding callback returns, so most consumers never need to call it directly.
+    /// </remarks>
+    public void Seal() => Interlocked.Exchange(ref _sealed, 1);
 
     /// <summary>
     /// Registers (or overwrites) the translation for <paramref name="code"/> in
@@ -49,11 +97,23 @@ public sealed class InMemoryLocalizationCatalog : ILocalizationCatalog
     /// <exception cref="ArgumentException"><paramref name="code"/> or <paramref name="value"/> is
     /// null, empty, or whitespace-only.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="culture"/> is null.</exception>
+    /// <exception cref="InvalidOperationException"><see cref="Seal"/> has already been called on
+    /// this catalog — see the seed-once-then-immutable lifecycle documented on this type.</exception>
     public InMemoryLocalizationCatalog AddTranslation(string code, CultureInfo culture, string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
         ArgumentNullException.ThrowIfNull(culture);
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
+
+        if (IsSealed)
+        {
+            throw new InvalidOperationException(
+                $"This {nameof(InMemoryLocalizationCatalog)} has been sealed and can no longer be "
+                    + $"mutated. {nameof(Seal)}() is called automatically by "
+                    + $"{nameof(LocalizationServiceCollectionExtensions.AddInMemoryLocalizationCatalog)}"
+                    + " once its seeding callback returns; a fully dynamic, runtime-mutable catalog "
+                    + $"should implement {nameof(ILocalizationCatalog)} directly instead.");
+        }
 
         _translations[(code, culture.Name)] = value;
         return this;

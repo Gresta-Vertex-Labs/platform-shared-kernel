@@ -63,15 +63,42 @@ public sealed class Pbkdf2OneWayHasher : IOneWayHasher
     }
 
     /// <inheritdoc />
-    public string Hash(string secret)
+    /// <remarks>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): <paramref name="secret"/>'s derived <c>salt</c>
+    /// and <c>subkey</c> buffers are zeroed via <see cref="CryptographicOperations.ZeroMemory"/>
+    /// immediately after <see cref="Encode"/> has copied their contents into the returned string —
+    /// this package fully owns both buffers' lifetime and never hands them back to the caller.
+    /// </b>
+    /// </remarks>
+    public string Hash(string secret) => Hash(secret, captureSubkeyForTesting: null);
+
+    /// <summary>
+    /// Test-only seam (P-524/WO-083), gated via <c>InternalsVisibleTo</c> to this package's own
+    /// <c>.Tests</c> project: identical to <see cref="Hash(string)"/>, except a caller-supplied
+    /// callback is invoked with the freshly-derived <c>subkey</c> buffer BEFORE it is zeroed,
+    /// letting a test capture the exact same array reference and assert it is genuinely all-zero
+    /// bytes once this call returns. Never invoked by any production code path — the public
+    /// <see cref="Hash(string)"/> overload always passes <see langword="null"/>.
+    /// </summary>
+    internal string Hash(string secret, Action<byte[]>? captureSubkeyForTesting)
     {
         ArgumentNullException.ThrowIfNull(secret);
 
         int iterations = _options.CurrentValue.Pbkdf2Iterations;
         byte[] salt = RandomNumberGenerator.GetBytes(SaltSize);
         byte[] subkey = Rfc2898DeriveBytes.Pbkdf2(secret, salt, iterations, Algorithm, SubkeySize);
+        captureSubkeyForTesting?.Invoke(subkey);
 
-        return Encode(iterations, salt, subkey);
+        try
+        {
+            return Encode(iterations, salt, subkey);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(salt);
+            CryptographicOperations.ZeroMemory(subkey);
+        }
     }
 
     /// <inheritdoc />
@@ -85,6 +112,13 @@ public sealed class Pbkdf2OneWayHasher : IOneWayHasher
     /// ATTACKER-INFLUENCEABLE CPU/MEMORY-EXHAUSTION OR CRASH VECTORS SINCE <paramref name="hash"/>
     /// ULTIMATELY ORIGINATES FROM STORED DATA, NOT FROM THIS PROCESS'S OWN CONFIGURATION.
     /// </b>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): <c>salt</c>, <c>expectedSubkey</c> (decoded from
+    /// <paramref name="hash"/>), and <c>actualSubkey</c> (freshly derived from
+    /// <paramref name="secret"/>) are all zeroed via <see cref="CryptographicOperations.ZeroMemory"/>
+    /// once the <see cref="CryptographicOperations.FixedTimeEquals(System.ReadOnlySpan{byte}, System.ReadOnlySpan{byte})"/>
+    /// comparison has run — every exit path below, not just the successful one.
+    /// </b>
     /// </remarks>
     public HashVerificationResult Verify(string hash, string secret)
     {
@@ -96,23 +130,36 @@ public sealed class Pbkdf2OneWayHasher : IOneWayHasher
             return HashVerificationResult.Failed;
         }
 
-        if (storedIterations < 1 || storedIterations > MaxVerifiableIterations || expectedSubkey.Length != SubkeySize)
+        byte[]? actualSubkey = null;
+        try
         {
-            return HashVerificationResult.Failed;
+            if (storedIterations < 1 || storedIterations > MaxVerifiableIterations || expectedSubkey.Length != SubkeySize)
+            {
+                return HashVerificationResult.Failed;
+            }
+
+            actualSubkey = Rfc2898DeriveBytes.Pbkdf2(secret, salt, storedIterations, Algorithm, expectedSubkey.Length);
+
+            bool matches = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
+            if (!matches)
+            {
+                return HashVerificationResult.Failed;
+            }
+
+            int currentIterations = _options.CurrentValue.Pbkdf2Iterations;
+            return storedIterations == currentIterations
+                ? HashVerificationResult.Success
+                : HashVerificationResult.SuccessRehashNeeded;
         }
-
-        byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(secret, salt, storedIterations, Algorithm, expectedSubkey.Length);
-
-        bool matches = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
-        if (!matches)
+        finally
         {
-            return HashVerificationResult.Failed;
+            CryptographicOperations.ZeroMemory(salt);
+            CryptographicOperations.ZeroMemory(expectedSubkey);
+            if (actualSubkey is not null)
+            {
+                CryptographicOperations.ZeroMemory(actualSubkey);
+            }
         }
-
-        int currentIterations = _options.CurrentValue.Pbkdf2Iterations;
-        return storedIterations == currentIterations
-            ? HashVerificationResult.Success
-            : HashVerificationResult.SuccessRehashNeeded;
     }
 
     private static string Encode(int iterations, byte[] salt, byte[] subkey)

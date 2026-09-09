@@ -121,27 +121,86 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
     }
 
     /// <inheritdoc />
-    public string EncryptToString(string plaintext, byte[] associatedData)
+    /// <remarks>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): the intermediate UTF-8 plaintext <c>byte[]</c>
+    /// produced from <paramref name="plaintext"/> is zeroed via
+    /// <see cref="CryptographicOperations.ZeroMemory"/> once it has been encrypted — this package
+    /// fully owns that buffer's lifetime and never hands it back to the caller (unlike the
+    /// primary <see cref="Encrypt(byte[], byte[])"/> overload's <c>byte[]</c>-based plaintext
+    /// parameter, which is caller-owned and never zeroed by this class).
+    /// </b>
+    /// </remarks>
+    public string EncryptToString(string plaintext, byte[] associatedData) =>
+        EncryptToString(plaintext, associatedData, captureIntermediatePlaintextForTesting: null);
+
+    /// <summary>
+    /// Test-only seam (P-524/WO-083), gated via <c>InternalsVisibleTo</c> to this package's own
+    /// <c>.Tests</c> project: identical to <see cref="EncryptToString(string, byte[])"/>, except a
+    /// caller-supplied callback is invoked with the intermediate UTF-8 plaintext buffer BEFORE it
+    /// is zeroed, letting a test capture the exact same array reference and assert it is
+    /// genuinely all-zero bytes once this call returns. Never invoked by any production code
+    /// path — the public <see cref="EncryptToString(string, byte[])"/> overload always passes
+    /// <see langword="null"/>.
+    /// </summary>
+    internal string EncryptToString(string plaintext, byte[] associatedData, Action<byte[]>? captureIntermediatePlaintextForTesting)
     {
         ThrowIfNotGenuinelySynchronous(nameof(EncryptToStringAsync));
         ArgumentNullException.ThrowIfNull(plaintext);
         ArgumentNullException.ThrowIfNull(associatedData);
 
-        EncryptedPayload payload = Encrypt(Encoding.UTF8.GetBytes(plaintext), associatedData);
-        return Pack(payload);
+        byte[] plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+        captureIntermediatePlaintextForTesting?.Invoke(plaintextBytes);
+
+        try
+        {
+            EncryptedPayload payload = Encrypt(plaintextBytes, associatedData);
+            return Pack(payload);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintextBytes);
+        }
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): the intermediate UTF-8 plaintext <c>byte[]</c>
+    /// produced from <paramref name="plaintext"/> is zeroed via
+    /// <see cref="CryptographicOperations.ZeroMemory"/> once it has been encrypted — this package
+    /// fully owns that buffer's lifetime and never hands it back to the caller.
+    /// </b>
+    /// </remarks>
     public async ValueTask<string> EncryptToStringAsync(string plaintext, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
         ArgumentNullException.ThrowIfNull(associatedData);
 
-        EncryptedPayload payload = await EncryptAsync(Encoding.UTF8.GetBytes(plaintext), associatedData, ct).ConfigureAwait(false);
-        return Pack(payload);
+        byte[] plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+        try
+        {
+            EncryptedPayload payload = await EncryptAsync(plaintextBytes, associatedData, ct).ConfigureAwait(false);
+            return Pack(payload);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintextBytes);
+        }
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): the decrypted intermediate plaintext
+    /// <c>byte[]</c> (this method's own internal call into <see cref="Decrypt(EncryptedPayload, byte[])"/>)
+    /// is zeroed via <see cref="CryptographicOperations.ZeroMemory"/> once its contents have been
+    /// copied into the returned <see cref="string"/> — this call site never exposes that
+    /// <c>byte[]</c> to its own caller, so zeroing it here is safe and does not affect the
+    /// primary <see cref="Decrypt(EncryptedPayload, byte[])"/> overload's own contract (its
+    /// directly-returned <c>byte[]</c> is never zeroed).
+    /// </b>
+    /// </remarks>
     public Result<string> DecryptToString(string encoded, byte[] associatedData)
     {
         ThrowIfNotGenuinelySynchronous(nameof(DecryptToStringAsync));
@@ -156,12 +215,31 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
         }
 
         Result<byte[]> result = Decrypt(payload, associatedData);
-        return result.IsSuccess
-            ? Encoding.UTF8.GetString(result.Value)
-            : result.Error;
+        if (!result.IsSuccess)
+        {
+            return result.Error;
+        }
+
+        byte[] plaintextBytes = result.Value;
+        try
+        {
+            return Encoding.UTF8.GetString(plaintextBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintextBytes);
+        }
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <b>
+    /// KEY-MATERIAL ZEROIZATION (P-524/WO-083): the decrypted intermediate plaintext
+    /// <c>byte[]</c> is zeroed once its contents have been copied into the returned
+    /// <see cref="string"/> — see <see cref="DecryptToString(string, byte[])"/>'s remarks for the
+    /// full rationale.
+    /// </b>
+    /// </remarks>
     public async ValueTask<Result<string>> DecryptToStringAsync(string encoded, byte[] associatedData, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(encoded);
@@ -175,9 +253,20 @@ public sealed class AesGcmEncryptionService : ISymmetricEncryptionService
         }
 
         Result<byte[]> result = await DecryptAsync(payload, associatedData, ct).ConfigureAwait(false);
-        return result.IsSuccess
-            ? Encoding.UTF8.GetString(result.Value)
-            : result.Error;
+        if (!result.IsSuccess)
+        {
+            return result.Error;
+        }
+
+        byte[] plaintextBytes = result.Value;
+        try
+        {
+            return Encoding.UTF8.GetString(plaintextBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintextBytes);
+        }
     }
 
     /// <summary>

@@ -67,4 +67,17 @@ public sealed class ReadmeSampleCompileTests
         Assert.Null(service.ValidateNationalId("10000000146", "TR"));
         Assert.NotNull(service.ValidateNationalId("10000000146", "ZZ"));
     }
+
+    [Fact]
+    public void ReadmeSample_LeiAbaRoutingNumberAndSepaCreditorIdentifier_ValidateAsDocumented()
+    {
+        Assert.True(LeiValidator.IsValid("506700GE1G29325QX363"));
+        Assert.Null(Guard.Against.InvalidLei("506700GE1G29325QX363"));
+
+        Assert.True(AbaRoutingNumberValidator.IsValid("111000025"));
+        Assert.Null(Guard.Against.InvalidAbaRoutingNumber("111000025"));
+
+        Assert.True(SepaCreditorIdentifierValidator.IsValid("DE98ZZZ09999999999"));
+        Assert.Null(Guard.Against.InvalidSepaCreditorIdentifier("DE98ZZZ09999999999"));
+    }
 }
