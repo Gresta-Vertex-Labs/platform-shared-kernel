@@ -66,6 +66,5 @@
   <ItemGroup>
     <ProjectReference Include="..\..\01.Core\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
     <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" />
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj" />
   </ItemGroup>
 </Project>
