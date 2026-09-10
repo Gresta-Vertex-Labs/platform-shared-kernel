@@ -90,23 +90,20 @@ public sealed class CachedEncryptionKeyProviderTests
         inner.Hold();
 
         const int concurrency = 50;
-        using var allAttached = new CountdownEvent(concurrency);
-        Task<CryptographicKey>[] callers = [.. Enumerable.Range(0, concurrency)
-            .Select(_ => Task.Run(() =>
-            {
-                // cached.GetCurrentKeyAsync() always runs synchronously up to the point where it
-                // has registered itself as a waiter on the shared in-flight slot (or created it)
-                // before it can suspend — so signalling right after the call returns is a
-                // deterministic proof of attachment, unlike a fixed Task.Delay, which is only a
-                // guess about thread-pool scheduling and can under-wait on a contended CI runner.
-                Task<CryptographicKey> task = cached.GetCurrentKeyAsync().AsTask();
-                allAttached.Signal();
-                return task;
-            }))];
 
-        Assert.True(
-            allAttached.Wait(TimeSpan.FromSeconds(10)),
-            "Not every concurrent caller attached to the shared in-flight resolution within the timeout.");
+        // Call directly on this thread — deliberately NOT via Task.Run. GetCurrentKeyAsync runs
+        // synchronously up to its first suspension point (the held inner provider), so it has
+        // already registered itself as a waiter on the shared in-flight slot by the time it
+        // returns its Task. Attachment is therefore complete for all N callers the moment this
+        // loop finishes, with no barrier and no dependence on the thread pool at all.
+        //
+        // Task.Run plus a CountdownEvent barrier was tried and is strictly worse: it queues N
+        // work items while this thread blocks synchronously on the barrier, and on a two-core CI
+        // runner the pool injects threads far too slowly to drain them, so the barrier times out
+        // deterministically rather than merely flaking. The neighbouring cancellation tests in
+        // this file have always used direct calls for exactly this reason.
+        Task<CryptographicKey>[] callers = [.. Enumerable.Range(0, concurrency)
+            .Select(_ => cached.GetCurrentKeyAsync().AsTask())];
 
         inner.Release();
 
@@ -128,27 +125,18 @@ public sealed class CachedEncryptionKeyProviderTests
         inner.Hold();
 
         const int concurrency = 10;
-        using var allAttached = new CountdownEvent(concurrency);
-        Task<CryptographicKey>[] callers = [.. Enumerable.Range(0, concurrency)
-            .Select(_ => Task.Run(() =>
-            {
-                // See the identical barrier in GetCurrentKeyAsync_ConcurrentCallersPastExpiry_
-                // CallInnerProviderExactlyOnce above: this deterministically proves every caller
-                // has attached to the shared slot as a waiter before Release() runs. Without it,
-                // a caller whose Task.Run body is slow to be dispatched under CI contention could
-                // still be queued when the other waiters observe the fault, decrement the
-                // slot's waiter count to zero, and evict it (the documented, correct P-511
-                // behavior for a failed refresh) — so the late caller would start a brand new
-                // resolution against ThrowOnNextCall's already-consumed one-shot exception and
-                // spuriously succeed instead of observing the failure.
-                Task<CryptographicKey> task = cached.GetCurrentKeyAsync().AsTask();
-                allAttached.Signal();
-                return task;
-            }))];
 
-        Assert.True(
-            allAttached.Wait(TimeSpan.FromSeconds(10)),
-            "Not every concurrent caller attached to the shared in-flight resolution within the timeout.");
+        // Direct calls on this thread, deliberately NOT Task.Run — see the identical comment in
+        // GetCurrentKeyAsync_ConcurrentCallersPastExpiry_CallInnerProviderExactlyOnce above.
+        // Every caller has attached to the shared in-flight slot by the time its Task is
+        // returned, so all N are provably attached before Release() runs below. That matters
+        // here specifically: a caller still queued when the others observe the fault, decrement
+        // the slot's waiter count to zero and evict it (the documented, correct P-511 behaviour
+        // for a failed refresh) would start a brand-new resolution against ThrowOnNextCall's
+        // already-consumed one-shot exception, and spuriously succeed instead of observing the
+        // failure. That is the exact CI failure this shape removes.
+        Task<CryptographicKey>[] callers = [.. Enumerable.Range(0, concurrency)
+            .Select(_ => cached.GetCurrentKeyAsync().AsTask())];
 
         inner.Release();
 
