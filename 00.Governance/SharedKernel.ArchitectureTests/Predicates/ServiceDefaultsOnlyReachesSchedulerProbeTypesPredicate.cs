@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <summary>
 /// Custom NetArchTest predicate verifying that a type reaches into
 /// <c>SharedKernel.Scheduling</c> (<c>19.Scheduling</c>) ONLY through the two types the
-/// WO-073/P-466 root <c>CLAUDE.md</c> layering grant permits —
+/// platform's layering grant permits —
 /// <c>SharedKernel.Scheduling.Probes.ISchedulerServiceProbe</c> and
 /// <c>SharedKernel.Scheduling.Probes.SchedulerServiceHealth</c>. Every other
 /// <c>SharedKernel.Scheduling.*</c> type reference — including the internal
@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// <strong>This predicate is purpose-built for exactly ONE named grant and must never be
 /// generalized.</strong> The root <c>CLAUDE.md</c> Hard rules are emphatic that the
-/// <c>13.ServiceDefaults</c>→<c>19.Scheduling</c> grant (WO-073/P-466) is a NEW, independently-
+/// <c>13.ServiceDefaults</c>→<c>19.Scheduling</c> grant is a NEW, independently-
 /// earned grant running parallel to the existing <c>13.ServiceDefaults</c>→<c>17.Workflows</c>
 /// grant — it does not widen that grant and must never be reasoned about by analogy in either
 /// direction. Do not refactor this predicate into a caller-parameterized "any higher-numbered

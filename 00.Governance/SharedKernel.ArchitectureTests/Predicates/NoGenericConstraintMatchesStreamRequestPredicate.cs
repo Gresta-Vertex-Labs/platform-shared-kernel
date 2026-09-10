@@ -12,7 +12,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by
 /// <see cref="Rules.ApplicationPipelineRules.NoExistingBehaviorMatchesStreamRequestConstraint"/>
-/// to mechanically verify the documented 05.Application design decision (P-221) that none of the
+/// to mechanically verify the documented 05.Application design decision that none of the
 /// platform's pipeline behaviors apply to the streaming query vocabulary —
 /// <c>ValidationBehavior</c>'s <c>TRequest : IRequest&lt;TResponse&gt;</c> constraint does not
 /// match <c>IStreamRequest&lt;TResponse&gt;</c> today, and extending any behavior to streaming

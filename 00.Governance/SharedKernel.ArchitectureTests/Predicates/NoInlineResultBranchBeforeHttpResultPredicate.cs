@@ -15,7 +15,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by
 /// <see cref="Rules.PresentationLayeringRules.NoInlineResultBranchBeforeHttpResultOutsideWebApi"/>
-/// to close the WO-026 P-166/167 documented backlog item: inline
+/// to close a documented backlog item: inline
 /// <c>if (result.IsSuccess) ... else ...</c> branching immediately before returning an HTTP
 /// response type duplicates the platform's <c>Result</c>→HTTP mapping logic at every call site
 /// instead of routing through <c>ResultHttpExtensions.ToProblemDetailsResult()</c>.
@@ -38,25 +38,25 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// Detection walks <see cref="TypeDefinition.Methods"/>; for each
 /// <see cref="MethodDefinition"/> with a non-null <see cref="MethodDefinition.Body"/>, evaluates
 /// three independent signals over <see cref="MethodBody.Instructions"/> and
-/// <see cref="MethodDefinition.ReturnType"/> in a single pass:
+/// <c>MethodDefinition.ReturnType</c> in a single pass:
 /// </para>
 /// <list type="number">
 ///   <item><description>
 ///     IsSuccess/IsFailure signal — a <c>Call</c> or <c>Callvirt</c> instruction whose
-///     <see cref="MethodReference.Name"/> is <c>"get_IsSuccess"</c> or <c>"get_IsFailure"</c> and
-///     whose <see cref="MethodReference.DeclaringType"/>.<see cref="MemberReference.Name"/> is
+///     <c>MethodReference.Name</c> is <c>"get_IsSuccess"</c> or <c>"get_IsFailure"</c> and
+///     whose <c>MethodReference.DeclaringType</c>.<see cref="MemberReference.Name"/> is
 ///     <c>"Result"</c> or starts with <c>"Result`1"</c> (covers both <c>Result</c> and
 ///     <c>Result&lt;T&gt;</c> IL representations).
 ///   </description></item>
 ///   <item><description>
-///     HTTP-result-type signal — <see cref="MethodDefinition.ReturnType"/>.<see cref="MemberReference.Name"/>
+///     HTTP-result-type signal — <c>MethodDefinition.ReturnType</c>.<see cref="MemberReference.Name"/>
 ///     is <c>"IResult"</c> or <c>"ActionResult"</c>, or starts with <c>"ActionResult`1"</c> — OR
 ///     any local variable (<see cref="MethodBody.Variables"/>) typed identically, to also catch
 ///     the "build a local, return it later" shape.
 ///   </description></item>
 ///   <item><description>
 ///     Escape-hatch signal — a <c>Call</c> or <c>Callvirt</c> instruction whose
-///     <see cref="MethodReference.Name"/> is <c>"ToProblemDetailsResult"</c> anywhere in the
+///     <c>MethodReference.Name</c> is <c>"ToProblemDetailsResult"</c> anywhere in the
 ///     method body; presence of this signal suppresses the violation regardless of signals 1
 ///     and 2.
 ///   </description></item>

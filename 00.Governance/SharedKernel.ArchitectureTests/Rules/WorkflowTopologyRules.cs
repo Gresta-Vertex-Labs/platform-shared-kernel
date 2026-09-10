@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <summary>
 /// Pre-built NetArchTest predicates that mechanically enforce the <c>17.Workflows</c> package
 /// topology (<c>SharedKernel.Workflows.Temporal</c>) documented in prose by
-/// <c>17.Workflows/CLAUDE.md</c>. Introduced in WO-046 P-290.
+/// <c>17.Workflows/CLAUDE.md</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -89,7 +89,7 @@ public static class WorkflowTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList NoRawClientAccessorConsumptionInRepo(params Assembly[] repoAssemblies) =>
@@ -122,10 +122,10 @@ public static class WorkflowTopologyRules
     /// <c>06.Persistence</c>/<c>08.Storage</c>/<c>09.Search</c>/<c>10.Intelligence</c>
     /// readiness-probe split precedent. The corresponding root <c>CLAUDE.md</c> Hard rule granting
     /// <c>13.ServiceDefaults</c> a narrow <c>ProjectReference</c> back into this package solely to
-    /// resolve that same <c>IWorkflowServiceProbe</c>/<c>WorkflowServiceHealth</c> pair (WO-047/P-291)
+    /// resolve that same <c>IWorkflowServiceProbe</c>/<c>WorkflowServiceHealth</c> pair
     /// is mechanically enforced from the <c>13.ServiceDefaults</c> side by
     /// <see cref="ServiceDefaultsWorkflowLayeringRules.OnlyReachesWorkflowProbeTypes"/>
-    /// (P-490/WO-080) — this class enforces what <c>17.Workflows</c> may not depend on; that one
+    /// — this class enforces what <c>17.Workflows</c> may not depend on; that one
     /// enforces what <c>13.ServiceDefaults</c> may not reach into here.
     /// </para>
     /// </remarks>
@@ -135,7 +135,7 @@ public static class WorkflowTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList NoHealthChecksDependencyInWorkflows(Assembly workflowsAssembly) =>

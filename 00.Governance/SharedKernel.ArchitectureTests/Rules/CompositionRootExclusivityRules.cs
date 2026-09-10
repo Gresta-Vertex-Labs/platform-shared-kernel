@@ -10,7 +10,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// provider packages themselves may reference <c>SharedKernel.Persistence.EfCore</c>,
 /// <c>SharedKernel.Persistence.PostgreSQL</c>, <c>SharedKernel.Persistence.Dapper</c>,
 /// <c>SharedKernel.Messaging.MassTransit</c>, or <c>SharedKernel.Security.Oidc</c>.
-/// Introduced by WO-027 P-173.
+///
 /// </summary>
 /// <remarks>
 /// <para>

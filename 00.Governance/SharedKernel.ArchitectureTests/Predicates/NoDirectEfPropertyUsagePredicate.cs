@@ -13,8 +13,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// <c>EF.Property&lt;TProperty&gt;(object entity, string propertyName)</c> called directly in
 /// ordinary executable code forces client-side evaluation of the surrounding query — the exact
-/// defect class fixed once already at P-105 (<c>EfReadRepository.GetByIdsAsync</c>) and again at
-/// P-316 (<c>TenantedRepository</c>'s two <c>GetByIdForTenantAsync*</c> methods), proving that
+/// defect class already fixed twice in this codebase — once in a read repository's
+/// <c>GetByIdsAsync</c>, once in a tenanted repository's <c>GetByIdForTenantAsync*</c> methods — proving that
 /// documenting the lesson alone does not prevent a second, independent occurrence of the
 /// identical defect from shipping elsewhere in the same package.
 /// </para>
@@ -32,7 +32,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// (via <c>ldtoken</c>/<c>GetMethodFromHandle</c>, or as an argument to an
 /// <c>Expression.Call(MethodInfo, ...)</c> overload) rather than invoking it directly. The
 /// predicate therefore only ever fires on a DIRECT, executable-code invocation of
-/// <c>EF.Property&lt;T&gt;</c> — exactly the client-side-evaluation defect class P-316 fixed —
+/// <c>EF.Property&lt;T&gt;</c> — exactly that client-side-evaluation defect class —
 /// never on the idiomatic, EF-Core-blessed expression-tree usage.
 /// </para>
 /// <para>
@@ -53,7 +53,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </code>
 /// </para>
 /// <para>
-/// <strong>Compliant pattern (P-316-corrected shape):</strong>
+/// <strong>Compliant pattern:</strong>
 /// <code>
 /// var param = Expression.Parameter(typeof(T), "e");
 /// var idProperty = Expression.Property(param, "Id");

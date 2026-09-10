@@ -28,8 +28,8 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <strong>Detection (fingerprint heuristic, not a full retry-loop detector):</strong> for all
 /// other types, walks every method body's <see cref="OpCodes.Call"/> and
 /// <see cref="OpCodes.Callvirt"/> instructions for an operand whose
-/// <see cref="MethodReference.Name"/> is <c>"Delay"</c> AND whose
-/// <see cref="MethodReference.DeclaringType"/> <see cref="MemberReference.FullName"/> is
+/// <c>MethodReference.Name</c> is <c>"Delay"</c> AND whose
+/// <c>MethodReference.DeclaringType</c> <see cref="MemberReference.FullName"/> is
 /// <c>"System.Threading.Tasks.Task"</c>. This single check covers every <c>Task.Delay</c>
 /// overload (the <c>int</c>-millisecond and <c>TimeSpan</c> forms alike), because both the
 /// declaring type and method name must match — avoiding false positives on unrelated

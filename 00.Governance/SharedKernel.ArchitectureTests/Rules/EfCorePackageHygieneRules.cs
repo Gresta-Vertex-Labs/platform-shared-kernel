@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest predicates that close the three regression vectors introduced by
-/// WO-017: no concrete downcast of <c>ISpecificationEvaluator&lt;T&gt;</c>, all
+/// no concrete downcast of <c>ISpecificationEvaluator&lt;T&gt;</c>, all
 /// <c>IUnitOfWork</c> implementors must have exactly one public constructor, and the
 /// application layer must never reference <c>IDbContextTransaction</c> directly.
 /// </summary>
@@ -17,29 +17,29 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// These rules are additive enforcement gates that prevent three specific regression patterns
-/// that were diagnosed and fixed in WO-017. Without build-time enforcement, any future
+/// that were diagnosed and fixed once already. Without build-time enforcement, any future
 /// refactor can silently reintroduce the anti-pattern.
 /// </para>
 /// <list type="bullet">
 ///   <item><description>
 ///     Rule 1 — <see cref="NoSpecificationEvaluatorDowncastInEfCoreAssembly"/>: prevents
 ///     re-introduction of the <c>(SpecificationEvaluator&lt;T&gt;)evaluator</c> downcast
-///     that was eliminated when P-097 added <c>GetProjectedQuery</c> to the interface.
+///     that was eliminated when <c>GetProjectedQuery</c> was added to the interface.
 ///   </description></item>
 ///   <item><description>
 ///     Rule 2 — <see cref="IUnitOfWorkImplementorsMustHaveExactlyOneConstructor"/>: prevents
 ///     re-introduction of a second constructor on <c>EfUnitOfWork</c> that caused DI ambiguity
-///     (P-098 regression).
+///     (a regression this rule has already caught once).
 ///   </description></item>
 ///   <item><description>
 ///     Rule 3 — <see cref="ApplicationLayerMustNotReferenceDbContextTransaction"/>: enforces
-///     that <c>ITransactionalUnitOfWork</c> (P-099) is the sole transaction entry point in the
+///     that <c>ITransactionalUnitOfWork</c> is the sole transaction entry point in the
 ///     application layer; direct <c>IDbContextTransaction</c> coupling is prohibited.
 ///   </description></item>
 ///   <item><description>
-///     Rule 4 — <see cref="NoDirectEfPropertyUsageInEfCoreAssembly"/> (WO-051 P-327): prevents
+///     Rule 4 — <see cref="NoDirectEfPropertyUsageInEfCoreAssembly"/>: prevents
 ///     re-introduction of a direct, client-side-evaluated <c>EF.Property&lt;T&gt;</c> call —
-///     the same defect class fixed at P-105 and again at P-316 (<c>TenantedRepository</c>).
+///     a defect class this codebase has hit more than once.
 ///   </description></item>
 /// </list>
 /// <para>
@@ -63,7 +63,7 @@ public static class EfCorePackageHygieneRules
     /// the generic form and any subclass forms in IL.
     /// </para>
     /// <para>
-    /// P-097 added <c>GetProjectedQuery</c> to <c>ISpecificationEvaluator&lt;T&gt;</c> to
+    /// <c>GetProjectedQuery</c> was added to <c>ISpecificationEvaluator&lt;T&gt;</c> to
     /// eliminate the concrete downcast. Without this rule, a future refactor could silently
     /// re-introduce the <c>(SpecificationEvaluator&lt;T&gt;)evaluator</c> pattern, bypassing
     /// the abstraction and preventing interface substitution.
@@ -98,7 +98,7 @@ public static class EfCorePackageHygieneRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>EfUnitOfWork</c> was reduced to a single constructor in P-098 to resolve DI ambiguity
+    /// <c>EfUnitOfWork</c> was reduced to a single constructor to resolve DI ambiguity
     /// caused by two competing registrations. A second "convenience constructor" would silently
     /// reintroduce the ambiguity, causing runtime DI resolution failures that only surface
     /// under specific DI configuration scenarios.
@@ -151,7 +151,7 @@ public static class EfCorePackageHygieneRules
     /// <remarks>
     /// <para>
     /// This rule must be called with the <c>05.Application</c> assembly.
-    /// <c>ITransactionalUnitOfWork</c> (P-099) is the only permitted transaction entry point
+    /// <c>ITransactionalUnitOfWork</c> is the only permitted transaction entry point
     /// for application handlers. Direct injection of <c>IDbContextTransaction</c> couples
     /// application code to EF Core's specific transaction implementation, making the
     /// transaction abstraction boundary unenforceable.
@@ -210,9 +210,9 @@ public static class EfCorePackageHygieneRules
     /// This rule must be called with the <c>SharedKernel.Persistence.EfCore</c> assembly.
     /// <c>EF.Property&lt;TProperty&gt;(object entity, string propertyName)</c> called directly
     /// in ordinary executable code forces client-side evaluation of the surrounding query — the
-    /// exact defect class fixed once already at P-105 (<c>EfReadRepository.GetByIdsAsync</c>)
-    /// and again at P-316 (<c>TenantedRepository</c>'s two <c>GetByIdForTenantAsync*</c>
-    /// methods).
+    /// exact defect class already fixed twice in this codebase — once in a read repository's
+    /// <c>GetByIdsAsync</c>, once in a tenanted repository's <c>GetByIdForTenantAsync*</c>
+    /// methods.
     /// </para>
     /// <para>
     /// See <see cref="NoDirectEfPropertyUsagePredicate"/> for the full structural
@@ -232,7 +232,7 @@ public static class EfCorePackageHygieneRules
     /// </code>
     /// </para>
     /// <para>
-    /// <strong>Compliant pattern (P-316-corrected shape):</strong>
+    /// <strong>Compliant pattern:</strong>
     /// <code>
     /// var param = Expression.Parameter(typeof(T), "e");
     /// var idProperty = Expression.Property(param, "Id");

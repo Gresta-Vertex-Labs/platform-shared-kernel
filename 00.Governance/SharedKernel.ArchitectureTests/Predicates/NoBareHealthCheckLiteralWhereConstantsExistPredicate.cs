@@ -12,10 +12,10 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <remarks>
 /// <para>
 /// Used by <see cref="Rules.HealthCheckConstantsUsageRules"/> to close the source-discipline gap
-/// found by the P-177 audit of <c>SharedKernel.ServiceDefaults</c>: one well-known-string
+/// found by an audit of the platform's own host composition: one well-known-string
 /// constants class was built correctly, but several sibling files kept hardcoding default
 /// health-check names as bare string literals instead of extending the same discipline. This
-/// rule is additive to <see cref="Rules.HealthCheckTagIntegrityRules"/> (P-173), which enforces
+/// rule is additive to <see cref="Rules.HealthCheckTagIntegrityRules"/>, which enforces
 /// tag mutual-exclusivity semantics — an orthogonal, never-overlapping concern.
 /// </para>
 /// <para>

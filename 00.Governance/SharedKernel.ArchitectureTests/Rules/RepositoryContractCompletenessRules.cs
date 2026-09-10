@@ -7,11 +7,11 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <summary>
 /// Pre-built NetArchTest predicates that enforce completeness of the
 /// <c>IRepository&lt;,&gt;</c> and <c>IReadRepository&lt;,&gt;</c> interface contracts
-/// after the batch-method additions introduced in P-093.
+/// after the batch-method additions
 /// </summary>
 /// <remarks>
 /// <para>
-/// P-093 added two new methods to the repository interfaces:
+/// Two methods were added to the repository interfaces:
 /// </para>
 /// <list type="bullet">
 ///   <item><description>
@@ -49,7 +49,7 @@ public static class RepositoryContractCompletenessRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>ExistsAsync</c> was added to <c>IRepository&lt;TEntity, TId&gt;</c> in P-093 as a
+    /// <c>ExistsAsync</c> was added to <c>IRepository&lt;TEntity, TId&gt;</c> as a
     /// lightweight presence check that avoids loading the full entity into the change tracker.
     /// Any concrete write-side repository that does not declare it will throw
     /// <c>NotImplementedException</c> at runtime if the base class provides only a stub.
@@ -106,7 +106,7 @@ public static class RepositoryContractCompletenessRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>GetByIdsAsync</c> was added to <c>IReadRepository&lt;TEntity, TId&gt;</c> in P-093
+    /// <c>GetByIdsAsync</c> was added to <c>IReadRepository&lt;TEntity, TId&gt;</c>
     /// to support batch lookups without N+1 query patterns. Any concrete read-side repository
     /// that does not declare it will throw <c>NotImplementedException</c> at runtime or return
     /// an empty result if the base class provides a do-nothing stub.

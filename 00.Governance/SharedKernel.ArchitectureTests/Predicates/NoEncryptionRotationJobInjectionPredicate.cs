@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first guard):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Persistence"</c>
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Persistence"</c>
 /// return <see langword="true"/> unconditionally — this is the interface's own package.
 /// </para>
 /// <para>
@@ -30,7 +30,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Detection: iterates <see cref="TypeDefinition.Methods"/> where
 /// <see cref="MethodDefinition.IsConstructor"/> is <see langword="true"/> and checks each
-/// <see cref="ParameterDefinition.ParameterType"/>.<see cref="MemberReference.Name"/>
+/// <c>ParameterDefinition.ParameterType</c>.<see cref="MemberReference.Name"/>
 /// for an exact match against <c>"IEncryptionRotationJob"</c>.
 /// </para>
 /// <para>

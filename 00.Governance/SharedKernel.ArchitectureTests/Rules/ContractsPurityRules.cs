@@ -1,7 +1,7 @@
 using System.Reflection;
 using NetArchTest.Rules;
+using SharedKernel.ArchitectureTests.Helpers;
 using SharedKernel.ArchitectureTests.Predicates;
-using SharedKernel.Contracts.Events;
 
 namespace SharedKernel.ArchitectureTests.Rules;
 
@@ -139,7 +139,7 @@ public static class ContractsPurityRules
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that every non-abstract type in the
-    /// supplied assembly that implements <see cref="IIntegrationEvent"/> is sealed.
+    /// supplied assembly that implements <c>IIntegrationEvent</c> is sealed.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -158,18 +158,35 @@ public static class ContractsPurityRules
     /// </para>
     /// </remarks>
     /// <param name="contractsAssembly">The contracts assembly to evaluate.</param>
+    /// <param name="integrationEventInterface">
+    /// The integration-event marker interface, i.e.
+    /// <c>typeof(SharedKernel.Contracts.Events.IIntegrationEvent)</c>. Supplied by the caller
+    /// rather than hard-bound here so this package declares no dependency on
+    /// <c>SharedKernel.Contracts</c>.
+    /// </param>
     /// <returns>
-    /// A <see cref="ConditionList"/> asserting all non-abstract <c>IIntegrationEvent</c>
+    /// A <see cref="ConditionList"/> asserting all non-abstract integration-event
     /// implementations are sealed.
     /// </returns>
+    /// <exception cref="ArgumentNullException">Either argument is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="integrationEventInterface"/> is not an interface — which would select
+    /// zero types and make the rule pass vacuously.
+    /// </exception>
     public static ConditionList IntegrationEventImplementationsMustBeSealed(
-        Assembly contractsAssembly) =>
-        Types
+        Assembly contractsAssembly,
+        Type integrationEventInterface)
+    {
+        RuleAnchor.NotNull(contractsAssembly, nameof(contractsAssembly));
+        RuleAnchor.Interface(integrationEventInterface, nameof(integrationEventInterface));
+
+        return Types
             .InAssembly(contractsAssembly)
             .That()
-            .ImplementInterface(typeof(IIntegrationEvent))
+            .ImplementInterface(integrationEventInterface)
             .And()
             .AreNotAbstract()
             .Should()
             .BeSealed();
+    }
 }

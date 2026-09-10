@@ -21,7 +21,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <see cref="DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure"/> — both
 /// rules may run in the same test suite. They are not duplicates: the latter covers broad
 /// infrastructure terms; this rule adds Npgsql and the in-repo persistence packages as a
-/// WO-013-scoped gate. Never remove either in favour of the other.
+/// narrower gate. Never remove either in favour of the other.
 /// </para>
 /// <para>
 /// Reference this class with <c>PrivateAssets="all"</c> so it never becomes a transitive
@@ -130,7 +130,7 @@ public static class PersistenceLayerProtectionRules
     /// <see cref="DomainLayerPurityRules.DomainAssembliesNeverReferenceInfrastructure"/> —
     /// both rules may run in the same test suite. The broader rule covers <c>EntityFramework</c>,
     /// <c>MassTransit</c>, <c>Redis</c>, and <c>RabbitMQ</c>; this rule adds Npgsql and the
-    /// in-repo persistence packages as a WO-013-scoped gate. Never remove either in favour of
+    /// in-repo persistence packages as a narrower gate. Never remove either in favour of
     /// the other.
     /// </para>
     /// <para>

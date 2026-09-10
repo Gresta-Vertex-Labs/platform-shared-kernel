@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <summary>
 /// Pre-built NetArchTest predicates that enforce the platform-wide prohibition on
 /// reflection-based generic method invocation (<c>GetMethod</c>/<c>GetMethods</c> +
-/// <c>MakeGenericMethod</c> + <c>Invoke</c>) introduced by WO-024 P-153.
+/// <c>MakeGenericMethod</c> + <c>Invoke</c>)
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,7 +20,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// statement. IL inspection (Mono.Cecil) is the only reliable detection mechanism.
 /// </para>
 /// <para>
-/// <strong>Motivating incident (P-147 / WO-024):</strong>
+/// <strong>Motivating incident:</strong>
 /// <c>SharedKernel.Persistence.EfCore.EncryptionRotationService.LoadBatchAsync</c> shipped
 /// a <c>GetMethod("LoadBatchAsync").MakeGenericMethod(entityType).Invoke(...)</c> pattern
 /// while the same package's <c>CLAUDE.md</c> documented expression trees as the gold
@@ -46,7 +46,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///   <item>
 ///     <description>
 ///       Expression trees — <c>Expression.Call(...).Compile()</c> as used in the fixed
-///       <c>EncryptionRotationService</c> (P-147) and in <c>TenantedDbContext</c>. This
+///       <c>EncryptionRotationService</c> and in <c>TenantedDbContext</c>. This
 ///       is the platform gold standard.
 ///     </description>
 ///   </item>

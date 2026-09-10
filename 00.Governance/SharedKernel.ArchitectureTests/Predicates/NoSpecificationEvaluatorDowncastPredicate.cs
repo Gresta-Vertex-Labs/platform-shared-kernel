@@ -13,7 +13,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.EfCorePackageHygieneRules"/> to enforce that no code in the
 /// <c>SharedKernel.Persistence.EfCore</c> assembly performs a concrete downcast of
-/// <c>ISpecificationEvaluator&lt;T&gt;</c> to its concrete implementation. P-097 added
+/// <c>ISpecificationEvaluator&lt;T&gt;</c> to its concrete implementation. Adding
 /// <c>GetProjectedQuery</c> to the interface specifically to eliminate the downcast; this
 /// rule ensures the pattern cannot silently regress.
 /// </para>

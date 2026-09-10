@@ -13,11 +13,11 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// methods standardized away from, in favor of
 /// <c>Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions</c>'s
 /// <c>TryAddSingleton</c>/<c>TryAddScoped</c>/<c>TryAddTransient</c>/<c>TryAddEnumerable</c>
-/// (P-518/WO-083).
+///.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Motivating defect (P-518/WO-083).</strong> Before that phase, roughly two-thirds of
+/// <strong>Motivating defect.</strong> Before that phase, roughly two-thirds of
 /// <c>01.Core</c>'s own registration call sites used the plain <c>Add*</c> verb. This meant
 /// <c>AddSharedKernelCryptography()</c> called twice (a realistic shape for a consuming service
 /// composed from more than one internal extension method, each of which happens to also pull in
@@ -60,7 +60,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// either.
 /// </para>
 /// <para>
-/// <strong>Scope (P-523/WO-083).</strong> Scoped to <c>01.Core</c>'s own DI extension methods for
+/// <strong>Scope.</strong> Scoped to <c>01.Core</c>'s own DI extension methods for
 /// this phase — the caller supplies exactly the <c>01.Core</c> assemblies to scan via
 /// <see cref="Rules.CoreArchitectureRules.DiExtensionsUseTryAddRegistrationConvention"/>. Extending
 /// the identical predicate to every other domain's own DI extension methods is a documented future

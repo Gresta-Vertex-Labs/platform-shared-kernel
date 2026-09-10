@@ -21,7 +21,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Namespace exemption:</strong> types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with
+/// <c>TypeDefinition.Namespace</c> starts with
 /// <c>"SharedKernel.Communication.GraphQL"</c> return <see langword="true"/> unconditionally —
 /// the platform GraphQL package is where <c>FilterBase&lt;T&gt;</c> and
 /// <c>SortBase&lt;T&gt;</c> are defined and legitimately inherit from the HotChocolate base

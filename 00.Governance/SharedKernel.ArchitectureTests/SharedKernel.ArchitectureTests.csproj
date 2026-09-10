@@ -1,8 +1,20 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>true</IsPackable>
+    <!-- Test-only infrastructure: NuGet marks the package so it never flows transitively
+         into a consumer's production dependency graph. This makes the README's
+         PrivateAssets="all" guidance structural rather than advisory. -->
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- Ship the XML documentation alongside the assembly: every rule's purpose, its offending
+         and compliant patterns, and its parameters are carried in the doc comments, and that is
+         the only form in which they reach a consumer's IntelliSense (or an agent reading the
+         package). Set explicitly here rather than relying on the repo-wide default in
+         Directory.Build.targets, whose '$(GenerateDocumentationFile)' == '' guard can never
+         match — the .NET SDK defaults the property to false earlier in the import chain.
+         CS1591 is clean for this project: every public member is documented. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- NuGet packaging metadata -->
-    <Description>NetArchTest-based base classes and pre-built layering-rule predicates for SharedKernel architecture tests. Reference with PrivateAssets="all" — this package must never become a transitive production dependency.</Description>
+    <Description>Pre-built NetArchTest architecture rules for the SharedKernel platform: layering direction, domain purity, provider isolation, forbidden injection patterns, and IL-level secure-default assertions. Assert them from your own test suite with any runner and any assertion library. Test-only development dependency — never flows into a production dependency graph.</Description>
     <PackageTags>architecture;netarchtest;sharedkernel;governance;testing</PackageTags>
   </PropertyGroup>
   <ItemGroup>
@@ -16,26 +28,9 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NetArchTest.Rules" />
-    <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Mono.Cecil" />
     <!-- Required to resolve IServiceCollection/ServiceDescriptor for PipelineOrderAssertion
          (WO-036 P-225). Abstractions-only package — no concrete DI container dependency. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-  </ItemGroup>
-  <ItemGroup>
-    <!-- SharedKernel.Guards was merged into SharedKernel.Core (WO-082/P-505); the C# namespace
-         (SharedKernel.Guards.*) was deliberately preserved. Reference required to resolve
-         typeof(IGuardClause) in GuardPurityRules — GuardPurityRules re-scopes its purity check
-         to the SharedKernel.Guards namespace specifically (via DoesNotContainThrowIlPredicate),
-         since SharedKernel.Core also hosts unrelated types (base exceptions, BCL/railway
-         extensions). PrivateAssets="all" prevents transitive leakage to production code. -->
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" PrivateAssets="all" />
-    <!-- Domain reference required to resolve typeof(IDomainService) and typeof(DomainService) in
-         DomainGoldStandardRules and DomainLayerPurityRules.
-         PrivateAssets="all" prevents transitive leakage to production code. -->
-    <ProjectReference Include="..\..\03.Domain\SharedKernel.Domain\SharedKernel.Domain.csproj" PrivateAssets="all" />
-    <!-- Contracts reference required to resolve typeof(IIntegrationEvent) in ContractsPurityRules.
-         PrivateAssets="all" prevents transitive leakage to production code. -->
-    <ProjectReference Include="..\..\04.Contracts\SharedKernel.Contracts\SharedKernel.Contracts.csproj" PrivateAssets="all" />
   </ItemGroup>
 </Project>

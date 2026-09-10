@@ -18,12 +18,12 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// assemblies the caller passes — historically just <c>03.Domain</c> and <c>05.Application</c>).
 /// The new predicate is designed to be invoked against <strong>every</strong> production assembly
 /// in the platform, closing the caller-scoping gap that allowed a hand-rolled <c>AesGcm</c>
-/// usage to ship inside <c>SharedKernel.Persistence.*</c> (the P-227 incident) without
+/// usage to ship inside <c>SharedKernel.Persistence.*</c> without
 /// being caught by SK0301.
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first check):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Cryptography"</c> are
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Cryptography"</c> are
 /// returned as passing (<see langword="true"/>) unconditionally —
 /// <c>SharedKernel.Cryptography</c> is the <em>sole</em> legitimate direct caller of BCL cipher
 /// and RNG types across the entire platform.

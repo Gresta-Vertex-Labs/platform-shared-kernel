@@ -17,7 +17,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Namespace exemption guard (first check):</strong> types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Messaging"</c> return
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Messaging"</c> return
 /// <see langword="true"/> unconditionally — the messaging adapter layer may reference
 /// <c>MassTransit.IMessageScheduler</c> for internal wiring.
 /// </para>

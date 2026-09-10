@@ -9,7 +9,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// health-check tagging contract documented in <c>13.ServiceDefaults/CLAUDE.md</c>:
 /// every health check carries either <c>"live"</c> or <c>"ready"</c>, never both, and
 /// dependency-specific checks always carry <c>"ready"</c> and never <c>"live"</c>.
-/// Introduced by WO-027 P-173.
+///
 /// </summary>
 /// <remarks>
 /// <para>

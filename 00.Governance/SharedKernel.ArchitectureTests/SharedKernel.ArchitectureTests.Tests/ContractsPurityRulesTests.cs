@@ -199,7 +199,9 @@ public class ContractsPurityRulesTests
             extraReferences: new[] { typeof(SharedKernel.Contracts.Events.IIntegrationEvent).Assembly.Location });
 
         var result = ContractsPurityRules
-            .IntegrationEventImplementationsMustBeSealed(assembly)
+            .IntegrationEventImplementationsMustBeSealed(
+                assembly,
+                typeof(SharedKernel.Contracts.Events.IIntegrationEvent))
             .GetResult();
 
         result.IsSuccessful.Should().BeFalse(
@@ -243,7 +245,9 @@ public class ContractsPurityRulesTests
             extraReferences: new[] { typeof(SharedKernel.Contracts.Events.IIntegrationEvent).Assembly.Location });
 
         var result = ContractsPurityRules
-            .IntegrationEventImplementationsMustBeSealed(assembly)
+            .IntegrationEventImplementationsMustBeSealed(
+                assembly,
+                typeof(SharedKernel.Contracts.Events.IIntegrationEvent))
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(

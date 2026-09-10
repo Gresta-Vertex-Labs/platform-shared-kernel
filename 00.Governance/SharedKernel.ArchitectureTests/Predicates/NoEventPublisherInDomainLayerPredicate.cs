@@ -18,7 +18,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <strong>Domain-layer membership (either signal triggers the scope check):</strong>
 /// <list type="bullet">
 ///   <item><description>
-///     <strong>Namespace signal:</strong> <see cref="TypeDefinition.Namespace"/> contains
+///     <strong>Namespace signal:</strong> <c>TypeDefinition.Namespace</c> contains
 ///     <c>".Domain."</c> as a substring — dots on both sides prevent matching application types
 ///     with <c>"Domain"</c> as a bare word fragment (e.g., <c>"IDomainEventHandler"</c> in an
 ///     application namespace).

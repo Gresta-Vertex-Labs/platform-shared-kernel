@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Mono.Cecil;
 using SharedKernel.ArchitectureTests.Predicates;
 using SharedKernel.ArchitectureTests.Rules;
+using SharedKernel.Guards.Clauses;
 using Xunit;
 
 namespace SharedKernel.ArchitectureTests.Tests;
@@ -87,8 +88,10 @@ public class GuardPurityRulesTests
     [Fact]
     public void GuardAgainstMethodsMustNotThrow_RealGuardsAssembly_Passes()
     {
-        // Act — uses typeof(IGuardClause).Assembly internally
-        var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow();
+        // Act — anchors are supplied by the caller (this package takes no SharedKernel reference)
+        var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(
+            typeof(IGuardClause).Assembly,
+            typeof(IGuardClause));
         var result = conditionList.GetResult();
 
         // Assert
@@ -168,7 +171,9 @@ public class GuardPurityRulesTests
             because: "Guard.Throw must contain throw instructions — this validates the exclusion is necessary");
 
         // Act — the overall rule should still pass because Guard.Throw does not implement IGuardClause
-        var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow();
+        var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(
+            typeof(IGuardClause).Assembly,
+            typeof(IGuardClause));
         var result = conditionList.GetResult();
 
         // Assert
@@ -227,7 +232,9 @@ public class GuardPurityRulesTests
             var fixtureAssembly = Assembly.LoadFrom(tempDll);
 
             // Act
-            var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(fixtureAssembly);
+            var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(
+                fixtureAssembly,
+                typeof(IGuardClause));
             var result = conditionList.GetResult();
 
             // Assert — still caught: the namespace re-scoping did not swallow the real fire path
@@ -281,7 +288,9 @@ public class GuardPurityRulesTests
             var fixtureAssembly = Assembly.LoadFrom(tempDll);
 
             // Act
-            var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(fixtureAssembly);
+            var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(
+                fixtureAssembly,
+                typeof(IGuardClause));
             var result = conditionList.GetResult();
 
             // Assert — NOT caught: out of the SharedKernel.Guards namespace scope, even though

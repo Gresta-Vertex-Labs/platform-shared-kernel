@@ -7,12 +7,12 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Pre-built NetArchTest predicates that mechanically enforce the <c>10.Intelligence</c> package
 /// topology (<c>SharedKernel.AI.Abstractions</c>, <c>SharedKernel.AI.Qdrant</c>,
 /// <c>SharedKernel.AI.SemanticKernel</c>) documented in prose by <c>10.Intelligence/CLAUDE.md</c>.
-/// Introduced in WO-045 P-286.
+///
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Two-provider adaptation (WO-048, 2026-07-27):</strong> the design originally scoped for
-/// this class (WO-045 P-286) targeted THREE sibling providers — Qdrant, Milvus, SemanticKernel.
+/// <strong>Two-provider adaptation.</strong> The design originally scoped for
+/// this class targeted THREE sibling providers — Qdrant, Milvus, SemanticKernel.
 /// <c>SharedKernel.AI.Milvus</c> was permanently retracted before ever being built — verified
 /// directly on disk: no <c>10.Intelligence/SharedKernel.AI.Milvus/</c> directory exists, and it
 /// never will (<c>Milvus.Client</c> never shipped a stable release). <c>10.Intelligence</c> now
@@ -56,7 +56,7 @@ public static class IntelligenceTopologyRules
 {
     /// <summary>
     /// The six forbidden dependency terms for <c>SharedKernel.AI.Abstractions</c> — the two-provider
-    /// (Qdrant/SemanticKernel) set surviving the WO-048 Milvus retraction.
+    /// (Qdrant/SemanticKernel) set that survived that retraction.
     /// </summary>
     private static readonly string[] AbstractionsForbiddenTerms =
     [
@@ -108,7 +108,7 @@ public static class IntelligenceTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList AbstractionsHasNoThirdPartyDependencies(Assembly abstractionsAssembly)
@@ -136,7 +136,7 @@ public static class IntelligenceTopologyRules
     /// <remarks>
     /// <para>
     /// TWO NAMED <see cref="Assembly"/> parameters (not <c>params Assembly[]</c>) — the two-provider
-    /// reality following the WO-048 Milvus retraction. The original WO-045 P-286 design called for a
+    /// reality after one vector-database provider was retracted. The original design called for a
     /// THREE-named-Assembly-parameter form (Qdrant/Milvus/SemanticKernel) returning a six-element
     /// array; since <c>SharedKernel.AI.Milvus</c> was never built and never will be, this method
     /// mirrors <see cref="StorageTopologyRules.ProviderPackagesNeverReferenceEachOther"/>/
@@ -231,7 +231,7 @@ public static class IntelligenceTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList NoHealthChecksDependencyAcrossIntelligencePackages(

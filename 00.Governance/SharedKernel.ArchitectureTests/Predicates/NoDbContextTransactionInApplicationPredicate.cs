@@ -14,11 +14,11 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.EfCorePackageHygieneRules"/> to enforce that application-layer
 /// code never couples directly to <c>Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction</c>.
-/// <c>ITransactionalUnitOfWork</c> (P-099) is the only permitted transaction entry point for
+/// <c>ITransactionalUnitOfWork</c> is the only permitted transaction entry point for
 /// application handlers.
 /// </para>
 /// <para>
-/// <strong>Exemption:</strong> Types whose <see cref="TypeDefinition.Namespace"/> starts with
+/// <strong>Exemption:</strong> Types whose <c>TypeDefinition.Namespace</c> starts with
 /// <c>"SharedKernel.Persistence"</c> are returned as passing (<see langword="true"/>)
 /// unconditionally — the persistence layer itself may use <c>IDbContextTransaction</c>
 /// internally. This exemption is evaluated as the first guard, before any IL walk.
@@ -28,16 +28,16 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// the <c>FullName</c> of referenced types:
 /// <list type="number">
 ///   <item><description>
-///     <see cref="TypeDefinition.Fields"/> — <see cref="FieldDefinition.FieldType"/>.<c>FullName</c>
+///     <see cref="TypeDefinition.Fields"/> — <c>FieldDefinition.FieldType</c>.<c>FullName</c>
 ///   </description></item>
 ///   <item><description>
 ///     <see cref="TypeDefinition.Methods"/> parameters —
-///     <see cref="ParameterDefinition.ParameterType"/>.<c>FullName</c>
+///     <c>ParameterDefinition.ParameterType</c>.<c>FullName</c>
 ///   </description></item>
 ///   <item><description>
 ///     <see cref="TypeDefinition.Methods"/>.<c>Body</c>.<c>Instructions</c> for
 ///     <c>Call</c> / <c>Callvirt</c> opcodes —
-///     <see cref="MethodReference.DeclaringType"/>.<c>FullName</c>
+///     <c>MethodReference.DeclaringType</c>.<c>FullName</c>
 ///   </description></item>
 /// </list>
 /// </para>

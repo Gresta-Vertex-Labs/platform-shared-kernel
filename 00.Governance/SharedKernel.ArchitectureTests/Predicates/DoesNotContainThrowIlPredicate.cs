@@ -17,14 +17,14 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// must never throw — they must return <c>Error?</c>.
 /// </para>
 /// <para>
-/// <strong>Namespace scope (WO-082/P-508).</strong> <c>SharedKernel.Guards</c> was merged
+/// <strong>Namespace scope.</strong> <c>SharedKernel.Guards</c> was merged
 /// into <c>SharedKernel.Core</c> — the C# namespace was deliberately preserved, but the
 /// hosting assembly now also carries base exceptions, BCL extensions, and the railway
 /// extensions (<c>ResultTry</c>/<c>ResultCombine</c>), none of which this predicate should
 /// ever judge. This predicate therefore checks each type's EFFECTIVE namespace — the
 /// namespace of its outermost enclosing type, walked via <see cref="TypeDefinition.DeclaringType"/>
 /// for nested types, since Mono.Cecil (and the underlying CLR metadata) leaves
-/// <see cref="TypeDefinition.Namespace"/> empty on every nested type (confirmed by direct
+/// <c>TypeDefinition.Namespace</c> empty on every nested type (confirmed by direct
 /// inspection of the real, shipped <c>SharedKernel.Core.dll</c> — <c>Guard/DefaultGuardClause</c>
 /// and <c>Guard/Throw</c> both report an empty <c>Namespace</c>, with the effective namespace
 /// only recoverable from the enclosing <c>Guard</c> type). Relying on NetArchTest's built-in
@@ -122,14 +122,14 @@ public sealed class DoesNotContainThrowIlPredicate : ICustomRule
     /// <summary>
     /// Walks up <see cref="TypeDefinition.DeclaringType"/> for a nested type until it reaches
     /// the outermost, non-nested enclosing type, then returns that type's
-    /// <see cref="TypeDefinition.Namespace"/>.
+    /// <c>TypeDefinition.Namespace</c>.
     /// </summary>
     /// <remarks>
     /// Mono.Cecil (mirroring the underlying CLR metadata's TypeDef table) never populates
-    /// <see cref="TypeDefinition.Namespace"/> for a nested type — it is always the empty
+    /// <c>TypeDefinition.Namespace</c> for a nested type — it is always the empty
     /// string. A nested type's real namespace is only recoverable by walking up to its
     /// outermost enclosing type. For a non-nested type, this returns the type's own
-    /// <see cref="TypeDefinition.Namespace"/> unchanged.
+    /// <c>TypeDefinition.Namespace</c> unchanged.
     /// </remarks>
     private static string GetEffectiveNamespace(TypeDefinition type)
     {

@@ -11,7 +11,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <remarks>
 /// <para>
 /// Used by <see cref="Rules.PersistenceInterfaceOwnershipRules"/> to enforce that
-/// <c>GetByIdAsync</c> — removed from <c>IReadRepository&lt;T,TId&gt;</c> in P-080 to
+/// <c>GetByIdAsync</c> — removed from <c>IReadRepository&lt;T,TId&gt;</c> to
 /// eliminate duplication with the write-side <c>IRepository</c> — is not re-introduced
 /// on any concrete read-side repository implementor.
 /// </para>

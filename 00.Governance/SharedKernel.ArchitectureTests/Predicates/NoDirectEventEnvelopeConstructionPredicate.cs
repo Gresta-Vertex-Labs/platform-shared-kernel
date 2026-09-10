@@ -25,11 +25,11 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <list type="number">
 /// <item><description>
-/// <see cref="MethodReference.DeclaringType"/>.<see cref="MemberReference.Namespace"/> equals
+/// <c>MethodReference.DeclaringType</c>.<c>MemberReference.Namespace</c> equals
 /// <c>"SharedKernel.Contracts.Events"</c> (exact match).
 /// </description></item>
 /// <item><description>
-/// <see cref="MethodReference.DeclaringType"/>.<see cref="MemberReference.Name"/> equals
+/// <c>MethodReference.DeclaringType</c>.<see cref="MemberReference.Name"/> equals
 /// <c>"EventEnvelope`1"</c> — Mono.Cecil's undecorated simple-name shape for a generic type
 /// (the backtick-arity suffix, never the substituted closed type argument). Confirmed
 /// empirically against real compiled IL: for a

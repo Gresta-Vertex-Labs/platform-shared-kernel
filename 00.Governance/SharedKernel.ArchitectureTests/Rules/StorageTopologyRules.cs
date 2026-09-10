@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Pre-built NetArchTest predicates that mechanically enforce the <c>08.Storage</c> two-provider
 /// package topology (<c>SharedKernel.Storage.Abstractions</c>, <c>SharedKernel.Storage.S3</c>,
 /// <c>SharedKernel.Storage.Obs</c>) documented in prose by <c>08.Storage/CLAUDE.md</c>. Introduced
-/// in WO-043 P-271.
+/// with the storage provider split.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -91,7 +91,7 @@ public static class StorageTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList AbstractionsHasNoThirdPartyDependencies(Assembly abstractionsAssembly)
@@ -228,7 +228,7 @@ public static class StorageTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList OnlyProviderPackagesMayReferenceAmazonS3(

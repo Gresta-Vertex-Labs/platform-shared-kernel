@@ -19,9 +19,9 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first guard):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Cryptography"</c> are
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Cryptography"</c> are
 /// returned as passing (<see langword="true"/>) unconditionally — this is the
-/// <em>sole</em> legitimate crypto consumer in the platform (narrowed in WO-037 P-229 from
+/// <em>sole</em> legitimate crypto consumer in the platform (narrowed from
 /// the original two-namespace exemption <c>"SharedKernel.Persistence.*"</c> /
 /// <c>"SharedKernel.Security.*"</c>; both layers now route through
 /// <c>SharedKernel.Cryptography</c>'s <c>ISymmetricEncryptionService</c> /

@@ -16,7 +16,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Scope guard:</strong> types that do not implement any interface whose
-/// <c>InterfaceType.Name</c> starts with <paramref name="interfaceNamePrefix"/> are returned
+/// <c>InterfaceType.Name</c> starts with <c>interfaceNamePrefix</c> are returned
 /// as passing unconditionally — the predicate self-scopes.
 /// </para>
 /// <para>

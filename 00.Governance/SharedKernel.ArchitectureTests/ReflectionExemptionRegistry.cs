@@ -12,7 +12,7 @@ namespace SharedKernel.ArchitectureTests;
 /// rule enforced by <see cref="Predicates.NoMakeGenericMethodReflectionPredicate"/>.
 /// </para>
 /// <para>
-/// <strong>Motivating incident (P-147 / WO-024):</strong>
+/// <strong>Motivating incident:</strong>
 /// <c>SharedKernel.Persistence.EfCore.EncryptionRotationService.LoadBatchAsync</c> shipped
 /// a <c>GetMethod("LoadBatchAsync").MakeGenericMethod(entityType).Invoke(...)</c> pattern
 /// while the same package's <c>CLAUDE.md</c> documented expression trees as the platform
@@ -21,12 +21,12 @@ namespace SharedKernel.ArchitectureTests;
 /// requires explicit governance review for every exception.
 /// </para>
 /// <para>
-/// The fixed <c>EncryptionRotationService</c> (P-147) now uses
+/// The fixed <c>EncryptionRotationService</c> now uses
 /// <c>Expression.Call + Expression.Lambda.Compile()</c> and requires no entry in this
 /// registry.
 /// </para>
 /// <para>
-/// <strong>The registry is no longer empty as of WO-039 P-240 (2026-07-06).</strong> Its first
+/// <strong>The registry is not empty.</strong> Its first
 /// real entry covers <c>SharedKernel.Application.DomainEvents.MediatRDomainEventDispatcher</c>'s
 /// <c>PublishSingle</c> method — see the entry's own remarks in <see cref="AllowList"/>'s
 /// initializer for the full rationale, and the "Closure-free static-lambda naming" note below
@@ -55,7 +55,7 @@ namespace SharedKernel.ArchitectureTests;
 /// <list type="number">
 ///   <item>
 ///     <description>
-///       Open a governance review in the root <c>state-map.md</c> with a written rationale
+///       Open a governance review with a written rationale
 ///       explaining why typed dispatch or expression trees cannot be used for the specific
 ///       call site.
 ///     </description>
@@ -82,12 +82,12 @@ namespace SharedKernel.ArchitectureTests;
 /// the registry is method-name-scoped, not signature-scoped.
 /// </para>
 /// <para>
-/// <strong>Known open gap (WO-039, out of scope for P-240):</strong>
+/// <strong>Known open gap.</strong>
 /// <c>SharedKernel.Messaging.MassTransit.MassTransitEventPublisher.BuildPublisher</c> — the
 /// structurally identical lambda-closure <c>MakeGenericMethod</c> pattern cited as this
 /// registry's own precedent — and <c>MessagingBusBuilder.AddActivity</c> (a second, differently-
 /// shaped <c>MakeGenericMethod</c> call) are themselves UNREGISTERED in this allow-list today.
-/// Neither is registered by P-240; both remain a candidate follow-up work order against
+/// Neither is registered here; both remain a candidate follow-up against
 /// <c>07.Messaging</c>'s real assembly. Running <see cref="Rules.ReflectionGuardRules.NoMakeGenericMethodReflection"/>
 /// against the real <c>SharedKernel.Messaging.MassTransit</c> assembly will currently fail until
 /// that follow-up work order registers both entries.
@@ -161,7 +161,7 @@ public static class ReflectionExemptionRegistry
     /// Registers a <c>(typeFullName, methodName)</c> pair as an approved exception to SK0012.
     /// </summary>
     /// <remarks>
-    /// This method exists to support tests that exercise the exemption path (T-115). In
+    /// This method exists to support tests that exercise the exemption path. In
     /// production, entries should be added directly to <see cref="AllowList"/> in source
     /// with the required governance XML doc comment.
     /// </remarks>

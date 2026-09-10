@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest rule factory mechanically enforcing the exact scope of the
-/// <c>13.ServiceDefaults</c>→<c>19.Scheduling</c> layering grant (WO-073/P-466).
+/// <c>13.ServiceDefaults</c>→<c>19.Scheduling</c> layering grant.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,13 +18,13 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// <strong>This is its own, separately-earned grant — never reason about it by analogy to the
-/// sibling <c>13.ServiceDefaults</c>→<c>17.Workflows</c> grant (P-291/WO-047), and never fold the
+/// sibling <c>13.ServiceDefaults</c>→<c>17.Workflows</c> grant, and never fold the
 /// two into one parameterized helper.</strong> The root brain is emphatic on this point: each
 /// grant is independently justified (each donor domain ships no lower-numbered
 /// <c>.Abstractions</c> companion to reference instead) and each must stay a distinct, narrowly-
 /// named rule. See <see cref="ServiceDefaultsOnlyReachesSchedulerProbeTypesPredicate"/>'s own
 /// remarks for the full rationale. The equivalent mechanical lock for the Workflows grant
-/// (P-490/WO-080) is <see cref="ServiceDefaultsWorkflowLayeringRules"/> — its own independent
+/// is <see cref="ServiceDefaultsWorkflowLayeringRules"/> — its own independent
 /// predicate and rule, designed on its own terms, never derived from this class.
 /// </para>
 /// </remarks>
@@ -40,7 +40,7 @@ public static class ServiceDefaultsSchedulingLayeringRules
     /// <param name="serviceDefaultsAssembly">The <c>SharedKernel.ServiceDefaults</c> assembly.</param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c>.
+    /// <c>AssertRule</c>, or by inspecting <c>GetResult().IsSuccessful</c> directly.
     /// </returns>
     /// <remarks>
     /// <para>

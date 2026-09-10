@@ -48,7 +48,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// applied in code.
 /// </para>
 /// <para>
-/// Introduced in WO-020 P-123. Reference this class with <c>PrivateAssets="all"</c> so it
+/// Reference this class with <c>PrivateAssets="all"</c> so it
 /// never becomes a transitive production dependency.
 /// </para>
 /// </remarks>

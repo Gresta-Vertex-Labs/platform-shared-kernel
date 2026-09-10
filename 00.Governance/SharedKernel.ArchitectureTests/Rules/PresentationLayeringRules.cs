@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest predicates enforcing the <c>14.Presentation</c> Result/HTTP
-/// boundary-mapping rules introduced by WO-031 P-199: hand-rolled <c>ProblemDetails</c>
+/// boundary-mapping rules: hand-rolled <c>ProblemDetails</c>
 /// construction and inline <c>Result</c>-to-HTTP branching are both banned outside
 /// <c>SharedKernel.Presentation.WebApi</c>.
 /// </summary>
@@ -31,7 +31,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// signals), so the exclusion must be caller-controlled rather than predicate-internal.
 /// </para>
 /// <para>
-/// Introduced in WO-031 P-199. Closes the WO-026 P-166/167 documented backlog item ("a future
+/// Closes a documented backlog item ("a future
 /// Roslyn analyzer ... is tracked as a backlog item") — implemented here as a NetArchTest rule
 /// rather than a Roslyn analyzer because the detection surface (IL method-body co-occurrence)
 /// matches this domain's existing <see cref="NetArchTest.Rules.ICustomRule"/> precedent more
@@ -53,7 +53,7 @@ public static class PresentationLayeringRules
     /// (<c>ErrorTypeStatusCodeMap</c>, <c>traceId</c> population, <c>Detail</c>-suppression
     /// outside <c>Development</c>) and reintroduces the inconsistent error-body problem
     /// <c>14.Presentation</c> exists to close. Mirrors the precedent set by SK0013 (raw
-    /// <c>HttpClient</c>) and the WO-026 Result/Envelope inline-mapping prohibition — mechanical
+    /// <c>HttpClient</c>) and the Result/Envelope inline-mapping prohibition — mechanical
     /// enforcement, not documentation-only guidance.
     /// </para>
     /// <para>
@@ -80,7 +80,7 @@ public static class PresentationLayeringRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList NoDirectProblemDetailsConstructionOutsideWebApi(
@@ -106,9 +106,8 @@ public static class PresentationLayeringRules
     /// <strong>Rationale:</strong> inline <c>if (result.IsSuccess) ... else ...</c> branching
     /// immediately before returning an HTTP response type duplicates the platform's
     /// <c>Result</c>→HTTP mapping logic at every call site — exactly the precedent already
-    /// closed for <c>Result&lt;T&gt;</c>→<c>Envelope&lt;T&gt;</c> boundary mapping (WO-026
-    /// P-166/167's documented backlog item; this rule is the mechanical closure of that backlog
-    /// note).
+    /// closed for <c>Result&lt;T&gt;</c>→<c>Envelope&lt;T&gt;</c> boundary mapping, where the
+    /// same inline-branching habit was prohibited for the same reason.
     /// </para>
     /// <para>
     /// This is a coarser, method-level co-occurrence check — not a full control-flow analysis of
@@ -144,7 +143,7 @@ public static class PresentationLayeringRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList NoInlineResultBranchBeforeHttpResultOutsideWebApi(
@@ -163,7 +162,7 @@ public static class PresentationLayeringRules
     /// <param name="grpcAssembly">The <c>SharedKernel.Presentation.Grpc</c> assembly.</param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c>.
+    /// <c>AssertRule</c>, or by inspecting <c>GetResult().IsSuccessful</c> directly.
     /// </returns>
     /// <remarks>
     /// <para>
@@ -205,7 +204,7 @@ public static class PresentationLayeringRules
     /// <para>
     /// No exemption is permitted for this rule, mirroring
     /// <see cref="CommunicationLayeringRules.GrpcNeverReferencesContracts"/>'s own "no exemption"
-    /// precedent. Introduced WO-074 (coordinator-directed extension to P-469, evaluated and
+    /// precedent. Added when the server-side gRPC package shipped (evaluated and
     /// accepted by this domain rather than deferred to a separately-planned phase — the mechanism
     /// and rationale are a direct, near-zero-novelty copy of an already-ratified sibling-domain
     /// rule).

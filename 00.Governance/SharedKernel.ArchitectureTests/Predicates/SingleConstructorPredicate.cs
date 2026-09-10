@@ -11,7 +11,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.EfCorePackageHygieneRules"/> to enforce that <c>EfUnitOfWork</c>
 /// (and any other <c>IUnitOfWork</c> implementor) has exactly one public instance constructor.
-/// P-098 reduced <c>EfUnitOfWork</c> to a single constructor to resolve a DI ambiguity caused
+/// <c>EfUnitOfWork</c> was reduced to a single constructor to resolve a DI ambiguity caused
 /// by two competing registrations. A second "convenience constructor" would silently reintroduce
 /// that ambiguity, causing runtime DI resolution failures.
 /// </para>

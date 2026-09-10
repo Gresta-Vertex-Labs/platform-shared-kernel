@@ -13,14 +13,14 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.MetricsInstrumentationRules"/> to enforce that every
 /// <c>RequestDuration</c> histogram recording call carries an <c>outcome</c> tag — the same shape
-/// <c>StreamMetricsBehavior</c> (P-234) already emits. Without an <c>outcome</c> tag, dashboards
+/// <c>StreamMetricsBehavior</c> already emits. Without an <c>outcome</c> tag, dashboards
 /// cannot distinguish success/failure/exception/cached/duplicate/unauthorized outcomes for a
 /// given request duration measurement.
 /// </para>
 /// <para>
 /// <strong>Detection technique (IL-literal collection, not full data-flow analysis).</strong> This
 /// predicate reuses the <c>Ldstr</c> literal-collection technique introduced by
-/// <see cref="NoConflictingLivenessReadinessTagsPredicate"/> (WO-027 P-173) — no new Mono.Cecil
+/// <see cref="NoConflictingLivenessReadinessTagsPredicate"/> — no new Mono.Cecil
 /// technique is introduced here, only a new call-site search target
 /// (<c>Histogram&lt;T&gt;.Record</c>, the first use of this search target in the domain). For each
 /// method body containing a <c>Call</c>/<c>Callvirt</c> instruction whose operand's

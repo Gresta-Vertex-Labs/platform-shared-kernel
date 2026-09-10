@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest predicates (SK0301–SK0304) that close the four most likely misuse
-/// patterns of the WO-019 AES-256-GCM field-level encryption subsystem.
+/// patterns of the AES-256-GCM field-level encryption subsystem.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -41,7 +41,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </list>
 /// </para>
 /// <para>
-/// Introduced in WO-019 P-114. The 03xx SK ID block is dedicated to the encryption subsystem.
+/// The 03xx SK ID block is dedicated to the encryption subsystem.
 /// Reference this class with <c>PrivateAssets="all"</c> so it never becomes a transitive
 /// production dependency.
 /// </para>
@@ -59,7 +59,7 @@ public static class EncryptionPatternGuardRules
     /// <para>
     /// Types whose namespace starts with <c>"SharedKernel.Cryptography"</c> are unconditionally
     /// exempt — this is the <em>sole</em> legitimate direct caller of BCL cipher types in the
-    /// platform (narrowed in WO-037 P-229 from the original two-namespace exemption
+    /// platform (narrowed from an earlier two-namespace exemption
     /// <c>"SharedKernel.Persistence.*"</c> / <c>"SharedKernel.Security.*"</c>; both layers now
     /// route through <c>SharedKernel.Cryptography</c>'s <c>ISymmetricEncryptionService</c> /
     /// <c>AesGcmEncryptionService</c> instead of touching BCL cipher types directly).

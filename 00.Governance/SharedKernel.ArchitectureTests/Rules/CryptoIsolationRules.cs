@@ -5,7 +5,7 @@ using SharedKernel.ArchitectureTests.Predicates;
 namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
-/// Platform-wide raw-cipher isolation predicate introduced in WO-037 P-229.
+/// Platform-wide raw-cipher isolation predicate
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,7 +16,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// in the platform rather than only <c>03.Domain</c> and <c>05.Application</c>.
 /// </para>
 /// <para>
-/// <strong>Motivation (P-227 incident):</strong>
+/// <strong>Motivation.</strong>
 /// A hand-rolled <c>AesGcm</c> usage shipped inside <c>SharedKernel.Persistence.*</c> without
 /// being caught by SK0301 because the SK0301-backing predicate exempted that namespace wholesale,
 /// and the calling test suite never passed the persistence assembly. This rule closes the gap by
@@ -44,13 +44,12 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// production dependency.
 /// </para>
 /// <para>
-/// <strong><see cref="CryptographyCoreHasNoThirdPartyDependencies"/> (WO-081/P-504,
-/// <c>SK.00.SyncCryptoGateAndArgon2ConfinementLock</c>).</strong> A second, independent factory
+/// <strong><see cref="CryptographyCoreHasNoThirdPartyDependencies"/>.</strong> A second, independent factory
 /// method added to this class, confirming <c>SharedKernel.Cryptography</c> core carries zero
-/// dependency on <c>Konscious.Security.Cryptography</c> (the future <c>SharedKernel.Cryptography.Argon2</c>
-/// sibling package's third-party dependency, P-495 — not yet shipped as of this method's
-/// introduction) or <c>Azure.Security.KeyVault</c>/<c>Azure.Identity</c> (the already-shipped
-/// <c>SharedKernel.Cryptography.KeyVault.Azure</c> sibling's third-party dependencies, P-447).
+/// dependency on <c>Konscious.Security.Cryptography</c> (the <c>SharedKernel.Cryptography.Argon2</c>
+/// sibling package's third-party dependency) or
+/// <c>Azure.Security.KeyVault</c>/<c>Azure.Identity</c> (the
+/// <c>SharedKernel.Cryptography.KeyVault.Azure</c> sibling's third-party dependencies).
 /// Same <c>Types.InAssembly(...).Should().NotHaveDependencyOn(term)</c> multi-term shape as
 /// <see cref="RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies"/> — confirming
 /// a package's zero-third-party-dependency core stays that way as new sibling provider packages
@@ -65,9 +64,9 @@ public static class CryptoIsolationRules
     /// </summary>
     /// <remarks>
     /// <c>"Konscious"</c> covers the future <c>Konscious.Security.Cryptography.Argon2</c> dependency
-    /// <c>SharedKernel.Cryptography.Argon2</c> (P-495) will introduce — this core package must never
+    /// <c>SharedKernel.Cryptography.Argon2</c> will introduce — this core package must never
     /// absorb it. <c>"Azure.Security.KeyVault"</c>/<c>"Azure.Identity"</c> cover the already-shipped
-    /// <c>SharedKernel.Cryptography.KeyVault.Azure</c> sibling's dependencies (P-447), previously
+    /// <c>SharedKernel.Cryptography.KeyVault.Azure</c> sibling's dependencies, previously
     /// verified only via <c>01.Core</c>'s own <c>.nuspec</c>-inspection technique in
     /// <c>SharedKernel.Consumer.Tests</c> — a different project, a different technique, outside
     /// <c>00.Governance</c>'s own jurisdiction until this method existed.
@@ -89,8 +88,8 @@ public static class CryptoIsolationRules
     /// <para>
     /// <strong>Motivation.</strong> <c>SharedKernel.Cryptography</c> core ships with zero
     /// third-party NuGet dependencies — every sibling provider package
-    /// (<c>SharedKernel.Cryptography.KeyVault.Azure</c> today; <c>SharedKernel.Cryptography.Argon2</c>
-    /// once P-495 ships) confines its own third-party dependency to itself, never leaking it back
+    /// (<c>SharedKernel.Cryptography.KeyVault.Azure</c>, <c>SharedKernel.Cryptography.Argon2</c>)
+    /// confines its own third-party dependency to itself, never leaking it back
     /// into the core assembly every other domain unconditionally references. This mirrors
     /// <see cref="RedisTopologyRules.CachingAbstractionsHasNoInfrastructureDependencies"/>'s
     /// identical purpose for <c>SharedKernel.Caching.Abstractions</c>.
@@ -144,10 +143,10 @@ public static class CryptoIsolationRules
     /// <para>
     /// <strong>Exemption:</strong> Types whose namespace starts with
     /// <c>"SharedKernel.Cryptography"</c> pass unconditionally — the sole legitimate platform
-    /// caller of BCL cipher and RNG types (once <c>06.Persistence</c> P-227 lands,
-    /// <c>EncryptedValueConverter</c> delegates to
+    /// caller of BCL cipher and RNG types. Everything else delegates: a persistence-layer
+    /// <c>EncryptedValueConverter</c>, for instance, goes through
     /// <c>SharedKernel.Cryptography.ISymmetricEncryptionService</c> / <c>AesGcmEncryptionService</c>
-    /// instead of constructing <c>AesGcm</c> directly). No <c>SharedKernel.Security.*</c>
+    /// rather than constructing <c>AesGcm</c> itself. No <c>SharedKernel.Security.*</c>
     /// exemption is carried forward: <c>12.Security.Oidc</c>'s JWT signing path must consume
     /// <c>SharedKernel.Cryptography.IHmacSigner</c> / <c>IAsymmetricSignatureService</c>
     /// rather than referencing BCL HMAC or asymmetric cipher types directly.

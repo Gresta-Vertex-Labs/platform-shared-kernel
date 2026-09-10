@@ -32,7 +32,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Detection: walks <see cref="TypeDefinition.Methods"/>.<see cref="MethodDefinition.Body"/>
 /// .<see cref="MethodBody.Instructions"/> for <c>newobj</c> opcodes where the operand
-/// <see cref="MethodReference"/>.<see cref="MethodReference.DeclaringType"/>
+/// <see cref="MethodReference"/>.<c>MethodReference.DeclaringType</c>
 /// .<see cref="MemberReference.FullName"/> exactly matches
 /// <c>"Microsoft.AspNetCore.Mvc.ProblemDetails"</c> or
 /// <c>"Microsoft.AspNetCore.Http.HttpValidationProblemDetails"</c>. Reuses the established

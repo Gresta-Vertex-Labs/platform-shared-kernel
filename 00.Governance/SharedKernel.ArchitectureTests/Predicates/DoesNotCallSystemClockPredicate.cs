@@ -16,7 +16,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// domain and application assemblies.
 /// </para>
 /// <para>
-/// The check walks all <see cref="MethodDefinition.Body.Instructions"/> in the type and tests
+/// The check walks all <c>MethodDefinition.Body.Instructions</c> in the type and tests
 /// each <c>call</c> or <c>callvirt</c> opcode operand (<see cref="MethodReference"/>) against
 /// the four forbidden property getter full names.
 /// </para>

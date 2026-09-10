@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest predicate enforcing the <c>04.Contracts</c> wire-format
-/// construction-path contract introduced by WO-054 P-350:
+/// construction-path contract:
 /// <c>SharedKernel.Contracts.Events.EventEnvelope&lt;TEvent&gt;</c> — the platform's single
 /// cross-service event wire format — must be constructed exclusively via
 /// <c>EventEnvelope.Wrap{TEvent}</c>, never a raw object initializer.
@@ -36,22 +36,15 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// exclusion).
 /// </para>
 /// <para>
-/// Introduced in WO-054 P-350, motivated by this review's own finding that the platform's
-/// shipped <c>07.Messaging</c>/<c>SharedKernel.Messaging.MassTransit</c>
-/// <c>MassTransitEventPublisher.PublishEnvelope&lt;TEvent&gt;</c> constructed
-/// <c>EventEnvelope&lt;TEvent&gt;</c> via a raw object initializer instead of
-/// <c>EventEnvelope.Wrap&lt;TEvent&gt;()</c> — <c>04.Contracts</c>'s own XML-doc-mandated
-/// factory — silently dropping the <c>TenantId</c> field shipped for cross-service tenant
-/// routing (WO-052/P-331). That defect shipped in <c>07.Messaging</c>'s P-340
-/// (<c>SK.07.EnvelopeTenancy</c>, ET-04) BEFORE this phase's own implementation session began
-/// (confirmed 2026-08-07 by reading <c>MassTransitEventPublisher.cs</c> directly and by
-/// <c>07.Messaging/state-map.md</c>'s ET-04 row showing <c>●</c> Complete, dated 2026-08-05) —
-/// see <see cref="ContractsLayeringRulesTests"/>'s own remarks and this phase's task-row
-/// annotations in <c>00.Governance/state-map.md</c> for the full stale-dependency correction
-/// record, mirroring the <c>SK.00.StorageTopology</c>/<c>SK.00.SearchTopology</c>/
-/// <c>SK.00.IntelligenceTopology</c>/<c>SK.00.WorkflowTopology</c>/
-/// <c>SK.00.EfPropertyUsageGuard</c> precedent for this exact class of
-/// dependency-resolved-before-implementation finding.
+/// <strong>The defect this rule exists to catch.</strong> A message publisher built its
+/// <c>EventEnvelope&lt;TEvent&gt;</c> with a raw object initializer instead of the
+/// <c>EventEnvelope.Wrap&lt;TEvent&gt;()</c> factory. Every field it did set was correct, so the
+/// code read as unremarkable and shipped — but the initializer simply never mentioned
+/// <c>TenantId</c>, so every published event went out with no tenant on it, and consumers had to
+/// deserialize the payload to work out which tenant an event belonged to. Nothing threw and
+/// nothing failed; the field was just quietly absent. That is the failure mode a factory-only
+/// construction path prevents, and the reason this rule enforces it mechanically rather than by
+/// convention.
 /// </para>
 /// </remarks>
 public static class ContractsLayeringRules
@@ -75,7 +68,7 @@ public static class ContractsLayeringRules
     /// <para>
     /// <strong>Offending pattern</strong> (the real, motivating defect —
     /// <c>07.Messaging</c>'s <c>MassTransitEventPublisher.PublishEnvelope&lt;TEvent&gt;</c>
-    /// before its P-340 fix):
+    /// before it was fixed):
     /// <code>
     /// var envelope = new EventEnvelope&lt;TEvent&gt;
     /// {
@@ -110,7 +103,7 @@ public static class ContractsLayeringRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList NoDirectEventEnvelopeConstructionOutsideContracts(

@@ -7,20 +7,20 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <summary>
 /// Pre-built NetArchTest predicate that enforces the platform's <c>outcome</c>-tag completeness
 /// contract for <c>RequestDuration</c> histogram recordings inside
-/// <c>SharedKernel.Application.Behaviors</c>. Introduced by WO-038 P-235.
+/// <c>SharedKernel.Application.Behaviors</c>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// No SK diagnostic ID is assigned to this rule — it is a NetArchTest <c>ICustomRule</c>,
-/// consistent with the <see cref="HealthCheckTagIntegrityRules"/> (WO-027 P-173) precedent of
+/// consistent with the <see cref="HealthCheckTagIntegrityRules"/> precedent of
 /// SK-less rules for tag/instrumentation completeness checks.
 /// </para>
 /// <para>
 /// <strong>Designed and tested against contrived in-memory fixtures ONLY for this phase.</strong>
 /// This rule is EXPECTED TO FAIL if pointed at the real <c>SharedKernel.Application.Behaviors</c>
 /// assembly until a companion <c>05.Application</c> phase retrofits the non-streaming
-/// <c>MetricsBehavior&lt;,&gt;</c> (P-217) to emit the <c>"outcome"</c> tag on
-/// <c>RequestDuration</c>, matching <c>StreamMetricsBehavior</c>'s (P-234) existing tag shape.
+/// <c>MetricsBehavior&lt;,&gt;</c> to emit the <c>"outcome"</c> tag on
+/// <c>RequestDuration</c>, matching <c>StreamMetricsBehavior</c>'s existing tag shape.
 /// Retrofitting <c>MetricsBehavior&lt;,&gt;</c> itself is <c>05.Application</c> production code and
 /// is explicitly out of scope for <c>00.Governance</c> — this domain writes no implementation
 /// files for other domains.

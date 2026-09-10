@@ -53,7 +53,9 @@ public class DomainGoldStandardRulesTests
 
         // Act — use the real IDomainService and DomainService types
         var conditionList = DomainGoldStandardRules.DomainServicesMustExtendAbstractBase(
-            violationAssembly);
+            violationAssembly,
+            typeof(IDomainService),
+            typeof(DomainService));
         var result = conditionList.GetResult();
 
         // Assert
@@ -77,7 +79,9 @@ public class DomainGoldStandardRulesTests
 
         // Act
         var conditionList = DomainGoldStandardRules.DomainServicesMustExtendAbstractBase(
-            domainAssembly);
+            domainAssembly,
+            typeof(IDomainService),
+            typeof(DomainService));
         var result = conditionList.GetResult();
 
         // Assert

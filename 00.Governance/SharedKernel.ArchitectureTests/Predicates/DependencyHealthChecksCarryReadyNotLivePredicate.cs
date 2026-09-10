@@ -26,7 +26,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <c>"AddRedis"</c>, <c>"AddDatabase"</c>, <c>"AddRabbitMq"</c>, <c>"AddAzureServiceBus"</c>,
 /// <c>"AddCache"</c>) supplied by the consuming test project. This keeps the predicate generic
 /// — the governance layer does not guess at extension method names that may not exist yet
-/// (<c>SharedKernel.ServiceDefaults</c> is not buildable until P-170 ships).
+/// (contrived fixtures only, with no dependency on a host-composition assembly).
 /// </para>
 /// <para>
 /// <strong>Detection technique (IL-literal collection, not full data-flow analysis).</strong>

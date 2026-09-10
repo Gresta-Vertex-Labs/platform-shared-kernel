@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest predicates that enforce the 05.Application extended-pipeline contract
-/// introduced by WO-036 P-225: the three new opt-in behaviors (<c>TracingBehavior</c>,
+/// the three opt-in behaviors (<c>TracingBehavior</c>,
 /// <c>ResilienceBehavior</c>, <c>CacheInvalidationBehavior</c>) reference only abstraction
 /// packages, no existing behavior's <c>TRequest</c> constraint accidentally captures the
 /// streaming query vocabulary, and no type other than <c>ResilienceBehavior</c> hand-rolls a
@@ -19,7 +19,6 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// in-memory fixture assemblies — <c>00.Governance</c> never references
 /// <c>05.Application</c>/<c>05.Application.Behaviors</c> directly (layering: <c>00.Governance</c>
 /// references nothing). The owning domain (<c>05.Application</c>) is responsible for invoking
-/// these factory methods against its own real assembly once WO-036's Core phase ships, mirroring
 /// the existing cross-domain consumption pattern already established for
 /// <see cref="CachingAbstractionRules"/>/<see cref="RedisTopologyRules"/> (consumed by
 /// 02.Caching's own test suites) and <see cref="PersistenceLayerProtectionRules"/> (consumed by
@@ -51,7 +50,7 @@ public static class ApplicationPipelineRules
     /// <remarks>
     /// Mirrors the existing, already-enforced
     /// <see cref="SharedKernelLayeringRules.ApplicationNeverReferencesConcreteInfrastructure"/>
-    /// guarantee, made explicit and behavior-scoped for the three new WO-036 behaviors — the
+    /// guarantee, made explicit and behavior-scoped for the three behaviors — the
     /// same purity expectation <c>CachingBehavior</c> (<c>SharedKernel.Caching.Abstractions</c>
     /// only) already satisfies by construction. Abstractions-only references remain permitted;
     /// only concrete provider packages are forbidden.
@@ -107,7 +106,7 @@ public static class ApplicationPipelineRules
     /// capture <c>IStreamQuery&lt;TResponse&gt;</c>/<c>IStreamRequest&lt;TResponse&gt;</c>.
     /// <c>05.Application/CLAUDE.md</c> documents as an explicit, deliberate design decision that
     /// none of the platform's pipeline behaviors apply to the streaming query vocabulary
-    /// (P-221) — this rule makes that documented fact mechanically verified rather than merely
+    /// — this rule makes that documented fact mechanically verified rather than merely
     /// asserted in prose.
     /// </remarks>
     public static ConditionList NoExistingBehaviorMatchesStreamRequestConstraint(

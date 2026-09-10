@@ -6,7 +6,7 @@ using SharedKernel.ArchitectureTests.Predicates;
 namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
-/// Local-seam interface distinctness guard introduced in WO-037 P-229.
+/// Local-seam interface distinctness guard
 /// </summary>
 /// <remarks>
 /// <para>

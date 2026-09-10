@@ -11,7 +11,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Use these in your architecture test project with a given assembly:
 /// <code>
 /// var result = SharedKernelLayeringRules.DomainNeverReferencesPersistence(domainAssembly).GetResult();
-/// result.IsSuccessful.Should().BeTrue();
+/// AssertRule(conditionList);
 /// </code>
 /// </remarks>
 public static class SharedKernelLayeringRules

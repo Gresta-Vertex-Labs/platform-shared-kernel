@@ -4,7 +4,7 @@ using NetArchTest.Rules;
 namespace SharedKernel.ArchitectureTests.Predicates;
 
 /// <summary>
-/// Custom NetArchTest predicate (WO-046 P-290) that fails any type — no exemption permitted — that
+/// Custom NetArchTest predicate that fails any type — no exemption permitted — that
 /// consumes <c>ITemporalRawClientAccessor</c> as a constructor parameter or a field.
 /// </summary>
 /// <remarks>
@@ -28,9 +28,9 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Detection: iterates <see cref="TypeDefinition.Methods"/> where
 /// <see cref="MethodDefinition.IsConstructor"/> is <see langword="true"/> and checks each
-/// <see cref="ParameterDefinition.ParameterType"/>.<see cref="MemberReference.Name"/> for an exact
+/// <c>ParameterDefinition.ParameterType</c>.<see cref="MemberReference.Name"/> for an exact
 /// match against <c>"ITemporalRawClientAccessor"</c>; separately iterates
-/// <see cref="TypeDefinition.Fields"/> and checks each <see cref="FieldDefinition.FieldType"/>.<see cref="MemberReference.Name"/>
+/// <see cref="TypeDefinition.Fields"/> and checks each <c>FieldDefinition.FieldType</c>.<see cref="MemberReference.Name"/>
 /// for the same exact match — reusing the established Mono.Cecil constructor-parameter and field
 /// inspection pattern already used throughout this file (e.g.
 /// <see cref="NoEncryptionRotationJobInjectionPredicate"/>, <see cref="NoDbContextTransactionInApplicationPredicate"/>).

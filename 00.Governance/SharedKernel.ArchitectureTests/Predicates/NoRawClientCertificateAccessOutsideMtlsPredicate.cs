@@ -5,7 +5,7 @@ using NetArchTest.Rules;
 namespace SharedKernel.ArchitectureTests.Predicates;
 
 /// <summary>
-/// Custom NetArchTest predicate (WO-058 P-383) that fails any type outside
+/// Custom NetArchTest predicate that fails any type outside
 /// <c>SharedKernel.Security.Mtls</c> that reads <c>HttpContext.Connection.ClientCertificate</c>
 /// directly.
 /// </summary>
@@ -13,20 +13,20 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.SecurityArchitectureRules.ClientCertificateAccessNeverDuplicatedOutsideMtls"/>
 /// to mechanize "this validation logic lives in exactly one package" for mutual-TLS
-/// client-certificate trust/validation, applying the <c>SK.00.SecurityContextGuard</c> (P-373)
+/// client-certificate trust/validation, applying the same single-owner
 /// lesson proactively rather than retroactively — before <c>SharedKernel.Security.Mtls</c> even
 /// shipped, not after a future gold-standard review discovered the drift.
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first check):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Security.Mtls"</c> are
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Security.Mtls"</c> are
 /// returned as passing (<see langword="true"/>) unconditionally — that package is the sole
 /// legitimate home for mTLS client-certificate trust/validation logic.
 /// </para>
 /// <para>
 /// <strong>Detection surface (single):</strong> a <c>Call</c>/<c>Callvirt</c> instruction whose
-/// resolved <see cref="MethodReference.Name"/> is exactly <c>"get_ClientCertificate"</c> and
-/// whose <see cref="MethodReference.DeclaringType"/>.<see cref="MemberReference.FullName"/> is
+/// resolved <c>MethodReference.Name</c> is exactly <c>"get_ClientCertificate"</c> and
+/// whose <c>MethodReference.DeclaringType</c>.<see cref="MemberReference.FullName"/> is
 /// exactly <c>"Microsoft.AspNetCore.Http.ConnectionInfo"</c> — the property-getter shape of
 /// <c>HttpContext.Connection.ClientCertificate</c>. This single, precise signal satisfies both
 /// halves of the "<c>HttpContext.Connection.ClientCertificate</c>/<c>X509Certificate2</c>"

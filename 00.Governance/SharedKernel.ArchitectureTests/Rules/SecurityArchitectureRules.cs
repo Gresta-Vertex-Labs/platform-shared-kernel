@@ -7,9 +7,9 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <summary>
 /// Pre-built NetArchTest predicates mechanically enforcing <c>12.Security</c>'s three documented
 /// hard rules — a layering rule, a construction-path rule (SK0031,
-/// <see cref="Diagnostics.RawSecurityContextConstructorInjectionAnalyzer"/> in
+/// <c>Diagnostics.RawSecurityContextConstructorInjectionAnalyzer</c> in
 /// <c>SharedKernel.Analyzers</c>), and a DI-lifetime rule — none of which had any governance
-/// coverage before this class was introduced (WO-057 P-373). The platform's first
+/// coverage before this class was introduced. The platform's first
 /// <c>12.Security</c>-domain architecture-rule class.
 /// </summary>
 /// <remarks>
@@ -33,12 +33,12 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///     Never register as singleton."
 ///   </description></item>
 ///   <item><description>
-///     Rule 3 — <see cref="DpopProofValidationNeverDuplicatedOutsideOidc"/> (WO-058 P-383):
+///     Rule 3 — <see cref="DpopProofValidationNeverDuplicatedOutsideOidc"/>:
 ///     mechanizes "DPoP (RFC 9449) proof-validation logic lives exclusively in
 ///     <c>SharedKernel.Security.Oidc</c>," applied proactively before that surface shipped.
 ///   </description></item>
 ///   <item><description>
-///     Rule 4 — <see cref="ClientCertificateAccessNeverDuplicatedOutsideMtls"/> (WO-058 P-383):
+///     Rule 4 — <see cref="ClientCertificateAccessNeverDuplicatedOutsideMtls"/>:
 ///     mechanizes "mTLS client-certificate trust/validation logic lives exclusively in
 ///     <c>SharedKernel.Security.Mtls</c>," applied proactively before that package shipped.
 ///   </description></item>
@@ -47,7 +47,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// The third documented hard rule — "Application-layer and domain-adjacent code must inject
 /// <c>IUserContext</c>/<c>ITenantProvider</c> — never <c>IHttpContextAccessor</c>,
 /// <c>ClaimsPrincipal</c>, or <c>HttpContext</c> directly" — is mechanized separately as SK0031
-/// (<see cref="Diagnostics.RawSecurityContextConstructorInjectionAnalyzer"/>), a Roslyn analyzer,
+/// (<c>Diagnostics.RawSecurityContextConstructorInjectionAnalyzer</c>), a Roslyn analyzer,
 /// not an architecture test — it is a per-call-site syntax pattern, not an assembly-dependency
 /// or IL-shape concern.
 /// </para>
@@ -167,9 +167,9 @@ public static class SecurityArchitectureRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// (WO-058 P-383) Mechanizes "this validation logic lives in exactly one package" for DPoP
+    /// Mechanizes "this validation logic lives in exactly one package" for DPoP
     /// (RFC 9449) sender-constrained proof validation, applying the
-    /// <c>SK.00.SecurityContextGuard</c> (P-373) lesson proactively rather than retroactively —
+    /// same lesson proactively rather than retroactively —
     /// before <c>12.Security</c>'s DPoP surface even shipped, not after a future gold-standard
     /// review discovered the drift.
     /// </para>
@@ -212,7 +212,7 @@ public static class SecurityArchitectureRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// (WO-058 P-383) Mechanizes "this validation logic lives in exactly one package" for mTLS
+    /// Mechanizes "this validation logic lives in exactly one package" for mTLS
     /// client-certificate trust/validation, applying the same proactive-locality motivation as
     /// <see cref="DpopProofValidationNeverDuplicatedOutsideOidc"/> — before
     /// <c>SharedKernel.Security.Mtls</c> even shipped, not after a future gold-standard review

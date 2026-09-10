@@ -30,20 +30,19 @@ namespace SharedKernel.ArchitectureTests;
 /// <para>
 /// <strong>Caller-supplied ranges.</strong> <c>00.Governance</c> never references
 /// <c>SharedKernel.Primitives</c> (it references nothing in production code). The consuming test
-/// project builds the <paramref name="assemblyRanges"/> (see
+/// project builds the <c>assemblyRanges</c> (see
 /// <see cref="AssertGloballyUniqueAndInRange"/>) dictionary itself, typically from
-/// <c>SharedKernel.Primitives.Logging.LoggingEventIdRanges</c> (P-249) constants — keeping that
+/// <c>SharedKernel.Primitives.Logging.LoggingEventIdRanges</c> constants — keeping that
 /// registry the single source of truth for range numbers while this helper stays
 /// dependency-free.
 /// </para>
 /// <para>
-/// <strong>Real-assembly status.</strong> EXPECTED TO FAIL if pointed at the platform's real
-/// shipped assemblies as of WO-041 P-250 (2026-07-08) — the WO-041 audit's own confirmed
-/// collisions (<c>SharedKernel.Caching.Redis.Core</c> vs. <c>SharedKernel.Caching.Redis.PubSub</c>,
-/// both 4001/4002; three internal <c>SharedKernel.Messaging.MassTransit</c> collisions) have not
-/// been retrofitted, and <c>01.Core</c>'s own <c>LoggingEventIdRanges</c> registry (P-249) is
-/// itself still pending. Design and tests for this phase use contrived in-memory multi-assembly
-/// Mono.Cecil fixtures only.
+/// <strong>Expect failures on first adoption.</strong> Pointed at a codebase that has been
+/// logging for a while, this helper normally fails the first time: duplicate
+/// <c>EventId</c> values accumulate quietly, because nothing in the compiler or the runtime
+/// objects to two log messages sharing a number. That first failure is the point — it lists the
+/// collisions so they can be retrofitted. Treat a green run as a property to be earned and then
+/// defended, not as the expected initial state.
 /// </para>
 /// </remarks>
 public static class LoggingEventIdIntegrityAssertion

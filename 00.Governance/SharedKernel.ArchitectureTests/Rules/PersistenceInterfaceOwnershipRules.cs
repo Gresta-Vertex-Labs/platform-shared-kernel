@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest predicates that enforce interface declaration ownership and
-/// read-side repository contract correctness, codifying the P-078 and P-080 interface
+/// read-side repository contract correctness, codifying two earlier interface
 /// migration decisions.
 /// </summary>
 /// <remarks>
@@ -18,7 +18,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <list type="bullet">
 ///   <item><description>
 ///     <see cref="IUserContextDeclaredOnlyInSecurityAbstractions"/> — <c>IUserContext</c> must
-///     not be declared outside <c>SharedKernel.Security.Abstractions</c> (P-078 migration).
+///     not be declared outside <c>SharedKernel.Security.Abstractions</c>.
 ///   </description></item>
 ///   <item><description>
 ///     <see cref="TenantIdentityInterfacesDeclaredOnlyInSecurityAbstractions"/> —
@@ -32,7 +32,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 ///   <item><description>
 ///     <see cref="NoGetByIdAsyncOnReadRepository"/> — types implementing an
 ///     <c>IReadRepository</c>-prefixed interface must not declare <c>GetByIdAsync</c> (removed
-///     in P-080 to eliminate duplication with the write-side <c>IRepository</c>).
+///     to eliminate duplication with the write-side <c>IRepository</c>).
 ///   </description></item>
 /// </list>
 /// <para>
@@ -54,7 +54,7 @@ public static class PersistenceInterfaceOwnershipRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>IUserContext</c> was migrated to <c>SharedKernel.Security.Abstractions</c> in P-078.
+    /// <c>IUserContext</c> was migrated to <c>SharedKernel.Security.Abstractions</c>.
     /// Local re-declarations in persistence or application layers duplicate the contract and
     /// break the single-source-of-truth principle for security identity abstractions.
     /// </para>
@@ -166,7 +166,7 @@ public static class PersistenceInterfaceOwnershipRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>GetByIdAsync</c> was removed from <c>IReadRepository&lt;T,TId&gt;</c> in P-080 to
+    /// <c>GetByIdAsync</c> was removed from <c>IReadRepository&lt;T,TId&gt;</c> to
     /// eliminate duplication with the write-side <c>IRepository&lt;T,TId&gt;</c>. Re-declaring
     /// it on a concrete implementor reintroduces the anti-pattern and diverges from the platform
     /// read/write split contract.
@@ -178,7 +178,7 @@ public static class PersistenceInterfaceOwnershipRules
     /// <para>
     /// <strong>Failure message content:</strong>
     /// <c>{type}.GetByIdAsync must be removed — use FindByIdAsync (returns Result&lt;T&gt;) or
-    /// GetAsync (returns T?) instead. GetByIdAsync was removed in P-080 to eliminate
+    /// GetAsync (returns T?) instead. GetByIdAsync was removed to eliminate
     /// duplication.</c>
     /// </para>
     /// <para>

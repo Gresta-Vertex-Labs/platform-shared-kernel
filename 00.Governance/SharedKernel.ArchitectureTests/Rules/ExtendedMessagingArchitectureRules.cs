@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest predicates (SK0706–SK0707) that close the misuse vectors introduced by
-/// the messaging adapter chains delivered in WO-020/WO-021: direct injection of
+/// the messaging adapter chains: direct injection of
 /// <c>MassTransit.IMessageScheduler</c> outside the messaging boundary, and saga state classes
 /// that do not extend <c>SagaStateBase</c>.
 /// </summary>
@@ -46,7 +46,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <c>00.Governance/CLAUDE.md</c> before it is applied in code.
 /// </para>
 /// <para>
-/// Introduced in WO-021 P-133. Reference this class with <c>PrivateAssets="all"</c> so it never
+/// Reference this class with <c>PrivateAssets="all"</c> so it never
 /// becomes a transitive production dependency.
 /// </para>
 /// </remarks>

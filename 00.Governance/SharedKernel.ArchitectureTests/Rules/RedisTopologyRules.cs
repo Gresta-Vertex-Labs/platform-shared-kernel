@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Pre-built NetArchTest predicates that mechanically enforce the post-split five-package
 /// Redis topology (<c>SharedKernel.Caching.Redis.Core</c>, <c>.Redis</c>,
 /// <c>.Redis.DistributedLocking</c>, <c>.Redis.HashStore</c>, <c>.Redis.PubSub</c>) introduced
-/// by WO-023 P-140–P-144, and re-affirm the <c>02.Caching</c> ↔ <c>07.Messaging</c> exclusion
+/// by the Redis role split, and re-affirm the <c>02.Caching</c> ↔ <c>07.Messaging</c> exclusion
 /// boundary across the new package set.
 /// </summary>
 /// <remarks>
@@ -21,7 +21,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// <strong>Matching note:</strong> NetArchTest's <c>NotHaveDependencyOn(term)</c> compares
-/// <paramref name="term" /> against each scanned type's set of dependency <em>namespaces</em>
+/// <c>term</c> against each scanned type's set of dependency <em>namespaces</em>
 /// (the declaring namespace of every type referenced from that type's members) using a
 /// <c>StartsWith</c> comparison, with <strong>no trailing dot</strong> on either side. Every
 /// forbidden term in this class is therefore the exact namespace of the package it identifies —
@@ -63,7 +63,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </list>
 /// <para>
 /// Any additional exemption must be documented in <c>00.Governance/CLAUDE.md</c> before it is
-/// applied in code. Introduced in WO-023 P-145.
+/// applied in code.
 /// </para>
 /// </remarks>
 public static class RedisTopologyRules
@@ -154,7 +154,7 @@ public static class RedisTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList RedisCoreNeverReferencesCapabilityPackages(Assembly redisCoreAssembly)
@@ -219,7 +219,7 @@ public static class RedisTopologyRules
     /// class-level <strong>Self-dependency note</strong>. An assembly whose simple name is not a
     /// recognized capability package (e.g., a test fixture) is checked against the full term set,
     /// since it owns none of the four capability namespaces. Assert each element via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList[] CapabilityPackagesNeverReferenceEachOther(
@@ -283,7 +283,7 @@ public static class RedisTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList PubSubNeverReferencesMessaging(Assembly pubSubAssembly) =>
@@ -376,7 +376,7 @@ public static class RedisTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList CachingAbstractionsHasNoInfrastructureDependencies(

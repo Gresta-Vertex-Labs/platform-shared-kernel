@@ -15,7 +15,7 @@ namespace SharedKernel.ArchitectureTests;
 /// NetArchTest <c>ConditionList</c>/<c>ICustomRule</c>, because "a specific options type's specific
 /// property resolves to a specific default value" has no single-assembly "fire on a contrived
 /// violating assembly" shape a <c>ConditionList</c> naturally expresses, and no source-level
-/// anti-pattern a Roslyn analyzer could target — the motivating P-385/P-386 defect
+/// anti-pattern a Roslyn analyzer could target — the motivating defect
 /// (<c>MtlsAuthenticationOptions.AllowedCertificateTypes</c>/<c>.RevocationMode</c> shipped as
 /// <c>CertificateTypes.All</c>/<c>X509RevocationMode.NoCheck</c>) was a correctly-shaped,
 /// syntactically unremarkable property initializer carrying the wrong constant.
@@ -96,25 +96,9 @@ namespace SharedKernel.ArchitectureTests;
 /// <see cref="LoggingEventIdIntegrityAssertion"/>/<see cref="WellKnownConstantOwnershipAssertion"/>.
 /// </para>
 /// <para>
-/// <strong>Real-assembly status (Technique 1/2 — <c>SK.00.SecureDefaultsLock</c>/P-390).</strong>
-/// Confirmed on disk at implementation time (2026-08-18): <c>12.Security</c> shipped its full
-/// WO-060 scope before that phase's implementation session — <c>SharedKernel.Security.Mtls</c>'s
-/// <c>MtlsAuthenticationOptions.AllowedCertificateTypes</c> defaults to
-/// <c>CertificateTypes.Chained</c> and <c>.RevocationMode</c> defaults to
-/// <c>X509RevocationMode.Offline</c> (C-39); <c>SharedKernel.Security.Oidc</c>'s
-/// <c>SecurityOptions.JwtOptions.ValidAlgorithms</c> and <c>DpopOptions.ValidAlgorithms</c> both
-/// default to <c>["PS256", "ES256"]</c> (C-40/C-41). Both real-assembly checks are wired directly
-/// in <c>SecureDefaultsAssertionTests</c> as GATING tests (T-309/T-310) rather than deferred as a
-/// Cross-Domain Dependency follow-up, mirroring the
-/// <c>SK.00.SenderConstrainedCredentialGuard</c>/<c>SK.00.StorageTopology</c>/
-/// <c>SK.00.SearchTopology</c> precedent for this exact class of dependency-resolved-before-
-/// implementation finding — this phase's own authoring-time prose and Cross-Domain Dependencies
-/// section were stale.
-/// </para>
-/// <para>
 /// <strong>Technique 3 — <see cref="AssertStringCollectionPropertyDefaultEquals"/>: order-
 /// sensitive constructor-initializer string-sequence equality.</strong> Added by
-/// <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401. Reuses the exact private literal-collection walk
+/// Reuses the exact private literal-collection walk
 /// Technique 2 already built (<c>ResolveConstructorStringLiteralCollectionDefault</c> — collect
 /// every <see cref="OpCodes.Ldstr"/> operand walking BACKWARD from the target property's
 /// backing-field <see cref="OpCodes.Stfld"/> to the previous initializer segment's boundary, then
@@ -128,7 +112,7 @@ namespace SharedKernel.ArchitectureTests;
 /// <c>newarr</c>/<c>dup</c>/<c>ldc.i4.N</c>/<c>ldstr</c>/<c>stelem.ref</c> sequence per element —
 /// interleaved index-then-value IL, not a flat run of consecutive <c>Ldstr</c> instructions — yet
 /// the existing backward walk still collects the three <c>Ldstr</c> operands in reverse emission
-/// order and the final <see cref="List{T}.Reverse"/> restores the correct forward sequence. Fails
+/// order and the final <see cref="List{T}.Reverse()"/> restores the correct forward sequence. Fails
 /// if the collected sequence's length differs from <c>expectedValuesInOrder</c>'s length, or if
 /// any positional element differs under ordinal (case-sensitive) comparison — platform
 /// <c>StrategyName</c> values are compile-time constants, not user input, so no case-insensitive
@@ -138,9 +122,9 @@ namespace SharedKernel.ArchitectureTests;
 /// <para>
 /// <strong>Technique 4 — <see cref="AssertMethodBodyInvokesMethod"/>: method-body invocation-
 /// presence assertion, including compiler-generated lambda closures.</strong> Added by
-/// <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401 — the first check in this file that fails on the
+/// The first check in this file that fails on the
 /// ABSENCE of a call site rather than the presence of an unwanted one. Loads
-/// <paramref name="declaringType"/>'s <see cref="TypeDefinition"/>, locates the single method
+/// <c>declaringType</c>'s <see cref="TypeDefinition"/>, locates the single method
 /// named <c>methodName</c> (a setup exception, never a silent false pass/fail, if zero or more
 /// than one match), and scans its instruction body for a <see cref="OpCodes.Call"/>/
 /// <see cref="OpCodes.Callvirt"/> instruction whose resolved <see cref="MethodReference"/> matches
@@ -167,37 +151,19 @@ namespace SharedKernel.ArchitectureTests;
 /// lives when the call is made from inside a lambda, not about the source generator itself.
 /// </para>
 /// <para>
-/// <strong>Real-assembly status (Technique 3/4 — <c>SK.00.TenantAndMtlsBoundaryLock</c>/P-401).
-/// </strong> Confirmed on disk at implementation time (2026-08-19) — the Cross-Domain Dependency
-/// this phase's own authoring-time prose recorded against <c>13.ServiceDefaults</c> P-393/P-394/
-/// P-395 was stale: that domain had already shipped its full WO-061 scope (171/171 + 51/51 tests
-/// green) before this phase's implementation session began, mirroring the now-repeated
-/// dependency-resolved-before-implementation pattern this file's own Cross-Domain Dependencies
-/// section already records for <c>SK.00.SenderConstrainedCredentialGuard</c>/
-/// <c>SK.00.SecureDefaultsLock</c>. <c>SharedKernel.MultiTenancy</c>'s
-/// <c>TenantResolutionOptions.StrategyOrder</c> defaults to
-/// <c>[TenantResolutionStrategyNames.Claim, .Header, .Database]</c> (const-folded to
-/// <c>["Claim", "Header", "Database"]</c> at the IL level); <c>SharedKernel.ServiceDefaults</c>'s
-/// <c>MtlsForwardedHeaderExtensions.AddMtlsForwardedHeaderCertificate</c> genuinely calls
-/// <c>ServiceDefaultsLog.ForwardedHeaderTrustBoundaryUnconfigured</c> from inside its
-/// <c>PostConfigure</c> lambda when <c>TrustedNetworks</c> is left empty. Both real-assembly
-/// checks are wired directly in <c>SecureDefaultsAssertionTests</c> as GATING tests (T-317/T-318)
-/// rather than deferred as a Cross-Domain Dependency follow-up.
-/// </para>
-/// <para>
 /// <strong>Technique 5 — <see cref="AssertMethodBodyRegistersSingleton"/>: closed-generic
 /// DI-registration-presence assertion.</strong> Added by
-/// <c>SK.00.WebhookSsrfGuardLock</c>/P-432 — generalizes/INVERTS
+/// Generalizes and INVERTS
 /// <see cref="Rules.SecurityArchitectureRules"/>'s sibling predicate (the internal
-/// <c>NoSecurityContextSingletonRegistrationPredicate</c>, WO-057/P-373)
+/// <c>NoSecurityContextSingletonRegistrationPredicate</c>)
 /// <see cref="GenericInstanceMethod.GenericArguments"/> inspection technique from "assert ABSENCE
 /// of a singleton registration for a forbidden type" to "assert PRESENCE of a singleton
 /// registration for exactly the given service→implementation pair." Locates
-/// <paramref name="declaringType"/>'s single method matching <c>methodName</c> (a setup
+/// <c>declaringType</c>'s single method matching <c>methodName</c> (a setup
 /// exception, never a silent false pass/fail, on zero or more than one match — the same
 /// discipline as every other method-body-scanning technique in this class) and scans its
 /// instruction body — plus, reusing <see cref="AssertMethodBodyInvokesMethod"/>'s proven
-/// closure-scanning extension (T-318/T-328), every method on every nested type whose name starts
+/// closure-scanning extension, every method on every nested type whose name starts
 /// with <c>&lt;{methodName}&gt;b__</c> — for a <see cref="OpCodes.Call"/>/
 /// <see cref="OpCodes.Callvirt"/> instruction whose operand is a closed
 /// <see cref="GenericInstanceMethod"/> named either <c>"AddSingleton"</c> or
@@ -229,7 +195,7 @@ namespace SharedKernel.ArchitectureTests;
 /// </para>
 /// <para>
 /// <strong>Exact-pairing discipline, not mere call-presence.</strong> A registration for the same
-/// <paramref name="serviceType"/> with a DIFFERENT closed <paramref name="implementationType"/>
+/// <c>serviceType</c> with a DIFFERENT closed <c>implementationType</c>
 /// argument does not satisfy this check — mirroring
 /// <see cref="AssertStringCollectionPropertyDefaultEquals"/>'s order-sensitive (not merely
 /// membership-sensitive) discipline, applied here to a registration pairing instead of a string
@@ -242,24 +208,6 @@ namespace SharedKernel.ArchitectureTests;
 /// <see cref="GenericInstanceMethod.GenericArguments"/> element resolves to a
 /// <see cref="GenericParameter"/>, whose <see cref="MemberReference.FullName"/> can never equal a
 /// concrete implementation type's <see cref="Type.FullName"/>.
-/// </para>
-/// <para>
-/// <strong>Real-assembly status (Technique 5 — <c>SK.00.WebhookSsrfGuardLock</c>/P-432).</strong>
-/// Confirmed on disk at implementation time (2026-08-21) — the Cross-Domain Dependency this
-/// phase's own authoring-time prose recorded against <c>15.Integration</c> P-422 (H-06/H-07) as
-/// <c>○</c> Not Started was STALE: that domain had already shipped <c>IWebhookUrlValidator</c>/
-/// <c>PrivateNetworkWebhookUrlValidator</c> and their default registration past Design into Core
-/// before this phase's implementation session began, mirroring the now-repeated
-/// dependency-resolved-before-implementation pattern this file's own Cross-Domain Dependencies
-/// section already records six times over. The real, compiled
-/// <c>ServiceCollectionExtensions.AddSharedKernelWebhooks</c> genuinely calls
-/// <c>services.TryAddSingleton&lt;IWebhookUrlValidator, PrivateNetworkWebhookUrlValidator&gt;()</c>
-/// directly in its own IL body (not inside a lambda closure — unlike the T-318/T-331 real call
-/// sites, this one exercises no closure-scanning). Wired directly in
-/// <c>SecureDefaultsAssertionTests</c> as a GATING test (T-335) rather than deferred as a
-/// Cross-Domain Dependency follow-up, verified non-vacuous via a temporary sanity check (a
-/// deliberately-wrong implementation type against the same real registration method, confirmed to
-/// fail, then reverted before commit).
 /// </para>
 /// </remarks>
 public static class SecureDefaultsAssertion
@@ -509,7 +457,7 @@ public static class SecureDefaultsAssertion
     /// <b>Signature disambiguation.</b> Resolving purely by name breaks the moment a locked method
     /// gains a same-named overload for any reason unrelated to the locked call site (the motivating
     /// case: <c>AesGcmEncryptionService.EncryptToString(string, byte[], Action&lt;byte[]&gt;?)</c>,
-    /// an <c>internal</c>, <c>InternalsVisibleTo</c>-gated testing seam added by P-524/WO-083
+    /// an <c>internal</c>, <c>InternalsVisibleTo</c>-gated testing seam
     /// alongside the pre-existing <c>public EncryptToString(string, byte[])</c>). Renaming the
     /// locked production method to satisfy this helper would be the tail wagging the dog — the
     /// helper gained a way to disambiguate instead.
@@ -1109,7 +1057,7 @@ public static class SecureDefaultsAssertion
     /// Resolves <paramref name="reflectionType"/>'s Mono.Cecil <see cref="TypeDefinition"/> inside
     /// <paramref name="module"/> by walking the declaring-type chain and matching on simple names
     /// at each level, rather than comparing <see cref="Type.FullName"/> against
-    /// <see cref="TypeDefinition.FullName"/> directly — .NET reflection separates a nested type's
+    /// <c>TypeDefinition.FullName</c> directly — .NET reflection separates a nested type's
     /// declaring type with <c>+</c> (e.g. <c>Outer+Inner</c>) while Mono.Cecil separates it with
     /// <c>/</c> (e.g. <c>Outer/Inner</c>), so a direct string comparison would silently fail to
     /// resolve a nested options type such as <c>SecurityOptions.JwtOptions</c>.

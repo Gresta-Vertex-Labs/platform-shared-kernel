@@ -18,7 +18,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Namespace exemption:</strong> types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with
+/// <c>TypeDefinition.Namespace</c> starts with
 /// <c>"SharedKernel.Communication.Grpc"</c> return <see langword="true"/> unconditionally —
 /// the platform gRPC package is the sole legitimate host for interceptor implementations.
 /// </para>

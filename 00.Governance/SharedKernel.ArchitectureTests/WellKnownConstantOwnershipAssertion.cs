@@ -21,7 +21,7 @@ namespace SharedKernel.ArchitectureTests;
 /// <para>
 /// <strong>Reuses and extends <see cref="StringConstantsClassDetector"/>.</strong> This helper
 /// calls <see cref="StringConstantsClassDetector.ResolveStringFieldsOnType(TypeDefinition)"/> —
-/// the field-shape + literal-value resolution technique from WO-028 P-178 — against EVERY
+/// the same field-shape + literal-value resolution technique — against EVERY
 /// <see cref="TypeDefinition"/> in a scanned assembly (walked recursively, including nested types,
 /// via the same <c>Mono.Cecil</c> traversal <see cref="LoggingEventIdIntegrityAssertion"/> uses),
 /// not only types matching the <c>abstract sealed</c> "constants class" shape the original
@@ -36,26 +36,15 @@ namespace SharedKernel.ArchitectureTests;
 /// <c>WellKnownHeaders</c>/<c>WellKnownBaggageKeys</c> values), <c>owningTypeFullNames</c> (e.g.
 /// <c>"SharedKernel.Primitives.Propagation.WellKnownHeaders"</c>), and <c>assembliesToScan</c>
 /// (every other shipped production assembly) — keeping <c>01.Core</c>'s <c>WellKnownHeaders</c>/
-/// <c>WellKnownBaggageKeys</c> (P-259) as the single source of truth for the canonical values
+/// <c>WellKnownBaggageKeys</c> as the single source of truth for the canonical values
 /// while this helper itself stays dependency-free.
 /// </para>
 /// <para>
-/// <strong>Motivating incident.</strong> P-261 — a <c>"CorrelationId"</c> vs <c>"correlation.id"</c>
+/// <strong>Motivating incident.</strong> A <c>"CorrelationId"</c> vs <c>"correlation.id"</c>
 /// mismatch between a hand-rolled literal and the value <c>01.Core</c>'s registry actually
 /// declared. A documented "always reference the <c>01.Core</c> constant" convention alone is
 /// exactly the kind of rule this domain's own precedent (SK0013, <c>PresentationLayeringRules</c>,
 /// SK0020/SK0021) has shown will drift without a build-time gate.
-/// </para>
-/// <para>
-/// <strong>Real-assembly status.</strong> Design/tests for this phase (WO-042 P-264, authored
-/// 2026-07-14) used contrived in-memory multi-assembly Mono.Cecil fixtures only, since only
-/// <c>01.Core</c>'s D-30 design for <c>WellKnownHeaders</c>/<c>WellKnownBaggageKeys</c> was locked
-/// at that time. <strong>Correction (SK.00.MagicStringGuard closeout, 2026-07-16):</strong>
-/// <c>01.Core</c> P-259 shipped the real types the same day at
-/// <c>SharedKernel.Primitives.Propagation.WellKnownHeaders</c>/<c>WellKnownBaggageKeys</c>, and
-/// P-260/P-261/P-262/P-263 (the consuming-domain retrofits) all landed by 2026-07-16 — real-
-/// assembly wiring is unblocked but was not implemented in this phase; it remains a candidate
-/// follow-up.
 /// </para>
 /// </remarks>
 public static class WellKnownConstantOwnershipAssertion
@@ -76,7 +65,7 @@ public static class WellKnownConstantOwnershipAssertion
     /// <param name="owningTypeFullNames">
     /// The full Mono.Cecil type names (e.g.
     /// <c>"SharedKernel.Primitives.Propagation.WellKnownHeaders"</c>) permitted to declare fields
-    /// carrying the canonical values. A type whose <see cref="TypeDefinition.FullName"/> appears in
+    /// carrying the canonical values. A type whose <c>TypeDefinition.FullName</c> appears in
     /// this collection is excluded from the scan entirely — the owning type is expected to declare
     /// exactly these values, by design.
     /// </param>

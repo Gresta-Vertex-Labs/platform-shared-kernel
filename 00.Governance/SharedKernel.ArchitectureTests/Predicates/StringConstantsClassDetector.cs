@@ -91,7 +91,7 @@ public static class StringConstantsClassDetector
     /// method still resolves whatever qualifying string fields it declares.
     /// </summary>
     /// <remarks>
-    /// Used by <c>WellKnownConstantOwnershipAssertion</c> (WO-042 P-264) to walk EVERY
+    /// Used by <c>WellKnownConstantOwnershipAssertion</c> to walk EVERY
     /// <c>TypeDefinition</c> in a scanned assembly — not only types matching the constants-class
     /// shape — so a stray <c>const</c>/<c>static readonly string</c> field on an ordinary class is
     /// caught too.

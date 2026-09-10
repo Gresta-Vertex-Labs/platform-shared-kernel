@@ -18,13 +18,13 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Exemption (EfUnitOfWork exclusion):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Persistence.EfCore"</c>
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Persistence.EfCore"</c>
 /// are returned as passing (<see langword="true"/>) unconditionally as the very first guard —
 /// before any IL walk is performed.
 /// </para>
 /// <para>
 /// The IL walk checks every <c>call</c> or <c>callvirt</c> instruction operand. An instruction
-/// is a violation when its <see cref="MethodReference.DeclaringType"/>.<see cref="MemberReference.Name"/>
+/// is a violation when its <c>MethodReference.DeclaringType</c>.<see cref="MemberReference.Name"/>
 /// equals <c>"DbContext"</c> and the method <see cref="MemberReference.Name"/> is either
 /// <c>"SaveChanges"</c> or <c>"SaveChangesAsync"</c>.
 /// </para>

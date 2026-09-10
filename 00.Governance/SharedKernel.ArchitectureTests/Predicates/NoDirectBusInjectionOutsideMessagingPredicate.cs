@@ -17,14 +17,14 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first guard):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Messaging"</c>
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Messaging"</c>
 /// return <see langword="true"/> unconditionally — both <c>SharedKernel.Messaging.Abstractions</c>
 /// and <c>SharedKernel.Messaging.MassTransit</c> (and all sub-namespaces) are exempt.
 /// </para>
 /// <para>
 /// <strong>Detection:</strong> iterates <see cref="TypeDefinition.Methods"/> where
 /// <see cref="MethodDefinition.IsConstructor"/> is <see langword="true"/> and checks each
-/// <see cref="ParameterDefinition.ParameterType"/>.<see cref="MemberReference.Name"/>
+/// <c>ParameterDefinition.ParameterType</c>.<see cref="MemberReference.Name"/>
 /// against the forbidden set <c>{"IBus", "IPublishEndpoint", "ISendEndpointProvider"}</c>
 /// (exact name match, case-sensitive).
 /// </para>

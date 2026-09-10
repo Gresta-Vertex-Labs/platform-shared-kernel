@@ -10,12 +10,12 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Rule 1 — <see cref="DiExtensionsUseTryAddRegistrationConvention"/> (P-523/WO-083): mechanizes
-/// P-518's corrected DI-registration idiom — every one of <c>01.Core</c>'s own DI extension
+/// Rule 1 — <see cref="DiExtensionsUseTryAddRegistrationConvention"/>: mechanizes
+/// the platform's DI-registration idiom — every one of <c>01.Core</c>'s own DI extension
 /// methods registers its own services via <c>TryAdd*</c>/<c>TryAddEnumerable</c>, never a plain
 /// <c>Add*</c> — closing the door on the convention silently drifting back the next time someone
 /// adds a registration line, mirroring this platform's established "follow a corrected default
-/// with a structural lock" pattern (P-401, P-410, P-432, P-489, P-490).
+/// with a structural lock" pattern.
 /// </para>
 /// <para>
 /// Reference this class with <c>PrivateAssets="all"</c> so it never becomes a transitive

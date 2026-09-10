@@ -7,18 +7,18 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// <summary>
 /// Pre-built NetArchTest predicate that bans bare string literals at health-check registration
 /// call sites when a sibling string constants class in the same assembly already exposes that
-/// exact value. Introduced by WO-028 P-178.
+/// exact value.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Motivating incident.</strong> P-177's audit of <c>13.ServiceDefaults</c> found two
+/// <strong>Motivating incident.</strong> An audit of the platform's own host composition found two
 /// generations of the same mistake: one well-known-string constants class was built correctly,
 /// but several sibling files kept hardcoding default health-check names as bare string literals
 /// instead of extending the same discipline. Nothing mechanically caught the inconsistency. This
 /// rule closes that gap.
 /// </para>
 /// <para>
-/// <strong>Additive, not overlapping, with <see cref="HealthCheckTagIntegrityRules"/> (P-173).</strong>
+/// <strong>Additive, not overlapping, with <see cref="HealthCheckTagIntegrityRules"/>.</strong>
 /// <see cref="HealthCheckTagIntegrityRules"/> enforces tag mutual-exclusivity semantics
 /// (<c>"live"</c> vs <c>"ready"</c>) — a domain-specific concern hardcoded to those two tag
 /// values. This rule enforces a source-discipline concern (bare literals vs. named constants)

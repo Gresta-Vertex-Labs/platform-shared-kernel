@@ -38,7 +38,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// closed-generic <c>AddSingleton&lt;TService&gt;(...)</c>/
 /// <c>AddSingleton&lt;TService,TImplementation&gt;(...)</c> call shapes — the non-generic
 /// <c>AddSingleton(Type, Type)</c>/<c>AddSingleton(Type, Func&lt;IServiceProvider, object&gt;)</c>
-/// overloads are not detected, mirroring <see cref="HealthCheckTagIntegrityRules"/>'s own
+/// overloads are not detected, mirroring <c>HealthCheckTagIntegrityRules</c>'s own
 /// documented data-flow limitation. No known legitimate use of either non-generic overload for
 /// these two types exists in the platform today; revisit only if a real false negative is found.
 /// </para>

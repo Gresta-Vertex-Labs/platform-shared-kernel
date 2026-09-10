@@ -8,7 +8,7 @@ namespace SharedKernel.ArchitectureTests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Introduced by WO-036 P-225. <c>ApplicationBehaviorsBuilder.Build()</c> registers behaviors
+/// <c>ApplicationBehaviorsBuilder.Build()</c> registers behaviors
 /// in a fixed, non-negotiable order (the ten-named-slot canonical sequence documented in
 /// <c>05.Application/CLAUDE.md</c>) regardless of <c>.AddXBehavior()</c> call order. Without a
 /// mechanical assertion, a future edit to <c>Build()</c> can silently reorder the sequence —
@@ -40,7 +40,7 @@ public static class PipelineOrderAssertion
     /// </summary>
     /// <param name="services">
     /// The (unbuilt) <see cref="IServiceCollection"/> to inspect. This method deliberately does
-    /// NOT call <see cref="ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(IServiceCollection)"/>
+    /// NOT call <c>BuildServiceProvider()</c>
     /// — MediatR resolves <c>IPipelineBehavior&lt;,&gt;</c> instances in registration order, so
     /// inspecting the unbuilt <see cref="ServiceDescriptor"/> list is sufficient and avoids the
     /// cost/side-effects of a full container build.

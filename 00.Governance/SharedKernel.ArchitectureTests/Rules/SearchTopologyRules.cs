@@ -7,7 +7,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Pre-built NetArchTest predicates that mechanically enforce the <c>09.Search</c> two-provider
 /// package topology (<c>SharedKernel.Search.Abstractions</c>, <c>SharedKernel.Search.Meilisearch</c>,
 /// <c>SharedKernel.Search.ElasticSearch</c>) documented in prose by <c>09.Search/CLAUDE.md</c>.
-/// Introduced in WO-044 P-278.
+///
 /// </summary>
 /// <remarks>
 /// <para>
@@ -96,7 +96,7 @@ public static class SearchTopologyRules
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
-    /// <c>result.IsSuccessful.Should().BeTrue()</c> or <c>AssertRule</c> on
+    /// <c>AssertRule</c> on
     /// <see cref="Helpers.ArchitectureRuleBase"/>.
     /// </returns>
     public static ConditionList AbstractionsHasNoThirdPartyDependencies(Assembly abstractionsAssembly)

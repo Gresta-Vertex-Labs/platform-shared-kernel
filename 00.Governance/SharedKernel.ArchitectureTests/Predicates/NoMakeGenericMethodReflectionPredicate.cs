@@ -13,10 +13,10 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.ReflectionGuardRules"/> to enforce the platform-wide prohibition
 /// on reflection-based generic method invocation (<c>GetMethod</c>/<c>GetMethods</c> +
-/// <c>MakeGenericMethod</c> + <c>Invoke</c>) introduced by WO-024 P-153.
+/// <c>MakeGenericMethod</c> + <c>Invoke</c>)
 /// </para>
 /// <para>
-/// <strong>Motivating incident (P-147 / WO-024):</strong>
+/// <strong>Motivating incident:</strong>
 /// <c>SharedKernel.Persistence.EfCore.EncryptionRotationService.LoadBatchAsync</c> shipped
 /// a <c>GetMethod("LoadBatchAsync").MakeGenericMethod(entityType).Invoke(...)</c> pattern
 /// while the same package's <c>CLAUDE.md</c> documented expression trees as the gold
@@ -27,7 +27,7 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// <strong>Detection logic:</strong> for each <see cref="MethodDefinition"/> with a non-null
 /// body, the predicate checks for <see cref="OpCodes.Call"/> or <see cref="OpCodes.Callvirt"/>
-/// instructions whose <see cref="MethodReference.Name"/> equals <c>"MakeGenericMethod"</c>
+/// instructions whose <c>MethodReference.Name</c> equals <c>"MakeGenericMethod"</c>
 /// (exact, case-sensitive). This name is unique to <c>System.Reflection.MethodInfo.MakeGenericMethod</c>
 /// within the BCL — no namespace or declaring-type check is required.
 /// </para>

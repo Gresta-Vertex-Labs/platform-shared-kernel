@@ -6,7 +6,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 
 /// <summary>
 /// Pre-built NetArchTest rule factories that mechanically enforce the layering invariants of the
-/// <c>11.Communication</c> capability domain, introduced by WO-025 P-159.
+/// <c>11.Communication</c> capability domain,
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,7 +16,7 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// </para>
 /// <para>
 /// <strong>NetArchTest matching contract:</strong> <c>NotHaveDependencyOn(term)</c> compares
-/// <paramref name="term"/> via <c>StartsWith</c> against each scanned type's set of dependency
+/// <c>term</c> via <c>StartsWith</c> against each scanned type's set of dependency
 /// <em>namespaces</em> — no trailing dot on either side. A type's dependency-namespace set
 /// includes its own declaring namespace, so a package must never be checked against its own
 /// identifying namespace term.
@@ -210,7 +210,7 @@ public static class CommunicationLayeringRules
     /// <c>SharedKernel.Communication.Grpc</c> is a protocol adapter — it communicates via
     /// Protobuf, not via the <c>SharedKernel.Contracts</c> cross-service DTO layer. A dead
     /// reference from <c>Communication.Grpc</c> to <c>SharedKernel.Contracts</c> was introduced
-    /// accidentally and removed in P-163 (WO-026). This rule mechanically prevents the reference
+    /// accidentally and later removed. This rule mechanically prevents the reference
     /// from re-entering the project on any future Grpc package PR.
     /// </para>
     /// <para>

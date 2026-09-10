@@ -5,7 +5,7 @@ using NetArchTest.Rules;
 namespace SharedKernel.ArchitectureTests.Predicates;
 
 /// <summary>
-/// Custom NetArchTest predicate (WO-058 P-383) that fails any type outside
+/// Custom NetArchTest predicate that fails any type outside
 /// <c>SharedKernel.Security.Oidc</c> that either references the raw <c>"DPoP"</c> header-name
 /// string literal or performs proof-JWT parsing via <c>JwtSecurityTokenHandler</c>/
 /// <c>JsonWebTokenHandler</c>.
@@ -14,13 +14,13 @@ namespace SharedKernel.ArchitectureTests.Predicates;
 /// <para>
 /// Used by <see cref="Rules.SecurityArchitectureRules.DpopProofValidationNeverDuplicatedOutsideOidc"/>
 /// to mechanize "this validation logic lives in exactly one package" for DPoP (RFC 9449)
-/// sender-constrained proof validation, applying the <c>SK.00.SecurityContextGuard</c> (P-373)
+/// sender-constrained proof validation, applying the same single-owner
 /// lesson proactively rather than retroactively — before <c>12.Security</c>'s DPoP surface even
 /// shipped, not after a future gold-standard review discovered the drift.
 /// </para>
 /// <para>
 /// <strong>Namespace exemption (first check):</strong> Types whose
-/// <see cref="TypeDefinition.Namespace"/> starts with <c>"SharedKernel.Security.Oidc"</c> are
+/// <c>TypeDefinition.Namespace</c> starts with <c>"SharedKernel.Security.Oidc"</c> are
 /// returned as passing (<see langword="true"/>) unconditionally — that package is the sole
 /// legitimate home for DPoP proof-validation logic. No second forward-looking exemption prefix,
 /// unlike SK0031's two-namespace shape — DPoP is exclusively an OIDC/JWT-bearer-adjacent concern,
