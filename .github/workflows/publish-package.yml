@@ -19,10 +19,16 @@ name: Publish Single Package
 # tag-triggered release.yml path — dispatching this workflow against such a project would pack it
 # at an arbitrary out-of-band version while its dependencies stay pinned to whatever the last real
 # tag produced, silently reintroducing the exact cross-package version drift lockstep exists to
-# prevent. Nothing in this workflow enforces that restriction mechanically; it is a human
-# discipline documented here because the workflow has no reliable way to check "does this project
-# have zero SharedKernel.* dependencies" other than a human reading its .nuspec, which is exactly
-# what happened for SharedKernel.Analyzers before this workflow was authored.
+# prevent. This is now enforced mechanically, not by discipline: the "Assert the packed package has
+# no SharedKernel.* dependencies" step below reads the packed .nuspec — the same file a consumer's
+# restore reads — and fails the run before the push if any SharedKernel.* dependency is declared.
+#
+# Packages published through this path so far, both verified to declare zero SharedKernel.*
+# dependencies: SharedKernel.Analyzers (no <dependencies> element at all —
+# IncludeBuildOutput=false, DevelopmentDependency=true, SuppressDependenciesWhenPacking=true) and
+# SharedKernel.ArchitectureTests (three third-party dependencies — NetArchTest.Rules, Mono.Cecil,
+# Microsoft.Extensions.DependencyInjection.Abstractions — and no SharedKernel.* dependency, since
+# its three rules that need SharedKernel anchor types take them from the caller).
 #
 # Standing hygiene identical to ci.yml/release.yml: permissions:{} at root widened per job, every
 # action pinned to a full 40-char SHA, fetch-depth: 0 (MinVer needs full tag history even for the
@@ -38,16 +44,24 @@ name: Publish Single Package
 #      the same admin gap that leaves release.yml's `nuget-publish` environment toothless applies
 #      here identically — see PLATFORM.md "DevOps Work Log" -> Deferred/Blocked.
 #
-# First run must be dry_run: true (the default) — a safe rehearsal that proves every step short of
-# the actual push.
+# dry_run defaults to TRUE — a safe rehearsal that proves every step short of the actual push.
+# A dry run and a real publish are told apart by which of the two mutually exclusive final steps
+# appears: "Push to GitHub Packages" or "Dry-run notice (nothing pushed)". Exactly one must run.
+# If NEITHER appears in a run, the gating condition is broken — see those steps' own comments.
+#
+# Note where the package lands: pushing with GITHUB_TOKEN publishes to
+# nuget.pkg.github.com/{owner}, which is OWNER-scoped, not repo-scoped. A published package shows
+# up under the organization's Packages page; it appears in this repository's sidebar only via the
+# <repository> element SourceLink stamps into the .nuspec. Seeing nothing in the repo sidebar is
+# therefore not by itself evidence that a push failed — check the org's package list too.
 
 on:
   workflow_dispatch:
     inputs:
       project:
-        description: 'Path to the .csproj to pack and publish'
+        description: 'Path to the .csproj to pack and publish. Must declare zero SharedKernel.* dependencies (asserted from the packed .nuspec before any push).'
         type: string
-        default: '00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.csproj'
+        default: '00.Governance/SharedKernel.ArchitectureTests/SharedKernel.ArchitectureTests.csproj'
       version:
         description: 'Optional exact version (e.g. 1.2.3). Empty = MinVer-derived version (currently a 1.0.0-alpha.0.<height> prerelease — this repo has no v* tag yet).'
         type: string
@@ -204,10 +218,38 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Packed: $package_id @ $packed_version"
 
+      # The lockstep precondition this whole workflow rests on, enforced mechanically instead of
+      # by the human discipline the header describes. Out-of-band publishing is only safe for a
+      # package with ZERO SharedKernel.* dependencies; pack one that has them and it emits
+      # dependencies on versions that were never published, which is exactly the drift repo-wide
+      # MinVer lockstep exists to prevent. The packed .nuspec is the authoritative answer — it is
+      # what a consumer's restore actually reads — so read it rather than trusting the dispatcher
+      # to have checked. A package with SharedKernel.* dependencies must go through the
+      # tag-triggered release.yml path instead.
+      - name: Assert the packed package has no SharedKernel.* dependencies
+        run: |
+          set -e
+          mkdir -p /tmp/nuspec-check
+          unzip -o -q "$NUPKG_PATH" -d /tmp/nuspec-check
+          nuspec=$(find /tmp/nuspec-check -maxdepth 1 -name '*.nuspec' | head -1)
+          if [ -z "$nuspec" ]; then
+            echo "::error::No .nuspec found inside $NUPKG_PATH — cannot verify the dependency set."
+            exit 1
+          fi
+          echo "::group::declared dependencies"
+          grep -oE '<dependency id="[^"]+" version="[^"]+"' "$nuspec" || echo "(none declared)"
+          echo "::endgroup::"
+          if grep -qE '<dependency id="SharedKernel\.' "$nuspec"; then
+            echo "::error::$PACKAGE_ID declares SharedKernel.* package dependencies, so it cannot be published out of band by this workflow — its dependencies would point at versions that were never published. Use the tag-triggered release.yml path (git tag vX.Y.Z), which packs and publishes every package at one lockstep version."
+            grep -oE '<dependency id="SharedKernel\.[^"]+" version="[^"]+"' "$nuspec"
+            exit 1
+          fi
+          echo "OK: $PACKAGE_ID declares no SharedKernel.* dependencies — safe to publish out of band."
+
       # Proves the packed artifact is genuinely consumable — not just that `dotnet pack` exited 0.
-      # Only meaningful for SharedKernel.Analyzers today (its one existing package-specific
-      # consumer-verify harness); gated so this workflow still runs correctly if someone dispatches
-      # it for a different project later, rather than failing on a check that does not apply.
+      # One step per package that has its own consumer-verify harness, each gated on PACKAGE_ID so
+      # dispatching this workflow for a project with no harness still runs correctly rather than
+      # failing on a check that does not apply to it.
       - name: Verify packed artifact is consumable (SharedKernel.Analyzers)
         if: env.PACKAGE_ID == 'SharedKernel.Analyzers'
         run: |
@@ -226,14 +268,35 @@ jobs:
           echo "OK: SK0001 present in AnalyzerConsumer's build output."
           dotnet run --project "$proj" --no-build --configuration Release
 
-      - name: Skip analyzer-specific consumer-verify (not SharedKernel.Analyzers)
-        if: env.PACKAGE_ID != 'SharedKernel.Analyzers'
-        run: echo "Packed package is '$PACKAGE_ID', not SharedKernel.Analyzers — no package-specific consumability check exists for it yet. Skipping."
+      # ArchTestConsumer resolves the package from the packed feed rather than by ProjectReference,
+      # so it is the only place a missing package dependency actually surfaces. It EXECUTES each
+      # rule (GetResult()) instead of merely compiling against it, and returns a non-zero exit code
+      # if any rule cannot run — the defect it exists to catch was a runtime FileNotFoundException
+      # on an assembly the nuspec never declared, which no compile-only check can see.
+      - name: Verify packed artifact is consumable (SharedKernel.ArchitectureTests)
+        if: env.PACKAGE_ID == 'SharedKernel.ArchitectureTests'
+        run: |
+          set -e
+          proj="00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj"
+          dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$PACKED_VERSION"
+          dotnet run --project "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$PACKED_VERSION"
+          echo "OK: every probed rule executed from the packed $PACKAGE_ID $PACKED_VERSION."
+
+      - name: No package-specific consumer-verify for this package
+        if: env.PACKAGE_ID != 'SharedKernel.Analyzers' && env.PACKAGE_ID != 'SharedKernel.ArchitectureTests'
+        run: echo "Packed package is '$PACKAGE_ID' — no package-specific consumability harness exists for it yet. Skipping. Its nested test suite and the dependency assertion above still gate this publish."
 
       # GitHub Packages' NuGet registry has no symbol-server endpoint — only *.nupkg is pushed,
       # identical to release.yml. --skip-duplicate makes a re-run idempotent.
       - name: Push to GitHub Packages
-        if: inputs.dry_run == false
+        # `!inputs.dry_run`, never `inputs.dry_run == false`. A workflow_dispatch boolean input can
+        # reach the expression evaluator as the STRING "false", and `'false' == false` coerces both
+        # sides to numbers — NaN vs 0 — so it never evaluates true. With the old form, an operator
+        # who correctly unchecked dry_run got a fully green run in which BOTH this step and the
+        # dry-run notice below were skipped, and no package was pushed or reported as skipped.
+        # The unary form applies GitHub's own falsiness rules and is correct for both the boolean
+        # and the string shape.
+        if: ${{ !inputs.dry_run }}
         env:
           NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -246,7 +309,10 @@ jobs:
           echo "Pushed $PACKAGE_ID $PACKED_VERSION to GitHub Packages."
 
       - name: Dry-run notice (nothing pushed)
-        if: inputs.dry_run == true
+        # See the Push step's comment — same coercion hazard, same unary fix. These two steps are
+        # mutually exclusive by construction, so exactly one of them must appear in every run;
+        # if neither does, the condition is broken, not the inputs.
+        if: ${{ inputs.dry_run }}
         run: |
           echo "DRY RUN — the actual push was skipped. This run would have executed:"
           echo ""
