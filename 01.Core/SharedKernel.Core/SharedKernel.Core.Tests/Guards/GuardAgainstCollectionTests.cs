@@ -2,7 +2,7 @@ using SharedKernel.Guards;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 
-namespace SharedKernel.Guards.Tests;
+namespace SharedKernel.Core.Tests.Guards;
 
 /// <summary>Tests for collection guard extensions (T-16).</summary>
 public sealed class GuardAgainstCollectionTests

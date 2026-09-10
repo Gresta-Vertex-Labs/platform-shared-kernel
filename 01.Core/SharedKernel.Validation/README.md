@@ -1,6 +1,6 @@
 # SharedKernel.Validation
 
-Culture-independent financial and identity format validators for the Platform.SharedKernel ecosystem. Pure C# — zero third-party NuGet dependencies, AOT-compatible. Depends on `SharedKernel.Primitives` and `SharedKernel.Guards`.
+Culture-independent financial and identity format validators for the Platform.SharedKernel ecosystem. Pure C# — zero third-party NuGet dependencies, AOT-compatible. Depends on `SharedKernel.Primitives` and `SharedKernel.Core` (the `Guard.Against.*` surface — formerly the separate `SharedKernel.Guards` package, merged into `SharedKernel.Core` by P-505/WO-082; same `SharedKernel.Guards`/`SharedKernel.Guards.Clauses` C# namespaces, unchanged).
 
 ## Included
 
@@ -111,7 +111,7 @@ public class KycService(INationalIdValidatorRegistry registry)
 
 ## Rules
 
-- `Guard.Throw.*` parity is intentionally out of scope for this package — `SharedKernel.Guards`' `Guard.Throw` nested class is hand-enumerated and hardcoded inside that package; extending it requires modifying `SharedKernel.Guards` itself.
+- `Guard.Throw.*` parity is intentionally out of scope for this package — the `Guard.Throw` nested class (now living in `SharedKernel.Core`, under the `SharedKernel.Guards` namespace, since P-505/WO-082) is hand-enumerated and hardcoded; extending it requires modifying `SharedKernel.Core` itself.
 - `ValidationErrorCodes` is package-local — never added to `SharedKernel.Primitives.ErrorCodes`.
 - `VatValidator` performs a format check only — it never validates a per-country checksum and a passing result is not proof of a real, registered VAT identifier.
 

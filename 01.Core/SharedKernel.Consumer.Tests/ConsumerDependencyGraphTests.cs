@@ -322,9 +322,12 @@ public sealed class ConsumerDependencyGraphTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // SharedKernel.Guards — functional Against.* path and imperative Throw.* path
-    // Verifies that Guards resolves correctly from the local feed and that its
-    // transitive dependencies (Primitives + Core) resolve without conflict.
+    // SharedKernel.Guards — functional Against.* path and imperative Throw.* path.
+    // SharedKernel.Guards was merged into SharedKernel.Core (P-505/WO-082) and no longer exists
+    // as a standalone package — these tests now verify that the Guard/IGuardClause surface
+    // resolves correctly from the packed SharedKernel.Core assembly, under the exact same
+    // SharedKernel.Guards/SharedKernel.Guards.Clauses C# namespaces it always used, and that
+    // SharedKernel.Core's transitive dependency (Primitives only) resolves without conflict.
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -473,7 +476,8 @@ public sealed class ConsumerDependencyGraphTests
     [Fact]
     public void Guards_Against_InvalidSmartEnum_PassesForKnownValue_ResolvedFromPackage()
     {
-        // Confirms SmartEnum transitive dep (Primitives) resolves correctly through Guards package.
+        // Confirms SmartEnum transitive dep (Primitives) resolves correctly through the merged
+        // Guard surface (now shipped inside SharedKernel.Core, P-505/WO-082).
         _ = ConsumerStatus.Active; // force type initialisation
         Error? error = Guard.Against.InvalidSmartEnum<ConsumerStatus, int>(1);
 
@@ -487,6 +491,29 @@ public sealed class ConsumerDependencyGraphTests
         Error? error = Guard.Against.InvalidSmartEnum<ConsumerStatus, int>(99);
 
         Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Core_NuspecDeclaresOnlyPrimitivesAsDependency_NoThirdPartyNuGetPackageLeakedFromGuardsMerge_ResolvedFromPackage()
+    {
+        // P-505/P-507/WO-082: SharedKernel.Guards (zero third-party NuGet dependencies of its own)
+        // was merged into SharedKernel.Core. Proves the merge did not accidentally pull a new
+        // transitive dependency into SharedKernel.Core's own nuspec — it must still depend on
+        // SharedKernel.Primitives only, exactly as it did before absorbing the Guard surface.
+        string nupkgsDirectory = FindNupkgsDirectory();
+
+        string coreNuspec = ReadNuspecXml(nupkgsDirectory, "SharedKernel.Core.*.nupkg", IsExactCorePackage);
+
+        XDocument nuspec = XDocument.Parse(coreNuspec);
+        XNamespace ns = nuspec.Root!.GetDefaultNamespace();
+
+        List<string> dependencyIds = [.. nuspec.Descendants(ns + "dependency")
+            .Select(d => d.Attribute("id")!.Value)];
+
+        // The one and only dependency this package's architectural claim rests on, unchanged by
+        // absorbing Guards' own (zero) third-party dependencies.
+        Assert.Single(dependencyIds);
+        Assert.Contains("SharedKernel.Primitives", dependencyIds);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -737,7 +764,8 @@ public sealed class ConsumerDependencyGraphTests
 
     // ──────────────────────────────────────────────────────────────────────────
     // SharedKernel.Validation — verifies the package resolves from the local
-    // feed and that its transitive dependencies (Primitives + Guards) resolve
+    // feed and that its transitive dependencies (Primitives + Core, the merged Guard.Against.*
+    // surface — re-pointed from SharedKernel.Guards by P-506/WO-082) resolve
     // without conflict, end-to-end through DI registration (P-19/WO-067).
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -792,9 +820,9 @@ public sealed class ConsumerDependencyGraphTests
     // ──────────────────────────────────────────────────────────────────────────
     // SharedKernel.Validation.FluentValidation — verifies the package resolves
     // from the local feed and that its transitive dependency chain (Validation
-    // → Primitives + Guards) plus the third-party FluentValidation package
-    // resolve without conflict, end-to-end through an AbstractValidator<T>
-    // (P-22/WO-067).
+    // → Primitives + Core, the merged Guard.Against.* surface) plus the third-party
+    // FluentValidation package resolve without conflict, end-to-end through an
+    // AbstractValidator<T> (P-22/WO-067).
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -1203,6 +1231,21 @@ public sealed class ConsumerDependencyGraphTests
     private static bool IsExactCryptographyPackage(string candidatePath)
     {
         const string Prefix = "SharedKernel.Cryptography.";
+        string fileName = Path.GetFileName(candidatePath);
+
+        return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            && fileName.Length > Prefix.Length
+            && char.IsAsciiDigit(fileName[Prefix.Length]);
+    }
+
+    /// <summary>
+    /// Matches ONLY <c>SharedKernel.Core.{version}.nupkg</c>, never a sibling package that might
+    /// someday share the <c>SharedKernel.Core.</c> filename prefix — the same positive shape check
+    /// as <see cref="IsExactCryptographyPackage"/>, for the same reason.
+    /// </summary>
+    private static bool IsExactCorePackage(string candidatePath)
+    {
+        const string Prefix = "SharedKernel.Core.";
         string fileName = Path.GetFileName(candidatePath);
 
         return fileName.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)

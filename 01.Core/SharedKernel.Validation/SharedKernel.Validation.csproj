@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- NuGet packaging metadata -->
-    <Description>Culture-independent financial and identity format validators for the SharedKernel: IBAN (mod-97 + per-country length table), BIC/SWIFT, payment-card PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164 phone numbers, a baseline VAT/tax-identifier format check, LEI (ISO 17442 mod-97-10), US ABA bank routing numbers ((3,7,1)-weighted checksum), SEPA Creditor Identifiers (mod-97-10), and a pluggable per-country national-identity-number registry (Turkey's TCKN ships as the built-in default). Every validator is dual-mode: a standalone IsValid/Validate call and a Guard.Against.* extension. Zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Guards.</Description>
+    <Description>Culture-independent financial and identity format validators for the SharedKernel: IBAN (mod-97 + per-country length table), BIC/SWIFT, payment-card PAN (Luhn + network detection), ISO 4217, ISO 3166, E.164 phone numbers, a baseline VAT/tax-identifier format check, LEI (ISO 17442 mod-97-10), US ABA bank routing numbers ((3,7,1)-weighted checksum), SEPA Creditor Identifiers (mod-97-10), and a pluggable per-country national-identity-number registry (Turkey's TCKN ships as the built-in default). Every validator is dual-mode: a standalone IsValid/Validate call and a Guard.Against.* extension. Zero third-party NuGet dependencies. AOT-compatible. Depends on SharedKernel.Primitives and SharedKernel.Core (the Guard.Against.* extension surface, formerly SharedKernel.Guards, merged into SharedKernel.Core by P-505/WO-082).</Description>
     <PackageTags>shared-kernel;validation;iban;bic;pan;luhn;iso4217;iso3166;e164;vat;lei;aba-routing-number;sepa-creditor-identifier;national-id;aot</PackageTags>
   </PropertyGroup>
   <ItemGroup>
@@ -9,6 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SharedKernel.Primitives\SharedKernel.Primitives.csproj" />
-    <ProjectReference Include="..\SharedKernel.Guards\SharedKernel.Guards.csproj" />
+    <ProjectReference Include="..\SharedKernel.Core\SharedKernel.Core.csproj" />
   </ItemGroup>
 </Project>

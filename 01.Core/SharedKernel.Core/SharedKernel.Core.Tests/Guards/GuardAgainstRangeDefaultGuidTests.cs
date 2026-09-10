@@ -2,7 +2,7 @@ using SharedKernel.Guards;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 
-namespace SharedKernel.Guards.Tests;
+namespace SharedKernel.Core.Tests.Guards;
 
 /// <summary>Tests for OutOfRange, Default, and InvalidGuid guard extensions (T-14).</summary>
 public sealed class GuardAgainstRangeDefaultGuidTests

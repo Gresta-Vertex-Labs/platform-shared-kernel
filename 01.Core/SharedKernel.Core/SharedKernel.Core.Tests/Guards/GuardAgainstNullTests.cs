@@ -3,7 +3,7 @@ using SharedKernel.Guards.Clauses;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 
-namespace SharedKernel.Guards.Tests;
+namespace SharedKernel.Core.Tests.Guards;
 
 /// <summary>Tests for null/empty/whitespace functional guard path (T-11).</summary>
 public sealed class GuardAgainstNullTests

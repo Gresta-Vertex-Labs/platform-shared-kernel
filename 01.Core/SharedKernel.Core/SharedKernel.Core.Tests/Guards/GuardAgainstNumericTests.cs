@@ -2,7 +2,7 @@ using SharedKernel.Guards;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 
-namespace SharedKernel.Guards.Tests;
+namespace SharedKernel.Core.Tests.Guards;
 
 /// <summary>Tests for numeric guard extensions — int, decimal, long (T-13).</summary>
 public sealed class GuardAgainstNumericTests

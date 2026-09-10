@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace SharedKernel.Guards.Tests;
+namespace SharedKernel.Core.Tests.Guards;
 
 /// <summary>Tests for InvalidFormat and Email guard extensions (T-15).</summary>
 public sealed class GuardAgainstFormatEmailTests
@@ -53,6 +53,34 @@ public sealed class GuardAgainstFormatEmailTests
         var secondInstance = cache[pattern];
 
         Assert.Same(firstInstance, secondInstance);
+    }
+
+    [Fact]
+    public void InvalidFormat_CacheDoesNotGrowPastBound_UnderManyDistinctPatterns()
+    {
+        // P-522/WO-083: the pattern-keyed Regex cache must be bounded — presenting far more
+        // distinct patterns than the documented cap must evict rather than grow without limit.
+        var cacheField = typeof(GuardClauseExtensions)
+            .GetField("_regexCache", BindingFlags.NonPublic | BindingFlags.Static);
+        var maxField = typeof(GuardClauseExtensions)
+            .GetField("MaxCachedPatterns", BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(cacheField);
+        Assert.NotNull(maxField);
+
+        var cache = (ConcurrentDictionary<string, Regex>)cacheField!.GetValue(null)!;
+        int maxCachedPatterns = (int)maxField!.GetValue(null)!;
+
+        for (int i = 0; i < maxCachedPatterns * 4; i++)
+        {
+            string pattern = $@"^unique-format-guard-pattern-{i}$";
+            _ = Guard.Against.InvalidFormat("no-match-for-any-of-these", pattern, "v");
+        }
+
+        Assert.True(
+            cache.Count <= maxCachedPatterns,
+            $"Expected the Regex cache to stay at or below {maxCachedPatterns} entries after presenting " +
+            $"{maxCachedPatterns * 4} distinct patterns, but found {cache.Count}.");
     }
 
     // ── Email ─────────────────────────────────────────────────────────────────

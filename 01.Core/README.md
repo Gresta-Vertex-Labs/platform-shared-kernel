@@ -1,14 +1,13 @@
 # 01.Core
 
-Foundational building blocks for the Platform.SharedKernel ecosystem. Thirteen independently publishable NuGet packages — every one but `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` (a first-party Microsoft dependency, not a third-party one) has zero third-party NuGet dependencies.
+Foundational building blocks for the Platform.SharedKernel ecosystem. Twelve independently publishable NuGet packages (thirteen minus `SharedKernel.Guards`, merged into `SharedKernel.Core` — P-505/WO-082, shipped, breaking as a package retirement only; the `SharedKernel.Guards`/`SharedKernel.Guards.Clauses`/`SharedKernel.Guards.Descriptions` C# namespaces are completely unchanged) — every one but `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` (a first-party Microsoft dependency, not a third-party one) has zero third-party NuGet dependencies.
 
 | Package | Purpose |
 |---------|---------|
 | `SharedKernel.Primitives` | `Result<T>`, `Error`, `IClock`, `IIdGenerator`, `SmartEnum`, `ValidationResult` |
-| `SharedKernel.Core` | Base exceptions, railway extensions, BCL helpers |
+| `SharedKernel.Core` | Base exceptions, railway extensions, BCL helpers, and the two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) — merged from the former `SharedKernel.Guards` package (P-505/WO-082) |
 | `SharedKernel.Configuration` | `AddValidatedOptions` startup-validation pattern |
 | `SharedKernel.FeatureManagement` | `IFeatureManager` abstraction over Microsoft.FeatureManagement |
-| `SharedKernel.Guards` | Two-path guard system: `Guard.Against.*` (functional) + `Guard.Throw.*` (imperative) |
 | `SharedKernel.Cryptography` | Password hashing, AES-256-GCM symmetric encryption, RSA/ECDSA + HMAC signing, secure random/token generation |
 | `SharedKernel.Compression` | Generic payload compression (`IPayloadCompressor`): Brotli default, GZip keyed alternate |
 | `SharedKernel.Validation` | Culture-independent IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT validators + pluggable national-ID registry |
@@ -1019,9 +1018,9 @@ public sealed record TenantContext(string TenantId)
 
 ---
 
-## SharedKernel.Guards — Guard Clauses
+## SharedKernel.Core — Guard Clauses (merged from `SharedKernel.Guards`, P-505/WO-082)
 
-`SharedKernel.Guards` provides a two-path guard system for validating inputs and enforcing invariants. Every guard is available via both paths:
+`SharedKernel.Core` provides a two-path guard system for validating inputs and enforcing invariants, merged in from the former standalone `SharedKernel.Guards` package — the `SharedKernel.Guards`/`SharedKernel.Guards.Clauses`/`SharedKernel.Guards.Descriptions` C# namespaces below are completely unchanged by that move; only the physical package changed, so an existing consumer's only required change is swapping the `PackageReference` from `SharedKernel.Guards` to `SharedKernel.Core`. Every guard is available via both paths:
 
 | Path | Entry point | Returns | Use when |
 |------|-------------|---------|---------|
@@ -1177,6 +1176,8 @@ public sealed class PaymentService
 | Predicate true | `True(condition, error)` | `condition == false` |
 | Predicate false | `False(condition, error)` | `condition == true` |
 | SmartEnum | `InvalidSmartEnum<TEnum, TValue>(id)` | `id` not a known member |
+
+**Bounded format-guard `Regex` cache (P-522/WO-083).** `InvalidFormat`/`Email`'s pattern-keyed compiled-`Regex` cache is capped at 256 distinct patterns (`MaxCachedPatterns`), evicting the oldest-inserted pattern first (FIFO, via a companion insertion-order queue) once the cap is exceeded. The existing 250ms ReDoS timeout is unaffected. Every current call site passes a literal, compile-time-known pattern, so eviction never triggers in practice — the bound exists purely against a hypothetical future call site deriving a pattern from configuration or user input.
 
 ---
 
@@ -1944,7 +1945,7 @@ IPayloadCompressor gzip = provider.GetRequiredKeyedService<IPayloadCompressor>(
 
 ## SharedKernel.Validation — Culture-Independent Format Validators
 
-`SharedKernel.Validation` provides culture-independent financial and identity format validators: IBAN (per-country length table + ISO 13616 mod-97 check digit), BIC/SWIFT, payment-card PAN (Luhn + card-network detection), ISO 4217 currency codes, ISO 3166-1 country codes, E.164 phone numbers, a baseline VAT/tax-identifier format check, and a pluggable per-country national-identity-number registry (`TckNationalIdValidator` — Turkey's TCKN — ships as the built-in default). Zero third-party NuGet dependencies. References `SharedKernel.Primitives` (for `Result`/`Error`) and `SharedKernel.Guards` (extending `Guard.Against` with new members via extension methods — `SharedKernel.Guards` itself is never modified).
+`SharedKernel.Validation` provides culture-independent financial and identity format validators: IBAN (per-country length table + ISO 13616 mod-97 check digit), BIC/SWIFT, payment-card PAN (Luhn + card-network detection), ISO 4217 currency codes, ISO 3166-1 country codes, E.164 phone numbers, a baseline VAT/tax-identifier format check, and a pluggable per-country national-identity-number registry (`TckNationalIdValidator` — Turkey's TCKN — ships as the built-in default). Zero third-party NuGet dependencies. References `SharedKernel.Primitives` (for `Result`/`Error`) and `SharedKernel.Core` (extending `Guard.Against` with new members via extension methods — `SharedKernel.Core`'s Guard surface itself is never modified; re-pointed from the retired `SharedKernel.Guards` package by P-506/WO-082).
 
 Every validator is dual-mode: a standalone `IsValid`/`Validate` call, and a `Guard.Against.*` extension. Both paths share the same underlying algorithm and the same `ValidationErrorCodes` constants — a failure surfaces an identical code whichever path reached it.
 
@@ -1968,7 +1969,7 @@ if (error is not null)
 }
 ```
 
-**`Guard.Throw.*` parity is intentionally out of scope for this package.** `SharedKernel.Guards`' `Guard.Throw` nested class is a hand-enumerated static class hardcoded inside `SharedKernel.Guards` itself — a package outside `SharedKernel.Guards` cannot add a member to it without modifying that package, which is out of `SharedKernel.Validation`'s jurisdiction. Only the functional `Guard.Against.*` path is provided here.
+**`Guard.Throw.*` parity is intentionally out of scope for this package.** The `Guard.Throw` nested class (now living in `SharedKernel.Core`, under the unchanged `SharedKernel.Guards` namespace, since P-505/WO-082) is a hand-enumerated static class hardcoded inside that class — a package outside `SharedKernel.Core` cannot add a member to it without modifying `SharedKernel.Core` itself, which is out of `SharedKernel.Validation`'s jurisdiction. Only the functional `Guard.Against.*` path is provided here.
 
 ### National ID registry
 
@@ -2032,7 +2033,7 @@ One nuance worth knowing: as of this writing, `ValidationBehavior` projects each
 
 ## SharedKernel.DataPrivacy — Classification Taxonomy, Masking, Data-Subject Requests
 
-`SharedKernel.DataPrivacy` ships three independent, composable pieces: a pure-metadata classification taxonomy, deterministic PII masking helpers, and the `IDataSubjectRequestHandler` GDPR/KVKK export/erasure contract. It depends on `SharedKernel.Primitives` only (for `Result<T>`/`Error` on the request-handler contract) — the same single-package, zero-third-party-dependency reasoning as `SharedKernel.Cryptography`/`.Compression`/`.Guards`.
+`SharedKernel.DataPrivacy` ships three independent, composable pieces: a pure-metadata classification taxonomy, deterministic PII masking helpers, and the `IDataSubjectRequestHandler` GDPR/KVKK export/erasure contract. It depends on `SharedKernel.Primitives` only (for `Result<T>`/`Error` on the request-handler contract) — the same single-package, zero-third-party-dependency reasoning as `SharedKernel.Cryptography`/`.Compression`.
 
 ### Classification attributes — metadata only, never reflected over at runtime
 
@@ -2183,13 +2184,12 @@ See [`SharedKernel.Localization`'s own README](SharedKernel.Localization/README.
 ```
 SharedKernel.Primitives              (no dependencies)
        |
-       +──► SharedKernel.Core           (BCL extensions, railway extensions, exceptions)
+       +──► SharedKernel.Core           (BCL extensions, railway extensions, exceptions, Guard.Against / Guard.Throw
+       |       |                         two-path guard system — merged from SharedKernel.Guards, P-505/WO-082)
        |       |
-       |       +──► SharedKernel.Guards  (Guard.Against / Guard.Throw two-path guard system)
+       |       +──► SharedKernel.Validation  (IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT + national-ID registry)
        |               |
-       |               +──► SharedKernel.Validation  (IBAN/BIC/PAN/ISO 4217/ISO 3166/E.164/VAT + national-ID registry)
-       |                       |
-       |                       +──► SharedKernel.Validation.FluentValidation  (IRuleBuilder<T,string> adapter; also pulls in the third-party FluentValidation package)
+       |               +──► SharedKernel.Validation.FluentValidation  (IRuleBuilder<T,string> adapter; also pulls in the third-party FluentValidation package)
        |
        +──► SharedKernel.Configuration  (Options pattern + startup validation)
        |       |
@@ -2208,4 +2208,4 @@ SharedKernel.Primitives              (no dependencies)
        +──► SharedKernel.Localization  (ILocalizationCatalog; also pulls in the first-party Microsoft.Extensions.Localization.Abstractions package)
 ```
 
-All thirteen packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` are the four exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `.Argon2` depends on `SharedKernel.Cryptography` plus the third-party `Konscious.Security.Cryptography.Argon2` package (a pure-managed implementation, no native/P-Invoke binding), deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason again; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected.
+All twelve packages can be referenced independently. Downstream packages in the SharedKernel ecosystem reference `SharedKernel.Primitives` as the minimum baseline and add the others as needed. `SharedKernel.Validation.FluentValidation`, `SharedKernel.Cryptography.KeyVault.Azure`, `SharedKernel.Cryptography.Argon2`, and `SharedKernel.Localization` are the four exceptions to "zero third-party NuGet dependencies" in this domain: `.FluentValidation` depends on `SharedKernel.Validation` plus the third-party `FluentValidation` package, deliberately kept out of `SharedKernel.Validation` itself so a FluentValidation-free consumer never pulls it in transitively; `.KeyVault.Azure` depends on `SharedKernel.Cryptography` plus the third-party `Azure.Security.KeyVault.Keys`/`Azure.Identity` packages, deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason; `.Argon2` depends on `SharedKernel.Cryptography` plus the third-party `Konscious.Security.Cryptography.Argon2` package (a pure-managed implementation, no native/P-Invoke binding), deliberately kept out of `SharedKernel.Cryptography` itself for the identical reason again; `SharedKernel.Localization` depends on the first-party (not third-party) `Microsoft.Extensions.Localization.Abstractions` package — a deliberate exception to the zero-dependency default because it is the platform's own vendor's abstraction, not an external one, and the alternative (a bespoke resx pipeline) was explicitly rejected.

@@ -9,8 +9,13 @@
     Primitives → Core → Configuration → FeatureManagement chain verified here.
     Cryptography → Primitives + Configuration transitive chain also verified here.
     Compression → Primitives + Configuration transitive chain also verified here.
-    Validation → Primitives + Guards transitive chain also verified here (P-19/WO-067).
-    Validation.FluentValidation → Validation (→ Primitives + Guards) transitive chain plus the
+    SharedKernel.Guards was merged into SharedKernel.Core (P-505/WO-082) — it no longer exists as
+    a standalone package/PackageReference. The Guard.Against.*/Guard.Throw.* surface (unchanged
+    SharedKernel.Guards/.Clauses C# namespaces) is now resolved via the SharedKernel.Core
+    PackageReference above.
+    Validation → Primitives + Core (the merged Guard.Against.* surface) transitive chain also
+    verified here (P-19/WO-067, re-pointed by P-506/WO-082).
+    Validation.FluentValidation → Validation (→ Primitives + Core) transitive chain plus the
     third-party FluentValidation package also verified here (P-22/WO-067).
     Cryptography.KeyVault.Azure → Cryptography + Configuration transitive chain plus the
     third-party Azure.Security.KeyVault.Keys/Azure.Identity packages also verified here
@@ -32,7 +37,6 @@
     <PackageReference Include="SharedKernel.Core" />
     <PackageReference Include="SharedKernel.Configuration" />
     <PackageReference Include="SharedKernel.FeatureManagement" />
-    <PackageReference Include="SharedKernel.Guards" />
     <PackageReference Include="SharedKernel.Cryptography" />
     <PackageReference Include="SharedKernel.Compression" />
     <PackageReference Include="SharedKernel.Validation" />

@@ -19,7 +19,18 @@ public static class GuardClauseExtensions
 {
     // ── Regex cache — keyed by pattern string (for InvalidFormat) ─────────────
     // ConcurrentDictionary is AOT-safe; Regex compiled once per distinct pattern.
+    //
+    // Bounded (P-522/WO-083): the dictionary's key is a caller-supplied string, so an unbounded
+    // cache is a latent unbounded-memory/JIT-compilation-cost vector the moment any future call
+    // site derives a pattern from configuration or user input rather than a compile-time literal.
+    // Every call site today passes a literal pattern, so this bound is never exercised in
+    // practice — it exists purely as a structural cap. Eviction is oldest-first (FIFO) via
+    // _regexCacheInsertionOrder, tracking only genuine first-time insertions (never a
+    // cache-hit re-read), which is sufficient to guarantee the bound without the extra
+    // bookkeeping a true LRU policy would require for a cache this small and this rarely evicted.
+    private const int MaxCachedPatterns = 256;
     private static readonly ConcurrentDictionary<string, Regex> _regexCache = new();
+    private static readonly ConcurrentQueue<string> _regexCacheInsertionOrder = new();
 
     // Fixed compiled regex for email validation — created once at type-init.
     private static readonly Regex _emailRegex = new(
@@ -255,8 +266,12 @@ public static class GuardClauseExtensions
     /// </summary>
     /// <remarks>
     /// The <see cref="Regex"/> for each distinct <paramref name="pattern"/> is compiled and cached
-    /// in a static <see cref="ConcurrentDictionary{TKey,TValue}"/> — a new instance is never
-    /// created per call. A bounded timeout of 250 ms prevents ReDoS.
+    /// in a static, size-bounded cache — a new instance is never created per call for a pattern
+    /// already seen, and the common case (an already-cached literal pattern) never allocates or
+    /// takes a lock beyond the lock-free <see cref="ConcurrentDictionary{TKey,TValue}"/> read. A
+    /// bounded timeout of 250 ms prevents ReDoS. The cache itself is capped at
+    /// <see cref="MaxCachedPatterns"/> distinct patterns with oldest-first eviction (P-522/WO-083)
+    /// — see the remarks on <see cref="_regexCache"/>.
     /// </remarks>
     /// <param name="guard">The guard clause entry-point.</param>
     /// <param name="value">The string to validate.</param>
@@ -264,13 +279,52 @@ public static class GuardClauseExtensions
     /// <param name="paramName">The parameter name used in the error message.</param>
     public static Error? InvalidFormat(this IGuardClause guard, string value, string pattern, string paramName)
     {
-        var regex = _regexCache.GetOrAdd(pattern, p =>
-            new Regex(p, RegexOptions.Compiled, TimeSpan.FromMilliseconds(250)));
+        var regex = GetOrCacheCompiledRegex(pattern);
 
         return regex.IsMatch(value)
             ? null
             : Error.Validation(ErrorCodes.Validation.OutOfRange,
                 string.Format(GuardDescriptions.InvalidFormat, paramName, pattern));
+    }
+
+    /// <summary>
+    /// Returns the cached compiled <see cref="Regex"/> for <paramref name="pattern"/>, compiling
+    /// and caching it on first use. The cache is bounded to <see cref="MaxCachedPatterns"/> entries
+    /// (P-522/WO-083) — once exceeded, the oldest inserted pattern is evicted first (FIFO).
+    /// </summary>
+    private static Regex GetOrCacheCompiledRegex(string pattern)
+    {
+        if (_regexCache.TryGetValue(pattern, out var cached))
+        {
+            return cached;
+        }
+
+        var compiled = new Regex(pattern, RegexOptions.Compiled, TimeSpan.FromMilliseconds(250));
+
+        if (!_regexCache.TryAdd(pattern, compiled))
+        {
+            // Another thread won the race to cache this exact pattern first — reuse its instance
+            // rather than leaving our freshly-compiled one to be discarded uncounted.
+            return _regexCache.TryGetValue(pattern, out var winner) ? winner : compiled;
+        }
+
+        _regexCacheInsertionOrder.Enqueue(pattern);
+        EvictExcessPatterns();
+        return compiled;
+    }
+
+    /// <summary>
+    /// Evicts the oldest-inserted cached patterns until the cache is back within
+    /// <see cref="MaxCachedPatterns"/>. A pattern evicted while still in use by another caller is
+    /// harmless — that caller already holds its own reference to the compiled <see cref="Regex"/>;
+    /// only a later call for the same pattern pays the cost of recompiling it.
+    /// </summary>
+    private static void EvictExcessPatterns()
+    {
+        while (_regexCache.Count > MaxCachedPatterns && _regexCacheInsertionOrder.TryDequeue(out var oldest))
+        {
+            _regexCache.TryRemove(oldest, out _);
+        }
     }
 
     /// <summary>

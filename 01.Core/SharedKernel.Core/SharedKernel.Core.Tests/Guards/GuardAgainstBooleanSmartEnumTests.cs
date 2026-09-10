@@ -3,7 +3,7 @@ using SharedKernel.Primitives.Enums;
 using SharedKernel.Primitives.Errors;
 using Xunit;
 
-namespace SharedKernel.Guards.Tests;
+namespace SharedKernel.Core.Tests.Guards;
 
 /// <summary>Tests for True/False boolean predicate guards and InvalidSmartEnum (T-17).</summary>
 public sealed class GuardAgainstBooleanSmartEnumTests
