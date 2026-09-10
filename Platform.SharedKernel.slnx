@@ -24,8 +24,6 @@
     <Project Path="01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.Tests/SharedKernel.DataPrivacy.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.csproj" />
     <Project Path="01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.Tests/SharedKernel.FeatureManagement.Tests.csproj" />
-    <Project Path="01.Core/SharedKernel.Guards/SharedKernel.Guards.csproj" />
-    <Project Path="01.Core/SharedKernel.Guards/SharedKernel.Guards.Tests/SharedKernel.Guards.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Localization/SharedKernel.Localization.csproj" />
     <Project Path="01.Core/SharedKernel.Localization/SharedKernel.Localization.Tests/SharedKernel.Localization.Tests.csproj" />
     <Project Path="01.Core/SharedKernel.Primitives/SharedKernel.Primitives.csproj" />

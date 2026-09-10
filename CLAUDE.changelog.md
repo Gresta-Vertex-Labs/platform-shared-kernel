@@ -106,3 +106,4 @@
 - [2026-09-08] 01.Core: WO-081 foundation shipped (AAD, sync-provider gate, async signing); wave dispatched (sync-brain)
 - [2026-09-09] Root brain corrected: `SharedKernel.Security.Totp` (WO-069/P-452) was described as queued in two places; it shipped (agent)
 - [2026-09-09] Root brain: stale `IPasswordHasher` reference corrected to `IOneWayHasher` (renamed WO-034) (agent)
+- [2026-09-10] WO-082 done: Guards merged into SharedKernel.Core, namespace kept; P-522 regex cap (sync-brain)

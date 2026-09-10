@@ -24,8 +24,6 @@
       "01.Core/SharedKernel.DataPrivacy/SharedKernel.DataPrivacy.csproj",
       "01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.Tests/SharedKernel.FeatureManagement.Tests.csproj",
       "01.Core/SharedKernel.FeatureManagement/SharedKernel.FeatureManagement.csproj",
-      "01.Core/SharedKernel.Guards/SharedKernel.Guards.Tests/SharedKernel.Guards.Tests.csproj",
-      "01.Core/SharedKernel.Guards/SharedKernel.Guards.csproj",
       "01.Core/SharedKernel.Localization/SharedKernel.Localization.Tests/SharedKernel.Localization.Tests.csproj",
       "01.Core/SharedKernel.Localization/SharedKernel.Localization.csproj",
       "01.Core/SharedKernel.Primitives/SharedKernel.Primitives.Tests/SharedKernel.Primitives.Tests.csproj",

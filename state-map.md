@@ -1579,7 +1579,7 @@ Every other corrected default or new structural boundary on this platform gets a
 
 ### P-505 — Core: Merge `SharedKernel.Guards` into `SharedKernel.Core` (BREAKING)
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-082
 **Domain:** 01.Core
 **Depends on:** None
@@ -1600,7 +1600,7 @@ Ratified decision 4. The user's own stated reasoning is package-count reduction;
 
 ### P-506 — Core: Re-point `SharedKernel.Validation` from `SharedKernel.Guards` to `SharedKernel.Core`
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-082
 **Domain:** 01.Core
 **Depends on:** P-505
@@ -1619,7 +1619,7 @@ Ratified decision 4. The user's own stated reasoning is package-count reduction;
 
 ### P-507 — Core: Update `SharedKernel.Consumer.Tests` for the Merged Package
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-082
 **Domain:** 01.Core
 **Depends on:** P-505
@@ -1638,7 +1638,7 @@ This is the platform's existing safety net for exactly this class of change — 
 
 ### P-508 — Governance: Re-point Architecture/Analyzer Tests from `SharedKernel.Guards` to `SharedKernel.Core`
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-082
 **Domain:** 00.Governance
 **Depends on:** P-505
@@ -1658,7 +1658,7 @@ These are the only production references to `SharedKernel.Guards` in this repo o
 
 ### P-509 — Domain: Re-point `SharedKernel.Domain` from `SharedKernel.Guards` to `SharedKernel.Core`
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-082
 **Domain:** 03.Domain
 **Depends on:** P-505
@@ -1913,7 +1913,7 @@ F19 — these registries drift over time; a stale table silently rejecting a gen
 
 ### P-522 — Core: Bound the Compiled-Regex Cache Used by Format/Email Guards
 
-**Status:** `○` Pending
+**Status:** `●` Complete
 **Work Order:** WO-083
 **Domain:** 01.Core
 **Depends on:** P-505
