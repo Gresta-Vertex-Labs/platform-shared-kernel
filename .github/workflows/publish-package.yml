@@ -1,0 +1,279 @@
+name: Publish Single Package
+
+# Manual, on-demand publish of ONE package to GitHub Packages — no tag required.
+#
+# Why this exists instead of using release.yml: release.yml triggers only on a `v*` tag and packs
+# the WHOLE solution, pushing all ~67 packable projects at once (see PLATFORM.md "Versioning" —
+# MinVer lockstep, one tag -> one version for every package). We want SharedKernel.Analyzers
+# published now, while the other ~66 packages have not yet had their own production-readiness
+# pass. That is safe to do OUTSIDE the tag-triggered, whole-solution path specifically because
+# SharedKernel.Analyzers declares ZERO package dependencies (confirmed by inspecting its packed
+# .nuspec — no <dependencies> element at all: IncludeBuildOutput=false, DevelopmentDependency=true,
+# SuppressDependenciesWhenPacking=true). The `ProjectReference` -> `PackageReference`
+# version-resolution hazard that motivates repo-wide lockstep (packing a package while one of its
+# OWN dependencies sits at an untagged prerelease emits a dependency on a version that was never
+# published) simply does not apply when a package has no SharedKernel dependencies to mis-resolve.
+#
+# THIS IS NOT A GENERAL ESCAPE FROM LOCKSTEP. Any package with a SharedKernel.* dependency
+# (ProjectReference in source, PackageReference once packed) MUST still go through the
+# tag-triggered release.yml path — dispatching this workflow against such a project would pack it
+# at an arbitrary out-of-band version while its dependencies stay pinned to whatever the last real
+# tag produced, silently reintroducing the exact cross-package version drift lockstep exists to
+# prevent. Nothing in this workflow enforces that restriction mechanically; it is a human
+# discipline documented here because the workflow has no reliable way to check "does this project
+# have zero SharedKernel.* dependencies" other than a human reading its .nuspec, which is exactly
+# what happened for SharedKernel.Analyzers before this workflow was authored.
+#
+# Standing hygiene identical to ci.yml/release.yml: permissions:{} at root widened per job, every
+# action pinned to a full 40-char SHA, fetch-depth: 0 (MinVer needs full tag history even for the
+# MinVer-derived default path), persist-credentials: false, timeout-minutes set.
+#
+# Gating that is NOT yet fully in place (same two admin-side gaps release.yml already documents —
+# see the hand-off in the run report that shipped this file):
+#   1. `environment: nuget-publish` requires a GitHub Environment of that exact name to exist with
+#      required-reviewer protection configured in repo Settings. This workflow reads the name, it
+#      does not create the environment. Until it exists, dispatching this workflow runs to
+#      completion unattended.
+#   2. No tag-creation ruleset is relevant here (this workflow never creates or reads a tag), but
+#      the same admin gap that leaves release.yml's `nuget-publish` environment toothless applies
+#      here identically — see PLATFORM.md "DevOps Work Log" -> Deferred/Blocked.
+#
+# First run must be dry_run: true (the default) — a safe rehearsal that proves every step short of
+# the actual push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Path to the .csproj to pack and publish'
+        type: string
+        default: '00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.csproj'
+      version:
+        description: 'Optional exact version (e.g. 1.2.3). Empty = MinVer-derived version (currently a 1.0.0-alpha.0.<height> prerelease — this repo has no v* tag yet).'
+        type: string
+        default: ''
+      dry_run:
+        description: 'Dry run: verify everything (build, test, pack, consumer-verify) but skip the actual push'
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Pack & Publish (single package)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: nuget-publish
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DOTNET_CLI_UI_LANGUAGE: en
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+      # Inputs are copied into env here, once, rather than interpolated with ${{ }} directly into
+      # run: blocks below — a workflow_dispatch input is caller-supplied text and splicing it
+      # straight into a shell script is a script-injection surface even for a repo-internal
+      # manual trigger. Every step below reads these as ordinary shell variables instead.
+      INPUT_PROJECT: ${{ inputs.project }}
+      INPUT_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # MinVer needs full tag history even on the default (no version override) path — see
+          # ci.yml/release.yml's identical comment. A shallow clone would silently stamp the
+          # MinVerMinimumMajorMinor floor instead of the real height-derived prerelease.
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # Fail fast and loud rather than packing something that was deliberately marked non-packable,
+      # or a project path that does not exist (a typo'd workflow_dispatch input).
+      - name: Validate inputs
+        run: |
+          set -e
+          if [ ! -f "$INPUT_PROJECT" ]; then
+            echo "::error::project '$INPUT_PROJECT' does not exist on disk."
+            exit 1
+          fi
+
+          is_packable=$(dotnet msbuild "$INPUT_PROJECT" -getProperty:IsPackable -nologo)
+          if [ "$is_packable" != "true" ]; then
+            echo "::error::'$INPUT_PROJECT' has IsPackable=$is_packable. Refusing to pack a project that is not marked packable."
+            exit 1
+          fi
+          echo "OK: $INPUT_PROJECT is packable."
+
+          if [ -n "$INPUT_VERSION" ]; then
+            if ! echo "$INPUT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::version '$INPUT_VERSION' does not match ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\$."
+              exit 1
+            fi
+            echo "MINVER_OVERRIDE_ARGS=-p:MinVerVersionOverride=$INPUT_VERSION" >> "$GITHUB_ENV"
+            echo "OK: version override '$INPUT_VERSION' is well-formed."
+          else
+            echo "MINVER_OVERRIDE_ARGS=" >> "$GITHUB_ENV"
+            echo "No version override supplied — using the MinVer-derived version."
+          fi
+
+      - name: Restore
+        run: dotnet restore "$INPUT_PROJECT"
+
+      - name: Build (Release)
+        # MINVER_OVERRIDE_ARGS is intentionally unquoted: it is either empty or a single
+        # "-p:MinVerVersionOverride=X.Y.Z" token, and word-splitting an empty string into zero
+        # arguments (rather than one empty-string argument) is exactly the wanted behavior here.
+        run: |
+          # shellcheck disable=SC2086
+          dotnet build "$INPUT_PROJECT" --no-restore --configuration Release $MINVER_OVERRIDE_ARGS
+
+      # Convention (root CLAUDE.md "Test Project Rules"): a package's test project is nested
+      # inside its own folder as "{PackageName}.Tests". For the default input that resolves to
+      # 00.Governance/SharedKernel.Analyzers/SharedKernel.Analyzers.Tests/SharedKernel.Analyzers.Tests.csproj
+      # (272 tests, confirmed by running it locally against this exact project during the pass
+      # that authored this workflow). Not every packable project necessarily has one nested next
+      # to it under this exact convention, so absence is a log line, not a failure.
+      - name: Locate nested test project
+        run: |
+          set -e
+          project_dir=$(dirname "$INPUT_PROJECT")
+          project_name=$(basename "$INPUT_PROJECT" .csproj)
+          test_project="$project_dir/$project_name.Tests/$project_name.Tests.csproj"
+          if [ -f "$test_project" ]; then
+            echo "TEST_PROJECT=$test_project" >> "$GITHUB_ENV"
+            echo "Found nested test project: $test_project"
+          else
+            echo "TEST_PROJECT=" >> "$GITHUB_ENV"
+            echo "No nested test project at $test_project — nothing to run, publish is not gated on a test suite for this project."
+          fi
+
+      # A failing suite here fails the job outright (no continue-on-error) — every step after this
+      # one, including Pack, never runs.
+      - name: Run nested test project (blocks publish on failure)
+        if: env.TEST_PROJECT != ''
+        run: dotnet test "$TEST_PROJECT" --configuration Release
+
+      - name: Pack
+        # See the Build step's identical comment: MINVER_OVERRIDE_ARGS is deliberately unquoted.
+        run: |
+          # shellcheck disable=SC2086
+          dotnet pack "$INPUT_PROJECT" --no-restore --configuration Release $MINVER_OVERRIDE_ARGS
+
+      # Only *.nupkg is ever pushed (see the Push step below) — GitHub Packages' NuGet registry
+      # rejects a .snupkg push outright, same fact release.yml's own comment already records.
+      # "*.nupkg" as a shell glob does not match "*.snupkg" (its own last 6 characters are
+      # "snupkg", not ".nupkg"), so this count is already symbol-package-clean.
+      - name: Assert exactly one package was produced
+        run: |
+          set -e
+          count=$(find nupkgs -maxdepth 1 -name "*.nupkg" | wc -l)
+          echo "Found $count .nupkg file(s) in nupkgs/:"
+          find nupkgs -maxdepth 1 -name "*.nupkg" -exec basename {} \; || true
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected exactly 1 .nupkg, found $count. A single-package publish run must produce exactly one artifact — refusing to guess which one to push."
+            exit 1
+          fi
+
+          nupkg_path=$(find nupkgs -maxdepth 1 -name "*.nupkg")
+          nupkg_basename=$(basename "$nupkg_path" .nupkg)
+          # Anchored at end-of-name, identical to ci.yml/release.yml's own version-extraction
+          # pattern, so a package ID that itself ends in a digit (e.g. SharedKernel.Storage.S3)
+          # can never have part of its own name misread as the version.
+          packed_version=$(echo "$nupkg_basename" | grep -oE '[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$')
+          package_id=${nupkg_basename%".$packed_version"}
+
+          {
+            echo "NUPKG_PATH=$nupkg_path"
+            echo "PACKAGE_ID=$package_id"
+            echo "PACKED_VERSION=$packed_version"
+          } >> "$GITHUB_ENV"
+          echo "Packed: $package_id @ $packed_version"
+
+      # Proves the packed artifact is genuinely consumable — not just that `dotnet pack` exited 0.
+      # Only meaningful for SharedKernel.Analyzers today (its one existing package-specific
+      # consumer-verify harness); gated so this workflow still runs correctly if someone dispatches
+      # it for a different project later, rather than failing on a check that does not apply.
+      - name: Verify packed artifact is consumable (SharedKernel.Analyzers)
+        if: env.PACKAGE_ID == 'SharedKernel.Analyzers'
+        run: |
+          set -e
+          proj="00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
+          dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$PACKED_VERSION"
+          echo "::group::build $proj"
+          dotnet build "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$PACKED_VERSION" 2>&1 | tee analyzer-consumer-build.log
+          echo "::endgroup::"
+          # Same locale-proofing as ci.yml's packaging-verify job: grep the bare diagnostic ID,
+          # never the localized word "warning" (see that job's step comment for why).
+          if ! grep -q 'SK0001' analyzer-consumer-build.log; then
+            echo "::error::SK0001 did not fire while building AnalyzerConsumer against the freshly packed SharedKernel.Analyzers ($PACKED_VERSION). Refusing to treat this as a passing verification — see ci.yml's packaging-verify job for the full explanation of what this check protects against."
+            exit 1
+          fi
+          echo "OK: SK0001 present in AnalyzerConsumer's build output."
+          dotnet run --project "$proj" --no-build --configuration Release
+
+      - name: Skip analyzer-specific consumer-verify (not SharedKernel.Analyzers)
+        if: env.PACKAGE_ID != 'SharedKernel.Analyzers'
+        run: echo "Packed package is '$PACKAGE_ID', not SharedKernel.Analyzers — no package-specific consumability check exists for it yet. Skipping."
+
+      # GitHub Packages' NuGet registry has no symbol-server endpoint — only *.nupkg is pushed,
+      # identical to release.yml. --skip-duplicate makes a re-run idempotent.
+      - name: Push to GitHub Packages
+        if: inputs.dry_run == false
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          dotnet nuget push "$NUPKG_PATH" \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "$NUGET_AUTH_TOKEN" \
+            --skip-duplicate
+          echo "PUSHED=true" >> "$GITHUB_ENV"
+          echo "Pushed $PACKAGE_ID $PACKED_VERSION to GitHub Packages."
+
+      - name: Dry-run notice (nothing pushed)
+        if: inputs.dry_run == true
+        run: |
+          echo "DRY RUN — the actual push was skipped. This run would have executed:"
+          echo ""
+          echo "  dotnet nuget push \"$NUPKG_PATH\" \\"
+          echo "    --source \"https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json\" \\"
+          echo "    --api-key <GITHUB_TOKEN> \\"
+          echo "    --skip-duplicate"
+          echo "PUSHED=false" >> "$GITHUB_ENV"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Publish: ${PACKAGE_ID:-<not reached>}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Project | \`$INPUT_PROJECT\` |"
+            echo "| Package ID | \`${PACKAGE_ID:-<not reached>}\` |"
+            echo "| Version | \`${PACKED_VERSION:-<not reached>}\` |"
+            echo "| Dry run | \`${{ inputs.dry_run }}\` |"
+            echo "| Pushed | \`${PUSHED:-false}\` |"
+            echo ""
+            if [ -n "${PACKAGE_ID:-}" ] && [ -n "${PACKED_VERSION:-}" ]; then
+              echo "### Install"
+              echo '```xml'
+              echo "<PackageReference Include=\"$PACKAGE_ID\" Version=\"$PACKED_VERSION\" />"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

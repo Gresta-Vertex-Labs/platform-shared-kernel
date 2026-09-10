@@ -340,11 +340,44 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Build and run consumer-verify harnesses
+      # AnalyzerConsumer is pulled out of the loop below into its own step, because it is the one
+      # harness whose entire reason to exist is proving a compiler DIAGNOSTIC actually fires, not
+      # just that the packed package restores/builds/runs. SK0001 is Warning severity,
+      # AnalyzerConsumer.csproj sets no TreatWarningsAsErrors, and nothing previously inspected the
+      # build output for the diagnostic ID — so a broken analyzer (wrong analyzers/dotnet/cs
+      # PackagePath, a broken netstandard2.0 target, an assembly-load failure) could silently stop
+      # emitting and this job would stay green while publishing a package that enforces nothing.
+      #
+      # Locale-proofing: grep the bare diagnostic ID "SK0001", never the word "warning" — MSBuild's
+      # per-diagnostic canonical line keeps "warning"/"error" in English regardless of CLI locale,
+      # but that is an implementation detail of the current toolchain, not a contract, and this
+      # repo has been built on a non-English-locale machine (confirmed: dotnet's own top-level
+      # status text renders in Turkish there) where other surrounding output ("X Uyarı"/"X Hata"
+      # instead of "X Warning(s)"/"X Error(s)") already is localized. The diagnostic ID itself is
+      # never localized under any observed toolchain behavior, so it's the only safe anchor.
+      # DOTNET_CLI_UI_LANGUAGE=en (workflow-level env, top of this file) is kept as defense in
+      # depth so the raw log stays human-readable in the Actions UI regardless of runner locale,
+      # but the assertion below does not depend on it.
+      - name: Build AnalyzerConsumer and assert SK0001 fired
+        run: |
+          set -e
+          proj="00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj"
+          echo "::group::build $proj"
+          dotnet build "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$SK_VERSION" 2>&1 | tee analyzer-consumer-build.log
+          echo "::endgroup::"
+          if ! grep -q 'SK0001' analyzer-consumer-build.log; then
+            echo "::error::SK0001 did not fire while building AnalyzerConsumer against the freshly packed SharedKernel.Analyzers ($SK_VERSION). Program.cs's 'DateTime.UtcNow' usage is expected to trigger it. Its absence means the packed analyzer enforces nothing — check the analyzers/dotnet/cs PackagePath, the netstandard2.0 target, and whether the analyzer assembly loaded at all. Refusing to treat this as a passing verification."
+            exit 1
+          fi
+          echo "OK: SK0001 present in AnalyzerConsumer's build output."
+
+      - name: Run AnalyzerConsumer
+        run: dotnet run --project "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" --no-build --configuration Release
+
+      - name: Build and run remaining consumer-verify harnesses
         run: |
           set -e
           for proj in \
-            "00.Governance/_verification/AnalyzerConsumer/AnalyzerConsumer.csproj" \
             "00.Governance/_verification/ArchTestConsumer/ArchTestConsumer.csproj" \
             "00.Governance/_verification/LinterConsumer/LinterConsumer.csproj" \
             "03.Domain/SharedKernel.Domain.ConsumerVerify/SharedKernel.Domain.ConsumerVerify.csproj" \
