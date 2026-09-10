@@ -32,19 +32,36 @@ namespace SharedKernel.ArchitectureTests.Rules;
 /// Reference this class with <c>PrivateAssets="all"</c> so it never becomes a transitive
 /// production dependency.
 /// </para>
+/// <para>
+/// <strong>WO-082/P-508 — hosting assembly changed, namespace did not.</strong>
+/// <c>SharedKernel.Guards</c> was merged into <c>SharedKernel.Core</c>; <c>typeof(IGuardClause)</c>
+/// now resolves to <c>SharedKernel.Core.dll</c>, an assembly that also hosts base exceptions,
+/// BCL extensions, and the railway extensions (<c>ResultTry</c>/<c>ResultCombine</c>) — none of
+/// which this rule is meant to police. The <c>.ImplementInterface(typeof(IGuardClause))</c>
+/// filter below narrows the NetArchTest selection, but the real re-scoping to the
+/// <c>SharedKernel.Guards</c> namespace happens INSIDE <see cref="DoesNotContainThrowIlPredicate"/>
+/// itself (see its own remarks) — not here — because NetArchTest's built-in
+/// <c>ResideInNamespaceStartingWith</c> selection filter reads each type's raw
+/// <c>TypeDefinition.Namespace</c>, which Mono.Cecil always leaves empty for a nested type
+/// (e.g. <c>Guard/DefaultGuardClause</c>, the sole real <c>IGuardClause</c> implementor).
+/// Applying that filter here would have silently excluded every guard type and made the whole
+/// rule vacuously pass. The predicate instead walks up to each type's outermost enclosing type
+/// to resolve its effective namespace before deciding whether it is in scope.
+/// </para>
 /// </remarks>
 public static class GuardPurityRules
 {
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that every type in
-    /// <see cref="IGuardClause"/>'s assembly that implements <see cref="IGuardClause"/>
+    /// <see cref="IGuardClause"/>'s hosting assembly, effectively namespaced under
+    /// <c>SharedKernel.Guards</c>, that implements <see cref="IGuardClause"/>
     /// — except the <c>Guard.Throw</c> companion class — contains no
     /// <see cref="Mono.Cecil.Cil.OpCodes.Throw"/> IL instruction in any method body.
     /// </summary>
     /// <remarks>
-    /// The <c>Guard.Throw</c> class (CLR full name <c>SharedKernel.Guards.Guard+Throw</c>)
-    /// is excluded by the <see cref="DoesNotContainThrowIlPredicate"/> itself via a full
-    /// type-name match.
+    /// The <c>Guard.Throw</c> class (CLR full name <c>SharedKernel.Guards.Guard+Throw</c>) and
+    /// any type outside the <c>SharedKernel.Guards</c> namespace (see class remarks) are both
+    /// excluded by <see cref="DoesNotContainThrowIlPredicate"/> itself.
     /// </remarks>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion via
@@ -64,12 +81,15 @@ public static class GuardPurityRules
 
     /// <summary>
     /// Returns a <see cref="ConditionList"/> asserting that every type in the provided
-    /// assembly that implements <see cref="IGuardClause"/> contains no
+    /// assembly that implements <see cref="IGuardClause"/> AND is effectively namespaced
+    /// under <c>SharedKernel.Guards</c> (see class remarks) contains no
     /// <see cref="Mono.Cecil.Cil.OpCodes.Throw"/> IL instruction in any method body.
     /// </summary>
     /// <param name="guardsAssembly">
     /// The assembly containing <see cref="IGuardClause"/> implementations to inspect.
-    /// Typically <c>typeof(IGuardClause).Assembly</c>.
+    /// Typically <c>typeof(IGuardClause).Assembly</c>. Since WO-082/P-508 this is
+    /// <c>SharedKernel.Core.dll</c>, which also hosts unrelated types — those are excluded by
+    /// namespace, not by which assembly they live in.
     /// </param>
     /// <returns>
     /// A <see cref="ConditionList"/> ready for assertion.

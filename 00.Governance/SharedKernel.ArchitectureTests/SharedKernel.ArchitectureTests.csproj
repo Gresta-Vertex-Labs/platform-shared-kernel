@@ -23,9 +23,13 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Guards reference required to resolve typeof(IGuardClause) in GuardPurityRules.
-         PrivateAssets="all" prevents transitive leakage to production code. -->
-    <ProjectReference Include="..\..\01.Core\SharedKernel.Guards\SharedKernel.Guards.csproj" PrivateAssets="all" />
+    <!-- SharedKernel.Guards was merged into SharedKernel.Core (WO-082/P-505); the C# namespace
+         (SharedKernel.Guards.*) was deliberately preserved. Reference required to resolve
+         typeof(IGuardClause) in GuardPurityRules — GuardPurityRules re-scopes its purity check
+         to the SharedKernel.Guards namespace specifically (via DoesNotContainThrowIlPredicate),
+         since SharedKernel.Core also hosts unrelated types (base exceptions, BCL/railway
+         extensions). PrivateAssets="all" prevents transitive leakage to production code. -->
+    <ProjectReference Include="..\..\01.Core\SharedKernel.Core\SharedKernel.Core.csproj" PrivateAssets="all" />
     <!-- Domain reference required to resolve typeof(IDomainService) and typeof(DomainService) in
          DomainGoldStandardRules and DomainLayerPurityRules.
          PrivateAssets="all" prevents transitive leakage to production code. -->

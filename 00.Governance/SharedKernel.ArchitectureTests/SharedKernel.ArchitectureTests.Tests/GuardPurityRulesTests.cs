@@ -14,9 +14,11 @@ namespace SharedKernel.ArchitectureTests.Tests;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-///   <item><description>T-13 (fire path): predicate returns false for a type whose method body contains a throw opcode.</description></item>
-///   <item><description>T-14 (pass path): the real <c>SharedKernel.Guards</c> assembly passes — all functional-path guard methods are pure.</description></item>
+///   <item><description>T-13 (fire path): predicate returns false for a type, inside the <c>SharedKernel.Guards</c> namespace scope, whose method body contains a throw opcode.</description></item>
+///   <item><description>T-14 (pass path): the real <c>SharedKernel.Guards</c> namespace (hosted in <c>SharedKernel.Core.dll</c> since WO-082/P-508) passes — all functional-path guard methods are pure.</description></item>
 ///   <item><description>T-15 (exclusion): <c>Guard.Throw</c> contains throws but is excluded by the predicate.</description></item>
+///   <item><description>WO-082/P-508 non-vacuity proof (direction 1): a contrived <c>IGuardClause</c> violation INSIDE the <c>SharedKernel.Guards</c> namespace still fails the rule.</description></item>
+///   <item><description>WO-082/P-508 non-vacuity proof (direction 2): a contrived <c>IGuardClause</c> violation OUTSIDE the <c>SharedKernel.Guards</c> namespace (elsewhere in what is now <c>SharedKernel.Core</c>) does NOT falsely fail the rule.</description></item>
 /// </list>
 /// </remarks>
 public class GuardPurityRulesTests
@@ -28,13 +30,17 @@ public class GuardPurityRulesTests
     /// <summary>
     /// T-13: When a type's method body contains a throw IL opcode,
     /// <see cref="DoesNotContainThrowIlPredicate"/> must return <see langword="false"/>.
+    /// The fixture's namespace is deliberately under <c>SharedKernel.Guards</c> — since
+    /// WO-082/P-508 the predicate is namespace-scoped, so a fixture outside that namespace
+    /// would be reported compliant regardless of its throw content (see the dedicated
+    /// non-vacuity tests below for that direction).
     /// </summary>
     [Fact]
     public void DoesNotContainThrowIlPredicate_TypeWithThrow_ReturnsFalse()
     {
         // Arrange — compile a fixture assembly with a class whose method throws
         const string violationSource = """
-            namespace GuardFixture
+            namespace SharedKernel.Guards.Fixtures
             {
                 public class ViolatingGuardClause
                 {
@@ -168,6 +174,127 @@ public class GuardPurityRulesTests
         // Assert
         result.IsSuccessful.Should().BeTrue(
             because: "Guard.Throw is not an IGuardClause implementor, so the rule's scope excludes it naturally");
+    }
+
+    // ---------------------------------------------------------------------------
+    // WO-082/P-508 — non-vacuity proof for the SharedKernel.Guards namespace re-scoping
+    // ---------------------------------------------------------------------------
+    //
+    // SharedKernel.Guards was merged into SharedKernel.Core, an assembly that now also hosts
+    // unrelated types (base exceptions, BCL/railway extensions). GuardPurityRules'
+    // GuardAgainstMethodsMustNotThrow is re-scoped (via DoesNotContainThrowIlPredicate) to the
+    // SharedKernel.Guards namespace specifically, so it never polices any of that unrelated
+    // surface. The two tests below prove BOTH directions of that re-scoping are real, not
+    // vacuous: a violation inside the namespace is still caught, and a violation outside the
+    // namespace is genuinely ignored rather than accidentally never being reachable.
+
+    /// <summary>
+    /// Non-vacuity direction 1: an <c>IGuardClause</c> implementor whose throwing method sits
+    /// INSIDE the <c>SharedKernel.Guards</c> namespace must still fail
+    /// <see cref="GuardPurityRules.GuardAgainstMethodsMustNotThrow(Assembly)"/> after the
+    /// WO-082/P-508 re-scoping — the namespace filter must not have accidentally swallowed the
+    /// rule's own real fire path.
+    /// </summary>
+    [Fact]
+    public void GuardAgainstMethodsMustNotThrow_ViolationInsideGuardsNamespace_RuleFails()
+    {
+        // Arrange — a fixture-local IGuardClause (matched by NetArchTest via full type name,
+        // the same technique DomainGoldStandardRulesTests uses for IDomainService) with an
+        // implementor whose namespace starts with SharedKernel.Guards and whose method throws.
+        const string violationSource = """
+            namespace SharedKernel.Guards.Clauses
+            {
+                public interface IGuardClause { }
+            }
+
+            namespace SharedKernel.Guards.NonVacuityFixture
+            {
+                public sealed class InNamespaceViolatingGuardClause
+                    : SharedKernel.Guards.Clauses.IGuardClause
+                {
+                    public void BadMethod()
+                    {
+                        throw new System.InvalidOperationException("in-namespace violation");
+                    }
+                }
+            }
+            """;
+
+        var tempDll = CompileFixture("InNamespaceGuardViolation", violationSource);
+
+        try
+        {
+            var fixtureAssembly = Assembly.LoadFrom(tempDll);
+
+            // Act
+            var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(fixtureAssembly);
+            var result = conditionList.GetResult();
+
+            // Assert — still caught: the namespace re-scoping did not swallow the real fire path
+            result.IsSuccessful.Should().BeFalse(
+                because: "InNamespaceViolatingGuardClause lives under SharedKernel.Guards and throws, "
+                    + "so the namespace-scoped rule must still flag it");
+        }
+        finally
+        {
+            TryDelete(tempDll);
+        }
+    }
+
+    /// <summary>
+    /// Non-vacuity direction 2: an <c>IGuardClause</c> implementor whose throwing method sits
+    /// OUTSIDE the <c>SharedKernel.Guards</c> namespace (i.e., elsewhere in what is now
+    /// <c>SharedKernel.Core</c>) must NOT fail
+    /// <see cref="GuardPurityRules.GuardAgainstMethodsMustNotThrow(Assembly)"/> — proving the
+    /// rule genuinely stops at the <c>SharedKernel.Guards</c> namespace boundary instead of
+    /// still judging the rest of the merged assembly by coincidence.
+    /// </summary>
+    [Fact]
+    public void GuardAgainstMethodsMustNotThrow_ViolationOutsideGuardsNamespace_RulePasses()
+    {
+        // Arrange — same fixture-local IGuardClause, but the implementor now lives in a
+        // namespace that does NOT start with SharedKernel.Guards, mirroring an unrelated
+        // SharedKernel.Core namespace (e.g. SharedKernel.Core.Exceptions/.Extensions).
+        const string violationSource = """
+            namespace SharedKernel.Guards.Clauses
+            {
+                public interface IGuardClause { }
+            }
+
+            namespace SharedKernel.Core.NonVacuityFixture
+            {
+                public sealed class OutsideNamespaceViolatingGuardClause
+                    : SharedKernel.Guards.Clauses.IGuardClause
+                {
+                    public void BadMethod()
+                    {
+                        throw new System.InvalidOperationException("outside-namespace violation");
+                    }
+                }
+            }
+            """;
+
+        var tempDll = CompileFixture("OutsideNamespaceGuardViolation", violationSource);
+
+        try
+        {
+            var fixtureAssembly = Assembly.LoadFrom(tempDll);
+
+            // Act
+            var conditionList = GuardPurityRules.GuardAgainstMethodsMustNotThrow(fixtureAssembly);
+            var result = conditionList.GetResult();
+
+            // Assert — NOT caught: out of the SharedKernel.Guards namespace scope, even though
+            // it implements IGuardClause and throws
+            result.IsSuccessful.Should().BeTrue(
+                because: "OutsideNamespaceViolatingGuardClause lives outside SharedKernel.Guards, "
+                    + "so the namespace-scoped rule must not judge it even though it implements "
+                    + "IGuardClause and throws");
+        }
+        finally
+        {
+            TryDelete(tempDll);
+        }
     }
 
     // ---------------------------------------------------------------------------
