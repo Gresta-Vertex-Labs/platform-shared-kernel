@@ -7,10 +7,46 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0004 — Fires when a <c>return null</c> literal appears inside a method whose declared
-/// return type is <c>Error</c> or <c>Error?</c> (nullable Error).
-/// Return <c>Error.None</c> to signal "no error" — never return <c>null</c> for Error.
+/// SK0004 — Fires on a bare <c>return null;</c> <see cref="ReturnStatementSyntax"/> inside a
+/// method, local function, or property accessor whose resolved return type is <c>Error</c> or
+/// nullable <c>Error</c> (<c>Error?</c>).
 /// </summary>
+/// <remarks>
+/// <para>
+/// <c>Error</c> already has a dedicated "no error" sentinel — <c>Error.None</c> — precisely so
+/// callers never need <see langword="null"/> to express absence. A <c>return null;</c> forces every
+/// caller of an <c>Error?</c>-returning member to null-check before it can safely inspect the
+/// result, reintroducing the exact null-handling burden the platform's <c>Result</c>/<c>Error</c>
+/// primitives exist to remove.
+/// </para>
+/// <para>
+/// <strong>Containing-member resolution.</strong> <c>GetContainingMethod</c> walks
+/// <see cref="SyntaxNode.Parent"/> looking for the nearest <see cref="MethodDeclarationSyntax"/>,
+/// <see cref="LocalFunctionStatementSyntax"/>, or <see cref="AccessorDeclarationSyntax"/>, and
+/// stops early — reporting no match — if it instead reaches a class/struct/record boundary first.
+/// A property accessor is resolved differently from the other two shapes: its "return type" is read
+/// from <c>semanticModel.GetTypeInfo(propertyDeclaration.Type)</c> on the enclosing
+/// <see cref="PropertyDeclarationSyntax"/>, since an accessor declaration has no return-type syntax
+/// of its own.
+/// </para>
+/// <para>
+/// <strong>Three-shape <c>Error</c> match.</strong> <c>IsErrorType</c> recognizes: the resolved
+/// type being literally named <c>Error</c>; the value-type nullable wrapper
+/// <c>Nullable&lt;Error&gt;</c>, unwrapped via <c>ConstructedFrom.SpecialType ==
+/// SpecialType.System_Nullable_T</c>; and a reference-type nullable annotation
+/// (<c>NullableAnnotation.Annotated</c>) on a type named <c>Error</c>. Covering all three shapes
+/// means the rule fires correctly whether the real <c>SharedKernel.Primitives.Error</c> is declared
+/// as a value type or a reference type, without the analyzer needing to know which.
+/// </para>
+/// <para>
+/// <strong>Simple-name match only.</strong> Like SK0005 and SK0009, the type check is
+/// <c>type.Name == "Error"</c> with no namespace qualification required — a test fixture (or an
+/// unrelated consuming type) can declare its own local <c>Error</c> type with no reference to
+/// <c>SharedKernel.Primitives</c> and still be recognized. A method returning plain
+/// <c>string?</c> never matches regardless of its body, since <see langword="null"/> is entirely
+/// legitimate there.
+/// </para>
+/// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class NullErrorReturnAnalyzer : AnalyzerBase
 {

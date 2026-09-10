@@ -4,10 +4,8 @@
          This deliberately overrides Directory.Build.props' net10.0 default. Do not remove. -->
     <TargetFramework>netstandard2.0</TargetFramework>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <!-- RS2008: Release tracking warnings — suppressed during development phases before first publish -->
-    <NoWarn>$(NoWarn);RS2008</NoWarn>
     <!-- NuGet packaging metadata -->
-    <Description>Roslyn diagnostic analyzers enforcing SharedKernel coding standards. Ships no runtime DLL — compiler-only. 35 rules spanning core standards (SK0001–SK0011), application and communication (SK0013–SK0019), cross-cutting concerns (SK0022–SK0032), persistence (SK0201–SK0202), and messaging (SK0703–SK0708).</Description>
+    <Description>Roslyn diagnostic analyzers enforcing SharedKernel coding standards. Ships no runtime DLL — compiler-only. 41 rules: core standards (SK0001–SK0011), application and communication (SK0013–SK0019), logging authoring (SK0020–SK0021), cross-cutting concerns (SK0022–SK0036), persistence (SK0201–SK0202), and messaging (SK0703–SK0705, SK0708). Gaps in the numbering are NetArchTest predicates that live in SharedKernel.ArchitectureTests, not analyzers. All rules default to Warning; escalate per rule via .editorconfig.</Description>
     <PackageTags>roslyn;analyzer;sharedkernel;governance</PackageTags>
     <!-- Analyzer packages ship no runtime assembly and are development-only dependencies -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
@@ -25,8 +23,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <AdditionalFiles Include="AnalyzerReleaseTracking.Shipped.txt" />
-    <AdditionalFiles Include="AnalyzerReleaseTracking.Unshipped.txt" />
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
   <!-- Place the compiled analyzer assembly under analyzers/dotnet/cs in the NuGet package -->
   <ItemGroup>

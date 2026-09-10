@@ -7,10 +7,44 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0002 — Fires when <c>Microsoft.FeatureManagement.IFeatureManager</c> is referenced
-/// as a constructor parameter type, field declaration type, or property declaration type.
-/// Inject <c>SharedKernel.FeatureManagement.IFeatureManager</c> instead.
+/// SK0002 — Fires when a <see cref="ParameterSyntax"/>, <see cref="FieldDeclarationSyntax"/>, or
+/// <see cref="PropertyDeclarationSyntax"/> is typed as
+/// <c>Microsoft.FeatureManagement.IFeatureManager</c>, resolved via
+/// <see cref="SemanticModel.GetTypeInfo(Microsoft.CodeAnalysis.SyntaxNode, System.Threading.CancellationToken)"/>.
 /// </summary>
+/// <remarks>
+/// <para>
+/// The platform wraps the third-party feature-flag package behind its own
+/// <c>SharedKernel.FeatureManagement.IFeatureManager</c> abstraction so consuming services never
+/// take a hard, unmediated dependency on that package's exact API surface. Referencing the
+/// Microsoft interface directly defeats the abstraction the moment it happens — nothing then
+/// stands between the consumer and a future breaking change in the underlying package.
+/// </para>
+/// <para>
+/// <strong>Registration.</strong> Three independent <see cref="SyntaxKind"/> registrations — one
+/// each for <see cref="SyntaxKind.Parameter"/>, <see cref="SyntaxKind.FieldDeclaration"/>, and
+/// <see cref="SyntaxKind.PropertyDeclaration"/> — every one resolving its own declared
+/// <see cref="TypeSyntax"/> against the <see cref="SemanticModel"/> and comparing
+/// <c>symbol.ToDisplayString()</c> against the forbidden fully-qualified name. No single shared
+/// "any type reference" registration is used, since a parameter, a field, and a property each
+/// expose their declared type through a differently-shaped syntax node.
+/// </para>
+/// <para>
+/// <strong>Unresolved-symbol fallback.</strong> When type resolution returns a
+/// <see langword="null"/> symbol — the type genuinely fails to bind, e.g. because a reference is
+/// missing from the compilation — the check falls back to a syntax-only simple-name comparison
+/// against <c>"IFeatureManager"</c>. This is a defensive fallback for an already-degraded
+/// compilation, not the analyzer's primary path; the primary path is always the fully-qualified-name
+/// comparison, so a same-simple-named but unrelated interface that resolves cleanly never
+/// false-positives.
+/// </para>
+/// <para>
+/// <strong>Pass case:</strong> <c>SharedKernel.FeatureManagement.IFeatureManager</c> — a distinct
+/// fully-qualified name sharing only the simple name <c>IFeatureManager</c> — never matches on the
+/// primary (resolved) path, since the comparison is against the full display string, not the
+/// simple name.
+/// </para>
+/// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class DirectMicrosoftFeatureManagerAnalyzer : AnalyzerBase
 {

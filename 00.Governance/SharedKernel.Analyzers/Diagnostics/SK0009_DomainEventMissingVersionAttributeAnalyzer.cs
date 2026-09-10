@@ -8,8 +8,10 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0009 — Fires when a non-abstract class or record that declares <c>IDomainEvent</c>
-/// in its base list does not carry a <c>[DomainEventVersion]</c> attribute.
+/// SK0009 — Fires when a non-<see langword="abstract"/> <see cref="ClassDeclarationSyntax"/> or
+/// <see cref="RecordDeclarationSyntax"/> declares a base-list entry simply named
+/// <c>IDomainEvent</c> and carries no attribute simply named <c>DomainEventVersion</c> or
+/// <c>DomainEventVersionAttribute</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,8 +22,32 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// </para>
 /// <para>
 /// Both the class name check (<c>ClassDeclarationSyntax</c>) and the record check
-/// (<c>RecordDeclarationSyntax</c>) are handled. Simple name matching is used throughout;
-/// no semantic model is required.
+/// (<c>RecordDeclarationSyntax</c>) are handled by the same <c>AnalyzeTypeDeclaration</c> callback,
+/// registered against both <see cref="SyntaxKind.ClassDeclaration"/> and
+/// <see cref="SyntaxKind.RecordDeclaration"/>. Simple name matching is used throughout for both the
+/// base-list interface check and the attribute check; no semantic model is required anywhere in
+/// this rule, so a test fixture (or a consuming service) can declare its own local
+/// <c>IDomainEvent</c> interface and <c>DomainEventVersionAttribute</c> with no reference to the
+/// real <c>SharedKernel.Primitives</c>/<c>SharedKernel.Domain</c> assemblies.
+/// </para>
+/// <para>
+/// <strong>Abstract exemption.</strong> Checked first, via
+/// <c>typeDecl.Modifiers.Any(SyntaxKind.AbstractKeyword)</c> — an abstract type implementing
+/// <c>IDomainEvent</c> short-circuits before either the base-list or attribute check runs, so an
+/// abstract base event class never needs the attribute, regardless of whether any of its concrete
+/// subclasses declare it either (each concrete subclass is still independently checked on its own
+/// merits).
+/// </para>
+/// <para>
+/// <strong>Attribute-name flexibility.</strong> Both the short form (<c>[DomainEventVersion(1)]</c>)
+/// and the fully-suffixed form (<c>[DomainEventVersionAttribute(1)]</c>) are accepted as satisfying
+/// the rule — C#'s own attribute-name-suffix convention is honored on the checking side without
+/// requiring the consumer to spell out <c>Attribute</c> explicitly.
+/// </para>
+/// <para>
+/// <strong>Pass case:</strong> a type that does not implement <c>IDomainEvent</c> at all is never
+/// flagged, regardless of whether it happens to carry a <c>[DomainEventVersion]</c> attribute — the
+/// base-list check gates everything else.
 /// </para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]

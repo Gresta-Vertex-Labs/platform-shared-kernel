@@ -1,6 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- Consumer-verify harness: proves the packed package is consumable. Never shipped.
+         Explicit because the name does not end in .Tests, so the Directory.Build.props
+         non-shipping default does not apply. -->
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="SharedKernel.ArchitectureTests" PrivateAssets="all" />

@@ -20,6 +20,31 @@ This document covers how to consume each package in the `00.Governance` capabili
   - [SK0008 — AggregateRootDispatchCoupling](#sk0008-aggregaterootdispatchcoupling)
   - [SK0009 — DomainEventMissingVersionAttribute](#sk0009-domaineventmissingversionattribute)
   - [SK0010 — SpecificationOrderingConflict](#sk0010-specificationorderingconflict)
+  - [SK0011 — GuidFormatCodeMisuse](#sk0011-guidformatcodemisuse)
+  - [SK0013 — RawHttpClientConstructorInjection](#sk0013-rawhttpclientconstructorinjection)
+  - [SK0014 — ClosedGenericResiliencePipelineRegistration](#sk0014-closedgenericresiliencepipelineregistration)
+  - [SK0015 — StreamPipelineBehaviorMisregistration](#sk0015-streampipelinebehaviormisregistration)
+  - [SK0016 — RequestTypeShortNameUsage](#sk0016-requesttypeshortnameusage)
+  - [SK0017 — CommandImplementsCacheableQuery](#sk0017-commandimplementscacheablequery)
+  - [SK0018 — QueryImplementsInvalidatesCache](#sk0018-queryimplementsinvalidatescache)
+  - [SK0019 — RetryableRequestWithoutIdempotency](#sk0019-retryablerequestwithoutidempotency)
+  - [SK0020 — DirectILoggerExtensionMethodUsage](#sk0020-directiloggerextensionmethodusage)
+  - [SK0021 — HandWrittenLoggerMessageDefineDelegate](#sk0021-handwrittenloggermessagedefinedelegate)
+  - [SK0022 — CrossCuttingMagicStringLiteral](#sk0022-crosscuttingmagicstringliteral)
+  - [SK0023 — NonSingletonAmazonS3ClientRegistration](#sk0023-nonsingletonamazons3clientregistration)
+  - [SK0024 — RawSearchFieldNameLiteral](#sk0024-rawsearchfieldnameliteral)
+  - [SK0025 — ObsoleteElasticsearchClientUsage](#sk0025-obsoleteelasticsearchclientusage)
+  - [SK0026 — RawIntelligenceProviderClientConstructorInjection](#sk0026-rawintelligenceproviderclientconstructorinjection)
+  - [SK0027 — RawIntelligenceIdentifierLiteral](#sk0027-rawintelligenceidentifierliteral)
+  - [SK0028 — NonDeterministicApiUsageInsideWorkflow](#sk0028-nondeterministicapiusageinsideworkflow)
+  - [SK0029 — RawTemporalClientConstructorInjection](#sk0029-rawtemporalclientconstructorinjection)
+  - [SK0030 — ResultOutcomeDiscarded](#sk0030-resultoutcomediscarded)
+  - [SK0031 — RawSecurityContextConstructorInjection](#sk0031-rawsecuritycontextconstructorinjection)
+  - [SK0032 — CorsWildcardOriginWithCredentials](#sk0032-corswildcardoriginwithcredentials)
+  - [SK0033 — ReflectionBasedObjectMapperUsage](#sk0033-reflectionbasedobjectmapperusage)
+  - [SK0034 — AmountCurrencyPairCoupling](#sk0034-amountcurrencypaircoupling)
+  - [SK0035 — UnmaskedClassifiedDataAtLoggingCallSite](#sk0035-unmaskedclassifieddataatloggingcallsite)
+  - [SK0036 — RawRpcExceptionConstruction](#sk0036-rawrpcexceptionconstruction)
   - [SK0201 — TenantedDbContextOnModelCreatingGuard](#sk0201-tenanteddbcontextonmodelcreatingguard)
   - [SK0202 — IgnoreQueryFiltersOutsideTenantedRepository](#sk0202-ignorequeryfiltersoutsidetenantedrepository)
   - [SK0703 — MessageBusSingletonRegistration](#sk0703-messagebussingletonregistration)
@@ -67,7 +92,9 @@ Add the reference to any project that should be checked:
 </ItemGroup>
 ```
 
-All rules (SK0001–SK0010) are enabled by default at `Warning` severity. To suppress a
+All 41 rules (SK0001–SK0010, SK0011–SK0036, SK0201–SK0202, SK0703–SK0705, SK0708) are enabled by
+default at `Warning` severity — including the `Security`-category rules (SK0032, SK0035) and the
+`Advisory`-category rule (SK0034); none of the 41 escalates to `Error` by default. To suppress a
 rule project-wide, add it to `<NoWarn>`:
 
 ```xml
@@ -87,6 +114,7 @@ var now = DateTime.UtcNow; // intentional — this class implements IClock
 
 ---
 
+<a id="sk0001-directdatetimeusage"></a>
 ### SK0001 — DirectDateTimeUsage
 
 **Category:** Usage  
@@ -94,10 +122,17 @@ var now = DateTime.UtcNow; // intentional — this class implements IClock
 
 #### Rationale
 
-Direct access to `DateTime.UtcNow`, `DateTime.Now`, or `DateTimeOffset.UtcNow` couples code
-to the system clock, making it impossible to control time in unit tests. All time-dependent
-code should obtain the current instant via `IClock` (from `SharedKernel.FeatureManagement`),
-injected via DI.
+Direct access to `DateTime.UtcNow`, `DateTime.Now`, `DateTimeOffset.UtcNow`, or
+`DateTimeOffset.Now` couples code to the system clock, making it impossible to control time
+in unit tests. `DateTimeOffset.Now` is also the worst offender of the four, since it reads
+the machine's local timezone on top of the current instant. All time-dependent code should
+obtain the current instant via `IClock` (from `SharedKernel.Primitives`), injected via DI.
+
+The rule fires on both a bare receiver (`DateTime.UtcNow`) and the fully qualified `System.`
+receiver (`System.DateTime.UtcNow`) — the fully qualified form is not an escape hatch. It does
+**not** fire on `DateTime.Today`, which returns a date-only value with different testability
+characteristics than the four "current instant" accessors above, and is deliberately out of
+scope.
 
 The rule is suppressed automatically for code inside the `SharedKernel.Primitives` namespace,
 where the clock interface itself is defined.
@@ -136,6 +171,7 @@ Suppress inline with `#pragma warning disable SK0001 / restore SK0001`, or proje
 
 ---
 
+<a id="sk0002-directmicrosoftfeaturemanagerusage"></a>
 ### SK0002 — DirectMicrosoftFeatureManagerUsage
 
 **Category:** Usage  
@@ -184,6 +220,7 @@ Suppress inline with `#pragma warning disable SK0002 / restore SK0002`, or proje
 
 ---
 
+<a id="sk0003-rawexceptionthrow"></a>
 ### SK0003 — RawExceptionThrow
 
 **Category:** Design  
@@ -241,6 +278,7 @@ Suppress inline with `#pragma warning disable SK0003 / restore SK0003`, or proje
 
 ---
 
+<a id="sk0004-nullerrorreturn"></a>
 ### SK0004 — NullErrorReturn
 
 **Category:** Design  
@@ -285,6 +323,7 @@ Suppress inline with `#pragma warning disable SK0004 / restore SK0004`, or proje
 
 ---
 
+<a id="sk0005-stringonlyexceptionconstructor"></a>
 ### SK0005 — StringOnlyExceptionConstructor
 
 **Category:** Design  
@@ -328,6 +367,7 @@ Suppress inline with `#pragma warning disable SK0005 / restore SK0005`, or proje
 
 ---
 
+<a id="sk0006-guardclausethrow"></a>
 ### SK0006 — GuardClauseThrow
 
 **Category:** Design  
@@ -437,6 +477,7 @@ Note: Suppression should be rare. If your method legitimately needs to throw, mo
 
 ---
 
+<a id="sk0007-redischannelservicemessagingsubstitute"></a>
 ### SK0007 — RedisChannelServiceMessagingSubstitute
 
 **Category:** Design  
@@ -514,6 +555,7 @@ invalidation, not as a substitute for a durable bus. If in doubt, use `IMessageB
 
 ---
 
+<a id="sk0008-aggregaterootdispatchcoupling"></a>
 ### SK0008 — AggregateRootDispatchCoupling
 
 **Category:** Design  
@@ -567,6 +609,7 @@ Suppress inline with `#pragma warning disable SK0008 / restore SK0008`, or proje
 
 ---
 
+<a id="sk0009-domaineventmissingversionattribute"></a>
 ### SK0009 — DomainEventMissingVersionAttribute
 
 **Category:** Design  
@@ -617,6 +660,7 @@ Suppress inline with `#pragma warning disable SK0009 / restore SK0009`, or proje
 
 ---
 
+<a id="sk0010-specificationorderingconflict"></a>
 ### SK0010 — SpecificationOrderingConflict
 
 **Category:** Design  
@@ -672,6 +716,1408 @@ Suppress inline with `#pragma warning disable SK0010 / restore SK0010`, or proje
 
 ---
 
+<a id="sk0011-guidformatcodemisuse"></a>
+### SK0011 — GuidFormatCodeMisuse
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+The canonical GUID string format for audit column values (`CreatedBy`, `ModifiedBy`) is the
+lowercase hyphenated form produced by `ToString()` or `ToString("D")` — e.g.,
+`"d3e4f5a6-1b2c-3d4e-5f6a-7b8c9d0e1f2a"`. Calling `Guid.ToString(...)` with the format code
+`"N"` (no hyphens), `"B"` (braces), `"P"` (parentheses), or `"X"` (hex), case-insensitively,
+produces a representation that diverges from this canonical format, causing inconsistent
+values across services sharing the same audit schema.
+
+SK0011 requires a semantic-model check on the receiver to confirm it is `System.Guid` before
+firing — a `"N"`/`"B"`/`"P"`/`"X"` format code on an unrelated type (e.g. a numeric format
+specifier on `int`/`double`) never triggers this rule.
+
+#### Violating Example
+
+```csharp
+public class AuditStamper
+{
+    public string BuildActor(Guid userId) =>
+        // SK0011: Guid.ToString("N") produces a non-canonical format
+        userId.ToString("N");
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public class AuditStamper
+{
+    public string BuildActor(Guid userId) =>
+        userId.ToString(); // or userId.ToString("D") — both produce the canonical hyphenated form
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0011 / restore SK0011` when a compact format is
+genuinely required (e.g., a URL segment). Document the rationale inline — there is no suppression
+namespace.
+
+---
+
+<a id="sk0013-rawhttpclientconstructorinjection"></a>
+### SK0013 — RawHttpClientConstructorInjection
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+Direct `HttpClient` injection bypasses connection pooling, DNS refresh cycles, and handler
+lifetime management — all production reliability concerns for .NET microservices. The correct
+pattern is a named typed client resolved via `IHttpClientFactory`, registered through
+`AddSharedKernelRestCommunication().AddRestClient<TClient>()`.
+
+SK0013 fires on any constructor parameter whose type is exactly `HttpClient`, unless one of two
+exemptions applies: the enclosing type sits inside a namespace starting with
+`SharedKernel.Communication.Rest` (the typed-client package legitimately manages `HttpClient`
+internally), or the enclosing class derives from `DelegatingHandler` (handlers receive the inner
+`HttpClient` as part of the handler chain).
+
+#### Violating Example
+
+```csharp
+namespace Application.Payments
+{
+    public class PaymentGatewayClient
+    {
+        // SK0013: raw HttpClient injection bypasses IHttpClientFactory pooling/DNS refresh
+        public PaymentGatewayClient(HttpClient httpClient) { }
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Application.Payments
+{
+    public interface IPaymentGatewayClient
+    {
+        Task<Result> ChargeAsync(decimal amount, CancellationToken ct);
+    }
+
+    public class PaymentGatewayClient : IPaymentGatewayClient
+    {
+        // Registered via AddSharedKernelRestCommunication().AddRestClient<IPaymentGatewayClient>()
+        public PaymentGatewayClient(IPaymentGatewayClient inner) { }
+
+        public Task<Result> ChargeAsync(decimal amount, CancellationToken ct) => throw new NotImplementedException();
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0013 / restore SK0013` only when raw `HttpClient`
+injection is genuinely required (e.g., a unit-test helper). Document the rationale inline.
+
+---
+
+<a id="sk0014-closedgenericresiliencepipelineregistration"></a>
+### SK0014 — ClosedGenericResiliencePipelineRegistration
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+Polly v8 resilience pipelines are registered and resolved via the non-generic
+`Polly.ResiliencePipeline` type, keyed by a string policy name
+(`ResiliencePipelineProvider<string>` / `AddResiliencePipeline("policy-name", ...)`). The
+arity-1 generic form `ResiliencePipeline<TResponse>` silently falls back to a no-op pipeline
+whenever the resolved key does not exactly match the closed type used at the call site —
+defeating retry/circuit-breaker protection with no runtime warning.
+
+SK0014 fires anywhere the arity-1 generic form is used — a DI registration type argument, a
+constructor/method parameter, a field type, or a local variable type. This is a syntax-only
+check; no suppression namespace exists, since a closed-generic `ResiliencePipeline<T>` has no
+legitimate call site on this platform.
+
+#### Violating Example
+
+```csharp
+public class PaymentGatewayClient
+{
+    // SK0014: ResiliencePipeline<HttpResponseMessage> silently falls back to a no-op pipeline
+    private readonly ResiliencePipeline<HttpResponseMessage> _pipeline;
+
+    public PaymentGatewayClient(ResiliencePipeline<HttpResponseMessage> pipeline) =>
+        _pipeline = pipeline;
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public class PaymentGatewayClient
+{
+    private readonly ResiliencePipeline _pipeline;
+
+    public PaymentGatewayClient(ResiliencePipelineProvider<string> provider) =>
+        _pipeline = provider.GetPipeline("payment-gateway");
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0014 / restore SK0014` only when a third-party
+library API genuinely requires the closed-generic Polly type; document the rationale inline.
+
+---
+
+<a id="sk0015-streampipelinebehaviormisregistration"></a>
+### SK0015 — StreamPipelineBehaviorMisregistration
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+MediatR dispatches `IStreamRequest<TResponse>` through `IStreamPipelineBehavior<,>`, never
+through `IPipelineBehavior<,>`. A streaming behavior registered against the wrong interface is
+silently never invoked — no exception, no warning, the behavior simply never runs.
+
+SK0015 fires when a type-based DI registration call (`AddTransient`, `AddScoped`, or
+`AddSingleton`) registers `typeof(IPipelineBehavior<,>)` against an implementation type that
+itself implements `MediatR.IStreamPipelineBehavior<,>`. The rule is self-exempt inside a method
+named `AddStreamingBehaviors` — the canonical builder method is the single sanctioned
+registration call site.
+
+#### Violating Example
+
+```csharp
+public static class ApplicationServiceCollectionExtensions
+{
+    public static IServiceCollection AddBehaviors(this IServiceCollection services)
+    {
+        // SK0015: StreamMetricsBehavior<,> implements IStreamPipelineBehavior<,> but is
+        // registered against IPipelineBehavior<,> — it will never be invoked
+        return services.AddTransient(
+            typeof(IPipelineBehavior<,>),
+            typeof(StreamMetricsBehavior<,>));
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public static class ApplicationBehaviorsBuilder
+{
+    public static ApplicationBehaviorsBuilder AddStreamingBehaviors(this ApplicationBehaviorsBuilder builder) =>
+        builder.Services.AddTransient(
+            typeof(IStreamPipelineBehavior<,>),
+            typeof(StreamMetricsBehavior<,>)) is var _
+            ? builder
+            : builder;
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0015 / restore SK0015` only for a deliberate
+hybrid unary/streaming behavior type; document why the type intentionally implements both
+interfaces.
+
+---
+
+<a id="sk0016-requesttypeshortnameusage"></a>
+### SK0016 — RequestTypeShortNameUsage
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+Two request types with the same short name in different namespaces or assemblies collide under
+`typeof(X).Name` alone. Any metric tag, log scope key, or cache key that must remain unique
+across assemblies must use `typeof(TRequest).FullName ?? typeof(TRequest).Name` instead.
+
+Unlike most rules in this registry, SK0016 is scoped as a trigger-**IN** condition: it fires
+only on a standalone `typeof(X).Name` access found inside a file whose namespace starts with
+`SharedKernel.Application` (covering both `SharedKernel.Application` and
+`SharedKernel.Application.Behaviors`) — the collision risk this rule targets is intrinsic to
+MediatR request-type tag/key construction, which lives exclusively there. It does not fire on
+`typeof(X).Name` usage anywhere else on the platform.
+
+#### Violating Example
+
+```csharp
+namespace SharedKernel.Application.Behaviors
+{
+    public sealed class MetricsBehavior<TRequest, TResponse>
+    {
+        public string BuildTag() =>
+            // SK0016: typeof(TRequest).Name is not collision-safe across assemblies
+            typeof(TRequest).Name;
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace SharedKernel.Application.Behaviors
+{
+    public sealed class MetricsBehavior<TRequest, TResponse>
+    {
+        public string BuildTag() =>
+            typeof(TRequest).FullName ?? typeof(TRequest).Name;
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0016 / restore SK0016` when the short name is
+genuinely sufficient (e.g. a user-facing display string where collision risk is irrelevant);
+document the rationale inline.
+
+---
+
+<a id="sk0017-commandimplementscacheablequery"></a>
+### SK0017 — CommandImplementsCacheableQuery
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+Caching is queries-only by design — a command must never be cacheable. SK0017 fires when a
+non-abstract class, record, or struct implements both `ICommandBase` and the open generic
+`ICacheableQuery<TResponse>`, whether directly or transitively (e.g. through
+`ICommand<TResponse> : ICommandBase`). This rule fires inside a **consuming** microservice's own
+compilation — the violation is a command/query type declaration, which never occurs inside
+`SharedKernel.Application.Behaviors` itself.
+
+Abstract types are exempt, mirroring SK0009's exemption for abstract base event classes.
+
+#### Violating Example
+
+```csharp
+namespace Application.Orders
+{
+    using SharedKernel.Application;
+    using SharedKernel.Application.Behaviors;
+
+    // SK0017: implements both ICommandBase and ICacheableQuery<TResponse>
+    public sealed class CancelOrderCommand : ICommand<Result>, ICacheableQuery<Result>
+    {
+        public string CacheKey => "cancel-order";
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Application.Orders
+{
+    using SharedKernel.Application;
+
+    public sealed class CancelOrderCommand : ICommand<Result>
+    {
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0017 / restore SK0017` at the type declaration
+with an inline comment documenting the rationale; fires globally, no suppression namespace.
+
+---
+
+<a id="sk0018-queryimplementsinvalidatescache"></a>
+### SK0018 — QueryImplementsInvalidatesCache
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+Cache invalidation is commands-only by design — a pure query must never invalidate cache
+entries as a side effect. SK0018 is the structural converse of SK0017: it fires when a
+non-abstract class, record, or struct implements the open generic `IQuery<TResponse>`, does
+**not** also implement `ICommandBase`, and also implements `IInvalidatesCache`. A type
+implementing `ICommandBase` alongside both markers belongs to SK0017 instead — the two rules are
+mutually exclusive by this guard.
+
+Abstract types are exempt, the same exemption already applied by SK0009/SK0017.
+
+#### Violating Example
+
+```csharp
+namespace Application.Orders
+{
+    using SharedKernel.Application;
+    using SharedKernel.Application.Behaviors;
+
+    // SK0018: implements IQuery<TResponse> and IInvalidatesCache without ICommandBase
+    public sealed class GetOrderQuery : IQuery<OrderDto>, IInvalidatesCache
+    {
+        public IReadOnlyCollection<string> CacheKeysToInvalidate => new[] { "orders" };
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Application.Orders
+{
+    using SharedKernel.Application;
+
+    public sealed class GetOrderQuery : IQuery<OrderDto>
+    {
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0018 / restore SK0018` at the type declaration
+with an inline comment documenting the rationale; fires globally, no suppression namespace.
+
+---
+
+<a id="sk0019-retryablerequestwithoutidempotency"></a>
+### SK0019 — RetryableRequestWithoutIdempotency
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+A retried request that already partially committed on its first attempt is re-executed instead
+of returning the original outcome, unless `IdempotentCommandBehavior` can guard against it via
+`IIdempotentRequest`. SK0019 closes `05.Application/CLAUDE.md`'s own documented, previously
+not-mechanically-enforced gap: it fires when a non-abstract class, record, or struct implements
+`IRetryableRequest` without also implementing `IIdempotentRequest`.
+
+Abstract types are exempt, the same exemption already applied by SK0009/SK0017/SK0018.
+
+#### Violating Example
+
+```csharp
+namespace Application.Payments
+{
+    using SharedKernel.Application.Behaviors;
+
+    // SK0019: implements IRetryableRequest without also implementing IIdempotentRequest
+    public sealed class ChargeCardCommand : IRetryableRequest
+    {
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Application.Payments
+{
+    using SharedKernel.Application.Behaviors;
+
+    public sealed class ChargeCardCommand : IRetryableRequest, IIdempotentRequest
+    {
+        public string IdempotencyKey { get; init; } = string.Empty;
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0019 / restore SK0019` at the type declaration
+with an inline comment documenting the rationale (e.g., an idempotency-key store is provided
+out-of-band); fires globally, no suppression namespace.
+
+---
+
+<a id="sk0020-directiloggerextensionmethodusage"></a>
+### SK0020 — DirectILoggerExtensionMethodUsage
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+The platform's logging standard (root `CLAUDE.md` "Logging Conventions", WO-041 P-249/P-250)
+requires every production log statement to go through the `[LoggerMessage]` source-generated
+partial-method pattern with an explicit `EventId`. SK0020 fires when a call resolves — by exact
+symbol resolution, not a syntax-only name match — to `Microsoft.Extensions.Logging.ILogger.Log`
+or a `Microsoft.Extensions.Logging.LoggerExtensions` method (`LogInformation`, `LogWarning`,
+etc.). A syntax-only simple-name check was rejected because `LogInformation`/`LogWarning`/etc.
+collide with unrelated logging frameworks (Serilog's own `ILogger`, NLog, custom wrappers) that
+may coexist in a consuming microservice's dependency tree.
+
+SK0020 and SK0021 share one analyzer class (`LoggingAuthoringStyleAnalyzer`) and one
+`SharedKernel.Testing` suppression namespace — the in-memory `ILogger`/`ILoggerFactory` test
+double legitimately implements/exercises the `ILogger` surface directly. The analyzer also
+guards against generated code (`ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None)`)
+— without this guard, SK0020 would fire against every `[LoggerMessage]` method's own
+compiler-generated body, which internally calls `ILogger.Log` directly.
+
+#### Violating Example
+
+```csharp
+public class OrderHandler
+{
+    private readonly ILogger<OrderHandler> _logger;
+
+    public OrderHandler(ILogger<OrderHandler> logger) => _logger = logger;
+
+    public void Handle(string orderId) =>
+        // SK0020: direct ILogger extension-method call bypasses [LoggerMessage]
+        _logger.LogInformation("Order {OrderId} handled", orderId);
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public static partial class Log
+{
+    [LoggerMessage(EventId = 5001, Level = LogLevel.Information, Message = "Order {OrderId} handled")]
+    public static partial void OrderHandled(this ILogger logger, string orderId);
+}
+
+public class OrderHandler
+{
+    private readonly ILogger<OrderHandler> _logger;
+
+    public OrderHandler(ILogger<OrderHandler> logger) => _logger = logger;
+
+    public void Handle(string orderId) => _logger.OrderHandled(orderId);
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0020 / restore SK0020`, or the namespace
+exemption for `SharedKernel.Testing`. Document the rationale inline for any other suppression.
+
+---
+
+<a id="sk0021-handwrittenloggermessagedefinedelegate"></a>
+### SK0021 — HandWrittenLoggerMessageDefineDelegate
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+Hand-written calls to `LoggerMessage.Define`/`LoggerMessage.DefineScope` bypass the
+`[LoggerMessage]` source generator entirely, producing the exact hand-rolled delegate shape the
+platform's logging standard prohibits. SK0021 is a syntax-only check: it fires on any
+`InvocationExpressionSyntax` whose expression is a `MemberAccessExpressionSyntax` with a
+qualifier identifier text of `"LoggerMessage"` and a member name starting with `"Define"`
+(covering `Define`/`DefineScope` across every generic arity).
+
+SK0021 shares SK0020's `SharedKernel.Testing` suppression namespace and generated-code guard —
+see [SK0020](#sk0020-directiloggerextensionmethodusage).
+
+#### Violating Example
+
+```csharp
+public static class Log
+{
+    // SK0021: hand-written LoggerMessage.Define bypasses the source generator
+    private static readonly Action<ILogger, string, Exception?> OrderHandledDelegate =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(5001), "Order {OrderId} handled");
+
+    public static void OrderHandled(this ILogger logger, string orderId) =>
+        OrderHandledDelegate(logger, orderId, null);
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public static partial class Log
+{
+    [LoggerMessage(EventId = 5001, Level = LogLevel.Information, Message = "Order {OrderId} handled")]
+    public static partial void OrderHandled(this ILogger logger, string orderId);
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0021 / restore SK0021`, or the namespace
+exemption for `SharedKernel.Testing`. Document the rationale inline for any other suppression.
+
+---
+
+<a id="sk0022-crosscuttingmagicstringliteral"></a>
+### SK0022 — CrossCuttingMagicStringLiteral
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+A raw string literal at a cross-cutting call site — an HTTP header name, an OpenTelemetry
+`Activity` baggage/tag key, an `IConfiguration` section name, or a claim-type comparison — is
+exactly the class of bug that produced a confirmed mismatch between `14.Presentation`'s
+`CorrelationIdMiddleware` and `13.ServiceDefaults`'s `BaggageLogRecordProcessor` (WO-041 DO-07).
+SK0022 flags the raw literal **syntax shape only**, never a resolved value or declaring-class
+identity — any expression that is not itself a string literal at the checked position (a
+`nameof(...)`, an identifier, a member access referencing a named constant) passes clean,
+regardless of which class declares it.
+
+SK0022 covers four call-site shapes, each resolved by exact declaring type via the semantic
+model: an HTTP header indexer/`.Add`/`.TryAddWithoutValidation` call, `Activity.SetBaggage`/
+`.SetTag`, `IConfiguration.GetSection`, and a `ClaimsPrincipal`/`ClaimsIdentity`/`Claim.Type`
+comparison. Fires globally — a domain-local constants class already satisfies the rule anywhere
+it is referenced, so there is no legitimate "exempt namespace."
+
+#### Violating Example
+
+```csharp
+public class CorrelationHandler
+{
+    public void Apply(HttpRequestMessage request, string correlationId) =>
+        // SK0022: raw string literal at a cross-cutting HTTP header call site
+        request.Headers.Add("X-Correlation-Id", correlationId);
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public static class WellKnownHeaders
+{
+    public const string CorrelationId = "X-Correlation-Id";
+}
+
+public class CorrelationHandler
+{
+    public void Apply(HttpRequestMessage request, string correlationId) =>
+        request.Headers.Add(WellKnownHeaders.CorrelationId, correlationId);
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0022 / restore SK0022`; document the rationale
+inline. There is no suppression namespace.
+
+---
+
+<a id="sk0023-nonsingletonamazons3clientregistration"></a>
+### SK0023 — NonSingletonAmazonS3ClientRegistration
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+`Amazon.S3.IAmazonS3` is thread-safe and connection/credential-pooled internally per the AWS
+SDK's own documented contract and `08.Storage/CLAUDE.md`'s explicit "Provider `IAmazonS3` clients
+are singletons" rule. Registering it as scoped or transient constructs a new client (and thus a
+new connection pool) per resolution — expensive under load and able to exhaust ephemeral ports.
+
+SK0023 fires when `AddScoped` or `AddTransient` is called with a first type argument whose
+simple name is exactly `"IAmazonS3"` — a syntax-only check covering both the one-argument
+factory form and the two-argument implementation form. It is the structural inverse of
+[SK0703](#sk0703-messagebussingletonregistration), which flags `AddSingleton<IMessageBus>`
+because that type must be scoped. Fires globally — `IAmazonS3` must be a singleton wherever it
+is registered, not only inside `SharedKernel.Storage.S3`/`SharedKernel.Storage.Obs`.
+
+#### Violating Example
+
+```csharp
+public static class StorageServiceCollectionExtensions
+{
+    public static IServiceCollection AddCustomS3Client(this IServiceCollection services) =>
+        // SK0023: IAmazonS3 must be Singleton, not Scoped
+        services.AddScoped<IAmazonS3>(sp => new AmazonS3Client());
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public static class StorageServiceCollectionExtensions
+{
+    public static IServiceCollection AddCustomS3Client(this IServiceCollection services) =>
+        services.AddSingleton<IAmazonS3>(sp => new AmazonS3Client());
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0023 / restore SK0023` only when a test fixture
+or a genuinely short-lived client is required. Document the reason inline.
+
+---
+
+<a id="sk0024-rawsearchfieldnameliteral"></a>
+### SK0024 — RawSearchFieldNameLiteral
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+A typo'd field name passed as a raw string literal to `SharedKernel.Search.Abstractions` is a
+visible, pre-I/O rejection on Meilisearch (`SearchErrors.FieldNotFilterable`/`FieldNotSortable`/
+`FieldNotFacetable`) but a **silent zero-result** on ElasticSearch whenever the typo happens to
+also be a syntactically legal but nonexistent field reference at the ES query-DSL level. SK0024
+bans a raw string literal at the field-name parameter position of eleven recognized call-site
+shapes: six on `IQueryBuilder<TDocument>`/`SearchQueryBuilder<TDocument>` (`OrderBy`,
+`OrderByDescending`, `SearchingIn`, `Faceting`, `WithNumericFacetStats`, `Returning`) and five on
+`SearchFilter`'s static factories (`Eq`, `Ne`, `In`, `Between`, `Exists`).
+
+Each shape is resolved to its exact declaring type via the semantic model — a syntax-only
+simple-name check on `OrderBy`/`Where`/`In`/`Exists` would collide catastrophically with LINQ's
+own `Enumerable`/`Queryable` extension methods of the same names. For the four `params string[]`
+shapes, every argument expression is checked individually, covering both the multi-argument call
+form and any array/collection-expression form. Fires globally, like SK0022.
+
+#### Violating Example
+
+```csharp
+public IQueryBuilder<ProductDocument> BuildQuery(IQueryBuilder<ProductDocument> query) =>
+    // SK0024: raw string literal in a search field-name position
+    query.OrderBy("title");
+```
+
+#### Compliant Fix
+
+```csharp
+public IQueryBuilder<ProductDocument> BuildQuery(IQueryBuilder<ProductDocument> query) =>
+    query.OrderBy(nameof(ProductDocument.Title));
+```
+
+Or, for a field referenced from more than one call site, a domain-local field-constants class:
+
+```csharp
+public static class ProductDocumentFields
+{
+    public const string Title = nameof(ProductDocument.Title);
+}
+
+public IQueryBuilder<ProductDocument> BuildQuery(IQueryBuilder<ProductDocument> query) =>
+    query.OrderBy(ProductDocumentFields.Title);
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0024 / restore SK0024`; document the rationale
+inline. There is no suppression namespace.
+
+---
+
+<a id="sk0025-obsoleteelasticsearchclientusage"></a>
+### SK0025 — ObsoleteElasticsearchClientUsage
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+`NEST`/`Elasticsearch.Net` are feature-frozen since client 8.13, with their support window closed
+at end-2025. SK0025 fires on any symbol usage — a type reference, a generic-name reference, or
+the name in a `using` directive — whose resolved `ContainingAssembly.Name` is exactly `"NEST"` or
+`"Elasticsearch.Net"`. This single assembly-identity check generalizes to every type either
+deprecated package exposes, without enumerating them individually — a fully-qualified
+`Nest.ElasticClient` reference and a bare `ElasticClient` after `using Nest;` are both caught the
+same way.
+
+A syntax-only simple-name check on `ElasticClient`/`ConnectionSettings` was rejected because
+those names are generic enough to plausibly collide with unrelated types. Types from the
+platform-sanctioned `Elastic.Clients.Elasticsearch` package resolve to a different
+`ContainingAssembly.Name` and never trip this rule. Fires globally, platform-wide — a consuming
+microservice adding NEST directly is exactly as unsafe as `SharedKernel.Search.ElasticSearch`
+itself getting it wrong.
+
+#### Violating Example
+
+```csharp
+using Nest;
+
+public class ProductSearchClient
+{
+    // SK0025: 'ElasticClient' resolves to the deprecated 'NEST' package
+    private readonly ElasticClient _client = new(new ConnectionSettings());
+}
+```
+
+#### Compliant Fix
+
+```csharp
+using Elastic.Clients.Elasticsearch;
+
+public class ProductSearchClient
+{
+    private readonly ElasticsearchClient _client = new();
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0025 / restore SK0025`; document the rationale
+inline. There is no suppression namespace — this platform has no legitimate NEST call site.
+
+---
+
+<a id="sk0026-rawintelligenceproviderclientconstructorinjection"></a>
+### SK0026 — RawIntelligenceProviderClientConstructorInjection
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+Injecting a raw vector-DB/model-SDK client bypasses the neutral `SharedKernel.AI.Abstractions`
+contracts (`IVectorCollection<TRecord>`, `IEmbeddingGenerator`, `ISemanticKernel`, and friends),
+losing tenant scoping and provider portability. SK0026 fires when a constructor parameter type
+resolves, via the semantic model, to exactly `Qdrant.Client.QdrantClient` or
+`Microsoft.SemanticKernel.Kernel`, unless the enclosing type sits inside that client's own
+owning provider package's namespace (`SharedKernel.AI.Qdrant` or `SharedKernel.AI.SemanticKernel`
+respectively — the exemption is per-client-type, not shared, so a `QdrantClient` parameter inside
+`SharedKernel.AI.SemanticKernel` still fires).
+
+Exact semantic-model resolution — not a syntax-only simple-name check — is required because
+`Microsoft.SemanticKernel.Kernel`'s simple name `"Kernel"` is highly collision-prone (a
+convolution kernel, an OS-kernel abstraction, and similar unrelated types are all plausible).
+
+#### Violating Example
+
+```csharp
+namespace Application.Recommendations
+{
+    // SK0026: raw QdrantClient injected outside SharedKernel.AI.Qdrant
+    public class RecommendationService
+    {
+        public RecommendationService(Qdrant.Client.QdrantClient client) { }
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Application.Recommendations
+{
+    using SharedKernel.AI.Abstractions;
+
+    public class RecommendationService
+    {
+        public RecommendationService(IVectorCollection<ProductEmbedding> collection) { }
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0026 / restore SK0026` per constructor; document
+the rationale inline.
+
+---
+
+<a id="sk0027-rawintelligenceidentifierliteral"></a>
+### SK0027 — RawIntelligenceIdentifierLiteral
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+A typo'd collection name is a visible, pre-I/O `IntelligenceErrors.CollectionNotFound` rejection
+on both vector-DB providers — but a typo'd `embeddingModelId` is sharper: a
+`VectorCollectionDefinition.Create`/`VectorCollectionDefinitionBuilder.EmbeddingModel` call site
+and the record/query call sites that must independently supply the *same* `embeddingModelId`
+string have no shared compile-time link, so a copy-pasted, typo'd literal at both places passes
+the model-identity guard cleanly — silently embedding/querying the corpus under a phantom model
+identity with zero engine-detectable error on either provider.
+
+SK0027 bans a raw string literal at the identifier-parameter position of eight recognized
+`SharedKernel.AI.Abstractions` call-site shapes: five on `VectorFilter`'s static factories (`Eq`,
+`Ne`, `In`, `Between`, `Exists`), three on `IVectorCollectionProvisioner`
+(`CollectionExistsAsync`, `DeleteCollectionAsync`, `ProbeAsync`), both string parameters of
+`VectorCollectionDefinition.Create`, and both single-string-parameter members of
+`VectorCollectionDefinitionBuilder` (`EmbeddingModel`, `Field`). Each shape requires exact
+semantic-model resolution to the declaring type. `VectorCollectionCutoverRequest`'s
+`StagingCollectionName`/`LiveCollectionName` object-initializer property assignments are
+explicitly out of scope — this rule detects only method-call arguments.
+
+#### Violating Example
+
+```csharp
+public VectorCollectionDefinition BuildDefinition() =>
+    // SK0027: raw string literals for both the collection name and the embedding model id
+    VectorCollectionDefinition.Create("product-chunks", "text-embedding-3-small");
+```
+
+#### Compliant Fix
+
+```csharp
+public static class IntelligenceModelIds
+{
+    public const string ProductEmbeddingV1 = "text-embedding-3-small";
+}
+
+public VectorCollectionDefinition BuildDefinition() =>
+    VectorCollectionDefinition.Create(
+        nameof(ProductChunkRecord),
+        IntelligenceModelIds.ProductEmbeddingV1);
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0027 / restore SK0027`; document the rationale
+inline. There is no suppression namespace.
+
+---
+
+<a id="sk0028-nondeterministicapiusageinsideworkflow"></a>
+### SK0028 — NonDeterministicApiUsageInsideWorkflow
+
+**Category:** Design  
+**Severity:** Warning
+
+#### Rationale
+
+Temporal workflow code is replay code — it must produce byte-identical commands on every replay.
+Every one of the seven shapes this rule forbids compiles cleanly and fails only on replay, in
+production, at an arbitrary time later, taking down every in-flight execution of that workflow
+type simultaneously. SK0028 is the first analyzer in this domain scoped by type
+**attribution/inheritance rather than namespace**: a type is in scope when it carries a
+`[Workflow]` attribute (`Temporalio.Workflows.WorkflowAttribute`) or has
+`SharedKernel.Workflows.Temporal.Authoring.WorkflowBase` anywhere in its base-type chain. A type
+carrying `ActivityBase`/`[Activity]` anywhere in its chain is unconditionally **excluded**,
+checked first — inside an activity, every one of these shapes is ordinary, correct code
+(`IClock`/`ILogger<T>` injection is in fact mandatory there).
+
+The seven forbidden shapes: `DateTime.UtcNow`/`.Now`/`DateTimeOffset.UtcNow`/`.Now`;
+`Guid.NewGuid()`; `new Random()`; `Task.Run`/`.Delay` and `ConfigureAwait(false)`; any
+`System.Environment`/`System.IO.File` member access; a constructor parameter typed `IClock`; and
+a constructor parameter typed the open generic `ILogger<T>`.
+
+#### Violating Example
+
+```csharp
+using SharedKernel.Workflows.Temporal.Authoring;
+
+[Workflow]
+public class OrderWorkflow : WorkflowBase
+{
+    [WorkflowRun]
+    public async Task RunAsync(Guid orderId)
+    {
+        // SK0028: DateTime.UtcNow is non-deterministic across replay
+        var startedAt = DateTime.UtcNow;
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+using SharedKernel.Workflows.Temporal.Authoring;
+using Temporalio.Workflows;
+
+[Workflow]
+public class OrderWorkflow : WorkflowBase
+{
+    [WorkflowRun]
+    public async Task RunAsync(Guid orderId)
+    {
+        var startedAt = Workflow.UtcNow;
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0028 / restore SK0028`; no legitimate case is
+known inside a genuine `[Workflow]` type.
+
+---
+
+<a id="sk0029-rawtemporalclientconstructorinjection"></a>
+### SK0029 — RawTemporalClientConstructorInjection
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+A raw Temporal SDK client bypasses tenant scoping and workflow-id composition. SK0029 fires when
+a constructor parameter type resolves, via the semantic model, to
+`Temporalio.Client.ITemporalClient`, `Temporalio.Client.TemporalClient`,
+`Temporalio.Worker.TemporalWorker`, or `Temporalio.Client.WorkflowHandle` (any generic arity),
+unless the enclosing type sits inside a namespace starting with `SharedKernel.Workflows.Temporal`
+— a single shared exemption prefix, since `17.Workflows` has exactly one owning package.
+
+Inject `IWorkflowDispatcher` (to start/signal/query workflows) or `IWorkflowHandle` (to interact
+with an already-started execution) instead. If a genuine Visibility-API/schedule/namespace-
+administration/Nexus need remains unmet by either, the sanctioned path is the three-gate
+`ITemporalRawClientAccessor` escape hatch — never a raw constructor-injected `Temporalio.*` client
+type.
+
+#### Violating Example
+
+```csharp
+namespace Application.Orders
+{
+    // SK0029: raw ITemporalClient injected outside SharedKernel.Workflows.Temporal
+    public class OrderOrchestrationService
+    {
+        public OrderOrchestrationService(Temporalio.Client.ITemporalClient client) { }
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Application.Orders
+{
+    using SharedKernel.Workflows.Temporal;
+
+    public class OrderOrchestrationService
+    {
+        public OrderOrchestrationService(IWorkflowDispatcher dispatcher) { }
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0029 / restore SK0029` per constructor; document
+the rationale inline — no legitimate use case outside `SharedKernel.Workflows.Temporal` itself is
+known.
+
+---
+
+<a id="sk0030-resultoutcomediscarded"></a>
+### SK0030 — ResultOutcomeDiscarded
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+`Result`/`Result<T>`'s entire value proposition is that callers must explicitly branch on outcome
+instead of exceptions silently unwinding the stack. That proposition is completely defeated the
+moment a caller invokes a `Result`-returning member as a bare statement and never inspects
+`.IsSuccess`/`.IsFailure` — it compiles cleanly, produces no compiler warning, and the failure
+path is simply gone, exactly as dangerous as a fire-and-forgotten `Task` (CS4014), one level
+further down the stack.
+
+SK0030 fires when a bare expression statement wraps an invocation or an `await` expression whose
+resolved type implements `SharedKernel.Primitives.Results.IHasSuccessFlag`. Only the
+**outermost** expression of the statement is inspected — this is what makes "passed as an
+argument" (`Bar(Foo());`), "returned" (`return Foo();`), and "receiver of a further member-access
+chain" (`Foo().Match(...);`) all pass, while a fluent chain whose outermost call still resolves to
+an `IHasSuccessFlag`-implementing type still correctly fires. The rule never inspects
+`AssignmentExpressionSyntax`, which is what makes both `result = Foo();` and the explicit discard
+`_ = Foo();` pass for free.
+
+#### Violating Example
+
+```csharp
+public class OrderService
+{
+    public void CancelOrder(Guid orderId) =>
+        // SK0030: the Result outcome is produced and never checked
+        _repository.Delete(orderId);
+}
+```
+
+#### Compliant Fix
+
+```csharp
+public class OrderService
+{
+    public Result CancelOrder(Guid orderId) =>
+        _repository.Delete(orderId);
+}
+```
+
+Or, when the outcome is genuinely irrelevant at this call site, make that explicit:
+
+```csharp
+public class OrderService
+{
+    public void CancelOrder(Guid orderId) =>
+        _ = _repository.Delete(orderId);
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0030 / restore SK0030`, or — preferred, since it
+requires no suppression comment at all — rewrite the bare statement as an explicit discard
+assignment (`_ = SomeMethodReturningResult();`).
+
+---
+
+<a id="sk0031-rawsecuritycontextconstructorinjection"></a>
+### SK0031 — RawSecurityContextConstructorInjection
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+Application-layer and domain-adjacent code must never reach past the platform's identity/tenant
+abstraction into ASP.NET Core hosting internals. SK0031 fires when a constructor parameter type
+is exactly `IHttpContextAccessor`, `ClaimsPrincipal`, or `HttpContext`, unless the enclosing type
+sits inside a namespace starting with `SharedKernel.Security.Oidc` or
+`SharedKernel.Security.ApiKey` — the two packages that legitimately construct
+`IUserContext`/`ITenantProvider` implementations from these raw ASP.NET Core types. This is a
+syntax-only check, mirroring [SK0013](#sk0013-rawhttpclientconstructorinjection)'s exact shape.
+
+Inject `SharedKernel.Security.Abstractions.IUserContext` (for identity) or `ITenantProvider` (for
+tenant identity) instead.
+
+#### Violating Example
+
+```csharp
+namespace Application.Orders
+{
+    // SK0031: raw ClaimsPrincipal injected outside SharedKernel.Security.Oidc/.ApiKey
+    public class OrderService
+    {
+        public OrderService(System.Security.Claims.ClaimsPrincipal principal) { }
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+namespace Application.Orders
+{
+    using SharedKernel.Security.Abstractions;
+
+    public class OrderService
+    {
+        public OrderService(IUserContext userContext) { }
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0031 / restore SK0031` when a raw
+`HttpContext`-family type is genuinely required (e.g., a middleware component); document the
+rationale inline.
+
+---
+
+<a id="sk0032-corswildcardoriginwithcredentials"></a>
+### SK0032 — CorsWildcardOriginWithCredentials
+
+**Category:** Security  
+**Severity:** Warning
+
+> SK0032 is one of two `Security`-category rules in this registry (alongside
+> [SK0035](#sk0035-unmaskedclassifieddataatloggingcallsite)). It ships at Warning severity like
+> every other rule here — the category label describes the class of risk, not an elevated
+> default severity. Escalate to Error per-project via `.editorconfig` if your service's policy
+> requires it (see [Referencing the Analyzer Package](#referencing-the-analyzer-package)).
+
+#### Rationale
+
+Combining a wildcard/always-allow origin policy with `AllowCredentials()` is the classic
+OWASP-catalogued CORS misconfiguration — most browsers already reject the combination at the
+wire level, but ASP.NET Core's own `CorsService` only rejects it at request-handling time, so a
+misconfigured policy fails silently per-request instead of failing fast at startup.
+
+SK0032 fires when a `CorsPolicyBuilder`-typed receiver has both an `AllowCredentials()` call and,
+anywhere in the same method/lambda scope, either an `AllowAnyOrigin()` call or a
+`SetIsOriginAllowed(...)` call whose lambda argument is syntactically unconditional-true (an
+expression body that is exactly `true`, or a block body of exactly `return true;`). Detection
+covers both a single fluent chain and separate statements against the same local
+variable/parameter/field within one method or lambda body. A same-symbol tracking scope is
+bounded to a single method/lambda body — a builder reference passed to a separate helper method
+is not followed across that boundary, a documented, intentional scope limit.
+
+#### Violating Example
+
+```csharp
+services.AddCors(options =>
+    options.AddPolicy("default", policy =>
+        // SK0032: AllowAnyOrigin() combined with AllowCredentials() fails only at request time
+        policy.AllowAnyOrigin().AllowCredentials()));
+```
+
+#### Compliant Fix
+
+```csharp
+services.AddCors(options =>
+    options.AddPolicy("default", policy =>
+        policy.WithOrigins("https://app.example.com").AllowCredentials()));
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0032 / restore SK0032`; document the rationale
+inline. There is no suppression namespace.
+
+---
+
+<a id="sk0033-reflectionbasedobjectmapperusage"></a>
+### SK0033 — ReflectionBasedObjectMapperUsage
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+AutoMapper's reflection-based mapping API has no legitimate call site anywhere on this platform —
+`Riok.Mapperly`'s compile-time source-generated `[Mapper]` partial class, or hand-written mapping
+code, is the sanctioned choice (root `CLAUDE.md` "What Goes Where"). SK0033 fires on any of three
+shapes, each resolved by exact `ContainingAssembly.Name == "AutoMapper"` match — never a
+syntax-only name match, since `Profile` in particular is a dangerously generic simple name: (1) a
+class declaration whose base type resolves to `AutoMapper.Profile`; (2) a
+method/local-function/lambda parameter typed `AutoMapper.IMapperConfigurationExpression`; or (3)
+an invocation resolving to `AddAutoMapper` declared in the real `AutoMapper` assembly.
+
+Mapster is deliberately **not** enforced — its runtime and source-generated call syntax is
+identical, so there is no reliable discriminator between the two, and enforcing it would carry an
+uncontrolled false-positive rate against a legitimate Mapster source-generated consumer.
+
+#### Violating Example
+
+```csharp
+using AutoMapper;
+
+public class CustomerProfile : Profile
+{
+    // SK0033: 'CustomerProfile' uses AutoMapper's reflection-based mapping API
+    public CustomerProfile() => CreateMap<Customer, CustomerDto>();
+}
+```
+
+#### Compliant Fix
+
+```csharp
+using Riok.Mapperly.Abstractions;
+
+[Mapper]
+public partial class CustomerMapper
+{
+    public partial CustomerDto Map(Customer source);
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0033 / restore SK0033`; document the rationale
+inline. There is no suppression namespace — AutoMapper has no legitimate call site on this
+platform.
+
+---
+
+<a id="sk0034-amountcurrencypaircoupling"></a>
+### SK0034 — AmountCurrencyPairCoupling
+
+**Category:** Advisory  
+**Severity:** Warning
+
+> **SK0034 is the platform's only `Advisory`-category rule, and it has no escalation path to
+> Error — ever.** Every other Warning-severity rule in this registry is either already enforced
+> at Warning pending a future escalation to Error, or a permanent platform-wide prohibition
+> deliberately kept at Warning. SK0034's detection technique (same-type suffix co-occurrence)
+> cannot meet the near-zero false-positive bar every Error-severity rule on this platform
+> requires. It is a heuristic nudge toward a better pattern, not a prohibition of a bad one — do
+> not escalate this rule to Error severity in any future phase without a fresh design review.
+
+#### Rationale
+
+A raw `decimal` amount paired with a `string` currency code on the same type can drift out of
+sync or silently mix currencies — the exact hazard `03.Domain`'s `Money` value object exists to
+close (ISO 4217 minor-unit-correct rounding, cross-currency-rejecting arithmetic). SK0034 fires
+when a class/record/struct declares, as **direct** (non-inherited) members, both a
+`decimal`/`decimal?`-typed member whose identifier ends with `Amount`, `Price`, `Total`, or
+`Balance`, and a `string`/`string?`-typed member whose identifier ends with `Currency` or
+`CurrencyCode`. This is a syntax-only check — no semantic model is needed, since both `decimal`
+and `string` are BCL keyword types.
+
+Only direct property/field declarations of a `class`/`struct`/`record`/`record struct` are
+scanned — never an `interface`, never an inherited member, and never a positional record's
+primary-constructor parameter list. A type literally named `Money` is self-exempt.
+
+#### Violating Example
+
+```csharp
+public class Payment
+{
+    // SK0034 (advisory): decimal amount + string currency code — consider Money instead
+    public decimal Amount { get; set; }
+
+    public string Currency { get; set; } = string.Empty;
+}
+```
+
+#### Compliant Fix
+
+```csharp
+using SharedKernel.Domain.ValueObjects;
+
+public class Payment
+{
+    public Money Amount { get; set; } = null!;
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0034 / restore SK0034`, or a `.editorconfig`
+severity override. A legitimate case exists whenever the pair is a deliberate wire-format/
+read-model choice (e.g. a `04.Contracts` DTO or a `06.Persistence` Dapper projection intentionally
+avoiding a rich domain type at a serialization boundary) — document the reason with a one-line
+comment naming it.
+
+---
+
+<a id="sk0035-unmaskedclassifieddataatloggingcallsite"></a>
+### SK0035 — UnmaskedClassifiedDataAtLoggingCallSite
+
+**Category:** Security  
+**Severity:** Warning
+
+> SK0035 is one of two `Security`-category rules in this registry (alongside
+> [SK0032](#sk0032-corswildcardoriginwithcredentials)). It ships at Warning severity like every
+> other rule here — the category label describes the class of risk, not an elevated default
+> severity. Escalate to Error per-project via `.editorconfig` if your service's policy requires
+> it.
+
+#### Rationale
+
+Logging a classified value unmasked is a compliance/PII-leak hazard — the exact case
+`01.Core/SharedKernel.DataPrivacy`'s `PiiMasking.*` helpers exist to close. SK0035 fires when a
+call to a `[LoggerMessage]`-attributed logging method passes, as one of its message-template
+arguments, a member carrying `SharedKernel.DataPrivacy.Classification.DataClassificationAttribute`
+(with `Classification == Restricted`) or `SensitiveDataCategoryAttribute` (any category), without
+first routing it through a `SharedKernel.DataPrivacy.Masking.PiiMasking.*` helper. Two shapes are
+covered: a direct member reference, and whole-object destructuring (the argument's static type
+declares a classified member, covering an entire classified-bearing DTO/entity passed as a single
+argument).
+
+Only a direct member reference or a direct `PiiMasking.*` wrapper call is recognized — an
+intermediate local variable or a helper method that internally reads a classified member and
+returns it unmasked is not traced across that boundary, a documented, intentional scope limit.
+
+#### Violating Example
+
+```csharp
+using SharedKernel.DataPrivacy.Classification;
+
+public class Customer
+{
+    [DataClassification(DataClassification.Restricted)]
+    public string Ssn { get; set; } = string.Empty;
+}
+
+public static partial class Log
+{
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "SSN {Ssn}")]
+    public static partial void CustomerSsn(this ILogger logger, string ssn);
+}
+
+public class CustomerService
+{
+    public void Handle(ILogger logger, Customer customer) =>
+        // SK0035: 'Customer.Ssn' carries DataClassification(Restricted) and reaches a
+        // [LoggerMessage] call site unmasked
+        Log.CustomerSsn(logger, customer.Ssn);
+}
+```
+
+#### Compliant Fix
+
+```csharp
+using SharedKernel.DataPrivacy.Masking;
+
+public class CustomerService
+{
+    public void Handle(ILogger logger, Customer customer) =>
+        Log.CustomerSsn(logger, PiiMasking.Suppress(customer.Ssn));
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0035 / restore SK0035`; document the rationale
+inline. There is no suppression namespace.
+
+---
+
+<a id="sk0036-rawrpcexceptionconstruction"></a>
+### SK0036 — RawRpcExceptionConstruction
+
+**Category:** Usage  
+**Severity:** Warning
+
+#### Rationale
+
+`SharedKernel.Presentation.Grpc.Results.GrpcResultExtensions.ToGrpcResult()`/`.ToGrpcResult<T>()`
+is the single sanctioned path for mapping a `Result<T>` outcome to a gRPC error — a hand-built
+`RpcException`/`Status` bypasses `GrpcStatusCodeMap`'s `01.Core.ErrorType`-keyed mapping. SK0036
+fires on a `new RpcException(...)` or standalone `new Status(...)` construction whose constructed
+type resolves, by exact semantic-model match, to `Grpc.Core.RpcException`/`Grpc.Core.Status`,
+anywhere outside the `SharedKernel.Presentation.Grpc` namespace. Both shapes are checked
+independently, since a bare `Status` may be built for later use (e.g. assigned to a trailer)
+without being immediately wrapped in an `RpcException`.
+
+Exact semantic-model resolution is required — `"Status"` is a dangerously generic simple name
+elsewhere on this platform (order status, application status, health-check status enums).
+
+#### Violating Example
+
+```csharp
+using Grpc.Core;
+
+namespace Services.Orders
+{
+    public class OrderGrpcService
+    {
+        public void Handle() =>
+            // SK0036: raw RpcException/Status construction outside SharedKernel.Presentation.Grpc
+            throw new RpcException(new Status(StatusCode.NotFound, "order not found"));
+    }
+}
+```
+
+#### Compliant Fix
+
+```csharp
+using SharedKernel.Presentation.Grpc.Results;
+
+namespace Services.Orders
+{
+    public class OrderGrpcService
+    {
+        public Result Handle() => Result.Failure(Error.NotFound("Order.NotFound", "order not found"));
+        // The caller maps it via result.ToGrpcResult() at the gRPC service-method boundary.
+    }
+}
+```
+
+#### Suppression Instructions
+
+Suppress inline with `#pragma warning disable SK0036 / restore SK0036`; document the rationale
+inline. There is no suppression namespace outside `SharedKernel.Presentation.Grpc` itself.
+
+---
+
+<a id="sk0201-tenanteddbcontextonmodelcreatingguard"></a>
 ### SK0201 — TenantedDbContextOnModelCreatingGuard
 
 **Category:** Design | **Severity:** Warning | **ID Block:** 02xx (multi-tenancy)
@@ -768,6 +2214,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 
 ---
 
+<a id="sk0202-ignorequeryfiltersoutsidetenantedrepository"></a>
 ### SK0202 — IgnoreQueryFiltersOutsideTenantedRepository
 
 **Category:** Design | **Severity:** Warning | **ID Block:** 02xx (multi-tenancy)
@@ -867,6 +2314,7 @@ var deletedCount = await _context.Set<AuditLog>()
 
 ---
 
+<a id="sk0703-messagebussingletonregistration"></a>
 ### SK0703 — MessageBusSingletonRegistration
 
 **Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
@@ -913,6 +2361,7 @@ services.AddSingleton<IMessageBus, NullMessageBus>();
 
 ---
 
+<a id="sk0704-hardcodedqueueuriingetsendendpoint"></a>
 ### SK0704 — HardcodedQueueUriInGetSendEndpoint
 
 **Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
@@ -966,6 +2415,7 @@ var dlq = await provider.GetSendEndpoint(new Uri("queue:dead-letter"));
 
 ---
 
+<a id="sk0705-faultconsumerdirectregistration"></a>
 ### SK0705 — FaultConsumerDirectRegistration
 
 **Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
@@ -1010,6 +2460,7 @@ services.AddScoped<IFaultConsumer<OrderPlaced>, FakeFaultConsumer>();
 
 ---
 
+<a id="sk0706-directmasstransitschedulerinjection"></a>
 ### SK0706 — DirectMassTransitSchedulerInjection
 
 **Category:** Design | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
@@ -1062,6 +2513,7 @@ SharedKernel.Messaging.Abstractions.IMessageScheduler to preserve transport inde
 
 ---
 
+<a id="sk0707-sagastatemustextendsagastatebase"></a>
 ### SK0707 — SagaStateMustExtendSagaStateBase
 
 **Category:** Design | **Severity:** Warning | **ID block:** 07xx (messaging-domain)
@@ -1112,6 +2564,7 @@ version, and audit fields."`
 
 ---
 
+<a id="sk0708-batchconsumerregisteredviaaddconsumer"></a>
 ### SK0708 — BatchConsumerRegisteredViaAddConsumer
 
 **Category:** Usage | **Severity:** Warning | **ID block:** 07xx (messaging-domain)

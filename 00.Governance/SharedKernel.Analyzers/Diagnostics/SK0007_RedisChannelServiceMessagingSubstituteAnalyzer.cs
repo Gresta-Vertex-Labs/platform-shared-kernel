@@ -8,10 +8,11 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0007 — Fires when <c>IRedisChannelService</c> appears as a constructor parameter, field
-/// declaration, or property declaration in a class whose name or enclosing namespace contains
-/// any of the substrings: <c>Command</c>, <c>Event</c>, <c>DomainEvent</c>, or
-/// <c>IntegrationEvent</c>.
+/// SK0007 — Fires when a <see cref="TypeSyntax"/> whose simple name is
+/// <c>IRedisChannelService</c> appears as a constructor parameter, field declaration, or property
+/// declaration inside a <see cref="ClassDeclarationSyntax"/> whose own name, or any enclosing
+/// namespace identifier, contains one of the case-sensitive substrings <c>Command</c>,
+/// <c>Event</c>, <c>DomainEvent</c>, or <c>IntegrationEvent</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,9 +22,32 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// events that require guaranteed delivery.
 /// </para>
 /// <para>
+/// <strong>Registration and scope.</strong> Registers only on
+/// <see cref="SyntaxKind.ClassDeclaration"/> — a record or struct with the same shape is out of
+/// scope. Inside a matched class, all three declaration shapes (constructor parameters, fields,
+/// properties) are inspected independently and each reports its own diagnostic location, so a
+/// class with e.g. two offending constructor parameters produces two diagnostics.
+/// </para>
+/// <para>
+/// <strong>Syntax-only, substring-based context match.</strong> Both the "is this class in a
+/// messaging context" check and the "is this type IRedisChannelService" check are pure text/name
+/// comparisons — no <see cref="SemanticModel"/> is consulted anywhere in this rule. The context
+/// check in particular is a SUBSTRING match (<c>string.Contains</c>), not an exact match, so a
+/// class or namespace merely containing one of the forbidden terms anywhere in its name (e.g. an
+/// unrelated <c>EventSourcingBackfillJob</c>) also matches — an accepted, documented trade-off for
+/// keeping the check cheap and free of any assembly reference to the real interface.
+/// </para>
+/// <para>
 /// <strong>Suppression:</strong> Diagnostics are suppressed inside namespaces that start with
 /// <c>SharedKernel.Caching</c> or <c>SharedKernel.Caching.Redis</c> — the service's own
-/// definition may reference <c>IRedisChannelService</c> freely.
+/// definition may reference <c>IRedisChannelService</c> freely. The suppression check is itself a
+/// <c>StartsWith</c> prefix match on the namespace name, mirroring the substring-match style used
+/// for the context check above.
+/// </para>
+/// <para>
+/// <strong>Pass case:</strong> a class such as <c>CacheInvalidationService</c>, in a namespace
+/// carrying none of the forbidden substrings, injecting <c>IRedisChannelService</c> freely — the
+/// context check never matches, so the type check inside the class is never even reached.
 /// </para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]

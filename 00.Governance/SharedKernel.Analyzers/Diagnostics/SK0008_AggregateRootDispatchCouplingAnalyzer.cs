@@ -8,10 +8,11 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace SharedKernel.Analyzers.Diagnostics;
 
 /// <summary>
-/// SK0008 — Fires when a constructor parameter is typed as <c>IAggregateRoot&lt;TId&gt;</c>
-/// (simple name contains <c>"IAggregateRoot"</c>) inside a class whose name or any enclosing
-/// namespace identifier contains any of: <c>"Interceptor"</c>, <c>"Publisher"</c>,
-/// <c>"Outbox"</c>, <c>"Dispatcher"</c>.
+/// SK0008 — Fires when a <see cref="ConstructorDeclarationSyntax"/> parameter's type text
+/// CONTAINS the substring <c>IAggregateRoot</c> (covering both the open interface
+/// <c>IAggregateRoot</c> and the closed generic <c>IAggregateRoot&lt;TId&gt;</c>), inside a class
+/// whose name or any enclosing namespace identifier contains one of <c>Interceptor</c>,
+/// <c>Publisher</c>, <c>Outbox</c>, or <c>Dispatcher</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,8 +21,30 @@ namespace SharedKernel.Analyzers.Diagnostics;
 /// <c>IHasDomainEvents</c> creates an unnecessary coupling to aggregate identity in dispatch code.
 /// </para>
 /// <para>
+/// <strong>Registration.</strong> Registers only on <see cref="SyntaxKind.ConstructorDeclaration"/>
+/// — unlike SK0007's sibling analyzer, field and property declarations are never inspected here,
+/// only constructor parameters.
+/// </para>
+/// <para>
+/// <strong>Substring type match, not exact.</strong> <c>IsAggregateRootType</c> is a
+/// <c>Contains("IAggregateRoot")</c> check on the parameter's type identifier text, not an equality
+/// check — so it matches the bare interface, its closed-generic form, AND any differently-named
+/// type whose simple name happens to contain that substring (e.g. a hypothetical
+/// <c>IAggregateRootRepository</c>). This mirrors SK0007's context-matching style and is an
+/// accepted, documented trade-off rather than an oversight — no <see cref="SemanticModel"/> is
+/// consulted, so no compiled reference to the real <c>IAggregateRoot&lt;TId&gt;</c> type is needed
+/// for the rule to fire.
+/// </para>
+/// <para>
 /// No suppression namespace is defined for SK0008. The rule fires in all namespaces where
 /// dispatch-context names appear.
+/// </para>
+/// <para>
+/// <strong>Pass cases:</strong> a constructor parameter typed <c>IHasDomainEvents</c> inside the
+/// same dispatch-context class never matches the substring check and passes; conversely, an
+/// <c>IAggregateRoot&lt;TId&gt;</c> parameter in a class with no dispatch-context term in its name
+/// or namespace (e.g. a domain-layer factory) never reaches the type check at all, since the
+/// dispatch-context gate is evaluated first.
 /// </para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
