@@ -13,6 +13,24 @@ namespace SharedKernel.Primitives.Logging;
 /// must derive its <c>EventId</c> values from this registry (domain base + local offset), never an
 /// ad hoc numeric literal disconnected from the domain's reserved block.
 /// </para>
+/// <example>
+/// How an <c>EventId</c> is derived in practice — domain base plus a local offset, never a bare
+/// literal:
+/// <code>
+/// internal static partial class CachingLog
+/// {
+///     // 2100 = LoggingEventIdRanges.Caching (2000) + this package's sub-block offset (100).
+///     [LoggerMessage(
+///         EventId = LoggingEventIdRanges.Caching + 100,
+///         Level = LogLevel.Warning,
+///         Message = "Cache backplane reconnected after {AttemptCount} attempts")]
+///     public static partial void BackplaneReconnected(ILogger logger, int attemptCount);
+/// }
+/// </code>
+/// Note the <c>EventId</c> is written as an expression against the constant rather than as
+/// <c>2100</c>. That is the point of the registry: the number stays traceable to the domain that
+/// owns it, and a reader can tell at a glance which block it belongs to.
+/// </example>
 /// <para>
 /// <b>Domain-level boundary only:</b> this registry enforces only the 1000-wide domain boundary.
 /// A domain composed of multiple packages must subdivide its own 1000-wide block into

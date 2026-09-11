@@ -1,16 +1,38 @@
 namespace SharedKernel.Primitives.Errors;
 
 /// <summary>
-/// Well-known, stable error code constants organized by category.
+/// The platform's shared <see cref="Error.Code"/> constants, grouped by the kind of failure they
+/// describe.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Each constant is a string that serves as the <see cref="Error.Code"/> value. Using string
-/// constants (rather than an enum) allows consuming packages to define additional local constants
-/// in their own namespaces without forking SharedKernel or causing versioning problems.
+/// <b>Check here before inventing a code.</b> These cover the failures that recur across every
+/// service, and reusing one means a dashboard or alert rule written against it works for your
+/// service too — which is the whole point of a code being stable and shared.
+/// </para>
+/// <example>
+/// <code>
+/// return Error.Validation(ErrorCodes.Validation.Required, "Customer name is required.");
+/// return Error.NotFound(ErrorCodes.NotFound.Default, $"Order {id} does not exist.");
+/// </code>
+/// </example>
+/// <para>
+/// <b>Your own codes belong in your own package.</b> These are deliberately <c>const string</c>
+/// rather than an enum, so a consuming package declares its domain-specific codes in a local
+/// constants class without needing a change here. Follow the same convention —
+/// dot-separated lowercase, general to specific, e.g. <c>"order.already_shipped"</c> — and never
+/// interpolate variable data into a code.
 /// </para>
 /// <para>
-/// Convention: codes use dot-separated lowercase segments, e.g. <c>"validation.required"</c>.
+/// <b>These values are effectively permanent.</b> Consumers branch on them, log searches filter on
+/// them, and <c>SharedKernel.Localization</c> keys translations off them, so changing one is a
+/// breaking change across all three. Adding a code is safe.
+/// </para>
+/// <para>
+/// Coverage is not uniform, and that is intentional rather than an oversight: a category gets a
+/// constant when some package actually needed a shared one. <see cref="Error.BusinessRule"/> has a
+/// single canonical code (<see cref="Domain.RuleViolated"/>) because domain rules are
+/// service-specific by nature.
 /// </para>
 /// </remarks>
 public static class ErrorCodes

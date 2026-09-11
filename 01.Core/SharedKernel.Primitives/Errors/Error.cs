@@ -3,91 +3,159 @@ using System.Diagnostics;
 namespace SharedKernel.Primitives.Errors;
 
 /// <summary>
-/// Represents a structured error produced by an operation. Carries a string code, a human-readable
-/// message, and an <see cref="ErrorType"/> discriminator.
+/// A structured, expected failure: a stable machine-readable <see cref="Code"/>, a human-readable
+/// <see cref="Message"/>, and an <see cref="ErrorType"/> saying what kind of failure it is.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Use <see cref="None"/> as the sentinel value meaning "no error occurred". Never use <c>null</c>
-/// to represent the absence of an error.
+/// The platform's most-depended-upon type. It travels from wherever a failure is detected, through
+/// <see cref="Results.Result{T}"/>, out to an RFC 9457 <c>ProblemDetails</c> response at
+/// <c>14.Presentation</c> — so its three fields are a cross-service contract, not local detail.
 /// </para>
 /// <para>
-/// All factory methods are static and return a new <see cref="Error"/> with the appropriate
-/// <see cref="ErrorType"/>. <see cref="Error"/> is a sealed record — value equality is structural
-/// (Code + Message + Type).
+/// A <c>sealed record</c>, so equality is by value across all three fields. Two errors built from
+/// the same code, message, and type are equal and hash equally.
+/// </para>
+/// <para>
+/// <b>Never use <see langword="null"/> for "no error" — use <see cref="None"/>.</b> This is
+/// enforced, not merely asked: the failure factories on
+/// <see cref="Results.Result{T}"/>/<see cref="Results.Result"/> reject a null error, and
+/// <c>Result.Error</c> throws rather than hand one back.
+/// </para>
+/// <para>
+/// <b><see cref="Code"/> is the field that matters most, and the one most often written
+/// carelessly.</b> It is the stable identity of the failure, and three separate things key off it:
+/// a consuming service branches on it, log dashboards and alert rules filter on it, and
+/// <c>01.Core/SharedKernel.Localization</c> looks up a translated message by it. Which gives the
+/// rules:
+/// </para>
+/// <list type="bullet">
+///   <item><description>
+///   Dot-separated lowercase, from general to specific — <c>"order.not_found"</c>,
+///   <c>"validation.required"</c>. Check <see cref="ErrorCodes"/> first; a suitable constant often
+///   already exists.
+///   </description></item>
+///   <item><description>
+///   Stable once shipped. Changing a code silently breaks every consumer branch, saved search, and
+///   translation entry pointing at the old one — treat it like renaming a public API member.
+///   </description></item>
+///   <item><description>
+///   Never interpolate variable data into it (no <c>$"order.{id}.not_found"</c>). A code with an
+///   id in it is unaggregatable and untranslatable. Identifiers belong in
+///   <see cref="Message"/>.
+///   </description></item>
+/// </list>
+/// <para>
+/// <b><see cref="Message"/> is for a human, and may reach one.</b> Write it so it could be shown
+/// to a caller, and keep secrets, credentials, connection strings, and raw exception text out of
+/// it. It is also the fallback shown when no translation is registered for
+/// <see cref="Code"/>, so a message reading <c>"see logs"</c> becomes an end user's error text.
+/// </para>
+/// <para>
+/// <b>There is no metadata bag, deliberately.</b> Adding a dictionary for extension members
+/// (a field path, a retry-after hint) has been evaluated and declined: it breaks this type's
+/// value-equality contract and raises AOT and cross-process-serialization questions no other change
+/// here has had to answer. Both motivating needs are already solved at the
+/// <c>ProblemDetails</c>-construction boundary in <c>14.Presentation</c> — that is the sanctioned
+/// place to attach response-shaped extras. Do not reopen this without a need that pattern
+/// genuinely cannot express.
 /// </para>
 /// </remarks>
-/// <param name="Code">A stable, machine-readable identifier for this error (e.g., <c>"validation.required"</c>).</param>
-/// <param name="Message">A human-readable description of the error.</param>
-/// <param name="Type">The category of this error.</param>
+/// <param name="Code">Stable machine-readable identifier, e.g. <c>"validation.required"</c>.</param>
+/// <param name="Message">Human-readable description of what went wrong.</param>
+/// <param name="Type">The category of failure, which decides the HTTP status at the boundary.</param>
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
 public sealed record Error(string Code, string Message, ErrorType Type)
 {
     /// <summary>
-    /// The sentinel value representing "no error". Use this wherever an <see cref="Error"/> is
-    /// required but no error has occurred — never use <c>null</c>.
+    /// The sentinel meaning "no error occurred". Use this wherever an <see cref="Error"/> is
+    /// required but nothing failed — never <see langword="null"/>.
     /// </summary>
     public static readonly Error None = new(string.Empty, string.Empty, ErrorType.None);
 
-    /// <summary>Creates an <see cref="ErrorType.Unexpected"/> error.</summary>
-    /// <param name="code">A stable machine-readable identifier.</param>
-    /// <param name="message">A human-readable description.</param>
+    /// <summary>
+    /// Creates an <see cref="ErrorType.Unexpected"/> error — an unclassified fault: an unhandled
+    /// exception, or an external service failing in a way this code cannot interpret. Maps to
+    /// HTTP 500.
+    /// </summary>
+    /// <param name="code">Stable machine-readable identifier. <see cref="ErrorCodes.Unexpected.Default"/> if you have nothing more specific.</param>
+    /// <param name="message">Human-readable description. Do not paste raw exception text here — it reaches callers.</param>
     public static Error Unexpected(string code, string message)
         => new(code, message, ErrorType.Unexpected);
 
-    /// <summary>Creates an <see cref="ErrorType.Validation"/> error.</summary>
-    /// <param name="code">A stable machine-readable identifier.</param>
-    /// <param name="message">A human-readable description.</param>
+    /// <summary>
+    /// Creates an <see cref="ErrorType.Validation"/> error — input was malformed, missing, or out
+    /// of range, caught before any domain logic ran. Maps to HTTP 400.
+    /// </summary>
+    /// <param name="code">Stable machine-readable identifier, e.g. <see cref="ErrorCodes.Validation.Required"/>.</param>
+    /// <param name="message">Human-readable description of what is wrong with the input.</param>
+    /// <remarks>
+    /// For several field failures at once, collect them in a
+    /// <see cref="Results.ValidationResult"/> rather than returning only the first.
+    /// </remarks>
     public static Error Validation(string code, string message)
         => new(code, message, ErrorType.Validation);
 
-    /// <summary>Creates an <see cref="ErrorType.NotFound"/> error.</summary>
-    /// <param name="code">A stable machine-readable identifier.</param>
-    /// <param name="message">A human-readable description.</param>
+    /// <summary>
+    /// Creates an <see cref="ErrorType.NotFound"/> error — the requested resource does not exist.
+    /// Maps to HTTP 404.
+    /// </summary>
+    /// <param name="code">Stable machine-readable identifier, e.g. <see cref="ErrorCodes.NotFound.Default"/>.</param>
+    /// <param name="message">Human-readable description of what was not found.</param>
     public static Error NotFound(string code, string message)
         => new(code, message, ErrorType.NotFound);
 
-    /// <summary>Creates an <see cref="ErrorType.Conflict"/> error.</summary>
-    /// <param name="code">A stable machine-readable identifier.</param>
-    /// <param name="message">A human-readable description.</param>
+    /// <summary>
+    /// Creates an <see cref="ErrorType.Conflict"/> error — the operation clashes with existing
+    /// state: a duplicate key, or an optimistic-concurrency violation. Maps to HTTP 409.
+    /// </summary>
+    /// <param name="code">Stable machine-readable identifier, e.g. <see cref="ErrorCodes.Conflict.Duplicate"/>.</param>
+    /// <param name="message">Human-readable description of the conflict.</param>
     public static Error Conflict(string code, string message)
         => new(code, message, ErrorType.Conflict);
 
-    /// <summary>Creates an <see cref="ErrorType.Unauthorized"/> error.</summary>
-    /// <param name="code">A stable machine-readable identifier.</param>
-    /// <param name="message">A human-readable description.</param>
+    /// <summary>
+    /// Creates an <see cref="ErrorType.Unauthorized"/> error — the caller may not attempt this at
+    /// all, because credentials are missing, invalid, or expired. Maps to HTTP 401.
+    /// </summary>
+    /// <param name="code">Stable machine-readable identifier, e.g. <see cref="ErrorCodes.Unauthorized.Expired"/>.</param>
+    /// <param name="message">Human-readable description. Do not reveal why authentication failed in detail.</param>
+    /// <remarks>
+    /// <b>If the caller IS authenticated and merely lacks permission, use
+    /// <see cref="Forbidden"/>.</b> Confusing the two makes an authorization failure
+    /// indistinguishable from a missing credential in logs, and tells the client to re-authenticate
+    /// when re-authenticating cannot help.
+    /// </remarks>
     public static Error Unauthorized(string code, string message)
         => new(code, message, ErrorType.Unauthorized);
 
     /// <summary>
-    /// Creates an <see cref="ErrorType.BusinessRule"/> error representing a domain invariant
-    /// or business rule violation.
+    /// Creates an <see cref="ErrorType.BusinessRule"/> error — the request was well-formed but
+    /// violates a domain invariant, e.g. an order cannot be cancelled after it has shipped. Maps to
+    /// HTTP 422.
     /// </summary>
-    /// <param name="code">
-    /// A stable machine-readable identifier for the violated rule (e.g.,
-    /// <see cref="ErrorCodes.Domain.RuleViolated"/>).
-    /// </param>
-    /// <param name="message">A human-readable description of the violated rule.</param>
-    /// <returns>
-    /// An <see cref="Error"/> with <see cref="Error.Type"/> set to
-    /// <see cref="ErrorType.BusinessRule"/>. Maps to HTTP 422 Unprocessable Entity at the
-    /// presentation layer.
-    /// </returns>
+    /// <param name="code">Stable machine-readable identifier for the violated rule, e.g. <see cref="ErrorCodes.Domain.RuleViolated"/>.</param>
+    /// <param name="message">Human-readable description of the rule that was violated.</param>
+    /// <remarks>
+    /// Distinct from <see cref="Validation"/>: validation is about the SHAPE of the input and runs
+    /// before the domain; this is the domain itself refusing. If the caller could fix it by
+    /// correcting a field, it is validation.
+    /// </remarks>
     public static Error BusinessRule(string code, string message)
         => new(code, message, ErrorType.BusinessRule);
 
     /// <summary>
-    /// Creates an <see cref="ErrorType.Forbidden"/> error representing a caller who is generally
-    /// permitted to attempt this kind of operation, but for whom this specific instance/condition
-    /// is not satisfied.
+    /// Creates an <see cref="ErrorType.Forbidden"/> error — the caller is authenticated and may
+    /// generally attempt this kind of operation, but not this instance under these conditions.
+    /// Maps to HTTP 403.
     /// </summary>
-    /// <param name="code">A stable machine-readable identifier for the violated gate.</param>
-    /// <param name="message">A human-readable description of why the operation is forbidden.</param>
-    /// <returns>
-    /// An <see cref="Error"/> with <see cref="Error.Type"/> set to <see cref="ErrorType.Forbidden"/>.
-    /// Maps to HTTP 403 Forbidden at the presentation layer. Distinct from
-    /// <see cref="Unauthorized"/>, which means the caller is not permitted to attempt this at all.
-    /// </returns>
+    /// <param name="code">Stable machine-readable identifier, e.g. <see cref="ErrorCodes.Forbidden.InsufficientPermission"/>.</param>
+    /// <param name="message">Human-readable description of why it is refused.</param>
+    /// <remarks>
+    /// Typical cases: a role or permission gate refusing an authenticated but under-privileged
+    /// caller, or a maker-checker rule refusing the same user who submitted the request. Use
+    /// <see cref="Unauthorized"/> only when the caller may not attempt the operation at all.
+    /// </remarks>
     public static Error Forbidden(string code, string message)
         => new(code, message, ErrorType.Forbidden);
 

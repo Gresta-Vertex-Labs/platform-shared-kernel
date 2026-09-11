@@ -1,23 +1,38 @@
 namespace SharedKernel.Primitives.Propagation;
 
 /// <summary>
-/// Compile-time constant registry of <see cref="System.Diagnostics.Activity"/> baggage /
-/// distributed-trace propagation key names — the single authoritative source for these literals
-/// platform-wide.
+/// The <see cref="System.Diagnostics.Activity"/> baggage key names used to propagate ambient
+/// identity across process boundaries.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Reconciles a confirmed live mismatch that existed before this registry:
-/// <c>14.Presentation.CorrelationIdMiddleware</c> writes <see cref="System.Diagnostics.Activity"/>
-/// baggage under the key <c>"correlation.id"</c> (the writer side of the contract), while
-/// <c>13.ServiceDefaults.BaggageLogRecordProcessor</c>'s test suite independently hardcoded the
-/// literal <c>"CorrelationId"</c> for the same concept (the reader side). Both sides must now
-/// reference <see cref="CorrelationId"/> so the two ends of the contract cannot silently drift apart
-/// again.
+/// <b>The rule:</b> reference the constant on both sides — the middleware writing the baggage and
+/// anything reading it. A writer and a reader are usually in different packages that cannot
+/// reference each other, so a mismatch is not a compile error; it is ambient context that silently
+/// stops arriving.
 /// </para>
 /// <para>
-/// <c>04.Contracts</c> was considered and rejected as the home for this registry — see
-/// <see cref="WellKnownHeaders"/> for the full rationale, which applies identically here.
+/// That happened here: <c>14.Presentation</c>'s correlation middleware wrote baggage under
+/// <c>"correlation.id"</c> while <c>13.ServiceDefaults</c>' reader independently hardcoded
+/// <c>"CorrelationId"</c> for the same concept. Both sides now reference
+/// <see cref="CorrelationId"/>.
+/// </para>
+/// <para>
+/// <b>Baggage is not a span tag.</b> Baggage propagates across process boundaries as part of the
+/// trace context and is comparatively expensive — it rides on every outbound call. A span-local
+/// attribute belongs in <see cref="WellKnownTagKeys"/> instead. Keep this registry small: each
+/// entry is a value every service carries on every hop.
+/// </para>
+/// <para>
+/// <b>These keys surface as log property names.</b> <c>13.ServiceDefaults</c>'
+/// <c>BaggageLogRecordProcessor</c> copies baggage onto log records generically, by enumeration
+/// rather than by known key, so whatever string is used here becomes the property name operators
+/// query on. That is why changing a value is an operational breaking change and not a tidy-up, and
+/// it is the reason <see cref="TenantId"/> looks inconsistent with its tag-key counterpart.
+/// </para>
+/// <para>
+/// <b>Why <c>01.Core</c> and not <c>04.Contracts</c>:</b> see <see cref="WellKnownHeaders"/>, whose
+/// rationale applies identically.
 /// </para>
 /// </remarks>
 public static class WellKnownBaggageKeys

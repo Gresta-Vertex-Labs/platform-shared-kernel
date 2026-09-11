@@ -5,79 +5,76 @@ using System.Runtime.CompilerServices;
 namespace SharedKernel.Primitives.Enums;
 
 /// <summary>
-/// Abstract base for type-safe enumeration types that pair a name with a strongly-typed value.
-/// Subclasses expose a static <c>List</c> of all instances and support value/name lookups
-/// without reflection in the hot path.
+/// Base class for a type-safe enumeration: a fixed set of named singleton members, each carrying
+/// an underlying value, with lookups and behaviour that a plain <c>enum</c> cannot have.
 /// </summary>
-/// <typeparam name="TEnum">The concrete enumeration type (CRTP pattern).</typeparam>
-/// <typeparam name="TValue">The type of the underlying value (e.g., <see cref="int"/>, <see cref="string"/>).</typeparam>
+/// <typeparam name="TEnum">The concrete enumeration type — the class deriving from this one.</typeparam>
+/// <typeparam name="TValue">The underlying value type, e.g. <see cref="int"/> or <see cref="string"/>.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>AOT lookup strategy:</b> Each concrete enum type initialises a static
-/// <see cref="IReadOnlyList{T}"/> (<see cref="List"/>) at type-initialization time via a
-/// protected constructor registration pattern. Value and name lookup dictionaries are built
-/// lazily from that list — no reflection is used at any point.
+/// Reach for this over a plain <c>enum</c> when the set needs to carry behaviour or data per
+/// member, or needs lookup by value that fails loudly instead of silently accepting
+/// <c>(Status)999</c>. A plain <c>enum</c> is still the right choice for a simple flag set.
 /// </para>
-/// <para>
-/// To define a SmartEnum:
+/// <example>
 /// <code>
-/// public sealed class Status : SmartEnum&lt;Status, int&gt;
+/// public sealed class OrderStatus : SmartEnum&lt;OrderStatus, int&gt;
 /// {
-///     public static readonly Status Active   = new(nameof(Active),   1);
-///     public static readonly Status Inactive = new(nameof(Inactive), 2);
+///     public static readonly OrderStatus Pending  = new(nameof(Pending),  1);
+///     public static readonly OrderStatus Shipped  = new(nameof(Shipped),  2);
+///     public static readonly OrderStatus Complete = new(nameof(Complete), 3);
 ///
-///     private Status(string name, int value) : base(name, value) { }
+///     private OrderStatus(string name, int value) : base(name, value) { }
+///
+///     public bool IsTerminal =&gt; this == Complete;
 /// }
 /// </code>
+/// Members are <c>static readonly</c> fields, the constructor is private, and the class is
+/// <c>sealed</c> — that shape is what makes every member a singleton and reference equality
+/// correct.
+/// </example>
+/// <para>
+/// <b>Lookups.</b> <see cref="List"/> returns every member in declaration order.
+/// <see cref="FromValue"/> and <see cref="FromName"/> throw when nothing matches;
+/// <see cref="TryFromValue"/> and <see cref="TryFromName"/> return <c>false</c> instead and never
+/// throw, including for a <see langword="null"/> key. Use the <c>Try</c> pair for anything
+/// parsed from outside the process — a request field, a database column — and the throwing pair
+/// only where a miss is a bug.
 /// </para>
 /// <para>
-/// <b>Member values must be distinct.</b> Two members sharing a <see cref="Value"/> (or a
-/// <see cref="Name"/>) make the lookup ambiguous, so the first lookup of either kind throws an
-/// <see cref="InvalidOperationException"/> naming the type and the duplicate. Because the lookup
-/// tables are built on first use rather than at type initialization, that error surfaces at the
-/// first <see cref="FromValue"/>/<see cref="FromName"/>/<see cref="TryFromValue"/> call, not at
-/// the declaration.
+/// <b>Rule: every member needs a distinct value AND a distinct name.</b> A duplicate makes lookup
+/// ambiguous, so the first lookup of that kind throws an <see cref="InvalidOperationException"/>
+/// naming the type, the duplicated key, and both colliding members. Because the lookup tables are
+/// built on first use, that error surfaces at the first lookup rather than at the declaration —
+/// so a duplicate can sit undetected until something reads it.
 /// </para>
 /// <para>
-/// <b>Ordering:</b> members are ordered by their underlying <see cref="Value"/> through
-/// <see cref="IComparable{T}"/>, so <c>List&lt;TEnum&gt;.Sort()</c>, <c>OrderBy</c>, and
-/// <c>SortedSet&lt;TEnum&gt;</c> all work; before this was added, <c>Sort()</c> threw. Equality
-/// remains reference equality — every member is a singleton held in a <c>static readonly</c>
-/// field, so the two agree for any type whose values are distinct as required above.
+/// <b>Equality is reference equality; ordering is by value.</b> Every member is a singleton, so
+/// <c>FromValue(2) == OrderStatus.Shipped</c> holds and <c>==</c> is the right comparison. Ordering
+/// comes from <see cref="IComparable{T}"/> over <see cref="Value"/>, so
+/// <c>List&lt;TEnum&gt;.Sort()</c>, <c>OrderBy</c>, and <c>SortedSet&lt;TEnum&gt;</c> all work.
 /// </para>
 /// <para>
-/// The comparison goes through <see cref="Comparer{T}"/> for <typeparamref name="TValue"/> rather
-/// than a <c>where TValue : IComparable&lt;TValue&gt;</c> constraint, and that is deliberate. Adding
-/// the constraint compiles here but breaks <c>SharedKernel.Core</c>'s
+/// The comparison goes through <see cref="Comparer{T}"/> rather than a
+/// <c>where TValue : IComparable&lt;TValue&gt;</c> constraint, deliberately. Adding that constraint
+/// compiles here but breaks <c>SharedKernel.Core</c>'s
 /// <c>Guard.Against.InvalidSmartEnum&lt;TEnum, TValue&gt;</c>, which is itself generic over
-/// <typeparamref name="TValue"/> and constrains only <see cref="IEquatable{T}"/> — so the
-/// constraint would have to be widened on a public API in another package, turning an additive
-/// change into a cross-package breaking one. The trade-off is that a
-/// <typeparamref name="TValue"/> with no ordering at all fails when first compared, with
-/// <see cref="Comparer{T}"/>'s own exception naming the type, instead of failing at compile time.
-/// In practice every underlying value is an <see cref="int"/>, <see cref="string"/>,
-/// <see cref="System.Guid"/>, or <c>enum</c>, all of which are comparable.
+/// <typeparamref name="TValue"/> and constrains only <see cref="IEquatable{T}"/> — so it would
+/// widen a public API in another package. The cost is that a <typeparamref name="TValue"/> with no
+/// ordering at all fails when first compared rather than at compile time; in practice every
+/// underlying value is an <see cref="int"/>, <see cref="string"/>, <see cref="System.Guid"/>, or
+/// <c>enum</c>, all of which are comparable.
 /// </para>
 /// <para>
-/// <b>Static-initialization trap (and why it cannot bite here):</b> <see cref="FromValue"/>,
-/// <see cref="TryFromValue"/>, <see cref="FromName"/>, and <see cref="List"/> are all physically
-/// declared on this closed generic base type, <c>SmartEnum&lt;TEnum,TValue&gt;</c> — never on
-/// <typeparamref name="TEnum"/> itself. Calling <c>Status.FromValue(1)</c> therefore resolves, at
-/// the CLR level, to an INHERITED static member. Per ECMA-335 type-initialization semantics,
-/// reaching an inherited static member through a derived type name does NOT guarantee the derived
-/// type's own static constructor has already run — and it is exactly that static constructor
-/// (<typeparamref name="TEnum"/>'s cctor) whose <c>public static readonly Status Active = new(...)</c>
-/// field initializers call the protected <see cref="SmartEnum{TEnum,TValue}(string,TValue)"/>
-/// instance constructor that populates <see cref="_list"/>. If the very first touch of a
-/// <c>SmartEnum</c>-derived type is one of these inherited static calls, <see cref="_list"/> could
-/// observably still be empty at that moment. <see cref="List"/>'s own
-/// <c>_readOnlyList ??= _list.AsReadOnly()</c> self-heals on a later read, because every instance
-/// constructor also resets <c>_readOnlyList</c> to <see langword="null"/> — but <see cref="_byValue"/>
-/// and <see cref="_byName"/> are one-shot <see cref="Lazy{T}"/> fields with no equivalent
-/// invalidation hook: once <c>.Value</c> forces the dictionary build against an empty
-/// <see cref="_list"/>, the built (empty) dictionary is cached for the remaining process lifetime.
-/// <see cref="_forceEnumStaticConstructor"/> below closes this gap structurally, at zero per-call
-/// cost — see its own remarks for the mechanism.
+/// <b>Serializing one needs <see cref="SmartEnumJsonConverter{TEnum, TValue}"/>.</b> Without it a
+/// SmartEnum is write-only over JSON: the default object serializer emits both properties and then
+/// cannot read them back, because the constructor is private. See that converter for the opt-in.
+/// </para>
+/// <para>
+/// <b>Trimming and AOT:</b> safe, and verified against a <c>TrimMode=full</c> publish. No
+/// reflection is used for registration or lookup. The one trim-analyzer interaction is documented
+/// on <see cref="_forceEnumStaticConstructor"/>, along with the initialization hazard it exists to
+/// close — read that before changing anything about how members register.
 /// </para>
 /// </remarks>
 [DebuggerDisplay("{DebuggerDisplay,nq}")]
@@ -94,8 +91,26 @@ public abstract class SmartEnum<TEnum, TValue> : IComparable<TEnum>, IComparable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This field exists solely to close the static-initialization trap documented on the type-level
-    /// remarks above. It is declared here — on the same closed generic type that declares
+    /// <b>The trap this closes, which is subtle enough to be worth stating before the fix.</b>
+    /// <see cref="FromValue"/>, <see cref="TryFromValue"/>, <see cref="FromName"/>, and
+    /// <see cref="List"/> are all physically declared on this closed generic BASE type,
+    /// <c>SmartEnum&lt;TEnum,TValue&gt;</c> — never on <typeparamref name="TEnum"/> itself. So
+    /// <c>OrderStatus.FromValue(1)</c> resolves, at the CLR level, to an INHERITED static member,
+    /// and per ECMA-335 type-initialization semantics, reaching an inherited static member through
+    /// a derived type name does NOT guarantee the derived type's own static constructor has run.
+    /// That cctor is exactly what registers the members: it runs the
+    /// <c>public static readonly OrderStatus Pending = new(...)</c> field initializers, which call
+    /// the protected instance constructor that appends to <see cref="_list"/>. So if the very first
+    /// touch of a SmartEnum-derived type is one of those inherited static calls,
+    /// <see cref="_list"/> can still be empty at that moment. <see cref="List"/> would survive it —
+    /// its <c>_readOnlyList ??=</c> cache is invalidated by every registration and so self-heals on
+    /// a later read — but <see cref="_byValue"/> and <see cref="_byName"/> are one-shot
+    /// <see cref="Lazy{T}"/> fields with no invalidation hook: force either against an empty
+    /// <see cref="_list"/> and the empty dictionary is cached for the rest of the process, so every
+    /// subsequent lookup silently misses.
+    /// </para>
+    /// <para>
+    /// <b>The fix.</b> It is declared here — on the same closed generic type that declares
     /// <see cref="_list"/>, <see cref="_byValue"/>, <see cref="_byName"/>, <see cref="List"/>,
     /// <see cref="FromValue"/>, <see cref="TryFromValue"/>, and <see cref="FromName"/> — specifically
     /// so the CLR's own static-initialization guarantee does the work: a type's static constructor
@@ -140,22 +155,49 @@ public abstract class SmartEnum<TEnum, TValue> : IComparable<TEnum>, IComparable
     private static readonly Lazy<Dictionary<string, TEnum>> _byName = new(BuildNameDictionary);
 
     /// <summary>
-    /// Gets all declared instances of <typeparamref name="TEnum"/> in declaration order.
+    /// Gets every declared member of <typeparamref name="TEnum"/>, in declaration order.
     /// </summary>
+    /// <remarks>
+    /// Useful for populating a dropdown, validating an incoming value against the full set, or
+    /// iterating members in a test. Order follows the order the <c>static readonly</c> fields are
+    /// declared in, not value order — call <c>.Order()</c> if you need the latter.
+    /// </remarks>
     public static IReadOnlyList<TEnum> List => _readOnlyList ??= _list.AsReadOnly();
 
-    /// <summary>Gets the name of this enumeration member.</summary>
+    /// <summary>
+    /// Gets this member's name — the identifier it was declared under.
+    /// </summary>
+    /// <remarks>
+    /// Also what <see cref="ToString"/> returns, so this is the text that reaches log messages and
+    /// exception text. Prefer <see cref="Value"/> for anything persisted or sent over the wire, so
+    /// that renaming a member stays a source-only change.
+    /// </remarks>
     public string Name { get; }
 
-    /// <summary>Gets the underlying value of this enumeration member.</summary>
+    /// <summary>
+    /// Gets this member's underlying value — its stable identity.
+    /// </summary>
+    /// <remarks>
+    /// This is the field to persist and to put on the wire, and the one
+    /// <see cref="SmartEnumJsonConverter{TEnum, TValue}"/> serializes. It also defines ordering.
+    /// </remarks>
     public TValue Value { get; }
 
     /// <summary>
-    /// Initialises a new SmartEnum member with the given <paramref name="name"/> and
-    /// <paramref name="value"/>, and registers it in the static <see cref="List"/>.
+    /// Initialises a member and registers it in <see cref="List"/>.
     /// </summary>
-    /// <param name="name">The name of this member (typically <c>nameof(FieldName)</c>).</param>
-    /// <param name="value">The underlying value of this member.</param>
+    /// <param name="name">
+    /// This member's name. Pass <c>nameof(TheField)</c> so the name cannot drift from the field it
+    /// names.
+    /// </param>
+    /// <param name="value">This member's underlying value. Must be distinct across members.</param>
+    /// <remarks>
+    /// Called only from a derived type's <c>static readonly</c> field initializers — keep the
+    /// derived constructor <c>private</c> so nothing outside the type can create an unregistered
+    /// member that no lookup would ever find.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
     protected SmartEnum(string name, TValue value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

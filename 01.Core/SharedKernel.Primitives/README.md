@@ -1,86 +1,97 @@
 # SharedKernel.Primitives
 
-The foundation layer of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel). Every other package in the platform depends on this one, directly or transitively, so it deliberately stays small and stable.
+The foundation layer of [Platform.SharedKernel](https://github.com/Gresta-Vertex-Labs/platform-shared-kernel). Every other package in the platform depends on this one, directly or transitively, so it stays small, stable, and opinionated.
 
-**One NuGet dependency:** `Microsoft.Extensions.DependencyInjection.Abstractions`, used only by the optional `AddClock()` extension. Nothing else.
+It gives you four things: a way to return failures without exceptions (`Result<T>`, `Error`), a testable clock (`IClock`), a richer enum (`SmartEnum<TEnum, TValue>`), and the registries that stop two packages from disagreeing about a wire identifier.
 
-**Trim- and AOT-clean.** The package compiles with zero `IL2026`/`IL3050`/`IL2059` under both `EnableTrimAnalyzer` and `EnableAotAnalyzer`, and its `SmartEnum` lookups are verified working against a self-contained `TrimMode=full` publish. No reflection, no `dynamic`, no expression trees, no runtime code generation anywhere in the package.
+**One NuGet dependency:** `Microsoft.Extensions.DependencyInjection.Abstractions`, used only by `AddClock()`.
+
+**Trim- and AOT-clean.** Compiles with zero `IL2026`/`IL3050`/`IL2059` under both `EnableTrimAnalyzer` and `EnableAotAnalyzer`, and `SmartEnum` lookups are verified working against a self-contained `TrimMode=full` publish. No reflection, no `dynamic`, no expression trees, no runtime code generation anywhere.
 
 ---
 
-## What's in here
+## The rules
 
-| Area | Types |
+These are the non-negotiables. Most are mechanically enforced; all of them exist because breaking them has caused a real defect on this platform.
+
+| Rule | Why, and what enforces it |
 | --- | --- |
-| **Results** | `Result<T>`, `Result`, `ValidationResult`, `ValidationResult<T>`, `IHasSuccessFlag`, `IResultOfT<T>`, `IFailureFactory<TSelf>` |
-| **Errors** | `Error`, `ErrorType`, `ErrorCodes` |
-| **Time** | `IClock`, `SystemClock`, `ClockExtensions.AddClock()` |
-| **Enumerations** | `SmartEnum<TEnum, TValue>`, `SmartEnumJsonConverter<TEnum, TValue>` |
-| **Identifiers** | `IIdGenerator`, `UuidV7IdGenerator` |
-| **Logging** | `LoggingEventIdRanges` |
-| **Propagation** | `WellKnownHeaders`, `WellKnownBaggageKeys`, `WellKnownTagKeys` |
+| Never read `DateTime.UtcNow` / `DateTimeOffset.UtcNow`. Inject `IClock`. | Inline clock reads make the surrounding logic untestable. Enforced by analyzer `SK0001`. |
+| Never use `null` for "no error". Use `Error.None`. | The failure factories reject a null error, and `Result.Error` throws rather than return one. |
+| Never build a `Result` any way but through its factories. | `Result` is a struct, so `default(Result)` is reachable and is **not** a valid result — see [Traps](#traps-worth-knowing). |
+| Never retype a header, baggage, or tag literal. Reference the registry constant. | These are contracts between packages that cannot reference each other, so drift is not a compile error. Enforced by analyzer `SK0022`. |
+| Never interpolate variable data into an `Error.Code`. | A code with an id in it cannot be aggregated, alerted on, or translated. Put identifiers in the message. |
+| Never derive an `EventId` from a bare literal. Use `LoggingEventIdRanges`. | Two packages independently collided on EventId 4001/4002 before this registry existed. |
+| Pick `ErrorType` by meaning, not convenience. | It maps mechanically to an HTTP status at `14.Presentation`. See [the table](#which-errortype). |
+| Give every `SmartEnum` member a distinct value **and** name. | A duplicate makes lookup ambiguous and throws on first use, not at declaration. |
+| Don't inject `TimeProvider`. | `SystemClock` is the only type allowed to depend on it, so `IClock`'s two members stay the only thing tests substitute. |
 
 ---
 
 ## Results and errors
 
-`Result<T>` and `Result` model an outcome that either succeeded or failed, without exceptions for expected failures.
+`Result<T>` and `Result` model an outcome that either succeeded or failed, without using exceptions for expected failures.
 
 ```csharp
 Result<Order> Find(Guid id)
 {
     var order = _repository.Get(id);
     return order is null
-        ? Error.NotFound("order.not_found", $"Order {id} does not exist.")
-        : order;                       // implicit conversions both ways
+        ? Error.NotFound("order.not_found", $"Order {id} does not exist.")   // implicit conversion
+        : order;                                                            // ...both ways
 }
 
 var result = Find(id);
 if (result.IsFailure)
 {
-    _logger.LookupFailed(result.Error.Code);
     return result.Error;
 }
 Use(result.Value);
 ```
 
-`Result` (non-generic) is the void counterpart, for operations with nothing to return on success.
+| Use | When |
+| --- | --- |
+| `Result<T>` | The operation returns a value on success. |
+| `Result` | The operation returns nothing on success — a command, a side effect. |
+| `ValidationResult` / `<T>` | Several things can fail **at once** and the caller needs all of them. |
 
-**Accessing the wrong side throws.** `Value` on a failure and `Error` on a success both throw `InvalidOperationException` — check `IsSuccess`/`IsFailure` first. This is intentional: a silent default would hide the bug.
+**Accessing the wrong side throws.** `Value` on a failure and `Error` on a success both throw `InvalidOperationException`. That is deliberate — a silent default would hide the bug. Check `IsSuccess`/`IsFailure` first.
 
-**Never construct a `Result` any way but through its factories.** `Result` is a struct, so the runtime can hand you an all-zero instance that ran neither factory — `default(Result)`, an unassigned field, an element of `new Result[n]`, or the `out` value of a failed `TryGetValue`. Such an instance reports `IsFailure` but carries no error, and reading `Error` throws an `InvalidOperationException` that names this cause. `Result<T>` is a class, so `default` is simply `null` and fails immediately.
-
-`Error` is a `sealed record` of `(Code, Message, Type)` with value equality and one factory per `ErrorType`:
+`Error` is a `sealed record` of `(Code, Message, Type)` with value equality, and one factory per `ErrorType`:
 
 ```csharp
 Error.Validation(ErrorCodes.Validation.Required, "Name is required.");
-Error.NotFound(...);      Error.Conflict(...);     Error.Unauthorized(...);
-Error.Forbidden(...);     Error.BusinessRule(...); Error.Unexpected(...);
+Error.NotFound(...);   Error.Conflict(...);      Error.Unauthorized(...);
+Error.Forbidden(...);  Error.BusinessRule(...);  Error.Unexpected(...);
 ```
 
-Use `Error.None` for "no error" — **never `null`**, which the failure factories reject outright.
+**`Code` is the field that matters most.** It is the stable identity of the failure, and three separate things key off it: consumers branch on it, dashboards and alert rules filter on it, and `SharedKernel.Localization` looks up a translated message by it. So: dot-separated lowercase, general to specific; stable once shipped; never any interpolated data. Check `ErrorCodes` first — a suitable constant often already exists.
 
-`ErrorType` is what `14.Presentation` maps to an HTTP status code, so pick it by meaning, not by convenience. The two most often confused:
+**`Message` may reach an end user.** It is the fallback shown when no translation is registered for the code, so keep secrets and raw exception text out of it, and don't write "see logs".
 
-| Type | Meaning | HTTP |
+### Which `ErrorType`
+
+| Type | Means | HTTP |
 | --- | --- | --- |
-| `Unauthorized` | The caller may not attempt this at all — missing or invalid credentials. | 401 |
-| `Forbidden` | The caller may generally attempt this, but not this instance under these conditions. | 403 |
-| `Validation` | Input was malformed or missing, caught before the domain ran. | 400 |
-| `BusinessRule` | Input was well-formed but violates a domain invariant. | 422 |
+| `Validation` | Input malformed or missing, caught before the domain ran | 400 |
+| `Unauthorized` | Caller may not attempt this **at all** — no/invalid credentials | 401 |
+| `Forbidden` | Caller is authenticated but not permitted **this instance** | 403 |
+| `NotFound` | Resource does not exist | 404 |
+| `Conflict` | Clashes with existing state — duplicate, or concurrency | 409 |
+| `BusinessRule` | Well-formed, but violates a domain invariant | 422 |
+| `Unexpected` | Unclassified fault | 500 |
 
-`ErrorCodes` holds the well-known code constants (`Validation.Required`, `NotFound.Default`, `Conflict.Duplicate`, `Unauthorized.Expired`, `Forbidden.InsufficientPermission`, `Unexpected.Default`, `Domain.RuleViolated`). They are `const string`, not an enum, so your own package can add its own codes without forking anything.
+The two pairs people get wrong:
+
+- **`Unauthorized` vs `Forbidden`** — "who are you?" versus "may you do *this*?". Substituting one makes an authorization failure indistinguishable from a missing credential in logs, and tells the client to re-authenticate when that cannot help.
+- **`Validation` vs `BusinessRule`** — if the caller could fix it by correcting a field, it's validation. If the request is well-formed and the domain is refusing, it's a business rule.
 
 ### `ValidationResult` — many errors, not one
 
-Use `ValidationResult` when a single operation can fail several ways at once and the caller needs all of them. Use `Result<T>` for a single-error outcome. They model different failure cardinalities; do not substitute one for the other.
-
 ```csharp
 var errors = new List<Error>();
-if (string.IsNullOrWhiteSpace(command.Name))
-    errors.Add(Error.Validation("name.required", "Name is required."));
-if (command.Quantity <= 0)
-    errors.Add(Error.Validation("quantity.positive", "Quantity must be positive."));
+if (string.IsNullOrWhiteSpace(cmd.Name)) errors.Add(Error.Validation("name.required", "Name is required."));
+if (cmd.Quantity <= 0)                   errors.Add(Error.Validation("quantity.positive", "Quantity must be positive."));
 
 return errors.Count == 0
     ? ValidationResult<OrderDraft>.Success(draft)
@@ -91,36 +102,54 @@ Both types **snapshot** the errors you pass, so continuing to mutate your own li
 
 ### The three result interfaces
 
-These exist so a MediatR pipeline behavior can inspect an unknown `TResponse` with no reflection at all. Application code rarely touches them.
+These exist so a MediatR pipeline behavior can work with a `TResponse` it cannot name, with no reflection. **Application code should not need them.**
 
-- **`IHasSuccessFlag`** — implemented by both result types. `if (response is IHasSuccessFlag f && f.IsSuccess)`.
-- **`IResultOfT<out T>`** — `Result<T>` only. Constrain `where TResponse : IResultOfT<TResponse>` to read `Value` directly.
-- **`IFailureFactory<TSelf>`** — `Result<T>` only. A static abstract member, so `TResponse.Failure(error)` constructs a failure of a shape the caller never names.
+- **`IHasSuccessFlag`** — read the outcome. Both result types implement it.
+- **`IResultOfT<T>`** — read the value. `Result<T>` only.
+- **`IFailureFactory<TSelf>`** — *construct* a failure of an unnamed shape. `Result<T>` only.
+
+The constraint shapes differ, and this is the part that trips people up:
+
+```csharp
+// IResultOfT needs TWO type parameters: the response shape AND the value it carries.
+static TValue? ReadValue<TResponse, TValue>(TResponse response)
+    where TResponse : IResultOfT<TValue>
+    => response.IsSuccess ? response.Value : default;
+
+// IFailureFactory IS self-referential, so one parameter is correct here.
+static TResponse BuildFailure<TResponse>(Error error)
+    where TResponse : IFailureFactory<TResponse>
+    => TResponse.Failure(error);
+```
+
+Writing `where TResponse : IResultOfT<TResponse>` does **not** compile (`CS0311`): `Result<int>` implements `IResultOfT<int>`, not `IResultOfT<Result<int>>`.
 
 ---
 
 ## Time
 
-Never call `DateTime.UtcNow` or `DateTimeOffset.UtcNow` in platform code — the `SK0001` analyzer flags it. Inject `IClock`:
-
 ```csharp
-services.AddClock();                       // TryAddSingleton, so your own registration wins
+services.AddClock();
 
-public sealed class Handler(IClock clock)
+public sealed class ExpireSessionHandler(IClock clock)
 {
-    public void Handle() => _stamp = clock.UtcNow;   // also clock.Today (DateOnly)
+    public bool HasExpired(Session s) => s.ExpiresAt <= clock.UtcNow;   // also clock.Today
 }
 ```
 
-`SystemClock` reads from a `TimeProvider` internally. If your host registers its own `TimeProvider` in DI, `AddClock()` picks it up automatically — the container selects the greediest constructor it can satisfy — which is how coordinated simulation or deterministic replay works without a custom clock. Outside `SystemClock` itself, inject `IClock`, never `TimeProvider` directly.
+Three behaviours of `AddClock()`, all verified by running them against a real container:
 
-In tests, register a fake `IClock` returning a fixed time. `16.Testing/SharedKernel.Testing` ships one.
+- **Calling it twice is harmless** — it uses `TryAddSingleton`.
+- **Your own `IClock` wins if you register it *first*.** `TryAdd` is first-registration-wins, not last.
+- **A registered `TimeProvider` is picked up automatically.** The container selects the greediest constructor it can satisfy, so if you register a custom `TimeProvider` — for coordinated simulation or deterministic replay — the clock reads from it with no further wiring. Order doesn't matter for this one.
+
+Both members are UTC. There is no local-time member and none should be added: local time is a presentation concern. In tests, register a fake `IClock`; `16.Testing/SharedKernel.Testing` ships one.
 
 ---
 
 ## SmartEnum
 
-A type-safe enumeration with behaviour, ordering, and lookups — reflection-free.
+A type-safe enumeration that can carry behaviour and data per member, and whose lookups fail loudly instead of silently accepting `(Status)999`. A plain `enum` is still right for a simple flag set.
 
 ```csharp
 public sealed class OrderStatus : SmartEnum<OrderStatus, int>
@@ -135,22 +164,24 @@ public sealed class OrderStatus : SmartEnum<OrderStatus, int>
 }
 ```
 
+`static readonly` fields, a `private` constructor, a `sealed` class — that shape is what makes each member a singleton and reference equality correct.
+
 ```csharp
-OrderStatus.List;                                  // all members, declaration order
-OrderStatus.FromValue(2);                          // throws if absent
-OrderStatus.TryFromValue(99, out var status);      // false; never throws, even for null
-OrderStatus.FromName("Shipped");                   // ordinal, case-sensitive
-OrderStatus.TryFromName(input, out var parsed);
-OrderStatus.List.Order();                          // IComparable, ordered by Value
+OrderStatus.List;                              // every member, declaration order
+OrderStatus.FromValue(2);                      // throws if absent
+OrderStatus.FromName("Shipped");               // ordinal, case-sensitive
+OrderStatus.TryFromValue(input, out var s);    // false if absent; never throws, even for null
+OrderStatus.TryFromName(input, out var s);
+OrderStatus.List.Order();                      // IComparable, ordered by Value
 ```
 
-**Member values and names must be distinct.** A duplicate makes lookup ambiguous, so the first lookup throws an `InvalidOperationException` naming the type, the duplicated key, and both colliding members. Because the lookup tables build on first use, that error appears at the first lookup rather than at the declaration.
+Use the `Try` pair for anything parsed from outside the process — a request field, a database column — and the throwing pair only where a miss is a bug.
 
-Equality is reference equality. Every member is a singleton in a `static readonly` field, so `FromValue(2) == OrderStatus.Shipped` holds, and with distinct values reference equality and ordering agree.
+**Equality is reference equality; ordering is by value.** `FromValue(2) == OrderStatus.Shipped` holds, so `==` is the right comparison.
 
 ### Serializing a SmartEnum
 
-Without a converter a `SmartEnum` is **write-only** over JSON: the default object serializer emits `{"Name":"Shipped","Value":2}` and cannot read it back, because members are singletons behind a private constructor. Opt in per property or per options instance:
+Without a converter a SmartEnum is **write-only** over JSON: the default serializer emits `{"Name":"Shipped","Value":2}` and cannot read it back, because the constructor is private. Opt in per property or per options instance:
 
 ```csharp
 public sealed record OrderDto(
@@ -161,46 +192,73 @@ public sealed record OrderDto(
 options.Converters.Add(new SmartEnumJsonConverter<OrderStatus, int>());
 ```
 
-The wire form is the **underlying value**, not the name — so renaming a member leaves persisted and in-flight payloads readable, the same trade-off a numerically-serialized `enum` makes. An unrecognized value fails as a `JsonException` naming the type and value. Nothing is registered globally and no `JsonSerializerContext` is shipped; the converter resolves `TValue` through the options' own `JsonTypeInfo`, so it composes with a source-generated context.
+The wire form is the **underlying value**, not the name — so renaming a member leaves persisted and in-flight payloads readable, the same trade-off a numerically-serialized `enum` makes. An unrecognized value fails as a `JsonException` naming the type and value. Nothing is registered globally.
 
 ---
 
 ## Identifiers
 
 ```csharp
-services.AddSingleton<IIdGenerator, UuidV7IdGenerator>();   // no DI extension shipped, by design
+services.AddSingleton<IIdGenerator, UuidV7IdGenerator>();   // no DI extension ships, by design
 ```
 
-`UuidV7IdGenerator` produces RFC 9562 UUID v7 values, which embed a millisecond timestamp in their high bits. A fully-random UUID v4 (what `Guid.NewGuid()` gives) is a well-known clustered-index anti-pattern: each insert lands at a random point in the B-tree, causing page splits that worsen as the table grows. v7 restores insert locality while still needing no central coordinator.
+`UuidV7IdGenerator` produces RFC 9562 UUID v7 values, which embed a millisecond timestamp in their high bits. `Guid.NewGuid()`'s fully random v4 is a well-known clustered-index anti-pattern: each insert lands at a random point in the B-tree, causing page splits that worsen as the table grows. v7 restores insert locality while still needing no central coordinator.
 
-Opt-in and additive — nothing calls it automatically, and existing `Guid.NewGuid()` call sites need not change. Values generated in the *same* millisecond have no defined order relative to each other, but still land adjacent in the index.
+Opt-in and additive — nothing calls it automatically, and existing `Guid.NewGuid()` call sites need not change.
+
+Two limits worth knowing: values generated in the **same millisecond** have no defined order relative to each other (only the random bits differ), so never treat id order as event order — store a timestamp from `IClock` if you need that. And a v7 id is **predictable by design**; never use one as a token, secret, or nonce. That is `SharedKernel.Cryptography`'s `ISecureRandomGenerator`.
 
 ---
 
 ## Platform registries
 
-Three compile-time constant registries exist so that two packages cannot independently hardcode the same wire identifier and drift apart — a mismatch that has happened on this platform and is what these replace.
+Three compile-time constant registries, so two packages cannot independently hardcode the same wire identifier and drift apart. Each has already prevented, or was created because of, a real mismatch.
 
-**`LoggingEventIdRanges`** reserves a 1000-wide `EventId` block per capability domain (`{domain number} * 1000`). Every `[LoggerMessage]` on the platform derives its `EventId` from this, never an ad hoc literal. A multi-package domain subdivides its block into 100-wide sub-blocks per package.
+| Registry | Holds | Call-site shape |
+| --- | --- | --- |
+| `WellKnownHeaders` | `X-Correlation-Id`, `X-Tenant-Id` | HTTP / gRPC metadata |
+| `WellKnownBaggageKeys` | correlation id, tenant id | `Activity.SetBaggage` / `AddBaggage` |
+| `WellKnownTagKeys` | `tenant.id`, `correlation.id`, `error.type`, `error.code` | `Activity.SetTag` |
 
-**`WellKnownHeaders`** — `X-Correlation-Id`, `X-Tenant-Id`. The propagation header names shared by `11.Communication`, `13.ServiceDefaults`, and `14.Presentation`.
+**Pick the registry matching your call-site shape.** Tags are span-local attributes. Baggage propagates across process boundaries and rides on every outbound call, so keep that registry small. They are not interchangeable, and two of them holding the same literal for the same concept does not make them so.
 
-**`WellKnownBaggageKeys`** — `Activity` baggage keys for correlation id and tenant id.
+> The tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"`. That asymmetry is deliberate and pinned by a test: `13.ServiceDefaults`' `BaggageLogRecordProcessor` copies baggage onto log records *generically*, so a baggage key string becomes the emitted log property name. Renaming it would silently rename a field that deployed dashboards and alert rules filter on.
 
-**`WellKnownTagKeys`** — OpenTelemetry `Activity.SetTag` attribute keys (`tenant.id`, `correlation.id`, `error.type`, `error.code`).
+**`LoggingEventIdRanges`** reserves a 1000-wide `EventId` block per capability domain (`{domain number} * 1000`), subdivided into 100-wide per-package sub-blocks. Derive every `[LoggerMessage]` EventId from it as an expression, so the number stays traceable to the domain that owns it:
 
-> The tenant **baggage** key is `"TenantId"` while the tenant **tag** key is `"tenant.id"`. That asymmetry is deliberate and documented on the constant: the baggage processor copies baggage generically, so the baggage key becomes the emitted log property name, and renaming it would break deployed dashboards and alert rules.
+```csharp
+[LoggerMessage(
+    EventId = LoggingEventIdRanges.Caching + 100,
+    Level = LogLevel.Warning,
+    Message = "Cache backplane reconnected after {AttemptCount} attempts")]
+public static partial void BackplaneReconnected(ILogger logger, int attemptCount);
+```
 
-These live here rather than in `04.Contracts` because `SharedKernel.Communication.Grpc` is barred from referencing `04.Contracts`, and `01.Core` is the one layer every consumer already references.
+All three live here rather than in `04.Contracts` because `SharedKernel.Communication.Grpc` is mechanically barred from referencing `04.Contracts`, and `01.Core` is the one layer every consumer already references.
 
 ---
 
-## What is deliberately *not* here
+## Traps worth knowing
 
-- **`Map`/`Bind`/`Tap` and other railway combinators** — `SharedKernel.Core`, alongside `ResultTry` (exception boundaries) and `ResultCombine` (aggregating several results).
-- **Guard clauses** — `SharedKernel.Core`, under the `SharedKernel.Guards` namespace.
-- **A metadata bag on `Error`** — evaluated and declined. `Error` is the platform's most-depended-upon type; a generic bag breaks its `record` equality contract and raises AOT and cross-process-serialization questions. The needs that motivated it (per-field validation errors, a retry-after hint) are solved at the `ProblemDetails` boundary in `14.Presentation` instead.
-- **A DI extension for `IIdGenerator`** — one implementation, one line to register; a package-owned extension would add surface without removing work.
+Each of these was found by executing the assembly, and each is pinned by a test.
+
+**`default(Result)` is not a valid result.** `Result` is a struct, so the runtime can hand you an all-zero instance that ran neither factory — `default(Result)`, an unassigned field, an element of `new Result[n]`, or the `out` value of a failed `TryGetValue`. It reports `IsFailure` while carrying no error. Reading `Error` throws an `InvalidOperationException` naming this cause rather than returning `null`. (`Result<T>` is a class, so its `default` is simply `null` and fails immediately.)
+
+**`IHasSuccessFlag` boxes the non-generic `Result`.** Measured at **32 bytes per check** for `Result` against **0 bytes** for `Result<T>`. It's AOT-clean either way — no reflection — but on a per-request hot path that only needs a non-generic `Result`, test the concrete type (`response is Result r`) instead, which matches without boxing.
+
+**A duplicate `SmartEnum` value surfaces late.** Lookup tables build on first use, so a duplicate value or name throws at the first `FromValue`/`FromName` call rather than at the declaration — it can sit undetected until something reads it. The exception names the type, the key, and both colliding members.
+
+**`ErrorType` is a wire contract.** Its numeric values are explicit and must never be renumbered — the enum is serialized and persisted, so changing a value reinterprets stored data. Adding a member is safe at runtime but breaks an exhaustive `switch` with no discard arm at compile time.
+
+---
+
+## Deliberately not here
+
+- **`Map` / `Bind` / `Tap` and other railway combinators** → `SharedKernel.Core`, with `ResultTry` (exception boundaries) and `ResultCombine` (aggregating several results).
+- **Guard clauses** → `SharedKernel.Core`, under the `SharedKernel.Guards` namespace.
+- **A metadata bag on `Error`** — evaluated and declined. It breaks the type's value-equality contract and raises AOT and cross-process-serialization questions. Both motivating needs (per-field validation errors, a retry-after hint) are solved at the `ProblemDetails` boundary in `14.Presentation` instead.
+- **A DI extension for `IIdGenerator`** — one implementation, one line to register.
+- **A local-time member on `IClock`** — presentation concern.
 
 ---
 
