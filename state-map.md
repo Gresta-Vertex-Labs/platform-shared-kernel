@@ -2074,6 +2074,32 @@ Same false-premise correction as P-527 (see that phase's "Why"): `SharedKernel.S
 - [ ] This phase's own verification explicitly confirms, against the real shipped `TotpChallengeService.cs` and `TotpVerifier.cs` source (not a sibling planner's summary), that no production call site in `SharedKernel.Security.Totp` touches `ITotpReplayGuard` directly and that `TotpVerifier.VerifyAsync`'s public signature is unchanged by P-514 — recorded as a pass/fail finding in this phase's own implementation notes, not assumed
 - [ ] If that verification finds a production dependency this phase's own text did not anticipate, it is fixed here rather than silently left broken — this phase's scope is deliberately "whatever P-514's blast radius genuinely touches in this domain," not merely the one fake file named above
 ---
+### P-529 — Core: `SharedKernel.Primitives` Pre-First-Publish Hardening Pass (BEHAVIOUR CHANGES)
+
+**Status:** `◐` Dispatched — 18/19 tasks `●`; only the publish itself (`P-51`) remains `○`
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A gold-standard audit of `SharedKernel.Primitives` immediately before it becomes the first `01.Core` package published to GitHub Packages. Full task breakdown, per-defect rationale, and the executed-perturbation results live in [`01.Core/state-map.md`](01.Core/state-map.md) under `SK.01.P529`.
+
+#### Why this is needed
+Six defects were found by EXECUTING the compiled assembly and running the trim/AOT analyzers over it, not by reading source — four of them directly contradicted the affected type's own XML documentation, which is why review had not caught them across the package's whole history. `default(Result).Error` returned `null` in violation of `Error`'s own never-null contract; `ValidationResult`/`<T>` equality was broken asymmetrically and both types were mutable through the caller's list; a real `IL2059` was emitted into every trimming consumer's build while the package advertised `aot`; `SmartEnum.TryFromValue(null)` threw instead of returning `false`; and both `Failure` factories accepted a null error unguarded.
+
+Taking the behaviour changes now was the whole point of the timing: nothing in `01.Core` had ever been pushed to a feed, so each was free. Under MinVer lockstep every one would otherwise have become a MAJOR bump across all 67 packages.
+
+#### Acceptance criteria
+- [x] All six defects fixed, each pinned by a test proven to fail when the fix is reverted (executed perturbation: 4/4/2/2 failures)
+- [x] Zero `IL2026`/`IL3050`/`IL2059` under both `EnableTrimAnalyzer` and `EnableAotAnalyzer`
+- [x] XML documentation ships in the packed nupkg (`GenerateDocumentationFile` set per-project — the SDK defeats `Directory.Build.targets`' guarded default)
+- [x] Packed nupkg declares exactly one dependency and zero `SharedKernel.*` dependencies, keeping the package eligible for the out-of-band single-package publish path
+- [x] Whole-solution regression check: `Platform.SharedKernel.slnx` 0 errors, `Platform.SharedKernel.Unit.slnf` 5,261 tests across 49 projects, 0 failures
+- [ ] `SharedKernel.Primitives` published to GitHub Packages
+
+> **Two cross-domain lessons worth reading before any similar pass**, both caught by measurement rather than review: (1) an `IComparable<TValue>` constraint widening on `SmartEnum` compiled locally and passed a survey of every concrete subclass in the repo, then broke `SharedKernel.Core`'s generic `Guard.Against.InvalidSmartEnum<TEnum, TValue>` forwarder with `CS0314` — surveying concrete subclasses does not assess a constraint change, generic forwarders in other packages must be searched for too; (2) the new `SmartEnumJsonConverter`'s obvious implementation emitted `IL2026`+`IL3050`, nearly reintroducing the exact defect class this phase was fixing, in the same commit, under a doc comment claiming otherwise — only STJ's `JsonTypeInfo<T>` overloads are unannotated.
+
+---
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).

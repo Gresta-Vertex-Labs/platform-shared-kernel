@@ -107,3 +107,4 @@
 - [2026-09-09] Root brain corrected: `SharedKernel.Security.Totp` (WO-069/P-452) was described as queued in two places; it shipped (agent)
 - [2026-09-09] Root brain: stale `IPasswordHasher` reference corrected to `IOneWayHasher` (renamed WO-034) (agent)
 - [2026-09-10] WO-082 done: Guards merged into SharedKernel.Core, namespace kept; P-522 regex cap (sync-brain)
+- [2026-09-11] P-529: Primitives pre-publish hardening; 6 defects fixed, SmartEnumJsonConverter added (agent)
