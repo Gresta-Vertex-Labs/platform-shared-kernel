@@ -282,8 +282,23 @@ jobs:
           dotnet run --project "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$PACKED_VERSION"
           echo "OK: every probed rule executed from the packed $PACKAGE_ID $PACKED_VERSION."
 
+      # Everything SharedKernel.Linter delivers is build-time (MSBuild props/targets plus two
+      # config files), so LinterConsumer asserts the wiring in MSBuild rather than at runtime:
+      # that the props and targets were imported from the package root at all, that CSharpier is
+      # pinned to report-only so it can never rewrite a consumer's sources, and that the config
+      # install target produces both files. Those assertions fail the build, so `dotnet run` here
+      # is a genuine gate.
+      - name: Verify packed artifact is consumable (SharedKernel.Linter)
+        if: env.PACKAGE_ID == 'SharedKernel.Linter'
+        run: |
+          set -e
+          proj="00.Governance/_verification/LinterConsumer/LinterConsumer.csproj"
+          dotnet restore "$proj" --force -p:SharedKernelPackageVersion="$PACKED_VERSION"
+          dotnet run --project "$proj" --no-restore --configuration Release -p:SharedKernelPackageVersion="$PACKED_VERSION"
+          echo "OK: packed $PACKAGE_ID $PACKED_VERSION imports its build logic and installs its config."
+
       - name: No package-specific consumer-verify for this package
-        if: env.PACKAGE_ID != 'SharedKernel.Analyzers' && env.PACKAGE_ID != 'SharedKernel.ArchitectureTests'
+        if: env.PACKAGE_ID != 'SharedKernel.Analyzers' && env.PACKAGE_ID != 'SharedKernel.ArchitectureTests' && env.PACKAGE_ID != 'SharedKernel.Linter'
         run: echo "Packed package is '$PACKAGE_ID' — no package-specific consumability harness exists for it yet. Skipping. Its nested test suite and the dependency assertion above still gate this publish."
 
       # GitHub Packages' NuGet registry has no symbol-server endpoint — only *.nupkg is pushed,
