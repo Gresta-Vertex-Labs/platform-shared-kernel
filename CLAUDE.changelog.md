@@ -108,3 +108,4 @@
 - [2026-09-09] Root brain: stale `IPasswordHasher` reference corrected to `IOneWayHasher` (renamed WO-034) (agent)
 - [2026-09-10] WO-082 done: Guards merged into SharedKernel.Core, namespace kept; P-522 regex cap (sync-brain)
 - [2026-09-11] P-529: Primitives pre-publish hardening; 6 defects fixed, SmartEnumJsonConverter added (agent)
+- [2026-09-11] P-530: Configuration pre-publish hardening; 6 defects fixed, ISectionBoundOptions added (agent)

@@ -2100,6 +2100,42 @@ Taking the behaviour changes now was the whole point of the timing: nothing in `
 > **Two cross-domain lessons worth reading before any similar pass**, both caught by measurement rather than review: (1) an `IComparable<TValue>` constraint widening on `SmartEnum` compiled locally and passed a survey of every concrete subclass in the repo, then broke `SharedKernel.Core`'s generic `Guard.Against.InvalidSmartEnum<TEnum, TValue>` forwarder with `CS0314` — surveying concrete subclasses does not assess a constraint change, generic forwarders in other packages must be searched for too; (2) the new `SmartEnumJsonConverter`'s obvious implementation emitted `IL2026`+`IL3050`, nearly reintroducing the exact defect class this phase was fixing, in the same commit, under a doc comment claiming otherwise — only STJ's `JsonTypeInfo<T>` overloads are unannotated.
 
 ---
+### P-530 — Core: `SharedKernel.Configuration` Pre-Publish Hardening Pass (BEHAVIOUR CHANGES)
+
+**Status:** `◐` Dispatched — 12/13 tasks `●`; only the publish itself (`P-56`) remains `○`
+**Work Order:** — (user-directed, not dispatched by `arch-lead`; recorded here so the P-ID cannot be reallocated)
+**Domain:** 01.Core
+**Depends on:** None
+
+#### What is needed
+A gold-standard audit of `SharedKernel.Configuration` before it publishes, immediately following P-529's identical pass over `SharedKernel.Primitives`. Full task breakdown, per-defect rationale, and the executed-perturbation results live in [`01.Core/state-map.md`](01.Core/state-map.md) under `SK.01.P530`.
+
+Package chosen on measured grounds rather than by position: of the packages depending on `SharedKernel.Primitives` alone, it has the most dependents repo-wide (23 referencing projects against `SharedKernel.Core`'s 11) and it gates the entire `SharedKernel.Cryptography` sub-tree — `SharedKernel.Cryptography` (14 dependents), `.Compression`, `.Cryptography.Argon2`, and `.Cryptography.KeyVault.Azure` all reference it — while being the cheapest audit in the domain at one source file and 139 lines.
+
+#### Why this is needed
+Six defects, every one found by executing the code or running the trim/AOT analyzers over it rather than by reading. The severe one: `AddValidatedOptions<TOptions, TValidator>` registered the caller's validator with `TryAddSingleton<IValidateOptions<TOptions>, TValidator>()`, but `IValidateOptions<T>` is a multi-implementation collection service — the options pipeline runs every registered validator for a type, not the first — so the validator was silently dropped whenever another validator for that options type already existed, including the one this package's own sibling overload adds. Measured: a cross-property rule never ran, and configuration violating it started the host cleanly.
+
+That matters beyond the one package, because **the convention was already written down and the package that violates it was the one that went unfixed.** `01.Core/README.md` documents this exact case as named `TryAdd` exception #2, and `SharedKernel.Cryptography.KeyVault.Azure` hand-rolls `TryAddEnumerable(...)` immediately after its own `AddValidatedOptions` call specifically to route around it. P-518 found the shape downstream and recorded the rule; nobody went back to the source. The pre-existing test `AddValidatedOptions_WithGeneratedValidator_CalledTwice_RegistersValidatorOnlyOnce` asserted the broken behaviour as though it were the intended contract.
+
+The remaining five: two distinct validators for one options type lost the second (same cause); the package advertised `aot` in `PackageTags` and "AOT-clean" in its README while emitting 6× `IL2091` + 4× `IL2026` + 2× `IL3050` into every trimming consumer's build; the Data Annotations overload was not idempotent, reporting 4 duplicated failure messages for 2 broken properties; the nuspec forced a dead `SharedKernel.Primitives` dependency on every consumer, with no `SharedKernel` type appearing anywhere in the source; and no XML documentation shipped, the same per-project `GenerateDocumentationFile` cause as P-529.
+
+As with P-529, the timing is the whole point: the package has never been pushed to a feed, so every behaviour change was free. Under MinVer lockstep each would otherwise have become a MAJOR bump across all 67 packages.
+
+#### Acceptance criteria
+- [x] All six defects fixed, each pinned by a test proven to fail when the fix is reverted (executed perturbation: 2/2/2/3 failures across four independent reverts)
+- [x] Trim/AOT posture made honest rather than clean-by-suppression: `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]` on every public overload and `[DynamicallyAccessedMembers]` on every `TOptions`/`TValidator`; 12 IL warnings → 0, and `aot` dropped from `PackageTags`
+- [x] XML documentation ships in the packed nupkg (10 documented members, covering the whole public surface)
+- [x] Packed nupkg declares **zero** `SharedKernel.*` dependencies, so the publish workflow's dependency gate has nothing to check and this package is publishable independently of `SharedKernel.Primitives`
+- [x] Whole-solution regression check: `Platform.SharedKernel.slnx` 0 errors with no new warning at any of the 27 in-repo `AddValidatedOptions` call sites; `Platform.SharedKernel.Unit.slnf` 5,310 tests across 49 projects, 0 failures
+- [x] Every `README.md` code sample compiled and executed against the built package
+- [ ] `SharedKernel.Configuration` published to GitHub Packages
+
+> **One cross-domain lesson worth reading before any similar `TryAdd` standardization.** The obvious fix for the idempotency defect is `TryAddEnumerable`, exactly as P-518 prescribed across this domain. Measured, that would have introduced a NEW defect of the same class it was fixing: `TryAddEnumerable` de-duplicates on **implementation type**, every named options instance shares the one implementation type `DataAnnotationValidateOptions<TOptions>`, and that validator is itself **name-scoped** and skips other names — so it would have registered the validator for the first name and left every other named instance of that type completely unvalidated, starting a host cleanly on invalid configuration. The fix is a per-name duplicate check over `ServiceDescriptor.ImplementationInstance`, possible only because the validator is registered as a pre-built immutable instance rather than through a factory, which exposes no inspectable name. **`TryAddEnumerable` is not a drop-in for `TryAddSingleton` when the service is keyed on something finer than its implementation type.**
+
+> **A convention became enforceable.** `ISectionBoundOptions` (`static abstract string SectionName`) turns the platform's section-path rule — mandated in root `CLAUDE.md`, adopted by 33 options types across 12 domains, retyped at 28 `GetSection(X.SectionName)` call sites — into a compile-time contract, with an `AddValidatedOptions<TOptions>(configuration)` overload that reads it so no call site names a section at all. Opt-in and non-breaking; migrating an options type means `public const string SectionName` → `public static string SectionName =>`, since a const field cannot satisfy a static abstract property. The 33 existing types are deliberately not retrofitted here — that is each domain's own call.
+
+---
+
 ### Closed phase index
 
 > All 437 phases are closed (`●` 422, `⊘` 15). Full text: [`state-map.archive.md`](state-map.archive.md).
