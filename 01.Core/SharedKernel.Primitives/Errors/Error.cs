@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace SharedKernel.Primitives.Errors;
 
 /// <summary>
@@ -18,6 +20,7 @@ namespace SharedKernel.Primitives.Errors;
 /// <param name="Code">A stable, machine-readable identifier for this error (e.g., <c>"validation.required"</c>).</param>
 /// <param name="Message">A human-readable description of the error.</param>
 /// <param name="Type">The category of this error.</param>
+[DebuggerDisplay("{DebuggerDisplay,nq}")]
 public sealed record Error(string Code, string Message, ErrorType Type)
 {
     /// <summary>
@@ -87,4 +90,8 @@ public sealed record Error(string Code, string Message, ErrorType Type)
     /// </returns>
     public static Error Forbidden(string code, string message)
         => new(code, message, ErrorType.Forbidden);
+
+    // Code plus type, not the message: the code is what a consumer branches on and greps logs
+    // for, and a message is long enough to push everything useful out of a watch-window row.
+    private string DebuggerDisplay => Type == ErrorType.None ? "None" : $"{Type}: {Code}";
 }

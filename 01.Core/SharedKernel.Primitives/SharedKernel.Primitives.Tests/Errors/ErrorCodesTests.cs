@@ -40,6 +40,8 @@ public sealed class ErrorCodesTests
             ErrorCodes.Conflict.Duplicate,
             ErrorCodes.Unauthorized.Default,
             ErrorCodes.Unauthorized.Expired,
+            ErrorCodes.Forbidden.Default,
+            ErrorCodes.Forbidden.InsufficientPermission,
             ErrorCodes.Unexpected.Default,
             ErrorCodes.Domain.RuleViolated,
         };
@@ -60,4 +62,50 @@ public sealed class ErrorCodesTests
     [Fact]
     public void Unexpected_Default_HasCorrectValue()
         => Assert.Equal("unexpected.exception", ErrorCodes.Unexpected.Default);
+
+    // ErrorType.Forbidden shipped in WO-059/P-384 with no companion code constants, unlike
+    // BusinessRule, which got Domain.RuleViolated. These close that gap.
+    [Fact]
+    public void Forbidden_Default_HasCorrectValue()
+        => Assert.Equal("forbidden.default", ErrorCodes.Forbidden.Default);
+
+    [Fact]
+    public void Forbidden_InsufficientPermission_HasCorrectValue()
+        => Assert.Equal(
+            "forbidden.insufficient_permission",
+            ErrorCodes.Forbidden.InsufficientPermission);
+
+    [Fact]
+    public void Forbidden_Codes_AreDistinctFromUnauthorizedCodes()
+    {
+        // 401 and 403 must stay distinguishable in logs and dashboards. Reusing an Unauthorized
+        // code for a Forbidden error would make an authorization failure look like a missing
+        // credential.
+        var forbidden = new[]
+        {
+            ErrorCodes.Forbidden.Default,
+            ErrorCodes.Forbidden.InsufficientPermission,
+        };
+        var unauthorized = new[]
+        {
+            ErrorCodes.Unauthorized.Default,
+            ErrorCodes.Unauthorized.Expired,
+        };
+
+        Assert.Empty(forbidden.Intersect(unauthorized));
+    }
+
+    [Fact]
+    public void Forbidden_Codes_UseTheDottedLowercaseConvention()
+    {
+        foreach (var code in new[]
+        {
+            ErrorCodes.Forbidden.Default,
+            ErrorCodes.Forbidden.InsufficientPermission,
+        })
+        {
+            Assert.StartsWith("forbidden.", code, StringComparison.Ordinal);
+            Assert.Equal(code.ToLowerInvariant(), code);
+        }
+    }
 }

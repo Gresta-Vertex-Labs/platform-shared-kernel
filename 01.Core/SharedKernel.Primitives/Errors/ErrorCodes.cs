@@ -61,6 +61,30 @@ public static class ErrorCodes
         public const string Expired = "unauthorized.expired";
     }
 
+    /// <summary>
+    /// Codes for failures where the caller is authenticated and generally permitted to attempt the
+    /// operation, but a specific per-instance condition is not met.
+    /// </summary>
+    /// <remarks>
+    /// Use these constants as the <see cref="Error.Code"/> value when raising
+    /// <see cref="ErrorType.Forbidden"/> errors, which map to HTTP 403 at the presentation layer.
+    /// Never reuse an <see cref="Unauthorized"/> code for a <see cref="ErrorType.Forbidden"/>
+    /// error: the two answer different questions (401 "who are you?" versus 403 "you may not do
+    /// this particular thing"), and conflating them makes an authorization failure
+    /// indistinguishable from a missing-credentials failure in logs and dashboards.
+    /// </remarks>
+    public static class Forbidden
+    {
+        /// <summary>The operation is forbidden for this caller under the current conditions.</summary>
+        public const string Default = "forbidden.default";
+
+        /// <summary>
+        /// The caller holds a valid identity but lacks the role or permission this operation
+        /// requires — the code behind a failed declarative role/permission gate.
+        /// </summary>
+        public const string InsufficientPermission = "forbidden.insufficient_permission";
+    }
+
     /// <summary>Codes for unexpected / unclassified failures.</summary>
     public static class Unexpected
     {
